@@ -1,0 +1,11 @@
+[package]
+name = "wonton-tunnel"
+description = "iroh 隧道：服务端入口与客户端本地 HTTP 代理"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

@@ -37,7 +37,7 @@ docs/        文档
 scripts/     CI 与开发脚本
 ```
 
-目录随 M0 的实现逐步创建。
+各目录的用途见其中的 README，Rust crate 的说明见各自 `src/lib.rs` 的模块文档。
 
 ## 许可
 

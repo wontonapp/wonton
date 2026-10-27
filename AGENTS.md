@@ -28,13 +28,24 @@
 ## 代码结构
 
 - CI 硬门禁：源码文件 ≤ 800 行，函数 ≤ 100 行，超过即失败。文件行数由
-  `scripts/check-file-size.sh` 检查；函数长度由各语言 linter 检查（Rust clippy
-  `too_many_lines`、Kotlin detekt `LongMethod`、SwiftLint `function_body_length`），代码落地时配置。
+  `scripts/check-file-size.sh` 检查；函数长度由各语言 linter 检查：Rust 用 clippy
+  `too_many_lines`（已配置），Kotlin 用 detekt `LongMethod`、Swift 用 SwiftLint
+  `function_body_length`，在对应工程创建时一起配置。
 - 确需例外时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
 - 按职责拆模块。新功能放进职责清晰的小模块，不往已经很大的文件末尾追加。
 - 客户端遵循“厚 Rust 核心 + 薄原生壳”：状态、业务逻辑、网络、存储、ViewModel 都在 Rust；
   Swift/Kotlin 只渲染 ViewModel、把用户操作发回核心，以及调用平台能力（推送、相册、文件选择、
   后台音频等）。
+
+## 开发环境与检查
+
+- Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
+- 提交前运行 `bash scripts/check.sh`：行数门禁、`cargo fmt`、`cargo clippy -D warnings`、`cargo test`，
+  和 CI 一致。
+- 依赖：只有一个 crate 用到的依赖写在该 crate 的 `Cargo.toml`；多个 crate 共用的依赖在根
+  `Cargo.toml` 的 `[workspace.dependencies]` 统一版本，crate 里用 `{ workspace = true }` 引用。
+- `Cargo.lock` 冲突时，先取 `main` 的版本，再运行 `cargo build` 重新生成，不手工合并。
+- 本地开发环境（Tuwunel、示例插件等）放在 `deploy/dev/`，用 Docker 运行。
 
 ## 测试
 

@@ -159,6 +159,7 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放�
 crates/
   wonton-protocol/   核心 API、ViewModel、插件清单类型：跨端唯一事实源，生成 Swift/Kotlin 类型
   wonton-tunnel/     iroh 隧道，服务端与客户端共用
+  wonton-matrix/     Matrix 客户端封装（matrix-rust-sdk），供客户端核心使用
   wonton-core/       服务端核心
   wonton-client/     客户端厚核心，UniFFI 导出
 apps/

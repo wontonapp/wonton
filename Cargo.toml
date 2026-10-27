@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "LicenseRef-Proprietary"
+publish = false
+
+# 共享依赖的统一版本。crate 里用 `name = { workspace = true }` 引用，按需追加 features。
+# 只有一个 crate 用到的依赖直接写在该 crate 的 Cargo.toml 里；多个 crate 都要用时再提到这里。
+[workspace.dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+bollard = "0.21.1"
+iroh = "1.4.1"
+matrix-sdk = "0.19.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = "1.54.1"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+uniffi = "0.32.2"
+
+[workspace.lints.clippy]
+# 函数体超过 100 行即失败，阈值见 clippy.toml。
+too_many_lines = "deny"
