@@ -1,0 +1,207 @@
+# 架构
+
+本文描述 Wonton 的目标架构。每个选择的理由见对应的 [ADR](adr/README.md)。标注“M0 选型”或
+“待验证”的部分，由 M0 技术验证给出结论后更新本文。
+
+## 一句话
+
+家里一台 Linux + Docker 主机上跑着一个薄的 Rust 核心容器，它用 Docker 管理所有插件；自托管的
+Matrix 服务器（Tuwunel）是所有会话的事实源；Agent 和插件都以 Matrix bot 的身份和人对话；手机上的
+原生 App 由一个厚的 Rust 客户端核心驱动，经 iroh 隧道连回家；推送经我们运营的中继转发密文。
+
+## 组件总览
+
+```mermaid
+flowchart LR
+  subgraph Client["手机 / 电脑"]
+    Shell["原生壳\nSwiftUI / Compose"]
+    ClientCore["Rust 客户端核心\nmatrix-rust-sdk · iroh · ViewModel"]
+    WebView["小程序 WebView"]
+    Shell --> ClientCore
+    WebView --> ClientCore
+  end
+
+  subgraph Home["家里的 Linux + Docker 主机"]
+    Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权"]
+    Tuwunel["Tuwunel\nMatrix homeserver"]
+    Agent["Agent 插件\n默认 Hermes"]
+    Magpie["magpie\n模型网关"]
+    Plugins["其他插件\nImmich · Navidrome · Paperless …"]
+  end
+
+  subgraph Cloud["我们运营的云端（不存业务数据）"]
+    Relay["iroh-relay\niroh-dns-server"]
+    PushRelay["推送中继\ngorush"]
+    Catalog["插件目录与节点列表\n签名静态文件"]
+  end
+
+  ClientCore <-->|"iroh 隧道"| Core
+  Core --> Tuwunel
+  Agent <--> Tuwunel
+  Agent --> Magpie
+  Agent -->|"MCP"| Core
+  Core -->|"MCP 与路由"| Plugins
+  Tuwunel -->|"pusher"| Core
+  Core -->|"加密通知"| PushRelay
+  PushRelay -->|"APNs / FCM / HMS"| Client
+  Core -.-> Relay
+  ClientCore -.-> Relay
+  Core -.-> Catalog
+```
+
+### 家里的服务器
+
+| 容器 | 类型 | 职责 |
+| --- | --- | --- |
+| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。唯一挂载 Docker socket 的容器。 |
+| `tuwunel` | 系统插件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
+| `hermes` | 系统插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。 |
+| `magpie` | 系统插件（可替换） | 模型网关：provider 和 key 只配一次，所有插件共用。 |
+| 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba，以及任意 CasaOS 应用。 |
+| `wonton-updater` | 一次性容器 | 升级核心时拉起：拉新镜像、重建核心、健康检查，失败回滚。 |
+
+### 云端
+
+我们只运营转发类服务，没有用户账号，也不存业务数据。
+
+| 服务 | 选型 | 说明 |
+| --- | --- | --- |
+| 中继 | 官方 `iroh-relay` 镜像 | 打洞失败时转发隧道流量。共享令牌加限速。 |
+| 发现 | 官方 `iroh-dns-server` 镜像 | 家里服务器换网络后，App 靠它找到新地址。 |
+| 推送中继 | gorush 加一层鉴权 | 只接收密文，转发到 APNs、FCM、华为 HMS。 |
+| 目录 | 签名静态文件 | 插件目录、中继节点列表、核心版本信息。 |
+| 镜像 | GHCR 加国内镜像仓库 | 安装脚本按网络选择。 |
+
+MVP 部署香港和海外各一个节点；公司主体和备案办好后再加内地节点。
+
+### 客户端
+
+| 端 | 技术 | 说明 |
+| --- | --- | --- |
+| iOS | SwiftUI | 外加通知扩展（解密推送）；录屏扩展留给 M2 的屏幕共享。 |
+| Android | Jetpack Compose | 推送服务内本地解密；国内可选“保持连接”前台服务。 |
+| 桌面（M2） | Compose Multiplatform | 与 Android 共享 UI 模块。 |
+| Web（M3） | Compose 编译到 Web | 核心在服务器上运行，浏览器经 WebSocket 收发。 |
+| 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel、行为测试。 |
+
+## 主要链路
+
+### 安装与配对
+
+1. 一行安装脚本拉起 `wonton-core` 和系统插件，并让用户选择存储目录。
+2. 核心生成服务器的 iroh 身份和一次性配对令牌，在局域网网页和终端里显示二维码。二维码里有服务器
+   endpoint ID、当前中继地址和令牌。
+3. App 扫码后经 iroh 连接核心，提交令牌和本机安装生成的公钥。核心创建主人账号，记下这台设备的
+   endpoint ID（以后只接受已配对设备），并为它签发 Tuwunel 登录（待验证：JWT 登录）。
+4. 之后 App 每次启动都经隧道连回；服务器换了网络，App 通过发现服务找到它。
+5. 主人丢失手机时，在局域网网页上重新配对（能接触到局域网即视为可信）。
+
+### 聊天
+
+App 的 Matrix 客户端请求进入客户端核心的本地代理，经 iroh 隧道到核心网关，再转给 Tuwunel。
+Bot（Agent 插件）作为 Matrix 用户收到消息，通过 magpie 调模型，通过 MCP 调工具，再把回复发回房间，
+由 Sliding Sync 同步到所有设备。
+
+### 推送
+
+1. App 把推送令牌和本机公钥登记给核心，并在 Tuwunel 注册指向核心推送代理的 pusher。
+2. 有新消息时，Tuwunel 调用核心推送代理（Matrix Push Gateway 接口）。
+3. 核心用该设备的公钥加密通知内容（发送者、预览），交给推送中继。
+4. 中继校验发送方服务器身份并限速，转发到 APNs、FCM 或 HMS。
+5. iOS 通知扩展、Android 推送服务在本机解密并显示。中继和苹果、谷歌只看到密文。
+
+### 小程序
+
+App 打开插件网页时，WebView 访问客户端核心的本地代理，经隧道到核心网关。网关校验设备会话后，
+按插件清单把请求路由到插件容器。插件清单声明 `sso: oidc` 时，核心在安装时为它注入 OIDC 客户端
+配置，用户进入时自动登录（OIDC 提供方见选型表）。
+
+### 插件安装
+
+1. 来源：官方目录、导入的 CasaOS 商店，或用户粘贴的 compose 文件。
+2. 核心校验清单，生成权限清单。
+3. 主人在 App 里确认权限；如果是 Bot 发起的安装，确认按钮出现在聊天里。
+4. 核心渲染 compose：注入应用数据目录、已授权的共享文件夹、模型网关地址、OIDC 配置，
+   并为插件建独立的 Docker 网络。
+5. 经 Docker API 启动，健康检查通过后注册网页路由、MCP 端点和 bot 身份，然后通知主人。
+
+### Agent 调工具与确认
+
+Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放行。敏感操作（装卸插件、删文件、
+改设置、对外发送）不会直接执行：核心先给主人发一张确认卡片（自定义 Matrix 事件，附纯文本兜底），
+主人点确认后才执行，并写审计日志，最后把结果返回给 Agent。
+
+### 升级
+
+核心按渠道（stable / beta）从目录检查新版本并通知主人。主人确认后，核心拉起 `wonton-updater`：
+拉新镜像、重建核心容器、健康检查，失败就回滚到旧镜像。插件按目录版本升级，可以设为自动。
+
+## Bot 与 Agent
+
+- Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。核心负责给 Bot 分配身份、权限、模型访问和工具，
+  不和具体 Agent 耦合。
+- 会说 Matrix 的 Agent 直接接入（Hermes 的 Matrix 平台）。支持 ACP 的 Agent（Codex、Claude Code、
+  Gemini CLI、OpenCode 等）通过通用“ACP 桥”插件接入：一个聊天房间对应一个 ACP 会话，ACP 的权限
+  请求对应聊天里的确认按钮。
+- 每个家人有自己的私人 Bot；Bot 之间可以互发消息，规则见 [ADR-0007](adr/0007-agents-and-bots.md)。
+
+## 安全模型
+
+- Agent 是不可信执行者：独立容器，只看得到自己的工作区和被授权的文件夹，没有 Docker socket，
+  也没有宿主 root。
+- 插件权限写在清单里，安装时确认。高权限（host 网络、设备、GPU、Docker socket、特权模式）单独醒目确认。
+- provider key 等密钥只存在核心密钥库和 magpie，插件拿到的是受限令牌。
+- 来自其他 Bot、网页、文件的内容都视为不可信输入。
+
+## 仓库布局（规划）
+
+```text
+crates/
+  wonton-protocol/   核心 API、ViewModel、插件清单类型：跨端唯一事实源，生成 Swift/Kotlin 类型
+  wonton-tunnel/     iroh 隧道，服务端与客户端共用
+  wonton-core/       服务端核心
+  wonton-client/     客户端厚核心，UniFFI 导出
+apps/
+  ios/               SwiftUI 壳、通知扩展
+  compose/           Kotlin Multiplatform：共享 UI 模块、android、desktop（M2）
+plugins/             官方插件清单（x-wonton）与自研插件
+cloud/               中继、发现、推送中继、目录发布的部署配置
+deploy/              一行安装脚本、compose 模板、升级器
+docs/                文档
+scripts/             CI 与开发脚本
+```
+
+## 选型
+
+| 能力 | 选型 | 许可证 | 状态 |
+| --- | --- | --- | --- |
+| Matrix homeserver | Tuwunel | Apache-2.0 | 已定，M0 验证 |
+| 客户端 Matrix SDK | matrix-rust-sdk | Apache-2.0 | 已定 |
+| 隧道 | iroh 1.x（参考 dumbpipe） | MIT / Apache-2.0 | 已定 |
+| 中继与发现 | iroh-relay、iroh-dns-server | MIT / Apache-2.0 | 已定 |
+| 推送中继 | gorush（APNs、FCM、HMS） | MIT | 已定；小米、OPPO、vivo 在 M2 |
+| Docker 管理 | bollard | Apache-2.0 | 已定 |
+| 默认 Agent | Hermes Agent | MIT | 已定 |
+| Agent 接入 | Matrix 原生、ACP | Apache-2.0（ACP 规范） | 已定 |
+| 模型网关 | magpie | MIT | 已定 |
+| MCP 总线 | Docker MCP Gateway、IBM ContextForge，或用官方 Rust SDK 自建最小聚合 | MIT / Apache-2.0 | M0 选型 |
+| OIDC 提供方 | Tuwunel 内置 OIDC、Pocket ID、Rauthy | Apache-2.0 / BSD-2-Clause / Apache-2.0 | M0 选型 |
+| HTTP 网关 | 核心内置（axum / hyper）或 Traefik | MIT | M0 选型 |
+| 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
+| UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
+| 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
+| 文档 | Paperless-ngx（插件） | GPL-3.0，独立容器 | 已定 |
+| 音乐 | Navidrome（插件）+ Subsonic 原生页（M2） | GPL-3.0，独立容器 | 已定 |
+| 实时通话（M2） | LiveKit、MatrixRTC | Apache-2.0 | 预留 |
+
+不使用：Element X、FluffyChat、Dart 版 Matrix SDK（AGPL）；Umbrel 应用商店（无开源许可证）。
+
+## 预留扩展点
+
+- **实时通话与屏幕共享（M2）**：通话是一通 MatrixRTC 通话，Agent 作为参与方加入。默认用云端实时
+  模型直连（家里服务器签发临时令牌，工具调用回家执行）；隐私模式在家里跑 LiveKit 插件。客户端核心
+  把音频会话和后台模式抽象一次，供音乐和通话共用。见 [ADR-0014](adr/0014-reserved-capabilities.md)。
+- **小程序 JS SDK（M2）**：原生播放、文件选择、分享、发到聊天。
+- **第三方 IM 渠道（M2）**：渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
+- **Web 端（M3）**：核心接口保持可序列化（操作进、ViewModel 出），为浏览器远程使用留路。
+- **跨机 Bot 通信（M3）**：插件实现，Matrix 联邦走 iroh 或 A2A。
