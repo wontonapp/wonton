@@ -8,6 +8,8 @@ services:
     build:
       context: ../../..
       dockerfile: deploy/dev/core/Dockerfile
+      args:
+        WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-unknown}
     image: wonton-core:dev
     # 核心要知道自己的容器名，才能把自己接入每个插件网络。
     container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}

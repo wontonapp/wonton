@@ -24,6 +24,12 @@ use wonton_core::plugin::store::Store;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 
+/// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
+const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
+    Some(commit) => commit,
+    None => "unknown",
+};
+
 #[tokio::main]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -36,7 +42,7 @@ async fn main() -> ExitCode {
         None | Some("serve") => serve().await,
         Some("healthcheck") => healthcheck().await,
         Some("--version") => {
-            println!("wonton-core {}", env!("CARGO_PKG_VERSION"));
+            println!("wonton-core {} ({BUILD_COMMIT})", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Some(other) => Err(anyhow::anyhow!(
@@ -53,6 +59,7 @@ async fn main() -> ExitCode {
 }
 
 async fn serve() -> anyhow::Result<()> {
+    tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?;
     let engine = Engine::connect()?;
     let docker = engine.check_server().await.context("连接 Docker")?;

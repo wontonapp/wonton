@@ -19,6 +19,9 @@ export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN=wonton.localhost
 export WONTON_DEV_DATA="/tmp/wonton-smoke-$(date +%s)-$$"
+# 核心镜像和隧道客户端镜像用同一个提交号构建，共用 Dockerfile 里的编译阶段。
+WONTON_BUILD_COMMIT="$("$dev" commit)"
+export WONTON_BUILD_COMMIT
 core="$WONTON_DEV_PROJECT"
 browser="$WONTON_DEV_PROJECT-browser"
 phone="$WONTON_DEV_PROJECT-phone"
@@ -140,7 +143,8 @@ expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner
 expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" | json 0.role)" Admin
 
 step "已配对设备经隧道打开插件：不用登录，直接是主人"
-docker build -q --target tunnel-client -t "$phone_image" -f "$here/Dockerfile" "$repo" >/dev/null
+docker build -q --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" \
+  -f "$here/Dockerfile" "$repo" >/dev/null
 server_id="$("$dev" tunnel | json endpoint_id)"
 # 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
 # 和 App 一样只接受带本次会话凭据的请求。

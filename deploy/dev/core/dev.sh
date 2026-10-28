@@ -14,16 +14,19 @@
 #   dev.sh allow <endpoint ID>         登记一台设备（M0 代替扫码配对），它经隧道访问时就是主人
 #   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
 #   dev.sh ticket [直连地址] [网页地址]  给 App 的连接信息（M0 代替配对二维码），直连地址默认 127.0.0.1:隧道端口
+#   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
-# WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）。
+# WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）、
+# WONTON_BUILD_COMMIT（编进核心、打在启动日志里的提交号，默认按当前检出算）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd "$here/../../.." && pwd)"
 secrets="$here/.secrets"
 curl_image="curlimages/curl:8.23.0"
 
@@ -61,6 +64,16 @@ ensure_secret() {
 compose() {
   ensure_secret
   docker compose -f "$here/compose.yaml" "$@"
+}
+
+# 镜像里是哪份代码：当前检出的提交号；构建上下文（Cargo 工作区）里有没提交的改动时加 -dirty。
+build_commit() {
+  local commit
+  commit="$(git -C "$repo" rev-parse --short HEAD)"
+  if [[ -n "$(git -C "$repo" status --porcelain -- crates Cargo.toml Cargo.lock rust-toolchain.toml)" ]]; then
+    commit="$commit-dirty"
+  fi
+  echo "$commit"
 }
 
 # 在与核心共享网络命名空间的容器里运行 curl：*.localhost 由 curl 解析到 127.0.0.1，即核心网关。
@@ -112,9 +125,11 @@ wipe_data() {
 case "${1:-}" in
   up)
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
+    export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     compose up -d --build --wait
-    echo "核心已就绪：$base_url（主人令牌：$0 token）"
+    echo "核心已就绪：$base_url（提交 $WONTON_BUILD_COMMIT，主人令牌：$0 token）"
     ;;
+  commit) build_commit ;;
   down) compose down ;;
   reset)
     compose down --volumes

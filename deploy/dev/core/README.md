@@ -21,6 +21,12 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
   宿主上的 Docker 解析。Hydra 的系统密钥在 `.secrets/`。两者都不提交。
 - `dev.sh` 的 HTTP 请求在一个与核心共享网络的 curl 容器里发出，所以 `DOCKER_HOST` 指向远端主机时
   也能用（远端只需要 Docker）：`DOCKER_HOST=ssh://npchy deploy/dev/core/dev.sh up`。
+- 镜像里编进了构建它的提交号（`dev.sh commit`；Cargo 工作区有没提交的改动时带 `-dirty`），核心启动日志的
+  第一行就是它（`docker logs <核心容器> 2>&1 | grep 核心启动`），`docker run --rm wonton-core:dev --version`
+  也能看到。验证前先看一眼，确认镜像里是这个检出的代码。
+- 所有 worktree 共用一份 cargo 编译缓存，而 cargo 按修改时间判断要不要重编：源码比别的 worktree 上次编译时
+  还旧，就会直接用别人的产物。所以 Dockerfile 每次编译前把工作区的源码 touch 一遍，依赖仍命中缓存，只重编
+  工作区的 crate；源码没变时整层命中 Docker 的构建缓存，不重编。
 
 ## 经隧道访问
 
