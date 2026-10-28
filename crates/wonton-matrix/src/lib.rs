@@ -20,9 +20,11 @@ mod message;
 mod rooms;
 mod session;
 mod sync;
+#[cfg(feature = "testkit")]
+pub mod testkit;
 mod timeline;
 
-pub use chat_room::{BackPaginationStatus, ChatRoom, ImageUpload};
+pub use chat_room::{BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload};
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use matrix_sdk::ruma::{

@@ -8,7 +8,7 @@ use std::{
 use futures_util::{Stream, StreamExt, future, stream};
 use matrix_sdk::{
     Room, RoomMemberships,
-    attachment::{AttachmentInfo, BaseImageInfo},
+    attachment::{AttachmentInfo, BaseImageInfo, Thumbnail},
     event_cache::PaginationStatus,
     ruma::{
         RoomId, UInt, api::client::receipt::create_receipt::v3::ReceiptType,
@@ -25,7 +25,7 @@ use tokio::{sync::broadcast::error::RecvError, task::JoinHandle};
 use crate::{
     Error, Message, Result,
     message::MemberNames,
-    timeline::{EntryKind, TimelineEntry, entry},
+    timeline::{self, EntryKind, TimelineEntry, entry},
 };
 
 /// 要发送的图片。
@@ -41,6 +41,18 @@ pub struct ImageUpload {
     pub width: Option<u32>,
     /// 像素高度。
     pub height: Option<u32>,
+    /// 发送端生成的缩略图。加密房间里服务器做不了缩略图，对方预览只能下载原图，所以由发送端给。
+    pub thumbnail: Option<ImageThumbnail>,
+}
+
+/// 发送端生成的缩略图。
+#[derive(Clone, Debug)]
+pub struct ImageThumbnail {
+    /// MIME 类型，如 `image/jpeg`。
+    pub mime_type: String,
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// 向前翻页的状态。
@@ -56,15 +68,18 @@ pub enum BackPaginationStatus {
 /// 一个已打开的房间。
 pub struct ChatRoom {
     room: Room,
-    timeline: Timeline,
+    timeline: Arc<Timeline>,
     names: Arc<RwLock<MemberNames>>,
     /// 房间有更新时在后台刷新显示名；房间关掉时停止。
     refresh: JoinHandle<()>,
+    /// 在后台向服务器取全部成员，补上时间线里发送者的资料；房间关掉时停止。
+    profiles: JoinHandle<()>,
 }
 
 impl Drop for ChatRoom {
     fn drop(&mut self) {
         self.refresh.abort();
+        self.profiles.abort();
     }
 }
 
@@ -72,20 +87,31 @@ impl ChatRoom {
     /// 打开房间只读本机已有的数据，不等网络：成员没同步全时 SDK 的 `members` 会去服务器拉（超时 60 秒、
     /// 重试 3 次），隧道断开时打开房间要等很久，本机缓存的历史也出不来。
     ///
-    /// 显示名只用本机已有的成员事件（同步时随消息发送者一起来），不另外向服务器拉全成员：私聊和小群里读消息
-    /// 的人就是发消息的人，够用；少数没发过言的成员在“已读”里显示用户 ID。
+    /// 显示名先用本机已有的成员事件（同步时随消息发送者一起来）。打开后在后台向服务器取全部成员，取到后时间线
+    /// 里发送者的资料随之补上（条目以 `Set` 增量更新）：新登录的设备上，房间列表同步只带最新一条的发送者，更早
+    /// 的发送者要靠这一步才有显示名。取不到（比如隧道断开）不影响聊天，发送者显示用户 ID。
     ///
     /// 打开前只经房间列表同步过最新一条时，更早的消息隔着缺口，服务器不一定随房间订阅补发，要向前翻页
     /// （[`Self::paginate_backwards`]，界面滚到顶时自动翻）。
     pub(crate) async fn open(room: Room) -> Result<Self> {
-        let timeline = room.timeline().await?;
+        let timeline = Arc::new(
+            room.timeline_builder()
+                .event_filter(timeline::shown)
+                .build()
+                .await?,
+        );
         let names = Arc::new(RwLock::new(local_member_names(&room).await));
         let refresh = tokio::spawn(refresh_member_names(room.clone(), Arc::downgrade(&names)));
+        let profiles = tokio::spawn({
+            let timeline = timeline.clone();
+            async move { timeline.fetch_members().await }
+        });
         Ok(Self {
             room,
             timeline,
             names,
             refresh,
+            profiles,
         })
     }
 
@@ -118,8 +144,10 @@ impl ChatRoom {
             blurhash: None,
             is_animated: None,
         };
+        let thumbnail = image.thumbnail.map(thumbnail).transpose()?;
         let config = AttachmentConfig {
             info: Some(AttachmentInfo::Image(info)),
+            thumbnail,
             ..Default::default()
         };
         let source = AttachmentSource::Data {
@@ -197,10 +225,31 @@ impl ChatRoom {
         }
     }
 
-    /// 把房间标为读到最新一条：发出已读回执，房间的未读数随之清零。已经读到最新时什么都不做，返回 `false`。
+    /// 把房间标为读到最新一条：发出已读回执，房间的未读数随之清零；已读位置（`m.fully_read`）也移到最新一条，
+    /// 房间开着时时间线里的“已读位置”不会停在中间。已经读到最新时什么都不做，返回 `false`。
     pub async fn mark_as_read(&self) -> Result<bool> {
-        Ok(self.timeline.mark_as_read(ReceiptType::Read).await?)
+        let receipt = self.timeline.mark_as_read(ReceiptType::Read).await?;
+        let marker = self.timeline.mark_as_read(ReceiptType::FullyRead).await?;
+        Ok(receipt || marker)
     }
+}
+
+fn thumbnail(thumbnail: ImageThumbnail) -> Result<Thumbnail> {
+    let content_type: Mime = thumbnail.mime_type.parse().map_err(|_| {
+        Error::InvalidInput(format!("无法识别的缩略图类型：{}", thumbnail.mime_type))
+    })?;
+    if content_type.type_() != mime::IMAGE {
+        return Err(Error::InvalidInput(format!(
+            "缩略图不是图片类型：{content_type}"
+        )));
+    }
+    Ok(Thumbnail {
+        size: UInt::new(thumbnail.data.len() as u64).unwrap_or(UInt::MAX),
+        data: thumbnail.data,
+        content_type,
+        height: UInt::from(thumbnail.height),
+        width: UInt::from(thumbnail.width),
+    })
 }
 
 fn back_pagination(status: PaginationStatus) -> BackPaginationStatus {

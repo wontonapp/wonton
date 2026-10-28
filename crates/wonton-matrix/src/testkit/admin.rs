@@ -1,9 +1,9 @@
 //! 模拟核心的管理操作：经 Tuwunel 实现的 Synapse 兼容管理接口注册管理账号、吊销设备、停用账号。
 
+use crate::{DeviceId, UserId};
 use aws_lc_rs::hmac;
 use matrix_sdk::reqwest::{Client, Method};
 use serde_json::{Value, json};
-use wonton_matrix::{DeviceId, UserId};
 
 use super::random_hex;
 

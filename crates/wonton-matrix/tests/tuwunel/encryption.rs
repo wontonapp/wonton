@@ -1,7 +1,8 @@
 //! 端到端加密：登录状态和密钥存在本机，重启后恢复；恢复密钥让另一台设备被验证；加密私聊在重启后仍能解密。
 
 use wonton_matrix::{
-    EncryptionState, Error, ImageUpload, MatrixSession, MessageBody, Recovery, Verification,
+    EncryptionState, Error, ImageThumbnail, ImageUpload, MatrixSession, MessageBody, Recovery,
+    Verification,
 };
 
 use crate::{
@@ -121,12 +122,20 @@ async fn encrypted_direct_chat_still_decrypts_after_restart() {
         .send_text("只有你能看到")
         .await
         .expect("发加密文字");
+    let thumbnail = random_bytes(8 * 1024);
     let photo = ImageUpload {
         filename: "secret.jpg".to_owned(),
         mime_type: "image/jpeg".to_owned(),
         data: random_bytes(256 * 1024),
         width: Some(640),
         height: Some(480),
+        // 加密房间里服务器做不了缩略图，由发送端给。
+        thumbnail: Some(ImageThumbnail {
+            mime_type: "image/jpeg".to_owned(),
+            data: thumbnail.clone(),
+            width: 320,
+            height: 240,
+        }),
     };
     alice_room
         .send_image(photo.clone())
@@ -164,6 +173,11 @@ async fn encrypted_direct_chat_still_decrypts_after_restart() {
         .await
         .expect("下载并解密图片");
     assert!(downloaded == photo.data, "解密后的图片与原图不一致");
+    let preview = bob
+        .download_media(&image.thumbnail_token().expect("应带缩略图"))
+        .await
+        .expect("下载并解密缩略图");
+    assert!(preview == thumbnail, "解密后的缩略图与发送的不一致");
 
     // Bob 重启：房间密钥存在本机，历史消息不用再向别人要密钥就能解密。
     let saved = bob.saved().expect("Bob 的登录状态");

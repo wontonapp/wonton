@@ -16,13 +16,14 @@ use iroh::{Endpoint, SecretKey};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
+use url::Url;
 use wonton_protocol::{CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
 };
 
-pub(crate) use storage::Storage;
+pub(crate) use storage::{Storage, write_private};
 use ticket::Ticket;
 
 /// iroh 的网络配置。
@@ -42,6 +43,8 @@ pub(crate) struct HomeLink {
     view: watch::Sender<HomeViewModel>,
     /// 当前用的连接信息（原文）。
     ticket: std::sync::Mutex<Option<String>>,
+    /// 当前连接信息里核心自己的地址，聊天从这里取 Matrix 登录令牌。
+    core_url: std::sync::Mutex<Option<Url>>,
     /// 当前的连接。换服务器时整个替换；锁保证同一时刻只有一次建连或检查。
     link: Mutex<Option<Link>>,
 }
@@ -79,6 +82,7 @@ impl HomeLink {
             network,
             view,
             ticket: std::sync::Mutex::new(None),
+            core_url: std::sync::Mutex::new(None),
             link: Mutex::new(None),
         });
         if let Some(text) = saved {
@@ -122,8 +126,20 @@ impl HomeLink {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// 核心自己的地址；还没有连接信息时为空。
+    pub(crate) fn core_url(&self) -> Option<Url> {
+        self.core_url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
     fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
         *self.lock_ticket() = Some(text);
+        *self
+            .core_url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ticket.core_url());
         self.view.send_modify(|view| {
             view.server_id = Some(ticket.server_id().to_string());
             view.web_url = ticket.web_url().map(str::to_owned);

@@ -65,6 +65,7 @@ async fn two_accounts_exchange_text_and_images() {
         data: random_bytes(2 * 1024 * 1024),
         width: Some(4032),
         height: Some(3024),
+        thumbnail: None,
     };
     let png = ImageUpload {
         filename: "dot.png".to_owned(),
@@ -72,6 +73,7 @@ async fn two_accounts_exchange_text_and_images() {
         data: PNG.to_vec(),
         width: Some(2),
         height: Some(2),
+        thumbnail: None,
     };
     send_and_receive_image(&alice_room, (&bob, &bob_room), png).await;
     send_and_receive_image(&bob_room, (&alice, &alice_room), photo).await;

@@ -10,9 +10,16 @@ use matrix_sdk::{
 use crate::{Error, ImageContent, MatrixSession, Result};
 
 impl ImageContent {
-    /// 取这张图片用的句柄，交给 [`MatrixSession::download_media`]。
+    /// 取这张图片原图用的句柄，交给 [`MatrixSession::download_media`]。
     pub fn media_token(&self) -> String {
         serde_json::to_string(&self.source).expect("媒体来源总能编成 JSON")
+    }
+
+    /// 发送端给的缩略图的句柄；没有缩略图时为 `None`。
+    pub fn thumbnail_token(&self) -> Option<String> {
+        self.thumbnail
+            .as_ref()
+            .map(|source| serde_json::to_string(source).expect("媒体来源总能编成 JSON"))
     }
 }
 

@@ -82,6 +82,7 @@ pub struct ImageContent {
     /// 像素高度。
     pub height: Option<u64>,
     pub(crate) source: MediaSource,
+    pub(crate) thumbnail: Option<MediaSource>,
 }
 
 /// 媒体来源没有实现相等比较，按它的 JSON（即句柄）比较。
@@ -93,6 +94,7 @@ impl PartialEq for ImageContent {
             && self.width == other.width
             && self.height == other.height
             && self.media_token() == other.media_token()
+            && self.thumbnail_token() == other.thumbnail_token()
     }
 }
 
@@ -109,6 +111,7 @@ impl From<&ImageMessageEventContent> for ImageContent {
             width: info.and_then(|info| info.width).map(u64::from),
             height: info.and_then(|info| info.height).map(u64::from),
             source: image.source.clone(),
+            thumbnail: info.and_then(|info| info.thumbnail_source.clone()),
         }
     }
 }
@@ -143,7 +146,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
     Some(Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
-        sender_name: sender_name(event),
+        sender_name: sender_name(event, names),
         is_own: event.is_own(),
         timestamp_ms: event.timestamp().get().into(),
         status: status(event.send_state()),
@@ -153,14 +156,14 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
     })
 }
 
-/// 发送者的显示名；资料还没加载到时用用户 ID。
-pub(crate) fn sender_name(event: &EventTimelineItem) -> String {
+/// 发送者的显示名：事件上带的资料还没加载到时，用本机已有的成员显示名，都没有时用用户 ID。
+pub(crate) fn sender_name(event: &EventTimelineItem, names: &MemberNames) -> String {
     match event.sender_profile() {
         TimelineDetails::Ready(profile) => profile
             .display_name
             .clone()
-            .unwrap_or_else(|| event.sender().to_string()),
-        _ => event.sender().to_string(),
+            .unwrap_or_else(|| names.name(event.sender())),
+        _ => names.name(event.sender()),
     }
 }
 

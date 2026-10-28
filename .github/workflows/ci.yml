@@ -46,3 +46,5 @@ jobs:
         run: docker version
       - name: wonton-matrix 对真实 Tuwunel 的集成测试
         run: cargo test -p wonton-matrix --locked --test tuwunel -- --include-ignored
+      - name: 客户端核心经隧道聊天的集成测试
+        run: cargo test -p wonton-client --locked --test chat -- --include-ignored

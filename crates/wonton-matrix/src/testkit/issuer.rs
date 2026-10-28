@@ -51,6 +51,7 @@ pub fn now() -> u64 {
         .as_secs()
 }
 
+#[derive(Clone)]
 pub struct Issuer {
     key: EncodingKey,
     public_key_pem: Option<String>,

@@ -1,12 +1,17 @@
+use std::future::Future;
+use std::path::Path;
 use std::sync::Arc;
 
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
-use wonton_protocol::{Action, CoreError, HomeViewModel, SessionListViewModel};
+use wonton_protocol::{
+    Action, ChatViewModel, CoreError, HomeViewModel, MediaHandle, SessionListViewModel,
+};
 
+use crate::chat::{ChatLink, TimelineSubscription};
 use crate::home::{HomeLink, Network, Storage};
 use crate::session_store::SessionStore;
-use crate::subscription::{HomeSubscription, SessionListSubscription};
+use crate::subscription::{ChatSubscription, HomeSubscription, SessionListSubscription};
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -16,6 +21,7 @@ use crate::subscription::{HomeSubscription, SessionListSubscription};
 pub struct ClientCore {
     state: watch::Sender<SessionStore>,
     home: Arc<HomeLink>,
+    chat: Arc<ChatLink>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -44,21 +50,10 @@ impl ClientCore {
             Action::ConnectHome { ticket } => self.home.connect(&ticket),
             Action::AppForegrounded => {
                 self.home.foregrounded();
+                self.chat.foregrounded();
                 Ok(())
             }
-            Action::JoinRoom { .. }
-            | Action::LeaveRoom { .. }
-            | Action::StartDirectChat { .. }
-            | Action::SendText { .. }
-            | Action::SendImage { .. }
-            | Action::PaginateBackwards { .. }
-            | Action::MarkRoomRead { .. }
-            | Action::SetUpRecovery
-            | Action::ConfirmRecoveryKeySaved
-            | Action::RecoverEncryption { .. }
-            | Action::DismissChatProblem => Err(CoreError::NotReady {
-                reason: "聊天（Matrix）还没有接入客户端核心".to_owned(),
-            }),
+            chat => self.chat.dispatch(chat),
         }
     }
 
@@ -81,6 +76,33 @@ impl ClientCore {
     pub fn subscribe_home(&self) -> Arc<HomeSubscription> {
         Arc::new(HomeSubscription::new(self.home.subscribe()))
     }
+
+    /// 当前的聊天状态（账号、同步、加密、房间列表），用于首帧渲染。
+    pub fn chat(&self) -> ChatViewModel {
+        self.chat.view()
+    }
+
+    /// 订阅聊天状态，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_chat(&self) -> Arc<ChatSubscription> {
+        Arc::new(ChatSubscription::new(self.chat.subscribe()))
+    }
+
+    /// 订阅一个已加入房间的时间线：第一批是全部条目，之后是按顺序应用的增量。同一时间只打开一个房间，
+    /// 打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时返回 `NotReady`。
+    pub async fn subscribe_timeline(
+        &self,
+        room_id: String,
+    ) -> Result<Arc<TimelineSubscription>, CoreError> {
+        let chat = self.chat.clone();
+        self.run(async move { chat.open_timeline(&room_id).await })
+            .await
+    }
+
+    /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。
+    pub async fn load_media(&self, media: MediaHandle) -> Result<Vec<u8>, CoreError> {
+        let chat = self.chat.clone();
+        self.run(async move { chat.load_media(media).await }).await
+    }
 }
 
 impl ClientCore {
@@ -94,11 +116,28 @@ impl ClientCore {
             .expect("创建 tokio 运行时失败");
         let storage = Storage::open(data_dir)?;
         let home = HomeLink::new(runtime.handle().clone(), storage, network)?;
+        let chat = ChatLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir))?;
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
+            chat,
             runtime: Some(runtime),
         }))
+    }
+
+    /// 在核心自己的运行时里执行：壳（Swift / Kotlin）驱动导出的 async 方法时，线程上没有 tokio 运行时，
+    /// matrix-sdk 的网络操作离不开它。
+    async fn run<T: Send + 'static>(
+        &self,
+        task: impl Future<Output = Result<T, CoreError>> + Send + 'static,
+    ) -> Result<T, CoreError> {
+        let runtime = self.runtime.as_ref().expect("核心释放前运行时一直在");
+        runtime
+            .spawn(task)
+            .await
+            .map_err(|error| CoreError::Upstream {
+                reason: format!("核心的后台任务异常结束：{error}"),
+            })?
     }
 
     fn update_sessions(

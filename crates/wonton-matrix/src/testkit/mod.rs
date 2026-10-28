@@ -1,17 +1,19 @@
 //! 测试用的 Tuwunel、模拟核心的签发与管理，以及等待异步结果的工具。
+//!
+//! 只在 `testkit` 特性下编译，给本 crate 和客户端核心的集成测试共用；App 不启用。
 
 mod admin;
 mod issuer;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
+use crate::{MatrixSession, Result, SessionConfig, StoreConfig};
 use futures_util::{Stream, StreamExt};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
-use wonton_matrix::{MatrixSession, Result, SessionConfig, StoreConfig};
 
 pub use self::{
     admin::Admin,

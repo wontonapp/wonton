@@ -6990,8 +6990,10 @@ name = "wonton-client"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
+ "futures-util",
  "iroh",
  "libc",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -7000,6 +7002,7 @@ dependencies = [
  "tracing-subscriber",
  "uniffi",
  "url",
+ "wonton-matrix",
  "wonton-protocol",
  "wonton-tunnel",
 ]
@@ -7064,6 +7067,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "wonton-matrix",
 ]
 
 [[package]]

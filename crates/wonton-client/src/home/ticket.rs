@@ -10,9 +10,13 @@
 //!     "direct_addrs": ["192.168.0.2:18482"]
 //!   },
 //!   "base_domain": "wonton.localhost",
+//!   "core_url": "http://wonton.localhost:18480",
 //!   "web_url": "http://app-grafana.wonton.localhost:18480/"
 //! }
 //! ```
+//!
+//! `core_url` 是核心自己的地址（经隧道访问），App 从这里取 Matrix 登录令牌；没有时用基础域名，协议和端口
+//! 跟 `web_url` 一样。
 //!
 //! `server` 和核心的 `GET /_wonton/api/tunnel` 返回的字段相同，`base_domain` 也来自那里：本地代理只转发
 //! 这个域名和它的子域名，插件网页入口也必须在它下面。直连地址要写手机能到达的地址，例如局域网
@@ -28,6 +32,8 @@ use url::Url;
 pub(crate) struct Ticket {
     server: Server,
     base_domain: String,
+    #[serde(default)]
+    core_url: Option<String>,
     #[serde(default)]
     web_url: Option<String>,
 }
@@ -72,10 +78,39 @@ impl Ticket {
                 ));
             }
         }
+        if let Some(text) = &ticket.core_url {
+            let url = Url::parse(text).map_err(|e| format!("核心地址不合法：{e}"))?;
+            let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+            if !matches!(url.scheme(), "http" | "https") || host != domain {
+                return Err(format!("核心地址要是 {domain} 的 http(s) 地址：{text}"));
+            }
+        }
         Ok(Self {
             base_domain: domain,
             ..ticket
         })
+    }
+
+    /// 核心自己的地址。没给时用基础域名，协议和端口跟插件网页地址一样（都由核心的同一个入口提供）。
+    pub(crate) fn core_url(&self) -> Url {
+        if let Some(url) = self
+            .core_url
+            .as_deref()
+            .and_then(|text| Url::parse(text).ok())
+        {
+            return url;
+        }
+        let mut url = Url::parse(&format!("http://{}/", self.base_domain))
+            .expect("校验过的基础域名总能组成地址");
+        if let Some(web) = self
+            .web_url
+            .as_deref()
+            .and_then(|text| Url::parse(text).ok())
+        {
+            url.set_scheme(web.scheme()).ok();
+            url.set_port(web.port()).ok();
+        }
+        url
     }
 
     pub(crate) fn server_id(&self) -> EndpointId {
@@ -121,6 +156,21 @@ mod tests {
         assert_eq!(ticket.server_id(), id);
         assert_eq!(ticket.server_addr().ip_addrs().count(), 1);
         assert_eq!(ticket.base_domain(), "wonton.localhost");
+        // 没给核心地址时，用基础域名加插件网页的协议和端口。
+        assert_eq!(ticket.core_url().as_str(), "http://wonton.localhost:18480/");
+        let explicit = ok.replace(
+            r#""base_domain""#,
+            r#""core_url": "https://wonton.localhost", "base_domain""#,
+        );
+        assert_eq!(
+            Ticket::parse(&explicit).unwrap().core_url().as_str(),
+            "https://wonton.localhost/"
+        );
+        let foreign_core = ok.replace(
+            r#""base_domain""#,
+            r#""core_url": "http://evil.example", "base_domain""#,
+        );
+        assert!(Ticket::parse(&foreign_core).is_err());
 
         let no_address = format!(
             r#"{{"server": {{"endpoint_id": "{id}"}}, "base_domain": "wonton.localhost"}}"#

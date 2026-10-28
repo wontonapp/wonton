@@ -1,9 +1,9 @@
 //! 聊天界面要用的数据：房间列表（名字、预览、未读数），时间线增量、向前翻页和已读回执。
 
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt, future, stream};
 use wonton_matrix::{
-    BackPaginationStatus, EntryKind, MatrixSession, Membership, Message, MessageBody, OwnedRoomId,
-    RoomInfo, TimelineEntry, Vector, VectorDiff,
+    BackPaginationStatus, ChatRoom, EntryKind, MatrixSession, Membership, Message, MessageBody,
+    OwnedRoomId, RoomInfo, TimelineEntry, Vector, VectorDiff,
 };
 
 use crate::support::{TestServer, eventually, unique};
@@ -72,6 +72,33 @@ async fn room_list_shows_names_previews_and_unread_counts() {
         },
     )
     .await;
+
+    // 已读位置也跟着移到了第二条：Alice 再发一条，Bob 开着的时间线在它前面显示已读位置；Bob 再标为已读，已读
+    // 位置移到最后，不再显示。
+    alice_room.send_text("第三条").await.expect("发第三条");
+    eventually(
+        "Bob 看到第三条前面的已读位置",
+        entry_snapshots(&bob_room).await,
+        |entries| {
+            let at = entries.iter().position(|entry| {
+                matches!(&entry.kind, EntryKind::Message(message) if is_text(message, "第三条"))
+            })?;
+            (at > 0 && entries[at - 1].kind == EntryKind::ReadMarker).then_some(())
+        },
+    )
+    .await;
+    assert!(bob_room.mark_as_read().await.expect("再标为已读"));
+    eventually(
+        "Bob 的已读位置不再显示",
+        entry_snapshots(&bob_room).await,
+        |entries| {
+            (!entries
+                .iter()
+                .any(|entry| entry.kind == EntryKind::ReadMarker))
+            .then_some(())
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -80,6 +107,7 @@ async fn timeline_increments_rebuild_the_timeline_and_paginate_to_the_start() {
     let server = TestServer::start().await;
     let alice = server.login(&unique("alice"), "Alice 的手机").await;
     let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    bob.set_display_name("Bob").await.expect("设置显示名");
     alice.start_sync().await.expect("Alice 开始同步");
     bob.start_sync().await.expect("Bob 开始同步");
     let room_id = direct_chat(&alice, &bob, false).await;
@@ -136,11 +164,21 @@ async fn timeline_increments_rebuild_the_timeline_and_paginate_to_the_start() {
         .collect();
     let expected: Vec<String> = (0..COUNT).map(|i| format!("消息 {i}")).collect();
     assert_eq!(texts, expected);
+    let notices: Vec<&str> = fresh
+        .iter()
+        .filter_map(|entry| match &entry.kind {
+            EntryKind::Notice(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
     assert!(
-        fresh.iter().any(
-            |entry| matches!(&entry.kind, EntryKind::Notice(text) if text.contains("加入了房间"))
-        ),
-        "成员加入应显示成一行说明"
+        notices.contains(&"Bob 加入了房间"),
+        "成员加入应以显示名显示成一行说明：{notices:?}"
+    );
+    // 建房时的权限、加入规则、历史可见性这类设置不显示。
+    assert!(
+        !notices.iter().any(|text| text.contains("修改了房间设置")),
+        "不应显示建房时的房间设置：{notices:?}"
     );
 }
 
@@ -232,6 +270,16 @@ fn text(message: &Message) -> Option<String> {
         MessageBody::Text(text) => Some(text.clone()),
         _ => None,
     }
+}
+
+/// 时间线条目的快照流：先是当前条目，之后是每应用一批增量后的结果。
+async fn entry_snapshots(room: &ChatRoom) -> impl Stream<Item = Vec<TimelineEntry>> + use<> {
+    let (initial, diffs) = room.entries().await;
+    let entries: Vector<TimelineEntry> = initial.iter().cloned().collect();
+    stream::once(future::ready(initial)).chain(diffs.scan(entries, |entries, batch| {
+        apply(entries, batch);
+        future::ready(Some(entries.iter().cloned().collect()))
+    }))
 }
 
 fn apply(entries: &mut Vector<TimelineEntry>, batch: Vec<VectorDiff<TimelineEntry>>) {

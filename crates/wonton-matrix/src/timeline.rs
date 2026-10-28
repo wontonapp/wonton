@@ -2,10 +2,16 @@
 
 use std::sync::Arc;
 
-use matrix_sdk::ruma::events::{StateEventContentChange, room::name::RoomNameEventContent};
+use matrix_sdk::ruma::{
+    events::{
+        AnySyncTimelineEvent, StateEventContentChange, TimelineEventType,
+        room::name::RoomNameEventContent,
+    },
+    room_version_rules::RoomVersionRules,
+};
 use matrix_sdk_ui::timeline::{
     AnyOtherStateEventContentChange, EventTimelineItem, MembershipChange, TimelineItem,
-    TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    TimelineItemContent, TimelineItemKind, VirtualTimelineItem, default_event_filter,
 };
 
 use crate::message::{MemberNames, Message, message, sender_name};
@@ -48,19 +54,37 @@ pub(crate) fn entry(item: &Arc<TimelineItem>, names: &MemberNames) -> TimelineEn
     }
 }
 
+/// 时间线里显示哪些事件：SDK 的默认规则之外，再藏起权限、加入规则、历史可见性、访客权限和服务器 ACL 这类房间
+/// 设置。建房时一下来好几条，对聊天的人没有意义，Element 也把它们折叠起来。
+pub(crate) fn shown(event: &AnySyncTimelineEvent, rules: &RoomVersionRules) -> bool {
+    default_event_filter(event, rules)
+        && !matches!(
+            event.event_type(),
+            TimelineEventType::RoomPowerLevels
+                | TimelineEventType::RoomJoinRules
+                | TimelineEventType::RoomHistoryVisibility
+                | TimelineEventType::RoomGuestAccess
+                | TimelineEventType::RoomServerAcl
+        )
+}
+
 fn event_kind(event: &EventTimelineItem, names: &MemberNames) -> EntryKind {
     if let Some(message) = message(event, names) {
         return EntryKind::Message(Box::new(message));
     }
-    EntryKind::Notice(notice(event))
+    EntryKind::Notice(notice(event, names))
 }
 
 /// 非消息事件的一行说明。
-fn notice(event: &EventTimelineItem) -> String {
-    let who = sender_name(event);
+fn notice(event: &EventTimelineItem, names: &MemberNames) -> String {
+    let who = sender_name(event, names);
     match event.content() {
         TimelineItemContent::MembershipChange(change) => {
-            membership_notice(change.user_id().as_str(), change.change())
+            // 成员事件自己带着显示名（加入时设好的），没有时用本机已有的成员显示名。
+            let user = change
+                .display_name()
+                .unwrap_or_else(|| names.name(change.user_id()));
+            membership_notice(&user, change.change())
         }
         TimelineItemContent::ProfileChange(change) => match change.displayname_change() {
             Some(name) => format!(
