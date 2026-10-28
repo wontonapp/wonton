@@ -10,6 +10,7 @@ use crate::support::{TempStore, TestServer, eventually, random_bytes, unique};
 const PNG: &[u8] = include_bytes!("fixtures/2x2.png");
 
 #[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn two_accounts_exchange_text_and_images() {
     let server = TestServer::start().await;
     // Alice 用内存存储，Bob 用 SQLite 存储，两种存储都走一遍。

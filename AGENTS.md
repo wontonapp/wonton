@@ -41,8 +41,16 @@
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
 - 提交前运行 `bash scripts/check.sh`：行数门禁、`cargo fmt`、`cargo clippy -D warnings`、`cargo test`，
-  和 CI 一致。部分集成测试（如 `wonton-matrix`）用 Docker 起一次性容器，需要本机 Docker 在运行；
-  没有 `/var/run/docker.sock` 时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`（如 OrbStack）。
+  和 CI 一致。
+- 依赖 Docker 的集成测试（如 `wonton-matrix` 的 `tests/tuwunel`，用 Docker 起一次性的 Tuwunel）标
+  `#[ignore = "需要 Docker，…"]`：普通的 `cargo test` 只列出它们、不运行，没有 Docker 的机器也能通过。
+  `check.sh` 连得上 Docker 就带 `--include-ignored` 一并运行；连不上就跳过，并在输出末尾打印跳过了哪些测试、
+  原因和手动运行的命令（`cargo test -p wonton-matrix --test tuwunel -- --include-ignored`）。
+  跳过不等于通过：PR 说明里写明没跑，由 CI 补上。CI 的“Docker 集成测试”作业运行它们，Docker 不可用即失败；
+  “Rust”作业故意让 Docker 不可用，保证默认的测试不依赖它。新增依赖 Docker 的测试同样标 `#[ignore]`，
+  并加进 Docker 作业。
+- 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；
+  直接运行 `cargo test` 要自己设置，testcontainers 不读 context。
 - 依赖：只有一个 crate 用到的依赖写在该 crate 的 `Cargo.toml`；多个 crate 共用的依赖在根
   `Cargo.toml` 的 `[workspace.dependencies]` 统一版本，crate 里用 `{ workspace = true }` 引用。
 - `Cargo.lock` 冲突时，先取 `main` 的版本，再运行 `cargo build` 重新生成，不手工合并。

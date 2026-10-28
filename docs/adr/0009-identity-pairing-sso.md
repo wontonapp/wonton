@@ -30,7 +30,7 @@
 ## 验证结果（M0-2）
 
 JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、matrix-sdk 0.19.1。可复跑：
-`cargo test -p wonton-matrix --test tuwunel login`；签发逻辑见
+`cargo test -p wonton-matrix --test tuwunel -- --include-ignored login`；签发逻辑见
 `crates/wonton-matrix/tests/tuwunel/support/issuer.rs`，Tuwunel 配置见 `deploy/dev/matrix/tuwunel.toml`。
 
 **签发**

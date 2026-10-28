@@ -36,6 +36,7 @@ async fn assert_signed_out(
 }
 
 #[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn login_token_must_be_valid_and_from_the_core() {
     let server = TestServer::container(&[]).await;
     let user = unique("dana");
@@ -79,6 +80,7 @@ async fn login_token_must_be_valid_and_from_the_core() {
 }
 
 #[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn login_token_is_not_single_use() {
     let server = TestServer::container(&[]).await;
     let jwt = server.issuer.login_token(&unique("frank"));
@@ -91,6 +93,7 @@ async fn login_token_is_not_single_use() {
 }
 
 #[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn expired_access_token_is_refreshed() {
     let server = TestServer::container(&[("TUWUNEL_ACCESS_TOKEN_TTL", "2")]).await;
     let alice = server.login(&unique("alice"), "Alice 的手机").await;
@@ -106,6 +109,7 @@ async fn expired_access_token_is_refreshed() {
 }
 
 #[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn revoked_device_is_signed_out_and_can_pair_again() {
     let server = TestServer::container(&[]).await;
     let admin = server.admin().await;
@@ -161,6 +165,7 @@ async fn revoked_device_is_signed_out_and_can_pair_again() {
 }
 
 #[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn deactivated_bot_cannot_log_in_again() {
     let server = TestServer::container(&[]).await;
     let admin = server.admin().await;

@@ -51,8 +51,9 @@ App 被杀后收不到任何消息。
 
 ## 验证结果（M0-2）
 
-验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑：`cargo test -p wonton-matrix --test tuwunel`
-（每个测试起一台一次性的 Tuwunel，配置同 `deploy/dev/matrix`），本地环境见 `deploy/dev/matrix/README.md`。
+验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑：
+`cargo test -p wonton-matrix --test tuwunel -- --include-ignored`（每个测试起一台一次性的 Tuwunel，配置同
+`deploy/dev/matrix`；测试标了 `#[ignore]`，所以要加这个参数），本地环境见 `deploy/dev/matrix/README.md`。
 
 - **结论：可行。** Tuwunel 关闭联邦跑在 Docker 里；两个账号用 Simplified Sliding Sync 互发文字和图片，
   2 MiB、8 MiB 的附件原样往返；客户端用内存或 SQLite 存储都通过。

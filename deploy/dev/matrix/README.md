@@ -16,10 +16,12 @@ deploy/dev/matrix/dev.sh down          # 停止；reset 连数据一起删除
 ## 测试
 
 ```bash
-cargo test -p wonton-matrix --test tuwunel
+cargo test -p wonton-matrix --test tuwunel -- --include-ignored
 ```
 
-每个测试用 Docker 起一台一次性的 Tuwunel，镜像和配置取自本目录。testcontainers 不读 docker context，
+每个测试用 Docker 起一台一次性的 Tuwunel，镜像和配置取自本目录。这些测试标了 `#[ignore]`，所以要加
+`--include-ignored`，不加则只列出、不运行；`scripts/check.sh` 在有 Docker 时自动带上，CI 有单独的
+“Docker 集成测试”作业。testcontainers 不读 docker context，
 Docker 套接字不在 `/var/run/docker.sock`（如 OrbStack、Colima）时先设置 `DOCKER_HOST`：
 
 ```bash
@@ -29,7 +31,7 @@ export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}
 消息测试也能连现成的服务器，例如 `dev.sh up` 起的服务器，或经隧道的客户端本地代理：
 
 ```bash
-WONTON_MATRIX_HOMESERVER=http://127.0.0.1:8008 cargo test -p wonton-matrix --test tuwunel messaging
+WONTON_MATRIX_HOMESERVER=http://127.0.0.1:8008 cargo test -p wonton-matrix --test tuwunel -- --include-ignored messaging
 ```
 
 签发私钥默认取 `.secrets/jwt-ed25519.pem`，用 `WONTON_MATRIX_JWT_KEY` 指定别的路径。
@@ -54,5 +56,5 @@ cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 
 然后让测试经本地代理访问：
 
 ```bash
-WONTON_MATRIX_HOMESERVER=http://127.0.0.1:18008 cargo test -p wonton-matrix --test tuwunel messaging
+WONTON_MATRIX_HOMESERVER=http://127.0.0.1:18008 cargo test -p wonton-matrix --test tuwunel -- --include-ignored messaging
 ```
