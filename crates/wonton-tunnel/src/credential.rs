@@ -8,12 +8,17 @@ use std::fmt;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 
-/// 本地代理接受哪些调用方。
+/// 本地代理接受哪些调用方、转发哪些地址。
 #[derive(Debug, Clone)]
 pub enum ProxyAccess {
     /// HTTP 正向代理，只接受带这份凭据的连接（`Proxy-Authorization: Basic`），支持 `CONNECT` 和绝对
     /// 形式的请求行。App 的 WebView 和 HTTP 客户端用这种。
-    Credential(ProxyCredential),
+    Credential {
+        credential: ProxyCredential,
+        /// 家里服务器的基础域名，例如 `wonton.localhost`。只转发它和它的子域名；别的地址（CDN、字体等
+        /// 外部资源）回 403（`foreign-host`），不进隧道，别的浏览流量不会被送回家。
+        domain: String,
+    },
     /// 不校验调用方，把每条连接原样转发（反向代理形态，把代理当成服务端访问）。同机的任何进程都能借用
     /// 本设备的配对身份，只给开发工具和测试用。
     Open,

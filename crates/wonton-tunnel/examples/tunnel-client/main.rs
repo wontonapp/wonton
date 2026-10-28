@@ -49,6 +49,9 @@ enum Command {
         /// 把代理当成服务端访问即可，但本机任何进程都能借用这台设备的配对身份。
         #[arg(long)]
         auth: bool,
+        /// 加 `--auth` 时只转发这个基础域名和它的子域名，别的地址回 403。
+        #[arg(long, default_value = "wonton.localhost")]
+        domain: String,
     },
     /// 多轮冷启动建连，测量直连与中继的比例、往返时间和经隧道的 HTTP 延迟。
     Probe {
@@ -99,7 +102,21 @@ async fn main() -> Result<()> {
             server,
             listen,
             auth,
-        } => run_proxy(key, &server, listen, auth).await?,
+            domain,
+        } => {
+            let access = if auth {
+                let credential = ProxyCredential::generate();
+                println!(
+                    "会话凭据：{}:{}",
+                    credential.username(),
+                    credential.password()
+                );
+                ProxyAccess::Credential { credential, domain }
+            } else {
+                ProxyAccess::Open
+            };
+            run_proxy(key, &server, listen, access).await?;
+        }
         Command::Probe { server, probe } => {
             probe::run(key, server.addr(), server.relay_only, &probe).await?;
         }
@@ -120,22 +137,11 @@ async fn run_proxy(
     key: SecretKey,
     server: &ServerArgs,
     listen: SocketAddr,
-    auth: bool,
+    access: ProxyAccess,
 ) -> Result<()> {
     let endpoint = bind_endpoint(key, server.relay_only).await?;
     println!("本机 endpoint ID：{}", endpoint.id());
     let client = TunnelClient::new(endpoint.clone(), server.addr());
-    let access = if auth {
-        let credential = ProxyCredential::generate();
-        println!(
-            "会话凭据：{}:{}",
-            credential.username(),
-            credential.password()
-        );
-        ProxyAccess::Credential(credential)
-    } else {
-        ProxyAccess::Open
-    };
     let proxy = LocalProxy::bind(client.clone(), listen, access).await?;
     println!("本地代理：http://{}", proxy.local_addr());
     let reporter = tokio::spawn(report(client.clone()));

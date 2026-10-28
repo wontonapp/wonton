@@ -161,7 +161,10 @@ impl Phone {
         let credential = ProxyCredential::generate();
         let pair = format!("{}:{}", credential.username(), credential.password());
         let authorization = format!("Basic {}", STANDARD.encode(pair));
-        let access = ProxyAccess::Credential(credential);
+        let access = ProxyAccess::Credential {
+            credential,
+            domain: CORE.into(),
+        };
         let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
             .unwrap();
@@ -364,6 +367,7 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let info: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(info["endpoint_id"], home.tunnel.endpoint.id().to_string());
+    assert_eq!(info["base_domain"], CORE);
     let bound = home.tunnel.endpoint.bound_sockets()[0].to_string();
     assert!(
         info["direct_addrs"]

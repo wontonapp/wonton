@@ -21,11 +21,13 @@ iroh = "1.4.1"
 matrix-sdk = "0.19.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = "1.54.1"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 uniffi = "0.32.2"
+url = "2.5.8"
 
 [workspace.lints.clippy]
 # 函数体超过 100 行即失败，阈值见 clippy.toml。

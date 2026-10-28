@@ -1,6 +1,7 @@
 //! 本地代理的 HTTP 正向代理前端：校验会话凭据，处理 `CONNECT` 和绝对形式的请求行。
 //!
-//! 只解析每条连接的第一个请求头，之后的字节都原样转发：
+//! 只解析每条连接的第一个请求头，之后的字节都原样转发。目标不在家里服务器的域名下时回 403，不进隧道。
+//!
 //!
 //! - `CONNECT host:port`（iOS 的 WKWebView 只能用这种代理）：回 `200` 后，连接里就是原样的 HTTP 请求，
 //!   `Host` 不变。隧道出错时，代理对里面的第一个请求回说明原因的 HTTP 错误。
@@ -21,12 +22,13 @@ const MAX_HEAD: usize = 64 * 1024;
 /// 一个请求最多解析多少个头。
 const MAX_HEADERS: usize = 100;
 
-/// 收下连接的第一个请求头并校验凭据。返回接下来要送进隧道的字节；已经回了错误响应，或者连接在请求头
-/// 读完之前就关闭了，返回 `None`。
+/// 收下连接的第一个请求头，校验凭据和目标地址。返回接下来要送进隧道的字节；已经回了错误响应，或者
+/// 连接在请求头读完之前就关闭了，返回 `None`。
 pub(crate) async fn accept(
     tcp_read: &mut OwnedReadHalf,
     tcp_write: &mut OwnedWriteHalf,
     credential: &ProxyCredential,
+    domain: &str,
 ) -> Option<Vec<u8>> {
     let head = match read_head(tcp_read).await {
         Ok(head) => head?,
@@ -40,20 +42,40 @@ pub(crate) async fn accept(
         reject(tcp_write, tcp_read, Rejection::Unauthorized).await;
         return None;
     }
+    let host = head.target_host();
+    if !host.as_deref().is_some_and(|host| in_domain(host, domain)) {
+        debug!(
+            host = host.as_deref().unwrap_or("-"),
+            "本地代理拒绝了家里服务器以外的地址"
+        );
+        reject(tcp_write, tcp_read, Rejection::ForeignHost).await;
+        return None;
+    }
     if head.method.eq_ignore_ascii_case("CONNECT") {
+        debug!(target = %head.target, "本地代理收到 CONNECT");
         tcp_write
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await
             .ok()?;
         return Some(head.rest);
     }
+    // 只记主机：路径和查询里可能有 OAuth 授权码等秘密。
+    debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "本地代理收到请求");
     Some(head.rewrite())
+}
+
+/// `host` 是 `domain` 本身或它的子域名（不区分大小写，忽略末尾的点）。
+fn in_domain(host: &str, domain: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+    !domain.is_empty() && (host == domain || host.ends_with(&format!(".{domain}")))
 }
 
 /// 不交给隧道、由代理自己回绝的原因。
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
     Unauthorized,
+    ForeignHost,
     TooLarge,
     Malformed,
 }
@@ -65,11 +87,13 @@ async fn reject(tcp_write: &mut OwnedWriteHalf, tcp_read: &mut OwnedReadHalf, wh
             "proxy-authenticate: Basic realm=\"wonton\"\r\n",
             "本地代理只接受带本 App 会话凭据的请求\n",
         ),
+        Rejection::ForeignHost => ("403 Forbidden", "", "本地代理只转发家里服务器的地址\n"),
         Rejection::TooLarge => ("431 Request Header Fields Too Large", "", "请求头太大\n"),
         Rejection::Malformed => ("400 Bad Request", "", "请求头不合法\n"),
     };
     let code = match why {
         Rejection::Unauthorized => "proxy-unauthorized",
+        Rejection::ForeignHost => "foreign-host",
         Rejection::TooLarge | Rejection::Malformed => "bad-request",
     };
     let response = format!(
@@ -131,6 +155,19 @@ async fn read_head(tcp: &mut OwnedReadHalf) -> Result<Option<Head>, Rejection> {
 }
 
 impl Head {
+    /// 请求的目标主机（不带端口）：`CONNECT` 取请求行里的地址，绝对形式取 URL，源站形式取 `Host` 头。
+    fn target_host(&self) -> Option<String> {
+        let authority = if self.method.eq_ignore_ascii_case("CONNECT") {
+            Some(self.target.clone())
+        } else {
+            split_absolute(&self.target).0.or_else(|| {
+                let host = self.header("host")?;
+                std::str::from_utf8(host).ok().map(str::to_owned)
+            })
+        }?;
+        Some(strip_port(authority.trim()).to_owned())
+    }
+
     fn header(&self, name: &str) -> Option<&[u8]> {
         self.headers
             .iter()
@@ -168,6 +205,22 @@ impl Head {
     }
 }
 
+/// `host:port` 去掉端口；IPv6 字面量去掉方括号外的端口。
+fn strip_port(authority: &str) -> &str {
+    if let Some(rest) = authority.strip_prefix('[') {
+        return rest.split_once(']').map_or(authority, |(ip, _)| ip);
+    }
+    authority
+        .rsplit_once(':')
+        .map_or(authority, |(host, port)| {
+            if port.bytes().all(|b| b.is_ascii_digit()) {
+                host
+            } else {
+                authority
+            }
+        })
+}
+
 /// 把绝对形式 `scheme://authority/path?query` 拆成 authority 和源站形式；其他形式原样返回、没有 authority。
 fn split_absolute(target: &str) -> (Option<String>, String) {
     let Some((_, after_scheme)) = target.split_once("://") else {
@@ -192,6 +245,33 @@ fn split_absolute(target: &str) -> (Option<String>, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_home_domain_and_its_subdomains_are_in_scope() {
+        for host in [
+            "wonton.localhost",
+            "app-grafana.wonton.localhost",
+            "AUTH.Wonton.Localhost.",
+        ] {
+            assert!(in_domain(host, "wonton.localhost"), "{host}");
+        }
+        for host in [
+            "example.com",
+            "evilwonton.localhost",
+            "wonton.localhost.evil",
+            "localhost",
+            "",
+        ] {
+            assert!(!in_domain(host, "wonton.localhost"), "{host}");
+        }
+        assert!(!in_domain("anything", ""), "空的基础域名不放行任何地址");
+        assert_eq!(
+            strip_port("app.wonton.localhost:18480"),
+            "app.wonton.localhost"
+        );
+        assert_eq!(strip_port("[::1]:443"), "::1");
+        assert_eq!(strip_port("wonton.localhost"), "wonton.localhost");
+    }
 
     #[test]
     fn absolute_targets_become_origin_form() {

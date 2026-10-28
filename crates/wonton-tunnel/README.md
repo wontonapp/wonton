@@ -20,10 +20,13 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 本地代理监听回环地址，同一台设备上的其他 App 也连得上；服务端只认设备的配对身份，经代理来的请求都算
 这台设备的。所以 `LocalProxy::bind` 要明确选一种 `ProxyAccess`：
 
-- **`Credential`（App 用）**：HTTP 正向代理，只接受带本次会话凭据的连接。凭据由 `ProxyCredential::generate()`
-  每次启动随机生成（用户名 `wonton`，密码 256 位随机数），只交给本 App 的 WebView 和 HTTP 客户端。代理只解析
-  每条连接的第一个请求头，之后原样转发，`Host` 不变：
+- **`Credential { credential, domain }`（App 用）**：HTTP 正向代理，只接受带本次会话凭据的连接，只转发家里
+  服务器基础域名（`domain`）和它的子域名。凭据由 `ProxyCredential::generate()` 每次启动随机生成（用户名
+  `wonton`，密码 256 位随机数），只交给本 App 的 WebView 和 HTTP 客户端。代理只解析每条连接的第一个请求头，
+  之后原样转发，`Host` 不变：
   - 没带凭据或凭据不对：回 407 和 `Proxy-Authenticate: Basic`，不建隧道连接。
+  - 目标不在基础域名下（`CONNECT` 看请求行，绝对形式看 URL，源站形式看 `Host`）：回 403，不建隧道连接，
+    外部资源不会被送回家。
   - `CONNECT host:port`（iOS 的 WKWebView 只能用这种代理）：回 200，之后的字节原样进隧道。
   - 绝对形式的请求行（`GET http://host:port/path`，Android WebView 和一般 HTTP 客户端访问 http 地址时这样发）：
     改成源站形式，`Host` 取自 URL，去掉 `Proxy-Authorization` 和 `Proxy-Connection`，加 `Connection: close`，
@@ -54,6 +57,7 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 | 两端协议不匹配 | 502 | `protocol` |
 | 客户端已关闭 | 502 | `closed` |
 | 正向代理：没带会话凭据或凭据不对 | 407 | `proxy-unauthorized` |
+| 正向代理：目标不在家里服务器的域名下 | 403 | `foreign-host` |
 | 正向代理：请求头不合法或超过 64 KiB | 400 / 431 | `bad-request` |
 
 上游已经开始返回数据后再出错，只能断开连接。`CONNECT` 已经回了 200 之后的隧道错误，作为里面第一个请求的
@@ -67,7 +71,8 @@ cargo run -p wonton-tunnel --example tunnel-server -- --upstream 127.0.0.1:8080 
 # 客户端：打印本机 ID；起本地代理；测直连/中继比例和延迟
 cargo run -p wonton-tunnel --example tunnel-client -- id
 cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID>
-# 像 App 一样：带会话凭据的正向代理，启动时打印凭据（curl -x http://127.0.0.1:8081 -U wonton:<密码>）
+# 像 App 一样：带会话凭据的正向代理，只转发 --domain（默认 wonton.localhost）下的地址，启动时打印凭据
+# （curl -x http://127.0.0.1:8081 -U wonton:<密码>）
 cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID> --auth
 cargo run -p wonton-tunnel --example tunnel-client -- probe --server <服务端 ID> --relay <中继 URL>
 ```

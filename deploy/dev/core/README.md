@@ -47,6 +47,11 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> http://app-grafan
 `--noproxy ''` 清掉环境变量里的 `NO_PROXY`，否则 `*.localhost` 会绕过代理。加 `-p` 改用 `CONNECT`，和 iOS 的
 WKWebView 一样。
 
+App 用 `dev.sh ticket [直连地址] [网页地址]` 生成的连接信息连接（见 `apps/ios/README.md`、`apps/compose/README.md`），
+里面带着基础域名：App 的本地代理和 WebView 只让这个域名下的地址走隧道。
+直连地址默认 `127.0.0.1:18482`（同机的 iOS 模拟器），Android 模拟器写 `10.0.2.2:18482`，局域网里的手机写本机的
+局域网 IP，并用 `WONTON_DEV_TUNNEL_BIND=0.0.0.0` 起核心。
+
 ## 端到端冒烟
 
 ```bash

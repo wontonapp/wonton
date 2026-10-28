@@ -21,7 +21,9 @@ pub struct SessionRow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Action, CoreError};
+    use crate::{
+        Action, CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings,
+    };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
     #[test]
@@ -43,6 +45,40 @@ mod tests {
         assert_eq!(round_trip(&view_model), view_model);
         assert_eq!(round_trip(&action), action);
         assert_eq!(round_trip(&error), error);
+
+        let home = HomeViewModel {
+            device_id: "ab".repeat(32),
+            server_id: Some("cd".repeat(32)),
+            status: HomeStatus::Disconnected {
+                reason: HomeFailure::Unauthorized,
+                message: "服务端拒绝了本设备".into(),
+            },
+            path: Some(HomePath {
+                relay: false,
+                rtt_ms: 3,
+            }),
+            proxy: Some(ProxySettings {
+                host: "127.0.0.1".into(),
+                port: 49152,
+                username: "wonton".into(),
+                password: "secret".into(),
+                domain: "wonton.localhost".into(),
+            }),
+            web_url: Some("http://app-grafana.wonton.localhost:18480/".into()),
+        };
+        assert_eq!(round_trip(&home), home);
+        for action in [
+            Action::ConnectHome {
+                ticket: "{}".into(),
+            },
+            Action::AppForegrounded,
+        ] {
+            assert_eq!(round_trip(&action), action);
+        }
+        assert!(
+            !format!("{home:?}").contains("secret"),
+            "Debug 不能输出代理密码"
+        );
     }
 
     fn round_trip<T>(value: &T) -> T

@@ -234,6 +234,9 @@ impl TunnelServer {
     }
 
     /// 停止接受新连接，关闭现有连接和 endpoint，等对端确认关闭（最多几秒）。
+    ///
+    /// 返回时 UDP 端口不一定已经释放：iroh 的后台任务还要再过一小会儿（毫秒级）才关掉套接字。要在同一个
+    /// 进程里用同一端口立即重启的调用方，先等端口空出来。
     pub async fn shutdown(self) {
         match self.router.shutdown().await {
             Ok(()) => {}

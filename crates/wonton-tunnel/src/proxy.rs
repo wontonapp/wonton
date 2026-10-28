@@ -28,7 +28,8 @@ use crate::{
 };
 
 /// 代理回错误响应时标明原因的头：隧道错误的取值见 [`TunnelError::code`]；代理自己回绝时是
-/// `proxy-unauthorized`（缺少或用错会话凭据，407）和 `bad-request`（请求头不合法或太大）。
+/// `proxy-unauthorized`（缺少或用错会话凭据，407）、`foreign-host`（目标不在家里服务器的域名下，403）
+/// 和 `bad-request`（请求头不合法或太大）。
 pub const ERROR_HEADER: &str = "x-wonton-tunnel-error";
 
 /// 回完错误响应后，最多再花这么久读掉客户端没发完的请求，再关闭连接。
@@ -127,8 +128,8 @@ async fn serve_local(client: TunnelClient, tcp: TcpStream, access: Arc<ProxyAcce
     // 正向代理先收下第一个请求头：校验凭据，CONNECT 回 200，绝对形式的请求行改写后送进隧道。
     let prefix = match &*access {
         ProxyAccess::Open => Vec::new(),
-        ProxyAccess::Credential(credential) => {
-            match http_front::accept(&mut tcp_read, &mut tcp_write, credential).await {
+        ProxyAccess::Credential { credential, domain } => {
+            match http_front::accept(&mut tcp_read, &mut tcp_write, credential, domain).await {
                 Some(prefix) => prefix,
                 None => return,
             }
@@ -185,10 +186,12 @@ async fn relay(
             }
             result = &mut download => {
                 result?;
+                debug!(upload_done, "服务端已回完");
                 if !upload_done {
                     // 服务端已经回完；等本地客户端读到 EOF 后关掉它那一侧。
                     upload.await.map_err(RelayError::Aborted)?;
                 }
+                debug!("本地连接结束");
                 return Ok(());
             }
         }

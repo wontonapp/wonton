@@ -10,8 +10,10 @@ uniffi::setup_scaffolding!();
 
 mod action;
 mod error;
+mod home;
 mod session;
 
 pub use action::Action;
 pub use error::CoreError;
+pub use home::{HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};
 pub use session::{SessionListViewModel, SessionRow};

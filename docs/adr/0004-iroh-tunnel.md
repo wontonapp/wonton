@@ -143,6 +143,8 @@
     凭据用 `applyCredential`。
   - Android 的 `ProxyController` 对 http 地址发绝对形式的请求行。代理改写成源站形式，并让服务端回完一个
     请求就关连接，凭据不会随后续请求进入隧道。
+- 代理只转发家里服务器基础域名下的地址（基础域名和它的子域名）。别的地址回 403（`foreign-host`），不建
+  隧道连接，CDN、字体等外部资源和别的浏览流量不会被送回家。WebView 也只让这个域名走代理，外部资源直连。
 - 不校验调用方的反向代理形态（`ProxyAccess::Open`）只留给开发工具和测试，示例默认用它；加 `--auth` 和 App
   一样。
 - 验证：`crates/wonton-tunnel/tests/tunnel/local_proxy.rs` 覆盖了以下行为：
@@ -153,4 +155,34 @@
 
   `deploy/dev/core/smoke.sh` 用带凭据的代理经隧道打开 Grafana，按 Android 和 iOS 两种方式各走一遍，都直接以
   主人进入；不带凭据的请求被拒（407）。
+
+### App 内经隧道打开插件网页（#21）
+
+客户端核心（`crates/wonton-client` 的 `home` 模块）内置隧道客户端和带会话凭据的本地代理，经 UniFFI 导出：
+壳发 `ConnectHome { ticket }`、`AppForegrounded`，订阅 `HomeViewModel`（设备 ID、状态、路径、本地代理地址、
+凭据和基础域名）。基础域名来自核心（`/_wonton/api/tunnel`），写在连接信息里。设备密钥和连接信息存在 App 的数据目录里，重启后自动重连。M0 的连接信息由 `dev.sh ticket` 给出，
+配对二维码上线后（#16）替换。
+
+- **iOS 17+**：`WKWebsiteDataStore.proxyConfigurations` 设为 `ProxyConfiguration(httpCONNECTProxy:)`，
+  `applyCredential` 带上凭据，`matchDomains` 只放基础域名（实测它的子域名也走代理）。iOS 模拟器实测：WKWebView 打开 `http://app-grafana.wonton.localhost:18480/`，
+  直接进入 Grafana 首页；同一个 WebView 打开 `/api/user`，返回 `login` 为 `owner`，`authLabels` 是
+  `Generic OAuth`。
+- **Android**：androidx.webkit 的 `ProxyController` 把 WebView 的代理设为本地代理，用反向绕过规则
+  （`setReverseBypassEnabled`，名单是 `<基础域名>` 和 `*.<基础域名>`）只让家里的地址走代理。不能再加
+  `removeImplicitRules()`：它对应的 `<-loopback>` 在反向模式下会把 `*.localhost` 排除出名单，实测 WebView
+  因此直连 `*.wonton.localhost`，连接被拒。WebView 第一次请求不带凭据，收到 407 后由
+  `onReceivedHttpAuthRequest` 交出凭据；只对代理自己的主机交，插件网页要认证时不给。Android 模拟器
+  （API 36）实测同样以 `owner` 进入 Grafana（Grafana 日志里 WebSocket 的用户是 `owner`）。
+  - Grafana 的 WebSocket 经 `CONNECT` 走代理，Chromium 对 ws 总是用 `CONNECT`。
+  - 模拟器上从启动到首页通常 2–8 秒，偶尔卡 30 秒左右。卡顿时代理和网关都在 100 ms 内处理完，
+    卡在 iroh 的路径层：模拟器虚拟网卡第一次 GSO 发送报 EIO（noq-udp 随后关掉 GSO），iroh 又在向本机
+    代理 TUN 的公网出口地址（经中继看到的“公网地址”）做 NAT 穿越探测。这台开发机开着 fake-IP 代理 TUN，
+    属于上面说过的“代理 TUN 会干扰选路”；没有 Android 真机，留到真机上复测（#16）。
+- **构建**：
+  - wonton-client 引入 iroh 之后，iOS 静态库要链接 `SystemConfiguration.framework`。
+  - libc 0.2.190 起只在 macOS 上提供 `in6_ifreq`，iroh 依赖的 netdev 0.46 在 iOS 上也用它，iOS 编译失败，
+    所以 libc 固定在 0.2.189（见 `crates/wonton-client/Cargo.toml`）。上游修好后去掉。
+  - Android 上没有调用 `iroh::dns::install_android_jni_context`，DNS 用 iroh 的备用公共服务器（日志会警告）。
+    连接信息里给了直连地址时不受影响；靠中继和地址发现时要补上。
+- 手机经本地代理访问、iOS 前后台切换后的重连：待真机验证。
 

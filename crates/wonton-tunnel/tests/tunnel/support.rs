@@ -64,6 +64,7 @@ impl Home {
 
     pub async fn restart(&mut self) {
         assert!(self.server.is_none(), "服务端还在运行");
+        wait_until_port_is_free(self.port).await;
         let endpoint = loopback_endpoint(self.key.clone(), self.port, Timeouts::Default).await;
         self.server = Some(TunnelServer::spawn(
             endpoint,
@@ -109,6 +110,20 @@ impl Phone {
             .await
             .expect("等待状态变化超时")
             .unwrap();
+    }
+}
+
+/// 等旧服务端的 UDP 端口空出来。iroh 的 `Endpoint::close` 返回后，后台任务还要再过一小会儿才释放
+/// 套接字（Linux 单核上实测约 1 ms），丢弃不关闭时也一样。真实的重启是新进程，旧进程退出后端口一定已经
+/// 空了；进程内模拟重启时要等到这一点，否则会偶发 `Address already in use`。
+async fn wait_until_port_is_free(port: u16) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "旧服务端的 UDP 端口 {port} 一直没有释放"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
     }
 }
 

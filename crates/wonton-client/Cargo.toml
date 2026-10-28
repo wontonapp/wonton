@@ -28,12 +28,26 @@ required-features = ["bindgen"]
 bindgen = ["uniffi/cli"]
 
 [dependencies]
-tokio = { workspace = true, features = ["macros", "sync"] }
+iroh = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "sync", "rt-multi-thread", "time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uniffi = { workspace = true }
+url = { workspace = true }
 wonton-protocol = { path = "../wonton-protocol", features = ["uniffi"] }
+wonton-tunnel = { path = "../wonton-tunnel" }
+
+# libc 0.2.190 起只在 macOS 上提供 `in6_ifreq`，而 iroh 依赖的 netdev 0.46 在 iOS 上也用它，iOS 编译失败。
+# 上游修好之前固定在 0.2.189（MIT OR Apache-2.0）。lockfile 不分目标，整个工作区都用这个版本。
+[target.'cfg(target_os = "ios")'.dependencies]
+libc = "=0.2.189"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "time"] }
+base64 = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
 
 [lints]
 workspace = true

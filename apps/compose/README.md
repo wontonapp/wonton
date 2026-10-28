@@ -37,6 +37,21 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 或 release 构建，用
 `-Pwonton.abis="arm64-v8a x86_64"`、`-Pwonton.rustProfile=release`。
 
+## 连家里的服务器（开发）
+
+M0 还没有扫码配对。起本地核心后（`deploy/dev/core/dev.sh up`），用 `dev.sh ticket 10.0.2.2:18482` 生成连接信息
+（模拟器里 `10.0.2.2` 就是 Mac），经 intent 传给 Debug 构建：
+
+```bash
+adb shell "am start -n app.wonton.android/.MainActivity --es wonton_ticket '$(deploy/dev/core/dev.sh ticket 10.0.2.2:18482)' --ez wonton_open_web true"
+```
+
+- “家”页面显示设备 ID，用 `dev.sh allow <设备 ID>` 登记。`wonton_open_web` 让本地代理就绪后自动打开网页，
+  加载结果在 logcat 的 `WontonWeb` 标签下。
+- 核心日志写在 App 的 `files/core.log`（`--es wonton_log` 改过滤规则）：
+  `adb shell run-as app.wonton.android cat files/core.log`。
+- WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
+
 ## 检查
 
 ```bash

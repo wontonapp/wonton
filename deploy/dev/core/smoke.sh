@@ -146,7 +146,8 @@ server_id="$("$dev" tunnel | json endpoint_id)"
 # 和 App 一样只接受带本次会话凭据的请求。
 docker run -d --name "$phone" --network "container:$core" --entrypoint sh "$phone_image" -c \
   "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
-   --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT --listen 127.0.0.1:18008" >/dev/null
+   --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
+   --listen 127.0.0.1:18008" >/dev/null
 for _ in $(seq 30); do
   docker logs "$phone" 2>/dev/null | grep -q '^本地代理' && break
   sleep 1
@@ -154,6 +155,8 @@ done
 device_id="$(docker logs "$phone" 2>/dev/null | head -1)"
 credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
 [[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
+expect "家里服务器以外的地址不进隧道" \
+  "$(t -o /dev/null -w '%{http_code}' http://cdn.example.com/app.js)" 403
 expect "同机其他程序不带会话凭据，被本地代理拒绝" \
   "$(docker exec "$browser" curl -sS -o /dev/null -w '%{http_code}' -x http://127.0.0.1:18008 "$grafana_url/api/user")" 407
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"

@@ -2,7 +2,7 @@
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
-//! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继地址和直连地址，客户端据此连接 |
+//! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继地址、直连地址和基础域名，客户端据此连接 |
 //! | GET | `/_wonton/api/devices` | 已登记的设备 |
 //! | POST | `/_wonton/api/devices` | 请求体 `{"endpoint_id": "…"}`，登记一台设备 |
 //! | DELETE | `/_wonton/api/devices/{endpoint_id}` | 吊销，立即断开它的隧道连接 |
@@ -33,6 +33,8 @@ pub async fn tunnel(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
         "endpoint_id": addr.id,
         "relay_urls": relay_urls,
         "direct_addrs": direct_addrs,
+        // 客户端的本地代理只转发这个域名和它的子域名（ADR-0004）。
+        "base_domain": gateway.public.base_domain,
     }))
     .into_response()
 }

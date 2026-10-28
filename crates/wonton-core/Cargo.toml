@@ -31,11 +31,11 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs"
 tower = { version = "0.5.3", features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
-url = "2.5.8"
+url = { workspace = true }
 wonton-tunnel = { path = "../wonton-tunnel" }
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

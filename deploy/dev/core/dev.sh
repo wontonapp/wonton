@@ -13,6 +13,7 @@
 #   dev.sh devices                     已登记的设备
 #   dev.sh allow <endpoint ID>         登记一台设备（M0 代替扫码配对），它经隧道访问时就是主人
 #   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
+#   dev.sh ticket [直连地址] [网页地址]  给 App 的连接信息（M0 代替配对二维码），直连地址默认 127.0.0.1:隧道端口
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
@@ -29,6 +30,7 @@ curl_image="curlimages/curl:8.23.0"
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-dev-core}"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18480}"
 export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}"
+export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18482}"
 if [[ -z "${WONTON_DEV_DATA:-}" ]]; then
   case "${DOCKER_HOST:-}" in
     ssh://* | tcp://*) WONTON_DEV_DATA=/tmp/wonton-dev ;;
@@ -151,5 +153,15 @@ case "${1:-}" in
     api DELETE "/_wonton/api/devices/${2:?用法：$0 revoke <endpoint ID>}"
     echo
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>" ;;
+  ticket)
+    # 服务端 ID 和中继地址来自核心；直连地址要写 App 能到达的地址：同机模拟器用 127.0.0.1，
+    # Android 模拟器用 10.0.2.2，局域网里的手机用本机局域网 IP（并设 WONTON_DEV_TUNNEL_BIND=0.0.0.0）。
+    api GET /_wonton/api/tunnel | python3 -c 'import json,sys
+info = json.load(sys.stdin)
+server = {"endpoint_id": info["endpoint_id"], "relay_urls": info["relay_urls"], "direct_addrs": [sys.argv[1]]}
+ticket = {"server": server, "base_domain": info["base_domain"], "web_url": sys.argv[2]}
+print(json.dumps(ticket, separators=(",", ":")))' \
+      "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}" "${3:-http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT/}"
+    ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]" ;;
 esac

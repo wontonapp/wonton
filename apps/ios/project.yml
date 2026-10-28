@@ -21,6 +21,17 @@ targets:
       - Wonton
     dependencies:
       - package: WontonClient
+      # Rust 核心里的 iroh 用它读网卡、路由和 DNS 配置（静态库不会自动链接系统框架）。
+      - sdk: SystemConfiguration.framework
+    # 由 xcodegen 生成，和下面的 INFOPLIST_KEY_* 合并；生成的文件不提交。
+    info:
+      path: Wonton/Info.plist
+      properties:
+        # M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），只对 WebView 里的内容放开。
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsInWebContent: true
+        # iroh 经局域网直连家里的服务器时，iOS 要先征得用户同意。
+        NSLocalNetworkUsageDescription: 云吞经局域网直连你家里的服务器。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios

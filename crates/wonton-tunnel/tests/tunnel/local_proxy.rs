@@ -84,6 +84,40 @@ async fn connect_carries_the_inner_requests_unchanged() {
 }
 
 #[tokio::test]
+async fn addresses_outside_the_home_domain_never_reach_the_tunnel() {
+    let (home, upstream) = home_with_head_echo(true).await;
+    let credential = ProxyCredential::generate();
+    let phone = phone(&home, credential.clone(), &upstream.device).await;
+    let authorization = format!("Proxy-Authorization: {}\r\n", basic(&credential));
+
+    for request in [
+        format!(
+            "GET http://cdn.example.com/app.js HTTP/1.1\r\nHost: cdn.example.com\r\n{authorization}\r\n"
+        ),
+        format!(
+            "CONNECT fonts.example.com:443 HTTP/1.1\r\nHost: fonts.example.com:443\r\n{authorization}\r\n"
+        ),
+        format!("CONNECT evilwonton.localhost:18480 HTTP/1.1\r\n{authorization}\r\n"),
+        format!(
+            "GET http://127.0.0.1:18480/ HTTP/1.1\r\nHost: app-grafana.wonton.localhost\r\n{authorization}\r\n"
+        ),
+        format!("GET / HTTP/1.1\r\nHost: example.com\r\n{authorization}\r\n"),
+        format!("GET / HTTP/1.1\r\n{authorization}\r\n"),
+    ] {
+        let response = parse_response(&exchange(phone.proxy.local_addr(), &request).await);
+        assert_eq!(response.status, 403, "{request}");
+        assert_eq!(
+            response.header(ERROR_HEADER),
+            Some("foreign-host"),
+            "{request}"
+        );
+    }
+    // 别的浏览流量不会被送回家：隧道一次都没有建连。
+    assert_eq!(phone.client.status(), TunnelStatus::Idle);
+    assert!(upstream.heads.is_empty());
+}
+
+#[tokio::test]
 async fn tunnel_errors_are_still_explained_through_the_forward_proxy() {
     let (home, upstream) = home_with_head_echo(false).await;
     let credential = ProxyCredential::generate();
@@ -123,7 +157,10 @@ async fn phone(home: &TunnelServer, credential: ProxyCredential, device: &Secret
         device.clone(),
         home.endpoint().addr(),
         Timeouts::Default,
-        ProxyAccess::Credential(credential),
+        ProxyAccess::Credential {
+            credential,
+            domain: "wonton.localhost".into(),
+        },
     )
     .await
 }

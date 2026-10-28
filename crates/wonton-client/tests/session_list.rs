@@ -2,9 +2,30 @@
 //!
 //! 只经由导出给原生壳的接口（`ClientCore`、`Action`、订阅）驱动，两端共享这些结论。
 
+use std::ops::Deref;
 use std::sync::Arc;
 
-use wonton_client::{Action, ClientCore, CoreError, SessionListViewModel};
+use wonton_client::{Action, ClientCore, CoreError, Network, SessionListViewModel};
+
+/// 测试用的核心，连同它的数据目录（存设备密钥），测试结束时一起删除。
+struct TestCore {
+    core: Arc<ClientCore>,
+    _dir: tempfile::TempDir,
+}
+
+impl Deref for TestCore {
+    type Target = ClientCore;
+
+    fn deref(&self) -> &ClientCore {
+        &self.core
+    }
+}
+
+fn new_core() -> TestCore {
+    let dir = tempfile::tempdir().unwrap();
+    let core = ClientCore::with_network(dir.path().to_str().unwrap(), Network::DirectOnly).unwrap();
+    TestCore { core, _dir: dir }
+}
 
 fn create(title: &str) -> Action {
     Action::CreateSession {
@@ -25,8 +46,8 @@ fn delete(session_id: &str) -> Action {
 }
 
 /// 依次执行操作，要求每一步都成功，返回最终的会话列表。
-fn run(actions: impl IntoIterator<Item = Action>) -> (Arc<ClientCore>, SessionListViewModel) {
-    let core = ClientCore::new();
+fn run(actions: impl IntoIterator<Item = Action>) -> (TestCore, SessionListViewModel) {
+    let core = new_core();
     for action in actions {
         core.dispatch(action.clone())
             .unwrap_or_else(|error| panic!("{action:?} 失败：{error}"));
@@ -148,7 +169,7 @@ mod subscription {
 
     #[tokio::test]
     async fn every_dispatch_reaches_a_waiting_subscriber() {
-        let core = ClientCore::new();
+        let core = new_core();
         let subscription = core.subscribe_session_list();
         assert_eq!(
             next(&subscription).await,
@@ -168,7 +189,7 @@ mod subscription {
 
     #[tokio::test]
     async fn a_slow_subscriber_only_sees_the_latest_state() {
-        let core = ClientCore::new();
+        let core = new_core();
         let subscription = core.subscribe_session_list();
         next(&subscription).await;
 
@@ -192,7 +213,7 @@ mod subscription {
 
     #[tokio::test]
     async fn cancel_ends_a_pending_and_all_later_waits() {
-        let core = ClientCore::new();
+        let core = new_core();
         let subscription = core.subscribe_session_list();
         next(&subscription).await;
 
@@ -210,7 +231,7 @@ mod subscription {
 
     #[tokio::test]
     async fn dropping_the_core_ends_the_subscription() {
-        let core = ClientCore::new();
+        let core = new_core();
         let subscription = core.subscribe_session_list();
         next(&subscription).await;
 
