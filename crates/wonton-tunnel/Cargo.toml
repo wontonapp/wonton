@@ -8,6 +8,12 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# MIT OR Apache-2.0。解析本地代理收到的 Proxy-Authorization（Basic）。
+base64 = { workspace = true }
+# MIT OR Apache-2.0。生成本地代理的会话凭据。
+getrandom = { workspace = true }
+# MIT OR Apache-2.0。解析本地代理收到的第一个请求头（hyper 用的同一个解析器）。
+httparse = "1.10.1"
 iroh = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }

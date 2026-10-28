@@ -18,7 +18,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     task::JoinHandle,
 };
-use wonton_tunnel::{Allowlist, LocalProxy, TunnelClient, TunnelServer, TunnelStatus};
+use wonton_tunnel::{Allowlist, LocalProxy, ProxyAccess, TunnelClient, TunnelServer, TunnelStatus};
 
 /// 等待异步事件的上限。正常情况下都在几百毫秒内完成，超过即视为失败。
 pub const WAIT: Duration = Duration::from_secs(15);
@@ -80,10 +80,20 @@ pub struct Phone {
 }
 
 impl Phone {
+    /// 本地代理不校验调用方（反向代理形态）。
     pub async fn start(key: SecretKey, server: EndpointAddr, timeouts: Timeouts) -> Self {
+        Self::start_with(key, server, timeouts, ProxyAccess::Open).await
+    }
+
+    pub async fn start_with(
+        key: SecretKey,
+        server: EndpointAddr,
+        timeouts: Timeouts,
+        access: ProxyAccess,
+    ) -> Self {
         let endpoint = loopback_endpoint(key, 0, timeouts).await;
         let client = TunnelClient::new(endpoint, server);
-        let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into())
+        let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
             .unwrap();
         Self { client, proxy }
@@ -213,15 +223,24 @@ impl Response {
 
 /// 最小的 HTTP/1.1 客户端：发一个 GET，读到连接关闭为止。
 pub async fn http_get(proxy: SocketAddr, path: &str) -> Response {
-    let mut tcp = TcpStream::connect(proxy).await.unwrap();
     let request = format!("GET {path} HTTP/1.1\r\nhost: home\r\nconnection: close\r\n\r\n");
+    parse_response(&exchange(proxy, &request).await)
+}
+
+/// 把 `request` 原样写给代理，读到连接关闭为止，返回读到的全部文本。
+pub async fn exchange(proxy: SocketAddr, request: &str) -> String {
+    let mut tcp = TcpStream::connect(proxy).await.unwrap();
     tcp.write_all(request.as_bytes()).await.unwrap();
     let mut raw = Vec::new();
     tokio::time::timeout(WAIT, tcp.read_to_end(&mut raw))
         .await
         .expect("等待响应超时")
         .unwrap();
-    let raw = String::from_utf8(raw).unwrap();
+    String::from_utf8(raw).unwrap()
+}
+
+/// 解析一个读到连接关闭为止的响应，正文是响应头之后的全部内容。
+pub fn parse_response(raw: &str) -> Response {
     let (head, body) = raw.split_once("\r\n\r\n").expect("响应没有头部");
     let mut lines = head.lines();
     let status = lines.next().unwrap().split_whitespace().nth(1).unwrap();

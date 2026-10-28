@@ -6980,6 +6980,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "bollard",
  "futures-util",
  "getrandom 0.4.3",
@@ -7034,7 +7035,10 @@ name = "wonton-tunnel"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
+ "getrandom 0.4.3",
+ "httparse",
  "iroh",
  "thiserror 2.0.21",
  "tokio",

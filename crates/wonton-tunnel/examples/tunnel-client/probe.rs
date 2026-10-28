@@ -16,7 +16,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use wonton_tunnel::{LocalProxy, PathInfo, PathKind, TunnelClient};
+use wonton_tunnel::{LocalProxy, PathInfo, PathKind, ProxyAccess, TunnelClient};
 
 /// 观察期内两次 ping 的间隔。
 const PING_INTERVAL: Duration = Duration::from_millis(200);
@@ -118,7 +118,12 @@ fn elapsed_since_connect(previous: &[Sample], current: Duration) -> Duration {
 }
 
 async fn run_http(client: &TunnelClient, args: &ProbeArgs) -> Result<Vec<Sample>> {
-    let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into()).await?;
+    let proxy = LocalProxy::bind(
+        client.clone(),
+        (Ipv4Addr::LOCALHOST, 0).into(),
+        ProxyAccess::Open,
+    )
+    .await?;
     let mut samples = Vec::with_capacity(args.requests);
     for _ in 0..args.requests {
         let started = Instant::now();

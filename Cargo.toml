@@ -14,7 +14,9 @@ publish = false
 [workspace.dependencies]
 anyhow = "1.0.104"
 axum = "0.8.9"
+base64 = "0.22.1"
 bollard = "0.21.1"
+getrandom = "0.4.3"
 iroh = "1.4.1"
 matrix-sdk = "0.19.1"
 serde = { version = "1.0.229", features = ["derive"] }

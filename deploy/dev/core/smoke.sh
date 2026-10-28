@@ -51,8 +51,10 @@ start_browser() {
   docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 1800 >/dev/null
 }
 b() { docker exec "$browser" curl -sS -c /tmp/jar -b /tmp/jar "$@"; }
-# 经手机的本地代理访问：所有连接都交给代理，Host 和地址原样保留；Cookie 罐与上面的浏览器分开。
-t() { docker exec "$browser" curl -sS -c /tmp/phone-jar -b /tmp/phone-jar --connect-to ::127.0.0.1:18008 "$@"; }
+# 经手机的本地代理访问，和 App 一样带会话凭据（$credential）。t 像 Android WebView：http 地址直接发绝对形式的
+# 请求行；tc 像 iOS WKWebView：每条连接先 CONNECT。两者各用一个 Cookie 罐，与上面的浏览器分开。
+t() { docker exec "$browser" curl -sS -c /tmp/phone-jar -b /tmp/phone-jar -x http://127.0.0.1:18008 -U "$credential" "$@"; }
+tc() { docker exec "$browser" curl -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x http://127.0.0.1:18008 -U "$credential" "$@"; }
 
 labeled() {
   local id="$1"
@@ -140,16 +142,20 @@ expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" |
 step "已配对设备经隧道打开插件：不用登录，直接是主人"
 docker build -q --target tunnel-client -t "$phone_image" -f "$here/Dockerfile" "$repo" >/dev/null
 server_id="$("$dev" tunnel | json endpoint_id)"
-# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008。
+# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
+# 和 App 一样只接受带本次会话凭据的请求。
 docker run -d --name "$phone" --network "container:$core" --entrypoint sh "$phone_image" -c \
-  "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy \
+  "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
    --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT --listen 127.0.0.1:18008" >/dev/null
 for _ in $(seq 30); do
   docker logs "$phone" 2>/dev/null | grep -q '^本地代理' && break
   sleep 1
 done
 device_id="$(docker logs "$phone" 2>/dev/null | head -1)"
-[[ "$device_id" =~ ^[0-9a-f]{64}$ ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
+credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
+[[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
+expect "同机其他程序不带会话凭据，被本地代理拒绝" \
+  "$(docker exec "$browser" curl -sS -o /dev/null -w '%{http_code}' -x http://127.0.0.1:18008 "$grafana_url/api/user")" 407
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "未登记的设备被隧道拒绝" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
 grep -qi '^x-wonton-tunnel-error: unauthorized' <<<"$reply" || fail "缺少 unauthorized 原因：$reply"
@@ -158,7 +164,10 @@ reply="$(t -L -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{url_effecti
 read -r code final redirects <<<"$reply"
 expect "直接落在 Grafana 首页（经过 $redirects 次跳转：只有 OIDC，没有登录和会话交接）" "$code $final" "200 $grafana_url/"
 expect "Grafana 里的用户是主人" "$(t "$grafana_url/api/user" | json login)" owner
-! docker exec "$browser" grep -q 'wonton_' /tmp/phone-jar || fail "经隧道时网关不应发会话 Cookie"
+reply="$(tc -L -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{url_effective}' "$grafana_url/")"
+expect "经 CONNECT（iOS WKWebView 的方式）同样直接进入 Grafana" "$reply" "200 $grafana_url/"
+expect "经 CONNECT 时用户也是主人" "$(tc "$grafana_url/api/user" | json login)" owner
+! docker exec "$browser" grep -q 'wonton_' /tmp/phone-jar /tmp/ios-jar || fail "经隧道时网关不应发会话 Cookie"
 ok "手机没有拿到任何网关 Cookie"
 expect "管理 API 不接受隧道身份" \
   "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 401

@@ -1,5 +1,5 @@
-//! 经隧道的网关行为测试：真实的 iroh 隧道（只走回环地址）、设备本地代理和网关。插件上游和 Hydra
-//! 管理接口的替身与 `tests.rs` 共用。
+//! 经隧道的网关行为测试：真实的 iroh 隧道（只走回环地址）、设备本地代理（和 App 一样带会话凭据）和
+//! 网关。插件上游和 Hydra 管理接口的替身与 `tests.rs` 共用。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
@@ -10,6 +10,8 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
@@ -17,7 +19,9 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
 use serde_json::Value;
 use tower::ServiceExt;
-use wonton_tunnel::{LocalProxy, TunnelClient, TunnelError, TunnelStatus};
+use wonton_tunnel::{
+    LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
+};
 
 use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, echo_upstream, fake_hydra, owner};
 use super::{Gateway, router};
@@ -142,22 +146,28 @@ impl Home {
     }
 }
 
-/// 测试里的手机：隧道客户端加本地代理。
+/// 测试里的手机：隧道客户端加本地代理，代理只接受带本次会话凭据的请求。
 struct Phone {
     client: TunnelClient,
     proxy: LocalProxy,
+    authorization: String,
     http: HttpClient,
 }
 
 impl Phone {
     async fn start(key: SecretKey, home: &Home) -> Self {
         let client = TunnelClient::new(loopback_endpoint(key).await, home.tunnel.endpoint.addr());
-        let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into())
+        let credential = ProxyCredential::generate();
+        let pair = format!("{}:{}", credential.username(), credential.password());
+        let authorization = format!("Basic {}", STANDARD.encode(pair));
+        let access = ProxyAccess::Credential(credential);
+        let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
             .unwrap();
         Self {
             client,
             proxy,
+            authorization,
             http: HttpClient::new(),
         }
     }
@@ -182,6 +192,7 @@ impl Phone {
             .uri(format!("http://{}{path}", self.proxy.local_addr()))
             .header(header::HOST, format!("{host}:{PORT}"))
             .header(header::ACCEPT, "text/html")
+            .header(header::PROXY_AUTHORIZATION, &self.authorization)
             .header(header::CONNECTION, "close")
             .body(Body::empty())
             .unwrap();

@@ -33,16 +33,19 @@ deploy/dev/core/dev.sh tunnel                  # 服务端 endpoint ID、中继�
 deploy/dev/core/dev.sh allow <设备 endpoint ID>  # 登记；revoke 吊销并立即断开，devices 列出
 ```
 
-在本机用隧道客户端示例扮演手机（`cargo run -p wonton-tunnel --example tunnel-client -- id` 输出它的 ID），
-起本地代理后，所有连接都交给代理、原样保留 `Host`：
+在本机用隧道客户端示例扮演手机（`cargo run -p wonton-tunnel --example tunnel-client -- id` 输出它的 ID）。
+`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
 
 ```bash
-cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID> --addr 127.0.0.1:18482 --listen 127.0.0.1:18008
+cargo run -p wonton-tunnel --example tunnel-client -- proxy --auth --server <服务端 ID> --addr 127.0.0.1:18482 --listen 127.0.0.1:18008
 ```
 
 ```bash
-curl --noproxy '*' --connect-to ::127.0.0.1:18008 http://app-grafana.wonton.localhost:18480/api/health
+curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> http://app-grafana.wonton.localhost:18480/api/health
 ```
+
+`--noproxy ''` 清掉环境变量里的 `NO_PROXY`，否则 `*.localhost` 会绕过代理。加 `-p` 改用 `CONNECT`，和 iOS 的
+WKWebView 一样。
 
 ## 端到端冒烟
 

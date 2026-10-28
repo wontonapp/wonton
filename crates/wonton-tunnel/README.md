@@ -12,8 +12,25 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
     endpoint ID。核心用它在进程内服务网关，并把设备身份交给网关。正常结束要 `shutdown`；没有 shutdown 就
     丢弃时复位流，客户端不会把被截断的数据当成正常结束。
 - **客户端**：`TunnelClient` 让所有请求复用一条连接，断开后下一次使用时自动重连，不设在线超时门禁；
-  用 `watch` 报告 `TunnelStatus`，只保留最新状态。`LocalProxy` 在回环地址上监听，本机的 HTTP 客户端
-  把 base URL 换成代理地址即可，相当于直接访问服务端的上游。
+  用 `watch` 报告 `TunnelStatus`，只保留最新状态。`LocalProxy` 在回环地址上监听，把本机 HTTP 客户端的
+  连接经隧道转发过去，用法见下一节。
+
+## 本地代理的两种用法
+
+本地代理监听回环地址，同一台设备上的其他 App 也连得上；服务端只认设备的配对身份，经代理来的请求都算
+这台设备的。所以 `LocalProxy::bind` 要明确选一种 `ProxyAccess`：
+
+- **`Credential`（App 用）**：HTTP 正向代理，只接受带本次会话凭据的连接。凭据由 `ProxyCredential::generate()`
+  每次启动随机生成（用户名 `wonton`，密码 256 位随机数），只交给本 App 的 WebView 和 HTTP 客户端。代理只解析
+  每条连接的第一个请求头，之后原样转发，`Host` 不变：
+  - 没带凭据或凭据不对：回 407 和 `Proxy-Authenticate: Basic`，不建隧道连接。
+  - `CONNECT host:port`（iOS 的 WKWebView 只能用这种代理）：回 200，之后的字节原样进隧道。
+  - 绝对形式的请求行（`GET http://host:port/path`，Android WebView 和一般 HTTP 客户端访问 http 地址时这样发）：
+    改成源站形式，`Host` 取自 URL，去掉 `Proxy-Authorization` 和 `Proxy-Connection`，加 `Connection: close`，
+    让服务端回完这个请求就关闭连接。每条连接只有一个请求，凭据不会随后续请求进入隧道。协议升级的请求
+    保留原来的 `Connection`。
+- **`Open`（开发工具和测试用）**：不校验调用方，每条连接原样转发，把代理当成服务端访问即可（把 base URL
+  换成 `http://<代理地址>`）。本机任何进程都能借用这台设备的配对身份。
 
 ## 线协议（ALPN `wonton/tunnel/0`）
 
@@ -36,8 +53,11 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 | 隧道是通的，服务端连不上上游 | 503 | `upstream-unavailable` |
 | 两端协议不匹配 | 502 | `protocol` |
 | 客户端已关闭 | 502 | `closed` |
+| 正向代理：没带会话凭据或凭据不对 | 407 | `proxy-unauthorized` |
+| 正向代理：请求头不合法或超过 64 KiB | 400 / 431 | `bad-request` |
 
-上游已经开始返回数据后再出错，只能断开连接。
+上游已经开始返回数据后再出错，只能断开连接。`CONNECT` 已经回了 200 之后的隧道错误，作为里面第一个请求的
+响应回给客户端。
 
 ## 示例与实地测试
 
@@ -47,10 +67,13 @@ cargo run -p wonton-tunnel --example tunnel-server -- --upstream 127.0.0.1:8080 
 # 客户端：打印本机 ID；起本地代理；测直连/中继比例和延迟
 cargo run -p wonton-tunnel --example tunnel-client -- id
 cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID>
+# 像 App 一样：带会话凭据的正向代理，启动时打印凭据（curl -x http://127.0.0.1:8081 -U wonton:<密码>）
+cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID> --auth
 cargo run -p wonton-tunnel --example tunnel-client -- probe --server <服务端 ID> --relay <中继 URL>
 ```
 
 `scripts/field-test.sh` 把服务端部署到一台 SSH 主机（进程到时自动退出），在本机跑测量，再清理，
 用来在真实网络（例如手机热点）下复测 ADR-0004 的验证结果。
 
-行为测试在 `tests/tunnel/`（转发到 TCP 上游、交给嵌入方各一组），只走本机回环地址，不依赖外网。
+行为测试在 `tests/tunnel/`（转发到 TCP 上游、交给嵌入方、App 用的本地代理各一组），只走本机回环地址，
+不依赖外网。

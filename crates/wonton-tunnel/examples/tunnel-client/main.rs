@@ -5,6 +5,8 @@
 //! cargo run -p wonton-tunnel --example tunnel-client -- id
 //! # 在本机起 HTTP 代理：http://127.0.0.1:8081 即服务端的上游 HTTP 服务
 //! cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 endpoint ID>
+//! # 像 App 一样起带会话凭据的 HTTP 正向代理（curl -x http://127.0.0.1:8081 -U wonton:<密码>）
+//! cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 endpoint ID> --auth
 //! # 测量直连与中继的比例和延迟
 //! cargo run -p wonton-tunnel --example tunnel-client -- probe --server <服务端 endpoint ID>
 //! ```
@@ -20,7 +22,7 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayUrl, SecretKey, endpoint::presets};
-use wonton_tunnel::{LocalProxy, TunnelClient};
+use wonton_tunnel::{LocalProxy, ProxyAccess, ProxyCredential, TunnelClient};
 
 /// Wonton 隧道客户端示例。
 #[derive(Debug, Parser)]
@@ -43,6 +45,10 @@ enum Command {
         /// 代理监听地址，只能是回环地址。
         #[arg(long, default_value = "127.0.0.1:8081")]
         listen: SocketAddr,
+        /// 像 App 一样：生成会话凭据，按 HTTP 正向代理工作，只接受带凭据的请求。不加时不校验调用方，
+        /// 把代理当成服务端访问即可，但本机任何进程都能借用这台设备的配对身份。
+        #[arg(long)]
+        auth: bool,
     },
     /// 多轮冷启动建连，测量直连与中继的比例、往返时间和经隧道的 HTTP 延迟。
     Probe {
@@ -89,7 +95,11 @@ async fn main() -> Result<()> {
     let key = common::load_or_create_key(&cli.key)?;
     match cli.command {
         Command::Id => println!("{}", key.public()),
-        Command::Proxy { server, listen } => run_proxy(key, &server, listen).await?,
+        Command::Proxy {
+            server,
+            listen,
+            auth,
+        } => run_proxy(key, &server, listen, auth).await?,
         Command::Probe { server, probe } => {
             probe::run(key, server.addr(), server.relay_only, &probe).await?;
         }
@@ -106,11 +116,27 @@ async fn bind_endpoint(key: SecretKey, relay_only: bool) -> Result<Endpoint> {
     Ok(builder.bind().await?)
 }
 
-async fn run_proxy(key: SecretKey, server: &ServerArgs, listen: SocketAddr) -> Result<()> {
+async fn run_proxy(
+    key: SecretKey,
+    server: &ServerArgs,
+    listen: SocketAddr,
+    auth: bool,
+) -> Result<()> {
     let endpoint = bind_endpoint(key, server.relay_only).await?;
     println!("本机 endpoint ID：{}", endpoint.id());
     let client = TunnelClient::new(endpoint.clone(), server.addr());
-    let proxy = LocalProxy::bind(client.clone(), listen).await?;
+    let access = if auth {
+        let credential = ProxyCredential::generate();
+        println!(
+            "会话凭据：{}:{}",
+            credential.username(),
+            credential.password()
+        );
+        ProxyAccess::Credential(credential)
+    } else {
+        ProxyAccess::Open
+    };
+    let proxy = LocalProxy::bind(client.clone(), listen, access).await?;
     println!("本地代理：http://{}", proxy.local_addr());
     let reporter = tokio::spawn(report(client.clone()));
 

@@ -129,3 +129,28 @@
 主人决定开发和内测期先用 n0 的公共中继，自建节点移到 M2。n0 官方对公共中继的说明是：免费、限速、
 适合开发和测试，没有可用性和性能保证。上面“自建香港中继是 MVP 的前提”改为：内测中打洞失败多、
 经公共中继体验差时提前部署（#8）。配对二维码带直连地址（#16），不依赖 n0 的发现服务。
+
+### 本地代理的会话凭据（#21）
+
+上面的结论之一是本地代理可能被同机其他 App 借用。选了“给代理加会话凭据”，而不是在网关逐个校验 Matrix
+令牌或插件会话：后者要让每个插件网页都带上网关能认的凭据，而 WebView 里的插件网页本身就不可信。
+
+- App 的本地代理是 HTTP 正向代理（`ProxyAccess::Credential`），每次启动随机生成一份凭据（256 位），只交给
+  本 App 的 WebView 和 HTTP 客户端。没带凭据的连接回 407，连隧道都不建；其他 App 拿不到凭据，也就借用
+  不了配对身份。网关因此可以把隧道身份当作设备身份，规则见 ADR-0009 的验证结果（#21）。
+- 两端 WebView 都把 HTTP 代理设为本地代理，`Host` 原样保留：
+  - iOS 17 的 `WKWebsiteDataStore.proxyConfigurations` 只能配 HTTP CONNECT 代理，每条连接先 `CONNECT`，
+    凭据用 `applyCredential`。
+  - Android 的 `ProxyController` 对 http 地址发绝对形式的请求行。代理改写成源站形式，并让服务端回完一个
+    请求就关连接，凭据不会随后续请求进入隧道。
+- 不校验调用方的反向代理形态（`ProxyAccess::Open`）只留给开发工具和测试，示例默认用它；加 `--auth` 和 App
+  一样。
+- 验证：`crates/wonton-tunnel/tests/tunnel/local_proxy.rs` 覆盖了以下行为：
+  - 没带凭据、凭据不对、`Bearer` 方案都被拒，隧道没有建连。
+  - 绝对形式的请求到服务端时 `Host` 取自 URL、没有代理专用的头。
+  - `CONNECT` 之后的字节原样转发。
+  - 隧道错误照样回说明原因的 HTTP 错误。
+
+  `deploy/dev/core/smoke.sh` 用带凭据的代理经隧道打开 Grafana，按 Android 和 iOS 两种方式各走一遍，都直接以
+  主人进入；不带凭据的请求被拒（407）。
+

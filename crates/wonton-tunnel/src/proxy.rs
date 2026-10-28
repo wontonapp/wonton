@@ -1,9 +1,11 @@
-//! 本地 HTTP 代理：在回环地址上监听，把每条 TCP 连接经隧道原样转发到服务端的上游 HTTP 服务。
+//! 本地 HTTP 代理：在回环地址上监听，把每条 TCP 连接经隧道转发到服务端。
 //!
-//! 对本机的 HTTP 客户端来说，代理就是服务端本身（反向代理形态）：把 base URL 换成
-//! `http://<local_addr>` 即可。隧道出错时回一个 HTTP 错误响应，用 [`ERROR_HEADER`] 头标明原因。
+//! 两种用法见 [`ProxyAccess`]：App 用带会话凭据的 HTTP 正向代理（`http_front` 模块先校验凭据、处理
+//! `CONNECT` 和绝对形式的请求行，`Host` 原样保留）；开发工具和测试可以用不校验调用方的反向代理形态，
+//! 把 base URL 换成 `http://<local_addr>` 即可。隧道出错时回一个 HTTP 错误响应，用 [`ERROR_HEADER`]
+//! 头标明原因。
 
-use std::{io, net::SocketAddr, pin::pin, time::Duration};
+use std::{io, net::SocketAddr, pin::pin, sync::Arc, time::Duration};
 
 use iroh::endpoint::RecvStream;
 use tokio::{
@@ -18,12 +20,15 @@ use tracing::{debug, error, warn};
 
 use crate::{
     client::{TunnelClient, TunnelStream},
-    error::TunnelError,
+    credential::ProxyAccess,
+    error::{TunnelError, from_write_error},
     forward::{self, PumpError},
+    http_front,
     wire::Request,
 };
 
-/// 代理回错误响应时标明原因的头，取值见 [`TunnelError::code`]。
+/// 代理回错误响应时标明原因的头：隧道错误的取值见 [`TunnelError::code`]；代理自己回绝时是
+/// `proxy-unauthorized`（缺少或用错会话凭据，407）和 `bad-request`（请求头不合法或太大）。
 pub const ERROR_HEADER: &str = "x-wonton-tunnel-error";
 
 /// 回完错误响应后，最多再花这么久读掉客户端没发完的请求，再关闭连接。
@@ -40,10 +45,15 @@ pub struct LocalProxy {
 }
 
 impl LocalProxy {
-    /// 在 `addr` 上开始监听。`addr` 必须是回环地址，端口为 0 时由系统分配。
+    /// 在 `addr` 上开始监听，按 `access` 认调用方。`addr` 必须是回环地址，端口为 0 时由系统分配。
     ///
     /// 只允许回环地址：代理使用本设备的配对身份，监听在局域网上等于把这个身份借给同网段的任何人。
-    pub async fn bind(client: TunnelClient, addr: SocketAddr) -> io::Result<Self> {
+    /// 回环地址同机的其他 App 也连得上，所以 App 要用 [`ProxyAccess::Credential`]。
+    pub async fn bind(
+        client: TunnelClient,
+        addr: SocketAddr,
+        access: ProxyAccess,
+    ) -> io::Result<Self> {
         if !addr.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -52,7 +62,7 @@ impl LocalProxy {
         }
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
-        let task = tokio::spawn(accept_loop(listener, client));
+        let task = tokio::spawn(accept_loop(listener, client, Arc::new(access)));
         Ok(Self { local_addr, task })
     }
 
@@ -74,14 +84,14 @@ impl Drop for LocalProxy {
     }
 }
 
-async fn accept_loop(listener: TcpListener, client: TunnelClient) {
+async fn accept_loop(listener: TcpListener, client: TunnelClient, access: Arc<ProxyAccess>) {
     let mut connections = JoinSet::new();
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((tcp, peer)) => {
                     debug!(%peer, "本地代理收到连接");
-                    connections.spawn(serve_local(client.clone(), tcp));
+                    connections.spawn(serve_local(client.clone(), tcp, access.clone()));
                 }
                 Err(err) => {
                     warn!("本地代理接受连接失败：{err}");
@@ -109,15 +119,31 @@ enum RelayError {
     Aborted(PumpError),
 }
 
-async fn serve_local(client: TunnelClient, tcp: TcpStream) {
+async fn serve_local(client: TunnelClient, tcp: TcpStream, access: Arc<ProxyAccess>) {
     if let Err(err) = tcp.set_nodelay(true) {
         debug!("本地连接设置 TCP_NODELAY 失败：{err}");
     }
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
+    // 正向代理先收下第一个请求头：校验凭据，CONNECT 回 200，绝对形式的请求行改写后送进隧道。
+    let prefix = match &*access {
+        ProxyAccess::Open => Vec::new(),
+        ProxyAccess::Credential(credential) => {
+            match http_front::accept(&mut tcp_read, &mut tcp_write, credential).await {
+                Some(prefix) => prefix,
+                None => return,
+            }
+        }
+    };
     let mut stream = match client.open(Request::Forward).await {
         Ok(stream) => stream,
         Err(err) => return respond_error(&mut tcp_write, &mut tcp_read, &err).await,
     };
+    if !prefix.is_empty()
+        && let Err(err) = stream.send.write_all(&prefix).await
+    {
+        stream.abort();
+        return respond_error(&mut tcp_write, &mut tcp_read, &from_write_error(&err)).await;
+    }
     match relay(&client, &mut stream, &mut tcp_read, &mut tcp_write).await {
         Ok(()) => {}
         Err(RelayError::BeforeResponse(err)) => {
@@ -191,7 +217,16 @@ async fn respond_error(
     err: &TunnelError,
 ) {
     debug!("本地代理回错误响应：{err}");
-    if let Err(write_err) = tcp_write.write_all(error_response(err).as_bytes()).await {
+    respond(tcp_write, tcp_read, &error_response(err)).await;
+}
+
+/// 回一个完整的 HTTP 响应（带 `connection: close`），然后优雅关闭连接。
+pub(crate) async fn respond(
+    tcp_write: &mut OwnedWriteHalf,
+    tcp_read: &mut OwnedReadHalf,
+    response: &str,
+) {
+    if let Err(write_err) = tcp_write.write_all(response.as_bytes()).await {
         debug!("回写错误响应失败：{write_err}");
         return;
     }
