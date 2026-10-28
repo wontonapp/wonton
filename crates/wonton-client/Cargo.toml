@@ -7,5 +7,33 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lib]
+# staticlib 给 iOS，cdylib 给 Android 和绑定生成，lib 给测试。
+crate-type = ["lib", "staticlib", "cdylib"]
+
+# 生成 Kotlin 绑定（以及通用的 UniFFI 命令行）。
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+# 生成 Swift 绑定、头文件和 XCFramework 用的 modulemap。
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "src/bin/uniffi-bindgen-swift.rs"
+required-features = ["bindgen"]
+
+[features]
+# 只在生成 Swift / Kotlin 绑定时启用，避免把 CLI 依赖带进 App。
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+tokio = { workspace = true, features = ["macros", "sync"] }
+uniffi = { workspace = true }
+wonton-protocol = { path = "../wonton-protocol", features = ["uniffi"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "time"] }
+
 [lints]
 workspace = true

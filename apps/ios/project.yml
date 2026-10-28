@@ -1,0 +1,32 @@
+# XcodeGen 工程描述。Wonton.xcodeproj 由它生成，不提交：xcodegen generate --spec apps/ios/project.yml
+name: Wonton
+options:
+  bundleIdPrefix: app.wonton
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  WontonClient:
+    path: WontonClient
+targets:
+  Wonton:
+    type: application
+    platform: iOS
+    sources:
+      - Wonton
+    dependencies:
+      - package: WontonClient
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: 云吞
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"

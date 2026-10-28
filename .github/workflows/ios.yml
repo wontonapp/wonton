@@ -1,0 +1,78 @@
+name: ios
+
+# macOS runner 在私有仓库按 10 倍计费：只在相关路径变化时运行，SwiftLint 放到 Linux 上，
+# macOS 上只做一次模拟器构建（只编译 Apple 芯片模拟器一个 target，不签名、不跑模拟器）。
+on:
+  pull_request:
+    paths:
+      - "apps/ios/**"
+      - "crates/wonton-client/**"
+      - "crates/wonton-protocol/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - "crates/wonton-client/**"
+      - "crates/wonton-protocol/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ios.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swiftlint:
+    name: SwiftLint（函数体 ≤ 100 行、文件 ≤ 800 行）
+    runs-on: ubuntu-latest
+    container: ghcr.io/realm/swiftlint:0.65.1
+    steps:
+      - uses: actions/checkout@v5
+      - name: SwiftLint
+        working-directory: apps/ios
+        run: swiftlint lint --strict
+
+  build:
+    name: 模拟器构建
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      XCODEGEN_VERSION: "2.46.0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+      - name: 安装 XcodeGen
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 编译 Rust 核心并生成 Swift 绑定
+        env:
+          WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+        run: apps/ios/scripts/build-core.sh debug
+      - name: 生成 Xcode 工程
+        run: xcodegen generate --spec apps/ios/project.yml
+      - name: 构建 App
+        run: |
+          xcodebuild -version
+          xcodebuild build \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO

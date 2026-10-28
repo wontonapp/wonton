@@ -1,0 +1,7 @@
+# UniFFI 生成绑定时的命名，与 crates/wonton-protocol/uniffi.toml 保持一致。
+[bindings.swift]
+ffi_module_name = "WontonClientFFI"
+ffi_module_filename = "wonton_clientFFI"
+
+[bindings.kotlin]
+package_name = "app.wonton.client"

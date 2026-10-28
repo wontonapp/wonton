@@ -1,0 +1,18 @@
+# 与仓库的体量门禁一致：函数体 ≤ 100 行、文件 ≤ 800 行，超出即 error。
+# CI 用 --strict 运行，其余规则的 warning 也会失败。
+included:
+  - Wonton
+  - WontonClient/Package.swift
+  - WontonClient/Sources
+
+excluded:
+  - WontonClient/Sources/WontonClient/Generated
+
+function_body_length:
+  warning: 100
+  error: 100
+
+file_length:
+  warning: 800
+  error: 800
+  ignore_comment_only_lines: false
