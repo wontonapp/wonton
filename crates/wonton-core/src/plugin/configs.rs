@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::compose::{Scalar, Service};
 use super::interpolate::Vars;
-use super::package::PluginPackage;
+use super::package::{PackageError, PluginPackage};
 
 /// 默认权限：所有用户可读，和 compose 一致。
 const DEFAULT_MODE: u32 = 0o444;
@@ -25,6 +25,16 @@ pub struct ConfigFile {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// 取配置内容失败，如 `content` 插值失败。
+    #[error(transparent)]
+    Package(#[from] PackageError),
+    /// 服务的 `configs` 不合规则。
+    #[error("{0}")]
+    Rule(String),
+}
+
 /// 解析服务的 `configs`。`mounts` 是这个服务所有挂载的目标：配置不能写进挂载点，否则在卷、应用数据
 /// 目录或共享文件夹里留下文件（tmpfs 则在启动时把它盖住）。
 pub fn resolve(
@@ -32,11 +42,26 @@ pub fn resolve(
     service: &Service,
     vars: &Vars,
     mounts: &[PathBuf],
-) -> Result<Vec<ConfigFile>, String> {
-    if service.configs.is_empty() {
-        return Ok(Vec::new());
-    }
-    if service.read_only == Some(true) {
+) -> Result<Vec<ConfigFile>, ConfigError> {
+    let placed = place(package, service, mounts).map_err(ConfigError::Rule)?;
+    placed
+        .into_iter()
+        .map(|(source, file)| {
+            Ok(ConfigFile {
+                data: package.config_data(&source, vars)?,
+                ..file
+            })
+        })
+        .collect()
+}
+
+/// 检查服务的每个配置引用，定下目标、属主和权限：（配置名，还没有内容的文件）。
+fn place(
+    package: &PluginPackage,
+    service: &Service,
+    mounts: &[PathBuf],
+) -> Result<Vec<(String, ConfigFile)>, String> {
+    if !service.configs.is_empty() && service.read_only == Some(true) {
         return Err(
             "read_only 的服务不能用 configs：Docker 不往只读的根文件系统写文件；\
                     可以由一次性服务把它复制进数据目录"
@@ -44,7 +69,7 @@ pub fn resolve(
         );
     }
     let (default_uid, default_gid) = default_owner(service.user.as_ref());
-    let mut files: Vec<ConfigFile> = Vec::new();
+    let mut placed: Vec<(String, ConfigFile)> = Vec::new();
     for entry in &service.configs {
         let config = entry.long();
         if !package.has_config(&config.source) {
@@ -58,7 +83,7 @@ pub fn resolve(
             .clone()
             .unwrap_or_else(|| format!("/{}", config.source));
         let target = target_path(&raw)?;
-        if files.iter().any(|f| f.target == target) {
+        if placed.iter().any(|(_, f)| f.target == target) {
             return Err(format!("configs 的目标 `{raw}` 重复"));
         }
         if let Some(mount) = mounts
@@ -70,17 +95,16 @@ pub fn resolve(
                 mount.display()
             ));
         }
-        files.push(ConfigFile {
+        let file = ConfigFile {
             target,
             uid: id(config.uid.as_ref(), "uid")?.unwrap_or(default_uid),
             gid: id(config.gid.as_ref(), "gid")?.unwrap_or(default_gid),
             mode: config.mode.as_ref().map_or(Ok(DEFAULT_MODE), mode)?,
-            data: package
-                .config_data(&config.source, vars)
-                .map_err(|e| e.to_string())?,
-        });
+            data: Vec::new(),
+        };
+        placed.push((config.source, file));
     }
-    Ok(files)
+    Ok(placed)
 }
 
 /// 配置的目标：容器里规范化的绝对路径，不能是 `/` 也不能含 `..`。

@@ -7,6 +7,7 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
+mod bots;
 mod configs;
 mod manager;
 mod secrets;

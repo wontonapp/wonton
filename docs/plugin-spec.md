@@ -560,15 +560,12 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
 1. **接口：清单类型迁到 `wonton-protocol`**（只改接口，先合并）。
    - `crates/wonton-core/src/plugin/manifest.rs` 的类型和校验移到 `crates/wonton-protocol` 的 `plugin`
      模块；`wonton-core` 加依赖并改为引用它。
-   - 新增：`Permission::NetworkEgress`；`Sso::Proxy` 和 `webui.proxy`（请求头、Cookie、值模板）；`bots`；
-     `provides.models`。`secrets`（`generate`、`collect`）已在核心里，随其他类型一起迁移。
-   - 新增的校验：`bot`、`bots` 和 `agent.protocol: matrix` 需要 `matrix.bot`；只有 `kind: system` 能声明
-     `provides`；模板只引用 `generate` 的项；`bots`、`provides` 引用的服务存在（在 `package.rs` 对照
-     compose 检查）。
+   - 新增：`Permission::NetworkEgress`；`Sso::Proxy` 和 `webui.proxy`（请求头、Cookie、值模板）；
+     `provides.models`。`secrets`（`generate`、`collect`）和 `bots` 已在核心里，随其他类型一起迁移。
+   - 新增的校验：只有 `kind: system` 能声明 `provides`；模板只引用 `generate` 的项；`provides` 引用的服务
+     存在（在 `package.rs` 对照 compose 检查）。
    - 契约测试：`plugins/` 下所有插件包都能解析，几类违规各被拒绝；App 的安装确认页以后用同一套类型
      （需要 UniFFI 导出的类型按它的约束调整）。
-3. **注入变量**（`render.rs`）：`InstallContext` 和 `injected_vars` 加上模型、Matrix、插件密钥和 Bot 的
-   变量，按权限和声明注入；`dry_run` 的占位值同步。
 4. **数据目录属主**（`render.rs`、`lifecycle.rs`）：`Deployment.dirs` 记下每个目录的属主（来自挂载它的
    服务的 `user`），`prepare_dirs` 按属主创建；写法不合规或属主冲突时报错。和 #20 的软链接检查一起改。
 5. **一次性服务与健康状态**（`lifecycle.rs`、`health.rs`、`manager.rs`）：`reconcile` 对一次性服务接受
@@ -584,9 +581,12 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
    - 凭据：生成后存密钥库，经 Docker exec 执行 `issue`、`revoke`（标准输入传值、30 秒超时、带上 stderr），
      签发后用 `GET …/models` 验证；提供方每次启动后对账；卸载时吊销。
    - 只在声明了 `models` 的插件网络里给核心加别名；核心不在容器里时（开发环境）用 `extra_hosts`。
+   - 注入 `WONTON_MODEL_*`：`InstallContext` 带上网关的地址、本插件的凭据和默认模型，`dry_run` 用占位值。
+     在那之前，声明了 `models` 的插件引用这些变量时安装报“尚未支持”。
 8. **Matrix Bot**（核心新增 `bots` 模块）：JWT 代 Bot 登录（首次登录即建号，不申请刷新令牌），设置显示名
-   和头像，替主人建加密私聊并写 `m.direct`，注入变量；网关按 Host `matrix.wonton.internal` 只转发客户端
-   接口；卸载时用核心的 Tuwunel 管理账号删设备，删除数据时停用账号。
+   和头像，替主人建加密私聊并写 `m.direct`，注入 `WONTON_MATRIX_*`（在那之前和模型的变量一样报“尚未
+   支持”）；网关按 Host `matrix.wonton.internal` 只转发客户端接口；卸载时用核心的 Tuwunel 管理账号删设备，
+   删除数据时停用账号。
 10. **网关代登录**（`gateway/proxy.rs`）：`sso: proxy` 时剥离同名请求头和 Cookie，按 Fetch Metadata 的
     规则加上声明的值，去掉插件响应里同名 Cookie 的 `Set-Cookie`；行为测试覆盖伪造、跨插件请求和不回传。
     和 #20 的 `Set-Cookie` 加固一起改。

@@ -47,6 +47,12 @@ pub enum PackageError {
     Volume(String),
     #[error("配置 `{name}`：{message}")]
     Config { name: String, message: String },
+    #[error("配置 `{name}` 插值失败：{source}")]
+    ConfigInterpolate {
+        name: String,
+        #[source]
+        source: InterpolateError,
+    },
     #[error("{field}：{message}")]
     Reference { field: String, message: String },
     #[error("{field} 引用的文件 `{path}`：{source}")]
@@ -58,6 +64,23 @@ pub enum PackageError {
     },
     #[error("插件包的 {COMPOSE_FILE}：{0}")]
     ComposeFile(FileError),
+}
+
+impl PackageError {
+    /// 插值时引用了没有定义的变量：返回变量名。
+    pub fn missing_var(&self) -> Option<&str> {
+        match self {
+            Self::Interpolate {
+                source: InterpolateError::Missing(var),
+                ..
+            }
+            | Self::ConfigInterpolate {
+                source: InterpolateError::Missing(var),
+                ..
+            } => Some(var),
+            _ => None,
+        }
+    }
 }
 
 /// 顶层 `configs` 的一项。
@@ -243,18 +266,25 @@ impl PluginPackage {
                 .ok_or_else(|| config_err(format!("插件包里没有 `{path}`"))),
             Some(ConfigSource::Content(text)) => interpolate(text, vars)
                 .map(String::into_bytes)
-                .map_err(|e| config_err(format!("插值失败：{e}"))),
+                .map_err(|source| PackageError::ConfigInterpolate {
+                    name: name.to_owned(),
+                    source,
+                }),
         }
     }
 
-    /// 用变量表插值后按 Compose 子集解析所有服务。
-    pub fn services(&self, vars: &Vars) -> Result<BTreeMap<String, Service>, PackageError> {
+    /// 插值后按 Compose 子集解析所有服务。`vars` 给出每个服务用的变量表：Bot 服务比全插件一份的服务
+    /// 多几个变量。
+    pub fn services<'v>(
+        &self,
+        vars: impl Fn(&str) -> &'v Vars,
+    ) -> Result<BTreeMap<String, Service>, PackageError> {
         self.services
             .iter()
             .map(|(name, raw)| {
                 let mut value = raw.clone();
                 strip_extensions(&mut value);
-                interpolate_value(&mut value, vars).map_err(|source| {
+                interpolate_value(&mut value, vars(name)).map_err(|source| {
                     PackageError::Interpolate {
                         service: name.clone(),
                         source,
@@ -291,7 +321,11 @@ impl PluginPackage {
                 }
                 SecretSpec::Generate(_) => None,
             });
-        for (field, service) in refs.into_iter().chain(collects) {
+        let bot_services = self.manifest.bots.iter().flat_map(|b| &b.services);
+        let bots = bot_services
+            .clone()
+            .map(|service| ("bots.services", Some(service)));
+        for (field, service) in refs.iter().cloned().chain(collects).chain(bots) {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {
@@ -300,6 +334,18 @@ impl PluginPackage {
                     service: service.clone(),
                 });
             }
+        }
+        // 网页和 MCP 入口全插件一份，不能指向每个 Bot 一份的服务。
+        let bot_entry = refs.iter().find_map(|(field, service)| {
+            service
+                .filter(|s| bot_services.clone().any(|b| b == *s))
+                .map(|s| (*field, s))
+        });
+        if let Some((field, service)) = bot_entry {
+            return Err(PackageError::Service {
+                service: service.clone(),
+                message: format!("{field} 不能指向 Bot 服务：Bot 服务每个 Bot 一份"),
+            });
         }
         Ok(())
     }

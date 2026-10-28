@@ -88,7 +88,10 @@ impl From<PackageError> for InstallError {
 
 impl From<RenderError> for InstallError {
     fn from(e: RenderError) -> Self {
-        Self::Invalid(e.to_string())
+        match e {
+            RenderError::Unsupported(message) => Self::Unsupported(message),
+            other => Self::Invalid(other.to_string()),
+        }
     }
 }
 

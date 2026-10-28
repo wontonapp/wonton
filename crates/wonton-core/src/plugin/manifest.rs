@@ -176,6 +176,13 @@ pub struct BotProfile {
     pub avatar: Option<String>,
 }
 
+/// 一个插件多个 Bot：`services` 里的服务每个 Bot 一份，其余服务全插件一份。M1 只有默认 Bot。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BotServices {
+    pub services: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentProtocol {
@@ -450,6 +457,8 @@ pub struct Manifest {
     #[serde(default)]
     pub bot: Option<BotProfile>,
     #[serde(default)]
+    pub bots: Option<BotServices>,
+    #[serde(default)]
     pub agent: Option<AgentSpec>,
     /// 插件自己的密钥，见规范“插件密钥”。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -474,6 +483,7 @@ impl Manifest {
                 "kind 为 agent 时必须提供 agent.protocol".to_owned(),
             ));
         }
+        validate_bots(self)?;
         if let Some(webui) = &self.webui {
             validate_webui(webui)?;
         }
@@ -489,6 +499,35 @@ impl Manifest {
             .iter()
             .try_for_each(|(n, s)| validate_secret(n, s))
     }
+}
+
+/// `bot`、`bots` 和 `agent.protocol: matrix` 都以 Bot 身份收发消息，必须申请 `matrix.bot`。
+fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
+    let wants_bot = [
+        ("bot", manifest.bot.is_some()),
+        ("bots", manifest.bots.is_some()),
+        (
+            "agent.protocol: matrix",
+            manifest.agent.as_ref().map(|a| a.protocol) == Some(AgentProtocol::Matrix),
+        ),
+    ];
+    if let Some((field, _)) = wants_bot.iter().find(|(_, declared)| *declared)
+        && !manifest.permissions.contains(&Permission::MatrixBot)
+    {
+        return Err(ManifestError::Invalid(format!(
+            "声明了 {field} 就必须申请 matrix.bot 权限"
+        )));
+    }
+    let Some(bots) = &manifest.bots else {
+        return Ok(());
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    if bots.services.is_empty() || !bots.services.iter().all(|s| seen.insert(s)) {
+        return Err(ManifestError::Invalid(
+            "bots.services 至少一项，且不能重复".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_secret(name: &str, spec: &SecretSpec) -> Result<(), ManifestError> {
