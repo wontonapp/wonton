@@ -90,6 +90,11 @@ Web UI；支持列表里有 Hermes Agent。
 - 本地模型：llama.cpp 跑的 Qwen2.5 1.5B 注册成 magpie 的自定义 provider 后，整条链路同样跑通
   （CPU 上首轮约 100 秒）。Hermes 要求至少 64K 窗口，本地模型服务要按此配置。
 
+### 手机端（2026-10-28）
+
+- iPhone 上的 Element X（iOS）在同一局域网用 `http://<本机 IP>:18008` 登录，接受明文 http，不用另套 https。
+- 和 Hermes 的加密私聊三轮对话正常，回复分别在 2.3、3.3、5.2 秒后到达（GLM-5.3-Flash）。
+
 ### 结论
 
 两项待验证都有了答案，决策不变：magpie 作为系统插件，每插件一个网关凭据，Hermes 只指向 magpie。
