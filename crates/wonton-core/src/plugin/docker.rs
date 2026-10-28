@@ -74,6 +74,14 @@ impl Engine {
         Ok(Self { docker })
     }
 
+    /// 测试用：连到给定地址上的 Engine API（测试里的假 Docker）。
+    #[cfg(test)]
+    pub(crate) fn http_for_test(url: &str) -> Self {
+        let docker = Docker::connect_with_http(url, 5, bollard::API_DEFAULT_VERSION)
+            .expect("构造测试用 Docker 客户端");
+        Self { docker }
+    }
+
     /// 测试用：指向一个不存在的 Docker，用于不需要 Docker 的网关测试。
     #[cfg(test)]
     pub(crate) fn unreachable_for_test() -> Self {

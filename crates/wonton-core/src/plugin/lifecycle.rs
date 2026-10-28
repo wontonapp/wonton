@@ -33,11 +33,6 @@ pub struct LifecycleConfig {
     pub install_timeout: Duration,
 }
 
-pub(super) struct Deployed {
-    pub upstream: Option<String>,
-    pub oidc_client_secret: Option<String>,
-}
-
 /// 本次安装已经创建的资源，失败时据此回滚。
 #[derive(Default)]
 struct Undo {
@@ -90,10 +85,16 @@ impl PluginManager {
         })
     }
 
-    pub(super) async fn deploy(&self, package: &PluginPackage) -> Result<Deployed, InstallError> {
+    /// 部署插件并写下安装记录，返回核心访问插件网页的地址。任一步失败（包括写记录）都回滚本次创建的
+    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。
+    pub(super) async fn deploy(
+        &self,
+        package: &PluginPackage,
+        granted: &[Permission],
+    ) -> Result<Option<String>, InstallError> {
         let mut undo = Undo::default();
-        match self.deploy_inner(package, &mut undo).await {
-            Ok(deployed) => Ok(deployed),
+        match self.deploy_inner(package, granted, &mut undo).await {
+            Ok(upstream) => Ok(upstream),
             Err(error) => {
                 let failures = self.rollback(undo).await;
                 if failures.is_empty() {
@@ -109,8 +110,9 @@ impl PluginManager {
     async fn deploy_inner(
         &self,
         package: &PluginPackage,
+        granted: &[Permission],
         undo: &mut Undo,
-    ) -> Result<Deployed, InstallError> {
+    ) -> Result<Option<String>, InstallError> {
         let manifest = &package.manifest;
         let secret = uses_sso(manifest).then(random_token);
         let ctx = self.install_context(manifest, secret.as_deref()).await?;
@@ -149,10 +151,15 @@ impl PluginManager {
             let url = format!("http://{upstream}{}", webui.path);
             health::wait_webui(&self.http, &url, deadline).await?;
         }
-        Ok(Deployed {
-            upstream,
+        self.store.save(&InstalledRecord {
+            id: manifest.id.clone(),
+            version: manifest.version.clone(),
+            source: package.source.clone(),
+            granted_permissions: granted.to_vec(),
             oidc_client_secret: secret,
-        })
+            installed_at: super::manager::now_secs(),
+        })?;
+        Ok(upstream)
     }
 
     async fn install_context(

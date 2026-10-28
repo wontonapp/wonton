@@ -13,6 +13,8 @@ pub mod render;
 pub mod store;
 
 #[cfg(test)]
+mod fake_docker;
+#[cfg(test)]
 mod tests;
 
 pub use manager::{InstallError, PluginManager, PluginStatus, PluginView};

@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use super::docker::{Engine, EngineError};
 use super::health::HealthError;
-use super::lifecycle::{Deployed, LifecycleConfig};
+use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
@@ -199,6 +199,19 @@ impl Entry {
             upstream,
         }
     }
+
+    /// 记录或其中的插件包读不出来：只知道 ID（版本可能也不知道），如实标为异常，主人可以卸载它。
+    fn broken(id: &PluginId, version: String, reason: String) -> Self {
+        Self {
+            version,
+            title: ["zh", "en"]
+                .map(|lang| (lang.to_owned(), id.to_string()))
+                .into(),
+            has_webui: false,
+            status: PluginStatus::Degraded { reason },
+            upstream: None,
+        }
+    }
 }
 
 pub struct PluginManager {
@@ -329,39 +342,40 @@ impl PluginManager {
     }
 
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
-    /// 单个插件恢复失败只把它标为异常，不影响核心和其他插件启动。
+    /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     pub async fn restore(&self) -> Result<(), InstallError> {
-        for record in self.store.load_all()? {
-            let entry = match PluginPackage::parse(&record.source) {
-                Ok(package) => match self.reconcile(&package, &record).await {
-                    Ok(upstream) => Entry::new(&package.manifest, PluginStatus::Running, upstream),
-                    Err(e) => {
-                        let reason = e.to_string();
-                        Entry::new(&package.manifest, PluginStatus::Degraded { reason }, None)
-                    }
-                },
-                Err(e) => Entry {
-                    version: record.version.clone(),
-                    title: [("zh", &record.id), ("en", &record.id)]
-                        .map(|(lang, id)| (lang.to_owned(), id.to_string()))
-                        .into(),
-                    has_webui: false,
-                    status: PluginStatus::Degraded {
-                        reason: format!("记录里的插件包无法解析：{e}"),
-                    },
-                    upstream: None,
-                },
+        for file in self.store.load_all()? {
+            let entry = match &file.record {
+                Ok(record) => self.restore_one(record).await,
+                Err(e) => Entry::broken(&file.id, String::new(), e.to_string()),
             };
             match &entry.status {
-                PluginStatus::Running => tracing::info!(plugin = %record.id, "已恢复插件"),
-                status => tracing::warn!(plugin = %record.id, ?status, "插件状态异常"),
+                PluginStatus::Running => tracing::info!(plugin = %file.id, "已恢复插件"),
+                status => tracing::warn!(plugin = %file.id, ?status, "插件状态异常"),
             }
             self.plugins
                 .write()
                 .expect("插件表锁中毒")
-                .insert(record.id, entry);
+                .insert(file.id, entry);
         }
         Ok(())
+    }
+
+    async fn restore_one(&self, record: &InstalledRecord) -> Entry {
+        match PluginPackage::parse(&record.source) {
+            Ok(package) => match self.reconcile(&package, record).await {
+                Ok(upstream) => Entry::new(&package.manifest, PluginStatus::Running, upstream),
+                Err(e) => {
+                    let reason = e.to_string();
+                    Entry::new(&package.manifest, PluginStatus::Degraded { reason }, None)
+                }
+            },
+            Err(e) => Entry::broken(
+                &record.id,
+                record.version.clone(),
+                format!("记录里的插件包无法解析：{e}"),
+            ),
+        }
     }
 
     /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。
@@ -377,29 +391,8 @@ impl PluginManager {
         self.check_requirements(&manifest).await?;
         self.reserve(&manifest)?;
         tracing::info!(plugin = %manifest.id, "开始安装插件");
-        match self.deploy(&package).await {
-            Ok(Deployed {
-                upstream,
-                oidc_client_secret,
-            }) => {
-                let record = InstalledRecord {
-                    id: manifest.id.clone(),
-                    version: manifest.version.clone(),
-                    source: package.source.clone(),
-                    granted_permissions: granted.to_vec(),
-                    oidc_client_secret,
-                    installed_at: now_secs(),
-                };
-                if let Err(e) = self.store.save(&record) {
-                    self.set(
-                        &manifest.id,
-                        PluginStatus::Degraded {
-                            reason: e.to_string(),
-                        },
-                        None,
-                    );
-                    return Err(e.into());
-                }
+        match self.deploy(&package, granted).await {
+            Ok(upstream) => {
                 self.set(&manifest.id, PluginStatus::Running, Some(upstream));
                 tracing::info!(plugin = %manifest.id, "插件安装完成");
                 let plugins = self.plugins.read().expect("插件表锁中毒");
