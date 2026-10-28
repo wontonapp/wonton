@@ -21,3 +21,4 @@
 | [0012](0012-updates-release-cloud.md) | 更新、发布与云服务 | 已接受 |
 | [0013](0013-engineering-standards.md) | 工程规范 | 已接受 |
 | [0014](0014-reserved-capabilities.md) | 预留能力：实时通话、音乐、渠道、Web | 已接受 |
+| [0015](0015-small-components-standard-interfaces.md) | 架构原则：小组件与标准接口（UNIX 哲学） | 已接受 |

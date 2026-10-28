@@ -32,7 +32,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 
 ## 理由
 
-- Matrix 和 ACP 都是开放标准，一个桥就能接入一整类 Agent，不用为每个 Agent 写适配器。
+- Matrix 和 ACP 都是开放标准，一个桥就能接入一整类 Agent，不用为每个 Agent 写适配器（ADR-0015）。
 - 只收发消息的形态大幅减少客户端和适配层的代码量。
 
 ## 范围
@@ -43,3 +43,26 @@ MVP 只有默认的 Hermes Bot。ACP 桥、家人 Bot、Bot 互发消息在 M2�
 
 - ACP 面向编辑器场景，桥需要为 Agent 提供受限的工作区（文件系统和终端能力）。
 - 多个 Agent 同时运行会占用较多内存，资源少的设备（如 Pi 4GB）要限制数量。
+
+## 补充：ACP 桥的形态（2026-10-28）
+
+讨论了 ACP 和 OAR（botiverse/oar，一个驱动多家 Agent 命令行工具的 TypeScript 库）两种做法，按 ADR-0015
+定为：**桥的接口是 ACP，OAR 只作可选的适配器**。
+
+- **桥只说 ACP。** 用 Rust 写，复用 `wonton-matrix`：每个 Bot 的端到端加密、交叉签名和恢复密钥都由它负责。
+  ACP 的权限请求（`session/request_permission`）对应聊天里的确认按钮。
+- **每个 Agent 插件的容器里放一个说 ACP 的程序。** 原生支持 ACP 的直接用，ACP 官网 2026-10 列出 48 个，
+  包括 Hermes、Kimi CLI、Qwen Code、Qoder CLI、OpenCode、Gemini CLI。Claude Code、Codex 用适配器：
+  Zed 维护的 `claude-agent-acp`，ACP 组织维护的 `codex-acp`。
+- **插话。** ACP 现行协议不支持在一轮进行中插入新消息，进行中只能取消；v2 提案也把插话和排队留作单独的
+  议题。桥的做法：
+  - 默认排队，等这一轮结束再发，和 Hermes 的 Bot 模式一致；
+  - 提供“打断重来”：取消当前一轮，带上新消息重新发提示，会话历史保留；
+  - 真插话做成可选的 ACP 扩展（`_meta` 字段或以 `_` 开头的自定义方法）。支持它的适配器真插话，不支持的
+    退回排队。
+- **OAR 不作为桥。** 它的价值是补 ACP 的空白：插话、不经终端登录、查额度和模型，以及接入没有 ACP 的运行时
+  （如 Grok Build、Antigravity）。需要时把它包成一个说 ACP 的适配器，放进对应的 Agent 插件；桥不用改。
+  是否采用、用在哪些运行时，由 #43 的验证决定。必须先验证的一点：DeepSeek harness 的 OAR 集成是一次性、
+  无人值守的委派，没有审批界面，OAR 对 Codex 的审批请求只记录、不回答，而我们需要由主人在聊天里确认。
+- **Hermes** 先保持自带 Matrix 的 Bot 模式（M0 已验证）。桥稳定后评估是否改走 ACP，让收发消息、确认按钮、
+  执行轨迹的取舍只有一份实现。
