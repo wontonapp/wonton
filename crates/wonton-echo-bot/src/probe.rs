@@ -1,11 +1,13 @@
 //! `echo-bot probe`：冒烟测试里扮演主人的一台设备。
 //!
 //! ```text
-//! echo-bot probe --homeserver <地址> [--proxy <代理>] --login-token <JWT> --room <房间> --bot <Bot 的用户 ID> [--text <文字>]
+//! echo-bot probe --homeserver <地址> [--proxy <代理>] --login-token <JWT> --room <房间> --bot <Bot 的用户 ID>
+//!                [--text <文字>]… [--reply echo|any] [--wait <秒>]
 //! ```
 //!
-//! 用核心签的登录令牌登录一台临时设备（密钥只在内存里），确认主房间是加密的，发一条消息，等 Bot 的回声：
-//! 回声必须是加密消息，内容对得上。结束时退出登录，设备一起删掉。
+//! 用核心签的登录令牌登录一台临时设备（密钥只在内存里），确认房间是加密的，按顺序发每条 `--text`，每发一条等
+//! Bot 回一条：`--reply echo`（默认）要求回 `回声：<原文>`，`--reply any` 只要回了文字就行（如 Hermes 这种模型
+//! 驱动的 Bot）。回复必须是加密消息。结束时退出登录，设备一起删掉。
 
 use std::time::Duration;
 
@@ -23,8 +25,28 @@ use tokio::sync::mpsc;
 
 use crate::PREFIX;
 
-/// 等回声的上限：Bot 要先拿到这台新设备的密钥才解得开消息。
+/// 每一轮等回复的默认上限：Bot 要先拿到这台新设备的密钥才解得开消息。
 const WAIT: Duration = Duration::from_secs(60);
+
+/// 认得的参数。
+const FLAGS: [&str; 8] = [
+    "homeserver",
+    "proxy",
+    "login-token",
+    "room",
+    "bot",
+    "text",
+    "reply",
+    "wait",
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reply {
+    /// 回 `回声：<原文>`。
+    Echo,
+    /// 回了文字就行。
+    Any,
+}
 
 struct Options {
     homeserver: String,
@@ -32,37 +54,59 @@ struct Options {
     token: String,
     room: OwnedRoomId,
     bot: OwnedUserId,
-    text: String,
+    texts: Vec<String>,
+    reply: Reply,
+    wait: Duration,
 }
 
 impl Options {
     fn parse(args: &[String]) -> anyhow::Result<Self> {
-        let mut values = std::collections::BTreeMap::new();
+        let mut values: Vec<(String, String)> = Vec::new();
         let mut rest = args.iter();
         while let Some(flag) = rest.next() {
             let name = flag
                 .strip_prefix("--")
+                .filter(|name| FLAGS.contains(name))
                 .with_context(|| format!("不认识的参数 {flag}"))?;
             let value = rest.next().with_context(|| format!("{flag} 后面要有值"))?;
-            values.insert(name.to_owned(), value.clone());
+            values.push((name.to_owned(), value.clone()));
         }
-        let mut take = |name: &str| {
+        let all = |name: &str| -> Vec<String> {
             values
-                .remove(name)
-                .with_context(|| format!("缺少 --{name}"))
+                .iter()
+                .filter(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+                .collect()
         };
-        let options = Self {
-            homeserver: take("homeserver")?,
-            token: take("login-token")?,
-            room: take("room")?.parse().context("--room 不是合法的房间 ID")?,
-            bot: take("bot")?.parse().context("--bot 不是合法的用户 ID")?,
-            proxy: take("proxy").ok(),
-            text: take("text").unwrap_or_else(|_| "你好，Wonton".to_owned()),
-        };
-        if let Some(extra) = values.keys().next() {
-            bail!("不认识的参数 --{extra}");
+        let one = |name: &str| all(name).pop();
+        let required = |name: &str| one(name).with_context(|| format!("缺少 --{name}"));
+        let mut texts = all("text");
+        if texts.is_empty() {
+            texts.push("你好，Wonton".to_owned());
         }
-        Ok(options)
+        let reply = match one("reply").as_deref() {
+            None | Some("echo") => Reply::Echo,
+            Some("any") => Reply::Any,
+            Some(other) => bail!("--reply 只能是 echo 或 any，不是 {other}"),
+        };
+        let wait = match one("wait") {
+            Some(secs) => Duration::from_secs(secs.parse().context("--wait 要是秒数")?),
+            None => WAIT,
+        };
+        Ok(Self {
+            homeserver: required("homeserver")?,
+            token: required("login-token")?,
+            room: required("room")?
+                .parse()
+                .context("--room 不是合法的房间 ID")?,
+            bot: required("bot")?
+                .parse()
+                .context("--bot 不是合法的用户 ID")?,
+            proxy: one("proxy"),
+            texts,
+            reply,
+            wait,
+        })
     }
 }
 
@@ -81,15 +125,18 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .initial_device_display_name("Wonton 冒烟")
         .await
         .context("用登录令牌登录")?;
-    let result = exchange(&client, &options).await;
+    let result = converse(&client, &options).await;
     if let Err(e) = client.matrix_auth().logout().await {
         tracing::warn!(error = %e, "冒烟设备退出登录失败");
     }
     result
 }
 
-/// 发一条加密消息，等 Bot 的加密回声。
-async fn exchange(client: &Client, options: &Options) -> anyhow::Result<()> {
+/// Bot 发来的文字（`m.text` 或 `m.notice`）：正文和是不是加密消息。
+type Message = (String, bool);
+
+/// 按顺序发每条消息，每发一条等 Bot 回一条。
+async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
     let first = client
         .sync_once(SyncSettings::default())
         .await
@@ -101,7 +148,7 @@ async fn exchange(client: &Client, options: &Options) -> anyhow::Result<()> {
     if !room.latest_encryption_state().await?.is_encrypted() {
         bail!("房间 {} 没有加密", options.room);
     }
-    let (sender, mut replies) = mpsc::unbounded_channel();
+    let (sender, mut replies) = mpsc::unbounded_channel::<Message>();
     let (room_id, bot) = (options.room.clone(), options.bot.clone());
     client.add_event_handler(
         move |event: OriginalSyncRoomMessageEvent,
@@ -110,42 +157,69 @@ async fn exchange(client: &Client, options: &Options) -> anyhow::Result<()> {
             let sender = sender.clone();
             let from_bot = room.room_id() == room_id && event.sender == bot;
             async move {
-                if let (true, MessageType::Text(text)) = (from_bot, event.content.msgtype) {
-                    let _ = sender.send((text.body, encryption.is_some()));
+                let body = match event.content.msgtype {
+                    MessageType::Text(text) => text.body,
+                    MessageType::Notice(notice) => notice.body,
+                    _ => return,
+                };
+                if from_bot {
+                    let _ = sender.send((body, encryption.is_some()));
                 }
             }
         },
     );
-    // 同步和等回声在同一个任务里并行：matrix-sdk 的同步 future 太深，放进 tokio::spawn 编译器证不出它是 Send。
+    // 同步和对话在同一个任务里并行：matrix-sdk 的同步 future 太深，放进 tokio::spawn 编译器证不出它是 Send。
     let settings = SyncSettings::default().token(first.next_batch);
     let sync = client.sync(settings);
     tokio::pin!(sync);
-    room.send(RoomMessageEventContent::text_plain(&options.text))
-        .await
-        .context("发消息")?;
-    let expected = format!("{PREFIX}{}", options.text);
-    let wait = tokio::time::timeout(WAIT, async {
-        while let Some((body, encrypted)) = replies.recv().await {
-            if body == expected {
-                return Some(encrypted);
+    let rounds = async {
+        for (round, text) in options.texts.iter().enumerate() {
+            let round = round + 1;
+            room.send(RoomMessageEventContent::text_plain(text))
+                .await
+                .context("发消息")?;
+            let wait = options.wait;
+            let (body, encrypted) =
+                tokio::time::timeout(wait, next_reply(&mut replies, options.reply, text))
+                    .await
+                    .ok()
+                    .flatten()
+                    .with_context(|| {
+                        format!(
+                            "第 {round} 轮：{} 秒内没收到 {} 的回复（Bot 没在运行，或者解不开这台设备的加密消息）",
+                            wait.as_secs(),
+                            options.bot
+                        )
+                    })?;
+            if !encrypted {
+                bail!("第 {round} 轮：回复没有加密");
             }
+            let shown: String = body.chars().take(80).collect();
+            println!("第 {round} 轮：收到加密的回复：{shown}");
         }
-        None
-    });
-    let answer = tokio::select! {
-        stopped = &mut sync => bail!("同步中断：{stopped:?}"),
-        answer = wait => answer,
+        Ok::<_, anyhow::Error>(())
     };
-    match answer {
-        Ok(Some(true)) => {
-            println!("收到加密的回声：{expected}");
-            Ok(())
-        }
-        Ok(Some(false)) => bail!("回声没有加密"),
-        Ok(None) | Err(_) => bail!(
-            "{} 秒内没收到 {} 的回声（Bot 没在运行，或者解不开这台设备的加密消息）",
-            WAIT.as_secs(),
-            options.bot
-        ),
+    tokio::select! {
+        stopped = &mut sync => bail!("同步中断：{stopped:?}"),
+        result = rounds => result,
     }
+}
+
+/// 下一条符合要求的回复：回声模式要内容对得上，否则要有文字。
+async fn next_reply(
+    replies: &mut mpsc::UnboundedReceiver<Message>,
+    reply: Reply,
+    text: &str,
+) -> Option<Message> {
+    let expected = format!("{PREFIX}{text}");
+    while let Some((body, encrypted)) = replies.recv().await {
+        let matches = match reply {
+            Reply::Echo => body == expected,
+            Reply::Any => !body.trim().is_empty(),
+        };
+        if matches {
+            return Some((body, encrypted));
+        }
+    }
+    None
 }

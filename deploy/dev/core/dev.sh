@@ -6,7 +6,7 @@
 #   dev.sh reset                       停止并删除 Hydra、Tuwunel 的数据和核心数据目录
 #   dev.sh status | logs               查看状态 / 跟随核心日志
 #   dev.sh token                       输出主人令牌
-#   dev.sh install <compose 文件> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
+#   dev.sh install <compose 文件或插件包目录> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
 #   dev.sh uninstall <插件 ID> [--purge]   卸载；--purge 同时删除插件数据
 #   dev.sh list                        列出插件
 #   dev.sh tunnel                      隧道入口的 endpoint ID、中继地址和直连地址
@@ -122,10 +122,24 @@ for key in sys.argv[1].split("."):
 print(value if not isinstance(value, (dict, list)) else json.dumps(value, ensure_ascii=False))' "$1"
 }
 
+# 插件包：compose 文件原样发送；目录打成 tar 归档发送（compose 引用了包里的文件时，如 Hermes 的 config.yaml）。
+package() {
+  if [[ -d "$1" ]]; then
+    COPYFILE_DISABLE=1 tar -C "$1" -cf - .
+  else
+    cat "$1"
+  fi
+}
+
+package_type() {
+  if [[ -d "$1" ]]; then echo application/x-tar; else echo application/yaml; fi
+}
+
 install() {
-  local file="$1" yes="${2:-}" preview grants
-  [[ -f "$file" ]] || die "找不到 compose 文件：$file"
-  preview="$(api POST /_wonton/api/plugins/preview --data-binary @- <"$file")" ||
+  local file="$1" yes="${2:-}" preview grants type
+  [[ -e "$file" ]] || die "找不到插件包：$file"
+  type="$(package_type "$file")"
+  preview="$(package "$file" | api POST /_wonton/api/plugins/preview -H "Content-Type: $type" --data-binary @-)" ||
     die "预览失败：$preview"
   grants="$(json_field permissions <<<"$preview" | python3 -c 'import json,sys
 print(",".join(p["permission"] for p in json.load(sys.stdin)))')"
@@ -135,7 +149,7 @@ print(",".join(p["permission"] for p in json.load(sys.stdin)))')"
     read -r -p "确认安装？[y/N] " answer
     [[ "$answer" == y || "$answer" == Y ]] || die "已取消"
   fi
-  api POST "/_wonton/api/plugins?grant=$grants" --data-binary @- <"$file"
+  package "$file" | api POST "/_wonton/api/plugins?grant=$grants" -H "Content-Type: $type" --data-binary @-
   echo
 }
 
@@ -161,7 +175,7 @@ case "${1:-}" in
   status) compose ps ;;
   logs) compose logs -f core ;;
   token) token ;;
-  install) install "${2:?用法：$0 install <compose 文件> [--yes]}" "${3:-}" ;;
+  install) install "${2:?用法：$0 install <compose 文件或插件包目录> [--yes]}" "${3:-}" ;;
   uninstall)
     id="${2:?用法：$0 uninstall <插件 ID> [--purge]}"
     purge=false
@@ -201,5 +215,5 @@ ticket = {"server": server, "base_domain": info["base_domain"], "web_url": sys.a
 print(json.dumps(ticket, separators=(",", ":")))' \
       "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}" "${3:-http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT/}"
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]" ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]" ;;
 esac

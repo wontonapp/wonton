@@ -106,11 +106,95 @@ pub fn read(dir: &Path, rel: &str) -> Result<Vec<u8>, FileError> {
     Ok(data)
 }
 
+/// 归档里最多这么多项：插件包只有 compose 文件和它引用的少数几个文件。
+const MAX_ARCHIVE_ENTRIES: usize = 256;
+
+/// 读插件包目录打成的 tar 归档（如 `tar -C <目录> -cf - .`），返回其中的普通文件。目录跳过；软链接、硬链接、
+/// 设备等一律拒绝，路径规则同 [`normalize`]，单个文件的上限同 [`read`]。
+pub fn read_archive(archive: &[u8]) -> Result<PackageFiles, String> {
+    let mut files = PackageFiles::new();
+    let mut archive = tar::Archive::new(archive);
+    let entries = archive
+        .entries()
+        .map_err(|e| format!("不是 tar 归档：{e}"))?;
+    for (index, entry) in entries.enumerate() {
+        if index >= MAX_ARCHIVE_ENTRIES {
+            return Err(format!("归档里超过 {MAX_ARCHIVE_ENTRIES} 项"));
+        }
+        let entry = entry.map_err(|e| format!("读归档失败：{e}"))?;
+        let raw = entry
+            .path()
+            .map_err(|e| format!("归档里的路径不合法：{e}"))?
+            .to_string_lossy()
+            .into_owned();
+        match entry.header().entry_type() {
+            tar::EntryType::Directory => continue,
+            tar::EntryType::Regular | tar::EntryType::Continuous => {}
+            other => {
+                return Err(format!(
+                    "`{raw}` 不是普通文件（{other:?}）：插件包里不能有软链接、硬链接和设备"
+                ));
+            }
+        }
+        let path = normalize(&raw)?;
+        let mut data = Vec::new();
+        entry
+            .take(MAX_FILE_BYTES + 1)
+            .read_to_end(&mut data)
+            .map_err(|e| format!("读归档里的 `{path}` 失败：{e}"))?;
+        if data.len() as u64 > MAX_FILE_BYTES {
+            return Err(format!("`{path}` {}", FileError::TooBig));
+        }
+        if files.insert(path.clone(), data).is_some() {
+            return Err(format!("归档里有两个 `{path}`"));
+        }
+    }
+    Ok(files)
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::symlink;
 
     use super::*;
+
+    /// 手写的归档：路径直接写进头部，`tar::Builder` 拒绝写的 `..` 也能造出来。
+    fn archive(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (path, kind, data) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.as_old_mut().name[..path.len()].copy_from_slice(path.as_bytes());
+            header.set_entry_type(*kind);
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            if *kind == tar::EntryType::Symlink {
+                header.set_link_name("/etc/passwd").unwrap();
+            }
+            header.set_cksum();
+            builder.append(&header, *data).unwrap();
+        }
+        builder.into_inner().unwrap()
+    }
+
+    #[test]
+    fn archives_yield_regular_files_and_refuse_links() {
+        let regular = tar::EntryType::Regular;
+        let ok = archive(&[
+            ("./", tar::EntryType::Directory, b""),
+            ("./docker-compose.yml", regular, b"services: {}"),
+            ("./conf/app.yaml", regular, b"a: 1"),
+        ]);
+        let files = read_archive(&ok).unwrap();
+        let names: Vec<&str> = files.keys().map(String::as_str).collect();
+        assert_eq!(names, ["conf/app.yaml", "docker-compose.yml"]);
+        let link = archive(&[("config.yaml", tar::EntryType::Symlink, b"")]);
+        assert!(read_archive(&link).unwrap_err().contains("软链接"));
+        let escape = archive(&[("../x", regular, b"x")]);
+        assert!(read_archive(&escape).is_err());
+        let big = vec![b'x'; MAX_FILE_BYTES as usize + 1];
+        assert!(read_archive(&archive(&[("big.bin", regular, &big)])).is_err());
+        assert!(read_archive(b"not a tar archive at all").is_err());
+    }
 
     #[test]
     fn references_are_normalized_or_refused() {

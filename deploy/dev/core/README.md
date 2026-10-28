@@ -8,6 +8,7 @@
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana/docker-compose.yml   # 预览权限，确认后安装
+deploy/dev/core/dev.sh install plugins/hermes   # 插件包目录（compose 引用了包里的文件时）打成 tar 上传
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh uninstall app.grafana --purge
@@ -99,15 +100,19 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
 失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
-经 `models.wonton.internal` 能用、卸载后凭据被吊销；没申请 `matrix.bot`、`models` 的插件进不了对应的内部地址；
+经 `models.wonton.internal` 能用、卸载后凭据被吊销；Hermes 按插件包目录装好后连上 Matrix，主人的新设备经隧道和它
+加密对话两轮，用量记在它的凭据名下，删除数据卸载后 Bot 账号停用、凭据吊销；没申请 `matrix.bot`、`models` 的插件
+进不了对应的内部地址；
 核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
-结束时清理全部资源，`KEEP=1` 保留现场。
+结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `rm/glm-5.3-flash`，
+冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例）：
 
 ```bash
 for image in rust:1.99.1-slim-trixie debian:trixie-slim oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 \
-  ghcr.io/yetone/magpie:0.1.1327 grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0; do
+  ghcr.io/yetone/magpie:0.1.1327 nousresearch/hermes-agent:v0.22.5 grafana/grafana:12.2.1 traefik/whoami:v1.11 \
+  curlimages/curl:8.23.0; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh npchy docker load
 done

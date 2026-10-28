@@ -558,6 +558,39 @@ async fn plugin_api_requires_owner_token() {
         )
         .await;
     assert_eq!(bad.error_kind(), Some("invalid_input"));
+
+    // 插件包目录的 tar 归档：compose 引用了包里的文件（Hermes 的 config.yaml）时这样传。
+    let hermes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/hermes");
+    let mut archive = tar::Builder::new(Vec::new());
+    archive.append_dir_all(".", &hermes).unwrap();
+    let archive = archive.into_inner().unwrap();
+    let tar = [
+        ("authorization", bearer.as_str()),
+        ("content-type", "application/x-tar"),
+    ];
+    let preview = h
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins/preview",
+            &tar,
+            Body::from(archive),
+        )
+        .await;
+    assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
+    assert_eq!(preview.json()["id"], "com.nousresearch.hermes");
+    // 只有 compose 文本时，引用的 config.yaml 缺失。
+    let compose = std::fs::read_to_string(hermes.join("docker-compose.yml")).unwrap();
+    let text = h
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins/preview",
+            &[("authorization", &bearer)],
+            Body::from(compose),
+        )
+        .await;
+    assert_eq!(text.error_kind(), Some("invalid_input"));
 }
 
 #[tokio::test]

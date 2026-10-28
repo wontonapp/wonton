@@ -1,5 +1,9 @@
 # M0-4 开发环境：默认 Bot
 
+> 核心已经接入 Matrix Bot 和模型网关（插件规范实现计划第 7、8 项）：Hermes 按插件包装进 `deploy/dev/core`，由核心
+> 代它登录、签发 magpie 凭据，M0-4 的检查（网关鉴权、两轮对话、用量归属）在 `deploy/dev/core/smoke.sh` 里跑。
+> 这套环境里 `dev.sh` 扮演核心的部分只作对照；手机用密码登录 Tuwunel、CPU 上的本地模型这些实验还在这里做。
+
 Tuwunel（不联邦）+ magpie 模型网关 + Hermes（以 Matrix bot 身份接入）。`dev.sh` 扮演核心：
 生成密钥、注册主人和 Bot 的账号、建好主人和 Bot 的加密私聊、给 Hermes 签发 Matrix 令牌和
 magpie 网关凭据。Hermes 的配置和插件草稿共用 [`plugins/hermes/config.yaml`](../../../plugins/hermes/config.yaml)。

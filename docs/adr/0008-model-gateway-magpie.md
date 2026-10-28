@@ -120,3 +120,16 @@ Web UI；支持列表里有 Hermes Agent。
 - 对账：在 magpie 里删掉这个凭据后请求得到 401；重启核心，核心用记下的同一个值重新签发，使用方不用重启就恢复 200。
 - 吊销：卸载使用方后，magpie 里没有这个凭据了，旧值得到 401。
 - 隔离：没申请 `models` 的插件从自己的网络里访问 `models.wonton.internal` 得到 403 `permission_denied`。
+
+## 验证结果（M1，核心安装 Hermes）
+
+M0-4 的检查改由核心完成，复跑：`deploy/dev/core/smoke.sh` 的“Hermes”一步。环境同上，Hermes Agent v0.22.5。
+
+- 安装：`dev.sh install plugins/hermes` 把插件包目录打成 tar 上传（带 `config.yaml`），核心代 Bot 登录、建主房间、
+  签发凭据 `com.nousresearch.hermes/default`（Bot 服务用 Bot 的凭据，见插件规范“模型网关”），8 秒装好并通过健康
+  检查（Matrix 已连上）。Hermes 只凭注入的变量工作，`config.yaml` 没为 Wonton 改过。
+- 对话：主人的一台新设备经隧道在加密私聊里问两轮，两轮都收到加密回复，第二轮记得第一轮的问题，两轮共约 8.6 秒
+  （GLM-5.3-Flash）。
+- 用量：`magpie usage` 里三次请求都记在 `com.nousresearch.hermes/default` 名下，第一轮约 1.3 万输入 token，首 token
+  1.3 到 3.2 秒，同 M0-4。
+- 卸载（删除数据）：Bot 的设备吊销、账号停用，它的 Matrix 令牌得到 401；magpie 里没有它的凭据了。

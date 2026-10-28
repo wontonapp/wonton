@@ -226,3 +226,6 @@ matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一
   `permission_denied`。
 - matrix-sdk 的 HTTP 客户端启动时要加载系统根证书，镜像里没有 `ca-certificates` 就直接退出，即使只用 http。
   用 matrix-sdk 的 Bot 插件，镜像里要装上它。
+- 第二个 Bot：Hermes Agent v0.22.5 按同样的规则装上，用户名是 `hermes`，只凭注入的令牌连上 Matrix
+  （`MATRIX_E2EE_MODE=required`），在主房间里和主人的新设备加密对话两轮（模型的部分见 ADR-0008）。核心没有为它
+  开任何特例。

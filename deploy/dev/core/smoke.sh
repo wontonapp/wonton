@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
-# 像浏览器一样经核心网关打开插件并自动登录 → 已配对设备经隧道打开插件，直接是主人 →
-# 已配对设备经隧道登录 Matrix，和回声 Bot 加密收发 → 核心预装模型网关，使用方拿到自己的凭据 →
-# 核心重启后恢复 → 卸载干净。
+# 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
+# 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
+# 装 Hermes，经模型网关和主人加密对话两轮 → 核心重启后恢复 → 卸载干净。
+# Hermes 一步要真实模型：开发机上要有在运行的 magpie（容器里经 host.docker.internal:3425 访问），
+# 提供 rm/glm-5.3-flash。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
 #   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
@@ -35,7 +37,8 @@ whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 echo_bot="wonton-agent-echo--bot"
 magpie="wonton-ai-usemagpie-magpie--magpie"
 model_client="wonton-app-model-client--client"
-plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client)
+hermes="wonton-com-nousresearch-hermes--gateway"
+plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes)
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ✓ %s\n' "$*"; }
@@ -146,6 +149,48 @@ user="$(b "$grafana_url/api/user")"
 expect "Grafana 里的用户是主人" "$(json login <<<"$user")" owner
 expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner@$WONTON_DEV_DOMAIN"
 expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" | json 0.role)" Admin
+
+step "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"
+plugin_state() {
+  "$dev" list | python3 -c 'import json, sys
+print(next((p["status"]["state"] for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' "$1"
+}
+for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
+expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+client_file="$(mktemp)"
+cat >"$client_file" <<'YAML'
+services:
+  client:
+    image: curlimages/curl:8.23.0
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      BASE: ${WONTON_MODEL_BASE_URL}
+      KEY: ${WONTON_MODEL_API_KEY}
+      MODEL: ${WONTON_MODEL_DEFAULT}
+x-wonton:
+  id: app.model-client
+  version: 0.1.0
+  kind: app
+  title: { zh: 模型客户端, en: Model client }
+  description: { zh: 冒烟用的模型网关使用方, en: Model gateway consumer for the smoke test }
+  permissions: [models]
+YAML
+installed="$("$dev" install "$client_file" --yes 2>/dev/null)" || fail "使用方安装失败：$installed"
+rm -f "$client_file"
+expect "使用方安装完成" "$(json status.state <<<"$installed")" running
+client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
+model_key="$(client_env KEY)"
+expect "使用方经核心在插件网络里的别名访问模型网关" "$(client_env BASE)" "http://models.wonton.internal:$WONTON_DEV_PORT/v1"
+expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
+in_client() { docker exec "$model_client" curl -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
+expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
+expect "不带凭据被网关拒绝" "$(in_client)" 401
+gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { print $2 }'; }
+expect "网关里的凭据以使用方命名" "$(gateway_keys)" app.model-client
+expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
+expect "卸载时在网关里吊销凭据" "$(gateway_keys)" ""
+expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" -sS -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")" 401
 
 step "已配对设备经隧道打开插件：不用登录，直接是主人"
 docker build -q --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" \
@@ -259,6 +304,38 @@ expect "删除数据时停用 Bot 账号" "$(json bot.deactivated <<<"$report")"
 members="$(owner_api "/rooms/$home_room/joined_members")"
 expect "停用的 Bot 退出了主房间" \
   "$(python3 -c 'import json, sys; print(sys.argv[1] in json.load(sys.stdin)["joined"])' "$bot_user" <<<"$members")" False
+
+step "Hermes（默认 Agent）：经 magpie 调模型，在加密私聊里和主人对话两轮，用量记在它的凭据名下"
+# 模型只经开发机上的 magpie（容器里是 host.docker.internal:3425），不读取、不复制主人 magpie 的配置和密钥。
+docker exec "$magpie" magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder \
+  models=rm/glm-5.3-flash >/dev/null || fail "magpie 连不上开发机上的 magpie（host.docker.internal:3425）"
+docker exec "$magpie" magpie group add wonton-default models=upstream/rm/glm-5.3-flash routing=order >/dev/null
+installed="$("$dev" install "$repo/plugins/hermes" --yes 2>/dev/null)" || fail "Hermes 安装失败：$installed"
+expect "插件包目录（带 config.yaml）一条命令装好 Hermes，连上了 Matrix" \
+  "$(json status.state <<<"$installed") $(json health <<<"$installed")" "running healthy"
+hermes_user="@hermes:$WONTON_DEV_DOMAIN"
+hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
+expect "Hermes 是一个 Bot" "$(hermes_env MATRIX_USER_ID)" "$hermes_user"
+expect "Hermes 的凭据以它的 Bot 命名" "$(gateway_keys)" com.nousresearch.hermes/default
+hermes_room="$(direct_rooms "$hermes_user")"
+[[ "$hermes_room" == '!'* ]] || fail "主人的 m.direct 里没有和 Hermes 的私聊：$hermes_room"
+jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
+probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
+  --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
+  --reply any --wait 180 --text "你好，用一句话介绍你自己。" --text "我刚才让你做什么？用一句话回答。" 2>&1)" ||
+  fail "和 Hermes 的对话失败：$probe"
+grep '^第' <<<"$probe" | sed 's/^/   · /'
+ok "经隧道和 Hermes 加密对话两轮"
+docker exec "$magpie" magpie usage --last 15m --csv | grep -q ',com.nousresearch.hermes/default,' ||
+  fail "用量没记在 com.nousresearch.hermes/default 名下"
+ok "用量记在 Hermes 的凭据名下"
+hermes_token="$(hermes_env MATRIX_ACCESS_TOKEN)"
+report="$("$dev" uninstall com.nousresearch.hermes --purge)"
+expect "卸载 Hermes：吊销 Bot 的设备、停用账号" \
+  "$(json bot.devices_removed <<<"$report") $(json bot.deactivated <<<"$report")" "1 true"
+expect "Hermes 的 Matrix 令牌失效" \
+  "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $hermes_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
+expect "网关里 Hermes 的凭据吊销了" "$(gateway_keys)" ""
 "$dev" revoke "$device_id" >/dev/null
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
@@ -284,48 +361,6 @@ for internal in "matrix.wonton.internal /_matrix/client/versions" "models.wonton
   grep -qi '^x-wonton-error: permission_denied' <<<"$denied" || fail "缺少 permission_denied：$denied"
 done
 expect "whoami 卸载" "$("$dev" uninstall app.whoami --purge | json data_removed)" true
-
-step "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"
-plugin_state() {
-  "$dev" list | python3 -c 'import json, sys
-print(next((p["status"]["state"] for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' "$1"
-}
-for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
-expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
-client_file="$(mktemp)"
-cat >"$client_file" <<'YAML'
-services:
-  client:
-    image: curlimages/curl:8.23.0
-    entrypoint: ["sleep", "infinity"]
-    environment:
-      BASE: ${WONTON_MODEL_BASE_URL}
-      KEY: ${WONTON_MODEL_API_KEY}
-      MODEL: ${WONTON_MODEL_DEFAULT}
-x-wonton:
-  id: app.model-client
-  version: 0.1.0
-  kind: app
-  title: { zh: 模型客户端, en: Model client }
-  description: { zh: 冒烟用的模型网关使用方, en: Model gateway consumer for the smoke test }
-  permissions: [models]
-YAML
-installed="$("$dev" install "$client_file" --yes 2>/dev/null)" || fail "使用方安装失败：$installed"
-rm -f "$client_file"
-expect "使用方安装完成" "$(json status.state <<<"$installed")" running
-client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-model_key="$(client_env KEY)"
-expect "使用方经核心在插件网络里的别名访问模型网关" "$(client_env BASE)" "http://models.wonton.internal:$WONTON_DEV_PORT/v1"
-expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
-in_client() { docker exec "$model_client" curl -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
-expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
-expect "不带凭据被网关拒绝" "$(in_client)" 401
-gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { print $2 }'; }
-expect "网关里的凭据以使用方命名" "$(gateway_keys)" app.model-client
-expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
-expect "卸载时在网关里吊销凭据" "$(gateway_keys)" ""
-expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" -sS -o /dev/null -w '%{http_code}' \
-  -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")" 401
 
 step "核心重启后恢复插件"
 docker restart "$core" >/dev/null

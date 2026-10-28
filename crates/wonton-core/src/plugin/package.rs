@@ -64,23 +64,8 @@ pub enum PackageError {
     },
     #[error("插件包的 {COMPOSE_FILE}：{0}")]
     ComposeFile(FileError),
-}
-
-impl PackageError {
-    /// 插值时引用了没有定义的变量：返回变量名。
-    pub fn missing_var(&self) -> Option<&str> {
-        match self {
-            Self::Interpolate {
-                source: InterpolateError::Missing(var),
-                ..
-            }
-            | Self::ConfigInterpolate {
-                source: InterpolateError::Missing(var),
-                ..
-            } => Some(var),
-            _ => None,
-        }
-    }
+    #[error("插件包归档：{0}")]
+    Archive(String),
 }
 
 /// 顶层 `configs` 的一项。
@@ -113,6 +98,18 @@ impl PluginPackage {
     /// compose 文本加上被引用的文件（如安装记录里保存的那些）。`files` 里没被引用的文件不保留。
     pub fn with_files(source: &str, files: PackageFiles) -> Result<Self, PackageError> {
         Self::structure(source)?.attach(files)
+    }
+
+    /// 插件包目录打成的 tar 归档：`docker-compose.yml` 和它引用的文件，规则见 [`package_files::read_archive`]。
+    /// 没被引用的文件不保留。
+    pub fn from_archive(archive: &[u8]) -> Result<Self, PackageError> {
+        let mut files = package_files::read_archive(archive).map_err(PackageError::Archive)?;
+        let source = files
+            .remove(COMPOSE_FILE)
+            .ok_or(PackageError::ComposeFile(FileError::Missing))?;
+        let source = String::from_utf8(source)
+            .map_err(|_| PackageError::Yaml("不是 UTF-8 文本".to_owned()))?;
+        Self::with_files(&source, files)
     }
 
     /// 读插件包目录：`docker-compose.yml` 和它引用的文件，路径和软链接的规则见 [`package_files`]。

@@ -3,22 +3,40 @@
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
 //! | GET | `/_wonton/api/plugins` | 列出插件 |
-//! | POST | `/_wonton/api/plugins/preview` | 请求体是 compose 文件，返回清单和要确认的权限 |
+//! | POST | `/_wonton/api/plugins/preview` | 请求体是插件包，返回清单和要确认的权限 |
 //! | POST | `/_wonton/api/plugins?grant=权限,权限` | 安装；`grant` 必须与清单声明的权限一致 |
+//!
+//! 插件包是 compose 文本，或者 `Content-Type: application/x-tar` 的整个插件包目录（compose 引用了包里的文件时，
+//! 如 Hermes 的 `config.yaml`）。
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 
 use std::sync::Arc;
 
 use axum::Json;
+use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
-use hyper::header::{AUTHORIZATION, HeaderValue};
+use hyper::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
 use super::{Gateway, pages};
-use crate::plugin::{InstallError, Permission, PluginId};
+use crate::plugin::{InstallError, Permission, PluginId, PluginPackage};
+
+/// 请求体里的插件包：tar 归档，或者 compose 文本。
+fn package(headers: &HeaderMap, body: &[u8]) -> Result<PluginPackage, InstallError> {
+    let archive = headers
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|t| t.starts_with("application/x-tar"));
+    if archive {
+        return Ok(PluginPackage::from_archive(body)?);
+    }
+    let source = std::str::from_utf8(body)
+        .map_err(|_| InstallError::Invalid("请求体不是 UTF-8 的 compose 文本".to_owned()))?;
+    Ok(PluginPackage::parse(source)?)
+}
 
 pub(super) fn error_response(status: StatusCode, kind: &'static str, message: &str) -> Response {
     let body = Json(json!({"error": {"kind": kind, "message": message}}));
@@ -73,12 +91,13 @@ pub async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Re
 pub async fn preview(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
-    body: String,
+    body: Bytes,
 ) -> Response {
     if let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
-    match gateway.plugins.preview(&body) {
+    let preview = package(&headers, &body).and_then(|p| gateway.plugins.preview_package(&p));
+    match preview {
         Ok(preview) => Json(preview).into_response(),
         Err(e) => install_error(&e),
     }
@@ -94,7 +113,7 @@ pub async fn install(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
     Query(query): Query<InstallQuery>,
-    body: String,
+    body: Bytes,
 ) -> Response {
     if let Some(denied) = denied(&gateway, &headers) {
         return denied;
@@ -110,7 +129,11 @@ pub async fn install(
         Ok(granted) => granted,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
-    match gateway.plugins.install(&body, &granted).await {
+    let package = match package(&headers, &body) {
+        Ok(package) => package,
+        Err(e) => return install_error(&e),
+    };
+    match gateway.plugins.install_package(package, &granted).await {
         Ok(view) => (StatusCode::CREATED, Json(view)).into_response(),
         Err(e) => install_error(&e),
     }
