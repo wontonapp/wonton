@@ -16,6 +16,7 @@ use super::manager::{InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::package::PluginPackage;
 use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
+use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
 use crate::config::PublicUrls;
 use crate::oidc::{ClientSpec, Hydra};
@@ -43,6 +44,8 @@ struct Undo {
     core_attached: bool,
     oidc_client: Option<String>,
     app_dir_created: Option<PathBuf>,
+    /// 本次安装之前插件的密钥（`None` 表示原来没有），回滚时恢复成这样。
+    secrets_before: Option<(PluginId, Option<Secrets>)>,
 }
 
 /// 插件声明的命名卷怎么处理。
@@ -116,7 +119,12 @@ impl PluginManager {
     ) -> Result<Option<String>, InstallError> {
         let manifest = &package.manifest;
         let secret = uses_sso(manifest).then(random_token);
-        let ctx = self.install_context(manifest, secret.as_deref()).await?;
+        let mut secrets = self.prepare_secrets(manifest, undo)?;
+        let generated =
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        let ctx = self
+            .install_context(manifest, secret.as_deref(), generated)
+            .await?;
         let plan = render(package, &ctx)?;
         for container in &plan.containers {
             self.engine
@@ -147,6 +155,9 @@ impl PluginManager {
         }
         let deadline = Instant::now() + self.cfg.install_timeout;
         self.start_containers(&plan, undo, deadline).await?;
+        if secrets::collect(&self.engine, manifest, &mut secrets).await? {
+            self.store.secrets().save(&manifest.id, &secrets)?;
+        }
         let upstream = self.webui_upstream(manifest, &plan.network).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             let url = format!("http://{upstream}{}", webui.path);
@@ -164,10 +175,30 @@ impl PluginManager {
         Ok(upstream)
     }
 
+    /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
+    fn prepare_secrets(
+        &self,
+        manifest: &Manifest,
+        undo: &mut Undo,
+    ) -> Result<Secrets, InstallError> {
+        if manifest.secrets.is_empty() {
+            return Ok(Secrets::new());
+        }
+        let store = self.store.secrets();
+        let before = store.load(&manifest.id)?;
+        let mut secrets = before.clone().unwrap_or_default();
+        undo.secrets_before = Some((manifest.id.clone(), before));
+        if secrets::generate_missing(manifest, &mut secrets) {
+            store.save(&manifest.id, &secrets)?;
+        }
+        Ok(secrets)
+    }
+
     async fn install_context(
         &self,
         manifest: &Manifest,
         secret: Option<&str>,
+        generated: BTreeMap<String, String>,
     ) -> Result<InstallContext, InstallError> {
         let public = &self.cfg.public;
         let slug = manifest.id.slug();
@@ -221,6 +252,7 @@ impl PluginManager {
             shares,
             app_url,
             oidc,
+            secrets: generated,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
             pgid: self.cfg.pgid,
@@ -404,10 +436,22 @@ impl PluginManager {
                 fs::remove_dir_all(dir).map_err(|e| e.to_string()),
             );
         }
+        if let Some((id, before)) = &undo.secrets_before {
+            let store = self.store.secrets();
+            let restored = match before {
+                Some(secrets) => store.save(id, secrets),
+                None => store.remove(id),
+            };
+            note(
+                format!("插件 {id} 的密钥"),
+                restored.map_err(|e| e.to_string()),
+            );
+        }
         failures
     }
 
-    /// 核心重启后核对插件：容器在运行、核心在插件网络里、OIDC 客户端已登记。
+    /// 核心重启后核对插件：容器在运行、核心在插件网络里、OIDC 客户端已登记、插件密钥都在，
+    /// 并重新收存一次插件写下的密钥。
     pub(super) async fn reconcile(
         &self,
         package: &PluginPackage,
@@ -426,17 +470,38 @@ impl PluginManager {
                 )));
             }
         }
+        let generated = self.check_secrets(manifest).await?;
         let network = format!("wonton-{slug}");
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
         if let Some(secret) = &record.oidc_client_secret {
-            let ctx = self.install_context(manifest, Some(secret)).await?;
+            let ctx = self
+                .install_context(manifest, Some(secret), generated)
+                .await?;
             self.hydra()?
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
         }
         self.webui_upstream(manifest, &network).await
+    }
+
+    /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。
+    async fn check_secrets(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<BTreeMap<String, String>, InstallError> {
+        if manifest.secrets.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let store = self.store.secrets();
+        let mut secrets = store.load(&manifest.id)?.unwrap_or_default();
+        let generated =
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        if secrets::collect(&self.engine, manifest, &mut secrets).await? {
+            store.save(&manifest.id, &secrets)?;
+        }
+        Ok(generated)
     }
 
     pub(super) async fn teardown(
@@ -479,6 +544,7 @@ impl PluginManager {
                     )));
                 }
             }
+            self.store.secrets().remove(id)?;
             report.data_removed = true;
         }
         self.store.remove(id)?;

@@ -10,10 +10,10 @@ use bollard::models::{
     NetworkCreateRequest, NetworkDisconnectRequest, VolumeCreateRequest,
 };
 use bollard::query_parameters::{
-    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, ListContainersOptionsBuilder,
-    ListNetworksOptionsBuilder, ListVolumesOptionsBuilder, LogsOptionsBuilder,
-    RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder, StopContainerOptionsBuilder,
-    UploadToContainerOptionsBuilder,
+    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder,
+    ListContainersOptionsBuilder, ListNetworksOptionsBuilder, ListVolumesOptionsBuilder,
+    LogsOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder,
+    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 
@@ -45,6 +45,19 @@ impl EngineError {
         }
     }
 }
+
+/// 读容器里一个文件的结果。
+#[derive(Debug, PartialEq, Eq)]
+pub enum ContainerFile {
+    Missing,
+    /// 是目录、软链接、设备等，不是普通文件。
+    NotRegular,
+    TooBig,
+    Regular(Vec<u8>),
+}
+
+/// 归档除了文件内容之外的开销（头部、PAX 扩展、结尾的空块）的上限。
+const ARCHIVE_SLACK: usize = 16 << 10;
 
 /// 按标签找到的属于某个插件的 Docker 资源。
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -258,6 +271,41 @@ impl Engine {
             .map_err(|e| EngineError::from_bollard(&format!("往容器 {container} 写入文件"), e))
     }
 
+    /// 经归档接口读容器里的一个普通文件，最多 `max` 字节。路径由 Docker 在容器里解析，最后一级是软链接时
+    /// 得到的是链接本身，不跟随。容器停着也能读；容器不存在时报错，文件不存在时返回 [`ContainerFile::Missing`]。
+    pub async fn read_file(
+        &self,
+        container: &str,
+        path: &str,
+        max: usize,
+    ) -> Result<ContainerFile> {
+        if self.inspect_container(container).await?.is_none() {
+            return Err(EngineError::NotFound(format!("容器 {container}")));
+        }
+        let context = format!("读取容器 {container} 里的 {path}");
+        let options = DownloadFromContainerOptionsBuilder::default()
+            .path(path)
+            .build();
+        let mut stream = self
+            .docker
+            .download_from_container(container, Some(options));
+        let mut archive = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            match chunk.map_err(|e| EngineError::from_bollard(&context, e)) {
+                Ok(bytes) => archive.extend_from_slice(&bytes),
+                Err(EngineError::NotFound(_)) => return Ok(ContainerFile::Missing),
+                Err(other) => return Err(other),
+            }
+            if archive.len() > max + ARCHIVE_SLACK {
+                break;
+            }
+        }
+        single_file(&archive, max).map_err(|e| EngineError::Rejected {
+            context,
+            message: format!("归档无法解析：{e}"),
+        })
+    }
+
     pub async fn start_container(&self, name: &str) -> Result<()> {
         self.docker
             .start_container(name, None)
@@ -380,6 +428,27 @@ fn pull_reference(image: &str) -> String {
     }
 }
 
+/// 归档接口返回的 tar 里的第一项：只接受不超过 `max` 字节的普通文件。`archive` 可能在内容中间被截断
+/// （读到上限就停了），所以先看头部再读内容。
+fn single_file(archive: &[u8], max: usize) -> std::io::Result<ContainerFile> {
+    use std::io::Read;
+
+    let mut archive = tar::Archive::new(archive);
+    let Some(entry) = archive.entries()?.next() else {
+        return Ok(ContainerFile::Missing);
+    };
+    let mut entry = entry?;
+    if entry.header().entry_type() != tar::EntryType::Regular {
+        return Ok(ContainerFile::NotRegular);
+    }
+    if entry.size() > max as u64 {
+        return Ok(ContainerFile::TooBig);
+    }
+    let mut data = Vec::new();
+    entry.read_to_end(&mut data)?;
+    Ok(ContainerFile::Regular(data))
+}
+
 fn ignore_missing(result: Result<()>) -> Result<()> {
     match result {
         Err(EngineError::NotFound(_)) => Ok(()),
@@ -389,7 +458,37 @@ fn ignore_missing(result: Result<()>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::pull_reference;
+    use super::{ContainerFile, pull_reference, single_file};
+
+    fn tar_of(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (path, kind, data) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(*kind);
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            builder.append_data(&mut header, path, *data).unwrap();
+        }
+        builder.into_inner().unwrap()
+    }
+
+    #[test]
+    fn only_small_regular_files_are_read_from_archives() {
+        use tar::EntryType::{Directory, Regular, Symlink};
+
+        let file = tar_of(&[("key", Regular, b"k-1")]);
+        assert_eq!(
+            single_file(&file, 8).unwrap(),
+            ContainerFile::Regular(b"k-1".to_vec())
+        );
+        assert_eq!(single_file(&file, 2).unwrap(), ContainerFile::TooBig);
+        // 读到上限就停：内容被截断时只凭头部判断。
+        assert_eq!(single_file(&file[..512], 2).unwrap(), ContainerFile::TooBig);
+        for kind in [Directory, Symlink] {
+            let other = tar_of(&[("key", kind, b"")]);
+            assert_eq!(single_file(&other, 8).unwrap(), ContainerFile::NotRegular);
+        }
+    }
 
     #[test]
     fn untagged_images_are_pulled_as_latest() {

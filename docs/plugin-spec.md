@@ -426,14 +426,15 @@ x-wonton:
 ```
 
 名字由小写字母、数字和 `_` 组成，以字母开头。每项必须有 `generate` 或 `collect` 之一，不能两个都有。
-两种密钥都存在核心的密钥库里：卸载时保留数据就一起保留，重装时沿用（数据库密码之类已经写进了数据，换了
-就对不上）；选择删除数据时一起删除。
+两种密钥都存在核心的密钥库里（核心数据目录下，文件权限 0600，插件的容器访问不到）：卸载时保留数据就一起
+保留，重装时沿用（数据库密码之类已经写进了数据，换了就对不上）；选择删除数据时一起删除。
 
 **核心生成（`generate`）**
 
-- `bytes` 是随机字节数，默认 32；`encoding` 是 `hex`（默认）或 `base64`，结果和
-  `openssl rand -hex <bytes>`、`openssl rand -base64 <bytes>` 的格式相同。
-- 首次安装时生成，以 `WONTON_SECRET_<名字大写>` 注入；升级时保留，升级新增的项在升级时生成。
+- `bytes` 是随机字节数，1 到 1024，默认 32；`encoding` 是 `hex`（默认，小写）或 `base64`（带填充、不换行），
+  结果和 `openssl rand -hex <bytes>`、`openssl rand -base64 <bytes>` 的格式相同。
+- 首次安装时生成，以 `WONTON_SECRET_<名字大写>` 注入；升级时保留，升级新增的项在升级时生成。已有的值
+  不随 `bytes`、`encoding` 的修改重新生成。
 - 做法同 Runtipi 的 `random` 字段：随机生成后保存，不像 Umbrel 的 `APP_SEED` 那样从主种子派生——只恢复了
   应用数据、没恢复种子时，派生出的值就对不上。
 - v0.1 不轮换，也不在 App 里显示（待定）。
@@ -443,8 +444,10 @@ x-wonton:
 插件运行中自己生成、丢了就无法恢复的秘密，如 Hermes 自动建交叉签名后写下的恢复密钥。清单声明它在哪个
 服务的容器里、哪个文件：
 
-- 核心在该服务健康后用 Docker 的归档接口读取。路径在容器里解析，软链接出不了容器；只接受不超过 64 KiB
-  的普通文件。文件还不存在时之后再试；读到以后，每次插件启动时核对一次，变了就更新。
+- 核心在安装时所有服务就绪后、以及核心每次启动核对插件时，用 Docker 的归档接口读取。路径在容器里解析，
+  软链接出不了容器，最后一级是软链接时不跟随；只接受不超过 64 KiB 的普通文件，是目录、软链接或超过上限时
+  安装失败（核心启动核对时则把插件标为异常）。文件还不存在时不算失败，下次核对时再试；读到以后每次核对，
+  变了就更新。
 - 核心不修改、不删除插件里的这个文件，也不注入回去。
 - 声明在 Bot 服务上时，每个 Bot 各存一份。
 
@@ -558,10 +561,10 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
    - `crates/wonton-core/src/plugin/manifest.rs` 的类型和校验移到 `crates/wonton-protocol` 的 `plugin`
      模块；`wonton-core` 加依赖并改为引用它。
    - 新增：`Permission::NetworkEgress`；`Sso::Proxy` 和 `webui.proxy`（请求头、Cookie、值模板）；`bots`；
-     `provides.models`；`secrets`（`generate`、`collect`）。
+     `provides.models`。`secrets`（`generate`、`collect`）已在核心里，随其他类型一起迁移。
    - 新增的校验：`bot`、`bots` 和 `agent.protocol: matrix` 需要 `matrix.bot`；只有 `kind: system` 能声明
-     `provides`；`secrets` 每项恰好一种来源，模板只引用 `generate` 的项；`bots`、`provides`、`collect`
-     引用的服务存在（在 `package.rs` 对照 compose 检查）。
+     `provides`；模板只引用 `generate` 的项；`bots`、`provides` 引用的服务存在（在 `package.rs` 对照
+     compose 检查）。
    - 契约测试：`plugins/` 下所有插件包都能解析，几类违规各被拒绝；App 的安装确认页以后用同一套类型
      （需要 UniFFI 导出的类型按它的约束调整）。
 3. **注入变量**（`render.rs`）：`InstallContext` 和 `injected_vars` 加上模型、Matrix、插件密钥和 Bot 的
@@ -584,8 +587,6 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
 8. **Matrix Bot**（核心新增 `bots` 模块）：JWT 代 Bot 登录（首次登录即建号，不申请刷新令牌），设置显示名
    和头像，替主人建加密私聊并写 `m.direct`，注入变量；网关按 Host `matrix.wonton.internal` 只转发客户端
    接口；卸载时用核心的 Tuwunel 管理账号删设备，删除数据时停用账号。
-9. **插件密钥**：`generate` 生成、保存并注入，随保留的数据一起保留；`collect` 用 bollard 的
-   `download_from_container` 读取（64 KiB 上限、只认普通文件），在服务健康后和每次启动后核对。
 10. **网关代登录**（`gateway/proxy.rs`）：`sso: proxy` 时剥离同名请求头和 Cookie，按 Fetch Metadata 的
     规则加上声明的值，去掉插件响应里同名 Cookie 的 `Set-Cookie`；行为测试覆盖伪造、跨插件请求和不回传。
     和 #20 的 `Set-Cookie` 加固一起改。

@@ -12,6 +12,7 @@ pub mod manifest;
 pub mod package;
 pub mod package_files;
 pub mod render;
+pub mod secrets;
 pub mod store;
 
 #[cfg(test)]

@@ -20,16 +20,27 @@ pub struct FakeDocker {
     resources: Arc<Mutex<Resources>>,
 }
 
+/// 容器里的一个路径。
+#[derive(Clone)]
+pub enum FakeFile {
+    Regular(Vec<u8>),
+    Directory,
+}
+
 #[derive(Default)]
 struct Resources {
     /// 容器名 → 所属插件。
     containers: BTreeMap<String, String>,
+    /// 容器名 → 创建时的环境变量。
+    envs: BTreeMap<String, Vec<String>>,
     /// 网络名 → 所属插件。
     networks: BTreeMap<String, String>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
     writes: Vec<String>,
     /// 写进容器的归档：容器名 → 归档内容。
     archives: BTreeMap<String, Vec<u8>>,
+    /// 容器里能经归档接口读到的路径：（容器名，路径）→ 内容。
+    files: BTreeMap<(String, String), FakeFile>,
 }
 
 impl FakeDocker {
@@ -67,6 +78,21 @@ impl FakeDocker {
         self.lock().archives.get(container).cloned()
     }
 
+    /// 容器最近一次创建时的环境变量。
+    pub fn env(&self, container: &str) -> Vec<String> {
+        self.lock().envs.get(container).cloned().unwrap_or_default()
+    }
+
+    /// 让容器里出现（`Some`）或去掉（`None`）一个路径，比如插件运行中写下的文件。
+    pub fn set_file(&self, container: &str, path: &str, file: Option<FakeFile>) {
+        let key = (container.to_owned(), path.to_owned());
+        let mut docker = self.lock();
+        match file {
+            Some(file) => docker.files.insert(key, file),
+            None => docker.files.remove(&key),
+        };
+    }
+
     fn lock(&self) -> MutexGuard<'_, Resources> {
         self.resources.lock().expect("假 Docker 的锁中毒")
     }
@@ -83,52 +109,65 @@ async fn handle(State(fake): State<FakeDocker>, method: Method, uri: Uri, body: 
     };
     let call = format!("{method} {path}");
     let query = uri.query().unwrap_or_default();
-    let raw = body;
-    let body: Value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
     let mut docker = fake.lock();
     if method != Method::GET {
         docker.writes.push(call.clone());
     }
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-    match (method, parts.as_slice()) {
-        (Method::PUT, ["containers", name, "archive"]) if docker.containers.contains_key(*name) => {
-            docker.archives.insert((*name).to_owned(), raw.to_vec());
-            StatusCode::OK.into_response()
-        }
-        (Method::GET, ["version"]) => json_reply(StatusCode::OK, json!({"Arch": "x86_64"})),
-        (Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
-        (Method::POST, ["networks", "create"]) => {
-            let name = body["Name"].as_str().unwrap_or_default().to_owned();
-            docker.networks.insert(name.clone(), plugin_label(&body));
-            json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
-        }
-        (Method::DELETE, ["networks", name]) => gone(docker.networks.remove(*name).is_some()),
-        (Method::GET, ["networks"]) => {
-            let names = labeled(&docker.networks, query);
-            let list: Vec<Value> = names.iter().map(|n| json!({"Name": n})).collect();
-            json_reply(StatusCode::OK, json!(list))
-        }
-        (Method::POST, ["containers", "create"]) => {
-            let name = url::form_urlencoded::parse(query.as_bytes())
-                .find(|(key, _)| key == "name")
-                .map(|(_, name)| name.into_owned())
-                .unwrap_or_default();
+    let reply = match parts.as_slice() {
+        ["containers", rest @ ..] => containers(&mut docker, &method, rest, query, &body),
+        _ => others(&mut docker, &method, &parts, query, &body),
+    };
+    reply.unwrap_or_else(|| {
+        json_reply(
+            StatusCode::NOT_FOUND,
+            json!({"message": format!("假 Docker 没有 {call}")}),
+        )
+    })
+}
+
+/// `/containers/...` 的端点。
+fn containers(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+    raw: &Bytes,
+) -> Option<Response> {
+    let exists = |name: &str| docker.containers.contains_key(name);
+    let reply = match (method, parts) {
+        (&Method::POST, ["create"]) => {
+            let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+            let name = query_param(query, "name").unwrap_or_default();
+            let env = body["Env"].as_array().into_iter().flatten();
+            let env = env.filter_map(|e| e.as_str().map(str::to_owned)).collect();
+            docker.envs.insert(name.clone(), env);
             docker.containers.insert(name.clone(), plugin_label(&body));
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
         }
-        (Method::POST, ["containers", name, "start" | "stop"]) => {
-            gone(docker.containers.contains_key(*name))
+        (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
+        (&Method::DELETE, [name]) => gone(docker.containers.remove(*name).is_some()),
+        (&Method::GET, [name, "json"]) if exists(name) => json_reply(
+            StatusCode::OK,
+            json!({"Name": format!("/{name}"), "State": {
+                "Status": "running", "Running": true, "Health": {"Status": "healthy"}
+            }}),
+        ),
+        (&Method::PUT, [name, "archive"]) if exists(name) => {
+            docker.archives.insert((*name).to_owned(), raw.to_vec());
+            StatusCode::OK.into_response()
         }
-        (Method::DELETE, ["containers", name]) => gone(docker.containers.remove(*name).is_some()),
-        (Method::GET, ["containers", name, "json"]) if docker.containers.contains_key(*name) => {
-            json_reply(
-                StatusCode::OK,
-                json!({"Name": format!("/{name}"), "State": {
-                    "Status": "running", "Running": true, "Health": {"Status": "healthy"}
-                }}),
-            )
+        (&Method::GET, [name, "archive"]) if exists(name) => {
+            let path = query_param(query, "path").unwrap_or_default();
+            match docker.files.get(&((*name).to_owned(), path.clone())) {
+                Some(file) => (StatusCode::OK, archive_of(&path, file)).into_response(),
+                None => json_reply(
+                    StatusCode::NOT_FOUND,
+                    json!({"message": format!("Could not find the file {path} in container {name}")}),
+                ),
+            }
         }
-        (Method::GET, ["containers", "json"]) => {
+        (&Method::GET, ["json"]) => {
             let names = labeled(&docker.containers, query);
             let list: Vec<Value> = names
                 .iter()
@@ -136,14 +175,67 @@ async fn handle(State(fake): State<FakeDocker>, method: Method, uri: Uri, body: 
                 .collect();
             json_reply(StatusCode::OK, json!(list))
         }
-        (Method::GET, ["volumes"]) => {
+        _ => return None,
+    };
+    Some(reply)
+}
+
+/// 版本、镜像、网络、卷。
+fn others(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+    raw: &Bytes,
+) -> Option<Response> {
+    let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+    let reply = match (method, parts) {
+        (&Method::GET, ["version"]) => json_reply(StatusCode::OK, json!({"Arch": "x86_64"})),
+        (&Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
+        (&Method::POST, ["networks", "create"]) => {
+            let name = body["Name"].as_str().unwrap_or_default().to_owned();
+            docker.networks.insert(name.clone(), plugin_label(&body));
+            json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
+        }
+        (&Method::DELETE, ["networks", name]) => gone(docker.networks.remove(*name).is_some()),
+        (&Method::GET, ["networks"]) => {
+            let names = labeled(&docker.networks, query);
+            let list: Vec<Value> = names.iter().map(|n| json!({"Name": n})).collect();
+            json_reply(StatusCode::OK, json!(list))
+        }
+        (&Method::GET, ["volumes"]) => {
             json_reply(StatusCode::OK, json!({"Volumes": [], "Warnings": []}))
         }
-        _ => json_reply(
-            StatusCode::NOT_FOUND,
-            json!({"message": format!("假 Docker 没有 {call}")}),
-        ),
-    }
+        _ => return None,
+    };
+    Some(reply)
+}
+
+/// 和 Docker 一样：归档里只有这一项，名字是路径的最后一级。
+fn archive_of(path: &str, file: &FakeFile) -> Vec<u8> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    let data: &[u8] = match file {
+        FakeFile::Regular(data) => {
+            header.set_entry_type(tar::EntryType::Regular);
+            data
+        }
+        FakeFile::Directory => {
+            header.set_entry_type(tar::EntryType::Directory);
+            &[]
+        }
+    };
+    header.set_size(data.len() as u64);
+    header.set_mode(0o644);
+    builder.append_data(&mut header, name, data).unwrap();
+    builder.into_inner().unwrap()
+}
+
+fn query_param(query: &str, key: &str) -> Option<String> {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(k, _)| k == key)
+        .map(|(_, value)| value.into_owned())
 }
 
 fn json_reply(status: StatusCode, body: Value) -> Response {
@@ -171,9 +263,8 @@ fn plugin_label(body: &Value) -> String {
 
 /// 按查询里的 `filters={"label":["wonton.plugin=<id>"]}` 筛出资源名。
 fn labeled(resources: &BTreeMap<String, String>, query: &str) -> Vec<String> {
-    let wanted = url::form_urlencoded::parse(query.as_bytes())
-        .find(|(key, _)| key == "filters")
-        .and_then(|(_, filters)| serde_json::from_str::<Value>(&filters).ok())
+    let wanted = query_param(query, "filters")
+        .and_then(|filters| serde_json::from_str::<Value>(&filters).ok())
         .and_then(|filters| filters["label"][0].as_str().map(str::to_owned))
         .and_then(|label| {
             label

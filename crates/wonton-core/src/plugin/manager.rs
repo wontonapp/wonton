@@ -13,6 +13,7 @@ use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
+use super::secrets::CollectError;
 use super::store::{InstalledRecord, Store, StoreError};
 use crate::http::HttpClient;
 use crate::oidc::{Hydra, OidcError};
@@ -112,6 +113,15 @@ impl From<HealthError> for InstallError {
 impl From<OidcError> for InstallError {
     fn from(e: OidcError) -> Self {
         Self::OidcUnavailable(e.to_string())
+    }
+}
+
+impl From<CollectError> for InstallError {
+    fn from(e: CollectError) -> Self {
+        match e {
+            CollectError::Engine(engine) => engine.into(),
+            invalid @ CollectError::Invalid { .. } => Self::Invalid(invalid.to_string()),
+        }
     }
 }
 

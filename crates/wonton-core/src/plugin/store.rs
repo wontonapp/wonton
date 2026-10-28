@@ -7,10 +7,12 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use super::manifest::{Permission, PluginId};
 use super::package_files::PackageFiles;
+use super::secrets::SecretStore;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
@@ -22,7 +24,7 @@ pub struct InstalledRecord {
     #[serde(
         default,
         skip_serializing_if = "PackageFiles::is_empty",
-        with = "base64_files"
+        with = "base64_map"
     )]
     pub files: PackageFiles,
     pub granted_permissions: Vec<Permission>,
@@ -52,22 +54,22 @@ pub struct RecordFile {
 
 pub struct Store {
     dir: PathBuf,
+    secrets: SecretStore,
 }
 
 impl Store {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, StoreError> {
         let dir = dir.into();
-        fs::create_dir_all(&dir).map_err(|source| StoreError::Io {
-            path: dir.clone(),
-            source,
-        })?;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(|source| {
-            StoreError::Io {
-                path: dir.clone(),
-                source,
-            }
-        })?;
-        Ok(Self { dir })
+        create_private_dir(&dir)?;
+        Ok(Self {
+            secrets: SecretStore::new(dir.join("secrets")),
+            dir,
+        })
+    }
+
+    /// 插件密钥库，在记录目录下的 `secrets/` 里。和记录分开存：不删数据的卸载删掉记录，密钥还在。
+    pub fn secrets(&self) -> &SecretStore {
+        &self.secrets
     }
 
     fn path(&self, id: &PluginId) -> PathBuf {
@@ -102,42 +104,82 @@ impl Store {
         Ok(files)
     }
 
-    /// 先写临时文件再改名，避免写到一半断电留下损坏的记录。
     pub fn save(&self, record: &InstalledRecord) -> Result<(), StoreError> {
-        let path = self.path(&record.id);
-        let tmp = path.with_extension("json.tmp");
-        let io = |source| StoreError::Io {
-            path: path.clone(),
-            source,
-        };
-        let text = serde_json::to_string_pretty(record).map_err(|e| StoreError::Corrupt {
-            path: path.clone(),
-            message: e.to_string(),
-        })?;
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)
-            .map_err(io)?;
-        file.write_all(text.as_bytes()).map_err(io)?;
-        file.sync_all().map_err(io)?;
-        fs::rename(&tmp, &path).map_err(io)
+        write_json(&self.path(&record.id), record)
     }
 
     pub fn remove(&self, id: &PluginId) -> Result<(), StoreError> {
-        let path = self.path(id);
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(StoreError::Io { path, source }),
-        }
+        remove_file(&self.path(id))
     }
 }
 
-/// 文件内容在 JSON 里以 base64 保存。
-mod base64_files {
+/// 只有核心能读写的目录（0700）。
+pub(super) fn create_private_dir(dir: &Path) -> Result<(), StoreError> {
+    let io = |source| StoreError::Io {
+        path: dir.to_owned(),
+        source,
+    };
+    fs::create_dir_all(dir).map_err(io)?;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(io)
+}
+
+/// 以 0600 写 JSON：先写临时文件再改名，避免写到一半断电留下损坏的文件。
+pub(super) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> {
+    let tmp = path.with_extension("json.tmp");
+    let io = |source| StoreError::Io {
+        path: path.to_owned(),
+        source,
+    };
+    let text = serde_json::to_string_pretty(value).map_err(|e| StoreError::Corrupt {
+        path: path.to_owned(),
+        message: e.to_string(),
+    })?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&tmp)
+        .map_err(io)?;
+    file.write_all(text.as_bytes()).map_err(io)?;
+    file.sync_all().map_err(io)?;
+    fs::rename(&tmp, path).map_err(io)
+}
+
+/// 读 JSON；文件不存在时返回 `None`。
+pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, StoreError> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(StoreError::Io {
+                path: path.to_owned(),
+                source,
+            });
+        }
+    };
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|e| StoreError::Corrupt {
+            path: path.to_owned(),
+            message: e.to_string(),
+        })
+}
+
+/// 删除文件；本来就没有也算成功。
+pub(super) fn remove_file(path: &Path) -> Result<(), StoreError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(StoreError::Io {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+
+/// 名字 → 字节内容的映射在 JSON 里以 base64 保存（插件包的文件、插件密钥）。
+pub(super) mod base64_map {
     use std::collections::BTreeMap;
 
     use base64::Engine as _;
@@ -145,29 +187,23 @@ mod base64_files {
     use serde::de::Error as _;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    use super::PackageFiles;
-
     pub fn serialize<S: Serializer>(
-        files: &PackageFiles,
+        map: &BTreeMap<String, Vec<u8>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        serializer.collect_map(
-            files
-                .iter()
-                .map(|(path, data)| (path, STANDARD.encode(data))),
-        )
+        serializer.collect_map(map.iter().map(|(name, data)| (name, STANDARD.encode(data))))
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<PackageFiles, D::Error> {
+    ) -> Result<BTreeMap<String, Vec<u8>>, D::Error> {
         BTreeMap::<String, String>::deserialize(deserializer)?
             .into_iter()
-            .map(|(path, text)| {
+            .map(|(name, text)| {
                 let data = STANDARD
                     .decode(&text)
-                    .map_err(|e| D::Error::custom(format!("文件 {path} 不是合法的 base64：{e}")))?;
-                Ok((path, data))
+                    .map_err(|e| D::Error::custom(format!("{name} 不是合法的 base64：{e}")))?;
+                Ok((name, data))
             })
             .collect()
     }

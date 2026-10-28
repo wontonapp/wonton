@@ -17,7 +17,7 @@ use crate::config::PublicUrls;
 use crate::http::HttpClient;
 
 /// 用给定 Docker 的管理器。PUID:PGID 取测试目录的属主，准备应用数据目录时不需要 chown 权限。
-fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
+pub(super) fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {

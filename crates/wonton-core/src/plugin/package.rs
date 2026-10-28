@@ -15,7 +15,7 @@ use super::compose::{
     network_mode_refusal, strip_extensions,
 };
 use super::interpolate::{InterpolateError, Vars, interpolate, interpolate_value};
-use super::manifest::{Manifest, ManifestError};
+use super::manifest::{Manifest, ManifestError, SecretSpec};
 use super::package_files::{self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, PackageFiles};
 
 #[derive(Debug, thiserror::Error)]
@@ -281,7 +281,17 @@ impl PluginPackage {
                 self.manifest.mcp.as_ref().map(|m| &m.service),
             ),
         ];
-        for (field, service) in refs {
+        let collects = self
+            .manifest
+            .secrets
+            .values()
+            .filter_map(|spec| match spec {
+                SecretSpec::Collect(collect) => {
+                    Some(("secrets 的 collect.service", Some(&collect.service)))
+                }
+                SecretSpec::Generate(_) => None,
+            });
+        for (field, service) in refs.into_iter().chain(collects) {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {

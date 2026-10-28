@@ -9,6 +9,7 @@ use super::render::{RenderError, dry_run};
 
 mod configs;
 mod manager;
+mod secrets;
 
 const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");
 const WHOAMI: &str = include_str!("../../../../../plugins/examples/whoami/docker-compose.yml");

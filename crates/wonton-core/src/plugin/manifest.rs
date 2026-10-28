@@ -189,6 +189,92 @@ pub struct AgentSpec {
     pub protocol: AgentProtocol,
 }
 
+/// 一项插件密钥：核心生成（`generate`）或插件运行中生成、交给核心保管（`collect`），恰好一种。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawSecret", into = "RawSecret")]
+pub enum SecretSpec {
+    Generate(GenerateSecret),
+    Collect(CollectSecret),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenerateSecret {
+    /// 随机字节数。
+    #[serde(default = "default_secret_bytes")]
+    pub bytes: usize,
+    #[serde(default)]
+    pub encoding: SecretEncoding,
+}
+
+/// 生成的密钥的文本格式，和 `openssl rand -hex`、`openssl rand -base64` 相同。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SecretEncoding {
+    #[default]
+    Hex,
+    Base64,
+}
+
+/// 插件在 `service` 的容器里写下的文件 `path`（容器里的绝对路径）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CollectSecret {
+    pub service: String,
+    pub path: String,
+}
+
+/// 生成的密钥最多这么多随机字节。
+pub const MAX_SECRET_BYTES: usize = 1024;
+
+fn default_secret_bytes() -> usize {
+    32
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSecret {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generate: Option<GenerateSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collect: Option<CollectSecret>,
+}
+
+impl TryFrom<RawSecret> for SecretSpec {
+    type Error = String;
+
+    fn try_from(raw: RawSecret) -> Result<Self, Self::Error> {
+        match (raw.generate, raw.collect) {
+            (Some(generate), None) => Ok(Self::Generate(generate)),
+            (None, Some(collect)) => Ok(Self::Collect(collect)),
+            _ => Err("每项密钥必须恰好写 generate 或 collect 之一".to_owned()),
+        }
+    }
+}
+
+impl From<SecretSpec> for RawSecret {
+    fn from(spec: SecretSpec) -> Self {
+        match spec {
+            SecretSpec::Generate(generate) => Self {
+                generate: Some(generate),
+                collect: None,
+            },
+            SecretSpec::Collect(collect) => Self {
+                generate: None,
+                collect: Some(collect),
+            },
+        }
+    }
+}
+
+/// 密钥名：小写字母开头，由小写字母、数字和 `_` 组成；注入为 `WONTON_SECRET_<名字大写>`。
+pub fn is_secret_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Arch {
@@ -365,6 +451,9 @@ pub struct Manifest {
     pub bot: Option<BotProfile>,
     #[serde(default)]
     pub agent: Option<AgentSpec>,
+    /// 插件自己的密钥，见规范“插件密钥”。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub secrets: BTreeMap<String, SecretSpec>,
     pub permissions: Vec<Permission>,
     #[serde(default)]
     pub settings: Option<String>,
@@ -396,7 +485,28 @@ impl Manifest {
         {
             return Err(ManifestError::Invalid("mcp.path 必须以 / 开头".to_owned()));
         }
-        Ok(())
+        self.secrets
+            .iter()
+            .try_for_each(|(n, s)| validate_secret(n, s))
+    }
+}
+
+fn validate_secret(name: &str, spec: &SecretSpec) -> Result<(), ManifestError> {
+    let invalid =
+        |message: String| Err(ManifestError::Invalid(format!("secrets.{name}：{message}")));
+    if !is_secret_name(name) {
+        return invalid("名字须以小写字母开头，只含小写字母、数字和 _".to_owned());
+    }
+    match spec {
+        SecretSpec::Generate(generate) if !(1..=MAX_SECRET_BYTES).contains(&generate.bytes) => {
+            invalid(format!("generate.bytes 须在 1 到 {MAX_SECRET_BYTES} 之间"))
+        }
+        SecretSpec::Collect(collect)
+            if !collect.path.starts_with('/') || collect.path.split('/').any(|p| p == "..") =>
+        {
+            invalid("collect.path 须是容器里的绝对路径，不能含 ..".to_owned())
+        }
+        _ => Ok(()),
     }
 }
 

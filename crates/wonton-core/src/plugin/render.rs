@@ -16,8 +16,9 @@ use super::compose::{
 };
 use super::configs::{self, ConfigFile};
 use super::interpolate::Vars;
-use super::manifest::{Access, Manifest, Permission, Sso};
+use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
 use super::package::{PackageError, PluginPackage};
+use super::secrets::secret_var;
 
 /// Docker 资源上的标签：标明归属哪个插件，卸载时按标签清理。
 pub const LABEL_PLUGIN: &str = "wonton.plugin";
@@ -60,6 +61,8 @@ pub struct InstallContext {
     /// 插件网页的公开地址（不带末尾斜杠）。
     pub app_url: Option<String>,
     pub oidc: Option<OidcVars>,
+    /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
+    pub secrets: BTreeMap<String, String>,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -116,6 +119,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     if let Some(url) = &ctx.app_url {
         set("WONTON_APP_URL", url.clone());
     }
+    for (name, value) in &ctx.secrets {
+        set(&secret_var(name), value.clone());
+    }
     if let Some(oidc) = &ctx.oidc {
         set("WONTON_OIDC_ISSUER", oidc.issuer.clone());
         set("WONTON_OIDC_CLIENT_ID", oidc.client_id.clone());
@@ -156,6 +162,12 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
             token_url: "http://auth.wonton.invalid/token".into(),
             userinfo_url: "http://auth.wonton.invalid/userinfo".into(),
         }),
+        secrets: manifest
+            .secrets
+            .iter()
+            .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_)))
+            .map(|(name, _)| (name.clone(), "dry-run".to_owned()))
+            .collect(),
         slug,
         tz: "UTC".into(),
         puid: 1000,
