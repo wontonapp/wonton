@@ -5,14 +5,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bollard::models::ContainerStateStatusEnum;
 use tokio::time::Instant;
 
-use super::compose::DependCondition;
 use super::configs;
-use super::health::{self, Target};
+use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
-use super::manager::{InstallError, PluginManager, UninstallReport};
+use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::package::PluginPackage;
 use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
@@ -95,10 +93,10 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         granted: &[Permission],
-    ) -> Result<Option<String>, InstallError> {
+    ) -> Result<Deployed, InstallError> {
         let mut undo = Undo::default();
         match self.deploy_inner(package, granted, &mut undo).await {
-            Ok(upstream) => Ok(upstream),
+            Ok(deployed) => Ok(deployed),
             Err(error) => {
                 let failures = self.rollback(undo).await;
                 if failures.is_empty() {
@@ -116,7 +114,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         undo: &mut Undo,
-    ) -> Result<Option<String>, InstallError> {
+    ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let secret = uses_sso(manifest).then(random_token);
         let mut secrets = self.prepare_secrets(manifest, undo)?;
@@ -154,7 +152,7 @@ impl PluginManager {
             undo.oidc_client = Some(manifest.id.to_string());
         }
         let deadline = Instant::now() + self.cfg.install_timeout;
-        self.start_containers(&plan, undo, deadline).await?;
+        let health = self.start_containers(&plan, undo, deadline).await?;
         if secrets::collect(&self.engine, manifest, &mut secrets).await? {
             self.store.secrets().save(&manifest.id, &secrets)?;
         }
@@ -172,7 +170,7 @@ impl PluginManager {
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
         })?;
-        Ok(upstream)
+        Ok(Deployed { upstream, health })
     }
 
     /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
@@ -317,7 +315,7 @@ impl PluginManager {
         plan: &Deployment,
         undo: &mut Undo,
         deadline: Instant,
-    ) -> Result<(), InstallError> {
+    ) -> Result<Health, InstallError> {
         for container in &plan.containers {
             for (dependency, condition) in &container.depends_on {
                 health::wait_for(
@@ -342,22 +340,14 @@ impl PluginManager {
             }
             self.engine.start_container(&container.name).await?;
         }
-        // 只为被依赖“运行完成”的一次性容器跳过就绪检查，其余容器都必须健康或稳定运行。
-        let one_shot: Vec<&String> = plan
-            .containers
-            .iter()
-            .flat_map(|c| c.depends_on.iter())
-            .filter(|(_, condition)| *condition == DependCondition::ServiceCompletedSuccessfully)
-            .map(|(name, _)| name)
-            .collect();
-        for container in plan
-            .containers
-            .iter()
-            .filter(|c| !one_shot.contains(&&c.name))
-        {
-            health::wait_for(&self.engine, &container.name, Target::Ready, deadline).await?;
+        // 一次性服务已经在被依赖时等到以 0 退出；其余容器都必须健康或稳定运行。
+        let mut healthy = Vec::new();
+        for container in plan.containers.iter().filter(|c| !c.one_shot) {
+            let readiness =
+                health::wait_for(&self.engine, &container.name, Target::Ready, deadline).await?;
+            healthy.push(readiness == Readiness::Healthy);
         }
-        Ok(())
+        Ok(Health::of(healthy))
     }
 
     /// 核心访问插件网页的地址：核心在容器里时用容器名（同一网络内的 DNS），否则用容器 IP。
@@ -458,24 +448,24 @@ impl PluginManager {
         failures
     }
 
-    /// 核心重启后核对插件：容器在运行、核心在插件网络里、OIDC 客户端已登记、插件密钥都在，
-    /// 并重新收存一次插件写下的密钥。
+    /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
+    /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。
     pub(super) async fn reconcile(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-    ) -> Result<Option<String>, InstallError> {
+    ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
+        let one_shot = package.one_shot_services();
+        let mut healthy = Vec::new();
         for service in package.service_names() {
             let name = container_name(&slug, service);
-            let info = self.engine.inspect_container(&name).await?;
-            let status = info.and_then(|i| i.state).and_then(|s| s.status);
-            if status != Some(ContainerStateStatusEnum::RUNNING) {
-                return Err(InstallError::Unhealthy(format!(
-                    "容器 {name} 不在运行（{}）",
-                    status.map_or("不存在".to_owned(), |s| format!("{s:?}"))
-                )));
+            match health::check_now(&self.engine, &name, one_shot.contains(service)).await? {
+                Checked::Completed => {}
+                Checked::Healthy => healthy.push(true),
+                Checked::Running => healthy.push(false),
+                Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
             }
         }
         let generated = self.check_secrets(manifest).await?;
@@ -491,7 +481,10 @@ impl PluginManager {
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
         }
-        self.webui_upstream(manifest, &network).await
+        Ok(Deployed {
+            upstream: self.webui_upstream(manifest, &network).await?,
+            health: Health::of(healthy),
+        })
     }
 
     /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。

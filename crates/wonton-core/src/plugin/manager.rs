@@ -146,12 +146,36 @@ pub enum PluginStatus {
     Uninstalling,
 }
 
+/// 运行中的插件健不健康。核心在安装时和每次启动时检查，这里是最近一次检查的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Health {
+    /// 每个长期运行的服务都有健康检查，而且都通过了。
+    Healthy,
+    /// 有长期运行的服务没有健康检查（或者检查时还没通过）：只知道它在运行，不能说它健康。
+    Unknown,
+}
+
+impl Health {
+    /// 所有长期运行的服务都健康才算健康。
+    pub fn of(healthy: impl IntoIterator<Item = bool>) -> Self {
+        if healthy.into_iter().all(|h| h) {
+            Self::Healthy
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginView {
     pub id: PluginId,
     pub version: String,
     pub title: LocalizedText,
     pub status: PluginStatus,
+    /// 只有运行中的插件才有。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health: Option<Health>,
     pub url: Option<String>,
 }
 
@@ -199,7 +223,14 @@ struct Entry {
     title: LocalizedText,
     has_webui: bool,
     status: PluginStatus,
+    health: Option<Health>,
     upstream: Option<String>,
+}
+
+/// 部署或核对完成的插件：核心访问它网页的地址，和检查时的健康状况。
+pub(super) struct Deployed {
+    pub upstream: Option<String>,
+    pub health: Health,
 }
 
 impl Entry {
@@ -209,7 +240,15 @@ impl Entry {
             title: manifest.title.clone(),
             has_webui: manifest.webui.is_some(),
             status,
+            health: None,
             upstream,
+        }
+    }
+
+    fn running(manifest: &Manifest, deployed: Deployed) -> Self {
+        Self {
+            health: Some(deployed.health),
+            ..Self::new(manifest, PluginStatus::Running, deployed.upstream)
         }
     }
 
@@ -222,6 +261,7 @@ impl Entry {
                 .into(),
             has_webui: false,
             status: PluginStatus::Degraded { reason },
+            health: None,
             upstream: None,
         }
     }
@@ -325,6 +365,7 @@ impl PluginManager {
             version: entry.version.clone(),
             title: entry.title.clone(),
             status: entry.status.clone(),
+            health: entry.health,
             url: entry.has_webui.then(|| {
                 self.cfg
                     .public
@@ -352,6 +393,7 @@ impl PluginManager {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = status;
+            entry.health = None;
             if let Some(upstream) = upstream {
                 entry.upstream = upstream;
             }
@@ -381,7 +423,7 @@ impl PluginManager {
     async fn restore_one(&self, record: &InstalledRecord) -> Entry {
         match PluginPackage::with_files(&record.source, record.files.clone()) {
             Ok(package) => match self.reconcile(&package, record).await {
-                Ok(upstream) => Entry::new(&package.manifest, PluginStatus::Running, upstream),
+                Ok(deployed) => Entry::running(&package.manifest, deployed),
                 Err(e) => {
                     let reason = e.to_string();
                     Entry::new(&package.manifest, PluginStatus::Degraded { reason }, None)
@@ -418,11 +460,13 @@ impl PluginManager {
         self.reserve(&manifest)?;
         tracing::info!(plugin = %manifest.id, "开始安装插件");
         match self.deploy(&package, granted).await {
-            Ok(upstream) => {
-                self.set(&manifest.id, PluginStatus::Running, Some(upstream));
-                tracing::info!(plugin = %manifest.id, "插件安装完成");
-                let plugins = self.plugins.read().expect("插件表锁中毒");
-                Ok(self.view(&manifest.id, &plugins[&manifest.id]))
+            Ok(deployed) => {
+                tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
+                let mut plugins = self.plugins.write().expect("插件表锁中毒");
+                let entry = Entry::running(&manifest, deployed);
+                let view = self.view(&manifest.id, &entry);
+                plugins.insert(manifest.id.clone(), entry);
+                Ok(view)
             }
             Err(e) => {
                 tracing::warn!(plugin = %manifest.id, error = %e, "插件安装失败，已回滚");

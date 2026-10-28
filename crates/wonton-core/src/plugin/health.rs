@@ -47,8 +47,17 @@ pub enum Target {
     Ready,
 }
 
+/// 容器达到目标时的情形。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Readiness {
+    /// 健康检查通过。
+    Healthy,
+    /// 没有用到健康检查：稳定运行了一段时间、已经启动或以 0 退出。
+    Running,
+}
+
 enum Observation {
-    Done,
+    Done(Readiness),
     Waiting(String),
 }
 
@@ -57,11 +66,11 @@ pub async fn wait_for(
     container: &str,
     target: Target,
     deadline: Instant,
-) -> Result<(), HealthError> {
+) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
         let state = match observe(engine, container, target, &mut running_since).await {
-            Ok(Observation::Done) => return Ok(()),
+            Ok(Observation::Done(readiness)) => return Ok(readiness),
             Ok(Observation::Waiting(state)) => state,
             Err(Failure::Unhealthy) => {
                 let logs = engine.logs_tail(container, LOG_LINES).await;
@@ -124,7 +133,9 @@ async fn observe(
 
     if target == Target::Depend(DependCondition::ServiceCompletedSuccessfully) {
         return match status {
-            ContainerStateStatusEnum::EXITED if exit_code == 0 => Ok(Observation::Done),
+            ContainerStateStatusEnum::EXITED if exit_code == 0 => {
+                Ok(Observation::Done(Readiness::Running))
+            }
             ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD => {
                 Err(Failure::Exited(exit_code))
             }
@@ -145,10 +156,12 @@ async fn observe(
         Target::Depend(DependCondition::ServiceHealthy) if !has_check => Err(Failure::Other(
             HealthError::NoHealthcheck(container.to_owned()),
         )),
-        Target::Depend(DependCondition::ServiceStarted) if running => Ok(Observation::Done),
+        Target::Depend(DependCondition::ServiceStarted) if running => {
+            Ok(Observation::Done(Readiness::Running))
+        }
         Target::Depend(DependCondition::ServiceHealthy) | Target::Ready if has_check => {
             if health == Some(HealthStatusEnum::HEALTHY) {
-                Ok(Observation::Done)
+                Ok(Observation::Done(Readiness::Healthy))
             } else {
                 Ok(Observation::Waiting(label))
             }
@@ -156,7 +169,7 @@ async fn observe(
         Target::Ready if running => {
             let since = *running_since.get_or_insert_with(Instant::now);
             if since.elapsed() >= STABLE_FOR {
-                Ok(Observation::Done)
+                Ok(Observation::Done(Readiness::Running))
             } else {
                 Ok(Observation::Waiting(label))
             }
@@ -166,6 +179,52 @@ async fn observe(
             Ok(Observation::Waiting(label))
         }
     }
+}
+
+/// 核心启动时核对一个容器的结果：只看一眼，不等待。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Checked {
+    /// 一次性服务已经以 0 退出（或者被重新运行着）。
+    Completed,
+    /// 长期运行，健康检查通过。
+    Healthy,
+    /// 长期运行，但没有健康检查，或者检查还没通过：只知道它在运行。
+    Running,
+    /// 不在应有的状态，原因如实给出。
+    Failed(String),
+}
+
+/// 核心重启后核对容器：一次性服务“已退出、退出码 0”是正常状态，长期运行的服务要在运行、健康检查不能失败。
+pub async fn check_now(
+    engine: &Engine,
+    container: &str,
+    one_shot: bool,
+) -> Result<Checked, EngineError> {
+    let Some(info) = engine.inspect_container(container).await? else {
+        return Ok(Checked::Failed(format!("容器 {container} 不存在")));
+    };
+    let state = info.state.unwrap_or_default();
+    let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
+    let exit_code = state.exit_code.unwrap_or_default();
+    let health = state.health.and_then(|h| h.status);
+    let running = status == ContainerStateStatusEnum::RUNNING;
+    Ok(match (one_shot, status) {
+        (true, ContainerStateStatusEnum::EXITED) if exit_code == 0 => Checked::Completed,
+        (true, _) if running => Checked::Completed,
+        (true, _) => Checked::Failed(format!(
+            "一次性服务的容器 {container} 没有以 0 退出（{status:?}，退出码 {exit_code}）"
+        )),
+        (false, _) if !running => {
+            Checked::Failed(format!("容器 {container} 不在运行（{status:?}）"))
+        }
+        (false, _) => match health {
+            Some(HealthStatusEnum::HEALTHY) => Checked::Healthy,
+            Some(HealthStatusEnum::UNHEALTHY) => {
+                Checked::Failed(format!("容器 {container} 健康检查失败"))
+            }
+            _ => Checked::Running,
+        },
+    })
 }
 
 /// 反复请求网页入口，直到返回非 5xx 的响应。

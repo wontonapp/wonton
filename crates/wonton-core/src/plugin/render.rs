@@ -87,6 +87,8 @@ pub struct ContainerPlan {
     pub body: ContainerCreateBody,
     /// 创建之后、启动之前写进容器的配置文件。
     pub files: Vec<ConfigFile>,
+    /// 一次性服务：以 0 退出是它的正常状态，安装时不等它健康。
+    pub one_shot: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -203,11 +205,20 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         .filter(|(name, _)| !share_writable(manifest, name))
         .map(|(_, path)| path.clone())
         .collect();
+    let one_shot = package.one_shot_services();
     let mut binds = Vec::new();
     let mut containers = Vec::new();
     for name in start_order(&services)? {
         let service = &services[&name];
         check_network_mode(manifest, &name, service)?;
+        let one_shot = one_shot.contains(name.as_str());
+        if one_shot && service.restart.as_deref() != Some("no") {
+            return Err(service_err(
+                &name,
+                "被以 service_completed_successfully 依赖的一次性服务必须写 restart: \"no\"：\
+                 否则 Docker 会在它退出后反复重启它",
+            ));
+        }
         let mounts = Mounts {
             ctx,
             read_only_shares: &read_only_shares,
@@ -224,6 +235,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         let endpoint = (network.as_str(), vars.aliases(&name));
         let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels)?;
         plan.files = files;
+        plan.one_shot = one_shot;
         containers.push(plan);
     }
     check_not_nested(&binds)?;
@@ -422,6 +434,7 @@ fn container_plan(
         depends_on,
         body,
         files: Vec::new(),
+        one_shot: false,
     })
 }
 

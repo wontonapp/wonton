@@ -22,6 +22,6 @@ mod fake_docker;
 #[cfg(test)]
 mod tests;
 
-pub use manager::{InstallError, PluginManager, PluginStatus, PluginView};
+pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
 pub use manifest::{Manifest, Permission, PluginId};
 pub use package::PluginPackage;

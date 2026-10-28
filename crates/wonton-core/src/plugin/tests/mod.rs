@@ -10,6 +10,7 @@ use super::render::{RenderError, dry_run};
 
 mod bots;
 mod configs;
+mod health;
 mod manager;
 mod secrets;
 

@@ -1,5 +1,6 @@
 //! 测试用的假 Docker Engine API：只实现插件安装、核对、卸载和回滚用到的端点，记下现存的容器和网络
-//! （连同 `wonton.plugin` 标签），供测试断言对 Docker 的副作用。容器一经创建就报告为运行中且健康。
+//! （连同 `wonton.plugin` 标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
+//! 测试可以按容器名改成别的状态（已退出、没有健康检查等）。
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -41,6 +42,8 @@ struct Resources {
     archives: BTreeMap<String, Vec<u8>>,
     /// 容器里能经归档接口读到的路径：（容器名，路径）→ 内容。
     files: BTreeMap<(String, String), FakeFile>,
+    /// 按容器名指定的状态（Docker inspect 里的 `State`），没指定的报告为运行中且健康。
+    states: BTreeMap<String, Value>,
 }
 
 impl FakeDocker {
@@ -91,6 +94,12 @@ impl FakeDocker {
             Some(file) => docker.files.insert(key, file),
             None => docker.files.remove(&key),
         };
+    }
+
+    /// 让这个名字的容器（现在的或之后创建的）报告给定的状态，如
+    /// `{"Status": "exited", "ExitCode": 0}`。
+    pub fn set_state(&self, container: &str, state: Value) {
+        self.lock().states.insert(container.to_owned(), state);
     }
 
     fn lock(&self) -> MutexGuard<'_, Resources> {
@@ -147,12 +156,15 @@ fn containers(
         }
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name]) => gone(docker.containers.remove(*name).is_some()),
-        (&Method::GET, [name, "json"]) if exists(name) => json_reply(
-            StatusCode::OK,
-            json!({"Name": format!("/{name}"), "State": {
-                "Status": "running", "Running": true, "Health": {"Status": "healthy"}
-            }}),
-        ),
+        (&Method::GET, [name, "json"]) if exists(name) => {
+            let healthy =
+                json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}});
+            let state = docker.states.get(*name).cloned().unwrap_or(healthy);
+            json_reply(
+                StatusCode::OK,
+                json!({"Name": format!("/{name}"), "State": state}),
+            )
+        }
         (&Method::PUT, [name, "archive"]) if exists(name) => {
             docker.archives.insert((*name).to_owned(), raw.to_vec());
             StatusCode::OK.into_response()

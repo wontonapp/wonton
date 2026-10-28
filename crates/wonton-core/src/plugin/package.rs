@@ -242,6 +242,18 @@ impl PluginPackage {
         &self.volumes
     }
 
+    /// 一次性服务：被其他服务以 `condition: service_completed_successfully` 依赖的服务。
+    pub fn one_shot_services(&self) -> BTreeSet<&str> {
+        let completed = Value::String("service_completed_successfully".to_owned());
+        self.services
+            .values()
+            .filter_map(|service| service.get("depends_on")?.as_object())
+            .flat_map(|deps| deps.iter())
+            .filter(|(_, spec)| spec.get("condition") == Some(&completed))
+            .filter_map(|(dep, _)| self.services.get_key_value(dep).map(|(k, _)| k.as_str()))
+            .collect()
+    }
+
     /// 被引用的文件，安装时随记录保存。
     pub fn files(&self) -> &PackageFiles {
         &self.files
