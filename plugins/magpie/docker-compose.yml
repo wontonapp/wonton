@@ -1,0 +1,79 @@
+# magpie 模型网关：系统插件草稿（按 docs/plugin-spec.md 草案 v0）。
+#
+# 用户只在“模型设置”小程序（magpie 自带网页）里配置 provider 和 key，key 只存在本插件的数据目录。
+# 其他插件声明 models 权限后，核心注入 WONTON_MODEL_BASE_URL 和一个只属于该插件的网关凭据
+# （magpie 的 gateway key，可单独限模型、限额度、吊销，用量按凭据名归属）。
+# 在 deploy/dev/agent 里验证过同样的运行配置；鉴权细节见 ADR-0008 的“验证结果”。
+name: magpie
+
+services:
+  magpie:
+    # 锁定 stable 渠道的版本（每周一更新）；升级前回归。
+    image: ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e
+    restart: unless-stopped
+    # 同一个进程同时提供网关（3425）和网页（3430）。
+    command: ["web", "--addr", "0.0.0.0:3430", "--no-open"]
+    environment:
+      TZ: ${TZ}
+      # 网关监听在容器网卡上：来自其他容器的请求必须带启用中的网关凭据，否则 401。
+      # 不要让别的容器共用本容器的网络命名空间：容器内回环不需要凭据。
+      MAGPIE_ADDR: 0.0.0.0:3425
+      # 网页的登录密钥（见下方 x-wonton-proposed.secrets）。
+      MAGPIE_WEB_KEY: ${WONTON_SECRET_WEB_KEY}
+    volumes:
+      # 镜像固定以 uid 65532 运行，数据目录必须归它所有（见 x-wonton-proposed.data_owner）。
+      - ${WONTON_APP_DATA}/config:/config
+    healthcheck:
+      test: ["CMD", "/magpie", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+x-wonton:
+  id: ai.usemagpie.magpie
+  version: 0.1.0
+  kind: system
+  title: { zh: 模型设置, en: Models }
+  description:
+    zh: magpie 模型网关：provider 和 key 只配一次，所有 Bot 和插件共用
+    en: "magpie model gateway: set up providers and keys once, shared by every bot and plugin"
+  category: system
+  webui:
+    service: magpie
+    port: 3430
+    sso: none
+  permissions: []
+  requirements:
+    arch: [amd64, arm64]
+    memory: 256M
+
+# 规范 v0 表达不了、本插件需要的部分。只是提议，核心不解析；见 PR 描述。
+x-wonton-proposed:
+  # 声明本插件提供 models 能力：声明了 models 权限的插件经它访问模型。
+  provides:
+    models:
+      service: magpie
+      port: 3425
+      path: /v1
+      apis: [openai-chat, openai-responses, anthropic-messages, gemini]
+      # 注入给各插件的 WONTON_MODEL_DEFAULT：magpie 的路由组，换 provider 或模型只在这里改。
+      default_model: group/wonton-default
+      # 核心签发、限制、吊销每插件凭据的方式：在服务容器里执行，秘密值经标准输入传入。
+      credentials:
+        issue: [magpie, gateway-key, add, "{name}", --key, "-"]
+        list: [magpie, gateway-key, list]
+        allow_models: [magpie, gateway-key, models, "{id}", "{models}"]
+        revoke: [magpie, gateway-key, remove, "{id}"]
+  # 插件自己的密钥：核心首次安装时生成并保存在密钥库，以 WONTON_SECRET_<NAME> 注入。
+  secrets:
+    - name: web_key
+      bytes: 32
+  # 网页用自己的令牌登录：核心网关校验设备后，经这个入口把令牌换成网页的 cookie。
+  webui_auth:
+    type: link_token
+    path: "/?k={secret:web_key}"
+  # 数据目录的属主：镜像用固定 uid 运行，不认 PUID/PGID。
+  data_owner: "65532:65532"
+  # 需要访问外网（上游 provider）。
+  egress: true

@@ -1,0 +1,48 @@
+# Wonton 给 Hermes 的初始配置：首次启动时由 init 服务写成数据目录里的 config.yaml，之后不覆盖
+# （Hermes 自己也会改写它，比如 /model）。deploy/dev/agent 的开发环境用的也是这一份。
+#
+# 模型只走 magpie。地址、凭据和默认模型都来自核心注入的环境变量，Hermes 会展开 ${VAR}：
+#   WONTON_MODEL_BASE_URL  magpie 网关的 OpenAI 兼容地址
+#   WONTON_MODEL_API_KEY   magpie 发给本插件的网关凭据（Hermes 用 key_env 读取，不落盘）
+#   WONTON_MODEL_DEFAULT   默认模型，指向 magpie 的路由组；换 provider 或模型只在 magpie 里改
+model:
+  provider: custom:magpie
+  default: ${WONTON_MODEL_DEFAULT}
+
+providers:
+  magpie:
+    api: ${WONTON_MODEL_BASE_URL}
+    key_env: WONTON_MODEL_API_KEY
+    transport: chat_completions
+    # 网关凭据只允许用默认路由组，列模型没有意义。
+    discover_models: false
+    models:
+      - ${WONTON_MODEL_DEFAULT}
+    # 路由组里各成员窗口的下限；Hermes 要求至少 64K。
+    context_length: 128000
+
+# Matrix 的行为设置（身份和令牌由核心经环境变量注入）。只收发消息：不加处理中的表情回应、
+# 房间里不自动开线程，重启前后也不往聊天里发状态消息。
+# 注意：v0.22.5 的 Matrix 适配器没有实现 reply_to_mode，回答总是引用触发它的那条消息。
+platforms:
+  matrix:
+    reactions: false
+    auto_thread: false
+    gateway_restart_notification: false
+
+# 只收发消息：Matrix 里不展示工具调用、推理和中间过程，只发最终回答。
+display:
+  # Bot 忙时收到的新消息排队，按顺序逐条回答；不打断当前回答，也不发“正在打断”之类的提示。
+  busy_input_mode: queue
+  busy_ack_enabled: false
+  platforms:
+    matrix:
+      tool_progress: "off"
+      show_reasoning: false
+      interim_assistant_messages: false
+      long_running_notifications: false
+      busy_ack_detail: false
+      streaming: false
+
+# 群聊里每个人各自一段会话，互不共享上下文。
+group_sessions_per_user: true

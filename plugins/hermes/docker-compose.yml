@@ -1,0 +1,103 @@
+# Hermes：默认 Agent 插件草稿（按 docs/plugin-spec.md 草案 v0）。
+#
+# Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型请求只发给 magpie。
+# 一个 Hermes profile 对应一个 Bot，本草稿是默认 profile 即默认 Bot。
+# 在 deploy/dev/agent 里验证过同样的运行配置；配置方式见 ADR-0008 的“验证结果”。
+name: hermes
+
+x-image: &image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+
+services:
+  # 首次启动前写入 Wonton 的 Hermes 配置（同目录 config.yaml）；已有配置时不覆盖。
+  init:
+    image: *image
+    entrypoint: ["/bin/sh", "-c", "test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml"]
+    volumes:
+      - ${WONTON_APP_DATA}:/opt/data
+      - ./config.yaml:/seed/config.yaml:ro
+    network_mode: none
+    restart: "no"
+
+  gateway:
+    image: *image
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      # 镜像启动时把内部用户改成这个 uid/gid，再修正数据目录属主。
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      # matrix.bot：核心签发的 Bot 身份（变量名是提议，见 x-wonton-proposed.injects）。
+      MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
+      MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
+      MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
+      # 私人 Bot 只接受主人的指令；主房间是核心替主人建的私聊，定时任务结果发到这里。
+      MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_OWNER}
+      MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM}
+      # 主流客户端默认加密私聊；依赖缺失时直接失败，不静默退回明文。
+      MATRIX_E2EE_MODE: required
+      MATRIX_RECOVERY_KEY_OUTPUT_FILE: /opt/data/platforms/matrix/recovery-key.txt
+      # models：magpie 的地址和只属于本插件的网关凭据，config.yaml 里引用。
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
+    volumes:
+      - ${WONTON_APP_DATA}:/opt/data
+    healthcheck:
+      # Matrix 连上才算健康：用 Hermes 自己生成的本机 API 密钥查详细状态。
+      test:
+        - CMD-SHELL
+        - >-
+          k="$$(sed -n 's/^API_SERVER_KEY=//p' /opt/data/.env)" &&
+          curl -fsS -H "Authorization: Bearer $$k" http://127.0.0.1:8642/health/detailed |
+          python3 -c 'import json, sys; sys.exit(json.load(sys.stdin)["platforms"]["matrix"]["state"] != "connected")'
+      interval: 30s
+      timeout: 10s
+      start_period: 3m
+      start_interval: 2s
+
+x-wonton:
+  id: com.nousresearch.hermes
+  version: 0.1.0
+  kind: agent
+  title: { zh: Hermes, en: Hermes }
+  description:
+    zh: 默认 Agent：以 Matrix bot 身份和你对话，模型经 magpie
+    en: Default agent that chats as a Matrix bot and reaches models through magpie
+  category: agent
+  agent:
+    protocol: matrix
+  bot:
+    display_name: { zh: Hermes, en: Hermes }
+  permissions:
+    - models
+    - matrix.bot
+  requirements:
+    arch: [amd64, arm64]
+    memory: 1G
+
+# 规范 v0 表达不了、本插件需要的部分。只是提议，核心不解析；见 PR 描述。
+x-wonton-proposed:
+  # 权限对应的注入变量，规范 v0 只定义了 models 的两个。
+  injects:
+    models: [WONTON_MODEL_BASE_URL, WONTON_MODEL_API_KEY, WONTON_MODEL_DEFAULT]
+    matrix.bot:
+      - WONTON_MATRIX_HOMESERVER
+      - WONTON_MATRIX_USER_ID
+      - WONTON_MATRIX_ACCESS_TOKEN
+      - WONTON_MATRIX_OWNER
+      - WONTON_MATRIX_HOME_ROOM
+  # 插件包里的文件（config.yaml）要随 compose 一起放到宿主机上，相对路径才能挂载。
+  package_files: [config.yaml]
+  # 一个容器可以跑多个 Bot（每个 Hermes profile 一个）。每个 Bot 的 Matrix 令牌和 magpie 凭据
+  # 要写进各自 profile 的 .env，不能用容器级环境变量注入。
+  bots:
+    multiple: true
+    secrets_file: profiles/{bot}/.env
+  # 插件运行中自己生成、应交给核心密钥库保管的秘密：Matrix 交叉签名的恢复密钥。
+  generated_secrets: [platforms/matrix/recovery-key.txt]
+  # 需要访问外网（网页搜索等工具）。
+  egress: true
