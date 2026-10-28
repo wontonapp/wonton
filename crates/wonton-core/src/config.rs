@@ -12,7 +12,8 @@ pub enum ConfigError {
     Invalid { name: &'static str, message: String },
 }
 
-/// 浏览器看到的地址：核心在 `<base>`，身份提供方在 `auth.<base>`，插件在 `<slug>.<base>`。
+/// 浏览器看到的地址：核心在 `<base>`，身份提供方在 `auth.<base>`，Matrix 客户端接口在 `matrix.<base>`，
+/// 插件在 `<slug>.<base>`。插件的 slug 至少两段（含 `-`），不会和 `auth`、`matrix` 重名。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicUrls {
     pub scheme: String,
@@ -25,6 +26,7 @@ pub struct PublicUrls {
 pub enum HostKind {
     Core,
     Auth,
+    Matrix,
     Plugin(String),
     Unknown,
 }
@@ -36,6 +38,10 @@ impl PublicUrls {
 
     pub fn auth_host(&self) -> String {
         format!("auth.{}", self.base_domain)
+    }
+
+    pub fn matrix_host(&self) -> String {
+        format!("matrix.{}", self.base_domain)
     }
 
     pub fn plugin_host(&self, slug: &str) -> String {
@@ -67,6 +73,7 @@ impl PublicUrls {
         }
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
+            Some("matrix") => HostKind::Matrix,
             Some(slug) if !slug.is_empty() && !slug.contains('.') => {
                 HostKind::Plugin(slug.to_owned())
             }
@@ -274,6 +281,10 @@ mod tests {
         let urls = &cfg.public;
         assert_eq!(urls.classify("wonton.localhost:8080"), HostKind::Core);
         assert_eq!(urls.classify("AUTH.wonton.localhost"), HostKind::Auth);
+        assert_eq!(
+            urls.classify("matrix.wonton.localhost:8080"),
+            HostKind::Matrix
+        );
         assert_eq!(
             urls.classify("app-grafana.wonton.localhost:8080"),
             HostKind::Plugin("app-grafana".into())

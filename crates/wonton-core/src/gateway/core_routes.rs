@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, devices, isolation, pages, same_origin_path, sso, with_cookie,
+    Gateway, TunnelPeer, api, devices, isolation, matrix, pages, same_origin_path, sso, with_cookie,
 };
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {
@@ -28,6 +28,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/sso", get(sso::start))
         .route("/_wonton/oidc/login", get(sso::oidc_login))
         .route("/_wonton/oidc/consent", get(sso::oidc_consent))
+        .route("/_wonton/matrix/login-token", post(matrix::login_token))
         .route("/_wonton/api/plugins", get(api::list).post(api::install))
         .route("/_wonton/api/plugins/preview", post(api::preview))
         .route("/_wonton/api/plugins/{id}", delete(api::uninstall))

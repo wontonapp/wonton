@@ -132,3 +132,42 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
   `http://app-grafana.wonton.localhost:18480/`，都直接进入 Grafana，用户是 `owner`，没有看到任何登录页。
   做法和遇到的问题见 ADR-0004 的验证结果（#21）。
 
+
+## 接口：App 登录和使用 Matrix（M1）
+
+App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwunel 在哪里。两个入口都只给经隧道接入的已配对设备
+（网关看隧道身份，局域网请求不行），管理 API 的规则不变，仍只认主人令牌。实现见
+`crates/wonton-core/src/gateway/matrix.rs`。
+
+**1. 取登录令牌：`POST <核心地址>/_wonton/matrix/login-token`**
+
+- 没有请求体，鉴权只看隧道身份。核心域名上的跨站修改拦截对它生效，响应也不带 CORS 头：插件网页能让 WebView
+  带着隧道身份发请求，但拿不到令牌。
+- 响应 200（JSON）：
+
+  | 字段 | 说明 |
+  | --- | --- |
+  | `homeserver_url` | Matrix 客户端接口的地址：`<scheme>://matrix.<基础域名>[:端口]`，经隧道访问，`Host` 原样保留 |
+  | `server_name` | Tuwunel 的 `server_name`，即用户 ID 冒号后的部分 |
+  | `user_id` | 设备所属的用户，如 `@owner:wonton.localhost`。M1 的已配对设备都属于主人 |
+  | `login_type` | `org.matrix.login.jwt` |
+  | `token` | 一次性的登录 JWT，声明见上面的验证结果（M0-2） |
+  | `expires_in` | 令牌还能用多少秒（120） |
+
+- 错误：`{"error": {"kind": …, "message": …}}`，`X-Wonton-Error` 头同 `kind`。401 `unauthenticated`（不是经隧道的
+  已配对设备）；403 `cross_site`（其他网页发来的跨站请求）；503 `matrix_unavailable`（核心没有接入 Tuwunel，或
+  Tuwunel 不可用）。
+
+**2. 登录**：在 `expires_in` 秒内调 `POST {homeserver_url}/_matrix/client/v3/login`，请求体
+`{"type": login_type, "token": token, "refresh_token": true, "initial_device_display_name": "…"}`。设备 ID、访问令牌和
+刷新令牌都归设备，核心不保存；令牌被吊销或丢失后再取一次登录令牌。
+
+**3. Matrix 客户端接口：`matrix.<基础域名>`**
+
+- 网关把 `/_matrix/client/` 和 `/_matrix/media/` 下的请求转发给 Tuwunel；联邦接口（`/_matrix/federation/`、
+  `/_matrix/key/`）和管理接口（`/_synapse/admin/`）不转，得到 404 `M_UNRECOGNIZED`。
+- 只接受经隧道的已配对设备，局域网请求得到 403 `M_FORBIDDEN`。错误都用 Matrix 的格式（`errcode`、`error`），另带
+  `X-Wonton-Error`；网关自己不回 401，免得 SDK 以为访问令牌失效。
+- 客户端核心的本地代理只转发基础域名和它的子域名（ADR-0004），`matrix.<基础域名>` 在其中。
+
+接口先于实现合并：在核心接入 Tuwunel 之前（插件规范实现计划第 8 项），两个入口都返回 503 `matrix_unavailable`。

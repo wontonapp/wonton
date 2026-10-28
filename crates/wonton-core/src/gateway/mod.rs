@@ -4,12 +4,14 @@
 //! | --- | --- |
 //! | `<base>` | 核心：登录、状态页、插件 API、OIDC 登录与授权确认端点 |
 //! | `auth.<base>` | 身份提供方（Ory Hydra）的公开端点 |
+//! | `matrix.<base>` | Matrix 客户端接口，只给经隧道的已配对设备（`matrix`） |
 //! | `<slug>.<base>` | 插件网页，需要插件会话 |
 //!
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
 //! （[`TunnelPeer`]），网关据此直接认出主人。局域网浏览器仍走核心会话加插件会话交接。
 //! 本地代理可能被同机其他 App 借用，所以设备一侧的本地代理要校验会话凭据（ADR-0004、#20）；
-//! 网关只在插件网页和 OIDC 登录、授权确认端点上接受隧道身份，管理 API 仍要主人令牌。
+//! 网关只在插件网页、OIDC 登录和授权确认端点、Matrix 登录令牌和 Matrix 客户端接口上接受隧道身份，管理
+//! API 仍要主人令牌。
 //!
 //! 插件子域名彼此同站，也和核心同站：插件网页能让浏览器带着 Cookie 或隧道身份向别处发请求。浏览器里的
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
@@ -19,6 +21,7 @@ mod api;
 mod core_routes;
 mod devices;
 mod isolation;
+pub mod matrix;
 mod pages;
 mod proxy;
 mod session;
@@ -159,6 +162,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
             Err(never) => match never {},
         },
         HostKind::Auth => auth_request(&gateway, req).await,
+        HostKind::Matrix => matrix::client_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Unknown => pages::error(
             StatusCode::NOT_FOUND,

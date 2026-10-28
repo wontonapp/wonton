@@ -377,3 +377,89 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
         "{info}"
     );
 }
+
+/// 局域网（没有隧道身份）的请求，在进程内直接交给网关。
+async fn lan(
+    home: &Home,
+    method: Method,
+    host: &str,
+    path: &str,
+) -> (StatusCode, HeaderMap, Value) {
+    let request = hyper::Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::HOST, format!("{host}:{PORT}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = home.app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        headers,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn matrix_login_and_client_api_are_only_for_paired_devices() {
+    let home = Home::start(None).await;
+    let device = SecretKey::generate();
+    home.register(&device).await;
+    let phone = Phone::start(device, &home).await;
+    let matrix = format!("matrix.{CORE}");
+
+    // 已配对设备：两个入口都到得了，核心还没接入 Tuwunel，如实报不可用。
+    let (status, headers, _) = phone
+        .send(Method::POST, CORE, "/_wonton/matrix/login-token", &[])
+        .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        header(&headers, "x-wonton-error"),
+        Some("matrix_unavailable")
+    );
+    let (status, headers, body) = phone
+        .send(Method::GET, &matrix, "/_matrix/client/versions", &[])
+        .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        header(&headers, "x-wonton-error"),
+        Some("matrix_unavailable")
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["errcode"],
+        "M_UNKNOWN"
+    );
+    // 联邦和管理接口不转发。
+    for path in [
+        "/_matrix/federation/v1/version",
+        "/_synapse/admin/v1/register",
+    ] {
+        let (status, _, body) = phone.send(Method::GET, &matrix, path, &[]).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        let errcode = serde_json::from_str::<Value>(&body).unwrap()["errcode"].clone();
+        assert_eq!(errcode, "M_UNRECOGNIZED", "{path}");
+    }
+    // 插件网页借着隧道身份跨站要登录令牌：核心域名上的跨站修改拦截挡住它。
+    let origin = format!("http://{PLUGIN}:{PORT}");
+    let cross_site = [("sec-fetch-site", "same-site"), ("origin", origin.as_str())];
+    let (status, headers, _) = phone
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/matrix/login-token",
+            &cross_site,
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(header(&headers, "x-wonton-error"), Some("cross_site"));
+
+    // 局域网：没有隧道身份，拿不到登录令牌，也进不了 Matrix（不用 401，免得 SDK 当成令牌失效）。
+    let (status, headers, _) = lan(&home, Method::POST, CORE, "/_wonton/matrix/login-token").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
+    let (status, _, body) = lan(&home, Method::GET, &matrix, "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["errcode"], "M_FORBIDDEN");
+}
