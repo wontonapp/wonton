@@ -1,20 +1,25 @@
-# Hermes：默认 Agent 插件草稿（按 docs/plugin-spec.md 草案 v0）。
+# Hermes：默认 Agent 插件草稿（按 docs/plugin-spec.md 草案 v0.1）。
 #
-# Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型请求只发给 magpie。
-# 一个 Hermes profile 对应一个 Bot，本草稿是默认 profile 即默认 Bot。
+# Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型请求只发给模型网关（magpie）。
+# 每个 Bot 一组 init + gateway 容器（x-wonton.bots）：Hermes 的 profile 不隔离文件系统，
+# 不同人的 Bot 不能共用一个容器。M1 只有默认 Bot。
 # 在 deploy/dev/agent 里验证过同样的运行配置；配置方式见 ADR-0008 的“验证结果”。
+# v0.1 新增的字段核心还没有实现（见规范的“实现计划”），在那之前本草稿装不上。
 name: hermes
 
 x-image: &image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
 
 services:
-  # 首次启动前写入 Wonton 的 Hermes 配置（同目录 config.yaml）；已有配置时不覆盖。
+  # 首次启动前把包里的 config.yaml 写进这个 Bot 的数据目录；已有配置时不覆盖
+  # （Hermes 自己也会改写它，比如 /model）。
   init:
     image: *image
     entrypoint: ["/bin/sh", "-c", "test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml"]
     volumes:
-      - ${WONTON_APP_DATA}:/opt/data
-      - ./config.yaml:/seed/config.yaml:ro
+      - ${WONTON_BOT_DATA}:/opt/data
+    configs:
+      - source: config
+        target: /seed/config.yaml
     network_mode: none
     restart: "no"
 
@@ -30,22 +35,24 @@ services:
       PUID: ${PUID}
       PGID: ${PGID}
       TZ: ${TZ}
-      # matrix.bot：核心签发的 Bot 身份（变量名是提议，见 x-wonton-proposed.injects）。
+      # matrix.bot：核心代这个 Bot 登录后签发的身份，只给令牌，不给密码。
       MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
       MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
       MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
-      # 私人 Bot 只接受主人的指令；主房间是核心替主人建的私聊，定时任务结果发到这里。
+      # 私人 Bot 只接受主人的指令；主房间是核心替主人建的加密私聊，定时任务结果发到这里。
+      # 变量名是 MATRIX_HOME_ROOM，不是 Hermes 插件清单里写的 MATRIX_HOME_CHANNEL。
       MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_OWNER}
       MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM}
       # 主流客户端默认加密私聊；依赖缺失时直接失败，不静默退回明文。
       MATRIX_E2EE_MODE: required
+      # 交叉签名的恢复密钥写在这里，核心收走保管（x-wonton.secrets.matrix_recovery_key）。
       MATRIX_RECOVERY_KEY_OUTPUT_FILE: /opt/data/platforms/matrix/recovery-key.txt
-      # models：magpie 的地址和只属于本插件的网关凭据，config.yaml 里引用。
+      # models：模型网关的地址、只属于这个 Bot 的网关凭据和默认模型，config.yaml 里引用。
       WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
       WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
       WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
     volumes:
-      - ${WONTON_APP_DATA}:/opt/data
+      - ${WONTON_BOT_DATA}:/opt/data
     healthcheck:
       # Matrix 连上才算健康：用 Hermes 自己生成的本机 API 密钥查详细状态。
       test:
@@ -59,9 +66,13 @@ services:
       start_period: 3m
       start_interval: 2s
 
+configs:
+  config:
+    file: ./config.yaml
+
 x-wonton:
   id: com.nousresearch.hermes
-  version: 0.1.0
+  version: 0.2.0
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:
@@ -72,32 +83,18 @@ x-wonton:
     protocol: matrix
   bot:
     display_name: { zh: Hermes, en: Hermes }
+  # init 和 gateway 每个 Bot 一份；每个 Bot 有自己的数据目录、Matrix 令牌和网关凭据。
+  bots:
+    services: [init, gateway]
+  secrets:
+    # Hermes 只凭令牌就自动建好交叉签名，恢复密钥只写在数据目录里；交给核心保管，数据丢了还能恢复。
+    matrix_recovery_key:
+      collect: { service: gateway, path: /opt/data/platforms/matrix/recovery-key.txt }
   permissions:
     - models
     - matrix.bot
+    # 网页搜索等工具。
+    - network.egress
   requirements:
     arch: [amd64, arm64]
     memory: 1G
-
-# 规范 v0 表达不了、本插件需要的部分。只是提议，核心不解析；见 PR 描述。
-x-wonton-proposed:
-  # 权限对应的注入变量，规范 v0 只定义了 models 的两个。
-  injects:
-    models: [WONTON_MODEL_BASE_URL, WONTON_MODEL_API_KEY, WONTON_MODEL_DEFAULT]
-    matrix.bot:
-      - WONTON_MATRIX_HOMESERVER
-      - WONTON_MATRIX_USER_ID
-      - WONTON_MATRIX_ACCESS_TOKEN
-      - WONTON_MATRIX_OWNER
-      - WONTON_MATRIX_HOME_ROOM
-  # 插件包里的文件（config.yaml）要随 compose 一起放到宿主机上，相对路径才能挂载。
-  package_files: [config.yaml]
-  # 一个容器可以跑多个 Bot（每个 Hermes profile 一个）。每个 Bot 的 Matrix 令牌和 magpie 凭据
-  # 要写进各自 profile 的 .env，不能用容器级环境变量注入。
-  bots:
-    multiple: true
-    secrets_file: profiles/{bot}/.env
-  # 插件运行中自己生成、应交给核心密钥库保管的秘密：Matrix 交叉签名的恢复密钥。
-  generated_secrets: [platforms/matrix/recovery-key.txt]
-  # 需要访问外网（网页搜索等工具）。
-  egress: true
