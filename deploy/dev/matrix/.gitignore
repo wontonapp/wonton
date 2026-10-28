@@ -1,0 +1,2 @@
+# dev.sh 生成的核心 JWT 签发密钥
+.secrets/

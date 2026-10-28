@@ -45,3 +45,29 @@ App 被杀后收不到任何消息。
 - Tuwunel 经隧道同步的性能，JWT 登录签发，pusher 行为。
 - iOS 通知扩展的内存限制下解密的可行性（优先用系统自带的加密能力，不在扩展里跑完整核心）。
 - Hermes Matrix 平台在 Tuwunel 上的表现。
+
+## 验证结果（M0-2）
+
+验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑：`cargo test -p wonton-matrix --test tuwunel`
+（每个测试起一台一次性的 Tuwunel，配置同 `deploy/dev/matrix`），本地环境见 `deploy/dev/matrix/README.md`。
+
+- **结论：可行。** Tuwunel 关闭联邦跑在 Docker 里；两个账号用 Simplified Sliding Sync 互发文字和图片，
+  2 MiB、8 MiB 的附件原样往返；客户端用内存或 SQLite 存储都通过。
+- **同步方式**：客户端用 matrix-sdk-ui 的 `SyncService`，和 Element X 一样：一条 Sliding Sync 连接同步
+  房间列表（每个房间只带最新一条消息，邀请也从这里到达），另一条收加密用的 to-device 消息；打开房间时
+  按房间订阅拉完整时间线。Tuwunel 在 `/versions` 里声明 `org.matrix.simplified_msc3575`，客户端创建时
+  就检查，不支持直接报错。
+- **延迟**（debug 构建）：
+
+  | 链路 | 首次同步 | 对方收到文字 p50 / p95 | 对方看到 8 MiB 图片 | 下载 8 MiB |
+  | --- | --- | --- | --- | --- |
+  | 同机 Docker | 29 ms | 23 / 30 ms | 32 ms | 10 ms |
+  | 局域网（Wi-Fi 到有线主机，ping 0.85 ms） | 77 ms | 48 / 100 ms | 274 ms | 755 ms |
+
+  有新事件时长轮询立即返回，消息延迟约等于一次往返加服务器处理。
+- **端到端加密**：另外试了加密私聊（matrix-sdk 的 `create_dm`），文字和图片都在对方解密，局域网下首条
+  消息 119 ms 到达并解密。M0 的封装建的是不加密房间：推送代理要读到内容才能生成加密通知的预览，房间
+  是否加密随推送方案（M0-3）一起定。
+- **登录**：设备和 Bot 都用核心签发的 JWT 登录，方案、过期与吊销见 ADR-0009 的验证结果。
+- **经隧道**：待隧道（M0-1）合并后补做。复跑方法：`WONTON_MATRIX_HOMESERVER` 指向客户端本地代理，
+  运行 `cargo test -p wonton-matrix --test tuwunel messaging`。

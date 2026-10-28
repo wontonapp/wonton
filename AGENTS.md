@@ -41,7 +41,8 @@
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
 - 提交前运行 `bash scripts/check.sh`：行数门禁、`cargo fmt`、`cargo clippy -D warnings`、`cargo test`，
-  和 CI 一致。
+  和 CI 一致。部分集成测试（如 `wonton-matrix`）用 Docker 起一次性容器，需要本机 Docker 在运行；
+  没有 `/var/run/docker.sock` 时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`（如 OrbStack）。
 - 依赖：只有一个 crate 用到的依赖写在该 crate 的 `Cargo.toml`；多个 crate 共用的依赖在根
   `Cargo.toml` 的 `[workspace.dependencies]` 统一版本，crate 里用 `{ workspace = true }` 引用。
 - `Cargo.lock` 冲突时，先取 `main` 的版本，再运行 `cargo build` 重新生成，不手工合并。
