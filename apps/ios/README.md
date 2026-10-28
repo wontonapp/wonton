@@ -32,7 +32,16 @@ xcodegen generate --spec apps/ios/project.yml
 ```
 
 然后用 Xcode 打开 `apps/ios/Wonton.xcodeproj` 运行。改了 Rust 代码后重新运行 `build-core.sh`；
-增删 Swift 文件后重新运行 `xcodegen`。只支持 Apple 芯片的 Mac 上的模拟器。
+增删 Swift 文件后重新运行 `xcodegen`。模拟器只支持 Apple 芯片的 Mac。
+
+真机要用自己的开发团队签名：在 Xcode 里登录 Apple ID 后，命令行这样构建（团队 ID 是开发证书的 OU）：
+
+```bash
+xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<设备 UDID>" -allowProvisioningUpdates DEVELOPMENT_TEAM=<团队 ID> build
+```
+
+用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
+“设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次连家里的服务器时，系统会请求“本地网络”权限。
 
 ## 连家里的服务器（开发）
 
@@ -49,6 +58,12 @@ SIMCTL_CHILD_WONTON_DEV_TICKET="$(deploy/dev/core/dev.sh ticket)" SIMCTL_CHILD_W
   真机上不用点按也能测。真机用 `xcrun devicectl device process launch --console --environment-variables`
   传同样的变量，直连地址写 Mac 的局域网 IP（核心要 `WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。
 - 连接信息存在 App 的数据目录里，之后直接启动也会自动重连。
+- `WONTON_LOG` 换核心的日志过滤规则，例如 `wonton_client=info,wonton_tunnel=debug,warn` 打开本地代理的
+  逐连接日志。
+- `WONTON_DEV_RELOAD_ON_FOREGROUND=1` 让网页每次从后台回来都重新加载，并把加载过程带上 UTC 时间打到控制台。
+  测前后台切换时，用 `xcrun devicectl device process launch --device <设备 UDID> com.apple.Preferences`
+  把 App 切到后台，等若干秒再 `launch app.wonton.ios` 拉回来，对照控制台里的“回到前台，隧道检查完成”
+  和“网页加载完成”。
 
 ## 检查
 

@@ -20,6 +20,11 @@ struct PluginWebView: UIViewRepresentable {
         #if DEBUG
         // 调试时可以用 Mac 上 Safari 的 Web 检查器看网页。
         webView.isInspectable = true
+        // 真机测前后台切换时 WONTON_DEV_RELOAD_ON_FOREGROUND=1：每次回到前台重新加载，验证本地代理和隧道
+        // 在挂起后还能用，不用点按。
+        if ProcessInfo.processInfo.environment["WONTON_DEV_RELOAD_ON_FOREGROUND"] != nil {
+            context.coordinator.reloadOnForeground(webView)
+        }
         #endif
         load(in: webView, coordinator: context.coordinator)
         return webView
@@ -53,19 +58,51 @@ struct PluginWebView: UIViewRepresentable {
         var loadedURL: URL?
 
         #if DEBUG
-        // 开发时把加载结果打到标准错误（devicectl / simctl 的控制台看得到），真机上不用点按也能测。
+        private weak var reloadingWebView: WKWebView?
+
+        /// 只在从后台回来时触发（启动时不发这个通知）。用 selector 注册：协调器释放时系统自动注销。
+        func reloadOnForeground(_ webView: WKWebView) {
+            reloadingWebView = webView
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(appWillEnterForeground),
+                name: UIApplication.willEnterForegroundNotification, object: nil
+            )
+        }
+
+        @objc private func appWillEnterForeground() {
+            Self.log("回到前台，重新加载网页")
+            reloadingWebView?.reload()
+        }
+
+        // 开发时把加载过程打到标准错误（devicectl / simctl 的控制台看得到），真机上不用点按也能测。
         // 只记到路径：查询串和片段里可能有 OAuth 授权码等秘密；错误也不打 userInfo，里面有完整地址。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            let page = Self.withoutQuery(webView.url)
-            FileHandle.standardError.write(Data("网页加载完成 page=\(page) title=\(webView.title ?? "-")\n".utf8))
+            Self.log("网页加载完成 page=\(Self.withoutQuery(webView.url)) title=\(webView.title ?? "-")")
         }
 
         func webView(
             _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
         ) {
+            Self.log("网页加载失败：\(Self.describe(error))")
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            Self.log("网页加载中断：\(Self.describe(error))")
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Self.log("网页进程被系统结束")
+        }
+
+        /// 带 UTC 时间，和核心的日志对得上。
+        private static func log(_ message: String) {
+            let time = Date.now.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+            FileHandle.standardError.write(Data("\(time) \(message)\n".utf8))
+        }
+
+        private static func describe(_ error: Error) -> String {
             let error = error as NSError
-            let line = "网页加载失败：\(error.domain) \(error.code) \(error.localizedDescription)\n"
-            FileHandle.standardError.write(Data(line.utf8))
+            return "\(error.domain) \(error.code) \(error.localizedDescription)"
         }
 
         private static func withoutQuery(_ url: URL?) -> String {

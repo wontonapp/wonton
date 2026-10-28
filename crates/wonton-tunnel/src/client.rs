@@ -83,6 +83,11 @@ impl fmt::Display for PathKind {
     }
 }
 
+/// 回到前台时等现有连接回应的时限。这段时间里新的请求都在等检查结果，所以取得短：直连往返通常几十毫秒，
+/// n0 中继的往返 P90 约 1 秒（ADR-0004 实测）。偶尔把慢的连接误判成失效，代价只是重连一次。挂起后
+/// QUIC 的往返时间估计会被挂起期间积压的确认拉高，不能拿来定时限。
+const REVALIDATE_DEADLINE: Duration = Duration::from_millis(1500);
+
 /// 到一台服务端的隧道客户端。克隆得到的是同一个客户端，共享同一条连接。
 #[derive(Debug, Clone)]
 pub struct TunnelClient {
@@ -164,6 +169,33 @@ impl TunnelClient {
         Ok(started.elapsed())
     }
 
+    /// 确认现有连接仍然可用。App 从挂起中恢复（回到前台）时调用。
+    ///
+    /// 挂起超过路径的空闲超时后，服务端会放弃这条连接，关闭帧却到不了挂起的设备：不检查的话，要等本机的
+    /// 空闲超时（iroh 默认 30 秒）才发现，期间所有请求都挂着。这里限时做一次往返，没有回应就关掉旧连接、
+    /// 立刻建新连接。检查期间新开的流等检查结果，再走确认过的连接或新连接。没有连接时等同于 [`ping`]。
+    ///
+    /// [`ping`]: Self::ping
+    pub async fn revalidate(&self) -> Result<Duration, TunnelError> {
+        let Some(conn) = self.inner.live_connection() else {
+            return self.ping().await;
+        };
+        let started = Instant::now();
+        let attempt = Arc::new(Attempt::default());
+        *self.inner.lock_attempt() = attempt.clone();
+        let client = self.clone();
+        let result = attempt
+            .result
+            .get_or_init(|| client.confirm_or_replace(conn))
+            .await;
+        if let Err(err) = result {
+            return Err(err.clone());
+        }
+        // 换了新连接时，这一次往返确认服务端仍接受本设备，并更新状态。
+        self.ping().await?;
+        Ok(started.elapsed())
+    }
+
     /// 当前连接正在使用的传输路径。没有可用连接时返回 `None`。
     pub fn path(&self) -> Option<PathInfo> {
         let conn = self.inner.live_connection()?;
@@ -227,6 +259,24 @@ impl TunnelClient {
             Status::UpstreamUnavailable => Err(TunnelError::UpstreamUnavailable),
             Status::UnsupportedRequest => Err(TunnelError::protocol("服务端不支持这个请求类型")),
         }
+    }
+
+    /// 限时在 `conn` 上做一次往返；没有回应或已经出错，就关掉它，建一条新连接。
+    async fn confirm_or_replace(self, conn: Connection) -> Result<Connection, TunnelError> {
+        match tokio::time::timeout(REVALIDATE_DEADLINE, self.ping_on(&conn)).await {
+            Ok(Ok(())) => return Ok(conn),
+            Ok(Err(err)) => info!("现有连接不可用，重新建连：{err}"),
+            Err(_) => info!(deadline = ?REVALIDATE_DEADLINE, "现有连接限时内没有回应，换新连接"),
+        }
+        conn.close(CLOSE_NORMAL, b"no response");
+        self.inner.clone().connect().await
+    }
+
+    /// 在指定的连接上做一次往返，不经过 [`Self::connection`]。
+    async fn ping_on(&self, conn: &Connection) -> Result<(), TunnelError> {
+        let mut stream = open_stream(conn, Request::Ping).await?;
+        stream.send.finish().ok();
+        self.read_status(&mut stream.recv, stream.conn_id).await
     }
 
     /// 取一条可用连接：复用现有连接；没有或已断开时建新连接，并发调用方共享同一次建连。

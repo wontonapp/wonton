@@ -206,7 +206,12 @@ impl HomeLink {
             link.endpoint.network_change().await;
             link.client.clone()
         };
-        self.check(&client).await;
+        // 挂起久了，服务端已经放弃这条连接，手机却收不到关闭帧：限时确认，没有回应就立刻换新连接，
+        // 不等 30 秒的空闲超时（见 ADR-0004 的真机实测）。
+        if let Err(err) = client.revalidate().await {
+            tracing::info!("隧道检查失败：{err}");
+        }
+        self.update_path(&client);
         tracing::info!(
             elapsed = ?started.elapsed(),
             status = %client.status(),
@@ -219,6 +224,10 @@ impl HomeLink {
         if let Err(err) = client.ping().await {
             tracing::info!("隧道检查失败：{err}");
         }
+        self.update_path(client);
+    }
+
+    fn update_path(&self, client: &TunnelClient) {
         let path = client.path().map(path_view);
         self.view.send_modify(|view| view.path = path);
     }

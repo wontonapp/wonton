@@ -4,4 +4,5 @@
 mod embedded;
 mod forwarding;
 mod local_proxy;
+mod resume;
 mod support;

@@ -21,9 +21,10 @@ struct WontonApp: App {
                         .tabItem { Label("家", systemImage: "house") }
                         .tag(AppTab.home)
                 }
-                .onChange(of: scenePhase) { _, phase in
-                    // 挂起期间系统可能回收了套接字、网络也可能变了，让核心检查并重连。
-                    if phase == .active { home.send(.appForegrounded) }
+                .onChange(of: scenePhase) { old, phase in
+                    // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
+                    // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
+                    if old == .background, phase != .background { home.send(.appForegrounded) }
                 }
             case let .failed(reason):
                 ContentUnavailableView("核心启动失败", systemImage: "exclamationmark.triangle",
@@ -54,7 +55,9 @@ private enum Launch {
 
     static func start() -> Launch {
         #if DEBUG
-        initLogging(filter: "wonton_client=info,wonton_tunnel=info,warn", file: nil)
+        // WONTON_LOG 可以换过滤规则，例如真机测试时打开本地代理的 debug 日志。
+        let filter = ProcessInfo.processInfo.environment["WONTON_LOG"] ?? "wonton_client=info,wonton_tunnel=info,warn"
+        initLogging(filter: filter, file: nil)
         #endif
         do {
             let core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))

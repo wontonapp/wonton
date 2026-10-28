@@ -16,7 +16,7 @@ use tokio::{
     },
     task::{JoinHandle, JoinSet},
 };
-use tracing::{debug, error, warn};
+use tracing::{Instrument, debug, debug_span, error, warn};
 
 use crate::{
     client::{TunnelClient, TunnelStream},
@@ -92,7 +92,9 @@ async fn accept_loop(listener: TcpListener, client: TunnelClient, access: Arc<Pr
             accepted = listener.accept() => match accepted {
                 Ok((tcp, peer)) => {
                     debug!(%peer, "本地代理收到连接");
-                    connections.spawn(serve_local(client.clone(), tcp, access.clone()));
+                    // 这条连接之后的日志都带上它的本地端口，并发的连接才分得清。
+                    let span = debug_span!("本地连接", port = peer.port());
+                    connections.spawn(serve_local(client.clone(), tcp, access.clone()).instrument(span));
                 }
                 Err(err) => {
                     warn!("本地代理接受连接失败：{err}");

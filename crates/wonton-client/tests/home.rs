@@ -5,7 +5,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use iroh::endpoint::presets;
@@ -141,6 +141,33 @@ async fn coming_back_to_the_foreground_reconnects() {
     assert!(view.path.is_some(), "{view:?}");
 }
 
+#[tokio::test]
+async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
+        .await;
+    let proxy = view.proxy.unwrap();
+
+    // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。
+    home.drop_connections_silently().await;
+    assert_eq!(phone.home().status, HomeStatus::Connected);
+
+    let started = Instant::now();
+    phone.dispatch(Action::AppForegrounded).unwrap();
+    home.wait_for_a_connection().await;
+    let (status, body) = get(&proxy, WEB_URL, "/after", true).await;
+    assert_eq!((status, body.as_str()), (200, "/after"));
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "回到前台后 {:?} 才恢复",
+        started.elapsed()
+    );
+}
+
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
 struct Phone {
     core: Arc<ClientCore>,
@@ -228,6 +255,28 @@ impl Home {
     async fn restart(&mut self) {
         let port = self.server().endpoint().bound_sockets()[0].port();
         self.server.take().expect("服务端没在运行").shutdown().await;
+        self.start_again(port).await;
+    }
+
+    /// 不发关闭帧就丢掉所有连接，再用同样的身份和端口启动：手机那边收不到任何通知，相当于服务端放弃了
+    /// 挂起设备的连接。
+    async fn drop_connections_silently(&mut self) {
+        let port = self.server().endpoint().bound_sockets()[0].port();
+        drop(self.server.take());
+        self.start_again(port).await;
+    }
+
+    /// 等手机建一条新连接。
+    async fn wait_for_a_connection(&self) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        let socket = &self.server().endpoint().metrics().socket;
+        while socket.num_conns_opened.get() == 0 {
+            assert!(tokio::time::Instant::now() < deadline, "手机一直没有重连");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    async fn start_again(&mut self, port: u16) {
         wait_until_port_is_free(port).await;
         let endpoint = loopback_endpoint(self.key.clone(), port).await;
         self.server = Some(TunnelServer::spawn(

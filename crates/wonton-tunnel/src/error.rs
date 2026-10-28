@@ -62,13 +62,16 @@ impl TunnelError {
     }
 }
 
-/// 连接被关闭的原因。服务端用 [`CLOSE_UNAUTHORIZED`] 关闭即为未授权；本地关闭即为已关闭；其余都是传输问题。
+/// 连接被关闭的原因。服务端用 [`CLOSE_UNAUTHORIZED`] 关闭即为未授权；其余都是传输问题。
+///
+/// 本机断开的连接也算传输问题：客户端关闭后，新的请求由客户端自己回 [`TunnelError::Closed`]；回到前台时
+/// 换掉的失效连接（[`crate::TunnelClient::revalidate`]），下一次请求会走新连接。
 pub(crate) fn from_connection_error(err: &ConnectionError) -> TunnelError {
     match err {
         ConnectionError::ApplicationClosed(close) if close.error_code == CLOSE_UNAUTHORIZED => {
             TunnelError::Unauthorized
         }
-        ConnectionError::LocallyClosed => TunnelError::Closed,
+        ConnectionError::LocallyClosed => TunnelError::transport("本机已断开这条连接"),
         other => TunnelError::transport(other),
     }
 }
