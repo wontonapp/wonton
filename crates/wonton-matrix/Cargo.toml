@@ -16,8 +16,12 @@ matrix-sdk-ui = "0.19.1"
 futures-util = "0.3.34"
 # MIT OR Apache-2.0。附件的 MIME 类型，matrix-sdk 的发送接口要求这个类型。
 mime = "0.3.17"
+# 存登录状态，以及把媒体来源编成不透明的句柄。
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "sync"] }
+tokio = { workspace = true, features = ["macros", "sync", "rt"] }
+tracing = { workspace = true }
 
 [dev-dependencies]
 # ISC AND (Apache-2.0 OR ISC)。测试里生成核心的 Ed25519 签发密钥；rustls 已经依赖它。
@@ -26,8 +30,6 @@ aws-lc-rs = "1"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 # MIT。把测试生成的公钥编码成 PEM 交给 Tuwunel；jsonwebtoken 已经依赖它。
 pem = "3.0.6"
-serde = { workspace = true }
-serde_json = { workspace = true }
 # MIT OR Apache-2.0。测试时用 Docker 起一次性的 Tuwunel。
 testcontainers = { version = "0.28.0", default-features = false }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

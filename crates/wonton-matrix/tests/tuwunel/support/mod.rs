@@ -103,6 +103,7 @@ impl TestServer {
             homeserver_url: self.url.clone(),
             device_name: device_name.to_owned(),
             store,
+            proxy: None,
         }
     }
 
@@ -127,6 +128,16 @@ impl TestServer {
         MatrixSession::login_with_jwt(&self.config(device_name, store), &jwt)
             .await
             .unwrap_or_else(|error| panic!("{localpart} 登录失败：{error}"))
+    }
+
+    /// 冻住服务器：连接还能建立，但请求永远等不到回应，相当于隧道断开时请求挂住。只有测试自己起的容器能冻。
+    pub async fn freeze(&self) {
+        self._container
+            .as_ref()
+            .expect("现成的服务器不能冻住")
+            .pause()
+            .await
+            .expect("冻住 Tuwunel 容器");
     }
 
     /// 核心的管理账号，只有测试自己起的容器才有。
@@ -166,25 +177,31 @@ pub fn random_hex(len: usize) -> String {
         .collect()
 }
 
-/// 测试结束时删除的 SQLite 存储目录。
-pub struct TempStore(PathBuf);
+/// 测试结束时删除的 SQLite 存储目录。口令在创建时定下，重启后用同一个口令打开。
+pub struct TempStore {
+    path: PathBuf,
+    passphrase: String,
+}
 
 impl TempStore {
     pub fn create() -> Self {
-        Self(std::env::temp_dir().join(unique("wonton-matrix-store")))
+        Self {
+            path: std::env::temp_dir().join(unique("wonton-matrix-store")),
+            passphrase: random_hex(16),
+        }
     }
 
     pub fn config(&self) -> StoreConfig {
         StoreConfig::Sqlite {
-            path: self.0.clone(),
-            passphrase: Some(random_hex(16)),
+            path: self.path.clone(),
+            passphrase: Some(self.passphrase.clone()),
         }
     }
 }
 
 impl Drop for TempStore {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 

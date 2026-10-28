@@ -1,32 +1,37 @@
-//! 时间线消息的 ViewModel：把 matrix-sdk-ui 的时间线条目转成界面直接能用的结构。
+//! 消息：把 matrix-sdk-ui 时间线里的事件条目转成界面直接能用的结构。
 
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use matrix_sdk::ruma::{
-    OwnedEventId, OwnedUserId,
+    OwnedEventId, OwnedUserId, UserId,
     events::room::{
         MediaSource,
         message::{ImageMessageEventContent, MessageType},
     },
 };
-use matrix_sdk_ui::{
-    eyeball_im::Vector,
-    timeline::{EventSendState, EventTimelineItem, MsgLikeKind, TimelineItem},
-};
+use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeKind, TimelineDetails};
 
 /// 时间线里的一条消息。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     /// 服务器分配的事件 ID；本地回显还没发出去时为 `None`。
     pub event_id: Option<OwnedEventId>,
     /// 发送者。
     pub sender: OwnedUserId,
+    /// 发送者的显示名，没有设置时是用户 ID。
+    pub sender_name: String,
     /// 是否由本账号发出（包括本账号的其他设备）。
     pub is_own: bool,
+    /// 发送时间，Unix 毫秒。本地回显是创建时间。
+    pub timestamp_ms: u64,
     /// 发送状态。
     pub status: SendStatus,
-    /// 内容。
+    /// 内容；被编辑过时是最新的内容。
     pub body: MessageBody,
+    /// 是否被编辑过。
+    pub edited: bool,
+    /// 读到这条为止的其他人（显示名）。
+    pub read_by: Vec<String>,
 }
 
 /// 发送状态。别人发的消息和从服务器同步来的消息都是 [`SendStatus::Sent`]。
@@ -46,15 +51,17 @@ pub enum SendStatus {
 }
 
 /// 消息内容。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MessageBody {
-    /// 文字。
+    /// 文字，包括 Bot 常用的 `m.notice`。
     Text(String),
     /// 图片。
     Image(ImageContent),
     /// 端到端加密的消息，本设备没有解密密钥。
     Undecryptable,
-    /// 其他类型（文件、语音、贴纸、投票、已撤回等），M0 还不展开；`kind` 是消息或事件类型。
+    /// 已撤回。
+    Redacted,
+    /// 其他类型（文件、语音、贴纸、投票等），还不展开；`kind` 是消息或事件类型。
     Other {
         /// 消息或事件类型。
         kind: String,
@@ -77,6 +84,20 @@ pub struct ImageContent {
     pub(crate) source: MediaSource,
 }
 
+/// 媒体来源没有实现相等比较，按它的 JSON（即句柄）比较。
+impl PartialEq for ImageContent {
+    fn eq(&self, other: &Self) -> bool {
+        self.filename == other.filename
+            && self.mime_type == other.mime_type
+            && self.size == other.size
+            && self.width == other.width
+            && self.height == other.height
+            && self.media_token() == other.media_token()
+    }
+}
+
+impl Eq for ImageContent {}
+
 impl From<&ImageMessageEventContent> for ImageContent {
     fn from(image: &ImageMessageEventContent) -> Self {
         let info = image.info.as_deref();
@@ -92,24 +113,55 @@ impl From<&ImageMessageEventContent> for ImageContent {
     }
 }
 
-/// 从时间线条目里取出消息，略过日期分隔线、成员变化等非消息条目。
-pub(crate) fn messages(items: &Vector<Arc<TimelineItem>>) -> Vec<Message> {
-    items
-        .iter()
-        .filter_map(|item| item.as_event())
-        .filter_map(message)
-        .collect()
+/// 房间成员的显示名，用来显示“谁已读”。没有记录的成员显示用户 ID。
+#[derive(Clone, Debug, Default)]
+pub(crate) struct MemberNames(HashMap<OwnedUserId, String>);
+
+impl MemberNames {
+    pub(crate) fn new(names: HashMap<OwnedUserId, String>) -> Self {
+        Self(names)
+    }
+
+    pub(crate) fn name(&self, user: &UserId) -> String {
+        self.0
+            .get(user)
+            .cloned()
+            .unwrap_or_else(|| user.to_string())
+    }
 }
 
-fn message(event: &EventTimelineItem) -> Option<Message> {
+/// 把消息类事件转成 [`Message`]；其他事件（成员变化、房间设置等）返回 `None`。
+pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<Message> {
     let kind = &event.content().as_msglike()?.kind;
+    let edited = matches!(kind, MsgLikeKind::Message(message) if message.is_edited());
+    let read_by = event
+        .read_receipts()
+        .keys()
+        .filter(|reader| *reader != event.sender())
+        .map(|reader| names.name(reader))
+        .collect();
     Some(Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
+        sender_name: sender_name(event),
         is_own: event.is_own(),
+        timestamp_ms: event.timestamp().get().into(),
         status: status(event.send_state()),
         body: body(kind),
+        edited,
+        read_by,
     })
+}
+
+/// 发送者的显示名；资料还没加载到时用用户 ID。
+pub(crate) fn sender_name(event: &EventTimelineItem) -> String {
+    match event.sender_profile() {
+        TimelineDetails::Ready(profile) => profile
+            .display_name
+            .clone()
+            .unwrap_or_else(|| event.sender().to_string()),
+        _ => event.sender().to_string(),
+    }
 }
 
 fn status(state: Option<&EventSendState>) -> SendStatus {
@@ -126,7 +178,7 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
     }
 }
 
-fn body(kind: &MsgLikeKind) -> MessageBody {
+pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {
     let other = |kind: &str| MessageBody::Other {
         kind: kind.to_owned(),
     };
@@ -139,7 +191,7 @@ fn body(kind: &MsgLikeKind) -> MessageBody {
             msgtype => other(msgtype.msgtype()),
         },
         MsgLikeKind::UnableToDecrypt(_) => MessageBody::Undecryptable,
-        MsgLikeKind::Redacted => other("redacted"),
+        MsgLikeKind::Redacted => MessageBody::Redacted,
         MsgLikeKind::Sticker(_) => other("m.sticker"),
         MsgLikeKind::Poll(_) => other("m.poll.start"),
         MsgLikeKind::LiveLocation(_) => other("m.beacon_info"),

@@ -1,7 +1,8 @@
 //! 两个账号经 Simplified Sliding Sync 互发文字和图片。
 
 use wonton_matrix::{
-    ChatRoom, ImageContent, ImageUpload, Membership, Message, MessageBody, SendStatus, UserId,
+    ChatRoom, ImageContent, ImageUpload, MatrixSession, Membership, Message, MessageBody,
+    SendStatus, UserId,
 };
 
 use crate::support::{TempStore, TestServer, eventually, random_bytes, unique};
@@ -24,10 +25,10 @@ async fn two_accounts_exchange_text_and_images() {
 
     // Alice 建私聊并邀请 Bob；Bob 经 Sliding Sync 看到邀请后加入。
     let room_id = alice
-        .create_direct_chat(bob.user_id())
+        .create_direct_chat(bob.user_id(), false)
         .await
         .expect("Alice 建私聊");
-    eventually("Bob 收到邀请", bob.room_updates(), |rooms| {
+    eventually("Bob 收到邀请", bob.rooms().await.unwrap(), |rooms| {
         rooms
             .iter()
             .find(|room| room.room_id == room_id && room.membership == Membership::Invited)
@@ -72,8 +73,8 @@ async fn two_accounts_exchange_text_and_images() {
         width: Some(2),
         height: Some(2),
     };
-    send_and_receive_image(&alice_room, &bob_room, png).await;
-    send_and_receive_image(&bob_room, &alice_room, photo).await;
+    send_and_receive_image(&alice_room, (&bob, &bob_room), png).await;
+    send_and_receive_image(&bob_room, (&alice, &alice_room), photo).await;
 }
 
 /// 等到 `sender` 发的文字出现且已送达服务器（有事件 ID）。
@@ -92,8 +93,12 @@ async fn wait_for_text(room: &ChatRoom, what: &str, sender: &UserId, text: &str)
     .await
 }
 
-/// 发图后，对方收到的图片带着原来的元数据，下载到的字节与原图一致。
-async fn send_and_receive_image(from: &ChatRoom, to: &ChatRoom, upload: ImageUpload) {
+/// 发图后，对方收到的图片带着原来的元数据，凭句柄下载到的字节与原图一致。
+async fn send_and_receive_image(
+    from: &ChatRoom,
+    (receiver, to): (&MatrixSession, &ChatRoom),
+    upload: ImageUpload,
+) {
     from.send_image(upload.clone()).await.expect("发图片");
     let image = eventually(
         "对方收到图片",
@@ -109,7 +114,10 @@ async fn send_and_receive_image(from: &ChatRoom, to: &ChatRoom, upload: ImageUpl
     assert_eq!(image.size, Some(upload.data.len() as u64));
     assert_eq!(image.width, upload.width.map(u64::from));
     assert_eq!(image.height, upload.height.map(u64::from));
-    let downloaded = to.download_image(&image).await.expect("下载图片");
+    let downloaded = receiver
+        .download_media(&image.media_token())
+        .await
+        .expect("下载图片");
     assert!(downloaded == upload.data, "下载到的图片与原图不一致");
 }
 

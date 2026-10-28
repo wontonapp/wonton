@@ -141,7 +141,10 @@ async fn revoked_device_is_signed_out_and_can_pair_again() {
     assert_eq!(status, Some(SyncStatus::Running));
     let friend = server.login(&unique("frank"), "Frank 的手机").await;
     assert!(
-        tablet.create_direct_chat(friend.user_id()).await.is_ok(),
+        tablet
+            .create_direct_chat(friend.user_id(), false)
+            .await
+            .is_ok(),
         "平板应仍可使用"
     );
 
@@ -177,7 +180,7 @@ async fn deactivated_bot_cannot_log_in_again() {
     admin.deactivate(bot.user_id()).await;
 
     let error = bot
-        .create_direct_chat(owner.user_id())
+        .create_direct_chat(owner.user_id(), false)
         .await
         .expect_err("停用后的会话应失效");
     assert_signed_out(&error, events.as_mut()).await;

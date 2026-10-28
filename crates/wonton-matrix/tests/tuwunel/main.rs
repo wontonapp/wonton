@@ -10,6 +10,8 @@
 // 同库本身：matrix-sdk 的 future 嵌套很深。
 #![recursion_limit = "256"]
 
+mod chat;
+mod encryption;
 mod login;
 mod messaging;
 mod support;
