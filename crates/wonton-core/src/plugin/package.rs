@@ -313,6 +313,12 @@ impl PluginPackage {
     }
 
     fn check_manifest_references(&self) -> Result<(), PackageError> {
+        let models = self
+            .manifest
+            .provides
+            .as_ref()
+            .and_then(|p| p.models.as_ref());
+        let credentials = models.and_then(|m| m.credentials.service.as_ref());
         let refs = [
             (
                 "webui.service",
@@ -322,6 +328,8 @@ impl PluginPackage {
                 "mcp.service",
                 self.manifest.mcp.as_ref().map(|m| &m.service),
             ),
+            ("provides.models.service", models.map(|m| &m.service)),
+            ("provides.models.credentials.service", credentials),
         ];
         let collects = self
             .manifest

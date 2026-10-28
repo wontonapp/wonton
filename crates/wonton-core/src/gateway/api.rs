@@ -38,7 +38,8 @@ fn install_error(error: &InstallError) -> Response {
         InstallError::NotInstalled(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
         | InstallError::OidcUnavailable(_)
-        | InstallError::MatrixUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+        | InstallError::MatrixUnavailable(_)
+        | InstallError::ModelsUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         InstallError::Docker(_) | InstallError::Unhealthy(_) => StatusCode::BAD_GATEWAY,
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };

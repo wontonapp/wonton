@@ -176,10 +176,10 @@ impl Reply {
 }
 
 pub(super) struct Harness {
-    addr: SocketAddr,
-    http: HttpClient,
+    pub addr: SocketAddr,
+    pub http: HttpClient,
     pub hits: Arc<AtomicUsize>,
-    manager: Arc<PluginManager>,
+    pub manager: Arc<PluginManager>,
     _dir: tempfile::TempDir,
 }
 

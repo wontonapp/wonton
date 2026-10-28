@@ -1,6 +1,7 @@
 # 本地核心（插件管理器 + 网关）、身份提供方和 Matrix 服务器
 
-本地开发用的 `wonton-core`、Ory Hydra（小程序单点登录）和 Tuwunel（Matrix 服务器），见 ADR-0009。核心在容器里
+本地开发用的 `wonton-core`、Ory Hydra（小程序单点登录）和 Tuwunel（Matrix 服务器），见 ADR-0009；核心还会预装
+模型网关 magpie（ADR-0008）。核心在容器里
 运行，和产品一致：唯一挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
 核心网关访问 Tuwunel。
 
@@ -67,6 +68,17 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 
 `matrix.<基础域名>` 只转发客户端和媒体接口，局域网的浏览器进不来；Tuwunel 的管理接口只有核心能用。
 
+## 模型网关
+
+核心镜像里带着系统插件 magpie（`plugins/magpie`），核心启动后在后台预装它（`WONTON_SYSTEM_PLUGINS`）。声明了
+`models` 的插件经 `models.wonton.internal` 访问它，凭据由核心签发。“模型设置”网页要等网关代登录，现在用
+magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie（同 `deploy/dev/agent`）：
+
+```bash
+docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder models=rm/glm-5.3-flash
+docker exec wonton-ai-usemagpie-magpie--magpie magpie group add wonton-default models=upstream/rm/glm-5.3-flash routing=order
+```
+
 App 用 `dev.sh ticket [直连地址] [网页地址]` 生成的连接信息连接（见 `apps/ios/README.md`、`apps/compose/README.md`），
 里面带着基础域名：App 的本地代理和 WebView 只让这个域名下的地址走隧道。
 直连地址默认 `127.0.0.1:18482`（同机的 iOS 模拟器），Android 模拟器写 `10.0.2.2:18482`，局域网里的手机写本机的
@@ -86,15 +98,16 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 插件收不到网关 Cookie 和伪造的转发头；已配对设备经隧道拿到 Matrix 登录令牌、登录 Tuwunel，局域网拿不到
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
-失效，不删数据重装沿用账号和主房间，删除数据时账号停用；没申请 `matrix.bot` 的插件进不了
-`matrix.wonton.internal`；核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
+失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
+经 `models.wonton.internal` 能用、卸载后凭据被吊销；没申请 `matrix.bot`、`models` 的插件进不了对应的内部地址；
+核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例）：
 
 ```bash
 for image in rust:1.99.1-slim-trixie debian:trixie-slim oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 \
-  grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0; do
+  ghcr.io/yetone/magpie:0.1.1327 grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh npchy docker load
 done

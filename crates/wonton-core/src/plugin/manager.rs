@@ -12,6 +12,7 @@ use super::docker::{Engine, EngineError};
 use super::health::HealthError;
 use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
+use super::models::{ModelsRoute, ProviderState};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 use super::secrets::CollectError;
@@ -42,6 +43,8 @@ pub enum InstallError {
     OidcUnavailable(String),
     #[error("Matrix 不可用：{0}")]
     MatrixUnavailable(String),
+    #[error("模型网关不可用：{0}")]
+    ModelsUnavailable(String),
     #[error("插件没有通过健康检查：{0}")]
     Unhealthy(String),
     #[error("{0}")]
@@ -61,6 +64,7 @@ impl InstallError {
             Self::Docker(_) => "docker_rejected",
             Self::OidcUnavailable(_) => "oidc_unavailable",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
+            Self::ModelsUnavailable(_) => "models_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
         }
@@ -81,6 +85,7 @@ impl InstallError {
             Self::Docker(m) => Self::Docker(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
+            Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),
         }
@@ -95,10 +100,7 @@ impl From<PackageError> for InstallError {
 
 impl From<RenderError> for InstallError {
     fn from(e: RenderError) -> Self {
-        match e {
-            RenderError::Unsupported(message) => Self::Unsupported(message),
-            other => Self::Invalid(other.to_string()),
-        }
+        Self::Invalid(e.to_string())
     }
 }
 
@@ -245,12 +247,17 @@ struct Entry {
     status: PluginStatus,
     health: Option<Health>,
     upstream: Option<String>,
+    /// 声明了 `provides.models`（不论状态）。
+    provides_models: bool,
+    /// 运行中的模型网关的转发目标。
+    models: Option<ModelsRoute>,
 }
 
-/// 部署或核对完成的插件：核心访问它网页的地址，和检查时的健康状况。
+/// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
 pub(super) struct Deployed {
     pub upstream: Option<String>,
     pub health: Health,
+    pub models: Option<ModelsRoute>,
 }
 
 impl Entry {
@@ -262,12 +269,18 @@ impl Entry {
             status,
             health: None,
             upstream,
+            provides_models: manifest
+                .provides
+                .as_ref()
+                .is_some_and(|p| p.models.is_some()),
+            models: None,
         }
     }
 
     fn running(manifest: &Manifest, deployed: Deployed) -> Self {
         Self {
             health: Some(deployed.health),
+            models: deployed.models,
             ..Self::new(manifest, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -283,6 +296,8 @@ impl Entry {
             status: PluginStatus::Degraded { reason },
             health: None,
             upstream: None,
+            provides_models: false,
+            models: None,
         }
     }
 }
@@ -304,7 +319,10 @@ pub struct PluginManager {
 fn supported(permission: &Permission) -> bool {
     matches!(
         permission,
-        Permission::StorageShare { .. } | Permission::NetworkEgress | Permission::MatrixBot
+        Permission::StorageShare { .. }
+            | Permission::NetworkEgress
+            | Permission::MatrixBot
+            | Permission::Models
     )
 }
 
@@ -348,6 +366,18 @@ impl PluginManager {
         self.sources.find(ip)
     }
 
+    /// 模型网关现在的状态：没装、装了没在运行、可用。
+    pub(super) fn models_provider(&self) -> ProviderState {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let Some((id, entry)) = plugins.iter().find(|(_, e)| e.provides_models) else {
+            return ProviderState::Absent;
+        };
+        match (&entry.status, &entry.models) {
+            (PluginStatus::Running, Some(route)) => ProviderState::Ready(Box::new(route.clone())),
+            _ => ProviderState::NotReady(id.clone()),
+        }
+    }
+
     /// 预览只有 compose 文本的插件包。
     pub fn preview(&self, source: &str) -> Result<Preview, InstallError> {
         self.preview_package(&PluginPackage::parse(source)?)
@@ -355,6 +385,7 @@ impl PluginManager {
 
     pub fn preview_package(&self, package: &PluginPackage) -> Result<Preview, InstallError> {
         dry_run(package)?;
+        check_sso(&package.manifest)?;
         let m = package.manifest.clone();
         let slug = m.id.slug();
         Ok(Preview {
@@ -416,6 +447,27 @@ impl PluginManager {
         }
     }
 
+    pub(super) fn is_installed(&self, id: &PluginId) -> bool {
+        self.plugins.read().expect("插件表锁中毒").contains_key(id)
+    }
+
+    /// 没装成的插件也如实列出来（标为异常、写明原因），主人看得到，不悄悄跳过。
+    pub(super) fn mark_failed(&self, id: &PluginId, version: String, reason: String) {
+        self.plugins
+            .write()
+            .expect("插件表锁中毒")
+            .insert(id.clone(), Entry::broken(id, version, reason));
+    }
+
+    /// 测试用：把登记过的插件当成运行中的模型网关，供网关测试指向本地的假上游。
+    #[cfg(test)]
+    pub(crate) fn serve_models_for_test(&self, route: ModelsRoute) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        let entry = plugins.get_mut(&route.id).expect("先 register_for_test");
+        entry.provides_models = true;
+        entry.models = Some(route);
+    }
+
     /// 测试用：不经 Docker 直接登记一个插件，供网关测试指向本地的假上游。
     #[cfg(test)]
     pub(crate) fn register_for_test(
@@ -444,7 +496,12 @@ impl PluginManager {
         self.sources.insert(&id, vec![subnet], permissions);
     }
 
-    fn set(&self, id: &PluginId, status: PluginStatus, upstream: Option<Option<String>>) {
+    pub(super) fn set(
+        &self,
+        id: &PluginId,
+        status: PluginStatus,
+        upstream: Option<Option<String>>,
+    ) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = status;
@@ -510,14 +567,30 @@ impl PluginManager {
             .await
     }
 
-    /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。
+    /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。系统插件只能由安装器预装
+    /// （见 [`super::system`]）。
     pub async fn install_package(
+        &self,
+        package: PluginPackage,
+        granted: &[Permission],
+    ) -> Result<PluginView, InstallError> {
+        if package.manifest.kind == PluginKind::System {
+            return Err(InstallError::Unsupported(
+                "system 插件只能由安装器预装".to_owned(),
+            ));
+        }
+        self.install_checked(package, granted).await
+    }
+
+    /// 检查并部署，API 安装和预装系统插件共用。
+    pub(super) async fn install_checked(
         &self,
         package: PluginPackage,
         granted: &[Permission],
     ) -> Result<PluginView, InstallError> {
         dry_run(&package)?;
         let manifest = package.manifest.clone();
+        check_sso(&manifest)?;
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
         self.reserve(&manifest)?;
@@ -566,10 +639,19 @@ impl PluginManager {
     }
 
     async fn check_requirements(&self, manifest: &Manifest) -> Result<(), InstallError> {
-        if manifest.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(
-                "system 插件只能由安装器预装".to_owned(),
-            ));
+        let provides_models = manifest
+            .provides
+            .as_ref()
+            .is_some_and(|p| p.models.is_some());
+        let existing = match self.models_provider() {
+            ProviderState::Absent => None,
+            ProviderState::NotReady(id) => Some(id),
+            ProviderState::Ready(route) => Some(route.id),
+        };
+        if provides_models && let Some(id) = existing {
+            return Err(InstallError::Conflict(format!(
+                "已经装了模型网关 {id}：同一时间只能有一个"
+            )));
         }
         let arch = self.engine.host_arch().await?;
         let wanted = manifest.requirements.as_ref().and_then(|r| r.arch.as_ref());
@@ -623,6 +705,16 @@ impl PluginManager {
                 Err(e)
             }
         }
+    }
+}
+
+/// 网关代登录（`sso: proxy`）还没实现：预览和安装时就如实拒绝，不装一个打开网页还要另外登录的插件。
+fn check_sso(manifest: &Manifest) -> Result<(), InstallError> {
+    match manifest.webui.as_ref().map(|w| w.sso) {
+        Some(Sso::Proxy) => Err(InstallError::Unsupported(
+            "网关代登录（sso: proxy）尚未支持，见插件规范实现计划第 10 项".to_owned(),
+        )),
+        _ => Ok(()),
     }
 }
 

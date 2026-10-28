@@ -14,6 +14,7 @@ mod configs;
 mod egress;
 mod health;
 mod manager;
+mod models;
 mod secrets;
 
 const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");
@@ -30,6 +31,19 @@ fn package(services: &str, extra_manifest: &str) -> String {
 
 fn env_of(plan: &super::render::ContainerPlan) -> Vec<String> {
     plan.body.env.clone().unwrap_or_default()
+}
+
+/// 假 Docker 里容器创建时的环境变量：名字 → 值。
+fn env_of_container(
+    docker: &super::fake_docker::FakeDocker,
+    container: &str,
+) -> std::collections::BTreeMap<String, String> {
+    docker
+        .env(container)
+        .iter()
+        .filter_map(|e| e.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
 }
 
 fn render_err(yaml: &str) -> String {

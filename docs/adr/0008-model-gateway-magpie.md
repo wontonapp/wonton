@@ -100,3 +100,23 @@ Web UI；支持列表里有 Hermes Agent。
 两项待验证都有了答案，决策不变：magpie 作为系统插件，每插件一个网关凭据，Hermes 只指向 magpie。
 插件规范要补的地方（`matrix.bot` 的注入变量、`WONTON_MODEL_DEFAULT`、模型网关如何声明自己并签发凭据、
 插件自有密钥、插件包文件、多 Bot 的凭据等）记在 M0-4 的 PR 里，由插件规范的修订统一处理。
+
+## 验证结果（M1，核心接入模型网关）
+
+核心按插件规范的“模型网关”接上 magpie，决策不变。环境：magpie 0.1.1327、macOS + OrbStack。可复跑：
+`deploy/dev/core/smoke.sh`（“模型网关”一步）；签发、验证、对账、吊销和注入的各种情况在假网关上测
+（`cargo test -p wonton-core models`）。
+
+- 预装：magpie 是系统插件，随开发用的核心镜像放在 `/usr/share/wonton/system-plugins/magpie`，核心启动后在后台
+  装上（`WONTON_SYSTEM_PLUGINS`），镜像已在本机时两秒内装好并通过健康检查。网页要等网关代登录（插件规范实现计划
+  第 10 项），在那之前不声明 `webui`；provider 用命令行配置：
+  `docker exec <magpie 容器> magpie provider add …`。
+- 凭据：核心在 magpie 容器里执行 `sh /wonton/credentials.sh issue <插件 id>`，值走标准输入；
+  `magpie gateway-key list` 里出现以插件 id 命名、不限模型的凭据。用它请求 `GET /v1/models` 返回 200
+  （没配 provider 时是空列表），不带凭据或带错的凭据 401。
+- 转发：使用方拿到 `WONTON_MODEL_BASE_URL=http://models.wonton.internal:<网关端口>/v1`、
+  `WONTON_MODEL_DEFAULT=group/wonton-default`。把 magpie 的上游指向主人本机的 magpie（同 M0-4）后，流式补全经核心
+  逐块转发，首 token 约 2.1 秒（GLM-5.3-Flash）；`magpie usage --csv` 的 `caller_key_name` 是使用方的插件 id。
+- 对账：在 magpie 里删掉这个凭据后请求得到 401；重启核心，核心用记下的同一个值重新签发，使用方不用重启就恢复 200。
+- 吊销：卸载使用方后，magpie 里没有这个凭据了，旧值得到 401。
+- 隔离：没申请 `models` 的插件从自己的网络里访问 `models.wonton.internal` 得到 403 `permission_denied`。

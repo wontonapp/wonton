@@ -99,6 +99,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_matrix(matrix.clone()),
     );
     manager.restore().await.context("恢复已安装的插件")?;
+    preinstall(&cfg, manager.clone())?;
 
     let tunnel = bind_tunnel(&cfg).await?;
     let gateway = Arc::new(
@@ -164,6 +165,28 @@ async fn connect_matrix(cfg: &Config, http: &HttpClient) -> anyhow::Result<Optio
         "Tuwunel 已就绪"
     );
     Ok(Some(Arc::new(matrix)))
+}
+
+/// 在后台装上还没装的系统插件（要拉镜像、等健康，不挡着网关启动），再为模型网关的使用方对一次账：凭据的值在
+/// 核心，网关的数据丢了也能补回来。系统插件目录配了却不是目录时启动失败。
+fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
+    let dir = cfg.system_plugins.clone();
+    if let Some(dir) = &dir
+        && !dir.is_dir()
+    {
+        bail!("WONTON_SYSTEM_PLUGINS 指向的 {} 不是目录", dir.display());
+    }
+    tokio::spawn(async move {
+        if let Some(dir) = dir
+            && let Err(e) = manager.ensure_system(&dir).await
+        {
+            tracing::error!(error = %e, "预装系统插件失败");
+        }
+        for (plugin, error) in manager.reconcile_models().await {
+            tracing::error!(%plugin, %error, "模型网关凭据对账失败");
+        }
+    });
+    Ok(())
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。

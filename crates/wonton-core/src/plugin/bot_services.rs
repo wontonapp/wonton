@@ -21,8 +21,8 @@ fn bot_services(manifest: &Manifest) -> BTreeSet<&str> {
 }
 
 /// 每个服务插值用的变量表：Bot 服务多了 `WONTON_BOT_NAME` 和 `WONTON_BOT_DATA`
-/// （`${WONTON_APP_DATA}/bots/<Bot 名>`）。声明了 `bots` 时 Bot 的 Matrix 身份（`WONTON_MATRIX_*`）也只给
-/// Bot 服务：全插件一份的服务引用这些变量时安装失败。
+/// （`${WONTON_APP_DATA}/bots/<Bot 名>`），`WONTON_MODEL_API_KEY` 是这个 Bot 的凭据。声明了 `bots` 时 Bot 的
+/// Matrix 身份（`WONTON_MATRIX_*`）也只给 Bot 服务：全插件一份的服务引用这些变量时安装失败。
 pub struct ServiceVars<'a> {
     plugin: Vars,
     bot: Vars,
@@ -30,11 +30,21 @@ pub struct ServiceVars<'a> {
 }
 
 impl<'a> ServiceVars<'a> {
-    pub fn new(manifest: &'a Manifest, app_data: &Path, mut plugin: Vars) -> Self {
+    /// `bot_model_key`：默认 Bot 的模型网关凭据，Bot 服务里的 `WONTON_MODEL_API_KEY` 用它。
+    pub fn new(
+        manifest: &'a Manifest,
+        app_data: &Path,
+        mut plugin: Vars,
+        bot_model_key: Option<String>,
+    ) -> Self {
         let mut bot = plugin.clone();
         bot.insert("WONTON_BOT_NAME".to_owned(), DEFAULT_BOT.to_owned());
         let data = app_data.join("bots").join(DEFAULT_BOT);
         bot.insert("WONTON_BOT_DATA".to_owned(), data.display().to_string());
+        match bot_model_key {
+            Some(key) => bot.insert("WONTON_MODEL_API_KEY".to_owned(), key),
+            None => bot.remove("WONTON_MODEL_API_KEY"),
+        };
         if manifest.bots.is_some() {
             plugin.retain(|name, _| !name.starts_with("WONTON_MATRIX_"));
         }

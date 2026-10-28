@@ -25,6 +25,9 @@ pub struct PublicUrls {
 /// 私有网络的顶级域名，基础域名不能落在它下面。
 pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
 
+/// 插件经核心在插件网络里的这个别名访问模型网关（`WONTON_MODEL_BASE_URL` 等）。
+pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
+
 /// 网关按 Host 头区分的目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostKind {
@@ -34,6 +37,8 @@ pub enum HostKind {
     Plugin(String),
     /// 插件网络里的 Bot 访问 Matrix（[`PLUGIN_MATRIX_HOST`]）。
     PluginMatrix,
+    /// 插件网络里的插件访问模型网关（[`PLUGIN_MODELS_HOST`]）。
+    PluginModels,
     Unknown,
 }
 
@@ -79,6 +84,9 @@ impl PublicUrls {
         }
         if host == PLUGIN_MATRIX_HOST {
             return HostKind::PluginMatrix;
+        }
+        if host == PLUGIN_MODELS_HOST {
+            return HostKind::PluginModels;
         }
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
@@ -143,6 +151,8 @@ pub struct Config {
     pub core_container: Option<String>,
     pub oidc: Option<OidcProviderConfig>,
     pub matrix: Option<MatrixConfig>,
+    /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
+    pub system_plugins: Option<PathBuf>,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -215,6 +225,7 @@ impl Config {
                 port,
             },
             core_container: get("WONTON_CORE_CONTAINER"),
+            system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
             oidc,
             matrix,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
@@ -383,11 +394,15 @@ mod tests {
             urls.classify("matrix.wonton.internal:8080"),
             HostKind::PluginMatrix
         );
+        assert_eq!(
+            urls.classify("models.wonton.internal"),
+            HostKind::PluginModels
+        );
         for other in [
             "a.b.wonton.localhost",
             "evil.example",
             "wonton.localhost.evil",
-            "models.wonton.internal",
+            "mail.wonton.internal",
             "",
         ] {
             assert_eq!(urls.classify(other), HostKind::Unknown, "{other}");

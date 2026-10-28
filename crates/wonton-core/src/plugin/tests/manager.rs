@@ -262,3 +262,37 @@ async fn docker_outage_is_reported_and_leaves_nothing_behind() {
         "not_installed"
     );
 }
+
+#[tokio::test]
+async fn proxy_sso_is_refused_until_the_core_implements_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager(&dir);
+    let web = "  web:\n    image: nginx";
+    let proxy = package(
+        web,
+        "  webui: {service: web, port: 80, sso: proxy, proxy: {cookies: {app_web: '{secret:web_key}'}}}\n  \
+         secrets: {web_key: {generate: {bytes: 32}}}\n  permissions: []",
+    );
+    // 预览就如实拒绝，主人不会确认装一个打开网页还要另外登录的插件；在碰 Docker 之前。
+    assert_eq!(m.preview(&proxy).unwrap_err().kind(), "unsupported");
+    assert_eq!(
+        m.install(&proxy, &[]).await.unwrap_err().kind(),
+        "unsupported"
+    );
+    assert!(m.list().is_empty());
+    // 写法不对的照常是清单不合法：sso: proxy 却没写 webui.proxy、proxy 是空的，或者写了 proxy 却不是 sso: proxy。
+    for webui in [
+        "{service: web, port: 80, sso: proxy}",
+        "{service: web, port: 80, sso: proxy, proxy: {}}",
+        "{service: web, port: 80, proxy: {headers: {Remote-User: '{user}'}}}",
+    ] {
+        let source = package(web, &format!("  webui: {webui}\n  permissions: []"));
+        assert!(
+            matches!(
+                PluginPackage::parse(&source),
+                Err(super::super::package::PackageError::Manifest(_))
+            ),
+            "{webui}"
+        );
+    }
+}

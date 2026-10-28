@@ -8,6 +8,8 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+use super::provides::Provides;
+
 /// 插件 ID 的最大长度。网关用它派生子域名，必须放得进一个 DNS 标签。
 pub const MAX_ID_LEN: usize = 63;
 
@@ -103,6 +105,8 @@ pub enum PluginKind {
 #[serde(rename_all = "lowercase")]
 pub enum Sso {
     Oidc,
+    /// 网关代登录（插件规范的“网关代登录”）：核心认得，但还没实现，安装预览时如实报“尚未支持”。
+    Proxy,
     #[default]
     None,
 }
@@ -145,6 +149,18 @@ pub struct WebUi {
     pub sso: Sso,
     #[serde(default)]
     pub oidc: Option<OidcClient>,
+    #[serde(default)]
+    pub proxy: Option<ProxyCredentials>,
+}
+
+/// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyCredentials {
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub cookies: BTreeMap<String, String>,
 }
 
 fn default_web_path() -> String {
@@ -463,6 +479,9 @@ pub struct Manifest {
     pub bots: Option<BotServices>,
     #[serde(default)]
     pub agent: Option<AgentSpec>,
+    /// 系统插件给其他插件提供的能力，见规范“模型网关”。
+    #[serde(default)]
+    pub provides: Option<Provides>,
     /// 插件自己的密钥，见规范“插件密钥”。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
@@ -487,6 +506,7 @@ impl Manifest {
             ));
         }
         validate_bots(self)?;
+        super::provides::validate(self)?;
         if let Some(webui) = &self.webui {
             validate_webui(webui)?;
         }
@@ -561,24 +581,28 @@ fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
     if webui.port == 0 {
         return Err(ManifestError::Invalid("webui.port 不能为 0".to_owned()));
     }
-    match (webui.sso, &webui.oidc) {
-        (Sso::Oidc, Some(client)) => {
+    let invalid = |message: &str| Err(ManifestError::Invalid(message.to_owned()));
+    if webui.oidc.is_some() && webui.sso != Sso::Oidc {
+        return invalid("webui.oidc 只能和 sso: oidc 一起使用");
+    }
+    if webui.proxy.is_some() && webui.sso != Sso::Proxy {
+        return invalid("webui.proxy 只能和 sso: proxy 一起使用");
+    }
+    match (webui.sso, &webui.oidc, &webui.proxy) {
+        (Sso::Oidc, Some(client), _) => {
             if client.redirect_paths.is_empty()
                 || client.redirect_paths.iter().any(|p| !p.starts_with('/'))
             {
-                return Err(ManifestError::Invalid(
-                    "webui.oidc.redirect_paths 至少一项，且每项以 / 开头".to_owned(),
-                ));
+                return invalid("webui.oidc.redirect_paths 至少一项，且每项以 / 开头");
             }
             Ok(())
         }
-        (Sso::Oidc, None) => Err(ManifestError::Invalid(
-            "webui.sso 为 oidc 时必须提供 webui.oidc.redirect_paths".to_owned(),
-        )),
-        (Sso::None, Some(_)) => Err(ManifestError::Invalid(
-            "webui.oidc 只能和 sso: oidc 一起使用".to_owned(),
-        )),
-        (Sso::None, None) => Ok(()),
+        (Sso::Oidc, None, _) => invalid("webui.sso 为 oidc 时必须提供 webui.oidc.redirect_paths"),
+        (Sso::Proxy, _, Some(proxy)) if proxy.headers.is_empty() && proxy.cookies.is_empty() => {
+            invalid("webui.proxy 至少声明一个请求头或 Cookie")
+        }
+        (Sso::Proxy, _, None) => invalid("webui.sso 为 proxy 时必须提供 webui.proxy"),
+        _ => Ok(()),
     }
 }
 

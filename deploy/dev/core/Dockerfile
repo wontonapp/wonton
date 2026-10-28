@@ -48,5 +48,7 @@ CMD ["run"]
 
 FROM debian:trixie-slim
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
+# 随核心预装的系统插件（WONTON_SYSTEM_PLUGINS）：模型网关 magpie。
+COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
 ENTRYPOINT ["wonton-core"]
 CMD ["serve"]

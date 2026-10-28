@@ -1,10 +1,12 @@
-# magpie 模型网关：系统插件草稿（按 docs/plugin-spec.md 草案 v0.1）。
+# magpie 模型网关：系统插件（按 docs/plugin-spec.md 草案 v0.1），由安装器预装（WONTON_SYSTEM_PLUGINS）。
 #
-# 用户只在“模型设置”小程序（magpie 自带网页）里配置 provider 和 key，key 只存在本插件的数据目录。
 # 本插件提供 models：声明了 models 权限的插件经核心转发访问它，各自拿到一个只属于自己的网关凭据
 # （magpie 的 gateway key，可单独限模型、限额度、吊销，用量按凭据名归属），由 credentials.sh 签发。
 # 在 deploy/dev/agent 里验证过同样的运行配置；鉴权细节见 ADR-0008 的“验证结果”。
-# v0.1 新增的字段核心还没有实现（见规范的“实现计划”），在那之前本草稿装不上。
+#
+# 用户在“模型设置”小程序（magpie 自带网页，3430 端口）里配置 provider 和 key，key 只存在本插件的数据目录。
+# 网页要网关代登录（sso: proxy，插件规范实现计划第 10 项）才能免密码打开，在那之前不声明 webui，网页不对外；
+# provider 先用 magpie 的命令行配置（docker exec <容器> magpie provider add …）。
 name: magpie
 
 services:
@@ -49,15 +51,9 @@ x-wonton:
     zh: magpie 模型网关：provider 和 key 只配一次，所有 Bot 和插件共用
     en: "magpie model gateway: set up providers and keys once, shared by every bot and plugin"
   category: system
-  webui:
-    service: magpie
-    port: 3430
-    # magpie 的网页认名为 magpie_web_<端口> 的 Cookie，值就是网页密钥本身。
-    # 网关校验主人的会话后代为带上，浏览器拿不到密钥。
-    sso: proxy
-    proxy:
-      cookies:
-        magpie_web_3430: "{secret:web_key}"
+  # 第 10 项实现网关代登录后加回网页入口：magpie 的网页认名为 magpie_web_<端口> 的 Cookie，值就是网页密钥，
+  # 网关校验主人的会话后代为带上，浏览器拿不到密钥。
+  #   webui: {service: magpie, port: 3430, sso: proxy, proxy: {cookies: {magpie_web_3430: "{secret:web_key}"}}}
   provides:
     models:
       service: magpie

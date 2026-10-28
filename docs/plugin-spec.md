@@ -185,6 +185,9 @@ services:
 
 ### 网关代登录（`sso: proxy`）
 
+> 核心认得 `sso: proxy` 和 `webui.proxy`，但还没实现（实现计划第 10 项）：在那之前预览和安装这样的插件都如实
+> 拒绝（`unsupported`），不装一个打开网页还要另外登录的插件。magpie 的“模型设置”网页也随第 10 项回来。
+
 网关校验会话后，在转发给插件的请求上加上清单声明的请求头或 Cookie。应用认反向代理传来的用户名时
 （Navidrome、Paperless-ngx、Grafana 的 auth proxy 等）：
 
@@ -247,7 +250,8 @@ webui:
 高权限在安装确认时单独醒目展示。插件不声明的能力一律不给。安装请求必须逐项确认清单里的全部权限，
 少一项或多一项都拒绝安装。
 
-核心目前兑现 `storage.share.*`、`network.egress`（见“网络”）和 `matrix.bot`（见“Matrix Bot”）。共享文件夹在数据目录的 `shares/<名称>` 下，
+核心目前兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）和 `matrix.bot`
+（见“Matrix Bot”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
 
@@ -262,7 +266,7 @@ webui:
 | `WONTON_APP_URL` | 声明了 `webui` | 插件网页的公开地址，不带末尾 `/`。应用生成回调地址、外部链接时使用。 |
 | `WONTON_OIDC_ISSUER`、`WONTON_OIDC_CLIENT_ID`、`WONTON_OIDC_CLIENT_SECRET` | `webui.sso: oidc` | OIDC 客户端配置。 |
 | `WONTON_OIDC_AUTH_URL`、`WONTON_OIDC_TOKEN_URL`、`WONTON_OIDC_USERINFO_URL` | `webui.sso: oidc` | 各端点地址，给不支持发现文档的应用（如 Grafana）。 |
-| `WONTON_MODEL_BASE_URL` | `models` | 模型网关 OpenAI 兼容接口的地址，以 `/v1` 结尾。 |
+| `WONTON_MODEL_BASE_URL` | `models` | 模型网关 OpenAI 兼容接口的地址，以 `/v1` 结尾，如 `http://models.wonton.internal:8080/v1`。 |
 | `WONTON_MODEL_ANTHROPIC_BASE_URL`、`WONTON_MODEL_GEMINI_BASE_URL` | `models`，且网关提供该接口 | Anthropic Messages、Gemini 接口的地址，按各自 SDK 的约定不带 `/v1`。 |
 | `WONTON_MODEL_API_KEY` | `models` | 只属于本插件（多 Bot 时只属于这个 Bot）的网关凭据。 |
 | `WONTON_MODEL_DEFAULT` | `models` | 默认模型名，由网关决定（magpie 是路由组 `group/wonton-default`）。 |
@@ -301,10 +305,16 @@ webui:
 模型请求只经模型网关（ADR-0008，默认 magpie）。网关是一个声明了 `provides.models` 的系统插件；核心把
 声明了 `models` 的插件接到它上面，给每个插件单独的凭据。
 
+系统插件（`kind: system`）由安装器预装，API 装不了：核心启动后在后台从 `WONTON_SYSTEM_PLUGINS` 目录（每个子目录
+一个插件包）装上还没装的系统插件，授予清单声明的全部权限，装核心就是主人对它们的确认；已经装着的照常核对，
+不重装也不升级。装不上的如实标为异常、写明原因，不影响核心启动。
+
 ### 使用方
 
 - 地址指向核心在插件网络里的别名 `models.wonton.internal`，由核心转发给网关（见“网络”），如
-  `http://models.wonton.internal/v1`。插件和网关不在同一个网络里，只能经这个别名访问。主机名一定带点：
+  `http://models.wonton.internal:8080/v1`。插件和网关不在同一个网络里，只能经这个别名访问；网关按来源地址认出
+  请求来自哪个插件网络，没申请 `models` 的插件得到 403 `permission_denied`，网关没在运行时得到 503
+  `models_unavailable`。请求和响应都流式转发，不缓冲，也不设总超时。主机名一定带点：
   Hermes 把不带点的主机名当成本机模型服务，会去探测 Ollama 接口，而 magpie 正好兼容这组接口，结果每个
   请求都被加上 Ollama 专用的参数（ADR-0008 实测）。
 - 请求 `WONTON_MODEL_DEFAULT`，不写死 provider 的模型名：换 provider 或模型只在网关里改。默认模型还没
@@ -312,7 +322,7 @@ webui:
 - 凭据默认可以用网关里的所有模型：插件和网关在同一台机器上，能访问就该能用。凭据由核心自动签发和注入，
   插件不用配置，作用是按插件记账和单独吊销。要限定某个插件能用的模型、设额度或限定账号，主人在网关自己的
   网页里改；核心不同步这些设置。
-- 网关没装或没就绪时，安装失败并说明是网关的原因，不注入半套变量。
+- 网关没装或没就绪时，安装失败（`models_unavailable`）并说明是网关的原因，不注入半套变量。
 
 > **已定：凭据默认可以用所有模型**（主人 2026-10-28 确认）。没选的方案是只允许默认模型：最小权限、花费
 > 可控，但需要特定模型（如视觉模型）的插件要主人去网关里放开。
@@ -344,8 +354,8 @@ x-wonton:
 | `credentials.issue`、`credentials.revoke` | 是 | 签发和吊销凭据的命令（argv，不经 shell），见下节。 |
 | `credentials.service` | 否 | 在哪个服务的容器里执行命令，默认是 `service`。 |
 
-同一台服务器同时只能有一个插件提供 `models`。提供方看得到全部模型请求和 provider 的 key，所以只有
-`kind: system` 的官方插件可以声明。
+同一台服务器同时只能有一个插件提供 `models`，装第二个时安装失败（`conflict`）。提供方看得到全部模型请求和
+provider 的 key，所以只有 `kind: system` 的官方插件可以声明。
 
 ### 凭据的签发与吊销
 
@@ -353,7 +363,9 @@ x-wonton:
 以退出码判断结果，不解析输出。magpie 的实现见
 [`plugins/magpie/credentials.sh`](../plugins/magpie/credentials.sh)。
 
-- 占位符：`{name}` 是凭据名，即插件 `id`，多 Bot 时是 `<插件 id>/<Bot 名>`。核心逐项替换 argv，不经 shell。
+- 占位符：`{name}` 是凭据名。没有 `bots` 时只有插件级的凭据，名字是插件 `id`；有 `bots` 时 Bot 服务用这个 Bot 的
+  凭据（`<插件 id>/<Bot 名>`，M1 只有 `default`），还有全插件一份的服务时再签发一个插件级的。核心逐项替换 argv，
+  不经 shell，在 `credentials.service`（默认 `service`）的容器里以容器的默认用户执行。
 - `issue`：标准输入给出凭据的值（一行）。网关里没有这个名字的凭据时，新建一个，不限定模型；
   已有时不改动它（主人可能调整过）。退出码 0 表示成功。
 - `revoke`：删除这个名字的凭据；本来就没有也算成功。
@@ -362,8 +374,10 @@ x-wonton:
 - 时机：
   - 安装使用方时签发，再用这个凭据请求一次 `GET <openai 基础地址>/models`，返回 200 才算成功。返回 401
     说明网关里的同名凭据不是这个值，核心先 `revoke` 再 `issue` 一次；还是不行就报错。
-  - 网关每次启动后（安装、升级、核心重启后的恢复），核心按同样的步骤为所有使用方对一次账。
-  - 卸载使用方或删掉一个 Bot 时吊销，再从密钥库删除。
+  - 网关每次启动后（安装、升级、核心重启后的恢复），核心按同样的步骤为所有使用方对一次账；对账失败的使用方
+    标为异常、写明原因。
+  - 卸载使用方（删不删数据都一样）或删掉一个 Bot 时吊销，再从密钥库删除；重装是一个新值。网关已经卸载了就没有
+    可吊销的；网关装着但没在运行时吊销不了，卸载如实失败。
 - 命令超时 30 秒。失败时错误里附上命令的标准错误输出，并区分“网关未就绪”和“网关拒绝”。
 
 ## Matrix Bot
@@ -589,25 +603,17 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
 1. **接口：清单类型迁到 `wonton-protocol`**（只改接口，先合并）。
    - `crates/wonton-core/src/plugin/manifest.rs` 的类型和校验移到 `crates/wonton-protocol` 的 `plugin`
      模块；`wonton-core` 加依赖并改为引用它。
-   - 新增：`Permission::NetworkEgress`；`Sso::Proxy` 和 `webui.proxy`（请求头、Cookie、值模板）；
-     `provides.models`。`secrets`（`generate`、`collect`）和 `bots` 已在核心里，随其他类型一起迁移。
-   - 新增的校验：只有 `kind: system` 能声明 `provides`；模板只引用 `generate` 的项；`provides` 引用的服务
-     存在（在 `package.rs` 对照 compose 检查）。
+   - 新增：`Permission::NetworkEgress`。`secrets`（`generate`、`collect`）、`bots`、`provides.models`
+     （`plugin/provides.rs`）、`Sso::Proxy` 和 `webui.proxy`（只解析，见第 10 项）已在核心里，随其他类型一起迁移。
+   - 新增的校验：模板只引用 `generate` 的项。只有 `kind: system` 能声明 `provides`、`provides` 引用的服务存在，
+     这两条已在核心里。
    - 契约测试：`plugins/` 下所有插件包都能解析，几类违规各被拒绝；App 的安装确认页以后用同一套类型
      （需要 UniFFI 导出的类型按它的约束调整）。
-7. **模型网关**（核心新增 `models` 模块，改 `gateway/`）。
-   - 解析并记录当前的提供方，同一时间只允许一个；使用方安装时检查它已就绪。
-   - 网关按 Host `models.wonton.internal` 路由：由连接进来的本地地址认出插件网络，只为声明了 `models`
-     的插件转发，转到提供方声明的服务和端口；流式响应不缓冲，超时放宽到分钟级。
-   - 凭据：生成后存密钥库，经 Docker exec 执行 `issue`、`revoke`（标准输入传值、30 秒超时、带上 stderr），
-     签发后用 `GET …/models` 验证；提供方每次启动后对账；卸载时吊销。
-   - 只在声明了 `models` 的插件网络里给核心加别名；核心不在容器里时（开发环境）用 `extra_hosts`。
-   - 注入 `WONTON_MODEL_*`：`InstallContext` 带上网关的地址、本插件的凭据和默认模型，`dry_run` 用占位值。
-     在那之前，声明了 `models` 的插件引用这些变量时安装报“尚未支持”。
 10. **网关代登录**（`gateway/proxy.rs`）：`sso: proxy` 时剥离同名请求头和 Cookie，按 Fetch Metadata 的
     规则加上声明的值，去掉插件响应里同名 Cookie 的 `Set-Cookie`；行为测试覆盖伪造、跨插件请求和不回传。
-    和 #20 的 `Set-Cookie` 加固一起改。
-11. **冒烟**：`deploy/dev/core/smoke.sh` 安装 `plugins/magpie` 和 `plugins/hermes`，复跑 M0-4 的检查
-    （网关鉴权、两轮对话、用量归属），取代 `deploy/dev/agent/dev.sh` 扮演核心的那部分。
+    和 #20 的 `Set-Cookie` 加固一起改。做完后给 `plugins/magpie` 加回网页入口（“模型设置”），在那之前它不声明
+    `webui`，provider 用 magpie 的命令行配置。
+11. **冒烟**：`deploy/dev/core/smoke.sh` 安装 `plugins/hermes`（带 `config.yaml`，要先能上传插件包），复跑 M0-4
+    的检查（网关鉴权、两轮对话、用量归属），取代 `deploy/dev/agent/dev.sh` 扮演核心的那部分。magpie 已由核心预装。
 12. **多 Bot**（M2，每个 Bot 一组容器）：按 `bots.services` 为每个 Bot 实例化容器、限制 Bot 服务的挂载、
     按 Bot 签发凭据和收存秘密。

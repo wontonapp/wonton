@@ -26,6 +26,8 @@ services:
       WONTON_MATRIX_URL: http://tuwunel:8008
       WONTON_MATRIX_JWT_KEY: ${WONTON_DEV_MATRIX_JWT_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+      # 核心启动后在后台预装镜像里的系统插件（模型网关 magpie）。
+      WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_PUID: ${WONTON_DEV_PUID:-1000}
       WONTON_PGID: ${WONTON_DEV_PGID:-1000}
       TZ: ${TZ:-UTC}

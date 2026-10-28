@@ -33,9 +33,6 @@ pub enum RenderError {
     Package(#[from] PackageError),
     #[error("服务 `{service}`：{message}")]
     Service { service: String, message: String },
-    /// 插件声明了核心还兑现不了的权限，又引用了这个权限的变量。
-    #[error("{0}")]
-    Unsupported(String),
 }
 
 pub(super) fn service_err(service: &str, message: impl Into<String>) -> RenderError {
@@ -86,6 +83,30 @@ impl std::fmt::Debug for MatrixVars {
     }
 }
 
+/// 注入给使用方的模型网关配置（`models`）。`Debug` 不打印凭据。
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModelVars {
+    pub base_url: String,
+    pub anthropic_url: Option<String>,
+    pub gemini_url: Option<String>,
+    /// 插件级的凭据（凭据名是插件 `id`），全插件一份的服务用。
+    pub plugin_key: Option<String>,
+    /// 默认 Bot 的凭据（`<id>/default`），声明了 `bots` 时 Bot 服务用。
+    pub bot_key: Option<String>,
+    pub default_model: String,
+}
+
+impl std::fmt::Debug for ModelVars {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelVars")
+            .field("base_url", &self.base_url)
+            .field("anthropic_url", &self.anthropic_url)
+            .field("gemini_url", &self.gemini_url)
+            .field("default_model", &self.default_model)
+            .finish_non_exhaustive()
+    }
+}
+
 /// 安装环境：由核心配置和本次安装分配的资源决定。`Debug` 不打印其中的令牌和密钥。
 #[derive(Clone)]
 pub struct InstallContext {
@@ -99,6 +120,8 @@ pub struct InstallContext {
     pub oidc: Option<OidcVars>,
     /// 声明了 `matrix.bot` 时：核心代 Bot 登录后签发的身份。
     pub matrix: Option<MatrixVars>,
+    /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
+    pub models: Option<ModelVars>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
     pub tz: String,
@@ -117,6 +140,7 @@ impl std::fmt::Debug for InstallContext {
             .field("app_url", &self.app_url)
             .field("oidc", &self.oidc)
             .field("matrix", &self.matrix)
+            .field("models", &self.models)
             .field("secrets", &self.secrets.keys().collect::<Vec<_>>())
             .field("tz", &self.tz)
             .field("puid", &self.puid)
@@ -188,6 +212,19 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         set("WONTON_OIDC_TOKEN_URL", oidc.token_url.clone());
         set("WONTON_OIDC_USERINFO_URL", oidc.userinfo_url.clone());
     }
+    if let Some(models) = &ctx.models {
+        set("WONTON_MODEL_BASE_URL", models.base_url.clone());
+        if let Some(url) = &models.anthropic_url {
+            set("WONTON_MODEL_ANTHROPIC_BASE_URL", url.clone());
+        }
+        if let Some(url) = &models.gemini_url {
+            set("WONTON_MODEL_GEMINI_BASE_URL", url.clone());
+        }
+        if let Some(key) = &models.plugin_key {
+            set("WONTON_MODEL_API_KEY", key.clone());
+        }
+        set("WONTON_MODEL_DEFAULT", models.default_model.clone());
+    }
     if let Some(matrix) = &ctx.matrix {
         set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
         set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
@@ -237,6 +274,17 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
                 owner: "@owner:wonton.invalid".into(),
                 home_room: "!dry-run:wonton.invalid".into(),
             }),
+        models: manifest
+            .permissions
+            .contains(&Permission::Models)
+            .then(|| ModelVars {
+                base_url: "http://models.wonton.internal/v1".into(),
+                anthropic_url: Some("http://models.wonton.internal".into()),
+                gemini_url: Some("http://models.wonton.internal".into()),
+                plugin_key: Some("dry-run".into()),
+                bot_key: manifest.bots.as_ref().map(|_| "dry-run".into()),
+                default_model: "dry-run".into(),
+            }),
         secrets: manifest
             .secrets
             .iter()
@@ -254,10 +302,14 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
 
 pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
     let manifest = &package.manifest;
-    let vars = ServiceVars::new(manifest, &ctx.app_data, injected_vars(manifest, ctx));
-    let services = package
-        .services(|name| vars.get(name))
-        .map_err(|e| explain(manifest, e))?;
+    let bot_key = ctx.models.as_ref().and_then(|m| m.bot_key.clone());
+    let vars = ServiceVars::new(
+        manifest,
+        &ctx.app_data,
+        injected_vars(manifest, ctx),
+        bot_key,
+    );
+    let services = package.services(|name| vars.get(name))?;
     if let Some((service, bot_service)) = vars.plugin_service_on_bot(&services) {
         return Err(service_err(
             &service,
@@ -296,7 +348,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         let targets = mount_targets(service, &mounts);
         let files =
             configs::resolve(package, service, vars.get(&name), &targets).map_err(|e| match e {
-                ConfigError::Package(e) => explain(manifest, e),
+                ConfigError::Package(e) => e.into(),
                 ConfigError::Rule(m) => service_err(&name, m),
             })?;
         let endpoint = (network.as_str(), vars.aliases(&name));
@@ -343,20 +395,6 @@ fn check_network_mode(
             format!("{field} 指向的服务不能写 network_mode: none"),
         )),
         None => Ok(()),
-    }
-}
-
-/// 引用了没有定义的变量，而变量属于插件声明了、核心还兑现不了的权限（模型网关接入之前）：如实报“尚未支持”，
-/// 而不是让人以为插件忘了声明权限。
-fn explain(manifest: &Manifest, error: PackageError) -> RenderError {
-    let pending = error.missing_var().and_then(|var| {
-        let permission = Permission::Models;
-        (var.starts_with("WONTON_MODEL_") && manifest.permissions.contains(&permission))
-            .then(|| format!("权限 {permission} 尚未支持：{var} 要等核心接入后才有值"))
-    });
-    match pending {
-        Some(message) => RenderError::Unsupported(message),
-        None => error.into(),
     }
 }
 

@@ -22,6 +22,7 @@ mod core_routes;
 mod devices;
 mod isolation;
 pub mod matrix;
+mod models;
 mod pages;
 mod proxy;
 mod session;
@@ -175,6 +176,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::Auth => auth_request(&gateway, req).await,
         HostKind::Matrix => matrix::client_request(&gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
+        HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Unknown => pages::error(
             StatusCode::NOT_FOUND,
@@ -304,6 +306,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 
 #[cfg(test)]
 mod isolation_tests;
+#[cfg(test)]
+mod models_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

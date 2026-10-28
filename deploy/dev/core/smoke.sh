@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
 # 像浏览器一样经核心网关打开插件并自动登录 → 已配对设备经隧道打开插件，直接是主人 →
-# 已配对设备经隧道登录 Matrix，和回声 Bot 加密收发 → 核心重启后恢复 → 卸载干净。
+# 已配对设备经隧道登录 Matrix，和回声 Bot 加密收发 → 核心预装模型网关，使用方拿到自己的凭据 →
+# 核心重启后恢复 → 卸载干净。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
 #   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
@@ -32,7 +33,9 @@ core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 echo_bot="wonton-agent-echo--bot"
-plugins=(app.grafana app.whoami agent.echo)
+magpie="wonton-ai-usemagpie-magpie--magpie"
+model_client="wonton-app-model-client--client"
+plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client)
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ✓ %s\n' "$*"; }
@@ -269,12 +272,60 @@ grep -qi "^X-Forwarded-Host: app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" <<<
 ! grep -q 'wonton_app=\|wonton_session=' <<<"$echoed" || fail "网关 Cookie 泄露给了插件：$echoed"
 ! grep -q '6.6.6.6' <<<"$echoed" || fail "伪造的 X-Forwarded-For 被转发：$echoed"
 ok "插件收到转发头，收不到网关 Cookie 和伪造的转发头"
-# 从 whoami 的插件网络里冒充 Bot：网关按来源地址认出插件，它没申请 matrix.bot。
-denied="$(docker run --rm --network wonton-app-whoami "$curl_image" -sS -o /dev/null -D - \
-  -H "Host: matrix.wonton.internal:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT/_matrix/client/versions")"
-expect "没申请 matrix.bot 的插件进不了 Matrix" "$(head -1 <<<"$denied" | cut -d' ' -f2)" 403
-grep -qi '^x-wonton-error: permission_denied' <<<"$denied" || fail "缺少 permission_denied：$denied"
+# 从 whoami 的插件网络里冒充 Bot 和模型网关的使用方：网关按来源地址认出插件，它两项权限都没申请。
+from_whoami() {
+  docker run --rm --network wonton-app-whoami "$curl_image" -sS -o /dev/null -D - \
+    -H "Host: $1:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT$2"
+}
+for internal in "matrix.wonton.internal /_matrix/client/versions" "models.wonton.internal /v1/models"; do
+  read -r host path <<<"$internal"
+  denied="$(from_whoami "$host" "$path")"
+  expect "没申请权限的插件进不了 $host" "$(head -1 <<<"$denied" | cut -d' ' -f2)" 403
+  grep -qi '^x-wonton-error: permission_denied' <<<"$denied" || fail "缺少 permission_denied：$denied"
+done
 expect "whoami 卸载" "$("$dev" uninstall app.whoami --purge | json data_removed)" true
+
+step "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"
+plugin_state() {
+  "$dev" list | python3 -c 'import json, sys
+print(next((p["status"]["state"] for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' "$1"
+}
+for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
+expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+client_file="$(mktemp)"
+cat >"$client_file" <<'YAML'
+services:
+  client:
+    image: curlimages/curl:8.23.0
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      BASE: ${WONTON_MODEL_BASE_URL}
+      KEY: ${WONTON_MODEL_API_KEY}
+      MODEL: ${WONTON_MODEL_DEFAULT}
+x-wonton:
+  id: app.model-client
+  version: 0.1.0
+  kind: app
+  title: { zh: 模型客户端, en: Model client }
+  description: { zh: 冒烟用的模型网关使用方, en: Model gateway consumer for the smoke test }
+  permissions: [models]
+YAML
+installed="$("$dev" install "$client_file" --yes 2>/dev/null)" || fail "使用方安装失败：$installed"
+rm -f "$client_file"
+expect "使用方安装完成" "$(json status.state <<<"$installed")" running
+client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
+model_key="$(client_env KEY)"
+expect "使用方经核心在插件网络里的别名访问模型网关" "$(client_env BASE)" "http://models.wonton.internal:$WONTON_DEV_PORT/v1"
+expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
+in_client() { docker exec "$model_client" curl -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
+expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
+expect "不带凭据被网关拒绝" "$(in_client)" 401
+gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { print $2 }'; }
+expect "网关里的凭据以使用方命名" "$(gateway_keys)" app.model-client
+expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
+expect "卸载时在网关里吊销凭据" "$(gateway_keys)" ""
+expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" -sS -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")" 401
 
 step "核心重启后恢复插件"
 docker restart "$core" >/dev/null

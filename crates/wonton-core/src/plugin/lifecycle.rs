@@ -13,11 +13,12 @@ use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
+use super::models::ModelsRoute;
 use super::package::PluginPackage;
 use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
-use crate::config::{PLUGIN_MATRIX_HOST, PublicUrls};
+use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MODELS_HOST, PublicUrls};
 use crate::matrix::ProvisionedBot;
 use crate::oidc::{ClientSpec, Hydra};
 use crate::secret::random_token;
@@ -54,6 +55,8 @@ struct Undo {
     bot: Option<(PluginId, ProvisionedBot)>,
     /// 已登记插件网络的地址段，回滚时注销。
     source: Option<PluginId>,
+    /// 本次安装在模型网关里签发了凭据的插件，回滚时吊销。
+    models: Option<PluginId>,
 }
 
 /// 插件声明的命名卷怎么处理。
@@ -89,7 +92,7 @@ fn uses_sso(manifest: &Manifest) -> bool {
 }
 
 /// 核心在插件网络里的别名：插件经它们访问核心代为转发的服务。SSO 插件经 `auth.<base>` 访问身份提供方，
-/// Bot 经 `matrix.wonton.internal` 访问 Matrix 客户端接口。
+/// Bot 经 `matrix.wonton.internal` 访问 Matrix 客户端接口，模型网关的使用方经 `models.wonton.internal`。
 fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<String> {
     let mut aliases = Vec::new();
     if uses_sso(manifest) {
@@ -97,6 +100,9 @@ fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<String> {
     }
     if manifest.permissions.contains(&Permission::MatrixBot) {
         aliases.push(PLUGIN_MATRIX_HOST.to_owned());
+    }
+    if manifest.permissions.contains(&Permission::Models) {
+        aliases.push(PLUGIN_MODELS_HOST.to_owned());
     }
     aliases
 }
@@ -150,6 +156,10 @@ impl PluginManager {
             ctx.matrix = Some(self.matrix_vars(&bot));
             undo.bot = Some((manifest.id.clone(), bot));
         }
+        if let Some(models) = self.provision_models(package).await? {
+            ctx.models = Some(models);
+            undo.models = Some(manifest.id.clone());
+        }
         let mut plan = render(package, &ctx)?;
         for container in &plan.containers {
             self.engine
@@ -192,6 +202,7 @@ impl PluginManager {
             self.store.secrets().save(&manifest.id, &secrets)?;
         }
         let upstream = self.webui_upstream(manifest, &plan.network).await?;
+        let models = self.models_upstream(manifest, &plan.network).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             let url = format!("http://{upstream}{}", webui.path);
             health::wait_webui(&self.http, &url, deadline).await?;
@@ -205,7 +216,11 @@ impl PluginManager {
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
         })?;
-        Ok(Deployed { upstream, health })
+        Ok(Deployed {
+            upstream,
+            health,
+            models,
+        })
     }
 
     /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
@@ -280,6 +295,7 @@ impl PluginManager {
             app_url,
             oidc,
             matrix: None,
+            models: None,
             secrets: generated,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
@@ -417,7 +433,7 @@ impl PluginManager {
         Ok(Health::of(healthy))
     }
 
-    /// 核心访问插件网页的地址：核心在容器里时用容器名（同一网络内的 DNS），否则用容器 IP。
+    /// 核心访问插件网页的地址。
     async fn webui_upstream(
         &self,
         manifest: &Manifest,
@@ -427,12 +443,44 @@ impl PluginManager {
             return Ok(None);
         };
         let name = container_name(&manifest.id.slug(), &webui.service);
+        self.service_upstream(&name, webui.port, network)
+            .await
+            .map(Some)
+    }
+
+    /// 是模型网关时：核心转发模型请求、执行凭据命令的目标。
+    async fn models_upstream(
+        &self,
+        manifest: &Manifest,
+        network: &str,
+    ) -> Result<Option<ModelsRoute>, InstallError> {
+        let Some(spec) = manifest.provides.as_ref().and_then(|p| p.models.as_ref()) else {
+            return Ok(None);
+        };
+        let slug = manifest.id.slug();
+        let name = container_name(&slug, &spec.service);
+        let upstream = self.service_upstream(&name, spec.port, network).await?;
+        Ok(Some(ModelsRoute {
+            id: manifest.id.clone(),
+            spec: spec.clone(),
+            upstream,
+            credentials_container: container_name(&slug, spec.credentials_service()),
+        }))
+    }
+
+    /// 核心访问容器里一个端口的地址：核心在容器里时用容器名（同一网络内的 DNS），否则用容器 IP。
+    async fn service_upstream(
+        &self,
+        name: &str,
+        port: u16,
+        network: &str,
+    ) -> Result<String, InstallError> {
         if self.cfg.core_container.is_some() {
-            return Ok(Some(format!("{name}:{}", webui.port)));
+            return Ok(format!("{name}:{port}"));
         }
         let info = self
             .engine
-            .inspect_container(&name)
+            .inspect_container(name)
             .await?
             .ok_or_else(|| InstallError::Docker(format!("容器 {name} 不存在")))?;
         let ip = info
@@ -444,7 +492,7 @@ impl PluginManager {
             .ok_or_else(|| {
                 InstallError::Docker(format!("容器 {name} 在网络 {network} 中没有地址"))
             })?;
-        Ok(Some(format!("{ip}:{}", webui.port)))
+        Ok(format!("{ip}:{port}"))
     }
 
     async fn rollback(&self, undo: Undo) -> Vec<String> {
@@ -468,6 +516,12 @@ impl PluginManager {
             note(
                 format!("Bot {} 的设备", bot.account.user_id),
                 self.revoke_bot_device(id, bot).await,
+            );
+        }
+        if let Some(id) = &undo.models {
+            note(
+                format!("插件 {id} 的模型网关凭据"),
+                self.revoke_models(id).await.map_err(|e| e.to_string()),
             );
         }
         if let Some(id) = &undo.source {
@@ -570,6 +624,7 @@ impl PluginManager {
         Ok(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
             health: Health::of(healthy),
+            models: self.models_upstream(manifest, &network).await?,
         })
     }
 
@@ -600,8 +655,9 @@ impl PluginManager {
         for container in &found.containers {
             self.engine.remove_container(container).await?;
         }
-        // 容器都停了再吊销 Bot 的设备。
+        // 容器都停了再吊销 Bot 的设备和模型网关凭据。
         let bot = self.remove_bot(id, purge).await?;
+        self.revoke_models(id).await?;
         for network in &found.networks {
             if let Some(core) = &self.cfg.core_container {
                 self.engine.disconnect_network(network, core).await?;

@@ -1,12 +1,11 @@
-//! Bot 服务的变量和规则，以及核心还兑现不了的权限的变量。安装、卸载时 Bot 在 Matrix 上的副作用见
-//! [`super::bot_lifecycle`]。
+//! Bot 服务的变量和规则，以及模型网关的变量。安装、卸载时 Bot 在 Matrix 上的副作用见
+//! [`super::bot_lifecycle`]，模型网关的凭据见 [`super::models`]。
 
-use super::super::docker::Engine;
 use super::super::package::{PackageError, PluginPackage};
 use super::super::render::{
-    ContainerPlan, Deployment, InstallContext, MatrixVars, OidcVars, RenderError, dry_run,
+    ContainerPlan, Deployment, InstallContext, MatrixVars, ModelVars, OidcVars, RenderError,
+    dry_run,
 };
-use super::manager::manager_with;
 use super::{env_of, package};
 
 /// `init` 和 `gateway` 每个 Bot 一份，`web` 全插件一份。
@@ -124,35 +123,27 @@ fn the_bot_identity_goes_only_to_bot_services_when_bots_are_declared() {
     assert!(env_of(container(&one, "web")).contains(&user));
 }
 
-#[tokio::test]
-async fn variables_of_permissions_the_core_cannot_honor_yet_are_reported_as_unsupported() {
-    let models = package(
-        "  web:\n    image: nginx\n    environment:\n      BASE: ${WONTON_MODEL_BASE_URL}",
-        "  permissions: [models]",
-    );
-    let err = dry_run(&PluginPackage::parse(&models).unwrap()).unwrap_err();
-    assert!(matches!(err, RenderError::Unsupported(_)), "{err}");
-    let dir = tempfile::tempdir().unwrap();
-    let m = manager_with(Engine::unreachable_for_test(), &dir);
-    let granted = vec!["models".parse().unwrap()];
-    let err = m.install(&models, &granted).await.unwrap_err();
-    assert_eq!(err.kind(), "unsupported", "{err}");
-
-    // 没声明权限却引用它的变量：是插件写错了，照常报变量未定义。
-    let undeclared = models.replace("[models]", "[]");
-    let err = dry_run(&PluginPackage::parse(&undeclared).unwrap()).unwrap_err();
-    assert!(matches!(err, RenderError::Package(_)), "{err}");
-
-    // 内联配置里引用模型网关的变量也一样。
-    let content = format!(
-        "configs:\n  key:\n    content: ${{WONTON_MODEL_API_KEY}}\n{}",
-        package(
-            &SERVICES.replace("image: hermes", "image: hermes\n    configs: [key]"),
-            &BOTS.replace("[matrix.bot]", "[matrix.bot, models]")
-        )
-    );
-    let err = dry_run(&PluginPackage::parse(&content).unwrap()).unwrap_err();
-    assert!(matches!(err, RenderError::Unsupported(_)), "{err}");
+#[test]
+fn model_variables_are_injected_only_for_plugins_that_declare_models() {
+    let web = "  web:\n    image: nginx\n    environment:\n      BASE: ${WONTON_MODEL_BASE_URL}\n      \
+               KEY: ${WONTON_MODEL_API_KEY}\n      MODEL: ${WONTON_MODEL_DEFAULT}";
+    let plan = plan(web, "  permissions: [models]").unwrap();
+    let env = env_of(container(&plan, "web"));
+    for expected in [
+        "BASE=http://models.wonton.internal/v1",
+        "KEY=dry-run",
+        "MODEL=dry-run",
+    ] {
+        assert!(
+            env.contains(&expected.to_owned()),
+            "缺少 {expected}：{env:?}"
+        );
+    }
+    // 没声明 models 却引用它的变量：是插件写错了，照常报变量未定义。
+    assert!(matches!(
+        plan_err(web, "  permissions: []"),
+        RenderError::Package(PackageError::Interpolate { .. })
+    ));
 }
 
 #[test]
@@ -177,6 +168,14 @@ fn install_contexts_print_no_tokens_or_secrets() {
             owner: "@owner:t".into(),
             home_room: "!room:t".into(),
         }),
+        models: Some(ModelVars {
+            base_url: "http://models.wonton.internal/v1".into(),
+            anthropic_url: None,
+            gemini_url: None,
+            plugin_key: Some("model-key-value".into()),
+            bot_key: Some("bot-model-key-value".into()),
+            default_model: "group/default".into(),
+        }),
         secrets: [("web_key".to_owned(), "generated-secret-value".to_owned())].into(),
         tz: "UTC".into(),
         puid: 1000,
@@ -187,6 +186,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
     for secret in [
         "oidc-secret-value",
         "matrix-token-value",
+        "model-key-value",
         "generated-secret-value",
     ] {
         assert!(!printed.contains(secret), "{printed}");

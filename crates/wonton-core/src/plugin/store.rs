@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use super::bots::BotStore;
 use super::manifest::{Permission, PluginId};
+use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
 use super::secrets::SecretStore;
 
@@ -57,6 +58,7 @@ pub struct Store {
     dir: PathBuf,
     secrets: SecretStore,
     bots: BotStore,
+    model_keys: ModelKeyStore,
 }
 
 impl Store {
@@ -66,6 +68,7 @@ impl Store {
         Ok(Self {
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
+            model_keys: ModelKeyStore::new(dir.join("model-keys")),
             dir,
         })
     }
@@ -78,6 +81,11 @@ impl Store {
     /// 插件的 Bot 记录，在记录目录下的 `bots/` 里，保留的规则同密钥。
     pub fn bots(&self) -> &BotStore {
         &self.bots
+    }
+
+    /// 插件的模型网关凭据，在记录目录下的 `model-keys/` 里，卸载时删除。
+    pub fn model_keys(&self) -> &ModelKeyStore {
+        &self.model_keys
     }
 
     fn path(&self, id: &PluginId) -> PathBuf {

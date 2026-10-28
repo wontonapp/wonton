@@ -42,7 +42,7 @@ pub enum EngineError {
 }
 
 impl EngineError {
-    fn from_bollard(context: &str, error: BollardError) -> Self {
+    pub(super) fn from_bollard(context: &str, error: BollardError) -> Self {
         match error {
             BollardError::DockerResponseServerError {
                 status_code: 404,
@@ -105,7 +105,7 @@ impl LabeledResources {
 
 #[derive(Clone)]
 pub struct Engine {
-    docker: Docker,
+    pub(super) docker: Docker,
 }
 
 type Result<T> = std::result::Result<T, EngineError>;

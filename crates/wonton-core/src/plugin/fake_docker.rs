@@ -5,12 +5,15 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::{Method, StatusCode, Uri};
+use axum::body::{Body, Bytes};
+use axum::extract::{Request, State};
+use axum::http::{Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
+use http_body_util::BodyExt;
+use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::docker::Engine;
@@ -19,6 +22,18 @@ use super::render::LABEL_PLUGIN;
 #[derive(Clone, Default)]
 pub struct FakeDocker {
     resources: Arc<Mutex<Resources>>,
+}
+
+/// 容器里执行的命令怎么回应：（容器名，argv，标准输入）→（退出码，标准错误）。
+pub type ExecHandler = Arc<dyn Fn(&str, &[String], &[u8]) -> (i64, String) + Send + Sync>;
+
+/// 一次 `docker exec`。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeExec {
+    pub container: String,
+    pub cmd: Vec<String>,
+    pub stdin: Vec<u8>,
+    exit_code: Option<i64>,
 }
 
 /// 容器里的一个路径。
@@ -48,6 +63,10 @@ struct Resources {
     states: BTreeMap<String, Value>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
+    /// exec ID → 这次执行，按创建顺序编号。
+    execs: BTreeMap<String, FakeExec>,
+    /// 没设时命令都以 0 退出。
+    exec_handler: Option<ExecHandler>,
 }
 
 impl FakeDocker {
@@ -136,12 +155,88 @@ impl FakeDocker {
         self.lock().states.insert(container.to_owned(), state);
     }
 
+    /// 容器里执行的命令由 `handler` 回应。
+    pub fn on_exec(
+        &self,
+        handler: impl Fn(&str, &[String], &[u8]) -> (i64, String) + Send + Sync + 'static,
+    ) {
+        self.lock().exec_handler = Some(Arc::new(handler));
+    }
+
+    /// 执行过的命令，按顺序。
+    pub fn execs(&self) -> Vec<FakeExec> {
+        self.lock().execs.values().cloned().collect()
+    }
+
     fn lock(&self) -> MutexGuard<'_, Resources> {
         self.resources.lock().expect("假 Docker 的锁中毒")
     }
 }
 
-async fn handle(State(fake): State<FakeDocker>, method: Method, uri: Uri, body: Bytes) -> Response {
+/// `POST /exec/<id>/start`：和 Docker 一样升级成原始连接，读完标准输入（客户端关闭写端）后按 Docker 的多路
+/// 复用格式写回标准错误，再关闭连接。
+fn start_exec(fake: FakeDocker, id: &str, mut request: Request) -> Response {
+    let Some(exec) = fake.lock().execs.get(id).cloned() else {
+        return gone(false);
+    };
+    let upgrade = hyper::upgrade::on(&mut request);
+    let id = id.to_owned();
+    tokio::spawn(async move {
+        let mut io = TokioIo::new(upgrade.await.expect("exec 连接升级"));
+        let mut stdin = Vec::new();
+        io.read_to_end(&mut stdin)
+            .await
+            .expect("读 exec 的标准输入");
+        let handler = fake.lock().exec_handler.clone();
+        let (code, stderr) = match handler {
+            Some(handler) => handler(&exec.container, &exec.cmd, &stdin),
+            None => (0, String::new()),
+        };
+        if let Some(exec) = fake.lock().execs.get_mut(&id) {
+            exec.stdin = stdin;
+            exec.exit_code = Some(code);
+        }
+        if !stderr.is_empty() {
+            let mut frame = vec![2, 0, 0, 0];
+            frame.extend_from_slice(&u32::try_from(stderr.len()).unwrap().to_be_bytes());
+            frame.extend_from_slice(stderr.as_bytes());
+            io.write_all(&frame).await.expect("写 exec 的标准错误");
+        }
+        io.shutdown().await.ok();
+    });
+    Response::builder()
+        .status(StatusCode::SWITCHING_PROTOCOLS)
+        .header(header::CONNECTION, "Upgrade")
+        .header(header::UPGRADE, "tcp")
+        .body(Body::empty())
+        .unwrap()
+}
+
+async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
+    let (method, uri) = (request.method().clone(), request.uri().clone());
+    let exec_start = uri
+        .path()
+        .split('/')
+        .collect::<Vec<_>>()
+        .windows(3)
+        .find(|w| w[0] == "exec" && w[2] == "start")
+        .map(|w| w[1].to_owned());
+    if let Some(id) = exec_start {
+        fake.lock()
+            .writes
+            .push(format!("{method} /exec/{id}/start"));
+        return start_exec(fake, &id, request);
+    }
+    let body = request
+        .into_body()
+        .collect()
+        .await
+        .map(|b| b.to_bytes())
+        .unwrap_or_default();
+    serve(&fake, &method, &uri, &body)
+}
+
+fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Response {
     // bollard 的请求路径可能带 API 版本前缀（/v1.51/...）。
     let path = uri.path();
     let path = match path.strip_prefix("/v") {
@@ -153,13 +248,13 @@ async fn handle(State(fake): State<FakeDocker>, method: Method, uri: Uri, body: 
     let call = format!("{method} {path}");
     let query = uri.query().unwrap_or_default();
     let mut docker = fake.lock();
-    if method != Method::GET {
+    if *method != Method::GET {
         docker.writes.push(call.clone());
     }
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let reply = match parts.as_slice() {
-        ["containers", rest @ ..] => containers(&mut docker, &method, rest, query, &body),
-        _ => others(&mut docker, &method, &parts, query, &body),
+        ["containers", rest @ ..] => containers(&mut docker, method, rest, query, body),
+        _ => others(&mut docker, method, &parts, query, body),
     };
     reply.unwrap_or_else(|| {
         json_reply(
@@ -208,6 +303,19 @@ fn containers(
                        "NetworkSettings": {"Networks": networks}}),
             )
         }
+        (&Method::POST, [name, "exec"]) if exists(name) => {
+            let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+            let cmd = serde_json::from_value(body["Cmd"].clone()).unwrap_or_default();
+            let id = format!("exec{}", docker.execs.len() + 1);
+            let exec = FakeExec {
+                container: (*name).to_owned(),
+                cmd,
+                stdin: Vec::new(),
+                exit_code: None,
+            };
+            docker.execs.insert(id.clone(), exec);
+            json_reply(StatusCode::CREATED, json!({"Id": id}))
+        }
         (&Method::PUT, [name, "archive"]) if exists(name) => {
             docker.archives.insert((*name).to_owned(), raw.to_vec());
             StatusCode::OK.into_response()
@@ -250,6 +358,13 @@ fn others(
             json!({"Arch": "x86_64", "Version": "29.0.0"}),
         ),
         (&Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
+        (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
+            let code = docker.execs[*id].exit_code;
+            json_reply(
+                StatusCode::OK,
+                json!({"ExitCode": code, "Running": code.is_none()}),
+            )
+        }
         (&Method::POST, ["networks", "create"]) => {
             let name = body["Name"].as_str().unwrap_or_default().to_owned();
             docker.networks.insert(name.clone(), plugin_label(&body));
