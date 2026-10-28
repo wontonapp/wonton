@@ -1,0 +1,7 @@
+# 核心镜像只需要 Cargo 工作区。
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!crates/
+crates/**/target

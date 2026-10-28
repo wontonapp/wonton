@@ -1,0 +1,10 @@
+# 示例插件
+
+用来验证插件规范和核心插件管理器的最小插件，不进入官方目录。
+
+| 目录 | 说明 |
+| --- | --- |
+| `grafana/` | Grafana，`sso: oidc`：核心安装时注入 OIDC 客户端配置，打开网页即自动登录。 |
+| `whoami/` | traefik/whoami，回显请求，用来检查网关的鉴权、路由和请求头处理。 |
+
+安装与端到端验证见 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md)。

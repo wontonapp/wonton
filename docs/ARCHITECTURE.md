@@ -186,9 +186,9 @@ scripts/             CI 与开发脚本
 | 默认 Agent | Hermes Agent | MIT | 已定 |
 | Agent 接入 | Matrix 原生、ACP | Apache-2.0（ACP 规范） | 已定 |
 | 模型网关 | magpie | MIT | 已定 |
-| MCP 总线 | Docker MCP Gateway、IBM ContextForge，或用官方 Rust SDK 自建最小聚合 | MIT / Apache-2.0 | M0 选型 |
-| OIDC 提供方 | Tuwunel 内置 OIDC、Pocket ID、Rauthy | Apache-2.0 / BSD-2-Clause / Apache-2.0 | M0 选型 |
-| HTTP 网关 | 核心内置（axum / hyper）或 Traefik | MIT | M0 选型 |
+| MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006），M1 实现 |
+| OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |
+| HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |

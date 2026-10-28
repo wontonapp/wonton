@@ -1,0 +1,86 @@
+# Wonton 本地开发用的核心和身份提供方（Ory Hydra）。用 dev.sh 起停：它准备好数据目录和
+# Hydra 的系统密钥，再把下面引用的变量传进来。
+# 项目名同时用作核心的容器名；冒烟脚本用另一个名字，和开发环境互不干扰。
+name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+
+services:
+  core:
+    build:
+      context: ../../..
+      dockerfile: deploy/dev/core/Dockerfile
+    image: wonton-core:dev
+    # 核心要知道自己的容器名，才能把自己接入每个插件网络。
+    container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+    restart: unless-stopped
+    environment:
+      WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
+      WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
+      WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
+      WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+      WONTON_OIDC_ADMIN_URL: http://hydra:4445
+      WONTON_OIDC_PUBLIC_URL: http://hydra:4444
+      WONTON_PUID: ${WONTON_DEV_PUID:-1000}
+      WONTON_PGID: ${WONTON_DEV_PGID:-1000}
+      TZ: ${TZ:-UTC}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      # 只监听本机。浏览器用 http://wonton.localhost:18480 访问，*.localhost 自动解析到本机。
+      - "127.0.0.1:${WONTON_DEV_PORT:-18480}:${WONTON_DEV_PORT:-18480}"
+    volumes:
+      # 唯一挂载 Docker socket 的容器（ADR-0011）。
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 数据目录在容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
+      - ${WONTON_DEV_DATA}:${WONTON_DEV_DATA}
+    networks: [core]
+    depends_on:
+      hydra:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wonton-core", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 2m
+      start_interval: 1s
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0
+    command: migrate sql up -e --yes
+    environment:
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+    volumes:
+      # 镜像以 nonroot 运行，卷挂在它的家目录才有写权限。
+      - hydra:/home/nonroot
+    networks: [core]
+
+  hydra:
+    image: oryd/hydra:v26.2.0
+    # --dev 允许 http 签发方：M0 的网关还没有 TLS。
+    command: serve all --dev
+    restart: unless-stopped
+    environment:
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+      # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
+      URLS_SELF_ISSUER: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
+      # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
+      URLS_LOGIN: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/login
+      URLS_CONSENT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/consent
+      SECRETS_SYSTEM: ${WONTON_DEV_HYDRA_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+    volumes:
+      - hydra:/home/nonroot
+    # 只在核心的私有网络里：插件访问不到管理端口（4445），公开端口也只经核心网关访问。
+    networks: [core]
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4445/health/ready"]
+      interval: 10s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+networks:
+  core:
+
+volumes:
+  hydra:
