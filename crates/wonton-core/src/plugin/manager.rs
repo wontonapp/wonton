@@ -2,7 +2,8 @@
 //! 具体的 Docker 部署和回滚在 [`super::lifecycle`] 里。
 
 use std::collections::BTreeMap;
-use std::sync::RwLock;
+use std::net::IpAddr;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -14,8 +15,10 @@ use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, Plugi
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 use super::secrets::CollectError;
+use super::sources::{Source, Sources};
 use super::store::{InstalledRecord, Store, StoreError};
 use crate::http::HttpClient;
+use crate::matrix::Matrix;
 use crate::oidc::{Hydra, OidcError};
 
 /// 插件管理操作的错误，按原因区分，API 据此给出不同的 HTTP 状态。
@@ -37,6 +40,8 @@ pub enum InstallError {
     Docker(String),
     #[error("身份提供方不可用：{0}")]
     OidcUnavailable(String),
+    #[error("Matrix 不可用：{0}")]
+    MatrixUnavailable(String),
     #[error("插件没有通过健康检查：{0}")]
     Unhealthy(String),
     #[error("{0}")]
@@ -55,6 +60,7 @@ impl InstallError {
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
             Self::OidcUnavailable(_) => "oidc_unavailable",
+            Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
         }
@@ -74,6 +80,7 @@ impl InstallError {
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
+            Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),
         }
@@ -208,6 +215,18 @@ pub struct UninstallReport {
     pub data_removed: bool,
     /// 没有配置身份提供方时为空。
     pub oidc_client_removed: Option<bool>,
+    /// 插件有 Bot 时：吊销了它的设备，删除数据时还停用了账号。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot: Option<BotReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BotReport {
+    pub user_id: String,
+    /// 吊销的设备数。
+    pub devices_removed: usize,
+    /// 账号已停用（不可恢复）。
+    pub deactivated: bool,
 }
 
 /// 网关查询用的路由信息。
@@ -273,7 +292,11 @@ pub struct PluginManager {
     pub(super) store: Store,
     pub(super) http: HttpClient,
     pub(super) oidc: Option<Hydra>,
+    pub(super) matrix: Option<Arc<Matrix>>,
     pub(super) cfg: LifecycleConfig,
+    pub(super) sources: Sources,
+    /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
+    pub(super) bot_allocation: tokio::sync::Mutex<()>,
     plugins: RwLock<BTreeMap<PluginId, Entry>>,
 }
 
@@ -281,7 +304,7 @@ pub struct PluginManager {
 fn supported(permission: &Permission) -> bool {
     matches!(
         permission,
-        Permission::StorageShare { .. } | Permission::NetworkEgress
+        Permission::StorageShare { .. } | Permission::NetworkEgress | Permission::MatrixBot
     )
 }
 
@@ -305,9 +328,24 @@ impl PluginManager {
             store,
             http,
             oidc,
+            matrix: None,
             cfg,
+            sources: Sources::default(),
+            bot_allocation: tokio::sync::Mutex::new(()),
             plugins: RwLock::new(BTreeMap::new()),
         }
+    }
+
+    /// 接上 Matrix 服务器：声明了 `matrix.bot` 的插件这才装得上。
+    #[must_use]
+    pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
+        self.matrix = matrix;
+        self
+    }
+
+    /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。
+    pub fn source(&self, ip: IpAddr) -> Option<Source> {
+        self.sources.find(ip)
     }
 
     /// 预览只有 compose 文本的插件包。
@@ -393,6 +431,19 @@ impl PluginManager {
             .insert(manifest.id, entry);
     }
 
+    /// 测试用：登记一个插件网络的地址段，供网关测试按来源地址认出插件。
+    #[cfg(test)]
+    pub(crate) fn register_source_for_test(
+        &self,
+        id: &str,
+        subnet: &str,
+        permissions: Vec<Permission>,
+    ) {
+        let id = PluginId::parse(id).unwrap();
+        let subnet = super::sources::Subnet::parse(subnet).unwrap();
+        self.sources.insert(&id, vec![subnet], permissions);
+    }
+
     fn set(&self, id: &PluginId, status: PluginStatus, upstream: Option<Option<String>>) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
@@ -426,13 +477,21 @@ impl PluginManager {
 
     async fn restore_one(&self, record: &InstalledRecord) -> Entry {
         match PluginPackage::with_files(&record.source, record.files.clone()) {
-            Ok(package) => match self.reconcile(&package, record).await {
-                Ok(deployed) => Entry::running(&package.manifest, deployed),
-                Err(e) => {
-                    let reason = e.to_string();
-                    Entry::new(&package.manifest, PluginStatus::Degraded { reason }, None)
+            Ok(package) => {
+                // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
+                let manifest = &package.manifest;
+                let network = format!("wonton-{}", manifest.id.slug());
+                if let Err(e) = self.register_source(manifest, &network).await {
+                    tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
-            },
+                match self.reconcile(&package, record).await {
+                    Ok(deployed) => Entry::running(manifest, deployed),
+                    Err(e) => {
+                        let reason = e.to_string();
+                        Entry::new(manifest, PluginStatus::Degraded { reason }, None)
+                    }
+                }
+            }
             Err(e) => Entry::broken(
                 &record.id,
                 record.version.clone(),
@@ -583,9 +642,7 @@ fn check_permissions(manifest: &Manifest, granted: &[Permission]) -> Result<(), 
         return Err(InstallError::PermissionNotGranted(missing));
     }
     if let Some(p) = manifest.permissions.iter().find(|p| !supported(p)) {
-        return Err(InstallError::Unsupported(format!(
-            "权限 {p} 在 M0 尚未支持"
-        )));
+        return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
     }
     Ok(())
 }

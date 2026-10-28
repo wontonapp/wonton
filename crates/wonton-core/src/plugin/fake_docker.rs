@@ -46,6 +46,8 @@ struct Resources {
     files: BTreeMap<(String, String), FakeFile>,
     /// 按容器名指定的状态（Docker inspect 里的 `State`），没指定的报告为运行中且健康。
     states: BTreeMap<String, Value>,
+    /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
+    connections: BTreeMap<String, Value>,
 }
 
 impl FakeDocker {
@@ -88,6 +90,15 @@ impl FakeDocker {
 
     pub fn writes(&self) -> Vec<String> {
         self.lock().writes.clone()
+    }
+
+    /// 最近一次接入这个网络的容器在网络里的别名。
+    pub fn aliases(&self, network: &str) -> Vec<String> {
+        let connection = self.lock().connections.get(network).cloned();
+        let aliases = connection.map(|c| c["EndpointConfig"]["Aliases"].clone());
+        aliases
+            .and_then(|a| serde_json::from_value(a).ok())
+            .unwrap_or_default()
     }
 
     /// 最近一次写进这个容器的 tar 归档。
@@ -245,8 +256,11 @@ fn others(
             docker.network_bodies.insert(name.clone(), body);
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
         }
-        (&Method::POST, ["networks", name, "connect" | "disconnect"]) => {
+        (&Method::POST, ["networks", name, action @ ("connect" | "disconnect")]) => {
             let found = docker.networks.contains_key(*name);
+            if found && *action == "connect" {
+                docker.connections.insert((*name).to_owned(), body);
+            }
             if found {
                 StatusCode::OK.into_response()
             } else {

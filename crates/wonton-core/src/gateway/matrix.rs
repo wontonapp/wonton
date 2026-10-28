@@ -22,6 +22,7 @@ use serde_json::json;
 use super::api::error_response;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
+use crate::plugin::Permission;
 
 /// 登录令牌接口的响应。客户端在 `expires_in` 秒内用它调一次 `POST {homeserver_url}/_matrix/client/v3/login`
 /// （`{"type": login_type, "token": token}`）；设备自己登录，设备 ID 和刷新令牌都归设备。
@@ -90,6 +91,34 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "Matrix 只对经隧道接入的已配对设备开放",
         );
     }
+    forward_client_api(gateway, req).await
+}
+
+/// `matrix.wonton.internal`：插件网络里的 Bot（`WONTON_MATRIX_HOMESERVER`）。只转发声明了 `matrix.bot` 的
+/// 插件的请求，按来源地址认出插件（见 [`crate::plugin::sources`]）；其余规则同 `matrix.<base>`。
+pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
+    let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
+    match source {
+        Some(source) if source.permissions.contains(&Permission::MatrixBot) => {
+            forward_client_api(gateway, req).await
+        }
+        Some(source) => matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "permission_denied",
+            &format!("插件 {} 没有申请 matrix.bot 权限", source.id),
+        ),
+        None => matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "unauthenticated",
+            "这个地址只给插件网络里的 Bot 用",
+        ),
+    }
+}
+
+/// 只转发客户端接口，先挡住可能被上游读成别的路径的写法。
+async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
     let path = req.uri().path();
     if is_ambiguous(path) {
         return matrix_error(

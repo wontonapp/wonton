@@ -21,6 +21,10 @@ pub struct PublicUrls {
     pub port: u16,
 }
 
+/// 插件经核心在插件网络里的这个别名访问 Matrix 客户端接口（`WONTON_MATRIX_HOMESERVER`）。`.internal` 是留给
+/// 私有网络的顶级域名，基础域名不能落在它下面。
+pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
+
 /// 网关按 Host 头区分的目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostKind {
@@ -28,6 +32,8 @@ pub enum HostKind {
     Auth,
     Matrix,
     Plugin(String),
+    /// 插件网络里的 Bot 访问 Matrix（[`PLUGIN_MATRIX_HOST`]）。
+    PluginMatrix,
     Unknown,
 }
 
@@ -70,6 +76,9 @@ impl PublicUrls {
             .to_ascii_lowercase();
         if host == self.base_domain {
             return HostKind::Core;
+        }
+        if host == PLUGIN_MATRIX_HOST {
+            return HostKind::PluginMatrix;
         }
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
@@ -159,6 +168,12 @@ impl Config {
             return Err(invalid(
                 "WONTON_BASE_DOMAIN",
                 "必须是小写域名，如 wonton.localhost",
+            ));
+        }
+        if base_domain == "wonton.internal" || base_domain.ends_with(".wonton.internal") {
+            return Err(invalid(
+                "WONTON_BASE_DOMAIN",
+                "不能用 wonton.internal：它留给插件网络里的内部别名",
             ));
         }
         let port = parse(&get, "WONTON_PUBLIC_PORT", 8080u16)?;
@@ -364,10 +379,15 @@ mod tests {
             urls.classify("app-grafana.wonton.localhost:8080"),
             HostKind::Plugin("app-grafana".into())
         );
+        assert_eq!(
+            urls.classify("matrix.wonton.internal:8080"),
+            HostKind::PluginMatrix
+        );
         for other in [
             "a.b.wonton.localhost",
             "evil.example",
             "wonton.localhost.evil",
+            "models.wonton.internal",
             "",
         ] {
             assert_eq!(urls.classify(other), HostKind::Unknown, "{other}");
@@ -383,13 +403,10 @@ mod tests {
     fn invalid_settings_fail_fast() {
         assert!(matches!(config(&[]), Err(ConfigError::Missing(_))));
         assert!(config(&[("WONTON_DATA_DIR", "relative")]).is_err());
-        assert!(
-            config(&[
-                ("WONTON_DATA_DIR", "/d"),
-                ("WONTON_BASE_DOMAIN", "192.168.1.2")
-            ])
-            .is_err()
-        );
+        for domain in ["192.168.1.2", "wonton.internal", "home.wonton.internal"] {
+            let settings = [("WONTON_DATA_DIR", "/d"), ("WONTON_BASE_DOMAIN", domain)];
+            assert!(config(&settings).is_err(), "{domain}");
+        }
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_PUBLIC_PORT", "x")]).is_err());
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_TUNNEL_PORT", "70000")]).is_err());
         assert!(

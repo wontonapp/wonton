@@ -45,8 +45,8 @@ pub(super) fn service_err(service: &str, message: impl Into<String>) -> RenderEr
     }
 }
 
-/// 注入给 OIDC 客户端的配置。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 注入给 OIDC 客户端的配置。`Debug` 不打印客户端密钥。
+#[derive(Clone, PartialEq, Eq)]
 pub struct OidcVars {
     pub issuer: String,
     pub client_id: String,
@@ -56,8 +56,38 @@ pub struct OidcVars {
     pub userinfo_url: String,
 }
 
-/// 安装环境：由核心配置和本次安装分配的资源决定。
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for OidcVars {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OidcVars")
+            .field("issuer", &self.issuer)
+            .field("client_id", &self.client_id)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
+#[derive(Clone, PartialEq, Eq)]
+pub struct MatrixVars {
+    pub homeserver: String,
+    pub user_id: String,
+    pub access_token: String,
+    pub owner: String,
+    pub home_room: String,
+}
+
+impl std::fmt::Debug for MatrixVars {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MatrixVars")
+            .field("homeserver", &self.homeserver)
+            .field("user_id", &self.user_id)
+            .field("owner", &self.owner)
+            .field("home_room", &self.home_room)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 安装环境：由核心配置和本次安装分配的资源决定。`Debug` 不打印其中的令牌和密钥。
+#[derive(Clone)]
 pub struct InstallContext {
     pub slug: String,
     /// 插件私有数据目录（宿主路径）。
@@ -67,6 +97,8 @@ pub struct InstallContext {
     /// 插件网页的公开地址（不带末尾斜杠）。
     pub app_url: Option<String>,
     pub oidc: Option<OidcVars>,
+    /// 声明了 `matrix.bot` 时：核心代 Bot 登录后签发的身份。
+    pub matrix: Option<MatrixVars>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
     pub tz: String,
@@ -74,6 +106,24 @@ pub struct InstallContext {
     pub pgid: u32,
     /// 额外写进每个容器 `/etc/hosts` 的条目（核心不在容器里运行时，用来让插件访问网关）。
     pub extra_hosts: Vec<String>,
+}
+
+impl std::fmt::Debug for InstallContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InstallContext")
+            .field("slug", &self.slug)
+            .field("app_data", &self.app_data)
+            .field("shares", &self.shares)
+            .field("app_url", &self.app_url)
+            .field("oidc", &self.oidc)
+            .field("matrix", &self.matrix)
+            .field("secrets", &self.secrets.keys().collect::<Vec<_>>())
+            .field("tz", &self.tz)
+            .field("puid", &self.puid)
+            .field("pgid", &self.pgid)
+            .field("extra_hosts", &self.extra_hosts)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +188,13 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         set("WONTON_OIDC_TOKEN_URL", oidc.token_url.clone());
         set("WONTON_OIDC_USERINFO_URL", oidc.userinfo_url.clone());
     }
+    if let Some(matrix) = &ctx.matrix {
+        set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
+        set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
+        set("WONTON_MATRIX_ACCESS_TOKEN", matrix.access_token.clone());
+        set("WONTON_MATRIX_OWNER", matrix.owner.clone());
+        set("WONTON_MATRIX_HOME_ROOM", matrix.home_room.clone());
+    }
     vars
 }
 
@@ -170,6 +227,16 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
             token_url: "http://auth.wonton.invalid/token".into(),
             userinfo_url: "http://auth.wonton.invalid/userinfo".into(),
         }),
+        matrix: manifest
+            .permissions
+            .contains(&Permission::MatrixBot)
+            .then(|| MatrixVars {
+                homeserver: "http://matrix.wonton.internal".into(),
+                user_id: "@dry-run:wonton.invalid".into(),
+                access_token: "dry-run".into(),
+                owner: "@owner:wonton.invalid".into(),
+                home_room: "!dry-run:wonton.invalid".into(),
+            }),
         secrets: manifest
             .secrets
             .iter()
@@ -279,20 +346,12 @@ fn check_network_mode(
     }
 }
 
-/// 引用了没有定义的变量，而变量属于插件声明了、核心还兑现不了的权限（模型网关、Matrix Bot 接入之前）：
-/// 如实报“尚未支持”，而不是让人以为插件忘了声明权限。
+/// 引用了没有定义的变量，而变量属于插件声明了、核心还兑现不了的权限（模型网关接入之前）：如实报“尚未支持”，
+/// 而不是让人以为插件忘了声明权限。
 fn explain(manifest: &Manifest, error: PackageError) -> RenderError {
     let pending = error.missing_var().and_then(|var| {
-        let permission = if var.starts_with("WONTON_MODEL_") {
-            Permission::Models
-        } else if var.starts_with("WONTON_MATRIX_") {
-            Permission::MatrixBot
-        } else {
-            return None;
-        };
-        manifest
-            .permissions
-            .contains(&permission)
+        let permission = Permission::Models;
+        (var.starts_with("WONTON_MODEL_") && manifest.permissions.contains(&permission))
             .then(|| format!("权限 {permission} 尚未支持：{var} 要等核心接入后才有值"))
     });
     match pending {

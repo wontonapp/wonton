@@ -29,6 +29,23 @@ FROM debian:trixie-slim AS tunnel-client
 COPY --from=tunnel-client-build /usr/local/bin/tunnel-client /usr/local/bin/tunnel-client
 ENTRYPOINT ["tunnel-client"]
 
+# 回声 Bot 示例插件（plugins/examples/echo-bot）的镜像，冒烟测试也用它扮演主人的加密客户端。只在
+# `--target echo-bot` 时构建。
+FROM build AS echo-bot-build
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/src/target,sharing=locked \
+    find crates -exec touch {} + \
+    && cargo build --release --locked -p wonton-echo-bot \
+    && cp target/release/echo-bot /usr/local/bin/echo-bot
+
+FROM debian:trixie-slim AS echo-bot
+# matrix-sdk 的 HTTP 客户端启动时要加载系统的根证书，没有就直接失败（即使只用 http）。
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=echo-bot-build /usr/local/bin/echo-bot /usr/local/bin/echo-bot
+ENTRYPOINT ["echo-bot"]
+CMD ["run"]
+
 FROM debian:trixie-slim
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 ENTRYPOINT ["wonton-core"]

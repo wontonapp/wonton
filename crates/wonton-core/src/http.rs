@@ -28,6 +28,16 @@ pub enum HttpError {
     Json(String),
 }
 
+/// [`HttpClient::request_json`] 的请求体。
+pub enum RequestBody<'a> {
+    Empty,
+    Json(&'a Value),
+    Bytes {
+        content_type: &'a str,
+        data: Vec<u8>,
+    },
+}
+
 #[derive(Clone)]
 pub struct HttpClient {
     inner: Client<HttpConnector, Body>,
@@ -76,16 +86,17 @@ impl HttpClient {
         body: Option<&Value>,
         timeout: Duration,
     ) -> Result<(StatusCode, Value), HttpError> {
+        let body = body.map_or(RequestBody::Empty, RequestBody::Json);
         self.request_json(method, url, None, body, timeout).await
     }
 
-    /// 同 [`Self::json`]，带上访问令牌（`Authorization: Bearer`）。
+    /// 同 [`Self::json`]，可以带访问令牌（`Authorization: Bearer`），请求体也可以是原始字节（如上传文件）。
     pub async fn request_json(
         &self,
         method: Method,
         url: &str,
         bearer: Option<&str>,
-        body: Option<&Value>,
+        body: RequestBody<'_>,
         timeout: Duration,
     ) -> Result<(StatusCode, Value), HttpError> {
         let mut builder = Request::builder()
@@ -96,10 +107,13 @@ impl HttpClient {
             builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
         }
         let request = match body {
-            Some(value) => builder
+            RequestBody::Empty => builder.body(Body::empty()),
+            RequestBody::Json(value) => builder
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(value.to_string())),
-            None => builder.body(Body::empty()),
+            RequestBody::Bytes { content_type, data } => builder
+                .header(header::CONTENT_TYPE, content_type)
+                .body(Body::from(data)),
         }
         .map_err(|e| HttpError::BadUrl(e.to_string()))?;
         let exchange = async {

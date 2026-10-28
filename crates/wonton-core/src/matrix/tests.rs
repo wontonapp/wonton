@@ -1,200 +1,42 @@
-//! 核心准备 Tuwunel 管理账号的行为：在一个假的 Tuwunel 上验证注册、复用、失效后重新登录和管理员权限。
+//! 核心和 Tuwunel 的行为：管理账号的注册、复用、失效后重新登录和管理员权限；代 Bot 建号、建主房间和清理。
+//! 都在假 Tuwunel（[`super::fake`]）上验证。
 
 use std::collections::BTreeSet;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::{Arc, Mutex};
 
-use aws_lc_rs::encoding::AsDer;
-use aws_lc_rs::hmac;
-use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
-use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{get, post};
-use axum::{Json, Router};
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
-use jsonwebtoken::DecodingKey;
-use serde_json::{Value, json};
-use tokio::net::TcpListener;
+use serde_json::json;
 
-use super::Matrix;
-use super::issuer::tests::verify;
+use super::fake::{Fake, User, start};
+use super::{Avatar, BotSpec, Matrix};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
 
-const SECRET: &str = "shared-secret";
-
-/// 假 Tuwunel 记下的状态：管理账号在不在、是不是服务器管理员，哪些令牌有效。
-#[derive(Default)]
-pub(crate) struct Tuwunel {
-    registered: bool,
-    admin: bool,
-    registrations: usize,
-    tokens: BTreeSet<String>,
-    next: usize,
-}
-
-/// 假的 Tuwunel：只实现核心用到的几个接口；`/_matrix/client/versions` 也给网关的转发测试用。
-#[derive(Clone)]
-pub(crate) struct Fake {
-    state: Arc<Mutex<Tuwunel>>,
-    /// 验签核心签的登录令牌用的公钥。
-    pub(crate) key: Arc<DecodingKey>,
-}
-
-impl Fake {
-    fn issue(&self) -> String {
-        let mut state = self.state.lock().unwrap();
-        state.next += 1;
-        let token = format!("token-{}", state.next);
-        state.tokens.insert(token.clone());
-        token
-    }
-}
-
-fn matrix_error(status: StatusCode, errcode: &str) -> (StatusCode, Json<Value>) {
-    (status, Json(json!({"errcode": errcode, "error": errcode})))
-}
-
-async fn register(State(fake): State<Fake>, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
-    let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, SECRET.as_bytes());
-    let field = |name: &str| body[name].as_str().unwrap_or_default().to_owned();
-    let message = [
-        field("nonce"),
-        field("username"),
-        field("password"),
-        "admin".into(),
-    ]
-    .join("\0");
-    let mac: String = hmac::sign(&key, message.as_bytes())
-        .as_ref()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if field("mac") != mac || body["admin"] != true {
-        return matrix_error(StatusCode::FORBIDDEN, "M_FORBIDDEN");
-    }
-    {
-        let mut state = fake.state.lock().unwrap();
-        if state.registered {
-            return matrix_error(StatusCode::BAD_REQUEST, "M_USER_IN_USE");
-        }
-        state.registered = true;
-        state.admin = true;
-        state.registrations += 1;
-    }
-    let token = fake.issue();
-    (
-        StatusCode::OK,
-        Json(json!({"access_token": token, "user_id": "@wonton-core:test"})),
-    )
-}
-
-async fn login(State(fake): State<Fake>, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
-    let claims = verify(body["token"].as_str().unwrap_or_default(), &fake.key);
-    let user = format!("@{}:test", claims["sub"].as_str().unwrap());
-    let token = fake.issue();
-    let reply = json!({"user_id": user, "device_id": "DEVICE", "access_token": token});
-    (StatusCode::OK, Json(reply))
-}
-
-fn bearer(headers: &HeaderMap) -> &str {
-    headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or_default()
-}
-
-async fn whoami(State(fake): State<Fake>, headers: HeaderMap) -> (StatusCode, Json<Value>) {
-    if fake.state.lock().unwrap().tokens.contains(bearer(&headers)) {
-        (
-            StatusCode::OK,
-            Json(json!({"user_id": "@wonton-core:test"})),
-        )
-    } else {
-        matrix_error(StatusCode::UNAUTHORIZED, "M_UNKNOWN_TOKEN")
-    }
-}
-
-/// 管理接口：令牌有效、账号又是服务器管理员才行，和 Tuwunel 一样对普通账号回 403。
-async fn devices(State(fake): State<Fake>, headers: HeaderMap) -> (StatusCode, Json<Value>) {
-    let state = fake.state.lock().unwrap();
-    if !state.tokens.contains(bearer(&headers)) {
-        matrix_error(StatusCode::UNAUTHORIZED, "M_UNKNOWN_TOKEN")
-    } else if !state.admin {
-        matrix_error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-    } else {
-        (StatusCode::OK, Json(json!({"devices": [], "total": 0})))
-    }
-}
-
-/// 起一个假 Tuwunel，返回它和一份指向它的配置（签发私钥是新生成的）。
-pub(crate) async fn start() -> (Fake, MatrixConfig) {
-    let pair = Ed25519KeyPair::generate().unwrap();
-    let der = pair.to_pkcs8().unwrap();
-    let public = pair.public_key().as_der().unwrap();
-    let fake = Fake {
-        state: Arc::default(),
-        key: Arc::new(DecodingKey::from_ed_der(public.as_ref())),
-    };
-    let app = Router::new()
-        .route(
-            "/_matrix/client/versions",
-            get(|| async { Json(json!({"versions": ["v1.11"]})) }),
-        )
-        .route(
-            "/_synapse/admin/v1/register",
-            get(|| async { Json(json!({"nonce": "n1"})) }).post(register),
-        )
-        .route("/_matrix/client/v3/login", post(login))
-        .route("/_matrix/client/v3/account/whoami", get(whoami))
-        .route("/_synapse/admin/v2/users/{user}/devices", get(devices))
-        // 其余路径：回 404，带上收到的原始路径，测试据此确认网关原样转发。
-        .fallback(|uri: axum::http::Uri| async move {
-            let body = json!({"errcode": "M_UNRECOGNIZED", "path": uri.path()});
-            (StatusCode::NOT_FOUND, Json(body))
-        })
-        .with_state(fake.clone());
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let body = STANDARD.encode(der.as_ref());
-    let config = MatrixConfig {
-        url: format!("http://{addr}"),
-        server_name: "test".into(),
-        jwt_key: format!("-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"),
-        registration_secret: SECRET.into(),
-    };
-    (fake, config)
+async fn connect(dir: &tempfile::TempDir, config: &MatrixConfig) -> Matrix {
+    Matrix::connect(config, dir.path(), HttpClient::new())
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
 async fn the_admin_account_is_registered_once_and_its_token_kept_private() {
     let (fake, config) = start().await;
     let dir = tempfile::tempdir().unwrap();
-    let first = Matrix::connect(&config, dir.path(), HttpClient::new())
-        .await
-        .unwrap();
+    let first = connect(&dir, &config).await;
     let saved = dir.path().join("matrix-admin-token");
     let mode = std::fs::metadata(&saved).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(first.admin_user_id(), "@wonton-core:test");
 
     // 核心重启：令牌还有效就沿用，不再注册。
-    let again = Matrix::connect(&config, dir.path(), HttpClient::new())
-        .await
-        .unwrap();
+    let again = connect(&dir, &config).await;
     assert_eq!(again.admin_token, first.admin_token);
-    assert_eq!(fake.state.lock().unwrap().registrations, 1);
+    assert_eq!(fake.state().registrations, 1);
 
     // 令牌失效（比如 Tuwunel 吊销了它）：账号已经在了，用核心签的 JWT 登录拿新令牌。
-    fake.state.lock().unwrap().tokens.clear();
-    let relogged = Matrix::connect(&config, dir.path(), HttpClient::new())
-        .await
-        .unwrap();
+    fake.state().tokens.clear();
+    let relogged = connect(&dir, &config).await;
     assert_ne!(relogged.admin_token, first.admin_token);
-    assert_eq!(fake.state.lock().unwrap().registrations, 1);
+    assert_eq!(fake.state().registrations, 1);
     let kept = std::fs::read_to_string(&saved).unwrap();
     assert_eq!(kept, relogged.admin_token);
 }
@@ -215,11 +57,207 @@ async fn a_wrong_shared_secret_is_refused_by_tuwunel() {
 async fn an_account_that_is_not_a_server_admin_stops_the_core() {
     // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但调不了管理接口。
     let (fake, config) = start().await;
-    fake.state.lock().unwrap().registered = true;
+    fake.state()
+        .users
+        .insert("@wonton-core:test".into(), User::default());
     let dir = tempfile::tempdir().unwrap();
     let Err(error) = Matrix::connect(&config, dir.path(), HttpClient::new()).await else {
         panic!("管理账号不是服务器管理员时核心不能启动");
     };
     assert_eq!(error.errcode(), "M_FORBIDDEN", "{error}");
     assert!(error.to_string().contains("服务器管理员"), "{error}");
+}
+
+fn spec<'a>(localpart: &'a str, taken: &'a BTreeSet<String>) -> BotSpec<'a> {
+    BotSpec {
+        localpart,
+        taken,
+        previous: None,
+        device_name: "Wonton 插件 app.echo",
+        display_name: "回声",
+        avatar: None,
+        owner: "owner",
+    }
+}
+
+fn members(fake: &Fake, room: &str) -> BTreeSet<String> {
+    fake.state().rooms[room].members.clone()
+}
+
+#[tokio::test]
+async fn a_bot_gets_an_account_a_device_and_an_encrypted_direct_room_with_the_owner() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let taken = BTreeSet::new();
+    let avatar = Avatar {
+        content_type: "image/png",
+        filename: "avatar.png",
+        data: b"png",
+    };
+    let bot = matrix
+        .provision_bot(&BotSpec {
+            avatar: Some(avatar),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(bot.account.user_id, "@echo:test");
+    assert_eq!(bot.owner, "@owner:test");
+    // 带令牌的结构打印出来不含令牌。
+    assert!(!format!("{bot:?}").contains(&bot.access_token));
+    let login = matrix.login("echo", "测试").await.unwrap();
+    assert!(!format!("{login:?}").contains(&login.access_token));
+    let state = fake.state();
+    let device = ("@echo:test".to_owned(), bot.device_id.clone());
+    assert_eq!(state.tokens[&bot.access_token], device);
+    let profile = state.user("@echo:test");
+    assert_eq!(profile.display_name.as_deref(), Some("回声"));
+    assert_eq!(state.media, [("image/png".to_owned(), b"png".to_vec())]);
+    assert!(
+        profile
+            .avatar_url
+            .as_deref()
+            .is_some_and(|u| u.starts_with("mxc://"))
+    );
+
+    // 主房间：加密的私聊，主人已经在里面，双方的 m.direct 都记着它。
+    let home = &bot.account.home_room;
+    let room = &state.rooms[home];
+    assert!(room.encrypted && room.direct, "主房间要加密、标为私聊");
+    let both = BTreeSet::from(["@echo:test".to_owned(), "@owner:test".to_owned()]);
+    assert_eq!(room.members, both);
+    let owner = state.user("@owner:test");
+    assert_eq!(owner.direct, Some(json!({"@echo:test": [home]})));
+    assert_eq!(profile.direct, Some(json!({"@owner:test": [home]})));
+    // 核心代主人临时登录的设备已经退出。
+    assert!(state.devices("@owner:test").is_empty());
+}
+
+#[tokio::test]
+async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let taken = BTreeSet::new();
+    let first = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    matrix
+        .delete_device(&first.account.user_id, &first.device_id)
+        .await
+        .unwrap();
+    let revoked = !fake.state().tokens.contains_key(&first.access_token);
+    assert!(revoked, "吊销设备后令牌立即失效");
+
+    let previous = first.account.clone();
+    let again = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(again.account, first.account, "沿用账号和主房间");
+    assert_ne!(again.device_id, first.device_id, "每次安装一台新设备");
+    assert_eq!(fake.state().rooms.len(), 1);
+
+    // 主人退出了主房间：再装时新建一个，不往没人看的房间里发。
+    fake.state()
+        .rooms
+        .get_mut(&first.account.home_room)
+        .unwrap()
+        .members
+        .remove("@owner:test");
+    let third = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(third.account.user_id, first.account.user_id);
+    assert_ne!(third.account.home_room, first.account.home_room);
+    assert_eq!(members(&fake, &third.account.home_room).len(), 2);
+}
+
+#[tokio::test]
+async fn bot_names_skip_reserved_taken_and_deactivated_accounts() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let none = BTreeSet::new();
+    // 和主人、核心的管理账号重名的不用。
+    let owner = matrix.provision_bot(&spec("owner", &none)).await.unwrap();
+    assert_eq!(owner.account.user_id, "@owner-2:test");
+    let core = matrix
+        .provision_bot(&spec("wonton-core", &none))
+        .await
+        .unwrap();
+    assert_eq!(core.account.user_id, "@wonton-core-2:test");
+    // 别的插件的 Bot 用掉的跳过。
+    let taken = BTreeSet::from(["echo".to_owned()]);
+    let second = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    assert_eq!(second.account.user_id, "@echo-2:test");
+    // 停用的账号（删除数据卸载过）不能再登录，也退出了房间：换下一个名字。
+    matrix.deactivate("@echo-2:test").await.unwrap();
+    assert!(fake.state().user("@echo-2:test").deactivated);
+    assert_eq!(members(&fake, &second.account.home_room).len(), 1);
+    let third = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    assert_eq!(third.account.user_id, "@echo-3:test");
+
+    // 记录里的账号已经停用：如实报错，不悄悄换一个账号。
+    let previous = second.account.clone();
+    let err = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.errcode(), "M_USER_DEACTIVATED", "{err}");
+}
+
+#[tokio::test]
+async fn a_bot_that_cannot_get_its_home_room_leaves_no_device_behind() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    fake.state().refuse_rooms = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
+    assert!(
+        fake.state().devices("@echo:test").is_empty(),
+        "没建好的 Bot 设备要吊销"
+    );
+}
+
+#[tokio::test]
+async fn an_existing_account_is_never_taken_over_by_a_new_bot() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    // 家人的账号恰好叫 echo，现在没有登录着的设备：JWT 登录会直接登录进去，所以要跳过。
+    fake.state()
+        .users
+        .insert("@echo:test".into(), User::default());
+    let none = BTreeSet::new();
+    let bot = matrix.provision_bot(&spec("echo", &none)).await.unwrap();
+    assert_eq!(bot.account.user_id, "@echo-2:test");
+    assert!(
+        fake.state().devices("@echo:test").is_empty(),
+        "没有登录进已有的账号"
+    );
+    // 这个插件记录在案的 Bot 才能登录已有的账号。
+    let previous = bot.account.clone();
+    let again = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &none)
+        })
+        .await
+        .unwrap();
+    assert_eq!(again.account.user_id, "@echo-2:test");
 }

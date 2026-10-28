@@ -1,8 +1,11 @@
-//! Bot 服务的变量和规则，以及核心还兑现不了的权限的变量。
+//! Bot 服务的变量和规则，以及核心还兑现不了的权限的变量。安装、卸载时 Bot 在 Matrix 上的副作用见
+//! [`super::bot_lifecycle`]。
 
 use super::super::docker::Engine;
 use super::super::package::{PackageError, PluginPackage};
-use super::super::render::{ContainerPlan, Deployment, RenderError, dry_run};
+use super::super::render::{
+    ContainerPlan, Deployment, InstallContext, MatrixVars, OidcVars, RenderError, dry_run,
+};
 use super::manager::manager_with;
 use super::{env_of, package};
 
@@ -96,6 +99,31 @@ fn bot_declarations_need_matrix_bot_and_real_services() {
     assert!(matches!(parse(&webui), Err(PackageError::Service { .. })));
 }
 
+#[test]
+fn the_bot_identity_goes_only_to_bot_services_when_bots_are_declared() {
+    let gateway_env = SERVICES.replace(
+        "BOT: ${WONTON_BOT_NAME}",
+        "BOT: ${WONTON_BOT_NAME}\n      TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}",
+    );
+    let bots = plan(&gateway_env, BOTS).unwrap();
+    assert!(env_of(container(&bots, "gateway")).contains(&"TOKEN=dry-run".to_owned()));
+    // 全插件一份的服务拿不到哪个 Bot 的令牌：每个 Bot 一个。
+    let web_env = SERVICES.replace(
+        "image: nginx",
+        "image: nginx\n    environment:\n      USER: ${WONTON_MATRIX_USER_ID}",
+    );
+    assert!(matches!(
+        plan_err(&web_env, BOTS),
+        RenderError::Package(PackageError::Interpolate { .. })
+    ));
+    // 没有 `bots` 时插件只有一个 Bot，所有服务都拿得到。
+    let web = "  web:\n    image: nginx\n    environment:\n      USER: ${WONTON_MATRIX_USER_ID}";
+    let single = "  bot: {display_name: {zh: 测试, en: Test}}\n  permissions: [matrix.bot]";
+    let one = plan(web, single).unwrap();
+    let user = "USER=@dry-run:wonton.invalid".to_owned();
+    assert!(env_of(container(&one, "web")).contains(&user));
+}
+
 #[tokio::test]
 async fn variables_of_permissions_the_core_cannot_honor_yet_are_reported_as_unsupported() {
     let models = package(
@@ -115,14 +143,53 @@ async fn variables_of_permissions_the_core_cannot_honor_yet_are_reported_as_unsu
     let err = dry_run(&PluginPackage::parse(&undeclared).unwrap()).unwrap_err();
     assert!(matches!(err, RenderError::Package(_)), "{err}");
 
-    // 内联配置里引用 Matrix 的变量也一样。
+    // 内联配置里引用模型网关的变量也一样。
     let content = format!(
-        "configs:\n  token:\n    content: ${{WONTON_MATRIX_ACCESS_TOKEN}}\n{}",
+        "configs:\n  key:\n    content: ${{WONTON_MODEL_API_KEY}}\n{}",
         package(
-            &SERVICES.replace("image: hermes", "image: hermes\n    configs: [token]"),
-            BOTS
+            &SERVICES.replace("image: hermes", "image: hermes\n    configs: [key]"),
+            &BOTS.replace("[matrix.bot]", "[matrix.bot, models]")
         )
     );
     let err = dry_run(&PluginPackage::parse(&content).unwrap()).unwrap_err();
     assert!(matches!(err, RenderError::Unsupported(_)), "{err}");
+}
+
+#[test]
+fn install_contexts_print_no_tokens_or_secrets() {
+    let ctx = InstallContext {
+        slug: "app-test".into(),
+        app_data: "/apps/app-test".into(),
+        shares: Default::default(),
+        app_url: None,
+        oidc: Some(OidcVars {
+            issuer: "http://auth".into(),
+            client_id: "app.test".into(),
+            client_secret: "oidc-secret-value".into(),
+            auth_url: String::new(),
+            token_url: String::new(),
+            userinfo_url: String::new(),
+        }),
+        matrix: Some(MatrixVars {
+            homeserver: "http://matrix.wonton.internal".into(),
+            user_id: "@test:t".into(),
+            access_token: "matrix-token-value".into(),
+            owner: "@owner:t".into(),
+            home_room: "!room:t".into(),
+        }),
+        secrets: [("web_key".to_owned(), "generated-secret-value".to_owned())].into(),
+        tz: "UTC".into(),
+        puid: 1000,
+        pgid: 1000,
+        extra_hosts: Vec::new(),
+    };
+    let printed = format!("{ctx:?}");
+    for secret in [
+        "oidc-secret-value",
+        "matrix-token-value",
+        "generated-secret-value",
+    ] {
+        assert!(!printed.contains(secret), "{printed}");
+    }
+    assert!(printed.contains("web_key"), "只打印密钥的名字：{printed}");
 }

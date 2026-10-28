@@ -5,16 +5,21 @@
 
 mod admin;
 mod api;
+mod bot;
 pub(crate) mod issuer;
+mod session;
 
 use std::path::Path;
 use std::time::Duration;
 
 use hyper::Method;
+use serde_json::json;
 
 pub use admin::ADMIN_LOCALPART;
-pub use api::{JWT_LOGIN_TYPE, MatrixError};
+pub use api::{JWT_LOGIN_TYPE, Login, MatrixError};
+pub use bot::{Avatar, BotAccount, BotSpec, ProvisionedBot};
 pub use issuer::LOGIN_TOKEN_TTL_SECS;
+pub use session::Session;
 
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
@@ -78,10 +83,75 @@ impl Matrix {
         self.issuer.login_token(localpart)
     }
 
+    /// 替 `localpart` 登录一台新设备（首次登录时 Tuwunel 自动建号），不申请刷新令牌。
+    pub async fn login(&self, localpart: &str, device_name: &str) -> Result<Login, MatrixError> {
+        self.api
+            .login(&self.login_token(localpart), device_name)
+            .await
+    }
+
+    /// 以已登录的用户身份调客户端接口。
+    pub fn session(&self, login: &Login) -> Session<'_> {
+        Session::new(&self.api, &login.user_id, &login.access_token)
+    }
+
+    /// 账号存不存在（停用的也算存在）：Synapse 兼容的 `GET /_synapse/admin/v2/users/{user}`，不存在时 Tuwunel 回
+    /// 404 `M_NOT_FOUND`。
+    pub async fn user_exists(&self, user_id: &str) -> Result<bool, MatrixError> {
+        let path = format!("/_synapse/admin/v2/users/{}", api::encode(user_id));
+        match self.admin(Method::GET, &path, None, "查询账号").await {
+            Ok(_) => Ok(true),
+            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// 用户现有的设备 ID；用户不存在时为空。
+    pub async fn devices(&self, user_id: &str) -> Result<Vec<String>, MatrixError> {
+        let path = format!("/_synapse/admin/v2/users/{}/devices", api::encode(user_id));
+        let value = match self.admin(Method::GET, &path, None, "列出设备").await {
+            Err(e) if e.errcode() == "M_NOT_FOUND" => return Ok(Vec::new()),
+            other => other?,
+        };
+        Ok(value["devices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|d| d["device_id"].as_str().map(str::to_owned))
+            .collect())
+    }
+
+    /// 吊销一台设备：它的访问令牌立即作废。设备本来就不在也算成功。
+    pub async fn delete_device(&self, user_id: &str, device_id: &str) -> Result<(), MatrixError> {
+        let path = format!(
+            "/_synapse/admin/v2/users/{}/devices/{}",
+            api::encode(user_id),
+            api::encode(device_id)
+        );
+        match self.admin(Method::DELETE, &path, None, "吊销设备").await {
+            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(()),
+            other => other.map(|_| ()),
+        }
+    }
+
+    /// 停用账号：所有设备下线、退出所有房间，之后也不能再登录。不可恢复；账号本来就不在也算成功。
+    pub async fn deactivate(&self, user_id: &str) -> Result<(), MatrixError> {
+        let path = format!("/_synapse/admin/v1/deactivate/{}", api::encode(user_id));
+        let body = json!({"erase": false});
+        match self
+            .admin(Method::POST, &path, Some(&body), "停用账号")
+            .await
+        {
+            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(()),
+            other => other.map(|_| ()),
+        }
+    }
+
     /// 确认管理账号真是服务器管理员。账号若先被 JWT 登录建成了普通账号，注册会报 `M_USER_IN_USE`，再登录拿到的
     /// 令牌调不了管理接口：启动时就停下，不等到要吊销设备时才失败。
     async fn check_admin(&self) -> Result<(), MatrixError> {
-        let path = format!("/_synapse/admin/v2/users/{}/devices", self.admin_user_id());
+        let user = api::encode(&self.admin_user_id());
+        let path = format!("/_synapse/admin/v2/users/{user}/devices");
         self.admin(Method::GET, &path, None, "确认核心的管理账号是服务器管理员")
             .await
             .map(|_| ())
@@ -101,4 +171,6 @@ impl Matrix {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+pub(crate) mod fake;
+#[cfg(test)]
+mod tests;

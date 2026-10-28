@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use http_body_util::BodyExt;
@@ -62,6 +63,7 @@ pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
 
 struct Home {
     app: Router,
+    plugins: Arc<PluginManager>,
     tunnel: Tunnel,
     hits: Arc<AtomicUsize>,
     _entry: TunnelEntry,
@@ -99,6 +101,8 @@ impl Home {
             puid: 1000,
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
+            owner: "owner".into(),
+            gateway_port: 8080,
         };
         let manager = Arc::new(PluginManager::new(
             Engine::unreachable_for_test(),
@@ -114,7 +118,7 @@ impl Home {
             public,
             owner(),
             TOKEN.into(),
-            manager,
+            manager.clone(),
             hydra,
             http,
             tunnel.clone(),
@@ -124,6 +128,7 @@ impl Home {
         let entry = TunnelEntry::spawn(tunnel.endpoint.clone(), &tunnel.devices, app.clone());
         Self {
             app,
+            plugins: manager,
             tunnel,
             hits,
             _entry: entry,
@@ -472,7 +477,7 @@ async fn matrix_login_and_client_api_are_only_for_paired_devices() {
 
 #[tokio::test]
 async fn paired_devices_get_a_login_token_and_reach_the_client_api() {
-    let (fake, config) = crate::matrix::tests::start().await;
+    let (fake, config) = crate::matrix::fake::start().await;
     let state = tempfile::tempdir().unwrap();
     let matrix = Matrix::connect(&config, state.path(), HttpClient::new())
         .await
@@ -522,5 +527,75 @@ async fn paired_devices_get_a_login_token_and_reach_the_client_api() {
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap()["path"],
         room_keys
+    );
+}
+
+/// 插件网络里的容器发来的请求：网关看到的来源地址是 `from`。
+async fn from_plugin(home: &Home, from: &str, path: &str) -> (StatusCode, HeaderMap, Value) {
+    let mut request = hyper::Request::builder()
+        .uri(path)
+        .header(header::HOST, "matrix.wonton.internal:8080")
+        .body(Body::empty())
+        .unwrap();
+    let addr: SocketAddr = from.parse().unwrap();
+    request.extensions_mut().insert(ConnectInfo(addr));
+    let response = home.app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, headers, body)
+}
+
+#[tokio::test]
+async fn bots_reach_matrix_only_from_networks_of_plugins_with_matrix_bot() {
+    let (_fake, config) = crate::matrix::fake::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let matrix = Matrix::connect(&config, state.path(), HttpClient::new())
+        .await
+        .unwrap();
+    let home = Home::start_with(None, Some(Arc::new(matrix))).await;
+    let bot = vec!["matrix.bot".parse().unwrap()];
+    home.plugins
+        .register_source_for_test("app.echo", "172.30.1.0/24", bot);
+    home.plugins
+        .register_source_for_test("app.web", "172.30.2.0/24", Vec::new());
+
+    let (status, _, body) =
+        from_plugin(&home, "172.30.1.5:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["versions"].is_array());
+    // 规则同 matrix.<base>：只有客户端接口，写法可疑的路径先挡住。
+    let admin = "/_synapse/admin/v1/register";
+    let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", admin).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let sneaky = "/_matrix/client/../../_synapse/admin/v1/register";
+    let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", sneaky).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // 没申请 matrix.bot 的插件、插件网络以外的来源都不行。
+    let (status, headers, body) =
+        from_plugin(&home, "172.30.2.5:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["errcode"], "M_FORBIDDEN");
+    assert_eq!(
+        header(&headers, "x-wonton-error"),
+        Some("permission_denied")
+    );
+    let (status, headers, _) =
+        from_plugin(&home, "192.168.1.20:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
+    let (status, _, _) = lan(
+        &home,
+        Method::GET,
+        "matrix.wonton.internal",
+        "/_matrix/client/versions",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "没有来源地址（如经隧道）也不行"
     );
 }

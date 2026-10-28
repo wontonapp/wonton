@@ -1,0 +1,176 @@
+//! 以某个用户的身份调 Tuwunel 的客户端接口：核心代 Bot 设置资料、建主房间，代主人加入它。
+
+use hyper::Method;
+use serde_json::{Map, Value, json};
+
+use super::api::{Api, MatrixError, encode};
+
+/// 一个已登录用户的会话。令牌属于核心刚登录的设备，用完由调用方吊销或退出。
+pub struct Session<'a> {
+    api: &'a Api,
+    user_id: String,
+    token: String,
+}
+
+impl<'a> Session<'a> {
+    pub fn new(api: &'a Api, user_id: &str, token: &str) -> Self {
+        Self {
+            api,
+            user_id: user_id.to_owned(),
+            token: token.to_owned(),
+        }
+    }
+
+    pub fn user_id(&self) -> &str {
+        &self.user_id
+    }
+
+    async fn json(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+        context: &str,
+    ) -> Result<Value, MatrixError> {
+        self.api
+            .json(method, path, Some(&self.token), body, context)
+            .await
+    }
+
+    fn profile_path(&self, field: &str) -> String {
+        format!(
+            "/_matrix/client/v3/profile/{}/{field}",
+            encode(&self.user_id)
+        )
+    }
+
+    pub async fn set_display_name(&self, name: &str) -> Result<(), MatrixError> {
+        let body = json!({"displayname": name});
+        self.json(
+            Method::PUT,
+            &self.profile_path("displayname"),
+            Some(&body),
+            "设置显示名",
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// 上传头像并设为自己的头像。
+    pub async fn set_avatar(
+        &self,
+        content_type: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> Result<(), MatrixError> {
+        let uri = self
+            .api
+            .upload(&self.token, content_type, filename, data)
+            .await?;
+        let body = json!({"avatar_url": uri});
+        self.json(
+            Method::PUT,
+            &self.profile_path("avatar_url"),
+            Some(&body),
+            "设置头像",
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// 建一个和 `invitee` 的加密私聊并邀请对方，返回房间 ID。`trusted_private_chat`：双方权限相同。
+    pub async fn create_direct_room(&self, invitee: &str) -> Result<String, MatrixError> {
+        let body = json!({
+            "preset": "trusted_private_chat",
+            "is_direct": true,
+            "invite": [invitee],
+            "initial_state": [{
+                "type": "m.room.encryption",
+                "state_key": "",
+                "content": {"algorithm": "m.megolm.v1.aes-sha2"},
+            }],
+        });
+        let value = self
+            .json(
+                Method::POST,
+                "/_matrix/client/v3/createRoom",
+                Some(&body),
+                "建私聊",
+            )
+            .await?;
+        value["room_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid("建房接口没有返回 room_id".to_owned()))
+    }
+
+    pub async fn join(&self, room: &str) -> Result<(), MatrixError> {
+        let path = format!("/_matrix/client/v3/join/{}", encode(room));
+        self.json(Method::POST, &path, Some(&json!({})), "加入房间")
+            .await
+            .map(|_| ())
+    }
+
+    /// 撤回对 `user` 的邀请并退出房间：建好的私聊没能交到对方手里时用，免得对方收到一个没人应答的邀请。
+    pub async fn abandon(&self, room: &str, user: &str) -> Result<(), MatrixError> {
+        let room = encode(room);
+        let kick = json!({"user_id": user, "reason": "Wonton 没能建好这个私聊"});
+        let path = format!("/_matrix/client/v3/rooms/{room}/kick");
+        self.json(Method::POST, &path, Some(&kick), "撤回邀请")
+            .await?;
+        let path = format!("/_matrix/client/v3/rooms/{room}/leave");
+        self.json(Method::POST, &path, Some(&json!({})), "退出房间")
+            .await
+            .map(|_| ())
+    }
+
+    /// 房间里已加入的成员；自己不在房间里时 Tuwunel 拒绝（`M_FORBIDDEN`）。
+    pub async fn joined_members(&self, room: &str) -> Result<Vec<String>, MatrixError> {
+        let path = format!("/_matrix/client/v3/rooms/{}/joined_members", encode(room));
+        let value = self.json(Method::GET, &path, None, "查询房间成员").await?;
+        Ok(value["joined"]
+            .as_object()
+            .map(|joined| joined.keys().cloned().collect())
+            .unwrap_or_default())
+    }
+
+    /// 在自己的 `m.direct` 里把 `room` 记为和 `other` 的私聊（保留已有的记录）。
+    pub async fn add_direct(&self, other: &str, room: &str) -> Result<(), MatrixError> {
+        let path = format!(
+            "/_matrix/client/v3/user/{}/account_data/m.direct",
+            encode(&self.user_id)
+        );
+        let mut direct = match self.json(Method::GET, &path, None, "读取 m.direct").await {
+            Ok(Value::Object(map)) => map,
+            Ok(_) => Map::new(),
+            Err(e) if e.errcode() == "M_NOT_FOUND" => Map::new(),
+            Err(e) => return Err(e),
+        };
+        let rooms = direct.entry(other.to_owned()).or_insert_with(|| json!([]));
+        match rooms.as_array_mut() {
+            Some(list) if list.iter().any(|r| r == room) => {}
+            Some(list) => list.push(json!(room)),
+            None => *rooms = json!([room]),
+        }
+        self.json(
+            Method::PUT,
+            &path,
+            Some(&Value::Object(direct)),
+            "写入 m.direct",
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// 退出登录：这台设备和它的令牌一起作废。
+    pub async fn logout(&self) -> Result<(), MatrixError> {
+        self.json(
+            Method::POST,
+            "/_matrix/client/v3/logout",
+            Some(&json!({})),
+            "退出登录",
+        )
+        .await
+        .map(|_| ())
+    }
+}

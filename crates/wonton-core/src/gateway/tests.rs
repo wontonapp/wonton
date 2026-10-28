@@ -220,6 +220,8 @@ impl Harness {
             puid: 1000,
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
+            owner: "owner".into(),
+            gateway_port: 8080,
         };
         let manager = Arc::new(PluginManager::new(
             Engine::unreachable_for_test(),

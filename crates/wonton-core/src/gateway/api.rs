@@ -36,9 +36,9 @@ fn install_error(error: &InstallError) -> Response {
         InstallError::Unsupported(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) => StatusCode::NOT_FOUND,
-        InstallError::DockerUnavailable(_) | InstallError::OidcUnavailable(_) => {
-            StatusCode::SERVICE_UNAVAILABLE
-        }
+        InstallError::DockerUnavailable(_)
+        | InstallError::OidcUnavailable(_)
+        | InstallError::MatrixUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         InstallError::Docker(_) | InstallError::Unhealthy(_) => StatusCode::BAD_GATEWAY,
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };

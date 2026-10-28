@@ -17,7 +17,8 @@ use super::package::PluginPackage;
 use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
-use crate::config::PublicUrls;
+use crate::config::{PLUGIN_MATRIX_HOST, PublicUrls};
+use crate::matrix::ProvisionedBot;
 use crate::oidc::{ClientSpec, Hydra};
 use crate::secret::random_token;
 
@@ -32,6 +33,10 @@ pub struct LifecycleConfig {
     pub puid: u32,
     pub pgid: u32,
     pub install_timeout: Duration,
+    /// 主人的用户名，也是主人的 Matrix 用户名（localpart）。
+    pub owner: String,
+    /// 核心网关监听的端口：插件经核心在插件网络里的别名（如 `matrix.wonton.internal`）访问它。
+    pub gateway_port: u16,
 }
 
 /// 本次安装已经创建的资源，失败时据此回滚。
@@ -45,6 +50,10 @@ struct Undo {
     app_dir_created: Option<PathBuf>,
     /// 本次安装之前插件的密钥（`None` 表示原来没有），回滚时恢复成这样。
     secrets_before: Option<(PluginId, Option<Secrets>)>,
+    /// 本次安装代 Bot 登录的设备，回滚时吊销（账号和主房间保留给下次安装）。
+    bot: Option<(PluginId, ProvisionedBot)>,
+    /// 已登记插件网络的地址段，回滚时注销。
+    source: Option<PluginId>,
 }
 
 /// 插件声明的命名卷怎么处理。
@@ -77,6 +86,19 @@ fn volume_action(
 
 fn uses_sso(manifest: &Manifest) -> bool {
     manifest.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc)
+}
+
+/// 核心在插件网络里的别名：插件经它们访问核心代为转发的服务。SSO 插件经 `auth.<base>` 访问身份提供方，
+/// Bot 经 `matrix.wonton.internal` 访问 Matrix 客户端接口。
+fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<String> {
+    let mut aliases = Vec::new();
+    if uses_sso(manifest) {
+        aliases.push(public.auth_host());
+    }
+    if manifest.permissions.contains(&Permission::MatrixBot) {
+        aliases.push(PLUGIN_MATRIX_HOST.to_owned());
+    }
+    aliases
 }
 
 impl PluginManager {
@@ -124,6 +146,10 @@ impl PluginManager {
         let mut ctx = self
             .install_context(manifest, secret.as_deref(), generated)
             .await?;
+        if let Some(bot) = self.provision_bot(package).await? {
+            ctx.matrix = Some(self.matrix_vars(&bot));
+            undo.bot = Some((manifest.id.clone(), bot));
+        }
         let mut plan = render(package, &ctx)?;
         for container in &plan.containers {
             self.engine
@@ -135,8 +161,12 @@ impl PluginManager {
             .create_network(&plan.network, &plan.labels, self.network_reach(manifest))
             .await?;
         undo.network = Some(plan.network.clone());
-        if let Some(entry) = self.auth_via_host(manifest, &plan.network).await? {
-            ctx.extra_hosts = vec![entry];
+        // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
+        self.register_source(manifest, &plan.network).await?;
+        undo.source = Some(manifest.id.clone());
+        let hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
+        if !hosts.is_empty() {
+            ctx.extra_hosts = hosts;
             plan = render(package, &ctx)?;
         }
         if let Some(core) = &self.cfg.core_container {
@@ -249,6 +279,7 @@ impl PluginManager {
             shares,
             app_url,
             oidc,
+            matrix: None,
             secrets: generated,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
@@ -269,18 +300,34 @@ impl PluginManager {
         }
     }
 
-    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的身份提供方入口：内部网络
-    /// 没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
-    async fn auth_via_host(
+    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`core_aliases`]）：
+    /// 内部网络没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
+    async fn hosts_via_gateway(
         &self,
         manifest: &Manifest,
         network: &str,
-    ) -> Result<Option<String>, InstallError> {
-        if self.cfg.core_container.is_some() || !uses_sso(manifest) {
-            return Ok(None);
+    ) -> Result<Vec<String>, InstallError> {
+        let aliases = core_aliases(&self.cfg.public, manifest);
+        if self.cfg.core_container.is_some() || aliases.is_empty() {
+            return Ok(Vec::new());
         }
         let gateway = self.engine.network_gateway(network).await?;
-        Ok(Some(format!("{}:{gateway}", self.cfg.public.auth_host())))
+        Ok(aliases
+            .into_iter()
+            .map(|alias| format!("{alias}:{gateway}"))
+            .collect())
+    }
+
+    /// 登记插件网络的地址段，网关据此认出插件的请求（见 [`super::sources`]）。
+    pub(super) async fn register_source(
+        &self,
+        manifest: &Manifest,
+        network: &str,
+    ) -> Result<(), InstallError> {
+        let subnets = self.engine.network_subnets(network).await?;
+        self.sources
+            .insert(&manifest.id, subnets, manifest.permissions.clone());
+        Ok(())
     }
 
     /// 主人的用户（PUID:PGID）：共享文件夹、应用数据目录本身和中间各级目录都交给它。
@@ -319,12 +366,7 @@ impl PluginManager {
         core: &str,
         manifest: &Manifest,
     ) -> Result<(), InstallError> {
-        // 插件容器经这个别名访问核心网关上的身份提供方（令牌、用户信息端点）。
-        let aliases = if uses_sso(manifest) {
-            vec![self.cfg.public.auth_host()]
-        } else {
-            Vec::new()
-        };
+        let aliases = core_aliases(&self.cfg.public, manifest);
         match self.engine.connect_network(network, core, aliases).await {
             Err(super::docker::EngineError::Rejected { message, .. })
                 if message.contains("already exists") =>
@@ -422,6 +464,15 @@ impl PluginManager {
                     .map_err(|e| e.to_string()),
             );
         }
+        if let Some((id, bot)) = &undo.bot {
+            note(
+                format!("Bot {} 的设备", bot.account.user_id),
+                self.revoke_bot_device(id, bot).await,
+            );
+        }
+        if let Some(id) = &undo.source {
+            self.sources.remove(id);
+        }
         if let (Some(id), Some(hydra)) = (&undo.oidc_client, &self.oidc) {
             note(
                 format!("OIDC 客户端 {id}"),
@@ -493,6 +544,7 @@ impl PluginManager {
                 Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
             }
         }
+        self.check_bot(manifest).await?;
         let generated = self.check_secrets(manifest).await?;
         let network = format!("wonton-{slug}");
         let expected = self.network_reach(manifest);
@@ -548,15 +600,19 @@ impl PluginManager {
         for container in &found.containers {
             self.engine.remove_container(container).await?;
         }
+        // 容器都停了再吊销 Bot 的设备。
+        let bot = self.remove_bot(id, purge).await?;
         for network in &found.networks {
             if let Some(core) = &self.cfg.core_container {
                 self.engine.disconnect_network(network, core).await?;
             }
             self.engine.remove_network(network).await?;
         }
+        self.sources.remove(id);
         let mut report = UninstallReport {
             containers: found.containers.clone(),
             networks: found.networks.clone(),
+            bot,
             ..Default::default()
         };
         if let Some(hydra) = &self.oidc {

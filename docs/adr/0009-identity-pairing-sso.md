@@ -200,3 +200,29 @@ Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版
   （`curl --path-as-is`）得到 400；会话 ID 里带 `%2F` 的 `room_keys` 请求原样转给 Tuwunel。
 - 开发环境的公钥经环境变量传给 Tuwunel（`DOCKER_HOST` 指向远端时挂不了本机文件），轮换签发密钥要重建 Tuwunel
   容器。按 M0-2 的结论，正式安装时公钥写在核心生成的配置文件里，才能热加载轮换。
+
+## 验证结果（M1，Bot 账号）
+
+声明了 `matrix.bot` 的插件由核心代 Bot 登录、建主房间，规则见插件规范的“Matrix Bot”。验证版本：Tuwunel v1.9.4、
+matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一步）；分配、沿用、回滚和清理的各种情况在
+假 Tuwunel 上测（`cargo test -p wonton-core bot`），假 Tuwunel 的行为按下面的实测写。
+
+- Tuwunel 的管理接口（一次性容器里逐个调过）：
+  - 吊销设备（`DELETE /_synapse/admin/v2/users/{user}/devices/{device}`）后，令牌立即得到 401 `M_UNKNOWN_TOKEN`；
+    设备本来不在也回 200。再用 JWT 登录还是同一个账号，仍在原来的房间里。
+  - 停用账号后令牌失效，JWT 登录得到 403 `M_USER_DEACTIVATED`，账号退出所有房间、资料清空；再停用一次也回 200，
+    不存在的用户回 404 `M_NOT_FOUND`。停用的用户名不能再用，所以删除数据后重装换成 `<名字>-2`。
+  - 查账号在不在：`GET /_synapse/admin/v2/users/{user}` 对已有的账号（包括停用的、没有设备的）回 200 和
+    `deactivated` 等字段，不存在回 404 `M_NOT_FOUND`；`/_synapse/admin/v1/whois` 对不存在的用户也回 200，不能用。
+    JWT 登录对已有的账号是直接登录进去，所以分配 Bot 用户名时先查，已有的一律跳过，只有插件记录在案的 Bot 能沿用。
+- 主房间：`createRoom` 用 `trusted_private_chat`、`is_direct`，`initial_state` 里带 `m.room.encryption`，建出来就是
+  加密私聊。由 Bot 建、邀请主人；核心用 JWT 临时登录主人的一台设备加入房间、写入主人的 `m.direct`（没写过时读出来
+  是 404 `M_NOT_FOUND`），再退出登录，这台设备随之删除。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请。
+- 端到端（`smoke.sh`）：回声 Bot 只凭注入的令牌恢复会话（`whoami` 取设备 ID），经 `matrix.wonton.internal` 同步，
+  安装时就过了健康检查。主人的一台新设备经隧道和手机的本地代理登录，在主房间里发加密消息，一两秒内收到 Bot 的
+  加密回声：matrix-sdk 默认把房间密钥发给房间里的所有设备，不要求先验证。
+- 卸载后 Bot 的令牌立即 401；不删数据重装是同一个账号，主人的 `m.direct` 里仍只有原来的主房间；删除数据后账号
+  停用、退出主房间。没申请 `matrix.bot` 的插件（whoami）从自己的网络里访问 `matrix.wonton.internal` 得到 403
+  `permission_denied`。
+- matrix-sdk 的 HTTP 客户端启动时要加载系统根证书，镜像里没有 `ca-certificates` 就直接退出，即使只用 http。
+  用 matrix-sdk 的 Bot 插件，镜像里要装上它。

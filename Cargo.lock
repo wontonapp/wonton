@@ -7036,6 +7036,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wonton-echo-bot"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "matrix-sdk",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "wonton-matrix"
 version = "0.0.0"
 dependencies = [

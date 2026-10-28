@@ -174,6 +174,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         },
         HostKind::Auth => auth_request(&gateway, req).await,
         HostKind::Matrix => matrix::client_request(&gateway, req).await,
+        HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Unknown => pages::error(
             StatusCode::NOT_FOUND,

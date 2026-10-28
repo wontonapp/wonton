@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::time::{Instant, sleep};
 
-use crate::http::HttpClient;
+use crate::http::{HttpClient, RequestBody};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -42,12 +42,21 @@ impl MatrixError {
     }
 }
 
-/// 一次 JWT 登录的结果：新设备和它的访问令牌。
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// 一次 JWT 登录的结果：新设备和它的访问令牌。`Debug` 不打印令牌。
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct Login {
     pub user_id: String,
     pub device_id: String,
     pub access_token: String,
+}
+
+impl std::fmt::Debug for Login {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Login")
+            .field("user_id", &self.user_id)
+            .field("device_id", &self.device_id)
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct Api {
@@ -68,13 +77,44 @@ impl Api {
         &self.base
     }
 
-    /// 调一个返回 JSON 的接口；`context` 写进错误里，说明核心当时在做什么。
+    /// 调一个返回 JSON 的接口，请求体是 JSON 或没有；`context` 写进错误里，说明核心当时在做什么。
     pub async fn json(
         &self,
         method: Method,
         path: &str,
         token: Option<&str>,
         body: Option<&Value>,
+        context: &str,
+    ) -> Result<Value, MatrixError> {
+        let body = body.map_or(RequestBody::Empty, RequestBody::Json);
+        self.call(method, path, token, body, context).await
+    }
+
+    /// 上传文件到媒体库，返回 `mxc://` 地址。
+    pub async fn upload(
+        &self,
+        token: &str,
+        content_type: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> Result<String, MatrixError> {
+        let path = format!("/_matrix/media/v3/upload?filename={}", encode(filename));
+        let body = RequestBody::Bytes { content_type, data };
+        let value = self
+            .call(Method::POST, &path, Some(token), body, "上传文件")
+            .await?;
+        value["content_uri"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid("上传接口没有返回 content_uri".to_owned()))
+    }
+
+    async fn call(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        body: RequestBody<'_>,
         context: &str,
     ) -> Result<Value, MatrixError> {
         let url = format!("{}{path}", self.base);
@@ -154,4 +194,17 @@ impl Api {
             Err(e) => Err(e),
         }
     }
+}
+
+/// 路径和查询参数里的一段：Matrix 的 ID 含 `!`、`#`、`:` 等字符，按 RFC 3986 编码保留字符以外的一切。
+pub fn encode(segment: &str) -> String {
+    let mut out = String::with_capacity(segment.len());
+    for byte in segment.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
 }

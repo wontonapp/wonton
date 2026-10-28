@@ -21,7 +21,8 @@ fn bot_services(manifest: &Manifest) -> BTreeSet<&str> {
 }
 
 /// 每个服务插值用的变量表：Bot 服务多了 `WONTON_BOT_NAME` 和 `WONTON_BOT_DATA`
-/// （`${WONTON_APP_DATA}/bots/<Bot 名>`），全插件一份的服务引用它们时安装失败。
+/// （`${WONTON_APP_DATA}/bots/<Bot 名>`）。声明了 `bots` 时 Bot 的 Matrix 身份（`WONTON_MATRIX_*`）也只给
+/// Bot 服务：全插件一份的服务引用这些变量时安装失败。
 pub struct ServiceVars<'a> {
     plugin: Vars,
     bot: Vars,
@@ -29,11 +30,14 @@ pub struct ServiceVars<'a> {
 }
 
 impl<'a> ServiceVars<'a> {
-    pub fn new(manifest: &'a Manifest, app_data: &Path, plugin: Vars) -> Self {
+    pub fn new(manifest: &'a Manifest, app_data: &Path, mut plugin: Vars) -> Self {
         let mut bot = plugin.clone();
         bot.insert("WONTON_BOT_NAME".to_owned(), DEFAULT_BOT.to_owned());
         let data = app_data.join("bots").join(DEFAULT_BOT);
         bot.insert("WONTON_BOT_DATA".to_owned(), data.display().to_string());
+        if manifest.bots.is_some() {
+            plugin.retain(|name, _| !name.starts_with("WONTON_MATRIX_"));
+        }
         Self {
             plugin,
             bot,

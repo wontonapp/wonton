@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
 # 像浏览器一样经核心网关打开插件并自动登录 → 已配对设备经隧道打开插件，直接是主人 →
-# 已配对设备经隧道登录 Matrix → 核心重启后恢复 → 卸载干净。
+# 已配对设备经隧道登录 Matrix，和回声 Bot 加密收发 → 核心重启后恢复 → 卸载干净。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
 #   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
@@ -26,11 +26,13 @@ core="$WONTON_DEV_PROJECT"
 browser="$WONTON_DEV_PROJECT-browser"
 phone="$WONTON_DEV_PROJECT-phone"
 phone_image="wonton-tunnel-client:dev"
+echo_image="wonton-echo-bot:dev"
 curl_image="curlimages/curl:8.23.0"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
-plugins=(app.grafana app.whoami)
+echo_bot="wonton-agent-echo--bot"
+plugins=(app.grafana app.whoami agent.echo)
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ✓ %s\n' "$*"; }
@@ -203,6 +205,57 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
   "$matrix_url/_matrix/client/v3/room_keys/keys/!nope:$WONTON_DEV_DOMAIN/ab%2Fcd?version=1")"
 ! grep -qi '^x-wonton-error' <<<"$reply" || fail "网关挡下了会话 ID 带 %2F 的请求：$reply"
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
+
+step "回声 Bot（matrix.bot）：核心代它登录、建好加密私聊，手机经隧道和它加密收发"
+docker build -q --target echo-bot --build-arg WONTON_BUILD_COMMIT -t "$echo_image" \
+  -f "$here/Dockerfile" "$repo" >/dev/null
+install_echo() {
+  local installed
+  installed="$("$dev" install "$repo/plugins/examples/echo-bot/docker-compose.yml" --yes 2>/dev/null)" ||
+    fail "回声 Bot 安装失败：$installed"
+  expect "回声 Bot 安装完成，同步上了 Matrix" \
+    "$(json status.state <<<"$installed") $(json health <<<"$installed")" "running healthy"
+}
+# 核心注入 Bot 容器的变量。
+bot_env() { docker inspect "$echo_bot" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
+owner_api() { t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3$1"; }
+# 主人 m.direct 里和这个用户的私聊，一行一个。
+direct_rooms() {
+  owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct" |
+    python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$1"
+}
+install_echo
+bot_user="$(bot_env WONTON_MATRIX_USER_ID)"
+bot_token="$(bot_env WONTON_MATRIX_ACCESS_TOKEN)"
+expect "Bot 有自己的账号" "$bot_user" "@echo:$WONTON_DEV_DOMAIN"
+expect "Bot 经核心在插件网络里的别名访问 Matrix" \
+  "$(bot_env WONTON_MATRIX_HOMESERVER)" "http://matrix.wonton.internal:$WONTON_DEV_PORT"
+expect "Bot 的显示名" "$(owner_api "/profile/$bot_user/displayname" | json displayname)" 回声
+home_room="$(direct_rooms "$bot_user")"
+[[ "$home_room" == '!'* && "$home_room" != *$'\n'* ]] || fail "主人的 m.direct 里应有一个和 Bot 的私聊：$home_room"
+ok "主房间记在主人的 m.direct 里"
+expect "主人和 Bot 都已经在主房间里" \
+  "$(owner_api "/rooms/$home_room/joined_members" | python3 -c 'import json, sys; print(" ".join(sorted(json.load(sys.stdin)["joined"])))')" \
+  "$bot_user @owner:$WONTON_DEV_DOMAIN"
+expect "主房间是加密的" "$(owner_api "/rooms/$home_room/state/m.room.encryption/" | json algorithm)" m.megolm.v1.aes-sha2
+# 主人的一台新设备（echo-bot probe）经手机的本地代理登录，发一条加密消息，等 Bot 的加密回声。
+jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
+probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
+  --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$home_room" \
+  --bot "$bot_user" 2>&1)" || fail "加密收发失败：$probe"
+ok "经隧道发出加密消息，收到 Bot 的加密回声"
+report="$("$dev" uninstall agent.echo)"
+expect "卸载时吊销 Bot 的设备" "$(json bot.devices_removed <<<"$report") $(json bot.deactivated <<<"$report")" "1 false"
+expect "Bot 的令牌立即失效" \
+  "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $bot_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
+install_echo
+expect "不删数据重装：同一个账号、同一个主房间" \
+  "$(bot_env WONTON_MATRIX_USER_ID) $(direct_rooms "$bot_user")" "$bot_user $home_room"
+report="$("$dev" uninstall agent.echo --purge)"
+expect "删除数据时停用 Bot 账号" "$(json bot.deactivated <<<"$report")" true
+members="$(owner_api "/rooms/$home_room/joined_members")"
+expect "停用的 Bot 退出了主房间" \
+  "$(python3 -c 'import json, sys; print(sys.argv[1] in json.load(sys.stdin)["joined"])' "$bot_user" <<<"$members")" False
 "$dev" revoke "$device_id" >/dev/null
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
@@ -216,6 +269,11 @@ grep -qi "^X-Forwarded-Host: app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" <<<
 ! grep -q 'wonton_app=\|wonton_session=' <<<"$echoed" || fail "网关 Cookie 泄露给了插件：$echoed"
 ! grep -q '6.6.6.6' <<<"$echoed" || fail "伪造的 X-Forwarded-For 被转发：$echoed"
 ok "插件收到转发头，收不到网关 Cookie 和伪造的转发头"
+# 从 whoami 的插件网络里冒充 Bot：网关按来源地址认出插件，它没申请 matrix.bot。
+denied="$(docker run --rm --network wonton-app-whoami "$curl_image" -sS -o /dev/null -D - \
+  -H "Host: matrix.wonton.internal:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT/_matrix/client/versions")"
+expect "没申请 matrix.bot 的插件进不了 Matrix" "$(head -1 <<<"$denied" | cut -d' ' -f2)" 403
+grep -qi '^x-wonton-error: permission_denied' <<<"$denied" || fail "缺少 permission_denied：$denied"
 expect "whoami 卸载" "$("$dev" uninstall app.whoami --purge | json data_removed)" true
 
 step "核心重启后恢复插件"

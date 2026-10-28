@@ -8,6 +8,7 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
+mod bot_lifecycle;
 mod bots;
 mod configs;
 mod egress;
@@ -17,6 +18,7 @@ mod secrets;
 
 const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");
 const WHOAMI: &str = include_str!("../../../../../plugins/examples/whoami/docker-compose.yml");
+const ECHO_BOT: &str = include_str!("../../../../../plugins/examples/echo-bot/docker-compose.yml");
 const SPEC: &str = include_str!("../../../../../docs/plugin-spec.md");
 
 fn package(services: &str, extra_manifest: &str) -> String {

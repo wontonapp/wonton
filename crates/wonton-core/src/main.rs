@@ -85,14 +85,19 @@ async fn serve() -> anyhow::Result<()> {
         puid: cfg.puid,
         pgid: cfg.pgid,
         install_timeout: cfg.install_timeout,
+        owner: cfg.owner.username.clone(),
+        gateway_port: cfg.listen.port(),
     };
-    let manager = Arc::new(PluginManager::new(
-        engine,
-        store,
-        http.clone(),
-        hydra.as_ref().map(|(h, _)| h.clone()),
-        lifecycle,
-    ));
+    let manager = Arc::new(
+        PluginManager::new(
+            engine,
+            store,
+            http.clone(),
+            hydra.as_ref().map(|(h, _)| h.clone()),
+            lifecycle,
+        )
+        .with_matrix(matrix.clone()),
+    );
     manager.restore().await.context("恢复已安装的插件")?;
 
     let tunnel = bind_tunnel(&cfg).await?;

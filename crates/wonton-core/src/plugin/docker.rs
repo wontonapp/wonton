@@ -18,6 +18,7 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 
 use super::compose::PullPolicy;
+use super::sources::Subnet;
 
 /// 核心要求的 Docker Engine 最低主版本：28 起局域网里的其他主机不能再经路由直接访问容器里没发布的端口
 /// （moby#48724），内部网络也才有 `isolated` 网关模式。
@@ -253,6 +254,33 @@ impl Engine {
                 context,
                 message: "网络没有 IPv4 网关".to_owned(),
             })
+    }
+
+    /// 网络的地址段（IPAM 配置里的 `Subnet`），不含网桥自己的地址（`Gateway`）。
+    pub async fn network_subnets(&self, name: &str) -> Result<Vec<Subnet>> {
+        let context = format!("查询网络 {name}");
+        let network = self
+            .docker
+            .inspect_network(name, None)
+            .await
+            .map_err(|e| EngineError::from_bollard(&context, e))?;
+        let subnets: Vec<Subnet> = network
+            .ipam
+            .and_then(|ipam| ipam.config)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|config| {
+                let gateway = config.gateway.and_then(|g| g.parse().ok());
+                Some(Subnet::parse(&config.subnet?)?.excluding(gateway))
+            })
+            .collect();
+        if subnets.is_empty() {
+            return Err(EngineError::Rejected {
+                context,
+                message: "网络没有地址段".to_owned(),
+            });
+        }
+        Ok(subnets)
     }
 
     /// 删除网络；不存在视为成功。

@@ -247,7 +247,7 @@ webui:
 高权限在安装确认时单独醒目展示。插件不声明的能力一律不给。安装请求必须逐项确认清单里的全部权限，
 少一项或多一项都拒绝安装。
 
-核心目前兑现 `storage.share.*` 和 `network.egress`（见“网络”）。共享文件夹在数据目录的 `shares/<名称>` 下，
+核心目前兑现 `storage.share.*`、`network.egress`（见“网络”）和 `matrix.bot`（见“Matrix Bot”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
 
@@ -266,7 +266,7 @@ webui:
 | `WONTON_MODEL_ANTHROPIC_BASE_URL`、`WONTON_MODEL_GEMINI_BASE_URL` | `models`，且网关提供该接口 | Anthropic Messages、Gemini 接口的地址，按各自 SDK 的约定不带 `/v1`。 |
 | `WONTON_MODEL_API_KEY` | `models` | 只属于本插件（多 Bot 时只属于这个 Bot）的网关凭据。 |
 | `WONTON_MODEL_DEFAULT` | `models` | 默认模型名，由网关决定（magpie 是路由组 `group/wonton-default`）。 |
-| `WONTON_MATRIX_HOMESERVER` | `matrix.bot` | Matrix 客户端接口的地址。 |
+| `WONTON_MATRIX_HOMESERVER` | `matrix.bot` | Matrix 客户端接口的地址：核心在插件网络里的别名，如 `http://matrix.wonton.internal:8080`。 |
 | `WONTON_MATRIX_USER_ID`、`WONTON_MATRIX_ACCESS_TOKEN` | `matrix.bot` | Bot 的 Matrix 用户 ID 和访问令牌。 |
 | `WONTON_MATRIX_OWNER` | `matrix.bot` | Bot 主人的 Matrix 用户 ID，用作白名单：私人 Bot 只接受主人的指令。 |
 | `WONTON_MATRIX_HOME_ROOM` | `matrix.bot` | Bot 的主房间：核心替主人建好的、和 Bot 的加密私聊，定时任务的结果发到这里。 |
@@ -368,23 +368,35 @@ x-wonton:
 
 ## Matrix Bot
 
-Bot 是一个 Matrix 身份加上驱动它的插件（ADR-0007）。安装声明了 `matrix.bot` 的插件时，核心：
+Bot 是一个 Matrix 身份加上驱动它的插件（ADR-0007）。核心没有接入 Matrix 时，声明了 `matrix.bot` 的插件
+安装失败（`matrix_unavailable`）。安装时核心：
 
-1. 分配 Bot 的用户名（插件以 `WONTON_MATRIX_USER_ID` 为准），用 JWT 代 Bot 登录一台设备，首次登录即
-   建号（ADR-0009）；不申请刷新令牌。Tuwunel 的 `access_token_ttl` 只作用于申请了刷新令牌的客户端，这样
-   拿到的访问令牌不会过期，而 Agent 多半不会自己刷新令牌。插件只拿到令牌，Bot 账号也没有密码。
-2. 按 `bot` 设置显示名和头像。
-3. 替 Bot 的主人建好和 Bot 的加密私聊（`is_direct`，并写进主人的 `m.direct`），作为 Bot 的主房间。
-   没有主房间时 Hermes 会在每个新会话的第一条回复里插一段设置提示（ADR-0008）。
-4. 注入 `WONTON_MATRIX_*` 变量。
+1. 分配 Bot 的用户名：插件 `id` 的最后一段（`agent.echo` 是 `echo`）。这个名字的账号已经存在（家人、别的插件的
+   Bot、停用的账号），或者和主人、核心的管理账号重名时，依次换成 `<名字>-2`、`<名字>-3`……JWT 登录对已有的账号
+   是直接登录进去，所以核心不登录任何已有的账号，只有这个插件记录在案的 Bot 账号能沿用。插件以
+   `WONTON_MATRIX_USER_ID` 为准。
+2. 用 JWT 代 Bot 登录一台新设备，首次登录即建号（ADR-0009）；不申请刷新令牌。Tuwunel 的 `access_token_ttl`
+   只作用于申请了刷新令牌的客户端，这样拿到的访问令牌不会过期，而 Agent 多半不会自己刷新令牌。插件只拿到
+   令牌，Bot 账号也没有密码。
+3. 按 `bot` 设置显示名（取中文，没有时取英文；没写 `bot.display_name` 时用 `title`）和头像（png、jpg、gif 或
+   webp）。
+4. 准备 Bot 的主房间：Bot 建一个加密私聊（`trusted_private_chat`、`is_direct`）邀请主人；核心用 JWT 临时登录主人的
+   一台设备加入它、写进主人的 `m.direct`，然后退出登录。Bot 的 `m.direct` 也记着它。没有主房间时 Hermes 会在每个
+   新会话的第一条回复里插一段设置提示（ADR-0008）。
+5. 注入 `WONTON_MATRIX_*` 变量。
 
-- `WONTON_MATRIX_HOMESERVER` 指向核心在插件网络里的别名 `matrix.wonton.internal`。核心只转发 Matrix
-  客户端接口（`/_matrix/client/`、`/_matrix/media/`），管理接口和联邦接口不转；插件不和 Tuwunel 共用网络。
-- 令牌对应一台设备，核心不主动轮换。吊销设备、删掉 Bot 时令牌立即失效（ADR-0009）。需要重新签发时，
-  核心重新登录并重建这个 Bot 的容器；Bot 换了一台设备，要重新建加密身份。
+- `WONTON_MATRIX_HOMESERVER` 是 `http://matrix.wonton.internal:<网关端口>`，核心在声明了 `matrix.bot` 的插件网络里的
+  别名。网关按连接的来源地址认出请求来自哪个插件网络（不算网桥自己的地址，那是宿主那一侧），只转发声明了
+  `matrix.bot` 的插件的请求，而且只转发 Matrix 客户端接口（`/_matrix/client/`、`/_matrix/media/`），管理接口和
+  联邦接口不转；其他来源得到 403 `M_FORBIDDEN`。插件不和 Tuwunel 共用网络。
+- 账号和主房间建好后一直沿用：不删数据卸载后重装、安装失败后重试，都是同一个账号；主房间里 Bot 和主人都还在
+  就沿用，否则新建一个。设备每次安装新建，安装失败回滚时吊销。
+- 令牌对应一台设备，核心不主动轮换。吊销设备、删掉 Bot 时令牌立即失效（ADR-0009）。核心重启时核对 Bot 的
+  设备还在，被吊销了就把插件标为异常，重装（可以不删数据）重新签发；Bot 换了一台设备，要重新建加密身份。
 - Agent 自己生成的加密恢复密钥之类，用 `secrets` 的 `collect` 交给核心保管（见“插件密钥”）。
-- 卸载插件时删除 Bot 的设备；选择删除数据时再停用 Bot 账号。停用不可恢复，所以保留数据重装时沿用原账号，
-  房间和历史都还在。
+- 卸载插件时吊销 Bot 的所有设备；选择删除数据时再停用 Bot 账号，账号随之退出所有房间。停用不可恢复，所以
+  保留数据重装时沿用原账号，房间和历史都还在；删除数据后重装是一个新账号。卸载结果的 `bot` 字段写着 Bot 的
+  用户 ID、吊销的设备数和是否停用。
 
 ### 一个插件多个 Bot（`bots`）
 
@@ -592,10 +604,6 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
    - 只在声明了 `models` 的插件网络里给核心加别名；核心不在容器里时（开发环境）用 `extra_hosts`。
    - 注入 `WONTON_MODEL_*`：`InstallContext` 带上网关的地址、本插件的凭据和默认模型，`dry_run` 用占位值。
      在那之前，声明了 `models` 的插件引用这些变量时安装报“尚未支持”。
-8. **Matrix Bot**（核心新增 `bots` 模块）：JWT 代 Bot 登录（首次登录即建号，不申请刷新令牌），设置显示名
-   和头像，替主人建加密私聊并写 `m.direct`，注入 `WONTON_MATRIX_*`（在那之前和模型的变量一样报“尚未
-   支持”）；网关按 Host `matrix.wonton.internal` 只转发客户端接口；卸载时用核心的 Tuwunel 管理账号删设备，
-   删除数据时停用账号。
 10. **网关代登录**（`gateway/proxy.rs`）：`sso: proxy` 时剥离同名请求头和 Cookie，按 Fetch Metadata 的
     规则加上声明的值，去掉插件响应里同名 Cookie 的 `Set-Cookie`；行为测试覆盖伪造、跨插件请求和不回传。
     和 #20 的 `Set-Cookie` 加固一起改。

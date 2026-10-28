@@ -59,6 +59,8 @@ fn manager_for(
         puid: owner.uid(),
         pgid: owner.gid(),
         install_timeout: Duration::from_secs(5),
+        owner: "owner".into(),
+        gateway_port: 8080,
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
     PluginManager::new(engine, store, HttpClient::new(), oidc, cfg)

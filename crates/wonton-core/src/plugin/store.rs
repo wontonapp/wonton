@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use super::bots::BotStore;
 use super::manifest::{Permission, PluginId};
 use super::package_files::PackageFiles;
 use super::secrets::SecretStore;
@@ -55,6 +56,7 @@ pub struct RecordFile {
 pub struct Store {
     dir: PathBuf,
     secrets: SecretStore,
+    bots: BotStore,
 }
 
 impl Store {
@@ -63,6 +65,7 @@ impl Store {
         create_private_dir(&dir)?;
         Ok(Self {
             secrets: SecretStore::new(dir.join("secrets")),
+            bots: BotStore::new(dir.join("bots")),
             dir,
         })
     }
@@ -70,6 +73,11 @@ impl Store {
     /// 插件密钥库，在记录目录下的 `secrets/` 里。和记录分开存：不删数据的卸载删掉记录，密钥还在。
     pub fn secrets(&self) -> &SecretStore {
         &self.secrets
+    }
+
+    /// 插件的 Bot 记录，在记录目录下的 `bots/` 里，保留的规则同密钥。
+    pub fn bots(&self) -> &BotStore {
+        &self.bots
     }
 
     fn path(&self, id: &PluginId) -> PathBuf {
