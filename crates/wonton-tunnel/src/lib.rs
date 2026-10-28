@@ -4,13 +4,15 @@
 //! 转发到家里服务器的核心网关。设计见 `docs/adr/0004-iroh-tunnel.md`。
 //!
 //! - 服务端：[`TunnelServer`]（独立运行）或 [`TunnelProtocol`]（挂到已有的 iroh router 上），按
-//!   [`Allowlist`] 授权，把每条流转发到本机的上游 HTTP 服务。
+//!   [`Allowlist`] 授权。每条流转发到本机的上游 HTTP 服务，或者交给嵌入方：核心从 [`TunnelListener`]
+//!   取出 [`PeerStream`]，在进程内服务，并知道流来自哪台已配对设备。
 //! - 客户端：[`TunnelClient`] 复用一条连接、断开后按需重连，并报告 [`TunnelStatus`]；
 //!   [`LocalProxy`] 在回环地址上监听，把本机 HTTP 客户端的连接经隧道转发过去。
 //! - 线协议见 `wire` 模块：一条 QUIC 连接上每条双向流对应一条 TCP 连接，做法参考 dumbpipe。
 
 mod allowlist;
 mod client;
+mod embed;
 mod error;
 mod forward;
 mod proxy;
@@ -19,6 +21,7 @@ mod wire;
 
 pub use allowlist::Allowlist;
 pub use client::{PathInfo, PathKind, TunnelClient, TunnelStatus};
+pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;
 pub use proxy::{ERROR_HEADER, LocalProxy};
 pub use server::{TunnelProtocol, TunnelServer};

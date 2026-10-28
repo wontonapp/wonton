@@ -5,7 +5,12 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 
 - **服务端**：`TunnelServer`（独立运行）或 `TunnelProtocol`（挂到核心已有的 iroh `Router` 上）。
   只接受 `Allowlist` 里的设备 endpoint ID，未配对的设备在握手后立即被关闭连接；吊销设备会断开它现有的连接。
-  每条隧道流转发到本机的上游 HTTP 服务。
+  每条隧道流有两种去向：
+  - 转发到本机的上游 HTTP 服务（`TunnelServer::spawn`、`TunnelProtocol::new`），示例和开发工具用这种。
+  - 交给嵌入方（`TunnelServer::spawn_embedded`、`TunnelProtocol::embedded`）：嵌入方从 `TunnelListener`
+    取出 `PeerStream`，它实现 tokio 的 `AsyncRead` / `AsyncWrite`，`remote_id()` 是 QUIC 握手认证过的设备
+    endpoint ID。核心用它在进程内服务网关，并把设备身份交给网关。正常结束要 `shutdown`；没有 shutdown 就
+    丢弃时复位流，客户端不会把被截断的数据当成正常结束。
 - **客户端**：`TunnelClient` 让所有请求复用一条连接，断开后下一次使用时自动重连，不设在线超时门禁；
   用 `watch` 报告 `TunnelStatus`，只保留最新状态。`LocalProxy` 在回环地址上监听，本机的 HTTP 客户端
   把 base URL 换成代理地址即可，相当于直接访问服务端的上游。
@@ -15,7 +20,8 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 做法参考 dumbpipe：一条 QUIC 连接上每条双向流对应一条 TCP 连接，流里原样转发字节。
 
 1. 客户端开流后先写 1 字节请求类型：`1` 转发、`2` ping。转发请求紧接着发送 TCP 字节，不等服务端回应。
-2. 服务端先回 1 字节状态：`0` 成功（转发请求随后是上游的原样字节）、`1` 连不上上游、`2` 不支持的请求类型。
+2. 服务端先回 1 字节状态：`0` 成功（转发请求随后是上游的原样字节）、`1` 连不上上游（交给嵌入方时是嵌入方
+   已停止接收）、`2` 不支持的请求类型。
 3. 服务端拒绝未配对或已吊销的设备时，用错误码 `403` 关闭整条连接。
 4. 转发中途出错时，两端用错误码 `1` 复位流，对端不会把被截断的数据当成正常结束。
 
@@ -47,4 +53,4 @@ cargo run -p wonton-tunnel --example tunnel-client -- probe --server <服务端 
 `scripts/field-test.sh` 把服务端部署到一台 SSH 主机（进程到时自动退出），在本机跑测量，再清理，
 用来在真实网络（例如手机热点）下复测 ADR-0004 的验证结果。
 
-行为测试在 `tests/tunnel.rs`，只走本机回环地址，不依赖外网。
+行为测试在 `tests/tunnel/`（转发到 TCP 上游、交给嵌入方各一组），只走本机回环地址，不依赖外网。
