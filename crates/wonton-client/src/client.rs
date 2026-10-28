@@ -46,6 +46,19 @@ impl ClientCore {
                 self.home.foregrounded();
                 Ok(())
             }
+            Action::JoinRoom { .. }
+            | Action::LeaveRoom { .. }
+            | Action::StartDirectChat { .. }
+            | Action::SendText { .. }
+            | Action::SendImage { .. }
+            | Action::PaginateBackwards { .. }
+            | Action::MarkRoomRead { .. }
+            | Action::SetUpRecovery
+            | Action::ConfirmRecoveryKeySaved
+            | Action::RecoverEncryption { .. }
+            | Action::DismissChatProblem => Err(CoreError::NotReady {
+                reason: "聊天（Matrix）还没有接入客户端核心".to_owned(),
+            }),
         }
     }
 

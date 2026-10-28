@@ -1,0 +1,342 @@
+//! 聊天：Matrix 账号、同步、端到端加密和房间列表（ADR-0003、ADR-0005）。
+//!
+//! 客户端核心经隧道把家里的 Tuwunel 当成标准的 Matrix 服务器用（ADR-0015）。这里的 ViewModel 是整份快照：
+//! 来不及取走的中间状态会被合并，壳拿到后直接渲染。打开的房间的消息走增量，见 `timeline` 模块。
+
+use serde::{Deserialize, Serialize};
+
+use crate::SecretString;
+
+/// 聊天页的 ViewModel。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ChatViewModel {
+    pub account: ChatAccount,
+    pub sync: ChatSync,
+    pub encryption: EncryptionStatus,
+    /// 房间，按最近活动排序：最近有消息的在前，正在发送的在最前。
+    pub rooms: Vec<RoomRow>,
+    /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
+    /// [`Action::DismissChatProblem`](crate::Action::DismissChatProblem) 清掉。
+    pub problem: Option<ChatProblem>,
+}
+
+/// 本设备的 Matrix 账号。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatAccount {
+    /// 还没有登录：家里的服务器还没连上，或者还没拿到登录凭据。
+    SignedOut,
+    /// 正在登录，或者正在恢复上次保存的会话。
+    SigningIn,
+    /// 已登录。会话存在本机，重启后直接恢复，不用重新登录。
+    SignedIn {
+        /// Matrix 用户 ID，如 `@owner:home.example`。
+        user_id: String,
+        /// 本设备在服务器上的设备 ID。
+        device_id: String,
+    },
+    /// 登录失败，或者会话已失效。`Unauthorized` 表示这台设备被吊销了，要主人重新配对。
+    Failed {
+        reason: ChatFailure,
+        message: String,
+    },
+}
+
+/// 同步状态。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatSync {
+    /// 没在同步：还没登录，或者 App 在后台。
+    Idle,
+    /// 正在同步，房间列表还没收全。
+    Starting,
+    /// 正常同步中。
+    Running,
+    /// 同步因错误停止。核心会在网络恢复或回到前台时重试；`Unauthorized` 不会重试。
+    Failed {
+        reason: ChatFailure,
+        message: String,
+    },
+}
+
+/// 聊天相关失败的原因，壳据此决定怎么提示（AGENTS.md：错误必须区分原因）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatFailure {
+    /// 连不上 Matrix 服务器：隧道没连上、网络断开或请求超时。
+    TransportUnavailable,
+    /// 服务器拒绝了身份或权限：登录凭据无效或过期、设备已被吊销、无权操作。
+    Unauthorized,
+    /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
+    NotReady,
+    /// 服务器或 Matrix SDK 出错。
+    Upstream,
+    /// 输入非法。
+    InvalidInput,
+}
+
+/// 后台操作失败的说明。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ChatProblem {
+    pub reason: ChatFailure,
+    /// 给人看的说明，包含失败的操作和原因。
+    pub message: String,
+}
+
+/// 端到端加密的状态。设备密钥、交叉签名密钥和密钥备份都存在本机的存储里，重启后不丢。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EncryptionStatus {
+    pub verification: DeviceVerification,
+    pub recovery: RecoveryStatus,
+    /// 刚设置好恢复时生成的恢复密钥，主人用它在别的设备上取回加密消息的密钥。只在主人确认已经另外保存
+    /// （[`Action::ConfirmRecoveryKeySaved`](crate::Action::ConfirmRecoveryKeySaved)）之前给出，确认后核心
+    /// 把它从快照和本机清掉；其余时候为空。
+    pub recovery_key: Option<SecretString>,
+}
+
+/// 本设备有没有被自己账号的交叉签名身份验证过。验证过的设备能解密历史消息，别人也会信任它。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceVerification {
+    /// 还不知道，比如还没登录或者还在同步。
+    Unknown,
+    Verified,
+    /// 账号已经有交叉签名身份，但本设备还没被验证：用恢复密钥恢复即可。
+    Unverified,
+}
+
+/// 恢复（密钥备份加秘密存储）的状态。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryStatus {
+    /// 还不知道，比如还没登录或者还在同步。
+    Unknown,
+    /// 账号还没设置恢复：用 [`Action::SetUpRecovery`](crate::Action::SetUpRecovery) 设置。
+    Disabled,
+    /// 正在设置或恢复。
+    InProgress,
+    /// 已设置，本设备也拿到了全部秘密。
+    Enabled,
+    /// 账号设置过恢复，但本设备还没拿到秘密：用
+    /// [`Action::RecoverEncryption`](crate::Action::RecoverEncryption) 输入恢复密钥。
+    Incomplete,
+}
+
+/// 房间列表里的一行。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RoomRow {
+    /// Matrix 房间 ID，操作里用它引用房间。
+    pub room_id: String,
+    /// 显示名：房间名，私聊时是对方的名字。
+    pub name: String,
+    /// 是否是私聊。
+    pub is_direct: bool,
+    /// 是否开了端到端加密。
+    pub is_encrypted: bool,
+    pub membership: RoomMembership,
+    /// 最新一条消息的预览；还没有消息或还没同步到时为空。
+    pub preview: Option<RoomPreview>,
+    /// 未读消息数。
+    pub unread_count: u64,
+}
+
+/// 本账号在房间里的成员状态。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum RoomMembership {
+    Joined,
+    /// 收到邀请，还没加入：用 [`Action::JoinRoom`](crate::Action::JoinRoom) 接受。
+    Invited,
+    /// 已离开或被移出。
+    Left,
+}
+
+/// 房间最新一条消息的预览。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RoomPreview {
+    /// 发送者的显示名。
+    pub sender_name: String,
+    /// 是否由本账号发出（包括本账号的其他设备）。
+    pub is_own: bool,
+    /// 一行文字摘要：文字消息是正文，图片是“[图片]”这样的占位，由核心给出。
+    pub text: String,
+    /// 发送时间，Unix 毫秒。
+    pub timestamp_ms: u64,
+}
+
+/// 要发送的图片。壳从相册或相机取到原图后交给核心，核心负责上传和发送。
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ImageUpload {
+    /// 文件名，接收方保存时使用。
+    pub filename: String,
+    /// MIME 类型，必须是图片类型，如 `image/jpeg`。
+    pub mime_type: String,
+    /// 原图字节。
+    pub data: Vec<u8>,
+    /// 像素宽度，接收方据此预留版面；未知时为空。
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// 壳生成的缩略图。加密房间里服务器做不了缩略图，对方预览只能下载原图，走中继时很慢（ADR-0004 实测
+    /// 4 MB 要 50 多秒），所以由发送端生成；壳生成不了时为空。
+    pub thumbnail: Option<ImageThumbnail>,
+}
+
+/// 发送端生成的缩略图，建议长边不超过 800 像素的 JPEG。
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ImageThumbnail {
+    /// MIME 类型，如 `image/jpeg`。
+    pub mime_type: String,
+    pub data: Vec<u8>,
+    /// 像素宽度和高度。
+    pub width: u32,
+    pub height: u32,
+}
+
+impl std::fmt::Debug for ImageUpload {
+    /// 只打字节数：原图可能有几 MB，不能整个写进日志。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageUpload")
+            .field("filename", &self.filename)
+            .field("mime_type", &self.mime_type)
+            .field("data", &format_args!("<{} 字节>", self.data.len()))
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("thumbnail", &self.thumbnail)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for ImageThumbnail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageThumbnail")
+            .field("mime_type", &self.mime_type)
+            .field("data", &format_args!("<{} 字节>", self.data.len()))
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::de::DeserializeOwned;
+
+    use super::*;
+    use crate::{Action, CoreError, SecretString};
+
+    /// 测试用的恢复密钥原文。
+    const KEY: &str = "EsTc 1234 abcd";
+
+    /// 契约：聊天的 ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
+    #[test]
+    fn chat_types_round_trip_through_json() {
+        let view_model = ChatViewModel {
+            account: ChatAccount::SignedIn {
+                user_id: "@owner:home.example".into(),
+                device_id: "ABCDEFGH".into(),
+            },
+            sync: ChatSync::Failed {
+                reason: ChatFailure::TransportUnavailable,
+                message: "连不上 Matrix 服务器".into(),
+            },
+            encryption: EncryptionStatus {
+                verification: DeviceVerification::Unverified,
+                recovery: RecoveryStatus::Incomplete,
+                recovery_key: Some(SecretString::new(KEY)),
+            },
+            rooms: vec![RoomRow {
+                room_id: "!bot:home.example".into(),
+                name: "Hermes".into(),
+                is_direct: true,
+                is_encrypted: true,
+                membership: RoomMembership::Invited,
+                preview: Some(RoomPreview {
+                    sender_name: "Hermes".into(),
+                    is_own: false,
+                    text: "[图片]".into(),
+                    timestamp_ms: 1_793_000_000_000,
+                }),
+                unread_count: 2,
+            }],
+            problem: Some(ChatProblem {
+                reason: ChatFailure::Unauthorized,
+                message: "加入房间失败".into(),
+            }),
+        };
+        assert_eq!(round_trip(&view_model), view_model);
+
+        let image = ImageUpload {
+            filename: "cat.jpg".into(),
+            mime_type: "image/jpeg".into(),
+            data: vec![0xff; 4096],
+            width: Some(640),
+            height: None,
+            thumbnail: Some(ImageThumbnail {
+                mime_type: "image/jpeg".into(),
+                data: vec![0xee; 2048],
+                width: 320,
+                height: 240,
+            }),
+        };
+        let actions = [
+            Action::JoinRoom {
+                room_id: "!a:home.example".into(),
+            },
+            Action::StartDirectChat {
+                user_id: "@hermes:home.example".into(),
+            },
+            Action::SendImage {
+                room_id: "!a:home.example".into(),
+                image: image.clone(),
+            },
+            Action::RecoverEncryption {
+                recovery_key: SecretString::new(KEY),
+            },
+            Action::ConfirmRecoveryKeySaved,
+            Action::DismissChatProblem,
+        ];
+        for action in &actions {
+            assert_eq!(&round_trip(action), action);
+        }
+        // 恢复密钥能解开主人全部的加密历史：ViewModel 和操作打进日志时都不能带出原文。
+        assert!(
+            !format!("{view_model:?}").contains(KEY),
+            "ViewModel 的 Debug 漏了恢复密钥"
+        );
+        assert!(
+            !format!("{actions:?}").contains(KEY),
+            "操作的 Debug 漏了恢复密钥"
+        );
+        assert_eq!(
+            serde_json::to_value(SecretString::new(KEY)).unwrap(),
+            serde_json::json!(KEY),
+            "序列化时是原文（Web 端要用）"
+        );
+        let error = CoreError::TransportUnavailable {
+            reason: "隧道没连上".into(),
+        };
+        assert_eq!(round_trip(&error), error);
+        let printed = format!("{image:?}");
+        assert!(
+            !printed.contains("255, 255") && !printed.contains("238, 238"),
+            "Debug 不能输出原图和缩略图的字节：{printed}"
+        );
+    }
+
+    fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
+        serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
+    }
+}

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{ImageUpload, SecretString};
+
 /// 原生壳发给客户端核心的用户操作。
 ///
 /// 壳只负责把用户手势翻译成操作；操作是否合法、状态怎么变，都由核心决定。
@@ -18,5 +20,32 @@ pub enum Action {
     /// `InvalidInput`；连接的进展和结果体现在 [`HomeViewModel`](crate::HomeViewModel) 里。
     ConnectHome { ticket: String },
     /// App 回到前台。核心检查隧道和本地代理是否还能用，必要时重建；系统挂起 App 期间可能回收了套接字。
+    /// Matrix 同步停了的话也在这时重启。
     AppForegrounded,
+
+    // 聊天（Matrix）。网络操作都在后台执行：进展体现在 `ChatViewModel` 和时间线里，失败放进
+    // `ChatViewModel::problem`。参数不合法、还没登录时直接返回错误。
+    /// 接受房间邀请。
+    JoinRoom { room_id: String },
+    /// 拒绝邀请，或者离开房间。
+    LeaveRoom { room_id: String },
+    /// 和另一个用户（比如 Bot）发起私聊；已经有和他的私聊时什么都不做。
+    StartDirectChat { user_id: String },
+    /// 发送文字。正文去掉首尾空白后不能为空。消息先以本地回显出现在时间线里。
+    SendText { room_id: String, body: String },
+    /// 发送图片。上传和发送的进展同 [`Action::SendText`]。
+    SendImage { room_id: String, image: ImageUpload },
+    /// 加载更早的消息。要先订阅这个房间的时间线，结果体现在时间线的增量和翻页状态里。
+    PaginateBackwards { room_id: String },
+    /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。
+    MarkRoomRead { room_id: String },
+    /// 设置恢复：必要时先建交叉签名身份，再建密钥备份和秘密存储，生成恢复密钥，放进
+    /// `EncryptionStatus::recovery_key` 给主人抄下。
+    SetUpRecovery,
+    /// 主人已经把恢复密钥另外保存：核心把它从快照和本机清掉，之后不再显示。
+    ConfirmRecoveryKeySaved,
+    /// 用恢复密钥恢复：取回交叉签名的秘密和密钥备份，本设备随之被验证，能解密历史消息。
+    RecoverEncryption { recovery_key: SecretString },
+    /// 清掉 `ChatViewModel::problem`。
+    DismissChatProblem,
 }

@@ -9,11 +9,24 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod chat;
 mod error;
 mod home;
+mod secret;
 mod session;
+mod timeline;
 
 pub use action::Action;
+pub use chat::{
+    ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, DeviceVerification,
+    EncryptionStatus, ImageThumbnail, ImageUpload, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow,
+};
 pub use error::CoreError;
 pub use home::{HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};
+pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
+pub use timeline::{
+    BackPagination, ImageContent, MediaHandle, MessageContent, SendState, TimelineContent,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+};
