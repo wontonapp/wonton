@@ -4,7 +4,8 @@
 # 1. magpie 鉴权（每个插件独立凭据）：
 #    - 其他容器不带凭据、带错凭据都是 401；
 #    - Hermes 的凭据只看得到默认路由组，点名其他模型被 403 拒绝；
-#    - 新发的凭据立即可用，吊销后立即 401，不用重启 magpie；
+#    - 新发的凭据立即可用，吊销后立即 401，不用重启 magpie（这个临时凭据按签发时拿到的 id 吊销，
+#      脚本中断或失败退出时也会吊销）；
 #    - magpie 容器内的回环请求不需要凭据（上游设计如此，记录在案）。
 # 2. 主人在一个新私聊里和 Bot 两轮对话：第二轮必须答出第一轮给的随机暗号，证明上下文连续，
 #    再从 magpie 的用量记录确认这些请求都记在 Hermes 的凭据名下。
@@ -13,21 +14,22 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=load-env.sh
+source "$here/load-env.sh"
 secrets="$here/.secrets"
 env_file="${WONTON_AGENT_ENV:-$here/.env}"
-if [[ -f "$env_file" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$env_file"
-  set +a
-fi
+load_env_file "$env_file"
 server_name="${WONTON_SERVER_NAME:-wonton.test}"
 base_url="http://127.0.0.1:${WONTON_AGENT_MATRIX_PORT:-18008}"
 bot="@hermes:$server_name"
 group="group/wonton-default"
 hermes_key_name="com.nousresearch.hermes"
+temp_key_name="smoke-temp"
 reply_timeout="${SMOKE_REPLY_TIMEOUT:-180}"
 failures=0
+# 临时网关凭据：签发前 magpie 里已有的同名凭据的 id，以及“已经开始签发”的标志。
+temp_key_before=""
+temp_key_issuing=0
 
 get_var() { sed -n "s/^$2=//p" "$1" | tail -n 1; }
 
@@ -57,6 +59,40 @@ from_hermes() {
     code="$(curl "$@")"; printf "%s " "$code"; cat /tmp/gw-body; rm -f /tmp/gw-body' sh "$method" "$path"
 }
 
+# magpie 允许重名的网关凭据，gateway-key add 又只输出凭据本身、不输出 id，所以不能按名字找 id：
+# 签发前后各列一次同名凭据的 id，多出来的才是这次签发的。
+temp_key_ids() {
+  compose exec -T magpie magpie gateway-key list |
+    awk -v name="$temp_key_name" 'NR > 1 && $2 == name { print $1 }' | sort
+}
+
+issued_temp_key_ids() {
+  local after
+  after="$(temp_key_ids)" || return 1
+  comm -13 <(printf '%s\n' "$temp_key_before") <(printf '%s\n' "$after")
+}
+
+# 正常流程里已经吊销过，这里兜底：中断或失败退出时，吊销这次签发的临时凭据。
+# 在 EXIT 的 trap 里，失败的命令会改掉脚本的退出码，所以每条命令都要自己兜住。
+cleanup() {
+  local ids id
+  ((temp_key_issuing)) || return 0
+  if ! ids="$(issued_temp_key_ids)"; then
+    echo "警告：没能列出 magpie 的网关凭据，冒烟签发的临时凭据 $temp_key_name 可能还在，请手动检查" >&2
+    return 0
+  fi
+  for id in $ids; do
+    compose exec -T magpie magpie gateway-key remove "$id" >/dev/null ||
+      echo "警告：没能吊销冒烟的临时网关凭据 $id；到 magpie 容器里运行 magpie gateway-key remove $id" >&2
+  done
+  return 0
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 check_magpie_auth() {
   local hermes_key resp temp_key temp_id models model
   echo "magpie 鉴权"
@@ -79,8 +115,14 @@ check_magpie_auth() {
   else
     bad "magpie 里还没有任何 provider 模型，无法检查越权"
   fi
-  temp_key="$(compose exec -T magpie magpie gateway-key add smoke-temp | tail -n 1)"
-  temp_id="$(compose exec -T magpie magpie gateway-key list | awk '$2 == "smoke-temp" { print $1; exit }')"
+  temp_key_before="$(temp_key_ids)"
+  temp_key_issuing=1
+  temp_key="$(compose exec -T magpie magpie gateway-key add "$temp_key_name" | tail -n 1)"
+  temp_id="$(issued_temp_key_ids)"
+  if [[ -z "$temp_id" || "$temp_id" == *$'\n'* ]]; then
+    bad "签发后 magpie 里新增的 $temp_key_name 凭据不是恰好一个，无法确定要吊销哪个：${temp_id//$'\n'/ }"
+    return
+  fi
   resp="$(from_hermes "$temp_key" GET /v1/models)"
   expect "新签发的凭据立即可用" 200 "${resp%% *}"
   compose exec -T magpie magpie gateway-key remove "$temp_id" >/dev/null

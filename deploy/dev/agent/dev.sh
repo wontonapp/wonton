@@ -7,14 +7,19 @@
 #   dev.sh smoke      冒烟：magpie 鉴权检查 + 和 Bot 的多轮对话（见 smoke.sh）
 #   dev.sh web        打印 magpie 网页（模型设置）的登录链接
 #   dev.sh down       停止，保留数据
-#   dev.sh reset      停止并删除数据卷和 .secrets/
+#   dev.sh reset      停止并删除这个项目的数据卷和 .secrets/
 #   dev.sh status | logs [服务]
 #
-# 配置文件默认是同目录的 .env（参考 .env.example），可用 WONTON_AGENT_ENV 指定别的路径。
+# 配置文件默认是同目录的 .env（参考 .env.example），可用 WONTON_AGENT_ENV 指定别的路径；
+# 每条命令都先读它，环境里已经设置的变量优先于文件（见 load-env.sh）。其中 WONTON_AGENT_PROJECT
+# 是 compose 项目名（默认 wonton-dev-agent），数据卷和网络按它区分；.secrets/ 属于检出目录，
+# 所以同机的第二套环境要放在另一个检出目录（git worktree）里，并换项目名和两个端口。
 # 依赖：docker compose、curl、jq、openssl。
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=load-env.sh
+source "$here/load-env.sh"
 secrets="$here/.secrets"
 env_file="${WONTON_AGENT_ENV:-$here/.env}"
 group_id="wonton-default"
@@ -32,14 +37,12 @@ die() {
 log() { echo "==> $*"; }
 
 load_env() {
-  if [[ -f "$env_file" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$env_file"
-    set +a
-  fi
+  load_env_file "$env_file"
   server_name="${WONTON_SERVER_NAME:-wonton.test}"
   base_url="http://127.0.0.1:${WONTON_AGENT_MATRIX_PORT:-18008}"
+  # compose.yaml 的 name: 读这个变量。down、reset 也要靠它找到对的项目，所以每条命令都先读配置。
+  project="${WONTON_AGENT_PROJECT:-wonton-dev-agent}"
+  export WONTON_AGENT_PROJECT="$project"
 }
 
 # 读写 .secrets/ 里的 KEY=VALUE 文件；值都是十六进制或 Matrix 令牌，不含空白和引号。
@@ -103,12 +106,18 @@ matrix() {
   curl -sS -X "$method" "$base_url/_matrix/client/v3$path" -H 'content-type: application/json' "$@"
 }
 
+# 服务器里是否已经有这个用户名。
+account_exists() {
+  local resp
+  resp="$(matrix GET "/register/available?username=$1")"
+  [[ "$(jq -r '.errcode // empty' <<<"$resp")" == "M_USER_IN_USE" ]]
+}
+
 # 用注册令牌走 UIA 注册；用户已存在时返回 1。
 register() {
   local user="$1" password="$2" token resp session body
   token="$(get_var "$secrets/tuwunel.env" TUWUNEL_REGISTRATION_TOKEN)"
-  resp="$(matrix GET "/register/available?username=$user")"
-  [[ "$(jq -r '.errcode // empty' <<<"$resp")" == "M_USER_IN_USE" ]] && return 1
+  account_exists "$user" && return 1
   body="$(jq -nc --arg u "$user" --arg p "$password" '{username: $u, password: $p, inhibit_login: true}')"
   session="$(matrix POST /register -d "$body" | jq -r '.session // empty')"
   [[ -n "$session" ]] || die "注册 $user 时没有拿到 UIA 会话"
@@ -120,6 +129,16 @@ register() {
   log "已注册 $(jq -r .user_id <<<"$resp")"
 }
 
+# 账号已经在服务器里，登录却被拒：.secrets/ 里记的密码不是建这个账号时用的那一个，
+# 也就是 .secrets/ 和数据卷不是同一套。
+secrets_mismatch() {
+  die "$1 登录失败：$2
+@$1:$server_name 已经在 Tuwunel 里，但 .secrets/ 里的密码登录不上：.secrets/ 和项目 $project 的数据卷不是同一套。
+通常是 .secrets/ 被重新生成了（换了检出目录，或只删了 .secrets/），数据卷却还在。
+- 数据不要了：先运行 $0 reset（删除项目 $project 的数据卷和 .secrets/，聊天记录会丢，已登录的客户端要重新登录），再运行 $0 up。
+- 数据要留：把原来那份 .secrets/ 放回 $secrets；或者让这个检出目录用自己的项目名和端口（WONTON_AGENT_PROJECT 等，见 README），不去动原来那套。"
+}
+
 # 密码登录一个新设备，输出 access_token。
 login() {
   local body resp
@@ -127,7 +146,11 @@ login() {
     '{type: "m.login.password", identifier: {type: "m.id.user", user: $u}, password: $p,
       initial_device_display_name: $d}')"
   resp="$(matrix POST /login -d "$body")"
-  jq -er '.access_token' <<<"$resp" || die "$1 登录失败：$resp"
+  jq -er '.access_token // empty' <<<"$resp" && return
+  if [[ "$(jq -r '.errcode // empty' <<<"$resp")" == "M_FORBIDDEN" ]] && account_exists "$1"; then
+    secrets_mismatch "$1" "$resp"
+  fi
+  die "$1 登录失败：$resp"
 }
 
 token_valid() {
@@ -204,7 +227,8 @@ ensure_gateway_key() {
 ensure_upstream() {
   [[ -n "${UPSTREAM_URL:-}" ]] || return 0
   local models="${UPSTREAM_MODELS:?配置文件里缺少 UPSTREAM_MODELS（逗号分隔的上游模型 ID）}" list model
-  [[ -n "${UPSTREAM_KEY:-}" ]] || die "配置文件里缺少 UPSTREAM_KEY"
+  [[ -n "${UPSTREAM_KEY:-}" ]] ||
+    die "配置文件里缺少 UPSTREAM_KEY：设了 UPSTREAM_URL 就不能留空（上游是 OrbStack 上开发机里的 magpie 时填任意值，见 .env.example）"
   if magpie provider upstream >/dev/null 2>&1; then
     magpie provider rm upstream >/dev/null
   fi
@@ -247,7 +271,6 @@ configure_providers() {
 }
 
 up() {
-  load_env
   ensure_secrets
   compose up -d --wait tuwunel magpie
   ensure_accounts
@@ -255,26 +278,25 @@ up() {
   ensure_gateway_key
   configure_providers
   compose up -d --wait hermes
+  log "项目 $project 已就绪"
   log "Tuwunel：$base_url（局域网里用本机 IP，端口 ${WONTON_AGENT_MATRIX_PORT:-18008}）"
   log "主人账号：$owner_user，密码在 $secrets/owner.env；和 @$bot_user:$server_name 私聊即可"
   log "冒烟：$0 smoke    模型设置：$0 web"
 }
 
 web() {
-  load_env
   echo "http://127.0.0.1:${WONTON_AGENT_MAGPIE_WEB_PORT:-13430}/?k=$(get_var "$secrets/magpie.env" MAGPIE_WEB_KEY)"
 }
 
+load_env
 case "${1:-}" in
   up) up ;;
-  providers)
-    load_env
-    configure_providers
-    ;;
+  providers) configure_providers ;;
   smoke) WONTON_AGENT_ENV="$env_file" exec "$here/smoke.sh" ;;
   web) web ;;
   down) compose down ;;
   reset)
+    log "删除项目 $project 的容器、数据卷，以及 $secrets"
     compose down --volumes
     rm -rf "$secrets"
     ;;

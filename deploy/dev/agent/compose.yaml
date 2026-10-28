@@ -3,7 +3,10 @@
 #
 # 网络按插件规范划分：Hermes 和 Tuwunel 在 matrix 网络；Hermes 经内部网络 models 访问 magpie，
 # 那里没有出口；只有 magpie 加入 egress 去访问上游 provider。
-name: wonton-dev-agent
+#
+# 数据卷和网络都以项目名为前缀。同一台机器上再起一套环境（比如另一个 git worktree 里验证改动）时，
+# 用 WONTON_AGENT_PROJECT 换项目名，并同时换两个端口，否则会和已有的那套共用数据卷和端口。
+name: ${WONTON_AGENT_PROJECT:-wonton-dev-agent}
 
 x-hermes-image: &hermes-image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
 

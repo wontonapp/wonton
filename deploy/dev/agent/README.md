@@ -13,17 +13,24 @@ magpie 网关凭据。Hermes 的配置和插件草稿共用 [`plugins/hermes/con
 ## 用法
 
 ```bash
-cp .env.example .env   # 填模型上游：UPSTREAM_URL、UPSTREAM_KEY、UPSTREAM_MODELS
+cp .env.example .env   # 按需改模型上游：UPSTREAM_URL、UPSTREAM_KEY、UPSTREAM_MODELS（见下）
 ./dev.sh up            # 生成密钥和账号，配置 magpie，启动并等到全部健康
 ./dev.sh smoke         # magpie 鉴权检查 + 和 Bot 的两轮对话，全部通过才返回 0
 ./dev.sh web           # 打印 magpie 网页（模型设置）的登录链接，可在里面直接加 provider
 ./dev.sh down          # 停止，保留数据；./dev.sh reset 连数据和 .secrets/ 一起删
 ```
 
+- 示例配置的上游是开发机上已经在跑的 magpie，容器经 `host.docker.internal` 访问它。设了 `UPSTREAM_URL`
+  就不能留空 `UPSTREAM_KEY`（留空时 `up` 在配置模型这一步直接退出）；示例里的 `placeholder` 只在这一种情况下可以原样用：
+  OrbStack 转发进来的连接在宿主机 magpie 看来是本机连接，不校验 key，填什么都行。上游换成别的 provider，
+  或在 Linux 上经网桥访问宿主机 magpie 时，要填真的 API key 或网关凭据。
 - 没有模型上游时，在 `.env` 里设 `WONTON_AGENT_LOCAL_MODEL=1`，用 CPU 上的 Qwen2.5 1.5B 跑通链路
   （首次下载约 1 GB，每轮首条回复要一两分钟）。
 - 改了 `.env` 里的上游或模型后运行 `./dev.sh providers`。
 - `plugins/hermes/config.yaml` 只在数据卷里没有 `config.yaml` 时写入；改了它要 `./dev.sh reset`。
+- `smoke` 会临时签发一个名为 `smoke-temp` 的网关凭据，验证“签发立即可用、吊销立即失效”。magpie 允许重名凭据，
+  所以按签发时新增的 id 吊销，脚本中断或失败退出时也会吊销。早先中断的冒烟可能留下同名凭据：在 magpie
+  容器里用 `magpie gateway-key list` 找到，再 `magpie gateway-key remove <id>` 清掉。
 
 ## 用手机或其他客户端测试
 
@@ -34,3 +41,28 @@ cp .env.example .env   # 填模型上游：UPSTREAM_URL、UPSTREAM_KEY、UPSTREA
 - 有的客户端拒绝明文 http。这时可以在本机用 `tailscale serve` 之类给 18008 套上 https，
   手机加入同一个 tailnet 后访问。
 - 浏览器客户端（如自己起的 Element Web）要通过 `localhost` 访问，加密功能才可用。
+
+## 同一台机器上再起一套环境
+
+项目名（默认 `wonton-dev-agent`）决定数据卷和网络的名字；`.secrets/` 则属于检出目录。所以第二套环境要放在
+另一个检出目录里（比如验证改动用的 git worktree），在它自己的 `.env` 里换项目名和两个端口：
+
+```bash
+WONTON_AGENT_PROJECT=wonton-dev-agent-feat-x
+WONTON_AGENT_MATRIX_PORT=18108
+WONTON_AGENT_MAGPIE_WEB_PORT=13440
+```
+
+也可以只在命令行（或 shell 里 `export`）设这三个变量：环境里已经设置的变量优先于 `.env`，和 docker compose 一致。
+`dev.sh` 的每条命令（包括 `reset`）都先读配置，只作用在这个项目上，不会动另一套的容器、数据卷和端口。
+不换项目名的话，两个检出目录会共用同一批数据卷，却各有各的 `.secrets/`，见下一节。
+
+## 排查
+
+**`up` 报“登录失败”，并说 `.secrets/` 和数据卷不是同一套**：Tuwunel 的数据卷里已经有 `owner`、`hermes`
+账号，但 `.secrets/` 里记的密码登录不上。通常是 `.secrets/` 重新生成了（换了检出目录，或只删了 `.secrets/`），
+数据卷却还在。二选一：
+
+- 数据不要了：先 `./dev.sh reset`（删除这个项目的数据卷和 `.secrets/`，聊天记录会丢，已登录的客户端要重新登录），
+  再 `./dev.sh up`。
+- 数据要留：把原来那份 `.secrets/` 放回来；或者让这个检出目录用自己的项目名和端口（见上一节），不去动原来那套。
