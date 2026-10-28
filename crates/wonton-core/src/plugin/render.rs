@@ -11,9 +11,10 @@ use bollard::models::{
 };
 
 use super::compose::{
-    DependCondition, Healthcheck, LongVolume, PullPolicy, Service, StringOrList, VolumeEntry,
-    VolumeType, parse_bytes, parse_duration,
+    DependCondition, Healthcheck, LongVolume, NetworkMode, PullPolicy, Service, StringOrList,
+    VolumeEntry, VolumeType, parse_bytes, parse_duration,
 };
+use super::configs::{self, ConfigFile};
 use super::interpolate::Vars;
 use super::manifest::{Access, Manifest, Permission, Sso};
 use super::package::{PackageError, PluginPackage};
@@ -75,6 +76,8 @@ pub struct ContainerPlan {
     /// 启动前要等待的容器及条件。
     pub depends_on: Vec<(String, DependCondition)>,
     pub body: ContainerCreateBody,
+    /// 创建之后、启动之前写进容器的配置文件。
+    pub files: Vec<ConfigFile>,
 }
 
 #[derive(Debug, Clone)]
@@ -164,7 +167,8 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
 
 pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
     let manifest = &package.manifest;
-    let services = package.services(&injected_vars(manifest, ctx))?;
+    let vars = injected_vars(manifest, ctx);
+    let services = package.services(&vars)?;
     let network = format!("wonton-{}", ctx.slug);
     let labels = HashMap::from([(LABEL_PLUGIN.to_owned(), manifest.id.to_string())]);
     let read_only_shares: Vec<PathBuf> = ctx
@@ -177,6 +181,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
     let mut containers = Vec::new();
     for name in start_order(&services)? {
         let service = &services[&name];
+        check_network_mode(manifest, &name, service)?;
         let mounts = Mounts {
             ctx,
             read_only_shares: &read_only_shares,
@@ -184,9 +189,11 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
             service: &name,
         }
         .build(&service.volumes, &mut binds)?;
-        containers.push(container_plan(
-            &name, service, mounts, ctx, &network, &labels,
-        )?);
+        let files = configs::resolve(package, service, &vars, &mount_targets(service, &mounts))
+            .map_err(|m| service_err(&name, m))?;
+        let mut plan = container_plan(&name, service, mounts, ctx, &network, &labels)?;
+        plan.files = files;
+        containers.push(plan);
     }
     check_not_nested(&binds)?;
     let mut dirs: Vec<PathBuf> = binds
@@ -208,6 +215,46 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         dirs,
         containers,
     })
+}
+
+/// `network_mode: none` 的服务没有网络，网页入口和 MCP 入口不能指向它。
+fn check_network_mode(
+    manifest: &Manifest,
+    name: &str,
+    service: &Service,
+) -> Result<(), RenderError> {
+    if service.network_mode != Some(NetworkMode::None) {
+        return Ok(());
+    }
+    let entries = [
+        ("webui", manifest.webui.as_ref().map(|w| &w.service)),
+        ("mcp", manifest.mcp.as_ref().map(|m| &m.service)),
+    ];
+    match entries
+        .iter()
+        .find(|(_, service)| service.is_some_and(|s| s == name))
+    {
+        Some((field, _)) => Err(service_err(
+            name,
+            format!("{field} 指向的服务不能写 network_mode: none"),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// 服务所有挂载的目标（卷、绑定挂载、`tmpfs`）。
+fn mount_targets(service: &Service, mounts: &[Mount]) -> Vec<PathBuf> {
+    let tmpfs = service.tmpfs.as_ref().map(list).unwrap_or_default();
+    mounts
+        .iter()
+        .filter_map(|m| m.target.clone())
+        .chain(
+            tmpfs
+                .into_iter()
+                .map(|entry| entry.split(':').next().unwrap_or_default().to_owned()),
+        )
+        .map(|target| Path::new(&target).components().collect())
+        .collect()
 }
 
 fn share_writable(manifest: &Manifest, share: &str) -> bool {
@@ -320,6 +367,17 @@ fn container_plan(
         .into_iter()
         .map(|(dep, cond)| (container_name(&ctx.slug, &dep), cond))
         .collect();
+    // 没有网络的服务不接插件网络。
+    let networking_config =
+        (service.network_mode != Some(NetworkMode::None)).then(|| NetworkingConfig {
+            endpoints_config: Some(HashMap::from([(
+                network.to_owned(),
+                EndpointSettings {
+                    aliases: Some(vec![name.to_owned()]),
+                    ..Default::default()
+                },
+            )])),
+        });
     let body = ContainerCreateBody {
         image: Some(service.image.clone()),
         cmd: words(name, service.command.as_ref())?,
@@ -342,15 +400,7 @@ fn container_plan(
             .transpose()
             .map_err(|m| service_err(name, m))?,
         host_config: Some(host_config(name, service, mounts, ctx, network)?),
-        networking_config: Some(NetworkingConfig {
-            endpoints_config: Some(HashMap::from([(
-                network.to_owned(),
-                EndpointSettings {
-                    aliases: Some(vec![name.to_owned()]),
-                    ..Default::default()
-                },
-            )])),
-        }),
+        networking_config,
         ..Default::default()
     };
     Ok(ContainerPlan {
@@ -360,6 +410,7 @@ fn container_plan(
         pull_policy: service.pull_policy,
         depends_on,
         body,
+        files: Vec::new(),
     })
 }
 
@@ -379,8 +430,9 @@ fn host_config(
             })
             .collect()
     });
+    let isolated = service.network_mode == Some(NetworkMode::None);
     Ok(HostConfig {
-        network_mode: Some(network.to_owned()),
+        network_mode: Some(if isolated { "none" } else { network }.to_owned()),
         mounts: Some(mounts),
         restart_policy: Some(restart_policy(name, service.restart.as_deref())?),
         init: service.init,
@@ -392,7 +444,7 @@ fn host_config(
             .transpose()
             .map_err(|m| service_err(name, m))?,
         tmpfs,
-        extra_hosts: (!ctx.extra_hosts.is_empty()).then(|| ctx.extra_hosts.clone()),
+        extra_hosts: (!isolated && !ctx.extra_hosts.is_empty()).then(|| ctx.extra_hosts.clone()),
         ..Default::default()
     })
 }

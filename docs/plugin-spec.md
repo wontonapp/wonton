@@ -84,8 +84,8 @@ x-wonton:
 插件包是一个目录：`docker-compose.yml`，加上它引用的文件——`icon`、`settings`、`bot.avatar` 和
 顶层 `configs` 的 `file`。
 
-- 引用的路径相对 compose 文件所在的目录，不能是绝对路径、不能含 `..`，也不能经过软链接；单个文件
-  不超过 1 MiB。引用的文件不存在时安装失败。
+- 引用的路径相对 compose 文件所在的目录，不能是绝对路径、不能含 `..`、不能用变量，也不能经过软链接；
+  单个文件不超过 1 MiB。引用的文件不存在时安装失败。
 - 核心只保存被引用的文件。安装后整个包（compose 原文和这些文件）存在核心自己的数据目录里，供审计、
   恢复和升级比对；插件的容器访问不到这个目录。
 - 卷不能用相对路径挂载包里的文件（见“Compose 子集”）；容器要用的包内文件一律经 `configs` 交给它。
@@ -114,8 +114,13 @@ configs:
 - 顶层 `configs` 只支持 `file` 和 `content`；`external`、`environment`、`name` 报错。
 - 核心在创建容器之后、启动之前，用 Docker 的归档接口把文件写进容器，不用绑定挂载。所以 `uid`、
   `gid`、`mode` 对 `file` 也生效（docker compose 对 `file` 用绑定挂载，这三项只对 `content` 生效）。
-  默认属主是容器的运行用户；`mode` 按八进制理解，默认 `0444`，写权限位被忽略。每次重建容器都重新
-  写入；应用要自己改写的配置，用下面的一次性服务复制进数据目录。
+  每次创建容器都重新写入；应用要自己改写的配置，用下面的一次性服务复制进数据目录。
+- `target` 是容器里的绝对路径，不能和这个服务的挂载点（卷、绑定挂载、`tmpfs`）重叠：写进挂载点的文件
+  会留在卷或数据目录里，`tmpfs` 则在启动时把它盖住。`read_only: true` 的服务不能用 `configs`，Docker
+  不往只读的根文件系统写文件。
+- 没写 `uid`、`gid` 时，属主取服务的 `user`：数字形式的 `uid:gid` 就是它，只有 uid 时组是 0，没写
+  `user` 或写的是用户名时是 root。`mode` 按八进制理解（`0440`、`"0440"`、`0o440` 都是 0440），默认
+  `0444`，写权限位被忽略，不能超过 `0777`。默认所有用户可读，收紧了 `mode` 才需要关心属主。
 
 ### 一次性服务与首次写配置
 
@@ -552,20 +557,13 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
 1. **接口：清单类型迁到 `wonton-protocol`**（只改接口，先合并）。
    - `crates/wonton-core/src/plugin/manifest.rs` 的类型和校验移到 `crates/wonton-protocol` 的 `plugin`
      模块；`wonton-core` 加依赖并改为引用它。
-   - 新增：`Permission::NetworkEgress`；`Sso::Proxy` 和 `webui.proxy`（请求头、Cookie、值模板）；`bot`
-     的 `avatar` 改为包内文件；`bots`；`provides.models`；`secrets`（`generate`、`collect`）。
+   - 新增：`Permission::NetworkEgress`；`Sso::Proxy` 和 `webui.proxy`（请求头、Cookie、值模板）；`bots`；
+     `provides.models`；`secrets`（`generate`、`collect`）。
    - 新增的校验：`bot`、`bots` 和 `agent.protocol: matrix` 需要 `matrix.bot`；只有 `kind: system` 能声明
      `provides`；`secrets` 每项恰好一种来源，模板只引用 `generate` 的项；`bots`、`provides`、`collect`
      引用的服务存在（在 `package.rs` 对照 compose 检查）。
    - 契约测试：`plugins/` 下所有插件包都能解析，几类违规各被拒绝；App 的安装确认页以后用同一套类型
      （需要 UniFFI 导出的类型按它的约束调整）。
-2. **插件包与 `configs`**（`package.rs`、`compose.rs`、`render.rs`、`lifecycle.rs`、`store.rs`）。
-   - `PluginPackage::parse` 改为读目录：compose 加上被引用的文件，检查路径、软链接和大小；安装记录里
-     保存这些文件。
-   - 顶层 `configs`（`file`、`content`）和服务的 `configs`（短、长语法）进白名单，`FORBIDDEN_TOP_KEYS`
-     去掉 `configs`；`network_mode` 只放行 `none`，这样的容器不接插件网络。
-   - `content` 按注入变量插值；`ContainerPlan` 带上要写入的文件，`lifecycle.rs` 在创建容器后、启动前用
-     bollard 的 `upload_to_container` 写入（属主、权限按声明）。
 3. **注入变量**（`render.rs`）：`InstallContext` 和 `injected_vars` 加上模型、Matrix、插件密钥和 Bot 的
    变量，按权限和声明注入；`dry_run` 的占位值同步。
 4. **数据目录属主**（`render.rs`、`lifecycle.rs`）：`Deployment.dirs` 记下每个目录的属主（来自挂载它的

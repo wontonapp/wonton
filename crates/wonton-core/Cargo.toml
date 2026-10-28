@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
+# 安装记录里以 base64 保存插件包里的文件。
+base64 = { workspace = true }
 bollard = { workspace = true }
 futures-util = "0.3.34"
 getrandom = { workspace = true }
@@ -22,6 +24,8 @@ serde = { workspace = true }
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 serde_json = { workspace = true }
 shlex = "2.0.1"
+# 经 Docker 的归档接口往容器里写 configs。
+tar = { version = "0.4.46", default-features = false }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs", "time", "signal", "sync", "io-util"] }
 tower = { version = "0.5.3", features = ["util"] }
@@ -31,8 +35,6 @@ url = "2.5.8"
 wonton-tunnel = { path = "../wonton-tunnel" }
 
 [dev-dependencies]
-# MIT OR Apache-2.0。测试里拼本地代理的 Proxy-Authorization。
-base64 = { workspace = true }
 tempfile = "3.27.0"
 
 [lints]

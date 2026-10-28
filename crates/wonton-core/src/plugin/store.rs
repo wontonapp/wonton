@@ -1,6 +1,6 @@
 //! 已安装插件的记录：每个插件一个 JSON 文件，核心重启后据此恢复路由和 OIDC 客户端。
 //!
-//! 记录里有 OIDC 客户端密钥，文件权限设为 0600。
+//! 记录里有整个插件包（compose 原文和它引用的文件）和 OIDC 客户端密钥，文件权限设为 0600。
 
 use std::fs;
 use std::io::Write;
@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::manifest::{Permission, PluginId};
+use super::package_files::PackageFiles;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
@@ -17,6 +18,13 @@ pub struct InstalledRecord {
     pub version: String,
     /// 原始 compose 文本。
     pub source: String,
+    /// 插件包里被引用的文件，供审计、恢复和升级比对。JSON 里是 base64。
+    #[serde(
+        default,
+        skip_serializing_if = "PackageFiles::is_empty",
+        with = "base64_files"
+    )]
+    pub files: PackageFiles,
     pub granted_permissions: Vec<Permission>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oidc_client_secret: Option<String>,
@@ -128,6 +136,43 @@ impl Store {
     }
 }
 
+/// 文件内容在 JSON 里以 base64 保存。
+mod base64_files {
+    use std::collections::BTreeMap;
+
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use serde::de::Error as _;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use super::PackageFiles;
+
+    pub fn serialize<S: Serializer>(
+        files: &PackageFiles,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(
+            files
+                .iter()
+                .map(|(path, data)| (path, STANDARD.encode(data))),
+        )
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<PackageFiles, D::Error> {
+        BTreeMap::<String, String>::deserialize(deserializer)?
+            .into_iter()
+            .map(|(path, text)| {
+                let data = STANDARD
+                    .decode(&text)
+                    .map_err(|e| D::Error::custom(format!("文件 {path} 不是合法的 base64：{e}")))?;
+                Ok((path, data))
+            })
+            .collect()
+    }
+}
+
 fn read_record(path: &Path, id: &PluginId) -> Result<InstalledRecord, StoreError> {
     let corrupt = |message: String| StoreError::Corrupt {
         path: path.to_owned(),
@@ -157,6 +202,7 @@ mod tests {
             id: PluginId::parse(id).unwrap(),
             version: "1.0.0".into(),
             source: "services: {}".into(),
+            files: [("config.yaml".to_owned(), b"a: \x01\xff".to_vec())].into(),
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,

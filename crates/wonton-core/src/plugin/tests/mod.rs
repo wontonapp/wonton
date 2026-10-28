@@ -7,9 +7,12 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
-const GRAFANA: &str = include_str!("../../../../plugins/examples/grafana/docker-compose.yml");
-const WHOAMI: &str = include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
-const SPEC: &str = include_str!("../../../../docs/plugin-spec.md");
+mod configs;
+mod manager;
+
+const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");
+const WHOAMI: &str = include_str!("../../../../../plugins/examples/whoami/docker-compose.yml");
+const SPEC: &str = include_str!("../../../../../docs/plugin-spec.md");
 
 fn package(services: &str, extra_manifest: &str) -> String {
     format!(
@@ -72,7 +75,9 @@ fn grafana_example_injects_oidc_and_app_url() {
 fn spec_example_is_a_valid_plugin() {
     let start = SPEC.find("```yaml\n").expect("规范里有示例") + "```yaml\n".len();
     let end = start + SPEC[start..].find("```").expect("示例代码块闭合");
-    let pkg = PluginPackage::parse(&SPEC[start..end]).unwrap();
+    // 示例引用了包里的图标和设置表单。
+    let files = ["icon.png", "settings.schema.json"].map(|f| (f.to_owned(), Vec::new()));
+    let pkg = PluginPackage::with_files(&SPEC[start..end], files.into()).unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.immich.photos");
     dry_run(&pkg).unwrap();
 }
@@ -361,171 +366,4 @@ fn manifest_rules_are_enforced() {
     let no_zh = "services:\n  web:\n    image: nginx\nx-wonton:\n  id: app.test\n  version: 1.0.0\n  \
                  kind: app\n  title: {en: Test}\n  description: {zh: 测, en: T}\n  permissions: []";
     assert!(PluginPackage::parse(no_zh).is_err());
-}
-
-mod manager {
-    use std::fs;
-    use std::os::unix::fs::MetadataExt;
-    use std::time::Duration;
-
-    use super::super::docker::Engine;
-    use super::super::fake_docker::FakeDocker;
-    use super::super::lifecycle::LifecycleConfig;
-    use super::super::render::container_name;
-    use super::super::store::{InstalledRecord, Store};
-    use super::super::{InstallError, PluginId, PluginManager, PluginStatus};
-    use super::{WHOAMI, package};
-    use crate::config::PublicUrls;
-    use crate::http::HttpClient;
-
-    /// 用给定 Docker 的管理器。PUID:PGID 取测试目录的属主，准备应用数据目录时不需要 chown 权限。
-    fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
-        let owner = fs::metadata(dir.path()).unwrap();
-        let cfg = LifecycleConfig {
-            public: PublicUrls {
-                scheme: "http".into(),
-                base_domain: "wonton.localhost".into(),
-                port: 8080,
-            },
-            apps_dir: dir.path().join("apps"),
-            shares_dir: dir.path().join("shares"),
-            core_container: None,
-            tz: "UTC".into(),
-            puid: owner.uid(),
-            pgid: owner.gid(),
-            install_timeout: Duration::from_secs(5),
-        };
-        let store = Store::open(dir.path().join("plugins")).unwrap();
-        PluginManager::new(engine, store, HttpClient::new(), None, cfg)
-    }
-
-    /// Docker 不可达的管理器：只用来验证不依赖 Docker 的规则，以及 Docker 不可用时的报错。
-    fn manager(dir: &tempfile::TempDir) -> PluginManager {
-        manager_with(Engine::unreachable_for_test(), dir)
-    }
-
-    /// 一个服务、把数据放在应用数据目录里的插件。
-    fn app(id: &str) -> String {
-        package(
-            "  web:\n    image: nginx\n    volumes: ['${WONTON_APP_DATA}/data:/data']",
-            "  permissions: []",
-        )
-        .replace("id: app.test", &format!("id: {id}"))
-    }
-
-    #[tokio::test]
-    async fn a_failed_record_write_rolls_back_the_deployment() {
-        let (docker, engine) = FakeDocker::start().await;
-        let dir = tempfile::tempdir().unwrap();
-        let m = manager_with(engine, &dir);
-        // 记录目录被换成普通文件：写记录必然失败，以 root 运行也一样。
-        let records = dir.path().join("plugins");
-        fs::remove_dir(&records).unwrap();
-        fs::write(&records, "").unwrap();
-        let err = m.install(&app("app.test"), &[]).await.unwrap_err();
-        assert_eq!(err.kind(), "storage", "{err}");
-        let started = format!(
-            "POST /containers/{}/start",
-            container_name("app-test", "web")
-        );
-        assert!(
-            docker.writes().contains(&started),
-            "部署本身应已完成：{:?}",
-            docker.writes()
-        );
-        assert!(docker.containers().is_empty(), "{:?}", docker.containers());
-        assert!(docker.networks().is_empty(), "{:?}", docker.networks());
-        assert!(!dir.path().join("apps/app-test").exists());
-        assert!(m.list().is_empty(), "失败的安装不能留在插件表里");
-    }
-
-    #[tokio::test]
-    async fn a_broken_record_degrades_only_its_own_plugin() {
-        let (docker, engine) = FakeDocker::start().await;
-        let dir = tempfile::tempdir().unwrap();
-        let m = manager_with(engine, &dir);
-        let good = PluginId::parse("app.good").unwrap();
-        Store::open(dir.path().join("plugins"))
-            .unwrap()
-            .save(&InstalledRecord {
-                id: good.clone(),
-                version: "1.0.0".into(),
-                source: app("app.good"),
-                granted_permissions: Vec::new(),
-                oidc_client_secret: None,
-                installed_at: 1,
-            })
-            .unwrap();
-        docker.add_container(&container_name("app-good", "web"), "app.good");
-        let broken = dir.path().join("plugins/app.broken.json");
-        fs::write(&broken, "{\"id\": ").unwrap();
-
-        m.restore().await.expect("一条损坏的记录不能让核心起不来");
-        let states: Vec<(String, PluginStatus)> = m
-            .list()
-            .into_iter()
-            .map(|p| (p.id.to_string(), p.status))
-            .collect();
-        assert!(
-            matches!(&states[..], [(b, PluginStatus::Degraded { .. }), (g, PluginStatus::Running)]
-                if b == "app.broken" && g == "app.good"),
-            "{states:?}"
-        );
-        // 主人能卸载这个异常的插件，它的记录文件随之删除。
-        let id = PluginId::parse("app.broken").unwrap();
-        m.uninstall(&id, false).await.unwrap();
-        assert!(!broken.exists());
-        assert_eq!(m.list().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn every_declared_permission_must_be_confirmed() {
-        let dir = tempfile::tempdir().unwrap();
-        let m = manager(&dir);
-        let share = package(
-            "  web:\n    image: nginx",
-            "  permissions: ['storage.share.photos:read', 'notify']",
-        );
-        let photos = vec!["storage.share.photos:read".parse().unwrap()];
-        let err = m.install(&share, &photos).await.unwrap_err();
-        assert!(
-            matches!(err, InstallError::PermissionNotGranted(ref p) if p == &["notify"]),
-            "{err}"
-        );
-        let extra = vec!["models".parse().unwrap()];
-        assert!(matches!(
-            m.install(WHOAMI, &extra).await,
-            Err(InstallError::Invalid(_))
-        ));
-        let all = vec![
-            "storage.share.photos:read".parse().unwrap(),
-            "notify".parse().unwrap(),
-        ];
-        let err = m.install(&share, &all).await.unwrap_err();
-        assert_eq!(
-            err.kind(),
-            "unsupported",
-            "M0 不能兑现 notify，必须如实拒绝：{err}"
-        );
-        assert!(m.list().is_empty(), "被拒的安装不能留下记录");
-    }
-
-    #[tokio::test]
-    async fn docker_outage_is_reported_and_leaves_nothing_behind() {
-        let dir = tempfile::tempdir().unwrap();
-        let m = manager(&dir);
-        let err = m.install(WHOAMI, &[]).await.unwrap_err();
-        assert_eq!(err.kind(), "docker_unavailable", "{err}");
-        assert!(m.list().is_empty());
-        let system = WHOAMI.replace("kind: app", "kind: system");
-        assert_eq!(
-            m.install(&system, &[]).await.unwrap_err().kind(),
-            "unsupported"
-        );
-        let id = super::super::PluginId::parse("app.whoami").unwrap();
-        assert_eq!(
-            m.uninstall(&id, true).await.unwrap_err().kind(),
-            "not_installed"
-        );
-    }
 }

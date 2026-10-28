@@ -12,10 +12,6 @@ use serde_json::Value;
 /// 服务级别明确不支持的字段及原因。其余未知字段由 serde 的 `deny_unknown_fields` 拒绝。
 pub const FORBIDDEN_SERVICE_KEYS: &[(&str, &str)] = &[
     ("ports", "插件不向宿主暴露端口，网页一律经核心网关访问"),
-    (
-        "network_mode",
-        "宿主网络属于高权限（network.host），M0 尚未开放",
-    ),
     ("networks", "插件网络由核心创建和管理"),
     ("privileged", "特权模式属于高权限，M0 尚未开放"),
     ("devices", "设备直通属于高权限（devices.*），M0 尚未开放"),
@@ -38,11 +34,25 @@ pub const FORBIDDEN_SERVICE_KEYS: &[(&str, &str)] = &[
 /// 顶层明确不支持的字段及原因。
 pub const FORBIDDEN_TOP_KEYS: &[(&str, &str)] = &[
     ("networks", "插件网络由核心创建和管理"),
-    (
-        "configs",
-        "M0 尚不支持 configs，请把配置写进环境变量或应用数据目录",
-    ),
     ("secrets", "M0 尚不支持 secrets，密钥由核心注入"),
+];
+
+/// `network_mode` 只接受 `none`（不需要网络的服务，如一次性服务），其余取值的原因。
+pub fn network_mode_refusal(value: &str) -> &'static str {
+    match value {
+        "host" => "宿主网络属于高权限（network.host），M0 尚未开放",
+        _ => "network_mode 只接受 none；插件网络由核心创建和管理",
+    }
+}
+
+/// 顶层 `configs` 里明确不支持的字段及原因。
+pub const FORBIDDEN_CONFIG_KEYS: &[(&str, &str)] = &[
+    ("external", "配置只能来自插件包"),
+    (
+        "environment",
+        "核心不把自己的环境变量传给插件，需要变量时用 content 插值",
+    ),
+    ("name", "核心不创建 Docker 配置对象，不需要 name"),
 ];
 
 /// 字符串或数字、布尔：compose 允许在环境变量、标签等处写非字符串标量。
@@ -191,6 +201,50 @@ impl DependsOn {
     }
 }
 
+/// 服务的 `configs`：短语法只写配置名，放到 `/<名字>`；长语法可以指定目标、属主和权限。
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum ConfigRef {
+    Short(String),
+    Long(LongConfigRef),
+}
+
+impl ConfigRef {
+    pub fn long(&self) -> LongConfigRef {
+        match self {
+            Self::Short(source) => LongConfigRef {
+                source: source.clone(),
+                target: None,
+                uid: None,
+                gid: None,
+                mode: None,
+            },
+            Self::Long(long) => long.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LongConfigRef {
+    pub source: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub uid: Option<Scalar>,
+    #[serde(default)]
+    pub gid: Option<Scalar>,
+    #[serde(default)]
+    pub mode: Option<Scalar>,
+}
+
+/// 只接受 `none`，其余取值在 [`super::package`] 里按原因拒绝。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkMode {
+    None,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PullPolicy {
@@ -213,6 +267,8 @@ pub struct Service {
     pub environment: Option<KeyValues>,
     #[serde(default)]
     pub volumes: Vec<VolumeEntry>,
+    #[serde(default)]
+    pub configs: Vec<ConfigRef>,
     #[serde(default)]
     pub restart: Option<String>,
     #[serde(default)]
@@ -243,6 +299,8 @@ pub struct Service {
     pub stop_grace_period: Option<String>,
     #[serde(default)]
     pub pull_policy: PullPolicy,
+    #[serde(default)]
+    pub network_mode: Option<NetworkMode>,
 }
 
 /// 去掉对象里 `x-` 开头的扩展字段（compose 规范允许在任意层级出现）。

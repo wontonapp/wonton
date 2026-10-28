@@ -28,6 +28,8 @@ struct Resources {
     networks: BTreeMap<String, String>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
     writes: Vec<String>,
+    /// 写进容器的归档：容器名 → 归档内容。
+    archives: BTreeMap<String, Vec<u8>>,
 }
 
 impl FakeDocker {
@@ -60,6 +62,11 @@ impl FakeDocker {
         self.lock().writes.clone()
     }
 
+    /// 最近一次写进这个容器的 tar 归档。
+    pub fn archive(&self, container: &str) -> Option<Vec<u8>> {
+        self.lock().archives.get(container).cloned()
+    }
+
     fn lock(&self) -> MutexGuard<'_, Resources> {
         self.resources.lock().expect("假 Docker 的锁中毒")
     }
@@ -76,13 +83,18 @@ async fn handle(State(fake): State<FakeDocker>, method: Method, uri: Uri, body: 
     };
     let call = format!("{method} {path}");
     let query = uri.query().unwrap_or_default();
-    let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    let raw = body;
+    let body: Value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
     let mut docker = fake.lock();
     if method != Method::GET {
         docker.writes.push(call.clone());
     }
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     match (method, parts.as_slice()) {
+        (Method::PUT, ["containers", name, "archive"]) if docker.containers.contains_key(*name) => {
+            docker.archives.insert((*name).to_owned(), raw.to_vec());
+            StatusCode::OK.into_response()
+        }
         (Method::GET, ["version"]) => json_reply(StatusCode::OK, json!({"Arch": "x86_64"})),
         (Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
         (Method::POST, ["networks", "create"]) => {

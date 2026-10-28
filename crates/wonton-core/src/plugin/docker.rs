@@ -13,6 +13,7 @@ use bollard::query_parameters::{
     CreateContainerOptionsBuilder, CreateImageOptionsBuilder, ListContainersOptionsBuilder,
     ListNetworksOptionsBuilder, ListVolumesOptionsBuilder, LogsOptionsBuilder,
     RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder, StopContainerOptionsBuilder,
+    UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 
@@ -237,6 +238,24 @@ impl Engine {
             .await
             .map(|_| ())
             .map_err(|e| EngineError::from_bollard(&format!("创建容器 {name}"), e))
+    }
+
+    /// 把 tar 归档解到容器里的 `path` 下，容器创建后还没启动时也可以。属主和权限按归档里的记录；
+    /// 要把已有的目录换成文件（或反过来）时报错，不覆盖。
+    pub async fn upload_archive(
+        &self,
+        container: &str,
+        path: &str,
+        archive: Vec<u8>,
+    ) -> Result<()> {
+        let options = UploadToContainerOptionsBuilder::default()
+            .path(path)
+            .no_overwrite_dir_non_dir("true")
+            .build();
+        self.docker
+            .upload_to_container(container, Some(options), bollard::body_full(archive.into()))
+            .await
+            .map_err(|e| EngineError::from_bollard(&format!("往容器 {container} 写入文件"), e))
     }
 
     pub async fn start_container(&self, name: &str) -> Result<()> {

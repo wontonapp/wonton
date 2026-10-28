@@ -9,6 +9,7 @@ use bollard::models::ContainerStateStatusEnum;
 use tokio::time::Instant;
 
 use super::compose::DependCondition;
+use super::configs;
 use super::health::{self, Target};
 use super::hostdir;
 use super::manager::{InstallError, PluginManager, UninstallReport};
@@ -155,6 +156,7 @@ impl PluginManager {
             id: manifest.id.clone(),
             version: manifest.version.clone(),
             source: package.source.clone(),
+            files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
@@ -290,6 +292,14 @@ impl PluginManager {
                 .create_container(&container.name, container.body.clone())
                 .await?;
             undo.containers.push(container.name.clone());
+            if !container.files.is_empty() {
+                let archive = configs::archive(&container.files).map_err(|e| {
+                    InstallError::Invalid(format!("打包 {} 的配置文件失败：{e}", container.name))
+                })?;
+                self.engine
+                    .upload_archive(&container.name, "/", archive)
+                    .await?;
+            }
             self.engine.start_container(&container.name).await?;
         }
         // 只为被依赖“运行完成”的一次性容器跳过就绪检查，其余容器都必须健康或稳定运行。

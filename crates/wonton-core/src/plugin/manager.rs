@@ -253,9 +253,13 @@ impl PluginManager {
         }
     }
 
+    /// 预览只有 compose 文本的插件包。
     pub fn preview(&self, source: &str) -> Result<Preview, InstallError> {
-        let package = PluginPackage::parse(source)?;
-        dry_run(&package)?;
+        self.preview_package(&PluginPackage::parse(source)?)
+    }
+
+    pub fn preview_package(&self, package: &PluginPackage) -> Result<Preview, InstallError> {
+        dry_run(package)?;
         let m = package.manifest.clone();
         let slug = m.id.slug();
         Ok(Preview {
@@ -362,7 +366,7 @@ impl PluginManager {
     }
 
     async fn restore_one(&self, record: &InstalledRecord) -> Entry {
-        match PluginPackage::parse(&record.source) {
+        match PluginPackage::with_files(&record.source, record.files.clone()) {
             Ok(package) => match self.reconcile(&package, record).await {
                 Ok(upstream) => Entry::new(&package.manifest, PluginStatus::Running, upstream),
                 Err(e) => {
@@ -378,13 +382,22 @@ impl PluginManager {
         }
     }
 
-    /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。
+    /// 安装只有 compose 文本的插件包，见 [`Self::install_package`]。
     pub async fn install(
         &self,
         source: &str,
         granted: &[Permission],
     ) -> Result<PluginView, InstallError> {
-        let package = PluginPackage::parse(source)?;
+        self.install_package(PluginPackage::parse(source)?, granted)
+            .await
+    }
+
+    /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。
+    pub async fn install_package(
+        &self,
+        package: PluginPackage,
+        granted: &[Permission],
+    ) -> Result<PluginView, InstallError> {
         dry_run(&package)?;
         let manifest = package.manifest.clone();
         check_permissions(&manifest, granted)?;

@@ -1,6 +1,7 @@
 //! 插件管理：解析 `x-wonton` 插件包、渲染部署计划、经 Docker API 安装和卸载。
 
 pub mod compose;
+pub mod configs;
 pub mod docker;
 pub mod health;
 pub mod hostdir;
@@ -9,6 +10,7 @@ pub mod lifecycle;
 pub mod manager;
 pub mod manifest;
 pub mod package;
+pub mod package_files;
 pub mod render;
 pub mod store;
 
