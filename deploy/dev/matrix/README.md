@@ -33,3 +33,26 @@ WONTON_MATRIX_HOMESERVER=http://127.0.0.1:8008 cargo test -p wonton-matrix --tes
 ```
 
 签发私钥默认取 `.secrets/jwt-ed25519.pem`，用 `WONTON_MATRIX_JWT_KEY` 指定别的路径。
+
+### 经隧道
+
+用 `crates/wonton-tunnel` 的示例在 Tuwunel 前面接一条隧道（结果见 ADR-0003 的验证结果）。三个命令各开一个
+终端，客户端可以在另一台机器上，`--addr` 给服务端的直连地址：
+
+```bash
+cargo run -p wonton-tunnel --example tunnel-client -- id     # 输出客户端 endpoint ID
+```
+
+```bash
+cargo run -p wonton-tunnel --example tunnel-server -- --port 47100 --upstream 127.0.0.1:8008 --allow <客户端 ID>
+```
+
+```bash
+cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID> --addr 127.0.0.1:47100 --listen 127.0.0.1:18008
+```
+
+然后让测试经本地代理访问：
+
+```bash
+WONTON_MATRIX_HOMESERVER=http://127.0.0.1:18008 cargo test -p wonton-matrix --test tuwunel messaging
+```
