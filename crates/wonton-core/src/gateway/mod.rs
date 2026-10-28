@@ -6,10 +6,14 @@
 //! | `auth.<base>` | 身份提供方（Ory Hydra）的公开端点 |
 //! | `<slug>.<base>` | 插件网页，需要插件会话 |
 //!
-//! 设备经隧道接入后（#2），隧道层会在请求扩展里放入已认证的身份，届时插件请求不再需要 Cookie。
+//! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
+//! （[`TunnelPeer`]），网关据此直接认出主人。局域网浏览器仍走核心会话加插件会话交接。
+//! 本地代理可能被同机其他 App 借用，所以设备一侧的本地代理要校验会话凭据（ADR-0004、#20）；
+//! 网关只在插件网页和 OIDC 登录、授权确认端点上接受隧道身份，管理 API 仍要主人令牌。
 
 mod api;
 mod core_routes;
+mod devices;
 mod pages;
 mod proxy;
 mod session;
@@ -23,6 +27,7 @@ use axum::extract::{ConnectInfo, Request};
 use axum::response::{IntoResponse, Redirect, Response};
 use hyper::header::{ACCEPT, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
+use iroh::EndpointId;
 use tower::ServiceExt;
 
 use crate::config::{HostKind, Owner, PublicUrls};
@@ -30,9 +35,15 @@ use crate::http::HttpClient;
 use crate::oidc::Hydra;
 use crate::plugin::{PluginManager, PluginStatus};
 use crate::secret::constant_time_eq;
+use crate::tunnel::Tunnel;
 
 pub use pages::ERROR_HEADER;
 pub use session::{APP_COOKIE, CORE_COOKIE};
+
+/// 经隧道接入的设备：QUIC 握手认证过的 endpoint ID。只有核心的隧道入口会把它放进请求扩展，
+/// 局域网 TCP 请求里没有，客户端也没法用请求头伪造。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TunnelPeer(pub EndpointId);
 
 pub struct Gateway {
     pub public: PublicUrls,
@@ -43,6 +54,7 @@ pub struct Gateway {
     /// 身份提供方公开端点的内部地址（`host:port`），`auth.<base>` 的请求转发到这里。
     pub hydra_public: Option<String>,
     pub http: HttpClient,
+    pub tunnel: Tunnel,
     sessions: session::SessionStore,
 }
 
@@ -54,6 +66,7 @@ impl Gateway {
         plugins: Arc<PluginManager>,
         hydra: Option<(Hydra, String)>,
         http: HttpClient,
+        tunnel: Tunnel,
     ) -> Self {
         let (hydra, hydra_public) = match hydra {
             Some((hydra, public_url)) => {
@@ -73,6 +86,7 @@ impl Gateway {
             hydra,
             hydra_public,
             http,
+            tunnel,
             sessions: session::SessionStore::default(),
         }
     }
@@ -81,10 +95,22 @@ impl Gateway {
         constant_time_eq(token.trim(), &self.owner_token)
     }
 
-    /// 核心域名上的当前用户（M0 只有主人）。
-    fn core_user(&self, headers: &HeaderMap) -> Option<String> {
-        let sid = session::cookie(headers, CORE_COOKIE)?;
-        self.sessions.core_user(&sid)
+    /// 经隧道接入的已配对设备属于主人（M0 只有主人一个用户）。吊销后立即不再认它，哪怕请求还在
+    /// 一条没来得及断开的连接上。
+    fn device_user(&self, peer: Option<TunnelPeer>) -> Option<String> {
+        let TunnelPeer(id) = peer?;
+        self.tunnel
+            .devices
+            .contains(&id)
+            .then(|| self.owner.id.clone())
+    }
+
+    /// 核心域名上的当前用户（M0 只有主人）：经隧道的已配对设备，或者局域网浏览器的核心会话。
+    fn core_user(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) -> Option<String> {
+        self.device_user(peer).or_else(|| {
+            let sid = session::cookie(headers, CORE_COOKIE)?;
+            self.sessions.core_user(&sid)
+        })
     }
 
     fn secure_cookies(&self) -> bool {
@@ -155,7 +181,7 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
     proxy::forward(&gateway.http, target, req, fwd).await
 }
 
-/// 插件子域名：先兑换交接码或校验插件会话，再转发给插件。
+/// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。然后转发给插件。
 async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response {
     let host = gateway.public.plugin_host(slug);
     let Some(route) = gateway.plugins.route(slug) else {
@@ -168,8 +194,12 @@ async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response
     if req.uri().path() == "/_wonton/session" {
         return sso::redeem(gateway, &host, &req);
     }
-    let user = session::cookie(req.headers(), APP_COOKIE)
-        .and_then(|sid| gateway.sessions.app_user(&sid, &host));
+    let user = gateway
+        .device_user(req.extensions().get().copied())
+        .or_else(|| {
+            let sid = session::cookie(req.headers(), APP_COOKIE)?;
+            gateway.sessions.app_user(&sid, &host)
+        });
     if user.is_none() {
         return unauthenticated(gateway, &host, &req);
     }
@@ -237,3 +267,5 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tunnel_tests;

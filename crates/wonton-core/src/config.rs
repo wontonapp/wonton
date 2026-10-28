@@ -107,6 +107,8 @@ pub struct Config {
     pub pgid: u32,
     pub owner: Owner,
     pub install_timeout: Duration,
+    /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
+    pub tunnel_port: u16,
 }
 
 impl Config {
@@ -168,6 +170,7 @@ impl Config {
             pgid: parse(&get, "WONTON_PGID", 1000)?,
             owner,
             install_timeout: Duration::from_secs(parse(&get, "WONTON_INSTALL_TIMEOUT_SECS", 300)?),
+            tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
         })
     }
 
@@ -275,6 +278,7 @@ mod tests {
             .is_err()
         );
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_PUBLIC_PORT", "x")]).is_err());
+        assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_TUNNEL_PORT", "70000")]).is_err());
         assert!(
             config(&[
                 ("WONTON_DATA_DIR", "/d"),

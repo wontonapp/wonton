@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use super::tunnel_tests::loopback_tunnel;
 use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
 use crate::config::{OidcProviderConfig, Owner, PublicUrls};
 use crate::http::HttpClient;
@@ -26,10 +27,11 @@ use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
 
-const TOKEN: &str = "test-owner-token";
-const CORE: &str = "wonton.localhost";
-const PLUGIN: &str = "app-whoami.wonton.localhost";
-const WHOAMI: &str = include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
+pub(super) const TOKEN: &str = "test-owner-token";
+pub(super) const CORE: &str = "wonton.localhost";
+pub(super) const PLUGIN: &str = "app-whoami.wonton.localhost";
+pub(super) const WHOAMI: &str =
+    include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
 
 async fn serve(listener: TcpListener, router: Router) {
     tokio::spawn(async move {
@@ -49,7 +51,7 @@ async fn bind() -> (TcpListener, SocketAddr) {
 }
 
 /// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节。
-async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
+pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let router = Router::new()
         .route("/ws", get(upgrade_echo))
         .fallback(move |req: Request| {
@@ -89,7 +91,7 @@ async fn upgrade_echo(mut req: Request) -> Response {
 }
 
 /// 假 Hydra 管理接口：返回预设的登录、授权请求，记录核心提交的接受内容。
-async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
+pub(super) async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
     let record = |accepted: Arc<Mutex<Vec<Value>>>, redirect: &'static str| {
         move |Json(body): Json<Value>| async move {
             accepted.lock().unwrap().push(body);
@@ -170,7 +172,7 @@ struct Harness {
     _dir: tempfile::TempDir,
 }
 
-fn owner() -> Owner {
+pub(super) fn owner() -> Owner {
     Owner {
         id: "owner".into(),
         username: "owner".into(),
@@ -224,6 +226,7 @@ impl Harness {
             manager.clone(),
             hydra,
             http.clone(),
+            loopback_tunnel(dir.path()).await,
         );
         serve(listener, router(Arc::new(gateway))).await;
         Self {

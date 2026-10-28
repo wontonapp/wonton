@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# M0-6 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
-# 像浏览器一样经核心网关打开插件并自动登录 → 核心重启后恢复 → 卸载干净。
+# M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
+# 像浏览器一样经核心网关打开插件并自动登录 → 已配对设备经隧道打开插件，直接是主人 →
+# 核心重启后恢复 → 卸载干净。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
 #   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
@@ -15,10 +16,13 @@ dev="$here/dev.sh"
 
 export WONTON_DEV_PROJECT=wonton-smoke
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
+export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN=wonton.localhost
 export WONTON_DEV_DATA="/tmp/wonton-smoke-$(date +%s)-$$"
 core="$WONTON_DEV_PROJECT"
 browser="$WONTON_DEV_PROJECT-browser"
+phone="$WONTON_DEV_PROJECT-phone"
+phone_image="wonton-tunnel-client:dev"
 curl_image="curlimages/curl:8.23.0"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -47,6 +51,8 @@ start_browser() {
   docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 1800 >/dev/null
 }
 b() { docker exec "$browser" curl -sS -c /tmp/jar -b /tmp/jar "$@"; }
+# 经手机的本地代理访问：所有连接都交给代理，Host 和地址原样保留；Cookie 罐与上面的浏览器分开。
+t() { docker exec "$browser" curl -sS -c /tmp/phone-jar -b /tmp/phone-jar --connect-to ::127.0.0.1:18008 "$@"; }
 
 labeled() {
   local id="$1"
@@ -63,7 +69,7 @@ cleanup() {
     echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
     return
   fi
-  docker rm -f "$browser" >/dev/null 2>&1 || true
+  docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true
   # 中途失败时插件可能还在：先删插件容器，再停核心，最后删插件网络和卷。
   local id resource
   for id in "${plugins[@]}"; do
@@ -130,6 +136,36 @@ user="$(b "$grafana_url/api/user")"
 expect "Grafana 里的用户是主人" "$(json login <<<"$user")" owner
 expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner@$WONTON_DEV_DOMAIN"
 expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" | json 0.role)" Admin
+
+step "已配对设备经隧道打开插件：不用登录，直接是主人"
+docker build -q --target tunnel-client -t "$phone_image" -f "$here/Dockerfile" "$repo" >/dev/null
+server_id="$("$dev" tunnel | json endpoint_id)"
+# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008。
+docker run -d --name "$phone" --network "container:$core" --entrypoint sh "$phone_image" -c \
+  "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy \
+   --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT --listen 127.0.0.1:18008" >/dev/null
+for _ in $(seq 30); do
+  docker logs "$phone" 2>/dev/null | grep -q '^本地代理' && break
+  sleep 1
+done
+device_id="$(docker logs "$phone" 2>/dev/null | head -1)"
+[[ "$device_id" =~ ^[0-9a-f]{64}$ ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
+reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
+expect "未登记的设备被隧道拒绝" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
+grep -qi '^x-wonton-tunnel-error: unauthorized' <<<"$reply" || fail "缺少 unauthorized 原因：$reply"
+expect "主人登记这台设备" "$("$dev" allow "$device_id" | json added)" true
+reply="$(t -L -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{url_effective} %{num_redirects}' "$grafana_url/")"
+read -r code final redirects <<<"$reply"
+expect "直接落在 Grafana 首页（经过 $redirects 次跳转：只有 OIDC，没有登录和会话交接）" "$code $final" "200 $grafana_url/"
+expect "Grafana 里的用户是主人" "$(t "$grafana_url/api/user" | json login)" owner
+! docker exec "$browser" grep -q 'wonton_' /tmp/phone-jar || fail "经隧道时网关不应发会话 Cookie"
+ok "手机没有拿到任何网关 Cookie"
+expect "管理 API 不接受隧道身份" \
+  "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 401
+"$dev" revoke "$device_id" >/dev/null
+reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
+expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
+docker rm -f "$phone" >/dev/null
 
 step "没有 OIDC 的插件：网关转发并剥离网关 Cookie"
 installed="$("$dev" install "$repo/plugins/examples/whoami/docker-compose.yml" --yes 2>/dev/null)"

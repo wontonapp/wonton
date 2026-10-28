@@ -16,6 +16,7 @@ services:
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
+      WONTON_TUNNEL_PORT: ${WONTON_DEV_TUNNEL_PORT:-18482}
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444
@@ -26,6 +27,8 @@ services:
     ports:
       # 只监听本机。浏览器用 http://wonton.localhost:18480 访问，*.localhost 自动解析到本机。
       - "127.0.0.1:${WONTON_DEV_PORT:-18480}:${WONTON_DEV_PORT:-18480}"
+      # 隧道入口（iroh，UDP）。默认只给本机，手机经局域网直连时设 WONTON_DEV_TUNNEL_BIND=0.0.0.0。
+      - "${WONTON_DEV_TUNNEL_BIND:-127.0.0.1}:${WONTON_DEV_TUNNEL_PORT:-18482}:${WONTON_DEV_TUNNEL_PORT:-18482}/udp"
     volumes:
       # 唯一挂载 Docker socket 的容器（ADR-0011）。
       - /var/run/docker.sock:/var/run/docker.sock

@@ -20,7 +20,7 @@ use serde_json::json;
 use super::{Gateway, pages};
 use crate::plugin::{InstallError, Permission, PluginId};
 
-fn error_response(status: StatusCode, kind: &'static str, message: &str) -> Response {
+pub(super) fn error_response(status: StatusCode, kind: &'static str, message: &str) -> Response {
     let body = Json(json!({"error": {"kind": kind, "message": message}}));
     let mut response = (status, body).into_response();
     response
@@ -45,9 +45,9 @@ fn install_error(error: &InstallError) -> Response {
     error_response(status, error.kind(), &error.to_string())
 }
 
-/// 只接受 `Authorization: Bearer <主人令牌>`；浏览器 Cookie 不能调用 API，避免跨站请求伪造。
-/// 未授权时返回要直接回给客户端的响应。
-fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response> {
+/// 只接受 `Authorization: Bearer <主人令牌>`；浏览器 Cookie 和隧道设备身份都不能调用 API：它们都会
+/// 随请求自动带上，插件网页可以借此发起跨站请求。未授权时返回要直接回给客户端的响应。
+pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response> {
     let token = headers
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())

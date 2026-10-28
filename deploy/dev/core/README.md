@@ -22,6 +22,28 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
 - `dev.sh` 的 HTTP 请求在一个与核心共享网络的 curl 容器里发出，所以 `DOCKER_HOST` 指向远端主机时
   也能用（远端只需要 Docker）：`DOCKER_HOST=ssh://npchy deploy/dev/core/dev.sh up`。
 
+## 经隧道访问
+
+核心内置隧道入口（iroh，UDP `WONTON_DEV_TUNNEL_PORT`，默认 18482，只发布到本机；手机经局域网直连时设
+`WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。已登记的设备经隧道访问时就是主人，打开插件不用登录。M0 还没有扫码
+配对，用主人令牌登记设备：
+
+```bash
+deploy/dev/core/dev.sh tunnel                  # 服务端 endpoint ID、中继地址和直连地址
+deploy/dev/core/dev.sh allow <设备 endpoint ID>  # 登记；revoke 吊销并立即断开，devices 列出
+```
+
+在本机用隧道客户端示例扮演手机（`cargo run -p wonton-tunnel --example tunnel-client -- id` 输出它的 ID），
+起本地代理后，所有连接都交给代理、原样保留 `Host`：
+
+```bash
+cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 ID> --addr 127.0.0.1:18482 --listen 127.0.0.1:18008
+```
+
+```bash
+curl --noproxy '*' --connect-to ::127.0.0.1:18008 http://app-grafana.wonton.localhost:18480/api/health
+```
+
 ## 端到端冒烟
 
 ```bash
@@ -29,10 +51,12 @@ deploy/dev/core/smoke.sh                           # 本机 Docker
 DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 ```
 
-用独立的 compose 项目、端口（18481）和临时数据目录，依次验证：一条命令安装 Grafana 示例插件并通过
+用独立的 compose 项目、端口（18481，隧道 18483）和临时数据目录，依次验证：一条命令安装 Grafana 示例插件并通过
 健康检查；插件不暴露端口、只在自己的网络里、访问不到 Hydra 的管理端口；未登录的请求被拒；登录核心
-一次后打开插件自动登录（Grafana 里是 `owner`、管理员角色）；没有 OIDC 的插件收不到网关 Cookie 和
-伪造的转发头；核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
+一次后打开插件自动登录（Grafana 里是 `owner`、管理员角色）；已配对设备经隧道打开插件不用登录、直接是
+`owner`，未登记和已吊销的设备被拒（设备由隧道客户端示例扮演，跑在核心的网络命名空间里）；没有 OIDC 的
+插件收不到网关 Cookie 和伪造的转发头；核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端
+都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例）：

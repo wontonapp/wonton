@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::extract::{Query, Request, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
 use super::session::{APP_COOKIE, APP_TTL, set_cookie};
-use super::{Gateway, pages, same_origin_path, with_cookie};
+use super::{Gateway, TunnelPeer, pages, same_origin_path, with_cookie};
 use crate::config::HostKind;
 use crate::oidc::{OidcError, granted_scopes, id_token_claims};
 
@@ -39,7 +40,7 @@ pub async fn start(
     Query(query): Query<SsoQuery>,
     req: Request,
 ) -> Response {
-    let Some(user) = gateway.core_user(req.headers()) else {
+    let Some(user) = gateway.core_user(req.extensions().get().copied(), req.headers()) else {
         return login_redirect(&gateway, &path_and_query(req.uri()));
     };
     let Ok(target) = url::Url::parse(&query.to) else {
@@ -118,14 +119,15 @@ fn oidc_failure(e: &OidcError) -> Response {
     pages::error(status, kind, &e.to_string())
 }
 
-/// Hydra 的登录端点：用核心会话的身份直接接受登录，用户不会看到第二个登录页。
+/// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。
 pub async fn oidc_login(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<LoginChallenge>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     uri: hyper::Uri,
 ) -> Response {
-    let Some(user) = gateway.core_user(&headers) else {
+    let Some(user) = gateway.core_user(peer.map(|Extension(peer)| peer), &headers) else {
         return login_redirect(&gateway, &path_and_query(&uri));
     };
     let Some(hydra) = &gateway.hydra else {
@@ -157,10 +159,11 @@ pub async fn oidc_login(
 pub async fn oidc_consent(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<ConsentChallenge>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     uri: hyper::Uri,
 ) -> Response {
-    let Some(user) = gateway.core_user(&headers) else {
+    let Some(user) = gateway.core_user(peer.map(|Extension(peer)| peer), &headers) else {
         return login_redirect(&gateway, &path_and_query(&uri));
     };
     let Some(hydra) = &gateway.hydra else {

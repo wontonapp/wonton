@@ -1,6 +1,6 @@
 //! `wonton-core`：服务端核心进程。
 //!
-//! - `wonton-core serve`（默认）：启动插件管理器和网关。
+//! - `wonton-core serve`（默认）：启动插件管理器、网关和隧道入口。
 //! - `wonton-core healthcheck`：请求本机网关的健康端点，供容器健康检查使用。
 
 use std::net::SocketAddr;
@@ -13,6 +13,7 @@ use hyper::Method;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
+use wonton_core::device::Devices;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
 use wonton_core::oidc::Hydra;
@@ -21,6 +22,7 @@ use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::store::Store;
 use wonton_core::secret;
+use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -98,6 +100,7 @@ async fn serve() -> anyhow::Result<()> {
     ));
     manager.restore().await.context("恢复已安装的插件")?;
 
+    let tunnel = bind_tunnel(&cfg).await?;
     let gateway = Arc::new(Gateway::new(
         cfg.public.clone(),
         cfg.owner.clone(),
@@ -105,22 +108,44 @@ async fn serve() -> anyhow::Result<()> {
         manager,
         hydra,
         http,
+        tunnel.clone(),
     ));
+    let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)
         .await
         .with_context(|| format!("监听 {}", cfg.listen))?;
+    let entry = TunnelEntry::spawn(tunnel.endpoint, &tunnel.devices, app.clone());
     tracing::info!(
         listen = %cfg.listen,
         url = %cfg.public.origin(cfg.public.core_host()),
         "网关已启动"
     );
-    axum::serve(
+    let served = axum::serve(
         listener,
-        gateway::router(gateway).into_make_service_with_connect_info::<SocketAddr>(),
+        app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown())
     .await
-    .context("网关异常退出")
+    .context("网关异常退出");
+    entry.shutdown().await;
+    served
+}
+
+/// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。
+async fn bind_tunnel(cfg: &Config) -> anyhow::Result<Tunnel> {
+    let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
+    let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
+    let endpoint = tunnel::bind(key, cfg.tunnel_port).await?;
+    tracing::info!(
+        endpoint_id = %endpoint.id(),
+        sockets = ?endpoint.bound_sockets(),
+        devices = devices.list().len(),
+        "隧道入口已启动"
+    );
+    Ok(Tunnel {
+        devices: Arc::new(devices),
+        endpoint,
+    })
 }
 
 async fn shutdown() {

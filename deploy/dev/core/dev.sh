@@ -9,9 +9,14 @@
 #   dev.sh install <compose 文件> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
 #   dev.sh uninstall <插件 ID> [--purge]   卸载；--purge 同时删除插件数据
 #   dev.sh list                        列出插件
+#   dev.sh tunnel                      隧道入口的 endpoint ID、中继地址和直连地址
+#   dev.sh devices                     已登记的设备
+#   dev.sh allow <endpoint ID>         登记一台设备（M0 代替扫码配对），它经隧道访问时就是主人
+#   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
+# WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
 # WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
@@ -128,5 +133,23 @@ case "${1:-}" in
     api GET /_wonton/api/plugins
     echo
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件> [--yes]|uninstall <插件 ID> [--purge]|list" ;;
+  tunnel)
+    api GET /_wonton/api/tunnel
+    echo
+    ;;
+  devices)
+    api GET /_wonton/api/devices
+    echo
+    ;;
+  allow)
+    id="${2:?用法：$0 allow <endpoint ID>}"
+    api POST /_wonton/api/devices -H 'Content-Type: application/json' \
+      --data-binary "{\"endpoint_id\": \"$id\"}"
+    echo
+    ;;
+  revoke)
+    api DELETE "/_wonton/api/devices/${2:?用法：$0 revoke <endpoint ID>}"
+    echo
+    ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>" ;;
 esac

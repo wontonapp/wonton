@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::extract::{Form, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get, post};
@@ -10,7 +11,7 @@ use hyper::HeaderMap;
 use serde::Deserialize;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookie, set_cookie};
-use super::{Gateway, api, pages, same_origin_path, sso, with_cookie};
+use super::{Gateway, TunnelPeer, api, devices, pages, same_origin_path, sso, with_cookie};
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
@@ -27,14 +28,24 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/api/plugins", get(api::list).post(api::install))
         .route("/_wonton/api/plugins/preview", post(api::preview))
         .route("/_wonton/api/plugins/{id}", delete(api::uninstall))
+        .route("/_wonton/api/tunnel", get(devices::tunnel))
+        .route(
+            "/_wonton/api/devices",
+            get(devices::list).post(devices::add),
+        )
+        .route("/_wonton/api/devices/{id}", delete(devices::remove))
         .fallback(|| async {
             pages::error(hyper::StatusCode::NOT_FOUND, "not_found", "没有这个页面")
         })
         .with_state(gateway)
 }
 
-async fn home(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    match gateway.core_user(&headers) {
+async fn home(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    match gateway.core_user(peer.map(|Extension(peer)| peer), &headers) {
         Some(user) => pages::status(&user, &gateway.plugins.list()),
         None => pages::login("/", false),
     }

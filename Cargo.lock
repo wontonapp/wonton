@@ -6986,6 +6986,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "iroh",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -6997,6 +6998,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "wonton-tunnel",
 ]
 
 [[package]]
