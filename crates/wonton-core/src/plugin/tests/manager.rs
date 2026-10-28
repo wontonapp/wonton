@@ -5,6 +5,8 @@ use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
+use serde_json::json;
+
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
 use super::super::lifecycle::LifecycleConfig;
@@ -15,9 +17,34 @@ use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginS
 use super::{WHOAMI, package};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
+use crate::oidc::Hydra;
 
-/// 用给定 Docker 的管理器。PUID:PGID 取测试目录的属主，准备应用数据目录时不需要 chown 权限。
+/// 核心在容器里（`WONTON_CORE_CONTAINER`）的管理器，其余同 [`manager_with`]。
+pub(super) fn manager_in_container(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
+    manager_for(engine, dir, Some("wonton-core".to_owned()), None)
+}
+
+/// 用给定 Docker 的管理器，核心直接跑在宿主上。PUID:PGID 取测试目录的属主，准备应用数据目录时不需要
+/// chown 权限。
 pub(super) fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
+    manager_for(engine, dir, None, None)
+}
+
+/// 核心直接跑在宿主上、配了身份提供方的管理器。
+pub(super) fn manager_with_oidc(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    oidc: Hydra,
+) -> PluginManager {
+    manager_for(engine, dir, None, Some(oidc))
+}
+
+fn manager_for(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    core_container: Option<String>,
+    oidc: Option<Hydra>,
+) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -27,14 +54,14 @@ pub(super) fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginMan
         },
         apps_dir: dir.path().join("apps"),
         shares_dir: dir.path().join("shares"),
-        core_container: None,
+        core_container,
         tz: "UTC".into(),
         puid: owner.uid(),
         pgid: owner.gid(),
         install_timeout: Duration::from_secs(5),
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
-    PluginManager::new(engine, store, HttpClient::new(), None, cfg)
+    PluginManager::new(engine, store, HttpClient::new(), oidc, cfg)
 }
 
 /// Docker 不可达的管理器：只用来验证不依赖 Docker 的规则，以及 Docker 不可用时的报错。
@@ -161,6 +188,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");
+    docker.add_network("wonton-app-good", "app.good", json!({"Internal": true}));
     let broken = dir.path().join("plugins/app.broken.json");
     fs::write(&broken, "{\"id\": ").unwrap();
 

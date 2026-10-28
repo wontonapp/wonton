@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::configs;
+use super::docker::NetworkReach;
 use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
@@ -120,10 +121,10 @@ impl PluginManager {
         let mut secrets = self.prepare_secrets(manifest, undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
-        let ctx = self
+        let mut ctx = self
             .install_context(manifest, secret.as_deref(), generated)
             .await?;
-        let plan = render(package, &ctx)?;
+        let mut plan = render(package, &ctx)?;
         for container in &plan.containers {
             self.engine
                 .ensure_image(&container.image, container.pull_policy)
@@ -131,9 +132,13 @@ impl PluginManager {
         }
         self.prepare_dirs(&ctx, &plan.dirs, undo)?;
         self.engine
-            .create_network(&plan.network, &plan.labels)
+            .create_network(&plan.network, &plan.labels, self.network_reach(manifest))
             .await?;
         undo.network = Some(plan.network.clone());
+        if let Some(entry) = self.auth_via_host(manifest, &plan.network).await? {
+            ctx.extra_hosts = vec![entry];
+            plan = render(package, &ctx)?;
+        }
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&plan.network, core, manifest).await?;
             undo.core_attached = true;
@@ -218,12 +223,6 @@ impl PluginManager {
                 })
             }
         };
-        // 核心不在容器里时，插件经宿主网关地址访问核心的身份提供方入口。
-        let extra_hosts = if self.cfg.core_container.is_none() && oidc.is_some() {
-            vec![format!("{}:host-gateway", public.auth_host())]
-        } else {
-            Vec::new()
-        };
         let shares = manifest
             .permissions
             .iter()
@@ -254,8 +253,34 @@ impl PluginManager {
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
             pgid: self.cfg.pgid,
-            extra_hosts,
+            extra_hosts: Vec::new(),
         })
+    }
+
+    /// 插件网络能连到哪里：声明了 `network.egress` 才能出网。不能出网时，核心在容器里就连宿主也隔开（核心
+    /// 加入插件网络访问插件）；核心直接跑在宿主上时要经网桥访问插件，只能用普通的内部网络。
+    fn network_reach(&self, manifest: &Manifest) -> NetworkReach {
+        if manifest.permissions.contains(&Permission::NetworkEgress) {
+            NetworkReach::Egress
+        } else if self.cfg.core_container.is_some() {
+            NetworkReach::Isolated
+        } else {
+            NetworkReach::Internal
+        }
+    }
+
+    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的身份提供方入口：内部网络
+    /// 没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
+    async fn auth_via_host(
+        &self,
+        manifest: &Manifest,
+        network: &str,
+    ) -> Result<Option<String>, InstallError> {
+        if self.cfg.core_container.is_some() || !uses_sso(manifest) {
+            return Ok(None);
+        }
+        let gateway = self.engine.network_gateway(network).await?;
+        Ok(Some(format!("{}:{gateway}", self.cfg.public.auth_host())))
     }
 
     /// 主人的用户（PUID:PGID）：共享文件夹、应用数据目录本身和中间各级目录都交给它。
@@ -470,6 +495,15 @@ impl PluginManager {
         }
         let generated = self.check_secrets(manifest).await?;
         let network = format!("wonton-{slug}");
+        let expected = self.network_reach(manifest);
+        let actual = self.engine.network_reach(&network).await?;
+        if actual != Some(expected) {
+            return Err(InstallError::Conflict(format!(
+                "插件网络 {network} {}，按清单和核心的运行方式应该{}：重装插件（可以不删数据）后生效",
+                describe_reach(actual),
+                describe_reach(Some(expected))
+            )));
+        }
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
@@ -557,6 +591,15 @@ impl PluginManager {
             return Err(InstallError::Docker(format!("卸载后仍有残留：{left:?}")));
         }
         Ok(report)
+    }
+}
+
+fn describe_reach(reach: Option<NetworkReach>) -> &'static str {
+    match reach {
+        None => "不存在",
+        Some(NetworkReach::Egress) => "能出网",
+        Some(NetworkReach::Internal) => "不能出网",
+        Some(NetworkReach::Isolated) => "不能出网、和宿主隔开",
     }
 }
 

@@ -19,10 +19,21 @@ use futures_util::StreamExt;
 
 use super::compose::PullPolicy;
 
+/// 核心要求的 Docker Engine 最低主版本：28 起局域网里的其他主机不能再经路由直接访问容器里没发布的端口
+/// （moby#48724），内部网络也才有 `isolated` 网关模式。
+pub const MIN_ENGINE_MAJOR: u32 = 28;
+
+const GATEWAY_MODES: [&str; 2] = [
+    "com.docker.network.bridge.gateway_mode_ipv4",
+    "com.docker.network.bridge.gateway_mode_ipv6",
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     #[error("无法连接 Docker：{0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unsupported(String),
     #[error("Docker 中不存在：{0}")]
     NotFound(String),
     #[error("Docker 拒绝了请求（{context}）：{message}")]
@@ -44,6 +55,24 @@ impl EngineError {
             other => Self::Unavailable(format!("{context}：{other}")),
         }
     }
+}
+
+/// Docker 守护进程的版本和宿主架构。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerInfo {
+    pub version: String,
+    pub arch: String,
+}
+
+/// 插件网络能连到哪里。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkReach {
+    /// 普通桥接网络：能访问外网和局域网。
+    Egress,
+    /// 内部网络：没有到外面的路由，也不转发外部 DNS；宿主经网桥还能和容器互访（核心直接跑在宿主上时）。
+    Internal,
+    /// 内部网络，网桥在宿主上也没有地址：容器只能和同一网络里的容器（包括核心）互访，宿主上的服务也访问不到。
+    Isolated,
 }
 
 /// 读容器里一个文件的结果。
@@ -107,12 +136,27 @@ impl Engine {
 
     /// 检查 Docker 可达，返回宿主架构（如 `x86_64`、`aarch64`）。
     pub async fn host_arch(&self) -> Result<String> {
+        Ok(self.server().await?.arch)
+    }
+
+    async fn server(&self) -> Result<ServerInfo> {
         let version = self
             .docker
             .version()
             .await
             .map_err(|e| EngineError::from_bollard("查询版本", e))?;
-        Ok(version.arch.unwrap_or_default())
+        Ok(ServerInfo {
+            version: version.version.unwrap_or_default(),
+            arch: version.arch.unwrap_or_default(),
+        })
+    }
+
+    /// 核心启动时检查 Docker：连得上，而且 Engine 版本不低于 [`MIN_ENGINE_MAJOR`]。低于时报错，不降级运行：
+    /// 插件网络的隔离靠的是新版的行为。
+    pub async fn check_server(&self) -> Result<ServerInfo> {
+        let info = self.server().await?;
+        check_engine_version(&info.version)?;
+        Ok(info)
     }
 
     pub async fn ensure_image(&self, image: &str, policy: PullPolicy) -> Result<()> {
@@ -144,11 +188,19 @@ impl Engine {
         Ok(())
     }
 
-    pub async fn create_network(&self, name: &str, labels: &HashMap<String, String>) -> Result<()> {
+    pub async fn create_network(
+        &self,
+        name: &str,
+        labels: &HashMap<String, String>,
+        reach: NetworkReach,
+    ) -> Result<()> {
+        let isolated = GATEWAY_MODES.map(|mode| (mode.to_owned(), "isolated".to_owned()));
         let request = NetworkCreateRequest {
             name: name.to_owned(),
             driver: Some("bridge".to_owned()),
             labels: Some(labels.clone()),
+            internal: Some(reach != NetworkReach::Egress),
+            options: (reach == NetworkReach::Isolated).then(|| isolated.into()),
             ..Default::default()
         };
         self.docker
@@ -156,6 +208,51 @@ impl Engine {
             .await
             .map(|_| ())
             .map_err(|e| EngineError::from_bollard(&format!("创建网络 {name}"), e))
+    }
+
+    /// 网络能连到哪里；网络不存在时返回 `None`。
+    pub async fn network_reach(&self, name: &str) -> Result<Option<NetworkReach>> {
+        let network = match self.docker.inspect_network(name, None).await {
+            Ok(network) => network,
+            Err(e) => {
+                return match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
+                    EngineError::NotFound(_) => Ok(None),
+                    other => Err(other),
+                };
+            }
+        };
+        let isolated = network
+            .options
+            .as_ref()
+            .and_then(|o| o.get(GATEWAY_MODES[0]))
+            .is_some_and(|mode| mode == "isolated");
+        Ok(Some(match (network.internal.unwrap_or(false), isolated) {
+            (false, _) => NetworkReach::Egress,
+            (true, false) => NetworkReach::Internal,
+            (true, true) => NetworkReach::Isolated,
+        }))
+    }
+
+    /// 网络在宿主上的 IPv4 网关（网桥的地址）。
+    pub async fn network_gateway(&self, name: &str) -> Result<String> {
+        let context = format!("查询网络 {name}");
+        let network = self
+            .docker
+            .inspect_network(name, None)
+            .await
+            .map_err(|e| EngineError::from_bollard(&context, e))?;
+        let configs = network
+            .ipam
+            .and_then(|ipam| ipam.config)
+            .unwrap_or_default();
+        configs
+            .into_iter()
+            .filter_map(|config| config.gateway)
+            .find(|gateway| gateway.parse::<std::net::Ipv4Addr>().is_ok())
+            .ok_or_else(|| EngineError::Rejected {
+                context,
+                message: "网络没有 IPv4 网关".to_owned(),
+            })
     }
 
     /// 删除网络；不存在视为成功。
@@ -449,6 +546,23 @@ fn single_file(archive: &[u8], max: usize) -> std::io::Result<ContainerFile> {
     Ok(ContainerFile::Regular(data))
 }
 
+fn check_engine_version(version: &str) -> Result<()> {
+    let major = version
+        .split('.')
+        .next()
+        .and_then(|m| m.parse::<u32>().ok());
+    match major {
+        Some(major) if major >= MIN_ENGINE_MAJOR => Ok(()),
+        Some(_) => Err(EngineError::Unsupported(format!(
+            "Docker Engine {version} 太旧，核心要求 {MIN_ENGINE_MAJOR} 及以上：28 起局域网里的其他主机不能再直接访问\
+             容器里没发布的端口，插件网络也才能和宿主完全隔开。请升级 Docker"
+        ))),
+        None => Err(EngineError::Unsupported(format!(
+            "无法识别 Docker Engine 的版本 `{version}`"
+        ))),
+    }
+}
+
 fn ignore_missing(result: Result<()>) -> Result<()> {
     match result {
         Err(EngineError::NotFound(_)) => Ok(()),
@@ -458,7 +572,20 @@ fn ignore_missing(result: Result<()>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ContainerFile, pull_reference, single_file};
+    use super::{ContainerFile, EngineError, check_engine_version, pull_reference, single_file};
+
+    #[test]
+    fn engines_older_than_28_are_refused() {
+        for good in ["28.0.0", "28.5.1", "29.8.2", "30.0.0-rc.1"] {
+            assert!(check_engine_version(good).is_ok(), "{good}");
+        }
+        for bad in ["27.5.1", "20.10.24", "", "dev"] {
+            assert!(
+                matches!(check_engine_version(bad), Err(EngineError::Unsupported(_))),
+                "{bad}"
+            );
+        }
+    }
 
     fn tar_of(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
         let mut builder = tar::Builder::new(Vec::new());

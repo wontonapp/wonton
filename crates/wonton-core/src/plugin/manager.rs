@@ -99,6 +99,7 @@ impl From<EngineError> for InstallError {
     fn from(e: EngineError) -> Self {
         match e {
             EngineError::Unavailable(m) => Self::DockerUnavailable(m),
+            EngineError::Unsupported(m) => Self::Unsupported(m),
             other => Self::Docker(other.to_string()),
         }
     }
@@ -276,9 +277,12 @@ pub struct PluginManager {
     plugins: RwLock<BTreeMap<PluginId, Entry>>,
 }
 
-/// M0 已实现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
+/// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
 fn supported(permission: &Permission) -> bool {
-    matches!(permission, Permission::StorageShare { .. })
+    matches!(
+        permission,
+        Permission::StorageShare { .. } | Permission::NetworkEgress
+    )
 }
 
 pub(super) fn now_secs() -> u64 {

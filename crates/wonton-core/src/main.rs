@@ -55,8 +55,8 @@ async fn main() -> ExitCode {
 async fn serve() -> anyhow::Result<()> {
     let cfg = Config::from_env()?;
     let engine = Engine::connect()?;
-    let arch = engine.host_arch().await.context("连接 Docker")?;
-    tracing::info!(%arch, "Docker 已连接");
+    let docker = engine.check_server().await.context("连接 Docker")?;
+    tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
     let token_path = cfg.core_state_dir().join("owner-token");
     let owner_token = secret::load_or_create(&token_path)
