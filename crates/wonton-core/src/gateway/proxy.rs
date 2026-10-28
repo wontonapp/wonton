@@ -10,7 +10,7 @@ use hyper::{StatusCode, Uri, Version};
 use hyper_util::rt::TokioIo;
 
 use super::pages;
-use super::session::{APP_COOKIE, CORE_COOKIE, strip_cookies};
+use super::session::{is_reserved_cookie, strip_cookies};
 use crate::http::HttpClient;
 
 const HOP_BY_HOP: &[&str] = &[
@@ -96,7 +96,7 @@ pub async fn forward(
     };
     let host = parts.headers.get(header::HOST).cloned();
     strip_hop_by_hop(&mut parts.headers, upgrade);
-    strip_cookies(&mut parts.headers, &[APP_COOKIE, CORE_COOKIE]);
+    strip_cookies(&mut parts.headers, is_reserved_cookie);
     for name in UNTRUSTED {
         parts.headers.remove(*name);
     }

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::Request;
+use axum::extract::{RawQuery, Request};
 use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -50,10 +50,12 @@ async fn bind() -> (TcpListener, SocketAddr) {
     (listener, addr)
 }
 
-/// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节。
+/// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节；
+/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回。
 pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let router = Router::new()
         .route("/ws", get(upgrade_echo))
+        .route("/set-cookie", get(set_cookies))
         .fallback(move |req: Request| {
             let hits = hits.clone();
             async move {
@@ -61,7 +63,7 @@ pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
                 let headers: serde_json::Map<String, Value> = req
                     .headers()
                     .iter()
-                    .map(|(k, v)| (k.to_string(), json!(v.to_str().unwrap_or_default())))
+                    .map(|(k, v)| (k.to_string(), json!(String::from_utf8_lossy(v.as_bytes()))))
                     .collect();
                 Json(json!({"path": req.uri().to_string(), "headers": headers}))
             }
@@ -69,6 +71,15 @@ pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let (listener, addr) = bind().await;
     serve(listener, router).await;
     addr
+}
+
+async fn set_cookies(RawQuery(query): RawQuery) -> Response {
+    let mut response = Response::new(Body::empty());
+    for (_, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+        let value = value.parse().unwrap();
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
 }
 
 async fn upgrade_echo(mut req: Request) -> Response {
@@ -134,22 +145,22 @@ pub(super) async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
     addr
 }
 
-struct Reply {
-    status: StatusCode,
-    headers: HeaderMap,
+pub(super) struct Reply {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
     text: String,
 }
 
 impl Reply {
-    fn location(&self) -> String {
+    pub fn location(&self) -> String {
         self.headers[header::LOCATION].to_str().unwrap().to_owned()
     }
 
-    fn error_kind(&self) -> Option<&str> {
+    pub fn error_kind(&self) -> Option<&str> {
         self.headers.get(ERROR_HEADER).map(|v| v.to_str().unwrap())
     }
 
-    fn cookie(&self, name: &str) -> String {
+    pub fn cookie(&self, name: &str) -> String {
         self.headers
             .get_all(header::SET_COOKIE)
             .iter()
@@ -159,15 +170,15 @@ impl Reply {
             .unwrap_or_else(|| panic!("响应里没有 {name} Cookie：{:?}", self.headers))
     }
 
-    fn json(&self) -> Value {
+    pub fn json(&self) -> Value {
         serde_json::from_str(&self.text).unwrap()
     }
 }
 
-struct Harness {
+pub(super) struct Harness {
     addr: SocketAddr,
     http: HttpClient,
-    hits: Arc<AtomicUsize>,
+    pub hits: Arc<AtomicUsize>,
     manager: Arc<PluginManager>,
     _dir: tempfile::TempDir,
 }
@@ -182,7 +193,7 @@ pub(super) fn owner() -> Owner {
 }
 
 impl Harness {
-    async fn start(hydra_admin: Option<SocketAddr>) -> Self {
+    pub async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
         let (listener, addr) = bind().await;
@@ -238,11 +249,11 @@ impl Harness {
         }
     }
 
-    fn origin(&self, host: &str) -> String {
+    pub fn origin(&self, host: &str) -> String {
         format!("http://{host}:{}", self.addr.port())
     }
 
-    async fn send(
+    pub async fn send(
         &self,
         method: Method,
         host: &str,
@@ -268,12 +279,12 @@ impl Harness {
         }
     }
 
-    async fn get(&self, host: &str, path: &str, headers: &[(&str, &str)]) -> Reply {
+    pub async fn get(&self, host: &str, path: &str, headers: &[(&str, &str)]) -> Reply {
         self.send(Method::GET, host, path, headers, Body::empty())
             .await
     }
 
-    async fn login(&self, token: &str) -> Reply {
+    pub async fn login(&self, token: &str) -> Reply {
         let form = format!("token={token}&next=%2F");
         let headers = [("content-type", "application/x-www-form-urlencoded")];
         self.send(
@@ -287,7 +298,7 @@ impl Harness {
     }
 
     /// 走完整的交接：登录核心 → 换交接码 → 在插件域名兑换，返回插件会话 Cookie。
-    async fn app_session(&self) -> String {
+    pub async fn app_session(&self) -> String {
         let core = self.login(TOKEN).await.cookie(CORE_COOKIE);
         let to = format!("{}/hello?x=1", self.origin(PLUGIN));
         let query = url::form_urlencoded::Serializer::new(String::new())
@@ -493,6 +504,16 @@ async fn unknown_hosts_and_unready_plugins_report_the_reason() {
         )
         .await;
     assert_eq!(no_oidc.error_kind(), Some("oidc_unavailable"));
+}
+
+#[tokio::test]
+async fn auth_host_is_forwarded_to_the_identity_provider() {
+    let hydra = fake_hydra(Arc::new(Mutex::new(Vec::new()))).await;
+    let h = Harness::start(Some(hydra)).await;
+    let path = "/.well-known/openid-configuration?x=1";
+    let reply = h.get("auth.wonton.localhost", path, &[]).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.json()["path"], path);
 }
 
 #[tokio::test]

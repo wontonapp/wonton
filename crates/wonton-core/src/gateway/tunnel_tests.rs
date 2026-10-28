@@ -23,6 +23,7 @@ use wonton_tunnel::{
     LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
 };
 
+use super::isolation_tests::{OTHER, browser_cases};
 use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, echo_upstream, fake_hydra, owner};
 use super::{Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
@@ -185,17 +186,30 @@ impl Phone {
         .unwrap();
     }
 
-    /// 经本地代理发一个请求，`Host` 原样带到网关。每个请求一条新连接，测试之间不受连接池影响。
+    /// 经本地代理打开一个页面。
     async fn get(&self, host: &str, path: &str) -> (StatusCode, HeaderMap, String) {
-        let request = hyper::Request::builder()
-            .method(Method::GET)
+        self.send(Method::GET, host, path, &[("accept", "text/html")])
+            .await
+    }
+
+    /// 经本地代理发一个请求，`Host` 原样带到网关。每个请求一条新连接，测试之间不受连接池影响。
+    async fn send(
+        &self,
+        method: Method,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> (StatusCode, HeaderMap, String) {
+        let mut builder = hyper::Request::builder()
+            .method(method)
             .uri(format!("http://{}{path}", self.proxy.local_addr()))
             .header(header::HOST, format!("{host}:{PORT}"))
-            .header(header::ACCEPT, "text/html")
             .header(header::PROXY_AUTHORIZATION, &self.authorization)
-            .header(header::CONNECTION, "close")
-            .body(Body::empty())
-            .unwrap();
+            .header(header::CONNECTION, "close");
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        let request = builder.body(Body::empty()).unwrap();
         let response = self.http.send(request).await.unwrap();
         let status = response.status();
         let headers = response.headers().clone();
@@ -230,6 +244,30 @@ async fn paired_device_opens_plugins_without_any_gateway_session() {
         "隧道请求没有客户端 IP：{seen}"
     );
     assert_eq!(home.hits.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn cross_plugin_requests_do_not_carry_the_device_identity() {
+    let home = Home::start(None).await;
+    let device = SecretKey::generate();
+    home.register(&device).await;
+    let phone = Phone::start(device, &home).await;
+
+    // 隧道身份和 Cookie 一样随请求自动带上，所以按同一套规则只认本插件页面的请求和导航。
+    let origin = |host: &str| format!("http://{host}:{PORT}");
+    let cases = browser_cases(&origin(PLUGIN), &origin(OTHER));
+    for case in &cases {
+        let (status, headers, _) = phone
+            .send(case.method.clone(), PLUGIN, "/notes", &case.headers())
+            .await;
+        case.check(status, &headers);
+    }
+    let recognized = cases.iter().filter(|c| c.recognized).count();
+    assert_eq!(
+        home.hits.load(Ordering::SeqCst),
+        recognized,
+        "不认人的请求不得到达插件"
+    );
 }
 
 #[tokio::test]

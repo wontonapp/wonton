@@ -1,17 +1,20 @@
-//! 核心域名 `<base>` 上的路由。
+//! 核心域名 `<base>` 上的路由。改状态的请求只接受同源（`isolation::write_allowed`）。
 
 use std::sync::Arc;
 
 use axum::Extension;
-use axum::extract::{Form, Query, State};
+use axum::extract::{Form, Query, Request, State};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
-use hyper::HeaderMap;
+use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
-use super::session::{CORE_COOKIE, CORE_TTL, cookie, set_cookie};
-use super::{Gateway, TunnelPeer, api, devices, pages, same_origin_path, sso, with_cookie};
+use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
+use super::{
+    Gateway, TunnelPeer, api, devices, isolation, pages, same_origin_path, sso, with_cookie,
+};
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
@@ -35,9 +38,31 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route("/_wonton/api/devices/{id}", delete(devices::remove))
         .fallback(|| async {
-            pages::error(hyper::StatusCode::NOT_FOUND, "not_found", "没有这个页面")
+            pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面")
         })
+        .layer(middleware::from_fn_with_state(
+            gateway.clone(),
+            reject_cross_site_writes,
+        ))
         .with_state(gateway)
+}
+
+/// 插件网页和核心同站，能让浏览器带着核心会话向核心发表单或 `fetch`（比如替主人退出登录）。所以改状态的
+/// 请求只接受核心自己的页面发起的。
+async fn reject_cross_site_writes(
+    State(gateway): State<Arc<Gateway>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    if isolation::write_allowed(req.method(), req.headers(), &gateway.core_origin()) {
+        return next.run(req).await;
+    }
+    tracing::warn!(method = %req.method(), path = req.uri().path(), "拒绝核心域名上的跨站修改请求");
+    pages::error(
+        StatusCode::FORBIDDEN,
+        "cross_site",
+        "核心只接受自己页面发起的修改请求",
+    )
 }
 
 async fn home(
@@ -80,8 +105,8 @@ async fn login(State(gateway): State<Arc<Gateway>>, Form(form): Form<LoginForm>)
 }
 
 async fn logout(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    if let Some(sid) = cookie(&headers, CORE_COOKIE) {
-        gateway.sessions.revoke_core(&sid);
+    for sid in cookies(&headers, CORE_COOKIE) {
+        gateway.sessions.revoke_core(sid);
     }
     let expired = format!("{CORE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
     with_cookie(Redirect::to("/").into_response(), expired)

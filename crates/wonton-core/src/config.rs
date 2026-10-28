@@ -75,7 +75,8 @@ impl PublicUrls {
     }
 }
 
-/// 身份提供方（Ory Hydra）的内部地址：只有核心能访问，插件和浏览器都经网关。
+/// 身份提供方（Ory Hydra）的内部地址：只有核心能访问，插件和浏览器都经网关。两个地址都已规范化成
+/// `http://主机:端口`（见 [`http_authority`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OidcProviderConfig {
     pub admin_url: String,
@@ -137,8 +138,8 @@ impl Config {
         )?;
         let oidc = match (get("WONTON_OIDC_ADMIN_URL"), get("WONTON_OIDC_PUBLIC_URL")) {
             (Some(admin_url), Some(public_url)) => Some(OidcProviderConfig {
-                admin_url: admin_url.trim_end_matches('/').to_owned(),
-                public_url: public_url.trim_end_matches('/').to_owned(),
+                admin_url: provider_url("WONTON_OIDC_ADMIN_URL", &admin_url)?,
+                public_url: provider_url("WONTON_OIDC_PUBLIC_URL", &public_url)?,
             }),
             (None, None) => None,
             _ => {
@@ -192,6 +193,32 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
         name,
         message: message.to_owned(),
     }
+}
+
+/// 把身份提供方的内部地址规范化成 `http://主机:端口`，不合法时启动就失败。
+fn provider_url(name: &'static str, text: &str) -> Result<String, ConfigError> {
+    http_authority(text)
+        .map(|authority| format!("http://{authority}"))
+        .map_err(|message| ConfigError::Invalid { name, message })
+}
+
+/// `http://主机[:端口]` 里的 `主机:端口`（没写端口时是 80）。身份提供方和核心在同一个内部网络里，核心的
+/// HTTP 客户端不做 TLS；网关把 `auth.<base>` 的请求按原路径转发到公开端点，管理接口的路径也由核心拼上。
+/// 所以只接受 http，不能带路径、查询、片段和用户信息。错误信息里不回显地址，免得把密码写进日志。
+pub fn http_authority(url: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(url).map_err(|e| format!("不是合法的地址：{e}"))?;
+    if parsed.scheme() != "http" {
+        return Err("要用 http://：核心访问身份提供方不经 TLS".into());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("不能带用户名或密码".into());
+    }
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("只能是 http://主机[:端口]，不能带路径、查询或片段".into());
+    }
+    let host = parsed.host_str().ok_or("缺少主机名")?;
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    Ok(format!("{host}:{port}"))
 }
 
 fn parse<T: std::str::FromStr>(
@@ -286,5 +313,43 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn oidc_provider_urls_must_be_plain_http_origins() {
+        let with_public = |public_url: &str| {
+            config(&[
+                ("WONTON_DATA_DIR", "/d"),
+                ("WONTON_OIDC_ADMIN_URL", "http://hydra:4445/"),
+                ("WONTON_OIDC_PUBLIC_URL", public_url),
+            ])
+        };
+        let oidc = with_public("HTTP://Hydra:4444/").unwrap().oidc.unwrap();
+        assert_eq!(oidc.admin_url, "http://hydra:4445");
+        assert_eq!(oidc.public_url, "http://hydra:4444");
+        let oidc = with_public("http://[::1]").unwrap().oidc.unwrap();
+        assert_eq!(oidc.public_url, "http://[::1]:80");
+        for bad in [
+            "https://hydra:4444",
+            "http://hydra:4444/oidc",
+            "http://hydra:4444/?x=1",
+            "http://hydra:4444#top",
+            "http://user:secret@hydra:4444",
+            "hydra:4444",
+            "http://",
+        ] {
+            let error = with_public(bad).unwrap_err();
+            assert!(
+                matches!(
+                    &error,
+                    ConfigError::Invalid {
+                        name: "WONTON_OIDC_PUBLIC_URL",
+                        ..
+                    }
+                ),
+                "{bad}：{error}"
+            );
+            assert!(!error.to_string().contains("secret"), "{error}");
+        }
     }
 }

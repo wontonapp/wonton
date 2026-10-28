@@ -10,10 +10,15 @@
 //! （[`TunnelPeer`]），网关据此直接认出主人。局域网浏览器仍走核心会话加插件会话交接。
 //! 本地代理可能被同机其他 App 借用，所以设备一侧的本地代理要校验会话凭据（ADR-0004、#20）；
 //! 网关只在插件网页和 OIDC 登录、授权确认端点上接受隧道身份，管理 API 仍要主人令牌。
+//!
+//! 插件子域名彼此同站，也和核心同站：插件网页能让浏览器带着 Cookie 或隧道身份向别处发请求。浏览器里的
+//! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
+//! 自己的子域名。
 
 mod api;
 mod core_routes;
 mod devices;
+mod isolation;
 mod pages;
 mod proxy;
 mod session;
@@ -30,7 +35,7 @@ use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
 
-use crate::config::{HostKind, Owner, PublicUrls};
+use crate::config::{self, HostKind, Owner, PublicUrls};
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
 use crate::plugin::{PluginManager, PluginStatus};
@@ -59,6 +64,8 @@ pub struct Gateway {
 }
 
 impl Gateway {
+    /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
+    /// `http://主机:端口`。
     pub fn new(
         public: PublicUrls,
         owner: Owner,
@@ -70,10 +77,8 @@ impl Gateway {
     ) -> Self {
         let (hydra, hydra_public) = match hydra {
             Some((hydra, public_url)) => {
-                let authority = public_url
-                    .trim_start_matches("http://")
-                    .trim_end_matches('/')
-                    .to_owned();
+                let authority = config::http_authority(&public_url)
+                    .unwrap_or_else(|e| panic!("身份提供方的公开地址没有经过配置层校验：{e}"));
                 (Some(hydra), Some(authority))
             }
             None => (None, None),
@@ -108,9 +113,18 @@ impl Gateway {
     /// 核心域名上的当前用户（M0 只有主人）：经隧道的已配对设备，或者局域网浏览器的核心会话。
     fn core_user(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) -> Option<String> {
         self.device_user(peer).or_else(|| {
-            let sid = session::cookie(headers, CORE_COOKIE)?;
-            self.sessions.core_user(&sid)
+            session::cookies(headers, CORE_COOKIE).find_map(|sid| self.sessions.core_user(sid))
         })
+    }
+
+    /// 插件子域名上的当前用户：经隧道的已配对设备，或者这个子域名的插件会话。只在
+    /// [`isolation::credentials_allowed`] 放行的请求上调用。
+    fn plugin_user(&self, host: &str, req: &Request) -> Option<String> {
+        self.device_user(req.extensions().get().copied())
+            .or_else(|| {
+                session::cookies(req.headers(), APP_COOKIE)
+                    .find_map(|sid| self.sessions.app_user(sid, host))
+            })
     }
 
     fn secure_cookies(&self) -> bool {
@@ -181,7 +195,8 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
     proxy::forward(&gateway.http, target, req, fwd).await
 }
 
-/// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。然后转发给插件。
+/// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
+/// 页面发起的请求和导航。然后转发给插件，并过滤插件响应里的 `Set-Cookie`。
 async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response {
     let host = gateway.public.plugin_host(slug);
     let Some(route) = gateway.plugins.route(slug) else {
@@ -194,14 +209,10 @@ async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response
     if req.uri().path() == "/_wonton/session" {
         return sso::redeem(gateway, &host, &req);
     }
-    let user = gateway
-        .device_user(req.extensions().get().copied())
-        .or_else(|| {
-            let sid = session::cookie(req.headers(), APP_COOKIE)?;
-            gateway.sessions.app_user(&sid, &host)
-        });
-    if user.is_none() {
-        return unauthenticated(gateway, &host, &req);
+    let origin = gateway.public.origin(&host);
+    let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
+    if !credentials || gateway.plugin_user(&host, &req).is_none() {
+        return unauthenticated(gateway, &host, &req, credentials);
     }
     let upstream = match (&route.status, &route.upstream) {
         (PluginStatus::Running, Some(upstream)) => upstream.clone(),
@@ -224,11 +235,21 @@ async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response
         authority: &upstream,
         name: route.id.as_str(),
     };
-    proxy::forward(&gateway.http, target, req, fwd).await
+    let mut response = proxy::forward(&gateway.http, target, req, fwd).await;
+    isolation::sanitize_set_cookies(response.headers_mut());
+    response
 }
 
-/// 未登录：浏览器的页面请求跳到核心换取插件会话，其余请求（XHR、API）直接 401。
-fn unauthenticated(gateway: &Gateway, host: &str, req: &Request) -> Response {
+/// 未登录：浏览器的页面请求跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
+/// 跨站请求换到会话也不认，同样 401。
+fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bool) -> Response {
+    if !credentials {
+        return pages::error(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "网关不认其他网页发来的跨站请求的登录状态，请从插件自己的页面操作",
+        );
+    }
     let wants_html = req
         .headers()
         .get(ACCEPT)
@@ -265,6 +286,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
     response
 }
 
+#[cfg(test)]
+mod isolation_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

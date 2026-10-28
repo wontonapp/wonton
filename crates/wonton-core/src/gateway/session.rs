@@ -18,6 +18,8 @@ use crate::secret::random_token;
 pub const CORE_COOKIE: &str = "wonton_session";
 pub const APP_COOKIE: &str = "wonton_app";
 
+const RESERVED_PREFIX: &[u8] = b"wonton_";
+
 pub const CORE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 pub const APP_TTL: Duration = Duration::from_secs(12 * 3600);
 const CODE_TTL: Duration = Duration::from_secs(60);
@@ -121,35 +123,55 @@ impl SessionStore {
     }
 }
 
-/// 读取请求里某个 Cookie 的值。
-pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+/// `wonton_` 开头的 Cookie 名归网关：插件设置不了（见 `isolation::sanitize_set_cookies`），也收不到。
+/// 不分大小写，免得各处比较方式不一致。
+pub fn is_reserved_cookie(name: &[u8]) -> bool {
+    name.get(..RESERVED_PREFIX.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(RESERVED_PREFIX))
+}
+
+/// 请求 `Cookie` 头里的每一对 `名=值`。按字节解析：插件可以设置非 ASCII 的 Cookie，网关不能因此读不出
+/// 自己的会话。
+fn cookie_pairs(headers: &HeaderMap) -> impl Iterator<Item = (&[u8], &[u8])> {
     headers
         .get_all(COOKIE)
         .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(';'))
-        .filter_map(|pair| pair.trim().split_once('='))
-        .find(|(k, _)| *k == name)
-        .map(|(_, v)| v.to_owned())
+        .flat_map(|v| v.as_bytes().split(|&b| b == b';'))
+        .filter_map(|pair| {
+            let pair = pair.trim_ascii();
+            let at = pair.iter().position(|&b| b == b'=')?;
+            Some((pair[..at].trim_ascii(), pair[at + 1..].trim_ascii()))
+        })
 }
 
-/// 从转发给插件的请求里去掉网关自己的 Cookie，插件永远拿不到网关会话。
-pub fn strip_cookies(headers: &mut HeaderMap, names: &[&str]) {
-    let kept: Vec<String> = headers
+/// 请求里名为 `name` 的每一个 Cookie 的值。同名的可能不止一个：插件页面的脚本能给父域写同名 Cookie，
+/// 还能用更长的路径排到真正的会话前面，所以调用方要逐个试，不能只看第一个。
+pub fn cookies<'a>(headers: &'a HeaderMap, name: &'a str) -> impl Iterator<Item = &'a str> {
+    cookie_pairs(headers)
+        .filter(move |(key, _)| *key == name.as_bytes())
+        .filter_map(|(_, value)| std::str::from_utf8(value).ok())
+}
+
+/// 从转发出去的请求里去掉名字满足 `strip` 的 Cookie，其余的原样保留。
+pub fn strip_cookies(headers: &mut HeaderMap, strip: impl Fn(&[u8]) -> bool) {
+    let mut kept = Vec::new();
+    let pairs = headers
         .get_all(COOKIE)
         .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(';'))
-        .map(str::trim)
-        .filter(|pair| {
-            let key = pair.split_once('=').map_or(*pair, |(k, _)| k);
-            !pair.is_empty() && !names.contains(&key)
-        })
-        .map(str::to_owned)
-        .collect();
+        .flat_map(|v| v.as_bytes().split(|&b| b == b';'));
+    for pair in pairs.map(<[u8]>::trim_ascii) {
+        let name = pair.split(|&b| b == b'=').next().unwrap_or_default();
+        if pair.is_empty() || strip(name.trim_ascii()) {
+            continue;
+        }
+        if !kept.is_empty() {
+            kept.extend_from_slice(b"; ");
+        }
+        kept.extend_from_slice(pair);
+    }
     headers.remove(COOKIE);
     if !kept.is_empty()
-        && let Ok(value) = HeaderValue::from_str(&kept.join("; "))
+        && let Ok(value) = HeaderValue::from_bytes(&kept)
     {
         headers.insert(COOKIE, value);
     }
@@ -202,16 +224,27 @@ mod tests {
             COOKIE,
             "grafana_session=g; wonton_app=secret".parse().unwrap(),
         );
-        headers.append(COOKIE, "wonton_session=core; theme=dark".parse().unwrap());
-        assert_eq!(cookie(&headers, "wonton_app").as_deref(), Some("secret"));
-        strip_cookies(&mut headers, &[APP_COOKIE, CORE_COOKIE]);
+        headers.append(
+            COOKIE,
+            HeaderValue::from_bytes(
+                b"wonton_session=core; name=\xe5\xbc\xa0; Wonton_X=1; wonton_app=2",
+            )
+            .unwrap(),
+        );
+        let apps: Vec<&str> = cookies(&headers, APP_COOKIE).collect();
         assert_eq!(
-            headers.get(COOKIE).unwrap(),
-            "grafana_session=g; theme=dark"
+            apps,
+            ["secret", "2"],
+            "同名的每一个都要读出来，非 ASCII 的 Cookie 不影响"
+        );
+        strip_cookies(&mut headers, is_reserved_cookie);
+        assert_eq!(
+            headers.get(COOKIE).unwrap().as_bytes(),
+            b"grafana_session=g; name=\xe5\xbc\xa0"
         );
         let mut only_ours = HeaderMap::new();
         only_ours.insert(COOKIE, "wonton_app=x".parse().unwrap());
-        strip_cookies(&mut only_ours, &[APP_COOKIE]);
+        strip_cookies(&mut only_ours, is_reserved_cookie);
         assert!(only_ours.get(COOKIE).is_none());
     }
 }
