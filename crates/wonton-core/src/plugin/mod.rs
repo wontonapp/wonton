@@ -3,6 +3,7 @@
 pub mod compose;
 pub mod docker;
 pub mod health;
+pub mod hostdir;
 pub mod interpolate;
 pub mod lifecycle;
 pub mod manager;

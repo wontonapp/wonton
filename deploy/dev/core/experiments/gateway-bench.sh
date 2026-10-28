@@ -57,7 +57,7 @@ http:
     whoami:
       loadBalancer:
         servers:
-          - url: http://wonton-app-whoami-web:8000
+          - url: http://wonton-app-whoami--web:8000
 EOF
 docker run -d --name wonton-bench-traefik --network "$network" --add-host "$domain:$core_ip" \
   -v "$workdir/dynamic.yml:/etc/traefik/dynamic.yml:ro" traefik:v3.6.25 \
@@ -70,7 +70,7 @@ bench() {
   docker run --rm --network "$network" "$oha" --no-tui --output-format json \
     -z "$duration" -c "$connections" "$@" "$url" >"$workdir/$name.json"
 }
-bench direct "http://wonton-app-whoami-web:8000/"
+bench direct "http://wonton-app-whoami--web:8000/"
 bench core "http://$core:$port/" -H "Host: $plugin_host" -H "Cookie: wonton_app=$session"
 bench traefik "http://wonton-bench-traefik/" -H "Host: app-whoami.$domain"
 

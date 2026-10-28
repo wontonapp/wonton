@@ -2,8 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bollard::models::ContainerStateStatusEnum;
@@ -11,6 +10,7 @@ use tokio::time::Instant;
 
 use super::compose::DependCondition;
 use super::health::{self, Target};
+use super::hostdir;
 use super::manager::{InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::package::PluginPackage;
@@ -196,10 +196,15 @@ impl PluginManager {
                 _ => None,
             })
             .collect::<BTreeMap<_, _>>();
-        for path in shares.values() {
-            ensure_owned_dir(path, self.cfg.puid, self.cfg.pgid).map_err(|e| {
-                InstallError::Storage(format!("准备共享文件夹 {} 失败：{e}", path.display()))
+        if !shares.is_empty() {
+            fs::create_dir_all(&self.cfg.shares_dir).map_err(|e| {
+                let dir = self.cfg.shares_dir.display();
+                InstallError::Storage(format!("创建共享文件夹目录 {dir} 失败：{e}"))
             })?;
+        }
+        for path in shares.values() {
+            hostdir::ensure_owned_dir(path, self.cfg.puid, self.cfg.pgid)
+                .map_err(|e| InstallError::Storage(format!("准备共享文件夹失败：{e}")))?;
         }
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
@@ -215,6 +220,7 @@ impl PluginManager {
     }
 
     /// 绑定挂载的源目录由核心预先创建并交给 PUID:PGID，否则 Docker 会以 root 身份创建。
+    /// 逐级检查、不跟随软链接：应用数据目录里可能有上次安装的插件留下的软链接。
     fn prepare_dirs(
         &self,
         ctx: &InstallContext,
@@ -224,27 +230,15 @@ impl PluginManager {
         if dirs.is_empty() {
             return Ok(());
         }
-        if !ctx.app_data.exists() {
+        let storage =
+            |e: &dyn std::fmt::Display| InstallError::Storage(format!("准备应用数据目录失败：{e}"));
+        fs::create_dir_all(&self.cfg.apps_dir).map_err(|e| storage(&e))?;
+        if fs::symlink_metadata(&ctx.app_data)
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        {
             undo.app_dir_created = Some(ctx.app_data.clone());
         }
-        for dir in dirs {
-            let mut current = ctx.app_data.clone();
-            let mut chain = vec![current.clone()];
-            for part in dir
-                .strip_prefix(&ctx.app_data)
-                .unwrap_or(Path::new(""))
-                .components()
-            {
-                current.push(part);
-                chain.push(current.clone());
-            }
-            for path in chain {
-                ensure_owned_dir(&path, ctx.puid, ctx.pgid).map_err(|e| {
-                    InstallError::Storage(format!("准备应用数据目录 {} 失败：{e}", path.display()))
-                })?;
-            }
-        }
-        Ok(())
+        hostdir::prepare(&ctx.app_data, dirs, ctx.puid, ctx.pgid).map_err(|e| storage(&e))
     }
 
     async fn attach_core(
@@ -508,16 +502,6 @@ fn client_spec(manifest: &Manifest, ctx: &InstallContext, secret: &str) -> Clien
     }
 }
 
-/// 确保目录存在且属于 uid:gid；属主已经正确时不调用 chown（核心不以 root 运行时也能工作）。
-fn ensure_owned_dir(path: &Path, uid: u32, gid: u32) -> std::io::Result<()> {
-    fs::create_dir_all(path)?;
-    let meta = fs::metadata(path)?;
-    if meta.uid() == uid && meta.gid() == gid {
-        return Ok(());
-    }
-    std::os::unix::fs::chown(path, Some(uid), Some(gid))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -530,16 +514,16 @@ mod tests {
 
     #[test]
     fn named_volumes_are_created_reused_or_refused_by_owner() {
-        let plugin = PluginId::parse("app.foo").unwrap();
+        let plugin = PluginId::parse("app.foo-bar").unwrap();
         let action = |labels: Option<HashMap<String, String>>| {
-            volume_action("wonton-app-foo-bar-data", labels.as_ref(), &plugin)
+            volume_action("wonton-app-foo-bar--data", labels.as_ref(), &plugin)
         };
         assert_eq!(action(None).unwrap(), VolumeAction::Create);
         assert_eq!(
-            action(Some(owned_by(Some("app.foo")))).unwrap(),
+            action(Some(owned_by(Some("app.foo-bar")))).unwrap(),
             VolumeAction::Reuse
         );
-        // app.foo.bar 的 data 卷和 app.foo 的 bar-data 卷同名：不能挂上别的插件的数据。
+        // app.foo.bar 和 app.foo-bar 的 slug 相同，它卸载时保留的 data 卷同名：不能挂上别的插件的数据。
         let other = action(Some(owned_by(Some("app.foo.bar")))).unwrap_err();
         assert_eq!(other.kind(), "conflict", "{other}");
         let unlabeled = action(Some(owned_by(None))).unwrap_err();

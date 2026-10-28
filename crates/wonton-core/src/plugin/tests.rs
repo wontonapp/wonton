@@ -5,7 +5,7 @@ use bollard::models::{MountType, RestartPolicyNameEnum};
 use super::compose::DependCondition;
 use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
-use super::render::dry_run;
+use super::render::{RenderError, dry_run};
 
 const GRAFANA: &str = include_str!("../../../../plugins/examples/grafana/docker-compose.yml");
 const WHOAMI: &str = include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
@@ -39,7 +39,7 @@ fn grafana_example_injects_oidc_and_app_url() {
     let plan = dry_run(&pkg).unwrap();
     assert_eq!(plan.network, "wonton-app-grafana");
     let grafana = &plan.containers[0];
-    assert_eq!(grafana.name, "wonton-app-grafana-grafana");
+    assert_eq!(grafana.name, "wonton-app-grafana--grafana");
     let env = env_of(grafana);
     for expected in [
         "GF_SERVER_ROOT_URL=http://app-grafana.wonton.invalid/",
@@ -186,6 +186,102 @@ fn host_paths_are_confined_to_app_data_and_granted_shares() {
     assert!(render_err(&undeclared).contains("WONTON_SHARE_MUSIC"));
 }
 
+/// 两个服务，各自挂载给定的卷。
+fn two_services(web: &str, worker: &str) -> PluginPackage {
+    let yaml = package(
+        &format!(
+            "  web:\n    image: nginx\n    volumes: [{web}]\n  \
+             worker:\n    image: nginx\n    volumes: [{worker}]"
+        ),
+        "  permissions: []",
+    );
+    PluginPackage::parse(&yaml).unwrap()
+}
+
+#[test]
+fn bind_mounts_of_one_plugin_must_not_nest() {
+    // #20 的复现：能写外层目录的容器把内层的源换成指向 / 的软链接，重启后就挂上了宿主根目录。
+    let nested = [
+        (
+            "'${WONTON_APP_DATA}:/a', '${WONTON_APP_DATA}/x:/x'",
+            "",
+            "web",
+        ),
+        (
+            "'${WONTON_APP_DATA}/./:/a', '${WONTON_APP_DATA}//x/:/x'",
+            "",
+            "web",
+        ),
+        (
+            "'${WONTON_APP_DATA}/data:/data'",
+            "'${WONTON_APP_DATA}/data/x:/x:ro'",
+            "worker",
+        ),
+    ];
+    for (web, worker, inner) in nested {
+        let err = dry_run(&two_services(web, worker)).unwrap_err();
+        assert!(
+            matches!(&err, RenderError::Service { service, .. } if service == inner),
+            "{web} / {worker}: {err}"
+        );
+    }
+    // 同一个目录挂进多个服务、并列的目录（包括名字是前缀的）都可以。
+    let shared = two_services(
+        "'${WONTON_APP_DATA}/data:/data', '${WONTON_APP_DATA}/data2:/data2'",
+        "'${WONTON_APP_DATA}/data/:/data:ro'",
+    );
+    let plan = dry_run(&shared).unwrap();
+    let app_data = std::path::Path::new("/wonton-dry-run/apps/app-test");
+    assert_eq!(plan.dirs, [app_data.join("data"), app_data.join("data2")]);
+}
+
+#[test]
+fn shares_are_mounted_only_at_their_root() {
+    // 共享文件夹由多个插件共用，有写权限的插件能把其中的子目录换成软链接。
+    let share = |volume: &str| {
+        let yaml = package(
+            &format!("  web:\n    image: nginx\n    volumes: ['{volume}']"),
+            "  permissions: ['storage.share.photos:write']",
+        );
+        dry_run(&PluginPackage::parse(&yaml).unwrap())
+    };
+    for volume in [
+        "${WONTON_SHARE_PHOTOS}/2024:/photos",
+        "${WONTON_SHARE_PHOTOS}/a/b:/photos:ro",
+    ] {
+        let err = share(volume).unwrap_err();
+        assert!(
+            matches!(err, RenderError::Service { .. }),
+            "{volume}: {err}"
+        );
+    }
+    let plan = share("${WONTON_SHARE_PHOTOS}/:/photos").unwrap();
+    let host = plan.containers[0].body.host_config.as_ref().unwrap();
+    let mount = &host.mounts.as_ref().unwrap()[0];
+    assert_eq!(
+        mount.source.as_deref(),
+        Some("/wonton-dry-run/shares/photos")
+    );
+}
+
+#[test]
+fn container_and_volume_names_differ_across_plugins() {
+    // 只用一个 `-` 连接时，app.foo 的 bar-web、bar-data 和 app.foo.bar 的 web、data 重名。
+    let plan = |id: &str, service: &str, volume: &str| {
+        let services = format!("  {service}:\n    image: nginx\n    volumes: ['{volume}:/data']");
+        let yaml = format!(
+            "volumes:\n  {volume}: {{}}\n{}",
+            package(&services, "  permissions: []")
+        )
+        .replace("id: app.test", &format!("id: {id}"));
+        dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap()
+    };
+    let foo = plan("app.foo", "bar-web", "bar-data");
+    let foo_bar = plan("app.foo.bar", "web", "data");
+    assert_ne!(foo.containers[0].name, foo_bar.containers[0].name);
+    assert_ne!(foo.volumes, foo_bar.volumes);
+}
+
 #[test]
 fn oidc_variables_exist_only_for_sso_plugins() {
     let yaml = package(
@@ -214,11 +310,11 @@ fn services_start_in_dependency_order_and_cycles_fail() {
     assert_eq!(
         plan.containers[1].depends_on,
         [(
-            "wonton-app-test-db".to_owned(),
+            "wonton-app-test--db".to_owned(),
             DependCondition::ServiceHealthy
         )]
     );
-    assert_eq!(plan.volumes, ["wonton-app-test-pg"]);
+    assert_eq!(plan.volumes, ["wonton-app-test--pg"]);
 
     let cycle = package(
         "  a:\n    image: a\n    depends_on: [b]\n  b:\n    image: b\n    depends_on: [a]",

@@ -83,7 +83,7 @@ pub struct Deployment {
     pub labels: HashMap<String, String>,
     /// 要创建的 Docker 命名卷。
     pub volumes: Vec<String>,
-    /// 要预先创建并交给 PUID:PGID 的宿主目录（绑定挂载的源）。
+    /// 要预先创建并交给 PUID:PGID 的宿主目录（应用数据目录下的绑定挂载源）。
     pub dirs: Vec<PathBuf>,
     /// 按依赖排好序的容器。
     pub containers: Vec<ContainerPlan>,
@@ -173,7 +173,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         .filter(|(name, _)| !share_writable(manifest, name))
         .map(|(_, path)| path.clone())
         .collect();
-    let mut dirs = Vec::new();
+    let mut binds = Vec::new();
     let mut containers = Vec::new();
     for name in start_order(&services)? {
         let service = &services[&name];
@@ -183,11 +183,17 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
             named: package.named_volumes(),
             service: &name,
         }
-        .build(&service.volumes, &mut dirs)?;
+        .build(&service.volumes, &mut binds)?;
         containers.push(container_plan(
             &name, service, mounts, ctx, &network, &labels,
         )?);
     }
+    check_not_nested(&binds)?;
+    let mut dirs: Vec<PathBuf> = binds
+        .into_iter()
+        .map(|(_, path)| path)
+        .filter(|path| path.starts_with(&ctx.app_data))
+        .collect();
     dirs.sort();
     dirs.dedup();
     let volumes = package
@@ -210,12 +216,38 @@ fn share_writable(manifest: &Manifest, share: &str) -> bool {
     )
 }
 
+/// 容器名 `wonton-<slug>--<服务名>`。slug 由单个 `-` 连接的小写字母数字段组成，不含 `--`，也不以 `-`
+/// 结尾，所以第一个 `--` 就是分隔符，不同插件的容器不会重名。只用一个 `-` 时会重名：`app.foo` 的服务
+/// `bar-web` 和 `app.foo.bar` 的服务 `web` 都是 `wonton-app-foo-bar-web`。
 pub fn container_name(slug: &str, service: &str) -> String {
-    format!("wonton-{slug}-{service}")
+    format!("wonton-{slug}--{service}")
 }
 
+/// 命名卷 `wonton-<slug>--<卷名>`，理由同容器名。
 pub fn volume_name(slug: &str, volume: &str) -> String {
-    format!("wonton-{slug}-{volume}")
+    format!("wonton-{slug}--{volume}")
+}
+
+/// 同一插件的绑定挂载源不能嵌套：能写外层目录的容器可以把内层的源换成软链接，Docker 下次启动容器时
+/// 跟随它，就把宿主上的任意目录挂了进来。同一个目录挂进多个服务没有问题。
+fn check_not_nested(binds: &[(String, PathBuf)]) -> Result<(), RenderError> {
+    for (service, inner) in binds {
+        let outer = binds
+            .iter()
+            .find(|(_, outer)| outer != inner && inner.starts_with(outer));
+        if let Some((outer_service, outer)) = outer {
+            return Err(service_err(
+                service,
+                format!(
+                    "宿主路径 `{}` 在服务 `{outer_service}` 挂载的 `{}` 里面；同一插件的绑定挂载不能嵌套\
+                     （容器能把内层目录换成软链接，逃出应用数据目录），请改用并列的子目录",
+                    inner.display(),
+                    outer.display()
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// 按 `depends_on` 拓扑排序；同层按名字排序，保证结果确定。
@@ -449,10 +481,11 @@ struct Mounts<'a> {
 }
 
 impl Mounts<'_> {
+    /// `binds` 收集每个绑定挂载的（服务名，宿主路径），供跨服务的嵌套检查。
     fn build(
         &self,
         entries: &[VolumeEntry],
-        dirs: &mut Vec<PathBuf>,
+        binds: &mut Vec<(String, PathBuf)>,
     ) -> Result<Vec<Mount>, RenderError> {
         entries
             .iter()
@@ -461,7 +494,7 @@ impl Mounts<'_> {
                     VolumeEntry::Long(long) => long.clone(),
                     VolumeEntry::Short(text) => self.parse_short(text)?,
                 };
-                self.mount(long, dirs)
+                self.mount(long, binds)
             })
             .collect()
     }
@@ -499,7 +532,11 @@ impl Mounts<'_> {
         })
     }
 
-    fn mount(&self, volume: LongVolume, dirs: &mut Vec<PathBuf>) -> Result<Mount, RenderError> {
+    fn mount(
+        &self,
+        volume: LongVolume,
+        binds: &mut Vec<(String, PathBuf)>,
+    ) -> Result<Mount, RenderError> {
         if !volume.target.starts_with('/') {
             return Err(self.err(format!("挂载目标 `{}` 必须是绝对路径", volume.target)));
         }
@@ -514,11 +551,8 @@ impl Mounts<'_> {
             }
             (VolumeType::Bind, None) => return Err(self.err("绑定挂载缺少 source")),
             (VolumeType::Bind, Some(path)) => {
-                let path = PathBuf::from(path);
-                self.check_bind(&path, volume.read_only)?;
-                if path.starts_with(&self.ctx.app_data) {
-                    dirs.push(path.clone());
-                }
+                let path = self.check_bind(&path, volume.read_only)?;
+                binds.push((self.service.to_owned(), path.clone()));
                 Some(path.display().to_string())
             }
         };
@@ -536,28 +570,37 @@ impl Mounts<'_> {
         })
     }
 
-    /// 宿主路径只能落在应用数据目录或已授权的共享文件夹里；只读共享必须以只读挂载。
-    fn check_bind(&self, path: &Path, read_only: bool) -> Result<(), RenderError> {
-        if path.components().any(|c| matches!(c, Component::ParentDir)) {
-            return Err(self.err(format!("宿主路径 `{}` 不能包含 ..", path.display())));
+    /// 宿主路径只能是应用数据目录（或其子目录）或已授权共享文件夹的根目录；只读共享必须以只读挂载。
+    /// 返回去掉 `.`、重复的 `/` 和末尾 `/` 之后的路径。
+    fn check_bind(&self, raw: &str, read_only: bool) -> Result<PathBuf, RenderError> {
+        let raw = Path::new(raw);
+        if raw.components().any(|c| matches!(c, Component::ParentDir)) {
+            return Err(self.err(format!("宿主路径 `{}` 不能包含 ..", raw.display())));
         }
+        let path: PathBuf = raw.components().collect();
         if path.starts_with(&self.ctx.app_data) {
-            return Ok(());
+            return Ok(path);
         }
-        let share = self.ctx.shares.values().find(|root| path.starts_with(root));
-        match share {
-            Some(root) if self.read_only_shares.contains(root) && !read_only => {
-                Err(self.err(format!(
-                    "共享文件夹 `{}` 只授权了读，必须以 :ro 挂载",
-                    root.display()
-                )))
-            }
-            Some(_) => Ok(()),
-            None => Err(self.err(format!(
+        let Some(root) = self.ctx.shares.values().find(|root| path.starts_with(root)) else {
+            return Err(self.err(format!(
                 "宿主路径 `{}` 不在应用数据目录或已授权的共享文件夹里",
                 path.display()
-            ))),
+            )));
+        };
+        // 共享文件夹由多个插件共用，有写权限的插件能把其中的子目录换成软链接。
+        if path != *root {
+            return Err(self.err(format!(
+                "共享文件夹只能整个挂载，不能只挂其中的 `{}`",
+                path.display()
+            )));
         }
+        if self.read_only_shares.contains(root) && !read_only {
+            return Err(self.err(format!(
+                "共享文件夹 `{}` 只授权了读，必须以 :ro 挂载",
+                root.display()
+            )));
+        }
+        Ok(path)
     }
 
     fn err(&self, message: impl Into<String>) -> RenderError {

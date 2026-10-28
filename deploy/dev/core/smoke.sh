@@ -101,13 +101,13 @@ expect "网页地址" "$(json url <<<"$installed")" "$grafana_url"
 
 step "隔离"
 expect "插件容器不向宿主暴露端口" \
-  "$(docker inspect -f '{{len .HostConfig.PortBindings}}' wonton-app-grafana-grafana)" 0
+  "$(docker inspect -f '{{len .HostConfig.PortBindings}}' wonton-app-grafana--grafana)" 0
 expect "插件容器只在自己的网络里" \
-  "$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' wonton-app-grafana-grafana)" "wonton-app-grafana "
+  "$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' wonton-app-grafana--grafana)" "wonton-app-grafana "
 aliases="$(docker inspect -f '{{json (index .NetworkSettings.Networks "wonton-app-grafana").Aliases}}' "$core")"
 [[ "$aliases" == *"\"auth.$WONTON_DEV_DOMAIN\""* ]] || fail "核心没有以 auth.$WONTON_DEV_DOMAIN 加入插件网络：$aliases"
 ok "核心加入插件网络，别名 auth.$WONTON_DEV_DOMAIN（插件经它访问身份提供方）"
-if docker exec wonton-app-grafana-grafana wget -q -T 3 -O /dev/null http://hydra:4445/health/ready 2>/dev/null; then
+if docker exec wonton-app-grafana--grafana wget -q -T 3 -O /dev/null http://hydra:4445/health/ready 2>/dev/null; then
   fail "插件能访问身份提供方的管理端口"
 fi
 ok "插件访问不到身份提供方的管理端口"
@@ -160,7 +160,7 @@ step "卸载干净"
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))
-expect "删除了容器（${uninstall_seconds}s）" "$(json containers <<<"$report")" '["wonton-app-grafana-grafana"]'
+expect "删除了容器（${uninstall_seconds}s）" "$(json containers <<<"$report")" '["wonton-app-grafana--grafana"]'
 expect "删除了插件网络" "$(json networks <<<"$report")" '["wonton-app-grafana"]'
 expect "删除了 OIDC 客户端" "$(json oidc_client_removed <<<"$report")" true
 expect "删除了应用数据" "$(json data_removed <<<"$report")" true
