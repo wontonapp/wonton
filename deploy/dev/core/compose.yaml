@@ -1,5 +1,5 @@
-# Wonton 本地开发用的核心和身份提供方（Ory Hydra）。用 dev.sh 起停：它准备好数据目录和
-# Hydra 的系统密钥，再把下面引用的变量传进来。
+# Wonton 本地开发用的核心、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。用 dev.sh 起停：它准备好
+# 数据目录、Hydra 的系统密钥和核心签发 Matrix 登录用的密钥，再把下面引用的变量传进来。
 # 项目名同时用作核心的容器名；冒烟脚本用另一个名字，和开发环境互不干扰。
 name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
 
@@ -22,6 +22,10 @@ services:
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444
+      # 核心持有 Matrix 登录的签发私钥，并用注册共享密钥注册自己的管理账号（ADR-0009）。
+      WONTON_MATRIX_URL: http://tuwunel:8008
+      WONTON_MATRIX_JWT_KEY: ${WONTON_DEV_MATRIX_JWT_KEY:?请用 deploy/dev/core/dev.sh up 启动}
+      WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_PUID: ${WONTON_DEV_PUID:-1000}
       WONTON_PGID: ${WONTON_DEV_PGID:-1000}
       TZ: ${TZ:-UTC}
@@ -39,6 +43,8 @@ services:
     networks: [core]
     depends_on:
       hydra:
+        condition: service_healthy
+      tuwunel:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wonton-core", "healthcheck"]
@@ -84,8 +90,48 @@ services:
       start_period: 1m
       start_interval: 1s
 
+  # Matrix 服务器，配置和 deploy/dev/matrix/tuwunel.toml 一致，这里全用环境变量给出：DOCKER_HOST 指向远端
+  # 主机时，本机的配置文件挂不进去。只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）。
+  tuwunel:
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
+    restart: unless-stopped
+    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
+    stop_grace_period: 5m
+    environment:
+      TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
+      TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
+      TUWUNEL_ADDRESS: 0.0.0.0
+      TUWUNEL_PORT: 8008
+      # 家里服务器默认不联邦（ADR-0003）。
+      TUWUNEL_ALLOW_FEDERATION: "false"
+      TUWUNEL_TRUSTED_SERVERS: "[]"
+      # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
+      TUWUNEL_ALLOW_REGISTRATION: "false"
+      TUWUNEL_LOGIN_WITH_PASSWORD: "false"
+      TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
+      # 核心持有 Ed25519 私钥，Tuwunel 只拿公钥验签；令牌必须带 exp 和对应的签发方、接收方。
+      TUWUNEL_JWT__ENABLE: "true"
+      TUWUNEL_JWT__FORMAT: EDDSA
+      TUWUNEL_JWT__ALGORITHM: EdDSA
+      TUWUNEL_JWT__REQUIRE_EXP: "true"
+      TUWUNEL_JWT__ISSUER: '["wonton-core"]'
+      TUWUNEL_JWT__AUDIENCE: '["tuwunel"]'
+      TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
+      # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
+      TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+    volumes:
+      - tuwunel:/var/lib/tuwunel
+    networks: [core]
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5m
+      start_interval: 1s
+
 networks:
   core:
 
 volumes:
   hydra:
+  tuwunel:

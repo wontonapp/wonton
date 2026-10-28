@@ -6,8 +6,8 @@
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
 //!
 //! 登录令牌能换出主人的 Matrix 账号，所以接口只认隧道身份（局域网浏览器的核心会话不行），用 `POST` 让核心
-//! 域名上的跨站修改拦截对它生效，也不发 CORS 头，插件网页读不到响应。核心还没接入 Tuwunel（实现计划第 8
-//! 项）时两个入口都如实报 `matrix_unavailable`。
+//! 域名上的跨站修改拦截对它生效，也不发 CORS 头，插件网页读不到响应。核心没有接 Tuwunel 时两个入口都如实报
+//! `matrix_unavailable`。
 
 use std::sync::Arc;
 
@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
-use super::{Gateway, TunnelPeer, pages};
+use super::{Gateway, TunnelPeer, client_addr, pages, proxy};
+use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
 
 /// 登录令牌接口的响应。客户端在 `expires_in` 秒内用它调一次 `POST {homeserver_url}/_matrix/client/v3/login`
 /// （`{"type": login_type, "token": token}`）；设备自己登录，设备 ID 和刷新令牌都归设备。
@@ -55,11 +56,24 @@ pub async fn login_token(
             "只给经隧道接入的已配对设备签发 Matrix 登录令牌",
         );
     }
-    error_response(
-        StatusCode::SERVICE_UNAVAILABLE,
-        KIND_UNAVAILABLE,
-        UNAVAILABLE,
-    )
+    let Some(matrix) = &gateway.matrix else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            KIND_UNAVAILABLE,
+            UNAVAILABLE,
+        );
+    };
+    // M1 的已配对设备都属于主人。
+    let localpart = &gateway.owner.username;
+    Json(LoginToken {
+        homeserver_url: gateway.public.origin(&gateway.public.matrix_host()),
+        server_name: matrix.server_name().to_owned(),
+        user_id: matrix.user_id(localpart),
+        login_type: JWT_LOGIN_TYPE.to_owned(),
+        token: matrix.login_token(localpart),
+        expires_in: LOGIN_TOKEN_TTL_SECS,
+    })
+    .into_response()
 }
 
 /// `matrix.<base>`：只有已配对设备、只有客户端接口。错误按 Matrix 的格式给出，客户端的 SDK 能照常处理；
@@ -76,7 +90,16 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "Matrix 只对经隧道接入的已配对设备开放",
         );
     }
-    if !is_client_api(req.uri().path()) {
+    let path = req.uri().path();
+    if is_ambiguous(path) {
+        return matrix_error(
+            StatusCode::BAD_REQUEST,
+            "M_UNRECOGNIZED",
+            "invalid_input",
+            "路径里不能有 . 或 .. 段、反斜杠，以及编码过的 .、/、\\",
+        );
+    }
+    if !is_client_api(path) {
         return matrix_error(
             StatusCode::NOT_FOUND,
             "M_UNRECOGNIZED",
@@ -84,23 +107,74 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "这里只转发 Matrix 客户端接口（/_matrix/client/、/_matrix/media/）",
         );
     }
-    matrix_error(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "M_UNKNOWN",
-        KIND_UNAVAILABLE,
-        UNAVAILABLE,
-    )
+    let Some(matrix) = &gateway.matrix else {
+        return matrix_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "M_UNKNOWN",
+            KIND_UNAVAILABLE,
+            UNAVAILABLE,
+        );
+    };
+    let fwd = proxy::Forwarded {
+        client: client_addr(&req),
+        scheme: &gateway.public.scheme,
+    };
+    let target = proxy::Target {
+        authority: matrix.authority(),
+        name: "Tuwunel",
+    };
+    match proxy::forward_or(&gateway.http, target, req, fwd).await {
+        Ok(response) => response,
+        Err(e) => matrix_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "M_UNKNOWN",
+            KIND_UNAVAILABLE,
+            &format!("Tuwunel 暂时无法访问：{e}"),
+        ),
+    }
 }
 
 const KIND_UNAVAILABLE: &str = "matrix_unavailable";
-const UNAVAILABLE: &str = "核心还没有接入 Tuwunel";
+const UNAVAILABLE: &str = "核心没有接入 Tuwunel";
 
 /// 只转发客户端接口和媒体接口；联邦接口（`/_matrix/federation/`、`/_matrix/key/`）和管理接口
-/// （`/_synapse/admin/`）不转。
+/// （`/_synapse/admin/`）不转。先用 [`is_ambiguous`] 挡住可能被上游读成别的路径的写法。
 fn is_client_api(path: &str) -> bool {
     ["/_matrix/client/", "/_matrix/media/"]
         .iter()
         .any(|prefix| path.starts_with(prefix))
+}
+
+/// 上游可能把这些写法规范化成另一条路径，绕过前缀判断到达管理接口：按字面的 `/` 切段，百分号解码后是 `.` 或
+/// `..` 的段（包括 `%2e%2e`、`.%2e`），以及反斜杠。实测 Tuwunel v1.9.4 都不规范化，这一层是纵深防御，不能误伤
+/// 合法请求：编码过的 `/`、`\`（`%2F`、`%5C`）放行。ruma 把路径参数里的 `/`、`\` 编成它们，而 Megolm 会话 ID
+/// 是标准 base64，大约一半带 `/`，按会话取密钥备份（`GET /_matrix/client/v3/room_keys/keys/{房间}/{会话}`）
+/// 要用到。
+fn is_ambiguous(path: &str) -> bool {
+    path.contains('\\')
+        || path
+            .split('/')
+            .any(|segment| matches!(percent_decode(segment).as_slice(), b"." | b".."))
+}
+
+/// 百分号解码一段路径：`%XX` 换成字节，不成对的 `%` 原样保留。
+fn percent_decode(segment: &str) -> Vec<u8> {
+    let hex = |b: u8| (b as char).to_digit(16).and_then(|d| u8::try_from(d).ok());
+    let mut out = Vec::with_capacity(segment.len());
+    let mut rest = segment.as_bytes();
+    while let Some((&first, tail)) = rest.split_first() {
+        if first == b'%'
+            && let [high, low, after @ ..] = tail
+            && let (Some(high), Some(low)) = (hex(*high), hex(*low))
+        {
+            out.push(high << 4 | low);
+            rest = after;
+        } else {
+            out.push(first);
+            rest = tail;
+        }
+    }
+    out
 }
 
 fn matrix_error(status: StatusCode, errcode: &str, kind: &'static str, message: &str) -> Response {
@@ -147,6 +221,32 @@ mod tests {
             ]
         );
         assert_eq!(serde_json::from_value::<LoginToken>(value).unwrap(), token);
+    }
+
+    #[test]
+    fn paths_that_upstream_could_read_differently_are_refused() {
+        for path in [
+            "/_matrix/client/../../_synapse/admin/v1/users",
+            "/_matrix/client/./v3/sync",
+            "/_matrix/client/%2e%2e/%2E%2E/_synapse/admin",
+            "/_matrix/client/.%2e/_synapse/admin",
+            "/_matrix/client/%2e/v3/sync",
+            "/_matrix/client\\..\\_synapse",
+        ] {
+            assert!(is_ambiguous(path), "{path}");
+        }
+        for path in [
+            "/_matrix/client/v3/rooms/!abc:wonton.localhost/send/m.room.message/1",
+            "/_matrix/client/v3/profile/@a.b:wonton.localhost/displayname",
+            "/_matrix/media/v3/download/wonton.localhost/abc",
+            // Megolm 会话 ID 里的 `/` 由 ruma 编成 %2F：按会话取密钥备份必须放行。
+            "/_matrix/client/v3/room_keys/keys/!r:x/ab%2Fcd%2fef",
+            "/_matrix/client/v3/x%5Cy",
+            "/_matrix/client/v3/a..b/.c./%252e%252e",
+            "/_matrix/client/v3/50%/%zz",
+        ] {
+            assert!(!is_ambiguous(path), "{path}");
+        }
     }
 
     #[test]

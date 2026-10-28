@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 本地开发用的核心（插件管理器 + 网关）和身份提供方（Ory Hydra）。
+# 本地开发用的核心（插件管理器 + 网关）、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。
 #
-#   dev.sh up                          构建核心镜像，启动核心和 Hydra，等到健康
+#   dev.sh up                          构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 #   dev.sh down                        停止，保留数据
-#   dev.sh reset                       停止并删除 Hydra 数据和核心数据目录
+#   dev.sh reset                       停止并删除 Hydra、Tuwunel 的数据和核心数据目录
 #   dev.sh status | logs               查看状态 / 跟随核心日志
 #   dev.sh token                       输出主人令牌
 #   dev.sh install <compose 文件> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
@@ -61,8 +61,31 @@ ensure_secret() {
   export WONTON_DEV_HYDRA_SECRET
 }
 
+# 核心签发 Matrix 登录 JWT 的 Ed25519 密钥，和 Tuwunel 的注册共享密钥（ADR-0009）。私钥给核心，公钥给
+# Tuwunel。生成需要 OpenSSL 3 及以上（macOS 可以 brew install openssl@3）。
+ensure_matrix_secrets() {
+  local key="$secrets/matrix-jwt.pem" pub="$secrets/matrix-jwt.pub.pem" shared="$secrets/matrix-shared-secret"
+  mkdir -p "$secrets"
+  chmod 700 "$secrets"
+  if [[ ! -s "$key" || ! -s "$pub" ]]; then
+    [[ "$(openssl version 2>/dev/null)" =~ ^OpenSSL\ [3-9] ]] ||
+      die "生成 Matrix 签发密钥需要 OpenSSL 3 及以上（当前：$(openssl version 2>/dev/null || echo 未安装)）"
+    (umask 077 && openssl genpkey -algorithm ed25519 -out "$key")
+    openssl pkey -in "$key" -pubout -out "$pub"
+  fi
+  if [[ ! -s "$shared" ]]; then
+    od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$shared"
+    chmod 600 "$shared"
+  fi
+  WONTON_DEV_MATRIX_JWT_KEY="$(cat "$key")"
+  WONTON_DEV_MATRIX_JWT_PUBLIC_KEY="$(cat "$pub")"
+  WONTON_DEV_MATRIX_SECRET="$(cat "$shared")"
+  export WONTON_DEV_MATRIX_JWT_KEY WONTON_DEV_MATRIX_JWT_PUBLIC_KEY WONTON_DEV_MATRIX_SECRET
+}
+
 compose() {
   ensure_secret
+  ensure_matrix_secrets
   docker compose -f "$here/compose.yaml" "$@"
 }
 

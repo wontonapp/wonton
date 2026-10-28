@@ -7,6 +7,7 @@ pub mod config;
 pub mod device;
 pub mod gateway;
 pub mod http;
+pub mod matrix;
 pub mod oidc;
 pub mod plugin;
 pub mod secret;

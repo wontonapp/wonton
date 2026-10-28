@@ -90,6 +90,29 @@ pub struct OidcProviderConfig {
     pub public_url: String,
 }
 
+/// Matrix 服务器（Tuwunel）：核心签发登录 JWT、持有管理账号（ADR-0009）。只有核心能直接访问它，设备和 Bot
+/// 都经网关。
+#[derive(Clone, PartialEq, Eq)]
+pub struct MatrixConfig {
+    /// 客户端接口的内部地址，已规范化成 `http://主机:端口`。
+    pub url: String,
+    /// Tuwunel 的 `server_name`，默认是基础域名。
+    pub server_name: String,
+    /// 签发登录 JWT 的 Ed25519 私钥（PEM）。Tuwunel 只配对应的公钥。
+    pub jwt_key: String,
+    /// Tuwunel 的 `registration_shared_secret`：核心用它注册自己的管理账号。
+    pub registration_secret: String,
+}
+
+impl std::fmt::Debug for MatrixConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MatrixConfig")
+            .field("url", &self.url)
+            .field("server_name", &self.server_name)
+            .finish_non_exhaustive()
+    }
+}
+
 /// M0 只有主人一个用户；配对和家人账号在后续里程碑加入。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner {
@@ -110,6 +133,7 @@ pub struct Config {
     /// 未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
     pub core_container: Option<String>,
     pub oidc: Option<OidcProviderConfig>,
+    pub matrix: Option<MatrixConfig>,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -156,7 +180,11 @@ impl Config {
                 ));
             }
         };
+        let matrix = matrix_config(&get, &base_domain)?;
         let username = get("WONTON_OWNER_NAME").unwrap_or_else(|| "owner".into());
+        if matrix.is_some() {
+            check_owner_localpart(&username)?;
+        }
         let owner = Owner {
             id: username.clone(),
             display_name: get("WONTON_OWNER_DISPLAY_NAME").unwrap_or_else(|| "Owner".into()),
@@ -173,6 +201,7 @@ impl Config {
             },
             core_container: get("WONTON_CORE_CONTAINER"),
             oidc,
+            matrix,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
@@ -202,20 +231,66 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
     }
 }
 
-/// 把身份提供方的内部地址规范化成 `http://主机:端口`，不合法时启动就失败。
+/// 接了 Matrix 时主人的用户名就是主人的 Matrix 用户名：要是合法的 localpart（小写字母、数字和 `._=-/+`），也不能
+/// 是核心的管理账号，否则主人的设备会登录成管理账号。
+fn check_owner_localpart(username: &str) -> Result<(), ConfigError> {
+    let valid = !username.is_empty()
+        && username
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._=-/+".contains(&b));
+    if !valid {
+        return Err(invalid(
+            "WONTON_OWNER_NAME",
+            "接入 Matrix 时必须是合法的 Matrix 用户名：小写字母、数字和 ._=-/+",
+        ));
+    }
+    if username == crate::matrix::ADMIN_LOCALPART {
+        return Err(invalid(
+            "WONTON_OWNER_NAME",
+            "不能和核心在 Matrix 上的管理账号同名",
+        ));
+    }
+    Ok(())
+}
+
+/// `WONTON_MATRIX_URL` 设了就要同时给出签发私钥和注册共享密钥；都没设表示核心不接 Matrix。
+fn matrix_config(
+    get: &impl Fn(&str) -> Option<String>,
+    base_domain: &str,
+) -> Result<Option<MatrixConfig>, ConfigError> {
+    let Some(url) = get("WONTON_MATRIX_URL") else {
+        let stray = ["WONTON_MATRIX_JWT_KEY", "WONTON_MATRIX_REGISTRATION_SECRET"]
+            .into_iter()
+            .find(|name| get(name).is_some());
+        return match stray {
+            Some(name) => Err(invalid(name, "设了它就要同时设 WONTON_MATRIX_URL")),
+            None => Ok(None),
+        };
+    };
+    let required = |name: &'static str| get(name).ok_or(ConfigError::Missing(name));
+    Ok(Some(MatrixConfig {
+        url: provider_url("WONTON_MATRIX_URL", &url)?,
+        server_name: get("WONTON_MATRIX_SERVER_NAME").unwrap_or_else(|| base_domain.to_owned()),
+        jwt_key: required("WONTON_MATRIX_JWT_KEY")?,
+        registration_secret: required("WONTON_MATRIX_REGISTRATION_SECRET")?,
+    }))
+}
+
+/// 把身份提供方、Tuwunel 的内部地址规范化成 `http://主机:端口`，不合法时启动就失败。
 fn provider_url(name: &'static str, text: &str) -> Result<String, ConfigError> {
     http_authority(text)
         .map(|authority| format!("http://{authority}"))
         .map_err(|message| ConfigError::Invalid { name, message })
 }
 
-/// `http://主机[:端口]` 里的 `主机:端口`（没写端口时是 80）。身份提供方和核心在同一个内部网络里，核心的
-/// HTTP 客户端不做 TLS；网关把 `auth.<base>` 的请求按原路径转发到公开端点，管理接口的路径也由核心拼上。
+/// `http://主机[:端口]` 里的 `主机:端口`（没写端口时是 80）。身份提供方、Tuwunel 和核心在同一个内部网络里，
+/// 核心的 HTTP 客户端不做 TLS；网关把 `auth.<base>`、`matrix.<base>` 的请求按原路径转发，管理接口的路径也由
+/// 核心拼上。
 /// 所以只接受 http，不能带路径、查询、片段和用户信息。错误信息里不回显地址，免得把密码写进日志。
 pub fn http_authority(url: &str) -> Result<String, String> {
     let parsed = url::Url::parse(url).map_err(|e| format!("不是合法的地址：{e}"))?;
     if parsed.scheme() != "http" {
-        return Err("要用 http://：核心访问身份提供方不经 TLS".into());
+        return Err("要用 http://：核心访问内部服务不经 TLS".into());
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err("不能带用户名或密码".into());
@@ -361,6 +436,53 @@ mod tests {
                 "{bad}：{error}"
             );
             assert!(!error.to_string().contains("secret"), "{error}");
+        }
+    }
+
+    #[test]
+    fn with_matrix_the_owner_name_must_be_a_matrix_localpart_other_than_the_core() {
+        let matrix = [
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_MATRIX_URL", "http://tuwunel:8008"),
+            ("WONTON_MATRIX_JWT_KEY", "-----BEGIN PRIVATE KEY-----"),
+            ("WONTON_MATRIX_REGISTRATION_SECRET", "s3cret"),
+        ];
+        let with_owner = |name: &'static str| {
+            let mut settings = matrix.to_vec();
+            settings.push(("WONTON_OWNER_NAME", name));
+            config(&settings)
+        };
+        assert_eq!(with_owner("alice.b-1").unwrap().owner.username, "alice.b-1");
+        for bad in ["Alice", "a b", "", "wonton-core"] {
+            assert!(with_owner(bad).is_err(), "{bad}");
+        }
+        // 没接 Matrix 时不受这条限制。
+        let plain = [("WONTON_DATA_DIR", "/d"), ("WONTON_OWNER_NAME", "Alice")];
+        assert!(config(&plain).is_ok());
+    }
+
+    #[test]
+    fn matrix_needs_its_url_key_and_secret_together() {
+        let base = [("WONTON_DATA_DIR", "/d")];
+        assert!(config(&base).unwrap().matrix.is_none());
+        let full = [
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_MATRIX_URL", "http://tuwunel:8008/"),
+            ("WONTON_MATRIX_JWT_KEY", "-----BEGIN PRIVATE KEY-----"),
+            ("WONTON_MATRIX_REGISTRATION_SECRET", "s3cret"),
+        ];
+        let matrix = config(&full).unwrap().matrix.unwrap();
+        assert_eq!(matrix.url, "http://tuwunel:8008");
+        assert_eq!(matrix.server_name, "wonton.localhost");
+        assert!(!format!("{matrix:?}").contains("s3cret"), "密钥不进日志");
+        for missing in [1, 2, 3] {
+            let partial: Vec<(&str, &str)> = full
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != missing)
+                .map(|(_, pair)| *pair)
+                .collect();
+            assert!(config(&partial).is_err(), "少了 {}", full[missing].0);
         }
     }
 }

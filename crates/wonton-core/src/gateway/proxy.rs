@@ -80,9 +80,28 @@ fn strip_hop_by_hop(headers: &mut HeaderMap, keep_upgrade: bool) {
 pub async fn forward(
     http: &HttpClient,
     target: Target<'_>,
-    mut req: Request,
+    req: Request,
     fwd: Forwarded<'_>,
 ) -> Response {
+    let name = target.name;
+    forward_or(http, target, req, fwd)
+        .await
+        .unwrap_or_else(|e| {
+            pages::error(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unreachable",
+                &format!("{name} 暂时无法访问：{e}"),
+            )
+        })
+}
+
+/// 同 [`forward`]，上游不可达时把原因交给调用方，由它按自己的格式回错误（比如 Matrix 的 JSON）。
+pub async fn forward_or(
+    http: &HttpClient,
+    target: Target<'_>,
+    mut req: Request,
+    fwd: Forwarded<'_>,
+) -> Result<Response, String> {
     let upgrade = is_upgrade(req.headers());
     let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
     let (mut parts, body) = req.into_parts();
@@ -92,7 +111,11 @@ pub async fn forward(
         .map_or("/", |p| p.as_str())
         .to_owned();
     let Ok(uri) = format!("http://{}{path}", target.authority).parse::<Uri>() else {
-        return pages::error(StatusCode::BAD_REQUEST, "invalid_input", "请求路径不合法");
+        return Ok(pages::error(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            "请求路径不合法",
+        ));
     };
     let host = parts.headers.get(header::HOST).cloned();
     strip_hop_by_hop(&mut parts.headers, upgrade);
@@ -120,11 +143,7 @@ pub async fn forward(
         Ok(response) => response,
         Err(e) => {
             tracing::warn!(target = target.name, error = %e, "上游不可达");
-            return pages::error(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unreachable",
-                &format!("{} 暂时无法访问：{e}", target.name),
-            );
+            return Err(e.to_string());
         }
     };
     if response.status() == StatusCode::SWITCHING_PROTOCOLS
@@ -142,11 +161,11 @@ pub async fn forward(
         });
         let (mut parts, _) = response.into_parts();
         strip_hop_by_hop(&mut parts.headers, true);
-        return Response::from_parts(parts, Body::empty());
+        return Ok(Response::from_parts(parts, Body::empty()));
     }
     let (mut parts, body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers, false);
-    Response::from_parts(parts, Body::new(body)).into_response()
+    Ok(Response::from_parts(parts, Body::new(body)).into_response())
 }
 
 #[cfg(test)]

@@ -137,7 +137,7 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 
 App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwunel 在哪里。两个入口都只给经隧道接入的已配对设备
 （网关看隧道身份，局域网请求不行），管理 API 的规则不变，仍只认主人令牌。实现见
-`crates/wonton-core/src/gateway/matrix.rs`。
+`crates/wonton-core/src/gateway/matrix.rs` 和 `crates/wonton-core/src/matrix/`。
 
 **1. 取登录令牌：`POST <核心地址>/_wonton/matrix/login-token`**
 
@@ -165,9 +165,38 @@ App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwun
 **3. Matrix 客户端接口：`matrix.<基础域名>`**
 
 - 网关把 `/_matrix/client/` 和 `/_matrix/media/` 下的请求转发给 Tuwunel；联邦接口（`/_matrix/federation/`、
-  `/_matrix/key/`）和管理接口（`/_synapse/admin/`）不转，得到 404 `M_UNRECOGNIZED`。
-- 只接受经隧道的已配对设备，局域网请求得到 403 `M_FORBIDDEN`。错误都用 Matrix 的格式（`errcode`、`error`），另带
-  `X-Wonton-Error`；网关自己不回 401，免得 SDK 以为访问令牌失效。
+  `/_matrix/key/`）和管理接口（`/_synapse/admin/`）不转，得到 404 `M_UNRECOGNIZED`（`X-Wonton-Error: not_found`）。
+- 先于前缀判断，挡住上游可能规范化成前缀以外接口的写法：路径按字面的 `/` 切段，百分号解码后是 `.` 或 `..` 的段
+  （包括 `%2e%2e`、`.%2e`），以及反斜杠，得到 400 `M_UNRECOGNIZED`（`invalid_input`）。编码过的 `/`、`\`
+  （`%2F`、`%5C`）放行：ruma 把路径参数里的 `/`、`\` 编成它们，Megolm 会话 ID 是标准 base64、大约一半带 `/`，按会话
+  取密钥备份（`GET /_matrix/client/v3/room_keys/keys/{房间}/{会话}`）要用到。实测 Tuwunel v1.9.4 对 `%2F`、`%5C`、
+  `..`、`%2e%2e` 都不规范化，绕不到管理接口，这一层是纵深防御。
+- 只接受经隧道的已配对设备，局域网请求得到 403 `M_FORBIDDEN`（`unauthenticated`）；Tuwunel 不可用时 503
+  `M_UNKNOWN`（`matrix_unavailable`）。错误都用 Matrix 的格式（`errcode`、`error`），另带 `X-Wonton-Error`；网关
+  自己不回 401，免得 SDK 以为访问令牌失效。
 - 客户端核心的本地代理只转发基础域名和它的子域名（ADR-0004），`matrix.<基础域名>` 在其中。
 
-接口先于实现合并：在核心接入 Tuwunel 之前（插件规范实现计划第 8 项），两个入口都返回 503 `matrix_unavailable`。
+核心没有配置 Matrix 时，两个入口都返回 503 `matrix_unavailable`。
+
+## 验证结果（M1，核心接入 Tuwunel）
+
+Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版本：Tuwunel v1.9.4。可复跑：`deploy/dev/core/smoke.sh`
+（“已配对设备经隧道登录 Matrix”一步）；管理账号的几种情况在假 Tuwunel 上测（`cargo test -p wonton-core matrix`）。
+
+- 部署：Tuwunel 只在核心的私有网络里（`deploy/dev/core/compose.yaml`），App 和 Bot 都经核心网关访问它。核心的
+  配置是 `WONTON_MATRIX_URL`、`WONTON_MATRIX_SERVER_NAME`（默认基础域名）、`WONTON_MATRIX_JWT_KEY`（Ed25519 私钥，
+  PEM）和 `WONTON_MATRIX_REGISTRATION_SECRET`，要么都不配，要么配齐。主人的用户名（`WONTON_OWNER_NAME`）就是主人的
+  Matrix 用户名，要是合法的 localpart，也不能是管理账号的 `wonton-core`。配置了却在 90 秒内连不上 Tuwunel，或者
+  管理账号用不了，核心启动失败，不降级运行。
+- 管理账号 `@wonton-core:<server_name>`：首次启动用共享密钥注册（`admin: true`，随机密码不保存），访问令牌存在
+  `<数据目录>/core/matrix-admin-token`（0600）。重启时 `whoami` 通过就沿用；令牌失效，或文件丢了而账号还在时，
+  用核心签的 JWT 登录同一个账号换新令牌。每次启动都调一次管理接口，确认它是服务器管理员：实测普通账号的
+  令牌调 `GET /_synapse/admin/v2/users/{user}/devices` 得到 403 `M_FORBIDDEN`，管理账号拿到设备列表。
+- 经隧道（隧道客户端示例扮演手机）：登录令牌的 `homeserver_url` 是 `http://matrix.wonton.localhost:<端口>`，
+  `user_id` 是 `@owner:wonton.localhost`；用它经 `matrix.<基础域名>` 登录，拿到访问令牌、刷新令牌和设备 ID，
+  `whoami` 是主人。同一个令牌有效期内能再登录一次（Tuwunel 不查 `jti`，同 M0-2）。
+- 局域网的浏览器带着核心会话也拿不到登录令牌（401），进 `matrix.<基础域名>` 得到 403 `M_FORBIDDEN`。
+  `/_synapse/admin/`、`/_matrix/federation/` 得到 404；`/_matrix/client/../../_synapse/admin/v1/register`
+  （`curl --path-as-is`）得到 400；会话 ID 里带 `%2F` 的 `room_keys` 请求原样转给 Tuwunel。
+- 开发环境的公钥经环境变量传给 Tuwunel（`DOCKER_HOST` 指向远端时挂不了本机文件），轮换签发密钥要重建 Tuwunel
+  容器。按 M0-2 的结论，正式安装时公钥写在核心生成的配置文件里，才能热加载轮换。

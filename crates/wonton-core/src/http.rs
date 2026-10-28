@@ -76,10 +76,25 @@ impl HttpClient {
         body: Option<&Value>,
         timeout: Duration,
     ) -> Result<(StatusCode, Value), HttpError> {
-        let builder = Request::builder()
+        self.request_json(method, url, None, body, timeout).await
+    }
+
+    /// 同 [`Self::json`]，带上访问令牌（`Authorization: Bearer`）。
+    pub async fn request_json(
+        &self,
+        method: Method,
+        url: &str,
+        bearer: Option<&str>,
+        body: Option<&Value>,
+        timeout: Duration,
+    ) -> Result<(StatusCode, Value), HttpError> {
+        let mut builder = Request::builder()
             .method(method)
             .uri(url)
             .header(header::ACCEPT, "application/json");
+        if let Some(token) = bearer {
+            builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
         let request = match body {
             Some(value) => builder
                 .header(header::CONTENT_TYPE, "application/json")

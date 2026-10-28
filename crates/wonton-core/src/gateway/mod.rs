@@ -40,6 +40,7 @@ use tower::ServiceExt;
 
 use crate::config::{self, HostKind, Owner, PublicUrls};
 use crate::http::HttpClient;
+use crate::matrix::Matrix;
 use crate::oidc::Hydra;
 use crate::plugin::{PluginManager, PluginStatus};
 use crate::secret::constant_time_eq;
@@ -63,6 +64,8 @@ pub struct Gateway {
     pub hydra_public: Option<String>,
     pub http: HttpClient,
     pub tunnel: Tunnel,
+    /// Matrix 服务器；没接时 App 的 Matrix 入口如实报不可用。
+    pub matrix: Option<Arc<Matrix>>,
     sessions: session::SessionStore,
 }
 
@@ -95,8 +98,16 @@ impl Gateway {
             hydra_public,
             http,
             tunnel,
+            matrix: None,
             sessions: session::SessionStore::default(),
         }
+    }
+
+    /// 接上 Matrix 服务器：App 的登录令牌和 `matrix.<base>` 这才可用。
+    #[must_use]
+    pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
+        self.matrix = matrix;
+        self
     }
 
     fn check_owner_token(&self, token: &str) -> bool {

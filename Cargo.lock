@@ -7009,6 +7009,7 @@ name = "wonton-core"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "axum",
  "base64 0.22.1",
  "bollard",
@@ -7018,6 +7019,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "iroh",
+ "jsonwebtoken",
  "serde",
  "serde-saphyr",
  "serde_json",

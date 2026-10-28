@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
 # 像浏览器一样经核心网关打开插件并自动登录 → 已配对设备经隧道打开插件，直接是主人 →
-# 核心重启后恢复 → 卸载干净。
+# 已配对设备经隧道登录 Matrix → 核心重启后恢复 → 卸载干净。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
 #   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
@@ -178,6 +178,31 @@ expect "经 CONNECT 时用户也是主人" "$(tc "$grafana_url/api/user" | json 
 ok "手机没有拿到任何网关 Cookie"
 expect "管理 API 不接受隧道身份" \
   "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 401
+
+step "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"
+matrix_url="http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
+login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
+expect "登录令牌给出 homeserver 地址" "$(json homeserver_url <<<"$login")" "$matrix_url"
+expect "令牌只能登录主人" "$(json user_id <<<"$login")" "@owner:$WONTON_DEV_DOMAIN"
+body="$(python3 -c 'import json, sys
+print(json.dumps({"type": sys.argv[1], "token": sys.argv[2], "initial_device_display_name": "wonton smoke"}))' \
+  "$(json login_type <<<"$login")" "$(json token <<<"$login")")"
+access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
+  "$matrix_url/_matrix/client/v3/login" | json access_token)"
+expect "经 matrix.<基础域名> 登录 Tuwunel，设备属于主人" \
+  "$(t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3/account/whoami" | json user_id)" \
+  "@owner:$WONTON_DEV_DOMAIN"
+expect "局域网浏览器（有核心会话）拿不到登录令牌" \
+  "$(b -o /dev/null -w '%{http_code}' -X POST "$core_url/_wonton/matrix/login-token")" 401
+expect "局域网进不了 Matrix" "$(b -o /dev/null -w '%{http_code}' "$matrix_url/_matrix/client/versions")" 403
+expect "管理接口不转发" "$(t -o /dev/null -w '%{http_code}' "$matrix_url/_synapse/admin/v1/register")" 404
+expect "绕路到管理接口的路径被挡住" \
+  "$(t --path-as-is -o /dev/null -w '%{http_code}' "$matrix_url/_matrix/client/../../_synapse/admin/v1/register")" 400
+# Megolm 会话 ID 里的 `/` 编成 %2F：按会话取密钥备份的请求要原样转给 Tuwunel，由它作答。
+reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
+  "$matrix_url/_matrix/client/v3/room_keys/keys/!nope:$WONTON_DEV_DOMAIN/ab%2Fcd?version=1")"
+! grep -qi '^x-wonton-error' <<<"$reply" || fail "网关挡下了会话 ID 带 %2F 的请求：$reply"
+ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 "$dev" revoke "$device_id" >/dev/null
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403

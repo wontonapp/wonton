@@ -1,0 +1,157 @@
+//! 调 Tuwunel：客户端接口和 Synapse 兼容的管理接口，都是 JSON。错误按原因区分：Tuwunel 不可达，或者它拒绝了
+//! 请求（带上 Matrix 的 `errcode`）。
+
+use std::time::Duration;
+
+use hyper::{Method, StatusCode};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tokio::time::{Instant, sleep};
+
+use crate::http::HttpClient;
+
+const TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 登录令牌类型：Tuwunel 的 JWT 登录。
+pub const JWT_LOGIN_TYPE: &str = "org.matrix.login.jwt";
+
+#[derive(Debug, thiserror::Error)]
+pub enum MatrixError {
+    #[error("Tuwunel 不可达（{context}）：{message}")]
+    Unavailable { context: String, message: String },
+    #[error("Tuwunel 拒绝了请求（{context}）：HTTP {status} {errcode}：{message}")]
+    Rejected {
+        context: String,
+        status: u16,
+        errcode: String,
+        message: String,
+    },
+    #[error("{0}")]
+    Invalid(String),
+    #[error("{0}")]
+    Storage(String),
+}
+
+impl MatrixError {
+    /// Matrix 的错误码，Tuwunel 不可达时为空。
+    pub fn errcode(&self) -> &str {
+        match self {
+            Self::Rejected { errcode, .. } => errcode,
+            _ => "",
+        }
+    }
+}
+
+/// 一次 JWT 登录的结果：新设备和它的访问令牌。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Login {
+    pub user_id: String,
+    pub device_id: String,
+    pub access_token: String,
+}
+
+pub struct Api {
+    http: HttpClient,
+    /// `http://主机:端口`。
+    base: String,
+}
+
+impl Api {
+    pub fn new(http: HttpClient, base: &str) -> Self {
+        Self {
+            http,
+            base: base.trim_end_matches('/').to_owned(),
+        }
+    }
+
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// 调一个返回 JSON 的接口；`context` 写进错误里，说明核心当时在做什么。
+    pub async fn json(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        body: Option<&Value>,
+        context: &str,
+    ) -> Result<Value, MatrixError> {
+        let url = format!("{}{path}", self.base);
+        let (status, value) = self
+            .http
+            .request_json(method, &url, token, body, TIMEOUT)
+            .await
+            .map_err(|e| MatrixError::Unavailable {
+                context: context.to_owned(),
+                message: e.to_string(),
+            })?;
+        if status.is_success() {
+            return Ok(value);
+        }
+        Err(MatrixError::Rejected {
+            context: context.to_owned(),
+            status: status.as_u16(),
+            errcode: value["errcode"].as_str().unwrap_or_default().to_owned(),
+            message: value["error"].as_str().unwrap_or_default().to_owned(),
+        })
+    }
+
+    /// 等 Tuwunel 能回答客户端接口（升级后首次启动可能在迁移数据库）。
+    pub async fn wait_ready(&self, timeout: Duration) -> Result<(), MatrixError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let result = self
+                .json(
+                    Method::GET,
+                    "/_matrix/client/versions",
+                    None,
+                    None,
+                    "查询版本",
+                )
+                .await;
+            match result {
+                Ok(_) => return Ok(()),
+                Err(e) if Instant::now() >= deadline => return Err(e),
+                Err(_) => sleep(Duration::from_millis(500)).await,
+            }
+        }
+    }
+
+    /// 用核心签的 JWT 登录，新建一台设备。不申请刷新令牌：这个访问令牌不过期，吊销设备时才失效。
+    pub async fn login(&self, jwt: &str, device_name: &str) -> Result<Login, MatrixError> {
+        let body = json!({
+            "type": JWT_LOGIN_TYPE,
+            "token": jwt,
+            "initial_device_display_name": device_name,
+        });
+        let value = self
+            .json(
+                Method::POST,
+                "/_matrix/client/v3/login",
+                None,
+                Some(&body),
+                "JWT 登录",
+            )
+            .await?;
+        serde_json::from_value(value)
+            .map_err(|e| MatrixError::Invalid(format!("登录响应不对：{e}")))
+    }
+
+    /// 令牌属于谁；令牌已失效时返回 `None`。
+    pub async fn whoami(&self, token: &str) -> Result<Option<String>, MatrixError> {
+        let path = "/_matrix/client/v3/account/whoami";
+        match self
+            .json(Method::GET, path, Some(token), None, "查询令牌")
+            .await
+        {
+            Ok(value) => Ok(value["user_id"].as_str().map(str::to_owned)),
+            Err(MatrixError::Rejected { status, .. })
+                if status == StatusCode::UNAUTHORIZED.as_u16() =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+}

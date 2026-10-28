@@ -1,10 +1,11 @@
-# 本地核心（插件管理器 + 网关）与身份提供方
+# 本地核心（插件管理器 + 网关）、身份提供方和 Matrix 服务器
 
-本地开发用的 `wonton-core` 和 Ory Hydra（小程序单点登录，见 ADR-0009 的验证结果）。核心在容器里运行，
-和产品一致：唯一挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页。
+本地开发用的 `wonton-core`、Ory Hydra（小程序单点登录）和 Tuwunel（Matrix 服务器），见 ADR-0009。核心在容器里
+运行，和产品一致：唯一挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
+核心网关访问 Tuwunel。
 
 ```bash
-deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心和 Hydra，等到健康
+deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana/docker-compose.yml   # 预览权限，确认后安装
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
@@ -18,7 +19,9 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
 - 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认 `wonton.localhost`）。
   端口也是浏览器看到的地址的一部分，Hydra 的签发方地址随之变化，改端口后要重新安装 SSO 插件。
 - 数据目录 `WONTON_DEV_DATA`（默认本目录下的 `.data`）在核心容器内外路径相同，因为插件的绑定挂载由
-  宿主上的 Docker 解析。Hydra 的系统密钥在 `.secrets/`。两者都不提交。
+  宿主上的 Docker 解析。Hydra 的系统密钥、核心签发 Matrix 登录用的 Ed25519 密钥对和 Tuwunel 的注册共享密钥
+  在 `.secrets/`，首次 `up` 时生成（Ed25519 要 OpenSSL 3 及以上，macOS 自带的 LibreSSL 不行：
+  `brew install openssl@3`）。两者都不提交。
 - `dev.sh` 的 HTTP 请求在一个与核心共享网络的 curl 容器里发出，所以 `DOCKER_HOST` 指向远端主机时
   也能用（远端只需要 Docker）：`DOCKER_HOST=ssh://npchy deploy/dev/core/dev.sh up`。
 - 镜像里编进了构建它的提交号（`dev.sh commit`；Cargo 工作区有没提交的改动时带 `-dirty`），核心启动日志的
@@ -53,6 +56,17 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> http://app-grafan
 `--noproxy ''` 清掉环境变量里的 `NO_PROXY`，否则 `*.localhost` 会绕过代理。加 `-p` 改用 `CONNECT`，和 iOS 的
 WKWebView 一样。
 
+已登记的设备经隧道向核心要 Matrix 登录令牌，再用它登录 `matrix.<基础域名>`（ADR-0009 的“App 登录和使用
+Matrix”）。令牌两分钟内有效，账号就是主人：
+
+```bash
+curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -X POST http://wonton.localhost:18480/_wonton/matrix/login-token
+curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type: application/json' \
+  -d '{"type":"org.matrix.login.jwt","token":"<令牌>"}' http://matrix.wonton.localhost:18480/_matrix/client/v3/login
+```
+
+`matrix.<基础域名>` 只转发客户端和媒体接口，局域网的浏览器进不来；Tuwunel 的管理接口只有核心能用。
+
 App 用 `dev.sh ticket [直连地址] [网页地址]` 生成的连接信息连接（见 `apps/ios/README.md`、`apps/compose/README.md`），
 里面带着基础域名：App 的本地代理和 WebView 只让这个域名下的地址走隧道。
 直连地址默认 `127.0.0.1:18482`（同机的 iOS 模拟器），Android 模拟器写 `10.0.2.2:18482`，局域网里的手机写本机的
@@ -69,15 +83,16 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 健康检查；插件不暴露端口、只在自己的网络里、访问不到 Hydra 的管理端口；未登录的请求被拒；登录核心
 一次后打开插件自动登录（Grafana 里是 `owner`、管理员角色）；已配对设备经隧道打开插件不用登录、直接是
 `owner`，未登记和已吊销的设备被拒（设备由隧道客户端示例扮演，跑在核心的网络命名空间里）；没有 OIDC 的
-插件收不到网关 Cookie 和伪造的转发头；核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端
-都没有残留。
+插件收不到网关 Cookie 和伪造的转发头；已配对设备经隧道拿到 Matrix 登录令牌、登录 Tuwunel，局域网拿不到
+令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；核心重启后插件恢复；卸载后容器、网络、卷、
+应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例）：
 
 ```bash
-for image in rust:1.99.1-slim-trixie debian:trixie-slim oryd/hydra:v26.2.0 grafana/grafana:12.2.1 \
-  traefik/whoami:v1.11 curlimages/curl:8.23.0; do
+for image in rust:1.99.1-slim-trixie debian:trixie-slim oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 \
+  grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh npchy docker load
 done

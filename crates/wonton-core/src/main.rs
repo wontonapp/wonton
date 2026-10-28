@@ -16,6 +16,7 @@ use wonton_core::config::Config;
 use wonton_core::device::Devices;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
+use wonton_core::matrix::Matrix;
 use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
@@ -71,21 +72,8 @@ async fn serve() -> anyhow::Result<()> {
     tracing::info!(path = %token_path.display(), "主人令牌已就绪");
 
     let http = HttpClient::new();
-    let hydra = match &cfg.oidc {
-        Some(oidc) => {
-            let hydra = Hydra::new(http.clone(), oidc);
-            hydra
-                .wait_ready(Duration::from_secs(90))
-                .await
-                .context("等待身份提供方就绪")?;
-            tracing::info!(admin = %oidc.admin_url, "身份提供方已就绪");
-            Some((hydra, oidc.public_url.clone()))
-        }
-        None => {
-            tracing::warn!("没有配置身份提供方，声明 sso: oidc 的插件将无法安装");
-            None
-        }
-    };
+    let hydra = connect_hydra(&cfg, &http).await?;
+    let matrix = connect_matrix(&cfg, &http).await?;
 
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
     let lifecycle = LifecycleConfig {
@@ -108,15 +96,18 @@ async fn serve() -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
 
     let tunnel = bind_tunnel(&cfg).await?;
-    let gateway = Arc::new(Gateway::new(
-        cfg.public.clone(),
-        cfg.owner.clone(),
-        owner_token,
-        manager,
-        hydra,
-        http,
-        tunnel.clone(),
-    ));
+    let gateway = Arc::new(
+        Gateway::new(
+            cfg.public.clone(),
+            cfg.owner.clone(),
+            owner_token,
+            manager,
+            hydra,
+            http,
+            tunnel.clone(),
+        )
+        .with_matrix(matrix),
+    );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)
         .await
@@ -136,6 +127,38 @@ async fn serve() -> anyhow::Result<()> {
     .context("网关异常退出");
     entry.shutdown().await;
     served
+}
+
+async fn connect_hydra(cfg: &Config, http: &HttpClient) -> anyhow::Result<Option<(Hydra, String)>> {
+    let Some(oidc) = &cfg.oidc else {
+        tracing::warn!("没有配置身份提供方，声明 sso: oidc 的插件将无法安装");
+        return Ok(None);
+    };
+    let hydra = Hydra::new(http.clone(), oidc);
+    hydra
+        .wait_ready(Duration::from_secs(90))
+        .await
+        .context("等待身份提供方就绪")?;
+    tracing::info!(admin = %oidc.admin_url, "身份提供方已就绪");
+    Ok(Some((hydra, oidc.public_url.clone())))
+}
+
+/// 等 Tuwunel 就绪、准备好核心的管理账号。连不上就启动失败：配置了 Matrix 却用不了，不降级运行。
+async fn connect_matrix(cfg: &Config, http: &HttpClient) -> anyhow::Result<Option<Arc<Matrix>>> {
+    let Some(config) = &cfg.matrix else {
+        tracing::warn!("没有配置 Matrix（WONTON_MATRIX_URL），App 登录 Matrix 和 Bot 插件都不可用");
+        return Ok(None);
+    };
+    let matrix = Matrix::connect(config, &cfg.core_state_dir(), http.clone())
+        .await
+        .context("连接 Tuwunel")?;
+    tracing::info!(
+        url = %config.url,
+        server_name = %matrix.server_name(),
+        admin = %matrix.admin_user_id(),
+        "Tuwunel 已就绪"
+    );
+    Ok(Some(Arc::new(matrix)))
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。
