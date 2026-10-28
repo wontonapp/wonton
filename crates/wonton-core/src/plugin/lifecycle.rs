@@ -11,7 +11,7 @@ use tokio::time::Instant;
 use super::compose::DependCondition;
 use super::configs;
 use super::health::{self, Target};
-use super::hostdir;
+use super::hostdir::{self, Owner};
 use super::manager::{InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::package::PluginPackage;
@@ -243,7 +243,7 @@ impl PluginManager {
             })?;
         }
         for path in shares.values() {
-            hostdir::ensure_owned_dir(path, self.cfg.puid, self.cfg.pgid)
+            hostdir::ensure_owned_dir(path, self.owner())
                 .map_err(|e| InstallError::Storage(format!("准备共享文件夹失败：{e}")))?;
         }
         Ok(InstallContext {
@@ -260,12 +260,20 @@ impl PluginManager {
         })
     }
 
-    /// 绑定挂载的源目录由核心预先创建并交给 PUID:PGID，否则 Docker 会以 root 身份创建。
+    /// 主人的用户（PUID:PGID）：共享文件夹、应用数据目录本身和中间各级目录都交给它。
+    fn owner(&self) -> Owner {
+        Owner {
+            uid: self.cfg.puid,
+            gid: self.cfg.pgid,
+        }
+    }
+
+    /// 绑定挂载的源目录由核心预先创建并交给挂载它的服务的属主，否则 Docker 会以 root 身份创建。
     /// 逐级检查、不跟随软链接：应用数据目录里可能有上次安装的插件留下的软链接。
     fn prepare_dirs(
         &self,
         ctx: &InstallContext,
-        dirs: &[PathBuf],
+        dirs: &BTreeMap<PathBuf, Owner>,
         undo: &mut Undo,
     ) -> Result<(), InstallError> {
         if dirs.is_empty() {
@@ -279,7 +287,7 @@ impl PluginManager {
         {
             undo.app_dir_created = Some(ctx.app_data.clone());
         }
-        hostdir::prepare(&ctx.app_data, dirs, ctx.puid, ctx.pgid).map_err(|e| storage(&e))
+        hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
     }
 
     async fn attach_core(

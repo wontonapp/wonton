@@ -3,6 +3,7 @@
 use bollard::models::{MountType, RestartPolicyNameEnum};
 
 use super::compose::DependCondition;
+use super::hostdir::Owner;
 use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
@@ -70,7 +71,15 @@ fn grafana_example_injects_oidc_and_app_url() {
         Some(RestartPolicyNameEnum::UNLESS_STOPPED)
     );
     assert!(host.port_bindings.is_none(), "插件不得向宿主暴露端口");
-    assert_eq!(plan.dirs.len(), 1, "应用数据目录要预先创建");
+    // 应用数据目录要预先创建，交给 Grafana 运行的 ${PUID}:${PGID}。
+    let data = std::path::Path::new("/wonton-dry-run/apps/app-grafana/data");
+    assert_eq!(
+        plan.dirs.get(data),
+        Some(&Owner {
+            uid: 1000,
+            gid: 1000
+        })
+    );
 }
 
 #[test]
@@ -239,7 +248,53 @@ fn bind_mounts_of_one_plugin_must_not_nest() {
     );
     let plan = dry_run(&shared).unwrap();
     let app_data = std::path::Path::new("/wonton-dry-run/apps/app-test");
-    assert_eq!(plan.dirs, [app_data.join("data"), app_data.join("data2")]);
+    let dirs: Vec<_> = plan.dirs.keys().cloned().collect();
+    assert_eq!(dirs, [app_data.join("data"), app_data.join("data2")]);
+}
+
+#[test]
+fn data_dirs_belong_to_the_user_of_the_service_mounting_them() {
+    let owner_of = |user: &str| {
+        let yaml = package(
+            &format!(
+                "  web:\n    image: nginx\n{user}    volumes: ['${{WONTON_APP_DATA}}/data:/data']"
+            ),
+            "  permissions: []",
+        );
+        let plan = dry_run(&PluginPackage::parse(&yaml).unwrap())?;
+        Ok::<_, RenderError>(plan.dirs.values().copied().collect::<Vec<_>>())
+    };
+    // 没写或是 root：以 root 启动、再按 PUID/PGID 降权的镜像，交给 PUID:PGID（演练里是 1000:1000）。
+    let puid = Owner {
+        uid: 1000,
+        gid: 1000,
+    };
+    for user in ["", "    user: root\n", "    user: '0:0'\n"] {
+        assert_eq!(owner_of(user).unwrap(), [puid], "{user}");
+    }
+    let magpie = Owner {
+        uid: 65532,
+        gid: 65532,
+    };
+    assert_eq!(owner_of("    user: '65532:65532'\n").unwrap(), [magpie]);
+    // 用户名或只有 uid：核心看不出是谁。
+    for user in ["    user: nobody\n", "    user: '1000'\n"] {
+        let err = owner_of(user).unwrap_err();
+        assert!(matches!(err, RenderError::Service { .. }), "{user}: {err}");
+    }
+    // 同一个目录挂进两个服务，属主必须一样。
+    let same = two_services(
+        "'${WONTON_APP_DATA}/data:/data'",
+        "'${WONTON_APP_DATA}/data:/data:ro'",
+    );
+    dry_run(&same).unwrap();
+    let yaml = package(
+        "  web:\n    image: nginx\n    volumes: ['${WONTON_APP_DATA}/data:/data']\n  \
+         worker:\n    image: nginx\n    user: '65532:65532'\n    volumes: ['${WONTON_APP_DATA}/data:/data']",
+        "  permissions: []",
+    );
+    let err = dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap_err();
+    assert!(matches!(err, RenderError::Service { .. }), "{err}");
 }
 
 #[test]

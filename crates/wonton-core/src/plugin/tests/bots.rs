@@ -42,7 +42,8 @@ fn bot_services_get_the_bot_name_and_their_own_data_dir() {
     let mounts = gateway.body.host_config.clone().unwrap().mounts.unwrap();
     let bot_data = "/wonton-dry-run/apps/app-test/bots/default";
     assert_eq!(mounts[0].source.as_deref(), Some(bot_data));
-    assert_eq!(plan.dirs, [std::path::PathBuf::from(bot_data)]);
+    let dirs: Vec<_> = plan.dirs.keys().cloned().collect();
+    assert_eq!(dirs, [std::path::PathBuf::from(bot_data)]);
     // 同一个 Bot 的服务之间用 `<服务名>-<Bot 名>` 互访。
     assert_eq!(aliases(&plan, "gateway"), ["gateway", "gateway-default"]);
     assert_eq!(aliases(&plan, "web"), ["web"]);

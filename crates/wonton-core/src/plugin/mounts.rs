@@ -1,12 +1,13 @@
 //! 把 compose 的 `volumes` 变成 Docker 挂载，并检查宿主路径：只能是应用数据目录（或其子目录）和已授权
 //! 共享文件夹的根目录，同一插件的绑定挂载源不能嵌套（ADR-0011 的“插件隔离的约束”）。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
 use bollard::models::{Mount, MountType};
 
-use super::compose::{LongVolume, Service, VolumeEntry, VolumeType};
+use super::compose::{LongVolume, Service, UserSpec, VolumeEntry, VolumeType};
+use super::hostdir::Owner;
 use super::render::{InstallContext, RenderError, list, service_err, volume_name};
 
 /// 把 compose 的 `volumes` 变成 Docker 挂载，并检查宿主路径是否在允许范围内。
@@ -180,4 +181,53 @@ pub(super) fn mount_targets(service: &Service, mounts: &[Mount]) -> Vec<PathBuf>
         )
         .map(|target| Path::new(&target).components().collect())
         .collect()
+}
+
+/// 应用数据目录下的绑定挂载源交给谁：看挂载它的服务的 `user`。没写或是 root 时交给 PUID:PGID（以 root
+/// 启动、再按 PUID/PGID 降权的镜像）；数字形式的 `uid:gid` 交给它。用户名或只有 uid 时看不出是谁，
+/// 几个服务以不同的属主挂载同一个目录时也说不清交给谁，都拒绝。
+pub(super) fn dir_owners(
+    binds: &[(String, PathBuf)],
+    services: &BTreeMap<String, Service>,
+    ctx: &InstallContext,
+) -> Result<BTreeMap<PathBuf, Owner>, RenderError> {
+    let mut owners: BTreeMap<PathBuf, (Owner, &str)> = BTreeMap::new();
+    for (service, path) in binds.iter().filter(|(_, p)| p.starts_with(&ctx.app_data)) {
+        let owner = match UserSpec::parse(services[service].user.as_ref()) {
+            UserSpec::Root => Owner {
+                uid: ctx.puid,
+                gid: ctx.pgid,
+            },
+            UserSpec::Ids { uid, gid } => Owner { uid, gid },
+            UserSpec::Uid(uid) => return Err(numeric_user(service, &uid.to_string())),
+            UserSpec::Named(user) => return Err(numeric_user(service, &user)),
+        };
+        match owners.get(path) {
+            Some((other, other_service)) if *other != owner => {
+                return Err(service_err(
+                    service,
+                    format!(
+                        "和服务 `{other_service}` 以不同的属主挂载 `{}`，核心不知道把它交给谁",
+                        path.display()
+                    ),
+                ));
+            }
+            _ => {
+                owners.insert(path.clone(), (owner, service));
+            }
+        }
+    }
+    Ok(owners
+        .into_iter()
+        .map(|(path, (owner, _))| (path, owner))
+        .collect())
+}
+
+fn numeric_user(service: &str, user: &str) -> RenderError {
+    service_err(
+        service,
+        format!(
+            "挂载了应用数据目录，user `{user}` 要写成数字形式的 uid:gid：核心据此决定目录交给谁"
+        ),
+    )
 }

@@ -76,6 +76,40 @@ impl Scalar {
     }
 }
 
+/// compose `user` 的几种写法（插值之后）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UserSpec {
+    /// 没写，或是 root：`root`、`0`、`0:0`（组也可以写 `root`）。
+    Root,
+    /// 数字形式的 `uid:gid`。
+    Ids { uid: u32, gid: u32 },
+    /// 只有数字 uid，组由镜像里的 `/etc/passwd` 决定。
+    Uid(u32),
+    /// 用户名或组名（root 以外），要看镜像里的 `/etc/passwd` 才知道是谁。
+    Named(String),
+}
+
+impl UserSpec {
+    pub fn parse(user: Option<&Scalar>) -> Self {
+        let Some(text) = user.map(Scalar::as_string) else {
+            return Self::Root;
+        };
+        let (uid, gid) = match text.split_once(':') {
+            Some((uid, gid)) => (uid, Some(gid)),
+            None => (text.as_str(), None),
+        };
+        let root = |part: &str| matches!(part, "root" | "0");
+        if root(uid) && gid.is_none_or(root) {
+            return Self::Root;
+        }
+        match (uid.parse(), gid.map(str::parse)) {
+            (Ok(uid), Some(Ok(gid))) => Self::Ids { uid, gid },
+            (Ok(uid), None) => Self::Uid(uid),
+            _ => Self::Named(text),
+        }
+    }
+}
+
 /// `command`、`entrypoint`、`tmpfs` 等：一个字符串或字符串列表。
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
@@ -375,6 +409,31 @@ mod tests {
         assert_eq!(parse_bytes(&Scalar::Str("64m".into())).unwrap(), 64 << 20);
         assert_eq!(parse_bytes(&Scalar::Int(1024)).unwrap(), 1024);
         assert!(parse_bytes(&Scalar::Str("1t".into())).is_err());
+    }
+
+    #[test]
+    fn user_forms_are_told_apart() {
+        let parse = |text: &str| UserSpec::parse(Some(&Scalar::Str(text.to_owned())));
+        assert_eq!(UserSpec::parse(None), UserSpec::Root);
+        for root in ["root", "0", "0:0", "root:root", "0:root"] {
+            assert_eq!(parse(root), UserSpec::Root, "{root}");
+        }
+        assert_eq!(
+            parse("65532:65532"),
+            UserSpec::Ids {
+                uid: 65532,
+                gid: 65532
+            }
+        );
+        assert_eq!(parse("0:1000"), UserSpec::Ids { uid: 0, gid: 1000 });
+        assert_eq!(parse("1000"), UserSpec::Uid(1000));
+        assert_eq!(
+            UserSpec::parse(Some(&Scalar::Int(1000))),
+            UserSpec::Uid(1000)
+        );
+        for named in ["nobody", "app:app", "1000:staff", "node:1000"] {
+            assert_eq!(parse(named), UserSpec::Named(named.to_owned()), "{named}");
+        }
     }
 
     #[test]

@@ -5,7 +5,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use super::compose::{Scalar, Service};
+use super::compose::{Scalar, Service, UserSpec};
 use super::interpolate::Vars;
 use super::package::{PackageError, PluginPackage};
 
@@ -125,13 +125,10 @@ fn target_path(raw: &str) -> Result<PathBuf, String> {
 /// 没写 `uid`、`gid` 时的属主：服务的 `user` 是数字时就是它（只写了 uid 时组是 0，和 Docker 找不到
 /// 这个用户时一样），否则是 root。默认权限所有用户可读，只有收紧了 `mode` 才需要关心属主。
 fn default_owner(user: Option<&Scalar>) -> (u32, u32) {
-    let Some(user) = user.map(Scalar::as_string) else {
-        return (0, 0);
-    };
-    let (uid, gid) = user.split_once(':').unwrap_or((&user, "0"));
-    match (uid.parse(), gid.parse()) {
-        (Ok(uid), Ok(gid)) => (uid, gid),
-        _ => (0, 0),
+    match UserSpec::parse(user) {
+        UserSpec::Ids { uid, gid } => (uid, gid),
+        UserSpec::Uid(uid) => (uid, 0),
+        UserSpec::Root | UserSpec::Named(_) => (0, 0),
     }
 }
 

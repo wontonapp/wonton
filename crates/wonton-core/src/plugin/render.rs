@@ -16,9 +16,10 @@ use super::compose::{
     parse_duration,
 };
 use super::configs::{self, ConfigError, ConfigFile};
+use super::hostdir::Owner;
 use super::interpolate::Vars;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
-use super::mounts::{Mounts, check_not_nested, mount_targets};
+use super::mounts::{Mounts, check_not_nested, dir_owners, mount_targets};
 use super::package::{PackageError, PluginPackage};
 use super::secrets::secret_var;
 
@@ -94,8 +95,8 @@ pub struct Deployment {
     pub labels: HashMap<String, String>,
     /// 要创建的 Docker 命名卷。
     pub volumes: Vec<String>,
-    /// 要预先创建并交给 PUID:PGID 的宿主目录（应用数据目录下的绑定挂载源）。
-    pub dirs: Vec<PathBuf>,
+    /// 要预先创建的宿主目录（应用数据目录下的绑定挂载源）和各自的属主。
+    pub dirs: BTreeMap<PathBuf, Owner>,
     /// 按依赖排好序的容器。
     pub containers: Vec<ContainerPlan>,
 }
@@ -226,13 +227,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         containers.push(plan);
     }
     check_not_nested(&binds)?;
-    let mut dirs: Vec<PathBuf> = binds
-        .into_iter()
-        .map(|(_, path)| path)
-        .filter(|path| path.starts_with(&ctx.app_data))
-        .collect();
-    dirs.sort();
-    dirs.dedup();
+    let dirs = dir_owners(&binds, &services, ctx)?;
     let volumes = package
         .named_volumes()
         .iter()
