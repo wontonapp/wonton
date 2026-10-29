@@ -18,7 +18,13 @@ bot 读不到包等发布事故反复出现；发布要走 test、canary、prod 
 - **节点**：开发和 MVP 内测期，中继和发现先用 n0 的公共节点，推送中继从 M1 起部署在一台公网主机上；
   M2 部署香港和海外各一个自建节点，主体和备案办好后增加内地节点。
 - **App 分发**：MVP 走 TestFlight 和直装 APK；应用商店上架在 M3。
-- **CI**：GitHub Actions；发布由 tag 触发。
+- **CI**：GitHub Actions；发布由 tag 触发。作业跑在自托管 runner 上（2026-10-29 起）：GitHub 托管的 macOS 机器
+  在私有仓库按 10 倍计分钟，免费额度很快用完，自托管不计分钟。
+  - 标签 `self-hosted, macOS, ARM64, xcode` 的机器跑 iOS 模拟器构建，要装 Xcode 和 rustup；
+  - 标签 `self-hosted, Linux, X64, docker` 的机器跑其余作业（结构门禁、Rust、Docker 集成测试、SwiftLint 容器、
+    Android），要装 rustup 和 Docker，Android SDK 与 NDK 由 runner 环境的 `ANDROID_HOME` 给出；
+  - Rust 构建缓存放在 runner 工作目录下的 `_cargo-target/`，跨次运行沿用；
+  - 仓库公开之前要先改成只跑本仓库分支的作业：自托管 runner 会执行推上来的任何代码，外人的 PR 不能跑在上面。
 
 ## 理由
 

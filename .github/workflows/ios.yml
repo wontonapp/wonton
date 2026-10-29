@@ -1,7 +1,7 @@
 name: ios
 
-# macOS runner 在私有仓库按 10 倍计费：只在相关路径变化时运行，SwiftLint 放到 Linux 上，
-# macOS 上只做一次模拟器构建（只编译 Apple 芯片模拟器一个 target，不签名、不跑模拟器）。
+# 自托管 runner（ADR-0012 的“CI”）：SwiftLint 在 Linux 上的容器里跑；macOS 上只做一次模拟器构建（只编译
+# Apple 芯片模拟器一个 target，不签名、不跑模拟器）。
 on:
   pull_request:
     paths:
@@ -32,35 +32,39 @@ concurrency:
 jobs:
   swiftlint:
     name: SwiftLint（函数体 ≤ 100 行、文件 ≤ 800 行）
-    runs-on: ubuntu-latest
-    container: ghcr.io/realm/swiftlint:0.65.1
+    runs-on: [self-hosted, Linux, X64, docker]
     steps:
       - uses: actions/checkout@v5
+      # 不用 container 作业：容器里以 root 检出和写文件，留在自托管 runner 工作区里的文件 runner 自己删不掉，
+      # 之后的作业检出就会失败。这里以 runner 的用户身份起容器；镜像里的缓存目录只有 root 能写，所以关掉缓存。
       - name: SwiftLint
-        working-directory: apps/ios
-        run: swiftlint lint --strict
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work/apps/ios \
+            ghcr.io/realm/swiftlint:0.65.1 swiftlint lint --strict --no-cache
 
   build:
     name: 模拟器构建
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode]
     timeout-minutes: 30
     env:
       XCODEGEN_VERSION: "2.46.0"
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../../_cargo-target/ios
     steps:
       - uses: actions/checkout@v5
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ios
-      - name: 安装 XcodeGen
+      - name: 安装 XcodeGen（按版本放进 runner 的工具缓存，下次直接用）
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
-            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
-          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+          dir="$RUNNER_TOOL_CACHE/xcodegen/$XCODEGEN_VERSION"
+          if [[ ! -x "$dir/xcodegen/bin/xcodegen" ]]; then
+            curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+              "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+            mkdir -p "$dir"
+            unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$dir"
+          fi
+          echo "$dir/xcodegen/bin" >> "$GITHUB_PATH"
       - name: 编译 Rust 核心并生成 Swift 绑定
         env:
           WONTON_IOS_TARGETS: aarch64-apple-ios-sim

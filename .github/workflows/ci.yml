@@ -5,10 +5,13 @@ on:
   push:
     branches: [main]
 
+# 作业都跑在主人的自托管 runner 上（ADR-0012 的“CI”）。检出时会清掉工作区里没被跟踪的文件，所以 Rust 的
+# 构建缓存放在工作区外的 `_work/_cargo-target/`，跨次运行沿用；不再用 GitHub 的缓存服务。
+
 jobs:
   structure:
     name: 结构门禁
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v5
       - name: 源码文件不超过 800 行
@@ -16,12 +19,14 @@ jobs:
 
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../../_cargo-target/workspace
     steps:
       - uses: actions/checkout@v5
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
       - name: 格式
         run: cargo fmt --all --check
       - name: Clippy（含函数不超过 100 行）
@@ -34,14 +39,15 @@ jobs:
 
   docker-tests:
     name: Docker 集成测试
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker]
     # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。
     timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../../_cargo-target/workspace
     steps:
       - uses: actions/checkout@v5
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
       - name: 确认 Docker 可用
         run: docker version
       - name: wonton-matrix 对真实 Tuwunel 的集成测试

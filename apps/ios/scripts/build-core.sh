@@ -24,7 +24,9 @@ repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 package_dir="$repo_root/apps/ios/WontonClient"
 generated_dir="$package_dir/Sources/WontonClient/Generated"
 xcframework="$package_dir/build/WontonClientFFI.xcframework"
-work_dir="$repo_root/target/ios-bindings"
+# 认 CARGO_TARGET_DIR：自托管 CI 把构建缓存放在工作区外。
+target_dir="${CARGO_TARGET_DIR:-$repo_root/target}"
+work_dir="$target_dir/ios-bindings"
 cd "$repo_root"
 
 # 与 project.yml 的部署版本一致，避免链接时的版本警告。
@@ -34,7 +36,7 @@ libraries=()
 for target in "${targets[@]}"; do
   cargo rustc -p wonton-client --lib --crate-type staticlib --locked \
     --target "$target" --profile "$cargo_profile"
-  libraries+=("target/$target/$profile/libwonton_client.a")
+  libraries+=("$target_dir/$target/$profile/libwonton_client.a")
 done
 
 rm -rf "$work_dir"
