@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::SecretString;
+use crate::{PushStatus, SecretString};
 
 /// 聊天页的 ViewModel。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,6 +19,8 @@ pub struct ChatViewModel {
     /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
     /// [`Action::DismissChatProblem`](crate::Action::DismissChatProblem) 清掉。
     pub problem: Option<ChatProblem>,
+    /// 推送：App 被杀或锁屏时，新消息能不能弹出通知。
+    pub push: PushStatus,
 }
 
 /// 本设备的 Matrix 账号。
@@ -235,7 +237,7 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::{Action, CoreError, SecretString};
+    use crate::{Action, CoreError, PushStatus, SecretString};
 
     /// 测试用的恢复密钥原文。
     const KEY: &str = "EsTc 1234 abcd";
@@ -275,6 +277,7 @@ mod tests {
                 reason: ChatFailure::Unauthorized,
                 message: "加入房间失败".into(),
             }),
+            push: PushStatus::Registering,
         };
         assert_eq!(round_trip(&view_model), view_model);
 

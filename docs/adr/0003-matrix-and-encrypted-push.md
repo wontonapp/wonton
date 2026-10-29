@@ -49,6 +49,89 @@ App 被杀后收不到任何消息。
   M0 先在 Android 上验证加密链路（有谷歌服务走 FCM，没有就用 UnifiedPush 自建 ntfy），iOS 通知扩展的
   解密在有账号后补做。是否把 UnifiedPush 作为正式渠道另行决定。
 
+## 设计：加密推送（M0-3）
+
+**链路**
+
+1. 平台给 App 一个推送地址和本设备的推送公钥，即 Web Push 的推送订阅。Android 上由 UnifiedPush 分发器给出
+   （M0 用自建的 ntfy），连接库在设备上生成 P-256 密钥对和认证密钥；FCM、APNs 也包装成同样的推送地址（见“渠道”）。
+2. App 经隧道把订阅登记给核心（接口见下）。核心按隧道认出的设备记下，回给它一个 pushkey 和推送代理的地址。
+3. App 经 matrix-sdk 在 Tuwunel 上注册 HTTP pusher，`pushkey` 和 `data.url` 用核心给的。
+4. 有新消息时，Tuwunel 调核心推送代理的 Matrix Push Gateway 接口。核心按 pushkey 找到设备，把房间 ID、事件 ID、
+   发送者和房间名按 RFC 8291 加密，按 RFC 8030 发到推送地址。推送服务只看到密文。
+5. App 在本机解开推送，经隧道向 Tuwunel 取回这条消息，用本机的房间密钥解密，再弹出通知。取不到正文时照实说明
+   原因，比如“新消息（内容暂时取不到：连不上家里的服务器）”。
+
+**推送里不带正文**
+
+- Bot 的主房间是端到端加密的，主人自己建的私聊也加密，推送代理拿到的只有密文，做不了预览。另一种做法是让不加密的
+  房间由核心带上预览，但那样要把 Bot 房间改成不加密；核心同时是 Matrix 流量的网关，就能读到全部聊天，所以没选。
+- 推送因此只是唤醒信号，和 Element X 的做法一样（它推 `event_id_only`），正文只在手机上解密。代价是每条通知都要
+  经隧道取一次消息，耗时和耗电见验证结果。
+- 房间、事件 ID 和发送者名也加密，推送服务和中继看不出谁在给谁发消息，只看得到时间和大小。
+
+**加密：Web Push（RFC 8291 的 aes128gcm）**
+
+- 没有自定 HPKE 格式：RFC 8291 就是“用设备公钥加密推送、推送服务读不到”的标准。Android 的 UnifiedPush 连接库
+  （Apache-2.0）收到后自动解密；浏览器的 Push API 原生支持，M3 的 Web 端可以直接用；iOS 通知扩展用 CryptoKit 的
+  P-256 和 AES-GCM 就能解。
+- 核心因此是一个标准的 Web Push 发送方（RFC 8030），每个渠道都只是一个推送地址。加密用 `web-push-native`
+  （MIT 或 Apache-2.0）。
+
+**渠道**
+
+- M0：UnifiedPush 加自建 ntfy，不需要账号。推送地址由分发器给出，核心直接发给它，ntfy 就是中继。
+- M1：FCM、APNs 经我们运营的中继：中继为 App 的 FCM 或 APNs 令牌开一个推送地址，Web Push 进、gorush 出，用 VAPID
+  （RFC 8292）认出发来推送的家里服务器并按它限速。App 换渠道时核心不用改。
+- 是否把 UnifiedPush 作为正式渠道另行决定。
+
+**设备的推送密钥**
+
+- 在设备上生成，私钥不出设备（Android 由 UnifiedPush 连接库生成，存在 App 的私有存储里）。核心只拿到公钥和认证
+  密钥；认证密钥加上推送地址就能伪造推送，核心把它当秘密存（文件权限 0600，不进日志）。
+- 吊销设备时核心删掉它的登记，每次推送前还会再查一次设备登记表，已吊销的设备收不到推送。Tuwunel 下次推给它时，
+  推送代理在 `rejected` 里回这个 pushkey，Tuwunel 随即删掉这个 pusher；删除 Matrix 设备时，Tuwunel 也会删掉它的
+  pusher（v1.9.4 的 `remove_device`）。
+
+## 接口：推送（M0-3）
+
+**1. 登记：`PUT <核心地址>/_wonton/push/registration`**
+
+- 只认隧道身份，同 Matrix 登录令牌；核心域名上的跨站修改拦截对它生效。
+- 请求体是 W3C Push API 的 `PushSubscription` JSON：`{"endpoint": "…", "keys": {"p256dh": "…", "auth": "…"}}`。
+  `endpoint` 是 http 或 https 地址；`p256dh` 是 65 字节的未压缩 P-256 点，`auth` 是 16 字节，都是 base64url。
+- 响应 200：`{"pushkey": "…", "gateway_url": "http://push.wonton.internal/_matrix/push/v1/notify"}`。同一台设备再次
+  登记时换成新的地址和公钥，pushkey 不变。
+- 错误同 Matrix 登录令牌的格式：401 `unauthenticated`（不是经隧道的已配对设备）；400 `invalid_input`；
+  500 `storage`。
+- App 随后注册 pusher：`kind: http`，`app_id` 用 App 的包名，`data: {"url": gateway_url}`。不设 `format`：推送代理要
+  用到 Tuwunel 完整格式里的发送者名和房间名。
+
+**2. 取消登记：`DELETE <核心地址>/_wonton/push/registration`**，响应 200 `{"removed": true|false}`。
+
+**3. 推送代理：`POST http://push.wonton.internal/_matrix/push/v1/notify`**
+
+- Matrix Push Gateway API v1，只给 Tuwunel 用。Tuwunel 默认拒绝推到私网地址（`ip_range_denylist`），连核心容器都
+  推不到；所以给它配出站代理，只代理 `push.wonton.internal`（`proxy.by_domain`），代理地址是核心网关。代理地址
+  不受这个限制，其他 pusher 仍受它保护。
+- Matrix 推送网关没有鉴权，pushkey 是核心生成的 256 位随机串，兼作凭据；网关另外拒绝插件网络和隧道来的请求。
+- 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。
+- 发给设备的明文（加密前）是 Matrix 推送通知的子集：
+  `{"room_id", "event_id", "sender", "sender_display_name", "room_name", "prio"}`，只有前两项一定有。
+- Web Push 请求带 `Content-Encoding: aes128gcm`、`TTL: 86400`，`Urgency` 为 `high`（`prio` 为 `low` 时为
+  `normal`）。
+- 响应：推送服务收下了（2xx），或者 pushkey 没登记，回 200 `{"rejected": [...]}`。推送地址回 404、410 表示订阅已
+  失效，核心删掉登记并 rejected。推送服务暂时不可用（连不上、5xx、429）时回 502，Tuwunel 稍后重试。
+
+**4. App 一侧**（`wonton-protocol` 的 `push` 模块）：壳把推送订阅交给核心（`Action::SetPushEndpoint`），平台收不了
+推送时如实告诉核心（`Action::PushUnavailable`），进展看 `ChatViewModel::push`。收到推送、解开后交给
+`ClientCore::resolve_push`，核心取回消息、解密，给出要显示的通知。
+
+**iOS（Apple 开发者账号到位后）**
+
+- App 用 CryptoKit 生成 P-256 密钥对和认证密钥，放进和通知扩展共享的钥匙串；推送地址由中继为 APNs 令牌开。
+- 通知扩展也要经隧道取回消息、解密 Megolm。扩展的内存上限很低，在里面跑 iroh 和 matrix-sdk 是那一批的主要风险。
+
 ## 验证结果（M0-2）
 
 验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑：

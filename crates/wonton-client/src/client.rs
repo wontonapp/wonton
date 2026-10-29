@@ -53,6 +53,11 @@ impl ClientCore {
                 self.chat.foregrounded();
                 Ok(())
             }
+            Action::SetPushEndpoint { .. } | Action::PushUnavailable { .. } => {
+                Err(CoreError::NotReady {
+                    reason: "这个版本的客户端核心不支持推送".to_owned(),
+                })
+            }
             chat => self.chat.dispatch(chat),
         }
     }

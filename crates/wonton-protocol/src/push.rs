@@ -1,0 +1,132 @@
+//! 推送：App 被杀或锁屏时，新消息经推送唤醒 App 并弹出系统通知（ADR-0003 的“设计：加密推送”）。
+//!
+//! 推送地址和设备的推送公钥来自平台（Android 上是 UnifiedPush 分发器），壳用
+//! [`Action::SetPushEndpoint`](crate::Action::SetPushEndpoint) 交给核心。核心把它经隧道登记给家里的服务器，再在
+//! Matrix 上注册指向家里推送代理的 pusher，进展在 [`ChatViewModel::push`](crate::ChatViewModel::push) 里。推送内容
+//! 按 Web Push 的标准加密（RFC 8291），推送服务和中继只看到密文。壳收到推送、在本机解开后交给客户端核心的
+//! `resolve_push`：核心经隧道取回消息、在本机解密，给出要显示的 [`PushNotification`]。
+
+use serde::{Deserialize, Serialize};
+
+use crate::{ChatFailure, SecretString};
+
+/// 平台给的推送地址，即 Web Push 的推送订阅（W3C Push API 的 `PushSubscription`，RFC 8030、RFC 8291）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PushEndpoint {
+    /// 推送地址：家里的服务器把加密后的推送 POST 到这里（RFC 8030 的推送资源）。
+    pub url: String,
+    /// 本设备收推送用的 P-256 公钥：未压缩的点（65 字节），base64url（RFC 8291 的 `p256dh`）。
+    pub p256dh: String,
+    /// 认证密钥（16 字节），base64url（RFC 8291 的 `auth`）。只交给家里的服务器：知道它和推送地址就能伪造推送。
+    pub auth: SecretString,
+}
+
+/// 推送的状态。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PushStatus {
+    /// 壳还没给推送地址。
+    NoEndpoint,
+    /// 平台收不了推送：没有装分发器，分发器拒绝了登记或者注销了本 App。
+    Unavailable { message: String },
+    /// 正在登记给家里的服务器、在 Matrix 上注册 pusher。
+    Registering,
+    /// 已登记：App 被杀或锁屏时，新消息也会弹出通知。
+    Registered,
+    /// 登记失败。回到前台、隧道重新连上时重试；`Unauthorized` 要主人重新配对。
+    Failed {
+        reason: ChatFailure,
+        message: String,
+    },
+}
+
+/// 一条推送对应的通知，壳照着弹出系统通知。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PushNotification {
+    /// 消息所在的房间，点开通知时进入它。同一个房间的通知用它合并。
+    pub room_id: String,
+    pub event_id: String,
+    /// 发送者的显示名，没有时是用户 ID。
+    pub sender: String,
+    /// 房间名；私聊时为空，标题用发送者。
+    pub room_name: Option<String>,
+    pub content: PushContent,
+}
+
+/// 通知的正文。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PushContent {
+    /// 取回了消息并在本机解密：消息的文字，图片等是“[图片]”这样的占位，由核心给出。
+    Message { body: String },
+    /// 取不到正文（隧道连不上、还没收到房间密钥等），照实说明原因，不显示成正常的消息。
+    Unavailable {
+        reason: ChatFailure,
+        message: String,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::de::DeserializeOwned;
+
+    use super::*;
+    use crate::Action;
+
+    /// 测试用的认证密钥原文。
+    const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
+
+    /// 契约：推送的操作、状态和通知都能经 JSON 往返；认证密钥不随 `Debug` 进日志。
+    #[test]
+    fn push_types_round_trip_and_hide_the_auth_secret() {
+        let endpoint = PushEndpoint {
+            url: "https://ntfy.example/upAbC123?up=1".into(),
+            p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4".into(),
+            auth: SecretString::new(AUTH),
+        };
+        let actions = [
+            Action::SetPushEndpoint {
+                endpoint: endpoint.clone(),
+            },
+            Action::PushUnavailable {
+                message: "没有装 UnifiedPush 分发器".into(),
+            },
+        ];
+        for action in &actions {
+            assert_eq!(&round_trip(action), action);
+        }
+        assert!(
+            !format!("{actions:?}").contains(AUTH),
+            "操作的 Debug 漏了认证密钥"
+        );
+        for status in [
+            PushStatus::NoEndpoint,
+            PushStatus::Registered,
+            PushStatus::Failed {
+                reason: ChatFailure::TransportUnavailable,
+                message: "连不上家里的服务器".into(),
+            },
+        ] {
+            assert_eq!(round_trip(&status), status);
+        }
+        let notification = PushNotification {
+            room_id: "!bot:home.example".into(),
+            event_id: "$reply".into(),
+            sender: "Hermes".into(),
+            room_name: None,
+            content: PushContent::Unavailable {
+                reason: ChatFailure::NotReady,
+                message: "还没收到这条消息的房间密钥".into(),
+            },
+        };
+        assert_eq!(round_trip(&notification), notification);
+    }
+
+    fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
+        serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
+    }
+}

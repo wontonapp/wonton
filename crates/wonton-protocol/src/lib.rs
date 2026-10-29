@@ -12,6 +12,7 @@ mod action;
 mod chat;
 mod error;
 mod home;
+mod push;
 mod secret;
 mod session;
 mod timeline;
@@ -24,6 +25,7 @@ pub use chat::{
 };
 pub use error::CoreError;
 pub use home::{HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};
+pub use push::{PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
 pub use timeline::{

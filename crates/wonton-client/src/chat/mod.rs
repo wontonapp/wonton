@@ -25,7 +25,7 @@ use wonton_matrix::{
 use wonton_protocol::{
     Action, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, CoreError,
     DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel, MediaHandle, ProxySettings,
-    RecoveryStatus, SecretString,
+    PushStatus, RecoveryStatus, SecretString,
 };
 
 pub use timeline::TimelineSubscription;
@@ -81,6 +81,7 @@ impl ChatLink {
             },
             rooms: Vec::new(),
             problem: None,
+            push: PushStatus::NoEndpoint,
         });
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
@@ -202,7 +203,9 @@ impl ChatLink {
                 Ok(())
             }
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
-            Action::CreateSession { .. }
+            Action::SetPushEndpoint { .. }
+            | Action::PushUnavailable { .. }
+            | Action::CreateSession { .. }
             | Action::SelectSession { .. }
             | Action::DeleteSession { .. }
             | Action::ConnectHome { .. }

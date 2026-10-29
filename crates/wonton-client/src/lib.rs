@@ -33,7 +33,7 @@ pub use wonton_protocol::{
     Action, BackPagination, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
     CoreError, DeviceVerification, EncryptionStatus, HomeFailure, HomePath, HomeStatus,
     HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, MediaHandle, MessageContent,
-    ProxySettings, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString, SendState,
-    SessionListViewModel, SessionRow, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineUpdate,
+    ProxySettings, PushContent, PushEndpoint, PushNotification, PushStatus, RecoveryStatus,
+    RoomMembership, RoomPreview, RoomRow, SecretString, SendState, SessionListViewModel,
+    SessionRow, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
 };

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{ImageUpload, SecretString};
+use crate::{ImageUpload, PushEndpoint, SecretString};
 
 /// 原生壳发给客户端核心的用户操作。
 ///
@@ -48,4 +48,12 @@ pub enum Action {
     RecoverEncryption { recovery_key: SecretString },
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
+
+    // 推送（ADR-0003 的“设计：加密推送”）。进展在 `ChatViewModel::push` 里。
+    /// 平台给了（或者换了）推送地址。核心经隧道把它登记给家里的服务器，再在 Matrix 上注册指向家里推送代理的
+    /// pusher；之后每次登录都重新注册一遍。地址或公钥不合法时返回 `InvalidInput`。
+    SetPushEndpoint { endpoint: PushEndpoint },
+    /// 平台收不了推送了：没有装分发器，分发器拒绝了登记或者注销了本 App。核心删掉家里的登记和 pusher，
+    /// 把 `message` 照实放进 `ChatViewModel::push`。
+    PushUnavailable { message: String },
 }
