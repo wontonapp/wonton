@@ -41,7 +41,7 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
   归属，同 slug 的另一个插件挂不上。
 - **浏览器里的隔离**：插件子域名彼此同站，也和核心同站，`SameSite=Lax` 拦不住一个插件的页面让浏览器带着
   Cookie 向别的插件或核心发请求；经隧道时，设备身份同样随每个请求带上。所以网关（`gateway/isolation.rs`）：
-  - 插件子域名上，Cookie 会话和隧道身份（以后还有 `sso: proxy` 代加的凭据）只给这些请求：`Sec-Fetch-Site`
+  - 插件子域名上，Cookie 会话、隧道身份和 `sso: proxy` 代加的凭据只给这些请求：`Sec-Fetch-Site`
     为 `same-origin` 或 `none`；导航（`Sec-Fetch-Mode: navigate`，方法为 `GET` 或 `HEAD`，`<object>`、
     `<embed>` 的加载不算）；没有 `Sec-Fetch-Site` 时，没有 `Origin` 或者 `Origin` 就是插件地址。其余请求按
     未登录处理，到不了插件，也不跳去核心换会话。
@@ -52,6 +52,8 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
     丢弃，转发给插件的请求里也去掉这些 Cookie。插件页面的脚本仍能用 `document.cookie` 给父域写 Cookie，
     所以网关按字节解析 `Cookie` 头，同名的会话 Cookie 逐个试：别处写进来的 Cookie 冒充不了会话，也挤不掉
     真正的会话。
+  - `sso: proxy` 的插件：网关代加的请求头和 Cookie 先删掉客户端发来的同名项；响应里设置这些 Cookie 的
+    `Set-Cookie`，以及值里带着代加密钥原文的响应头，都不交给浏览器（插件规范“网关代登录”）。
 
   这几条的边界：
   - 浏览器只对 https 和 `localhost` 发 Fetch Metadata，其余 http 地址上只剩 `Origin`：跨站的表单 POST、

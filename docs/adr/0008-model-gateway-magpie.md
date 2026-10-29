@@ -108,9 +108,8 @@ Web UI；支持列表里有 Hermes Agent。
 （`cargo test -p wonton-core models`）。
 
 - 预装：magpie 是系统插件，随开发用的核心镜像放在 `/usr/share/wonton/system-plugins/magpie`，核心启动后在后台
-  装上（`WONTON_SYSTEM_PLUGINS`），镜像已在本机时两秒内装好并通过健康检查。网页要等网关代登录（插件规范实现计划
-  第 10 项），在那之前不声明 `webui`；provider 用命令行配置：
-  `docker exec <magpie 容器> magpie provider add …`。
+  装上（`WONTON_SYSTEM_PLUGINS`），镜像已在本机时两秒内装好并通过健康检查。“模型设置”网页由网关代登录（见下面的
+  “模型设置网页”一节）；provider 也可以用命令行配置：`docker exec <magpie 容器> magpie provider add …`。
 - 凭据：核心在 magpie 容器里执行 `sh /wonton/credentials.sh issue <插件 id>`，值走标准输入；
   `magpie gateway-key list` 里出现以插件 id 命名、不限模型的凭据。用它请求 `GET /v1/models` 返回 200
   （没配 provider 时是空列表），不带凭据或带错的凭据 401。
@@ -133,3 +132,17 @@ M0-4 的检查改由核心完成，复跑：`deploy/dev/core/smoke.sh` 的“Her
 - 用量：`magpie usage` 里三次请求都记在 `com.nousresearch.hermes/default` 名下，第一轮约 1.3 万输入 token，首 token
   1.3 到 3.2 秒，同 M0-4。
 - 卸载（删除数据）：Bot 的设备吊销、账号停用，它的 Matrix 令牌得到 401；magpie 里没有它的凭据了。
+
+## 验证结果（M1，“模型设置”网页）
+
+magpie 的网页经网关代登录（ADR-0009 的“网关代登录”）打开，主人不用输网页密钥，浏览器和 App 也拿不到它。可复跑：
+`deploy/dev/core/smoke.sh` 的“模型设置”一步。环境：magpie 0.1.1327。
+
+- 鉴权：magpie 的网页认名为 `magpie_web_<端口>` 的 Cookie，值就是 `MAGPIE_WEB_KEY`；不带或带错时页面和 `/api/*`
+  都得到 401（纯文本）。同名的 Cookie 里有一个对就放行，所以挡住浏览器伪造的是网关先删掉同名 Cookie（行为测试覆盖）。
+- 网页密钥是核心生成的插件密钥 `web_key`（32 字节），以 `MAGPIE_WEB_KEY` 注入容器，由网关代加进 Cookie。页面、脚本和
+  `/api/settings`、`/api/providers` 等接口的响应里都没有它（实测）。
+- magpie 自己的登录链接 `/?k=<网页密钥>` 回 303 和一个带密钥、400 天有效的 `Set-Cookie`：网关去掉这个 `Set-Cookie`，
+  冒烟里验证过。
+- 网页的修改是同源的 `fetch`（`POST /api/…`，JSON），经网关照常转发：在网页上关掉、再打开上游，`magpie providers`
+  里随即可见。别的插件网页发来的同样请求得到 401，到不了 magpie。

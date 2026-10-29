@@ -507,6 +507,7 @@ impl Manifest {
         }
         validate_bots(self)?;
         super::provides::validate(self)?;
+        super::proxy_auth::validate(self)?;
         if let Some(webui) = &self.webui {
             validate_webui(webui)?;
         }

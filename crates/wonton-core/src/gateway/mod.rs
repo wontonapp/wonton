@@ -25,6 +25,7 @@ pub mod matrix;
 mod models;
 mod pages;
 mod proxy;
+mod proxy_sso;
 mod session;
 mod sso;
 
@@ -214,8 +215,9 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
 }
 
 /// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
-/// 页面发起的请求和导航。然后转发给插件，并过滤插件响应里的 `Set-Cookie`。
-async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response {
+/// 页面发起的请求和导航。`sso: proxy` 的插件这时加上代登录凭据（`proxy_sso`）。然后转发给插件，并过滤插件
+/// 响应里的 `Set-Cookie` 和会交出凭据的头。
+async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
     let host = gateway.public.plugin_host(slug);
     let Some(route) = gateway.plugins.route(slug) else {
         return pages::error(
@@ -245,6 +247,15 @@ async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response
             );
         }
     };
+    if let Some(auth) = &route.proxy
+        && let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &gateway.owner)
+    {
+        return pages::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "proxy_credentials",
+            &format!("插件 {} 的代登录凭据：{e}", route.id),
+        );
+    }
     let fwd = proxy::Forwarded {
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
@@ -255,6 +266,9 @@ async fn plugin_request(gateway: &Gateway, slug: &str, req: Request) -> Response
     };
     let mut response = proxy::forward(&gateway.http, target, req, fwd).await;
     isolation::sanitize_set_cookies(response.headers_mut());
+    if let Some(auth) = &route.proxy {
+        proxy_sso::scrub(response.headers_mut(), auth);
+    }
     response
 }
 
@@ -308,6 +322,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 mod isolation_tests;
 #[cfg(test)]
 mod models_tests;
+#[cfg(test)]
+mod proxy_sso_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -1,0 +1,261 @@
+//! 网关代登录（`sso: proxy`，插件规范的“网关代登录”）：清单声明的请求头和 Cookie 的值模板。网关认出主人后把它们
+//! 加在转发给插件网页的请求上（见 `gateway::proxy_sso`），浏览器拿不到其中的密钥。
+//!
+//! 值模板里可以用 `{user}`、`{name}`、`{email}`（主人的用户名、显示名和邮箱），以及 `{secret:<名字>}`（插件自己的
+//! `secrets` 里由核心生成的一项），其余文字原样保留。
+
+use std::collections::BTreeMap;
+
+use hyper::header::{HeaderName, HeaderValue};
+
+use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
+use crate::config::Owner;
+
+/// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
+const MIN_SECRET_BYTES: usize = 16;
+
+/// 不能代加的请求头：Host 和 Cookie 由网关自己处理，转发头由网关重新设置，逐跳头不能转发。
+const FORBIDDEN_HEADERS: &[&str] = &[
+    "host",
+    "cookie",
+    "forwarded",
+    "x-real-ip",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+];
+
+/// 值模板里的一段。`Secret` 解析清单时是密钥的名字，网关用的时候是它的值。
+#[derive(Clone, PartialEq, Eq)]
+enum Part {
+    Text(String),
+    User,
+    Name,
+    Email,
+    Secret(String),
+}
+
+/// 解析好的代登录凭据：请求头和 Cookie 的名字及值模板，`{secret:…}` 已经换成核心生成的值。`Debug` 只打印名字。
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProxyAuth {
+    headers: Vec<(HeaderName, Vec<Part>)>,
+    cookies: Vec<(String, Vec<Part>)>,
+}
+
+impl std::fmt::Debug for ProxyAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headers: Vec<&str> = self.headers.iter().map(|(n, _)| n.as_str()).collect();
+        let cookies: Vec<&str> = self.cookies.iter().map(|(n, _)| n.as_str()).collect();
+        f.debug_struct("ProxyAuth")
+            .field("headers", &headers)
+            .field("cookies", &cookies)
+            .finish()
+    }
+}
+
+impl ProxyAuth {
+    /// 声明了 `sso: proxy` 的插件的凭据；`generated` 是核心生成的插件密钥（名字 → 值）。
+    pub fn resolve(
+        manifest: &Manifest,
+        generated: &BTreeMap<String, String>,
+    ) -> Result<Option<Self>, String> {
+        let Some(proxy) = manifest
+            .webui
+            .as_ref()
+            .filter(|w| w.sso == Sso::Proxy)
+            .and_then(|w| w.proxy.as_ref())
+        else {
+            return Ok(None);
+        };
+        let resolve = |template: &str| -> Result<Vec<Part>, String> {
+            parse(template)?
+                .into_iter()
+                .map(|part| match part {
+                    Part::Secret(name) => generated
+                        .get(&name)
+                        .map(|value| Part::Secret(value.clone()))
+                        .ok_or_else(|| format!("插件密钥 {name} 不在密钥库里")),
+                    other => Ok(other),
+                })
+                .collect()
+        };
+        let headers = proxy
+            .headers
+            .iter()
+            .map(|(name, template)| {
+                let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| e.to_string())?;
+                Ok((name, resolve(template)?))
+            })
+            .collect::<Result<_, String>>()?;
+        let cookies = proxy
+            .cookies
+            .iter()
+            .map(|(name, template)| Ok((name.clone(), resolve(template)?)))
+            .collect::<Result<_, String>>()?;
+        Ok(Some(Self { headers, cookies }))
+    }
+
+    /// 代加的请求头：名字和这次请求的值。
+    pub fn headers(&self, owner: &Owner) -> Vec<(HeaderName, String)> {
+        self.headers
+            .iter()
+            .map(|(name, parts)| (name.clone(), render(parts, owner)))
+            .collect()
+    }
+
+    /// 代加的 Cookie：名字和这次请求的值。
+    pub fn cookies(&self, owner: &Owner) -> Vec<(&str, String)> {
+        self.cookies
+            .iter()
+            .map(|(name, parts)| (name.as_str(), render(parts, owner)))
+            .collect()
+    }
+
+    /// 代加的 Cookie 的名字。
+    pub fn cookie_names(&self) -> impl Iterator<Item = &str> {
+        self.cookies.iter().map(|(name, _)| name.as_str())
+    }
+
+    /// 模板里用到的密钥的值：不能出现在给浏览器的响应里。
+    pub fn secrets(&self) -> Vec<&str> {
+        let header_parts = self.headers.iter().map(|(_, parts)| parts);
+        let cookie_parts = self.cookies.iter().map(|(_, parts)| parts);
+        header_parts
+            .chain(cookie_parts)
+            .flatten()
+            .filter_map(|part| match part {
+                Part::Secret(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+fn render(parts: &[Part], owner: &Owner) -> String {
+    parts
+        .iter()
+        .map(|part| match part {
+            Part::Text(text) | Part::Secret(text) => text.as_str(),
+            Part::User => owner.username.as_str(),
+            Part::Name => owner.display_name.as_str(),
+            Part::Email => owner.email.as_str(),
+        })
+        .collect()
+}
+
+/// 拆开一个值模板。`{`、`}` 只能用来写占位符。
+fn parse(template: &str) -> Result<Vec<Part>, String> {
+    let mut parts = Vec::new();
+    let mut rest = template;
+    while let Some(start) = rest.find(['{', '}']) {
+        if rest[start..].starts_with('}') {
+            return Err(format!("`{template}` 里的 }} 没有配对的 {{"));
+        }
+        if start > 0 {
+            parts.push(Part::Text(rest[..start].to_owned()));
+        }
+        let after = &rest[start + 1..];
+        let end = after
+            .find('}')
+            .ok_or_else(|| format!("`{template}` 里的 {{ 没有配对的 }}"))?;
+        parts.push(match &after[..end] {
+            "user" => Part::User,
+            "name" => Part::Name,
+            "email" => Part::Email,
+            other => match other.strip_prefix("secret:") {
+                Some(name) if !name.is_empty() => Part::Secret(name.to_owned()),
+                _ => {
+                    return Err(format!(
+                        "`{template}` 里的 {{{other}}} 不认识：只能用 {{user}}、{{name}}、{{email}} 和 {{secret:<名字>}}"
+                    ));
+                }
+            },
+        });
+        rest = &after[end + 1..];
+    }
+    if !rest.is_empty() {
+        parts.push(Part::Text(rest.to_owned()));
+    }
+    Ok(parts)
+}
+
+/// RFC 6265 的 Cookie 名：token，不含空白和分隔符。
+fn is_cookie_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?={}".contains(&b))
+}
+
+/// RFC 6265 的 cookie-octet：可见 ASCII，除去 `"`、`,`、`;` 和 `\`。生成的密钥（十六进制、Base64）都满足。
+fn is_cookie_value(text: &str) -> bool {
+    text.bytes()
+        .all(|b| b.is_ascii_graphic() && !b"\",;\\".contains(&b))
+}
+
+fn invalid(message: String) -> ManifestError {
+    ManifestError::Invalid(format!("webui.proxy：{message}"))
+}
+
+/// 清单校验：请求头名和 Cookie 名合法；模板写法对，`{secret:…}` 只引用插件自己的 `secrets` 里由核心生成、
+/// 至少 16 字节的项；Cookie 的值只能用 `{secret:…}` 和 cookie-octet 组成的固定文字（用户名、显示名和邮箱可能有
+/// Cookie 里不能出现的字符）。
+pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+    let Some(proxy) = manifest.webui.as_ref().and_then(|w| w.proxy.as_ref()) else {
+        return Ok(());
+    };
+    let secret_ok = |name: &str| {
+        matches!(
+            manifest.secrets.get(name),
+            Some(SecretSpec::Generate(g)) if g.bytes >= MIN_SECRET_BYTES
+        )
+    };
+    let check_template = |template: &str, in_cookie: bool| -> Result<(), ManifestError> {
+        for part in parse(template).map_err(invalid)? {
+            match part {
+                Part::Secret(name) if !secret_ok(&name) => {
+                    return Err(invalid(format!(
+                        "{{secret:{name}}} 要引用 secrets 里由核心生成（generate）、至少 {MIN_SECRET_BYTES} 字节的一项"
+                    )));
+                }
+                Part::User | Part::Name | Part::Email if in_cookie => {
+                    return Err(invalid(format!(
+                        "Cookie 的值只能用 {{secret:…}} 和固定文字：`{template}`"
+                    )));
+                }
+                Part::Text(text) if in_cookie && !is_cookie_value(&text) => {
+                    return Err(invalid(format!(
+                        "Cookie 的值里不能有空白、引号、逗号、分号和反斜杠：`{template}`"
+                    )));
+                }
+                Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
+                    return Err(invalid(format!("请求头的值里不能有控制字符：`{template}`")));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    };
+    for (name, template) in &proxy.headers {
+        let lower = name.to_ascii_lowercase();
+        if HeaderName::from_bytes(name.as_bytes()).is_err()
+            || FORBIDDEN_HEADERS.contains(&lower.as_str())
+            || lower.starts_with("x-forwarded-")
+        {
+            return Err(invalid(format!("不能代加请求头 {name}")));
+        }
+        check_template(template, false)?;
+    }
+    for (name, template) in &proxy.cookies {
+        if !is_cookie_name(name) || name.to_ascii_lowercase().starts_with("wonton_") {
+            return Err(invalid(format!("不能代加 Cookie {name}")));
+        }
+        check_template(template, true)?;
+    }
+    Ok(())
+}

@@ -2,7 +2,7 @@
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
 # 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
-# 装 Hermes，经模型网关和主人加密对话两轮 → 核心重启后恢复 → 卸载干净。
+# 装 Hermes，经模型网关和主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复 → 卸载干净。
 # Hermes 一步要真实模型：开发机上要有在运行的 magpie（容器里经 host.docker.internal:3425 访问），
 # 提供 rm/glm-5.3-flash。
 #
@@ -336,6 +336,54 @@ expect "卸载 Hermes：吊销 Bot 的设备、停用账号" \
 expect "Hermes 的 Matrix 令牌失效" \
   "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $hermes_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
 expect "网关里 Hermes 的凭据吊销了" "$(gateway_keys)" ""
+
+step "“模型设置”网页（sso: proxy）：主人不用输网页密钥就能打开，密钥不出网关"
+magpie_url="http://ai-usemagpie-magpie.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
+# 核心生成、注入 magpie 容器的网页密钥，只用来检查它没有出现在任何响应和 Cookie 罐里。
+web_key="$(docker inspect "$magpie" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^MAGPIE_WEB_KEY=//p')"
+[[ "$web_key" =~ ^[0-9a-f]{64}$ ]] || fail "magpie 没有拿到核心生成的网页密钥"
+upstream_off() { [[ "$(docker exec "$magpie" magpie providers)" == *'switched off'* ]]; }
+# 没有任何 Cookie 的浏览器。
+anon() { docker exec "$browser" curl -sS "$@"; }
+reply="$(anon -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Accept: text/html' "$magpie_url/")"
+expect "没登录：打开页面跳到核心登录" "${reply%% *}" 303
+[[ "${reply#* }" == "$core_url/_wonton/sso?to="* ]] || fail "跳转地址不对：${reply#* }"
+expect "没登录时知道网页密钥也进不去" \
+  "$(anon -o /dev/null -w '%{http_code}' -H "Cookie: magpie_web_3430=$web_key" "$magpie_url/api/settings")" 401
+# 局域网浏览器登录过核心（Grafana 一步），换一次插件会话就进去了。
+seen="$(b -L -D - -H 'Accept: text/html' -w '\n%{http_code} %{url_effective}' "$magpie_url/")"
+expect "局域网浏览器直接打开“模型设置”" "$(tail -1 <<<"$seen")" "200 $magpie_url/"
+grep -q '<title>magpie</title>' <<<"$seen" || fail "打开的不是 magpie 的网页"
+reply="$(b -D - "$magpie_url/api/providers")"
+seen+="$reply"
+grep -q '"id":"upstream"' <<<"$reply" || fail "网页上没有命令行配置的上游：$reply"
+ok "网页上看得到命令行配置的上游"
+# 网页里的修改和它的 fetch 一样带 Origin：同源的放行，别的插件网页发来的按没登录处理，不转发。
+page_post() { b -D - -H "Origin: $1" -H 'content-type: application/json' -d '{"id":"upstream"}' "$magpie_url/api/provider/$2"; }
+reply="$(page_post "$grafana_url" off)"
+expect "别的插件的网页发来的修改被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 401
+! upstream_off || fail "跨站请求改动了 magpie 的设置"
+seen+="$(page_post "$magpie_url" off)"
+upstream_off || fail "网页上关掉的上游在 magpie 里没生效"
+seen+="$(page_post "$magpie_url" on)"
+! upstream_off || fail "网页上打开的上游在 magpie 里没生效"
+ok "在网页上关掉、再打开上游，magpie 里随即生效"
+# magpie 自己的登录链接 /?k=<网页密钥> 回一个带密钥的 Set-Cookie：网关把它去掉。
+seen+="$(b -D - -o /dev/null "$magpie_url/?k=$web_key")"
+! grep -qi '^set-cookie: magpie_web' <<<"$seen" || fail "magpie 设置网页密钥的 Set-Cookie 到了浏览器"
+ok "magpie 设置网页密钥的 Set-Cookie 被网关去掉"
+reply="$(t -L -D - -H 'Accept: text/html' -w '\n%{http_code} %{num_redirects}' "$magpie_url/")"
+expect "已配对设备经隧道直接打开“模型设置”（没有跳转）" "$(tail -1 <<<"$reply")" "200 0"
+seen+="$reply"
+reply="$(tc -D - -w '\n%{http_code}' "$magpie_url/api/settings")"
+expect "经 CONNECT（iOS WKWebView 的方式）同样能读设置" "$(tail -1 <<<"$reply")" 200
+seen+="$reply"
+! grep -qF "$web_key" <<<"$seen" || fail "响应里出现了网页密钥"
+! docker exec "$browser" grep -qF -e "$web_key" -e magpie_web /tmp/jar /tmp/phone-jar /tmp/ios-jar ||
+  fail "浏览器或手机的 Cookie 罐里有 magpie 的网页密钥"
+ok "网页密钥不在任何响应头、响应体和 Cookie 罐里"
+
+step "吊销手机"
 "$dev" revoke "$device_id" >/dev/null
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
@@ -376,6 +424,8 @@ b -o /dev/null -X POST --data-urlencode "token=$("$dev" token)" "$core_url/_wont
 expect "重新登录后打开插件仍自动登录" \
   "$(b -L -o /dev/null -w '%{http_code}' -H 'Accept: text/html' "$grafana_url/")" 200
 expect "核心重启后插件仍认出主人" "$(b "$grafana_url/api/user" | json login)" owner
+expect "核心重启后“模型设置”仍免密码打开（代登录的密钥从密钥库读回）" \
+  "$(b -L -o /dev/null -w '%{http_code} %{url_effective}' -H 'Accept: text/html' "$magpie_url/")" "200 $magpie_url/"
 
 step "卸载干净"
 started=$(date +%s)

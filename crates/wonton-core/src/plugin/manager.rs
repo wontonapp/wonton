@@ -14,6 +14,7 @@ use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::models::{ModelsRoute, ProviderState};
 use super::package::{PackageError, PluginPackage};
+use super::proxy_auth::ProxyAuth;
 use super::render::{RenderError, dry_run};
 use super::secrets::CollectError;
 use super::sources::{Source, Sources};
@@ -206,6 +207,7 @@ pub struct Preview {
     pub permissions: Vec<PermissionView>,
     pub services: Vec<String>,
     pub url: Option<String>,
+    /// 打开网页时自动登录：经身份提供方（`sso: oidc`）或网关代登录（`sso: proxy`）。
     pub sso: bool,
 }
 
@@ -238,6 +240,8 @@ pub struct Route {
     pub status: PluginStatus,
     /// `host:port`，核心可直接访问的插件网页地址。
     pub upstream: Option<String>,
+    /// `sso: proxy` 时网关代加的凭据。
+    pub proxy: Option<Arc<ProxyAuth>>,
 }
 
 struct Entry {
@@ -251,6 +255,8 @@ struct Entry {
     provides_models: bool,
     /// 运行中的模型网关的转发目标。
     models: Option<ModelsRoute>,
+    /// `sso: proxy` 时网关代加的凭据。
+    proxy: Option<Arc<ProxyAuth>>,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
@@ -258,6 +264,7 @@ pub(super) struct Deployed {
     pub upstream: Option<String>,
     pub health: Health,
     pub models: Option<ModelsRoute>,
+    pub proxy: Option<Arc<ProxyAuth>>,
 }
 
 impl Entry {
@@ -274,6 +281,7 @@ impl Entry {
                 .as_ref()
                 .is_some_and(|p| p.models.is_some()),
             models: None,
+            proxy: None,
         }
     }
 
@@ -281,6 +289,7 @@ impl Entry {
         Self {
             health: Some(deployed.health),
             models: deployed.models,
+            proxy: deployed.proxy,
             ..Self::new(manifest, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -298,6 +307,7 @@ impl Entry {
             upstream: None,
             provides_models: false,
             models: None,
+            proxy: None,
         }
     }
 }
@@ -385,7 +395,6 @@ impl PluginManager {
 
     pub fn preview_package(&self, package: &PluginPackage) -> Result<Preview, InstallError> {
         dry_run(package)?;
-        check_sso(&package.manifest)?;
         let m = package.manifest.clone();
         let slug = m.id.slug();
         Ok(Preview {
@@ -403,7 +412,7 @@ impl PluginManager {
                 .webui
                 .as_ref()
                 .map(|_| self.cfg.public.origin(&self.cfg.public.plugin_host(&slug))),
-            sso: m.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc),
+            sso: m.webui.as_ref().is_some_and(|w| w.sso != Sso::None),
             id: m.id,
             version: m.version,
             kind: m.kind,
@@ -429,6 +438,7 @@ impl PluginManager {
                 id: id.clone(),
                 status: entry.status.clone(),
                 upstream: entry.upstream.clone(),
+                proxy: entry.proxy.clone(),
             })
     }
 
@@ -481,6 +491,13 @@ impl PluginManager {
             .write()
             .expect("插件表锁中毒")
             .insert(manifest.id, entry);
+    }
+
+    /// 测试用：给登记过的插件设上网关代登录的凭据。
+    #[cfg(test)]
+    pub(crate) fn proxy_for_test(&self, id: &PluginId, auth: ProxyAuth) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        plugins.get_mut(id).expect("先 register_for_test").proxy = Some(Arc::new(auth));
     }
 
     /// 测试用：登记一个插件网络的地址段，供网关测试按来源地址认出插件。
@@ -590,7 +607,6 @@ impl PluginManager {
     ) -> Result<PluginView, InstallError> {
         dry_run(&package)?;
         let manifest = package.manifest.clone();
-        check_sso(&manifest)?;
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
         self.reserve(&manifest)?;
@@ -705,16 +721,6 @@ impl PluginManager {
                 Err(e)
             }
         }
-    }
-}
-
-/// 网关代登录（`sso: proxy`）还没实现：预览和安装时就如实拒绝，不装一个打开网页还要另外登录的插件。
-fn check_sso(manifest: &Manifest) -> Result<(), InstallError> {
-    match manifest.webui.as_ref().map(|w| w.sso) {
-        Some(Sso::Proxy) => Err(InstallError::Unsupported(
-            "网关代登录（sso: proxy）尚未支持，见插件规范实现计划第 10 项".to_owned(),
-        )),
-        _ => Ok(()),
     }
 }
 

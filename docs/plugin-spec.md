@@ -188,10 +188,7 @@ services:
 
 ### 网关代登录（`sso: proxy`）
 
-> 核心认得 `sso: proxy` 和 `webui.proxy`，但还没实现（实现计划第 10 项）：在那之前预览和安装这样的插件都如实
-> 拒绝（`unsupported`），不装一个打开网页还要另外登录的插件。magpie 的“模型设置”网页也随第 10 项回来。
-
-网关校验会话后，在转发给插件的请求上加上清单声明的请求头或 Cookie。应用认反向代理传来的用户名时
+网关认出主人后，在转发给插件的请求上加上清单声明的请求头或 Cookie。应用认反向代理传来的用户名时
 （Navidrome、Paperless-ngx、Grafana 的 auth proxy 等）：
 
 ```yaml
@@ -218,19 +215,28 @@ webui:
 
 | 字段 | 说明 |
 | --- | --- |
-| `webui.proxy.headers` | 请求头名 → 值模板。不能是 `Host`、`Cookie`、`X-Forwarded-*` 和逐跳头部。 |
-| `webui.proxy.cookies` | Cookie 名 → 值模板。和浏览器发来的其他 Cookie 合并成一个 `Cookie` 头。 |
+| `webui.proxy.headers` | 请求头名 → 值模板。不能是 `Host`、`Cookie`、`Forwarded`、`X-Real-IP`、`X-Forwarded-*` 和逐跳头部。 |
+| `webui.proxy.cookies` | Cookie 名 → 值模板。名字不能以 `wonton_` 开头。和浏览器发来的其他 Cookie 合并成一个 `Cookie` 头。 |
 
 两项至少写一项。值模板里可以用 `{user}`（用户名，同 OIDC 的 `preferred_username`）、`{name}`、
-`{email}`，以及 `{secret:<名字>}`（`secrets` 里由核心生成的一项），其余文字原样保留，如
-`"Bearer {secret:api_token}"`。
+`{email}`，以及 `{secret:<名字>}`，其余文字原样保留，如 `"Bearer {secret:api_token}"`；`{`、`}` 只能用来写
+占位符。
 
-- 网关先删掉客户端发来的同名请求头和 Cookie 再加上声明的值，客户端无法伪造或覆盖。
-- 这些值不回到浏览器：插件响应里设置同名 Cookie 的 `Set-Cookie` 由网关去掉，密钥只在核心和插件之间。
+- `{secret:…}` 只能引用插件自己的 `secrets` 里由核心生成（`generate`）、至少 16 字节的一项：引用不到别的插件的
+  密钥，也引用不到插件交给核心保管（`collect`）的秘密。网关按值从响应里找出并去掉它（见下），值太短会误伤。
+- Cookie 的值只能用 `{secret:…}` 和固定文字，文字里不能有空白、引号、逗号、分号和反斜杠：用户名、显示名和邮箱
+  可能有 Cookie 里不能出现的字符。请求头的值里不能有控制字符。不合规的清单在预览和安装时就被拒绝。
+- 只有网关认出主人的请求才加凭据，规则和其他插件网页一样：局域网浏览器要有这个插件子域名的会话，经隧道的
+  已配对设备看设备身份。没认出主人的请求不转发：打开页面跳到核心登录，其余请求 401。
 - 插件子域名彼此同站，一个插件的页面能让浏览器带着会话向另一个插件发请求。所以网关按 Fetch Metadata
-  的资源隔离策略，只给这些请求加凭据：`Sec-Fetch-Site` 为 `same-origin` 或 `none`；顶层导航
+  的资源隔离策略，只认这些请求的登录状态：`Sec-Fetch-Site` 为 `same-origin` 或 `none`；顶层导航
   （`Sec-Fetch-Mode: navigate`，方法为 `GET` 或 `HEAD`）；没有 `Sec-Fetch-Site` 时，没有 `Origin`
-  或 `Origin` 就是插件地址。其余请求照常转发，但不加凭据。
+  或 `Origin` 就是插件地址。其余请求按没登录处理，同样不转发。凭据只加在这个插件自己的子域名上。
+- 网关先删掉客户端发来的同名请求头和 Cookie（名字不分大小写）再加上声明的值，客户端无法伪造或覆盖。
+- 凭据不回到浏览器：插件响应里设置这些 Cookie 的 `Set-Cookie`（名字不分大小写，包括没写名字、浏览器会读成
+  同名的）由网关去掉；值里带着 `{secret:…}` 原文的响应头（比如插件把密钥写回别的 Cookie 或跳转地址）也去掉。
+  网关不改响应体：插件不能把凭据写进页面。
+- 主人的显示名这类值写不进请求头时（比如带换行），网关如实报错（500 `proxy_credentials`），不转发。
 - 插件网络里只有核心和本插件的服务，局域网也不能直接访问容器里没发布的端口（见“网络”），所以应用的
   “信任的代理地址”可以放宽到整个插件网络（如 Navidrome 的 `ND_REVERSEPROXYWHITELIST: 0.0.0.0/0`）。
 - 用 `{secret:…}` 的插件分不出是谁在用：每个能打开这个小程序的人都以同一个应用身份登录。
@@ -607,14 +613,11 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
    - `crates/wonton-core/src/plugin/manifest.rs` 的类型和校验移到 `crates/wonton-protocol` 的 `plugin`
      模块；`wonton-core` 加依赖并改为引用它。
    - 新增：`Permission::NetworkEgress`。`secrets`（`generate`、`collect`）、`bots`、`provides.models`
-     （`plugin/provides.rs`）、`Sso::Proxy` 和 `webui.proxy`（只解析，见第 10 项）已在核心里，随其他类型一起迁移。
-   - 新增的校验：模板只引用 `generate` 的项。只有 `kind: system` 能声明 `provides`、`provides` 引用的服务存在，
-     这两条已在核心里。
+     （`plugin/provides.rs`）、`Sso::Proxy` 和 `webui.proxy`（模板校验在 `plugin/proxy_auth.rs`）已在核心里，随其他类型
+     一起迁移。
+   - 校验一起迁移：`{secret:…}` 模板只引用 `generate` 的项、只有 `kind: system` 能声明 `provides`、`provides`
+     引用的服务存在，这几条已在核心里。
    - 契约测试：`plugins/` 下所有插件包都能解析，几类违规各被拒绝；App 的安装确认页以后用同一套类型
      （需要 UniFFI 导出的类型按它的约束调整）。
-10. **网关代登录**（`gateway/proxy.rs`）：`sso: proxy` 时剥离同名请求头和 Cookie，按 Fetch Metadata 的
-    规则加上声明的值，去掉插件响应里同名 Cookie 的 `Set-Cookie`；行为测试覆盖伪造、跨插件请求和不回传。
-    和 #20 的 `Set-Cookie` 加固一起改。做完后给 `plugins/magpie` 加回网页入口（“模型设置”），在那之前它不声明
-    `webui`，provider 用 magpie 的命令行配置。
 12. **多 Bot**（M2，每个 Bot 一组容器）：按 `bots.services` 为每个 Bot 实例化容器、限制 Bot 服务的挂载、
     按 Bot 签发凭据和收存秘密。

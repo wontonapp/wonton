@@ -229,3 +229,22 @@ matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一
 - 第二个 Bot：Hermes Agent v0.22.5 按同样的规则装上，用户名是 `hermes`，只凭注入的令牌连上 Matrix
   （`MATRIX_E2EE_MODE=required`），在主房间里和主人的新设备加密对话两轮（模型的部分见 ADR-0008）。核心没有为它
   开任何特例。
+
+## 验证结果（M1，网关代登录）
+
+插件规范 v0.1 的 `sso: proxy` 已实现：应用不支持 OIDC、但认反向代理传来的用户名或一个固定密钥时，网关在转发给插件的
+请求上代加清单声明的请求头或 Cookie，主人打开网页不用再登录一次。实现见 `crates/wonton-core/src/plugin/proxy_auth.rs`
+（值模板和清单校验）和 `crates/wonton-core/src/gateway/proxy_sso.rs`（转发前代加、转发后清理）。可复跑：
+`cargo test -p wonton-core proxy_sso`、`cargo test -p wonton-core gateway::tunnel_tests::paired_devices_open_proxy`（经真实
+隧道），以及 `deploy/dev/core/smoke.sh` 的“模型设置”一步（magpie 的网页，见 ADR-0008）。
+
+- 什么时候加：和其他插件网页一样先认出主人（局域网浏览器看这个子域名的插件会话，经隧道的已配对设备看设备身份），
+  只认本插件页面发起的请求和导航（ADR-0011 的“浏览器里的隔离”）。没认出主人的请求不转发：打开页面跳到核心登录，
+  其余 401。凭据只加在这个插件自己的子域名上，别的插件的页面和会话都用不上。
+- 伪造不了：转发前删掉客户端发来的同名请求头和 Cookie（名字不分大小写），再加上声明的值。
+- 拿不走：转发后去掉设置这些 Cookie 的 `Set-Cookie`（名字不分大小写，包括没写名字、浏览器读成同名的），以及值里带着
+  代加密钥原文的响应头。响应体不改，插件不能把凭据写进页面。
+- `{secret:…}` 只引用插件自己的、由核心生成且至少 16 字节的密钥；不合规的清单在预览和安装时就被拒绝。
+- 冒烟实测（magpie 0.1.1327）：局域网浏览器登录过核心后，经一次会话交接打开“模型设置”；已配对设备经隧道直接打开，
+  没有跳转（Android WebView 和 iOS WKWebView 两种代理方式）。没登录时打开页面跳到核心登录，只带网页密钥的 Cookie
+  得到 401；别的插件网页发来的修改得到 401，没到 magpie。网页密钥不在任何响应头、响应体和 Cookie 罐里。

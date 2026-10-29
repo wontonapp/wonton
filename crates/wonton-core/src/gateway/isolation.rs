@@ -101,7 +101,7 @@ fn sanitize(set_cookie: &[u8]) -> Option<HeaderValue> {
 
 /// 浏览器之后在 `Cookie` 头里写出的名字。没有名字的 Cookie（`Set-Cookie: =wonton_app=x`）只写值，
 /// 看上去就是 `wonton_app=x`，所以要看值里第一个 `=` 之前的部分。
-fn sent_name(pair: &[u8]) -> &[u8] {
+pub(super) fn sent_name(pair: &[u8]) -> &[u8] {
     let pair = pair.trim_ascii();
     match split_once(pair, b'=') {
         Some((name, value)) if name.trim_ascii().is_empty() => {

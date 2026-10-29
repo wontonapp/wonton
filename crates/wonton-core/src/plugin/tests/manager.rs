@@ -5,6 +5,8 @@ use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
+use axum::Router;
+use axum::routing::get;
 use serde_json::json;
 
 use super::super::docker::Engine;
@@ -14,6 +16,7 @@ use super::super::package_files::PackageFiles;
 use super::super::render::container_name;
 use super::super::store::{InstalledRecord, Store};
 use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus};
+use super::egress::serve;
 use super::{WHOAMI, package};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
@@ -263,36 +266,104 @@ async fn docker_outage_is_reported_and_leaves_nothing_behind() {
     );
 }
 
+/// 网关代登录的插件：代加一个请求头和一个 Cookie，Cookie 的值是核心生成的密钥。
+fn proxy_app(port: u16) -> String {
+    package(
+        "  web:\n    image: nginx",
+        &format!(
+            "  webui:\n    service: web\n    port: {port}\n    sso: proxy\n    proxy:\n      \
+             headers: {{Remote-User: '{{user}}'}}\n      cookies: {{app_web: '{{secret:web_key}}'}}\n  \
+             secrets: {{web_key: {{generate: {{bytes: 32}}}}}}\n  permissions: []"
+        ),
+    )
+}
+
 #[tokio::test]
-async fn proxy_sso_is_refused_until_the_core_implements_it() {
+async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
+    // 假 Docker 把插件容器的地址报成 127.0.0.1，安装最后一步检查的网页就是这个本机服务。
+    let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
+    let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let m = manager(&dir);
-    let web = "  web:\n    image: nginx";
-    let proxy = package(
-        web,
-        "  webui: {service: web, port: 80, sso: proxy, proxy: {cookies: {app_web: '{secret:web_key}'}}}\n  \
-         secrets: {web_key: {generate: {bytes: 32}}}\n  permissions: []",
+    let m = manager_with(engine.clone(), &dir);
+    let compose = proxy_app(web.port());
+    assert!(
+        m.preview(&compose).unwrap().sso,
+        "安装确认页上显示会自动登录"
     );
-    // 预览就如实拒绝，主人不会确认装一个打开网页还要另外登录的插件；在碰 Docker 之前。
-    assert_eq!(m.preview(&proxy).unwrap_err().kind(), "unsupported");
+    m.install(&compose, &[]).await.unwrap();
+    let owner = crate::config::Owner {
+        id: "owner".into(),
+        username: "owner".into(),
+        display_name: "主人".into(),
+        email: "owner@wonton.localhost".into(),
+    };
+    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let header = auth.headers(&owner);
     assert_eq!(
-        m.install(&proxy, &[]).await.unwrap_err().kind(),
-        "unsupported"
+        (header[0].0.as_str(), header[0].1.as_str()),
+        ("remote-user", "owner")
     );
-    assert!(m.list().is_empty());
-    // 写法不对的照常是清单不合法：sso: proxy 却没写 webui.proxy、proxy 是空的，或者写了 proxy 却不是 sso: proxy。
-    for webui in [
-        "{service: web, port: 80, sso: proxy}",
-        "{service: web, port: 80, sso: proxy, proxy: {}}",
-        "{service: web, port: 80, proxy: {headers: {Remote-User: '{user}'}}}",
+    let cookies = auth.cookies(&owner);
+    let (name, key) = (&cookies[0].0, cookies[0].1.clone());
+    assert_eq!((*name, key.len()), ("app_web", 64), "32 字节的十六进制");
+    assert_eq!(auth.secrets(), [key.as_str()]);
+    // 核心重启后从密钥库读回同一个值。
+    let restarted = manager_with(engine, &dir);
+    restarted.restore().await.unwrap();
+    let auth = restarted.route("app-test").unwrap().proxy.unwrap();
+    assert_eq!(auth.cookies(&owner)[0].1, key);
+}
+
+#[test]
+fn proxy_sso_templates_use_known_placeholders_and_long_generated_secrets() {
+    let parse = |headers: &str, cookies: &str, secrets: &str| {
+        let manifest = format!(
+            "  webui:\n    service: web\n    port: 80\n    sso: proxy\n    proxy:\n      \
+             headers: {headers}\n      cookies: {cookies}\n  secrets: {secrets}\n  permissions: []"
+        );
+        PluginPackage::parse(&package("  web:\n    image: nginx", &manifest))
+    };
+    let key = "{web_key: {generate: {bytes: 32}}}";
+    let ok = parse(
+        "{Remote-User: '{user} <{email}>'}",
+        "{app_web: 'v1.{secret:web_key}'}",
+        key,
+    );
+    assert!(ok.is_ok(), "{ok:?}");
+    for (headers, cookies, secrets) in [
+        // 不认识的占位符、不配对的括号。
+        ("{X-A: '{who}'}", "{}", key),
+        ("{X-A: '{user'}", "{}", key),
+        ("{X-A: 'user}'}", "{}", key),
+        // 只能引用核心生成、至少 16 字节的密钥。
+        ("{}", "{a: '{secret:nope}'}", key),
+        (
+            "{}",
+            "{a: '{secret:web_key}'}",
+            "{web_key: {generate: {bytes: 8}}}",
+        ),
+        (
+            "{}",
+            "{a: '{secret:web_key}'}",
+            "{web_key: {collect: {service: web, path: /k}}}",
+        ),
+        // Cookie 的值里不能放用户名这类可能带分隔符的字段，也不能有空白；请求头的值里不能有控制字符。
+        ("{}", "{a: '{name}'}", key),
+        ("{}", "{a: 'v {secret:web_key}'}", key),
+        ("{X-A: \"a\\u0001b\"}", "{}", key),
+        // 网关自己管的头、逐跳头和保留的 Cookie 名。
+        ("{Host: x}", "{}", key),
+        ("{X-Forwarded-For: x}", "{}", key),
+        ("{Cookie: x}", "{}", key),
+        ("{}", "{wonton_app: x}", key),
+        ("{}", "{'a;b': x}", key),
     ] {
-        let source = package(web, &format!("  webui: {webui}\n  permissions: []"));
         assert!(
             matches!(
-                PluginPackage::parse(&source),
+                parse(headers, cookies, secrets),
                 Err(super::super::package::PackageError::Manifest(_))
             ),
-            "{webui}"
+            "{headers} {cookies} {secrets}"
         );
     }
 }

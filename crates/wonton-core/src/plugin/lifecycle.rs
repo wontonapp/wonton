@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -15,6 +16,7 @@ use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallRep
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::models::ModelsRoute;
 use super::package::PluginPackage;
+use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
@@ -149,6 +151,7 @@ impl PluginManager {
         let mut secrets = self.prepare_secrets(manifest, undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
         let mut ctx = self
             .install_context(manifest, secret.as_deref(), generated)
             .await?;
@@ -220,6 +223,7 @@ impl PluginManager {
             upstream,
             health,
             models,
+            proxy: proxy.map(Arc::new),
         })
     }
 
@@ -600,6 +604,7 @@ impl PluginManager {
         }
         self.check_bot(manifest).await?;
         let generated = self.check_secrets(manifest).await?;
+        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
         let network = format!("wonton-{slug}");
         let expected = self.network_reach(manifest);
         let actual = self.engine.network_reach(&network).await?;
@@ -625,6 +630,7 @@ impl PluginManager {
             upstream: self.webui_upstream(manifest, &network).await?,
             health: Health::of(healthy),
             models: self.models_upstream(manifest, &network).await?,
+            proxy: proxy.map(Arc::new),
         })
     }
 

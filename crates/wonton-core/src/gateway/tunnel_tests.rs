@@ -25,6 +25,7 @@ use wonton_tunnel::{
 };
 
 use super::isolation_tests::{OTHER, browser_cases};
+use super::proxy_sso_tests::{KEY, VAULT_HOST, leaked, received, register_vault};
 use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, echo_upstream, fake_hydra, owner};
 use super::{Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
@@ -258,6 +259,21 @@ async fn paired_device_opens_plugins_without_any_gateway_session() {
         "隧道请求没有客户端 IP：{seen}"
     );
     assert_eq!(home.hits.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn paired_devices_open_proxy_sign_in_pages_without_a_password() {
+    let home = Home::start(None).await;
+    let hits = register_vault(&home.plugins).await;
+    let device = SecretKey::generate();
+    home.register(&device).await;
+    let phone = Phone::start(device, &home).await;
+    let forged = [("cookie", "vault_web=forged")];
+    let (status, headers, text) = phone.send(Method::GET, VAULT_HOST, "/leak", &forged).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert_eq!(received(&text, "cookie"), [format!("vault_web={KEY}")]);
+    assert!(leaked(&headers).is_empty(), "{headers:?}");
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

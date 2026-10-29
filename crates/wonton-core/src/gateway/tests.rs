@@ -301,8 +301,13 @@ impl Harness {
 
     /// 走完整的交接：登录核心 → 换交接码 → 在插件域名兑换，返回插件会话 Cookie。
     pub async fn app_session(&self) -> String {
+        self.app_session_on(PLUGIN).await
+    }
+
+    /// 同 [`Self::app_session`]，插件域名是 `host`。
+    pub async fn app_session_on(&self, host: &str) -> String {
         let core = self.login(TOKEN).await.cookie(CORE_COOKIE);
-        let to = format!("{}/hello?x=1", self.origin(PLUGIN));
+        let to = format!("{}/hello?x=1", self.origin(host));
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("to", &to)
             .finish();
@@ -311,14 +316,14 @@ impl Harness {
             .await;
         assert_eq!(handoff.status, StatusCode::SEE_OTHER);
         let target = url::Url::parse(&handoff.location()).unwrap();
-        assert_eq!(target.host_str(), Some(PLUGIN));
+        assert_eq!(target.host_str(), Some(host));
         let redeem_path = format!("{}?{}", target.path(), target.query().unwrap());
-        let redeemed = self.get(PLUGIN, &redeem_path, &[]).await;
+        let redeemed = self.get(host, &redeem_path, &[]).await;
         assert_eq!(redeemed.status, StatusCode::SEE_OTHER);
         assert_eq!(redeemed.location(), "/hello?x=1");
         // 同一个交接码不能再用。
         assert_eq!(
-            self.get(PLUGIN, &redeem_path, &[]).await.status,
+            self.get(host, &redeem_path, &[]).await.status,
             StatusCode::UNAUTHORIZED
         );
         redeemed.cookie(super::APP_COOKIE)

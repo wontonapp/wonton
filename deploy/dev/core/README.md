@@ -72,8 +72,9 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 ## 模型网关
 
 核心镜像里带着系统插件 magpie（`plugins/magpie`），核心启动后在后台预装它（`WONTON_SYSTEM_PLUGINS`）。声明了
-`models` 的插件经 `models.wonton.internal` 访问它，凭据由核心签发。“模型设置”网页要等网关代登录，现在用
-magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie（同 `deploy/dev/agent`）：
+`models` 的插件经 `models.wonton.internal` 访问它，凭据由核心签发。“模型设置”网页
+（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和已配对设备直接打开，不用输
+magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie（同 `deploy/dev/agent`）：
 
 ```bash
 docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder models=rm/glm-5.3-flash
@@ -101,8 +102,9 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
 失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
 经 `models.wonton.internal` 能用、卸载后凭据被吊销；Hermes 按插件包目录装好后连上 Matrix，主人的新设备经隧道和它
-加密对话两轮，用量记在它的凭据名下，删除数据卸载后 Bot 账号停用、凭据吊销；没申请 `matrix.bot`、`models` 的插件
-进不了对应的内部地址；
+加密对话两轮，用量记在它的凭据名下，删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
+浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
+响应和 Cookie 罐里；没申请 `matrix.bot`、`models` 的插件进不了对应的内部地址；
 核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `rm/glm-5.3-flash`，
 冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。

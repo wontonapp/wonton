@@ -17,6 +17,7 @@ pub mod mounts;
 pub mod package;
 pub mod package_files;
 pub mod provides;
+pub mod proxy_auth;
 pub mod render;
 pub mod secrets;
 pub mod sources;
