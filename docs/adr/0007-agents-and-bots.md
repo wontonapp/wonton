@@ -54,8 +54,8 @@ MVP 只有默认的 Hermes Bot。ACP 桥、家人 Bot、Bot 互发消息在 M2�
 - **桥只说 ACP。** 用 Rust 写，复用 `wonton-matrix`：每个 Bot 的端到端加密、交叉签名和恢复密钥都由它负责。
   ACP 的权限请求（`session/request_permission`）对应聊天里的确认按钮。
 - **每个 Agent 插件的容器里放一个说 ACP 的程序。** 原生支持 ACP 的直接用，ACP 官网 2026-10 列出 48 个，
-  包括 Hermes、Kimi Code CLI、Qwen Code、Qoder CLI、OpenCode、Gemini CLI。Claude Code、Codex 用适配器：
-  `claude-agent-acp`（Zed 起头，现在和 `codex-acp` 一样归 ACP 组织维护）。
+  包括 Hermes、Kimi Code CLI、Qwen Code、Qoder CLI、OpenCode、Gemini CLI。Claude Code、Codex 用 ACP 组织
+  维护的适配器 `claude-agent-acp`、`codex-acp`。
 - **插话。** ACP 现行协议不支持在一轮进行中插入新消息，进行中只能取消；v2 提案也把插话和排队留作单独的
   议题。桥的做法：
   - 默认排队，等这一轮结束再发，和 Hermes 的 Bot 模式一致；
@@ -203,7 +203,7 @@ claude-agent-acp 和 codex-acp 实现了同一个约定（两家都写在各自�
 - 请求：`_session/steering`，参数 `{sessionId, prompt: ContentBlock[], _meta: {steering: {idleBehavior: "promptRequired"}}}`。
 - 结果：`injected` 表示并入进行中的这一轮，原来那个 `session/prompt` 照常以这一轮的结束返回；`promptRequired`
   表示 agent 空闲，由桥用 `session/prompt` 发。
-- 桥只在自己有一轮进行中时发。Codex 目前不认 `idleBehavior`（codex-acp#440），空闲时会返回 `startedNewTurn`、
+- 桥只在自己有一轮进行中时发。codex-acp 2.3.0 不认 `idleBehavior`（codex-acp#440），空闲时会返回 `startedNewTurn`、
   自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥要处理这个竞态：把后续输出当作新一轮。M2 实现时
   写测试覆盖。
 - 不支持的运行时（Kimi、Qwen、Qoder）退回排队，聊天里另给“打断重来”。Qwen 有私有的插话方法
@@ -232,7 +232,7 @@ OAR 直接驱动 claude 2.1.312、codex 0.165 实测，其余运行时按 OAR �
     额度只对官方订阅有意义。
   - 登录 ACP 这边已有（见上），不值得为它多一个 Node 24 进程。
 - **接入没有 ACP 的运行时**：补充里举的 Grok Build、Antigravity，OAR 内部其实也是经 ACP 驱动的（和 Kimi、OpenCode
-  共用 ACP 传输），可以直接接桥。只靠 OAR 才能驱动的是 Cursor、Pi 这类经 SDK 在进程内跑的，目前不在计划里。
+  共用 ACP 传输），可以直接接桥。只靠 OAR 才能驱动的是 Cursor、Pi 这类经 SDK 在进程内跑的，不在计划里。
 - **维护**：2026-08-26 首发，到 10-27 已发 133 个版本，其中 10 月 103 个；DeepSeek harness 打补丁的 0.67.0
   是 10-17 发的，十天后已到 0.75.0。
 

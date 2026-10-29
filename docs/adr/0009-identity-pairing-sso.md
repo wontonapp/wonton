@@ -31,7 +31,7 @@
 
 JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、matrix-sdk 0.19.1。可复跑：
 `cargo test -p wonton-matrix --test tuwunel -- --include-ignored login`；签发逻辑见
-`crates/wonton-matrix/tests/tuwunel/support/issuer.rs`，Tuwunel 配置见 `deploy/dev/matrix/tuwunel.toml`。
+`crates/wonton-matrix/src/testkit/issuer.rs`，Tuwunel 配置见 `deploy/dev/matrix/tuwunel.toml`。
 
 **签发**
 
@@ -116,7 +116,7 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 请求里没有这个扩展，请求头也伪造不了它。可复跑：`cargo test -p wonton-core gateway::tunnel_tests`（真实
 隧道，只走回环地址），以及 `deploy/dev/core/smoke.sh` 的“已配对设备经隧道打开插件”一步。
 
-- **设备登记**：M0 还没有扫码配对（#16），主人用令牌经管理 API 登记设备（`dev.sh allow <endpoint ID>`）。
+- **设备登记**：这组验证里主人用令牌经管理 API 登记设备（`dev.sh allow <endpoint ID>`），扫码配对见 #16。
   登记表存在 `core/devices.json`，所有设备都属于主人。吊销（`dev.sh revoke`）立即断开该设备的隧道连接；
   网关对每个请求再查一次登记表，吊销和断开之间漏进来的请求也不放行。
 - **放行范围**：插件网页、核心首页、OIDC 登录和授权确认端点接受隧道身份。经隧道的已配对设备不需要核心

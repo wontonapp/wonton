@@ -111,4 +111,4 @@ Traefik 一组在负载下有约 0.7% 的 500（forwardAuth 子请求失败，�
 新增 `WONTON_APP_URL` 和三个 OIDC 端点变量；变量只用于插值，未定义即安装失败；Compose 子集；
 网页地址 `<slug>.<基础域名>`；M0 只兑现 `storage.share.*` 权限。
 
-**还没验证**：App 内 WebView 经隧道打开小程序（依赖 #2 隧道和 #6 App 骨架），本次只在本机浏览器验证。
+这一组只在本机浏览器验证；App 内 WebView 经隧道打开小程序的验证见 ADR-0004。

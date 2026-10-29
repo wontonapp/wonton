@@ -1,10 +1,9 @@
 # 插件规范 `x-wonton`（草案 v0.1）
 
-> 草案，M1 前定稿。字段可能调整，调整时同步更新本文和清单类型。M0 期间类型在
-> `crates/wonton-core/src/plugin/manifest.rs`，定稿后迁到 `crates/wonton-protocol`。
-> v0.1 补上了 M0-4 实测 Hermes 和 magpie 时发现的缺口。新增的部分核心还没有实现，步骤见末尾的
-> “实现计划”。三处取舍已由主人确认（2026-10-28）：插件默认不能出网，每个 Bot 一组容器，模型凭据默认可以用
-> 网关里的所有模型。
+> 草案，M1 前定稿。字段可能调整，调整时同步更新本文和清单类型。清单类型在
+> `crates/wonton-core/src/plugin/manifest.rs`，迁到 `crates/wonton-protocol` 见“实现计划”第 1 项。
+> v0.1 补上了 M0-4 实测 Hermes 和 magpie 时发现的缺口，没落地的部分见末尾的“实现计划”。三处取舍已由
+> 主人确认（2026-10-28）：插件默认不能出网，每个 Bot 一组容器，模型凭据默认可以用网关里的所有模型。
 
 一个插件就是一个 `docker-compose.yml`，在顶层加一个 `x-wonton` 扩展字段描述它在 Wonton 里的身份、
 入口、能力和权限。compose 引用的配置文件、图标和设置表单与它放在同一个目录里，合称插件包。
@@ -71,7 +70,7 @@ x-wonton:
 | `bot` | 否 | Bot 的显示名（`display_name`，多语言）和头像（`avatar`，插件包里的文件）。只能和 `matrix.bot` 权限一起声明。 |
 | `bots` | 否 | 一个插件多个 Bot：`services` 列出每个 Bot 一份的服务（见“一个插件多个 Bot”）。 |
 | `agent` | `kind=agent` 时必填 | `protocol`：`matrix`（Agent 自己登录 Matrix，须声明 `matrix.bot`）或 `acp`（经 ACP 桥接入）。 |
-| `provides` | 否 | 向其他插件提供的能力，目前只有 `models`（见“模型网关”）。只有 `kind: system` 的插件可以声明。 |
+| `provides` | 否 | 向其他插件提供的能力，v0.1 只有 `models`（见“模型网关”）。只有 `kind: system` 的插件可以声明。 |
 | `secrets` | 否 | 插件自己的密钥：核心生成后注入，或插件运行中生成、交给核心保管（见“插件密钥”）。 |
 | `permissions` | 是 | 安装时由主人确认的权限，见下表。没有权限时写空列表。 |
 | `settings` | 否 | 插件包里的 JSON Schema 文件，App 用原生表单渲染。 |
@@ -259,7 +258,7 @@ webui:
 高权限在安装确认时单独醒目展示。插件不声明的能力一律不给。安装请求必须逐项确认清单里的全部权限，
 少一项或多一项都拒绝安装。
 
-核心目前兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）和 `matrix.bot`
+核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）和 `matrix.bot`
 （见“Matrix Bot”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
@@ -606,8 +605,7 @@ x-wonton:
 
 ## 实现计划
 
-v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本节删掉，全部完成后删掉本节。改
-`crates/wonton-core/src/plugin/` 的几项要和 #20（挂载约束、容器命名、网关 Cookie）协调先后。
+v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本节删掉，全部完成后删掉本节。
 
 1. **接口：清单类型迁到 `wonton-protocol`**（只改接口，先合并）。
    - `crates/wonton-core/src/plugin/manifest.rs` 的类型和校验移到 `crates/wonton-protocol` 的 `plugin`
