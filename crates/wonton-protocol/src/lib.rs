@@ -10,6 +10,7 @@ uniffi::setup_scaffolding!();
 
 mod action;
 mod chat;
+mod confirmation;
 mod error;
 mod home;
 mod push;
@@ -22,6 +23,10 @@ pub use chat::{
     ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, DeviceVerification,
     EncryptionStatus, ImageThumbnail, ImageUpload, RecoveryStatus, RoomMembership, RoomPreview,
     RoomRow,
+};
+pub use confirmation::{
+    Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
+    ConfirmationReply, ConfirmationState, answer_path,
 };
 pub use error::CoreError;
 pub use home::{HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};

@@ -66,7 +66,7 @@ x-wonton:
 | `icon` | 否 | 插件包里的文件，或 HTTPS URL。 |
 | `category` | 否 | 商店分类。 |
 | `webui` | 否 | 作为小程序打开的入口：`service`、`port`、`path`（默认 `/`）、`sso`（`oidc`、`proxy`、`none`，默认 `none`）、`oidc`、`proxy`（见“网页入口与单点登录”）。 |
-| `mcp` | 否 | 给 Agent 的工具入口：`service`、`port`、`path`、`transport`（`streamable-http`）。 |
+| `mcp` | 否 | 给 Agent 的工具入口：`service`、`port`、`path`（默认 `/mcp`）、`transport`（`streamable-http`），见“工具与 MCP 总线”。 |
 | `bot` | 否 | Bot 的显示名（`display_name`，多语言）和头像（`avatar`，插件包里的文件）。只能和 `matrix.bot` 权限一起声明。 |
 | `bots` | 否 | 一个插件多个 Bot：`services` 列出每个 Bot 一份的服务（见“一个插件多个 Bot”）。 |
 | `agent` | `kind=agent` 时必填 | `protocol`：`matrix`（Agent 自己登录 Matrix，须声明 `matrix.bot`）或 `acp`（经 ACP 桥接入）。 |
@@ -247,6 +247,7 @@ webui:
 | `storage.share.<名称>:read` / `:write` | 读或写某个共享文件夹，如 `photos`、`documents`、`music`、`downloads`。 |
 | `storage.home:read` / `:write` | 读或写当前用户的私人空间。 |
 | `models` | 访问模型网关（magpie），见“模型网关”。 |
+| `tools` | 经核心的 MCP 总线调用核心和其他插件的工具，见“工具与 MCP 总线”。 |
 | `matrix.bot` | 以 Bot 身份收发消息，见“Matrix Bot”。 |
 | `notify` | 给主人发通知。 |
 | `network.egress` | 访问外网和局域网，见“网络”。 |
@@ -258,8 +259,8 @@ webui:
 高权限在安装确认时单独醒目展示。插件不声明的能力一律不给。安装请求必须逐项确认清单里的全部权限，
 少一项或多一项都拒绝安装。
 
-核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）和 `matrix.bot`
-（见“Matrix Bot”）。共享文件夹在数据目录的 `shares/<名称>` 下，
+核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）、`matrix.bot`
+（见“Matrix Bot”）和 `tools`（见“工具与 MCP 总线”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
 
@@ -278,6 +279,7 @@ webui:
 | `WONTON_MODEL_ANTHROPIC_BASE_URL`、`WONTON_MODEL_GEMINI_BASE_URL` | `models`，且网关提供该接口 | Anthropic Messages、Gemini 接口的地址，按各自 SDK 的约定不带 `/v1`。 |
 | `WONTON_MODEL_API_KEY` | `models` | 只属于本插件（多 Bot 时只属于这个 Bot）的网关凭据。 |
 | `WONTON_MODEL_DEFAULT` | `models` | 默认模型名，由网关决定（magpie 是路由组 `group/wonton-default`）。 |
+| `WONTON_MCP_URL` | `tools` | MCP 总线的地址（Streamable HTTP）：核心在插件网络里的别名，如 `http://mcp.wonton.internal:8080/mcp`。 |
 | `WONTON_MATRIX_HOMESERVER` | `matrix.bot` | Matrix 客户端接口的地址：核心在插件网络里的别名，如 `http://matrix.wonton.internal:8080`。 |
 | `WONTON_MATRIX_USER_ID`、`WONTON_MATRIX_ACCESS_TOKEN` | `matrix.bot` | Bot 的 Matrix 用户 ID 和访问令牌。 |
 | `WONTON_MATRIX_OWNER` | `matrix.bot` | Bot 主人的 Matrix 用户 ID，用作白名单：私人 Bot 只接受主人的指令。 |
@@ -454,6 +456,50 @@ x-wonton:
 > `profiles/<名字>/.env`，核心要按插件声明的模板把每个 Bot 的凭据写成文件；省内存，但只适合同一个人的
 > 多个 Bot。同一个人的多个 Bot 要不要另外支持 B，M2 按内存实测再定。
 
+## 工具与 MCP 总线
+
+Agent 经核心的 MCP 总线调用工具（ADR-0006、ADR-0016）：总线把核心自己的工具和所有在运行的插件声明的工具汇总成
+一个 MCP 服务器，按调用方授权，敏感的调用先请主人确认。
+
+### 提供工具（`mcp`）
+
+```yaml
+x-wonton:
+  mcp:
+    service: mcp           # 说 MCP 的服务
+    port: 8080
+    path: /mcp             # 默认 /mcp
+    transport: streamable-http
+```
+
+- 核心经插件网络连这个服务（同网页入口），它只对核心可见；插件在运行时它的工具才出现在总线上。只说 stdio 的
+  MCP 服务器要在镜像里自带一个转成 Streamable HTTP 的桥（如 supergateway，见 `plugins/files`）。
+- 工具在总线上叫 `<slug>__<工具名>`，如 `app-wonton-files__search_files`。核心连插件的 MCP 服务用 `initialize` 握手
+  （MCP 2025-11-25）。
+- 没有标 `readOnlyHint: true`（MCP 的工具注解）的工具算敏感：总线先请主人确认，确认了才转给插件。会改数据的工具
+  不要标成只读。
+- 工具返回的内容原样交给 Agent，Agent 把它当不可信输入（ADR-0011）。
+
+### 使用工具（`tools`）
+
+- 申请了 `tools` 的插件得到 `WONTON_MCP_URL`，以 Streamable HTTP 连接。网关按来源地址认出调用方（同“模型网关”），
+  不在插件网络里的请求得到 403 `unauthenticated`，没申请 `tools` 的得到 403 `permission_denied`。
+- M1 申请了 `tools` 的插件看到全部工具；按 Bot 的白名单放行在 M2（一个插件多个 Bot 时，每个 Bot 另发令牌）。
+- 插件装上、卸掉、恢复运行时工具列表随之变化，总线给连着的客户端发 `notifications/tools/list_changed`。
+- 核心自己的工具：
+
+  | 工具 | 敏感 | 说明 |
+  | --- | --- | --- |
+  | `wonton__list_plugins` | 否 | 已装的插件、版本、状态和网页地址。 |
+  | `wonton__search_catalog` | 否 | 按关键词在插件目录里找插件：ID、名字、说明和要申请的权限。 |
+  | `wonton__install_plugin` | 是 | 按目录里的 ID 安装，授予它声明的全部权限。声明了高权限的插件只能由主人在 App 里装。 |
+  | `wonton__uninstall_plugin` | 是 | 卸载，`delete_data` 为真时同时删除它的数据。 |
+
+- 插件目录：M1 是核心读的本地目录（`WONTON_CATALOG`，每个子目录一个插件包，格式同预装系统插件的目录），官方目录和
+  导入 CasaOS 商店随 M1 第 5 项。Bot 只能装目录里的插件，不能装自己写的 compose。
+- 敏感的调用会一直等到主人回答或者确认过期（10 分钟），Agent 的工具超时要比这长。确认卡片发在核心和主人的“Wonton”
+  私聊里，主人在 Wonton App 里回答（ADR-0016）。主人拒绝或者过期时工具返回错误（`isError: true`），说明原因。
+
 ## 插件密钥（`secrets`）
 
 ```yaml
@@ -544,6 +590,7 @@ x-wonton:
   | `auth.<基础域名>` | `webui.sso: oidc` | 身份提供方的公开端点；浏览器和插件看到同一个签发方地址。 |
   | `models.wonton.internal` | `models` | 模型网关声明的服务和端口。 |
   | `matrix.wonton.internal` | `matrix.bot` | Tuwunel 的 Matrix 客户端接口。 |
+  | `mcp.wonton.internal` | `tools` | 核心的 MCP 总线。 |
 
   不让声明 `models` 的插件直接加入模型网关的网络：那样这些插件彼此也连通了，还能访问网关容器的所有端口。
   经核心转发只多一跳（核心网关的 p50 约 0.27 ms，见 ADR-0006），却守住了插件之间的隔离，核心也能按插件
