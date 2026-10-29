@@ -1,0 +1,10 @@
+{
+  "name": "wonton-acp-exp-oar",
+  "private": true,
+  "description": "#43：OAR 直接驱动 claude、codex，以及把 OAR 包成 ACP 适配器的原型。不进 CI。",
+  "type": "module",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@botiverse/oar": "0.75.0"
+  }
+}

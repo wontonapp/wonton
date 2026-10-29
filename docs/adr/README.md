@@ -13,7 +13,7 @@
 | [0004](0004-iroh-tunnel.md) | 远程网络：iroh 1.x 应用内隧道 | 已接受，M0 验证 |
 | [0005](0005-native-clients-thick-core.md) | 客户端：原生三端 + 厚 Rust 核心 | 已接受，M0 验证 |
 | [0006](0006-plugin-system.md) | 插件系统：薄核心 + Compose 插件 | 已接受，M0 选型已定 |
-| [0007](0007-agents-and-bots.md) | Agent 与 Bot：Agent 即插件 | 已接受 |
+| [0007](0007-agents-and-bots.md) | Agent 与 Bot：Agent 即插件 | 已接受，ACP 桥已验证（#43） |
 | [0008](0008-model-gateway-magpie.md) | 模型网关：magpie | 已接受 |
 | [0009](0009-identity-pairing-sso.md) | 身份、配对与单点登录 | 已接受，M0 选型已定 |
 | [0010](0010-storage-and-nas.md) | 存储与 NAS 能力 | 已接受 |
