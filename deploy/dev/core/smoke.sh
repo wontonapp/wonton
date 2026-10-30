@@ -126,7 +126,7 @@ started=$(date +%s)
 installed="$("$dev" install "$repo/plugins/examples/grafana/docker-compose.yml" --yes 2>/dev/null)"
 install_seconds=$(($(date +%s) - started))
 expect "安装完成且健康检查通过（${install_seconds}s）" "$(json status.state <<<"$installed")" running
-expect "网页地址" "$(json url <<<"$installed")" "$grafana_url"
+expect "网页地址" "$(json web_url <<<"$installed")" "$grafana_url"
 
 step "隔离"
 expect "插件容器不向宿主暴露端口" \
@@ -279,7 +279,7 @@ install_echo() {
   installed="$("$dev" install "$repo/plugins/examples/echo-bot/docker-compose.yml" --yes 2>/dev/null)" ||
     fail "回声 Bot 安装失败：$installed"
   expect "回声 Bot 安装完成，同步上了 Matrix" \
-    "$(json status.state <<<"$installed") $(json health <<<"$installed")" "running healthy"
+    "$(json status.state <<<"$installed") $(json status.health <<<"$installed")" "running healthy"
 }
 # 核心注入 Bot 容器的变量。
 bot_env() { docker inspect "$echo_bot" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
@@ -339,7 +339,7 @@ docker exec "$magpie" magpie provider add upstream url="$model_url" key=placehol
 docker exec "$magpie" magpie group add wonton-default models="upstream/$model" routing=order >/dev/null
 installed="$("$dev" install "$repo/plugins/hermes" --yes 2>/dev/null)" || fail "Hermes 安装失败：$installed"
 expect "插件包目录（带 config.yaml）一条命令装好 Hermes，连上了 Matrix" \
-  "$(json status.state <<<"$installed") $(json health <<<"$installed")" "running healthy"
+  "$(json status.state <<<"$installed") $(json status.health <<<"$installed")" "running healthy"
 hermes_user="@hermes:$WONTON_DEV_DOMAIN"
 hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
 expect "Hermes 是一个 Bot" "$(hermes_env MATRIX_USER_ID)" "$hermes_user"

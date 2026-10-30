@@ -1,0 +1,147 @@
+//! 交给 App 的插件图标：地址按原文件的 sha256 和规格生成（`/_wonton/api/images/<sha256>/icon-192.png`），同一个地址的
+//! 内容不变，App 可以一直缓存。核心只给它列出的插件的图标：已安装的（图标在它们的记录里），和最近预览过的插件包。
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+
+use tokio::sync::OnceCell;
+use wonton_protocol::{PluginIcon, PluginImage};
+
+use super::image_worker::{ImageError, ImageWorker};
+use super::images::{ICON_LARGE, ICON_SMALL, Icon, IconFormat};
+use super::package::PluginPackage;
+use super::package_files::sha256_hex;
+
+/// 图片地址的前缀。
+pub const IMAGES_PATH: &str = "/_wonton/api/images";
+
+/// 记住最近这么多个预览过的插件包的图标，供确认页显示。
+const MAX_PREVIEWS: usize = 32;
+/// 处理结果（包括处理不了的原因）最多缓存这么多个，满了丢掉最早的。
+const MAX_RENDERED: usize = 128;
+
+/// 插件包里的图标原文件。
+#[derive(Debug, Clone)]
+pub struct IconSource {
+    pub path: String,
+    pub sha256: String,
+    pub format: IconFormat,
+    pub data: Arc<Vec<u8>>,
+}
+
+impl IconSource {
+    /// 插件包声明的图标；没有图标时为空。
+    pub fn of(package: &PluginPackage) -> Option<Self> {
+        let path = package.manifest.icon.as_deref()?;
+        let path = super::package_files::normalize(path).ok()?;
+        let data = package.files().get(&path)?;
+        Some(Self {
+            sha256: sha256_hex(data),
+            format: IconFormat::from_path(&path)?,
+            data: Arc::new(data.clone()),
+            path,
+        })
+    }
+
+    pub fn paths(&self) -> PluginIcon {
+        let image = |edge: u32| PluginImage {
+            path: format!("{IMAGES_PATH}/{}/icon-{edge}.png", self.sha256),
+        };
+        PluginIcon {
+            small: image(ICON_SMALL),
+            large: image(ICON_LARGE),
+        }
+    }
+}
+
+/// 图片地址里的文件名对应哪一张。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Variant {
+    Small,
+    Large,
+}
+
+impl Variant {
+    pub fn parse(file: &str) -> Option<Self> {
+        match file.strip_prefix("icon-")?.strip_suffix(".png")?.parse() {
+            Ok(ICON_SMALL) => Some(Self::Small),
+            Ok(ICON_LARGE) => Some(Self::Large),
+            _ => None,
+        }
+    }
+}
+
+pub struct Gallery {
+    images: ImageWorker,
+    previews: Mutex<VecDeque<IconSource>>,
+    rendered: Mutex<Rendered>,
+}
+
+/// 一张图标的处理结果（处理不了时是原因）：并发的请求等同一次处理。
+type Rendering = Arc<OnceCell<Result<Arc<Icon>, String>>>;
+
+#[derive(Default)]
+struct Rendered {
+    icons: HashMap<String, Rendering>,
+    order: VecDeque<String>,
+}
+
+impl Gallery {
+    pub fn new(images: ImageWorker) -> Self {
+        Self {
+            images,
+            previews: Mutex::default(),
+            rendered: Mutex::default(),
+        }
+    }
+
+    /// 记住预览过的插件包的图标：确认页显示它的时候，插件还没装。
+    pub fn remember_preview(&self, source: &IconSource) {
+        let mut previews = self.previews.lock().expect("图标表锁中毒");
+        previews.retain(|p| p.sha256 != source.sha256);
+        previews.push_back(source.clone());
+        if previews.len() > MAX_PREVIEWS {
+            previews.pop_front();
+        }
+    }
+
+    pub fn preview(&self, sha256: &str) -> Option<IconSource> {
+        let previews = self.previews.lock().expect("图标表锁中毒");
+        previews.iter().find(|p| p.sha256 == sha256).cloned()
+    }
+
+    /// 处理图标（在子进程里，限时限内存），结果缓存起来。同一张图标只处理一次：处理不了的（包括超时、内存不够）也记住，
+    /// 不会被反复拿来占用子进程；起不了子进程不是图标的问题，不记，下次再试。
+    pub async fn render(&self, source: &IconSource) -> Result<Arc<Icon>, ImageError> {
+        let rendering = self.rendering(&source.sha256);
+        let result = rendering
+            .get_or_try_init(|| async {
+                match self.images.icon(source.format, &source.data).await {
+                    Ok(icon) => Ok(Ok(Arc::new(icon))),
+                    Err(ImageError::Refused(reason)) => Ok(Err(reason)),
+                    Err(e @ ImageError::Unavailable(_)) => Err(e),
+                }
+            })
+            .await?;
+        result.clone().map_err(ImageError::Refused)
+    }
+
+    fn rendering(&self, sha256: &str) -> Rendering {
+        let mut rendered = self.rendered.lock().expect("图标缓存锁中毒");
+        if let Some(rendering) = rendered.icons.get(sha256) {
+            return rendering.clone();
+        }
+        if rendered.icons.len() >= MAX_RENDERED
+            && let Some(oldest) = rendered.order.pop_front()
+        {
+            rendered.icons.remove(&oldest);
+        }
+        let rendering = Rendering::default();
+        rendered.icons.insert(sha256.to_owned(), rendering.clone());
+        rendered.order.push_back(sha256.to_owned());
+        rendering
+    }
+}
+
+#[cfg(test)]
+mod tests;

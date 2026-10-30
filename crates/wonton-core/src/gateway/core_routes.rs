@@ -37,7 +37,11 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/confirmations/{id}", post(confirmations::answer))
         .route("/_wonton/api/plugins", get(api::list).post(api::install))
         .route("/_wonton/api/plugins/preview", post(api::preview))
-        .route("/_wonton/api/plugins/{id}", delete(api::uninstall))
+        .route(
+            "/_wonton/api/plugins/{id}",
+            get(api::detail).delete(api::uninstall),
+        )
+        .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .route(
             "/_wonton/api/devices",

@@ -11,6 +11,8 @@ use serde_json::json;
 
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
+use super::super::image_worker::ImageWorker;
+use super::super::languages::Languages;
 use super::super::lifecycle::LifecycleConfig;
 use super::super::package_files::PackageFiles;
 use super::super::render::container_name;
@@ -66,7 +68,14 @@ fn manager_for(
         gateway_port: 8080,
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
-    PluginManager::new(engine, store, HttpClient::new(), oidc, cfg)
+    PluginManager::new(
+        engine,
+        store,
+        HttpClient::new(),
+        oidc,
+        cfg,
+        ImageWorker::in_process(),
+    )
 }
 
 /// Docker 不可达的管理器：只用来验证不依赖 Docker 的规则，以及 Docker 不可用时的报错。
@@ -286,9 +295,17 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine.clone(), &dir);
     let compose = proxy_app(web.port());
+    let preview = m
+        .preview_install(
+            &PluginPackage::parse(&compose).unwrap(),
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
     assert!(
-        m.preview(&compose).unwrap().sso,
-        "安装确认页上显示会自动登录"
+        preview.notices.iter().any(|n| n.text.contains("自动登录")),
+        "安装确认页上显示会自动登录：{:?}",
+        preview.notices
     );
     m.install(&compose, &[]).await.unwrap();
     let owner = crate::config::Owner {

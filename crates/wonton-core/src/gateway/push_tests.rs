@@ -23,6 +23,7 @@ use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::plugin::PluginManager;
 use crate::plugin::docker::Engine;
+use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::push::Push;
@@ -78,6 +79,7 @@ impl Home {
             http.clone(),
             None,
             lifecycle,
+            ImageWorker::in_process(),
         ));
         let tunnel = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();

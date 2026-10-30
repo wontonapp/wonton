@@ -2,6 +2,7 @@
 
 use super::docker::EngineError;
 use super::health::HealthError;
+use super::manifest::ManifestError;
 use super::package::PackageError;
 use super::render::RenderError;
 use super::secrets::CollectError;
@@ -31,6 +32,8 @@ pub enum InstallError {
     MatrixUnavailable(String),
     #[error("模型网关不可用：{0}")]
     ModelsUnavailable(String),
+    #[error("处理图片的进程不可用：{0}")]
+    ImagesUnavailable(String),
     #[error("插件没有通过健康检查：{0}")]
     Unhealthy(String),
     #[error("{0}")]
@@ -51,6 +54,7 @@ impl InstallError {
             Self::OidcUnavailable(_) => "oidc_unavailable",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::ModelsUnavailable(_) => "models_unavailable",
+            Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
         }
@@ -72,6 +76,7 @@ impl InstallError {
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
+            Self::ImagesUnavailable(m) => Self::ImagesUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),
         }
@@ -80,7 +85,13 @@ impl InstallError {
 
 impl From<PackageError> for InstallError {
     fn from(e: PackageError) -> Self {
-        Self::Invalid(e.to_string())
+        match e {
+            // 规范比核心新：插件包本身可能没问题，是核心要升级。
+            PackageError::Manifest(newer @ ManifestError::NewerSpec { .. }) => {
+                Self::Unsupported(newer.to_string())
+            }
+            other => Self::Invalid(other.to_string()),
+        }
     }
 }
 

@@ -6,7 +6,7 @@ use wonton_protocol::{
     Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard, ConfirmationState,
 };
 
-use crate::plugin::manifest::{Access, LocalizedText, Manifest, Permission};
+use crate::plugin::manifest::{LocalizedText, Manifest};
 
 /// 还没编号、没定到期时间的卡片内容。
 pub struct Draft {
@@ -52,26 +52,7 @@ fn choices(approve: &str, reject: &str) -> Vec<CardChoice> {
     ]
 }
 
-/// 权限的说明，和安装确认页一致。
-pub fn permission(permission: &Permission) -> String {
-    let access = |access: &Access| match access {
-        Access::Read => "读",
-        Access::Write => "读写",
-    };
-    match permission {
-        Permission::StorageShare { name, access: a } => format!("{}共享文件夹 {name}", access(a)),
-        Permission::StorageHome { access: a } => format!("{}你的私人空间", access(a)),
-        Permission::Models => "使用模型网关".to_owned(),
-        Permission::Tools => "调用核心和其他插件的工具".to_owned(),
-        Permission::MatrixBot => "以 Bot 身份收发消息".to_owned(),
-        Permission::Notify => "给你发通知".to_owned(),
-        Permission::NetworkEgress => "访问外网和局域网".to_owned(),
-        Permission::NetworkHost => "使用宿主的网络（高权限）".to_owned(),
-        Permission::DevicesGpu => "使用 GPU（高权限）".to_owned(),
-        Permission::Device { path } => format!("访问宿主设备 {path}（高权限）"),
-        Permission::DockerSocket => "控制 Docker（最高权限）".to_owned(),
-    }
-}
+pub use crate::plugin::views::permission_text as permission;
 
 /// 安装插件。
 pub fn install(requester: &str, manifest: &Manifest) -> Draft {

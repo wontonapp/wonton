@@ -34,6 +34,7 @@ use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
 use crate::plugin::docker::Engine;
+use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
@@ -112,6 +113,7 @@ impl Home {
             http.clone(),
             hydra.as_ref().map(|(h, _)| h.clone()),
             lifecycle,
+            ImageWorker::in_process(),
         ));
         let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));

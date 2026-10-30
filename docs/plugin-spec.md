@@ -32,6 +32,7 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
 
 x-wonton:
+  spec: "0.2"
   id: app.immich.photos
   version: 2.0.0
   kind: app
@@ -39,6 +40,21 @@ x-wonton:
   description: { zh: 照片备份、人脸与语义搜索, en: Photo backup with face and semantic search }
   icon: icon.png
   category: photos
+  screenshots: [screenshots/timeline.png, screenshots/search.png]
+  author: { name: Example, url: https://example.com }
+  homepage: https://immich.app
+  license: AGPL-3.0-only
+  tags: [immich, 照片, 备份]
+  about:
+    zh: |
+      手机里的照片自动备份到家里的服务器。
+
+      按人脸、地点和画面内容搜索照片。
+    en: |
+      Back up the photos on your phone to the server at home.
+
+      Search photos by face, place and what is in them.
+  release_notes: { zh: 升级到 Immich 2.0。, en: Upgrades to Immich 2.0. }
   webui:
     service: server
     port: 2283
@@ -203,12 +219,21 @@ services:
   - PNG 至少 256×256，建议 512×512，不超过 512 KiB；SVG 的 `viewBox` 是正方形，不超过 128 KiB。
   - 满幅：画面铺满整个正方形，不留透明边，不画圆角和阴影。App 统一裁成圆角方形，四角会被裁掉，重要内容放在中间 80%
     的范围里。
-  - SVG 里的文字不渲染（要用文字就转成路径），外部资源（图片、字体、样式表）不加载，脚本和动画不执行。
+  - SVG 里的文字不渲染（要用文字就转成路径），外部资源（图片、字体、样式表）和内嵌的位图都不加载，脚本和动画不执行。
+  - SVG 要是 UTF-8 文本，根元素是 SVG 命名空间里的 `<svg>`，不能有 `<!DOCTYPE>`，不收压缩过的 SVG（svgz）。
+  - `<use>` 只有一个 `href` 或 `xlink:href`，写成 `#` 加 id，id 里没有空白；展开以后不超过 20000 个元素、64 层，不能循环
+    引用。
+  - `<style>` 里只用不带组合符的选择器：`.cls-1`、`#a`、`rect.a` 可以，`g rect`、`g > rect`、`a + b` 不行；最多 256 条
+    规则。渲染器匹配后代选择器时逐层回溯，几百字节的样式表就能算上几分钟。
+  - 不能用 `<pattern>`、`<marker>` 和 `<filter>`（阴影和模糊本来就不该画）；`<clipPath>` 的 `clipPathUnits` 只能是
+    `userSpaceOnUse`（默认值），`<mask>` 要写 `maskUnits="userSpaceOnUse"`；每个渐变最多 64 个 `<stop>`。渲染器会按引用的
+    次数复制这些功能的内容，不加限制时几 KB 的文件就能占掉几 GB 内存。
   - 不接受 HTTPS 地址：图标随提交固定，App 也不向第三方取图。
 - 截图是 PNG 或 JPEG，每张不超过 1 MiB，建议长边至少 1280，横屏和竖屏的截图不要混在一个插件里。
 - 核心把图片解码后重新编码再交给 App：图标是 192×192 和 512×512 的 PNG，截图是长边不超过 1280 的 JPEG，都不带原文件的
-  元数据。解码不了的、解码后超过 4096×4096 像素的图片和不是正方形的图标都不合法：图标不合法时安装失败，截图不合法时
-  详情页里不显示它。`wonton-core plugin check` 按同样的规则检查。
+  元数据。解码和渲染在单独的进程里做，每张图最多用 512 MiB 内存、10 秒（很细的虚线这类写法渲染起来很慢）。解码不了的、
+  解码后超过 4096×4096 像素的、处理时超出内存或时间的图片，和不是正方形的图标都不合法：图标不合法时安装失败，截图不合法
+  时详情页里不显示它。`wonton-core plugin check` 按同样的规则、同样在单独的进程里检查。
 - `bot.avatar` 的格式不变（见“Matrix Bot”）。
 
 ## 网页入口与单点登录
@@ -764,7 +789,13 @@ x-wonton:
 ### 开发与校验
 
 - 校验：`wonton-core plugin check <目录>`，发布的核心镜像里就有。和安装时同一套解析和校验，加上商店信息和图片的检查，
-  最后打印插件包摘要；`--official` 再按官方索引的要求检查。
+  最后打印插件包里的文件和插件包摘要；`--official` 再按官方索引的要求检查。不连 Docker，也不联网。
+  - 插件包解析不了时只报这一条（和安装时报的一样）；解析得了时列出所有问题。
+  - 不合格（退出码 1）：装不上的（核心还不支持的权限、渲染不了的 compose），图标或截图处理不了。
+  - 提醒（退出码 0）：镜像没有按摘要固定，长期运行的服务没有健康检查，没有图标，图标的角是透明的，截图的长边不到
+    1280，横屏和竖屏的截图混在一起，`kind: system`。`--official` 时前三项也算不合格，另外要有 `category`、`license`、
+    `author`。只看得到 compose 里写的健康检查，镜像自带的看不到。
+  - 用法不对时退出码 2。
 - 开发时从本地目录安装：把插件目录打成 tar 上传（见“插件包”），装上后是本地来源，不检查升级。改了以后上传到升级接口
   （`POST /_wonton/api/plugins/{id}/upgrade`），保留数据。
 - 模板仓库 `geraldpeng6/wonton-plugin-template` 带开发环境（用发布的核心镜像在本机起一套核心）和检查、发布的脚本。
@@ -819,8 +850,6 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
 
 v0.2（ADR-0017）的部分同样每项一个 PR：
 
-1. **商店信息和校验**：`spec` 和商店信息字段（“示例”一节随之写上它们，契约测试按示例解析），图标和截图的处理，
-   `wonton-core plugin check`，已安装列表的新接口。
 2. **来源和商店**：`github:` 来源，官方索引（取代 `WONTON_CATALOG`），社区插件的发现，商店和详情接口，按来源安装。
 3. **升级**：检查新版本、升级预览、升级和回滚，系统插件随核心升级。
 4. **客户端核心**：`PluginsViewModel` 和插件相关的操作。

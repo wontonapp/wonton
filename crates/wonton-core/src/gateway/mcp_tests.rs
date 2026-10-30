@@ -29,6 +29,7 @@ use crate::http::HttpClient;
 use crate::mcp::test_support::{Cards, Notes, serve_notes};
 use crate::mcp::{Bus, Confirmations};
 use crate::plugin::docker::Engine;
+use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{Permission, PluginManager, PluginPackage, PluginStatus};
@@ -85,6 +86,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         http.clone(),
         None,
         lifecycle,
+        ImageWorker::in_process(),
     ));
     let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
     let id = manifest.id.clone();

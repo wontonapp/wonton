@@ -9,14 +9,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use super::docker::Engine;
+use super::gallery::Gallery;
+use super::image_worker::ImageWorker;
 use super::lifecycle::LifecycleConfig;
-use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
+use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind};
 use super::models::{ModelsRoute, ProviderState};
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::render::dry_run;
 use super::sources::{Source, Sources};
 use super::store::{InstalledRecord, Store};
+use super::views::Listed;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 
@@ -68,27 +71,6 @@ pub struct PluginView {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct PermissionView {
-    pub permission: Permission,
-    pub high: bool,
-    pub supported: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Preview {
-    pub id: PluginId,
-    pub version: String,
-    pub kind: PluginKind,
-    pub title: LocalizedText,
-    pub description: LocalizedText,
-    pub permissions: Vec<PermissionView>,
-    pub services: Vec<String>,
-    pub url: Option<String>,
-    /// 打开网页时自动登录：经身份提供方（`sso: oidc`）或网关代登录（`sso: proxy`）。
-    pub sso: bool,
-}
-
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct UninstallReport {
     pub containers: Vec<String>,
@@ -131,14 +113,16 @@ pub struct McpServer {
     pub url: String,
 }
 
-struct Entry {
-    version: String,
-    title: LocalizedText,
+pub(super) struct Entry {
+    pub(super) version: String,
+    pub(super) title: LocalizedText,
     /// `kind: system`：由安装器预装。
-    system: bool,
-    has_webui: bool,
-    status: PluginStatus,
-    health: Option<Health>,
+    pub(super) system: bool,
+    pub(super) has_webui: bool,
+    pub(super) status: PluginStatus,
+    pub(super) health: Option<Health>,
+    /// 列表和详情页显示的信息；记录读不出来的插件为空。
+    pub(super) listed: Option<Arc<Listed>>,
     upstream: Option<String>,
     /// 声明了 `provides.models`（不论状态）。
     provides_models: bool,
@@ -160,7 +144,8 @@ pub(super) struct Deployed {
 }
 
 impl Entry {
-    fn new(manifest: &Manifest, status: PluginStatus, upstream: Option<String>) -> Self {
+    fn new(listed: Arc<Listed>, status: PluginStatus, upstream: Option<String>) -> Self {
+        let manifest = &listed.manifest;
         Self {
             version: manifest.version.clone(),
             title: manifest.title.clone(),
@@ -176,16 +161,17 @@ impl Entry {
             models: None,
             proxy: None,
             mcp: None,
+            listed: Some(listed),
         }
     }
 
-    fn running(manifest: &Manifest, deployed: Deployed) -> Self {
+    fn running(listed: Arc<Listed>, deployed: Deployed) -> Self {
         Self {
             health: Some(deployed.health),
             models: deployed.models,
             proxy: deployed.proxy,
             mcp: deployed.mcp,
-            ..Self::new(manifest, PluginStatus::Running, deployed.upstream)
+            ..Self::new(listed, PluginStatus::Running, deployed.upstream)
         }
     }
 
@@ -205,6 +191,7 @@ impl Entry {
             models: None,
             proxy: None,
             mcp: None,
+            listed: None,
         }
     }
 }
@@ -219,13 +206,15 @@ pub struct PluginManager {
     pub(super) sources: Sources,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
-    plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    /// 交给 App 的图标。
+    pub(super) gallery: Gallery,
+    pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
-fn supported(permission: &Permission) -> bool {
+pub(super) fn supported(permission: &Permission) -> bool {
     matches!(
         permission,
         Permission::StorageShare { .. }
@@ -250,6 +239,7 @@ impl PluginManager {
         http: HttpClient,
         oidc: Option<Hydra>,
         cfg: LifecycleConfig,
+        images: ImageWorker,
     ) -> Self {
         Self {
             engine,
@@ -260,6 +250,7 @@ impl PluginManager {
             cfg,
             sources: Sources::default(),
             bot_allocation: tokio::sync::Mutex::new(()),
+            gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
             changes: tokio::sync::watch::Sender::new(0),
         }
@@ -316,39 +307,6 @@ impl PluginManager {
         }
     }
 
-    /// 预览只有 compose 文本的插件包。
-    pub fn preview(&self, source: &str) -> Result<Preview, InstallError> {
-        self.preview_package(&PluginPackage::parse(source)?)
-    }
-
-    pub fn preview_package(&self, package: &PluginPackage) -> Result<Preview, InstallError> {
-        dry_run(package)?;
-        let m = package.manifest.clone();
-        let slug = m.id.slug();
-        Ok(Preview {
-            permissions: m
-                .permissions
-                .iter()
-                .map(|p| PermissionView {
-                    permission: p.clone(),
-                    high: p.is_high(),
-                    supported: supported(p),
-                })
-                .collect(),
-            services: package.service_names().map(str::to_owned).collect(),
-            url: m
-                .webui
-                .as_ref()
-                .map(|_| self.cfg.public.origin(&self.cfg.public.plugin_host(&slug))),
-            sso: m.webui.as_ref().is_some_and(|w| w.sso != Sso::None),
-            id: m.id,
-            version: m.version,
-            kind: m.kind,
-            title: m.title,
-            description: m.description,
-        })
-    }
-
     pub fn list(&self) -> Vec<PluginView> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
@@ -377,12 +335,15 @@ impl PluginManager {
             title: entry.title.clone(),
             status: entry.status.clone(),
             health: entry.health,
-            url: entry.has_webui.then(|| {
-                self.cfg
-                    .public
-                    .origin(&self.cfg.public.plugin_host(&id.slug()))
-            }),
+            url: entry.has_webui.then(|| self.web_url(id)),
         }
+    }
+
+    /// 插件网页的地址。
+    pub(super) fn web_url(&self, id: &PluginId) -> String {
+        self.cfg
+            .public
+            .origin(&self.cfg.public.plugin_host(&id.slug()))
     }
 
     pub(crate) fn is_installed(&self, id: &PluginId) -> bool {
@@ -430,11 +391,12 @@ impl PluginManager {
         status: PluginStatus,
         upstream: Option<String>,
     ) {
-        let entry = Entry::new(&manifest, status, upstream);
+        let id = manifest.id.clone();
+        let entry = Entry::new(Listed::of_manifest(manifest), status, upstream);
         self.plugins
             .write()
             .expect("插件表锁中毒")
-            .insert(manifest.id, entry);
+            .insert(id, entry);
     }
 
     /// 测试用：给登记过的插件设上 MCP 服务的地址。
@@ -514,11 +476,12 @@ impl PluginManager {
                 if let Err(e) = self.register_source(manifest, &network).await {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
+                let listed = Listed::new(&package, record.installed_at);
                 match self.reconcile(&package, record).await {
-                    Ok(deployed) => Entry::running(manifest, deployed),
+                    Ok(deployed) => Entry::running(listed, deployed),
                     Err(e) => {
                         let reason = e.to_string();
-                        Entry::new(manifest, PluginStatus::Degraded { reason }, None)
+                        Entry::new(listed, PluginStatus::Degraded { reason }, None)
                     }
                 }
             }
@@ -562,16 +525,18 @@ impl PluginManager {
         granted: &[Permission],
     ) -> Result<PluginView, InstallError> {
         dry_run(&package)?;
+        self.check_icon(&package).await?;
         let manifest = package.manifest.clone();
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
-        self.reserve(&manifest)?;
+        let listed = Listed::new(&package, now_secs());
+        self.reserve(&listed)?;
         tracing::info!(plugin = %manifest.id, "开始安装插件");
         match self.deploy(&package, granted).await {
             Ok(deployed) => {
                 tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");
-                let entry = Entry::running(&manifest, deployed);
+                let entry = Entry::running(listed, deployed);
                 let view = self.view(&manifest.id, &entry);
                 plugins.insert(manifest.id.clone(), entry);
                 drop(plugins);
@@ -590,7 +555,8 @@ impl PluginManager {
     }
 
     /// 占位，防止同一插件并发安装，也防止两个插件映射到同一个子域名。
-    fn reserve(&self, manifest: &Manifest) -> Result<(), InstallError> {
+    fn reserve(&self, listed: &Arc<Listed>) -> Result<(), InstallError> {
+        let manifest = &listed.manifest;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(existing) = plugins.get(&manifest.id) {
             return Err(InstallError::Conflict(format!(
@@ -607,12 +573,12 @@ impl PluginManager {
         }
         plugins.insert(
             manifest.id.clone(),
-            Entry::new(manifest, PluginStatus::Installing, None),
+            Entry::new(listed.clone(), PluginStatus::Installing, None),
         );
         Ok(())
     }
 
-    async fn check_requirements(&self, manifest: &Manifest) -> Result<(), InstallError> {
+    pub(super) async fn check_requirements(&self, manifest: &Manifest) -> Result<(), InstallError> {
         let provides_models = manifest
             .provides
             .as_ref()

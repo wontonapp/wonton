@@ -3,14 +3,19 @@
 pub mod bot_services;
 pub mod bots;
 pub mod catalog;
+pub mod check;
 pub mod compose;
 pub mod configs;
 pub mod docker;
 pub mod docker_exec;
+pub mod gallery;
 pub mod health;
 pub mod hostdir;
+pub mod image_worker;
+pub mod images;
 mod install_error;
 pub mod interpolate;
+pub mod languages;
 pub mod lifecycle;
 pub mod manager;
 pub mod manifest;
@@ -24,8 +29,10 @@ pub mod render;
 pub mod secrets;
 pub mod sources;
 pub mod store;
+pub mod store_info;
 pub mod system;
 mod upstreams;
+pub mod views;
 
 #[cfg(test)]
 pub(crate) mod fake_docker;

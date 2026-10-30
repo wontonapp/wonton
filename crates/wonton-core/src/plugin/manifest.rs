@@ -9,6 +9,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use super::provides::Provides;
+use super::store_info::{Author, Category};
 
 /// 插件 ID 的最大长度。网关用它派生子域名，必须放得进一个 DNS 标签。
 pub const MAX_ID_LEN: usize = 63;
@@ -25,6 +26,8 @@ pub enum ManifestError {
     MissingLocale { field: &'static str },
     #[error("权限 `{0}` 不在规范的权限表里")]
     UnknownPermission(String),
+    #[error("插件按规范 {spec} 写成，这个核心只支持到 {supported}：先升级核心")]
+    NewerSpec { spec: String, supported: String },
     #[error("{0}")]
     Invalid(String),
 }
@@ -463,15 +466,34 @@ impl From<Permission> for String {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
+    /// 清单按哪一版规范写成，见 [`super::store_info`]。
+    #[serde(default)]
+    pub spec: Option<String>,
     pub id: PluginId,
     pub version: String,
     pub kind: PluginKind,
     pub title: LocalizedText,
     pub description: LocalizedText,
+    /// 插件包里的 PNG 或 SVG。
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
-    pub category: Option<String>,
+    pub category: Option<Category>,
+    /// 仓库里的截图，不算插件包的一部分。
+    #[serde(default)]
+    pub screenshots: Option<Vec<String>>,
+    #[serde(default)]
+    pub author: Option<Author>,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub about: Option<LocalizedText>,
+    #[serde(default)]
+    pub release_notes: Option<LocalizedText>,
     #[serde(default)]
     pub webui: Option<WebUi>,
     #[serde(default)]
@@ -503,6 +525,7 @@ impl Manifest {
         }
         require_locales("title", &self.title)?;
         require_locales("description", &self.description)?;
+        super::store_info::validate(self)?;
         if self.kind == PluginKind::Agent && self.agent.is_none() {
             return Err(ManifestError::Invalid(
                 "kind 为 agent 时必须提供 agent.protocol".to_owned(),
@@ -610,7 +633,10 @@ fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
     }
 }
 
-fn require_locales(field: &'static str, text: &LocalizedText) -> Result<(), ManifestError> {
+pub(super) fn require_locales(
+    field: &'static str,
+    text: &LocalizedText,
+) -> Result<(), ManifestError> {
     let present = |lang: &str| text.get(lang).is_some_and(|value| !value.trim().is_empty());
     if present("zh") && present("en") {
         Ok(())

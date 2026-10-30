@@ -14,9 +14,12 @@ use super::compose::{
     FORBIDDEN_CONFIG_KEYS, FORBIDDEN_SERVICE_KEYS, FORBIDDEN_TOP_KEYS, Service,
     network_mode_refusal, strip_extensions,
 };
+use super::images::IconFormat;
 use super::interpolate::{InterpolateError, Vars, interpolate, interpolate_value};
 use super::manifest::{Manifest, ManifestError, SecretSpec};
-use super::package_files::{self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, PackageFiles};
+use super::package_files::{
+    self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PackageError {
@@ -66,6 +69,8 @@ pub enum PackageError {
     ComposeFile(FileError),
     #[error("插件包归档：{0}")]
     Archive(String),
+    #[error("插件包一共 {} KiB，超过 {} KiB", .0.div_ceil(1024), MAX_PACKAGE_BYTES >> 10)]
+    TooBig(u64),
 }
 
 /// 顶层 `configs` 的一项。
@@ -140,6 +145,7 @@ impl PluginPackage {
         let manifest_value = top
             .remove("x-wonton")
             .ok_or(PackageError::MissingManifest)?;
+        super::store_info::check_spec(&manifest_value)?;
         let manifest: Manifest = serde_json::from_value(manifest_value)
             .map_err(|e| ManifestError::Invalid(e.to_string()))?;
         manifest.validate()?;
@@ -185,15 +191,14 @@ impl PluginPackage {
             Ok::<_, PackageError>(())
         };
         if let Some(icon) = &manifest.icon {
-            if icon.contains("://") && !icon.starts_with("https://") {
+            // 图标随提交固定，App 也不向第三方取图（ADR-0017），所以不收网址。
+            if IconFormat::from_path(icon).is_none() || icon.contains("://") {
                 return Err(PackageError::Reference {
                     field: "icon".to_owned(),
-                    message: "只能是插件包里的文件或 HTTPS 地址".to_owned(),
+                    message: format!("`{icon}` 要是插件包里的 PNG 或 SVG 文件"),
                 });
             }
-            if !icon.starts_with("https://") {
-                add("icon", icon)?;
-            }
+            add("icon", icon)?;
         }
         if let Some(settings) = &manifest.settings {
             add("settings", settings)?;
@@ -228,7 +233,16 @@ impl PluginPackage {
             }
             self.files.insert(path, data);
         }
+        let total = self.source.len() + self.files.values().map(Vec::len).sum::<usize>();
+        if total as u64 > MAX_PACKAGE_BYTES {
+            return Err(PackageError::TooBig(total as u64));
+        }
         Ok(self)
+    }
+
+    /// 插件包摘要，见 [`package_files::digest`]。
+    pub fn digest(&self) -> String {
+        package_files::digest(self.source.as_bytes(), &self.files)
     }
 
     pub fn service_names(&self) -> impl Iterator<Item = &str> {

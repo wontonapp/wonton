@@ -22,7 +22,8 @@ use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
 use crate::config::{OidcProviderConfig, Owner, PublicUrls};
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
-use crate::plugin::docker::Engine;
+use crate::plugin::fake_docker::FakeDocker;
+use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
@@ -223,12 +224,15 @@ impl Harness {
             owner: "owner".into(),
             gateway_port: 8080,
         };
+        // 安装预览要查宿主架构，和安装一样连 Docker。
+        let (_docker, engine) = FakeDocker::start().await;
         let manager = Arc::new(PluginManager::new(
-            Engine::unreachable_for_test(),
+            engine,
             Store::open(dir.path().join("plugins")).unwrap(),
             http.clone(),
             hydra.as_ref().map(|(h, _)| h.clone()),
             lifecycle,
+            ImageWorker::in_process(),
         ));
         let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
@@ -552,7 +556,11 @@ async fn plugin_api_requires_owner_token() {
             Body::from(WHOAMI),
         )
         .await;
-    assert_eq!(preview.json()["url"], h.origin(PLUGIN));
+    assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
+    let preview = preview.json();
+    let blocked = preview["blocked"].as_str().unwrap();
+    assert!(blocked.starts_with("已经装了 app.whoami"), "{blocked}");
+    assert!(preview["digest"].as_str().unwrap().starts_with("sha256:"));
     let bad = h
         .send(
             Method::POST,
@@ -596,6 +604,52 @@ async fn plugin_api_requires_owner_token() {
         )
         .await;
     assert_eq!(text.error_kind(), Some("invalid_input"));
+}
+
+#[tokio::test]
+async fn plugin_api_answers_in_the_requested_language() {
+    let h = Harness::start(None).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let english = [
+        ("authorization", bearer.as_str()),
+        ("accept-language", "en-GB, zh;q=0.5"),
+    ];
+    let listed = h.get(CORE, "/_wonton/api/plugins", &english).await.json();
+    let whoami = &listed["plugins"][0];
+    assert_eq!(whoami["title"], "Who am I");
+    assert_eq!(
+        whoami["status"],
+        json!({"state": "running", "health": "unknown"})
+    );
+    assert_eq!(whoami["web_url"], h.origin(PLUGIN));
+    assert_eq!(whoami["trust"], "local");
+
+    let detail = h
+        .get(CORE, "/_wonton/api/plugins/app.whoami", &english)
+        .await;
+    assert_eq!(detail.status, StatusCode::OK, "{}", detail.text);
+    assert_eq!(detail.json()["installed"]["id"], "app.whoami");
+    let missing = h
+        .get(CORE, "/_wonton/api/plugins/app.missing", &english)
+        .await;
+    assert_eq!(missing.error_kind(), Some("not_installed"));
+    let image = format!("/_wonton/api/images/{}/icon-192.png", "0".repeat(64));
+    assert_eq!(
+        h.get(CORE, &image, &english).await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    // 按来源安装（JSON 请求体）在这个版本还不支持，不当成 compose 文本去解析。
+    let json = [
+        ("authorization", bearer.as_str()),
+        ("content-type", "application/json"),
+    ];
+    for path in ["/_wonton/api/plugins/preview", "/_wonton/api/plugins"] {
+        let body = Body::from(r#"{"source": "github.com/example/plugin"}"#);
+        let reply = h.send(Method::POST, CORE, path, &json, body).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{path}");
+        assert_eq!(reply.error_kind(), Some("unsupported"), "{path}");
+    }
 }
 
 #[tokio::test]

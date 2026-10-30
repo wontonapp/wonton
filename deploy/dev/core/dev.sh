@@ -155,15 +155,20 @@ package_type() {
 }
 
 install() {
-  local file="$1" yes="${2:-}" preview grants type
+  local file="$1" yes="${2:-}" preview grants type blocked
   [[ -e "$file" ]] || die "找不到插件包：$file"
   type="$(package_type "$file")"
   preview="$(package "$file" | api POST /_wonton/api/plugins/preview -H "Content-Type: $type" --data-binary @-)" ||
     die "预览失败：$preview"
   grants="$(json_field permissions <<<"$preview" | python3 -c 'import json,sys
 print(",".join(p["permission"] for p in json.load(sys.stdin)))')"
-  echo "插件：$(json_field id <<<"$preview")（$(json_field title.zh <<<"$preview")）" >&2
+  echo "插件：$(json_field id <<<"$preview")（$(json_field title <<<"$preview")）" >&2
   echo "需要的权限：${grants:-无}" >&2
+  python3 -c 'import json,sys
+for notice in json.load(sys.stdin)["notices"]:
+    print("提示：" + notice["text"])' <<<"$preview" >&2
+  blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["blocked"] or "")' <<<"$preview")"
+  [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
   if [[ "$yes" != "--yes" ]]; then
     read -r -p "确认安装？[y/N] " answer
     [[ "$answer" == y || "$answer" == Y ]] || die "已取消"

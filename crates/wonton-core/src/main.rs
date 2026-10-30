@@ -4,6 +4,9 @@
 //! - `wonton-core healthcheck`：请求本机网关的健康端点，供容器健康检查使用。
 //! - `wonton-core init <安装目录> <基础域名>`：正式安装时生成密钥、Tuwunel 配置和 compose 文件（`wonton_core::install`）。
 //! - `wonton-core pair [--first] [IP:端口…]`：向运行中的核心要配对码，在终端里显示二维码（见 `pair_command`）。
+//! - `wonton-core plugin check <插件包目录> [--official]`：插件作者发布前的检查（见 `plugin_command`）。
+//! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
+//!   （`wonton_core::plugin::image_worker`）。
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
@@ -24,6 +27,7 @@ use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::catalog::Catalog;
 use wonton_core::plugin::docker::Engine;
+use wonton_core::plugin::image_worker::{self, ImageWorker};
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
@@ -31,6 +35,7 @@ use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 
 mod pair_command;
+mod plugin_command;
 
 /// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
 const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
@@ -38,14 +43,26 @@ const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
     None => "unknown",
 };
 
+fn main() -> ExitCode {
+    // 处理图片的子进程不起 tokio 运行时，也不初始化日志（日志写在标准输出上，会混进结果）。
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some(image_worker::COMMAND) {
+        return image_worker::child(&args[2..]);
+    }
+    run()
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn run() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
     let command = std::env::args().nth(1);
+    if command.as_deref() == Some("plugin") {
+        return plugin_command::run(&std::env::args().skip(2).collect::<Vec<_>>()).await;
+    }
     let result = match command.as_deref() {
         None | Some("serve") => serve().await,
         Some("healthcheck") => healthcheck().await,
@@ -56,7 +73,7 @@ async fn main() -> ExitCode {
             Ok(())
         }
         Some(other) => Err(anyhow::anyhow!(
-            "未知命令 {other}；用法：wonton-core [serve|healthcheck|init|pair]"
+            "未知命令 {other}；用法：wonton-core [serve|healthcheck|init|pair|plugin]"
         )),
     };
     match result {
@@ -97,6 +114,8 @@ async fn serve() -> anyhow::Result<()> {
         owner: cfg.owner.username.clone(),
         gateway_port: cfg.listen.port(),
     };
+    let images =
+        ImageWorker::current().context("找不到核心自己的可执行文件（处理插件图片要用）")?;
     let manager = Arc::new(
         PluginManager::new(
             engine,
@@ -104,6 +123,7 @@ async fn serve() -> anyhow::Result<()> {
             http.clone(),
             hydra.as_ref().map(|(h, _)| h.clone()),
             lifecycle,
+            images,
         )
         .with_matrix(matrix.clone()),
     );

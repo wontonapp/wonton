@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
 use super::{Bus, Caller, Outcome, cards, naming};
-use crate::plugin::{PluginId, PluginPackage};
+use crate::plugin::render::dry_run;
+use crate::plugin::{InstallError, PluginId, PluginPackage};
 
 const LIST: &str = "list_plugins";
 const SEARCH: &str = "search_catalog";
@@ -181,8 +182,8 @@ fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
             high.join("、")
         ));
     }
-    bus.plugins
-        .preview_package(&package)
+    dry_run(&package)
+        .map_err(InstallError::from)
         .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
     Ok(package)
 }

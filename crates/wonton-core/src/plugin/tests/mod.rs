@@ -10,12 +10,14 @@ use super::render::{RenderError, dry_run};
 
 mod bot_lifecycle;
 mod bots;
+mod check;
 mod configs;
 mod egress;
 mod health;
 mod manager;
 mod models;
 mod secrets;
+mod views;
 
 const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");
 const WHOAMI: &str = include_str!("../../../../../plugins/examples/whoami/docker-compose.yml");

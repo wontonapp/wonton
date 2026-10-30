@@ -18,6 +18,7 @@ use crate::http::HttpClient;
 use crate::plugin::catalog::Catalog;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
+use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginId, PluginManager, PluginPackage, PluginStatus};
@@ -89,6 +90,7 @@ fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
         HttpClient::new(),
         None,
         cfg,
+        ImageWorker::in_process(),
     ))
 }
 

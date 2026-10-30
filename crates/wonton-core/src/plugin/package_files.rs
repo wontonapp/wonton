@@ -18,6 +18,29 @@ pub const COMPOSE_FILE: &str = "docker-compose.yml";
 /// 单个文件（包括 compose 文件本身）的大小上限。
 pub const MAX_FILE_BYTES: u64 = 1 << 20;
 
+/// 整个插件包（compose 文件和它引用的文件）的大小上限。
+pub const MAX_PACKAGE_BYTES: u64 = 2 << 20;
+
+/// 插件包摘要（插件规范的“插件包摘要”）：每个文件一行 `<sha256>  <路径>`，按路径的字节序排列，即 `sha256sum`
+/// 的输出；这段文字的 sha256 写成 `sha256:<十六进制>`。只取决于文件的内容，和文件从哪里取、怎么打包无关。
+pub fn digest(compose: &[u8], files: &PackageFiles) -> String {
+    let mut hashes: BTreeMap<&str, String> = files
+        .iter()
+        .map(|(path, data)| (path.as_str(), sha256_hex(data)))
+        .collect();
+    hashes.insert(COMPOSE_FILE, sha256_hex(compose));
+    let listing: String = hashes
+        .iter()
+        .map(|(path, hash)| format!("{hash}  {path}\n"))
+        .collect();
+    format!("sha256:{}", sha256_hex(listing.as_bytes()))
+}
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    let hash = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, data);
+    hash.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum FileError {
     #[error("不存在")]
@@ -194,6 +217,17 @@ mod tests {
         let big = vec![b'x'; MAX_FILE_BYTES as usize + 1];
         assert!(read_archive(&archive(&[("big.bin", regular, &big)])).is_err());
         assert!(read_archive(b"not a tar archive at all").is_err());
+    }
+
+    /// 摘要和 `sha256sum docker-compose.yml icon.svg | sha256sum` 一致（在 macOS 上用 `shasum -a 256` 算的）。
+    #[test]
+    fn digest_is_the_hash_of_the_sha256sum_listing() {
+        let files = PackageFiles::from([("icon.svg".to_owned(), b"b\n".to_vec())]);
+        assert_eq!(
+            digest(b"a\n", &files),
+            "sha256:699204d977f0cad660a051467a6b3095cb2e1e0ce7ba4eeb2e628d428b05df23"
+        );
+        assert_ne!(digest(b"a\n", &PackageFiles::new()), digest(b"a\n", &files));
     }
 
     #[test]
