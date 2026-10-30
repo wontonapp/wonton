@@ -15,6 +15,40 @@ pub struct HomeViewModel {
     pub proxy: Option<ProxySettings>,
     /// 插件网页的入口地址（M0 由连接信息给出）。
     pub web_url: Option<String>,
+    /// 扫码配对的进展；没在配对时为空，配对成功后也回到空。
+    pub pairing: Option<PairingStatus>,
+}
+
+/// 扫码配对的进展。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PairingStatus {
+    /// 正在连服务器、出示配对码。
+    InProgress,
+    Failed {
+        reason: PairingFailure,
+        message: String,
+    },
+}
+
+/// 配对失败的原因，壳据此提示主人下一步。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PairingFailure {
+    /// 服务器不认这个码：没发过，或者已经用过。要拿一个新码。
+    Rejected,
+    /// 码过期了，要拿一个新码。
+    Expired,
+    /// 服务器不再接受这种码，例如已经有配对的设备时的首次配对码。要用别的办法加这台设备，`message` 里有说明。
+    Closed,
+    /// 连不上服务器：手机和服务器之间不通，或者服务器没在运行。
+    TransportUnavailable,
+    /// 服务器出错了，稍后再试；`message` 里有原因。
+    Upstream,
+    /// 两端协议版本不匹配：App 或服务器要更新。
+    Protocol,
 }
 
 /// 连接状态。

@@ -10,6 +10,7 @@
 //!   [`LocalProxy`] 在回环地址上监听，把本机 HTTP 客户端的连接经隧道转发过去。App 用带会话凭据
 //!   （[`ProxyCredential`]）的 HTTP 正向代理，同机的其他 App 借用不了本设备的配对身份。
 //! - 线协议见 `wire` 模块：一条 QUIC 连接上每条双向流对应一条 TCP 连接，做法参考 dumbpipe。
+//! - 扫码配对：二维码里的配对码和配对的 ALPN 见 [`pair`] 模块。
 
 mod allowlist;
 mod client;
@@ -18,6 +19,7 @@ mod embed;
 mod error;
 mod forward;
 mod http_front;
+pub mod pair;
 mod proxy;
 mod server;
 mod wire;

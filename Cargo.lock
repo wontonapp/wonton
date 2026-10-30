@@ -7090,10 +7090,13 @@ dependencies = [
  "getrandom 0.4.3",
  "httparse",
  "iroh",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

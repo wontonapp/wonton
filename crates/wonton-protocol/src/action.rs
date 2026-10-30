@@ -19,6 +19,14 @@ pub enum Action {
     /// （`deploy/dev/core/dev.sh ticket`），配对上线后来自二维码（#16）。连接信息不合法时返回
     /// `InvalidInput`；连接的进展和结果体现在 [`HomeViewModel`](crate::HomeViewModel) 里。
     ConnectHome { ticket: String },
+    /// 扫码配对：`code` 是二维码里的文字（`wonton://pair?…`，格式见 ADR-0009 的“接口：扫码配对”），里面有一次性的
+    /// 配对密钥，所以和恢复密钥一样打码；`device_name` 是主人在设备列表里认这台设备用的名字。不是配对码时返回
+    /// `InvalidInput`；进展和结果在 [`HomeViewModel::pairing`](crate::HomeViewModel::pairing) 里，配对成功后存下连接
+    /// 信息并连上，之后每次启动自动连接，和 `ConnectHome` 一样。
+    PairHome {
+        code: SecretString,
+        device_name: String,
+    },
     /// App 回到前台。核心检查隧道和本地代理是否还能用，必要时重建；系统挂起 App 期间可能回收了套接字。
     /// Matrix 同步停了的话也在这时重启。
     AppForegrounded,

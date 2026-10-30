@@ -29,7 +29,9 @@ pub use confirmation::{
     ConfirmationReply, ConfirmationState, answer_path,
 };
 pub use error::CoreError;
-pub use home::{HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};
+pub use home::{
+    HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus, ProxySettings,
+};
 pub use push::{PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};

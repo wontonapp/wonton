@@ -22,7 +22,8 @@ pub struct SessionRow {
 mod tests {
     use super::*;
     use crate::{
-        Action, CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings,
+        Action, CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure,
+        PairingStatus, ProxySettings, SecretString,
     };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
@@ -65,11 +66,19 @@ mod tests {
                 domain: "wonton.localhost".into(),
             }),
             web_url: Some("http://app-grafana.wonton.localhost:18480/".into()),
+            pairing: Some(PairingStatus::Failed {
+                reason: PairingFailure::Expired,
+                message: "码过期了".into(),
+            }),
         };
         assert_eq!(round_trip(&home), home);
         for action in [
             Action::ConnectHome {
                 ticket: "{}".into(),
+            },
+            Action::PairHome {
+                code: SecretString::new("wonton://pair?v=0"),
+                device_name: "phone".into(),
             },
             Action::AppForegrounded,
         ] {
@@ -79,6 +88,18 @@ mod tests {
             !format!("{home:?}").contains("secret"),
             "Debug 不能输出代理密码"
         );
+    }
+
+    /// 配对码里有一次性的配对密钥：操作打进日志时只能看到打码后的样子。
+    #[test]
+    fn pairing_codes_are_redacted_in_debug_output() {
+        let secret = "00112233445566778899aabbccddeeff";
+        let action = Action::PairHome {
+            code: SecretString::new(format!("wonton://pair?v=0&secret={secret}")),
+            device_name: "phone".into(),
+        };
+        let printed = format!("{action:?}");
+        assert!(!printed.contains(secret), "{printed}");
     }
 
     fn round_trip<T>(value: &T) -> T

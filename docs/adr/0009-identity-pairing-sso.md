@@ -178,6 +178,53 @@ App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwun
 
 核心没有配置 Matrix 时，两个入口都返回 503 `matrix_unavailable`。
 
+## 接口：扫码配对（M1）
+
+App 扫一个一次性的配对码，成为主人的设备。线协议的类型和契约测试在 `crates/wonton-tunnel/src/pair.rs`，App 一侧的
+操作和状态是 `Action::PairHome`、`HomeViewModel::pairing`（`crates/wonton-protocol`）。
+
+**配对码**：二维码里是一个地址 `wonton://pair?v=0&id=…&relay=…&addr=…&domain=…&core=…&secret=…`。
+
+| 参数 | 说明 |
+| --- | --- |
+| `v` | 格式版本，不兼容地变化时加一。App 认不出的版本提示更新 App，不当成坏码 |
+| `id` | 服务端的 endpoint ID |
+| `relay`、`addr` | 中继地址、直连地址，各自可以有多个，合起来至少一个：n0 的地址发现在国内靠不住（ADR-0004） |
+| `domain` | 基础域名。本地代理只转发它和它的子域名 |
+| `core` | 核心自己的地址，经隧道访问，主机名就是基础域名 |
+| `secret` | 一次性的配对密钥：128 位随机数，32 位十六进制小写 |
+
+认不出的参数忽略，同一个版本里可以往码里加可选的字段。
+
+**配对**
+
+1. 还没登记的设备用 ALPN `wonton/pair/0` 连上服务端（和隧道的 `wonton/tunnel/0` 在同一个 endpoint 上），开一条双向流，
+   写入请求后结束发送：`{"type": "pair", "secret": "…", "device_name": "…"}`。`device_name` 给主人在设备列表里认设备用。
+2. 服务端回一个 JSON 后结束：`{"result": "paired"}`，或者 `{"result": "rejected", "reason": "…", "message": "…"}`。请求和
+   回应都不超过 4096 字节，超过就断开。
+3. 登记的是 QUIC 握手认证过的设备 endpoint ID，请求里没有身份字段。成功后设备改用隧道的 ALPN 连接，之后和已登记的设备
+   一样。
+
+| `reason` | 含义 | App 的 `PairingFailure` |
+| --- | --- | --- |
+| `unknown_code` | 服务端没发过这个码 | `Rejected` |
+| `used` | 码已经用过 | `Rejected` |
+| `expired` | 码过期了 | `Expired` |
+| `closed` | 这种码不再能用来配对，例如已经有配对设备时的首次配对码 | `Closed` |
+| `bad_request` | 请求格式不对或太长 | `Protocol` |
+| `server_error` | 服务端自己出错了，例如设备登记表写不进去 | `Upstream` |
+| 认不出的值 | 比 App 新的服务端给的原因 | `Rejected`，显示 `message` |
+
+连不上服务端是 `TransportUnavailable`；服务端不接受 `wonton/pair/0`（版本不配）是 `Protocol`。扫到的文字不是配对码时，
+`PairHome` 直接返回 `InvalidInput`。
+
+**码的有效期**：一次性，用过就作废，10 分钟后过期。码只在核心的内存里，核心重启后全部作废。
+
+**状态页**：局域网浏览器用 IP 地址打开核心的端口（`http://<服务器 IP>:<端口>/`），看到运行状态和可用的配对码。只回应
+`Host` 是 IP 地址的请求：别的网站把自己的域名解析到局域网 IP（DNS 重绑定）后，从浏览器里读不到配对码。
+
+**开发和冒烟**：主人令牌 `POST /_wonton/api/pairing-codes` 发一个码，回应 `{"code": "wonton://pair?…", "expires_in": 600}`。
+
 ## 验证结果（M1，核心接入 Tuwunel）
 
 Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版本：Tuwunel v1.9.4。可复跑：`deploy/dev/core/smoke.sh`
