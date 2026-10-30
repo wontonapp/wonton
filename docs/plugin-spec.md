@@ -91,10 +91,11 @@ x-wonton:
 | `bots` | 否 | 一个插件多个 Bot：`services` 列出每个 Bot 一份的服务（见“一个插件多个 Bot”）。 |
 | `agent` | `kind=agent` 时必填 | `protocol`：`matrix`（Agent 自己登录 Matrix，须声明 `matrix.bot`）或 `acp`（经 ACP 桥接入）。 |
 | `provides` | 否 | 向其他插件提供的能力，v0.1 只有 `models`（见“模型网关”）。只有 `kind: system` 的插件可以声明。 |
+| `gpu` | 否 | 拿到显卡的服务（`services`）。要和 `devices.gpu` 权限一起声明，见“显卡”。 |
 | `secrets` | 否 | 插件自己的密钥：核心生成后注入，或插件运行中生成、交给核心保管（见“插件密钥”）。 |
 | `permissions` | 是 | 安装时由主人确认的权限，见下表。没有权限时写空列表。 |
 | `settings` | 否 | 插件包里的 JSON Schema 文件，留给 App 用原生表单渲染（ADR-0017 的“自定义接口”，预留）；在那之前插件用自己的网页做设置。 |
-| `requirements` | 否 | `arch`（安装时与宿主架构比对，不符则拒绝）、`memory`、`gpu`（`required`、`optional`）。 |
+| `requirements` | 否 | `arch`（安装时与宿主架构比对，不符则拒绝）、`memory`、`gpu`（`required`、`optional`，见“显卡”）。 |
 
 `x-wonton` 里出现未知字段时安装失败；`spec` 比核心支持的版本新时，先报规范版本（见“商店信息”）。
 
@@ -331,7 +332,7 @@ webui:
 | `notify` | 给主人发通知。 |
 | `network.egress` | 访问外网和局域网，见“网络”。 |
 | `network.host` | 使用宿主网络（如 Samba、DLNA）。高权限。 |
-| `devices.gpu` | 使用 GPU。高权限。 |
+| `devices.gpu` | 使用显卡，见“显卡”。高权限。 |
 | `devices.<路径>` | 访问宿主设备，如 USB。高权限。 |
 | `docker.socket` | 访问 Docker socket。最高权限，默认拒绝，需要单独确认。 |
 
@@ -339,7 +340,7 @@ webui:
 少一项或多一项都拒绝安装。
 
 核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）、`matrix.bot`
-（见“Matrix Bot”）和 `tools`（见“工具与 MCP 总线”）。共享文件夹在数据目录的 `shares/<名称>` 下，
+（见“Matrix Bot”）、`tools`（见“工具与 MCP 总线”）和 `devices.gpu`（见“显卡”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
 
@@ -615,6 +616,68 @@ x-wonton:
 - 核心不修改、不删除插件里的这个文件，也不注入回去。
 - 声明在 Bot 服务上时，每个 Bot 各存一份。
 
+## 显卡（`devices.gpu`）
+
+要用显卡的插件（生图、生视频、本地模型）申请 `devices.gpu` 权限，并在 `gpu.services` 里写明哪些服务拿到显卡。
+交给容器什么由核心按宿主实际有的显卡决定，compose 里自己写的 `devices` 一律拒绝（ADR-0018）：插件写不了宿主路径，
+一份清单在 AMD 和 NVIDIA 的主机上都能装。
+
+```yaml
+name: comfyui
+services:
+  comfyui:
+    image: ghcr.io/example/comfyui:1
+    shm_size: 8g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8188/"]
+  web:
+    image: ghcr.io/example/comfyui-proxy:1
+
+x-wonton:
+  id: ai.example.comfyui
+  version: 1.0.0
+  kind: app
+  title: { zh: ComfyUI, en: ComfyUI }
+  description: { zh: 用工作流生图、生视频, en: Image and video generation with workflows }
+  webui:
+    service: web
+    port: 8188
+  gpu:
+    services: [comfyui]
+  permissions:
+    - devices.gpu
+  requirements:
+    gpu: required
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `gpu.services` | 拿到显卡的服务，至少一项，不能重复，都要在 `services` 里。其余服务什么都不拿。 |
+| `requirements.gpu` | `required`（没写时的默认）：本机没有可用的显卡时装不上。`optional`：照常装，不给设备，插件自己退回 CPU。 |
+
+三者缺一不可：写了 `gpu` 或 `requirements.gpu` 却没申请 `devices.gpu`，或者申请了 `devices.gpu` 却没写 `gpu.services`，
+清单都不合法。
+
+核心按宿主的显卡交给这些服务，容器里的路径和宿主相同：
+
+| 宿主 | 交给容器什么 |
+| --- | --- |
+| AMD、Intel 等开源驱动的显卡（有 DRM 渲染节点） | 设备 `/dev/dri`（整个目录）；有 KFD（amdgpu 的 ROCm 计算接口）时还有 `/dev/kfd`。容器加入这些设备节点所属的组（宿主 `video`、`render` 组的 GID），以非 root 用户运行的服务才开得了设备。 |
+| NVIDIA 官方驱动 | Docker 的 `DeviceRequests`（同 `docker run --gpus all`），由宿主上的 NVIDIA Container Toolkit 把全部 NVIDIA 显卡和驱动库放进容器。 |
+
+- 两种显卡都有时都给。核心只给显卡本身：没有 `privileged`、`cap_add`、`security_opt`、`ipc: host`；要大一点的共享内存
+  写 `shm_size`。
+- 有没有可用的显卡看 sysfs 里的驱动和设备节点，不看 `nvidia-smi`、`rocminfo` 这类命令装没装。`required` 的插件装不上时
+  错误类别是 `gpu_unavailable`（HTTP 422），原因分清：没有找到显卡；有显卡但没有可用的驱动（没加载驱动，或者是
+  nouveau）；有 NVIDIA 驱动但 Docker 没有登记 `nvidia` 运行时（没装 NVIDIA Container Toolkit）；核心在容器里却没挂载
+  宿主的 `/dev`。
+- 安装预览的说明（`notices`）里有一行写明拿显卡的服务，以及本机会交给它们什么（厂商、设备、组）或者为什么给不了；`required`
+  而给不了时同时是装不了的原因（`blocked`）。确认卡片列出拿显卡的服务。
+- 核心在容器里看不到宿主的 `/dev`，compose 把它只读、不递归地挂到 `/host/dev`（`WONTON_HOST_DEV`，`/dev/shm` 这类子挂载
+  不带进来）；没挂时申请显卡的插件装不上，原因写明，核心不拿容器自己的 `/dev` 当宿主的。
+- 装好后核心不再盯着显卡：显卡拔了、驱动换了，容器自己会出错。可运行的检查插件见
+  [`plugins/examples/gpu-check/`](../plugins/examples/gpu-check/README.md)。
+
 ## Compose 子集
 
 核心经 Docker API 渲染插件，只接受下面的字段，其余字段一律报错：
@@ -633,8 +696,9 @@ x-wonton:
 - 命名卷在 Docker 里叫 `wonton-<slug>--<卷名>`。同名卷已存在时：属于本插件（上次卸载时保留的数据）就
   直接复用；属于其他插件或不是核心创建的，拒绝安装。安装失败回滚时只删除本次新建的卷，保留的卷不删。
 - 明确拒绝并给出原因：`ports`、`network_mode`（`none` 以外的取值）、`networks`、`privileged`、
-  `devices`、`cap_add`、`security_opt`、`pid`、`ipc`、`container_name`、`build`、`env_file`、`extends`、
-  `links`、`external_links`、`volumes_from`，以及顶层的 `networks`、`secrets`。
+  `devices`（显卡由核心按 `gpu.services` 交给服务，见“显卡”）、`cap_add`、`security_opt`、`pid`、`ipc`、
+  `container_name`、`build`、`env_file`、`extends`、`links`、`external_links`、`volumes_from`，以及顶层的
+  `networks`、`secrets`。
 - `environment` 里只有键没有值的写法（取宿主环境变量）不受支持。
 
 安装时核心按 `depends_on` 顺序启动容器，等每个长期运行的容器健康（有健康检查时）或稳定运行、每个一次性

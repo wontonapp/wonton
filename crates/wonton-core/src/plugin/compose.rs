@@ -1,7 +1,8 @@
 //! 核心接受的 Compose 子集。字段是白名单：不在这里的字段一律报错，而不是悄悄忽略。
 //!
-//! 安全相关的字段（端口、宿主网络、特权、设备、Docker socket 等）在 M0 一律拒绝，并给出原因；
-//! 它们对应的高权限在后续里程碑随权限确认流程一起开放。
+//! 安全相关的字段（端口、宿主网络、特权、Docker socket 等）一律拒绝，并给出原因；它们对应的高权限随权限确认
+//! 流程逐个开放。开放了的也不收 compose 里的写法：显卡由核心按清单的 `gpu.services` 和宿主实际的显卡交给服务
+//! （[`super::gpu`]），插件写不了设备路径。
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -14,7 +15,10 @@ pub const FORBIDDEN_SERVICE_KEYS: &[(&str, &str)] = &[
     ("ports", "插件不向宿主暴露端口，网页一律经核心网关访问"),
     ("networks", "插件网络由核心创建和管理"),
     ("privileged", "特权模式属于高权限，M0 尚未开放"),
-    ("devices", "设备直通属于高权限（devices.*），M0 尚未开放"),
+    (
+        "devices",
+        "设备由核心交给服务：显卡申请 devices.gpu 权限、用 x-wonton 的 gpu.services 指定服务；其他设备尚未开放",
+    ),
     ("cap_add", "增加内核能力属于高权限，M0 尚未开放"),
     ("security_opt", "修改安全选项属于高权限，M0 尚未开放"),
     ("pid", "共享宿主进程空间属于高权限"),

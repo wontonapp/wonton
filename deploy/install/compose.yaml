@@ -20,6 +20,8 @@ services:
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
       WONTON_CORE_CONTAINER: ${WONTON_CORE_CONTAINER:-wonton-core}
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
+      # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
+      WONTON_HOST_DEV: /host/dev
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444
@@ -41,6 +43,14 @@ services:
       # 容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}
       - ${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro
+      # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
+      # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
+      - type: bind
+        source: /dev
+        target: /host/dev
+        read_only: true
+        bind:
+          recursive: disabled
     networks: [core]
     depends_on:
       hydra:

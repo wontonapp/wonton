@@ -172,6 +172,10 @@ pub struct Config {
     /// 核心自己的容器名。设置后核心会加入每个插件网络，用容器名访问插件；
     /// 未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
     pub core_container: Option<String>,
+    /// 宿主的 `/dev` 在核心里的路径（`WONTON_HOST_DEV`），用来检测显卡设备和它们所属的组：核心在容器里时由
+    /// compose 只读挂载进来；直接跑在宿主上时就是 `/dev`。在容器里却没设时为 `None`，申请显卡的插件装不上，
+    /// 原因写明。
+    pub host_dev: Option<PathBuf>,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
@@ -245,6 +249,15 @@ impl Config {
             email: get("WONTON_OWNER_EMAIL").unwrap_or_else(|| format!("{username}@{base_domain}")),
             username,
         };
+        let core_container = get("WONTON_CORE_CONTAINER");
+        let host_dev = match get("WONTON_HOST_DEV") {
+            Some(path) if !path.starts_with('/') => {
+                return Err(invalid("WONTON_HOST_DEV", "必须是绝对路径"));
+            }
+            Some(path) => Some(PathBuf::from(path)),
+            None if core_container.is_none() => Some(PathBuf::from("/dev")),
+            None => None,
+        };
         Ok(Self {
             data_dir,
             listen,
@@ -253,7 +266,8 @@ impl Config {
                 base_domain,
                 port,
             },
-            core_container: get("WONTON_CORE_CONTAINER"),
+            core_container,
+            host_dev,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),

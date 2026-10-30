@@ -16,6 +16,7 @@ use super::compose::{
     parse_duration,
 };
 use super::configs::{self, ConfigError, ConfigFile};
+use super::gpu::GpuGrant;
 use super::hostdir::Owner;
 use super::interpolate::Vars;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
@@ -133,6 +134,8 @@ pub struct InstallContext {
     pub pgid: u32,
     /// 额外写进每个容器 `/etc/hosts` 的条目（核心不在容器里运行时，用来让插件访问网关）。
     pub extra_hosts: Vec<String>,
+    /// 申请了 `devices.gpu` 且本机有可用的显卡时：交给 `gpu.services` 里的服务的设备（见 [`super::gpu`]）。
+    pub gpu: Option<GpuGrant>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -152,6 +155,7 @@ impl std::fmt::Debug for InstallContext {
             .field("puid", &self.puid)
             .field("pgid", &self.pgid)
             .field("extra_hosts", &self.extra_hosts)
+            .field("gpu", &self.gpu)
             .finish()
     }
 }
@@ -310,6 +314,7 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
         puid: 1000,
         pgid: 1000,
         extra_hosts: Vec::new(),
+        gpu: None,
     };
     render(package, &ctx)
 }
@@ -339,11 +344,13 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
         .map(|(_, path)| path.clone())
         .collect();
     let one_shot = package.one_shot_services();
+    let gpu_services: &[String] = manifest.gpu.as_ref().map_or(&[], |g| &g.services);
     let mut binds = Vec::new();
     let mut containers = Vec::new();
     for name in start_order(&services)? {
         let service = &services[&name];
         check_network_mode(manifest, &name, service)?;
+        let gpu = ctx.gpu.as_ref().filter(|_| gpu_services.contains(&name));
         let one_shot = one_shot.contains(name.as_str());
         if one_shot && service.restart.as_deref() != Some("no") {
             return Err(service_err(
@@ -366,7 +373,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
                 ConfigError::Rule(m) => service_err(&name, m),
             })?;
         let endpoint = (network.as_str(), vars.aliases(&name));
-        let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels)?;
+        let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels, gpu)?;
         plan.files = files;
         plan.one_shot = one_shot;
         containers.push(plan);
@@ -454,7 +461,7 @@ fn start_order(services: &BTreeMap<String, Service>) -> Result<Vec<String>, Rend
     Ok(order)
 }
 
-/// `endpoint` 是插件网络和服务在其中的别名。
+/// `endpoint` 是插件网络和服务在其中的别名；`gpu` 是这个服务拿到的显卡（清单的 `gpu.services` 里的服务才有）。
 fn container_plan(
     name: &str,
     service: &Service,
@@ -462,6 +469,7 @@ fn container_plan(
     ctx: &InstallContext,
     (network, aliases): (&str, Vec<String>),
     labels: &HashMap<String, String>,
+    gpu: Option<&GpuGrant>,
 ) -> Result<ContainerPlan, RenderError> {
     let env = match &service.environment {
         Some(kv) => kv.pairs("environment").map_err(|m| service_err(name, m))?,
@@ -521,7 +529,7 @@ fn container_plan(
             .map(|d| parse_duration(d).map(|d| d.as_secs() as i64))
             .transpose()
             .map_err(|m| service_err(name, m))?,
-        host_config: Some(host_config(name, service, mounts, ctx, network)?),
+        host_config: Some(host_config(name, service, mounts, ctx, network, gpu)?),
         networking_config,
         ..Default::default()
     };
@@ -543,6 +551,7 @@ fn host_config(
     mounts: Vec<Mount>,
     ctx: &InstallContext,
     network: &str,
+    gpu: Option<&GpuGrant>,
 ) -> Result<HostConfig, RenderError> {
     let tmpfs = service.tmpfs.as_ref().map(|spec| {
         list(spec)
@@ -554,7 +563,7 @@ fn host_config(
             .collect()
     });
     let isolated = service.network_mode == Some(NetworkMode::None);
-    Ok(HostConfig {
+    let mut host = HostConfig {
         network_mode: Some(if isolated { "none" } else { network }.to_owned()),
         mounts: Some(mounts),
         restart_policy: Some(restart_policy(name, service.restart.as_deref())?),
@@ -569,7 +578,11 @@ fn host_config(
         tmpfs,
         extra_hosts: (!isolated && !ctx.extra_hosts.is_empty()).then(|| ctx.extra_hosts.clone()),
         ..Default::default()
-    })
+    };
+    if let Some(grant) = gpu {
+        grant.apply(&mut host);
+    }
+    Ok(host)
 }
 
 pub(super) fn list(spec: &StringOrList) -> Vec<String> {

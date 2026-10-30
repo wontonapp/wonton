@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+use super::gpu::GpuSpec;
 use super::provides::Provides;
 use super::store_info::{Author, Category};
 
@@ -507,6 +508,9 @@ pub struct Manifest {
     /// 系统插件给其他插件提供的能力，见规范“模型网关”。
     #[serde(default)]
     pub provides: Option<Provides>,
+    /// 拿到显卡的服务，见规范“显卡”；要和 `devices.gpu` 权限一起声明。
+    #[serde(default)]
+    pub gpu: Option<GpuSpec>,
     /// 插件自己的密钥，见规范“插件密钥”。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
@@ -532,6 +536,7 @@ impl Manifest {
             ));
         }
         validate_bots(self)?;
+        super::gpu::validate(self)?;
         super::provides::validate(self)?;
         super::proxy_auth::validate(self)?;
         if let Some(webui) = &self.webui {

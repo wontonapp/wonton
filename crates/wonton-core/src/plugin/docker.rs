@@ -152,6 +152,18 @@ impl Engine {
         })
     }
 
+    /// Docker 登记的 OCI 运行时的名字（`runc`，装了 NVIDIA Container Toolkit 时还有 `nvidia`）。
+    pub async fn runtimes(&self) -> Result<Vec<String>> {
+        let info = self
+            .docker
+            .info()
+            .await
+            .map_err(|e| EngineError::from_bollard("查询 Docker 信息", e))?;
+        let mut runtimes: Vec<String> = info.runtimes.unwrap_or_default().into_keys().collect();
+        runtimes.sort();
+        Ok(runtimes)
+    }
+
     /// 核心启动时检查 Docker：连得上，而且 Engine 版本不低于 [`MIN_ENGINE_MAJOR`]。低于时报错，不降级运行：
     /// 插件网络的隔离靠的是新版的行为。
     pub async fn check_server(&self) -> Result<ServerInfo> {

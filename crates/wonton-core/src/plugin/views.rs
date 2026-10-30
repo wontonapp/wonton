@@ -132,6 +132,9 @@ impl PluginManager {
             Err(InstallError::Unsupported(reason) | InstallError::Conflict(reason)) => Some(reason),
             Err(e) => return Err(e),
         };
+        // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
+        let gpu = self.gpu_preview(m).await?;
+        let blocked = blocked.or(gpu.blocked);
         let unpinned: Vec<String> = plan
             .containers
             .iter()
@@ -146,6 +149,7 @@ impl PluginManager {
             notices.push(line("在 App 里打开它的网页时自动登录".to_owned()));
         }
         notices.extend(requirement_lines(m).into_iter().map(line));
+        notices.extend(gpu.notice);
         Ok(InstallPreview {
             source: None,
             commit: None,

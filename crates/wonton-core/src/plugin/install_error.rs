@@ -32,6 +32,9 @@ pub enum InstallError {
     MatrixUnavailable(String),
     #[error("模型网关不可用：{0}")]
     ModelsUnavailable(String),
+    /// 插件要显卡（`requirements.gpu: required`），本机没有可用的：没有设备、没有驱动，或者没有运行时。
+    #[error("本机没有可用的显卡：{0}")]
+    GpuUnavailable(String),
     #[error("处理图片的进程不可用：{0}")]
     ImagesUnavailable(String),
     #[error("插件没有通过健康检查：{0}")]
@@ -54,6 +57,7 @@ impl InstallError {
             Self::OidcUnavailable(_) => "oidc_unavailable",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::ModelsUnavailable(_) => "models_unavailable",
+            Self::GpuUnavailable(_) => "gpu_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
@@ -76,6 +80,7 @@ impl InstallError {
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
+            Self::GpuUnavailable(m) => Self::GpuUnavailable(add(m)),
             Self::ImagesUnavailable(m) => Self::ImagesUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),

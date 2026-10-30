@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -10,6 +11,7 @@ use serde::Serialize;
 
 use super::docker::Engine;
 use super::gallery::Gallery;
+use super::gpu::HostPaths;
 use super::image_worker::ImageWorker;
 use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind};
@@ -203,6 +205,8 @@ pub struct PluginManager {
     pub(super) oidc: Option<Hydra>,
     pub(super) matrix: Option<Arc<Matrix>>,
     pub(super) cfg: LifecycleConfig,
+    /// 核心看到的宿主路径，探测显卡用（见 [`super::gpu`]）。
+    pub(super) host: HostPaths,
     pub(super) sources: Sources,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
@@ -222,6 +226,7 @@ pub(super) fn supported(permission: &Permission) -> bool {
             | Permission::MatrixBot
             | Permission::Models
             | Permission::Tools
+            | Permission::DevicesGpu
     )
 }
 
@@ -241,12 +246,15 @@ impl PluginManager {
         cfg: LifecycleConfig,
         images: ImageWorker,
     ) -> Self {
+        // 核心直接跑在宿主上时 /dev 就是宿主的；在容器里要由 compose 挂载进来，见 [`Self::with_host`]。
+        let host_dev = cfg.core_container.is_none().then(|| PathBuf::from("/dev"));
         Self {
             engine,
             store,
             http,
             oidc,
             matrix: None,
+            host: HostPaths::new(host_dev),
             cfg,
             sources: Sources::default(),
             bot_allocation: tokio::sync::Mutex::new(()),
@@ -287,6 +295,13 @@ impl PluginManager {
     #[must_use]
     pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
         self.matrix = matrix;
+        self
+    }
+
+    /// 核心看到的宿主路径（`WONTON_HOST_DEV`），申请了 `devices.gpu` 的插件按它探测显卡。
+    #[must_use]
+    pub fn with_host(mut self, host: HostPaths) -> Self {
+        self.host = host;
         self
     }
 
@@ -529,10 +544,11 @@ impl PluginManager {
         let manifest = package.manifest.clone();
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
+        let gpu = self.gpu_grant(&manifest).await?;
         let listed = Listed::new(&package, now_secs());
         self.reserve(&listed)?;
-        tracing::info!(plugin = %manifest.id, "开始安装插件");
-        match self.deploy(&package, granted).await {
+        tracing::info!(plugin = %manifest.id, gpu = ?gpu, "开始安装插件");
+        match self.deploy(&package, granted, gpu).await {
             Ok(deployed) => {
                 tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");

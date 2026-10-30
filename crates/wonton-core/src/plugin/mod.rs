@@ -9,6 +9,7 @@ pub mod configs;
 pub mod docker;
 pub mod docker_exec;
 pub mod gallery;
+pub mod gpu;
 pub mod health;
 pub mod hostdir;
 pub mod image_worker;

@@ -72,6 +72,8 @@ struct Resources {
     execs: BTreeMap<String, FakeExec>,
     /// 没设时命令都以 0 退出。
     exec_handler: Option<ExecHandler>,
+    /// Docker 登记的运行时；没设时只有 runc。
+    runtimes: Option<Vec<String>>,
 }
 
 impl FakeDocker {
@@ -175,6 +177,11 @@ impl FakeDocker {
     /// 执行过的命令，按顺序。
     pub fn execs(&self) -> Vec<FakeExec> {
         self.lock().execs.values().cloned().collect()
+    }
+
+    /// 让 `GET /info` 报告这些运行时（如 `runc`、`nvidia`）。
+    pub fn set_runtimes(&self, runtimes: &[&str]) {
+        self.lock().runtimes = Some(runtimes.iter().map(|r| (*r).to_owned()).collect());
     }
 
     fn lock(&self) -> MutexGuard<'_, Resources> {
@@ -364,6 +371,17 @@ fn others(
             StatusCode::OK,
             json!({"Arch": "x86_64", "Version": "29.0.0"}),
         ),
+        (&Method::GET, ["info"]) => {
+            let runtimes = docker
+                .runtimes
+                .clone()
+                .unwrap_or_else(|| vec!["runc".to_owned()]);
+            let map: serde_json::Map<String, Value> = runtimes
+                .into_iter()
+                .map(|name| (name.clone(), json!({"path": name})))
+                .collect();
+            json_reply(StatusCode::OK, json!({"Runtimes": map}))
+        }
         (&Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
             let code = docker.execs[*id].exit_code;

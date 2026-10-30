@@ -10,6 +10,7 @@ use tokio::time::Instant;
 
 use super::configs;
 use super::docker::{LabeledResources, NetworkReach};
+use super::gpu::GpuGrant;
 use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
@@ -102,14 +103,15 @@ impl PluginManager {
     }
 
     /// 部署插件并写下安装记录，返回核心访问插件网页的地址。任一步失败（包括写记录）都回滚本次创建的
-    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。
+    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡。
     pub(super) async fn deploy(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
+        gpu: Option<GpuGrant>,
     ) -> Result<Deployed, InstallError> {
         let mut undo = Undo::default();
-        match self.deploy_inner(package, granted, &mut undo).await {
+        match self.deploy_inner(package, granted, gpu, &mut undo).await {
             Ok(deployed) => Ok(deployed),
             Err(error) => {
                 let failures = self.rollback(undo).await;
@@ -127,6 +129,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         granted: &[Permission],
+        gpu: Option<GpuGrant>,
         undo: &mut Undo,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
@@ -138,6 +141,7 @@ impl PluginManager {
         let mut ctx = self
             .install_context(manifest, secret.as_deref(), generated)
             .await?;
+        ctx.gpu = gpu;
         if let Some(bot) = self.provision_bot(package).await? {
             ctx.matrix = Some(self.matrix_vars(&bot));
             undo.bot = Some((manifest.id.clone(), bot));
@@ -295,6 +299,7 @@ impl PluginManager {
             puid: self.cfg.puid,
             pgid: self.cfg.pgid,
             extra_hosts: Vec::new(),
+            gpu: None,
         })
     }
 

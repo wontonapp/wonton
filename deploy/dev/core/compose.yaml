@@ -25,6 +25,8 @@ services:
       WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
       WONTON_TUNNEL_PORT: ${WONTON_DEV_TUNNEL_PORT:-18482}
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+      # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
+      WONTON_HOST_DEV: /host/dev
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444
       # 核心持有 Matrix 登录的签发私钥，并用注册共享密钥注册自己的管理账号（ADR-0009）。
@@ -48,6 +50,14 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # 数据目录在容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DEV_DATA}:${WONTON_DEV_DATA}
+      # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
+      # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
+      - type: bind
+        source: /dev
+        target: /host/dev
+        read_only: true
+        bind:
+          recursive: disabled
     networks: [core]
     depends_on:
       hydra:

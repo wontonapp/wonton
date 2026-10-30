@@ -26,6 +26,8 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
   `brew install openssl@3`）。两者都不提交。
 - `dev.sh` 的 HTTP 请求在一个与核心共享网络的 curl 容器里发出，所以 `DOCKER_HOST` 指向远端主机时
   也能用（远端只需要 Docker）：`DOCKER_HOST=ssh://npchy deploy/dev/core/dev.sh up`。
+- 核心容器只读挂着宿主的 `/dev`（`WONTON_HOST_DEV=/host/dev`），申请了 `devices.gpu` 的插件据此检测显卡和设备所属的组
+  （ADR-0018）；核心直接跑在宿主上时不用设，读的就是 `/dev`。
 - 镜像里编进了构建它的提交号（`dev.sh commit`；Cargo 工作区有没提交的改动时带 `-dirty`），核心启动日志的
   第一行就是它（`docker logs <核心容器> 2>&1 | grep 核心启动`），`docker run --rm wonton-core:dev --version`
   也能看到。验证前先看一眼，确认镜像里是这个检出的代码。

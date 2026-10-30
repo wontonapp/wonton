@@ -361,7 +361,13 @@ impl PluginPackage {
         let bots = bot_services
             .clone()
             .map(|service| ("bots.services", Some(service)));
-        for (field, service) in refs.iter().cloned().chain(collects).chain(bots) {
+        let gpu = self
+            .manifest
+            .gpu
+            .iter()
+            .flat_map(|g| &g.services)
+            .map(|service| ("gpu.services", Some(service)));
+        for (field, service) in refs.iter().cloned().chain(collects).chain(bots).chain(gpu) {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {

@@ -77,7 +77,9 @@ fn install_error(error: &InstallError) -> Response {
     let status = match error {
         InstallError::Invalid(_) => StatusCode::BAD_REQUEST,
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
-        InstallError::Unsupported(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        InstallError::Unsupported(_) | InstallError::GpuUnavailable(_) => {
+            StatusCode::UNPROCESSABLE_ENTITY
+        }
         InstallError::Conflict(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)

@@ -27,6 +27,7 @@ use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::catalog::Catalog;
 use wonton_core::plugin::docker::Engine;
+use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::store::Store;
@@ -88,6 +89,14 @@ async fn run() -> ExitCode {
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?;
+    if let Some(dev) = &cfg.host_dev
+        && !dev.is_dir()
+    {
+        bail!(
+            "WONTON_HOST_DEV 指向的 {} 不是目录：核心在容器里时要把宿主的 /dev 只读挂载到这里",
+            dev.display()
+        );
+    }
     let engine = Engine::connect()?;
     let docker = engine.check_server().await.context("连接 Docker")?;
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
@@ -126,7 +135,8 @@ async fn serve() -> anyhow::Result<()> {
             lifecycle,
             images,
         )
-        .with_matrix(matrix.clone()),
+        .with_matrix(matrix.clone())
+        .with_host(HostPaths::new(cfg.host_dev.clone())),
     );
     manager.restore().await.context("恢复已安装的插件")?;
     preinstall(&cfg, manager.clone())?;

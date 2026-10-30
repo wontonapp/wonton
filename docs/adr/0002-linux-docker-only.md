@@ -29,7 +29,7 @@
 ## 待验证（M0 / M1）
 
 - 在群晖、飞牛等 NAS 的 Docker 环境里的安装体验和权限限制。
-- GPU 直通（NVIDIA、AMD ROCm）给 Ollama 等插件的方式。
+- GPU 直通（NVIDIA、AMD ROCm）给 Ollama 等插件的方式：见 ADR-0018。
 
 ## 验证结果（M1，一行安装）
 
