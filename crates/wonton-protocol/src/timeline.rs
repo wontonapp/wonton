@@ -119,10 +119,16 @@ pub struct TimelineMessage {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendState {
-    /// 本地回显，正在发送（含上传附件）。
+    /// 本地回显，在排队或正在发送（含上传附件）。排在一条发送失败的消息后面时一直是这个状态，直到那条发出去或者被
+    /// 取消。
     Sending,
     Sent,
-    /// 发送失败。`recoverable` 为真时，核心会在网络恢复后自动重发。
+    /// 发送失败，`message` 是原因。没发出去的都可以取消（[`Action::CancelSend`](crate::Action::CancelSend)）。
+    ///
+    /// - `recoverable` 为真：连接出了问题（连不上、超时、服务器暂时出错）。核心隔一段时间自动重发，连续失败时间隔
+    ///   逐渐拉长，直到发出去；也可以马上重发（[`Action::RetrySend`](crate::Action::RetrySend)）。
+    /// - 为假：服务器拒收（比如太大、没有权限）。核心不自动重发，同一房间之后发的消息都排在它后面，直到主人重发或者
+    ///   取消这一条。
     Failed {
         message: String,
         recoverable: bool,

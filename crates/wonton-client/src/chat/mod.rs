@@ -182,6 +182,9 @@ impl ChatLink {
                 });
                 Ok(())
             }
+            Action::RetrySend { .. } | Action::CancelSend { .. } => Err(CoreError::NotReady {
+                reason: "这个版本的客户端核心不能重发或取消发送".to_owned(),
+            }),
             Action::PaginateBackwards { room_id } => {
                 let room = self.opened(&room_id)?;
                 self.spawn_op("加载更早的消息", async move {

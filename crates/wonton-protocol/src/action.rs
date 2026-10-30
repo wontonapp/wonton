@@ -47,6 +47,12 @@ pub enum Action {
     SendText { room_id: String, body: String },
     /// 发送图片。上传和发送的进展同 [`Action::SendText`]。
     SendImage { room_id: String, image: ImageUpload },
+    /// 马上重发一条发送失败的消息（[`SendState::Failed`](crate::SendState::Failed)），不等核心自动重发。`item_id` 是
+    /// 它的 [`TimelineItem::id`](crate::TimelineItem::id)，要先订阅这个房间的时间线。
+    RetrySend { room_id: String, item_id: String },
+    /// 取消发送：删掉一条还没发出去的消息（排队中或发送失败的），同一房间排在它后面的接着发。`item_id` 同
+    /// [`Action::RetrySend`]。已经发出去的取消不了。
+    CancelSend { room_id: String, item_id: String },
     /// 加载更早的消息。要先订阅这个房间的时间线，结果体现在时间线的增量和翻页状态里。
     PaginateBackwards { room_id: String },
     /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。
