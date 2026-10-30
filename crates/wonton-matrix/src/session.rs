@@ -1,6 +1,7 @@
 //! 登录与会话：用核心签发的 JWT 登录 Tuwunel（ADR-0009），把登录状态存下来，重启后恢复。
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use futures_util::{Stream, stream};
 use matrix_sdk::{
@@ -105,7 +106,8 @@ impl SavedSession {
 /// 一个已登录设备的 Matrix 会话。
 pub struct MatrixSession {
     pub(crate) client: Client,
-    pub(crate) sync: SyncService,
+    /// 推送取消息时要和它共用加密同步（`NotificationProcessSetup::SingleProcess`）。
+    pub(crate) sync: Arc<SyncService>,
     user_id: OwnedUserId,
     device_id: OwnedDeviceId,
 }
@@ -149,6 +151,7 @@ impl MatrixSession {
             .build()
             .await
             .map_err(|error| Error::from(&error))?;
+        let sync = Arc::new(sync);
         Ok(Self {
             client,
             sync,

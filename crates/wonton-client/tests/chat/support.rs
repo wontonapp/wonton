@@ -4,13 +4,13 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
@@ -19,7 +19,7 @@ use wonton_client::{
     TimelineSubscription,
 };
 use wonton_matrix::MatrixSession;
-use wonton_matrix::testkit::{Issuer, TestServer};
+use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::{Allowlist, TunnelServer};
 
 pub const WAIT: Duration = Duration::from_secs(60);
@@ -29,25 +29,55 @@ pub const OWNER: &str = "@owner:wonton.localhost";
 
 pub struct Home {
     pub matrix: TestServer,
-    login_tokens: Arc<AtomicUsize>,
+    /// 扮演核心的推送代理：Tuwunel 经出站代理把通知发到这里，和产品里一样。
+    pub push: PushGateway,
+    core: Arc<Core>,
     tunnel: TunnelServer,
     _core: JoinHandle<()>,
 }
 
+/// 模拟的核心记下的东西。
+struct Core {
+    tuwunel: String,
+    issuer: Issuer,
+    login_tokens: AtomicUsize,
+    /// 登记推送时回给设备的 pushkey。
+    pushkey: String,
+    /// 推送登记接口收到的请求：方法和请求体（`DELETE` 没有请求体，是 `Null`）。
+    push_requests: Mutex<Vec<(String, Value)>>,
+}
+
 impl Home {
     pub async fn start(devices: &[EndpointId]) -> Self {
-        let matrix = TestServer::container(&[]).await;
-        let tuwunel = matrix.url.trim_start_matches("http://").to_owned();
-        let login_tokens = Arc::new(AtomicUsize::new(0));
-        let (core, task) = fake_core(tuwunel, matrix.issuer.clone(), login_tokens.clone()).await;
+        let push = PushGateway::start().await;
+        let matrix = TestServer::with_push_gateway(&push).await;
+        let core = Arc::new(Core {
+            tuwunel: matrix.url.trim_start_matches("http://").to_owned(),
+            issuer: matrix.issuer.clone(),
+            login_tokens: AtomicUsize::new(0),
+            pushkey: random_hex(32),
+            push_requests: Mutex::default(),
+        });
+        let (addr, task) = fake_core(core.clone()).await;
         let endpoint = loopback_endpoint(SecretKey::generate()).await;
-        let tunnel = TunnelServer::spawn(endpoint, Allowlist::new(devices.iter().copied()), core);
+        let tunnel = TunnelServer::spawn(endpoint, Allowlist::new(devices.iter().copied()), addr);
         Self {
             matrix,
-            login_tokens,
+            push,
+            core,
             tunnel,
             _core: task,
         }
+    }
+
+    /// 登记推送时核心回给设备的 pushkey。
+    pub fn pushkey(&self) -> &str {
+        &self.core.pushkey
+    }
+
+    /// 推送登记接口收到的请求。
+    pub fn push_requests(&self) -> Vec<(String, Value)> {
+        self.core.push_requests.lock().unwrap().clone()
     }
 
     pub fn ticket(&self) -> String {
@@ -61,7 +91,7 @@ impl Home {
 
     /// 核心签发过几次登录令牌。
     pub fn login_tokens(&self) -> usize {
-        self.login_tokens.load(Ordering::SeqCst)
+        self.core.login_tokens.load(Ordering::SeqCst)
     }
 
     /// 一个 Bot 账号：直接连 Tuwunel（Bot 跑在家里的服务器上，不经隧道），设好显示名并开始同步。
@@ -76,26 +106,21 @@ impl Home {
 }
 
 /// 模拟的核心：`POST /_wonton/matrix/login-token` 签发主人的登录令牌（字段同核心的 `LoginToken`），
-/// `matrix.<基础域名>` 上的请求原样转给 Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
-async fn fake_core(
-    tuwunel: String,
-    issuer: Issuer,
-    login_tokens: Arc<AtomicUsize>,
-) -> (SocketAddr, JoinHandle<()>) {
+/// `PUT`、`DELETE /_wonton/push/registration` 记下推送登记（响应同核心的推送登记接口），`matrix.<基础域名>` 上的
+/// 请求原样转给 Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
+async fn fake_core(core: Arc<Core>) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let task = tokio::spawn(async move {
         loop {
             let (tcp, _) = listener.accept().await.unwrap();
-            let issuer = issuer.clone();
-            let login_tokens = login_tokens.clone();
-            tokio::spawn(serve(tcp, tuwunel.clone(), issuer, login_tokens));
+            tokio::spawn(serve(tcp, core.clone()));
         }
     });
     (addr, task)
 }
 
-async fn serve(mut tcp: TcpStream, tuwunel: String, issuer: Issuer, tokens: Arc<AtomicUsize>) {
+async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     let mut head = Vec::new();
     while !head.ends_with(b"\r\n\r\n") {
         let mut byte = [0u8; 1];
@@ -106,34 +131,64 @@ async fn serve(mut tcp: TcpStream, tuwunel: String, issuer: Issuer, tokens: Arc<
     }
     let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
     if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
-        let mut upstream = TcpStream::connect(tuwunel.as_str()).await.unwrap();
+        let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();
         upstream.write_all(&head).await.unwrap();
         tokio::io::copy_bidirectional(&mut tcp, &mut upstream)
             .await
             .ok();
         return;
     }
-    let response = if text.starts_with("post /_wonton/matrix/login-token ") {
-        tokens.fetch_add(1, Ordering::SeqCst);
-        let body = json!({
+    let length = text
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length:"))
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0);
+    let mut body = vec![0u8; length];
+    if tcp.read_exact(&mut body).await.is_err() {
+        return;
+    }
+    let response = match respond(&core, &text, &body) {
+        Some(body) => format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+             connection: close\r\n\r\n{body}",
+            body.len()
+        ),
+        None => {
+            "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_owned()
+        }
+    };
+    tcp.write_all(response.as_bytes()).await.ok();
+    tcp.shutdown().await.ok();
+}
+
+/// 核心自己的接口；不认识的请求回 `None`（404）。
+fn respond(core: &Core, head: &str, body: &[u8]) -> Option<String> {
+    let push = |method: &str, body: Value| {
+        core.push_requests
+            .lock()
+            .unwrap()
+            .push((method.to_owned(), body));
+    };
+    let response = if head.starts_with("post /_wonton/matrix/login-token ") {
+        core.login_tokens.fetch_add(1, Ordering::SeqCst);
+        json!({
             "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),
             "server_name": BASE_DOMAIN,
             "user_id": OWNER,
             "login_type": "org.matrix.login.jwt",
-            "token": issuer.login_token("owner"),
+            "token": core.issuer.login_token("owner"),
             "expires_in": 120,
         })
-        .to_string();
-        format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-             connection: close\r\n\r\n{body}",
-            body.len()
-        )
+    } else if head.starts_with("put /_wonton/push/registration ") {
+        push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
+        json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
+    } else if head.starts_with("delete /_wonton/push/registration ") {
+        push("DELETE", Value::Null);
+        json!({"removed": true})
     } else {
-        "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_owned()
+        return None;
     };
-    tcp.write_all(response.as_bytes()).await.ok();
-    tcp.shutdown().await.ok();
+    Some(response.to_string())
 }
 
 async fn loopback_endpoint(key: SecretKey) -> Endpoint {

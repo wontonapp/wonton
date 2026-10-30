@@ -5,11 +5,13 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, ChatViewModel, CoreError, HomeViewModel, MediaHandle, SessionListViewModel,
+    Action, ChatViewModel, CoreError, HomeViewModel, MediaHandle, PushNotification,
+    SessionListViewModel,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
 use crate::home::{HomeLink, Network, Storage};
+use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{ChatSubscription, HomeSubscription, SessionListSubscription};
 
@@ -22,6 +24,7 @@ pub struct ClientCore {
     state: watch::Sender<SessionStore>,
     home: Arc<HomeLink>,
     chat: Arc<ChatLink>,
+    push: Arc<PushLink>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -57,12 +60,13 @@ impl ClientCore {
             Action::AppForegrounded => {
                 self.home.foregrounded();
                 self.chat.foregrounded();
+                self.push.foregrounded();
                 Ok(())
             }
-            Action::SetPushEndpoint { .. } | Action::PushUnavailable { .. } => {
-                Err(CoreError::NotReady {
-                    reason: "这个版本的客户端核心不支持推送".to_owned(),
-                })
+            Action::SetPushEndpoint { endpoint } => self.push.set_endpoint(endpoint),
+            Action::PushUnavailable { message } => {
+                self.push.unavailable(message);
+                Ok(())
             }
             chat => self.chat.dispatch(chat),
         }
@@ -114,6 +118,18 @@ impl ClientCore {
         let chat = self.chat.clone();
         self.run(async move { chat.load_media(media).await }).await
     }
+
+    /// 处理收到的一条推送：`payload` 是壳在本机解开后的明文（Android 上 UnifiedPush 连接库已经按 RFC 8291 解开）。
+    /// 核心经隧道取回那条消息、在本机解密，给出要弹出的通知；取不到正文时通知里照实写原因。推送唤醒的进程可以
+    /// 一创建核心就调用，核心等会话从本机恢复。不用显示（按推送规则不该响、消息已撤回）时返回空，内容不是家里
+    /// 推送代理发的格式时返回 `InvalidInput`。最多等二三十秒。
+    pub async fn resolve_push(
+        &self,
+        payload: Vec<u8>,
+    ) -> Result<Option<PushNotification>, CoreError> {
+        let push = self.push.clone();
+        self.run(async move { push.resolve(&payload).await }).await
+    }
 }
 
 impl ClientCore {
@@ -128,10 +144,12 @@ impl ClientCore {
         let storage = Storage::open(data_dir)?;
         let home = HomeLink::new(runtime.handle().clone(), storage, network)?;
         let chat = ChatLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir))?;
+        let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
             chat,
+            push,
             runtime: Some(runtime),
         }))
     }

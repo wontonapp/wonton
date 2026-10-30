@@ -1,7 +1,9 @@
 //! 按原因区分的错误（AGENTS.md：失败即停，错误必须区分原因）。
 
 use matrix_sdk::{HttpError, RefreshTokenError};
-use matrix_sdk_ui::{encryption_sync_service, room_list_service, sync_service, timeline};
+use matrix_sdk_ui::{
+    encryption_sync_service, notification_client, room_list_service, sync_service, timeline,
+};
 
 /// 本 crate 的结果类型。
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -107,6 +109,18 @@ impl From<timeline::Error> for Error {
                 Self::InvalidInput(error.to_string())
             }
             timeline::Error::Sdk(source) => (&source).into(),
+            other => Self::Upstream(other.to_string()),
+        }
+    }
+}
+
+impl From<notification_client::Error> for Error {
+    fn from(error: notification_client::Error) -> Self {
+        match error {
+            notification_client::Error::SdkError(source) => (&source).into(),
+            notification_client::Error::UnknownRoom => {
+                Self::NotReady("推送说的房间还没同步到本机".to_owned())
+            }
             other => Self::Upstream(other.to_string()),
         }
     }

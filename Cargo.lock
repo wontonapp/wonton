@@ -7270,6 +7270,7 @@ name = "wonton-matrix"
 version = "0.0.0"
 dependencies = [
  "aws-lc-rs",
+ "axum",
  "futures-util",
  "jsonwebtoken",
  "matrix-sdk",

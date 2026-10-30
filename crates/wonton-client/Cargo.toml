@@ -28,6 +28,8 @@ required-features = ["bindgen"]
 bindgen = ["uniffi/cli"]
 
 [dependencies]
+# MIT OR Apache-2.0。校验推送订阅里 base64url 编码的公钥和认证密钥。
+base64 = { workspace = true }
 # MIT OR Apache-2.0。
 futures-util = "0.3.34"
 iroh = { workspace = true }
@@ -50,7 +52,6 @@ wonton-tunnel = { path = "../wonton-tunnel" }
 libc = "=0.2.189"
 
 [dev-dependencies]
-base64 = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。

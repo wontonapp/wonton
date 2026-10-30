@@ -86,8 +86,7 @@ pub struct LatestMessage {
 }
 
 impl MatrixSession {
-    /// 和另一个用户建一个私聊房间并邀请对方，返回房间 ID。`encrypted` 决定是否开端到端加密：产品里建的
-    /// 私聊是否加密随推送方案定，见 ADR-0003 的验证结果。
+    /// 和另一个用户建一个私聊房间并邀请对方，返回房间 ID。`encrypted` 决定是否开端到端加密。
     pub async fn create_direct_chat(&self, peer: &UserId, encrypted: bool) -> Result<OwnedRoomId> {
         let room = if encrypted {
             self.client.create_dm(peer).await?

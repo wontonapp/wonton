@@ -6,6 +6,8 @@
 //! - [`MatrixSession`]：用核心签发的 JWT 登录 Tuwunel，或者用存下来的登录状态恢复；用 Simplified Sliding
 //!   Sync（MSC4186）同步；建私聊、加入和离开房间、观察房间列表；端到端加密的恢复；下载媒体。
 //! - [`ChatRoom`]：打开一个房间，收发文字和图片，按增量观察时间线，向前翻页，发已读回执。
+//! - 推送：注册指向家里推送代理的 pusher（[`PusherConfig`]），推送到了取回那条消息并在本机解密
+//!   （[`MatrixSession::notification`]）。
 //!
 //! 所有错误都按原因区分，见 [`Error`]。
 
@@ -17,6 +19,7 @@ mod encryption;
 mod error;
 mod media;
 mod message;
+mod push;
 mod rooms;
 mod session;
 mod sync;
@@ -32,6 +35,7 @@ pub use matrix_sdk::ruma::{
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use message::{ImageContent, Message, MessageBody, SendStatus};
+pub use push::{Notification, PusherConfig};
 pub use rooms::{LatestMessage, Membership, RoomInfo};
 pub use session::{MatrixSession, SavedSession, SessionConfig, SessionEvent, StoreConfig};
 pub use sync::SyncStatus;

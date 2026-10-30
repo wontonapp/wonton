@@ -28,11 +28,13 @@ use wonton_protocol::{
     PushStatus, RecoveryStatus, SecretString,
 };
 
+pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
+pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
 use storage::{ChatStorage, StoredSession};
-use view::{core_error, failure, recovery, room_row, verification};
+use view::{core_error, recovery, room_row, verification};
 
 /// 本设备在 Matrix 服务器上的显示名。
 const DEVICE_NAME: &str = "Wonton App";
@@ -248,9 +250,9 @@ impl ChatLink {
         if session.direct_chat_with(&user).is_some() {
             return Ok(());
         }
-        // 自己建的私聊暂不加密：推送要读预览，加密与否随推送方案定（ADR-0003）。
+        // 和 Bot 的主房间一样端到端加密：推送只带房间和事件 ID，正文在手机上解密（ADR-0003 的“设计：加密推送”）。
         self.spawn_op("发起私聊", async move {
-            session.create_direct_chat(&user, false).await.map(drop)
+            session.create_direct_chat(&user, true).await.map(drop)
         });
         Ok(())
     }
@@ -321,7 +323,12 @@ impl ChatLink {
         });
     }
 
-    fn current(&self) -> Result<Arc<MatrixSession>, CoreError> {
+    /// 推送的状态由 `push` 模块维护，放在聊天的 ViewModel 里。
+    pub(crate) fn set_push(&self, status: PushStatus) {
+        self.view.send_modify(|view| view.push = status);
+    }
+
+    pub(crate) fn current(&self) -> Result<Arc<MatrixSession>, CoreError> {
         lock(&self.session)
             .clone()
             .ok_or_else(|| CoreError::NotReady {

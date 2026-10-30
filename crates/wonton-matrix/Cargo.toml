@@ -24,6 +24,8 @@ tokio = { workspace = true, features = ["macros", "sync", "rt"] }
 tracing = { workspace = true }
 
 # 以下只给 testkit 用。
+# MIT。扮演核心推送代理的推送网关。
+axum = { workspace = true, optional = true }
 # ISC AND (Apache-2.0 OR ISC)。生成模拟核心的 Ed25519 签发密钥；rustls 已经依赖它。
 aws-lc-rs = { version = "1", optional = true }
 # MIT。模拟核心签发 Tuwunel 登录 JWT。
@@ -35,7 +37,7 @@ testcontainers = { version = "0.28.0", default-features = false, optional = true
 
 [features]
 # 一次性的 Tuwunel 和模拟核心的 JWT 签发，给本 crate 和客户端核心的集成测试共用；App 不启用。
-testkit = ["dep:aws-lc-rs", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers"]
+testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers", "tokio/net"]
 
 [dev-dependencies]
 # 集成测试用 testkit。

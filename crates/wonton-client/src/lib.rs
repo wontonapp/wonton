@@ -9,7 +9,8 @@
 //!   `Flow`。打开的房间的时间线用 [`ClientCore::subscribe_timeline`]，推的是不能合并的增量批次。
 //!
 //! 和家里服务器的连接见 `home` 模块：iroh 隧道加 WebView 和 HTTP 客户端用的本地代理（ADR-0004）。聊天见
-//! `chat` 模块：经隧道登录主人的 Matrix 账号（ADR-0003、ADR-0009）。会话列表还是 M0 验证 UniFFI 用的示例，
+//! `chat` 模块：经隧道登录主人的 Matrix 账号（ADR-0003、ADR-0009）。推送见 `push` 模块：登记推送订阅，收到推送
+//! 时取回消息在本机解密（ADR-0003 的“设计：加密推送”）。会话列表还是 M0 验证 UniFFI 用的示例，
 //! 只放在内存里。
 
 // matrix-sdk 的 future 嵌套很深，默认的 128 层不够算出聊天后台任务的类型布局。
@@ -21,6 +22,7 @@ mod chat;
 mod client;
 mod home;
 mod logging;
+mod push;
 mod session_store;
 mod subscription;
 

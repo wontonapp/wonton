@@ -4,6 +4,7 @@
 
 mod admin;
 mod issuer;
+mod push;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
@@ -11,13 +12,14 @@ use crate::{MatrixSession, Result, SessionConfig, StoreConfig};
 use futures_util::{Stream, StreamExt};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
-    core::{IntoContainerPort, WaitFor},
+    core::{Host, IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
 
 pub use self::{
     admin::Admin,
     issuer::{Claims, Issuer, now},
+    push::{PushGateway, Received},
 };
 
 /// 本地开发环境的配置和镜像，测试用同一份。
@@ -70,16 +72,50 @@ impl TestServer {
 
     /// 用 Docker 起一台一次性的 Tuwunel，`overrides` 以环境变量形式覆盖配置。
     pub async fn container(overrides: &[(&str, &str)]) -> Self {
+        Self::start_container(overrides, None).await
+    }
+
+    /// 能把推送发到 `gateway`（测试进程里扮演推送代理的推送网关）的 Tuwunel：经只代理推送代理域名的出站代理，
+    /// 和产品里一样。
+    ///
+    /// 容器要连回测试进程。Linux 上宿主的防火墙（比如 ufw）常常挡住容器到宿主的连接，回环地址不受影响，所以这台
+    /// Tuwunel 用宿主的网络、只听回环地址；Docker Desktop、OrbStack 上容器经 `host.docker.internal` 到宿主。
+    pub async fn with_push_gateway(gateway: &PushGateway) -> Self {
+        let proxy = gateway.tuwunel_proxy();
+        if !cfg!(target_os = "linux") {
+            return Self::start_container(&[("TUWUNEL_PROXY", proxy.as_str())], None).await;
+        }
+        let port = free_port();
+        let port_text = port.to_string();
+        let overrides = [
+            ("TUWUNEL_PROXY", proxy.as_str()),
+            ("TUWUNEL_ADDRESS", "127.0.0.1"),
+            ("TUWUNEL_PORT", port_text.as_str()),
+        ];
+        Self::start_container(&overrides, Some(port)).await
+    }
+
+    /// `host_port` 为空时容器在自己的网络里，发布 8008；否则用宿主的网络，听这个端口。
+    async fn start_container(overrides: &[(&str, &str)], host_port: Option<u16>) -> Self {
         let issuer = Issuer::generate();
         let secret = random_hex(32);
         let (name, tag) = image();
-        let mut request = GenericImage::new(name, tag)
-            .with_exposed_port(PORT.tcp())
-            .with_wait_for(WaitFor::message_on_either_std("Listening on"))
+        let image = GenericImage::new(name, tag)
+            .with_wait_for(WaitFor::message_on_either_std("Listening on"));
+        let image = match host_port {
+            Some(_) => image,
+            None => image.with_exposed_port(PORT.tcp()),
+        };
+        let mut request = image
             .with_copy_to(CONFIG_PATH, CONFIG.as_bytes().to_vec())
             .with_env_var("TUWUNEL_CONFIG", CONFIG_PATH)
             .with_env_var("TUWUNEL_JWT__KEY", issuer.public_key_pem())
             .with_env_var("TUWUNEL_REGISTRATION_SHARED_SECRET", &secret);
+        request = match host_port {
+            Some(_) => request.with_network("host"),
+            // Docker Desktop、OrbStack 自带这个名字，Linux 上要显式加。
+            None => request.with_host("host.docker.internal", Host::HostGateway),
+        };
         for (key, value) in overrides {
             request = request.with_env_var(*key, *value);
         }
@@ -90,10 +126,16 @@ impl TestServer {
                  export DOCKER_HOST=\"$(docker context inspect --format '{{{{.Endpoints.docker.Host}}}}')\""
             )
         });
-        let host = container.get_host().await.expect("容器地址");
-        let port = container.get_host_port_ipv4(PORT).await.expect("容器端口");
+        let url = match host_port {
+            Some(port) => format!("http://127.0.0.1:{port}"),
+            None => {
+                let host = container.get_host().await.expect("容器地址");
+                let port = container.get_host_port_ipv4(PORT).await.expect("容器端口");
+                format!("http://{host}:{port}")
+            }
+        };
         Self {
-            url: format!("http://{host}:{port}"),
+            url,
             issuer,
             registration_secret: Some(secret),
             _container: Some(container),
@@ -150,6 +192,14 @@ impl TestServer {
             .expect("现成的服务器没有管理密钥");
         Admin::register(&self.url, secret).await
     }
+}
+
+/// 本机一个空闲的 TCP 端口。放开后到 Tuwunel 绑上之间可能被别人占去，测试里这个窗口可以接受。
+fn free_port() -> u16 {
+    std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("找空闲端口")
+        .port()
 }
 
 /// compose.yaml 里的镜像，拆成名字和标签。

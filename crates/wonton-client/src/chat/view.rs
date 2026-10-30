@@ -28,20 +28,27 @@ pub(crate) fn room_row(room: RoomInfo) -> RoomRow {
 
 /// 预览的一行文字。不是消息的事件（成员变化等）不做预览。
 fn preview(latest: LatestMessage) -> Option<RoomPreview> {
-    let text = match latest.body {
-        MessageBody::Text(text) => text,
-        MessageBody::Image(_) => "[图片]".to_owned(),
-        MessageBody::Undecryptable => "[加密消息]".to_owned(),
-        MessageBody::Redacted => "[已撤回]".to_owned(),
-        MessageBody::Other { kind } if kind == "state" => return None,
-        MessageBody::Other { kind } => format!("[{kind}]"),
-    };
+    if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
+        return None;
+    }
+    let text = summary(latest.body);
     Some(RoomPreview {
         sender_name: latest.sender_name,
         is_own: latest.is_own,
         text,
         timestamp_ms: latest.timestamp_ms,
     })
+}
+
+/// 消息的一行文字：房间列表的预览和通知的正文都用它。
+pub(crate) fn summary(body: MessageBody) -> String {
+    match body {
+        MessageBody::Text(text) => text,
+        MessageBody::Image(_) => "[图片]".to_owned(),
+        MessageBody::Undecryptable => "[加密消息]".to_owned(),
+        MessageBody::Redacted => "[已撤回]".to_owned(),
+        MessageBody::Other { kind } => format!("[{kind}]"),
+    }
 }
 
 pub(crate) fn timeline_item(entry: TimelineEntry) -> TimelineItem {
