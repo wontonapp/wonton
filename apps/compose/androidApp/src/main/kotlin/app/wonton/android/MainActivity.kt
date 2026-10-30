@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import app.wonton.android.push.PushRegistration
 import app.wonton.client.initLogging
 import app.wonton.protocol.Action
 import app.wonton.ui.StartupFailure
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         val openWeb = debuggable && intent.getBooleanExtra("wonton_open_web", false)
+        PushRegistration(this, core).start()
         setContent { WontonApp(core, openWebOnReady = openWeb) }
     }
 

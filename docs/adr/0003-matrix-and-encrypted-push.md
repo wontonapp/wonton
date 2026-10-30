@@ -137,6 +137,15 @@ App 被杀后收不到任何消息。
 推送时如实告诉核心（`Action::PushUnavailable`），进展看 `ChatViewModel::push`。收到推送、解开后交给
 `ClientCore::resolve_push`，核心取回消息、解密，给出要显示的通知。
 
+**Android**（`apps/compose/androidApp` 的 `push` 包，UnifiedPush 连接库 3.3）
+
+- 启动时先申请通知权限，再向分发器登记；没有分发器、没给通知权限、分发器拒绝或注销了本 App，都用
+  `PushUnavailable` 照实告诉核心。
+- 连接库解不开推送时，会把原文当明文交过来（`PushMessage.decrypted` 为假），App 丢掉这种推送：只有家里的服务器知道
+  本机的公钥和认证密钥，解不开就不是它发的。
+- 收到推送后自己拿一个唤醒锁，等核心取回消息再弹通知；同一个房间的通知合并成一条。锁屏隐藏敏感内容时，显示不带
+  发送者和正文的版本。
+
 **iOS（Apple 开发者账号到位后）**
 
 - App 用 CryptoKit 生成 P-256 密钥对和认证密钥，放进和通知扩展共享的钥匙串；推送地址由中继为 APNs 令牌开。

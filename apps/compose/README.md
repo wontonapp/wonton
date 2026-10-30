@@ -62,3 +62,8 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_ticket '$(de
 `scripts/check-file-size.sh` 检查。CI 见 `.github/workflows/android.yml`。
 
 包名 `app.wonton.*` 是临时的，上架前确定正式的。
+
+## 推送
+
+App 被杀或锁屏时，新消息经 UnifiedPush 分发器（如 ntfy）弹出系统通知，见 ADR-0003 的“设计：加密推送”。启动时先申请
+通知权限，再向分发器登记，手机上要装一个分发器；推送的接收、解密和通知在 `androidApp` 的 `push` 包里。
