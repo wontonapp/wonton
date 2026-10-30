@@ -13,8 +13,8 @@ use serde::Deserialize;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, devices, isolation, matrix, pages, push, same_origin_path, sso,
-    with_cookie,
+    Gateway, TunnelPeer, api, confirmations, devices, isolation, matrix, pages, push,
+    same_origin_path, sso, with_cookie,
 };
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {
@@ -34,6 +34,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/push/registration",
             put(push::register).delete(push::unregister),
         )
+        .route("/_wonton/confirmations/{id}", post(confirmations::answer))
         .route("/_wonton/api/plugins", get(api::list).post(api::install))
         .route("/_wonton/api/plugins/preview", post(api::preview))
         .route("/_wonton/api/plugins/{id}", delete(api::uninstall))

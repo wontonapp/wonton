@@ -8,6 +8,7 @@ pub mod gateway;
 pub mod http;
 pub mod install;
 pub mod matrix;
+pub mod mcp;
 pub mod oidc;
 pub mod pairing;
 pub mod plugin;

@@ -8,142 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use super::docker::{Engine, EngineError};
-use super::health::HealthError;
+use super::docker::Engine;
 use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::models::{ModelsRoute, ProviderState};
-use super::package::{PackageError, PluginPackage};
+use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
-use super::render::{RenderError, dry_run};
-use super::secrets::CollectError;
+use super::render::dry_run;
 use super::sources::{Source, Sources};
-use super::store::{InstalledRecord, Store, StoreError};
+use super::store::{InstalledRecord, Store};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
-use crate::oidc::{Hydra, OidcError};
 
-/// 插件管理操作的错误，按原因区分，API 据此给出不同的 HTTP 状态。
-#[derive(Debug, thiserror::Error)]
-pub enum InstallError {
-    #[error("{0}")]
-    Invalid(String),
-    #[error("以下权限需要主人确认后才能安装：{}", .0.join(", "))]
-    PermissionNotGranted(Vec<String>),
-    #[error("{0}")]
-    Unsupported(String),
-    #[error("{0}")]
-    Conflict(String),
-    #[error("插件 {0} 没有安装")]
-    NotInstalled(String),
-    #[error("Docker 不可用：{0}")]
-    DockerUnavailable(String),
-    #[error("Docker 操作失败：{0}")]
-    Docker(String),
-    #[error("身份提供方不可用：{0}")]
-    OidcUnavailable(String),
-    #[error("Matrix 不可用：{0}")]
-    MatrixUnavailable(String),
-    #[error("模型网关不可用：{0}")]
-    ModelsUnavailable(String),
-    #[error("插件没有通过健康检查：{0}")]
-    Unhealthy(String),
-    #[error("{0}")]
-    Storage(String),
-}
-
-impl InstallError {
-    /// 机器可读的错误类别。
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::Invalid(_) => "invalid_input",
-            Self::PermissionNotGranted(_) => "permission_denied",
-            Self::Unsupported(_) => "unsupported",
-            Self::Conflict(_) => "conflict",
-            Self::NotInstalled(_) => "not_installed",
-            Self::DockerUnavailable(_) => "docker_unavailable",
-            Self::Docker(_) => "docker_rejected",
-            Self::OidcUnavailable(_) => "oidc_unavailable",
-            Self::MatrixUnavailable(_) => "matrix_unavailable",
-            Self::ModelsUnavailable(_) => "models_unavailable",
-            Self::Unhealthy(_) => "unhealthy",
-            Self::Storage(_) => "storage",
-        }
-    }
-}
-
-impl InstallError {
-    /// 在原错误后追加说明，类别不变（如回滚失败的残留信息）。
-    pub fn with_note(self, note: &str) -> Self {
-        let add = |message: String| format!("{message}（{note}）");
-        match self {
-            Self::Invalid(m) => Self::Invalid(add(m)),
-            Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
-            Self::Unsupported(m) => Self::Unsupported(add(m)),
-            Self::Conflict(m) => Self::Conflict(add(m)),
-            Self::NotInstalled(m) => Self::NotInstalled(m),
-            Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
-            Self::Docker(m) => Self::Docker(add(m)),
-            Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
-            Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
-            Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
-            Self::Unhealthy(m) => Self::Unhealthy(add(m)),
-            Self::Storage(m) => Self::Storage(add(m)),
-        }
-    }
-}
-
-impl From<PackageError> for InstallError {
-    fn from(e: PackageError) -> Self {
-        Self::Invalid(e.to_string())
-    }
-}
-
-impl From<RenderError> for InstallError {
-    fn from(e: RenderError) -> Self {
-        Self::Invalid(e.to_string())
-    }
-}
-
-impl From<EngineError> for InstallError {
-    fn from(e: EngineError) -> Self {
-        match e {
-            EngineError::Unavailable(m) => Self::DockerUnavailable(m),
-            EngineError::Unsupported(m) => Self::Unsupported(m),
-            other => Self::Docker(other.to_string()),
-        }
-    }
-}
-
-impl From<HealthError> for InstallError {
-    fn from(e: HealthError) -> Self {
-        match e {
-            HealthError::Engine(engine) => engine.into(),
-            other => Self::Unhealthy(other.to_string()),
-        }
-    }
-}
-
-impl From<OidcError> for InstallError {
-    fn from(e: OidcError) -> Self {
-        Self::OidcUnavailable(e.to_string())
-    }
-}
-
-impl From<CollectError> for InstallError {
-    fn from(e: CollectError) -> Self {
-        match e {
-            CollectError::Engine(engine) => engine.into(),
-            invalid @ CollectError::Invalid { .. } => Self::Invalid(invalid.to_string()),
-        }
-    }
-}
-
-impl From<StoreError> for InstallError {
-    fn from(e: StoreError) -> Self {
-        Self::Storage(e.to_string())
-    }
-}
+pub use super::install_error::InstallError;
+use crate::oidc::Hydra;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -244,9 +122,20 @@ pub struct Route {
     pub proxy: Option<Arc<ProxyAuth>>,
 }
 
+/// 在运行、声明了 `mcp` 的插件：MCP 总线连它的地址。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServer {
+    pub id: PluginId,
+    pub title: LocalizedText,
+    /// `http://主机:端口/路径`。
+    pub url: String,
+}
+
 struct Entry {
     version: String,
     title: LocalizedText,
+    /// `kind: system`：由安装器预装。
+    system: bool,
     has_webui: bool,
     status: PluginStatus,
     health: Option<Health>,
@@ -257,6 +146,8 @@ struct Entry {
     models: Option<ModelsRoute>,
     /// `sso: proxy` 时网关代加的凭据。
     proxy: Option<Arc<ProxyAuth>>,
+    /// 运行中时 MCP 服务的地址。
+    mcp: Option<String>,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
@@ -265,6 +156,7 @@ pub(super) struct Deployed {
     pub health: Health,
     pub models: Option<ModelsRoute>,
     pub proxy: Option<Arc<ProxyAuth>>,
+    pub mcp: Option<String>,
 }
 
 impl Entry {
@@ -272,6 +164,7 @@ impl Entry {
         Self {
             version: manifest.version.clone(),
             title: manifest.title.clone(),
+            system: manifest.kind == PluginKind::System,
             has_webui: manifest.webui.is_some(),
             status,
             health: None,
@@ -282,6 +175,7 @@ impl Entry {
                 .is_some_and(|p| p.models.is_some()),
             models: None,
             proxy: None,
+            mcp: None,
         }
     }
 
@@ -290,6 +184,7 @@ impl Entry {
             health: Some(deployed.health),
             models: deployed.models,
             proxy: deployed.proxy,
+            mcp: deployed.mcp,
             ..Self::new(manifest, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -301,6 +196,7 @@ impl Entry {
             title: ["zh", "en"]
                 .map(|lang| (lang.to_owned(), id.to_string()))
                 .into(),
+            system: false,
             has_webui: false,
             status: PluginStatus::Degraded { reason },
             health: None,
@@ -308,6 +204,7 @@ impl Entry {
             provides_models: false,
             models: None,
             proxy: None,
+            mcp: None,
         }
     }
 }
@@ -323,6 +220,8 @@ pub struct PluginManager {
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
     plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
+    changes: tokio::sync::watch::Sender<u64>,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -333,10 +232,11 @@ fn supported(permission: &Permission) -> bool {
             | Permission::NetworkEgress
             | Permission::MatrixBot
             | Permission::Models
+            | Permission::Tools
     )
 }
 
-pub(super) fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -361,7 +261,35 @@ impl PluginManager {
             sources: Sources::default(),
             bot_allocation: tokio::sync::Mutex::new(()),
             plugins: RwLock::new(BTreeMap::new()),
+            changes: tokio::sync::watch::Sender::new(0),
         }
+    }
+
+    /// 插件装上、卸掉、状态变了时收到通知。
+    pub fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
+    fn changed(&self) {
+        self.changes.send_modify(|generation| *generation += 1);
+    }
+
+    /// 在运行、声明了 `mcp` 的插件。
+    pub fn mcp_servers(&self) -> Vec<McpServer> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .iter()
+            .filter(|(_, entry)| entry.status == PluginStatus::Running)
+            .filter_map(|(id, entry)| {
+                let url = entry.mcp.clone()?;
+                let title = entry.title.clone();
+                Some(McpServer {
+                    id: id.clone(),
+                    title,
+                    url,
+                })
+            })
+            .collect()
     }
 
     /// 接上 Matrix 服务器：声明了 `matrix.bot` 的插件这才装得上。
@@ -457,8 +385,23 @@ impl PluginManager {
         }
     }
 
-    pub(super) fn is_installed(&self, id: &PluginId) -> bool {
+    pub(crate) fn is_installed(&self, id: &PluginId) -> bool {
         self.plugins.read().expect("插件表锁中毒").contains_key(id)
+    }
+
+    /// 插件的名字（多语言）。
+    pub fn title(&self, id: &PluginId) -> Option<LocalizedText> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins.get(id).map(|entry| entry.title.clone())
+    }
+
+    /// 是安装器预装的系统插件。
+    pub fn is_system(&self, id: &PluginId) -> bool {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .is_some_and(|entry| entry.system)
     }
 
     /// 没装成的插件也如实列出来（标为异常、写明原因），主人看得到，不悄悄跳过。
@@ -467,6 +410,7 @@ impl PluginManager {
             .write()
             .expect("插件表锁中毒")
             .insert(id.clone(), Entry::broken(id, version, reason));
+        self.changed();
     }
 
     /// 测试用：把登记过的插件当成运行中的模型网关，供网关测试指向本地的假上游。
@@ -491,6 +435,15 @@ impl PluginManager {
             .write()
             .expect("插件表锁中毒")
             .insert(manifest.id, entry);
+    }
+
+    /// 测试用：给登记过的插件设上 MCP 服务的地址。
+    #[cfg(test)]
+    pub(crate) fn mcp_for_test(&self, id: &PluginId, url: String) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        plugins.get_mut(id).expect("先 register_for_test").mcp = Some(url);
+        drop(plugins);
+        self.changed();
     }
 
     /// 测试用：给登记过的插件设上网关代登录的凭据。
@@ -527,6 +480,8 @@ impl PluginManager {
                 entry.upstream = upstream;
             }
         }
+        drop(plugins);
+        self.changed();
     }
 
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
@@ -546,6 +501,7 @@ impl PluginManager {
                 .expect("插件表锁中毒")
                 .insert(file.id, entry);
         }
+        self.changed();
         Ok(())
     }
 
@@ -618,6 +574,8 @@ impl PluginManager {
                 let entry = Entry::running(&manifest, deployed);
                 let view = self.view(&manifest.id, &entry);
                 plugins.insert(manifest.id.clone(), entry);
+                drop(plugins);
+                self.changed();
                 Ok(view)
             }
             Err(e) => {
@@ -712,6 +670,7 @@ impl PluginManager {
         match self.teardown(id, purge).await {
             Ok(report) => {
                 self.plugins.write().expect("插件表锁中毒").remove(id);
+                self.changed();
                 tracing::info!(plugin = %id, "插件已卸载");
                 Ok(report)
             }

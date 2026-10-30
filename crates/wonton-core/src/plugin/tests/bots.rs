@@ -176,6 +176,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
             bot_key: Some("bot-model-key-value".into()),
             default_model: "group/default".into(),
         }),
+        mcp_url: None,
         secrets: [("web_key".to_owned(), "generated-secret-value".to_owned())].into(),
         tz: "UTC".into(),
         puid: 1000,

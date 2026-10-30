@@ -348,6 +348,7 @@ pub enum Permission {
     StorageShare { name: String, access: Access },
     StorageHome { access: Access },
     Models,
+    Tools,
     MatrixBot,
     Notify,
     NetworkEgress,
@@ -382,6 +383,7 @@ impl FromStr for Permission {
         let unknown = || ManifestError::UnknownPermission(value.to_owned());
         let simple = match value {
             "models" => Some(Self::Models),
+            "tools" => Some(Self::Tools),
             "matrix.bot" => Some(Self::MatrixBot),
             "notify" => Some(Self::Notify),
             "network.egress" => Some(Self::NetworkEgress),
@@ -431,6 +433,7 @@ impl fmt::Display for Permission {
             }
             Self::StorageHome { access: a } => write!(f, "storage.home:{}", access(a)),
             Self::Models => f.write_str("models"),
+            Self::Tools => f.write_str("tools"),
             Self::MatrixBot => f.write_str("matrix.bot"),
             Self::Notify => f.write_str("notify"),
             Self::NetworkEgress => f.write_str("network.egress"),

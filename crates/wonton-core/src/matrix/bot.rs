@@ -147,7 +147,12 @@ impl Matrix {
     }
 
     /// 代主人加入主房间，并写进主人的 `m.direct`：用 JWT 临时登录主人的一台设备，做完就退出登录。
-    async fn owner_joins(&self, owner: &str, bot: &str, room: &str) -> Result<(), MatrixError> {
+    pub(super) async fn owner_joins(
+        &self,
+        owner: &str,
+        bot: &str,
+        room: &str,
+    ) -> Result<(), MatrixError> {
         let login = self.login(owner, OWNER_DEVICE).await?;
         let session = self.session(&login);
         let joined = async {

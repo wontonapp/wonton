@@ -18,9 +18,11 @@ use wonton_core::config::Config;
 use wonton_core::device::Devices;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
-use wonton_core::matrix::Matrix;
+use wonton_core::matrix::{Matrix, NoticeRoom};
+use wonton_core::mcp;
 use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
+use wonton_core::plugin::catalog::Catalog;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::store::Store;
@@ -108,6 +110,7 @@ async fn serve() -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
     preinstall(&cfg, manager.clone())?;
 
+    let bus = mcp_bus(&cfg, manager.clone(), matrix.clone())?;
     let tunnel = bind_tunnel(&cfg).await?;
     let push_path = cfg.core_state_dir().join("push.json");
     let push = Push::open(&push_path, tunnel.devices.clone())
@@ -123,7 +126,8 @@ async fn serve() -> anyhow::Result<()> {
             tunnel.clone(),
         )
         .with_matrix(matrix)
-        .with_push(Some(Arc::new(push))),
+        .with_push(Some(Arc::new(push)))
+        .with_mcp(Some(bus.endpoint())),
     );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)
@@ -198,6 +202,31 @@ fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
         }
     });
     Ok(())
+}
+
+/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间，审计写在核心的状态目录里。插件目录配了却不是目录时启动
+/// 失败；没接 Matrix 时敏感的调用如实报“没法请主人确认”。
+fn mcp_bus(
+    cfg: &Config,
+    manager: Arc<PluginManager>,
+    matrix: Option<Arc<Matrix>>,
+) -> anyhow::Result<Arc<mcp::Bus>> {
+    if let Some(dir) = &cfg.catalog
+        && !dir.is_dir()
+    {
+        bail!("WONTON_CATALOG 指向的 {} 不是目录", dir.display());
+    }
+    let notifier: Arc<dyn mcp::Notifier> = match matrix {
+        Some(matrix) => {
+            let saved = cfg.core_state_dir().join("matrix-notice-room");
+            Arc::new(NoticeRoom::new(matrix, &cfg.owner.username, saved))
+        }
+        None => Arc::new(mcp::NoMatrix),
+    };
+    let confirmations = Arc::new(mcp::Confirmations::new(notifier, cfg.confirmation_ttl));
+    let catalog = cfg.catalog.clone().map(Catalog::new);
+    let audit = cfg.core_state_dir().join("audit.jsonl");
+    Ok(mcp::Bus::new(manager, catalog, confirmations, audit))
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。

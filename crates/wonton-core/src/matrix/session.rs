@@ -104,6 +104,48 @@ impl<'a> Session<'a> {
             .ok_or_else(|| MatrixError::Invalid("建房接口没有返回 room_id".to_owned()))
     }
 
+    /// 建一个和 `invitee` 的不加密私聊（核心发给主人的通知房间，ADR-0016）并邀请对方，返回房间 ID。
+    pub async fn create_notice_room(
+        &self,
+        name: &str,
+        invitee: &str,
+    ) -> Result<String, MatrixError> {
+        let body = json!({
+            "preset": "trusted_private_chat",
+            "is_direct": true,
+            "name": name,
+            "invite": [invitee],
+        });
+        let value = self
+            .json(
+                Method::POST,
+                "/_matrix/client/v3/createRoom",
+                Some(&body),
+                "建通知房间",
+            )
+            .await?;
+        value["room_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid("建房接口没有返回 room_id".to_owned()))
+    }
+
+    /// 发一条消息，返回事件 ID。
+    pub async fn send_message(&self, room: &str, content: &Value) -> Result<String, MatrixError> {
+        let path = format!(
+            "/_matrix/client/v3/rooms/{}/send/m.room.message/{}",
+            encode(room),
+            crate::secret::random_token()
+        );
+        let value = self
+            .json(Method::PUT, &path, Some(content), "发消息")
+            .await?;
+        value["event_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid("发消息接口没有返回 event_id".to_owned()))
+    }
+
     pub async fn join(&self, room: &str) -> Result<(), MatrixError> {
         let path = format!("/_matrix/client/v3/join/{}", encode(room));
         self.json(Method::POST, &path, Some(&json!({})), "加入房间")

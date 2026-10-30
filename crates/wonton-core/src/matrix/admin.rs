@@ -16,7 +16,7 @@ use super::issuer::Issuer;
 use crate::secret::random_token;
 
 /// 管理账号的用户名。
-pub const ADMIN_LOCALPART: &str = "wonton-core";
+pub const ADMIN_LOCALPART: &str = wonton_protocol::CORE_LOCALPART;
 
 /// 读出能用的管理令牌，没有或失效时注册（首次）或重新登录，并保存。
 pub async fn admin_token(

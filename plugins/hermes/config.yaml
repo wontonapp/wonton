@@ -30,7 +30,8 @@ platforms:
     auto_thread: false
     gateway_restart_notification: false
 
-# 只收发消息：Matrix 里不展示工具调用、推理和中间过程，只发最终回答。
+# 只收发消息：Matrix 里不展示工具调用和推理，只发回答。要主人确认的工具（装卸插件等）会一直等主人回答，所以
+# 打开中间消息：模型在调用前说的那句话（“请到 Wonton 私聊里确认”）先发出去，主人才知道要去确认。
 display:
   # Bot 忙时收到的新消息排队，按顺序逐条回答；不打断当前回答，也不发“正在打断”之类的提示。
   busy_input_mode: queue
@@ -39,10 +40,23 @@ display:
     matrix:
       tool_progress: "off"
       show_reasoning: false
-      interim_assistant_messages: false
+      interim_assistant_messages: true
       long_running_notifications: false
       busy_ack_detail: false
       streaming: false
 
 # 群聊里每个人各自一段会话，互不共享上下文。
 group_sessions_per_user: true
+
+# 工具经核心的 MCP 总线（插件规范的“工具与 MCP 总线”），地址由核心注入（WONTON_MCP_URL）。装卸插件和会改数据的
+# 工具要主人在 Wonton App 里确认，调用一直等到主人回答（确认 10 分钟内有效）再加上执行的时间，所以 MCP 调用和工具
+# 调用的超时都放宽到 30 分钟（默认 300 秒和 420 秒）。
+mcp_servers:
+  wonton:
+    url: ${WONTON_MCP_URL}
+    timeout: 1800
+
+timeouts:
+  tools:
+    sequential_call: 1800
+    concurrent_batch: 1800

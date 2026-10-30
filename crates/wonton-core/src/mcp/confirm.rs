@@ -1,0 +1,231 @@
+//! 敏感操作的确认（ADR-0016）：核心发卡片、等主人回答、验证回答，Agent 只能发起，没法替主人同意。
+//!
+//! 主人的回答只经 [`Confirmations::answer`] 进来，网关只在经隧道的已配对设备的请求上调用它。
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use futures_util::future::BoxFuture;
+use tokio::sync::oneshot;
+use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState};
+
+use super::cards::Draft;
+use crate::plugin::PluginId;
+use crate::secret::random_token;
+
+/// 同一个插件同时等待确认的请求最多这么多，再多的直接拒绝。
+const MAX_PENDING_PER_CALLER: usize = 3;
+
+/// 回答过、过期的确认留这么久，之后再回答得到“不存在”。
+const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
+
+/// 把卡片交给主人：发出去，状态变了再更新。
+pub trait Notifier: Send + Sync {
+    /// 发一张新卡片，返回它的标识（Matrix 事件 ID），之后用来更新。
+    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>>;
+    fn update<'a>(
+        &'a self,
+        handle: &'a str,
+        card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<(), String>>;
+}
+
+/// 没能执行的原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    Rejected,
+    Expired,
+    /// 这个插件已经有太多请求在等主人。
+    TooMany,
+    /// 卡片发不出去，没法问主人。
+    Unavailable(String),
+}
+
+impl Refusal {
+    pub fn message(&self) -> String {
+        match self {
+            Self::Rejected => "主人拒绝了，没有执行".to_owned(),
+            Self::Expired => "主人没有在期限内确认，已经过期，没有执行".to_owned(),
+            Self::TooMany => {
+                format!("已经有 {MAX_PENDING_PER_CALLER} 个请求在等主人确认，等主人处理完再试")
+            }
+            Self::Unavailable(e) => format!("没能请主人确认：{e}"),
+        }
+    }
+}
+
+/// 回答失败的原因，网关按它给出 HTTP 状态。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AnswerError {
+    #[error("没有这个确认")]
+    NotFound,
+    #[error("这个确认已经回答过了")]
+    AlreadyAnswered,
+    #[error("这个确认已经过期")]
+    Expired,
+}
+
+impl AnswerError {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::NotFound => "not_found",
+            Self::AlreadyAnswered => "already_answered",
+            Self::Expired => "expired",
+        }
+    }
+}
+
+/// 主人确认之后、执行完之前：执行完用它更新卡片。
+pub struct Ticket {
+    id: String,
+}
+
+struct Slot {
+    caller: PluginId,
+    card: ConfirmationCard,
+    handle: Option<String>,
+    waiter: Option<oneshot::Sender<Answer>>,
+    created: SystemTime,
+}
+
+pub struct Confirmations {
+    notifier: Arc<dyn Notifier>,
+    ttl: Duration,
+    slots: Mutex<HashMap<String, Slot>>,
+}
+
+fn now_ms(at: SystemTime) -> u64 {
+    at.duration_since(UNIX_EPOCH)
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or_default()
+}
+
+impl Confirmations {
+    /// `ttl`：卡片发出后多久没回答就过期。
+    pub fn new(notifier: Arc<dyn Notifier>, ttl: Duration) -> Self {
+        Self {
+            notifier,
+            ttl,
+            slots: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Slot>> {
+        self.slots.lock().expect("确认表锁中毒")
+    }
+
+    /// 请主人确认，等到主人回答或者过期。确认了返回 [`Ticket`]，执行完要调 [`Self::finish`]。
+    pub async fn ask(&self, caller: &PluginId, draft: Draft) -> Result<Ticket, Refusal> {
+        let created = SystemTime::now();
+        let card = ConfirmationCard {
+            id: random_token(),
+            state: ConfirmationState::Pending,
+            title: draft.title,
+            lines: draft.lines,
+            choices: draft.choices,
+            expires_at_ms: now_ms(created + self.ttl),
+        };
+        let id = card.id.clone();
+        let (waiter, answered) = oneshot::channel();
+        {
+            let mut slots = self.lock();
+            slots.retain(|_, slot| {
+                slot.waiter.is_some()
+                    || created.duration_since(slot.created).unwrap_or_default() < KEEP_FINISHED
+            });
+            let pending = slots
+                .values()
+                .filter(|s| s.waiter.is_some() && &s.caller == caller)
+                .count();
+            if pending >= MAX_PENDING_PER_CALLER {
+                return Err(Refusal::TooMany);
+            }
+            let slot = Slot {
+                caller: caller.clone(),
+                card: card.clone(),
+                handle: None,
+                waiter: Some(waiter),
+                created,
+            };
+            slots.insert(id.clone(), slot);
+        }
+        let handle = match self.notifier.post(&card).await {
+            Ok(handle) => handle,
+            Err(e) => {
+                self.lock().remove(&id);
+                return Err(Refusal::Unavailable(e));
+            }
+        };
+        if let Some(slot) = self.lock().get_mut(&id) {
+            slot.handle = Some(handle);
+        }
+        let answer = tokio::time::timeout(self.ttl, answered).await;
+        match answer {
+            Ok(Ok(Answer::Approve)) => {
+                self.publish(&id).await;
+                Ok(Ticket { id })
+            }
+            Ok(Ok(Answer::Reject)) => {
+                self.publish(&id).await;
+                Err(Refusal::Rejected)
+            }
+            Err(_) | Ok(Err(_)) => {
+                self.settle(&id, ConfirmationState::Expired).await;
+                Err(Refusal::Expired)
+            }
+        }
+    }
+
+    /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。
+    pub fn answer(&self, id: &str, answer: Answer) -> Result<ConfirmationState, AnswerError> {
+        let mut slots = self.lock();
+        let slot = slots.get_mut(id).ok_or(AnswerError::NotFound)?;
+        if slot.card.state == ConfirmationState::Expired
+            || now_ms(SystemTime::now()) >= slot.card.expires_at_ms
+        {
+            return Err(AnswerError::Expired);
+        }
+        let Some(waiter) = slot.waiter.take() else {
+            return Err(AnswerError::AlreadyAnswered);
+        };
+        let state = match answer {
+            Answer::Approve => ConfirmationState::Running,
+            Answer::Reject => ConfirmationState::Rejected,
+        };
+        // 等待的一方已经不在（只会在核心退出时发生）：当作过期。
+        if waiter.send(answer).is_err() {
+            slot.card.state = ConfirmationState::Expired;
+            return Err(AnswerError::Expired);
+        }
+        slot.card.state = state.clone();
+        Ok(state)
+    }
+
+    /// 执行完：卡片更新成结果。
+    pub async fn finish(&self, ticket: Ticket, state: ConfirmationState) {
+        self.settle(&ticket.id, state).await;
+    }
+
+    async fn settle(&self, id: &str, state: ConfirmationState) {
+        if let Some(slot) = self.lock().get_mut(id) {
+            slot.waiter = None;
+            slot.card.state = state;
+        }
+        self.publish(id).await;
+    }
+
+    /// 把卡片现在的状态发给主人。更新失败只记日志：执行已经发生了，工具的结果照样返回给 Agent。
+    async fn publish(&self, id: &str) {
+        let current = self
+            .lock()
+            .get(id)
+            .and_then(|slot| Some((slot.handle.clone()?, slot.card.clone())));
+        let Some((handle, card)) = current else {
+            return;
+        };
+        if let Err(e) = self.notifier.update(&handle, &card).await {
+            tracing::error!(confirmation = %id, error = %e, "更新确认卡片失败");
+        }
+    }
+}

@@ -28,6 +28,8 @@ iroh = { workspace = true }
 jsonwebtoken = { workspace = true }
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。
 reqwest = { workspace = true, features = ["rustls"] }
+# Apache-2.0。MCP 总线（ADR-0006、ADR-0016）：对 Agent 是 Streamable HTTP 服务器，对插件是客户端。
+rmcp = { version = "3.8.0", default-features = false, features = ["server", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
 serde = { workspace = true }
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 serde_json = { workspace = true }
@@ -42,6 +44,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 url = { workspace = true }
 # MIT OR Apache-2.0。推送内容按 RFC 8291 加密给设备（RustCrypto 的 P-256、HKDF、AES-GCM）；不用 VAPID。
 web-push-native = { version = "0.5.0", default-features = false }
+wonton-protocol = { path = "../wonton-protocol" }
 wonton-tunnel = { path = "../wonton-tunnel" }
 
 [dev-dependencies]

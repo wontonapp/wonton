@@ -1,0 +1,67 @@
+# 文件搜索：让 Agent 在授权的共享文件夹里按文件名、按内容找文件，读文件（ADR-0016）。只做这一件事：申请共享
+# 文件夹的读权限，它们只读挂进容器，看不到别的；经 MCP 把工具交给核心的 MCP 总线，核心只路由和授权。
+#
+# 工具来自 rust-mcp-filesystem：默认只读，写文件、移动、打包这些工具都关掉；读的工具都标了 readOnlyHint，Agent
+# 调用时不用主人确认。它只说 stdio，supergateway 转成 Streamable HTTP。镜像由同目录的 Dockerfile 构建。
+name: files
+
+services:
+  mcp:
+    # 开发环境本地构建（deploy/dev/core/smoke.sh），进官方目录前改成发布的镜像。
+    image: wonton-files:dev
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    command:
+      - --stdio
+      - >-
+        rust-mcp-filesystem
+        --disable-tools create_directory,move_file,write_file,edit_file,zip_files,unzip_file,zip_directory
+        /shares/documents /shares/photos /shares/music /shares/videos /shares/downloads
+      - --outputTransport
+      - streamableHttp
+      - --stateful
+      - --port
+      - "8080"
+      - --healthEndpoint
+      - /healthz
+      - --healthCheck
+      - server
+    volumes:
+      - ${WONTON_SHARE_DOCUMENTS}:/shares/documents:ro
+      - ${WONTON_SHARE_PHOTOS}:/shares/photos:ro
+      - ${WONTON_SHARE_MUSIC}:/shares/music:ro
+      - ${WONTON_SHARE_VIDEOS}:/shares/videos:ro
+      - ${WONTON_SHARE_DOWNLOADS}:/shares/downloads:ro
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 15s
+      start_period: 30s
+      start_interval: 2s
+
+x-wonton:
+  id: app.wonton.files
+  version: 0.1.0
+  kind: app
+  title: { zh: 文件搜索, en: File search }
+  description:
+    zh: 让 Bot 在你授权的共享文件夹里按名字和内容找文件、读文件
+    en: Lets bots find and read files in the shared folders you authorize
+  category: files
+  mcp:
+    service: mcp
+    port: 8080
+    transport: streamable-http
+  permissions:
+    - storage.share.documents:read
+    - storage.share.photos:read
+    - storage.share.music:read
+    - storage.share.videos:read
+    - storage.share.downloads:read
+  requirements:
+    arch: [amd64, arm64]
+    memory: 128M

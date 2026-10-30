@@ -19,11 +19,13 @@
 //! 自己的子域名。
 
 mod api;
+mod confirmations;
 mod core_routes;
 mod devices;
 mod isolation;
 mod lan;
 pub mod matrix;
+mod mcp;
 mod models;
 mod pages;
 mod proxy;
@@ -75,6 +77,8 @@ pub struct Gateway {
     pub matrix: Option<Arc<Matrix>>,
     /// 推送代理；没启用时登记和推送都如实报不可用。
     pub push: Option<Arc<Push>>,
+    /// MCP 总线；没启用时 `mcp.wonton.internal` 如实报不可用。
+    pub mcp: Option<crate::mcp::Endpoint>,
     sessions: session::SessionStore,
 }
 
@@ -109,6 +113,7 @@ impl Gateway {
             tunnel,
             matrix: None,
             push: None,
+            mcp: None,
             sessions: session::SessionStore::default(),
         }
     }
@@ -124,6 +129,13 @@ impl Gateway {
     #[must_use]
     pub fn with_push(mut self, push: Option<Arc<Push>>) -> Self {
         self.push = push;
+        self
+    }
+
+    /// 接上 MCP 总线：`mcp.wonton.internal` 和回答确认的接口这才可用。
+    #[must_use]
+    pub fn with_mcp(mut self, mcp: Option<crate::mcp::Endpoint>) -> Self {
+        self.mcp = mcp;
         self
     }
 
@@ -194,6 +206,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::Push => push::gateway_request(&gateway, req).await,
+        HostKind::PluginMcp => mcp::request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
         HostKind::Unknown => pages::error(
@@ -337,6 +350,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 
 #[cfg(test)]
 mod isolation_tests;
+#[cfg(test)]
+mod mcp_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]

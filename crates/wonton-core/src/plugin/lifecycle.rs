@@ -13,14 +13,14 @@ use super::docker::NetworkReach;
 use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
-use super::manifest::{Manifest, Permission, PluginId, Sso};
-use super::models::ModelsRoute;
+use super::manifest::{Manifest, Permission, PluginId};
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
-use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MODELS_HOST, PublicUrls};
+use super::upstreams::{core_aliases, uses_sso};
+use crate::config::PublicUrls;
 use crate::matrix::ProvisionedBot;
 use crate::oidc::{ClientSpec, Hydra};
 use crate::secret::random_token;
@@ -87,26 +87,6 @@ fn volume_action(
             "卷 {volume} 已存在，且不是核心为插件创建的"
         ))),
     }
-}
-
-fn uses_sso(manifest: &Manifest) -> bool {
-    manifest.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc)
-}
-
-/// 核心在插件网络里的别名：插件经它们访问核心代为转发的服务。SSO 插件经 `auth.<base>` 访问身份提供方，
-/// Bot 经 `matrix.wonton.internal` 访问 Matrix 客户端接口，模型网关的使用方经 `models.wonton.internal`。
-fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<String> {
-    let mut aliases = Vec::new();
-    if uses_sso(manifest) {
-        aliases.push(public.auth_host());
-    }
-    if manifest.permissions.contains(&Permission::MatrixBot) {
-        aliases.push(PLUGIN_MATRIX_HOST.to_owned());
-    }
-    if manifest.permissions.contains(&Permission::Models) {
-        aliases.push(PLUGIN_MODELS_HOST.to_owned());
-    }
-    aliases
 }
 
 impl PluginManager {
@@ -206,6 +186,7 @@ impl PluginManager {
         }
         let upstream = self.webui_upstream(manifest, &plan.network).await?;
         let models = self.models_upstream(manifest, &plan.network).await?;
+        let mcp = self.mcp_upstream(manifest, &plan.network).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             let url = format!("http://{upstream}{}", webui.path);
             health::wait_webui(&self.http, &url, deadline).await?;
@@ -224,6 +205,7 @@ impl PluginManager {
             health,
             models,
             proxy: proxy.map(Arc::new),
+            mcp,
         })
     }
 
@@ -300,6 +282,10 @@ impl PluginManager {
             oidc,
             matrix: None,
             models: None,
+            mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
+                let port = self.cfg.gateway_port;
+                format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)
+            }),
             secrets: generated,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
@@ -437,68 +423,6 @@ impl PluginManager {
         Ok(Health::of(healthy))
     }
 
-    /// 核心访问插件网页的地址。
-    async fn webui_upstream(
-        &self,
-        manifest: &Manifest,
-        network: &str,
-    ) -> Result<Option<String>, InstallError> {
-        let Some(webui) = &manifest.webui else {
-            return Ok(None);
-        };
-        let name = container_name(&manifest.id.slug(), &webui.service);
-        self.service_upstream(&name, webui.port, network)
-            .await
-            .map(Some)
-    }
-
-    /// 是模型网关时：核心转发模型请求、执行凭据命令的目标。
-    async fn models_upstream(
-        &self,
-        manifest: &Manifest,
-        network: &str,
-    ) -> Result<Option<ModelsRoute>, InstallError> {
-        let Some(spec) = manifest.provides.as_ref().and_then(|p| p.models.as_ref()) else {
-            return Ok(None);
-        };
-        let slug = manifest.id.slug();
-        let name = container_name(&slug, &spec.service);
-        let upstream = self.service_upstream(&name, spec.port, network).await?;
-        Ok(Some(ModelsRoute {
-            id: manifest.id.clone(),
-            spec: spec.clone(),
-            upstream,
-            credentials_container: container_name(&slug, spec.credentials_service()),
-        }))
-    }
-
-    /// 核心访问容器里一个端口的地址：核心在容器里时用容器名（同一网络内的 DNS），否则用容器 IP。
-    async fn service_upstream(
-        &self,
-        name: &str,
-        port: u16,
-        network: &str,
-    ) -> Result<String, InstallError> {
-        if self.cfg.core_container.is_some() {
-            return Ok(format!("{name}:{port}"));
-        }
-        let info = self
-            .engine
-            .inspect_container(name)
-            .await?
-            .ok_or_else(|| InstallError::Docker(format!("容器 {name} 不存在")))?;
-        let ip = info
-            .network_settings
-            .and_then(|s| s.networks)
-            .and_then(|mut n| n.remove(network))
-            .and_then(|e| e.ip_address)
-            .filter(|ip| !ip.is_empty())
-            .ok_or_else(|| {
-                InstallError::Docker(format!("容器 {name} 在网络 {network} 中没有地址"))
-            })?;
-        Ok(format!("{ip}:{port}"))
-    }
-
     async fn rollback(&self, undo: Undo) -> Vec<String> {
         let mut failures = Vec::new();
         let mut note = |what: String, result: Result<(), String>| {
@@ -630,6 +554,7 @@ impl PluginManager {
             upstream: self.webui_upstream(manifest, &network).await?,
             health: Health::of(healthy),
             models: self.models_upstream(manifest, &network).await?,
+            mcp: self.mcp_upstream(manifest, &network).await?,
             proxy: proxy.map(Arc::new),
         })
     }

@@ -122,6 +122,8 @@ pub struct InstallContext {
     pub matrix: Option<MatrixVars>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
+    /// 声明了 `tools` 时：MCP 总线的地址。
+    pub mcp_url: Option<String>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
     pub tz: String,
@@ -141,6 +143,7 @@ impl std::fmt::Debug for InstallContext {
             .field("oidc", &self.oidc)
             .field("matrix", &self.matrix)
             .field("models", &self.models)
+            .field("mcp_url", &self.mcp_url)
             .field("secrets", &self.secrets.keys().collect::<Vec<_>>())
             .field("tz", &self.tz)
             .field("puid", &self.puid)
@@ -225,6 +228,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         }
         set("WONTON_MODEL_DEFAULT", models.default_model.clone());
     }
+    if let Some(url) = &ctx.mcp_url {
+        set("WONTON_MCP_URL", url.clone());
+    }
     if let Some(matrix) = &ctx.matrix {
         set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
         set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
@@ -285,6 +291,10 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
                 bot_key: manifest.bots.as_ref().map(|_| "dry-run".into()),
                 default_model: "dry-run".into(),
             }),
+        mcp_url: manifest
+            .permissions
+            .contains(&Permission::Tools)
+            .then(|| "http://mcp.wonton.internal/mcp".into()),
         secrets: manifest
             .secrets
             .iter()

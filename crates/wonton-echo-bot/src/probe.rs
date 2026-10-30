@@ -2,12 +2,13 @@
 //!
 //! ```text
 //! echo-bot probe --homeserver <地址> [--proxy <代理>] --login-token <JWT> --room <房间> --bot <Bot 的用户 ID>
-//!                [--text <文字>]… [--reply echo|any] [--wait <秒>]
+//!                [--text <文字>]… [--reply echo|any] [--wait <秒>] [--settle <秒>]
 //! ```
 //!
 //! 用核心签的登录令牌登录一台临时设备（密钥只在内存里），确认房间是加密的，按顺序发每条 `--text`，每发一条等
 //! Bot 回一条：`--reply echo`（默认）要求回 `回声：<原文>`，`--reply any` 只要回了文字就行（如 Hermes 这种模型
-//! 驱动的 Bot）。回复必须是加密消息。结束时退出登录，设备一起删掉。
+//! 驱动的 Bot）。回复必须是加密消息。`--settle` 时收到回复后接着收，直到 Bot 这么多秒不再说话：Bot 先说一句再去
+//! 调要等主人确认的工具时，这样才收得到它最后的回答。结束时退出登录，设备一起删掉。
 
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ use crate::PREFIX;
 const WAIT: Duration = Duration::from_secs(60);
 
 /// 认得的参数。
-const FLAGS: [&str; 8] = [
+const FLAGS: [&str; 9] = [
     "homeserver",
     "proxy",
     "login-token",
@@ -38,6 +39,7 @@ const FLAGS: [&str; 8] = [
     "text",
     "reply",
     "wait",
+    "settle",
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,7 @@ struct Options {
     texts: Vec<String>,
     reply: Reply,
     wait: Duration,
+    settle: Option<Duration>,
 }
 
 impl Options {
@@ -93,6 +96,12 @@ impl Options {
             Some(secs) => Duration::from_secs(secs.parse().context("--wait 要是秒数")?),
             None => WAIT,
         };
+        let settle = match one("settle") {
+            Some(secs) => Some(Duration::from_secs(
+                secs.parse().context("--settle 要是秒数")?,
+            )),
+            None => None,
+        };
         Ok(Self {
             homeserver: required("homeserver")?,
             token: required("login-token")?,
@@ -106,6 +115,7 @@ impl Options {
             texts,
             reply,
             wait,
+            settle,
         })
     }
 }
@@ -196,6 +206,17 @@ async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
             }
             let shown: String = body.chars().take(80).collect();
             println!("第 {round} 轮：收到加密的回复：{shown}");
+            if let Some(settle) = options.settle {
+                while let Ok(Some((body, encrypted))) =
+                    tokio::time::timeout(settle, replies.recv()).await
+                {
+                    if !encrypted {
+                        bail!("第 {round} 轮：回复没有加密");
+                    }
+                    let shown: String = body.chars().take(80).collect();
+                    println!("第 {round} 轮：又收到加密的回复：{shown}");
+                }
+            }
         }
         Ok::<_, anyhow::Error>(())
     };

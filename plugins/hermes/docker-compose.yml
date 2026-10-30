@@ -4,7 +4,6 @@
 # 每个 Bot 一组 init + gateway 容器（x-wonton.bots）：Hermes 的 profile 不隔离文件系统，
 # 不同人的 Bot 不能共用一个容器。M1 只有默认 Bot。
 # 在 deploy/dev/agent 里验证过同样的运行配置；配置方式见 ADR-0008 的“验证结果”。
-# v0.1 新增的字段核心还没有实现（见规范的“实现计划”），在那之前本草稿装不上。
 name: hermes
 
 x-image: &image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
@@ -51,6 +50,8 @@ services:
       WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
       WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
       WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
+      # tools：核心的 MCP 总线（核心和其他插件的工具），config.yaml 的 mcp_servers.wonton 引用。
+      WONTON_MCP_URL: ${WONTON_MCP_URL}
     volumes:
       - ${WONTON_BOT_DATA}:/opt/data
     healthcheck:
@@ -72,7 +73,7 @@ configs:
 
 x-wonton:
   id: com.nousresearch.hermes
-  version: 0.2.0
+  version: 0.3.0
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:
@@ -93,6 +94,8 @@ x-wonton:
   permissions:
     - models
     - matrix.bot
+    # 经核心的 MCP 总线用工具：装卸插件、在授权的文件夹里找文件等。
+    - tools
     # 网页搜索等工具。
     - network.egress
   requirements:

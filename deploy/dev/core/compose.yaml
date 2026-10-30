@@ -8,8 +8,13 @@ services:
     build:
       context: ../../..
       dockerfile: deploy/dev/core/Dockerfile
+      # 开发镜像带插件目录（WONTON_CATALOG）；发布的镜像是 Dockerfile 的最后一个阶段，不带。
+      target: dev
+      # 经 Docker 主机上的代理构建时，dev.sh 自己构建这个镜像（见 build_image）。
       args:
         WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-unknown}
+        # cargo 不认空值，没设 WONTON_DEV_BUILD_JOBS 时按 CPU 数（default）。
+        CARGO_BUILD_JOBS: ${WONTON_DEV_BUILD_JOBS:-default}
     image: wonton-core:dev
     # 核心要知道自己的容器名，才能把自己接入每个插件网络。
     container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
@@ -28,6 +33,7 @@ services:
       WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
       # 核心启动后在后台预装镜像里的系统插件（模型网关 magpie）。
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
+      WONTON_CATALOG: /usr/share/wonton/catalog
       WONTON_PUID: ${WONTON_DEV_PUID:-1000}
       WONTON_PGID: ${WONTON_DEV_PGID:-1000}
       TZ: ${TZ:-UTC}

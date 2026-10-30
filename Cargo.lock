@@ -4237,6 +4237,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "pastey"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+
+[[package]]
 name = "pbkdf2"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4837,6 +4843,8 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-platform-verifier",
+ "serde",
+ "serde_json",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -4873,6 +4881,39 @@ dependencies = [
  "libc",
  "untrusted 0.9.0",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rmcp"
+version = "3.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8be15815186873ea063bf005011d16c356804973489e40c39116ae3a2878d1f"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "chrono",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "indexmap 2.14.2",
+ "libc",
+ "pastey",
+ "pin-project-lite",
+ "rand 0.10.3",
+ "reqwest",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "sse-stream",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower-service",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -5241,10 +5282,24 @@ version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "ref-cast",
+ "schemars_derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1c3a92094fa7d61aa124645844facb6b554dfc797136d0f5fd1f890e2bffc69"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -5419,6 +5474,17 @@ name = "serde_derive"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5739,6 +5805,19 @@ checksum = "7ef958a98b9d5da290cfc78946e9f3e61e1e62a18db0d92cac0b83cc161491a9"
 dependencies = [
  "base64ct",
  "der 0.8.3",
+]
+
+[[package]]
+name = "sse-stream"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c25ac7aff0abd1dbc474536e40416e1102c7dd9bfba0b9861c6d357f835dcfb4"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http-body",
+ "http-body-util",
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -7244,6 +7323,7 @@ dependencies = [
  "jsonwebtoken",
  "qrcode",
  "reqwest",
+ "rmcp",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -7257,6 +7337,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "web-push-native",
+ "wonton-protocol",
  "wonton-tunnel",
 ]
 

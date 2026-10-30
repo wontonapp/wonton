@@ -70,7 +70,7 @@ COPY --from=echo-bot-build /usr/local/bin/echo-bot /usr/local/bin/echo-bot
 ENTRYPOINT ["echo-bot"]
 CMD ["run"]
 
-FROM public.ecr.aws/docker/library/debian:trixie-slim
+FROM public.ecr.aws/docker/library/debian:trixie-slim AS core
 # 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。根证书从编译阶段
 # 复制过来，这一层不执行命令：交叉编译的 arm64 镜像不用模拟器也能构建。
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
@@ -79,3 +79,12 @@ COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
 ENTRYPOINT ["wonton-core"]
 CMD ["serve"]
+
+# 开发和冒烟用的核心镜像（`--target dev`）：多一个开发用的插件目录（WONTON_CATALOG），Bot 经 MCP 总线只能装这里的
+# 插件（ADR-0016）。发布的镜像不带它。
+FROM core AS dev
+COPY plugins/files /usr/share/wonton/catalog/files
+COPY plugins/examples/whoami /usr/share/wonton/catalog/whoami
+
+# 发布的核心镜像：release.yml 不指定 target，构建的是最后这个阶段。
+FROM core

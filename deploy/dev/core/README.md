@@ -84,6 +84,16 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 docker exec wonton-ai-usemagpie-magpie--magpie magpie group add wonton-default models=upstream/rm/glm-5.3-flash routing=order
 ```
 
+## MCP 总线
+
+申请了 `tools` 的插件经 `mcp.wonton.internal` 连核心的 MCP 总线（ADR-0016），看到核心自己的工具（列出插件、在插件
+目录里找插件、装卸插件）和在运行的插件声明的工具。开发用的核心镜像（Dockerfile 的 `dev` 阶段）带着插件目录
+（`WONTON_CATALOG`，文件搜索和 whoami），Bot 只能装这里面的插件；发布的镜像不带。装卸插件和会改数据的工具要主人
+确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
+`{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
+
+文件搜索插件的镜像要先在本机构建：`docker build -t wonton-files:dev plugins/files`。
+
 App 用 `dev.sh ticket [直连地址] [网页地址]` 生成的连接信息连接（见 `apps/ios/README.md`、`apps/compose/README.md`），
 里面带着基础域名：App 的本地代理和 WebView 只让这个域名下的地址走隧道。
 直连地址默认 `127.0.0.1:18482`（同机的 iOS 模拟器），Android 模拟器写 `10.0.2.2:18482`，局域网里的手机写本机的
@@ -113,20 +123,43 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 经 `models.wonton.internal` 能用、卸载后凭据被吊销；Hermes 按插件包目录装好后连上 Matrix，主人的新设备经隧道和它
 加密对话两轮，用量记在它的凭据名下，删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
 浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
-响应和 Cookie 罐里；没申请 `matrix.bot`、`models` 的插件进不了对应的内部地址；
+响应和 Cookie 罐里；对 Hermes 说装文件搜索，核心在 Wonton 房间里发确认卡片，Hermes 的插件网络和局域网浏览器都答不了，
+主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
+`models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `rm/glm-5.3-flash`，
 冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
 
-远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例）：
+远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
+Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
 
 ```bash
-for image in rust:1.99.1-slim-trixie debian:trixie-slim oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 \
-  ghcr.io/yetone/magpie:0.1.1327 nousresearch/hermes-agent:v0.22.5 grafana/grafana:12.2.1 traefik/whoami:v1.11 \
-  curlimages/curl:8.23.0; do
+for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 \
+  grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0 alpine/socat:1.8.0.3; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh npchy docker load
+  docker image rm --platform linux/amd64 "$image"
 done
+```
+
+插件包里按摘要锁定的镜像（magpie、Hermes、文件搜索镜像的基础镜像 node）不能只传 amd64：那样传过去的是一个新的
+镜像，摘要对不上，核心还会去拉。整个索引传过去（本机有的平台都带上），再在远端打上标签：
+
+```bash
+image=nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+docker pull --platform linux/amd64 "$image"
+docker save "$image" | ssh npchy docker load
+ssh npchy docker tag "sha256:${image#*@sha256:}" "${image%@*}"
+```
+
+远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
+Linux 主机上容器里没有 `host.docker.internal`，冒烟用 `WONTON_SMOKE_MODEL_RELAY` 指向那台主机上只监听回环地址的
+magpie，`WONTON_SMOKE_MODEL` 选它提供的模型。冒烟在主机网络里起一个 socat 转发，监听在冒烟 magpie 插件网络的网关上、
+只接受冒烟的 magpie，结束时删掉；主机的防火墙要放行插件网络连这个端口（13425），否则 Hermes 一步连不上模型：
+
+```bash
+DOCKER_HOST=ssh://npchy WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
+  WONTON_SMOKE_MODEL_RELAY=127.0.0.1:3425 WONTON_SMOKE_MODEL=group/auto-glm-5-3-flash deploy/dev/core/smoke.sh
 ```
 
 ## 在宿主上直接运行核心

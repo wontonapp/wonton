@@ -31,6 +31,8 @@ pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 /// Tuwunel 经这个地址调核心的推送代理（ADR-0003 的“接口：推送”）。不用解析它：Tuwunel 经出站代理发请求，代理
 /// 只代理这一个域名，代理地址就是核心网关。
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
+/// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。
+pub const PLUGIN_MCP_HOST: &str = "mcp.wonton.internal";
 
 /// 网关按 Host 头区分的目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +49,8 @@ pub enum HostKind {
     Push,
     /// 局域网浏览器用服务器的 IP 地址访问：状态页。
     Lan(std::net::IpAddr),
+    /// 插件网络里的 Agent 访问 MCP 总线（[`PLUGIN_MCP_HOST`]）。
+    PluginMcp,
     Unknown,
 }
 
@@ -101,6 +105,9 @@ impl PublicUrls {
         }
         if host == PUSH_GATEWAY_HOST {
             return HostKind::Push;
+        }
+        if host == PLUGIN_MCP_HOST {
+            return HostKind::PluginMcp;
         }
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
@@ -167,6 +174,10 @@ pub struct Config {
     pub matrix: Option<MatrixConfig>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
     pub system_plugins: Option<PathBuf>,
+    /// 插件目录：Bot 经 MCP 总线只能装这里的插件，格式同系统插件的目录（`WONTON_CATALOG`）。
+    pub catalog: Option<PathBuf>,
+    /// 确认卡片发出后多久没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`，ADR-0016）。
+    pub confirmation_ttl: Duration,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -240,6 +251,12 @@ impl Config {
             },
             core_container: get("WONTON_CORE_CONTAINER"),
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
+            catalog: get("WONTON_CATALOG").map(PathBuf::from),
+            confirmation_ttl: Duration::from_secs(parse(
+                &get,
+                "WONTON_CONFIRMATION_TTL_SECS",
+                600,
+            )?),
             oidc,
             matrix,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),

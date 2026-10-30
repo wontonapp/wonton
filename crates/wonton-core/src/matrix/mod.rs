@@ -7,6 +7,7 @@ mod admin;
 mod api;
 mod bot;
 pub(crate) mod issuer;
+mod notices;
 mod session;
 
 use std::path::Path;
@@ -19,6 +20,7 @@ pub use admin::ADMIN_LOCALPART;
 pub use api::{JWT_LOGIN_TYPE, Login, MatrixError};
 pub use bot::{Avatar, BotAccount, BotSpec, ProvisionedBot};
 pub use issuer::LOGIN_TOKEN_TTL_SECS;
+pub use notices::NoticeRoom;
 pub use session::Session;
 
 use crate::config::MatrixConfig;
@@ -93,6 +95,11 @@ impl Matrix {
     /// 以已登录的用户身份调客户端接口。
     pub fn session(&self, login: &Login) -> Session<'_> {
         Session::new(&self.api, &login.user_id, &login.access_token)
+    }
+
+    /// 以核心的管理账号调客户端接口。
+    pub(crate) fn core_session(&self) -> Session<'_> {
+        Session::new(&self.api, &self.admin_user_id(), &self.admin_token)
     }
 
     /// 账号存不存在（停用的也算存在）：Synapse 兼容的 `GET /_synapse/admin/v2/users/{user}`，不存在时 Tuwunel 回

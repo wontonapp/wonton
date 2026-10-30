@@ -13,6 +13,7 @@
 #   dev.sh devices                     已登记的设备
 #   dev.sh allow <endpoint ID>         登记一台设备（M0 代替扫码配对），它经隧道访问时就是主人
 #   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
+#   dev.sh build <docker build 的参数>  构建镜像，带上 WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS 要的参数
 #   dev.sh ticket [直连地址] [网页地址]  给 App 的连接信息（不经配对，配合 allow 用），直连地址默认 127.0.0.1:隧道端口
 #   dev.sh pair [直连地址]             发一个配对码，在终端里出二维码；直连地址同 ticket
 #   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
@@ -22,7 +23,9 @@
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
 # WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）、
-# WONTON_BUILD_COMMIT（编进核心、打在启动日志里的提交号，默认按当前检出算）。
+# WONTON_BUILD_COMMIT（编进核心、打在启动日志里的提交号，默认按当前检出算）、
+# WONTON_DEV_BUILD_PROXY（构建镜像时经 Docker 主机上的这个代理下载依赖，如 npchy 本机的 http://127.0.0.1:7899）、
+# WONTON_DEV_BUILD_JOBS（构建镜像时编译的并发数，和别的任务共用一台主机时用）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
 set -euo pipefail
 
@@ -88,6 +91,23 @@ compose() {
   ensure_secret
   ensure_matrix_secrets
   docker compose -f "$here/compose.yaml" "$@"
+}
+
+# docker build，加上 WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS 要的参数。代理只监听 Docker 主机的回环地址，
+# 构建要用宿主网络；compose 把构建交给 buildx bake，传不了 --allow，所以经代理时核心镜像也由这里构建。
+build_image() {
+  local flags=()
+  if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
+    flags+=(--network host --allow network.host)
+    local var
+    for var in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
+      flags+=(--build-arg "$var=$WONTON_DEV_BUILD_PROXY")
+    done
+  fi
+  if [[ -n "${WONTON_DEV_BUILD_JOBS:-}" ]]; then
+    flags+=(--build-arg "CARGO_BUILD_JOBS=$WONTON_DEV_BUILD_JOBS")
+  fi
+  docker build ${flags[@]+"${flags[@]}"} "$@"
 }
 
 # 镜像里是哪份代码：当前检出的提交号；构建上下文（Cargo 工作区）里有没提交的改动时加 -dirty。
@@ -164,10 +184,16 @@ case "${1:-}" in
   up)
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
-    compose up -d --build --wait
+    if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
+      build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t wonton-core:dev -f "$here/Dockerfile" "$repo" >/dev/null
+      compose up -d --wait
+    else
+      compose up -d --build --wait
+    fi
     echo "核心已就绪：$base_url（提交 $WONTON_BUILD_COMMIT，主人令牌：$0 token）"
     ;;
   commit) build_commit ;;
+  build) build_image "${@:2}" ;;
   down) compose down ;;
   reset)
     compose down --volumes
@@ -220,5 +246,5 @@ print(json.dumps(ticket, separators=(",", ":")))' \
     # 主人发的配对码，已经有设备时也能用。局域网状态页（http://<本机 IP>:端口/）在还没有设备时另有首次配对码。
     docker exec "$core" wonton-core pair "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}"
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]|pair [直连地址]" ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]|pair [直连地址]" ;;
 esac

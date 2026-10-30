@@ -2,12 +2,14 @@
 
 pub mod bot_services;
 pub mod bots;
+pub mod catalog;
 pub mod compose;
 pub mod configs;
 pub mod docker;
 pub mod docker_exec;
 pub mod health;
 pub mod hostdir;
+mod install_error;
 pub mod interpolate;
 pub mod lifecycle;
 pub mod manager;
@@ -23,12 +25,13 @@ pub mod secrets;
 pub mod sources;
 pub mod store;
 pub mod system;
+mod upstreams;
 
 #[cfg(test)]
-mod fake_docker;
+pub(crate) mod fake_docker;
 #[cfg(test)]
 mod tests;
 
-pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
+pub use manager::{Health, InstallError, McpServer, PluginManager, PluginStatus, PluginView};
 pub use manifest::{Manifest, Permission, PluginId};
 pub use package::PluginPackage;
