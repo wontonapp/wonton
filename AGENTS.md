@@ -39,6 +39,12 @@
   Swift/Kotlin 只渲染 ViewModel、把用户操作发回核心，以及调用平台能力（推送、相册、文件选择、
   后台音频等）。
 
+## 界面设计
+
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+  分组、顺序、位置和图标已经说明了的，不再加副标题、说明文字或标签重复一遍。App 的原生界面和插件的网页都适用。
+- 错误、权限和来源（如“未审核”）的提示不算多余，照常写清楚（见“运行时原则：失败即停”）。
+
 ## 开发环境与检查
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
