@@ -30,8 +30,8 @@ Agent 通过工具调用它们；有网页界面的插件，在 App 里像小程
 ```text
 crates/      Rust 工作区：协议类型、iroh 隧道、服务端核心、客户端厚核心
 apps/        iOS（SwiftUI）与 Compose（Android、桌面）原生壳
-plugins/     官方插件清单与自研插件（ACP 桥、MCP 适配器等）
-cloud/       推送中继、iroh 节点、插件目录的部署配置
+plugins/     核心测试用的示例插件；正式的插件各在自己的仓库，见 ADR-0017
+cloud/       推送中继、iroh 节点、签名静态文件的部署配置
 deploy/      一行安装脚本、compose 模板、升级器
 docs/        文档
 scripts/     CI 与开发脚本

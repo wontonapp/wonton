@@ -213,7 +213,14 @@ impl ChatLink {
             | Action::ConnectHome { .. }
             | Action::PairHome { .. }
             | Action::InviteDevice
-            | Action::AppForegrounded => Err(invalid("不是聊天操作")),
+            | Action::AppForegrounded
+            | Action::SetLanguages { .. }
+            | Action::RefreshPlugins
+            | Action::RefreshStore { .. }
+            | Action::InstallPlugin { .. }
+            | Action::UpgradePlugin { .. }
+            | Action::UninstallPlugin { .. }
+            | Action::DismissPluginTask { .. } => Err(invalid("不是聊天操作")),
         }
     }
 

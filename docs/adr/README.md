@@ -23,3 +23,4 @@
 | [0014](0014-reserved-capabilities.md) | 预留能力：实时通话、音乐、渠道、Web | 已接受 |
 | [0015](0015-small-components-standard-interfaces.md) | 架构原则：小组件与标准接口（UNIX 哲学） | 已接受 |
 | [0016](0016-mcp-bus-and-confirmations.md) | MCP 总线与敏感操作的确认 | 已接受 |
+| [0017](0017-plugin-ecosystem-and-store.md) | 插件生态：独立仓库、商店和来源 | 已接受 |

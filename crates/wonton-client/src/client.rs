@@ -5,15 +5,18 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, ChatViewModel, CoreError, HomeViewModel, MediaHandle, PushNotification,
-    SessionListViewModel,
+    Action, ChatViewModel, CoreError, HomeViewModel, InstallPreview, MediaHandle, PluginDetail,
+    PluginFailure, PluginImage, PluginProblem, PluginsViewModel, PushNotification,
+    SessionListViewModel, StoreItem,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
 use crate::home::{HomeLink, Network, Storage};
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
-use crate::subscription::{ChatSubscription, HomeSubscription, SessionListSubscription};
+use crate::subscription::{
+    ChatSubscription, HomeSubscription, PluginsSubscription, SessionListSubscription,
+};
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -25,6 +28,7 @@ pub struct ClientCore {
     home: Arc<HomeLink>,
     chat: Arc<ChatLink>,
     push: Arc<PushLink>,
+    plugins: watch::Sender<PluginsViewModel>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -64,6 +68,13 @@ impl ClientCore {
                 self.push.unavailable(message);
                 Ok(())
             }
+            Action::SetLanguages { .. }
+            | Action::RefreshPlugins
+            | Action::RefreshStore { .. }
+            | Action::InstallPlugin { .. }
+            | Action::UpgradePlugin { .. }
+            | Action::UninstallPlugin { .. }
+            | Action::DismissPluginTask { .. } => Err(plugins_unsupported()),
             chat => self.chat.dispatch(chat),
         }
     }
@@ -115,6 +126,53 @@ impl ClientCore {
         self.run(async move { chat.load_media(media).await }).await
     }
 
+    /// 当前的插件页面（已安装的插件、商店、安装的进展），用于首帧渲染。
+    pub fn plugins(&self) -> PluginsViewModel {
+        self.plugins.borrow().clone()
+    }
+
+    /// 订阅插件页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_plugins(&self) -> Arc<PluginsSubscription> {
+        Arc::new(PluginsSubscription::new(self.plugins.subscribe()))
+    }
+
+    /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
+    pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
+        let _ = source;
+        Err(plugins_unsupported())
+    }
+
+    /// 一个已安装插件的详情（装着的版本）。
+    pub async fn installed_plugin(&self, id: String) -> Result<PluginDetail, CoreError> {
+        let _ = id;
+        Err(plugins_unsupported())
+    }
+
+    /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是
+    /// [`StoreItem::source`]，或者主人输入的 `github:<owner>/<repo>[@<tag>]`。
+    pub async fn preview_install(&self, source: String) -> Result<InstallPreview, CoreError> {
+        let _ = source;
+        Err(plugins_unsupported())
+    }
+
+    /// 升级前的预览：升到已安装列表里提示的版本。
+    pub async fn preview_upgrade(&self, id: String) -> Result<InstallPreview, CoreError> {
+        let _ = id;
+        Err(plugins_unsupported())
+    }
+
+    /// 取插件的图标或截图：PNG 或 JPEG 的字节，经隧道取回并缓存，同 [`load_media`](Self::load_media)。
+    pub async fn load_plugin_image(&self, image: PluginImage) -> Result<Vec<u8>, CoreError> {
+        let _ = image;
+        Err(plugins_unsupported())
+    }
+
+    /// 在最近取到的商店列表里按关键词找插件：名字、说明、标签和 ID，不分大小写，官方的在前。还没取过商店时为空。
+    pub fn search_store(&self, query: String) -> Vec<StoreItem> {
+        let _ = query;
+        Vec::new()
+    }
+
     /// 处理收到的一条推送：`payload` 是壳在本机解开后的明文（Android 上 UnifiedPush 连接库已经按 RFC 8291 解开）。
     /// 核心经隧道取回那条消息、在本机解密，给出要弹出的通知；取不到正文时通知里照实写原因。推送唤醒的进程可以
     /// 一创建核心就调用，核心等会话从本机恢复。不用显示（按推送规则不该响、消息已撤回）时返回空，内容不是家里
@@ -146,6 +204,13 @@ impl ClientCore {
             home,
             chat,
             push,
+            plugins: watch::Sender::new(PluginsViewModel {
+                problem: Some(PluginProblem {
+                    reason: PluginFailure::Protocol,
+                    message: plugins_unsupported().to_string(),
+                }),
+                ..PluginsViewModel::default()
+            }),
             runtime: Some(runtime),
         }))
     }
@@ -178,6 +243,13 @@ impl ClientCore {
             }
         });
         outcome
+    }
+}
+
+/// 插件商店的接口先于实现合并（ADR-0017）：实现之前，插件相关的调用都如实失败。
+fn plugins_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持插件商店".into(),
     }
 }
 

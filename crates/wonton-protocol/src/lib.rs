@@ -13,6 +13,7 @@ mod chat;
 mod confirmation;
 mod error;
 mod home;
+mod plugin;
 mod push;
 mod secret;
 mod session;
@@ -32,6 +33,13 @@ pub use error::CoreError;
 pub use home::{
     DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
     ProxySettings,
+};
+pub use plugin::{
+    InstallPreview, InstallRequest, InstallSource, InstalledPlugin, InstalledPlugins,
+    PermissionLine, PluginAuthor, PluginCategory, PluginDetail, PluginFailure, PluginHealth,
+    PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTask,
+    PluginTaskState, PluginTrust, PluginsViewModel, StoreFailure, StoreItem, StoreListing,
+    StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
 };
 pub use push::{PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

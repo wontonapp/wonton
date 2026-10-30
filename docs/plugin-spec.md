@@ -1,13 +1,15 @@
-# 插件规范 `x-wonton`（草案 v0.1）
+# 插件规范 `x-wonton`（草案 v0.2）
 
 > 草案，M1 前定稿。字段可能调整，调整时同步更新本文和清单类型。清单类型在
 > `crates/wonton-core/src/plugin/manifest.rs`，迁到 `crates/wonton-protocol` 见“实现计划”第 1 项。
 > v0.1 补上了 M0-4 实测 Hermes 和 magpie 时发现的缺口，没落地的部分见末尾的“实现计划”。三处取舍已由
 > 主人确认（2026-10-28）：插件默认不能出网，每个 Bot 一组容器，模型凭据默认可以用网关里的所有模型。
+> v0.2 加上规范版本（`spec`）、商店信息和插件的发布与来源（ADR-0017）。
 
 一个插件就是一个 `docker-compose.yml`，在顶层加一个 `x-wonton` 扩展字段描述它在 Wonton 里的身份、
 入口、能力和权限。compose 引用的配置文件、图标和设置表单与它放在同一个目录里，合称插件包。
-没有 `x-wonton` 的 compose 文件可以由用户手动导入，但必须先补全权限声明。可运行的示例见
+没有 `x-wonton` 的 compose 文件可以由用户手动导入，但必须先补全权限声明。一个插件一个 Git 仓库，仓库根目录
+就是插件包，发布就是打 tag（见“发布与来源”）。可运行的示例见
 [`plugins/examples/`](../plugins/examples/README.md)；默认 Agent 和模型网关的草稿见
 [`plugins/hermes/`](../plugins/hermes/docker-compose.yml) 和
 [`plugins/magpie/`](../plugins/magpie/docker-compose.yml)。
@@ -36,7 +38,7 @@ x-wonton:
   title: { zh: 相册, en: Photos }
   description: { zh: 照片备份、人脸与语义搜索, en: Photo backup with face and semantic search }
   icon: icon.png
-  category: media
+  category: photos
   webui:
     service: server
     port: 2283
@@ -59,12 +61,14 @@ x-wonton:
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
+| `spec` | 否 | 清单按哪一版规范写成，见“商店信息”。 |
 | `id` | 是 | 反向域名形式，全局唯一，安装后不可修改。至少两段，每段由小写字母、数字和单个连字符组成，总长不超过 63。 |
 | `version` | 是 | 插件包版本（语义化版本），和镜像版本无关。 |
 | `kind` | 是 | `app`（普通应用）、`agent`（Agent 运行时）、`channel`（第三方 IM 渠道）、`model`（模型服务）、`system`（系统插件，仅官方，只能由安装器预装）。 |
 | `title`、`description` | 是 | 多语言文本，至少提供 `zh` 和 `en`。 |
-| `icon` | 否 | 插件包里的文件，或 HTTPS URL。 |
-| `category` | 否 | 商店分类。 |
+| `icon` | 否 | 插件包里的 PNG 或 SVG，见“商店信息”。官方索引要求必填。 |
+| `category` | 否 | 商店分类，取“商店信息”里的一项。官方索引要求必填。 |
+| `screenshots`、`author`、`homepage`、`license`、`tags`、`about`、`release_notes` | 否 | 商店信息，见“商店信息”。官方索引要求有 `author` 和 `license`。 |
 | `webui` | 否 | 作为小程序打开的入口：`service`、`port`、`path`（默认 `/`）、`sso`（`oidc`、`proxy`、`none`，默认 `none`）、`oidc`、`proxy`（见“网页入口与单点登录”）。 |
 | `mcp` | 否 | 给 Agent 的工具入口：`service`、`port`、`path`（默认 `/mcp`）、`transport`（`streamable-http`），见“工具与 MCP 总线”。 |
 | `bot` | 否 | Bot 的显示名（`display_name`，多语言）和头像（`avatar`，插件包里的文件）。只能和 `matrix.bot` 权限一起声明。 |
@@ -73,18 +77,18 @@ x-wonton:
 | `provides` | 否 | 向其他插件提供的能力，v0.1 只有 `models`（见“模型网关”）。只有 `kind: system` 的插件可以声明。 |
 | `secrets` | 否 | 插件自己的密钥：核心生成后注入，或插件运行中生成、交给核心保管（见“插件密钥”）。 |
 | `permissions` | 是 | 安装时由主人确认的权限，见下表。没有权限时写空列表。 |
-| `settings` | 否 | 插件包里的 JSON Schema 文件，App 用原生表单渲染。 |
+| `settings` | 否 | 插件包里的 JSON Schema 文件，留给 App 用原生表单渲染（ADR-0017 的“自定义接口”，预留）；在那之前插件用自己的网页做设置。 |
 | `requirements` | 否 | `arch`（安装时与宿主架构比对，不符则拒绝）、`memory`、`gpu`（`required`、`optional`）。 |
 
-`x-wonton` 里出现未知字段时安装失败。
+`x-wonton` 里出现未知字段时安装失败；`spec` 比核心支持的版本新时，先报规范版本（见“商店信息”）。
 
 ## 插件包
 
 插件包是一个目录：`docker-compose.yml`，加上它引用的文件——`icon`、`settings`、`bot.avatar` 和
-顶层 `configs` 的 `file`。
+顶层 `configs` 的 `file`。`screenshots` 不算在内（见“商店信息”）。
 
 - 引用的路径相对 compose 文件所在的目录，不能是绝对路径、不能含 `..`、不能用变量，也不能经过软链接；
-  单个文件不超过 1 MiB。引用的文件不存在时安装失败。
+  单个文件不超过 1 MiB，整个插件包（文件大小相加）不超过 2 MiB。引用的文件不存在时安装失败。
 - 安装接口收 compose 文本，或者 `Content-Type: application/x-tar` 的整个插件包目录（如
   `tar -C <目录> -cf - .`）。compose 引用了包里的文件时只能传归档；归档里只能有普通文件和目录，软链接、硬链接和
   设备一律拒绝，最多 256 项。
@@ -156,6 +160,56 @@ services:
       init:
         condition: service_completed_successfully
 ```
+
+## 商店信息
+
+商店、安装确认页和 App 主屏用到的信息写在清单里，随插件包按提交固定（ADR-0017）。多语言的字段同 `title`，至少有
+`zh` 和 `en`。
+
+| 字段 | 说明 |
+| --- | --- |
+| `spec` | 清单按哪一版规范写成，字符串，如 `"0.2"`（YAML 里要加引号，不然读成数字）。没写时按 `"0.1"`。核心先读它：比核心支持的版本新时安装失败（`unsupported`），提示先升级核心，不再逐项报未知字段。用到 v0.2 的字段时写 `"0.2"`。 |
+| `icon` | 图标，见下节。 |
+| `screenshots` | 截图：仓库里的 PNG 或 JPEG（路径规则同插件包里的文件），1 到 6 张，按顺序显示。截图不算插件包的一部分：不参与插件包摘要，安装时不取，上传插件包时忽略；商店的详情页要显示时，核心按同一个提交去取。 |
+| `author` | 插件包的作者：`name`（必填）、`url`（HTTPS，可选）。不一定是应用的作者。 |
+| `homepage` | 应用的主页，HTTPS。 |
+| `license` | 应用的许可证，SPDX 表达式，如 `AGPL-3.0-only`、`MIT OR Apache-2.0`。插件包自己的许可证写在仓库的 LICENSE 里。 |
+| `category` | 分类，取下表的一项。 |
+| `tags` | 搜索用的关键词，最多 8 个，每个 1 到 24 个字符，不分语言。 |
+| `about` | 详细介绍：多语言，纯文本，空行分段，每种语言不超过 4000 个字符。没写时详情页只显示 `description`。 |
+| `release_notes` | 这个版本的更新说明：多语言，纯文本，每种语言不超过 2000 个字符，升级提示里显示。数据迁移不可逆时要写明。 |
+
+| `category` | 中文名 | 例子 |
+| --- | --- | --- |
+| `ai` | AI 与模型 | Ollama |
+| `agent` | 助手 | Hermes |
+| `photos` | 照片 | Immich |
+| `media` | 影音 | Navidrome、Jellyfin |
+| `files` | 文件 | Syncthing、Samba、文件搜索 |
+| `documents` | 文档 | Paperless-ngx |
+| `productivity` | 效率 | 笔记、待办、日历 |
+| `communication` | 通讯 | 第三方 IM 渠道 |
+| `home` | 智能家居 | Home Assistant |
+| `network` | 网络 | DNS、代理 |
+| `security` | 安全 | 密码管理 |
+| `developer` | 开发 | Git 服务 |
+| `downloads` | 下载 | BT 下载 |
+| `tools` | 工具 | 不属于以上各类的 |
+| `system` | 系统 | 只给系统插件（`kind: system`） |
+
+### 图标和截图
+
+- 图标是插件包里的 PNG 或 SVG，正方形：
+  - PNG 至少 256×256，建议 512×512，不超过 512 KiB；SVG 的 `viewBox` 是正方形，不超过 128 KiB。
+  - 满幅：画面铺满整个正方形，不留透明边，不画圆角和阴影。App 统一裁成圆角方形，四角会被裁掉，重要内容放在中间 80%
+    的范围里。
+  - SVG 里的文字不渲染（要用文字就转成路径），外部资源（图片、字体、样式表）不加载，脚本和动画不执行。
+  - 不接受 HTTPS 地址：图标随提交固定，App 也不向第三方取图。
+- 截图是 PNG 或 JPEG，每张不超过 1 MiB，建议长边至少 1280，横屏和竖屏的截图不要混在一个插件里。
+- 核心把图片解码后重新编码再交给 App：图标是 192×192 和 512×512 的 PNG，截图是长边不超过 1280 的 JPEG，都不带原文件的
+  元数据。解码不了的、解码后超过 4096×4096 像素的图片和不是正方形的图标都不合法：图标不合法时安装失败，截图不合法时
+  详情页里不显示它。`wonton-core plugin check` 按同样的规则检查。
+- `bot.avatar` 的格式不变（见“Matrix Bot”）。
 
 ## 网页入口与单点登录
 
@@ -317,7 +371,7 @@ webui:
 
 系统插件（`kind: system`）由安装器预装，API 装不了：核心启动后在后台从 `WONTON_SYSTEM_PLUGINS` 目录（每个子目录
 一个插件包）装上还没装的系统插件，授予清单声明的全部权限，装核心就是主人对它们的确认；已经装着的照常核对，
-不重装也不升级。装不上的如实标为异常、写明原因，不影响核心启动。
+目录里的版本比装着的新时按“升级”的步骤升级它（ADR-0017）。装不上的如实标为异常、写明原因，不影响核心启动。
 
 ### 使用方
 
@@ -491,12 +545,11 @@ x-wonton:
   | 工具 | 敏感 | 说明 |
   | --- | --- | --- |
   | `wonton__list_plugins` | 否 | 已装的插件、版本、状态和网页地址。 |
-  | `wonton__search_catalog` | 否 | 按关键词在插件目录里找插件：ID、名字、说明和要申请的权限。 |
-  | `wonton__install_plugin` | 是 | 按目录里的 ID 安装，授予它声明的全部权限。声明了高权限的插件只能由主人在 App 里装。 |
+  | `wonton__search_catalog` | 否 | 按关键词在官方索引里找插件：ID、名字、说明和要申请的权限。 |
+  | `wonton__install_plugin` | 是 | 按官方索引里的 ID 安装，授予它声明的全部权限。声明了高权限的插件只能由主人在 App 里装。 |
   | `wonton__uninstall_plugin` | 是 | 卸载，`delete_data` 为真时同时删除它的数据。 |
 
-- 插件目录：M1 是核心读的本地目录（`WONTON_CATALOG`，每个子目录一个插件包，格式同预装系统插件的目录），官方目录和
-  导入 CasaOS 商店随 M1 第 5 项。Bot 只能装目录里的插件，不能装自己写的 compose。
+- 插件目录就是官方索引（见“发布与来源”）。Bot 只能装官方索引里的插件，不能装社区插件和自己写的 compose。
 - 敏感的调用会一直等到主人回答或者确认过期（10 分钟），Agent 的工具超时要比这长。确认卡片发在核心和主人的“Wonton”
   私聊里，主人在 Wonton App 里回答（ADR-0016）。主人拒绝或者过期时工具返回错误（`isError: true`），说明原因。
 
@@ -567,11 +620,11 @@ x-wonton:
 
 - 长期运行的服务都要有健康检查，而且检查的是真正可用，不只是进程还活着：Hermes 要 Matrix 已经连上
   （用它自己的 `/health/detailed`），magpie 用自带的 `magpie healthcheck`。
-- 写在 compose 的 `healthcheck` 里。镜像自带的 `HEALTHCHECK` 也算数，但官方目录的插件要在 compose 里
+- 写在 compose 的 `healthcheck` 里。镜像自带的 `HEALTHCHECK` 也算数，但官方索引的插件要在 compose 里
   显式写出，便于审核，也随插件版本锁定。
 - 写上 `start_period` 和 `start_interval`：安装时能尽快判断就绪，启动慢时又不会误判失败。
 - 检查只能用镜像里已有的命令，distroless 之类的镜像里没有 `curl`、`wget`。
-- 官方目录的插件缺健康检查时不收录（契约测试扫描 `plugins/` 下除 `examples/` 以外的插件）。导入的应用
+- 官方索引的插件缺健康检查时不收录（`wonton-core plugin check --official` 检查）。导入的应用和社区插件
   没有健康检查时照常安装，状态如实显示为“运行中，健康未知”，不显示“健康”。
 - 核心在安装时和每次启动时检查，插件列表里运行中的插件带上最近一次的结果：每个长期运行的服务都有健康检查
   而且都通过了是 `healthy`；有服务没有健康检查，或者核心启动时检查还没通过，是 `unknown`（只知道在运行）。
@@ -620,11 +673,108 @@ x-wonton:
 - 插件的容器、网络和卷都带标签 `wonton.plugin=<id>`，卸载时据此清理；卸载时选择删除数据才会删除
   命名卷、应用数据目录和插件密钥，共享文件夹永不删除。
 
+## 发布与来源
+
+### 插件仓库
+
+- 一个插件一个 Git 仓库，仓库根目录就是插件包：`docker-compose.yml` 和它引用的文件。仓库里的其他文件（README、LICENSE、
+  Dockerfile、源码、截图、测试）核心不取，截图只在商店的详情页里显示。
+- 发布：把清单的 `version` 改成新版本，提交，打 tag `v<version>` 推上去。tag 和清单的版本不一致时装不上。带预发布后缀的
+  版本（如 `v1.2.0-beta.1`）只能按 tag 明确安装，不进商店，也不作为升级提示。发布过的 tag 不要移动：已经装上的不受
+  影响，但核心会提示主人这个 tag 被改过。
+- 插件自己的镜像由作者构建，推到公开的镜像仓库，compose 按摘要引用（`名字:标签@sha256:…`，多架构镜像写清单列表的
+  摘要）。核心不构建镜像。
+- 公开仓库加上 topic `wonton-plugin`，几分钟后就出现在商店的社区插件里，标为“未审核”。想进官方商店，向官方索引提 PR
+  （见“官方索引”）。
+
+### 来源
+
+| 写法 | 装的是 |
+| --- | --- |
+| `github:<owner>/<repo>@v1.2.0` | 这个 tag |
+| `github:<owner>/<repo>` | 最新的正式版本：版本号最大的、不带预发布后缀的 `v<语义化版本>` tag |
+| `github:<owner>/<repo>@<40 位提交号>` | 这个提交，开发时用；清单的版本照常校验，不检查升级 |
+
+- 核心经 git 协议 v2 的 `ls-refs`（`https://github.com/<owner>/<repo>.git`）把 tag 解析成提交，之后按提交取文件：先取
+  `docker-compose.yml`，再取它引用的文件。取到后和上传的插件包走同一套解析和校验。
+- 私有仓库核心取不到（核心不存 GitHub 令牌），开发时从本地目录上传（见“开发与校验”）。
+- 安装记录写下来源、tag、提交、插件包摘要和每个服务实际用的镜像摘要。
+
+### 插件包摘要
+
+插件包的每个文件一行 `<sha256 的十六进制>  <路径>`（两个空格），按路径的字节序排列，每行以换行结尾，即 `sha256sum`
+的输出格式；路径相对包的根目录，不带 `./`，`docker-compose.yml` 也在内。这段文字的 sha256 就是插件包摘要，写成
+`sha256:<十六进制>`。它只取决于文件的内容，和文件从哪里取、怎么打包无关；`wonton-core plugin check` 会打印它。
+
+安装和升级的预览返回摘要，安装请求必须带回同一个摘要，对不上时得到 409 `changed`：主人确认的就是装上的。
+
+### 镜像
+
+- 官方索引的插件，所有服务的 `image` 都按摘要写。
+- 社区插件和上传的插件包可以只写标签，预览时如实提示“镜像没有按摘要固定”。核心拉取后记下实际的镜像摘要，以后重建
+  容器（如升级失败回滚）都用它，不再按标签拉。
+
+### 官方索引
+
+公开仓库 `geraldpeng6/wonton-store` 的 `index.json`：
+
+```json
+{
+  "format": 1,
+  "plugins": [
+    {
+      "source": "github:geraldpeng6/wonton-plugin-files",
+      "version": "0.2.0",
+      "commit": "<40 位提交号>",
+      "files": {
+        "docker-compose.yml": "<sha256 的十六进制>",
+        "icon.svg": "<sha256 的十六进制>"
+      },
+      "compose": "<docker-compose.yml 的原文>"
+    }
+  ]
+}
+```
+
+- `format` 是索引格式的版本，核心读不懂的格式按取不到处理，并提示升级核心。
+- 一个插件一项，`source` 和插件 ID 都不重复，商店按这里的顺序列出官方插件。`files` 是插件包的全部文件，`compose` 必须
+  和 `files` 里的 `docker-compose.yml` 一致。核心按 `files` 核对取到的每个文件，所以文件可以从任何地方取（GitHub、
+  jsDelivr、核心内置的副本）。
+- 条目用 `wonton-core plugin index-entry github:<owner>/<repo>@<tag>` 生成，不手写。
+- 收录要求：`wonton-core plugin check --official` 通过，即有 `icon`、`category`、`license`、`author`，所有服务的 `image`
+  按摘要固定，长期运行的服务都有健康检查；申请的权限和插件做的事相符；镜像来自上游官方或作者可复现的构建。
+- 核心镜像内置一份索引和其中插件包的文件。开发镜像和测试用本地的索引目录代替（`WONTON_STORE_INDEX`）：`index.json`
+  加上按 sha256 存放的文件（`blobs/<sha256 的十六进制>`）。
+
+### 社区插件
+
+- 公开仓库、topic `wonton-plugin`、有 `v<语义化版本>` tag：核心按 GitHub 星数列出，标为“未审核”。
+- 核心读最新正式版本的 `docker-compose.yml`；没有 tag、清单解析不了的仓库不列出。官方索引里的仓库、插件 ID 和官方插件
+  相同的仓库也不列出。
+- 列表缓存 10 分钟。主人可以关掉社区插件（`WONTON_STORE_COMMUNITY=off`）。
+
+### 升级
+
+- 官方插件按官方索引里的版本、社区插件按仓库最新的正式版本 tag 提示升级；上传的插件包不提示。只升不降。
+- `id` 不能变。升级保留数据、插件密钥、Bot 账号和设备、模型凭据、OIDC 客户端，只换容器；新版本装不好就回滚到旧版本
+  的容器。
+- 新版本申请的权限和装着的不同时，主人要重新确认全部权限，新增的标出来。
+- 数据迁移由应用自己在启动时做；不可逆的迁移要在 `release_notes` 里写明，回滚后旧版本可能读不了迁移过的数据。
+
+### 开发与校验
+
+- 校验：`wonton-core plugin check <目录>`，发布的核心镜像里就有。和安装时同一套解析和校验，加上商店信息和图片的检查，
+  最后打印插件包摘要；`--official` 再按官方索引的要求检查。
+- 开发时从本地目录安装：把插件目录打成 tar 上传（见“插件包”），装上后是本地来源，不检查升级。改了以后上传到升级接口
+  （`POST /_wonton/api/plugins/{id}/upgrade`），保留数据。
+- 模板仓库 `geraldpeng6/wonton-plugin-template` 带开发环境（用发布的核心镜像在本机起一套核心）和检查、发布的脚本。
+
 ## 兼容 CasaOS 应用
 
 导入 CasaOS 格式（`x-casaos`）的应用时，核心按以下规则转换，再请主人确认：
 
-- `x-casaos.title`、`icon`、`description` 映射到 `title`、`icon`、`description`。
+- `x-casaos.title`、`description` 映射到 `title`、`description`。`x-casaos.icon` 是图片地址：核心导入时把它取下来放进
+  插件包，取不到或不合法时没有图标。
 - `x-casaos.index` 与 `port_map` 映射到 `webui`。
 - `/DATA/AppData/$AppID` 下的卷映射到 `WONTON_APP_DATA`。
 - 其余宿主路径（如 `/DATA/Media`）映射到共享文件夹，并生成对应的读写权限，必须由主人确认。
@@ -636,7 +786,9 @@ x-wonton:
 ## 待定问题
 
 - 插件间依赖与通信的声明方式。
-- 插件包的签名与官方目录的审核流程。
+- 官方索引的签名（minisign），签名后索引也能经镜像和国内的静态托管分发。
+- 一个仓库放多个插件（`github:<owner>/<repo>/<路径>`）。
+- 多个入口和快捷方式（`shortcuts`）、插件给主人发通知（`notify`）的写法（ADR-0017 的“自定义接口”）。
 - `settings.schema.json` 支持的 JSON Schema 子集。
 - 插件升级时的数据迁移钩子。
 - 网关上 HTTPS 以后，插件网页地址和 OIDC 签发方地址的形式（M0 只有 http）。
@@ -646,8 +798,6 @@ x-wonton:
 - `network.egress` 区分外网和局域网、按服务细分。
 - 插件密钥在 App 里的查看（如应用的管理员密码）与轮换；收存的秘密在恢复数据时怎样交还插件。
 - compose 的 `secrets`：以文件形式交给容器的密钥，给遵循 `*_FILE` 约定的镜像用。
-- 规范版本号：`x-wonton` 遇到未知字段即失败，带新字段的插件会被旧核心拒绝，需要一个版本字段给出
-  清楚的错误。
 - 模型网关的首次配置：默认路由组由谁建，主人还没配置 provider 时 Bot 怎样提示。
 
 ## 实现计划
@@ -666,3 +816,13 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
      （需要 UniFFI 导出的类型按它的约束调整）。
 12. **多 Bot**（M2，每个 Bot 一组容器）：按 `bots.services` 为每个 Bot 实例化容器、限制 Bot 服务的挂载、
     按 Bot 签发凭据和收存秘密。
+
+v0.2（ADR-0017）的部分同样每项一个 PR：
+
+1. **商店信息和校验**：`spec` 和商店信息字段（“示例”一节随之写上它们，契约测试按示例解析），图标和截图的处理，
+   `wonton-core plugin check`，已安装列表的新接口。
+2. **来源和商店**：`github:` 来源，官方索引（取代 `WONTON_CATALOG`），社区插件的发现，商店和详情接口，按来源安装。
+3. **升级**：检查新版本、升级预览、升级和回滚，系统插件随核心升级。
+4. **客户端核心**：`PluginsViewModel` 和插件相关的操作。
+5. **开发套件**：模板仓库、开发环境、实例名（`WONTON_INSTANCE`）。
+6. **插件移出主仓库**：文件搜索插件；预装的 magpie、Hermes 改由锁文件固定。

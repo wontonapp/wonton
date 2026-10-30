@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{ImageUpload, PushEndpoint, SecretString};
+use crate::{ImageUpload, InstallPreview, PushEndpoint, SecretString};
 
 /// 原生壳发给客户端核心的用户操作。
 ///
@@ -68,4 +68,21 @@ pub enum Action {
     /// 平台收不了推送了：没有装分发器，分发器拒绝了登记或者注销了本 App。核心删掉家里的登记和 pusher，
     /// 把 `message` 照实放进 `ChatViewModel::push`。
     PushUnavailable { message: String },
+
+    // 插件（ADR-0017）。网络操作都在后台执行，进展和结果在 `PluginsViewModel` 里。
+    /// 主人偏好的语言（BCP 47，按优先级），壳在启动时和系统语言变了时告诉核心。家里的服务器按它挑插件的名字和说明。
+    SetLanguages { languages: Vec<String> },
+    /// 重新取已安装的插件和它们能不能升级。
+    RefreshPlugins,
+    /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
+    RefreshStore { force: bool },
+    /// 主人在确认页上点了“安装”：按预览安装，授予预览里列出的全部权限。插件包在预览之后变了时失败
+    /// （`PluginFailure::Changed`），要重新预览。
+    InstallPlugin { preview: InstallPreview },
+    /// 主人在升级确认页上点了“升级”，同 [`Action::InstallPlugin`]。
+    UpgradePlugin { preview: InstallPreview },
+    /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
+    UninstallPlugin { id: String, delete_data: bool },
+    /// 清掉一个做完的任务（成功或失败的提示）。
+    DismissPluginTask { id: String },
 }

@@ -32,8 +32,10 @@ flowchart LR
   subgraph Cloud["我们运营的云端（不存业务数据）"]
     Relay["iroh-relay\niroh-dns-server"]
     PushRelay["推送中继\ngorush"]
-    Catalog["插件目录与节点列表\n签名静态文件"]
+    Catalog["节点列表与版本信息\n签名静态文件"]
   end
+
+  GitHub["GitHub\n插件仓库 · 官方索引"]
 
   ClientCore <-->|"iroh 隧道"| Core
   Core --> Tuwunel
@@ -47,6 +49,7 @@ flowchart LR
   Core -.-> Relay
   ClientCore -.-> Relay
   Core -.-> Catalog
+  Core -.->|"商店与插件包"| GitHub
 ```
 
 ### 家里的服务器
@@ -69,7 +72,7 @@ flowchart LR
 | 中继 | 官方 `iroh-relay` 镜像 | 打洞失败时转发隧道流量。共享令牌加限速。 |
 | 发现 | 官方 `iroh-dns-server` 镜像 | 家里服务器换网络后，App 靠它找到新地址。 |
 | 推送中继 | gorush 加一层鉴权 | 只接收密文，转发到 APNs、FCM、华为 HMS。 |
-| 目录 | 签名静态文件 | 插件目录、中继节点列表、核心版本信息。 |
+| 目录 | 签名静态文件 | 中继节点列表、核心版本信息。插件的官方索引在 GitHub 上，签名以后也能经这里分发（ADR-0017）。 |
 | 镜像 | GHCR 加国内镜像仓库 | 安装脚本按网络选择。 |
 
 开发和 MVP 内测期，中继和发现先用 n0 的公共节点，推送中继从 M1 起部署在我们的一台公网主机上；
@@ -128,7 +131,8 @@ App 打开插件网页时，WebView 以客户端核心的本地代理为 HTTP �
 
 ### 插件安装
 
-1. 来源：官方目录、导入的 CasaOS 商店，或用户粘贴的 compose 文件。
+1. 来源：官方索引里审核过的插件、GitHub 上的社区插件（`github:<owner>/<repo>@<tag>`）、导入的 CasaOS 应用，
+   或主人上传的插件包。每个插件一个仓库，发布就是打 tag（ADR-0017）。
 2. 核心校验清单，生成权限清单。
 3. 主人在 App 里确认权限；如果是 Bot 发起的安装，确认按钮出现在聊天里。
 4. 核心准备插件要用的身份和凭据（Bot 账号与令牌、模型网关凭据、插件密钥、OIDC 客户端），渲染
@@ -146,7 +150,8 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放�
 ### 升级
 
 核心按渠道（stable / beta）从目录检查新版本并通知主人。主人确认后，核心拉起 `wonton-updater`：
-拉新镜像、重建核心容器、健康检查，失败就回滚到旧镜像。插件按目录版本升级，可以设为自动。
+拉新镜像、重建核心容器、健康检查，失败就回滚到旧镜像。插件按官方索引里的版本或仓库的新 tag 提示升级，主人确认后
+只换容器，失败回滚（ADR-0017）。
 
 ## Bot 与 Agent
 
@@ -177,7 +182,7 @@ crates/
 apps/
   ios/               SwiftUI 壳、通知扩展
   compose/           Kotlin Multiplatform：共享 UI 模块、android、desktop（M2）
-plugins/             官方插件清单（x-wonton）与自研插件
+plugins/             核心测试用的示例插件；正式的插件各在自己的仓库（ADR-0017）
 cloud/               中继、发现、推送中继、目录发布的部署配置
 deploy/              一行安装脚本、compose 模板、升级器
 docs/                文档
@@ -198,6 +203,7 @@ scripts/             CI 与开发脚本
 | Agent 接入 | Matrix 原生、ACP | Apache-2.0（ACP 规范） | 已定 |
 | 模型网关 | magpie | MIT | 已定 |
 | MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006），M1 实现 |
+| 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
 | OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |

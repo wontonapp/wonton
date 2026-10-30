@@ -117,6 +117,5 @@ Hermes 是第一个用这份合同的 Agent：插件包申请 `tools`，`gateway
 4. **Bot 只能装插件目录里的插件，高权限的除外。** 不能装 Bot 自己写的 compose；声明了高权限（host 网络、设备、GPU、
    Docker socket）的插件只能由主人在 App 里装。
 
-插件目录：M1 先读本地目录 `WONTON_CATALOG`（每个子目录一个插件包，格式同预装系统插件的目录），开发镜像里放示例插件。
-官方目录（签名静态文件，ADR-0012）和导入 CasaOS 商店随 M1 第 5 项来；它们只要按插件 ID 交出插件包、按关键词列出
-插件，`wonton__search_catalog` 和 `wonton__install_plugin` 不用改。
+插件目录是官方索引（ADR-0017）：Bot 能找到、能装的只有官方索引里审核过的插件，社区插件和上传的插件包只能由主人在 App
+里装。开发镜像和冒烟测试用本地的索引目录（`WONTON_STORE_INDEX`），取代最初的本地目录 `WONTON_CATALOG`。
