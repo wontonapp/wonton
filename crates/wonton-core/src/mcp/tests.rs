@@ -82,6 +82,7 @@ fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
         gateway_port: 8080,
+        instance: Default::default(),
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
     Arc::new(PluginManager::new(

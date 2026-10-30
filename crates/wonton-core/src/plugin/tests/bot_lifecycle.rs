@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
-use super::super::render::container_name;
+use super::super::names::container_name;
 use super::super::store::Store;
 use super::super::{PluginId, PluginManager, PluginStatus};
 use super::manager::manager_in_container;

@@ -7,7 +7,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::super::fake_docker::FakeDocker;
-use super::super::render::{RenderError, container_name, dry_run};
+use super::super::names::container_name;
+use super::super::render::{RenderError, dry_run};
 use super::super::{Health, PluginPackage, PluginStatus, PluginView};
 use super::manager::manager_with;
 use super::package;

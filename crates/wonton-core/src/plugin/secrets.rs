@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use super::docker::{ContainerFile, Engine, EngineError};
 use super::manifest::{GenerateSecret, Manifest, PluginId, SecretEncoding, SecretSpec};
-use super::render::container_name;
+use super::names::Instance;
 use super::store::{
     StoreError, base64_map, create_private_dir, read_json, remove_file, write_json,
 };
@@ -121,6 +121,7 @@ pub enum CollectError {
 /// 不删除插件里的这个文件，也不把它注入回去。
 pub async fn collect(
     engine: &Engine,
+    instance: &Instance,
     manifest: &Manifest,
     secrets: &mut Secrets,
 ) -> Result<bool, CollectError> {
@@ -129,7 +130,7 @@ pub async fn collect(
         let SecretSpec::Collect(spec) = spec else {
             continue;
         };
-        let container = container_name(&manifest.id.slug(), &spec.service);
+        let container = instance.container(&manifest.id.slug(), &spec.service);
         let invalid = |reason: &str| CollectError::Invalid {
             name: name.clone(),
             container: container.clone(),

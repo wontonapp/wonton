@@ -20,11 +20,11 @@ use super::hostdir::Owner;
 use super::interpolate::Vars;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners, mount_targets};
+use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
 use super::secrets::secret_var;
 
-/// Docker 资源上的标签：标明归属哪个插件，卸载时按标签清理。
-pub const LABEL_PLUGIN: &str = "wonton.plugin";
+/// 容器是插件的哪个服务。
 pub const LABEL_SERVICE: &str = "wonton.service";
 
 #[derive(Debug, thiserror::Error)]
@@ -111,6 +111,8 @@ impl std::fmt::Debug for ModelVars {
 #[derive(Clone)]
 pub struct InstallContext {
     pub slug: String,
+    /// 资源名和标签带不带实例名。
+    pub instance: Instance,
     /// 插件私有数据目录（宿主路径）。
     pub app_data: PathBuf,
     /// 已授权的共享文件夹：名称 → 宿主路径。
@@ -137,6 +139,7 @@ impl std::fmt::Debug for InstallContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InstallContext")
             .field("slug", &self.slug)
+            .field("instance", &self.instance)
             .field("app_data", &self.app_data)
             .field("shares", &self.shares)
             .field("app_url", &self.app_url)
@@ -302,6 +305,7 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
             .map(|(name, _)| (name.clone(), "dry-run".to_owned()))
             .collect(),
         slug,
+        instance: Instance::default(),
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
@@ -326,8 +330,8 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
             format!("全插件一份的服务不能依赖 Bot 服务 `{bot_service}`：Bot 服务每个 Bot 一份"),
         ));
     }
-    let network = format!("wonton-{}", ctx.slug);
-    let labels = HashMap::from([(LABEL_PLUGIN.to_owned(), manifest.id.to_string())]);
+    let network = ctx.instance.network(&ctx.slug);
+    let labels = ctx.instance.labels(&manifest.id);
     let read_only_shares: Vec<PathBuf> = ctx
         .shares
         .iter()
@@ -372,7 +376,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
     let volumes = package
         .named_volumes()
         .iter()
-        .map(|v| volume_name(&ctx.slug, v))
+        .map(|v| ctx.instance.volume(&ctx.slug, v))
         .collect();
     Ok(Deployment {
         network,
@@ -412,18 +416,6 @@ fn share_writable(manifest: &Manifest, share: &str) -> bool {
     manifest.permissions.iter().any(
         |p| matches!(p, Permission::StorageShare { name, access: Access::Write } if name == share),
     )
-}
-
-/// 容器名 `wonton-<slug>--<服务名>`。slug 由单个 `-` 连接的小写字母数字段组成，不含 `--`，也不以 `-`
-/// 结尾，所以第一个 `--` 就是分隔符，不同插件的容器不会重名。只用一个 `-` 时会重名：`app.foo` 的服务
-/// `bar-web` 和 `app.foo.bar` 的服务 `web` 都是 `wonton-app-foo-bar-web`。
-pub fn container_name(slug: &str, service: &str) -> String {
-    format!("wonton-{slug}--{service}")
-}
-
-/// 命名卷 `wonton-<slug>--<卷名>`，理由同容器名。
-pub fn volume_name(slug: &str, volume: &str) -> String {
-    format!("wonton-{slug}--{volume}")
 }
 
 /// 按 `depends_on` 拓扑排序；同层按名字排序，保证结果确定。
@@ -495,7 +487,7 @@ fn container_plan(
         .map(|d| d.entries())
         .unwrap_or_default()
         .into_iter()
-        .map(|(dep, cond)| (container_name(&ctx.slug, &dep), cond))
+        .map(|(dep, cond)| (ctx.instance.container(&ctx.slug, &dep), cond))
         .collect();
     // 没有网络的服务不接插件网络。
     let networking_config =
@@ -535,7 +527,7 @@ fn container_plan(
     };
     Ok(ContainerPlan {
         service: name.to_owned(),
-        name: container_name(&ctx.slug, name),
+        name: ctx.instance.container(&ctx.slug, name),
         image: service.image.clone(),
         pull_policy: service.pull_policy,
         depends_on,

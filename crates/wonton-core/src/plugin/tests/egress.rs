@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 use super::super::fake_docker::FakeDocker;
-use super::super::render::container_name;
+use super::super::names::container_name;
 use super::super::store::{InstalledRecord, Store};
 use super::super::{PluginId, PluginStatus};
 use super::manager::{manager_in_container, manager_with, manager_with_oidc};

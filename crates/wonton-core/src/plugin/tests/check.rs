@@ -1,4 +1,4 @@
-//! `wonton-core plugin check`：插件作者发布前看到的检查结果。
+//! `wonton-core plugin check` 和 `pack`：插件作者发布前看到的检查结果，开发时上传的插件包。
 
 use std::fs;
 use std::io::Cursor;
@@ -9,6 +9,7 @@ use image::{ImageFormat, Rgba, RgbaImage};
 use super::super::check::{Report, check};
 use super::super::image_worker::ImageWorker;
 use super::super::package::PluginPackage;
+use super::super::package_files::read_archive;
 use super::package;
 use super::views::ICON;
 
@@ -156,4 +157,16 @@ async fn a_package_that_does_not_parse_is_reported_like_at_install() {
     );
     let err = run(dir.path(), false).await.unwrap_err();
     assert!(err.contains("icon.svg"), "{err}");
+}
+
+#[test]
+fn packing_keeps_only_the_package_and_installs_the_same_digest() {
+    let dir = repo(&compose(UNPINNED, ""));
+    let package = PluginPackage::load_dir(dir.path()).unwrap();
+    let archive = package.archive();
+    let files = read_archive(&archive).unwrap();
+    let paths: Vec<&str> = files.keys().map(String::as_str).collect();
+    assert_eq!(paths, ["docker-compose.yml", "icon.svg"]);
+    let uploaded = PluginPackage::from_archive(&archive).unwrap();
+    assert_eq!(uploaded.digest(), package.digest());
 }

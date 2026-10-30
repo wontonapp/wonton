@@ -488,9 +488,17 @@ impl Engine {
         out
     }
 
-    /// 列出带 `key=value` 标签的容器、网络和卷（容器包括已停止的）。
-    pub async fn labeled(&self, key: &str, value: &str) -> Result<LabeledResources> {
+    /// 列出带 `key=value` 标签、其余标签又让 `keep` 认可的容器、网络和卷（容器包括已停止的）。Docker 的标签过滤
+    /// 只能要求有某个标签，不能要求没有，所以 `keep` 在这里筛。
+    pub async fn labeled(
+        &self,
+        key: &str,
+        value: &str,
+        keep: impl Fn(&HashMap<String, String>) -> bool,
+    ) -> Result<LabeledResources> {
         let filters = HashMap::from([("label".to_owned(), vec![format!("{key}={value}")])]);
+        let kept =
+            |labels: Option<&HashMap<String, String>>| keep(labels.unwrap_or(&HashMap::new()));
         let containers = self
             .docker
             .list_containers(Some(
@@ -502,6 +510,7 @@ impl Engine {
             .await
             .map_err(|e| EngineError::from_bollard("列出容器", e))?
             .into_iter()
+            .filter(|c| kept(c.labels.as_ref()))
             .filter_map(|c| {
                 c.names
                     .and_then(|n| n.first().map(|n| n.trim_start_matches('/').to_owned()))
@@ -517,6 +526,7 @@ impl Engine {
             .await
             .map_err(|e| EngineError::from_bollard("列出网络", e))?
             .into_iter()
+            .filter(|n| kept(n.labels.as_ref()))
             .filter_map(|n| n.name)
             .collect();
         let volumes = self
@@ -531,6 +541,7 @@ impl Engine {
             .volumes
             .unwrap_or_default()
             .into_iter()
+            .filter(|v| kept(Some(&v.labels)))
             .map(|v| v.name)
             .collect();
         Ok(LabeledResources {

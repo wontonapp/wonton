@@ -150,6 +150,7 @@ fn model_variables_are_injected_only_for_plugins_that_declare_models() {
 fn install_contexts_print_no_tokens_or_secrets() {
     let ctx = InstallContext {
         slug: "app-test".into(),
+        instance: Default::default(),
         app_data: "/apps/app-test".into(),
         shares: Default::default(),
         app_url: None,

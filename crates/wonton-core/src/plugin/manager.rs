@@ -472,7 +472,7 @@ impl PluginManager {
             Ok(package) => {
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
                 let manifest = &package.manifest;
-                let network = format!("wonton-{}", manifest.id.slug());
+                let network = self.cfg.instance.network(&manifest.id.slug());
                 if let Err(e) = self.register_source(manifest, &network).await {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }

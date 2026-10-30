@@ -9,14 +9,15 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::configs;
-use super::docker::NetworkReach;
+use super::docker::{LabeledResources, NetworkReach};
 use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId};
+use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
-use super::render::{Deployment, InstallContext, LABEL_PLUGIN, OidcVars, container_name, render};
+use super::render::{Deployment, InstallContext, OidcVars, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
 use super::upstreams::{core_aliases, uses_sso};
@@ -40,6 +41,8 @@ pub struct LifecycleConfig {
     pub owner: String,
     /// 核心网关监听的端口：插件经核心在插件网络里的别名（如 `matrix.wonton.internal`）访问它。
     pub gateway_port: u16,
+    /// 核心的实例名（`WONTON_INSTANCE`），决定插件的资源名和标签。
+    pub instance: Instance,
 }
 
 /// 本次安装已经创建的资源，失败时据此回滚。
@@ -181,7 +184,7 @@ impl PluginManager {
         }
         let deadline = Instant::now() + self.cfg.install_timeout;
         let health = self.start_containers(&plan, undo, deadline).await?;
-        if secrets::collect(&self.engine, manifest, &mut secrets).await? {
+        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
             self.store.secrets().save(&manifest.id, &secrets)?;
         }
         let upstream = self.webui_upstream(manifest, &plan.network).await?;
@@ -277,6 +280,7 @@ impl PluginManager {
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
             slug,
+            instance: self.cfg.instance.clone(),
             shares,
             app_url,
             oidc,
@@ -518,7 +522,7 @@ impl PluginManager {
         let one_shot = package.one_shot_services();
         let mut healthy = Vec::new();
         for service in package.service_names() {
-            let name = container_name(&slug, service);
+            let name = self.cfg.instance.container(&slug, service);
             match health::check_now(&self.engine, &name, one_shot.contains(service)).await? {
                 Checked::Completed => {}
                 Checked::Healthy => healthy.push(true),
@@ -529,7 +533,7 @@ impl PluginManager {
         self.check_bot(manifest).await?;
         let generated = self.check_secrets(manifest).await?;
         let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
-        let network = format!("wonton-{slug}");
+        let network = self.cfg.instance.network(&slug);
         let expected = self.network_reach(manifest);
         let actual = self.engine.network_reach(&network).await?;
         if actual != Some(expected) {
@@ -571,10 +575,20 @@ impl PluginManager {
         let mut secrets = store.load(&manifest.id)?.unwrap_or_default();
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
-        if secrets::collect(&self.engine, manifest, &mut secrets).await? {
+        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
             store.save(&manifest.id, &secrets)?;
         }
         Ok(generated)
+    }
+
+    /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
+    async fn own_resources(&self, id: &PluginId) -> Result<LabeledResources, InstallError> {
+        let instance = &self.cfg.instance;
+        let found = self
+            .engine
+            .labeled(LABEL_PLUGIN, id.as_str(), |labels| instance.owns(labels))
+            .await?;
+        Ok(found)
     }
 
     pub(super) async fn teardown(
@@ -582,7 +596,7 @@ impl PluginManager {
         id: &PluginId,
         purge: bool,
     ) -> Result<UninstallReport, InstallError> {
-        let found = self.engine.labeled(LABEL_PLUGIN, id.as_str()).await?;
+        let found = self.own_resources(id).await?;
         for container in &found.containers {
             self.engine.remove_container(container).await?;
         }
@@ -626,7 +640,7 @@ impl PluginManager {
             report.data_removed = true;
         }
         self.store.remove(id)?;
-        let left = self.engine.labeled(LABEL_PLUGIN, id.as_str()).await?;
+        let left = self.own_resources(id).await?;
         if !left.containers.is_empty()
             || !left.networks.is_empty()
             || (purge && !left.volumes.is_empty())

@@ -4,7 +4,7 @@
 //! - `wonton-core healthcheck`：请求本机网关的健康端点，供容器健康检查使用。
 //! - `wonton-core init <安装目录> <基础域名>`：正式安装时生成密钥、Tuwunel 配置和 compose 文件（`wonton_core::install`）。
 //! - `wonton-core pair [--first] [IP:端口…]`：向运行中的核心要配对码，在终端里显示二维码（见 `pair_command`）。
-//! - `wonton-core plugin check <插件包目录> [--official]`：插件作者发布前的检查（见 `plugin_command`）。
+//! - `wonton-core plugin check|pack <插件包目录>`：插件作者用的检查和打包（见 `plugin_command`）。
 //! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
 //!   （`wonton_core::plugin::image_worker`）。
 
@@ -113,6 +113,7 @@ async fn serve() -> anyhow::Result<()> {
         install_timeout: cfg.install_timeout,
         owner: cfg.owner.username.clone(),
         gateway_port: cfg.listen.port(),
+        instance: cfg.instance.clone(),
     };
     let images =
         ImageWorker::current().context("找不到核心自己的可执行文件（处理插件图片要用）")?;

@@ -8,7 +8,7 @@ use bollard::models::{Mount, MountType};
 
 use super::compose::{LongVolume, Service, UserSpec, VolumeEntry, VolumeType};
 use super::hostdir::Owner;
-use super::render::{InstallContext, RenderError, list, service_err, volume_name};
+use super::render::{InstallContext, RenderError, list, service_err};
 
 /// 把 compose 的 `volumes` 变成 Docker 挂载，并检查宿主路径是否在允许范围内。
 pub(super) struct Mounts<'a> {
@@ -85,7 +85,7 @@ impl Mounts<'_> {
                 if !self.named.contains(&name) {
                     return Err(self.err(format!("命名卷 `{name}` 没有在顶层 volumes 中声明")));
                 }
-                Some(volume_name(&self.ctx.slug, &name))
+                Some(self.ctx.instance.volume(&self.ctx.slug, &name))
             }
             (VolumeType::Bind, None) => return Err(self.err("绑定挂载缺少 source")),
             (VolumeType::Bind, Some(path)) => {

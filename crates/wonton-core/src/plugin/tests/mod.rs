@@ -14,6 +14,7 @@ mod check;
 mod configs;
 mod egress;
 mod health;
+mod instances;
 mod manager;
 mod models;
 mod secrets;

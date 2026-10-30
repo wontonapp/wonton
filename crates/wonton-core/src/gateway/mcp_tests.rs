@@ -77,6 +77,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
         gateway_port: addr.port(),
+        instance: Default::default(),
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
     let http = HttpClient::new();

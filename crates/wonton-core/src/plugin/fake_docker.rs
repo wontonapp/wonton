@@ -1,5 +1,5 @@
-//! 测试用的假 Docker Engine API：只实现插件安装、核对、卸载和回滚用到的端点，记下现存的容器和网络
-//! （连同 `wonton.plugin` 标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
+//! 测试用的假 Docker Engine API：只实现插件安装、核对、卸载和回滚用到的端点，记下现存的容器、网络和卷
+//! （连同标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
 //! 测试可以按容器名改成别的状态（已退出、没有健康检查等）。
 
 use std::collections::BTreeMap;
@@ -17,7 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::docker::Engine;
-use super::render::LABEL_PLUGIN;
+use super::names::LABEL_PLUGIN;
 
 #[derive(Clone, Default)]
 pub struct FakeDocker {
@@ -43,16 +43,21 @@ pub enum FakeFile {
     Directory,
 }
 
+/// 资源的标签。
+type Labels = BTreeMap<String, String>;
+
 #[derive(Default)]
 struct Resources {
-    /// 容器名 → 所属插件。
-    containers: BTreeMap<String, String>,
+    /// 容器名 → 标签。
+    containers: BTreeMap<String, Labels>,
     /// 容器名 → 创建它的请求。
     created: BTreeMap<String, Value>,
-    /// 网络名 → 所属插件。
-    networks: BTreeMap<String, String>,
+    /// 网络名 → 标签。
+    networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
     network_bodies: BTreeMap<String, Value>,
+    /// 卷名 → 标签。
+    volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
     writes: Vec<String>,
     /// 写进容器的归档：容器名 → 归档内容。
@@ -84,7 +89,7 @@ impl FakeDocker {
     pub fn add_container(&self, name: &str, plugin: &str) {
         self.lock()
             .containers
-            .insert(name.to_owned(), plugin.to_owned());
+            .insert(name.to_owned(), owned_by(plugin));
     }
 
     pub fn containers(&self) -> Vec<String> {
@@ -95,10 +100,14 @@ impl FakeDocker {
         self.lock().networks.keys().cloned().collect()
     }
 
+    pub fn volumes(&self) -> Vec<String> {
+        self.lock().volumes.keys().cloned().collect()
+    }
+
     /// 放进一个已有的网络，比如核心重启前就装好的插件的网络；`body` 是创建它的请求。
     pub fn add_network(&self, name: &str, plugin: &str, body: Value) {
         let mut docker = self.lock();
-        docker.networks.insert(name.to_owned(), plugin.to_owned());
+        docker.networks.insert(name.to_owned(), owned_by(plugin));
         docker.network_bodies.insert(name.to_owned(), body);
     }
 
@@ -277,7 +286,7 @@ fn containers(
         (&Method::POST, ["create"]) => {
             let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
             let name = query_param(query, "name").unwrap_or_default();
-            docker.containers.insert(name.clone(), plugin_label(&body));
+            docker.containers.insert(name.clone(), labels_of(&body));
             docker.created.insert(name.clone(), body);
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
         }
@@ -331,10 +340,8 @@ fn containers(
             }
         }
         (&Method::GET, ["json"]) => {
-            let names = labeled(&docker.containers, query);
-            let list: Vec<Value> = names
-                .iter()
-                .map(|n| json!({"Names": [format!("/{n}")]}))
+            let list: Vec<Value> = labeled(&docker.containers, query)
+                .map(|(n, labels)| json!({"Names": [format!("/{n}")], "Labels": labels}))
                 .collect();
             json_reply(StatusCode::OK, json!(list))
         }
@@ -367,7 +374,7 @@ fn others(
         }
         (&Method::POST, ["networks", "create"]) => {
             let name = body["Name"].as_str().unwrap_or_default().to_owned();
-            docker.networks.insert(name.clone(), plugin_label(&body));
+            docker.networks.insert(name.clone(), labels_of(&body));
             docker.network_bodies.insert(name.clone(), body);
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
         }
@@ -397,12 +404,27 @@ fn others(
             gone(docker.networks.remove(*name).is_some())
         }
         (&Method::GET, ["networks"]) => {
-            let names = labeled(&docker.networks, query);
-            let list: Vec<Value> = names.iter().map(|n| json!({"Name": n})).collect();
+            let list: Vec<Value> = labeled(&docker.networks, query)
+                .map(|(n, labels)| json!({"Name": n, "Labels": labels}))
+                .collect();
             json_reply(StatusCode::OK, json!(list))
         }
+        (&Method::POST, ["volumes", "create"]) => {
+            let name = body["Name"].as_str().unwrap_or_default().to_owned();
+            let labels = labels_of(&body);
+            let reply = volume(&name, &labels);
+            docker.volumes.insert(name, labels);
+            json_reply(StatusCode::CREATED, reply)
+        }
+        (&Method::GET, ["volumes", name]) if docker.volumes.contains_key(*name) => {
+            json_reply(StatusCode::OK, volume(name, &docker.volumes[*name]))
+        }
+        (&Method::DELETE, ["volumes", name]) => gone(docker.volumes.remove(*name).is_some()),
         (&Method::GET, ["volumes"]) => {
-            json_reply(StatusCode::OK, json!({"Volumes": [], "Warnings": []}))
+            let list: Vec<Value> = labeled(&docker.volumes, query)
+                .map(|(n, labels)| volume(n, labels))
+                .collect();
+            json_reply(StatusCode::OK, json!({"Volumes": list, "Warnings": []}))
         }
         _ => return None,
     };
@@ -452,26 +474,34 @@ fn gone(found: bool) -> Response {
     }
 }
 
-fn plugin_label(body: &Value) -> String {
-    body["Labels"][LABEL_PLUGIN]
-        .as_str()
-        .unwrap_or_default()
-        .to_owned()
+fn owned_by(plugin: &str) -> Labels {
+    Labels::from([(LABEL_PLUGIN.to_owned(), plugin.to_owned())])
 }
 
-/// 按查询里的 `filters={"label":["wonton.plugin=<id>"]}` 筛出资源名。
-fn labeled(resources: &BTreeMap<String, String>, query: &str) -> Vec<String> {
-    let wanted = query_param(query, "filters")
+fn labels_of(body: &Value) -> Labels {
+    serde_json::from_value(body["Labels"].clone()).unwrap_or_default()
+}
+
+fn volume(name: &str, labels: &Labels) -> Value {
+    json!({
+        "Name": name, "Driver": "local", "Mountpoint": format!("/var/lib/docker/volumes/{name}"),
+        "Labels": labels, "Options": {}, "Scope": "local"
+    })
+}
+
+/// 按查询里的 `filters={"label":["键=值", "键"]}` 筛出资源：每一条都要满足，和 Docker 一样。
+fn labeled<'a>(
+    resources: &'a BTreeMap<String, Labels>,
+    query: &str,
+) -> impl Iterator<Item = (&'a String, &'a Labels)> {
+    let wanted: Vec<String> = query_param(query, "filters")
         .and_then(|filters| serde_json::from_str::<Value>(&filters).ok())
-        .and_then(|filters| filters["label"][0].as_str().map(str::to_owned))
-        .and_then(|label| {
-            label
-                .strip_prefix(&format!("{LABEL_PLUGIN}="))
-                .map(str::to_owned)
-        });
-    resources
-        .iter()
-        .filter(|(_, owner)| Some(owner.as_str()) == wanted.as_deref())
-        .map(|(name, _)| name.clone())
-        .collect()
+        .and_then(|filters| serde_json::from_value(filters["label"].clone()).ok())
+        .unwrap_or_default();
+    resources.iter().filter(move |(_, labels)| {
+        wanted.iter().all(|filter| match filter.split_once('=') {
+            Some((key, value)) => labels.get(key).map(String::as_str) == Some(value),
+            None => labels.contains_key(filter),
+        })
+    })
 }

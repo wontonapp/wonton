@@ -175,6 +175,28 @@ pub fn read_archive(archive: &[u8]) -> Result<PackageFiles, String> {
     Ok(files)
 }
 
+/// 把插件包打成 [`read_archive`] 读得回来的 tar 归档：compose 文件在前，被引用的文件按路径排序；修改时间写 0，
+/// 同一个插件包每次打出来都一样。
+pub fn write_archive(compose: &[u8], files: &PackageFiles) -> Vec<u8> {
+    let mut builder = tar::Builder::new(Vec::new());
+    let entries = std::iter::once((COMPOSE_FILE, compose)).chain(
+        files
+            .iter()
+            .map(|(path, data)| (path.as_str(), data.as_slice())),
+    );
+    for (path, data) in entries {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.set_mtime(0);
+        builder
+            .append_data(&mut header, path, data)
+            .expect("路径都经过 normalize，写进内存不会失败");
+    }
+    builder.into_inner().expect("写进内存不会失败")
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::symlink;

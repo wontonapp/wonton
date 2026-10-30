@@ -14,8 +14,8 @@ use super::super::fake_docker::FakeDocker;
 use super::super::image_worker::ImageWorker;
 use super::super::languages::Languages;
 use super::super::lifecycle::LifecycleConfig;
+use super::super::names::{Instance, container_name};
 use super::super::package_files::PackageFiles;
-use super::super::render::container_name;
 use super::super::store::{InstalledRecord, Store};
 use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::egress::serve;
@@ -26,13 +26,29 @@ use crate::oidc::Hydra;
 
 /// 核心在容器里（`WONTON_CORE_CONTAINER`）的管理器，其余同 [`manager_with`]。
 pub(super) fn manager_in_container(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
-    manager_for(engine, dir, Some("wonton-core".to_owned()), None)
+    manager_for(
+        engine,
+        dir,
+        Some("wonton-core".to_owned()),
+        None,
+        Instance::default(),
+    )
 }
 
 /// 用给定 Docker 的管理器，核心直接跑在宿主上。PUID:PGID 取测试目录的属主，准备应用数据目录时不需要
 /// chown 权限。
 pub(super) fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
-    manager_for(engine, dir, None, None)
+    manager_for(engine, dir, None, None, Instance::default())
+}
+
+/// 实例名是 `instance` 的核心（`WONTON_INSTANCE`）的管理器，其余同 [`manager_with`]。
+pub(super) fn manager_in_instance(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    instance: &str,
+) -> PluginManager {
+    let instance = Instance::parse(Some(instance)).unwrap();
+    manager_for(engine, dir, None, None, instance)
 }
 
 /// 核心直接跑在宿主上、配了身份提供方的管理器。
@@ -41,7 +57,7 @@ pub(super) fn manager_with_oidc(
     dir: &tempfile::TempDir,
     oidc: Hydra,
 ) -> PluginManager {
-    manager_for(engine, dir, None, Some(oidc))
+    manager_for(engine, dir, None, Some(oidc), Instance::default())
 }
 
 fn manager_for(
@@ -49,6 +65,7 @@ fn manager_for(
     dir: &tempfile::TempDir,
     core_container: Option<String>,
     oidc: Option<Hydra>,
+    instance: Instance,
 ) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
@@ -66,6 +83,7 @@ fn manager_for(
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
         gateway_port: 8080,
+        instance,
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
     PluginManager::new(

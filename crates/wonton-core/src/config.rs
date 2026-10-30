@@ -4,6 +4,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::plugin::names::Instance;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("缺少环境变量 {0}")]
@@ -170,6 +172,8 @@ pub struct Config {
     /// 核心自己的容器名。设置后核心会加入每个插件网络，用容器名访问插件；
     /// 未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
     pub core_container: Option<String>,
+    /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
+    pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
     pub matrix: Option<MatrixConfig>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
@@ -250,6 +254,8 @@ impl Config {
                 port,
             },
             core_container: get("WONTON_CORE_CONTAINER"),
+            instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
+                .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
             catalog: get("WONTON_CATALOG").map(PathBuf::from),
             confirmation_ttl: Duration::from_secs(parse(
@@ -483,6 +489,7 @@ mod tests {
         }
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_PUBLIC_PORT", "x")]).is_err());
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_TUNNEL_PORT", "70000")]).is_err());
+        assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_INSTANCE", "dev-1")]).is_err());
         assert!(
             config(&[
                 ("WONTON_DATA_DIR", "/d"),

@@ -21,6 +21,7 @@ pub mod manager;
 pub mod manifest;
 pub mod models;
 pub mod mounts;
+pub mod names;
 pub mod package;
 pub mod package_files;
 pub mod provides;

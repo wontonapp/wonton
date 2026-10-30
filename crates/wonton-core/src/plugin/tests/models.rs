@@ -10,7 +10,7 @@ use axum::routing::get;
 use tokio::net::TcpListener;
 
 use super::super::fake_docker::FakeDocker;
-use super::super::render::container_name;
+use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
 use super::{env_of_container, package};

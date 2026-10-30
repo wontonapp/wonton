@@ -240,6 +240,11 @@ impl PluginPackage {
         Ok(self)
     }
 
+    /// 插件包打成的 tar 归档，[`Self::from_archive`] 读得回来。
+    pub fn archive(&self) -> Vec<u8> {
+        package_files::write_archive(self.source.as_bytes(), &self.files)
+    }
+
     /// 插件包摘要，见 [`package_files::digest`]。
     pub fn digest(&self) -> String {
         package_files::digest(self.source.as_bytes(), &self.files)

@@ -71,6 +71,7 @@ impl Home {
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
             gateway_port: 8080,
+            instance: Default::default(),
         };
         let http = HttpClient::new();
         let plugins = Arc::new(PluginManager::new(

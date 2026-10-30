@@ -9,15 +9,17 @@ services:
   core:
     # 写成 digest，升级就是换掉 .env 里的这一行再 up（ADR-0012）。
     image: ${WONTON_CORE_IMAGE:?安装目录的 .env 里缺 WONTON_CORE_IMAGE}
-    # 核心按这个名字把自己接入每个插件网络。
-    container_name: wonton-core
+    # 核心按这个名字把自己接入每个插件网络。几套核心共用一台 Docker 时（插件开发环境，ADR-0017），各自换一个容器名，
+    # 再设实例名 WONTON_INSTANCE；正式安装两个都不设。
+    container_name: ${WONTON_CORE_CONTAINER:-wonton-core}
     restart: unless-stopped
     environment:
       WONTON_DATA_DIR: ${WONTON_DATA_DIR:?}
       WONTON_BASE_DOMAIN: ${WONTON_BASE_DOMAIN:?}
       WONTON_PUBLIC_PORT: ${WONTON_PORT:?}
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
-      WONTON_CORE_CONTAINER: wonton-core
+      WONTON_CORE_CONTAINER: ${WONTON_CORE_CONTAINER:-wonton-core}
+      WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444

@@ -223,6 +223,7 @@ impl Harness {
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
             gateway_port: 8080,
+            instance: Default::default(),
         };
         // 安装预览要查宿主架构，和安装一样连 Docker。
         let (_docker, engine) = FakeDocker::start().await;

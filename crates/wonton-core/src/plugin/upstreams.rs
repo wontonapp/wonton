@@ -4,7 +4,6 @@
 use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
-use super::render::container_name;
 use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PublicUrls};
 
 /// MCP 服务没写 `path` 时的路径。
@@ -45,7 +44,10 @@ impl PluginManager {
         let Some(webui) = &manifest.webui else {
             return Ok(None);
         };
-        let name = container_name(&manifest.id.slug(), &webui.service);
+        let name = self
+            .cfg
+            .instance
+            .container(&manifest.id.slug(), &webui.service);
         self.service_upstream(&name, webui.port, network)
             .await
             .map(Some)
@@ -61,13 +63,16 @@ impl PluginManager {
             return Ok(None);
         };
         let slug = manifest.id.slug();
-        let name = container_name(&slug, &spec.service);
+        let name = self.cfg.instance.container(&slug, &spec.service);
         let upstream = self.service_upstream(&name, spec.port, network).await?;
         Ok(Some(ModelsRoute {
             id: manifest.id.clone(),
             spec: spec.clone(),
             upstream,
-            credentials_container: container_name(&slug, spec.credentials_service()),
+            credentials_container: self
+                .cfg
+                .instance
+                .container(&slug, spec.credentials_service()),
         }))
     }
 
@@ -80,7 +85,10 @@ impl PluginManager {
         let Some(mcp) = &manifest.mcp else {
             return Ok(None);
         };
-        let name = container_name(&manifest.id.slug(), &mcp.service);
+        let name = self
+            .cfg
+            .instance
+            .container(&manifest.id.slug(), &mcp.service);
         let upstream = self.service_upstream(&name, mcp.port, network).await?;
         let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
         Ok(Some(format!("http://{upstream}{path}")))

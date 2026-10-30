@@ -1,23 +1,33 @@
-//! `wonton-core plugin check <插件包目录> [--official]`：插件作者发布前的检查，规则见 `wonton_core::plugin::check`。
-//! 通过时退出码 0；有不合格的地方时 1；用法不对时 2。
+//! `wonton-core plugin`：插件作者用的命令，在发布的核心镜像里就有。
+//!
+//! - `plugin check <插件包目录> [--official]`：发布前的检查，规则见 `wonton_core::plugin::check`。
+//! - `plugin pack <插件包目录>`：把插件包（compose 和它引用的文件）打成 tar 写到标准输出，开发工具拿它上传安装；
+//!   README、截图这些不属于插件包的文件不在里面。
+//!
+//! 通过时退出码 0；插件包不合格时 1；用法不对时 2。
 
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use wonton_core::plugin::PluginPackage;
 use wonton_core::plugin::check::{self, Report};
 use wonton_core::plugin::image_worker::ImageWorker;
 
-const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--official]";
+const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--official]\n      \
+                     wonton-core plugin pack <插件包目录> > 插件包.tar";
 
 pub async fn run(args: &[String]) -> ExitCode {
-    let Some((command, rest)) = args.split_first() else {
-        return usage();
-    };
-    if command != "check" {
-        return usage();
+    match args {
+        [command, rest @ ..] if command == "check" => check_dir(rest).await,
+        [command, dir] if command == "pack" && !dir.starts_with('-') => pack(Path::new(dir)),
+        _ => usage(),
     }
-    let official = rest.iter().any(|a| a == "--official");
-    let dirs: Vec<&String> = rest.iter().filter(|a| *a != "--official").collect();
+}
+
+async fn check_dir(args: &[String]) -> ExitCode {
+    let official = args.iter().any(|a| a == "--official");
+    let dirs: Vec<&String> = args.iter().filter(|a| *a != "--official").collect();
     let [dir] = dirs[..] else {
         return usage();
     };
@@ -35,6 +45,31 @@ pub async fn run(args: &[String]) -> ExitCode {
         Ok(report) => print(&report),
         Err(e) => {
             eprintln!("不合格：{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn pack(dir: &Path) -> ExitCode {
+    let mut stdout = std::io::stdout().lock();
+    if stdout.is_terminal() {
+        eprintln!("插件包是二进制的 tar：把标准输出重定向到文件或管道");
+        return usage();
+    }
+    let package = match PluginPackage::load_dir(dir) {
+        Ok(package) => package,
+        Err(e) => {
+            eprintln!("不合格：{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match stdout
+        .write_all(&package.archive())
+        .and_then(|()| stdout.flush())
+    {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("写标准输出失败：{e}");
             ExitCode::FAILURE
         }
     }
