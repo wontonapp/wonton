@@ -128,17 +128,19 @@ async fn coming_back_to_the_foreground_reconnects() {
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
 
-    // App 在后台时服务端重启了：手机看到连接断开。
+    // App 在后台时服务端重启了，回到前台后手机连上重启后的服务端。不等状态里的 Disconnected：状态经 watch 通道推送、
+    // 只留最新值，重连得快时那一下断开会被合并掉，机器忙的时候测试就等不到它。看的是重启后的服务端确实收到了一条新
+    // 连接，这个不会被合并掉。
     home.restart().await;
-    phone
-        .wait_for(|view| matches!(view.status, HomeStatus::Disconnected { .. }))
-        .await;
-
     phone.dispatch(Action::AppForegrounded).unwrap();
+    home.wait_for_a_connection().await;
     let view = phone
-        .wait_for(|view| view.status == HomeStatus::Connected)
+        .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
-    assert!(view.path.is_some(), "{view:?}");
+    assert_eq!(
+        view.server_id,
+        Some(home.server().endpoint().id().to_string())
+    );
 }
 
 #[tokio::test]

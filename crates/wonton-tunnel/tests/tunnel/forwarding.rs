@@ -1,9 +1,8 @@
 //! 隧道流转发到本机 TCP 上游：授权、连接复用、错误归类、吊销和服务端重启。
 
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 
 use iroh::{EndpointAddr, SecretKey};
-use tokio::net::TcpListener;
 use wonton_tunnel::{Allowlist, ERROR_HEADER, TunnelError, TunnelStatus};
 
 use crate::support::{Home, Phone, Timeouts, Upstream, http_get};
@@ -94,9 +93,9 @@ async fn unreachable_server_is_reported_as_transport_unavailable() {
 
 #[tokio::test]
 async fn upstream_failure_is_distinguished_from_tunnel_failure() {
-    let closed_port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let dead_upstream = closed_port.local_addr().unwrap();
-    drop(closed_port);
+    // 连不上的上游：0 号端口上不会有人监听，连接立刻失败（Linux 上被拒绝，macOS 上报地址不可用）。先绑后关的随机端口
+    // 在机器忙的时候可能被别的程序占去，请求就打到了活的服务上；绑着不监听的端口在 macOS 上连接会一直等到超时。
+    let dead_upstream = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
     let device = SecretKey::generate();
     let home = Home::start(
         SecretKey::generate(),

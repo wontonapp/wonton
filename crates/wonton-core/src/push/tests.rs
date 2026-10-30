@@ -253,11 +253,9 @@ async fn a_struggling_push_service_makes_tuwunel_retry_and_a_refusal_does_not() 
     assert!(home.push.notify(&notice).await.unwrap().is_empty());
     assert!(home.push.registration(&home.device).is_some());
 
-    // 推送服务整个连不上。
-    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = format!("http://{}/up", closed.local_addr().unwrap());
-    drop(closed);
-    let subscription = Subscription::new(&endpoint, UA_PUBLIC, AUTH).unwrap();
+    // 推送服务整个连不上：0 号端口上不会有人监听，连接立刻失败。先绑后关的随机端口可能被别的程序占去。
+    let endpoint = "http://127.0.0.1:0/up";
+    let subscription = Subscription::new(endpoint, UA_PUBLIC, AUTH).unwrap();
     home.push.register(home.device, subscription).unwrap();
     assert!(matches!(
         home.push.notify(&notice).await,
