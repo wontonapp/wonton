@@ -293,9 +293,19 @@ impl Timeline {
         what: &str,
         mut check: impl FnMut(&TimelineItem) -> Option<R>,
     ) -> R {
+        self.until_items(what, |items| items.iter().find_map(&mut check))
+            .await
+    }
+
+    /// 应用增量，直到整个列表满足条件。
+    pub async fn until_items<R>(
+        &mut self,
+        what: &str,
+        mut check: impl FnMut(&[TimelineItem]) -> Option<R>,
+    ) -> R {
         let waiting = async {
             loop {
-                if let Some(found) = self.items.iter().find_map(&mut check) {
+                if let Some(found) = check(&self.items) {
                     return found;
                 }
                 let update = self.subscription.next().await.expect("时间线订阅提前结束");

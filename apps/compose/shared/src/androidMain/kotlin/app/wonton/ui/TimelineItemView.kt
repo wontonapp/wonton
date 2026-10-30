@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -54,11 +57,17 @@ import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。 */
+/** `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`onRetry`、`onCancel` 处理发送失败的这一条。 */
 @Composable
-fun TimelineItemView(item: TimelineItem, core: ClientCore, showsSender: Boolean) {
+fun TimelineItemView(
+    item: TimelineItem,
+    core: ClientCore,
+    showsSender: Boolean,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+) {
     when (val content = item.content) {
-        is TimelineContent.Message -> MessageBubble(content.message, core, showsSender)
+        is TimelineContent.Message -> MessageBubble(content.message, core, showsSender, onRetry, onCancel)
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.DateDivider ->
             CenteredNote(DateFormat.getDateInstance(DateFormat.FULL).format(Date(content.timestampMs.toLong())))
@@ -88,7 +97,13 @@ private fun CenteredNote(text: String) {
 }
 
 @Composable
-private fun MessageBubble(message: TimelineMessage, core: ClientCore, showsSender: Boolean) {
+private fun MessageBubble(
+    message: TimelineMessage,
+    core: ClientCore,
+    showsSender: Boolean,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+) {
     val alignment = if (message.isOwn) Alignment.End else Alignment.Start
     Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
         if (showsSender && !message.isOwn) {
@@ -113,13 +128,39 @@ private fun MessageBubble(message: TimelineMessage, core: ClientCore, showsSende
             Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong())), style = small)
             when (val state = message.sendState) {
                 SendState.Sending -> Text("发送中", style = small)
-                is SendState.Failed -> Text(
-                    if (state.recoverable) "发送失败，会自动重试" else "发送失败：${state.message}",
-                    style = small,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                is SendState.Failed -> FailedSend(state, small, onRetry, onCancel)
                 SendState.Sent -> if (message.isOwn && message.readBy.isNotEmpty()) Text("已读", style = small)
             }
+        }
+    }
+}
+
+/** 点开选重发或删除。 */
+@Composable
+private fun FailedSend(state: SendState.Failed, style: TextStyle, onRetry: () -> Unit, onCancel: () -> Unit) {
+    var choosing by remember { mutableStateOf(false) }
+    Box {
+        Text(
+            if (state.recoverable) "发送失败，会自动重试" else "发送失败：${state.message}",
+            Modifier.clickable { choosing = true },
+            style = style,
+            color = MaterialTheme.colorScheme.error,
+        )
+        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+            DropdownMenuItem(
+                text = { Text("重发") },
+                onClick = {
+                    choosing = false
+                    onRetry()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    choosing = false
+                    onCancel()
+                },
+            )
         }
     }
 }

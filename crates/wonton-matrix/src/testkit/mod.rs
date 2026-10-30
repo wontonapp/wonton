@@ -5,6 +5,7 @@
 mod admin;
 mod issuer;
 mod push;
+mod relay;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
@@ -20,6 +21,7 @@ pub use self::{
     admin::Admin,
     issuer::{Claims, Issuer, now},
     push::{PushGateway, Received},
+    relay::Relay,
 };
 
 /// 本地开发环境的配置和镜像，测试用同一份。
@@ -168,8 +170,24 @@ impl TestServer {
         device_name: &str,
         store: StoreConfig,
     ) -> MatrixSession {
+        self.login_via(&self.url, localpart, device_name, store)
+            .await
+    }
+
+    /// 经 `homeserver_url`（比如 [`Relay`] 的地址）登录，之后的请求都走它。
+    pub async fn login_via(
+        &self,
+        homeserver_url: &str,
+        localpart: &str,
+        device_name: &str,
+        store: StoreConfig,
+    ) -> MatrixSession {
+        let config = SessionConfig {
+            homeserver_url: homeserver_url.to_owned(),
+            ..self.config(device_name, store)
+        };
         let jwt = self.issuer.login_token(localpart);
-        MatrixSession::login_with_jwt(&self.config(device_name, store), &jwt)
+        MatrixSession::login_with_jwt(&config, &jwt)
             .await
             .unwrap_or_else(|error| panic!("{localpart} 登录失败：{error}"))
     }

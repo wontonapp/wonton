@@ -24,8 +24,8 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     Action, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, CoreError,
-    DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel, MediaHandle, ProxySettings,
-    PushStatus, RecoveryStatus, SecretString,
+    DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel, ImageUpload, MediaHandle,
+    ProxySettings, PushStatus, RecoveryStatus, SecretString,
 };
 
 pub(crate) use login::proxy_url;
@@ -156,35 +156,17 @@ impl ChatLink {
                 });
                 Ok(())
             }
-            Action::SendImage { room_id, image } => {
-                if !image.mime_type.starts_with("image/") {
-                    return Err(invalid(&format!("不是图片类型：{}", image.mime_type)));
-                }
-                let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
-                let upload = wonton_matrix::ImageUpload {
-                    filename: image.filename,
-                    mime_type: image.mime_type,
-                    data: image.data,
-                    width: image.width,
-                    height: image.height,
-                    thumbnail: image
-                        .thumbnail
-                        .map(|thumbnail| wonton_matrix::ImageThumbnail {
-                            mime_type: thumbnail.mime_type,
-                            data: thumbnail.data,
-                            width: thumbnail.width,
-                            height: thumbnail.height,
-                        }),
-                };
-                self.spawn_op("发送图片", async move {
-                    chat.room(&room_id).await?.send_image(upload).await
-                });
+            Action::SendImage { room_id, image } => self.send_image(&room_id, image),
+            Action::RetrySend { room_id, item_id } => {
+                let room = self.opened(&room_id)?;
+                self.spawn_op("重发消息", async move { room.retry_send(&item_id).await });
                 Ok(())
             }
-            Action::RetrySend { .. } | Action::CancelSend { .. } => Err(CoreError::NotReady {
-                reason: "这个版本的客户端核心不能重发或取消发送".to_owned(),
-            }),
+            Action::CancelSend { room_id, item_id } => {
+                let room = self.opened(&room_id)?;
+                self.spawn_op("取消发送", async move { room.cancel_send(&item_id).await });
+                Ok(())
+            }
             Action::PaginateBackwards { room_id } => {
                 let room = self.opened(&room_id)?;
                 self.spawn_op("加载更早的消息", async move {
@@ -263,6 +245,33 @@ impl ChatLink {
         // 和 Bot 的主房间一样端到端加密：推送只带房间和事件 ID，正文在手机上解密（ADR-0003 的“设计：加密推送”）。
         self.spawn_op("发起私聊", async move {
             session.create_direct_chat(&user, true).await.map(drop)
+        });
+        Ok(())
+    }
+
+    fn send_image(self: &Arc<Self>, room_id: &str, image: ImageUpload) -> Result<(), CoreError> {
+        if !image.mime_type.starts_with("image/") {
+            return Err(invalid(&format!("不是图片类型：{}", image.mime_type)));
+        }
+        let chat = self.clone();
+        let (_, room_id) = self.target(room_id)?;
+        let upload = wonton_matrix::ImageUpload {
+            filename: image.filename,
+            mime_type: image.mime_type,
+            data: image.data,
+            width: image.width,
+            height: image.height,
+            thumbnail: image
+                .thumbnail
+                .map(|thumbnail| wonton_matrix::ImageThumbnail {
+                    mime_type: thumbnail.mime_type,
+                    data: thumbnail.data,
+                    width: thumbnail.width,
+                    height: thumbnail.height,
+                }),
+        };
+        self.spawn_op("发送图片", async move {
+            chat.room(&room_id).await?.send_image(upload).await
         });
         Ok(())
     }

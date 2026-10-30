@@ -6,11 +6,14 @@ struct TimelineRow: View {
     let core: ClientCore
     /// 私聊里对方是谁看标题就知道，不在每条消息上重复名字。
     let showsSender: Bool
+    /// 重发、删除发送失败的这一条。
+    let retry: () -> Void
+    let cancel: () -> Void
 
     var body: some View {
         switch item.content {
         case let .message(message):
-            MessageBubble(message: message, core: core, showsSender: showsSender)
+            MessageBubble(message: message, core: core, showsSender: showsSender, retry: retry, cancel: cancel)
         case let .notice(text):
             Text(text).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
         case let .dateDivider(timestampMs):
@@ -38,6 +41,8 @@ private struct MessageBubble: View {
     let message: TimelineMessage
     let core: ClientCore
     let showsSender: Bool
+    let retry: () -> Void
+    let cancel: () -> Void
 
     var body: some View {
         HStack {
@@ -81,7 +86,15 @@ private struct MessageBubble: View {
             case .sending:
                 Text("发送中")
             case let .failed(reason, recoverable):
-                Text(recoverable ? "发送失败，会自动重试" : "发送失败：\(reason)").foregroundStyle(.red)
+                Menu {
+                    Button("重发", action: retry)
+                    Button("删除", role: .destructive, action: cancel)
+                } label: {
+                    Label(recoverable ? "发送失败，会自动重试" : "发送失败：\(reason)",
+                          systemImage: "exclamationmark.circle")
+                }
+                .tint(.red)
+                .foregroundStyle(.red)
             case .sent:
                 if message.isOwn, !message.readBy.isEmpty { Text("已读") }
             }

@@ -13,9 +13,9 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::{sync::broadcast::error::RecvError, task::JoinHandle};
 
-use crate::{Error, Result};
+use crate::{Error, Result, send_queue};
 
 /// Tuwunel 的 JWT 登录类型。
 const JWT_LOGIN_TYPE: &str = "org.matrix.login.jwt";
@@ -110,6 +110,14 @@ pub struct MatrixSession {
     pub(crate) sync: Arc<SyncService>,
     user_id: OwnedUserId,
     device_id: OwnedDeviceId,
+    /// 发送出错以后接着发（[`send_queue`](crate::send_queue)），会话释放时停止。
+    sending: JoinHandle<()>,
+}
+
+impl Drop for MatrixSession {
+    fn drop(&mut self) {
+        self.sending.abort();
+    }
 }
 
 impl MatrixSession {
@@ -152,11 +160,13 @@ impl MatrixSession {
             .await
             .map_err(|error| Error::from(&error))?;
         let sync = Arc::new(sync);
+        let sending = tokio::spawn(send_queue::keep_sending(client.clone()));
         Ok(Self {
             client,
             sync,
             user_id,
             device_id,
+            sending,
         })
     }
 

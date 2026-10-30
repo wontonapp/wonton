@@ -37,7 +37,7 @@ pub struct Message {
 /// 发送状态。别人发的消息和从服务器同步来的消息都是 [`SendStatus::Sent`]。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SendStatus {
-    /// 本地回显，正在发送（含上传附件）。
+    /// 本地回显，在排队或正在发送（含上传附件）。
     Sending,
     /// 服务器已接收。
     Sent,
@@ -45,7 +45,9 @@ pub enum SendStatus {
     Failed {
         /// 失败原因。
         error: String,
-        /// 是否可恢复：可恢复的失败会在网络恢复后自动重试。
+        /// 是否可恢复。可恢复的（连不上、超时、服务器暂时出错）由会话隔一段时间自动重发；不可恢复的（服务器拒收）
+        /// 停在队首，挡住这个房间之后的消息，直到 [`ChatRoom::retry_send`](crate::ChatRoom::retry_send) 或
+        /// [`ChatRoom::cancel_send`](crate::ChatRoom::cancel_send)。
         recoverable: bool,
     },
 }

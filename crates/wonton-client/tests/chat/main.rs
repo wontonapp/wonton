@@ -8,6 +8,7 @@
 #![recursion_limit = "256"]
 
 mod push;
+mod send;
 mod support;
 
 use wonton_client::{

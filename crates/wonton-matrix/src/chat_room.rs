@@ -1,8 +1,9 @@
-//! 一个已打开房间的时间线：收发文字和图片、按增量观察条目、向前翻页、发已读回执。
+//! 一个已打开房间的时间线：收发文字和图片（发送失败的可以重发、取消）、按增量观察条目、向前翻页、发已读回执。
 
 use std::{
     collections::HashMap,
     sync::{Arc, PoisonError, RwLock, Weak},
+    time::Duration,
 };
 
 use futures_util::{Stream, StreamExt, future, stream};
@@ -14,10 +15,11 @@ use matrix_sdk::{
         RoomId, UInt, api::client::receipt::create_receipt::v3::ReceiptType,
         events::room::message::RoomMessageEventContent,
     },
+    send_queue::SendHandle,
 };
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
-    timeline::{AttachmentConfig, AttachmentSource, RoomExt, Timeline},
+    timeline::{AttachmentConfig, AttachmentSource, EventTimelineItem, RoomExt, Timeline},
 };
 use mime::Mime;
 use tokio::{sync::broadcast::error::RecvError, task::JoinHandle};
@@ -27,6 +29,9 @@ use crate::{
     message::MemberNames,
     timeline::{self, EntryKind, TimelineEntry, entry},
 };
+
+/// 发图前向服务器要上传上限最多等多久。
+const UPLOAD_LIMIT_WAIT: Duration = Duration::from_secs(5);
 
 /// 要发送的图片。
 #[derive(Clone, Debug)]
@@ -128,12 +133,11 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 发送图片：在这次调用里上传原图（加密房间里先在本机加密），再发 `m.image` 消息。图片不经发送队列，没有本地
-    /// 回显：发出去、同步回来后才出现在时间线里；失败作为这次调用的错误返回。
+    /// 发送图片：和文字一样经发送队列，原图和缩略图先存进本机的媒体缓存，马上以本地回显出现在时间线里（取图的句柄
+    /// 指向缓存），之后在后台上传（加密房间里先在本机加密）、发 `m.image` 消息，结果见 [`Message::status`]。
     ///
-    /// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限。matrix-sdk 上传前
-    /// 自己也查，但时间线的 `send_attachment` 把它的 `MediaTooLargeToUpload` 换成了不带原因的
-    /// `FailedSendingAttachment`。
+    /// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限，不进队列：进了队列，
+    /// 上传被服务器拒收后会停在队首，挡住这个房间之后的消息。
     pub async fn send_image(&self, image: ImageUpload) -> Result<()> {
         let mime_type: Mime = image.mime_type.parse().map_err(|_| {
             Error::InvalidInput(format!("无法识别的 MIME 类型：{}", image.mime_type))
@@ -141,14 +145,24 @@ impl ChatRoom {
         if mime_type.type_() != mime::IMAGE {
             return Err(Error::InvalidInput(format!("不是图片类型：{mime_type}")));
         }
-        let limit = u64::from(self.room.client().load_or_fetch_max_upload_size().await?);
         let size = image.data.len() as u64;
-        if size > limit {
-            return Err(Error::InvalidInput(format!(
-                "图片有 {}，超过服务器的上传上限 {}",
-                megabytes(size),
-                megabytes(limit)
-            )));
+        // SDK 只在内存里记着上限，每次启动后第一次发图才向服务器要；隧道断开时这个请求要等建连失败才返回。要不到时
+        // 不拦，和文字一样进队列、马上有本地回显：连上后由服务器判断，太大的被拒收，停在队首等主人取消。
+        let client = self.room.client();
+        match tokio::time::timeout(UPLOAD_LIMIT_WAIT, client.load_or_fetch_max_upload_size()).await
+        {
+            Ok(Ok(limit)) if size > u64::from(limit) => {
+                return Err(Error::InvalidInput(format!(
+                    "图片有 {}，超过服务器的上传上限 {}",
+                    megabytes(size),
+                    megabytes(u64::from(limit))
+                )));
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => tracing::info!("要不到服务器的上传上限，图片照样进队列：{error}"),
+            Err(_) => {
+                tracing::info!("{UPLOAD_LIMIT_WAIT:?} 内没要到服务器的上传上限，图片照样进队列")
+            }
         }
         let info = BaseImageInfo {
             width: image.width.map(UInt::from),
@@ -169,8 +183,50 @@ impl ChatRoom {
         };
         self.timeline
             .send_attachment(source, mime_type, config)
+            .use_send_queue()
             .await?;
         Ok(())
+    }
+
+    /// 马上重发一条发送失败的消息（`item_id` 是 [`TimelineEntry::id`]）：服务器拒收的那条重新排回队首再发，连接
+    /// 出错的那条不等自动重发。
+    pub async fn retry_send(&self, item_id: &str) -> Result<()> {
+        self.unsent(item_id)
+            .await?
+            .unwedge()
+            .await
+            .map_err(|error| Error::Upstream(format!("重发失败：{error}")))?;
+        // `unwedge` 只唤醒队列，出错后停下的队列要重新打开。
+        self.room.send_queue().set_enabled(true);
+        Ok(())
+    }
+
+    /// 取消一条还没发出去的消息（排队中或发送失败的），这个房间排在它后面的接着发。
+    pub async fn cancel_send(&self, item_id: &str) -> Result<()> {
+        let aborted = self
+            .unsent(item_id)
+            .await?
+            .abort()
+            .await
+            .map_err(|error| Error::Upstream(format!("取消发送失败：{error}")))?;
+        if !aborted {
+            return Err(Error::InvalidInput("这条已经发出去了".to_owned()));
+        }
+        // 取消的是连接出错的那条时，后面的不用等自动重发的间隔。
+        self.room.send_queue().set_enabled(true);
+        Ok(())
+    }
+
+    /// 还没发出去的一条在发送队列里的句柄。
+    async fn unsent(&self, item_id: &str) -> Result<SendHandle> {
+        let items = self.timeline.items().await;
+        let item = items
+            .iter()
+            .find(|item| item.unique_id().0 == item_id)
+            .ok_or_else(|| Error::InvalidInput(format!("时间线里没有这一条：{item_id}")))?;
+        item.as_event()
+            .and_then(EventTimelineItem::local_echo_send_handle)
+            .ok_or_else(|| Error::InvalidInput("这条已经发出去了".to_owned()))
     }
 
     /// 时间线条目和之后的增量：第一项是当前的全部条目，流里每一项是一批要按顺序应用的变化。

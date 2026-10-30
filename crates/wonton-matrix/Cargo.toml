@@ -20,7 +20,7 @@ mime = "0.3.17"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "sync", "rt"] }
+tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
 tracing = { workspace = true }
 
 # 以下只给 testkit 用。
@@ -37,7 +37,7 @@ testcontainers = { version = "0.28.0", default-features = false, optional = true
 
 [features]
 # 一次性的 Tuwunel 和模拟核心的 JWT 签发，给本 crate 和客户端核心的集成测试共用；App 不启用。
-testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers", "tokio/net"]
+testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers", "tokio/io-util", "tokio/net"]
 
 [dev-dependencies]
 # 集成测试用 testkit。

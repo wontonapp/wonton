@@ -52,7 +52,12 @@ struct ChatRoomView: View {
                             }
                     }
                     ForEach(timeline.items, id: \.id) { item in
-                        TimelineRow(item: item, core: model.core, showsSender: !isDirect).id(item.id)
+                        TimelineRow(
+                            item: item, core: model.core, showsSender: !isDirect,
+                            retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
+                            cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) }
+                        )
+                        .id(item.id)
                     }
                 }
                 .padding(.horizontal)

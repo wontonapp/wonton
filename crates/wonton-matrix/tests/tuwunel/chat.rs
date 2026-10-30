@@ -283,7 +283,7 @@ fn text(message: &Message) -> Option<String> {
 }
 
 /// 时间线条目的快照流：先是当前条目，之后是每应用一批增量后的结果。
-async fn entry_snapshots(room: &ChatRoom) -> impl Stream<Item = Vec<TimelineEntry>> + use<> {
+pub async fn entry_snapshots(room: &ChatRoom) -> impl Stream<Item = Vec<TimelineEntry>> + use<> {
     let (initial, diffs) = room.entries().await;
     let entries: Vector<TimelineEntry> = initial.iter().cloned().collect();
     stream::once(future::ready(initial)).chain(diffs.scan(entries, |entries, batch| {

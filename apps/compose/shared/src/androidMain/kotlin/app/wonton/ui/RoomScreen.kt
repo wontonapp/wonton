@@ -172,7 +172,15 @@ private fun Messages(
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(newestFirst, key = { it.id }) { item -> TimelineItemView(item, core, showsSender) }
+        items(newestFirst, key = { it.id }) { item ->
+            TimelineItemView(
+                item,
+                core,
+                showsSender,
+                onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
+                onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+            )
+        }
         if (timeline.backPagination != BackPagination.REACHED_START) {
             item(key = "paginating") {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

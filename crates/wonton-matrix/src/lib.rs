@@ -21,6 +21,7 @@ mod media;
 mod message;
 mod push;
 mod rooms;
+mod send_queue;
 mod session;
 mod sync;
 #[cfg(feature = "testkit")]

@@ -16,4 +16,5 @@ mod encryption;
 mod login;
 mod messaging;
 mod push;
+mod send_queue;
 mod support;

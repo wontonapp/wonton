@@ -153,7 +153,7 @@ async fn send_and_receive_image(
     assert!(downloaded == upload.data, "下载到的图片与原图不一致");
 }
 
-fn image_named(message: &Message, filename: &str) -> Option<ImageContent> {
+pub fn image_named(message: &Message, filename: &str) -> Option<ImageContent> {
     match &message.body {
         MessageBody::Image(image) if image.filename == filename => Some(image.clone()),
         _ => None,
