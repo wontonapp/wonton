@@ -37,8 +37,13 @@ async fn room_list_shows_names_previews_and_unread_counts() {
     })
     .await;
     assert_eq!(row.name, alice_name);
+    assert_eq!(row.direct_user_id.as_deref(), Some(alice.user_id()));
     assert!(!row.is_encrypted);
     assert_eq!(row.membership, Membership::Joined);
+    wait_for_room(&alice, "Alice 的私聊对方是 Bob", &room_id, |row| {
+        row.direct_user_id.as_deref() == Some(bob.user_id())
+    })
+    .await;
     let latest = row.latest.expect("有预览");
     assert_eq!(latest.sender_name, alice_name);
     assert!(!latest.is_own);
@@ -233,10 +238,15 @@ pub async fn direct_chat(
         .expect("建私聊");
     // 邀请先出现在列表里，邀请事件里的私聊标记可能稍后才到；SDK 在加入时按这个标记把房间记进
     // `m.direct`，所以等标记到了再加入。
-    wait_for_room(bob, "收到私聊邀请", &room_id, |row| {
+    let invited = wait_for_room(bob, "收到私聊邀请", &room_id, |row| {
         row.membership == Membership::Invited && row.is_direct
     })
     .await;
+    assert_eq!(
+        invited.direct_user_id.as_deref(),
+        Some(alice.user_id()),
+        "受邀时私聊对方是邀请人"
+    );
     bob.join_room(&room_id).await.expect("加入私聊");
     wait_for_room(bob, "已加入", &room_id, |row| {
         row.membership == Membership::Joined

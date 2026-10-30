@@ -135,6 +135,10 @@ async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoom
         })
         .await;
     assert_eq!(invite.name, "Hermes");
+    assert_eq!(
+        invite.direct_user_id.as_deref(),
+        Some(bot.user_id().as_str())
+    );
     phone
         .dispatch(Action::JoinRoom {
             room_id: room_id.to_string(),
@@ -145,12 +149,18 @@ async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoom
             view.rooms
                 .iter()
                 .find(|row| {
-                    row.room_id == room_id.as_str() && row.membership == RoomMembership::Joined
+                    row.room_id == room_id.as_str()
+                        && row.membership == RoomMembership::Joined
+                        && row.is_direct
                 })
                 .cloned()
         })
         .await;
     assert!(joined.is_encrypted);
+    assert_eq!(
+        joined.direct_user_id.as_deref(),
+        Some(bot.user_id().as_str())
+    );
     room_id
 }
 

@@ -62,6 +62,9 @@ pub struct RoomInfo {
     pub name: String,
     /// 是否是私聊。
     pub is_direct: bool,
+    /// 私聊对方：加入了的私聊是 `m.direct` 里唯一的对方，和 [`MatrixSession::direct_chat_with`] 认私聊的办法一样；
+    /// 受邀还没加入的私聊是邀请人。
+    pub direct_user_id: Option<OwnedUserId>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     /// 本账号的成员状态。
@@ -246,11 +249,34 @@ async fn room_info(room: &Room) -> RoomInfo {
         room_id: room.room_id().to_owned(),
         name,
         is_direct,
+        direct_user_id: if is_direct {
+            direct_peer(room).await
+        } else {
+            None
+        },
         is_encrypted: room.encryption_state().is_encrypted(),
         membership: room.state().into(),
         latest: latest_message(room).await,
         unread_count: room.num_unread_messages(),
     }
+}
+
+/// 受邀的房间还没进 `m.direct`，对方取邀请人。
+async fn direct_peer(room: &Room) -> Option<OwnedUserId> {
+    if room.state() == RoomState::Invited {
+        return match room.invite_details().await {
+            Ok(invite) => Some(invite.inviter_id),
+            Err(error) => {
+                tracing::warn!(room = %room.room_id(), "读不到邀请人：{error}");
+                None
+            }
+        };
+    }
+    let targets = room.direct_targets();
+    if targets.len() != 1 {
+        return None;
+    }
+    targets.iter().next()?.as_user_id().map(ToOwned::to_owned)
 }
 
 /// 私聊里对方的显示名；没有设置或者本机还没有对方的成员事件时为 `None`。

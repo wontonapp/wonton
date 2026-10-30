@@ -15,6 +15,7 @@ pub(crate) fn room_row(room: RoomInfo) -> RoomRow {
         room_id: room.room_id.to_string(),
         name: room.name,
         is_direct: room.is_direct,
+        direct_user_id: room.direct_user_id.map(|user| user.to_string()),
         is_encrypted: room.is_encrypted,
         membership: match room.membership {
             Membership::Joined => RoomMembership::Joined,

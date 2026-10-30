@@ -142,6 +142,9 @@ pub struct RoomRow {
     pub name: String,
     /// 是否是私聊。
     pub is_direct: bool,
+    /// 私聊对方的 Matrix 用户 ID，壳按它找和某个用户（如插件的 Bot）的私聊。加入了的私聊是 `m.direct` 里记的
+    /// 对方，记了不止一个时为空；收到邀请、还没加入的私聊是邀请人。不是私聊时为空。
+    pub direct_user_id: Option<String>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     pub membership: RoomMembership,
@@ -263,6 +266,7 @@ mod tests {
                 room_id: "!bot:home.example".into(),
                 name: "Hermes".into(),
                 is_direct: true,
+                direct_user_id: Some("@hermes:home.example".into()),
                 is_encrypted: true,
                 membership: RoomMembership::Invited,
                 preview: Some(RoomPreview {
