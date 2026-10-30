@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
-use super::{Gateway, TunnelPeer, client_addr, pages, proxy};
+use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
 use crate::plugin::Permission;
 
@@ -100,6 +100,15 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
     match source {
         Some(source) if source.permissions.contains(&Permission::MatrixBot) => {
+            // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
+            let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
+                match pushers::check(req).await {
+                    Ok(req) => req,
+                    Err(refused) => return *refused,
+                }
+            } else {
+                req
+            };
             forward_client_api(gateway, req).await
         }
         Some(source) => matrix_error(
@@ -206,7 +215,12 @@ fn percent_decode(segment: &str) -> Vec<u8> {
     out
 }
 
-fn matrix_error(status: StatusCode, errcode: &str, kind: &'static str, message: &str) -> Response {
+pub(super) fn matrix_error(
+    status: StatusCode,
+    errcode: &str,
+    kind: &'static str,
+    message: &str,
+) -> Response {
     let mut response =
         (status, Json(json!({"errcode": errcode, "error": message}))).into_response();
     response

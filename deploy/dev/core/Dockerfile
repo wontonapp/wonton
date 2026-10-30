@@ -47,6 +47,9 @@ ENTRYPOINT ["echo-bot"]
 CMD ["run"]
 
 FROM debian:trixie-slim
+# 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 # 随核心预装的系统插件（WONTON_SYSTEM_PLUGINS）：模型网关 magpie。
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie

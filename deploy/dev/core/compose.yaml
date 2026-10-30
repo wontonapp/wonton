@@ -121,6 +121,9 @@ services:
       TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
       TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+      # Tuwunel 默认不往私网地址推送（ip_range_denylist），核心容器也在私网里。推送代理的地址只经这个出站代理到达
+      # 核心网关；代理地址不受那个限制，别的 pusher 仍受它保护（ADR-0003 的“接口：推送”）。
+      TUWUNEL_PROXY: '{by_domain=[{url="http://${WONTON_DEV_PROJECT:-wonton-dev-core}:${WONTON_DEV_PORT:-18480}",include=["push.wonton.internal"]}]}'
     volumes:
       - tuwunel:/var/lib/tuwunel
     networks: [core]

@@ -94,6 +94,7 @@ pub async fn remove(
     match gateway.tunnel.devices.remove(&id) {
         Ok(true) => {
             tracing::info!(device = %id.fmt_short(), "吊销设备");
+            super::push::forget_device(&gateway, &id);
             Json(json!({"endpoint_id": id, "removed": true})).into_response()
         }
         Ok(false) => error_response(StatusCode::NOT_FOUND, "not_found", "没有登记这台设备"),

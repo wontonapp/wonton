@@ -475,6 +475,14 @@ pub async fn start() -> (Fake, MatrixConfig) {
             &format!("{client}/user/{{user}}/account_data/m.direct"),
             get(get_direct).put(put_direct),
         )
+        // 注册 pusher：回显收到的请求体（原文和解析结果），测试据此确认网关转过来的就是它检查过的那一份。
+        .route(
+            &format!("{client}/pushers/set"),
+            post(|raw: String| async move {
+                let parsed: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+                Json(json!({"received": parsed, "raw": raw}))
+            }),
+        )
         // 其余路径：回 404，带上收到的原始路径，测试据此确认网关原样转发。
         .fallback(|uri: axum::http::Uri| async move {
             let body = json!({"errcode": "M_UNRECOGNIZED", "path": uri.path()});

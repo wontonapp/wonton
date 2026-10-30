@@ -5,6 +5,7 @@
 //! | `<base>` | 核心：登录、状态页、插件 API、OIDC 登录与授权确认端点 |
 //! | `auth.<base>` | 身份提供方（Ory Hydra）的公开端点 |
 //! | `matrix.<base>` | Matrix 客户端接口，只给经隧道的已配对设备（`matrix`） |
+//! | `push.wonton.internal` | 推送代理，只给 Tuwunel（`push`） |
 //! | `<slug>.<base>` | 插件网页，需要插件会话 |
 //!
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
@@ -26,6 +27,8 @@ mod models;
 mod pages;
 mod proxy;
 mod proxy_sso;
+mod push;
+mod pushers;
 mod session;
 mod sso;
 
@@ -45,6 +48,7 @@ use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
 use crate::plugin::{PluginManager, PluginStatus};
+use crate::push::Push;
 use crate::secret::constant_time_eq;
 use crate::tunnel::Tunnel;
 
@@ -68,6 +72,8 @@ pub struct Gateway {
     pub tunnel: Tunnel,
     /// Matrix 服务器；没接时 App 的 Matrix 入口如实报不可用。
     pub matrix: Option<Arc<Matrix>>,
+    /// 推送代理；没启用时登记和推送都如实报不可用。
+    pub push: Option<Arc<Push>>,
     sessions: session::SessionStore,
 }
 
@@ -101,6 +107,7 @@ impl Gateway {
             http,
             tunnel,
             matrix: None,
+            push: None,
             sessions: session::SessionStore::default(),
         }
     }
@@ -109,6 +116,13 @@ impl Gateway {
     #[must_use]
     pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
         self.matrix = matrix;
+        self
+    }
+
+    /// 接上推送代理：设备登记推送、Tuwunel 调 `push.wonton.internal` 这才可用。
+    #[must_use]
+    pub fn with_push(mut self, push: Option<Arc<Push>>) -> Self {
+        self.push = push;
         self
     }
 
@@ -178,6 +192,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::Matrix => matrix::client_request(&gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
+        HostKind::Push => push::gateway_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Unknown => pages::error(
             StatusCode::NOT_FOUND,
@@ -324,6 +339,8 @@ mod isolation_tests;
 mod models_tests;
 #[cfg(test)]
 mod proxy_sso_tests;
+#[cfg(test)]
+mod push_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

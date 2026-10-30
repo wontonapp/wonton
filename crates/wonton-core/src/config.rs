@@ -28,6 +28,10 @@ pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
 /// 插件经核心在插件网络里的这个别名访问模型网关（`WONTON_MODEL_BASE_URL` 等）。
 pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 
+/// Tuwunel 经这个地址调核心的推送代理（ADR-0003 的“接口：推送”）。不用解析它：Tuwunel 经出站代理发请求，代理
+/// 只代理这一个域名，代理地址就是核心网关。
+pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
+
 /// 网关按 Host 头区分的目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostKind {
@@ -39,6 +43,8 @@ pub enum HostKind {
     PluginMatrix,
     /// 插件网络里的插件访问模型网关（[`PLUGIN_MODELS_HOST`]）。
     PluginModels,
+    /// Tuwunel 调推送代理（[`PUSH_GATEWAY_HOST`]）。
+    Push,
     Unknown,
 }
 
@@ -87,6 +93,9 @@ impl PublicUrls {
         }
         if host == PLUGIN_MODELS_HOST {
             return HostKind::PluginModels;
+        }
+        if host == PUSH_GATEWAY_HOST {
+            return HostKind::Push;
         }
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
@@ -398,6 +407,7 @@ mod tests {
             urls.classify("models.wonton.internal"),
             HostKind::PluginModels
         );
+        assert_eq!(urls.classify("push.wonton.internal"), HostKind::Push);
         for other in [
             "a.b.wonton.localhost",
             "evil.example",

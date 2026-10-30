@@ -1,7 +1,6 @@
 //! 服务端核心：插件管理、网关与配对、推送代理、MCP 总线、密钥与存储授权。
 //!
-//! 设计见 `docs/ARCHITECTURE.md` 与 `docs/adr/0006-plugin-system.md`。M0 实现了插件管理器、
-//! 网关、小程序单点登录和隧道入口；配对、推送代理和 MCP 总线在后续里程碑加入。
+//! 设计见 `docs/ARCHITECTURE.md` 与 `docs/adr/0006-plugin-system.md`。
 
 pub mod config;
 pub mod device;
@@ -10,5 +9,6 @@ pub mod http;
 pub mod matrix;
 pub mod oidc;
 pub mod plugin;
+pub mod push;
 pub mod secret;
 pub mod tunnel;

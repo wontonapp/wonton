@@ -22,6 +22,7 @@ use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::store::Store;
+use wonton_core::push::Push;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 
@@ -102,6 +103,9 @@ async fn serve() -> anyhow::Result<()> {
     preinstall(&cfg, manager.clone())?;
 
     let tunnel = bind_tunnel(&cfg).await?;
+    let push_path = cfg.core_state_dir().join("push.json");
+    let push = Push::open(&push_path, tunnel.devices.clone())
+        .with_context(|| format!("打开推送登记表 {}", push_path.display()))?;
     let gateway = Arc::new(
         Gateway::new(
             cfg.public.clone(),
@@ -112,7 +116,8 @@ async fn serve() -> anyhow::Result<()> {
             http,
             tunnel.clone(),
         )
-        .with_matrix(matrix),
+        .with_matrix(matrix)
+        .with_push(Some(Arc::new(push))),
     );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)

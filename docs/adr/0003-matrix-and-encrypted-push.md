@@ -114,7 +114,8 @@ App 被杀后收不到任何消息。
 - Matrix Push Gateway API v1，只给 Tuwunel 用。Tuwunel 默认拒绝推到私网地址（`ip_range_denylist`），连核心容器都
   推不到；所以给它配出站代理，只代理 `push.wonton.internal`（`proxy.by_domain`），代理地址是核心网关。代理地址
   不受这个限制，其他 pusher 仍受它保护。
-- Matrix 推送网关没有鉴权，pushkey 是核心生成的 256 位随机串，兼作凭据；网关另外拒绝插件网络和隧道来的请求。
+- Matrix 推送网关没有鉴权，pushkey 是核心生成的 256 位随机串，兼作凭据；推送代理另外只接受 Tuwunel 的地址来的
+  请求（按核心配置里的 Matrix 服务器地址现查，容器重建后地址会变），局域网、插件网络和隧道来的都拒绝。
 - 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。
 - 发给设备的明文（加密前）是 Matrix 推送通知的子集：
   `{"room_id", "event_id", "sender", "sender_display_name", "room_name", "prio"}`，只有前两项一定有。
@@ -122,6 +123,15 @@ App 被杀后收不到任何消息。
   `normal`）。
 - 响应：推送服务收下了（2xx），或者 pushkey 没登记，回 200 `{"rejected": [...]}`。推送地址回 404、410 表示订阅已
   失效，核心删掉登记并 rejected。推送服务暂时不可用（连不上、5xx、429）时回 502，Tuwunel 稍后重试。
+- 插件网络里的 Bot（`matrix.wonton.internal`）只能注册指向推送代理的 pusher：`POST /_matrix/client/{版本}/pushers/set`
+  里 HTTP pusher 的 `data.url` 必须正好是上面这个地址，别的种类（如邮件）不放行，删除照常放行；不合规的回 403
+  `M_FORBIDDEN`（`X-Wonton-Error: permission_denied`）。Tuwunel 能出网而插件默认不能，指向外网的 pusher 会让 Tuwunel
+  把 Bot 的通知推到外面，不加密房间里还带着正文；`ip_range_denylist` 只挡私网地址，挡不住这个。转给 Tuwunel 的是检查
+  过的那一份（重新序列化），原文里有重复的键也不会让两边看到不同的地址。
+- 主人经隧道的设备（`matrix.<base>`）不受这个限制：主人的设备信得过，Element X 这类第三方客户端也要注册自己的
+  推送网关（ADR-0015：换客户端不用改服务器）。
+- 同样会让 Tuwunel 替客户端去外网取东西的还有 URL 预览（`preview_url`）。Tuwunel v1.9.4 默认不开：`url_preview_*`
+  的白名单都是空的，请求一律回 403，取之前就拒绝，我们的配置没有打开它。联邦也关着（见“决策”）。
 
 **4. App 一侧**（`wonton-protocol` 的 `push` 模块）：壳把推送订阅交给核心（`Action::SetPushEndpoint`），平台收不了
 推送时如实告诉核心（`Action::PushUnavailable`），进展看 `ChatViewModel::push`。收到推送、解开后交给

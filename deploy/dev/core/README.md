@@ -86,6 +86,11 @@ App 用 `dev.sh ticket [直连地址] [网页地址]` 生成的连接信息连�
 直连地址默认 `127.0.0.1:18482`（同机的 iOS 模拟器），Android 模拟器写 `10.0.2.2:18482`，局域网里的手机写本机的
 局域网 IP，并用 `WONTON_DEV_TUNNEL_BIND=0.0.0.0` 起核心。
 
+## 推送
+
+Tuwunel 默认不往私网地址推送（`ip_range_denylist`），compose 里的 `TUWUNEL_PROXY` 让它只把 `push.wonton.internal`
+（核心的推送代理）经核心网关代理出去，见 ADR-0003 的“接口：推送”。
+
 ## 端到端冒烟
 
 ```bash
