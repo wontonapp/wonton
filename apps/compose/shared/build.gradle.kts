@@ -49,6 +49,7 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     executable = script.path
     inputs.file(script)
     inputs.dir(repoRoot.resolve("crates/wonton-client"))
+    inputs.dir(repoRoot.resolve("crates/wonton-matrix"))
     inputs.dir(repoRoot.resolve("crates/wonton-protocol"))
     inputs.dir(repoRoot.resolve("crates/wonton-tunnel"))
     inputs.file(repoRoot.resolve("Cargo.lock"))
@@ -72,6 +73,8 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 // Apache-2.0。WebView 的代理设置（ProxyController），插件网页经核心的本地代理打开。
                 implementation(libs.androidx.webkit)
+                // Apache-2.0。系统的照片选择器（PickVisualMedia）和返回键处理（BackHandler）。
+                implementation(libs.androidx.activity.compose)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             }
         }

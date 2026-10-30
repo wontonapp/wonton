@@ -52,6 +52,15 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_ticket '$(de
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
 
+## 聊天（开发）
+
+“聊天”页登录主人的 Matrix 账号，家里的核心要接好 Tuwunel（`deploy/dev/core` 自带）；登录、本地存储和恢复密钥见
+[ADR-0005](../../docs/adr/0005-native-clients-thick-core.md) 的“App 内聊天的核心接口”。要有个能聊的对象，装上
+[回声 Bot 示例插件](../../plugins/examples/echo-bot/README.md)。
+
+Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将近 1 GB，装进模拟器很慢，编译产物也很占磁盘；只看
+界面时用 `-Pwonton.rustProfile=release`。
+
 ## 检查
 
 ```bash

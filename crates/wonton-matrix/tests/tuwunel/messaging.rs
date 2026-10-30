@@ -1,7 +1,7 @@
 //! 两个账号经 Simplified Sliding Sync 互发文字和图片。
 
 use wonton_matrix::{
-    ChatRoom, ImageContent, ImageUpload, MatrixSession, Membership, Message, MessageBody,
+    ChatRoom, Error, ImageContent, ImageUpload, MatrixSession, Membership, Message, MessageBody,
     SendStatus, UserId,
 };
 
@@ -77,6 +77,36 @@ async fn two_accounts_exchange_text_and_images() {
     };
     send_and_receive_image(&alice_room, (&bob, &bob_room), png).await;
     send_and_receive_image(&bob_room, (&alice, &alice_room), photo).await;
+}
+
+/// 比服务器上传上限大的图片按输入非法拒绝，不是笼统的上游出错。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_image_over_the_upload_limit_is_refused_as_invalid_input() {
+    // Tuwunel 不接受低于 10 MB 的上限。
+    let server = TestServer::container(&[("TUWUNEL_MAX_REQUEST_SIZE", "10485760")]).await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("Alice 建私聊");
+    let room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
+
+    let photo = ImageUpload {
+        filename: "photo.jpg".to_owned(),
+        mime_type: "image/jpeg".to_owned(),
+        data: random_bytes(11 * 1024 * 1024),
+        width: Some(4096),
+        height: Some(3072),
+        thumbnail: None,
+    };
+    let refused = room.send_image(photo).await;
+    assert!(
+        matches!(refused, Err(Error::InvalidInput(_))),
+        "超过上限的图片：{refused:?}"
+    );
 }
 
 /// 等到 `sender` 发的文字出现且已送达服务器（有事件 ID）。

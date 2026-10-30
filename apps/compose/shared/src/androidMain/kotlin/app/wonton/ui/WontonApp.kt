@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -44,14 +45,15 @@ fun WontonApp(core: ClientCore, openWebOnReady: Boolean = false) {
         Scaffold(
             bottomBar = {
                 NavigationBar {
-                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = {}, label = { Text("会话") })
+                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = {}, label = { Text("聊天") })
                     NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = {}, label = { Text("家") })
                 }
             },
         ) { padding ->
-            Box(Modifier.padding(padding).fillMaxSize()) {
+            // 内层页面自己的标题栏和输入框不再重复让出系统栏和底部导航栏占掉的空间。
+            Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
                 when (tab) {
-                    0 -> SessionListRoute(core)
+                    0 -> ChatRoute(core)
                     else -> HomeRoute(core, home, onOpenWeb = { showingPage = true })
                 }
             }

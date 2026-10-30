@@ -1,5 +1,5 @@
 extension HomeSubscription {
-    /// 把订阅包装成 `AsyncStream`，用法和取消方式同 `SessionListSubscription.updates()`。
+    /// 把订阅包装成 `AsyncStream`，用法和取消方式同 `ChatSubscription.updates()`。
     public func updates() -> AsyncStream<HomeViewModel> {
         AsyncStream {
             await withTaskCancellationHandler {

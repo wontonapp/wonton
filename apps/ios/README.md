@@ -5,8 +5,9 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 
 ## 结构
 
-- `Wonton/`：App 源码。`SessionListModel`、`HomeModel` 持有核心推来的 ViewModel 并转发操作，视图只渲染。
-  `PluginWebView` 把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。
+- `Wonton/`：App 源码。`ChatModel`、`HomeModel` 持有核心推来的 ViewModel 并转发操作，`TimelineModel` 按顺序
+  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`PluginWebView`
+  把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。
@@ -64,6 +65,12 @@ SIMCTL_CHILD_WONTON_DEV_TICKET="$(deploy/dev/core/dev.sh ticket)" SIMCTL_CHILD_W
   测前后台切换时，用 `xcrun devicectl device process launch --device <设备 UDID> com.apple.Preferences`
   把 App 切到后台，等若干秒再 `launch app.wonton.ios` 拉回来，对照控制台里的“回到前台，隧道检查完成”
   和“网页加载完成”。
+
+## 聊天（开发）
+
+“聊天”页登录主人的 Matrix 账号，家里的核心要接好 Tuwunel（`deploy/dev/core` 自带）；登录、本地存储和恢复密钥见
+[ADR-0005](../../docs/adr/0005-native-clients-thick-core.md) 的“App 内聊天的核心接口”。要有个能聊的对象，装上
+[回声 Bot 示例插件](../../plugins/examples/echo-bot/README.md)。
 
 ## 检查
 

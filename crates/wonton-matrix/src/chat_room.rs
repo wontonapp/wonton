@@ -128,14 +128,27 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 发送图片：先上传原图（加密房间里先在本机加密），再发 `m.image` 消息；本地回显和发送状态同
-    /// [`Self::send_text`]。
+    /// 发送图片：在这次调用里上传原图（加密房间里先在本机加密），再发 `m.image` 消息。图片不经发送队列，没有本地
+    /// 回显：发出去、同步回来后才出现在时间线里；失败作为这次调用的错误返回。
+    ///
+    /// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限。matrix-sdk 上传前
+    /// 自己也查，但时间线的 `send_attachment` 把它的 `MediaTooLargeToUpload` 换成了不带原因的
+    /// `FailedSendingAttachment`。
     pub async fn send_image(&self, image: ImageUpload) -> Result<()> {
         let mime_type: Mime = image.mime_type.parse().map_err(|_| {
             Error::InvalidInput(format!("无法识别的 MIME 类型：{}", image.mime_type))
         })?;
         if mime_type.type_() != mime::IMAGE {
             return Err(Error::InvalidInput(format!("不是图片类型：{mime_type}")));
+        }
+        let limit = u64::from(self.room.client().load_or_fetch_max_upload_size().await?);
+        let size = image.data.len() as u64;
+        if size > limit {
+            return Err(Error::InvalidInput(format!(
+                "图片有 {}，超过服务器的上传上限 {}",
+                megabytes(size),
+                megabytes(limit)
+            )));
         }
         let info = BaseImageInfo {
             width: image.width.map(UInt::from),
@@ -232,6 +245,11 @@ impl ChatRoom {
         let marker = self.timeline.mark_as_read(ReceiptType::FullyRead).await?;
         Ok(receipt || marker)
     }
+}
+
+/// 1 MB 按 1024 × 1024 字节算，保留一位小数。
+fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
 }
 
 fn thumbnail(thumbnail: ImageThumbnail) -> Result<Thumbnail> {

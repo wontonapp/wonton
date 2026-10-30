@@ -12,11 +12,11 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(sessions, home):
+            case let .ready(chat, home):
                 TabView(selection: $tab) {
-                    SessionListView(model: sessions)
-                        .tabItem { Label("会话", systemImage: "bubble.left.and.bubble.right") }
-                        .tag(AppTab.sessions)
+                    ChatListView(model: chat)
+                        .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
+                        .tag(AppTab.chat)
                     HomeView(model: home)
                         .tabItem { Label("家", systemImage: "house") }
                         .tag(AppTab.home)
@@ -35,14 +35,14 @@ struct WontonApp: App {
 }
 
 private enum AppTab {
-    case sessions
+    case chat
     case home
 }
 
 /// 启动核心。核心失败时如实显示原因，不进入主界面。
 @MainActor
 private enum Launch {
-    case ready(SessionListModel, HomeModel)
+    case ready(ChatModel, HomeModel)
     case failed(String)
 
     /// 开发时 WONTON_DEV_OPEN_WEB=1 直接停在“家”，网页就绪后自动打开（见 HomeView）。
@@ -50,7 +50,7 @@ private enum Launch {
         #if DEBUG
         if ProcessInfo.processInfo.environment["WONTON_DEV_OPEN_WEB"] != nil { return .home }
         #endif
-        return .sessions
+        return .chat
     }
 
     static func start() -> Launch {
@@ -65,7 +65,7 @@ private enum Launch {
             if let ticket = ProcessInfo.processInfo.environment["WONTON_DEV_TICKET"] {
                 try core.dispatch(action: .connectHome(ticket: ticket))
             }
-            return .ready(SessionListModel(core: core), HomeModel(core: core))
+            return .ready(ChatModel(core: core), HomeModel(core: core))
         } catch {
             return .failed(String(describing: error))
         }
