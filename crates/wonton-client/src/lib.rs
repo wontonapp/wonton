@@ -31,10 +31,10 @@ pub use logging::init_logging;
 pub use subscription::{ChatSubscription, HomeSubscription, SessionListSubscription};
 pub use wonton_protocol::{
     Action, BackPagination, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
-    CoreError, DeviceVerification, EncryptionStatus, HomeFailure, HomePath, HomeStatus,
-    HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, MediaHandle, MessageContent,
-    PairingFailure, PairingStatus, ProxySettings, PushContent, PushEndpoint, PushNotification,
-    PushStatus, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString, SendState,
-    SessionListViewModel, SessionRow, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineUpdate,
+    CoreError, DeviceInvite, DeviceVerification, EncryptionStatus, HomeFailure, HomePath,
+    HomeStatus, HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, MediaHandle,
+    MessageContent, PairingFailure, PairingStatus, ProxySettings, PushContent, PushEndpoint,
+    PushNotification, PushStatus, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
+    SecretString, SendState, SessionListViewModel, SessionRow, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineMessage, TimelineUpdate,
 };

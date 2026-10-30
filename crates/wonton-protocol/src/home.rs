@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::SecretString;
+
 /// 和家里服务器的连接：隧道状态，以及 WebView 和 HTTP 客户端要用的本地代理。壳只渲染，不做推导。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -17,6 +19,27 @@ pub struct HomeViewModel {
     pub web_url: Option<String>,
     /// 扫码配对的进展；没在配对时为空，配对成功后也回到空。
     pub pairing: Option<PairingStatus>,
+    /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
+    pub invite: Option<DeviceInvite>,
+}
+
+/// 给新设备扫的配对码。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DeviceInvite {
+    /// 正在经隧道向家里的服务器要码。
+    Requesting,
+    /// 新设备扫 `code`（`wonton://pair?…`）：壳把它画成二维码，也显示文字给不能扫码的设备粘贴。码只能用一次，
+    /// 到 `expires_at_ms`（Unix 毫秒）过期。
+    Ready {
+        code: SecretString,
+        expires_at_ms: u64,
+    },
+    Failed {
+        reason: HomeFailure,
+        message: String,
+    },
 }
 
 /// 扫码配对的进展。

@@ -51,6 +51,9 @@ impl ClientCore {
             Action::PairHome { .. } => Err(CoreError::NotReady {
                 reason: "这个版本的客户端核心不支持扫码配对".to_owned(),
             }),
+            Action::InviteDevice => Err(CoreError::NotReady {
+                reason: "这个版本的客户端核心不支持添加设备".to_owned(),
+            }),
             Action::AppForegrounded => {
                 self.home.foregrounded();
                 self.chat.foregrounded();

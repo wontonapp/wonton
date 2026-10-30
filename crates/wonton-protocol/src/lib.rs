@@ -30,7 +30,8 @@ pub use confirmation::{
 };
 pub use error::CoreError;
 pub use home::{
-    HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus, ProxySettings,
+    DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
+    ProxySettings,
 };
 pub use push::{PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

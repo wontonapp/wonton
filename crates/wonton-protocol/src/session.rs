@@ -22,8 +22,8 @@ pub struct SessionRow {
 mod tests {
     use super::*;
     use crate::{
-        Action, CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure,
-        PairingStatus, ProxySettings, SecretString,
+        Action, CoreError, DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel,
+        PairingFailure, PairingStatus, ProxySettings, SecretString,
     };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
@@ -70,6 +70,12 @@ mod tests {
                 reason: PairingFailure::Expired,
                 message: "码过期了".into(),
             }),
+            invite: Some(DeviceInvite::Ready {
+                code: SecretString::new(
+                    "wonton://pair?v=0&secret=00112233445566778899aabbccddeeff",
+                ),
+                expires_at_ms: 1_767_225_600_000,
+            }),
         };
         assert_eq!(round_trip(&home), home);
         for action in [
@@ -80,13 +86,14 @@ mod tests {
                 code: SecretString::new("wonton://pair?v=0"),
                 device_name: "phone".into(),
             },
+            Action::InviteDevice,
             Action::AppForegrounded,
         ] {
             assert_eq!(round_trip(&action), action);
         }
         assert!(
             !format!("{home:?}").contains("secret"),
-            "Debug 不能输出代理密码"
+            "Debug 不能输出代理密码和给新设备的配对码"
         );
     }
 

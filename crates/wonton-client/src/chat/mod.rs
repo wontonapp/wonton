@@ -210,6 +210,7 @@ impl ChatLink {
             | Action::DeleteSession { .. }
             | Action::ConnectHome { .. }
             | Action::PairHome { .. }
+            | Action::InviteDevice
             | Action::AppForegrounded => Err(invalid("不是聊天操作")),
         }
     }

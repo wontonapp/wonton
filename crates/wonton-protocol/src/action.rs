@@ -27,6 +27,10 @@ pub enum Action {
         code: SecretString,
         device_name: String,
     },
+    /// “添加设备”：经隧道向家里的服务器要一个一次性配对码，显示给新设备扫（ADR-0009 的“接口：扫码配对”）。还没配对
+    /// 时返回 `NotReady`；进展和码在 [`HomeViewModel::invite`](crate::HomeViewModel::invite) 里。再发一次换一个新码，
+    /// 旧码到期前仍然能用。
+    InviteDevice,
     /// App 回到前台。核心检查隧道和本地代理是否还能用，必要时重建；系统挂起 App 期间可能回收了套接字。
     /// Matrix 同步停了的话也在这时重启。
     AppForegrounded,

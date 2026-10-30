@@ -75,6 +75,7 @@ impl HomeLink {
             proxy: None,
             web_url: None,
             pairing: None,
+            invite: None,
         });
         let home = Arc::new(Self {
             runtime,
