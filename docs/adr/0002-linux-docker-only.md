@@ -45,3 +45,17 @@
 - 已配对的 App 里“添加设备”拿到的码、服务器上 `sudo wonton pair` 打出的码，各让一台设备（隧道客户端示例）配上。
 - 再执行一次安装命令：arm64 2 秒、amd64 6 秒，密钥都沿用，已配对的设备都在，终端只说明怎么加设备。
 - 主机上不需要 openssl：密钥由核心镜像里的 `wonton-core init` 生成。
+
+### 公开发布后
+
+用公开仓库的一行命令（`curl -fsSL https://raw.githubusercontent.com/geraldpeng6/wonton-install/main/install.sh | sudo sh`）
+装发布出来的 `v0.1.0-beta.1`（beta 渠道）。验证条件（2026-10-30）：同上的 OrbStack 虚拟机，arm64 原生、amd64 在 Rosetta 下，
+Docker Engine 29.9.2、Compose v5.6.1，所有镜像都从公开的仓库拉取。
+
+- 从执行安装命令到终端出现首次配对码（含拉全部镜像）：arm64 44 秒，amd64 35 秒。
+- `.env` 记下渠道（`WONTON_CORE_SOURCE=ghcr.io/geraldpeng6/wonton-core:beta`）和按 digest 写下的镜像
+  （`ghcr.io/geraldpeng6/wonton-core@sha256:93feeb5de86afb2c678cef8e3c630cd4f6c0228d95aa9d046c58120ba6fe8b7f`）；amd64 上
+  拉到的是 amd64 的变体。
+- 核心、Hydra、Tuwunel、magpie 四个容器都健康。
+- 从另一台机器用虚拟机的 IP 打开 8480 端口，看到运行状态和首次配对二维码；`Host` 换成域名得到 404。
+- `sudo wonton pair` 打出一个配对码。
