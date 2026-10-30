@@ -161,7 +161,7 @@ impl PairHandler for Pairing {
             }
             Ok(None) => rejected(
                 RejectReason::Closed,
-                "这台服务器已经有配对的设备，首次配对码不能再用；请在服务器上用 wonton-core pair 另发一个配对码",
+                "这台服务器已经有配对的设备，首次配对码不能再用；请在服务器上执行 sudo wonton pair 另发一个配对码",
             ),
             Err(e) => {
                 tracing::error!(error = %e, "配对时登记设备失败");

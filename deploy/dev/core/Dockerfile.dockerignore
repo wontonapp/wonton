@@ -1,4 +1,4 @@
-# 核心镜像只需要 Cargo 工作区，和随核心预装的系统插件包。
+# 核心镜像只需要 Cargo 工作区、随核心预装的系统插件包，和编进核心的正式安装用 compose 文件。
 *
 !Cargo.toml
 !Cargo.lock
@@ -6,3 +6,5 @@
 !crates/
 crates/**/target
 !plugins/magpie/
+!deploy/install/compose.yaml
+!deploy/install/wonton

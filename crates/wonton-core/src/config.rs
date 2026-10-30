@@ -299,21 +299,48 @@ fn matrix_config(
     base_domain: &str,
 ) -> Result<Option<MatrixConfig>, ConfigError> {
     let Some(url) = get("WONTON_MATRIX_URL") else {
-        let stray = ["WONTON_MATRIX_JWT_KEY", "WONTON_MATRIX_REGISTRATION_SECRET"]
-            .into_iter()
-            .find(|name| get(name).is_some());
+        let stray = [
+            "WONTON_MATRIX_JWT_KEY",
+            "WONTON_MATRIX_JWT_KEY_FILE",
+            "WONTON_MATRIX_REGISTRATION_SECRET",
+            "WONTON_MATRIX_REGISTRATION_SECRET_FILE",
+        ]
+        .into_iter()
+        .find(|name| get(name).is_some());
         return match stray {
             Some(name) => Err(invalid(name, "设了它就要同时设 WONTON_MATRIX_URL")),
             None => Ok(None),
         };
     };
-    let required = |name: &'static str| get(name).ok_or(ConfigError::Missing(name));
+    let required = |name: &'static str, file: &'static str| {
+        secret_value(get, name, file)?.ok_or(ConfigError::Missing(name))
+    };
     Ok(Some(MatrixConfig {
         url: provider_url("WONTON_MATRIX_URL", &url)?,
         server_name: get("WONTON_MATRIX_SERVER_NAME").unwrap_or_else(|| base_domain.to_owned()),
-        jwt_key: required("WONTON_MATRIX_JWT_KEY")?,
-        registration_secret: required("WONTON_MATRIX_REGISTRATION_SECRET")?,
+        jwt_key: required("WONTON_MATRIX_JWT_KEY", "WONTON_MATRIX_JWT_KEY_FILE")?,
+        registration_secret: required(
+            "WONTON_MATRIX_REGISTRATION_SECRET",
+            "WONTON_MATRIX_REGISTRATION_SECRET_FILE",
+        )?,
     }))
+}
+
+/// 密钥可以直接给值，也可以给存着它的文件（`<名字>_FILE`）：正式安装时密钥放在只有 root 读得了的文件里，不进
+/// 环境变量（`docker inspect` 看得到环境变量）。
+fn secret_value(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+    file: &'static str,
+) -> Result<Option<String>, ConfigError> {
+    match (get(name), get(file)) {
+        (Some(_), Some(_)) => Err(invalid(name, &format!("和 {file} 只能设一个"))),
+        (Some(value), None) => Ok(Some(value)),
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .map(|text| Some(text.trim().to_owned()))
+            .map_err(|e| invalid(file, &format!("读不了 {path}：{e}"))),
+        (None, None) => Ok(None),
+    }
 }
 
 /// 把身份提供方、Tuwunel 的内部地址规范化成 `http://主机:端口`，不合法时启动就失败。
@@ -506,6 +533,32 @@ mod tests {
         // 没接 Matrix 时不受这条限制。
         let plain = [("WONTON_DATA_DIR", "/d"), ("WONTON_OWNER_NAME", "Alice")];
         assert!(config(&plain).is_ok());
+    }
+
+    #[test]
+    fn matrix_secrets_can_come_from_files_but_not_from_both_places() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = dir.path().join("matrix-jwt.pem");
+        let secret = dir.path().join("matrix-registration-secret");
+        std::fs::write(&key, "-----BEGIN PRIVATE KEY-----\n").unwrap();
+        std::fs::write(&secret, "s3cret\n").unwrap();
+        let (key, secret) = (key.to_str().unwrap(), secret.to_str().unwrap());
+        let files = [
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_MATRIX_URL", "http://tuwunel:8008"),
+            ("WONTON_MATRIX_JWT_KEY_FILE", key),
+            ("WONTON_MATRIX_REGISTRATION_SECRET_FILE", secret),
+        ];
+        let matrix = config(&files).unwrap().matrix.unwrap();
+        assert_eq!(matrix.registration_secret, "s3cret");
+        assert!(matrix.jwt_key.starts_with("-----BEGIN PRIVATE KEY-----"));
+
+        let mut both = files.to_vec();
+        both.push(("WONTON_MATRIX_REGISTRATION_SECRET", "other"));
+        assert!(config(&both).is_err(), "值和文件只能给一个");
+        let mut missing = files.to_vec();
+        missing[2] = ("WONTON_MATRIX_JWT_KEY_FILE", "/no/such/file");
+        assert!(config(&missing).is_err(), "文件读不了时启动失败");
     }
 
     #[test]

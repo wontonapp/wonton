@@ -1,0 +1,118 @@
+# 正式安装的云吞：核心、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。系统插件（模型网关 magpie）由核心启动后
+# 自己装上（WONTON_SYSTEM_PLUGINS）。
+#
+# 这份文件编进核心的二进制，由 `wonton-core init` 和密钥一起写到安装目录，随核心镜像一起升级；变量来自安装目录的
+# .env，由安装脚本写好（deploy/install/install.sh）。
+name: wonton
+
+services:
+  core:
+    # 写成 digest，升级就是换掉 .env 里的这一行再 up（ADR-0012）。
+    image: ${WONTON_CORE_IMAGE:?安装目录的 .env 里缺 WONTON_CORE_IMAGE}
+    # 核心按这个名字把自己接入每个插件网络。
+    container_name: wonton-core
+    restart: unless-stopped
+    environment:
+      WONTON_DATA_DIR: ${WONTON_DATA_DIR:?}
+      WONTON_BASE_DOMAIN: ${WONTON_BASE_DOMAIN:?}
+      WONTON_PUBLIC_PORT: ${WONTON_PORT:?}
+      WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
+      WONTON_CORE_CONTAINER: wonton-core
+      WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
+      WONTON_OIDC_ADMIN_URL: http://hydra:4445
+      WONTON_OIDC_PUBLIC_URL: http://hydra:4444
+      WONTON_MATRIX_URL: http://tuwunel:8008
+      WONTON_MATRIX_JWT_KEY_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-jwt.pem
+      WONTON_MATRIX_REGISTRATION_SECRET_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-registration-secret
+      WONTON_PUID: ${WONTON_PUID:-1000}
+      WONTON_PGID: ${WONTON_PGID:-1000}
+      TZ: ${TZ:-UTC}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      # 局域网状态页和网关。
+      - "${WONTON_PORT}:${WONTON_PORT}"
+      # 隧道入口（iroh，UDP）：手机在局域网里直连，在外面打洞或经中继。
+      - "${WONTON_TUNNEL_PORT}:${WONTON_TUNNEL_PORT}/udp"
+    volumes:
+      # 唯一挂载 Docker socket 的容器（ADR-0011）。
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
+      - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}
+      - ${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro
+    networks: [core]
+    depends_on:
+      hydra:
+        condition: service_healthy
+      tuwunel:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wonton-core", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 2m
+      start_interval: 1s
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
+    command: migrate sql up -e --yes
+    environment:
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+    volumes:
+      # 镜像以 nonroot 运行，卷挂在它的家目录才有写权限。
+      - hydra:/home/nonroot
+    networks: [core]
+
+  hydra:
+    image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
+    # --dev 允许 http 签发方：网关和隧道里只跑 http（ADR-0009）。
+    command: serve all --dev
+    restart: unless-stopped
+    # SECRETS_SYSTEM，由 `wonton-core init` 生成。
+    env_file: secrets/hydra.env
+    environment:
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+      # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
+      URLS_SELF_ISSUER: http://auth.${WONTON_BASE_DOMAIN}:${WONTON_PORT}
+      # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
+      URLS_LOGIN: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/oidc/login
+      URLS_CONSENT: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/oidc/consent
+    volumes:
+      - hydra:/home/nonroot
+    # 只在核心的私有网络里：插件访问不到管理端口（4445），公开端口也只经核心网关访问。
+    networks: [core]
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4445/health/ready"]
+      interval: 10s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+  tuwunel:
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4@sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec
+    restart: unless-stopped
+    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
+    stop_grace_period: 5m
+    environment:
+      # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
+      TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
+    volumes:
+      - tuwunel:/var/lib/tuwunel
+      - ${WONTON_INSTALL_DIR}/secrets/tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
+    # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）。
+    networks: [core]
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5m
+      start_interval: 1s
+
+networks:
+  core:
+
+volumes:
+  hydra:
+  tuwunel:

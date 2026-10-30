@@ -30,3 +30,18 @@
 
 - 在群晖、飞牛等 NAS 的 Docker 环境里的安装体验和权限限制。
 - GPU 直通（NVIDIA、AMD ROCm）给 Ollama 等插件的方式。
+
+## 验证结果（M1，一行安装）
+
+`deploy/install/install.sh` 在干净的 Ubuntu 24.04 上装好核心、Hydra、Tuwunel，核心随后装上 magpie，四个容器都健康。
+验证条件（2026-10-29）：OrbStack 虚拟机，arm64 原生、amd64 在 Rosetta 下，Docker Engine 29.9.2、Compose v5.6.1；核心镜像
+用发布的 Dockerfile 在 npchy 上构建（arm64 交叉编译）后导入虚拟机，Hydra、Tuwunel、magpie 的镜像从各自的仓库拉取；安装
+脚本由本机的 HTTP 服务提供，按 `curl … | sudo sh` 执行。
+
+- amd64：从执行安装命令到终端出现首次配对码（这时核心、Hydra、Tuwunel 都健康）465 秒，大半是在 Rosetta 下拉 Hydra 和
+  Tuwunel 的镜像；magpie 在核心启动 4 分半后装好。上一轮不含拉镜像时 arm64 16 秒、amd64 34 秒。
+- 安装终端最后显示首次配对码，和状态页上的是同一个。arm64 上 iOS 模拟器里的 App 粘贴这个码配上，amd64 上隧道客户端
+  示例用它配上；终端随即打出“配对成功”，安装命令退出，状态页只剩运行状态。App 配上后经隧道登录了主人的 Matrix 账号。
+- 已配对的 App 里“添加设备”拿到的码、服务器上 `sudo wonton pair` 打出的码，各让一台设备（隧道客户端示例）配上。
+- 再执行一次安装命令：arm64 2 秒、amd64 6 秒，密钥都沿用，已配对的设备都在，终端只说明怎么加设备。
+- 主机上不需要 openssl：密钥由核心镜像里的 `wonton-core init` 生成。

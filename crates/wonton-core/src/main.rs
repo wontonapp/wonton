@@ -2,6 +2,7 @@
 //!
 //! - `wonton-core serve`（默认）：启动插件管理器、网关和隧道入口。
 //! - `wonton-core healthcheck`：请求本机网关的健康端点，供容器健康检查使用。
+//! - `wonton-core init <安装目录> <基础域名>`：正式安装时生成密钥、Tuwunel 配置和 compose 文件（`wonton_core::install`）。
 //! - `wonton-core pair [--first] [IP:端口…]`：向运行中的核心要配对码，在终端里显示二维码（见 `pair_command`）。
 
 use std::net::SocketAddr;
@@ -47,12 +48,13 @@ async fn main() -> ExitCode {
         None | Some("serve") => serve().await,
         Some("healthcheck") => healthcheck().await,
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
+        Some("init") => init(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("--version") => {
             println!("wonton-core {} ({BUILD_COMMIT})", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Some(other) => Err(anyhow::anyhow!(
-            "未知命令 {other}；用法：wonton-core [serve|healthcheck|pair]"
+            "未知命令 {other}；用法：wonton-core [serve|healthcheck|init|pair]"
         )),
     };
     match result {
@@ -236,6 +238,20 @@ async fn healthcheck() -> anyhow::Result<()> {
         .context("健康检查超时")??;
     if !response.status().is_success() {
         bail!("健康检查失败：HTTP {}", response.status());
+    }
+    Ok(())
+}
+
+fn init(args: &[String]) -> anyhow::Result<()> {
+    let [dir, server_name] = args else {
+        bail!("用法：wonton-core init <安装目录> <基础域名>");
+    };
+    let report = wonton_core::install::init(std::path::Path::new(dir), server_name)?;
+    for path in &report.created {
+        println!("已生成 {}", path.display());
+    }
+    for path in &report.kept {
+        println!("沿用 {}", path.display());
     }
     Ok(())
 }
