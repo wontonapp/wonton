@@ -11,7 +11,7 @@ IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还
 - `compose.yaml`、`wonton`：编进核心的二进制，由 `wonton-core init` 写到安装目录，跟着核心镜像的版本走。
   `wonton` 是主机上的命令，转到核心容器里的 `wonton-core pair`。
 
-镜像发布在 `ghcr.io/geraldpeng6/wonton-core`，`stable` 和 `beta` 两个渠道（ADR-0012）；安装脚本另放在一个公开的
+镜像发布在 `ghcr.io/geraldpeng6/wonton-core`，`stable` 和 `beta` 两个渠道（ADR-0012），1.0 之前安装脚本默认装 `beta`；安装脚本另放在一个公开的
 小仓库里，因为主仓库是私有的。
 
 ## 装在哪
@@ -27,10 +27,15 @@ IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还
 
 ## 升级
 
-再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（默认 `stable` 渠道）的最新版本，已有的密钥、
+再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（1.0 之前默认 `beta` 渠道）的最新版本，已有的密钥、
 数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，Matrix 的服务器名（基础域名）不能改。App 里的一键升级
 （ADR-0012）按同样的顺序做：拉新镜像，改 `.env` 里的 `WONTON_CORE_IMAGE`，在新镜像里执行 `wonton-core init`，
 再 `docker compose -f /opt/wonton/compose.yaml up -d`；健康检查不过就把 `.env` 改回旧的 digest 再 `up`。
+
+## 拉不到镜像
+
+核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。安装时拉
+镜像失败，先给 Docker 配镜像加速或代理，再执行一次安装命令。国内的镜像仓库按 ADR-0012 以后加上。
 
 ## 在本机测
 
@@ -51,6 +56,6 @@ sudo docker load`），在本机用 `python3 -m http.server --directory deploy/i
 curl -fsSL http://<本机在 OrbStack 网桥上的 IP>:8000/install.sh | sudo WONTON_CORE_IMAGE=wonton-core:install-test WONTON_PULL=never sh
 ```
 
-amd64 用 `orb create --arch amd64 …` 和 `docker buildx build --platform linux/amd64 --load …`（在 Rosetta 下编译，
-几分钟）。用 `cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 在本机扮演手机配对。测完
+amd64 用 `orb create --arch amd64 …` 和 `docker buildx build --platform linux/amd64 --load …`（交叉编译，见 Dockerfile
+开头）。用 `cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 在本机扮演手机配对。测完
 `orb delete` 删掉虚拟机。

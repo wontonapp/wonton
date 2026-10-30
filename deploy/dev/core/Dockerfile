@@ -1,8 +1,32 @@
-# 开发用的核心镜像：在容器里编译，宿主不需要交叉编译工具链。构建上下文是仓库根目录，
-# 只放进 Cargo 工作区（见 Dockerfile.dockerignore）。
-FROM rust:1.99.1-slim-trixie AS build
+# 核心镜像，开发（dev.sh、冒烟）和发布（.github/workflows/release.yml）共用：在容器里编译，宿主不需要工具链。
+# 构建上下文是仓库根目录，只放进 Cargo 工作区（见 Dockerfile.dockerignore）。
+#
+# 编译总在构建机自己的架构上跑，要别的架构时交叉编译（`--platform linux/arm64`），不在 QEMU 里跑编译器；核心镜像的
+# 最后一层只复制文件、不执行命令，也用不到模拟器。
+#
+# 基础镜像是 Docker 官方镜像在 ECR Public 上的副本：国内的构建机（比如跑发布作业的 npchy）连不上 Docker Hub，
+# ECR Public 直连可用（2026-10-29 实测）。
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/rust:1.99.1-slim-trixie AS build
 # 固定为镜像自带的工具链，不按 rust-toolchain.toml 再去下载组件。
 ENV RUSTUP_TOOLCHAIN=1.99.1 CARGO_TERM_COLOR=never
+ARG TARGETARCH BUILDARCH
+# 和别的作业共用一台机器时用 `--build-arg CARGO_BUILD_JOBS=…` 限制并行编译的任务数，不给就按 CPU 数。
+ARG CARGO_BUILD_JOBS
+# Debian 给本机的 gcc 也装了带三元组前缀的名字，同一套设置在本机编译和交叉编译时都能用。
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+    CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+RUN case "$TARGETARCH" in \
+      amd64) triple=x86_64-unknown-linux-gnu gcc=gcc-x86-64-linux-gnu ;; \
+      arm64) triple=aarch64-unknown-linux-gnu gcc=gcc-aarch64-linux-gnu ;; \
+      *) echo "不支持的架构 $TARGETARCH，只支持 amd64 和 arm64" >&2; exit 1 ;; \
+    esac \
+    && echo "$triple" >/rust-target \
+    && if [ "$TARGETARCH" != "$BUILDARCH" ]; then \
+         apt-get update && apt-get install -y --no-install-recommends "$gcc" "libc6-dev-$TARGETARCH-cross" \
+         && rm -rf /var/lib/apt/lists/* && rustup target add "$triple"; \
+       fi
 WORKDIR /src
 COPY . .
 # 构建它的提交号（dev.sh 传入），编进核心、打在启动日志里，一眼看出镜像里是哪份代码。
@@ -13,8 +37,8 @@ ARG WONTON_BUILD_COMMIT=unknown
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
     find crates -exec touch {} + \
-    && cargo build --release --locked -p wonton-core \
-    && cp target/release/wonton-core /usr/local/bin/wonton-core
+    && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-core \
+    && cp "target/$(cat /rust-target)/release/wonton-core" /usr/local/bin/wonton-core
 
 # 冒烟测试用的隧道客户端（wonton-tunnel 的示例），smoke.sh 用它扮演已配对的手机。只在
 # `--target tunnel-client` 时构建，不影响核心镜像。
@@ -22,10 +46,10 @@ FROM build AS tunnel-client-build
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
     find crates -exec touch {} + \
-    && cargo build --release --locked -p wonton-tunnel --example tunnel-client \
-    && cp target/release/examples/tunnel-client /usr/local/bin/tunnel-client
+    && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-tunnel --example tunnel-client \
+    && cp "target/$(cat /rust-target)/release/examples/tunnel-client" /usr/local/bin/tunnel-client
 
-FROM debian:trixie-slim AS tunnel-client
+FROM public.ecr.aws/docker/library/debian:trixie-slim AS tunnel-client
 COPY --from=tunnel-client-build /usr/local/bin/tunnel-client /usr/local/bin/tunnel-client
 ENTRYPOINT ["tunnel-client"]
 
@@ -35,10 +59,10 @@ FROM build AS echo-bot-build
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
     find crates -exec touch {} + \
-    && cargo build --release --locked -p wonton-echo-bot \
-    && cp target/release/echo-bot /usr/local/bin/echo-bot
+    && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-echo-bot \
+    && cp "target/$(cat /rust-target)/release/echo-bot" /usr/local/bin/echo-bot
 
-FROM debian:trixie-slim AS echo-bot
+FROM public.ecr.aws/docker/library/debian:trixie-slim AS echo-bot
 # matrix-sdk 的 HTTP 客户端启动时要加载系统的根证书，没有就直接失败（即使只用 http）。
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -46,10 +70,10 @@ COPY --from=echo-bot-build /usr/local/bin/echo-bot /usr/local/bin/echo-bot
 ENTRYPOINT ["echo-bot"]
 CMD ["run"]
 
-FROM debian:trixie-slim
-# 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM public.ecr.aws/docker/library/debian:trixie-slim
+# 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。根证书从编译阶段
+# 复制过来，这一层不执行命令：交叉编译的 arm64 镜像不用模拟器也能构建。
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 # 随核心预装的系统插件（WONTON_SYSTEM_PLUGINS）：模型网关 magpie。
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie

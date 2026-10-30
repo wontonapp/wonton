@@ -3,7 +3,7 @@
 #
 # 再执行一次就是升级或修复：拉核心镜像的最新版本，密钥和数据都沿用，compose 文件按新的核心镜像重写。可调的环境变量：
 #
-#   WONTON_CORE_IMAGE   要装的核心镜像（默认 ghcr.io/geraldpeng6/wonton-core:stable，也可以写别的 tag 或 digest）
+#   WONTON_CORE_IMAGE   要装的核心镜像（默认 ghcr.io/geraldpeng6/wonton-core:beta，也可以写别的 tag 或 digest）
 #   WONTON_INSTALL_DIR  compose 文件、.env 和密钥（默认 /opt/wonton）
 #   WONTON_DATA_DIR     核心和插件的数据（默认 /var/lib/wonton）
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
@@ -59,7 +59,8 @@ saved() {
 }
 
 image=${WONTON_CORE_IMAGE:-$(saved WONTON_CORE_SOURCE)}
-image=${image:-ghcr.io/geraldpeng6/wonton-core:stable}
+# 1.0 之前默认装 beta 渠道：内测期只发预发布版本，stable 渠道在 1.0 才有第一个版本。
+image=${image:-ghcr.io/geraldpeng6/wonton-core:beta}
 data_dir=${WONTON_DATA_DIR:-$(saved WONTON_DATA_DIR)}
 data_dir=${data_dir:-/var/lib/wonton}
 port=${WONTON_PORT:-$(saved WONTON_PORT)}
