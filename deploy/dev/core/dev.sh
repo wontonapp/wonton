@@ -13,7 +13,8 @@
 #   dev.sh devices                     已登记的设备
 #   dev.sh allow <endpoint ID>         登记一台设备（M0 代替扫码配对），它经隧道访问时就是主人
 #   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
-#   dev.sh ticket [直连地址] [网页地址]  给 App 的连接信息（M0 代替配对二维码），直连地址默认 127.0.0.1:隧道端口
+#   dev.sh ticket [直连地址] [网页地址]  给 App 的连接信息（不经配对，配合 allow 用），直连地址默认 127.0.0.1:隧道端口
+#   dev.sh pair [直连地址]             发一个配对码，在终端里出二维码；直连地址同 ticket
 #   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
@@ -215,5 +216,9 @@ ticket = {"server": server, "base_domain": info["base_domain"], "web_url": sys.a
 print(json.dumps(ticket, separators=(",", ":")))' \
       "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}" "${3:-http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT/}"
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]" ;;
+  pair)
+    # 主人发的配对码，已经有设备时也能用。局域网状态页（http://<本机 IP>:端口/）在还没有设备时另有首次配对码。
+    docker exec "$core" wonton-core pair "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}"
+    ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]|pair [直连地址]" ;;
 esac

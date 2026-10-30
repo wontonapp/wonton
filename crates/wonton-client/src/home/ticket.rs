@@ -128,6 +128,11 @@ impl Ticket {
         addr
     }
 
+    /// 码里给的服务端直连地址。
+    pub(crate) fn direct_addrs(&self) -> &[SocketAddr] {
+        &self.server.direct_addrs
+    }
+
     pub(crate) fn web_url(&self) -> Option<&str> {
         self.web_url.as_deref()
     }

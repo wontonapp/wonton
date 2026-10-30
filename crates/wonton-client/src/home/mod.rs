@@ -4,6 +4,8 @@
 //! 状态放在 watch 通道里，壳经订阅拿到 [`HomeViewModel`]。网络操作都在核心自己的 tokio 运行时里执行，
 //! `dispatch` 不阻塞。
 
+mod invite;
+mod pairing;
 mod storage;
 mod ticket;
 

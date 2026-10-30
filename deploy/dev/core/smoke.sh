@@ -216,7 +216,16 @@ expect "同机其他程序不带会话凭据，被本地代理拒绝" \
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "未登记的设备被隧道拒绝" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
 grep -qi '^x-wonton-tunnel-error: unauthorized' <<<"$reply" || fail "缺少 unauthorized 原因：$reply"
-expect "主人登记这台设备" "$("$dev" allow "$device_id" | json added)" true
+# 局域网里的浏览器用 IP 打开状态页，上面有首次配对码；手机拿它经 wonton/pair/0 成为主人的设备。
+lan_page() { docker exec "$browser" curl -sS "http://127.0.0.1:$WONTON_DEV_PORT/"; }
+pairing_code="$(lan_page | sed -n 's/.*<code class="pairing-code">\([^<]*\)<\/code>.*/\1/p' | sed 's/\&amp;/\&/g')"
+[[ "$pairing_code" == wonton://pair\?* ]] || fail "状态页上没有首次配对码：$(lan_page)"
+ok "局域网状态页上有首次配对码"
+expect "手机用首次配对码配对" \
+  "$(docker exec "$phone" tunnel-client --key /tmp/phone.key pair "$pairing_code" --name 冒烟的手机 | json result)" paired
+expect "配对后状态页不再出码" "$(lan_page | grep -c 'pairing-code')" 0
+expect "同一个码不能再用" \
+  "$(docker exec "$phone" tunnel-client --key /tmp/other.key pair "$pairing_code" | json reason)" used
 reply="$(t -L -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{url_effective} %{num_redirects}' "$grafana_url/")"
 read -r code final redirects <<<"$reply"
 expect "直接落在 Grafana 首页（经过 $redirects 次跳转：只有 OIDC，没有登录和会话交接）" "$code $final" "200 $grafana_url/"

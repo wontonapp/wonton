@@ -43,7 +43,7 @@ use crate::tunnel::{Tunnel, TunnelEntry};
 const PORT: u16 = 18480;
 
 /// 只走回环地址的 iroh endpoint：不连中继，不做地址发现。
-async fn loopback_endpoint(key: SecretKey) -> Endpoint {
+pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
     Endpoint::builder(presets::Minimal)
         .secret_key(key)
         .clear_ip_transports()
@@ -56,23 +56,24 @@ async fn loopback_endpoint(key: SecretKey) -> Endpoint {
 
 /// 测试用的隧道：空的设备登记表，加一个只走回环地址的 endpoint。
 pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
-    Tunnel {
-        devices: Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
-        endpoint: loopback_endpoint(SecretKey::generate()).await,
-    }
+    Tunnel::new(
+        Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+        loopback_endpoint(SecretKey::generate()).await,
+        0,
+    )
 }
 
-struct Home {
-    app: Router,
+pub(super) struct Home {
+    pub(super) app: Router,
     plugins: Arc<PluginManager>,
-    tunnel: Tunnel,
+    pub(super) tunnel: Tunnel,
     hits: Arc<AtomicUsize>,
     _entry: TunnelEntry,
     _dir: tempfile::TempDir,
 }
 
 impl Home {
-    async fn start(hydra_admin: Option<SocketAddr>) -> Self {
+    pub(super) async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         Self::start_with(hydra_admin, None).await
     }
 
@@ -126,7 +127,7 @@ impl Home {
         )
         .with_matrix(matrix);
         let app = router(Arc::new(gateway));
-        let entry = TunnelEntry::spawn(tunnel.endpoint.clone(), &tunnel.devices, app.clone());
+        let entry = TunnelEntry::spawn(&tunnel, app.clone());
         Self {
             app,
             plugins: manager,
@@ -138,7 +139,7 @@ impl Home {
     }
 
     /// 主人经管理 API 登记或吊销设备（在进程内直接调用网关）。
-    async fn manage(&self, method: Method, path: &str, body: &str) -> StatusCode {
+    pub(super) async fn manage(&self, method: Method, path: &str, body: &str) -> StatusCode {
         let request = hyper::Request::builder()
             .method(method)
             .uri(path)
@@ -160,7 +161,7 @@ impl Home {
 }
 
 /// 测试里的手机：隧道客户端加本地代理，代理只接受带本次会话凭据的请求。
-struct Phone {
+pub(super) struct Phone {
     client: TunnelClient,
     proxy: LocalProxy,
     authorization: String,
@@ -168,7 +169,7 @@ struct Phone {
 }
 
 impl Phone {
-    async fn start(key: SecretKey, home: &Home) -> Self {
+    pub(super) async fn start(key: SecretKey, home: &Home) -> Self {
         let client = TunnelClient::new(loopback_endpoint(key).await, home.tunnel.endpoint.addr());
         let credential = ProxyCredential::generate();
         let pair = format!("{}:{}", credential.username(), credential.password());
@@ -202,9 +203,23 @@ impl Phone {
     }
 
     /// 经本地代理打开一个页面。
-    async fn get(&self, host: &str, path: &str) -> (StatusCode, HeaderMap, String) {
+    pub(super) async fn get(&self, host: &str, path: &str) -> (StatusCode, HeaderMap, String) {
         self.send(Method::GET, host, path, &[("accept", "text/html")])
             .await
+    }
+
+    /// 经本地代理 POST 一段 JSON。
+    pub(super) async fn post_json(
+        &self,
+        host: &str,
+        path: &str,
+        body: &str,
+    ) -> (StatusCode, String) {
+        let headers = [("content-type", "application/json")];
+        let (status, _, text) = self
+            .send_with_body(Method::POST, host, path, &headers, body)
+            .await;
+        (status, text)
     }
 
     /// 经本地代理发一个请求，`Host` 原样带到网关。每个请求一条新连接，测试之间不受连接池影响。
@@ -215,6 +230,17 @@ impl Phone {
         path: &str,
         headers: &[(&str, &str)],
     ) -> (StatusCode, HeaderMap, String) {
+        self.send_with_body(method, host, path, headers, "").await
+    }
+
+    async fn send_with_body(
+        &self,
+        method: Method,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> (StatusCode, HeaderMap, String) {
         let mut builder = hyper::Request::builder()
             .method(method)
             .uri(format!("http://{}{path}", self.proxy.local_addr()))
@@ -224,7 +250,7 @@ impl Phone {
         for (name, value) in headers {
             builder = builder.header(*name, *value);
         }
-        let request = builder.body(Body::empty()).unwrap();
+        let request = builder.body(Body::from(body.to_owned())).unwrap();
         let response = self.http.send(request).await.unwrap();
         let status = response.status();
         let headers = response.headers().clone();

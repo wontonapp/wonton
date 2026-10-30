@@ -2,6 +2,7 @@
 //!
 //! - `wonton-core serve`（默认）：启动插件管理器、网关和隧道入口。
 //! - `wonton-core healthcheck`：请求本机网关的健康端点，供容器健康检查使用。
+//! - `wonton-core pair [--first] [IP:端口…]`：向运行中的核心要配对码，在终端里显示二维码（见 `pair_command`）。
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
@@ -26,6 +27,8 @@ use wonton_core::push::Push;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 
+mod pair_command;
+
 /// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
 const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
     Some(commit) => commit,
@@ -43,12 +46,13 @@ async fn main() -> ExitCode {
     let result = match command.as_deref() {
         None | Some("serve") => serve().await,
         Some("healthcheck") => healthcheck().await,
+        Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
         Some("--version") => {
             println!("wonton-core {} ({BUILD_COMMIT})", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Some(other) => Err(anyhow::anyhow!(
-            "未知命令 {other}；用法：wonton-core [serve|healthcheck]"
+            "未知命令 {other}；用法：wonton-core [serve|healthcheck|pair]"
         )),
     };
     match result {
@@ -123,7 +127,7 @@ async fn serve() -> anyhow::Result<()> {
     let listener = TcpListener::bind(cfg.listen)
         .await
         .with_context(|| format!("监听 {}", cfg.listen))?;
-    let entry = TunnelEntry::spawn(tunnel.endpoint, &tunnel.devices, app.clone());
+    let entry = TunnelEntry::spawn(&tunnel, app.clone());
     tracing::info!(
         listen = %cfg.listen,
         url = %cfg.public.origin(cfg.public.core_host()),
@@ -205,10 +209,7 @@ async fn bind_tunnel(cfg: &Config) -> anyhow::Result<Tunnel> {
         devices = devices.list().len(),
         "隧道入口已启动"
     );
-    Ok(Tunnel {
-        devices: Arc::new(devices),
-        endpoint,
-    })
+    Ok(Tunnel::new(Arc::new(devices), endpoint, cfg.tunnel_port))
 }
 
 async fn shutdown() {

@@ -18,6 +18,8 @@ base64 = { workspace = true }
 bollard = { workspace = true }
 futures-util = "0.3.34"
 getrandom = { workspace = true }
+# MIT OR Apache-2.0。状态页和终端上的配对二维码。
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }

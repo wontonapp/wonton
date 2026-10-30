@@ -45,6 +45,8 @@ pub enum HostKind {
     PluginModels,
     /// Tuwunel 调推送代理（[`PUSH_GATEWAY_HOST`]）。
     Push,
+    /// 局域网浏览器用服务器的 IP 地址访问：状态页。
+    Lan(std::net::IpAddr),
     Unknown,
 }
 
@@ -87,6 +89,9 @@ impl PublicUrls {
             .to_ascii_lowercase();
         if host == self.base_domain {
             return HostKind::Core;
+        }
+        if let Ok(ip) = host.trim_start_matches('[').trim_end_matches(']').parse() {
+            return HostKind::Lan(ip);
         }
         if host == PLUGIN_MATRIX_HOST {
             return HostKind::PluginMatrix;

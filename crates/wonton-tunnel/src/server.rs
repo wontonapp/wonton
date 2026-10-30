@@ -18,6 +18,7 @@ use crate::{
     allowlist::Allowlist,
     embed::{PeerStream, TunnelListener},
     forward,
+    pair::{PAIR_ALPN, PairHandler, PairProtocol},
     wire::{ALPN, CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED, Request, Status},
 };
 
@@ -216,6 +217,21 @@ impl TunnelServer {
     pub fn spawn_embedded(endpoint: Endpoint, allowlist: Allowlist) -> (Self, TunnelListener) {
         let (protocol, listener) = TunnelProtocol::embedded(allowlist.clone());
         (Self::with_protocol(endpoint, allowlist, protocol), listener)
+    }
+
+    /// 同 [`spawn_embedded`](Self::spawn_embedded)，同一个 endpoint 上再接受还没登记的设备来配对：配对成功的
+    /// 设备由 `pairing` 的处理方加进 `allowlist`，随后用隧道的 ALPN 连进来。
+    pub fn spawn_embedded_with_pairing<H: PairHandler>(
+        endpoint: Endpoint,
+        allowlist: Allowlist,
+        pairing: PairProtocol<H>,
+    ) -> (Self, TunnelListener) {
+        let (protocol, listener) = TunnelProtocol::embedded(allowlist.clone());
+        let router = Router::builder(endpoint)
+            .accept(ALPN, protocol)
+            .accept(PAIR_ALPN, pairing)
+            .spawn();
+        (Self { router, allowlist }, listener)
     }
 
     fn with_protocol(endpoint: Endpoint, allowlist: Allowlist, protocol: TunnelProtocol) -> Self {

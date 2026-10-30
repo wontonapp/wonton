@@ -5,6 +5,9 @@
 //!   JSON 的 [`PairResponse`] 后结束。消息都不超过 [`MAX_MESSAGE_LEN`] 字节。配对成功时，服务端已经按 QUIC 握手
 //!   认证过的 endpoint ID 登记了这台设备，设备随后改用隧道的 ALPN 连接。
 
+mod client;
+mod server;
+
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -12,6 +15,9 @@ use std::str::FromStr;
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use serde::{Deserialize, Serialize};
 use url::Url;
+
+pub use client::pair;
+pub use server::{PairHandler, PairProtocol};
 
 /// 配对协议的 ALPN，和隧道的 ALPN 挂在同一个 endpoint 上。协议不兼容地变化时升级末尾的版本号。
 pub const PAIR_ALPN: &[u8] = b"wonton/pair/0";

@@ -36,16 +36,19 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
 ## 经隧道访问
 
 核心内置隧道入口（iroh，UDP `WONTON_DEV_TUNNEL_PORT`，默认 18482，只发布到本机；手机经局域网直连时设
-`WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。已登记的设备经隧道访问时就是主人，打开插件不用登录。M0 还没有扫码
-配对，用主人令牌登记设备：
+`WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。已登记的设备经隧道访问时就是主人，打开插件不用登录。
+
+设备扫码配对（ADR-0009 的“接口：扫码配对”）：浏览器用 IP 打开 `http://127.0.0.1:18480/` 是局域网状态页，还没有
+设备时上面有首次配对码；`dev.sh pair [直连地址]` 随时再发一个，在终端里出二维码。也可以用主人令牌直接登记：
 
 ```bash
+deploy/dev/core/dev.sh pair                    # 发配对码；直连地址默认 127.0.0.1:18482
 deploy/dev/core/dev.sh tunnel                  # 服务端 endpoint ID、中继地址和直连地址
-deploy/dev/core/dev.sh allow <设备 endpoint ID>  # 登记；revoke 吊销并立即断开，devices 列出
+deploy/dev/core/dev.sh allow <设备 endpoint ID>  # 不经配对直接登记；revoke 吊销并立即断开，devices 列出
 ```
 
-在本机用隧道客户端示例扮演手机（`cargo run -p wonton-tunnel --example tunnel-client -- id` 输出它的 ID）。
-`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
+在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
+登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
 
 ```bash
 cargo run -p wonton-tunnel --example tunnel-client -- proxy --auth --server <服务端 ID> --addr 127.0.0.1:18482 --listen 127.0.0.1:18008
@@ -101,7 +104,8 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 用独立的 compose 项目、端口（18481，隧道 18483）和临时数据目录，依次验证：一条命令安装 Grafana 示例插件并通过
 健康检查；插件不暴露端口、只在自己的网络里、访问不到 Hydra 的管理端口；未登录的请求被拒；登录核心
 一次后打开插件自动登录（Grafana 里是 `owner`、管理员角色）；已配对设备经隧道打开插件不用登录、直接是
-`owner`，未登记和已吊销的设备被拒（设备由隧道客户端示例扮演，跑在核心的网络命名空间里）；没有 OIDC 的
+`owner`，未登记和已吊销的设备被拒，设备用局域网状态页上的首次配对码配对，配上后状态页不再出码、同一个码不能再用
+（设备由隧道客户端示例扮演，跑在核心的网络命名空间里）；没有 OIDC 的
 插件收不到网关 Cookie 和伪造的转发头；已配对设备经隧道拿到 Matrix 登录令牌、登录 Tuwunel，局域网拿不到
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即

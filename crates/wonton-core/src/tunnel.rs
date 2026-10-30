@@ -20,17 +20,42 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
 use tokio::task::{JoinHandle, JoinSet};
 use tower::ServiceExt;
+use wonton_tunnel::pair::PairProtocol;
 use wonton_tunnel::{PeerStream, TunnelListener, TunnelServer};
 
 use crate::device::Devices;
 use crate::gateway::TunnelPeer;
+use crate::pairing::Pairing;
 use crate::secret;
 
-/// 网关需要知道的隧道信息：已配对设备，以及向主人报告服务端地址用的 endpoint。
+/// 网关需要知道的隧道信息：已配对设备、发配对码的一方，以及向主人报告服务端地址用的 endpoint。
 #[derive(Clone)]
 pub struct Tunnel {
     pub devices: Arc<Devices>,
+    pub pairing: Arc<Pairing>,
     pub endpoint: Endpoint,
+    /// 手机连隧道用的 UDP 端口：核心在容器里时是宿主上发布的端口，配对码里的直连地址用它。
+    pub port: u16,
+}
+
+impl Tunnel {
+    /// `port` 为 0 时用 endpoint 实际绑定的端口（直接跑在宿主上、由系统分配端口时）。
+    pub fn new(devices: Arc<Devices>, endpoint: Endpoint, port: u16) -> Self {
+        let port = if port == 0 {
+            endpoint
+                .bound_sockets()
+                .first()
+                .map_or(0, std::net::SocketAddr::port)
+        } else {
+            port
+        };
+        Self {
+            pairing: Arc::new(Pairing::new(devices.clone())),
+            devices,
+            endpoint,
+            port,
+        }
+    }
 }
 
 /// 读取或生成核心的隧道私钥。私钥决定服务端的 endpoint ID，换了它所有设备都要重新配对，所以要持久化。
@@ -59,10 +84,14 @@ pub struct TunnelEntry {
 }
 
 impl TunnelEntry {
-    /// 在 `endpoint` 上接受已配对设备的隧道连接，用 `app`（网关的完整路由）服务每条流。
-    pub fn spawn(endpoint: Endpoint, devices: &Devices, app: Router) -> Self {
-        let (server, listener) =
-            TunnelServer::spawn_embedded(endpoint, devices.allowlist().clone());
+    /// 在隧道的 endpoint 上接受已配对设备的隧道连接，用 `app`（网关的完整路由）服务每条流；还没登记的设备
+    /// 可以来配对。
+    pub fn spawn(tunnel: &Tunnel, app: Router) -> Self {
+        let (server, listener) = TunnelServer::spawn_embedded_with_pairing(
+            tunnel.endpoint.clone(),
+            tunnel.devices.allowlist().clone(),
+            PairProtocol::new(tunnel.pairing.clone()),
+        );
         let task = tokio::spawn(serve(listener, app));
         Self { server, task }
     }

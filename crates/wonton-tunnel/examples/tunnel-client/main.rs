@@ -3,6 +3,8 @@
 //! ```text
 //! # 打印本机 endpoint ID，把它加进服务端的 --allow
 //! cargo run -p wonton-tunnel --example tunnel-client -- id
+//! # 用配对码（wonton://pair?…）把本机登记成核心的设备
+//! cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'
 //! # 在本机起 HTTP 代理：http://127.0.0.1:8081 即服务端的上游 HTTP 服务
 //! cargo run -p wonton-tunnel --example tunnel-client -- proxy --server <服务端 endpoint ID>
 //! # 像 App 一样起带会话凭据的 HTTP 正向代理（curl -x http://127.0.0.1:8081 -U wonton:<密码>）
@@ -38,6 +40,14 @@ struct Cli {
 enum Command {
     /// 打印本机 endpoint ID。
     Id,
+    /// 用配对码把本机登记成核心的设备，打印核心的回应。
+    Pair {
+        /// 二维码里的文字（`wonton://pair?…`）。
+        code: String,
+        /// 报给核心的设备名。
+        #[arg(long, default_value = "隧道客户端示例")]
+        name: String,
+    },
     /// 在本机起 HTTP 代理，经隧道转发到服务端的上游 HTTP 服务。
     Proxy {
         #[command(flatten)]
@@ -98,6 +108,16 @@ async fn main() -> Result<()> {
     let key = common::load_or_create_key(&cli.key)?;
     match cli.command {
         Command::Id => println!("{}", key.public()),
+        Command::Pair { code, name } => {
+            let code = wonton_tunnel::pair::PairingCode::parse(&code)?;
+            let endpoint = bind_endpoint(key, false).await?;
+            let reply = wonton_tunnel::pair::pair(&endpoint, &code, &name).await?;
+            endpoint.close().await;
+            println!("{}", serde_json::to_string(&reply)?);
+            if !matches!(reply, wonton_tunnel::pair::PairResponse::Paired) {
+                anyhow::bail!("核心拒绝了配对");
+            }
+        }
         Command::Proxy {
             server,
             listen,

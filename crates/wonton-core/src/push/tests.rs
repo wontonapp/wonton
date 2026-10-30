@@ -104,7 +104,7 @@ impl Home {
         let dir = tempfile::tempdir().unwrap();
         let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
         let device = SecretKey::generate().public();
-        devices.add(device).unwrap();
+        devices.add(device, None).unwrap();
         let push = Push::open(dir.path().join("push.json"), devices.clone()).unwrap();
         let service = PushService::start().await;
         let subscription = Subscription::new(&service.endpoint(), UA_PUBLIC, AUTH).unwrap();

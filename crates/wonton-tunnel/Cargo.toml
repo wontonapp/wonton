@@ -17,6 +17,7 @@ httparse = "1.10.1"
 iroh = { workspace = true }
 # MIT OR Apache-2.0。配对请求和回应的 JSON。
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 tracing = { workspace = true }
@@ -27,7 +28,6 @@ url = { workspace = true }
 anyhow = { workspace = true }
 # 示例的命令行解析。MIT OR Apache-2.0。
 clap = { version = "4.6.7", features = ["derive"] }
-serde_json = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 

@@ -8,6 +8,7 @@ pub mod gateway;
 pub mod http;
 pub mod matrix;
 pub mod oidc;
+pub mod pairing;
 pub mod plugin;
 pub mod push;
 pub mod secret;

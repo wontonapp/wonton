@@ -43,6 +43,11 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             get(devices::list).post(devices::add),
         )
         .route("/_wonton/api/devices/{id}", delete(devices::remove))
+        .route("/_wonton/api/pairing-codes", post(devices::pairing_code))
+        .route(
+            "/_wonton/api/pairing-codes/first",
+            post(devices::first_pairing_code),
+        )
         .fallback(|| async {
             pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面")
         })

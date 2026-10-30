@@ -1,6 +1,6 @@
 # ADR-0009 身份、配对与单点登录
 
-- 状态：已接受（2026-10-28），M0 选型已定（见验证结果）
+- 状态：已接受（2026-10-28），M0 选型已定（见验证结果）；加设备和找回的做法 2026-10-29 改定（见决策和理由）
 
 ## 背景
 
@@ -8,18 +8,25 @@
 
 ## 决策
 
-- **服务器即账号**：安装后，局域网网页和终端显示配对二维码（服务器 endpoint ID、当前中继、一次性令牌）。
-  App 扫码即成为主人，不需要注册。
+- **服务器即账号**：安装后，服务器上还没有配对的设备时，局域网状态页和安装终端显示首次配对码（服务器 endpoint ID、
+  中继和直连地址、一次性密钥）。App 扫码即成为主人，不需要注册。第一台设备配上后首次配对码作废，不再出现。
 - **设备身份**：每个 App 安装生成密钥对；核心记录已配对设备，主人可以随时吊销。隧道只接受已配对设备。
 - **Matrix 登录**：核心为配对设备和 Bot 签发 Tuwunel 登录（Tuwunel 支持由运营方签发 JWT 登录）。
 - **家人**：主人可以邀请家人（M2），每人一个 Matrix 用户和私人空间；一个 App 可以连多台服务器。
 - **小程序单点登录**：所有插件网页都经核心网关鉴权；支持 OIDC 的应用由核心提供 OIDC 单点登录，
   不支持的保留应用自身的登录。
-- **找回**：主人丢失手机时，在局域网网页上重新配对；能接触到局域网即视为可信。
+- **添加设备**：在已配对的 App 里点“添加设备”，App 向核心要一个一次性配对码，显示给新设备扫。
+- **找回**：设备都丢了时，在服务器终端执行 `sudo wonton pair` 出一个配对码。
+- **信任边界**：服务器终端和已配对的设备。能在服务器上执行命令、或者手里有已配对的设备，才能加设备；能接触局域网
+  不算可信。
 
 ## 理由
 
 不依赖任何云账号，也就没有账号数据要保护；配对体验和“扫码加好友”一样简单。
+
+局域网里不只有主人：访客的手机、智能家电、被攻破的设备都在同一个网段，网页还能借 DNS 重绑定从浏览器里读局域网的
+页面。所以状态页只在装好到第一台设备配上之间出码，并且只回应 `Host` 是 IP 地址的请求；之后加设备要经过服务器终端
+或已配对的设备。
 
 ## 待验证（M0 选型）
 
@@ -136,7 +143,8 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 ## 接口：App 登录和使用 Matrix（M1）
 
 App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwunel 在哪里。两个入口都只给经隧道接入的已配对设备
-（网关看隧道身份，局域网请求不行），管理 API 的规则不变，仍只认主人令牌。实现见
+（网关看隧道身份，局域网请求不行）。管理 API 仍只认主人令牌，只有发配对码的接口也接受已配对设备（见“接口：扫码
+配对”的“主人发的码”）。实现见
 `crates/wonton-core/src/gateway/matrix.rs` 和 `crates/wonton-core/src/matrix/`。
 
 **1. 取登录令牌：`POST <核心地址>/_wonton/matrix/login-token`**
@@ -231,6 +239,30 @@ App 扫一个一次性的配对码，成为主人的设备。线协议的类型�
 地址（配对时存下的连接信息里的），拿到的码放进 `HomeViewModel::invite`（`Ready`，带过期时间），App 画成二维码给新设备扫，
 新设备照常用 `PairHome`。还没配对时 `InviteDevice` 返回 `NotReady`；连不上、本设备被吊销、服务器出错分别是 `Failed` 里
 `HomeFailure` 的 `TransportUnavailable`、`Unauthorized`、`UpstreamUnavailable`，回应认不出是 `Protocol`。
+
+## 验证结果（M1，扫码配对）
+
+接口按上一节实现：核心发码、验码和登记设备在 `crates/wonton-core/src/pairing.rs`，局域网状态页在
+`crates/wonton-core/src/gateway/lan.rs`，`wonton/pair/0` 的两端在 `crates/wonton-tunnel/src/pair/`，App 一侧在
+`crates/wonton-client/src/home/pairing.rs`。可复跑：`cargo test -p wonton-core pairing`（经真实的隧道入口）、
+`cargo test -p wonton-client --test pairing`、`cargo test -p wonton-tunnel --test tunnel pairing`，以及
+`deploy/dev/core/smoke.sh` 的“已配对设备经隧道打开插件”一步。
+
+- **首次配对码**：服务器上还没有设备时，状态页给一个码，还剩不到 2 分钟时换新码，旧码到期前仍然有效。第一台设备配上
+  后状态页只显示运行状态；没用掉的首次配对码随之作废（`closed`），两台设备同时扫也只有一台配上：判断和登记在设备
+  登记表的同一把锁里。
+- **主人发的码**：管理 API（`POST /_wonton/api/pairing-codes`，主人令牌）和服务器上的 `wonton-core pair` 发的码，已经
+  有设备时也能用。
+- **安装终端**：`wonton-core pair --first`（管理 API `POST /_wonton/api/pairing-codes/first`）显示和状态页上同一个首次
+  配对码，换码时跟着换，第一台设备配上后退出；已经有设备时 API 回 409 `paired`，命令只说明怎么加设备。
+- **添加设备**：已配对的设备经隧道要码不需要主人令牌，局域网里不带令牌仍是 401
+  （`cargo test -p wonton-core a_paired_phone_gets_a_code`）。App 一侧 `InviteDevice` 拿到的码让另一台设备配上；要码被拒时
+  403、5xx、认不出的回应分别报 `Unauthorized`、`UpstreamUnavailable`、`Protocol`（`cargo test -p wonton-client --test pairing`）。
+- **状态页**：码里的直连地址是浏览器打开状态页用的 IP 加隧道端口，同一个局域网里的手机也连得上；`Host` 是域名的请求
+  （DNS 重绑定）得到 404。页面只列出各组件是否就绪和插件数量，不列插件名。
+- **App**：扫到的码先在本机解析，不是配对码直接拒绝；配上后存下码里的服务端地址（不存密钥），重启后直接连上。服务端
+  不认识 `wonton/pair/0` 时 TLS 握手以 `no_application_protocol` 失败，App 报协议版本不配。
+- **设备登记表**：每台设备多记配对时报的名字和登记时间；只有 endpoint ID 的旧登记表照样读得进来。
 
 ## 验证结果（M1，核心接入 Tuwunel）
 

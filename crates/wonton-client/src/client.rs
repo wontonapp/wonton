@@ -51,12 +51,8 @@ impl ClientCore {
                 self.update_sessions(|store| store.delete(&session_id))
             }
             Action::ConnectHome { ticket } => self.home.connect(&ticket),
-            Action::PairHome { .. } => Err(CoreError::NotReady {
-                reason: "这个版本的客户端核心不支持扫码配对".to_owned(),
-            }),
-            Action::InviteDevice => Err(CoreError::NotReady {
-                reason: "这个版本的客户端核心不支持添加设备".to_owned(),
-            }),
+            Action::PairHome { code, device_name } => self.home.pair(code.expose(), &device_name),
+            Action::InviteDevice => self.home.invite(),
             Action::AppForegrounded => {
                 self.home.foregrounded();
                 self.chat.foregrounded();

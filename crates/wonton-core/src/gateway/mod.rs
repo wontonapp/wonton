@@ -22,6 +22,7 @@ mod api;
 mod core_routes;
 mod devices;
 mod isolation;
+mod lan;
 pub mod matrix;
 mod models;
 mod pages;
@@ -194,6 +195,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::Push => push::gateway_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
+        HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
         HostKind::Unknown => pages::error(
             StatusCode::NOT_FOUND,
             "unknown_host",
@@ -337,6 +339,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 mod isolation_tests;
 #[cfg(test)]
 mod models_tests;
+#[cfg(test)]
+mod pairing_tests;
 #[cfg(test)]
 mod proxy_sso_tests;
 #[cfg(test)]
