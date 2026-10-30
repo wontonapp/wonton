@@ -11,11 +11,9 @@
 #   dev.sh list                        列出插件
 #   dev.sh tunnel                      隧道入口的 endpoint ID、中继地址和直连地址
 #   dev.sh devices                     已登记的设备
-#   dev.sh allow <endpoint ID>         登记一台设备（M0 代替扫码配对），它经隧道访问时就是主人
 #   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
 #   dev.sh build <docker build 的参数>  构建镜像，带上 WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS 要的参数
-#   dev.sh ticket [直连地址] [网页地址]  给 App 的连接信息（不经配对，配合 allow 用），直连地址默认 127.0.0.1:隧道端口
-#   dev.sh pair [直连地址]             发一个配对码，在终端里出二维码；直连地址同 ticket
+#   dev.sh pair [直连地址]             发一个配对码：终端里出二维码，最后一行是码的文字；直连地址默认 127.0.0.1:隧道端口
 #   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
@@ -222,29 +220,15 @@ case "${1:-}" in
     api GET /_wonton/api/devices
     echo
     ;;
-  allow)
-    id="${2:?用法：$0 allow <endpoint ID>}"
-    api POST /_wonton/api/devices -H 'Content-Type: application/json' \
-      --data-binary "{\"endpoint_id\": \"$id\"}"
-    echo
-    ;;
   revoke)
     api DELETE "/_wonton/api/devices/${2:?用法：$0 revoke <endpoint ID>}"
     echo
     ;;
-  ticket)
-    # 服务端 ID 和中继地址来自核心；直连地址要写 App 能到达的地址：同机模拟器用 127.0.0.1，
-    # Android 模拟器用 10.0.2.2，局域网里的手机用本机局域网 IP（并设 WONTON_DEV_TUNNEL_BIND=0.0.0.0）。
-    api GET /_wonton/api/tunnel | python3 -c 'import json,sys
-info = json.load(sys.stdin)
-server = {"endpoint_id": info["endpoint_id"], "relay_urls": info["relay_urls"], "direct_addrs": [sys.argv[1]]}
-ticket = {"server": server, "base_domain": info["base_domain"], "web_url": sys.argv[2]}
-print(json.dumps(ticket, separators=(",", ":")))' \
-      "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}" "${3:-http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT/}"
-    ;;
   pair)
     # 主人发的配对码，已经有设备时也能用。局域网状态页（http://<本机 IP>:端口/）在还没有设备时另有首次配对码。
+    # 直连地址要写 App 能到达的地址：同机的 iOS 模拟器用 127.0.0.1，Android 模拟器用 10.0.2.2，局域网里的手机
+    # 用本机的局域网 IP（并设 WONTON_DEV_TUNNEL_BIND=0.0.0.0）。
     docker exec "$core" wonton-core pair "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}"
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|allow <endpoint ID>|revoke <endpoint ID>|ticket [直连地址] [网页地址]|pair [直连地址]" ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
 esac

@@ -6,8 +6,14 @@ import WontonClient
 struct WontonApp: App {
     @Environment(\.scenePhase) private var scenePhase
     /// 整个 App 只有一个核心实例，状态都在它里面。
-    @State private var launch = Launch.start()
-    @State private var tab = Launch.initialTab
+    @State private var launch: Launch
+    @State private var tab: AppTab
+
+    init() {
+        let launch = Launch.start()
+        _launch = State(initialValue: launch)
+        _tab = State(initialValue: launch.initialTab)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -17,7 +23,7 @@ struct WontonApp: App {
                     ChatListView(model: chat)
                         .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
                         .tag(AppTab.chat)
-                    HomeView(model: home)
+                    HomeView(model: home, devWebURL: Launch.devWebURL)
                         .tabItem { Label("家", systemImage: "house") }
                         .tag(AppTab.home)
                 }
@@ -27,7 +33,7 @@ struct WontonApp: App {
                     if old == .background, phase != .background { home.send(.appForegrounded) }
                 }
             case let .failed(reason):
-                ContentUnavailableView("核心启动失败", systemImage: "exclamationmark.triangle",
+                ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
                                        description: Text(reason))
             }
         }
@@ -45,12 +51,19 @@ private enum Launch {
     case ready(ChatModel, HomeModel)
     case failed(String)
 
-    /// 开发时 WONTON_DEV_OPEN_WEB=1 直接停在“家”，网页就绪后自动打开（见 HomeView）。
-    static var initialTab: AppTab {
+    /// 还没配对时先到“家”的配对页；开发时要自动打开网页的也停在“家”。
+    var initialTab: AppTab {
+        guard case let .ready(_, home) = self else { return .chat }
+        if case .notConfigured = home.viewModel.status { return .home }
+        return Self.devWebURL == nil ? .chat : .home
+    }
+
+    /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。
+    static var devWebURL: URL? {
         #if DEBUG
-        if ProcessInfo.processInfo.environment["WONTON_DEV_OPEN_WEB"] != nil { return .home }
+        if let text = ProcessInfo.processInfo.environment["WONTON_DEV_OPEN_WEB"] { return URL(string: text) }
         #endif
-        return .chat
+        return nil
     }
 
     static func start() -> Launch {
@@ -59,16 +72,23 @@ private enum Launch {
         let filter = ProcessInfo.processInfo.environment["WONTON_LOG"] ?? "wonton_client=info,wonton_tunnel=info,warn"
         initLogging(filter: filter, file: nil)
         #endif
+        let core: ClientCore
         do {
-            let core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
-            // 开发时由 `xcrun simctl launch` / `devicectl` 传入连接信息（dev.sh ticket 的输出）。
-            if let ticket = ProcessInfo.processInfo.environment["WONTON_DEV_TICKET"] {
-                try core.dispatch(action: .connectHome(ticket: ticket))
-            }
-            return .ready(ChatModel(core: core), HomeModel(core: core))
+            core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
         } catch {
-            return .failed(String(describing: error))
+            return .failed("核心启动失败：\(error)")
         }
+        #if DEBUG
+        // 开发时由 `xcrun simctl launch` / `devicectl` 传入配对码（`dev.sh pair` 的输出），模拟器上不用扫码。
+        if let code = ProcessInfo.processInfo.environment["WONTON_DEV_PAIRING_CODE"] {
+            do {
+                try core.dispatch(action: .pairHome(code: code, deviceName: UIDevice.current.name))
+            } catch {
+                return .failed("开发时传入的配对码被拒绝：\(error)")
+            }
+        }
+        #endif
+        return .ready(ChatModel(core: core), HomeModel(core: core))
     }
 
     /// App 私有的数据目录，存设备密钥和连接信息。

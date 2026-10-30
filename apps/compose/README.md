@@ -39,15 +39,18 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 
 ## 连家里的服务器（开发）
 
-M0 还没有扫码配对。起本地核心后（`deploy/dev/core/dev.sh up`），用 `dev.sh ticket 10.0.2.2:18482` 生成连接信息
-（模拟器里 `10.0.2.2` 就是 Mac），经 intent 传给 Debug 构建：
+起本地核心后（`deploy/dev/core/dev.sh up`），还没配对时“家”页面就是配对页：扫局域网状态页上或 `dev.sh pair` 打出的
+二维码（CameraX 取景、ZXing 识别），也可以粘贴码的文字。配上以后“家”页面的“添加设备”向核心要一个码，用 ZXing
+画成二维码给新设备扫。模拟器里用 `dev.sh pair 10.0.2.2:18482` 发码（模拟器里
+`10.0.2.2` 就是 Mac），经 intent 把最后一行传给 Debug 构建：
 
 ```bash
-adb shell "am start -n app.wonton.android/.MainActivity --es wonton_ticket '$(deploy/dev/core/dev.sh ticket 10.0.2.2:18482)' --ez wonton_open_web true"
+adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code '$(deploy/dev/core/dev.sh pair 10.0.2.2:18482 | tail -n 1)'"
 ```
 
-- “家”页面显示设备 ID，用 `dev.sh allow <设备 ID>` 登记。`wonton_open_web` 让本地代理就绪后自动打开网页，
-  加载结果在 logcat 的 `WontonWeb` 标签下。
+- 配上以后连接信息存在 App 的数据目录里，之后直接启动也会自动重连，不用再传码；配对码只能用一次。
+- `--es wonton_open_web <插件网页地址>`（比如装好 Grafana 示例插件后的 `http://app-grafana.wonton.localhost:18480/`）
+  让本地代理就绪后自动打开这个网页，加载结果在 logcat 的 `WontonWeb` 标签下。
 - 核心日志写在 App 的 `files/core.log`（`--es wonton_log` 改过滤规则）：
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。

@@ -160,8 +160,8 @@
 
 客户端核心（`crates/wonton-client` 的 `home` 模块）内置隧道客户端和带会话凭据的本地代理，经 UniFFI 导出：
 壳发 `ConnectHome { ticket }`、`AppForegrounded`，订阅 `HomeViewModel`（设备 ID、状态、路径、本地代理地址、
-凭据和基础域名）。基础域名来自核心（`/_wonton/api/tunnel`），写在连接信息里。设备密钥和连接信息存在 App 的数据目录里，重启后自动重连。M0 的连接信息由 `dev.sh ticket` 给出，
-配对二维码上线后（#16）替换。
+凭据和基础域名）。基础域名来自核心（`/_wonton/api/tunnel`），写在连接信息里。设备密钥和连接信息存在 App 的数据目录里，重启后自动重连。这组验证的连接信息由开发脚本
+直接给出；App 扫码配对（`PairHome`，ADR-0009 的“接口：扫码配对”）后由核心按配对码生成。
 
 - **iOS 17+**：`WKWebsiteDataStore.proxyConfigurations` 设为 `ProxyConfiguration(httpCONNECTProxy:)`，
   `applyCredential` 带上凭据，`matchDomains` 只放基础域名（实测它的子域名也走代理）。iOS 模拟器实测：WKWebView 打开 `http://app-grafana.wonton.localhost:18480/`，

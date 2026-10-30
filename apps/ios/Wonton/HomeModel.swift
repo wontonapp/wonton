@@ -31,4 +31,14 @@ final class HomeModel {
             rejection = String(describing: error)
         }
     }
+
+    /// 扫到的不是配对码时核心当场拒绝，原因返回给配对页就地显示，不弹窗；之后的进展在 `viewModel.pairing` 里。
+    func pair(code: String, deviceName: String) -> String? {
+        do {
+            try core.dispatch(action: .pairHome(code: code, deviceName: deviceName))
+            return nil
+        } catch {
+            return String(describing: error)
+        }
+    }
 }

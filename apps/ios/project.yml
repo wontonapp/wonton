@@ -32,6 +32,7 @@ targets:
           NSAllowsArbitraryLoadsInWebContent: true
         # iroh 经局域网直连家里的服务器时，iOS 要先征得用户同意。
         NSLocalNetworkUsageDescription: 云吞经局域网直连你家里的服务器。
+        NSCameraUsageDescription: 云吞用相机扫家里服务器上的配对二维码。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios

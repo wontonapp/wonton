@@ -10,6 +10,7 @@ import app.wonton.client.initLogging
 import app.wonton.protocol.Action
 import app.wonton.ui.StartupFailure
 import app.wonton.ui.WontonApp
+import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.send
 import java.io.File
 
@@ -27,17 +28,19 @@ class MainActivity : ComponentActivity() {
             setContent { StartupFailure("核心启动失败：$failure") }
             return
         }
-        // 开发时用 adb 传入连接信息（dev.sh ticket 的输出），并在网页就绪后自动打开：
-        // adb shell am start -n app.wonton.android/.MainActivity --es wonton_ticket '<JSON>' --ez wonton_open_web true
-        val ticket = intent.getStringExtra("wonton_ticket")
-        val rejected = if (debuggable && ticket != null) core.send(Action.ConnectHome(ticket)) else null
+        // 开发时用 adb 传入配对码（dev.sh pair 输出的最后一行），模拟器上不用扫码；wonton_open_web 是插件网页的
+        // 地址，本地代理就绪后自动打开：
+        // adb shell am start -n app.wonton.android/.MainActivity \
+        //   --es wonton_pairing_code '<码>' --es wonton_open_web <网址>
+        val code = intent.getStringExtra("wonton_pairing_code")?.takeIf { debuggable }
+        val rejected = code?.let { core.send(Action.PairHome(it, defaultDeviceName(this))) }
         if (rejected != null) {
-            setContent { StartupFailure("连接信息被拒绝：$rejected") }
+            setContent { StartupFailure("开发时传入的配对码被拒绝：$rejected") }
             return
         }
-        val openWeb = debuggable && intent.getBooleanExtra("wonton_open_web", false)
+        val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
         PushRegistration(this, core).start()
-        setContent { WontonApp(core, openWebOnReady = openWeb) }
+        setContent { WontonApp(core, devWebUrl = devWebUrl) }
     }
 
     override fun onResume() {

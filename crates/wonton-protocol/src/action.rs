@@ -15,8 +15,8 @@ pub enum Action {
     SelectSession { session_id: String },
     /// 删除一个会话；删除的是选中的会话时，清空选中。
     DeleteSession { session_id: String },
-    /// 连接家里的服务器，并把连接信息存在本机，之后每次启动自动连接。M0 的连接信息由开发脚本给出
-    /// （`deploy/dev/core/dev.sh ticket`），配对上线后来自二维码（#16）。连接信息不合法时返回
+    /// 不经配对，直接用给定的连接信息连接家里的服务器，并存在本机，之后每次启动自动连接。App 走
+    /// [`Action::PairHome`]，连接信息由核心按配对码生成；这个操作给测试用。连接信息不合法时返回
     /// `InvalidInput`；连接的进展和结果体现在 [`HomeViewModel`](crate::HomeViewModel) 里。
     ConnectHome { ticket: String },
     /// 扫码配对：`code` 是二维码里的文字（`wonton://pair?…`，格式见 ADR-0009 的“接口：扫码配对”），里面有一次性的

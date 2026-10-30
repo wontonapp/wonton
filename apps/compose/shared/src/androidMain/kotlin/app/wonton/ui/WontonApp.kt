@@ -20,26 +20,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.protocol.HomeStatus
 
 /**
  * 应用的根界面。平台入口（Android 的 Activity，以后的桌面窗口）只负责创建核心并调用它。
- * `openWebOnReady` 只在开发时为真：网页入口和本地代理就绪后自动打开网页，不用点按也能测。
+ * `devWebUrl` 只在开发时给出：本地代理就绪后自动打开这个插件网页，不用点按也能测。
  */
 @Composable
-fun WontonApp(core: ClientCore, openWebOnReady: Boolean = false) {
+fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
     MaterialTheme {
         val updates = remember(core) { core.homeUpdates() }
         val initial = remember(core) { core.home() }
         val home by updates.collectAsState(initial = initial)
-        var tab by rememberSaveable { mutableStateOf(if (openWebOnReady) 1 else 0) }
+        // 还没配对时先到“家”的配对页；开发时要自动打开网页的也停在“家”。
+        val startAtHome = initial.status is HomeStatus.NotConfigured || devWebUrl != null
+        var tab by rememberSaveable { mutableStateOf(if (startAtHome) 1 else 0) }
         var showingPage by rememberSaveable { mutableStateOf(false) }
-        val url = home.webUrl
         val proxy = home.proxy
-        LaunchedEffect(openWebOnReady, url, proxy) {
-            if (openWebOnReady && url != null && proxy != null) showingPage = true
+        LaunchedEffect(devWebUrl, proxy) {
+            if (devWebUrl != null && proxy != null) showingPage = true
         }
-        if (showingPage && url != null && proxy != null) {
-            PluginPage(url = url, proxy = proxy, onClose = { showingPage = false })
+        if (showingPage && devWebUrl != null && proxy != null) {
+            PluginPage(url = devWebUrl, proxy = proxy, onClose = { showingPage = false })
             return@MaterialTheme
         }
         Scaffold(
@@ -54,14 +56,14 @@ fun WontonApp(core: ClientCore, openWebOnReady: Boolean = false) {
             Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
                 when (tab) {
                     0 -> ChatRoute(core)
-                    else -> HomeRoute(core, home, onOpenWeb = { showingPage = true })
+                    else -> HomeRoute(core, home)
                 }
             }
         }
     }
 }
 
-/** 核心起不来或开发时传入的连接信息被拒绝：如实显示原因，不进入主界面。 */
+/** 核心起不来或开发时传入的配对码被拒绝：如实显示原因，不进入主界面。 */
 @Composable
 fun StartupFailure(reason: String) {
     MaterialTheme {

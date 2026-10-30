@@ -39,13 +39,17 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
 `WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。已登记的设备经隧道访问时就是主人，打开插件不用登录。
 
 设备扫码配对（ADR-0009 的“接口：扫码配对”）：浏览器用 IP 打开 `http://127.0.0.1:18480/` 是局域网状态页，还没有
-设备时上面有首次配对码；`dev.sh pair [直连地址]` 随时再发一个，在终端里出二维码。也可以用主人令牌直接登记：
+设备时上面有首次配对码；`dev.sh pair [直连地址]` 随时再发一个，在终端里出二维码，最后一行是码的文字：
 
 ```bash
 deploy/dev/core/dev.sh pair                    # 发配对码；直连地址默认 127.0.0.1:18482
 deploy/dev/core/dev.sh tunnel                  # 服务端 endpoint ID、中继地址和直连地址
-deploy/dev/core/dev.sh allow <设备 endpoint ID>  # 不经配对直接登记；revoke 吊销并立即断开，devices 列出
+deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <endpoint ID> 吊销并立即断开
 ```
+
+码里的直连地址要写 App 能到达的地址：同机的 iOS 模拟器用默认的 `127.0.0.1:18482`，Android 模拟器写
+`10.0.2.2:18482`，局域网里的手机写本机的局域网 IP，并用 `WONTON_DEV_TUNNEL_BIND=0.0.0.0` 起核心。App 怎么用码见
+`apps/ios/README.md`、`apps/compose/README.md`。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
@@ -93,11 +97,6 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie group add wonton-default m
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 
 文件搜索插件的镜像要先在本机构建：`docker build -t wonton-files:dev plugins/files`。
-
-App 用 `dev.sh ticket [直连地址] [网页地址]` 生成的连接信息连接（见 `apps/ios/README.md`、`apps/compose/README.md`），
-里面带着基础域名：App 的本地代理和 WebView 只让这个域名下的地址走隧道。
-直连地址默认 `127.0.0.1:18482`（同机的 iOS 模拟器），Android 模拟器写 `10.0.2.2:18482`，局域网里的手机写本机的
-局域网 IP，并用 `WONTON_DEV_TUNNEL_BIND=0.0.0.0` 起核心。
 
 ## 推送
 

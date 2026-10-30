@@ -7,7 +7,9 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 
 - `Wonton/`：App 源码。`ChatModel`、`HomeModel` 持有核心推来的 ViewModel 并转发操作，`TimelineModel` 按顺序
   应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`PluginWebView`
-  把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。
+  把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。`PairingView` 是扫码配对页，
+  `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
+  把核心要来的配对码画成二维码。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。
@@ -42,23 +44,24 @@ xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<�
 ```
 
 用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
-“设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次连家里的服务器时，系统会请求“本地网络”权限。
+“设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次打开配对页时系统请求相机权限，第一次连家里的服务器时请求
+“本地网络”权限。
 
 ## 连家里的服务器（开发）
 
-M0 还没有扫码配对。先起本地核心（`deploy/dev/core/dev.sh up`，装好 Grafana 示例插件），用 `dev.sh ticket`
-生成连接信息，启动时经环境变量传给 App（Debug 构建才读）：
+先起本地核心（`deploy/dev/core/dev.sh up`）。还没配对时“家”页面就是配对页：真机扫局域网状态页上或
+`dev.sh pair` 打出的二维码；模拟器没有相机，粘贴 `dev.sh pair` 输出的最后一行，或者启动时经环境变量传入
+（Debug 构建才读）：
 
 ```bash
-SIMCTL_CHILD_WONTON_DEV_TICKET="$(deploy/dev/core/dev.sh ticket)" SIMCTL_CHILD_WONTON_DEV_OPEN_WEB=1 xcrun simctl launch --console-pty booted app.wonton.ios
+SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)" xcrun simctl launch --console-pty booted app.wonton.ios
 ```
 
-- 第一次启动时核心生成设备密钥，控制台打印 `本机设备身份 device_id=…`，“家”页面也显示它；用
-  `dev.sh allow <设备 ID>` 登记后，插件网页直接以主人进入。
-- `WONTON_DEV_OPEN_WEB=1` 让 App 停在“家”，本地代理就绪后自动打开连接信息里的网页，并把加载结果打到控制台，
-  真机上不用点按也能测。真机用 `xcrun devicectl device process launch --console --environment-variables`
-  传同样的变量，直连地址写 Mac 的局域网 IP（核心要 `WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。
-- 连接信息存在 App 的数据目录里，之后直接启动也会自动重连。
+- 配上以后连接信息存在 App 的数据目录里，之后直接启动也会自动重连，不用再传码；配对码只能用一次。
+- `WONTON_DEV_OPEN_WEB=<插件网页地址>`（比如装好 Grafana 示例插件后的 `http://app-grafana.wonton.localhost:18480/`）
+  让 App 停在“家”，本地代理就绪后自动打开这个网页，并把加载结果打到控制台，真机上不用点按也能测。真机用
+  `xcrun devicectl device process launch --console --environment-variables` 传同样的变量；码里的直连地址写 Mac 的
+  局域网 IP（`dev.sh pair <IP>:18482`，核心要 `WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。
 - `WONTON_LOG` 换核心的日志过滤规则，例如 `wonton_client=info,wonton_tunnel=debug,warn` 打开本地代理的
   逐连接日志。
 - `WONTON_DEV_RELOAD_ON_FOREGROUND=1` 让网页每次从后台回来都重新加载，并把加载过程带上 UTC 时间打到控制台。

@@ -75,6 +75,12 @@ kotlin {
                 implementation(libs.androidx.webkit)
                 // Apache-2.0。系统的照片选择器（PickVisualMedia）和返回键处理（BackHandler）。
                 implementation(libs.androidx.activity.compose)
+                // Apache-2.0。扫码配对页的相机取景和逐帧分析（CameraX）。
+                implementation(libs.androidx.camera.camera2)
+                implementation(libs.androidx.camera.lifecycle)
+                implementation(libs.androidx.camera.view)
+                // Apache-2.0。在相机的帧里识别二维码（ZXing 的解码库，不含它的扫码界面）。
+                implementation(libs.zxing.core)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             }
         }
