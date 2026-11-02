@@ -7571,6 +7571,7 @@ dependencies = [
  "resvg",
  "rmcp",
  "rustix",
+ "semver",
  "serde",
  "serde-saphyr",
  "serde_json",

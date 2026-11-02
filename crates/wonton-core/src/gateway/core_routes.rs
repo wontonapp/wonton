@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use axum::Extension;
-use axum::extract::{Form, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Form, Query, Request, State};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get, post, put};
@@ -35,8 +35,16 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             put(push::register).delete(push::unregister),
         )
         .route("/_wonton/confirmations/{id}", post(confirmations::answer))
-        .route("/_wonton/api/plugins", get(api::list).post(api::install))
-        .route("/_wonton/api/plugins/preview", post(api::preview))
+        .route(
+            "/_wonton/api/plugins",
+            get(api::list)
+                .post(api::install)
+                .layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
+        )
+        .route(
+            "/_wonton/api/plugins/preview",
+            post(api::preview).layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
+        )
         .route(
             "/_wonton/api/plugins/{id}",
             get(api::detail).delete(api::uninstall),

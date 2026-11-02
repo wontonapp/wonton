@@ -9,6 +9,7 @@ use wonton_protocol::{
 };
 
 use super::gallery::{IconSource, Variant};
+use super::github_source::Origin;
 use super::image_worker::ImageError;
 use super::languages::Languages;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
@@ -26,6 +27,8 @@ pub struct Listed {
     pub icon: Option<IconSource>,
     /// 装上的时间（Unix 秒），列表按它排序。
     pub installed_at: u64,
+    /// 按来源装的从哪里来。
+    pub origin: Option<Origin>,
 }
 
 impl Listed {
@@ -34,6 +37,7 @@ impl Listed {
             manifest: package.manifest.clone(),
             icon: IconSource::of(package),
             installed_at,
+            origin: package.origin.clone(),
         })
     }
 
@@ -43,6 +47,7 @@ impl Listed {
             manifest,
             icon: None,
             installed_at: 0,
+            origin: None,
         })
     }
 }
@@ -88,8 +93,9 @@ impl PluginManager {
             return Some(broken_detail(installed));
         };
         let m = &listed.manifest;
+        let origin = listed.origin.as_ref();
         Some(PluginDetail {
-            source: None,
+            source: origin.map(|o| o.repo.clone()),
             id: installed.id.clone(),
             title: installed.title.clone(),
             summary: installed.summary.clone(),
@@ -103,7 +109,7 @@ impl PluginManager {
             trust: installed.trust,
             author: author(m),
             homepage: m.homepage.clone(),
-            repository: None,
+            repository: origin.map(Origin::repository_url),
             license: m.license.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
@@ -115,7 +121,7 @@ impl PluginManager {
         })
     }
 
-    /// 安装上传的插件包之前给主人确认的内容。插件包不合法时报错；合法但这台主机上装不了时，原因写在 `blocked`。
+    /// 安装插件包之前给主人确认的内容（按来源取来的插件包带着来源）。插件包不合法时报错；合法但这台主机上装不了时，原因写在 `blocked`。
     pub async fn preview_install(
         &self,
         package: &PluginPackage,
@@ -142,6 +148,12 @@ impl PluginManager {
             .map(|c| format!("{}（{}）", c.service, c.image))
             .collect();
         let mut notices = Vec::new();
+        if package.origin.is_some() {
+            notices.push(CardLine {
+                text: "云吞没有审核过这个插件，代码和镜像由它的作者提供".to_owned(),
+                emphasis: true,
+            });
+        }
         if !unpinned.is_empty() {
             notices.push(line(format!("镜像没有按摘要固定：{}", unpinned.join("、"))));
         }
@@ -151,8 +163,8 @@ impl PluginManager {
         notices.extend(requirement_lines(m).into_iter().map(line));
         notices.extend(gpu.notice);
         Ok(InstallPreview {
-            source: None,
-            commit: None,
+            source: package.origin.as_ref().map(Origin::source),
+            commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
@@ -160,7 +172,7 @@ impl PluginManager {
             version: m.version.clone(),
             kind: kind(m.kind),
             icon: icon.map(|i| i.paths()),
-            trust: PluginTrust::Local,
+            trust: trust(package.origin.as_ref()),
             author: author(m),
             permissions: m.permissions.iter().map(permission_line).collect(),
             notices,
@@ -241,6 +253,7 @@ impl PluginManager {
     /// 列表里的一项，还没填 Bot。
     fn listing(&self, id: &PluginId, entry: &Entry, langs: &Languages) -> InstalledPlugin {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
+        let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
         InstalledPlugin {
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
@@ -256,9 +269,9 @@ impl PluginManager {
             trust: if entry.system {
                 PluginTrust::System
             } else {
-                PluginTrust::Local
+                trust(origin)
             },
-            source: None,
+            source: origin.map(Origin::source),
             status: state(&entry.status, entry.health),
             web_url: entry.has_webui.then(|| self.web_url(id)),
             bot_user_id: None,
@@ -337,6 +350,14 @@ fn requirement_lines(manifest: &Manifest) -> Vec<String> {
         None => {}
     }
     lines
+}
+
+/// 不是系统插件时：按来源装的是社区插件（官方索引见插件规范的“官方索引”），上传的是本地插件。
+fn trust(origin: Option<&Origin>) -> PluginTrust {
+    match origin {
+        Some(_) => PluginTrust::Community,
+        None => PluginTrust::Local,
+    }
 }
 
 fn line(text: String) -> CardLine {

@@ -1,0 +1,282 @@
+//! 从 GitHub 上的公开仓库取插件包（插件规范的“来源”）：tag 经 git 协议 v2 的 `ls-refs` 解析成提交，文件按提交从
+//! `raw.githubusercontent.com` 取。两者都不计入 GitHub API 的额度（不带令牌时每小时 60 次），核心也不存 GitHub 令牌。
+//! 下载照常走 `HTTPS_PROXY`。
+
+use std::time::Duration;
+
+use reqwest::StatusCode;
+
+/// 一次请求最多等这么久：GitHub 在国内时常很慢，但不能让预览一直挂着。
+const TIMEOUT: Duration = Duration::from_secs(30);
+/// `ls-refs` 的响应最多这么大：一个 tag 一行，几万个 tag 也用不到。
+const MAX_REFS_BYTES: u64 = 4 << 20;
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GitHubError {
+    /// 连不上 GitHub、超时、GitHub 出错或限速了。
+    #[error("{0}")]
+    Unavailable(String),
+    /// 没有这个公开仓库，或者这个提交里没有这个文件。
+    #[error("{0}")]
+    NotFound(String),
+    /// 文件超过了给的上限。
+    #[error("{0}")]
+    TooBig(String),
+}
+
+/// GitHub 上的一个仓库：`owner/name`。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Repo {
+    pub owner: String,
+    pub name: String,
+}
+
+impl std::fmt::Display for Repo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.owner, self.name)
+    }
+}
+
+/// 仓库里的一个 tag：名字（不带 `refs/tags/`）和它指向的提交（注解 tag 已经剥到提交）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tag {
+    pub name: String,
+    pub commit: String,
+}
+
+#[derive(Clone)]
+pub struct GitHub {
+    client: reqwest::Client,
+    /// `https://github.com`，git 协议走这里。
+    git: String,
+    /// `https://raw.githubusercontent.com`。
+    raw: String,
+}
+
+impl Default for GitHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GitHub {
+    pub fn new() -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(TIMEOUT)
+            .user_agent(concat!("wonton-core/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .expect("GitHub 客户端的配置是固定的");
+        Self {
+            client,
+            git: "https://github.com".to_owned(),
+            raw: "https://raw.githubusercontent.com".to_owned(),
+        }
+    }
+
+    /// 连到测试替身：两个地址都是它，不走代理。
+    #[cfg(test)]
+    pub fn for_test(base: &str) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .no_proxy()
+            .build()
+            .unwrap();
+        Self {
+            client,
+            git: base.to_owned(),
+            raw: base.to_owned(),
+        }
+    }
+
+    /// 仓库的全部 tag。仓库不存在或不公开时 GitHub 要求登录（401），这里报 [`GitHubError::NotFound`]。
+    pub async fn tags(&self, repo: &Repo) -> Result<Vec<Tag>, GitHubError> {
+        let url = format!("{}/{repo}.git/git-upload-pack", self.git);
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/x-git-upload-pack-request")
+            .header("Accept", "application/x-git-upload-pack-result")
+            .header("Git-Protocol", "version=2")
+            .body(ls_refs_request())
+            .send()
+            .await
+            .map_err(|e| unavailable(&format!("读 {repo} 的 tag"), &e))?;
+        match response.status() {
+            StatusCode::OK => {}
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => {
+                return Err(GitHubError::NotFound(format!(
+                    "GitHub 上没有公开仓库 {repo}"
+                )));
+            }
+            status => {
+                return Err(GitHubError::Unavailable(format!(
+                    "读 {repo} 的 tag 时 GitHub 回了 {status}"
+                )));
+            }
+        }
+        let body = read_limited(response, MAX_REFS_BYTES)
+            .await
+            .map_err(|e| e.context(&format!("读 {repo} 的 tag")))?;
+        parse_ls_refs(&body)
+            .map_err(|e| GitHubError::Unavailable(format!("GitHub 给的 {repo} 的 tag 读不懂：{e}")))
+    }
+
+    /// 某个提交里的一个文件，超过 `max` 字节时报错。
+    pub async fn file(
+        &self,
+        repo: &Repo,
+        commit: &str,
+        path: &str,
+        max: u64,
+    ) -> Result<Vec<u8>, GitHubError> {
+        let url = format!("{}/{repo}/{commit}/{path}", self.raw);
+        let what = format!("{repo} 在提交 {commit} 里的 {path}");
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| unavailable(&format!("取 {what}"), &e))?;
+        match response.status() {
+            StatusCode::OK => read_limited(response, max)
+                .await
+                .map_err(|e| e.context(&format!("取 {what}"))),
+            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {what}"))),
+            status => Err(GitHubError::Unavailable(format!(
+                "取 {what} 时 GitHub 回了 {status}"
+            ))),
+        }
+    }
+}
+
+impl GitHubError {
+    fn context(self, what: &str) -> Self {
+        match self {
+            Self::Unavailable(m) => Self::Unavailable(format!("{what}：{m}")),
+            Self::NotFound(m) => Self::NotFound(format!("{what}：{m}")),
+            Self::TooBig(m) => Self::TooBig(format!("{what}：{m}")),
+        }
+    }
+}
+
+fn unavailable(what: &str, e: &reqwest::Error) -> GitHubError {
+    let reason = if e.is_timeout() {
+        format!("{} 秒内没有回应", TIMEOUT.as_secs())
+    } else {
+        format!("连不上 GitHub（{e}）")
+    };
+    GitHubError::Unavailable(format!("{what}：{reason}"))
+}
+
+async fn read_limited(mut response: reqwest::Response, max: u64) -> Result<Vec<u8>, GitHubError> {
+    let too_big = || GitHubError::TooBig(format!("超过 {} KiB", max.div_ceil(1024)));
+    if response.content_length().is_some_and(|len| len > max) {
+        return Err(too_big());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| GitHubError::Unavailable(format!("读响应时断开（{e}）")))?
+    {
+        body.extend_from_slice(&chunk);
+        if body.len() as u64 > max {
+            return Err(too_big());
+        }
+    }
+    Ok(body)
+}
+
+/// 一行 pkt-line：4 位十六进制的长度（含这 4 位）加内容。GitHub 对长度算错的请求回空响应，不报错。
+fn pkt_line(payload: &str) -> String {
+    format!("{:04x}{payload}", payload.len() + 4)
+}
+
+/// 只要 tag，注解 tag 带上它指向的提交（`peel`）。
+fn ls_refs_request() -> String {
+    [
+        pkt_line("command=ls-refs\n"),
+        "0001".to_owned(),
+        pkt_line("peel\n"),
+        pkt_line("ref-prefix refs/tags/\n"),
+        "0000".to_owned(),
+    ]
+    .concat()
+}
+
+/// `ls-refs` 的响应：每行 `<对象> refs/tags/<名字>[ peeled:<提交>]`，以 `0000` 结束。
+fn parse_ls_refs(body: &[u8]) -> Result<Vec<Tag>, String> {
+    let mut tags = Vec::new();
+    let mut rest = body;
+    loop {
+        let (len, after) = rest.split_at_checked(4).ok_or("响应在结束标记前断了")?;
+        let len = std::str::from_utf8(len)
+            .ok()
+            .and_then(|l| usize::from_str_radix(l, 16).ok())
+            .ok_or("pkt-line 的长度不是十六进制")?;
+        if len == 0 {
+            return Ok(tags);
+        }
+        let (line, after) = len
+            .checked_sub(4)
+            .and_then(|n| after.split_at_checked(n))
+            .ok_or("pkt-line 的长度不对")?;
+        rest = after;
+        let line = std::str::from_utf8(line).map_err(|_| "ref 不是 UTF-8")?;
+        if let Some(tag) = parse_ref(line.trim_end_matches('\n')) {
+            tags.push(tag);
+        }
+    }
+}
+
+fn parse_ref(line: &str) -> Option<Tag> {
+    let mut parts = line.split(' ');
+    let object = parts.next()?;
+    let name = parts.next()?.strip_prefix("refs/tags/")?;
+    let peeled = parts.find_map(|attr| attr.strip_prefix("peeled:"));
+    let commit = peeled.unwrap_or(object);
+    is_commit_id(commit).then(|| Tag {
+        name: name.to_owned(),
+        commit: commit.to_owned(),
+    })
+}
+
+/// 40 位小写十六进制：git 的 SHA-1 对象名。
+pub fn is_commit_id(text: &str) -> bool {
+    text.len() == 40 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ls_refs_requests_and_responses_are_pkt_lines() {
+        assert_eq!(
+            ls_refs_request(),
+            "0014command=ls-refs\n00010009peel\n001aref-prefix refs/tags/\n0000"
+        );
+        let a = "a".repeat(40);
+        let b = "b".repeat(40);
+        let body = [
+            pkt_line(&format!("{a} refs/tags/v1.0.0\n")),
+            pkt_line(&format!("{a} refs/tags/v1.1.0 peeled:{b}\n")),
+            "0000".to_owned(),
+        ]
+        .concat();
+        assert_eq!(
+            parse_ls_refs(body.as_bytes()).unwrap(),
+            [
+                Tag {
+                    name: "v1.0.0".into(),
+                    commit: a.clone()
+                },
+                Tag {
+                    name: "v1.1.0".into(),
+                    commit: b
+                },
+            ]
+        );
+        assert!(parse_ls_refs(pkt_line(&format!("{a} refs/tags/v1\n")).as_bytes()).is_err());
+    }
+}

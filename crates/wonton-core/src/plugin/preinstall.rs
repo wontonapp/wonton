@@ -109,6 +109,8 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::Unsupported(_)
         | InstallError::Conflict(_)
         | InstallError::NotInstalled(_)
+        | InstallError::NotFound(_)
+        | InstallError::Changed(_)
         // 本机没有可用的显卡：装驱动、插显卡都要主人动手，下次启动再试。
         | InstallError::GpuUnavailable(_) => false,
         InstallError::DockerUnavailable(_)
@@ -120,7 +122,8 @@ fn retryable(e: &InstallError) -> bool {
         // 核心起不了处理图片的子进程，和插件包里的图片无关。
         | InstallError::ImagesUnavailable(_)
         | InstallError::Unhealthy(_)
-        | InstallError::Storage(_) => true,
+        | InstallError::Storage(_)
+        | InstallError::SourceUnavailable(_) => true,
     }
 }
 

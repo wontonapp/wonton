@@ -223,6 +223,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             granted_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            origin: None,
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");

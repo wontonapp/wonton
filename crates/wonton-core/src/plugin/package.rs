@@ -14,6 +14,7 @@ use super::compose::{
     FORBIDDEN_CONFIG_KEYS, FORBIDDEN_SERVICE_KEYS, FORBIDDEN_TOP_KEYS, Service,
     network_mode_refusal, strip_extensions,
 };
+use super::github_source::Origin;
 use super::images::IconFormat;
 use super::interpolate::{InterpolateError, Vars, interpolate, interpolate_value};
 use super::manifest::{Manifest, ManifestError, SecretSpec};
@@ -92,6 +93,8 @@ pub struct PluginPackage {
     volumes: BTreeSet<String>,
     configs: BTreeMap<String, ConfigSource>,
     files: PackageFiles,
+    /// 从哪里取来的；上传的和预装的插件包为空。
+    pub origin: Option<Origin>,
 }
 
 impl PluginPackage {
@@ -135,6 +138,12 @@ impl PluginPackage {
         package.attach(files)
     }
 
+    /// compose 文本引用的插件包里的文件（规范化后的路径）：按来源取插件包时，取完 compose 再取它们。
+    pub fn referenced_files(source: &str) -> Result<Vec<String>, PackageError> {
+        let refs = Self::structure(source)?.references()?;
+        Ok(refs.into_iter().map(|(_, path)| path).collect())
+    }
+
     fn structure(source: &str) -> Result<Self, PackageError> {
         let document: Value =
             serde_saphyr::from_str(source).map_err(|e| PackageError::Yaml(e.to_string()))?;
@@ -172,6 +181,7 @@ impl PluginPackage {
             volumes,
             configs,
             files: PackageFiles::new(),
+            origin: None,
         };
         package.check_manifest_references()?;
         Ok(package)

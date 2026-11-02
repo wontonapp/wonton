@@ -211,6 +211,7 @@ impl PluginManager {
             granted_permissions: granted.to_vec(),
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
+            origin: package.origin.clone(),
         })?;
         Ok(Deployed {
             upstream,

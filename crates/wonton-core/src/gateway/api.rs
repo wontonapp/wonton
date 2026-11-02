@@ -5,14 +5,13 @@
 //! | --- | --- | --- |
 //! | GET | `/_wonton/api/plugins` | 已安装的插件（`InstalledPlugins`） |
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
-//! | POST | `/_wonton/api/plugins/preview` | 请求体是插件包，返回要主人确认的内容（`InstallPreview`） |
-//! | POST | `/_wonton/api/plugins?grant=权限,权限` | 安装插件包；`grant` 必须与清单声明的权限一致（201 `InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`） |
+//! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
 //!
 //! 插件包是 compose 文本，或者 `Content-Type: application/x-tar` 的整个插件包目录（compose 引用了包里的文件时，
-//! 如 Hermes 的 `config.yaml`）。按来源安装（JSON 请求体）由插件规范“实现计划”的第 2 项实现，在那之前如实报
-//! `unsupported`。
+//! 如 Hermes 的 `config.yaml`）。JSON 请求体（`Content-Type: application/json`）是按来源预览和安装。
 
 use std::sync::Arc;
 
@@ -23,30 +22,37 @@ use axum::response::{IntoResponse, Response};
 use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::json;
+use wonton_protocol::{InstallRequest, InstallSource};
 
 use super::{Gateway, pages};
 use crate::plugin::gallery::Variant;
 use crate::plugin::image_worker::ImageError;
 use crate::plugin::languages::Languages;
-use crate::plugin::{InstallError, Permission, PluginId, PluginPackage};
+use crate::plugin::package_files::MAX_PACKAGE_BYTES;
+use crate::plugin::{InstallError, Permission, PluginId, PluginPackage, PluginView};
+
+/// 上传插件包的请求体上限：插件包本身最多 [`MAX_PACKAGE_BYTES`]，打成 tar 还要加上每个文件的头和对齐。axum 默认的
+/// 2 MiB 会把接近上限的插件包拒掉，包的大小由解析插件包时检查。
+pub const MAX_UPLOAD_BYTES: usize = 2 * MAX_PACKAGE_BYTES as usize;
 
 fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()))
 }
 
-/// 按来源预览和安装（JSON 请求体）还没实现：如实报不支持，不把 JSON 当成 compose 文本去解析。
-fn source_request(headers: &HeaderMap) -> Option<Response> {
+/// JSON 请求体是按来源预览或安装（`InstallSource`、`InstallRequest`）；其余是上传的插件包。解析不了时是
+/// `InstallError::Invalid`。
+fn json_body<T: DeserializeOwned>(
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Option<Result<T, InstallError>> {
     let json = headers
         .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|t| t.starts_with("application/json"));
     json.then(|| {
-        error_response(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "unsupported",
-            "这个版本的核心还不能按来源安装，只收上传的插件包",
-        )
+        serde_json::from_slice(body).map_err(|e| InstallError::Invalid(format!("请求体不对：{e}")))
     })
 }
 
@@ -80,13 +86,14 @@ fn install_error(error: &InstallError) -> Response {
         InstallError::Unsupported(_) | InstallError::GpuUnavailable(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
         }
-        InstallError::Conflict(_) => StatusCode::CONFLICT,
-        InstallError::NotInstalled(_) => StatusCode::NOT_FOUND,
+        InstallError::Conflict(_) | InstallError::Changed(_) => StatusCode::CONFLICT,
+        InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
         | InstallError::OidcUnavailable(_)
         | InstallError::MatrixUnavailable(_)
         | InstallError::ModelsUnavailable(_)
-        | InstallError::ImagesUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+        | InstallError::ImagesUnavailable(_)
+        | InstallError::SourceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         InstallError::Docker(_) | InstallError::ImagePull(_) | InstallError::Unhealthy(_) => {
             StatusCode::BAD_GATEWAY
         }
@@ -142,18 +149,24 @@ pub async fn preview(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers).or_else(|| source_request(&headers)) {
+    if let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
-    let package = match package(&headers, &body) {
-        Ok(package) => package,
-        Err(e) => return install_error(&e),
+    let langs = languages(&headers);
+    let preview = match json_body::<InstallSource>(&headers, &body) {
+        Some(Err(e)) => return install_error(&e),
+        Some(Ok(request)) => {
+            gateway
+                .plugins
+                .preview_source(&request.source, &langs)
+                .await
+        }
+        None => match package(&headers, &body) {
+            Ok(package) => gateway.plugins.preview_install(&package, &langs).await,
+            Err(e) => return install_error(&e),
+        },
     };
-    match gateway
-        .plugins
-        .preview_install(&package, &languages(&headers))
-        .await
-    {
+    match preview {
         Ok(preview) => Json(preview).into_response(),
         Err(e) => install_error(&e),
     }
@@ -171,9 +184,32 @@ pub async fn install(
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers).or_else(|| source_request(&headers)) {
+    if let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
+    let installed = match json_body::<InstallRequest>(&headers, &body) {
+        Some(Err(e)) => return install_error(&e),
+        Some(Ok(request)) => gateway.plugins.install_source(&request).await,
+        None => install_upload(&gateway, &headers, &query, &body).await,
+    };
+    let id = match installed {
+        Ok(view) => view.id,
+        Err(e) => return install_error(&e),
+    };
+    match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
+        Some(installed) => (StatusCode::CREATED, Json(installed)).into_response(),
+        // 装好之后立刻被卸掉了。
+        None => install_error(&InstallError::NotInstalled(id.to_string())),
+    }
+}
+
+/// 上传的插件包，`?grant=` 是主人确认的权限。
+async fn install_upload(
+    gateway: &Arc<Gateway>,
+    headers: &HeaderMap,
+    query: &InstallQuery,
+    body: &[u8],
+) -> Result<PluginView, InstallError> {
     let granted: Result<Vec<Permission>, _> = query
         .grant
         .split(',')
@@ -181,23 +217,11 @@ pub async fn install(
         .filter(|p| !p.is_empty())
         .map(str::parse)
         .collect();
-    let granted = match granted {
-        Ok(granted) => granted,
-        Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
-    };
-    let package = match package(&headers, &body) {
-        Ok(package) => package,
-        Err(e) => return install_error(&e),
-    };
-    let id = package.manifest.id.clone();
-    if let Err(e) = gateway.plugins.install_detached(package, granted).await {
-        return install_error(&e);
-    }
-    match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-        Some(installed) => (StatusCode::CREATED, Json(installed)).into_response(),
-        // 装好之后立刻被卸掉了。
-        None => install_error(&InstallError::NotInstalled(id.to_string())),
-    }
+    let granted = granted.map_err(|e: <Permission as std::str::FromStr>::Err| {
+        InstallError::Invalid(e.to_string())
+    })?;
+    let package = package(headers, body)?;
+    gateway.plugins.install_detached(package, granted).await
 }
 
 #[derive(Deserialize)]

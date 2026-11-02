@@ -644,7 +644,7 @@ async fn plugin_api_answers_in_the_requested_language() {
         StatusCode::NOT_FOUND
     );
 
-    // 按来源安装（JSON 请求体）在这个版本还不支持，不当成 compose 文本去解析。
+    // JSON 请求体是按来源预览和安装，不当成 compose 文本去解析：来源写错、少了摘要都是请求不对。
     let json = [
         ("authorization", bearer.as_str()),
         ("content-type", "application/json"),
@@ -652,8 +652,8 @@ async fn plugin_api_answers_in_the_requested_language() {
     for path in ["/_wonton/api/plugins/preview", "/_wonton/api/plugins"] {
         let body = Body::from(r#"{"source": "github.com/example/plugin"}"#);
         let reply = h.send(Method::POST, CORE, path, &json, body).await;
-        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{path}");
-        assert_eq!(reply.error_kind(), Some("unsupported"), "{path}");
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{path}");
+        assert_eq!(reply.error_kind(), Some("invalid_input"), "{path}");
     }
 }
 

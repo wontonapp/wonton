@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use super::docker::Engine;
 use super::gallery::Gallery;
+use super::github::GitHub;
 use super::gpu::HostPaths;
 use super::image_worker::ImageWorker;
 use super::lifecycle::LifecycleConfig;
@@ -212,6 +213,8 @@ pub struct PluginManager {
     /// 核心看到的宿主路径，探测显卡用（见 [`super::gpu`]）。
     pub(super) host: HostPaths,
     pub(super) sources: Sources,
+    /// 按来源取插件包。
+    pub(super) github: GitHub,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
     /// 交给 App 的图标。
@@ -263,6 +266,7 @@ impl PluginManager {
             host: HostPaths::new(host_dev),
             cfg,
             sources: Sources::default(),
+            github: GitHub::new(),
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
@@ -296,6 +300,14 @@ impl PluginManager {
                 })
             })
             .collect()
+    }
+
+    /// 从测试替身取按来源安装的插件包。
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_github(mut self, github: GitHub) -> Self {
+        self.github = github;
+        self
     }
 
     /// 接上 Matrix 服务器：声明了 `matrix.bot` 的插件这才装得上。
@@ -520,7 +532,8 @@ impl PluginManager {
 
     async fn restore_one(&self, record: &InstalledRecord) -> Entry {
         match PluginPackage::with_files(&record.source, record.files.clone()) {
-            Ok(package) => {
+            Ok(mut package) => {
+                package.origin = record.origin.clone();
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
                 let manifest = &package.manifest;
                 let network = self.cfg.instance.network(&manifest.id.slug());

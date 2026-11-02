@@ -30,6 +30,7 @@ iroh = { workspace = true }
 jsonwebtoken = { workspace = true }
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。
 reqwest = { workspace = true, features = ["rustls"] }
+semver = "1.0.28"
 # Apache-2.0 OR MIT（渲染用的 tiny-skia 是 BSD-3-Clause，解析 XML 的 roxmltree 是 MIT OR Apache-2.0，经 resvg 引用）。
 # SVG 图标渲染成 PNG；不开 text、raster-images、svgz：不渲染文字，不解码 SVG 里嵌的位图，不收压缩过的 SVG。
 resvg = { version = "0.49.0", default-features = false }

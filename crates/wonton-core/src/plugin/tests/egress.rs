@@ -87,6 +87,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             granted_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            origin: None,
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");

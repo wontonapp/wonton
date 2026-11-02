@@ -11,6 +11,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use super::bots::BotStore;
+use super::github_source::Origin;
 use super::manifest::{Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
@@ -34,6 +35,9 @@ pub struct InstalledRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oidc_client_secret: Option<String>,
     pub installed_at: u64,
+    /// 按来源装的插件从哪里来（来源、tag、提交）；上传的和预装的为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -266,6 +270,7 @@ mod tests {
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
+            origin: None,
         }
     }
 

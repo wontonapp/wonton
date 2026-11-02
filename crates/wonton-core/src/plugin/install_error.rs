@@ -44,6 +44,15 @@ pub enum InstallError {
     Unhealthy(String),
     #[error("{0}")]
     Storage(String),
+    /// 家里的服务器连不上插件的来源（GitHub）。
+    #[error("{0}")]
+    SourceUnavailable(String),
+    /// 来源里没有这个仓库、版本或文件。
+    #[error("{0}")]
+    NotFound(String),
+    /// 插件包在预览之后变了（摘要对不上），要重新预览、重新确认。
+    #[error("{0}")]
+    Changed(String),
 }
 
 impl InstallError {
@@ -65,6 +74,9 @@ impl InstallError {
             Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
+            Self::SourceUnavailable(_) => "source_unavailable",
+            Self::NotFound(_) => "not_found",
+            Self::Changed(_) => "changed",
         }
     }
 }
@@ -89,6 +101,9 @@ impl InstallError {
             Self::ImagesUnavailable(m) => Self::ImagesUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),
+            Self::SourceUnavailable(m) => Self::SourceUnavailable(add(m)),
+            Self::NotFound(m) => Self::NotFound(add(m)),
+            Self::Changed(m) => Self::Changed(add(m)),
         }
     }
 }
