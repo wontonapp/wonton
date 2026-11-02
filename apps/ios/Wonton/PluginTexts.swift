@@ -36,6 +36,7 @@ extension PluginFailure {
         case .unsupported: return "家里的服务器不支持这个插件，先升级家里的服务器。"
         case .conflict: return "它已经装了，或者正在安装、升级、卸载，等那边做完。"
         case .invalid: return "插件包不合法，请联系插件的作者。"
+        case .lanUnavailable: return "在局域网设置里选好网卡或地址后再试。"
         case .upstream: return "家里的服务器出了错，稍后再试。"
         case .protocol: return "App 和家里的服务器版本对不上，请更新 App 或家里的服务器。"
         }

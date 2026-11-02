@@ -13,6 +13,7 @@ mod chat;
 mod confirmation;
 mod error;
 mod home;
+mod lan;
 mod plugin;
 mod push;
 mod secret;
@@ -33,6 +34,10 @@ pub use error::CoreError;
 pub use home::{
     DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
     ProxySettings,
+};
+pub use lan::{
+    LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
+    LanProblem, LanProtocol, LanSettings,
 };
 pub use plugin::{
     InstallPreview, InstallRequest, InstallSource, InstalledPlugin, InstalledPlugins,

@@ -5,9 +5,9 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, ChatViewModel, CoreError, HomeViewModel, InstallPreview, MediaHandle, PluginDetail,
-    PluginFailure, PluginImage, PluginProblem, PluginsViewModel, PushNotification,
-    SessionListViewModel, StoreItem,
+    Action, ChatViewModel, CoreError, HomeViewModel, InstallPreview, LanChoice, LanSettings,
+    MediaHandle, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginsViewModel,
+    PushNotification, SessionListViewModel, StoreItem,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
@@ -167,6 +167,20 @@ impl ClientCore {
         Err(plugins_unsupported())
     }
 
+    /// 局域网设置：插件的局域网端口开在哪些地址上、可以选的网卡，以及开了端口的插件。
+    pub async fn lan_settings(&self) -> Result<LanSettings, CoreError> {
+        Err(lan_unsupported())
+    }
+
+    /// 改选局域网端口开在哪里。家里的服务器按新地址重建开了端口的插件容器，做完后返回新的设置；App 断开了它也
+    /// 照样做完。选择不合法（一项都没选、网卡或地址不在宿主上、不是私有地址、[`LanChoice::Unknown`]），或者地址由
+    /// `WONTON_LAN_ADDRESSES` 指定时返回 `InvalidInput`；选的网卡上没有私有 IPv4 地址、家里的服务器检测不了网卡时
+    /// 返回 `NotReady`。
+    pub async fn set_lan_choice(&self, choice: LanChoice) -> Result<LanSettings, CoreError> {
+        let _ = choice;
+        Err(lan_unsupported())
+    }
+
     /// 在最近取到的商店列表里按关键词找插件：名字、说明、标签和 ID，不分大小写，官方的在前。还没取过商店时为空。
     pub fn search_store(&self, query: String) -> Vec<StoreItem> {
         let _ = query;
@@ -250,6 +264,13 @@ impl ClientCore {
 fn plugins_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持插件商店".into(),
+    }
+}
+
+/// 局域网设置的接口同样先于实现合并（ADR-0019）。
+fn lan_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持局域网设置".into(),
     }
 }
 
