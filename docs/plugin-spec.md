@@ -357,6 +357,7 @@ webui:
 | `WONTON_APP_URL` | 声明了 `webui` | 插件网页的公开地址，不带末尾 `/`。应用生成回调地址、外部链接时使用。 |
 | `WONTON_OIDC_ISSUER`、`WONTON_OIDC_CLIENT_ID`、`WONTON_OIDC_CLIENT_SECRET` | `webui.sso: oidc` | OIDC 客户端配置。 |
 | `WONTON_OIDC_AUTH_URL`、`WONTON_OIDC_TOKEN_URL`、`WONTON_OIDC_USERINFO_URL` | `webui.sso: oidc` | 各端点地址，给不支持发现文档的应用（如 Grafana）。 |
+| `WONTON_OWNER_NAME`、`WONTON_OWNER_EMAIL` | `webui.sso` 是 `oidc` 或 `proxy` | 主人的用户名和邮箱，和 OIDC 的 `preferred_username`、`email` 以及代登录模板的 `{user}`、`{email}` 同值。应用要预先建好主人的账号时用。值是建容器时的快照，见下文。 |
 | `WONTON_MODEL_BASE_URL` | `models` | 模型网关 OpenAI 兼容接口的地址，以 `/v1` 结尾，如 `http://models.wonton.internal:8080/v1`。 |
 | `WONTON_MODEL_ANTHROPIC_BASE_URL`、`WONTON_MODEL_GEMINI_BASE_URL` | `models`，且网关提供该接口 | Anthropic Messages、Gemini 接口的地址，按各自 SDK 的约定不带 `/v1`。 |
 | `WONTON_MODEL_API_KEY` | `models` | 只属于本插件（多 Bot 时只属于这个 Bot）的网关凭据。 |
@@ -376,6 +377,14 @@ webui:
   `sso: oidc` 却引用 `WONTON_OIDC_CLIENT_SECRET`，或者模型网关不提供 Anthropic 接口却引用
   `WONTON_MODEL_ANTHROPIC_BASE_URL`。核心不把自己的环境变量传给插件。
 - 地址和令牌以注入值为准，插件不要自己拼：主机名、端口和格式都可能变。
+- 主人的用户名和邮箱同样以注入值为准，不要写死或按规则拼。没声明 `webui.sso` 的插件拿不到它们：这样的插件从登录
+  里也得不到主人的身份，安装不多给一份个人信息。
+- 主人改了用户名或邮箱、核心重启之后，OIDC 声明和代登录的请求头马上换成新值，容器里的 `WONTON_OWNER_*` 还是
+  旧值：核心重启只核对容器，不重建。升级或重装（可以不删数据）时新建的容器才拿到新值；局域网地址变化只重建
+  `lan.ports` 里的服务，同一个插件的其他服务还是旧值。只在首次启动时读这两个变量建账号的应用，重建后也不会改已有的
+  账号，要在每次启动时按注入值核对，或者请主人在应用里改。
+- 核心不注入 `WONTON_OWNER_ID`：OIDC 的 `sub` 就是主人的用户名，改用户名时一起变，另起一个变量只是同一个值，还会让
+  插件以为它不变。
 
 **数据目录属主**：核心预先创建的绑定挂载目录（`WONTON_APP_DATA` 下）交给谁，看挂载它的服务的
 `user`：

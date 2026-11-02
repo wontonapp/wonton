@@ -39,8 +39,6 @@ services:
       # （它的镜像有 4 GB）把 WONTON_DEV_DEFAULT_PLUGINS 设成空。
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: ${WONTON_DEV_DEFAULT_PLUGINS-/usr/share/wonton/default-plugins}
-      # 商店的官方插件和 Bot 能装的插件都来自镜像里的开发索引，不去 GitHub 取官方索引。
-      WONTON_STORE_INDEX: /usr/share/wonton/store
       WONTON_PUID: ${WONTON_DEV_PUID:-1000}
       WONTON_PGID: ${WONTON_DEV_PGID:-1000}
       TZ: ${TZ:-UTC}

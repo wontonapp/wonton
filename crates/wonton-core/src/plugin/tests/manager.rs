@@ -20,7 +20,7 @@ use super::super::package_files::PackageFiles;
 use super::super::store::{InstalledRecord, Store};
 use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::egress::serve;
-use super::{WHOAMI, package};
+use super::{WHOAMI, env_of_container, package};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
@@ -95,6 +95,7 @@ fn manager_for(
         pgid: owner.gid(),
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
+        owner_email: "owner@example.com".into(),
         gateway_port: 8080,
         instance,
     };
@@ -371,6 +372,38 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     restarted.restore().await.unwrap();
     let auth = restarted.route("app-test").unwrap().proxy.unwrap();
     assert_eq!(auth.cookies(&owner)[0].1, key);
+}
+
+#[tokio::test]
+async fn sso_plugins_get_the_owner_name_and_email_from_the_core() {
+    let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    let compose = package(
+        "  web:\n    image: nginx\n    environment:\n      \
+         ADMIN: ${WONTON_OWNER_NAME}\n      MAIL: ${WONTON_OWNER_EMAIL}",
+        &format!(
+            "  webui:\n    service: web\n    port: {}\n    sso: proxy\n    proxy:\n      \
+             headers: {{Remote-User: '{{user}}'}}\n  permissions: []",
+            web.port()
+        ),
+    );
+    m.install(&compose, &[]).await.unwrap();
+    let env = env_of_container(&docker, "wonton-app-test--web");
+    assert_eq!(env["ADMIN"], "owner");
+    assert_eq!(env["MAIL"], "owner@example.com");
+}
+
+#[test]
+fn plugins_without_sso_cannot_reference_the_owner() {
+    let compose = package(
+        "  web:\n    image: nginx\n    environment: {MAIL: '${WONTON_OWNER_EMAIL}'}",
+        "  webui: {service: web, port: 80}\n  permissions: []",
+    );
+    let pkg = PluginPackage::parse(&compose).unwrap();
+    let err = super::super::render::dry_run(&pkg).unwrap_err().to_string();
+    assert!(err.contains("WONTON_OWNER_EMAIL"), "{err}");
 }
 
 #[test]

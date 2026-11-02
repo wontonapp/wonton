@@ -15,11 +15,11 @@ use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::lan::LanGrant;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
-use super::render::{Deployment, InstallContext, OidcVars, render};
+use super::render::{Deployment, InstallContext, OidcVars, OwnerVars, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
 use super::upstreams::{core_aliases, uses_sso};
@@ -41,6 +41,8 @@ pub struct LifecycleConfig {
     pub install_timeout: Duration,
     /// 主人的用户名，也是主人的 Matrix 用户名（localpart）。
     pub owner: String,
+    /// 主人的邮箱，注入给声明了单点登录的插件。
+    pub owner_email: String,
     /// 核心网关监听的端口：插件经核心在插件网络里的别名（如 `matrix.wonton.internal`）访问它。
     pub gateway_port: u16,
     /// 核心的实例名（`WONTON_INSTANCE`），决定插件的资源名和标签。
@@ -309,6 +311,14 @@ impl PluginManager {
             shares,
             app_url,
             oidc,
+            owner: manifest
+                .webui
+                .as_ref()
+                .filter(|w| w.sso != Sso::None)
+                .map(|_| OwnerVars {
+                    name: self.cfg.owner.clone(),
+                    email: self.cfg.owner_email.clone(),
+                }),
             matrix: None,
             models: None,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {

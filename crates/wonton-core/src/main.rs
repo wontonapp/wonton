@@ -127,6 +127,7 @@ async fn serve() -> anyhow::Result<()> {
         pgid: cfg.pgid,
         install_timeout: cfg.install_timeout,
         owner: cfg.owner.username.clone(),
+        owner_email: cfg.owner.email.clone(),
         gateway_port: cfg.listen.port(),
         instance: cfg.instance.clone(),
     };

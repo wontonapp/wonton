@@ -64,6 +64,13 @@ impl std::fmt::Debug for OidcVars {
     }
 }
 
+/// 注入给声明了单点登录的插件的主人身份，和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnerVars {
+    pub name: String,
+    pub email: String,
+}
+
 /// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
 #[derive(Clone, PartialEq, Eq)]
 pub struct MatrixVars {
@@ -122,6 +129,9 @@ pub struct InstallContext {
     /// 插件网页的公开地址（不带末尾斜杠）。
     pub app_url: Option<String>,
     pub oidc: Option<OidcVars>,
+    /// 声明了 `webui.sso`（`oidc` 或 `proxy`）时：主人的用户名和邮箱。这些插件本来就能从登录里得到它们，其余的
+    /// 插件（包括未审核的）不多拿一份主人的个人信息。
+    pub owner: Option<OwnerVars>,
     /// 声明了 `matrix.bot` 时：核心代 Bot 登录后签发的身份。
     pub matrix: Option<MatrixVars>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
@@ -150,6 +160,7 @@ impl std::fmt::Debug for InstallContext {
             .field("shares", &self.shares)
             .field("app_url", &self.app_url)
             .field("oidc", &self.oidc)
+            .field("owner", &self.owner)
             .field("matrix", &self.matrix)
             .field("models", &self.models)
             .field("mcp_url", &self.mcp_url)
@@ -226,6 +237,10 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         set("WONTON_OIDC_TOKEN_URL", oidc.token_url.clone());
         set("WONTON_OIDC_USERINFO_URL", oidc.userinfo_url.clone());
     }
+    if let Some(owner) = &ctx.owner {
+        set("WONTON_OWNER_NAME", owner.name.clone());
+        set("WONTON_OWNER_EMAIL", owner.email.clone());
+    }
     if let Some(models) = &ctx.models {
         set("WONTON_MODEL_BASE_URL", models.base_url.clone());
         if let Some(url) = &models.anthropic_url {
@@ -283,6 +298,10 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
             auth_url: "http://auth.wonton.invalid/auth".into(),
             token_url: "http://auth.wonton.invalid/token".into(),
             userinfo_url: "http://auth.wonton.invalid/userinfo".into(),
+        }),
+        owner: webui.filter(|w| w.sso != Sso::None).map(|_| OwnerVars {
+            name: "owner".into(),
+            email: "owner@wonton.invalid".into(),
         }),
         matrix: manifest
             .permissions

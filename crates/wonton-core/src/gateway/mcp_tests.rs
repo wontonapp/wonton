@@ -76,6 +76,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         pgid: owner_ids.gid(),
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
+        owner_email: "owner@example.com".into(),
         gateway_port: addr.port(),
         instance: Default::default(),
     };

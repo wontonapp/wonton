@@ -162,6 +162,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
             token_url: String::new(),
             userinfo_url: String::new(),
         }),
+        owner: None,
         matrix: Some(MatrixVars {
             homeserver: "http://matrix.wonton.internal".into(),
             user_id: "@test:t".into(),
