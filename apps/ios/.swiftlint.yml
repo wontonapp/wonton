@@ -16,3 +16,7 @@ file_length:
   warning: 800
   error: 800
   ignore_comment_only_lines: false
+
+# 每个枚举值一个分支的平铺 switch（时间线的增量、分类名、失败后的下一步）拆开反而难读，case 不计入圈复杂度。
+cyclomatic_complexity:
+  ignores_case_statements: true

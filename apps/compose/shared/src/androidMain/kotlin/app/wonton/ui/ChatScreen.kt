@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,24 +44,25 @@ import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 
 @Composable
-fun ChatRoute(core: ClientCore) {
+fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
     var rejection by remember { mutableStateOf<String?>(null) }
-    var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
     var showingEncryption by rememberSaveable { mutableStateOf(false) }
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
-    val room = openRoom
+    LaunchedEffect(viewModel) { navigation.onUpdate(viewModel) }
+
+    val room = navigation.openRoom
     when {
         showingEncryption -> {
             BackHandler { showingEncryption = false }
             EncryptionScreen(viewModel.encryption, onAction, onClose = { showingEncryption = false })
         }
         room != null -> {
-            BackHandler { openRoom = null }
+            BackHandler { navigation.openRoom = null }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             RoomRoute(
                 core = core,
@@ -69,13 +71,13 @@ fun ChatRoute(core: ClientCore) {
                 isDirect = row?.isDirect == true,
                 onAction = onAction,
                 onReject = { rejection = it },
-                onClose = { openRoom = null },
+                onClose = { navigation.openRoom = null },
             )
         }
         else -> ChatListScreen(
             viewModel = viewModel,
             onAction = onAction,
-            onOpenRoom = { openRoom = it },
+            onOpenRoom = { navigation.openRoom = it },
             onOpenEncryption = { showingEncryption = true },
         )
     }

@@ -8,7 +8,7 @@ struct ChatListView: View {
     @State private var isShowingEncryption = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.path) {
             List {
                 if let status = statusText {
                     Section { Text(status).font(.footnote).foregroundStyle(.secondary) }

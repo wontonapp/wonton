@@ -36,8 +36,6 @@ final class TimelineModel {
         }
     }
 
-    // 每种增量一个分支，平铺的 switch，拆开反而难读。
-    // swiftlint:disable:next cyclomatic_complexity
     private func apply(_ diff: TimelineDiff) {
         switch diff {
         case let .append(more):

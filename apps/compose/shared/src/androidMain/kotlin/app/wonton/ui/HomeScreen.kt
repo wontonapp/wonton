@@ -22,22 +22,35 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PairingStatus
 
-/** “家”：还没配对时是配对页，配上以后是和家里服务器的连接状态。只渲染核心的 ViewModel。 */
+/**
+ * “家”：还没配对时是配对页；配上以后是主屏，按图标和名字列出已装的插件，连接和设备在右上角。
+ * 只渲染核心的 ViewModel。
+ */
 @Composable
-fun HomeRoute(core: ClientCore, viewModel: HomeViewModel) {
-    var pairingAgain by rememberSaveable { mutableStateOf(false) }
-    var inviting by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = pairingAgain || inviting) {
-        pairingAgain = false
-        inviting = false
+fun HomeRoute(
+    core: ClientCore,
+    viewModel: HomeViewModel,
+    plugins: PluginsState,
+    navigation: PluginNavigation,
+    onShowStore: () -> Unit,
+) {
+    var page by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
+    BackHandler(enabled = page != HomePage.LAUNCHER) {
+        page = if (page == HomePage.CONNECTION) HomePage.LAUNCHER else HomePage.CONNECTION
     }
     when {
         viewModel.status is HomeStatus.NotConfigured -> PairingPage("家", core, viewModel.pairing, onBack = null)
-        pairingAgain -> PairingPage("重新配对", core, viewModel.pairing, onBack = { pairingAgain = false })
-        inviting -> InvitePage(core, viewModel, onDone = { inviting = false })
-        else -> HomeScreen(viewModel, onPairAgain = { pairingAgain = true }, onInvite = { inviting = true })
+        page == HomePage.PAIRING ->
+            PairingPage("重新配对", core, viewModel.pairing, onBack = { page = HomePage.CONNECTION })
+        page == HomePage.INVITE -> InvitePage(core, viewModel, onDone = { page = HomePage.CONNECTION })
+        page == HomePage.CONNECTION -> ConnectionPage(viewModel, onNavigate = { page = it })
+        else -> PluginPages(plugins, navigation) {
+            LauncherScreen(viewModel.status, plugins, navigation, onShowStore) { page = HomePage.CONNECTION }
+        }
     }
 }
+
+enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,27 +82,36 @@ private fun PairingPage(title: String, core: ClientCore, pairing: PairingStatus?
     }
 }
 
+/** 和家里服务器的连接，以及添加设备、重新配对。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(viewModel: HomeViewModel, onPairAgain: () -> Unit, onInvite: () -> Unit) {
-    Scaffold(topBar = { TopAppBar(title = { Text("家") }) }) { padding ->
+private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("连接") },
+                navigationIcon = { TextButton(onClick = { onNavigate(HomePage.LAUNCHER) }) { Text("返回") } },
+            )
+        },
+    ) { padding ->
         Column(Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
-            Text("状态：${statusText(viewModel.status)}")
+            Text("状态：${viewModel.status.text}")
             viewModel.path?.let { path ->
                 Text("路径：${if (path.relay) "中继" else "直连"} · ${path.rttMs} ms")
             }
-            TextButton(onClick = onInvite, Modifier.padding(top = 24.dp)) { Text("添加设备") }
-            TextButton(onClick = onPairAgain) { Text("重新配对") }
+            TextButton(onClick = { onNavigate(HomePage.INVITE) }, Modifier.padding(top = 24.dp)) { Text("添加设备") }
+            TextButton(onClick = { onNavigate(HomePage.PAIRING) }) { Text("重新配对") }
         }
     }
 }
 
-private fun statusText(status: HomeStatus): String = when (status) {
-    is HomeStatus.NotConfigured -> "还没有配对"
-    is HomeStatus.Connecting -> "连接中"
-    is HomeStatus.Connected -> "已连接"
-    is HomeStatus.Disconnected -> when (status.reason) {
-        HomeFailure.UNAUTHORIZED -> "家里的服务器不认这台设备，请重新扫码配对"
-        else -> status.message
+val HomeStatus.text: String
+    get() = when (this) {
+        is HomeStatus.NotConfigured -> "还没有配对"
+        is HomeStatus.Connecting -> "连接中"
+        is HomeStatus.Connected -> "已连接"
+        is HomeStatus.Disconnected -> when (reason) {
+            HomeFailure.UNAUTHORIZED -> "家里的服务器不认这台设备，请重新扫码配对"
+            else -> message
+        }
     }
-}

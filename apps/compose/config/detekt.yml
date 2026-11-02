@@ -5,6 +5,9 @@ complexity:
     allowedLines: 100
   LargeClass:
     allowedLines: 800
+  CyclomaticComplexMethod:
+    # 每个枚举值一个分支的平铺 when（分类名、失败后的下一步）拆开反而难读，简单的分支不计入圈复杂度。
+    ignoreSimpleWhenEntries: true
 
 naming:
   FunctionNaming:

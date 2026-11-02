@@ -36,11 +36,11 @@ private const val TAG = "WontonWeb"
 /** 全屏的插件网页，带一个关闭按钮。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PluginPage(url: String, proxy: ProxySettings, onClose: () -> Unit) {
+fun PluginPage(title: String, url: String, proxy: ProxySettings, onClose: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(Uri.parse(url).host.orEmpty()) },
+                title = { Text(title) },
                 actions = { TextButton(onClick = onClose) { Text("关闭") } },
             )
         },

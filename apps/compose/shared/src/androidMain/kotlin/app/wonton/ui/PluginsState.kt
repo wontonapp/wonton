@@ -1,0 +1,108 @@
+package app.wonton.ui
+
+import android.graphics.ImageDecoder
+import android.util.LruCache
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import app.wonton.client.ClientCore
+import app.wonton.protocol.Action
+import app.wonton.protocol.CoreException
+import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.PluginImage
+import app.wonton.protocol.PluginKind
+import app.wonton.protocol.PluginState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.nio.ByteBuffer
+
+private const val CACHED_IMAGES = 128
+
+/**
+ * 主屏、商店和核心之间的桥：持有核心推来的插件 ViewModel，转发操作，替界面取插件的图片。
+ * 这里不做任何业务判断。
+ */
+class PluginsState(val core: ClientCore) {
+    var viewModel by mutableStateOf(core.plugins())
+        private set
+
+    /** 核心拒绝主人的操作的原因，由界面弹窗展示。 */
+    var rejection by mutableStateOf<String?>(null)
+
+    /** 页面出现时自动发的刷新被核心拒绝的原因。不弹窗，没有 `viewModel.problem` 时就地显示。 */
+    var refreshRejection by mutableStateOf<String?>(null)
+        private set
+
+    /** 核心给的图片地址内容不变（ADR-0017），按地址缓存解码后的图片。 */
+    private val images = LruCache<String, ImageBitmap>(CACHED_IMAGES)
+
+    /** 在主界面里一直收集，切到别的页面时也接着更新。 */
+    suspend fun observe() {
+        core.pluginsUpdates().collect { viewModel = it }
+    }
+
+    fun send(action: Action) {
+        core.send(action)?.let { rejection = it }
+    }
+
+    /** 发页面出现时的刷新，被拒绝的原因记在 [refreshRejection]。 */
+    fun refresh(action: Action) {
+        refreshRejection = core.send(action)
+    }
+
+    /** 取插件的图标或截图；取不到、解不开时为 null，界面画占位（ADR-0017），不当作错误。 */
+    suspend fun imageOrNull(image: PluginImage): ImageBitmap? =
+        images.get(image.path) ?: try {
+            val bytes = core.loadPluginImage(image)
+            withContext(Dispatchers.Default) {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))).asImageBitmap()
+            }.also { images.put(image.path, it) }
+        } catch (ignored: CoreException) {
+            null
+        } catch (ignored: IOException) {
+            null
+        }
+}
+
+/** 已安装的插件从主屏和商店打开的方式（ADR-0017 的“主屏入口”）。 */
+sealed interface PluginEntry {
+    /** 和插件的 Bot 的私聊。 */
+    data class Chat(val botUserId: String) : PluginEntry
+
+    /** 插件网页，全屏打开就是小程序。 */
+    data class Web(val url: String, val title: String) : PluginEntry
+}
+
+/** 打开它的方式，第一种是点图标时用的。都没有时点开看详情。 */
+val InstalledPlugin.entries: List<PluginEntry>
+    get() = buildList {
+        val bot = botUserId
+        if (kind == PluginKind.AGENT && bot != null) add(PluginEntry.Chat(bot))
+        webUrl?.let { add(PluginEntry.Web(it, title)) }
+    }
+
+val InstalledPlugin.isBusy: Boolean
+    get() = when (status) {
+        is PluginState.Installing, is PluginState.Upgrading, is PluginState.Uninstalling -> true
+        else -> false
+    }
+
+/** 插件详情页：商店里的（来源最新的版本）或者装着的。 */
+sealed interface PluginRoute {
+    data class Store(val source: String) : PluginRoute
+
+    data class Installed(val id: String) : PluginRoute
+}
+
+/** 安装或升级的确认页。 */
+sealed interface PluginConfirmation {
+    data class Install(val source: String) : PluginConfirmation
+
+    data class Upgrade(val id: String) : PluginConfirmation
+}
+
+/** 要卸载的插件，确认对话框用。 */
+data class UninstallTarget(val id: String, val title: String)
