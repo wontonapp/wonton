@@ -84,7 +84,10 @@ fn timeline_message(message: Message) -> TimelineMessage {
             },
         },
         body: match message.body {
-            MessageBody::Text(body) => MessageContent::Text { body },
+            MessageBody::Text(body) => MessageContent::Text {
+                body,
+                files: Vec::new(),
+            },
             MessageBody::Image(image) => MessageContent::Image {
                 image: ImageContent {
                     media: MediaHandle {

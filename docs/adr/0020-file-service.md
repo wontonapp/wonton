@@ -85,7 +85,7 @@ Raft（raft.build）的做法值得参考：文件存在平台上，Agent 只拿
 
 App 的显示：
 
-- 客户端核心从消息的纯文本 `body` 里按严格的正则找链接，`formatted_body` 不看。
+- 客户端核心从消息的纯文本 `body` 里按严格的规则找链接，`formatted_body` 不看。
 - 认出来的链接从显示的文字里去掉，包括包着它的 Markdown 链接语法，消息下面画文件卡片。主人看不到这串字符。
 - 链接不是凭据。谁发的都一样，App 只按编号去问核心；看不了就显示为什么看不了（见“错误”）。
 
@@ -206,9 +206,10 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 
 - `FileId`，以及解析和生成链接的函数：格式有契约测试。
 - `FileInfo`：编号、名字、类型、大小、来源（`Device`、`Bot { name, plugin }`）、有没有缩略图。
-- `FileCard`：`Loading`、`Ready(FileInfo)`、`Failed(FileFailure)`。
-- `FileFailure`：和“错误”一节一一对应，加 `TransportUnavailable`、`Protocol`。
-- `Transfer`：编号、方向、已传字节、总字节、状态（`Running`、`Paused`、`Done`、`Failed`）。
+- `FileCard`：`Loading`、`Ready(FileInfo)`、`Failed(FileFailure, 说明)`。
+- `FileFailure`：和“错误”一节一一对应，加 `TransportUnavailable`、`Protocol`，以及给比 App 新的核心用的 `Other`。
+- `Transfer`：本机给这次传输的标识、文件编号、名字、方向、已传字节、总字节、状态（`Running`、`Paused`、`Done`、`Failed`）。标识不用文件编号：上传在核心发编号之前就要显示进度，
+  创建时的 `storage_full` 也要落在这条传输上，所以文件编号可以为空；同一个文件也可以同时下载到两个地方。`CancelTransfer` 收的是这个标识。
 
 **时间线（`timeline.rs`）**
 

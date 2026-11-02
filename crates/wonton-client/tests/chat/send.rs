@@ -79,7 +79,7 @@ fn own_text<'a>(item: &'a TimelineItem, expected: &str) -> Option<&'a TimelineMe
     match &item.content {
         TimelineContent::Message { message }
             if message.is_own
-                && matches!(&message.body, MessageContent::Text { body } if body == expected) =>
+                && matches!(&message.body, MessageContent::Text { body, .. } if body == expected) =>
         {
             Some(message)
         }

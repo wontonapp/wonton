@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::FileId;
+
 /// 一批时间线变化，以及向前翻页的状态。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -140,9 +142,11 @@ pub enum SendState {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessageContent {
-    /// 文字，包括 Bot 常用的 `m.notice`。
+    /// 文字，包括 Bot 常用的 `m.notice`。`body` 是去掉文件链接后要显示的文字，消息只有链接时为空；`files` 是认出的
+    /// 文件，壳在消息下面按编号画卡片（ADR-0020）。
     Text {
         body: String,
+        files: Vec<FileId>,
     },
     Image {
         image: ImageContent,
@@ -275,6 +279,7 @@ mod tests {
                         "3",
                         message(MessageContent::Text {
                             body: "你好".into(),
+                            files: vec![FileId::from_bytes([7; 16])],
                         }),
                     ),
                 },

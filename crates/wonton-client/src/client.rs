@@ -75,6 +75,12 @@ impl ClientCore {
             | Action::UpgradePlugin { .. }
             | Action::UninstallPlugin { .. }
             | Action::DismissPluginTask { .. } => Err(plugins_unsupported()),
+            Action::UploadFile { .. }
+            | Action::DownloadFile { .. }
+            | Action::CancelTransfer { .. }
+            | Action::DeleteFile { .. }
+            | Action::SendFileToDevices { .. }
+            | Action::GrantFileToRoom { .. } => Err(files_unsupported()),
             chat => self.chat.dispatch(chat),
         }
     }
@@ -271,6 +277,13 @@ fn plugins_unsupported() -> CoreError {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
+    }
+}
+
+/// 文件服务的接口同样先于实现合并（ADR-0020）。
+fn files_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持文件传输".into(),
     }
 }
 

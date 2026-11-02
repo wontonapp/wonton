@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{ImageUpload, InstallPreview, PushEndpoint, SecretString};
+use crate::{FileId, ImageUpload, InstallPreview, PushEndpoint, SecretString};
 
 /// 原生壳发给客户端核心的用户操作。
 ///
@@ -91,4 +91,18 @@ pub enum Action {
     UninstallPlugin { id: String, delete_data: bool },
     /// 清掉一个做完的任务（成功或失败的提示）。
     DismissPluginTask { id: String },
+
+    // 文件（ADR-0020）。网络操作都在后台执行，进展和结果在传输列表和文件卡片里。
+    /// 上传一个文件。`source` 是壳选到的文件：路径或内容 URI。传完放进共享文件夹 `transfers`。
+    UploadFile { source: String },
+    /// 下载到 `destination`（路径或内容 URI）。断了从断点接着下，文件变了从头下。
+    DownloadFile { id: FileId, destination: String },
+    /// 取消一次传输。`id` 是 [`Transfer::id`](crate::Transfer::id)，不是文件编号。
+    CancelTransfer { id: String },
+    /// 删掉编号。设备上传的文件核对没变过后连文件一起删，其他来源的原文件不动。
+    DeleteFile { id: FileId },
+    /// 把链接发到和主人的“Wonton”私聊，主人所有设备都看得到卡片。
+    SendFileToDevices { id: FileId },
+    /// 把这个房间的 Bot 加进文件的访问范围。在 Bot 的房间里发链接时一起调，Bot 才能看和再分享。
+    GrantFileToRoom { id: FileId, room: String },
 }

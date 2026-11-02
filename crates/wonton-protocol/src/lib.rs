@@ -12,6 +12,7 @@ mod action;
 mod chat;
 mod confirmation;
 mod error;
+mod file;
 mod home;
 mod lan;
 mod plugin;
@@ -31,6 +32,11 @@ pub use confirmation::{
     ConfirmationReply, ConfirmationState, answer_path,
 };
 pub use error::CoreError;
+pub use file::{
+    FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileError, FileErrorBody, FileFailure,
+    FileGrantRequest, FileId, FileInfo, FileLinks, FileSource, InvalidFileId, Transfer,
+    TransferDirection, TransferState, extract_file_links,
+};
 pub use home::{
     DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
     ProxySettings,

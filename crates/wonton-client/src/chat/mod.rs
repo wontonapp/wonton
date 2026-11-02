@@ -205,7 +205,13 @@ impl ChatLink {
             | Action::InstallPlugin { .. }
             | Action::UpgradePlugin { .. }
             | Action::UninstallPlugin { .. }
-            | Action::DismissPluginTask { .. } => Err(invalid("不是聊天操作")),
+            | Action::DismissPluginTask { .. }
+            | Action::UploadFile { .. }
+            | Action::DownloadFile { .. }
+            | Action::CancelTransfer { .. }
+            | Action::DeleteFile { .. }
+            | Action::SendFileToDevices { .. }
+            | Action::GrantFileToRoom { .. } => Err(invalid("不是聊天操作")),
         }
     }
 

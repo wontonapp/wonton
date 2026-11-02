@@ -65,7 +65,7 @@ private struct MessageBubble: View {
 
     @ViewBuilder private var content: some View {
         switch message.body {
-        case let .text(body):
+        case let .text(body, _):
             Text(body).textSelection(.enabled)
         case let .image(image):
             MediaImage(image: image, core: core)

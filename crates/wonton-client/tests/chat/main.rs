@@ -292,7 +292,8 @@ async fn read_and_set_up_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Secre
 fn text(item: &TimelineItem, expected: &str) -> Option<()> {
     match &item.content {
         TimelineContent::Message { message } => {
-            matches!(&message.body, MessageContent::Text { body } if body == expected).then_some(())
+            matches!(&message.body, MessageContent::Text { body, .. } if body == expected)
+                .then_some(())
         }
         _ => None,
     }
