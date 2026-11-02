@@ -325,7 +325,7 @@ webui:
 
 | 权限 | 含义 |
 | --- | --- |
-| `storage.share.<名称>:read` / `:write` | 读或写某个共享文件夹，如 `photos`、`documents`、`music`、`downloads`。 |
+| `storage.share.<名称>:read` / `:write` | 读或写某个共享文件夹，如 `photos`、`documents`、`music`、`downloads`。设备上传的文件在 `transfers` 里（ADR-0020）。 |
 | `storage.home:read` / `:write` | 读或写当前用户的私人空间。 |
 | `models` | 访问模型网关（magpie），见“模型网关”。 |
 | `tools` | 经核心的 MCP 总线调用核心和其他插件的工具，见“工具与 MCP 总线”。 |
@@ -589,7 +589,54 @@ x-wonton:
   （MCP 2025-11-25）。
 - 没有标 `readOnlyHint: true`（MCP 的工具注解）的工具算敏感：总线先请主人确认，确认了才转给插件。会改数据的工具
   不要标成只读。
-- 工具返回的内容原样交给 Agent，Agent 把它当不可信输入（ADR-0011）。
+- 工具返回的内容交给 Agent，Agent 把它当不可信输入（ADR-0011）。除了下面的文件引用，总线不改内容。
+
+**工具结果里的文件**（ADR-0020）
+
+工具结果是交给 Agent 的。Agent 没有主人的登录，打不开插件网页，也看不到共享文件夹。文件要这样返回，核心把引用换成一个编号，
+Agent 用编号调 `wonton__view_file`、`wonton__share_file`，主人的设备按链接经核心的文件服务下载。
+
+| 文件 | 返回 |
+| --- | --- |
+| 小图（不超过 1 MiB），Agent 看一眼就够 | `image` 块。它没有编号，分享不了；要能分享原图，再给一个下面的引用。 |
+| 共享文件夹里的文件 | `resource_link`，`uri` 是 `wonton-share:<共享文件夹>/<相对路径>`，路径按 URI 规则做百分号编码。 |
+| 插件自己的文件 | `resource_link`，`uri` 是插件的 MCP 资源，插件实现 `resources/read`。大文件在 `_meta` 里加内网地址，支持 `Range` 才能续传和流式播放。 |
+
+```json
+{
+  "content": [
+    { "type": "text", "text": "找到 2 张 7 月的照片" },
+    {
+      "type": "resource_link",
+      "uri": "wonton-share:photos/2025/07/IMG_1234.jpg",
+      "name": "IMG_1234.jpg",
+      "mimeType": "image/jpeg",
+      "size": 4404019
+    },
+    {
+      "type": "resource_link",
+      "uri": "immich://assets/3f2a/original",
+      "name": "IMG_1235.heic",
+      "mimeType": "image/heic",
+      "_meta": { "app.wonton/internal_url": "http://server:2283/internal/assets/3f2a/original" }
+    }
+  ]
+}
+```
+
+- `name`、`mimeType`、`size` 用来告诉 Agent 和显示卡片。`name` 没写时取路径的最后一段。下载时的类型由核心决定，不可信的类型一律按附件下载。
+- 共享文件夹必须是这个插件申请到的（读或写都算），写别的共享文件夹不会登记。路径不能是绝对路径，不能含 `.`、`..` 或空段，路径上不能有软链接，
+  必须是普通文件。第一段是共享文件夹的名字，不是容器里的挂载点：`${WONTON_SHARE_PHOTOS}:/photos:ro` 里的 `/photos/a.jpg` 写成
+  `wonton-share:photos/a.jpg`。
+- `app.wonton/internal_url` 只有核心会访问：主机名必须是这个插件 compose 里的服务名，协议是 `http`，不跟随跳转，不用 IP 字面量。不声明时核心用
+  `resources/read`，最多读 32 MiB。这个键在交给 Agent 前去掉。
+- `uri` 是 `http`、`https` 的 `resource_link` 不是文件引用，原样交给 Agent。
+- 引用登记不了时（没有授权、路径不合法等），Agent 看到的是一句说明原因的文字，不是这个引用。
+- 不要：
+  - 返回宿主路径；
+  - 用 `blob`、`image`、`audio` 塞大文件：超过 1 MiB 的块，总线换成一句说明原因的文字；
+  - 自己往聊天里发文件：发不发给主人由 Agent 决定；
+  - 一次返回几百个文件：一个结果最多登记 100 个，要分页。
 
 ### 使用工具（`tools`）
 
@@ -605,6 +652,8 @@ x-wonton:
   | `wonton__search_catalog` | 否 | 按关键词在官方索引里找插件：ID、名字、说明和要申请的权限。 |
   | `wonton__install_plugin` | 是 | 按官方索引里的 ID 安装，授予它声明的全部权限。声明了高权限的插件只能由主人在 App 里装。 |
   | `wonton__uninstall_plugin` | 是 | 卸载，`delete_data` 为真时同时删除它的数据。 |
+  | `wonton__view_file` | 否 | 按文件编号返回图片预览，看不了的类型报错（ADR-0020）。 |
+  | `wonton__share_file` | 否 | 把编号指向的文件分享给主人，返回文件链接，原样放进回复（ADR-0020）。 |
 
 - 插件目录就是官方索引（见“发布与来源”）。Bot 只能装官方索引里的插件，不能装社区插件和自己写的 compose。
 - 敏感的调用会一直等到主人回答或者确认过期（10 分钟），Agent 的工具超时要比这长。确认卡片发在核心和主人的“Wonton”
@@ -1021,3 +1070,8 @@ v0.2（ADR-0017）的部分同样每项一个 PR：
 3. **升级**：检查新版本、升级预览、升级和回滚，系统插件随核心升级；安装记录写下每个服务实际用的镜像摘要，回滚时用它。
 4. **客户端核心**：`PluginsViewModel` 和插件相关的操作。
 6. **插件移出主仓库**：预装的 magpie、Hermes 改由锁文件固定。
+
+ADR-0020 的部分：
+
+- **文件服务**：先提只改接口的 PR（`wonton-protocol` 的 `file` 模块）。核心的编号、下载接口和 tusd；总线登记编号、改写结果，`wonton__view_file`、
+  `wonton__share_file`；客户端核心和 App 的文件卡片与传输；Hermes 的引导；文件搜索插件返回引用，并申请 `transfers`。
