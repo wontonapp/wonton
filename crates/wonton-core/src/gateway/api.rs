@@ -9,6 +9,8 @@
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
+//! | GET | `/_wonton/api/lan` | 局域网设置（`LanSettings`），当场检测一次（ADR-0019） |
+//! | PUT | `/_wonton/api/lan` | 请求体是 `LanChoice`，改选端口开在哪些地址上，重建完返回新的 `LanSettings` |
 //!
 //! 插件包是 compose 文本，或者 `Content-Type: application/x-tar` 的整个插件包目录（compose 引用了包里的文件时，
 //! 如 Hermes 的 `config.yaml`）。JSON 请求体（`Content-Type: application/json`）是按来源预览和安装。
@@ -24,7 +26,7 @@ use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use wonton_protocol::{InstallRequest, InstallSource};
+use wonton_protocol::{InstallRequest, InstallSource, LanChoice};
 
 use super::{Gateway, pages};
 use crate::plugin::gallery::Variant;
@@ -83,9 +85,9 @@ fn install_error(error: &InstallError) -> Response {
     let status = match error {
         InstallError::Invalid(_) => StatusCode::BAD_REQUEST,
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
-        InstallError::Unsupported(_) | InstallError::GpuUnavailable(_) => {
-            StatusCode::UNPROCESSABLE_ENTITY
-        }
+        InstallError::Unsupported(_)
+        | InstallError::GpuUnavailable(_)
+        | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_) | InstallError::Changed(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
@@ -245,6 +247,41 @@ pub async fn uninstall(
     };
     match gateway.plugins.uninstall_detached(id, query.purge).await {
         Ok(report) => Json(report).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+pub async fn lan(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    match gateway.plugins.lan_settings(&languages(&headers)).await {
+        Ok(settings) => Json(settings).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+pub async fn set_lan(
+    State(gateway): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    let choice = match serde_json::from_slice::<LanChoice>(&body) {
+        Ok(choice) => choice,
+        Err(e) => {
+            let message = format!("请求体不是局域网设置的选择：{e}");
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+        }
+    };
+    match gateway
+        .plugins
+        .set_lan_choice(choice, languages(&headers))
+        .await
+    {
+        Ok(settings) => Json(settings).into_response(),
         Err(e) => install_error(&e),
     }
 }

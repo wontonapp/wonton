@@ -27,6 +27,8 @@ services:
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
+      # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
+      WONTON_LAN_ADDRESSES: ${WONTON_DEV_LAN_ADDRESSES:-}
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444
       # 核心持有 Matrix 登录的签发私钥，并用注册共享密钥注册自己的管理账号（ADR-0009）。

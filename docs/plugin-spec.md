@@ -92,6 +92,7 @@ x-wonton:
 | `agent` | `kind=agent` 时必填 | `protocol`：`matrix`（Agent 自己登录 Matrix，须声明 `matrix.bot`）或 `acp`（经 ACP 桥接入）。 |
 | `provides` | 否 | 向其他插件提供的能力，v0.1 只有 `models`（见“模型网关”）。只有 `kind: system` 的插件可以声明。 |
 | `gpu` | 否 | 拿到显卡的服务（`services`）。要和 `devices.gpu` 权限一起声明，见“显卡”。 |
+| `lan` | 否 | 在局域网上开放的端口（`ports`）。要和 `network.lan` 权限一起声明，见“局域网”。 |
 | `secrets` | 否 | 插件自己的密钥：核心生成后注入，或插件运行中生成、交给核心保管（见“插件密钥”）。 |
 | `permissions` | 是 | 安装时由主人确认的权限，见下表。没有权限时写空列表。 |
 | `settings` | 否 | 插件包里的 JSON Schema 文件，留给 App 用原生表单渲染（ADR-0017 的“自定义接口”，预留）；在那之前插件用自己的网页做设置。 |
@@ -331,7 +332,8 @@ webui:
 | `matrix.bot` | 以 Bot 身份收发消息，见“Matrix Bot”。 |
 | `notify` | 给主人发通知。 |
 | `network.egress` | 访问外网和局域网，见“网络”。 |
-| `network.host` | 使用宿主网络（如 Samba、DLNA）。高权限。 |
+| `network.lan` | 在局域网上开放 `lan.ports` 列出的端口，见“局域网”。高权限。 |
+| `network.host` | 使用宿主网络。高权限，不开放（ADR-0019）。 |
 | `devices.gpu` | 使用显卡，见“显卡”。高权限。 |
 | `devices.<路径>` | 访问宿主设备，如 USB。高权限。 |
 | `docker.socket` | 访问 Docker socket。最高权限，默认拒绝，需要单独确认。 |
@@ -339,8 +341,8 @@ webui:
 高权限在安装确认时单独醒目展示。插件不声明的能力一律不给。安装请求必须逐项确认清单里的全部权限，
 少一项或多一项都拒绝安装。
 
-核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`models`（见“模型网关”）、`matrix.bot`
-（见“Matrix Bot”）、`tools`（见“工具与 MCP 总线”）和 `devices.gpu`（见“显卡”）。共享文件夹在数据目录的 `shares/<名称>` 下，
+核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`network.lan`（见“局域网”）、`models`（见“模型网关”）、
+`matrix.bot`（见“Matrix Bot”）、`tools`（见“工具与 MCP 总线”）和 `devices.gpu`（见“显卡”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
 
@@ -366,6 +368,7 @@ webui:
 | `WONTON_MATRIX_HOME_ROOM` | `matrix.bot` | Bot 的主房间：核心替主人建好的、和 Bot 的加密私聊，定时任务的结果发到这里。 |
 | `WONTON_SECRET_<名字>` | `secrets` 里由核心生成的项 | 插件密钥，名字转成大写，如 `WONTON_SECRET_WEB_KEY`。 |
 | `WONTON_BOT_NAME`、`WONTON_BOT_DATA` | `bots.services` 里的服务 | Bot 名和这个 Bot 的数据目录（宿主路径）。 |
+| `WONTON_LAN_ADDRESSES` | `network.lan` | 局域网端口开在哪些地址上，逗号分隔，如 `192.168.0.193`。地址变了核心重建开端口的容器，见“局域网”。 |
 
 - 这些变量只用于 compose 插值（`${VAR}`、`${VAR:-默认值}` 等，`$$` 表示字面量 `$`），不会自动进入
   容器环境；需要的变量在对应服务的 `environment` 里显式引用，密钥只给用得到它的容器。
@@ -705,6 +708,64 @@ x-wonton:
 - 装好后核心不再盯着显卡：显卡拔了、驱动换了，容器自己会出错。可运行的检查插件见
   [`plugins/examples/gpu-check/`](../plugins/examples/gpu-check/README.md)。
 
+## 局域网（`network.lan`）
+
+要让局域网里的电脑、手机直接连上来的插件（Samba、Syncthing），申请 `network.lan` 权限，并在 `lan.ports` 里逐项写明开放哪个
+服务的哪个端口。为什么这样做、没选宿主网络的理由和实测结果见 [ADR-0019](adr/0019-lan-services-for-plugins.md)。
+
+```yaml
+name: samba
+services:
+  samba:
+    image: ghcr.io/example/samba:4
+    volumes:
+      - ${WONTON_SHARE_DOCUMENTS}:/shares/documents
+  web:
+    image: ghcr.io/example/samba-web:1
+    environment:
+      LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES}
+
+x-wonton:
+  id: org.example.samba
+  version: 1.0.0
+  kind: app
+  title: { zh: 文件共享, en: File sharing }
+  description: { zh: 用 SMB 在局域网里共享文件夹, en: Share folders over SMB on the LAN }
+  webui:
+    service: web
+    port: 8080
+  lan:
+    ports:
+      - { service: samba, port: 445 }
+  permissions:
+    - network.lan
+    - storage.share.documents:write
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `lan.ports[].service` | 开端口的服务，要在 `services` 里，不能写 `network_mode: none`。 |
+| `lan.ports[].port` | 端口号。宿主端口和容器端口相同，不做映射。 |
+| `lan.ports[].protocol` | `tcp`（默认）或 `udp`。 |
+
+清单不合法的情况：`lan` 和 `network.lan` 只写了一个；`ports` 为空、端口为 0 或者同一端口和协议写了两次；把 `webui` 或 `mcp`
+的 TCP 端口列进来（它们只经核心访问）；同时申请了 `matrix.bot`（地址变了核心要按记录重建容器，而它不保存 Bot 的访问令牌）。
+
+- **端口开在哪里**由核心决定：默认是宿主默认路由所在网卡的私有 IPv4 主地址，主人可以在 App 的局域网设置里改选网卡或地址
+  （管理接口 `/_wonton/api/lan`，见 ADR-0019 的“接口”），或者给核心设 `WONTON_LAN_ADDRESSES` 指定。端口只发布在这些地址上，
+  从不发布到 `0.0.0.0` 或 `::`。选出的地址经 `WONTON_LAN_ADDRESSES` 交给插件，插件在自己的网页上告诉用户怎么连。
+- **选不出地址就装不上**：错误类别是 `lan_unavailable`（HTTP 422），原因写明是哪一种（没有默认路由、默认路由走的是虚拟网卡、
+  网卡上没有私有 IPv4 地址、检测失败）。预览的 `notices` 里每个端口一行，写明开在哪块网卡的哪个地址上；端口被别的插件的
+  `lan.ports` 占着、或者选不出地址时，`blocked` 写明原因。被宿主自己的服务占着的端口，Docker 启动容器时报错，安装附上原文并回滚。
+- **发布在哪个网络上**：声明了 `network.egress` 的插件直接发布在自己的插件网络上。没声明的，核心另建 `<插件网络>--lan`
+  （关掉地址伪装的桥接网络），只把 `lan.ports` 里的服务以网关优先级 1 接进去，端口发布在它上面；这些服务仍在插件网络里，
+  主动连外网和局域网的其他主机仍然不通。
+- **地址变了自动跟上**：装了这类插件时，核心启动后和之后每 5 分钟检测一次。地址变了，只重建 `lan.ports` 里的服务的容器，
+  数据不动，正在用的连接会断开；选不出地址时插件标为异常，端口不改开到别的地址上，地址回来后恢复。主人改了设置也一样重建。
+- **不做发现**：核心不发 mDNS、WS-Discovery、SSDP，也不转发组播和广播，用户按地址连。
+- **身份由插件自己验证**：局域网的连接不经核心登录。插件经 IPv4 地址看得到真实的客户端地址；主人选了 IPv6 地址时，
+  那上面的连接由 docker-proxy 转发，插件看到的是网桥的网关地址。
+
 ## Compose 子集
 
 核心经 Docker API 渲染插件，只接受下面的字段，其余字段一律报错：
@@ -722,7 +783,7 @@ x-wonton:
   多个服务）；命名卷必须在顶层 `volumes` 声明。理由见 ADR-0011 的“插件隔离的约束”。
 - 命名卷在 Docker 里叫 `wonton-<slug>--<卷名>`。同名卷已存在时：属于本插件（上次卸载时保留的数据）就
   直接复用；属于其他插件或不是核心创建的，拒绝安装。安装失败回滚时只删除本次新建的卷，保留的卷不删。
-- 明确拒绝并给出原因：`ports`、`network_mode`（`none` 以外的取值）、`networks`、`privileged`、
+- 明确拒绝并给出原因：`ports`（局域网端口写在 `lan.ports`，见“局域网”）、`network_mode`（`none` 以外的取值）、`networks`、`privileged`、
   `devices`（显卡由核心按 `gpu.services` 交给服务，见“显卡”）、`cap_add`、`security_opt`、`pid`、`ipc`、
   `container_name`、`build`、`env_file`、`extends`、`links`、`external_links`、`volumes_from`，以及顶层的
   `networks`、`secrets`。
@@ -790,7 +851,8 @@ x-wonton:
   请求头，靠的就是这一点。核心启动时检查 Engine 版本，低于 28 时报错退出，不降级运行；
   `allow-direct-routing` 经 Engine API 查不到，由安装器保证。
 - 插件之间默认互不可达；需要互通时在清单里声明依赖（待定，M1 前补充）。
-- 除 `network.host` 外，插件不向宿主暴露端口；网页一律经核心网关访问。
+- 插件不向宿主暴露端口，只有 `network.lan` 的插件把 `lan.ports` 列出的端口发布在局域网地址上（见“局域网”）；
+  网页一律经核心网关访问。
 - 插件的容器、网络和卷都带标签 `wonton.plugin=<id>`，卸载时据此清理；卸载时选择删除数据才会删除
   命名卷、应用数据目录和插件密钥，共享文件夹永不删除。
 - 安装和卸载不随请求取消：请求断了（手机切网、隧道断开），操作照样做完，结果看插件列表里的状态。同一个插件正在

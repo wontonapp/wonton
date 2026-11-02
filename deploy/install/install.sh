@@ -9,6 +9,8 @@
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
 #   WONTON_TUNNEL_PORT  隧道的 UDP 端口（默认 8482）
 #   WONTON_BASE_DOMAIN  基础域名，同时是 Matrix 的服务器名，装好后不能改（默认 wonton.localhost）
+#   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改；
+#                       ADR-0019）。设成空就取消
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
 #
 # 第一次装好后，安装目录里的 .env 记下这些设置，以后再执行时不用再给。
@@ -69,6 +71,8 @@ tunnel_port=${WONTON_TUNNEL_PORT:-$(saved WONTON_TUNNEL_PORT)}
 tunnel_port=${tunnel_port:-8482}
 domain=${WONTON_BASE_DOMAIN:-$(saved WONTON_BASE_DOMAIN)}
 domain=${domain:-wonton.localhost}
+# 不用 `:-`：环境变量设成空就是取消上次的设置。
+lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
 case "$data_dir" in
   /*) ;;
   *) die "WONTON_DATA_DIR 要是绝对路径：$data_dir" ;;
@@ -101,10 +105,12 @@ WONTON_DATA_DIR=$data_dir
 WONTON_PORT=$port
 WONTON_TUNNEL_PORT=$tunnel_port
 WONTON_BASE_DOMAIN=$domain
+WONTON_LAN_ADDRESSES=$lan_addresses
 EOF
 
 # docker compose 先看环境变量再看 .env：调用时带着的 WONTON_* 会盖过上面按 digest 写下的镜像。
-unset WONTON_CORE_IMAGE WONTON_INSTALL_DIR WONTON_DATA_DIR WONTON_PORT WONTON_TUNNEL_PORT WONTON_BASE_DOMAIN
+unset WONTON_CORE_IMAGE WONTON_INSTALL_DIR WONTON_DATA_DIR WONTON_PORT WONTON_TUNNEL_PORT WONTON_BASE_DOMAIN \
+  WONTON_LAN_ADDRESSES
 info "启动核心、身份提供方和 Matrix 服务器（第一次要拉镜像，几分钟）"
 docker compose -f "$install_dir/compose.yaml" up -d --wait --wait-timeout 600 ||
   die "服务没有在 10 分钟内就绪，看看日志：docker compose -f $install_dir/compose.yaml logs"

@@ -14,6 +14,7 @@ use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
 use super::image_worker::ImageWorker;
+use super::lan::Lan;
 use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind};
 use super::models::{ModelsRoute, ProviderState};
@@ -147,7 +148,7 @@ pub(super) struct Deployed {
 }
 
 impl Entry {
-    fn new(listed: Arc<Listed>, status: PluginStatus, upstream: Option<String>) -> Self {
+    pub(super) fn new(listed: Arc<Listed>, status: PluginStatus, upstream: Option<String>) -> Self {
         let manifest = &listed.manifest;
         Self {
             version: manifest.version.clone(),
@@ -168,7 +169,7 @@ impl Entry {
         }
     }
 
-    fn running(listed: Arc<Listed>, deployed: Deployed) -> Self {
+    pub(super) fn running(listed: Arc<Listed>, deployed: Deployed) -> Self {
         Self {
             health: Some(deployed.health),
             models: deployed.models,
@@ -224,6 +225,8 @@ pub struct PluginManager {
     changes: tokio::sync::watch::Sender<u64>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
+    /// 局域网端口开在哪里，见 [`super::lan`]。
+    pub(super) lan: Lan,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -236,6 +239,7 @@ pub(super) fn supported(permission: &Permission) -> bool {
             | Permission::Models
             | Permission::Tools
             | Permission::DevicesGpu
+            | Permission::NetworkLan
     )
 }
 
@@ -257,6 +261,7 @@ impl PluginManager {
     ) -> Self {
         // 核心直接跑在宿主上时 /dev 就是宿主的；在容器里要由 compose 挂载进来，见 [`Self::with_host`]。
         let host_dev = cfg.core_container.is_none().then(|| PathBuf::from("/dev"));
+        let lan = Lan::for_core(cfg.core_container.clone());
         Self {
             engine,
             store,
@@ -272,6 +277,7 @@ impl PluginManager {
             plugins: RwLock::new(BTreeMap::new()),
             changes: tokio::sync::watch::Sender::new(0),
             bundled: RwLock::new(BTreeSet::new()),
+            lan,
         }
     }
 
@@ -280,7 +286,7 @@ impl PluginManager {
         self.changes.subscribe()
     }
 
-    fn changed(&self) {
+    pub(super) fn changed(&self) {
         self.changes.send_modify(|generation| *generation += 1);
     }
 
@@ -321,6 +327,13 @@ impl PluginManager {
     #[must_use]
     pub fn with_host(mut self, host: HostPaths) -> Self {
         self.host = host;
+        self
+    }
+
+    /// 怎么检测局域网地址、`WONTON_LAN_ADDRESSES`（见 [`super::lan`]）。
+    #[must_use]
+    pub fn with_lan(mut self, lan: Lan) -> Self {
+        self.lan = lan;
         self
     }
 
@@ -544,6 +557,10 @@ impl PluginManager {
                 match self.reconcile(&package, record).await {
                     Ok(deployed) => Entry::running(listed, deployed),
                     Err(e) => {
+                        // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。
+                        if manifest.lan.is_some() {
+                            self.lan.mark_degraded(&manifest.id);
+                        }
                         let reason = e.to_string();
                         Entry::new(listed, PluginStatus::Degraded { reason }, None)
                     }
@@ -594,10 +611,11 @@ impl PluginManager {
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
         let gpu = self.gpu_grant(&manifest).await?;
+        let lan = self.lan_grant(&manifest).await?;
         let listed = Listed::new(&package, now_secs());
         self.reserve(&listed)?;
-        tracing::info!(plugin = %manifest.id, gpu = ?gpu, "开始安装插件");
-        match self.deploy(&package, granted, gpu).await {
+        tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
+        match self.deploy(&package, granted, gpu, lan).await {
             Ok(deployed) => {
                 tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");
@@ -704,11 +722,16 @@ impl PluginManager {
             if let Some(e) = busy(id, &entry.status) {
                 return Err(e);
             }
+            if self.lan.is_rebuilding(id) {
+                let reason = format!("插件 {id} 正在按新的局域网地址重建");
+                return Err(InstallError::Conflict(reason));
+            }
             entry.status = PluginStatus::Uninstalling;
         }
         tracing::info!(plugin = %id, purge, "开始卸载插件");
         match self.teardown(id, purge).await {
             Ok(report) => {
+                self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);
                 self.changed();
                 tracing::info!(plugin = %id, "插件已卸载");
@@ -736,7 +759,7 @@ fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError> {
 /// 在独立的任务里执行，调用方只等结果：调用方被丢弃（请求断开：手机切网、隧道断开）时操作照样做完，不会停在
 /// 半路，留下一直“安装中”“卸载中”的插件和装了一半的资源。任务不会被取消（只有运行时关闭时才会，那时调用方
 /// 也已经没了），所以出错只可能是任务 panic，原样传给调用方。
-async fn detached<T: Send + 'static>(op: impl Future<Output = T> + Send + 'static) -> T {
+pub(super) async fn detached<T: Send + 'static>(op: impl Future<Output = T> + Send + 'static) -> T {
     match tokio::spawn(op).await {
         Ok(out) => out,
         Err(e) => std::panic::resume_unwind(e.into_panic()),

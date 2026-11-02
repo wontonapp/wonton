@@ -17,6 +17,7 @@ mod github;
 mod gpu;
 mod health;
 mod instances;
+mod lan;
 mod manager;
 mod models;
 mod preinstall;

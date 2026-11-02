@@ -13,6 +13,7 @@ use super::docker::{LabeledResources, NetworkReach};
 use super::gpu::GpuGrant;
 use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
+use super::lan::LanGrant;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId};
 use super::names::{Instance, LABEL_PLUGIN};
@@ -48,10 +49,12 @@ pub struct LifecycleConfig {
 
 /// 本次安装已经创建的资源，失败时据此回滚。
 #[derive(Default)]
-struct Undo {
+pub(super) struct Undo {
     containers: Vec<String>,
     volumes: Vec<String>,
     network: Option<String>,
+    /// 发布局域网端口的网络（见 [`super::lan`]）。
+    lan_network: Option<String>,
     core_attached: bool,
     oidc_client: Option<String>,
     app_dir_created: Option<PathBuf>,
@@ -105,15 +108,20 @@ impl PluginManager {
     }
 
     /// 部署插件并写下安装记录，返回核心访问插件网页的地址。任一步失败（包括写记录）都回滚本次创建的
-    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡。
+    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡，`lan`
+    /// 是局域网端口开在哪里。
     pub(super) async fn deploy(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
         gpu: Option<GpuGrant>,
+        lan: Option<LanGrant>,
     ) -> Result<Deployed, InstallError> {
         let mut undo = Undo::default();
-        match self.deploy_inner(package, granted, gpu, &mut undo).await {
+        match self
+            .deploy_inner(package, granted, (gpu, lan), &mut undo)
+            .await
+        {
             Ok(deployed) => Ok(deployed),
             Err(error) => {
                 let failures = self.rollback(undo).await;
@@ -131,7 +139,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         granted: &[Permission],
-        gpu: Option<GpuGrant>,
+        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
         undo: &mut Undo,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
@@ -144,6 +152,7 @@ impl PluginManager {
             .install_context(manifest, secret.as_deref(), generated)
             .await?;
         ctx.gpu = gpu;
+        ctx.lan = lan;
         if let Some(bot) = self.provision_bot(package).await? {
             ctx.matrix = Some(self.matrix_vars(&bot));
             undo.bot = Some((manifest.id.clone(), bot));
@@ -163,6 +172,12 @@ impl PluginManager {
             .create_network(&plan.network, &plan.labels, self.network_reach(manifest))
             .await?;
         undo.network = Some(plan.network.clone());
+        if let Some(network) = ctx.lan.as_ref().and_then(|l| l.network.clone()) {
+            self.engine
+                .create_lan_network(&network, &plan.labels)
+                .await?;
+            undo.lan_network = Some(network);
+        }
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
         undo.source = Some(manifest.id.clone());
@@ -241,7 +256,7 @@ impl PluginManager {
         Ok(secrets)
     }
 
-    async fn install_context(
+    pub(super) async fn install_context(
         &self,
         manifest: &Manifest,
         secret: Option<&str>,
@@ -306,6 +321,7 @@ impl PluginManager {
             pgid: self.cfg.pgid,
             extra_hosts: Vec::new(),
             gpu: None,
+            lan: None,
         })
     }
 
@@ -323,7 +339,7 @@ impl PluginManager {
 
     /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`core_aliases`]）：
     /// 内部网络没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
-    async fn hosts_via_gateway(
+    pub(super) async fn hosts_via_gateway(
         &self,
         manifest: &Manifest,
         network: &str,
@@ -398,7 +414,7 @@ impl PluginManager {
         }
     }
 
-    async fn start_containers(
+    pub(super) async fn start_containers(
         &self,
         plan: &Deployment,
         undo: &mut Undo,
@@ -492,6 +508,10 @@ impl PluginManager {
                     .map_err(|e| e.to_string()),
             );
         }
+        if let Some(network) = &undo.lan_network {
+            let result = self.engine.remove_network(network).await;
+            note(format!("网络 {network}"), result.map_err(|e| e.to_string()));
+        }
         if let Some(network) = &undo.network {
             if let (true, Some(core)) = (undo.core_attached, &self.cfg.core_container) {
                 let result = self.engine.disconnect_network(network, core).await;
@@ -582,7 +602,7 @@ impl PluginManager {
     }
 
     /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。
-    async fn check_secrets(
+    pub(super) async fn check_secrets(
         &self,
         manifest: &Manifest,
     ) -> Result<BTreeMap<String, String>, InstallError> {

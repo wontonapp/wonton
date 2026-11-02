@@ -19,6 +19,7 @@ use super::configs::{self, ConfigError, ConfigFile};
 use super::gpu::GpuGrant;
 use super::hostdir::Owner;
 use super::interpolate::Vars;
+use super::lan::{self, LanGrant};
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners, mount_targets};
 use super::names::Instance;
@@ -136,6 +137,8 @@ pub struct InstallContext {
     pub extra_hosts: Vec<String>,
     /// 申请了 `devices.gpu` 且本机有可用的显卡时：交给 `gpu.services` 里的服务的设备（见 [`super::gpu`]）。
     pub gpu: Option<GpuGrant>,
+    /// 申请了 `network.lan` 时：局域网端口开在哪里（见 [`super::lan`]）。
+    pub lan: Option<LanGrant>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -156,6 +159,7 @@ impl std::fmt::Debug for InstallContext {
             .field("pgid", &self.pgid)
             .field("extra_hosts", &self.extra_hosts)
             .field("gpu", &self.gpu)
+            .field("lan", &self.lan)
             .finish()
     }
 }
@@ -238,6 +242,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     if let Some(url) = &ctx.mcp_url {
         set("WONTON_MCP_URL", url.clone());
     }
+    if let Some(grant) = &ctx.lan {
+        set(lan::ADDRESSES_VAR, grant.var());
+    }
     if let Some(matrix) = &ctx.matrix {
         set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
         set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
@@ -308,13 +315,19 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
             .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_)))
             .map(|(name, _)| (name.clone(), "dry-run".to_owned()))
             .collect(),
-        slug,
         instance: Instance::default(),
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
         extra_hosts: Vec::new(),
         gpu: None,
+        // 192.0.2.1 是文档用的地址（RFC 5737）。
+        lan: manifest.lan.as_ref().map(|_| LanGrant {
+            addresses: vec![[192, 0, 2, 1].into()],
+            network: (!manifest.permissions.contains(&Permission::NetworkEgress))
+                .then(|| Instance::default().lan_network(&slug)),
+        }),
+        slug,
     };
     render(package, &ctx)
 }
@@ -374,6 +387,9 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
             })?;
         let endpoint = (network.as_str(), vars.aliases(&name));
         let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels, gpu)?;
+        if let Some(grant) = &ctx.lan {
+            lan::publish(manifest, &name, service, grant, &mut plan.body)?;
+        }
         plan.files = files;
         plan.one_shot = one_shot;
         containers.push(plan);

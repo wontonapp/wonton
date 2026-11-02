@@ -28,6 +28,8 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
   也能用（远端只需要 Docker）：`DOCKER_HOST=ssh://npchy deploy/dev/core/dev.sh up`。
 - 核心容器只读挂着宿主的 `/dev`（`WONTON_HOST_DEV=/host/dev`），申请了 `devices.gpu` 的插件据此检测显卡和设备所属的组
   （ADR-0018）；核心直接跑在宿主上时不用设，读的就是 `/dev`。
+- 申请了 `network.lan` 的插件，端口开在哪个地址上由核心起一个宿主网络里的一次性容器检测（`wonton-<实例名>-lan-probe`，
+  没设实例名时是 `wonton-lan-probe`，ADR-0019）；`WONTON_DEV_LAN_ADDRESSES` 指定地址时照样检测，但只用指定的地址。
 - 镜像里编进了构建它的提交号（`dev.sh commit`；Cargo 工作区有没提交的改动时带 `-dirty`），核心启动日志的
   第一行就是它（`docker logs <核心容器> 2>&1 | grep 核心启动`），`docker run --rm wonton-core:dev --version`
   也能看到。验证前先看一眼，确认镜像里是这个检出的代码。

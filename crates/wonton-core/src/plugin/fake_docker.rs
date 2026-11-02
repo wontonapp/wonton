@@ -99,6 +99,8 @@ struct Resources {
     pull_error: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
+    /// 容器名 → 跑完时的（退出码，标准输出，标准错误），`wait` 和 `logs` 按它回答；没设的以 0 退出、没有输出。
+    outputs: BTreeMap<String, (i64, String, String)>,
     hold: Option<Hold>,
 }
 
@@ -230,6 +232,21 @@ impl FakeDocker {
     /// 执行过的命令，按顺序。
     pub fn execs(&self) -> Vec<FakeExec> {
         self.lock().execs.values().cloned().collect()
+    }
+
+    /// 放进一个从 `image` 创建的运行中的容器，比如核心自己的容器。
+    pub fn add_image_container(&self, name: &str, image: &str) {
+        let mut docker = self.lock();
+        docker.containers.insert(name.to_owned(), Labels::new());
+        docker
+            .created
+            .insert(name.to_owned(), json!({"Image": image}));
+    }
+
+    /// 这个名字的容器（之后创建的）跑完时的退出码和输出。
+    pub fn set_output(&self, container: &str, code: i64, stdout: &str, stderr: &str) {
+        let output = (code, stdout.to_owned(), stderr.to_owned());
+        self.lock().outputs.insert(container.to_owned(), output);
     }
 
     /// 让 `GET /info` 报告这些运行时（如 `runc`、`nvidia`）。
@@ -379,9 +396,27 @@ fn containers(
                 .collect();
             json_reply(
                 StatusCode::OK,
-                json!({"Name": format!("/{name}"), "State": state,
+                json!({"Name": format!("/{name}"), "State": state, "Image": created["Image"],
+                       "HostConfig": created["HostConfig"],
                        "NetworkSettings": {"Networks": networks}}),
             )
+        }
+        (&Method::POST, [name, "wait"]) if exists(name) => {
+            let code = docker.outputs.get(*name).map_or(0, |o| o.0);
+            json_reply(StatusCode::OK, json!({"StatusCode": code}))
+        }
+        (&Method::GET, [name, "logs"]) if exists(name) => {
+            let (_, stdout, stderr) = docker.outputs.get(*name).cloned().unwrap_or_default();
+            let mut frames = Vec::new();
+            // 和 Docker 一样多路复用：1 是标准输出，2 是标准错误。
+            for (stream, text) in [(1u8, stdout), (2, stderr)] {
+                if !text.is_empty() {
+                    frames.extend_from_slice(&[stream, 0, 0, 0]);
+                    frames.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+                    frames.extend_from_slice(text.as_bytes());
+                }
+            }
+            (StatusCode::OK, frames).into_response()
         }
         (&Method::POST, [name, "exec"]) if exists(name) => {
             let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
@@ -494,7 +529,11 @@ fn others(
         }
         (&Method::GET, ["networks"]) => {
             let list: Vec<Value> = labeled(&docker.networks, query)
-                .map(|(n, labels)| json!({"Name": n, "Labels": labels}))
+                .map(|(n, labels)| {
+                    json!({"Name": n, "Id": n, "Driver": "bridge", "Labels": labels,
+                           "Options": docker.network_bodies[n]["Options"],
+                           "IPAM": {"Config": [{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]}})
+                })
                 .collect();
             json_reply(StatusCode::OK, json!(list))
         }

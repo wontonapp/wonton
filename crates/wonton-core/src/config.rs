@@ -1,6 +1,6 @@
 //! 核心配置，全部来自环境变量（见 `deploy/dev/core/README.md`）。
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -176,6 +176,8 @@ pub struct Config {
     /// compose 只读挂载进来；直接跑在宿主上时就是 `/dev`。在容器里却没设时为 `None`，申请显卡的插件装不上，
     /// 原因写明。
     pub host_dev: Option<PathBuf>,
+    /// 局域网端口只开在这些地址上，不再自动选（`WONTON_LAN_ADDRESSES`，ADR-0019）。必须都是私有地址。
+    pub lan_addresses: Option<Vec<IpAddr>>,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
@@ -271,6 +273,10 @@ impl Config {
             },
             core_container,
             host_dev,
+            lan_addresses: get(crate::plugin::lan::ADDRESSES_VAR)
+                .map(|text| crate::plugin::lan::parse_addresses(&text))
+                .transpose()
+                .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
@@ -508,6 +514,14 @@ mod tests {
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_PUBLIC_PORT", "x")]).is_err());
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_TUNNEL_PORT", "70000")]).is_err());
         assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_INSTANCE", "dev-1")]).is_err());
+        // 局域网端口不能开在公网地址上：核心启动时就报错退出。
+        let lan = |value| config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_LAN_ADDRESSES", value)]);
+        assert!(lan("192.168.0.193,203.0.113.5").is_err());
+        let addresses = lan("192.168.0.193, fd00::10")
+            .unwrap()
+            .lan_addresses
+            .unwrap();
+        assert_eq!(addresses.len(), 2);
         assert!(
             config(&[
                 ("WONTON_DATA_DIR", "/d"),

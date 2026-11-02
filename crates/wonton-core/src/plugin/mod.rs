@@ -19,6 +19,7 @@ pub mod image_worker;
 pub mod images;
 mod install_error;
 pub mod interpolate;
+pub mod lan;
 pub mod languages;
 pub mod lifecycle;
 pub mod manager;

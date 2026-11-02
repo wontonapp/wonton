@@ -184,6 +184,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         pgid: 1000,
         extra_hosts: Vec::new(),
         gpu: None,
+        lan: None,
     };
     let printed = format!("{ctx:?}");
     for secret in [

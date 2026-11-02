@@ -55,6 +55,29 @@ impl Instance {
         format!("{}--{volume}", self.network(slug))
     }
 
+    /// 没声明 `network.egress` 的插件发布局域网端口的网络 `<插件网络>--lan`（ADR-0019）。网络和容器不同名字空间，
+    /// 和服务 `lan` 的容器同名也不冲突。
+    pub fn lan_network(&self, slug: &str) -> String {
+        format!("{}--lan", self.network(slug))
+    }
+
+    /// 检测局域网地址的一次性容器。名字里没有 `--`，不会和插件的容器重名。
+    pub fn lan_probe(&self) -> String {
+        match &self.0 {
+            None => "wonton-lan-probe".to_owned(),
+            Some(instance) => format!("wonton-{instance}-lan-probe"),
+        }
+    }
+
+    /// 核心自己建的、不属于哪个插件的资源（如检测局域网地址的容器）的标签。
+    pub fn core_labels(&self) -> HashMap<String, String> {
+        let instance = self
+            .0
+            .iter()
+            .map(|i| (LABEL_INSTANCE.to_owned(), i.clone()));
+        instance.collect()
+    }
+
     /// 核心给插件的容器、网络和命名卷打的标签。
     pub fn labels(&self, id: &PluginId) -> HashMap<String, String> {
         let mut labels = HashMap::from([(LABEL_PLUGIN.to_owned(), id.to_string())]);

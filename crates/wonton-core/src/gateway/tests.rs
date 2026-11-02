@@ -231,14 +231,17 @@ impl Harness {
         };
         // 安装预览要查宿主架构，和安装一样连 Docker。
         let (_docker, engine) = FakeDocker::start().await;
-        let manager = Arc::new(PluginManager::new(
-            engine,
-            Store::open(dir.path().join("plugins")).unwrap(),
-            http.clone(),
-            hydra.as_ref().map(|(h, _)| h.clone()),
-            lifecycle,
-            ImageWorker::in_process(),
-        ));
+        let manager = Arc::new(
+            PluginManager::new(
+                engine,
+                Store::open(dir.path().join("plugins")).unwrap(),
+                http.clone(),
+                hydra.as_ref().map(|(h, _)| h.clone()),
+                lifecycle,
+                ImageWorker::in_process(),
+            )
+            .with_lan(super::lan_api_tests::lan()),
+        );
         let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let gateway = Gateway::new(

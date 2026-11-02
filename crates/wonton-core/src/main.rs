@@ -7,6 +7,8 @@
 //! - `wonton-core plugin check|pack <插件包目录>`：插件作者用的检查和打包（见 `plugin_command`）。
 //! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
 //!   （`wonton_core::plugin::image_worker`）。
+//! - `wonton-core lan-probe`：核心内部用，在宿主网络里的一次性容器里读宿主的路由和网卡
+//!   （`wonton_core::plugin::lan::probe`）。
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
@@ -29,6 +31,7 @@ use wonton_core::plugin::catalog::Catalog;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
+use wonton_core::plugin::lan::{self, Lan};
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::preinstall::Backoff;
 use wonton_core::plugin::store::Store;
@@ -48,8 +51,11 @@ const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
 fn main() -> ExitCode {
     // 处理图片的子进程不起 tokio 运行时，也不初始化日志（日志写在标准输出上，会混进结果）。
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) == Some(image_worker::COMMAND) {
-        return image_worker::child(&args[2..]);
+    match args.get(1).map(String::as_str) {
+        Some(image_worker::COMMAND) => return image_worker::child(&args[2..]),
+        // 检测容器的结果打印在标准输出上，同样不初始化日志。
+        Some(lan::probe::COMMAND) => return lan::probe::command(),
+        _ => {}
     }
     run()
 }
@@ -137,9 +143,11 @@ async fn serve() -> anyhow::Result<()> {
             images,
         )
         .with_matrix(matrix.clone())
-        .with_host(HostPaths::new(cfg.host_dev.clone())),
+        .with_host(HostPaths::new(cfg.host_dev.clone()))
+        .with_lan(lan_state(&cfg)),
     );
     manager.restore().await.context("恢复已安装的插件")?;
+    manager.spawn_lan_monitor();
     preinstall(&cfg, manager.clone())?;
 
     let bus = mcp_bus(&cfg, manager.clone(), matrix.clone())?;
@@ -180,6 +188,20 @@ async fn serve() -> anyhow::Result<()> {
     .context("网关异常退出");
     entry.shutdown().await;
     served
+}
+
+fn lan_state(cfg: &Config) -> Lan {
+    let detector = Lan::for_core(cfg.core_container.clone());
+    match &cfg.lan_addresses {
+        Some(addresses) => {
+            tracing::info!(
+                ?addresses,
+                "局域网端口只开在 WONTON_LAN_ADDRESSES 指定的地址上"
+            );
+            detector.with_fixed(addresses.clone())
+        }
+        None => detector,
+    }
 }
 
 async fn connect_hydra(cfg: &Config, http: &HttpClient) -> anyhow::Result<Option<(Hydra, String)>> {

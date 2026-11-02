@@ -9,6 +9,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use super::gpu::GpuSpec;
+use super::lan::LanSpec;
 use super::provides::Provides;
 use super::store_info::{Author, Category};
 
@@ -356,6 +357,7 @@ pub enum Permission {
     MatrixBot,
     Notify,
     NetworkEgress,
+    NetworkLan,
     NetworkHost,
     DevicesGpu,
     Device { path: String },
@@ -367,7 +369,11 @@ impl Permission {
     pub fn is_high(&self) -> bool {
         matches!(
             self,
-            Self::NetworkHost | Self::DevicesGpu | Self::Device { .. } | Self::DockerSocket
+            Self::NetworkLan
+                | Self::NetworkHost
+                | Self::DevicesGpu
+                | Self::Device { .. }
+                | Self::DockerSocket
         )
     }
 }
@@ -391,6 +397,7 @@ impl FromStr for Permission {
             "matrix.bot" => Some(Self::MatrixBot),
             "notify" => Some(Self::Notify),
             "network.egress" => Some(Self::NetworkEgress),
+            "network.lan" => Some(Self::NetworkLan),
             "network.host" => Some(Self::NetworkHost),
             "devices.gpu" => Some(Self::DevicesGpu),
             "docker.socket" => Some(Self::DockerSocket),
@@ -441,6 +448,7 @@ impl fmt::Display for Permission {
             Self::MatrixBot => f.write_str("matrix.bot"),
             Self::Notify => f.write_str("notify"),
             Self::NetworkEgress => f.write_str("network.egress"),
+            Self::NetworkLan => f.write_str("network.lan"),
             Self::NetworkHost => f.write_str("network.host"),
             Self::DevicesGpu => f.write_str("devices.gpu"),
             Self::Device { path } => write!(f, "devices.{path}"),
@@ -511,6 +519,9 @@ pub struct Manifest {
     /// 拿到显卡的服务，见规范“显卡”；要和 `devices.gpu` 权限一起声明。
     #[serde(default)]
     pub gpu: Option<GpuSpec>,
+    /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
+    #[serde(default)]
+    pub lan: Option<LanSpec>,
     /// 插件自己的密钥，见规范“插件密钥”。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
@@ -537,6 +548,7 @@ impl Manifest {
         }
         validate_bots(self)?;
         super::gpu::validate(self)?;
+        super::lan::validate(self)?;
         super::provides::validate(self)?;
         super::proxy_auth::validate(self)?;
         if let Some(webui) = &self.webui {
@@ -699,6 +711,7 @@ mod tests {
             "matrix.bot",
             "notify",
             "network.egress",
+            "network.lan",
             "network.host",
             "devices.gpu",
             "devices./dev/ttyUSB0",

@@ -119,6 +119,8 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::OidcUnavailable(_)
         | InstallError::MatrixUnavailable(_)
         | InstallError::ModelsUnavailable(_)
+        // 宿主刚启动时 DHCP 可能还没拿到地址。
+        | InstallError::LanUnavailable(_)
         // 核心起不了处理图片的子进程，和插件包里的图片无关。
         | InstallError::ImagesUnavailable(_)
         | InstallError::Unhealthy(_)

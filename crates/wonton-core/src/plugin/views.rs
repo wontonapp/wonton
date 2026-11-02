@@ -140,7 +140,8 @@ impl PluginManager {
         };
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m).await?;
-        let blocked = blocked.or(gpu.blocked);
+        let lan = self.lan_preview(m).await?;
+        let blocked = blocked.or(gpu.blocked).or(lan.blocked);
         let unpinned: Vec<String> = plan
             .containers
             .iter()
@@ -162,6 +163,7 @@ impl PluginManager {
         }
         notices.extend(requirement_lines(m).into_iter().map(line));
         notices.extend(gpu.notice);
+        notices.extend(lan.notices);
         Ok(InstallPreview {
             source: package.origin.as_ref().map(Origin::source),
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
@@ -308,6 +310,7 @@ pub fn permission_text(permission: &Permission) -> String {
         Permission::MatrixBot => "以 Bot 身份收发消息".to_owned(),
         Permission::Notify => "给你发通知".to_owned(),
         Permission::NetworkEgress => "访问外网和局域网".to_owned(),
+        Permission::NetworkLan => "在局域网上开放端口（高权限）".to_owned(),
         Permission::NetworkHost => "使用宿主的网络（高权限）".to_owned(),
         Permission::DevicesGpu => "使用 GPU（高权限）".to_owned(),
         Permission::Device { path } => format!("访问宿主设备 {path}（高权限）"),

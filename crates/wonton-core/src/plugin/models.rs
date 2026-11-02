@@ -199,16 +199,43 @@ impl PluginManager {
             }
             return Err(e);
         }
+        Ok(Some(self.model_vars(&route, package, &keys)))
+    }
+
+    /// 重建容器时（见 [`super::lan`]）：用记下的凭据，不重新签发。网关没在运行时如实报错。
+    pub(super) fn stored_model_vars(
+        &self,
+        package: &PluginPackage,
+    ) -> Result<Option<ModelVars>, InstallError> {
+        if !uses_models(&package.manifest) {
+            return Ok(None);
+        }
+        let route = self.provider()?;
+        let keys = self.store.model_keys().load(&package.manifest.id)?;
+        let (plugin, bot) = credential_names(package);
+        if let Some(missing) = plugin
+            .iter()
+            .chain(bot.iter())
+            .find(|n| !keys.contains_key(*n))
+        {
+            return Err(unavailable(format!("没有记下模型网关凭据 {missing}")));
+        }
+        Ok(Some(self.model_vars(&route, package, &keys)))
+    }
+
+    /// 注入的变量；`keys` 里有使用方要的每个凭据。
+    fn model_vars(&self, route: &ModelsRoute, package: &PluginPackage, keys: &Keys) -> ModelVars {
+        let (plugin, bot) = credential_names(package);
         let spec = &route.spec;
         let port = self.cfg.gateway_port;
-        Ok(Some(ModelVars {
+        ModelVars {
             base_url: base_url(port, &spec.apis.openai),
             anthropic_url: spec.apis.anthropic.as_ref().map(|p| base_url(port, p)),
             gemini_url: spec.apis.gemini.as_ref().map(|p| base_url(port, p)),
             plugin_key: plugin.map(|name| keys[&name].clone()),
             bot_key: bot.map(|name| keys[&name].clone()),
             default_model: spec.default_model.clone(),
-        }))
+        }
     }
 
     /// 卸载使用方或安装失败回滚：在网关里吊销它的凭据，再删掉记下的值。网关已经卸载了就没有可吊销的；网关装着

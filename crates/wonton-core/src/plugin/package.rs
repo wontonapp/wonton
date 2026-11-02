@@ -377,7 +377,14 @@ impl PluginPackage {
             .iter()
             .flat_map(|g| &g.services)
             .map(|service| ("gpu.services", Some(service)));
-        for (field, service) in refs.iter().cloned().chain(collects).chain(bots).chain(gpu) {
+        let lan = self
+            .manifest
+            .lan
+            .iter()
+            .flat_map(|l| &l.ports)
+            .map(|port| ("lan.ports", Some(&port.service)));
+        let all = refs.iter().cloned().chain(collects).chain(bots).chain(gpu);
+        for (field, service) in all.chain(lan) {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {

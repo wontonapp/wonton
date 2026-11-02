@@ -38,6 +38,10 @@ pub enum InstallError {
     /// 插件要显卡（`requirements.gpu: required`），本机没有可用的：没有设备、没有驱动，或者没有运行时。
     #[error("本机没有可用的显卡：{0}")]
     GpuUnavailable(String),
+    /// 插件要在局域网上开放端口（`network.lan`），选不出地址：没有默认路由、默认路由走虚拟网卡、选的网卡或地址
+    /// 不在了、检测不了网卡等。主人在局域网设置里选网卡或地址后再试。
+    #[error("选不出局域网地址：{0}")]
+    LanUnavailable(String),
     #[error("处理图片的进程不可用：{0}")]
     ImagesUnavailable(String),
     #[error("插件没有通过健康检查：{0}")]
@@ -71,6 +75,7 @@ impl InstallError {
             Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::ModelsUnavailable(_) => "models_unavailable",
             Self::GpuUnavailable(_) => "gpu_unavailable",
+            Self::LanUnavailable(_) => "lan_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
@@ -98,6 +103,7 @@ impl InstallError {
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::GpuUnavailable(m) => Self::GpuUnavailable(add(m)),
+            Self::LanUnavailable(m) => Self::LanUnavailable(add(m)),
             Self::ImagesUnavailable(m) => Self::ImagesUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),

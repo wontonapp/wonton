@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use wonton_protocol::LanChoice;
 
 use super::bots::BotStore;
 use super::github_source::Origin;
@@ -132,8 +133,28 @@ impl Store {
         Ok(files)
     }
 
+    /// 一个插件的记录；没有时为 `None`。
+    pub fn load(&self, id: &PluginId) -> Result<Option<InstalledRecord>, StoreError> {
+        let path = self.path(id);
+        if !path.exists() {
+            return Ok(None);
+        }
+        read_record(&path, id).map(Some)
+    }
+
     pub fn save(&self, record: &InstalledRecord) -> Result<(), StoreError> {
         write_json(&self.path(&record.id), record)
+    }
+
+    /// 主人的局域网设置（ADR-0019），在记录目录下的 `lan/choice.json` 里：放进子目录，不和插件记录混在一起。
+    pub fn lan_choice(&self) -> Result<Option<LanChoice>, StoreError> {
+        read_json(&self.dir.join("lan").join("choice.json"))
+    }
+
+    pub fn save_lan_choice(&self, choice: &LanChoice) -> Result<(), StoreError> {
+        let dir = self.dir.join("lan");
+        create_private_dir(&dir)?;
+        write_json(&dir.join("choice.json"), choice)
     }
 
     pub fn remove(&self, id: &PluginId) -> Result<(), StoreError> {
