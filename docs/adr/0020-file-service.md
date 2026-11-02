@@ -148,10 +148,14 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 | `file_expired` | — | Bot 登记的编号没分享就过期了（只有工具） |
 | `file_gone` | 410 | 原文件已被移动或删除 |
 | `file_changed` | 409 | 文件登记后改过（工具）；要删的已经不是上传的那个文件，编号删了、文件没删（`DELETE`） |
-| `not_viewable` | — | 这个类型没有预览（只有 `view_file`） |
+| `not_viewable` | 404 | 这个类型没有预览或缩略图（`view_file`、`thumbnail`） |
 | `storage_full` | 507 | 磁盘放不下这个上传 |
-| `plugin_unavailable` | 503 | 来源插件卸了或没在运行 |
+| `plugin_unavailable` | 503 | 来源插件给不了这个文件：卸了、没在运行、连不上，或者不再提供 MCP 服务，说明里写是哪一种 |
 | `upstream_error` | 502 | 来源插件返回错误，附上原话 |
+| `resource_too_large` | 502 | 插件的资源超过 `resources/read` 的上限，插件要给内网地址 |
+| `service_unavailable` | 503 | 核心依赖的系统服务（tusd、Matrix 服务器）没配置或连不上 |
+| `internal` | 500 | 核心自己的问题：读写不了记录、读不了插件记录、Docker 出错、起不了进程 |
+| `invalid_input` | 400 | 请求本身不合法：请求体读不懂，或者上传没有声明长度 |
 
 ### 生命周期
 

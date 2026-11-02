@@ -80,14 +80,22 @@ pub enum FileFailure {
     FileGone,
     /// 文件登记后改过（工具）；要删的已经不是上传的那个文件，编号删了、文件没删（`DELETE`）。
     FileChanged,
-    /// 这个类型没有预览。只有 `wonton__view_file` 会返回。
+    /// 这个类型没有预览或缩略图（`wonton__view_file`、`/thumbnail`）。
     NotViewable,
     /// 磁盘放不下这个上传。
     StorageFull,
-    /// 来源插件卸了或没在运行。
+    /// 来源插件给不了这个文件：卸了、没在运行、连不上，或者不再提供 MCP 服务。说明里写是哪一种。
     PluginUnavailable,
     /// 来源插件返回错误，说明里附上原话。
     UpstreamError,
+    /// 插件的资源超过 `resources/read` 的上限：插件要给内网地址。
+    ResourceTooLarge,
+    /// 核心依赖的系统服务（tusd、Matrix 服务器）没配置或连不上。
+    ServiceUnavailable,
+    /// 核心自己的问题：读写不了记录、读不了插件记录、Docker 出错、起不了进程。
+    Internal,
+    /// 请求本身不合法：请求体读不懂，或者上传没有声明长度。
+    InvalidInput,
     /// 客户端核心连不上家里的服务器：隧道没连上、网络断开或请求超时。不会出现在核心的响应里。
     TransportUnavailable,
     /// 客户端核心读不懂核心的响应。不会出现在核心的响应里。
@@ -112,6 +120,10 @@ impl FileFailure {
             Self::StorageFull => "storage_full",
             Self::PluginUnavailable => "plugin_unavailable",
             Self::UpstreamError => "upstream_error",
+            Self::ResourceTooLarge => "resource_too_large",
+            Self::ServiceUnavailable => "service_unavailable",
+            Self::Internal => "internal",
+            Self::InvalidInput => "invalid_input",
             Self::TransportUnavailable => "transport_unavailable",
             Self::Protocol => "protocol",
             Self::Other => "other",
@@ -123,17 +135,15 @@ impl FileFailure {
         match self {
             Self::Unauthenticated => Some(401),
             Self::NotShared | Self::PermissionDenied => Some(403),
-            Self::FileUnknown => Some(404),
+            Self::FileUnknown | Self::NotViewable => Some(404),
             Self::FileGone => Some(410),
             Self::FileChanged => Some(409),
             Self::StorageFull => Some(507),
-            Self::PluginUnavailable => Some(503),
-            Self::UpstreamError => Some(502),
-            Self::FileExpired
-            | Self::NotViewable
-            | Self::TransportUnavailable
-            | Self::Protocol
-            | Self::Other => None,
+            Self::PluginUnavailable | Self::ServiceUnavailable => Some(503),
+            Self::UpstreamError | Self::ResourceTooLarge => Some(502),
+            Self::Internal => Some(500),
+            Self::InvalidInput => Some(400),
+            Self::FileExpired | Self::TransportUnavailable | Self::Protocol | Self::Other => None,
         }
     }
 }

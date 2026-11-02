@@ -157,7 +157,8 @@ fn failure_kinds_and_http_statuses_are_stable() {
         (FileFailure::FileExpired, "file_expired", None),
         (FileFailure::FileGone, "file_gone", Some(410)),
         (FileFailure::FileChanged, "file_changed", Some(409)),
-        (FileFailure::NotViewable, "not_viewable", None),
+        (FileFailure::NotViewable, "not_viewable", Some(404)),
+        (FileFailure::InvalidInput, "invalid_input", Some(400)),
         (FileFailure::StorageFull, "storage_full", Some(507)),
         (
             FileFailure::PluginUnavailable,
@@ -165,6 +166,17 @@ fn failure_kinds_and_http_statuses_are_stable() {
             Some(503),
         ),
         (FileFailure::UpstreamError, "upstream_error", Some(502)),
+        (
+            FileFailure::ResourceTooLarge,
+            "resource_too_large",
+            Some(502),
+        ),
+        (
+            FileFailure::ServiceUnavailable,
+            "service_unavailable",
+            Some(503),
+        ),
+        (FileFailure::Internal, "internal", Some(500)),
         (
             FileFailure::TransportUnavailable,
             "transport_unavailable",
