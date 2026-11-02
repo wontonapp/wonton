@@ -222,7 +222,7 @@ fn deep_nesting_is_refused_after_expanding_use() {
 fn svg_features_that_copy_content_per_reference_are_refused() {
     let svg = |body: &str| {
         format!(
-            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" viewBox="0 0 24 24">{body}</svg>"#
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:e="urn:e" viewBox="0 0 24 24">{body}</svg>"#
         )
     };
     let stops = "<stop/>".repeat(65);
@@ -247,6 +247,16 @@ fn svg_features_that_copy_content_per_reference_are_refused() {
         ),
         (
             r#"<mask maskUnits=" userSpaceOnUse"/>"#.to_owned(),
+            "maskUnits",
+        ),
+        // usvg 不读别的命名空间里的属性，这样写 maskUnits 还是默认的 objectBoundingBox。
+        (
+            r#"<mask e:maskUnits="userSpaceOnUse"/>"#.to_owned(),
+            "maskUnits",
+        ),
+        // xlink 命名空间里的 usvg 也读。
+        (
+            r#"<mask maskUnits="userSpaceOnUse" xlink:maskUnits="objectBoundingBox"/>"#.to_owned(),
             "maskUnits",
         ),
         (

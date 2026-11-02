@@ -227,12 +227,18 @@ fn allowed(node: Node) -> Result<(), String> {
     Ok(())
 }
 
-/// 这个名字的属性（不管命名空间，同名的都算）都是 `userSpaceOnUse`；`absent_ok` 时也可以不写（默认就是）。只认原样的
-/// `userSpaceOnUse`：usvg 读不懂的值按默认值处理，而 `maskUnits` 的默认值是 objectBoundingBox。
+/// 这个名字的属性写了 `userSpaceOnUse`；`absent_ok` 时也可以不写（默认就是）。只认原样的 `userSpaceOnUse`：usvg
+/// 读不懂的值按默认值处理，而 `maskUnits` 的默认值是 objectBoundingBox。
+///
+/// 算“写了”只看没有命名空间和 SVG 命名空间的：usvg 不读别的命名空间里的属性，只写在那里等于没写（xlink 和 xml 命名
+/// 空间里的它也读，这里不认这种写法）。值要求所有命名空间里同名的都是 `userSpaceOnUse`，不管 usvg 读到的是哪一个。
 fn user_space(node: Node, name: &str, absent_ok: bool) -> bool {
-    let mut values = node.attributes().filter(|a| a.name() == name).peekable();
-    if values.peek().is_none() {
-        return absent_ok;
+    let mut written = false;
+    for attr in node.attributes().filter(|a| a.name() == name) {
+        if attr.value() != "userSpaceOnUse" {
+            return false;
+        }
+        written |= matches!(attr.namespace(), None | Some(SVG_NS));
     }
-    values.all(|a| a.value() == "userSpaceOnUse")
+    written || absent_ok
 }
