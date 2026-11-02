@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::plugin::names::Instance;
+use crate::plugin::storefront::StoreConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -189,6 +190,8 @@ pub struct Config {
     pub default_plugins: Option<PathBuf>,
     /// 插件目录：Bot 经 MCP 总线只能装这里的插件，格式同系统插件的目录（`WONTON_CATALOG`）。
     pub catalog: Option<PathBuf>,
+    /// 商店：本地的官方索引目录（`WONTON_STORE_INDEX`），列不列社区插件（`WONTON_STORE_COMMUNITY=off` 时不列）。
+    pub store: StoreConfig,
     /// 确认卡片发出后多久没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`，ADR-0016）。
     pub confirmation_ttl: Duration,
     pub tz: String,
@@ -282,6 +285,7 @@ impl Config {
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
             default_plugins: get("WONTON_DEFAULT_PLUGINS").map(PathBuf::from),
             catalog: get("WONTON_CATALOG").map(PathBuf::from),
+            store: store_config(&get)?,
             confirmation_ttl: Duration::from_secs(parse(
                 &get,
                 "WONTON_CONFIRMATION_TTL_SECS",
@@ -316,6 +320,24 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
         name,
         message: message.to_owned(),
     }
+}
+
+/// 商店的设置：本地的官方索引目录（`WONTON_STORE_INDEX`），社区插件开不开（`WONTON_STORE_COMMUNITY`，on 或 off）。
+fn store_config(get: &impl Fn(&str) -> Option<String>) -> Result<StoreConfig, ConfigError> {
+    let community = match get("WONTON_STORE_COMMUNITY").as_deref() {
+        None | Some("on") => true,
+        Some("off") => false,
+        Some(other) => {
+            return Err(invalid(
+                "WONTON_STORE_COMMUNITY",
+                &format!("只能是 on 或 off，不是 {other}"),
+            ));
+        }
+    };
+    Ok(StoreConfig {
+        index_dir: get("WONTON_STORE_INDEX").map(PathBuf::from),
+        community,
+    })
 }
 
 /// 接了 Matrix 时主人的用户名就是主人的 Matrix 用户名：要是合法的 localpart（小写字母、数字和 `._=-/+`），也不能

@@ -1,5 +1,6 @@
 //! 交给 App 的插件图标：地址按原文件的 sha256 和规格生成（`/_wonton/api/images/<sha256>/icon-192.png`），同一个地址的
-//! 内容不变，App 可以一直缓存。核心只给它列出的插件的图标：已安装的（图标在它们的记录里），和最近预览过的插件包。
+//! 内容不变，App 可以一直缓存。核心只给它列出的插件的图标：已安装的（图标在它们的记录里）、最近预览过的插件包，
+//! 和商店最近一次列出的插件。
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -43,6 +44,16 @@ impl IconSource {
         })
     }
 
+    /// 一个图标文件；不是 PNG 或 SVG 时为空。
+    pub fn from_file(path: &str, data: Vec<u8>) -> Option<Self> {
+        Some(Self {
+            path: path.to_owned(),
+            sha256: sha256_hex(&data),
+            format: IconFormat::from_path(path)?,
+            data: Arc::new(data),
+        })
+    }
+
     pub fn paths(&self) -> PluginIcon {
         let image = |edge: u32| PluginImage {
             path: format!("{IMAGES_PATH}/{}/icon-{edge}.png", self.sha256),
@@ -74,6 +85,8 @@ impl Variant {
 pub struct Gallery {
     images: ImageWorker,
     previews: Mutex<VecDeque<IconSource>>,
+    /// 商店最近一次列出的插件的图标。
+    store: Mutex<HashMap<String, IconSource>>,
     rendered: Mutex<Rendered>,
 }
 
@@ -91,6 +104,7 @@ impl Gallery {
         Self {
             images,
             previews: Mutex::default(),
+            store: Mutex::default(),
             rendered: Mutex::default(),
         }
     }
@@ -107,7 +121,21 @@ impl Gallery {
 
     pub fn preview(&self, sha256: &str) -> Option<IconSource> {
         let previews = self.previews.lock().expect("图标表锁中毒");
-        previews.iter().find(|p| p.sha256 == sha256).cloned()
+        let found = previews.iter().find(|p| p.sha256 == sha256).cloned();
+        drop(previews);
+        found.or_else(|| {
+            self.store
+                .lock()
+                .expect("图标表锁中毒")
+                .get(sha256)
+                .cloned()
+        })
+    }
+
+    /// 记住商店列出的插件的图标，换掉上一次列出的。
+    pub fn remember_store(&self, icons: impl IntoIterator<Item = IconSource>) {
+        let icons = icons.into_iter().map(|i| (i.sha256.clone(), i)).collect();
+        *self.store.lock().expect("图标表锁中毒") = icons;
     }
 
     /// 处理图标（在子进程里，限时限内存），结果缓存起来。同一张图标只处理一次：处理不了的（包括超时、内存不够）也记住，

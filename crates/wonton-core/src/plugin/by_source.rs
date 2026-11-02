@@ -13,8 +13,13 @@ use super::package::PluginPackage;
 
 impl PluginManager {
     /// 按来源取插件包：先解析成提交，再按提交取文件。
+    /// 是官方索引里的那个版本时，插件包按索引核对（信任级别是官方）。
     pub async fn fetch_source(&self, source: &str) -> Result<PluginPackage, InstallError> {
         let source = SourceRef::parse(source)?;
+        let (index, _, _) = self.storefront.official(false).await;
+        if let Some(listed) = index.find(&source).filter(|l| l.matches(&source)) {
+            return self.storefront.files().package(listed).await;
+        }
         let origin = github_source::resolve(&self.github, &source).await?;
         github_source::fetch(&self.github, &origin).await
     }

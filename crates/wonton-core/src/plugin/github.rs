@@ -22,6 +22,9 @@ pub enum GitHubError {
     /// 文件超过了给的上限。
     #[error("{0}")]
     TooBig(String),
+    /// GitHub 限速了（搜索 API）。
+    #[error("{0}")]
+    RateLimited(String),
 }
 
 /// GitHub 上的一个仓库：`owner/name`。
@@ -44,13 +47,15 @@ pub struct Tag {
     pub commit: String,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct GitHub {
     client: reqwest::Client,
     /// `https://github.com`，git 协议走这里。
     git: String,
     /// `https://raw.githubusercontent.com`。
     raw: String,
+    /// `https://api.github.com`：只有搜索社区插件用它。
+    api: String,
 }
 
 impl Default for GitHub {
@@ -70,6 +75,7 @@ impl GitHub {
             client,
             git: "https://github.com".to_owned(),
             raw: "https://raw.githubusercontent.com".to_owned(),
+            api: "https://api.github.com".to_owned(),
         }
     }
 
@@ -85,6 +91,7 @@ impl GitHub {
             client,
             git: base.to_owned(),
             raw: base.to_owned(),
+            api: base.to_owned(),
         }
     }
 
@@ -149,12 +156,108 @@ impl GitHub {
     }
 }
 
+/// 搜索结果里的一个仓库。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub repo: Repo,
+    pub stars: u32,
+    /// 最近一次推送的时间（GitHub 给的原文）：没变就不用重读这个仓库。
+    pub pushed_at: String,
+}
+
+/// 搜索的一页。
+#[derive(Debug, Clone, Default)]
+pub struct SearchPage {
+    pub repos: Vec<Found>,
+    /// 一共有多少个，GitHub 最多给前 1000 个。
+    pub total: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct SearchResponse {
+    total_count: u32,
+    items: Vec<SearchItem>,
+}
+
+#[derive(serde::Deserialize)]
+struct SearchItem {
+    name: String,
+    owner: SearchOwner,
+    stargazers_count: u32,
+    #[serde(default)]
+    pushed_at: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct SearchOwner {
+    login: String,
+}
+
+impl GitHub {
+    /// 搜索 API 的一页（`page` 从 1 开始，每页 100 个，按星数从多到少）。不带令牌时每个出口 IP 每分钟 10 次，
+    /// 超了 GitHub 回 403 或 429，报 [`GitHubError::RateLimited`]。
+    pub async fn search(&self, query: &str, page: u32) -> Result<SearchPage, GitHubError> {
+        let page = page.to_string();
+        let url = reqwest::Url::parse_with_params(
+            &format!("{}/search/repositories", self.api),
+            [
+                ("q", query),
+                ("sort", "stars"),
+                ("order", "desc"),
+                ("per_page", "100"),
+                ("page", page.as_str()),
+            ],
+        )
+        .map_err(|e| GitHubError::Unavailable(format!("搜索的地址不对：{e}")))?;
+        let response = self
+            .client
+            .get(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await
+            .map_err(|e| unavailable("搜索社区插件", &e))?;
+        match response.status() {
+            StatusCode::OK => {}
+            StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => {
+                return Err(GitHubError::RateLimited(
+                    "GitHub 限速了，几分钟后再试".to_owned(),
+                ));
+            }
+            status => {
+                return Err(GitHubError::Unavailable(format!(
+                    "搜索社区插件时 GitHub 回了 {status}"
+                )));
+            }
+        }
+        let body = read_limited(response, MAX_REFS_BYTES).await?;
+        let found: SearchResponse = serde_json::from_slice(&body)
+            .map_err(|e| GitHubError::Unavailable(format!("GitHub 给的搜索结果读不懂：{e}")))?;
+        Ok(SearchPage {
+            total: found.total_count,
+            repos: found
+                .items
+                .into_iter()
+                .map(|item| Found {
+                    repo: Repo {
+                        owner: item.owner.login,
+                        name: item.name,
+                    },
+                    stars: item.stargazers_count,
+                    pushed_at: item.pushed_at.unwrap_or_default(),
+                })
+                .collect(),
+        })
+    }
+}
+
 impl GitHubError {
     fn context(self, what: &str) -> Self {
         match self {
             Self::Unavailable(m) => Self::Unavailable(format!("{what}：{m}")),
             Self::NotFound(m) => Self::NotFound(format!("{what}：{m}")),
             Self::TooBig(m) => Self::TooBig(format!("{what}：{m}")),
+            Self::RateLimited(m) => Self::RateLimited(format!("{what}：{m}")),
         }
     }
 }

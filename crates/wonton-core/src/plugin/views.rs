@@ -9,7 +9,7 @@ use wonton_protocol::{
 };
 
 use super::gallery::{IconSource, Variant};
-use super::github_source::Origin;
+use super::github_source::{Origin, Trust};
 use super::image_worker::ImageError;
 use super::languages::Languages;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
@@ -149,7 +149,11 @@ impl PluginManager {
             .map(|c| format!("{}（{}）", c.service, c.image))
             .collect();
         let mut notices = Vec::new();
-        if package.origin.is_some() {
+        if package
+            .origin
+            .as_ref()
+            .is_some_and(|o| o.trust == Trust::Community)
+        {
             notices.push(CardLine {
                 text: "云吞没有审核过这个插件，代码和镜像由它的作者提供".to_owned(),
                 emphasis: true,
@@ -318,7 +322,7 @@ pub fn permission_text(permission: &Permission) -> String {
     }
 }
 
-fn permission_line(permission: &Permission) -> PermissionLine {
+pub(super) fn permission_line(permission: &Permission) -> PermissionLine {
     PermissionLine {
         permission: permission.to_string(),
         text: permission_text(permission),
@@ -329,7 +333,7 @@ fn permission_line(permission: &Permission) -> PermissionLine {
 }
 
 /// 对宿主的要求，一项一行。
-fn requirement_lines(manifest: &Manifest) -> Vec<String> {
+pub(super) fn requirement_lines(manifest: &Manifest) -> Vec<String> {
     let Some(r) = &manifest.requirements else {
         return Vec::new();
     };
@@ -355,10 +359,11 @@ fn requirement_lines(manifest: &Manifest) -> Vec<String> {
     lines
 }
 
-/// 不是系统插件时：按来源装的是社区插件（官方索引见插件规范的“官方索引”），上传的是本地插件。
-fn trust(origin: Option<&Origin>) -> PluginTrust {
-    match origin {
-        Some(_) => PluginTrust::Community,
+/// 不是系统插件时：按来源装的看来源，上传的是本地插件。
+pub(super) fn trust(origin: Option<&Origin>) -> PluginTrust {
+    match origin.map(|o| o.trust) {
+        Some(Trust::Official) => PluginTrust::Official,
+        Some(Trust::Community) => PluginTrust::Community,
         None => PluginTrust::Local,
     }
 }
@@ -370,7 +375,7 @@ fn line(text: String) -> CardLine {
     }
 }
 
-fn author(manifest: &Manifest) -> Option<PluginAuthor> {
+pub(super) fn author(manifest: &Manifest) -> Option<PluginAuthor> {
     manifest.author.as_ref().map(|a| PluginAuthor {
         name: a.name.clone(),
         url: a.url.clone(),
@@ -422,7 +427,7 @@ fn state(status: &PluginStatus, health: Option<Health>) -> PluginState {
     }
 }
 
-fn kind(kind: PluginKind) -> Kind {
+pub(super) fn kind(kind: PluginKind) -> Kind {
     match kind {
         PluginKind::App => Kind::App,
         PluginKind::Agent => Kind::Agent,
@@ -432,7 +437,7 @@ fn kind(kind: PluginKind) -> Kind {
     }
 }
 
-fn category(category: Category) -> PluginCategory {
+pub(super) fn category(category: Category) -> PluginCategory {
     match category {
         Category::Ai => PluginCategory::Ai,
         Category::Agent => PluginCategory::Agent,

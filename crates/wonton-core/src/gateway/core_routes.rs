@@ -51,6 +51,8 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
         .route("/_wonton/api/lan", get(api::lan).put(api::set_lan))
+        .route("/_wonton/api/store", get(api::store))
+        .route("/_wonton/api/store/plugin", get(api::store_plugin))
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .route(
             "/_wonton/api/devices",

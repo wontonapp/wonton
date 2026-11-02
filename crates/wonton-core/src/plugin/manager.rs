@@ -23,6 +23,7 @@ use super::proxy_auth::ProxyAuth;
 use super::render::dry_run;
 use super::sources::{Source, Sources};
 use super::store::{InstalledRecord, Store};
+use super::storefront::{StoreConfig, Storefront};
 use super::views::Listed;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
@@ -216,6 +217,8 @@ pub struct PluginManager {
     pub(super) sources: Sources,
     /// 按来源取插件包。
     pub(super) github: GitHub,
+    /// 官方索引和社区插件。
+    pub(super) storefront: Storefront,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
     /// 交给 App 的图标。
@@ -272,6 +275,7 @@ impl PluginManager {
             cfg,
             sources: Sources::default(),
             github: GitHub::new(),
+            storefront: Storefront::new(GitHub::new(), StoreConfig::default()),
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
@@ -308,11 +312,19 @@ impl PluginManager {
             .collect()
     }
 
-    /// 从测试替身取按来源安装的插件包。
+    /// 从测试替身取按来源安装的插件包，商店也用它。
     #[cfg(test)]
     #[must_use]
     pub fn with_github(mut self, github: GitHub) -> Self {
+        self.storefront = Storefront::new(github.clone(), self.storefront.config().clone());
         self.github = github;
+        self
+    }
+
+    /// 商店的配置：官方索引从哪里取，列不列社区插件。
+    #[must_use]
+    pub fn with_store(mut self, config: StoreConfig) -> Self {
+        self.storefront = Storefront::new(self.github.clone(), config);
         self
     }
 

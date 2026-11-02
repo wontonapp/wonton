@@ -1,0 +1,216 @@
+//! 官方索引（插件规范的“官方索引”）：`index.json` 里每个插件一项，带着插件包每个文件的 sha256 和 compose 原文。
+//! 商店列表直接用索引里的 compose，不逐个去取；安装时按 sha256 核对取到的每个文件，所以文件从哪里取都行：
+//! 本地的索引目录（`WONTON_STORE_INDEX`，文件按 sha256 放在 `blobs/` 下），或者按提交从 GitHub 取。
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use super::super::github::{GitHub, Repo, is_commit_id};
+use super::super::github_source::{Origin, SourceRef, Trust, Wanted, github_error};
+use super::super::install_error::InstallError;
+use super::super::manifest::Manifest;
+use super::super::package::PluginPackage;
+use super::super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles, sha256_hex};
+
+/// 核心读得懂的索引格式。
+pub const FORMAT: u32 = 1;
+
+/// `index.json`。
+#[derive(Debug, Clone, Deserialize)]
+struct IndexFile {
+    format: u32,
+    #[serde(default)]
+    plugins: Vec<IndexEntry>,
+}
+
+/// 索引里的一个插件。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexEntry {
+    /// `github:<owner>/<repo>`，不带版本。
+    pub source: String,
+    pub version: String,
+    pub commit: String,
+    /// 插件包的全部文件：路径 → sha256 的十六进制。
+    pub files: BTreeMap<String, String>,
+    /// `docker-compose.yml` 的原文。
+    pub compose: String,
+}
+
+/// 读懂、核对过的一项。
+#[derive(Debug, Clone)]
+pub struct Listed {
+    pub entry: IndexEntry,
+    pub repo: Repo,
+    pub manifest: Manifest,
+}
+
+impl Listed {
+    /// 装的就是索引里的这个版本。
+    pub fn origin(&self) -> Origin {
+        Origin {
+            repo: self.entry.source.clone(),
+            tag: Some(format!("v{}", self.entry.version)),
+            commit: self.entry.commit.clone(),
+            trust: Trust::Official,
+        }
+    }
+
+    /// 来源要的是不是索引里的这个版本：不带版本、tag 是 `v<索引里的版本>`、或者就是索引里的提交。
+    pub fn matches(&self, source: &SourceRef) -> bool {
+        source.repo == self.repo
+            && match &source.wanted {
+                Wanted::Latest => true,
+                Wanted::Tag(tag) => tag.strip_prefix('v') == Some(self.entry.version.as_str()),
+                Wanted::Commit(commit) => commit == &self.entry.commit,
+            }
+    }
+}
+
+/// 读懂的索引：能用的项，和读不懂、对不上的项的原因（每项一句）。
+#[derive(Debug, Clone, Default)]
+pub struct Index {
+    pub plugins: Vec<Listed>,
+    pub skipped: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum IndexError {
+    /// 索引的格式比核心新：要升级核心。
+    #[error("官方索引的格式是 {0}，这个版本的核心只读得懂 {FORMAT}：升级核心后才能用新的索引")]
+    NewerFormat(u32),
+    #[error("官方索引读不懂：{0}")]
+    Invalid(String),
+}
+
+impl Index {
+    pub fn parse(json: &[u8]) -> Result<Self, IndexError> {
+        let format = serde_json::from_slice::<serde_json::Value>(json)
+            .map_err(|e| IndexError::Invalid(e.to_string()))?
+            .get("format")
+            .and_then(serde_json::Value::as_u64);
+        match format {
+            Some(f) if f != u64::from(FORMAT) => {
+                return Err(IndexError::NewerFormat(
+                    u32::try_from(f).unwrap_or(u32::MAX),
+                ));
+            }
+            Some(_) => {}
+            None => return Err(IndexError::Invalid("没有 format".to_owned())),
+        }
+        let file: IndexFile =
+            serde_json::from_slice(json).map_err(|e| IndexError::Invalid(e.to_string()))?;
+        debug_assert_eq!(file.format, FORMAT);
+        let mut index = Self::default();
+        for entry in file.plugins {
+            let source = entry.source.clone();
+            match check(entry, &index.plugins) {
+                Ok(listed) => index.plugins.push(listed),
+                Err(reason) => {
+                    tracing::warn!(%source, %reason, "官方索引里的一项用不了，跳过");
+                    index.skipped.push(format!("{source}：{reason}"));
+                }
+            }
+        }
+        Ok(index)
+    }
+
+    pub fn find(&self, source: &SourceRef) -> Option<&Listed> {
+        self.plugins.iter().find(|p| p.repo == source.repo)
+    }
+}
+
+/// 一项要来源合法、提交是 40 位、compose 和 `files` 里记的一致、清单读得懂，来源和插件 ID 都不和前面的重复。
+fn check(entry: IndexEntry, before: &[Listed]) -> Result<Listed, String> {
+    let source = SourceRef::parse(&entry.source).map_err(|e| e.to_string())?;
+    if source.wanted != Wanted::Latest {
+        return Err("source 不能带版本".to_owned());
+    }
+    if !is_commit_id(&entry.commit) {
+        return Err("commit 要是 40 位提交号".to_owned());
+    }
+    if entry.files.get(COMPOSE_FILE) != Some(&sha256_hex(entry.compose.as_bytes())) {
+        return Err(format!(
+            "compose 和 files 里 {COMPOSE_FILE} 的 sha256 对不上"
+        ));
+    }
+    let manifest = PluginPackage::manifest_of(&entry.compose).map_err(|e| e.to_string())?;
+    if manifest.version != entry.version {
+        return Err(format!(
+            "version {} 和清单的版本 {} 不一致",
+            entry.version, manifest.version
+        ));
+    }
+    if before.iter().any(|p| p.repo == source.repo) {
+        return Err("source 重复".to_owned());
+    }
+    if before.iter().any(|p| p.manifest.id == manifest.id) {
+        return Err(format!("插件 ID {} 重复", manifest.id));
+    }
+    Ok(Listed {
+        entry,
+        repo: source.repo,
+        manifest,
+    })
+}
+
+/// 索引和插件包的文件从哪里取。
+#[derive(Debug, Clone)]
+pub enum Files {
+    /// 本地的索引目录：`index.json` 和 `blobs/<sha256>`。
+    Dir(PathBuf),
+    /// 按提交从 GitHub 取。
+    GitHub(GitHub),
+}
+
+impl Files {
+    /// 插件包里的一个文件，按索引记的 sha256 核对。
+    pub async fn file(&self, listed: &Listed, path: &str) -> Result<Vec<u8>, InstallError> {
+        let sha256 = listed.entry.files.get(path).ok_or_else(|| {
+            InstallError::Invalid(format!(
+                "官方索引里 {} 的文件没有 {path}",
+                listed.entry.source
+            ))
+        })?;
+        let data = match self {
+            Self::Dir(dir) => read_blob(dir, sha256)?,
+            Self::GitHub(github) => github
+                .file(&listed.repo, &listed.entry.commit, path, MAX_FILE_BYTES)
+                .await
+                .map_err(github_error)?,
+        };
+        if &sha256_hex(&data) != sha256 {
+            return Err(InstallError::Invalid(format!(
+                "{} 的 {path} 和官方索引里记的 sha256 对不上",
+                listed.entry.source
+            )));
+        }
+        Ok(data)
+    }
+
+    /// 索引里这一项的插件包：compose 用索引里的，引用的文件逐个取来核对。
+    pub async fn package(&self, listed: &Listed) -> Result<PluginPackage, InstallError> {
+        let compose = &listed.entry.compose;
+        let mut files = PackageFiles::new();
+        for path in PluginPackage::referenced_files(compose)? {
+            let data = self.file(listed, &path).await?;
+            files.insert(path, data);
+        }
+        let mut package = PluginPackage::with_files(compose, files)?;
+        package.origin = Some(listed.origin());
+        Ok(package)
+    }
+}
+
+fn read_blob(dir: &Path, sha256: &str) -> Result<Vec<u8>, InstallError> {
+    // sha256 来自索引：只收 64 位十六进制，拼进路径前先确认，免得 `../` 跑出目录。
+    if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(InstallError::Invalid(format!(
+            "官方索引里的 sha256 不合法：{sha256}"
+        )));
+    }
+    let path = dir.join("blobs").join(sha256);
+    std::fs::read(&path)
+        .map_err(|e| InstallError::NotFound(format!("索引目录里没有 {}：{e}", path.display())))
+}

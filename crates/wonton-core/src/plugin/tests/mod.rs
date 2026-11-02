@@ -22,6 +22,7 @@ mod manager;
 mod models;
 mod preinstall;
 mod secrets;
+mod store;
 mod views;
 
 const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");

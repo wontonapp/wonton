@@ -80,6 +80,17 @@ fn is_tag(text: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'+'))
 }
 
+/// 按来源装的插件信得过到什么程度（ADR-0017 的“信任和权限”）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Trust {
+    /// 官方索引里审核过的版本，文件按索引记的 sha256 核对过。
+    Official,
+    /// GitHub 上的社区插件，没有审核过。
+    #[default]
+    Community,
+}
+
 /// 插件包是从哪里取来的，写进安装记录；上传的和预装的插件没有。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Origin {
@@ -89,6 +100,8 @@ pub struct Origin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     pub commit: String,
+    #[serde(default)]
+    pub trust: Trust,
 }
 
 impl Origin {
@@ -131,7 +144,12 @@ pub async fn resolve(github: &GitHub, source: &SourceRef) -> Result<Origin, Inst
             (Some(tag.name), tag.commit)
         }
     };
-    Ok(Origin { repo, tag, commit })
+    Ok(Origin {
+        repo,
+        tag,
+        commit,
+        trust: Trust::Community,
+    })
 }
 
 /// 版本号最大的正式版本 tag。
@@ -185,9 +203,11 @@ fn source_repo(origin: &Origin) -> Result<Repo, InstallError> {
     Ok(SourceRef::parse(&origin.repo)?.repo)
 }
 
-fn github_error(e: GitHubError) -> InstallError {
+pub(super) fn github_error(e: GitHubError) -> InstallError {
     match e {
-        GitHubError::Unavailable(m) => InstallError::SourceUnavailable(m),
+        GitHubError::Unavailable(m) | GitHubError::RateLimited(m) => {
+            InstallError::SourceUnavailable(m)
+        }
         GitHubError::NotFound(m) => InstallError::NotFound(m),
         GitHubError::TooBig(m) => InstallError::Invalid(m),
     }

@@ -21,16 +21,17 @@ use super::manager::manager_with;
 /// （仓库，提交，路径）→ 文件内容。
 type Files = BTreeMap<(String, String, String), Vec<u8>>;
 
-/// 假的 GitHub：仓库 → tag（名字 → 提交），和提交里的文件。
+/// 假的 GitHub：仓库 → tag（名字 → 提交），提交里的文件，和搜得到的仓库（仓库 → 星数）。
 #[derive(Clone, Default)]
-struct FakeGitHub {
-    tags: Arc<Mutex<BTreeMap<String, BTreeMap<String, String>>>>,
+pub(super) struct FakeGitHub {
+    pub(super) tags: Arc<Mutex<BTreeMap<String, BTreeMap<String, String>>>>,
     files: Arc<Mutex<Files>>,
     commits: Arc<Mutex<u32>>,
+    pub(super) topic: Arc<Mutex<Vec<(String, u32)>>>,
 }
 
 impl FakeGitHub {
-    async fn start() -> (Self, GitHub) {
+    pub(super) async fn start() -> (Self, GitHub) {
         let fake = Self::default();
         let app = Router::new().fallback(handle).with_state(fake.clone());
         let addr = serve(app).await;
@@ -38,7 +39,7 @@ impl FakeGitHub {
     }
 
     /// 提交这些文件，打上 tag（已有的 tag 就是移动它），返回提交号。
-    fn publish(&self, repo: &str, tag: &str, files: &[(&str, &str)]) -> String {
+    pub(super) fn publish(&self, repo: &str, tag: &str, files: &[(&str, &str)]) -> String {
         let commit = {
             let mut n = self.commits.lock().unwrap();
             *n += 1;
@@ -77,6 +78,25 @@ async fn handle(State(fake): State<FakeGitHub>, request: Request) -> Response {
             body.push_str("0000");
             Bytes::from(body).into_response()
         }
+        (&Method::GET, ["search", "repositories"]) => {
+            let items: Vec<_> = fake
+                .topic
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(repo, stars)| {
+                    let (owner, name) = repo.split_once('/').unwrap();
+                    serde_json::json!({
+                        "name": name,
+                        "owner": {"login": owner},
+                        "stargazers_count": stars,
+                        "pushed_at": "2026-11-01T00:00:00Z",
+                    })
+                })
+                .collect();
+            axum::Json(serde_json::json!({"total_count": items.len(), "items": items}))
+                .into_response()
+        }
         (&Method::GET, [owner, repo, commit, file]) => {
             let key = (
                 format!("{owner}/{repo}"),
@@ -93,7 +113,7 @@ async fn handle(State(fake): State<FakeGitHub>, request: Request) -> Response {
 }
 
 /// 版本是 `version` 的插件，带一个图标文件。
-fn compose(version: &str, image: &str) -> String {
+pub(super) fn compose(version: &str, image: &str) -> String {
     format!(
         "services:\n  web:\n    image: {image}\nx-wonton:\n  id: app.hello\n  version: {version}\n  kind: app\n  \
          title: {{zh: 你好, en: Hello}}\n  description: {{zh: 打个招呼, en: Say hi}}\n  icon: icon.svg\n  \
@@ -101,9 +121,9 @@ fn compose(version: &str, image: &str) -> String {
     )
 }
 
-const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#22aa66"/></svg>"##;
+pub(super) const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#22aa66"/></svg>"##;
 
-fn release(fake: &FakeGitHub, version: &str, image: &str) -> String {
+pub(super) fn release(fake: &FakeGitHub, version: &str, image: &str) -> String {
     let compose = compose(version, image);
     fake.publish(
         "acme/hello",
@@ -112,7 +132,7 @@ fn release(fake: &FakeGitHub, version: &str, image: &str) -> String {
     )
 }
 
-fn zh() -> Languages {
+pub(super) fn zh() -> Languages {
     Languages::from_header(Some("zh"))
 }
 

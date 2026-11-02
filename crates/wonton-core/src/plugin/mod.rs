@@ -37,6 +37,7 @@ pub mod secrets;
 pub mod sources;
 pub mod store;
 pub mod store_info;
+pub mod storefront;
 pub mod system;
 mod upstreams;
 pub mod views;

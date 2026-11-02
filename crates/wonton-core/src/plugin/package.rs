@@ -138,6 +138,11 @@ impl PluginPackage {
         package.attach(files)
     }
 
+    /// compose 文本里的清单，不管它引用的文件：商店列表只要清单。
+    pub fn manifest_of(source: &str) -> Result<Manifest, PackageError> {
+        Ok(Self::structure(source)?.manifest)
+    }
+
     /// compose 文本引用的插件包里的文件（规范化后的路径）：按来源取插件包时，取完 compose 再取它们。
     pub fn referenced_files(source: &str) -> Result<Vec<String>, PackageError> {
         let refs = Self::structure(source)?.references()?;

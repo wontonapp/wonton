@@ -8,6 +8,8 @@
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`） |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
+//! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
+//! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
 //! | GET | `/_wonton/api/lan` | 局域网设置（`LanSettings`），当场检测一次（ADR-0019） |
 //! | PUT | `/_wonton/api/lan` | 请求体是 `LanChoice`，改选端口开在哪些地址上，重建完返回新的 `LanSettings` |
@@ -224,6 +226,50 @@ async fn install_upload(
     })?;
     let package = package(headers, body)?;
     gateway.plugins.install_detached(package, granted).await
+}
+
+#[derive(Deserialize)]
+pub struct StoreQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+pub async fn store(
+    State(gateway): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    Query(query): Query<StoreQuery>,
+) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    let listing = gateway
+        .plugins
+        .store_listing(&languages(&headers), query.refresh)
+        .await;
+    Json(listing).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct StorePluginQuery {
+    source: String,
+}
+
+pub async fn store_plugin(
+    State(gateway): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    Query(query): Query<StorePluginQuery>,
+) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    match gateway
+        .plugins
+        .store_plugin(&query.source, &languages(&headers))
+        .await
+    {
+        Ok(detail) => Json(detail).into_response(),
+        Err(e) => install_error(&e),
+    }
 }
 
 #[derive(Deserialize)]

@@ -144,7 +144,8 @@ async fn serve() -> anyhow::Result<()> {
         )
         .with_matrix(matrix.clone())
         .with_host(HostPaths::new(cfg.host_dev.clone()))
-        .with_lan(lan_state(&cfg)),
+        .with_lan(lan_state(&cfg))
+        .with_store(cfg.store.clone()),
     );
     manager.restore().await.context("恢复已安装的插件")?;
     manager.spawn_lan_monitor();
