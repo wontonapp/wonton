@@ -411,7 +411,12 @@ ok "用量记在 Hermes 的凭据名下"
 
 step "让 Agent 动手（MCP 总线）：Hermes 请主人确认后装上文件搜索，再用它在授权的文件夹里找文件"
 expect "Hermes 拿到 MCP 总线的地址" "$(hermes_env WONTON_MCP_URL)" "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp"
-build -t "$files_image" "$repo/plugins/files"
+# 文件搜索插件在开发索引里，镜像没有发布：按索引记的提交检出它的私有仓库，在 Docker 主机上构建。
+files_src="$(mktemp -d)"
+"$here/store/checkout.sh" geraldpeng6/wonton-plugin-files "$files_src/repo" ||
+  fail "取不到文件搜索插件的仓库：它是私有的，要先 gh auth login"
+build -t "$files_image" "$files_src/repo/images/mcp"
+rm -rf "$files_src"
 # 经隧道在和 Hermes 的私聊里说一句话，收它的回答，直到它 90 秒不再说话（它先说一句再去调要等确认的工具）：
 # $1 输出文件，$2 话。
 ask_hermes() {
@@ -443,7 +448,7 @@ if cards:
 }
 answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
 asked="$(mktemp)"
-ask_hermes "$asked" "帮我装一下插件目录里的“文件搜索”插件。" &
+ask_hermes "$asked" "帮我装一下官方插件里的“文件搜索”。" &
 asking=$!
 card=""
 for _ in $(seq 240); do

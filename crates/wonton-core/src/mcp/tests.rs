@@ -15,12 +15,13 @@ use super::test_support::{Cards, Notes, serve_notes};
 use super::{AnswerError, Bus, Caller, Confirmations};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
-use crate::plugin::catalog::Catalog;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
+use crate::plugin::storefront::StoreConfig;
+use crate::plugin::storefront::index::IndexEntry;
 use crate::plugin::{PluginId, PluginManager, PluginPackage, PluginStatus};
 
 /// 提供工具的假插件，登记成在运行。
@@ -38,8 +39,8 @@ x-wonton:
   permissions: []
 ";
 
-/// 目录里可以装的插件。
-fn catalog_package(id: &str, title: &str, permission: &str) -> String {
+/// 官方索引里可以装的插件。
+fn official_package(id: &str, title: &str, permission: &str) -> String {
     format!(
         "name: app
 services:
@@ -85,23 +86,27 @@ fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
         instance: Default::default(),
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
-    Arc::new(PluginManager::new(
+    let index = StoreConfig {
+        index_dir: Some(dir.path().join("index")),
+        community: false,
+    };
+    let manager = PluginManager::new(
         engine,
         store,
         HttpClient::new(),
         None,
         cfg,
         ImageWorker::in_process(),
-    ))
+    );
+    Arc::new(manager.with_store(index))
 }
 
-/// 目录里放一个普通插件（笔记本）和一个申请高权限的插件。
-fn catalog(dir: &tempfile::TempDir) -> Catalog {
-    let root = dir.path().join("catalog");
-    for (name, source) in [
+/// 官方索引里放一个普通插件（日记）和一个申请高权限的插件。
+fn write_index(dir: &tempfile::TempDir) {
+    for (repo, source) in [
         (
             "journal",
-            catalog_package(
+            official_package(
                 "app.example.journal",
                 "日记",
                 "storage.share.documents:read",
@@ -109,13 +114,14 @@ fn catalog(dir: &tempfile::TempDir) -> Catalog {
         ),
         (
             "root",
-            catalog_package("app.example.root", "全能", "docker.socket"),
+            official_package("app.example.root", "全能", "docker.socket"),
         ),
     ] {
-        fs::create_dir_all(root.join(name)).unwrap();
-        fs::write(root.join(name).join("docker-compose.yml"), source).unwrap();
+        let package = PluginPackage::parse(&source).unwrap();
+        let source = format!("github:example/{repo}");
+        let entry = IndexEntry::of(&package, &source, &"a".repeat(40)).unwrap();
+        entry.write_to(&dir.path().join("index"), &package).unwrap();
     }
-    Catalog::new(root)
 }
 
 async fn setup(engine: Engine, ttl: Duration) -> Setup {
@@ -130,7 +136,8 @@ async fn setup(engine: Engine, ttl: Duration) -> Setup {
     let cards = Arc::new(Cards::default());
     let confirmations = Arc::new(Confirmations::new(cards.clone(), ttl));
     let audit = dir.path().join("audit.jsonl");
-    let bus = Bus::new(manager.clone(), Some(catalog(&dir)), confirmations, audit);
+    write_index(&dir);
+    let bus = Bus::new(manager.clone(), confirmations, audit);
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
     Setup {
@@ -330,7 +337,7 @@ async fn without_a_card_nothing_runs() {
 }
 
 #[tokio::test]
-async fn the_bot_installs_from_the_catalog_after_the_owner_confirms() {
+async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
     let (_docker, engine) = FakeDocker::start().await;
     let s = setup(engine, Duration::from_secs(60)).await;
     let found = s
@@ -378,10 +385,10 @@ async fn the_bot_installs_from_the_catalog_after_the_owner_confirms() {
         "{states:?}"
     );
 
-    // 已经装了、目录里没有、要高权限的：直接拒绝，不发卡片。
+    // 已经装了、官方索引里没有、要高权限的：直接拒绝，不发卡片。
     for (id, reason) in [
         ("app.example.journal", "已经装了"),
-        ("app.example.nope", "插件目录里没有"),
+        ("app.example.nope", "官方索引里没有"),
         ("app.example.root", "只能由主人在 Wonton App 里安装"),
     ] {
         let result = s.call("wonton__install_plugin", json!({"id": id})).await;
@@ -394,13 +401,36 @@ async fn the_bot_installs_from_the_catalog_after_the_owner_confirms() {
 }
 
 #[tokio::test]
+async fn an_unreadable_index_is_reported_not_shown_as_empty() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let s = setup(engine, Duration::from_secs(60)).await;
+    fs::write(s.dir.path().join("index").join("index.json"), "{").unwrap();
+    for (tool, args) in [
+        ("wonton__search_catalog", json!({})),
+        (
+            "wonton__install_plugin",
+            json!({"id": "app.example.journal"}),
+        ),
+    ] {
+        let result = s.call(tool, args).await;
+        assert!(
+            failed(&result) && text(&result).contains("官方索引用不了"),
+            "{tool}: {result:?}"
+        );
+    }
+    assert!(s.cards.posted.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
     let (_docker, engine) = FakeDocker::start().await;
     let s = setup(engine, Duration::from_secs(60)).await;
-    let package = catalog(&s.dir)
-        .find("app.example.journal")
-        .unwrap()
-        .unwrap();
+    let package = PluginPackage::parse(&official_package(
+        "app.example.journal",
+        "日记",
+        "storage.share.documents:read",
+    ))
+    .unwrap();
     let permissions = package.manifest.permissions.clone();
     s.manager
         .install_package(package, &permissions)

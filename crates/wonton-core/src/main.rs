@@ -27,7 +27,6 @@ use wonton_core::matrix::{Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
-use wonton_core::plugin::catalog::Catalog;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
@@ -151,7 +150,7 @@ async fn serve() -> anyhow::Result<()> {
     manager.spawn_lan_monitor();
     preinstall(&cfg, manager.clone())?;
 
-    let bus = mcp_bus(&cfg, manager.clone(), matrix.clone())?;
+    let bus = mcp_bus(&cfg, manager.clone(), matrix.clone());
     let tunnel = bind_tunnel(&cfg).await?;
     let push_path = cfg.core_state_dir().join("push.json");
     let push = Push::open(&push_path, tunnel.devices.clone())
@@ -270,18 +269,13 @@ fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间，审计写在核心的状态目录里。插件目录配了却不是目录时启动
-/// 失败；没接 Matrix 时敏感的调用如实报“没法请主人确认”。
+/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间，审计写在核心的状态目录里。没接 Matrix 时敏感的调用如实报
+/// “没法请主人确认”。
 fn mcp_bus(
     cfg: &Config,
     manager: Arc<PluginManager>,
     matrix: Option<Arc<Matrix>>,
-) -> anyhow::Result<Arc<mcp::Bus>> {
-    if let Some(dir) = &cfg.catalog
-        && !dir.is_dir()
-    {
-        bail!("WONTON_CATALOG 指向的 {} 不是目录", dir.display());
-    }
+) -> Arc<mcp::Bus> {
     let notifier: Arc<dyn mcp::Notifier> = match matrix {
         Some(matrix) => {
             let saved = cfg.core_state_dir().join("matrix-notice-room");
@@ -290,9 +284,8 @@ fn mcp_bus(
         None => Arc::new(mcp::NoMatrix),
     };
     let confirmations = Arc::new(mcp::Confirmations::new(notifier, cfg.confirmation_ttl));
-    let catalog = cfg.catalog.clone().map(Catalog::new);
     let audit = cfg.core_state_dir().join("audit.jsonl");
-    Ok(mcp::Bus::new(manager, catalog, confirmations, audit))
+    mcp::Bus::new(manager, confirmations, audit)
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。

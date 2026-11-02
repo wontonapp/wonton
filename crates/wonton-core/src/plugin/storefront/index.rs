@@ -38,6 +38,61 @@ pub struct IndexEntry {
     pub compose: String,
 }
 
+impl IndexEntry {
+    /// 插件包在仓库 `source`（不带版本）的提交 `commit` 上的那一项：`plugin index-entry` 用它生成索引条目。核心不连
+    /// Git，插件包要是那个提交的检出，由调用的人保证；装的时候按 sha256 核对，对不上就装不了。
+    pub fn of(package: &PluginPackage, source: &str, commit: &str) -> Result<Self, String> {
+        let entry = Self {
+            source: source.to_owned(),
+            version: package.manifest.version.clone(),
+            commit: commit.to_owned(),
+            files: Self::blobs(package)
+                .map(|(path, data)| (path.to_owned(), sha256_hex(data)))
+                .collect(),
+            compose: package.source.clone(),
+        };
+        check(entry.clone(), &[])?;
+        Ok(entry)
+    }
+
+    /// 插件包的全部文件，含 compose：本地的索引目录按 sha256 把它们放在 `blobs/` 下。
+    pub fn blobs(package: &PluginPackage) -> impl Iterator<Item = (&str, &[u8])> {
+        let compose = (COMPOSE_FILE, package.source.as_bytes());
+        let files = package.files().iter();
+        std::iter::once(compose).chain(files.map(|(path, data)| (path.as_str(), data.as_slice())))
+    }
+
+    /// 把这一项写进本地的索引目录：文件放进 `blobs/`，`index.json` 里同一个来源的旧项换成这一项，别的项原样留着。
+    /// 没有 `index.json` 时新建一份。
+    pub fn write_to(&self, dir: &Path, package: &PluginPackage) -> Result<(), String> {
+        let blobs = dir.join("blobs");
+        std::fs::create_dir_all(&blobs).map_err(|e| format!("建不了 {}：{e}", blobs.display()))?;
+        for (_, data) in Self::blobs(package) {
+            let path = blobs.join(sha256_hex(data));
+            std::fs::write(&path, data).map_err(|e| format!("写不了 {}：{e}", path.display()))?;
+        }
+        let path = dir.join("index.json");
+        let mut index = match std::fs::read(&path) {
+            Ok(json) => serde_json::from_slice(&json)
+                .map_err(|e| format!("{} 读不懂：{e}", path.display()))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                serde_json::json!({ "format": FORMAT, "plugins": [] })
+            }
+            Err(e) => return Err(format!("读不了 {}：{e}", path.display())),
+        };
+        let plugins = index
+            .get_mut("plugins")
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or_else(|| format!("{} 里没有 plugins 列表", path.display()))?;
+        plugins
+            .retain(|p| p.get("source").and_then(serde_json::Value::as_str) != Some(&self.source));
+        plugins.push(serde_json::to_value(self).expect("索引项能写成 JSON"));
+        let mut json = serde_json::to_vec_pretty(&index).expect("索引能写成 JSON");
+        json.push(b'\n');
+        std::fs::write(&path, json).map_err(|e| format!("写不了 {}：{e}", path.display()))
+    }
+}
+
 /// 读懂、核对过的一项。
 #[derive(Debug, Clone)]
 pub struct Listed {

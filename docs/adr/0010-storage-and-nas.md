@@ -15,7 +15,7 @@ U 盘同步（Go）。新方案原则是不造轮子：预置插件的同类功�
 - **按需授权**：插件按清单申请共享文件夹的读或写权限，主人确认后才挂载进容器。
 - **App 内的文件**：内置基础的文件浏览、上传、下载，经核心 API 访问。
 - **相册**：Immich 插件，加一个 MCP 适配器让 Agent 能按内容搜照片。
-- **文件检索**：MVP 用文件搜索插件（`plugins/files`，rust-mcp-filesystem，限定在已授权的文件夹；没选官方 MCP
+- **文件检索**：MVP 用文件搜索插件（`geraldpeng6/wonton-plugin-files`，rust-mcp-filesystem，限定在已授权的文件夹；没选官方 MCP
   文件系统服务的原因见 ADR-0016）加 Paperless-ngx（文档的 OCR 与全文检索）；专门的语义索引插件在 M2 选型。
 - **音乐**：Navidrome 插件，加 Subsonic 原生音乐页（M2）。
 - **不搬旧代码**：旧 asset-indexer、usb-sync 不迁移；U 盘自动导入在 M2 选型现成方案。

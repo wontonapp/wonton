@@ -3,7 +3,6 @@
 pub mod bot_services;
 pub mod bots;
 mod by_source;
-pub mod catalog;
 pub mod check;
 pub mod compose;
 pub mod configs;

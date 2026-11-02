@@ -1,5 +1,5 @@
-//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在插件目录里找插件、安装和卸载。安装和卸载要主人
-//! 确认。Bot 只能装目录里的插件，申请高权限的插件只能由主人在 App 里装（ADR-0016）。
+//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载。安装和卸载要主人
+//! 确认。Bot 只能装官方索引里的插件，申请高权限的插件只能由主人在 App 里装（ADR-0016）。
 
 use std::sync::Arc;
 
@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
 use super::{Bus, Caller, Outcome, cards, naming};
+use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
+use crate::plugin::storefront::index::Listed;
 use crate::plugin::{InstallError, PluginId, PluginPackage};
 
 const LIST: &str = "list_plugins";
@@ -48,7 +50,7 @@ pub fn definitions() -> Vec<Tool> {
         ),
         tool(
             SEARCH,
-            "在插件目录里按关键词找可以安装的插件：ID、名字、说明和要申请的权限。不写关键词时列出全部。",
+            "在官方索引里按关键词找可以安装的插件：ID、名字、说明和要申请的权限。不写关键词时列出全部。",
             json!({"type": "object", "properties": {
                 "query": {"type": "string", "description": "关键词，多个用空格分开"},
             }}),
@@ -56,7 +58,7 @@ pub fn definitions() -> Vec<Tool> {
         ),
         tool(
             INSTALL,
-            "安装插件目录里的一个插件。调用前先用一句话告诉主人：确认卡片会发到 Wonton App 里的“Wonton”私聊，\
+            "安装官方索引里的一个插件。调用前先用一句话告诉主人：确认卡片会发到 Wonton App 里的“Wonton”私聊，\
              请去那里确认。调用会一直等到主人回答或者确认过期（10 分钟）；确认后安装，返回结果。",
             json!({"type": "object", "properties": {"id": id}, "required": ["id"]}),
             false,
@@ -83,7 +85,7 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
     let value = Value::Object(args.clone());
     let read = match tool {
         LIST => Ok(list(bus)),
-        SEARCH => search(bus, &args),
+        SEARCH => search(bus, &args).await,
         INSTALL => return install(bus, caller, &name, args).await,
         UNINSTALL => return uninstall(bus, caller, &name, args).await,
         _ => Err(format!("没有工具 {name}")),
@@ -121,20 +123,39 @@ fn list(bus: &Bus) -> Value {
     json!({ "plugins": plugins })
 }
 
-fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
-    let catalog = bus
-        .catalog
-        .as_ref()
-        .ok_or("核心没有配置插件目录（WONTON_CATALOG）")?;
-    let query = args
+/// 官方索引里 Bot 能看到的插件（系统插件随核心预装，哪种来源都装不了），和读索引时遇到的问题。一个都读不到又
+/// 有问题时报错，免得 Bot 以为索引是空的。
+async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), String> {
+    let (index, problem) = bus.plugins.official_index().await;
+    let problem = problem.map(|p| p.message);
+    let listed: Vec<Listed> = index
+        .plugins
+        .into_iter()
+        .filter(|l| l.manifest.kind != PluginKind::System)
+        .collect();
+    match problem {
+        Some(problem) if listed.is_empty() => Err(format!("官方索引用不了：{problem}")),
+        problem => Ok((listed, problem)),
+    }
+}
+
+async fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
+    let words: Vec<String> = args
         .get("query")
         .and_then(Value::as_str)
-        .unwrap_or_default();
-    let found: Vec<Value> = catalog
-        .search(query)?
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect();
+    let (listed, problem) = official(bus).await?;
+    let found: Vec<Value> = listed
         .iter()
-        .map(|package| {
-            let m = &package.manifest;
+        .map(|l| &l.manifest)
+        .filter(|m| {
+            let text = searchable(m);
+            words.iter().all(|word| text.contains(word))
+        })
+        .map(|m| {
             json!({
                 "id": m.id,
                 "title": cards::text(&m.title),
@@ -146,7 +167,22 @@ fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
             })
         })
         .collect();
-    Ok(json!({ "plugins": found }))
+    let mut result = json!({ "plugins": found });
+    if let Some(problem) = problem {
+        result["problem"] = json!(problem);
+    }
+    Ok(result)
+}
+
+/// 每个词都出现在 ID、名字或说明里才算找到（不分大小写）。
+fn searchable(manifest: &Manifest) -> String {
+    let texts = [&manifest.title, &manifest.description];
+    let mut text = manifest.id.to_string();
+    for value in texts.iter().flat_map(|t| t.values()) {
+        text.push(' ');
+        text.push_str(value);
+    }
+    text.to_lowercase()
 }
 
 fn required<'a>(args: &'a JsonObject, key: &str) -> Result<&'a str, String> {
@@ -156,17 +192,15 @@ fn required<'a>(args: &'a JsonObject, key: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("缺少参数 {key}"))
 }
 
-/// 不需要主人确认就能做的检查：目录里有没有、装没装、权限 Bot 能不能申请、清单合不合法。
-fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
+/// 不需要主人确认就能做的检查：官方索引里有没有、装没装、权限 Bot 能不能申请、插件包取不取得到、合不合法。
+async fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
     let id = required(args, "id")?;
-    let catalog = bus
-        .catalog
-        .as_ref()
-        .ok_or("核心没有配置插件目录（WONTON_CATALOG）")?;
-    let package = catalog
-        .find(id)?
-        .ok_or_else(|| format!("插件目录里没有 {id}，先用 wonton__search_catalog 找"))?;
-    let manifest = &package.manifest;
+    let (listed, _) = official(bus).await?;
+    let listed = listed
+        .iter()
+        .find(|l| l.manifest.id.as_str() == id)
+        .ok_or_else(|| format!("官方索引里没有 {id}，先用 wonton__search_catalog 找"))?;
+    let manifest = &listed.manifest;
     if bus.plugins.is_installed(&manifest.id) {
         return Err(format!("{id} 已经装了"));
     }
@@ -182,6 +216,11 @@ fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
             high.join("、")
         ));
     }
+    let package = bus
+        .plugins
+        .official_package(listed)
+        .await
+        .map_err(|e| format!("取不到 {id} 的插件包（{}）：{e}", e.kind()))?;
     dry_run(&package)
         .map_err(InstallError::from)
         .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
@@ -190,7 +229,7 @@ fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
 
 async fn install(bus: &Arc<Bus>, caller: &Caller, name: &str, args: JsonObject) -> CallToolResult {
     let value = Value::Object(args.clone());
-    let package = match installable(bus, &args) {
+    let package = match installable(bus, &args).await {
         Ok(package) => package,
         Err(message) => return bus.deny(caller, name, &value, &message),
     };

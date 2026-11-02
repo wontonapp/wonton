@@ -11,30 +11,17 @@ use super::super::fake_docker::FakeDocker;
 use super::super::gallery::Variant;
 use super::super::package_files::sha256_hex;
 use super::super::storefront::StoreConfig;
-use super::super::{PluginId, PluginManager};
+use super::super::storefront::index::IndexEntry;
+use super::super::{PluginId, PluginManager, PluginPackage};
 use super::github::{FakeGitHub, ICON, compose, release, zh};
 use super::manager::manager_with;
 
-/// 在 `dir` 里放一份官方索引：`acme/hello` 的 1.0.0 版，文件按 sha256 放在 `blobs/` 下。
+/// 在 `dir` 里放一份官方索引：`acme/hello` 的 1.0.0 版，文件按 sha256 放在 `blobs/` 下（同 `plugin index-entry`）。
 fn write_index(dir: &Path, compose: &str, icon: &str) {
-    fs::create_dir_all(dir.join("blobs")).unwrap();
-    for data in [compose, icon] {
-        fs::write(dir.join("blobs").join(sha256_hex(data.as_bytes())), data).unwrap();
-    }
-    let index = json!({
-        "format": 1,
-        "plugins": [{
-            "source": "github:acme/hello",
-            "version": "1.0.0",
-            "commit": "c".repeat(40),
-            "files": {
-                "docker-compose.yml": sha256_hex(compose.as_bytes()),
-                "icon.svg": sha256_hex(icon.as_bytes()),
-            },
-            "compose": compose,
-        }],
-    });
-    fs::write(dir.join("index.json"), index.to_string()).unwrap();
+    let files = [("icon.svg".to_owned(), icon.as_bytes().to_vec())].into();
+    let package = PluginPackage::with_files(compose, files).unwrap();
+    let entry = IndexEntry::of(&package, "github:acme/hello", &"c".repeat(40)).unwrap();
+    entry.write_to(dir, &package).unwrap();
 }
 
 struct Bed {
@@ -64,6 +51,8 @@ async fn bed(index: &Path, community: bool) -> Bed {
 #[tokio::test]
 async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
     let index = tempfile::tempdir().unwrap();
+    write_index(index.path(), &compose("1.0.0", "nginx"), ICON);
+    // 同一个来源再写一次：换掉旧的一项，不重复。
     write_index(index.path(), &compose("1.0.0", "nginx"), ICON);
     let bed = bed(index.path(), false).await;
     let m = &bed.m;

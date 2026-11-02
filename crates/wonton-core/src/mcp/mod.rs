@@ -23,7 +23,6 @@ use serde_json::Value;
 use wonton_protocol::ConfirmationState;
 
 use crate::config::PLUGIN_MCP_HOST;
-use crate::plugin::catalog::Catalog;
 use crate::plugin::{McpServer, PluginManager};
 use audit::{Audit, Decision, Record};
 use cards::Draft;
@@ -45,7 +44,6 @@ pub struct Endpoint {
 
 pub struct Bus {
     plugins: Arc<PluginManager>,
-    catalog: Option<Catalog>,
     confirmations: Arc<Confirmations>,
     upstreams: Upstreams,
     audit: Audit,
@@ -83,13 +81,11 @@ fn error(message: &str) -> CallToolResult {
 impl Bus {
     pub fn new(
         plugins: Arc<PluginManager>,
-        catalog: Option<Catalog>,
         confirmations: Arc<Confirmations>,
         audit_path: PathBuf,
     ) -> Arc<Self> {
         let bus = Arc::new(Self {
             plugins,
-            catalog,
             confirmations,
             upstreams: Upstreams::new(),
             audit: Audit::new(audit_path),

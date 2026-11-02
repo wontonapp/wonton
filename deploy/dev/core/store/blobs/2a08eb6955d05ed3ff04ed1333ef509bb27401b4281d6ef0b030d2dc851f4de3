@@ -2,12 +2,12 @@
 # 文件夹的读权限，它们只读挂进容器，看不到别的；经 MCP 把工具交给核心的 MCP 总线，核心只路由和授权。
 #
 # 工具来自 rust-mcp-filesystem：默认只读，写文件、移动、打包这些工具都关掉；读的工具都标了 readOnlyHint，Agent
-# 调用时不用主人确认。它只说 stdio，supergateway 转成 Streamable HTTP。镜像由同目录的 Dockerfile 构建。
+# 调用时不用主人确认。它只说 stdio，supergateway 转成 Streamable HTTP。镜像由 images/mcp/Dockerfile 构建。
 name: files
 
 services:
   mcp:
-    # 开发环境本地构建（deploy/dev/core/smoke.sh），进官方目录前改成发布的镜像。
+    # 开发环境在本机按 images/mcp/Dockerfile 构建（见 README），进正式的官方索引前改成发布的、按摘要固定的镜像。
     image: wonton-files:dev
     restart: unless-stopped
     user: "${PUID}:${PGID}"

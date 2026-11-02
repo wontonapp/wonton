@@ -58,7 +58,7 @@ pub use crate::plugin::views::permission_text as permission;
 pub fn install(requester: &str, manifest: &Manifest) -> Draft {
     let mut lines = vec![
         line(text(&manifest.description)),
-        line(format!("版本 {}，来自插件目录", manifest.version)),
+        line(format!("版本 {}，来自官方索引", manifest.version)),
     ];
     if manifest.permissions.is_empty() {
         lines.push(line("不需要额外的权限"));

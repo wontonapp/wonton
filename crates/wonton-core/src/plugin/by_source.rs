@@ -3,13 +3,14 @@
 
 use std::sync::Arc;
 
-use wonton_protocol::{InstallPreview, InstallRequest};
+use wonton_protocol::{InstallPreview, InstallRequest, StoreProblem};
 
 use super::github_source::{self, SourceRef};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView};
 use super::manifest::Permission;
 use super::package::PluginPackage;
+use super::storefront::index::{Index, Listed};
 
 impl PluginManager {
     /// 按来源取插件包：先解析成提交，再按提交取文件。
@@ -22,6 +23,17 @@ impl PluginManager {
         }
         let origin = github_source::resolve(&self.github, &source).await?;
         github_source::fetch(&self.github, &origin).await
+    }
+
+    /// 官方索引，和读它时遇到的问题：Bot 经 MCP 总线只能找、只能装这里的插件（ADR-0016）。
+    pub async fn official_index(&self) -> (Index, Option<StoreProblem>) {
+        let (index, _, problem) = self.storefront.official(false).await;
+        (index, problem)
+    }
+
+    /// 官方索引里一项的插件包，文件按索引核对。
+    pub async fn official_package(&self, listed: &Listed) -> Result<PluginPackage, InstallError> {
+        self.storefront.files().package(listed).await
     }
 
     pub async fn preview_source(

@@ -99,7 +99,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
     let cards = Arc::new(Cards::default());
     let confirmations = Arc::new(Confirmations::new(cards.clone(), Duration::from_secs(60)));
     let audit = dir.path().join("audit.jsonl");
-    let bus = Bus::new(manager.clone(), None, confirmations, audit);
+    let bus = Bus::new(manager.clone(), confirmations, audit);
     let gateway = Gateway::new(
         public,
         owner(),

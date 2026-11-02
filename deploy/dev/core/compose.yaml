@@ -8,7 +8,7 @@ services:
     build:
       context: ../../..
       dockerfile: deploy/dev/core/Dockerfile
-      # 开发镜像带插件目录（WONTON_CATALOG）；发布的镜像是 Dockerfile 的最后一个阶段，不带。
+      # 开发镜像带开发索引（WONTON_STORE_INDEX）；发布的镜像是 Dockerfile 的最后一个阶段，不带。
       target: dev
       # 经 Docker 主机上的代理构建时，dev.sh 自己构建这个镜像（见 build_image）。
       args:
@@ -39,7 +39,8 @@ services:
       # （它的镜像有 4 GB）把 WONTON_DEV_DEFAULT_PLUGINS 设成空。
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: ${WONTON_DEV_DEFAULT_PLUGINS-/usr/share/wonton/default-plugins}
-      WONTON_CATALOG: /usr/share/wonton/catalog
+      # 商店的官方插件和 Bot 能装的插件都来自镜像里的开发索引，不去 GitHub 取官方索引。
+      WONTON_STORE_INDEX: /usr/share/wonton/store
       WONTON_PUID: ${WONTON_DEV_PUID:-1000}
       WONTON_PGID: ${WONTON_DEV_PGID:-1000}
       TZ: ${TZ:-UTC}

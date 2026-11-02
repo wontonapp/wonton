@@ -583,7 +583,8 @@ x-wonton:
 ```
 
 - 核心经插件网络连这个服务（同网页入口），它只对核心可见；插件在运行时它的工具才出现在总线上。只说 stdio 的
-  MCP 服务器要在镜像里自带一个转成 Streamable HTTP 的桥（如 supergateway，见 `plugins/files`）。
+  MCP 服务器要在镜像里自带一个转成 Streamable HTTP 的桥（如 supergateway，见文件搜索插件
+  `geraldpeng6/wonton-plugin-files`）。
 - 工具在总线上叫 `<slug>__<工具名>`，如 `app-wonton-files__search_files`。核心连插件的 MCP 服务用 `initialize` 握手
   （MCP 2025-11-25）。
 - 没有标 `readOnlyHint: true`（MCP 的工具注解）的工具算敏感：总线先请主人确认，确认了才转给插件。会改数据的工具
@@ -925,7 +926,9 @@ x-wonton:
 - 一个插件一项，`source` 和插件 ID 都不重复，商店按这里的顺序列出官方插件。`files` 是插件包的全部文件，`compose` 必须
   和 `files` 里的 `docker-compose.yml` 一致。核心按 `files` 核对取到的每个文件，所以文件可以从任何地方取（GitHub、
   jsDelivr、核心内置的副本）。
-- 条目用 `wonton-core plugin index-entry github:<owner>/<repo>@<tag>` 生成，不手写。
+- 条目用 `wonton-core plugin index-entry <插件包目录> github:<owner>/<repo> <提交号>` 生成，不手写：目录是那个提交的
+  检出（核心不连 Git，不核对），条目的 JSON 写到标准输出；加 `--index <索引目录>` 时直接写进本地的索引目录，同一个
+  来源的旧条目换掉。
 - 收录要求：`wonton-core plugin check --official` 通过，即有 `icon`、`category`、`license`、`author`，所有服务的 `image`
   按摘要固定，长期运行的服务都有健康检查；申请的权限和插件做的事相符；镜像来自上游官方或作者可复现的构建。
 - 核心镜像内置一份索引和其中插件包的文件。开发镜像和测试用本地的索引目录代替（`WONTON_STORE_INDEX`）：`index.json`
@@ -1013,8 +1016,8 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
 
 v0.2（ADR-0017）的部分同样每项一个 PR：
 
-2. **商店**：Bot 经 MCP 总线和开发镜像改用官方索引，去掉 `WONTON_CATALOG`；核心镜像内置一份索引和其中的插件包；
+2. **商店**：核心镜像内置一份索引和其中的插件包；
    官方索引和社区插件的列表落盘，重启后先用；详情页的截图。
 3. **升级**：检查新版本、升级预览、升级和回滚，系统插件随核心升级；安装记录写下每个服务实际用的镜像摘要，回滚时用它。
 4. **客户端核心**：`PluginsViewModel` 和插件相关的操作。
-6. **插件移出主仓库**：文件搜索插件；预装的 magpie、Hermes 改由锁文件固定。
+6. **插件移出主仓库**：预装的 magpie、Hermes 改由锁文件固定。

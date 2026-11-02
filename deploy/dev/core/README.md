@@ -95,13 +95,15 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 
 ## MCP 总线
 
-申请了 `tools` 的插件经 `mcp.wonton.internal` 连核心的 MCP 总线（ADR-0016），看到核心自己的工具（列出插件、在插件
-目录里找插件、装卸插件）和在运行的插件声明的工具。开发用的核心镜像（Dockerfile 的 `dev` 阶段）带着插件目录
-（`WONTON_CATALOG`，文件搜索和 whoami），Bot 只能装这里面的插件；发布的镜像不带。装卸插件和会改数据的工具要主人
+申请了 `tools` 的插件经 `mcp.wonton.internal` 连核心的 MCP 总线（ADR-0016），看到核心自己的工具（列出插件、在官方
+索引里找插件、装卸插件）和在运行的插件声明的工具。Bot 只能装官方索引里的插件；开发用的核心镜像（Dockerfile 的 `dev`
+阶段）用镜像里的开发索引（`WONTON_STORE_INDEX`，见 [store/README.md](store/README.md)）代替 GitHub 上的官方索引，
+发布的镜像不带。装卸插件和会改数据的工具要主人
 确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 
-文件搜索插件的镜像要先在本机构建：`docker build -t wonton-files:dev plugins/files`。
+开发索引里的文件搜索插件在私有仓库 `geraldpeng6/wonton-plugin-files`，镜像没有发布，要先在本机按索引记的提交构建，
+见 [store/README.md](store/README.md)。
 
 ## 推送
 

@@ -188,8 +188,6 @@ pub struct Config {
     /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
     /// （`WONTON_DEFAULT_PLUGINS`）。
     pub default_plugins: Option<PathBuf>,
-    /// 插件目录：Bot 经 MCP 总线只能装这里的插件，格式同系统插件的目录（`WONTON_CATALOG`）。
-    pub catalog: Option<PathBuf>,
     /// 商店：本地的官方索引目录（`WONTON_STORE_INDEX`），列不列社区插件（`WONTON_STORE_COMMUNITY=off` 时不列）。
     pub store: StoreConfig,
     /// 确认卡片发出后多久没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`，ADR-0016）。
@@ -284,7 +282,6 @@ impl Config {
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
             default_plugins: get("WONTON_DEFAULT_PLUGINS").map(PathBuf::from),
-            catalog: get("WONTON_CATALOG").map(PathBuf::from),
             store: store_config(&get)?,
             confirmation_ttl: Duration::from_secs(parse(
                 &get,

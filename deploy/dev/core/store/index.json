@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "plugins": [
+    {
+      "commit": "1f1de075ff28d659265dc8671299705b7ef32a61",
+      "compose": "# 文件搜索：让 Agent 在授权的共享文件夹里按文件名、按内容找文件，读文件（ADR-0016）。只做这一件事：申请共享\n# 文件夹的读权限，它们只读挂进容器，看不到别的；经 MCP 把工具交给核心的 MCP 总线，核心只路由和授权。\n#\n# 工具来自 rust-mcp-filesystem：默认只读，写文件、移动、打包这些工具都关掉；读的工具都标了 readOnlyHint，Agent\n# 调用时不用主人确认。它只说 stdio，supergateway 转成 Streamable HTTP。镜像由 images/mcp/Dockerfile 构建。\nname: files\n\nservices:\n  mcp:\n    # 开发环境在本机按 images/mcp/Dockerfile 构建（见 README），进正式的官方索引前改成发布的、按摘要固定的镜像。\n    image: wonton-files:dev\n    restart: unless-stopped\n    user: \"${PUID}:${PGID}\"\n    command:\n      - --stdio\n      - >-\n        rust-mcp-filesystem\n        --disable-tools create_directory,move_file,write_file,edit_file,zip_files,unzip_file,zip_directory\n        /shares/documents /shares/photos /shares/music /shares/videos /shares/downloads\n      - --outputTransport\n      - streamableHttp\n      - --stateful\n      - --port\n      - \"8080\"\n      - --healthEndpoint\n      - /healthz\n      - --healthCheck\n      - server\n    volumes:\n      - ${WONTON_SHARE_DOCUMENTS}:/shares/documents:ro\n      - ${WONTON_SHARE_PHOTOS}:/shares/photos:ro\n      - ${WONTON_SHARE_MUSIC}:/shares/music:ro\n      - ${WONTON_SHARE_VIDEOS}:/shares/videos:ro\n      - ${WONTON_SHARE_DOWNLOADS}:/shares/downloads:ro\n    healthcheck:\n      test:\n        - CMD\n        - node\n        - -e\n        - \"fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))\"\n      interval: 30s\n      timeout: 15s\n      start_period: 30s\n      start_interval: 2s\n\nx-wonton:\n  id: app.wonton.files\n  version: 0.1.0\n  kind: app\n  title: { zh: 文件搜索, en: File search }\n  description:\n    zh: 让 Bot 在你授权的共享文件夹里按名字和内容找文件、读文件\n    en: Lets bots find and read files in the shared folders you authorize\n  category: files\n  mcp:\n    service: mcp\n    port: 8080\n    transport: streamable-http\n  permissions:\n    - storage.share.documents:read\n    - storage.share.photos:read\n    - storage.share.music:read\n    - storage.share.videos:read\n    - storage.share.downloads:read\n  requirements:\n    arch: [amd64, arm64]\n    memory: 128M\n",
+      "files": {
+        "docker-compose.yml": "2a08eb6955d05ed3ff04ed1333ef509bb27401b4281d6ef0b030d2dc851f4de3"
+      },
+      "source": "github:geraldpeng6/wonton-plugin-files",
+      "version": "0.1.0"
+    }
+  ]
+}

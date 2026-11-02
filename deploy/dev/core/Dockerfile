@@ -82,11 +82,11 @@ COPY plugins/hermes /usr/share/wonton/default-plugins/hermes
 ENTRYPOINT ["wonton-core"]
 CMD ["serve"]
 
-# 开发和冒烟用的核心镜像（`--target dev`）：多一个开发用的插件目录（WONTON_CATALOG），Bot 经 MCP 总线只能装这里的
-# 插件（ADR-0016）。发布的镜像不带它。
+# 开发和冒烟用的核心镜像（`--target dev`）：多一份本地的开发索引（WONTON_STORE_INDEX，见 store/README.md），取代
+# GitHub 上的官方索引；Bot 经 MCP 总线只能装官方索引里的插件（ADR-0016）。发布的镜像不带它。
 FROM core AS dev
-COPY plugins/files /usr/share/wonton/catalog/files
-COPY plugins/examples/whoami /usr/share/wonton/catalog/whoami
+COPY deploy/dev/core/store/index.json /usr/share/wonton/store/index.json
+COPY deploy/dev/core/store/blobs /usr/share/wonton/store/blobs
 
 # 发布的核心镜像：release.yml 不指定 target，构建的是最后这个阶段。
 FROM core
