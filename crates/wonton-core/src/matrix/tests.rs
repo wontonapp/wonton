@@ -85,7 +85,7 @@ fn members(fake: &Fake, room: &str) -> BTreeSet<String> {
 }
 
 #[tokio::test]
-async fn a_bot_gets_an_account_a_device_and_an_encrypted_direct_room_with_the_owner() {
+async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_owner_later() {
     let (fake, config) = start().await;
     let dir = tempfile::tempdir().unwrap();
     let matrix = connect(&dir, &config).await;
@@ -108,30 +108,44 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_direct_room_with_the_ow
     assert!(!format!("{bot:?}").contains(&bot.access_token));
     let login = matrix.login("echo", "测试").await.unwrap();
     assert!(!format!("{login:?}").contains(&login.access_token));
-    let state = fake.state();
-    let device = ("@echo:test".to_owned(), bot.device_id.clone());
-    assert_eq!(state.tokens[&bot.access_token], device);
-    let profile = state.user("@echo:test");
-    assert_eq!(profile.display_name.as_deref(), Some("回声"));
-    assert_eq!(state.media, [("image/png".to_owned(), b"png".to_vec())]);
-    assert!(
-        profile
-            .avatar_url
-            .as_deref()
-            .is_some_and(|u| u.starts_with("mxc://"))
-    );
+    let home = bot.account.home_room.clone();
+    {
+        let state = fake.state();
+        let device = ("@echo:test".to_owned(), bot.device_id.clone());
+        assert_eq!(state.tokens[&bot.access_token], device);
+        let profile = state.user("@echo:test");
+        assert_eq!(profile.display_name.as_deref(), Some("回声"));
+        assert_eq!(state.media, [("image/png".to_owned(), b"png".to_vec())]);
+        assert!(
+            profile
+                .avatar_url
+                .as_deref()
+                .is_some_and(|u| u.starts_with("mxc://"))
+        );
+        // 主房间：加密的房间，插件装好之前只有 Bot 在里面，主人那边什么都没有。
+        let room = &state.rooms[&home];
+        assert!(room.encrypted, "主房间要加密");
+        assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
+        assert!(room.invited.is_empty(), "插件装好之前不邀请主人");
+        assert_eq!(profile.direct, None);
+        assert!(!state.users.contains_key("@owner:test"));
+    }
 
-    // 主房间：加密的私聊，主人已经在里面，双方的 m.direct 都记着它。
-    let home = &bot.account.home_room;
-    let room = &state.rooms[home];
-    assert!(room.encrypted && room.direct, "主房间要加密、标为私聊");
-    let both = BTreeSet::from(["@echo:test".to_owned(), "@owner:test".to_owned()]);
-    assert_eq!(room.members, both);
-    let owner = state.user("@owner:test");
-    assert_eq!(owner.direct, Some(json!({"@echo:test": [home]})));
-    assert_eq!(profile.direct, Some(json!({"@owner:test": [home]})));
-    // 核心代主人临时登录的设备已经退出。
-    assert!(state.devices("@owner:test").is_empty());
+    // 插件装好后交给主人：主人在里面，双方的 m.direct 都记着它。
+    assert!(matrix.hand_over("owner", &bot).await.unwrap());
+    {
+        let state = fake.state();
+        let both = BTreeSet::from(["@echo:test".to_owned(), "@owner:test".to_owned()]);
+        assert_eq!(state.rooms[&home].members, both);
+        let owner = state.user("@owner:test");
+        assert_eq!(owner.direct, Some(json!({"@echo:test": [&home]})));
+        let bot_direct = &state.user("@echo:test").direct;
+        assert_eq!(*bot_direct, Some(json!({"@owner:test": [&home]})));
+        // 核心代主人临时登录的设备已经退出。
+        assert!(state.devices("@owner:test").is_empty());
+    }
+    // 主人已经在里面（重装）：不再交一次。
+    assert!(!matrix.hand_over("owner", &bot).await.unwrap());
 }
 
 #[tokio::test]
@@ -141,6 +155,7 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
     let matrix = connect(&dir, &config).await;
     let taken = BTreeSet::new();
     let first = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    matrix.hand_over("owner", &first).await.unwrap();
     matrix
         .delete_device(&first.account.user_id, &first.device_id)
         .await
@@ -161,12 +176,12 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
     assert_eq!(fake.state().rooms.len(), 1);
 
     // 主人退出了主房间：再装时新建一个，不往没人看的房间里发。
-    fake.state()
-        .rooms
-        .get_mut(&first.account.home_room)
-        .unwrap()
-        .members
-        .remove("@owner:test");
+    {
+        let mut state = fake.state();
+        let room = state.rooms.get_mut(&first.account.home_room).unwrap();
+        room.members.remove("@owner:test");
+        room.left.insert("@owner:test".to_owned());
+    }
     let third = matrix
         .provision_bot(&BotSpec {
             previous: Some(&previous),
@@ -176,7 +191,45 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
         .unwrap();
     assert_eq!(third.account.user_id, first.account.user_id);
     assert_ne!(third.account.home_room, first.account.home_room);
+    assert!(matrix.hand_over("owner", &third).await.unwrap());
     assert_eq!(members(&fake, &third.account.home_room).len(), 2);
+}
+
+#[tokio::test]
+async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let taken = BTreeSet::new();
+    // 上次安装在交给主人之前就失败了：房间里只有 Bot。
+    let first = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    let previous = first.account.clone();
+    let again = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(again.account, first.account, "重试不另建房间");
+    // 交到一半：主人只收到了邀请。
+    fake.state()
+        .rooms
+        .get_mut(&first.account.home_room)
+        .unwrap()
+        .invited
+        .insert("@owner:test".to_owned());
+    let third = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(third.account, first.account);
+    assert_eq!(fake.state().rooms.len(), 1);
+    assert!(matrix.hand_over("owner", &third).await.unwrap());
+    assert_eq!(members(&fake, &first.account.home_room).len(), 2);
 }
 
 #[tokio::test]
@@ -200,7 +253,7 @@ async fn bot_names_skip_reserved_taken_and_deactivated_accounts() {
     // 停用的账号（删除数据卸载过）不能再登录，也退出了房间：换下一个名字。
     matrix.deactivate("@echo-2:test").await.unwrap();
     assert!(fake.state().user("@echo-2:test").deactivated);
-    assert_eq!(members(&fake, &second.account.home_room).len(), 1);
+    assert!(!members(&fake, &second.account.home_room).contains("@echo-2:test"));
     let third = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     assert_eq!(third.account.user_id, "@echo-3:test");
 

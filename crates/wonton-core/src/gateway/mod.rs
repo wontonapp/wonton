@@ -351,6 +351,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 #[cfg(test)]
 mod isolation_tests;
 #[cfg(test)]
+mod lan_tests;
+#[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
 mod models_tests;

@@ -25,6 +25,7 @@ pub mod mounts;
 pub mod names;
 pub mod package;
 pub mod package_files;
+pub mod preinstall;
 pub mod provides;
 pub mod proxy_auth;
 pub mod render;

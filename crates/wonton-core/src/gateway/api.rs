@@ -87,7 +87,9 @@ fn install_error(error: &InstallError) -> Response {
         | InstallError::MatrixUnavailable(_)
         | InstallError::ModelsUnavailable(_)
         | InstallError::ImagesUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-        InstallError::Docker(_) | InstallError::Unhealthy(_) => StatusCode::BAD_GATEWAY,
+        InstallError::Docker(_) | InstallError::ImagePull(_) | InstallError::Unhealthy(_) => {
+            StatusCode::BAD_GATEWAY
+        }
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     error_response(status, error.kind(), &error.to_string())

@@ -1,5 +1,5 @@
 //! 插件的 Bot（`matrix.bot`，插件规范的“Matrix Bot”）：安装时代 Bot 登录一台设备、设置资料、建好主房间，
-//! 注入 `WONTON_MATRIX_*`；卸载时吊销 Bot 的设备，删除数据时停用账号。
+//! 注入 `WONTON_MATRIX_*`，插件装好后把主房间交给主人；卸载时吊销 Bot 的设备，删除数据时停用账号。
 //!
 //! 账号和主房间记在插件记录目录下的 `bots/<插件 id>.json`：不删数据卸载、安装失败回滚都保留，重装时沿用，
 //! 房间和历史都还在。只有删除数据时才停用账号、删掉记录。
@@ -222,6 +222,21 @@ impl PluginManager {
             owner: bot.owner.clone(),
             home_room: bot.account.home_room.clone(),
         }
+    }
+
+    /// 插件装好、健康检查通过后把主房间交给主人，返回这次是否交出了；主人已经在里面（重装）时返回 false。
+    /// 早交出去的话，主人在 Bot 启动前发的话它收不到。
+    pub(super) async fn hand_over_home_room(
+        &self,
+        bot: &ProvisionedBot,
+    ) -> Result<bool, InstallError> {
+        Ok(self.matrix()?.hand_over(&self.cfg.owner, bot).await?)
+    }
+
+    /// 安装在交出主房间之后失败了：收回它，主人那边不留一个没有 Bot 应答的私聊。
+    pub(super) async fn withdraw_home_room(&self, bot: &ProvisionedBot) -> Result<(), String> {
+        let matrix = self.matrix().map_err(|e| e.to_string())?;
+        matrix.withdraw(bot).await.map_err(|e| e.to_string())
     }
 
     /// 安装失败回滚：吊销这次登录的设备，账号和主房间留给下次安装。

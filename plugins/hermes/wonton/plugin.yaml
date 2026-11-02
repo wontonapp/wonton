@@ -1,0 +1,6 @@
+# Wonton 给 Hermes 的插件，由 init 服务放进 Bot 的数据目录（$HERMES_HOME/plugins/wonton），config.yaml 启用。
+name: wonton
+version: 1.0.0
+description: "模型网关里还没有默认模型时，直接告诉主人去「模型设置」添加模型服务商，不调模型。"
+provides_hooks:
+  - post_gateway_admission

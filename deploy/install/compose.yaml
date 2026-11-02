@@ -1,5 +1,5 @@
 # 正式安装的云吞：核心、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。系统插件（模型网关 magpie）由核心启动后
-# 自己装上（WONTON_SYSTEM_PLUGINS）。
+# 自己装上（WONTON_SYSTEM_PLUGINS），然后装一次默认 Agent Hermes（WONTON_DEFAULT_PLUGINS）。
 #
 # 这份文件编进核心的二进制，由 `wonton-core init` 和密钥一起写到安装目录，随核心镜像一起升级；变量来自安装目录的
 # .env，由安装脚本写好（deploy/install/install.sh）。
@@ -23,6 +23,7 @@ services:
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
+      WONTON_DEFAULT_PLUGINS: /usr/share/wonton/default-plugins
       WONTON_OIDC_ADMIN_URL: http://hydra:4445
       WONTON_OIDC_PUBLIC_URL: http://hydra:4444
       WONTON_MATRIX_URL: http://tuwunel:8008

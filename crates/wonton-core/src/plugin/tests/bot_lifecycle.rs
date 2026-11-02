@@ -1,5 +1,6 @@
 //! Bot 插件在 Matrix 上的副作用：在假 Docker 和假 Tuwunel 上验证安装、卸载、删除数据、回滚和核心重启。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -150,7 +151,7 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
 }
 
 #[tokio::test]
-async fn a_failed_install_revokes_the_new_device_but_keeps_the_home_room_for_next_time() {
+async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_next_time() {
     let bed = Bed::start().await;
     let m = bed.manager();
     let bot = container_name("app-echo", "bot");
@@ -161,7 +162,16 @@ async fn a_failed_install_revokes_the_new_device_but_keeps_the_home_room_for_nex
     m.install(&echo(), &granted()).await.unwrap_err();
     let failed = bed.env();
     assert!(!bed.token_valid(&failed["TOKEN"]), "回滚吊销这次登录的设备");
-    assert!(bed.tuwunel.state().devices("@echo:test").is_empty());
+    {
+        let state = bed.tuwunel.state();
+        assert!(state.devices("@echo:test").is_empty());
+        let room = &state.rooms[&failed["ROOM"]];
+        assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
+        assert!(
+            room.invited.is_empty(),
+            "没装好的 Bot 不出现在主人的聊天列表里"
+        );
+    }
 
     bed.docker
         .set_state(&bot, json!({"Status": "running", "Running": true}));
@@ -171,7 +181,36 @@ async fn a_failed_install_revokes_the_new_device_but_keeps_the_home_room_for_nex
         failed["ROOM"],
         "重试沿用上次建好的主房间"
     );
-    assert_eq!(bed.tuwunel.state().rooms.len(), 1);
+    let state = bed.tuwunel.state();
+    assert_eq!(state.rooms.len(), 1);
+    assert!(state.rooms[&failed["ROOM"]].members.contains("@owner:test"));
+}
+
+#[tokio::test]
+async fn an_install_failing_after_the_handover_takes_the_chat_back() {
+    let bed = Bed::start().await;
+    let m = bed.manager();
+    // 安装记录写不进去（位置被一个目录占着）：这一步在把主房间交给主人之后。
+    let record = bed.dir.path().join("plugins/app.echo.json");
+    std::fs::create_dir_all(&record).unwrap();
+    m.install(&echo(), &granted()).await.unwrap_err();
+    let failed = bed.env();
+    assert!(
+        bed.tuwunel.state().rooms[&failed["ROOM"]]
+            .members
+            .is_empty(),
+        "主人和 Bot 都退出了交出去的房间"
+    );
+
+    std::fs::remove_dir(&record).unwrap();
+    m.install(&echo(), &granted()).await.unwrap();
+    let room = bed.env()["ROOM"].clone();
+    assert_ne!(room, failed["ROOM"]);
+    assert!(
+        bed.tuwunel.state().rooms[&room]
+            .members
+            .contains("@owner:test")
+    );
 }
 
 #[tokio::test]

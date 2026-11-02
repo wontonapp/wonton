@@ -39,6 +39,9 @@ pub enum EngineError {
     NotFound(String),
     #[error("Docker 拒绝了请求（{context}）：{message}")]
     Rejected { context: String, message: String },
+    /// 镜像仓库连不上、镜像或标签不存在、没有权限等，`message` 是 Docker 的原话。
+    #[error("拉取镜像失败（{image}）：{message}")]
+    Pull { image: String, message: String },
 }
 
 impl EngineError {
@@ -196,7 +199,14 @@ impl Engine {
             .build();
         let mut stream = self.docker.create_image(Some(options), None, None);
         while let Some(item) = stream.next().await {
-            item.map_err(|e| EngineError::from_bollard(&format!("拉取镜像 {image}"), e))?;
+            item.map_err(|e| match e {
+                BollardError::DockerResponseServerError { message, .. }
+                | BollardError::DockerStreamError { error: message } => EngineError::Pull {
+                    image: image.to_owned(),
+                    message,
+                },
+                other => EngineError::from_bollard(&format!("拉取镜像 {image}"), other),
+            })?;
         }
         Ok(())
     }

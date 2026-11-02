@@ -59,6 +59,8 @@ struct Undo {
     secrets_before: Option<(PluginId, Option<Secrets>)>,
     /// 本次安装代 Bot 登录的设备，回滚时吊销（账号和主房间保留给下次安装）。
     bot: Option<(PluginId, ProvisionedBot)>,
+    /// 本次安装把主房间交给了主人（主人原来不在里面），回滚时收回。
+    handed_over: bool,
     /// 已登记插件网络的地址段，回滚时注销。
     source: Option<PluginId>,
     /// 本次安装在模型网关里签发了凭据的插件，回滚时吊销。
@@ -197,6 +199,9 @@ impl PluginManager {
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             let url = format!("http://{upstream}{}", webui.path);
             health::wait_webui(&self.http, &url, deadline).await?;
+        }
+        if let Some((_, bot)) = &undo.bot {
+            undo.handed_over = self.hand_over_home_room(bot).await?;
         }
         self.store.save(&InstalledRecord {
             id: manifest.id.clone(),
@@ -450,6 +455,13 @@ impl PluginManager {
             );
         }
         if let Some((id, bot)) = &undo.bot {
+            // 收回主房间要用 Bot 的令牌，所以在吊销设备之前。
+            if undo.handed_over {
+                note(
+                    format!("交给主人的主房间 {}", bot.account.home_room),
+                    self.withdraw_home_room(bot).await,
+                );
+            }
             note(
                 format!("Bot {} 的设备", bot.account.user_id),
                 self.revoke_bot_device(id, bot).await,

@@ -32,13 +32,23 @@ pub(super) fn manager_in_container(engine: Engine, dir: &tempfile::TempDir) -> P
         Some("wonton-core".to_owned()),
         None,
         Instance::default(),
+        ImageWorker::in_process(),
     )
 }
 
 /// 用给定 Docker 的管理器，核心直接跑在宿主上。PUID:PGID 取测试目录的属主，准备应用数据目录时不需要
 /// chown 权限。
 pub(super) fn manager_with(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
-    manager_for(engine, dir, None, None, Instance::default())
+    manager_with_images(engine, dir, ImageWorker::in_process())
+}
+
+/// 用给定的处理图片的进程，其余同 [`manager_with`]。
+pub(super) fn manager_with_images(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    images: ImageWorker,
+) -> PluginManager {
+    manager_for(engine, dir, None, None, Instance::default(), images)
 }
 
 /// 实例名是 `instance` 的核心（`WONTON_INSTANCE`）的管理器，其余同 [`manager_with`]。
@@ -48,7 +58,7 @@ pub(super) fn manager_in_instance(
     instance: &str,
 ) -> PluginManager {
     let instance = Instance::parse(Some(instance)).unwrap();
-    manager_for(engine, dir, None, None, instance)
+    manager_for(engine, dir, None, None, instance, ImageWorker::in_process())
 }
 
 /// 核心直接跑在宿主上、配了身份提供方的管理器。
@@ -57,7 +67,8 @@ pub(super) fn manager_with_oidc(
     dir: &tempfile::TempDir,
     oidc: Hydra,
 ) -> PluginManager {
-    manager_for(engine, dir, None, Some(oidc), Instance::default())
+    let images = ImageWorker::in_process();
+    manager_for(engine, dir, None, Some(oidc), Instance::default(), images)
 }
 
 fn manager_for(
@@ -66,6 +77,7 @@ fn manager_for(
     core_container: Option<String>,
     oidc: Option<Hydra>,
     instance: Instance,
+    images: ImageWorker,
 ) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
@@ -86,14 +98,7 @@ fn manager_for(
         instance,
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
-    PluginManager::new(
-        engine,
-        store,
-        HttpClient::new(),
-        oidc,
-        cfg,
-        ImageWorker::in_process(),
-    )
+    PluginManager::new(engine, store, HttpClient::new(), oidc, cfg, images)
 }
 
 /// Docker 不可达的管理器：只用来验证不依赖 Docker 的规则，以及 Docker 不可用时的报错。
@@ -291,6 +296,23 @@ async fn docker_outage_is_reported_and_leaves_nothing_behind() {
         m.uninstall(&id, true).await.unwrap_err().kind(),
         "not_installed"
     );
+}
+
+#[tokio::test]
+async fn an_image_that_cannot_be_pulled_fails_the_install_with_dockers_reason() {
+    let (docker, engine) = FakeDocker::start().await;
+    docker.fail_pulls(Some("manifest unknown"));
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    let err = m.install(WHOAMI, &[]).await.unwrap_err();
+    assert_eq!(err.kind(), "image_pull_failed", "{err}");
+    assert!(
+        err.to_string()
+            .starts_with("拉取镜像失败（traefik/whoami:v1.11）：manifest unknown"),
+        "{err}"
+    );
+    assert!(m.list().is_empty());
+    assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }
 
 /// 网关代登录的插件：代加一个请求头和一个 Cookie，Cookie 的值是核心生成的密钥。

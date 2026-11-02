@@ -8,10 +8,12 @@
 # 网页由网关代登录（sso: proxy）：网关认出主人后代为带上网页密钥的 Cookie，主人不用输密码，浏览器也拿不到密钥。
 name: magpie
 
+# 锁定 stable 渠道的版本（每周一更新）；升级前回归。
+x-image: &image ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e
+
 services:
   magpie:
-    # 锁定 stable 渠道的版本（每周一更新）；升级前回归。
-    image: ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e
+    image: *image
     restart: unless-stopped
     # 镜像固定以 uid 65532 运行，不认 PUID/PGID；写明 user，核心据此把数据目录交给它。
     user: "65532:65532"
@@ -37,13 +39,39 @@ services:
       start_period: 1m
       start_interval: 1s
 
+  # 维护默认路由组 wonton-default（注入给各插件的默认模型）：provider 变了就按 ADR-0008 的规则重新挑模型，主人改过
+  # 就不再动它，见 default-model.sh。只读写 magpie 的配置目录，用缓存的模型目录，不联网。
+  default-model:
+    image: *image
+    user: "65532:65532"
+    entrypoint: [sh, /wonton/default-model.sh]
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
+    configs:
+      - source: default_model
+        target: /wonton/default-model.sh
+    network_mode: none
+    restart: unless-stopped
+    # 镜像自带的健康检查查网关端口，这个容器不跑网关；改成看上一次维护成没成功。
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/default-model.ok"]
+      interval: 30s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+    depends_on:
+      magpie:
+        condition: service_healthy
+
 configs:
   credentials:
     file: ./credentials.sh
+  default_model:
+    file: ./default-model.sh
 
 x-wonton:
   id: ai.usemagpie.magpie
-  version: 0.3.0
+  version: 0.4.0
   kind: system
   title: { zh: 模型设置, en: Models }
   description:
@@ -67,7 +95,7 @@ x-wonton:
         openai: /v1
         anthropic: /
         gemini: /
-      # 注入给各插件的 WONTON_MODEL_DEFAULT：magpie 的路由组，换 provider 或模型只在网页里改。
+      # 注入给各插件的 WONTON_MODEL_DEFAULT：default-model 维护的路由组，主人可以在网页里改。
       default_model: group/wonton-default
       credentials:
         issue: [sh, /wonton/credentials.sh, issue, "{name}"]

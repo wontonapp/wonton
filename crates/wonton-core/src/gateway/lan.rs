@@ -112,7 +112,8 @@ fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>) -> String {
     )
 }
 
-/// 只给数字和就绪与否：局域网里谁都打得开这个页面，不列出装了哪些插件。
+/// 只给数字和就绪与否：局域网里谁都打得开这个页面，不列出主人装了哪些插件。随核心附带的插件每台主机都有，没在运行
+/// 时逐个写明在装还是出了什么错（比如拉不下镜像）。
 fn status_items(gateway: &Gateway) -> String {
     let ready = |ok: bool| if ok { "就绪" } else { "没有接入" };
     let plugins = gateway.plugins.list();
@@ -136,6 +137,16 @@ fn status_items(gateway: &Gateway) -> String {
     if degraded > 0 {
         items.push(format!("<strong>{degraded} 个插件异常</strong>"));
     }
+    items.extend(gateway.plugins.bundled_not_running().iter().map(|p| {
+        // 原因的第一行说清是什么错。没通过健康检查时后面跟着容器日志，Agent 的日志里可能有聊天内容，只在主人登录后
+        // 的插件列表里给。
+        let state = pages::state_of(&p.status);
+        format!(
+            "{}：{}",
+            pages::escape(&pages::title_of(p)),
+            pages::escape(state.lines().next().unwrap_or_default())
+        )
+    }));
     items
         .iter()
         .map(|item| format!("<li>{item}</li>"))

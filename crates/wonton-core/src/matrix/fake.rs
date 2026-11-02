@@ -38,8 +38,9 @@ pub struct User {
 pub struct Room {
     pub members: BTreeSet<String>,
     pub invited: BTreeSet<String>,
+    /// 进过房间又退出（或被撤回邀请、停用账号）的人。
+    pub left: BTreeSet<String>,
     pub encrypted: bool,
-    pub direct: bool,
 }
 
 /// 假 Tuwunel 的全部状态，测试可以直接读写。
@@ -263,7 +264,9 @@ async fn deactivate(
         account.deactivated = true;
         state.tokens.retain(|_, (u, _)| *u != user);
         for room in state.rooms.values_mut() {
-            room.members.remove(&user);
+            if room.members.remove(&user) {
+                room.left.insert(user.clone());
+            }
         }
         Ok(ok(json!({"id_server_unbind_result": "success"})))
     }))
@@ -314,6 +317,13 @@ async fn create_room(
         if state.refuse_rooms {
             return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
         }
+        // 房间版本 12：建房的人不能写进 power_levels 的 users。
+        if body["power_level_content_override"]["users"]
+            .get(user.as_str())
+            .is_some()
+        {
+            return Err(error(StatusCode::BAD_REQUEST, "M_INVALID_PARAM"));
+        }
         let encrypted = body["initial_state"].as_array().is_some_and(|events| {
             events.iter().any(|e| {
                 e["type"] == "m.room.encryption"
@@ -331,14 +341,14 @@ async fn create_room(
             members: BTreeSet::from([user]),
             invited,
             encrypted,
-            direct: body["is_direct"] == true,
+            ..Room::default()
         };
         state.rooms.insert(id.clone(), room);
         Ok(ok(json!({"room_id": id})))
     }))
 }
 
-/// 加入、退出和撤回邀请（`kick`）。
+/// 加入、退出、邀请和撤回邀请（`kick`）。
 async fn membership(
     State(fake): State<Fake>,
     headers: HeaderMap,
@@ -351,22 +361,57 @@ async fn membership(
             .rooms
             .get_mut(&room)
             .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
+        let target = body.and_then(|Json(b)| b["user_id"].as_str().map(str::to_owned));
+        let target = target.unwrap_or_default();
         match action.as_str() {
             "join" if room_state.invited.remove(&user) || room_state.members.contains(&user) => {
+                room_state.left.remove(&user);
                 room_state.members.insert(user);
             }
             "leave" => {
                 room_state.members.remove(&user);
+                room_state.left.insert(user);
+            }
+            "invite"
+                if room_state.members.contains(&user) && !room_state.members.contains(&target) =>
+            {
+                room_state.left.remove(&target);
+                room_state.invited.insert(target);
             }
             "kick" if room_state.members.contains(&user) => {
-                let target = body.and_then(|Json(b)| b["user_id"].as_str().map(str::to_owned));
-                let target = target.unwrap_or_default();
                 room_state.invited.remove(&target);
                 room_state.members.remove(&target);
+                room_state.left.insert(target);
             }
             _ => return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN")),
         }
         Ok(ok(json!({"room_id": room})))
+    }))
+}
+
+/// 房间成员才能查别人的成员状态；从来没进过房间的人没有这个状态事件（404）。
+async fn member_state(
+    State(fake): State<Fake>,
+    headers: HeaderMap,
+    Path((room, target)): Path<(String, String)>,
+) -> Reply {
+    let state = fake.state();
+    reply(auth(&state, &headers).and_then(|(user, _)| {
+        let room = state
+            .rooms
+            .get(&room)
+            .filter(|r| r.members.contains(&user))
+            .ok_or_else(|| error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))?;
+        let membership = if room.members.contains(&target) {
+            "join"
+        } else if room.invited.contains(&target) {
+            "invite"
+        } else if room.left.contains(&target) {
+            "leave"
+        } else {
+            return Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND"));
+        };
+        Ok(ok(json!({"membership": membership})))
     }))
 }
 
@@ -470,6 +515,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(
             &format!("{client}/rooms/{{room}}/{{action}}"),
             post(membership),
+        )
+        .route(
+            &format!("{client}/rooms/{{room}}/state/m.room.member/{{user}}"),
+            get(member_state),
         )
         .route(
             &format!("{client}/user/{{user}}/account_data/m.direct"),

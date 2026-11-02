@@ -30,6 +30,7 @@ use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
 use wonton_core::plugin::lifecycle::LifecycleConfig;
+use wonton_core::plugin::preinstall::Backoff;
 use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
 use wonton_core::secret;
@@ -213,23 +214,34 @@ async fn connect_matrix(cfg: &Config, http: &HttpClient) -> anyhow::Result<Optio
     Ok(Some(Arc::new(matrix)))
 }
 
-/// 在后台装上还没装的系统插件（要拉镜像、等健康，不挡着网关启动），再为模型网关的使用方对一次账：凭据的值在
-/// 核心，网关的数据丢了也能补回来。系统插件目录配了却不是目录时启动失败。
+/// 在后台预装（要拉镜像、等健康，不挡着网关启动）：先装上还没装的系统插件，再为模型网关的使用方对一次账（凭据的
+/// 值在核心，网关的数据丢了也能补回来），最后装默认插件：默认 Agent 要用模型网关。目录配了却不是目录时启动失败。
 fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
-    let dir = cfg.system_plugins.clone();
-    if let Some(dir) = &dir
-        && !dir.is_dir()
-    {
-        bail!("WONTON_SYSTEM_PLUGINS 指向的 {} 不是目录", dir.display());
-    }
-    tokio::spawn(async move {
+    let (system, defaults) = (cfg.system_plugins.clone(), cfg.default_plugins.clone());
+    for (name, dir) in [
+        ("WONTON_SYSTEM_PLUGINS", &system),
+        ("WONTON_DEFAULT_PLUGINS", &defaults),
+    ] {
         if let Some(dir) = dir
-            && let Err(e) = manager.ensure_system(&dir).await
+            && !dir.is_dir()
+        {
+            bail!("{name} 指向的 {} 不是目录", dir.display());
+        }
+    }
+    let backoff = Backoff::default();
+    tokio::spawn(async move {
+        if let Some(dir) = system
+            && let Err(e) = manager.ensure_system(&dir, backoff).await
         {
             tracing::error!(error = %e, "预装系统插件失败");
         }
         for (plugin, error) in manager.reconcile_models().await {
             tracing::error!(%plugin, %error, "模型网关凭据对账失败");
+        }
+        if let Some(dir) = defaults
+            && let Err(e) = manager.ensure_defaults(&dir, backoff).await
+        {
+            tracing::error!(error = %e, "预装默认插件失败");
         }
     });
     Ok(())

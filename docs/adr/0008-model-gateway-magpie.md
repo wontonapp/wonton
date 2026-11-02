@@ -146,3 +146,94 @@ magpie 的网页经网关代登录（ADR-0009 的“网关代登录”）打开�
   冒烟里验证过。
 - 网页的修改是同源的 `fetch`（`POST /api/…`，JSON），经网关照常转发：在网页上关掉、再打开上游，`magpie providers`
   里随即可见。别的插件网页发来的同样请求得到 401，到不了 magpie。
+
+## 补充：默认模型（2026-10-30）
+
+主人在“模型设置”里加任意一家 provider 的 key，默认 Bot 就能回答，不用再做别的（GOAL 的 M1 第 3 项）。
+
+- **谁管**：magpie 插件自己。插件里的常驻服务 default-model（`plugins/magpie/default-model.sh`）维护 `wonton-default`
+  这个组，维护失败时它的健康检查不过，插件显示异常。`default_model` 是网关插件声明的，由它保证存在、选得合理；核心只
+  把它注入给使用方，不认识 magpie 的组（ADR-0015）。
+- **规则**：用 magpie 自己的“Cheap first”模板挑出的两个模型，便宜的在前、最强的在后：请求先发给便宜的，它出错才换
+  最强的，并记住出错的模型（`routing=order`）。贵贱和强弱是 magpie 按 models.dev 的模型目录（价格、能力）判断的，
+  模型目录里没有的模型不算数。挑不出来时（还没有 provider、只有一个模型、最强的旁边没有够便宜的，或者 magpie 还没
+  下载到模型目录），用全部模型（通配 `*`），按 provider 添加的先后、每家列出模型的顺序排。provider、模型列表或模型
+  目录变了，default-model 两秒内重新挑。组里只放这两个，不再接上其余的模型：两个都出错时把错误交给 Bot，不一路试到
+  又贵又不对的模型上去。“全部模型”指 magpie 用的那些：主人给哪家挑了模型，就只有挑的那些；没挑、服务商列出的又超过
+  24 个时，只有前 24 个。模板和 `*` 都只在这些里面挑、展开。
+- **看得到、改得了**：“模型设置”的路由页里有 wonton-default 这张卡片，按顺序列出成员，排第一的就是现在用的；每次
+  请求实际由哪个模型回答，用量里看得到。主人在网页（或命令行）里改了这个组的任何地方，default-model 就不再动它；
+  删掉它，或者把它的 id 改成别的，就按上面的规则重建一个 id 是 wonton-default 的组，主人的组不动。
+- **和主人同时改**：default-model 写组之前再读一次，挑模型的这段时间里主人改了这个组就不写，此后当作主人改过；写的
+  时候只按 id 改这一个组。magpie 改 `providers.json` 是把整个文件读出、改完、写回，不加锁（0.1.1327 实测，网页和命令
+  行都是），两边的保存相隔不到约 0.1 秒时，后写的一方会盖掉先写的一方，这要 magpie 加锁才能消除。default-model 只在
+  provider、模型列表或模型目录变了之后写，平时不写。
+- **没有模型时**：组是空的，magpie 的模型列表里没有它，请求它得到 404，报错很长，绕过了 Hermes 对模型报错的改写，
+  原样进了聊天。所以 Hermes 的插件包带一个 Hermes 插件（`plugins/hermes/wonton`，`post_gateway_admission` 钩子）：
+  每条消息先查一次网关的模型列表，默认模型不在里面时直接回提示，不调模型，这条消息也不进会话历史：
+  - 一个模型都没有：请在“模型设置”里添加模型服务商和它的 API key；
+  - 有模型、默认模型却不可用（组被改空了）：请检查 wonton-default 路由组。
+
+  网关连不上、回答不对时不拦，交给 Hermes 照常报错。主人加了 key，下一条消息就照常回答，不用重启。
+
+没选的做法：
+
+- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613（每百万
+  token 输入 30、输出 60 美元），组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
+  openrouter/auto（由 OpenRouter 按请求另挑模型，价格不定），通义千问下是旗舰 qwen-max（实测见下）。
+- 自己按模型名挑（如名字里带 mini、flash 的排前面）：命名没有规律可循，会过时；magpie 的模板用的是价格。通配也排不了
+  序：通配匹配到的模型一律按 magpie 列出模型的顺序排，写在前面的通配不会排在前面。
+- 用模板建一次就不管（magpie 网页里点一下模板就是这样）：模板建的组记的是具体模型，删掉 provider 后就空了，加了更
+  便宜的也不换。
+- 核心在网关装好后经 `docker exec` 建组：核心就要认识 magpie 的命令和组，换网关时跟着改。
+
+### 验证结果（2026-10-30）
+
+环境：magpie 0.1.1327、Hermes Agent v0.22.5，其余同“核心接入模型网关”一节。可复跑：`deploy/dev/core/smoke.sh` 的
+“Hermes”一步。
+
+- 挑出的模型：服务商的模型列表来自假的上游（和真实列表一样长、一样乱，key 是假的），模型目录是 magpie 从 models.dev
+  下载的：
+
+  | 服务商（预设） | 列出 / 留下 | 全部模型按顺序时的第一个 | “Cheap first” |
+  | --- | --- | --- | --- |
+  | OpenAI | 41 / 27 | gpt-4-0613 | gpt-5-mini → gpt-5 |
+  | OpenRouter | 22 / 22 | openrouter/auto | z-ai/glm-4.6 → anthropic/claude-sonnet-4.5 |
+  | 通义千问（qwen） | 26 / 21 | qwen-max | qwen-flash → qwen3-max |
+  | 阿里云百炼（bailian） | 26 / 21 | qwen-max | qwen-plus → qwen-max |
+  | DeepSeek | 2 / 2 | deepseek-chat | 挑不出来（两个一样贵），用全部模型：deepseek-chat 在前 |
+  | Anthropic | 20 / 20 | claude-haiku-5-5 | claude-haiku-5-5 → claude-sonnet-5-5 |
+  | Gemini（google） | 40 / 26 | gemini-2.0-flash | gemini-2.5-flash → gemini-4-argon |
+  | 智谱（zhipu） | 25 / 23 | glm-4-plus | glm-4.7-flash → glm-5.3-flashx |
+  | Kimi（moonshot） | 6 / 6 | kimi-k3.1-pro | 挑不出来（K3.1 Pro 旁边没有够便宜的），用全部模型：kimi-k3.1-pro 在前 |
+
+  “留下”是 magpie 去掉嵌入、图片、语音、审核等模型后的个数；OpenAI 留下 27 个，只用前 24 个（gpt-5-pro、gpt-5-codex、
+  chatgpt-4o-latest 不在里面）。请求 `group/wonton-default` 由 gpt-5-mini 回答（之前的 `*` 由 gpt-4-0613 回答）。
+  后四家的列表按各家文档和 models.dev 拼出，没有 key，没对过真实接口返回的顺序：Anthropic 从新到旧，Gemini 从旧到新、
+  混着嵌入、语音、图片和视频模型，智谱从旧到新，Kimi 是它文档上现有的 6 个（moonshot-v1 系列已在 2026-08 下线）。
+  留下的里面还有不能对话的（Gemini 的 aqa、veo、lyria，智谱的 cogvideox-3），模板不挑它们：把 models.dev 标价为 0
+  的 lyria 选进来，Gemini 挑出的不变。Kimi 最便宜的 K2.6 约是 K3.1 Pro 一半的价，magpie 不算它便宜；用全部模型时
+  第一个是 Kimi 列出的第一个，现有的 6 个都是对话模型，窗口至少 256K。
+- 全部模型：Gemini 留下 26 个，`*` 展开成前 24 个；主人多选一个（`magpie provider models google +<模型>`），`*` 就是
+  25 个；只选 3 个，`*` 就是这 3 个，模板也只在这 3 个里挑。
+- 模型目录：magpie 的服务进程启动时下载它，命令行不下载。断网的 default-model 用服务进程下载好的目录，挑出的结果和
+  联网时一样。没有目录时模板照样挑，但不看价格（OpenAI 预设下是 gpt-3.5-turbo → gpt-4-0613），所以 default-model 先用
+  `*`，用的是上表第三列的模型；目录放进去后两秒内换成 gpt-5-mini → gpt-5。
+- 维护：先后加 OpenAI、DeepSeek，删 OpenAI，组依次是 `*`、gpt-5-mini → gpt-5、不变、deepseek-chat → deepseek-reasoner；
+  主人改成手动只用 deepseek-reasoner 后再加 OpenAI，组不变；主人删掉组，两秒内按规则重建成 gpt-5-mini → gpt-5。加删
+  provider 时 magpie 不改组在 `providers.json` 里的定义，default-model 据此认出主人改没改过。组里没有成员时
+  `GET /v1/models` 不列出 `group/wonton-default`，有成员时列出。default-model 第一次维护完 5 秒内就是 healthy，
+  `docker stop` 时立刻退出。
+- 和主人同时改：default-model 和 magpie 的网页服务共用一个配置目录，主人的操作经网页用的接口（`/api/groups/save`、
+  `/api/groups/delete`）发出。主人在网页上另建一个组，default-model 的组不变；default-model 挑模型时（让
+  `group template` 停住）主人在网页上改了这个组，放行 6 秒后还是主人的版本，日志记一次“主人改过”，再加 provider 也
+  不动它；主人删掉这个组，或者把它的 id 改成别的、名字不变，default-model 都重建 `wonton-default`，主人的组不动，也不
+  多出别的组。本机 OrbStack 上挑一次模型 60 到 85 毫秒，`group set` 写一次 80 到 90 毫秒。
+- 网页：路由页按 `/api/groups` 画组的卡片，这个组在里面，带着成员和路由方式；卡片可以编辑、排序、删除，手动路由时
+  选中的那个带着标记。“路由组”功能默认开着。
+- 冒烟：还没有 provider 时网关的模型列表是空的，给 Hermes 发“你好”，回的就是“一个模型都没有”的提示。只执行
+  `magpie provider add`、不动组（经开发机上的 magpie，只给一个模型 GLM-5.3-Flash，挑不出来，组里是 `*`），网关的
+  模型列表里就有了 `group/wonton-default`，Hermes 在同一个私聊里接着对话两轮，第二轮记得第一轮的问题。
+- 钩子：在 Hermes 镜像里对着假的模型列表直接调用钩子：列表为空回第一种提示，有别的模型、没有默认模型回第二种；列表里
+  有默认模型、消息以 `/` 开头、网关回 500 或连不上时都不拦。按 Hermes v0.22.5 的源码，钩子回 `handled` 时这条消息算
+  处理过了，不写进会话。

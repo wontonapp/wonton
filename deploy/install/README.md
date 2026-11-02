@@ -1,10 +1,16 @@
 # 正式安装
 
 在装好 Docker Engine 28 以上的 Linux 主机（amd64、arm64）上用 root 执行 `install.sh`，装好核心、身份提供方
-（Ory Hydra）和 Matrix 服务器（Tuwunel）；核心启动后自己装上系统插件（模型网关 magpie）。装好后浏览器用主机的
+（Ory Hydra）和 Matrix 服务器（Tuwunel）；核心启动后在后台自己装上系统插件（模型网关 magpie），再装一次默认 Agent
+Hermes（ADR-0007），授予它 `models`、`matrix.bot`、`tools`、`network.egress`。装好后浏览器用主机的
 IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还没有设备时的首次配对二维码。安装终端最后也显示
 同一个首次配对码，第一台设备配上后结束。以后加设备在已配对的 App 里点“添加设备”，设备都丢了在服务器上执行
 `sudo wonton pair`（ADR-0009）。
+
+Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要下载约 1 GB（解开约 4 GB），全新主机上要等 5 分钟左右，
+还没装好时插件列表和局域网状态页上是“安装中”；拉不下镜像时两处都写明原因，核心隔一阵自动重试。在“模型设置”里
+添加任意一家模型服务商的 key，Hermes 就能回答；没添加时它会提示去添加（ADR-0008）。主人卸掉 Hermes 后，核心不会
+再自动装它。
 
 - `install.sh`：检查系统和 Docker，拉核心镜像，在镜像里执行 `wonton-core init` 生成密钥和配置，写 `.env`，
   `docker compose up` 等到都健康。可调的环境变量写在脚本开头。
@@ -34,8 +40,9 @@ IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还
 
 ## 拉不到镜像
 
-核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。安装时拉
-镜像失败，先给 Docker 配镜像加速或代理，再执行一次安装命令。国内的镜像仓库按 ADR-0012 以后加上。
+核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
+安装时拉镜像失败，先给 Docker 配镜像加速或代理，再执行一次安装命令。magpie 和 Hermes 由核心拉：拉不到时插件列表里
+如实显示原因，核心隔一段时间（最长 10 分钟）自动重试，配好代理后不用重装。国内的镜像仓库按 ADR-0012 以后加上。
 
 ## 在本机测
 

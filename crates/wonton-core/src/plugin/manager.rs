@@ -1,7 +1,7 @@
 //! 插件管理器：维护已安装插件的状态，对外提供预览、安装、卸载和网关路由查询。
 //! 具体的 Docker 部署和回滚在 [`super::lifecycle`] 里。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -196,6 +196,10 @@ impl Entry {
             listed: None,
         }
     }
+
+    fn failed_with(&self, reason: &str) -> bool {
+        matches!(&self.status, PluginStatus::Degraded { reason: r } if r == reason)
+    }
 }
 
 pub struct PluginManager {
@@ -215,6 +219,8 @@ pub struct PluginManager {
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
+    pub(super) bundled: RwLock<BTreeSet<PluginId>>,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -261,6 +267,7 @@ impl PluginManager {
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
             changes: tokio::sync::watch::Sender::new(0),
+            bundled: RwLock::new(BTreeSet::new()),
         }
     }
 
@@ -365,6 +372,11 @@ impl PluginManager {
         self.plugins.read().expect("插件表锁中毒").contains_key(id)
     }
 
+    pub(super) fn status_of(&self, id: &PluginId) -> Option<PluginStatus> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins.get(id).map(|entry| entry.status.clone())
+    }
+
     /// 插件的名字（多语言）。
     pub fn title(&self, id: &PluginId) -> Option<LocalizedText> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -381,12 +393,36 @@ impl PluginManager {
     }
 
     /// 没装成的插件也如实列出来（标为异常、写明原因），主人看得到，不悄悄跳过。
-    pub(super) fn mark_failed(&self, id: &PluginId, version: String, reason: String) {
+    pub(super) fn mark_failed(&self, manifest: &Manifest, reason: String) {
+        let entry = Entry {
+            title: manifest.title.clone(),
+            ..Entry::broken(&manifest.id, manifest.version.clone(), reason)
+        };
         self.plugins
             .write()
             .expect("插件表锁中毒")
-            .insert(id.clone(), Entry::broken(id, version, reason));
+            .insert(manifest.id.clone(), entry);
         self.changed();
+    }
+
+    /// 插件现在是不是 `reason` 这个异常。
+    pub(super) fn is_failed_with(&self, id: &PluginId, reason: &str) -> bool {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .get(id)
+            .is_some_and(|entry| entry.failed_with(reason))
+    }
+
+    /// 收回 [`Self::mark_failed`] 标的异常，好重新安装：插件还是 `reason` 这个异常才收回，返回收回了没有。
+    pub(super) fn take_failed(&self, id: &PluginId, reason: &str) -> bool {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        let failed = plugins
+            .get(id)
+            .is_some_and(|entry| entry.failed_with(reason));
+        if failed {
+            plugins.remove(id);
+        }
+        failed
     }
 
     /// 测试用：把登记过的插件当成运行中的模型网关，供网关测试指向本地的假上游。
@@ -533,7 +569,7 @@ impl PluginManager {
         self.install_checked(package, granted).await
     }
 
-    /// 检查并部署，API 安装和预装系统插件共用。
+    /// 检查并部署，API 安装和预装（见 [`super::preinstall`]）共用。
     pub(super) async fn install_checked(
         &self,
         package: PluginPackage,

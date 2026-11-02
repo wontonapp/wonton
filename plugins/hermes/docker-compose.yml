@@ -1,4 +1,5 @@
-# Hermes：默认 Agent 插件草稿（按 docs/plugin-spec.md 草案 v0.1）。
+# Hermes：默认 Agent（按 docs/plugin-spec.md 草案 v0.1），随核心镜像附带，核心启动后自动装一次（WONTON_DEFAULT_PLUGINS，
+# 见 ADR-0007）。
 #
 # Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型请求只发给模型网关（magpie）。
 # 每个 Bot 一组 init + gateway 容器（x-wonton.bots）：Hermes 的 profile 不隔离文件系统，
@@ -9,16 +10,26 @@ name: hermes
 x-image: &image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
 
 services:
-  # 首次启动前把包里的 config.yaml 写进这个 Bot 的数据目录；已有配置时不覆盖
-  # （Hermes 自己也会改写它，比如 /model）。
+  # 每次创建容器时（安装、升级、重建）把 Wonton 的 Hermes 插件（wonton/）放进这个 Bot 的数据目录，覆盖旧版本；包里的
+  # config.yaml 只在首次启动前写入，已有配置时不覆盖（Hermes 自己也会改写它，比如 /model）。
   init:
     image: *image
-    entrypoint: ["/bin/sh", "-c", "test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /opt/data/plugins/wonton &&
+        cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
+        { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; }
     volumes:
       - ${WONTON_BOT_DATA}:/opt/data
     configs:
       - source: config
         target: /seed/config.yaml
+      - source: wonton_manifest
+        target: /seed/wonton/plugin.yaml
+      - source: wonton_hooks
+        target: /seed/wonton/__init__.py
     network_mode: none
     restart: "no"
 
@@ -70,10 +81,14 @@ services:
 configs:
   config:
     file: ./config.yaml
+  wonton_manifest:
+    file: ./wonton/plugin.yaml
+  wonton_hooks:
+    file: ./wonton/__init__.py
 
 x-wonton:
   id: com.nousresearch.hermes
-  version: 0.3.0
+  version: 0.4.0
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:

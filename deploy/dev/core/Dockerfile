@@ -77,6 +77,8 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 # 随核心预装的系统插件（WONTON_SYSTEM_PLUGINS）：模型网关 magpie。
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
+# 随核心附带、只自动装一次的默认插件（WONTON_DEFAULT_PLUGINS）：默认 Agent Hermes。
+COPY plugins/hermes /usr/share/wonton/default-plugins/hermes
 ENTRYPOINT ["wonton-core"]
 CMD ["serve"]
 

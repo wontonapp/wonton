@@ -174,6 +174,10 @@ impl Reply {
     pub fn json(&self) -> Value {
         serde_json::from_str(&self.text).unwrap()
     }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
 }
 
 pub(super) struct Harness {

@@ -22,6 +22,8 @@ use super::names::LABEL_PLUGIN;
 #[derive(Clone, Default)]
 pub struct FakeDocker {
     resources: Arc<Mutex<Resources>>,
+    /// [`Self::pause`] 拿着写锁时请求都等着：每个请求先拿读锁再处理。
+    gate: Arc<tokio::sync::RwLock<()>>,
 }
 
 /// 容器里执行的命令怎么回应：（容器名，argv，标准输入）→（退出码，标准错误）。
@@ -72,6 +74,8 @@ struct Resources {
     execs: BTreeMap<String, FakeExec>,
     /// 没设时命令都以 0 退出。
     exec_handler: Option<ExecHandler>,
+    /// 设了时本地没有镜像，拉取时 Docker 回这个错误；没设时镜像都在本地。
+    pull_error: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
 }
@@ -174,6 +178,16 @@ impl FakeDocker {
         self.lock().exec_handler = Some(Arc::new(handler));
     }
 
+    /// 之后镜像都不在本地、拉取时 Docker 回 `message`（500）；`None` 恢复成镜像都在本地。
+    pub fn fail_pulls(&self, message: Option<&str>) {
+        self.lock().pull_error = message.map(str::to_owned);
+    }
+
+    /// 暂停回应（请求照收），直到丢掉返回的守卫，比如让卸载停在半路。
+    pub async fn pause(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
+        self.gate.clone().write_owned().await
+    }
+
     /// 执行过的命令，按顺序。
     pub fn execs(&self) -> Vec<FakeExec> {
         self.lock().execs.values().cloned().collect()
@@ -229,6 +243,7 @@ fn start_exec(fake: FakeDocker, id: &str, mut request: Request) -> Response {
 }
 
 async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
+    let _resumed = fake.gate.clone().read_owned().await;
     let (method, uri) = (request.method().clone(), request.uri().clone());
     let exec_start = uri
         .path()
@@ -371,6 +386,9 @@ fn others(
             StatusCode::OK,
             json!({"Arch": "x86_64", "Version": "29.0.0"}),
         ),
+        (&Method::GET, ["images", .., "json"]) if docker.pull_error.is_some() => {
+            json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
+        }
         (&Method::GET, ["info"]) => {
             let runtimes = docker
                 .runtimes
@@ -383,6 +401,10 @@ fn others(
             json_reply(StatusCode::OK, json!({"Runtimes": map}))
         }
         (&Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
+        (&Method::POST, ["images", "create"]) if docker.pull_error.is_some() => json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": docker.pull_error}),
+        ),
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
             let code = docker.execs[*id].exit_code;
             json_reply(

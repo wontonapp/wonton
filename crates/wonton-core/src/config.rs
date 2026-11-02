@@ -182,6 +182,9 @@ pub struct Config {
     pub matrix: Option<MatrixConfig>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
     pub system_plugins: Option<PathBuf>,
+    /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
+    /// （`WONTON_DEFAULT_PLUGINS`）。
+    pub default_plugins: Option<PathBuf>,
     /// 插件目录：Bot 经 MCP 总线只能装这里的插件，格式同系统插件的目录（`WONTON_CATALOG`）。
     pub catalog: Option<PathBuf>,
     /// 确认卡片发出后多久没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`，ADR-0016）。
@@ -271,6 +274,7 @@ impl Config {
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
+            default_plugins: get("WONTON_DEFAULT_PLUGINS").map(PathBuf::from),
             catalog: get("WONTON_CATALOG").map(PathBuf::from),
             confirmation_ttl: Duration::from_secs(parse(
                 &get,

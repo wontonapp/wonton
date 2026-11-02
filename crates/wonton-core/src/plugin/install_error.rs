@@ -26,6 +26,9 @@ pub enum InstallError {
     DockerUnavailable(String),
     #[error("Docker 操作失败：{0}")]
     Docker(String),
+    /// 拉不下插件的镜像：镜像仓库连不上、镜像不存在、没有权限等。
+    #[error("{0}")]
+    ImagePull(String),
     #[error("身份提供方不可用：{0}")]
     OidcUnavailable(String),
     #[error("Matrix 不可用：{0}")]
@@ -54,6 +57,7 @@ impl InstallError {
             Self::NotInstalled(_) => "not_installed",
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
+            Self::ImagePull(_) => "image_pull_failed",
             Self::OidcUnavailable(_) => "oidc_unavailable",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::ModelsUnavailable(_) => "models_unavailable",
@@ -77,6 +81,7 @@ impl InstallError {
             Self::NotInstalled(m) => Self::NotInstalled(m),
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),
+            Self::ImagePull(m) => Self::ImagePull(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
@@ -111,6 +116,7 @@ impl From<EngineError> for InstallError {
         match e {
             EngineError::Unavailable(m) => Self::DockerUnavailable(m),
             EngineError::Unsupported(m) => Self::Unsupported(m),
+            pull @ EngineError::Pull { .. } => Self::ImagePull(pull.to_string()),
             other => Self::Docker(other.to_string()),
         }
     }

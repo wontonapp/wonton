@@ -2,7 +2,8 @@
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
 # 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
-# 装 Hermes，经模型网关和主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复 → 卸载干净。
+# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
+# 主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
 # Hermes 一步要真实模型：开发机上要有在运行的 magpie（容器里经 host.docker.internal:3425 访问），
 # 提供 rm/glm-5.3-flash。
 #
@@ -88,6 +89,7 @@ labeled() {
 
 cleanup() {
   local status=$?
+  [[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true
   if [[ "${KEEP:-}" == 1 ]]; then
     echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
     return
@@ -117,6 +119,11 @@ ok "没有残留的示例插件资源"
 trap cleanup EXIT
 
 step "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"
+# 核心一启动就在后台装 Hermes：从现在起记下它的网关容器的健康状态变化，量它就绪后多久私聊出现。
+hermes_events="$(mktemp)"
+docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
+  >"$hermes_events" 2>/dev/null &
+events_pid=$!
 "$dev" up >/dev/null
 start_browser
 ok "核心健康：$core_url"
@@ -196,9 +203,10 @@ in_client() { docker exec "$model_client" curl -sS -o /dev/null -w '%{http_code}
 expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
 expect "不带凭据被网关拒绝" "$(in_client)" 401
 gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { print $2 }'; }
-expect "网关里的凭据以使用方命名" "$(gateway_keys)" app.model-client
+# 核心同时在后台装默认 Agent，网关里可能已经有 Hermes 的凭据，这里只看使用方的。
+expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
-expect "卸载时在网关里吊销凭据" "$(gateway_keys)" ""
+expect "卸载时在网关里吊销凭据" "$(gateway_keys | grep -cx app.model-client)" 0
 expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")" 401
 
@@ -260,6 +268,12 @@ access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
 expect "经 matrix.<基础域名> 登录 Tuwunel，设备属于主人" \
   "$(t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3/account/whoami" | json user_id)" \
   "@owner:$WONTON_DEV_DOMAIN"
+owner_api() { t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3$1"; }
+# 主人 m.direct 里和这个用户的私聊，一行一个。
+direct_rooms() {
+  owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct" |
+    python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$1"
+}
 expect "局域网浏览器（有核心会话）拿不到登录令牌" \
   "$(b -o /dev/null -w '%{http_code}' -X POST "$core_url/_wonton/matrix/login-token")" 401
 expect "局域网进不了 Matrix" "$(b -o /dev/null -w '%{http_code}' "$matrix_url/_matrix/client/versions")" 403
@@ -283,12 +297,6 @@ install_echo() {
 }
 # 核心注入 Bot 容器的变量。
 bot_env() { docker inspect "$echo_bot" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-owner_api() { t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3$1"; }
-# 主人 m.direct 里和这个用户的私聊，一行一个。
-direct_rooms() {
-  owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct" |
-    python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$1"
-}
 install_echo
 bot_user="$(bot_env WONTON_MATRIX_USER_ID)"
 bot_token="$(bot_env WONTON_MATRIX_ACCESS_TOKEN)"
@@ -322,7 +330,58 @@ members="$(owner_api "/rooms/$home_room/joined_members")"
 expect "停用的 Bot 退出了主房间" \
   "$(python3 -c 'import json, sys; print(sys.argv[1] in json.load(sys.stdin)["joined"])' "$bot_user" <<<"$members")" False
 
-step "Hermes（默认 Agent）：经 magpie 调模型，在加密私聊里和主人对话两轮，用量记在它的凭据名下"
+step "Hermes（默认 Agent）：核心自己装好，就绪后私聊才出现；没有模型时提示，加了 provider 就能对话"
+# 核心启动后在后台装 Hermes（WONTON_DEFAULT_PLUGINS），比主人配对、登录 Matrix 早：冒烟没有手动安装它。
+# 本机没有它的镜像时要先拉约 4 GB；装不上时核心会自动重试，插件列表里写着原因。
+for _ in $(seq 900); do [[ "$(plugin_state com.nousresearch.hermes)" == running ]] && break; sleep 1; done
+[[ "$(plugin_state com.nousresearch.hermes)" == running ]] ||
+  fail "核心没有装好 Hermes：$("$dev" list | python3 -c 'import json, sys
+print(next((json.dumps(p["status"], ensure_ascii=False) for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' com.nousresearch.hermes)"
+ok "核心在后台装好了 Hermes，没有手动安装"
+hermes_user="@hermes:$WONTON_DEV_DOMAIN"
+hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
+expect "Hermes 是一个 Bot" "$(hermes_env MATRIX_USER_ID)" "$hermes_user"
+hermes_room="$(direct_rooms "$hermes_user")"
+[[ "$hermes_room" == '!'* && "$hermes_room" != *$'\n'* ]] ||
+  fail "主人的 m.direct 里应有一个和 Hermes 的私聊：$hermes_room"
+ok "主人的 m.direct 里已经有和 Hermes 的私聊"
+expect "主人和 Hermes 都已经在私聊里" \
+  "$(owner_api "/rooms/$hermes_room/joined_members" | python3 -c 'import json, sys; print(" ".join(sorted(json.load(sys.stdin)["joined"])))')" \
+  "$hermes_user @owner:$WONTON_DEV_DOMAIN"
+expect "私聊是加密的" "$(owner_api "/rooms/$hermes_room/state/m.room.encryption/" | json algorithm)" m.megolm.v1.aes-sha2
+# 主人加入私聊的时间（Tuwunel 的事件时间）和网关容器第一次过健康检查的时间（Docker 事件）在同一台主机上。
+ready_ns="$(awk '$2 == "health_status:" && $3 == "healthy" { print $1; exit }' "$hermes_events")"
+[[ -n "$ready_ns" ]] || fail "没有记到 Hermes 的网关容器过健康检查：$(cat "$hermes_events")"
+joined_ms="$(owner_api "/rooms/$hermes_room/members" | python3 -c 'import json, sys
+print(next(e["origin_server_ts"] for e in json.load(sys.stdin)["chunk"]
+           if e["state_key"] == sys.argv[1] and e["content"]["membership"] == "join"))' "@owner:$WONTON_DEV_DOMAIN")"
+after_ms=$((joined_ms - ready_ns / 1000000))
+((after_ms >= 0)) || fail "Hermes 就绪之前 $((-after_ms)) 毫秒，主人就进了私聊"
+((after_ms < 30000)) || fail "Hermes 就绪 $((after_ms / 1000)) 秒后私聊才出现"
+ok "Hermes 就绪后 $(printf '%d.%03d' $((after_ms / 1000)) $((after_ms % 1000))) 秒，私聊出现（主人加入了它）"
+expect "Hermes 的凭据以它的 Bot 命名" "$(gateway_keys)" com.nousresearch.hermes/default
+# Hermes 用它的凭据经核心问网关有哪些模型，和它的提示插件看到的一样。
+hermes_models() {
+  docker exec "$hermes" sh -c 'curl -fsS -H "Authorization: Bearer $WONTON_MODEL_API_KEY" "$WONTON_MODEL_BASE_URL/models"' |
+    python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
+}
+expect "还没有 provider：网关里一个模型也没有" "$(hermes_models)" ""
+# 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，其余是话。
+talk_to_hermes() {
+  local out="$1" jwt
+  shift
+  jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
+  local texts=()
+  for text in "$@"; do texts+=(--text "$text"); done
+  docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
+    --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
+    --reply any --wait 180 "${texts[@]}" >"$out" 2>&1
+}
+said="$(mktemp)"
+talk_to_hermes "$said" "你好" || fail "Hermes 没有回答：$(cat "$said")"
+grep '^第' "$said" | sed 's/^/   · /'
+grep -q '模型设置' "$said" || fail "没有模型时 Hermes 应提示去“模型设置”添加：$(cat "$said")"
+ok "没有模型时，Hermes 提示主人去“模型设置”添加模型服务商"
 # 模型只经开发机上的 magpie（容器里是 host.docker.internal:3425），不读取、不复制主人 magpie 的配置和密钥。
 model_url="http://host.docker.internal:3425/v1"
 if [[ -n "${WONTON_SMOKE_MODEL_RELAY:-}" ]]; then
@@ -334,25 +393,18 @@ if [[ -n "${WONTON_SMOKE_MODEL_RELAY:-}" ]]; then
     "TCP-LISTEN:13425,bind=$gateway,reuseaddr,fork,range=$address/32" "TCP:$WONTON_SMOKE_MODEL_RELAY" >/dev/null
   model_url="http://$gateway:13425/v1"
 fi
+# 只加 provider，不建路由组：默认路由组由 magpie 插件建好，成员跟着 provider 变。
 docker exec "$magpie" magpie provider add upstream url="$model_url" key=placeholder \
   models="$model" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
-docker exec "$magpie" magpie group add wonton-default models="upstream/$model" routing=order >/dev/null
-installed="$("$dev" install "$repo/plugins/hermes" --yes 2>/dev/null)" || fail "Hermes 安装失败：$installed"
-expect "插件包目录（带 config.yaml）一条命令装好 Hermes，连上了 Matrix" \
-  "$(json status.state <<<"$installed") $(json status.health <<<"$installed")" "running healthy"
-hermes_user="@hermes:$WONTON_DEV_DOMAIN"
-hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-expect "Hermes 是一个 Bot" "$(hermes_env MATRIX_USER_ID)" "$hermes_user"
-expect "Hermes 的凭据以它的 Bot 命名" "$(gateway_keys)" com.nousresearch.hermes/default
-hermes_room="$(direct_rooms "$hermes_user")"
-[[ "$hermes_room" == '!'* ]] || fail "主人的 m.direct 里没有和 Hermes 的私聊：$hermes_room"
-jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
-probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
-  --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
-  --reply any --wait 180 --text "你好，用一句话介绍你自己。" --text "我刚才让你做什么？用一句话回答。" 2>&1)" ||
-  fail "和 Hermes 的对话失败：$probe"
-grep '^第' <<<"$probe" | sed 's/^/   · /'
+[[ " $(hermes_models) " == *" group/wonton-default "* ]] ||
+  fail "加了 provider，默认路由组应当可用：$(hermes_models)"
+ok "加了 provider，默认路由组自动有了它的模型，不用手动建组"
+talk_to_hermes "$said" "你好，用一句话介绍你自己。" "我刚才让你做什么？用一句话回答。" ||
+  fail "和 Hermes 的对话失败：$(cat "$said")"
+grep '^第' "$said" | sed 's/^/   · /'
+! grep -q '模型设置' "$said" || fail "有模型了，Hermes 不该再提示去“模型设置”：$(cat "$said")"
 ok "经隧道和 Hermes 加密对话两轮"
+rm -f "$said"
 docker exec "$magpie" magpie usage --last 15m --csv | grep -q ',com.nousresearch.hermes/default,' ||
   fail "用量没记在 com.nousresearch.hermes/default 名下"
 ok "用量记在 Hermes 的凭据名下"
@@ -532,6 +584,11 @@ expect "重新登录后打开插件仍自动登录" \
 expect "核心重启后插件仍认出主人" "$(b "$grafana_url/api/user" | json login)" owner
 expect "核心重启后“模型设置”仍免密码打开（代登录的密钥从密钥库读回）" \
   "$(b -L -o /dev/null -w '%{http_code} %{url_effective}' -H 'Accept: text/html' "$magpie_url/")" "200 $magpie_url/"
+# 第一次启动时 Hermes 还没装过，这条日志只会在重启后出现。不用 grep -q：它找到就退出，docker logs 接着写就收到
+# SIGPIPE，pipefail 下整条管道算失败。
+for _ in $(seq 60); do docker logs "$core" 2>&1 | grep '默认插件装过一次' >/dev/null && break; sleep 1; done
+docker logs "$core" 2>&1 | grep '默认插件装过一次' >/dev/null || fail "核心重启后没有核对默认插件"
+expect "主人卸掉的 Hermes，核心重启后不装回来" "$(plugin_state com.nousresearch.hermes) $(labeled com.nousresearch.hermes)" "absent "
 
 step "卸载干净"
 started=$(date +%s)

@@ -1,7 +1,7 @@
 # 本地核心（插件管理器 + 网关）、身份提供方和 Matrix 服务器
 
 本地开发用的 `wonton-core`、Ory Hydra（小程序单点登录）和 Tuwunel（Matrix 服务器），见 ADR-0009；核心还会预装
-模型网关 magpie（ADR-0008）。核心在容器里
+模型网关 magpie（ADR-0008），再装一次默认 Agent Hermes（ADR-0007）。核心在容器里
 运行，和产品一致：唯一挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
 核心网关访问 Tuwunel。
 
@@ -78,16 +78,17 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 
 `matrix.<基础域名>` 只转发客户端和媒体接口，局域网的浏览器进不来；Tuwunel 的管理接口只有核心能用。
 
-## 模型网关
+## 模型网关和默认 Agent
 
-核心镜像里带着系统插件 magpie（`plugins/magpie`），核心启动后在后台预装它（`WONTON_SYSTEM_PLUGINS`）。声明了
-`models` 的插件经 `models.wonton.internal` 访问它，凭据由核心签发。“模型设置”网页
-（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和已配对设备直接打开，不用输
-magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie（同 `deploy/dev/agent`）：
+核心镜像里带着系统插件 magpie（`plugins/magpie`），核心启动后在后台预装它（`WONTON_SYSTEM_PLUGINS`），接着装一次
+默认 Agent Hermes（`plugins/hermes`，`WONTON_DEFAULT_PLUGINS`）；规则见插件规范的“预装插件”。不要 Hermes 时用
+`WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
+核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
+已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
+magpie（同 `deploy/dev/agent`）；加了 provider，默认路由组 `wonton-default` 自动有了它的模型（ADR-0008）：
 
 ```bash
 docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder models=rm/glm-5.3-flash
-docker exec wonton-ai-usemagpie-magpie--magpie magpie group add wonton-default models=upstream/rm/glm-5.3-flash routing=order
 ```
 
 ## MCP 总线
@@ -121,13 +122,14 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
 失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
-经 `models.wonton.internal` 能用、卸载后凭据被吊销；Hermes 按插件包目录装好后连上 Matrix，主人的新设备经隧道和它
-加密对话两轮，用量记在它的凭据名下，删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
+经 `models.wonton.internal` 能用、卸载后凭据被吊销；核心在主人配对之前就自己装好了 Hermes，它过了健康检查
+之后，和它的加密私聊才出现在主人的聊天列表里，还没有 provider 时 Hermes 回提示去“模型设置”添加，命令行加了 provider（不建路由组）
+之后，主人的新设备经隧道和它加密对话两轮，用量记在它的凭据名下，删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
 浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
 响应和 Cookie 罐里；对 Hermes 说装文件搜索，核心在 Wonton 房间里发确认卡片，Hermes 的插件网络和局域网浏览器都答不了，
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
-核心重启后插件恢复；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
+核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `rm/glm-5.3-flash`，
 冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
 

@@ -71,13 +71,20 @@ services:
       start_period: 1m
       start_interval: 1s
 
-  # 首次启动前把插件草稿里的 Hermes 配置写进数据卷；已有 config.yaml 时不覆盖。
+  # 同插件包里的 init：把 Wonton 的 Hermes 插件放进数据卷；Hermes 配置只在首次启动前写入，已有 config.yaml 时不覆盖。
   hermes-init:
     image: *hermes-image
-    entrypoint: ["/bin/sh", "-c", "test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /opt/data/plugins/wonton &&
+        cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
+        { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; }
     volumes:
       - hermes-data:/opt/data
       - ../../../plugins/hermes/config.yaml:/seed/config.yaml:ro
+      - ../../../plugins/hermes/wonton:/seed/wonton:ro
     network_mode: none
     restart: "no"
 

@@ -260,7 +260,8 @@ App 扫一个一次性的配对码，成为主人的设备。线协议的类型�
   （`cargo test -p wonton-core a_paired_phone_gets_a_code`）。App 一侧 `InviteDevice` 拿到的码让另一台设备配上；要码被拒时
   403、5xx、认不出的回应分别报 `Unauthorized`、`UpstreamUnavailable`、`Protocol`（`cargo test -p wonton-client --test pairing`）。
 - **状态页**：码里的直连地址是浏览器打开状态页用的 IP 加隧道端口，同一个局域网里的手机也连得上；`Host` 是域名的请求
-  （DNS 重绑定）得到 404。页面只列出各组件是否就绪和插件数量，不列插件名。
+  （DNS 重绑定）得到 404。页面只列出各组件是否就绪和插件数量，不列主人装的插件名；随核心附带的插件没在运行时逐个
+  写明状态（插件规范的“预装插件”）。
 - **App**：扫到的码先在本机解析，不是配对码直接拒绝；配上后存下码里的服务端地址（不存密钥），重启后直接连上。服务端
   不认识 `wonton/pair/0` 时 TLS 握手以 `no_application_protocol` 失败，App 报协议版本不配。
 - **设备登记表**：每台设备多记配对时报的名字和登记时间；只有 endpoint ID 的旧登记表照样读得进来。
@@ -311,9 +312,14 @@ matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一
   - 查账号在不在：`GET /_synapse/admin/v2/users/{user}` 对已有的账号（包括停用的、没有设备的）回 200 和
     `deactivated` 等字段，不存在回 404 `M_NOT_FOUND`；`/_synapse/admin/v1/whois` 对不存在的用户也回 200，不能用。
     JWT 登录对已有的账号是直接登录进去，所以分配 Bot 用户名时先查，已有的一律跳过，只有插件记录在案的 Bot 能沿用。
-- 主房间：`createRoom` 用 `trusted_private_chat`、`is_direct`，`initial_state` 里带 `m.room.encryption`，建出来就是
-  加密私聊。由 Bot 建、邀请主人；核心用 JWT 临时登录主人的一台设备加入房间、写入主人的 `m.direct`（没写过时读出来
-  是 404 `M_NOT_FOUND`），再退出登录，这台设备随之删除。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请。
+- 主房间：`createRoom` 用 `trusted_private_chat`，`initial_state` 里带 `m.room.encryption`，建出来就是加密房间。
+  Tuwunel 默认建房间版本 12：建房的人权限最高，写进 power_levels 的 `users` 就回 400 `M_INVALID_PARAM`；这个预设把建房时
+  邀请的人也算作建房的人（`additional_creators`），建房的人踢不动这样的人（403）。所以建房时不邀请，用
+  `power_level_content_override` 只给主人 100，房间版本写明 12：版本 11 里这个 `users` 整个换掉默认值，Bot 只剩 0，
+  建房失败。成员状态（`/state/m.room.member/{用户}`）对从没进过的人回 404 `M_NOT_FOUND`，注册没注册都一样；邀请后
+  是 `invite`，踢掉后是 `leave`。Bot 退出后查成员回 403 `M_FORBIDDEN`。由 Bot 建，插件装好后才交给主人：
+  核心用 JWT 临时登录主人的一台设备，Bot 邀请主人，主人加入房间、写入自己的 `m.direct`（没写过时读出来是 404
+  `M_NOT_FOUND`），再退出登录，这台设备随之删除。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请。
 - 端到端（`smoke.sh`）：回声 Bot 只凭注入的令牌恢复会话（`whoami` 取设备 ID），经 `matrix.wonton.internal` 同步，
   安装时就过了健康检查。主人的一台新设备经隧道和手机的本地代理登录，在主房间里发加密消息，一两秒内收到 Bot 的
   加密回声：matrix-sdk 默认把房间密钥发给房间里的所有设备，不要求先验证。

@@ -80,22 +80,31 @@ pub fn login(next: &str, failed: bool) -> Response {
     response
 }
 
+/// 插件的中文名，没有就用英文名。
+pub(super) fn title_of(plugin: &PluginView) -> String {
+    let title = &plugin.title;
+    title
+        .get("zh")
+        .or_else(|| title.get("en"))
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// 插件的状态，异常时带着原因。
+pub(super) fn state_of(status: &PluginStatus) -> String {
+    match status {
+        PluginStatus::Installing => "安装中".to_owned(),
+        PluginStatus::Running => "运行中".to_owned(),
+        PluginStatus::Degraded { reason } => format!("异常：{reason}"),
+        PluginStatus::Uninstalling => "卸载中".to_owned(),
+    }
+}
+
 pub fn status(user: &str, plugins: &[PluginView]) -> Response {
     let items: String = plugins
         .iter()
         .map(|p| {
-            let title = p
-                .title
-                .get("zh")
-                .or_else(|| p.title.get("en"))
-                .cloned()
-                .unwrap_or_default();
-            let state = match &p.status {
-                PluginStatus::Installing => "安装中".to_owned(),
-                PluginStatus::Running => "运行中".to_owned(),
-                PluginStatus::Degraded { reason } => format!("异常：{reason}"),
-                PluginStatus::Uninstalling => "卸载中".to_owned(),
-            };
+            let (title, state) = (title_of(p), state_of(&p.status));
             let link = match &p.url {
                 Some(url) => format!("<a href=\"{}\">{}</a>", escape(url), escape(&title)),
                 None => escape(&title),

@@ -1,5 +1,5 @@
 //! Bot 的 Matrix 身份（插件规范的“Matrix Bot”）：分配用户名，代 Bot 登录一台设备，设置显示名和头像，
-//! 建好和主人的加密私聊作为主房间。
+//! 建好和主人的加密私聊作为主房间，插件装好后再交给主人（[`Matrix::hand_over`]）。
 //!
 //! 账号和主房间建好后一直沿用（重装、安装失败重试都一样），只有删除数据卸载时才停用账号；设备每次安装新建、
 //! 卸载时吊销。
@@ -117,7 +117,7 @@ impl Matrix {
         )))
     }
 
-    /// 设置显示名和头像，返回主房间：上次的主房间里 Bot 和主人都还在就沿用，否则新建。
+    /// 设置显示名和头像，返回主房间：上次的主房间还能用（见 [`reusable`]）就沿用，否则新建一个，先只有 Bot 在里面。
     async fn prepare_bot(&self, spec: &BotSpec<'_>, login: &Login) -> Result<String, MatrixError> {
         let bot = self.session(login);
         bot.set_display_name(spec.display_name).await?;
@@ -127,53 +127,90 @@ impl Matrix {
         }
         let owner = self.user_id(spec.owner);
         if let Some(previous) = spec.previous
-            && still_shared(&bot, &previous.home_room, &owner).await?
+            && reusable(&bot, &previous.home_room, &owner).await?
         {
             return Ok(previous.home_room.clone());
         }
-        let room = bot.create_direct_room(&owner).await?;
-        let handed_over = async {
-            bot.add_direct(&owner, &room).await?;
-            self.owner_joins(spec.owner, bot.user_id(), &room).await
+        bot.create_direct_room(&owner).await
+    }
+
+    /// 把主房间交给主人：Bot 邀请主人、记进自己的 `m.direct`，核心代主人加入、记进主人的 `m.direct`。主人已经在
+    /// 里面（重装）时什么也不做，返回 false。中途失败时撤回（[`Session::abandon`]）再返回错误。
+    pub async fn hand_over(&self, owner: &str, bot: &ProvisionedBot) -> Result<bool, MatrixError> {
+        let session = Session::new(&self.api, &bot.account.user_id, &bot.access_token);
+        let room = &bot.account.home_room;
+        if session.joined_members(room).await?.contains(&bot.owner) {
+            return Ok(false);
         }
-        .await;
+        // 先代主人登录再邀请：主人的账号在第一次 JWT 登录时才建出来，邀请发给已有的账号。
+        let handed_over = self
+            .as_owner(owner, async |me: &Session<'_>| {
+                session.invite(room, &bot.owner).await?;
+                session.add_direct(&bot.owner, room).await?;
+                me.join(room).await?;
+                me.add_direct(&bot.account.user_id, room).await
+            })
+            .await;
         if let Err(e) = handed_over {
-            if let Err(cleanup) = bot.abandon(&room, &owner).await {
-                tracing::error!(%room, error = %cleanup, "撤回没建好的主房间失败");
+            if let Err(cleanup) = session.abandon(room, &bot.owner).await {
+                tracing::error!(%room, error = %cleanup, "撤回没交给主人的主房间失败");
             }
             return Err(e);
         }
-        Ok(room)
+        Ok(true)
     }
 
-    /// 代主人加入主房间，并写进主人的 `m.direct`：用 JWT 临时登录主人的一台设备，做完就退出登录。
+    /// 收回交给主人的主房间（安装在交出之后失败了）：主人退出，Bot 也退出。要在吊销 Bot 的设备之前做。
+    pub async fn withdraw(&self, bot: &ProvisionedBot) -> Result<(), MatrixError> {
+        Session::new(&self.api, &bot.account.user_id, &bot.access_token)
+            .abandon(&bot.account.home_room, &bot.owner)
+            .await
+    }
+
+    /// 代主人加入房间，并写进主人的 `m.direct`。
     pub(super) async fn owner_joins(
         &self,
         owner: &str,
         bot: &str,
         room: &str,
     ) -> Result<(), MatrixError> {
+        self.as_owner(owner, async |me: &Session<'_>| {
+            me.join(room).await?;
+            me.add_direct(bot, room).await
+        })
+        .await
+    }
+
+    /// 用 JWT 临时登录主人的一台设备做 `work`，做完就退出登录，这台设备随之删除。
+    async fn as_owner<T>(
+        &self,
+        owner: &str,
+        work: impl AsyncFnOnce(&Session<'_>) -> Result<T, MatrixError>,
+    ) -> Result<T, MatrixError> {
         let login = self.login(owner, OWNER_DEVICE).await?;
         let session = self.session(&login);
-        let joined = async {
-            session.join(room).await?;
-            session.add_direct(bot, room).await
-        }
-        .await;
+        let done = work(&session).await;
         let logout = session.logout().await;
-        joined.and(logout)
+        done.and_then(|value| logout.map(|()| value))
     }
 }
 
-/// 房间里 Bot 和主人是不是都还在。Bot 已经不在房间里时 Tuwunel 回 `M_FORBIDDEN`。
-async fn still_shared(bot: &Session<'_>, room: &str, owner: &str) -> Result<bool, MatrixError> {
-    match bot.joined_members(room).await {
-        Ok(members) => {
-            Ok(members.iter().any(|m| m == owner) && members.iter().any(|m| m == bot.user_id()))
-        }
-        Err(e) if matches!(e.errcode(), "M_FORBIDDEN" | "M_NOT_FOUND") => Ok(false),
-        Err(e) => Err(e),
+/// 上次的主房间能不能接着用：Bot 还在里面，主人也在，或者还没交给过主人（上次安装没装完，主人从来没进过、或者只
+/// 收到了邀请）。主人退出过就不用了，不往没人看的房间里发。Bot 已经不在房间里时 Tuwunel 回 `M_FORBIDDEN`。
+async fn reusable(bot: &Session<'_>, room: &str, owner: &str) -> Result<bool, MatrixError> {
+    let members = match bot.joined_members(room).await {
+        Ok(members) => members,
+        Err(e) if matches!(e.errcode(), "M_FORBIDDEN" | "M_NOT_FOUND") => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if !members.iter().any(|m| m == bot.user_id()) {
+        return Ok(false);
     }
+    if members.iter().any(|m| m == owner) {
+        return Ok(true);
+    }
+    let owner = bot.membership(room, owner).await?;
+    Ok(matches!(owner.as_deref(), None | Some("invite")))
 }
 
 /// `@名字:服务器` 里的名字。

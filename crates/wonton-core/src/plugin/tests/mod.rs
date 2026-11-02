@@ -18,6 +18,7 @@ mod health;
 mod instances;
 mod manager;
 mod models;
+mod preinstall;
 mod secrets;
 mod views;
 
