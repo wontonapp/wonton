@@ -611,10 +611,9 @@ impl PluginManager {
         let manifest = &listed.manifest;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(existing) = plugins.get(&manifest.id) {
-            return Err(InstallError::Conflict(format!(
-                "插件 {} 已存在（状态：{:?}）",
-                manifest.id, existing.status
-            )));
+            return Err(busy(&manifest.id, &existing.status).unwrap_or_else(|| {
+                InstallError::Conflict(format!("插件 {} 已经装了", manifest.id))
+            }));
         }
         let slug = manifest.id.slug();
         if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
@@ -658,6 +657,26 @@ impl PluginManager {
         }
     }
 
+    /// 同 [`Self::install_package`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里安装。
+    pub async fn install_detached(
+        self: &Arc<Self>,
+        package: PluginPackage,
+        granted: Vec<Permission>,
+    ) -> Result<PluginView, InstallError> {
+        let this = Arc::clone(self);
+        detached(async move { this.install_package(package, &granted).await }).await
+    }
+
+    /// 同 [`Self::uninstall`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里卸载。
+    pub async fn uninstall_detached(
+        self: &Arc<Self>,
+        id: PluginId,
+        purge: bool,
+    ) -> Result<UninstallReport, InstallError> {
+        let this = Arc::clone(self);
+        detached(async move { this.uninstall(&id, purge).await }).await
+    }
+
     /// 卸载插件。`purge` 时一并删除命名卷和应用数据目录。
     pub async fn uninstall(
         &self,
@@ -669,18 +688,8 @@ impl PluginManager {
             let entry = plugins
                 .get_mut(id)
                 .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-            if matches!(
-                entry.status,
-                PluginStatus::Installing | PluginStatus::Uninstalling
-            ) {
-                return Err(InstallError::Conflict(format!(
-                    "插件 {id} 正在{}",
-                    if entry.status == PluginStatus::Installing {
-                        "安装"
-                    } else {
-                        "卸载"
-                    }
-                )));
+            if let Some(e) = busy(id, &entry.status) {
+                return Err(e);
             }
             entry.status = PluginStatus::Uninstalling;
         }
@@ -698,6 +707,26 @@ impl PluginManager {
                 Err(e)
             }
         }
+    }
+}
+
+/// 插件正在安装或卸载时，对它的新操作如实回答“正在进行”。
+fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError> {
+    let doing = match status {
+        PluginStatus::Installing => "安装",
+        PluginStatus::Uninstalling => "卸载",
+        PluginStatus::Running | PluginStatus::Degraded { .. } => return None,
+    };
+    Some(InstallError::Conflict(format!("插件 {id} 正在{doing}")))
+}
+
+/// 在独立的任务里执行，调用方只等结果：调用方被丢弃（请求断开：手机切网、隧道断开）时操作照样做完，不会停在
+/// 半路，留下一直“安装中”“卸载中”的插件和装了一半的资源。任务不会被取消（只有运行时关闭时才会，那时调用方
+/// 也已经没了），所以出错只可能是任务 panic，原样传给调用方。
+async fn detached<T: Send + 'static>(op: impl Future<Output = T> + Send + 'static) -> T {
+    match tokio::spawn(op).await {
+        Ok(out) => out,
+        Err(e) => std::panic::resume_unwind(e.into_panic()),
     }
 }
 

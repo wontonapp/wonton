@@ -190,7 +190,7 @@ pub async fn install(
         Err(e) => return install_error(&e),
     };
     let id = package.manifest.id.clone();
-    if let Err(e) = gateway.plugins.install_package(package, &granted).await {
+    if let Err(e) = gateway.plugins.install_detached(package, granted).await {
         return install_error(&e);
     }
     match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
@@ -219,7 +219,7 @@ pub async fn uninstall(
         Ok(id) => id,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
-    match gateway.plugins.uninstall(&id, query.purge).await {
+    match gateway.plugins.uninstall_detached(id, query.purge).await {
         Ok(report) => Json(report).into_response(),
         Err(e) => install_error(&e),
     }

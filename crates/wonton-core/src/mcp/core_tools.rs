@@ -198,7 +198,7 @@ async fn install(bus: &Arc<Bus>, caller: &Caller, name: &str, args: JsonObject) 
     let permissions = package.manifest.permissions.clone();
     let id = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>| async move {
-        match bus.plugins.install_package(package, &permissions).await {
+        match bus.plugins.install_detached(package, permissions).await {
             Ok(view) => {
                 let title = cards::text(&view.title);
                 let message = match &view.url {
@@ -253,7 +253,7 @@ async fn uninstall(
         .unwrap_or(false);
     let draft = cards::uninstall(&caller.name, &title, purge);
     let run = move |bus: Arc<Bus>| async move {
-        match bus.plugins.uninstall(&id, purge).await {
+        match bus.plugins.uninstall_detached(id.clone(), purge).await {
             Ok(report) => {
                 let data = if report.data_removed {
                     "，数据已删除"

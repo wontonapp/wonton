@@ -15,6 +15,7 @@ use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::{Notify, Semaphore};
 
 use super::docker::Engine;
 use super::names::LABEL_PLUGIN;
@@ -43,6 +44,26 @@ pub struct FakeExec {
 pub enum FakeFile {
     Regular(Vec<u8>),
     Directory,
+}
+
+/// 停住的请求，见 [`FakeDocker::hold`]。
+#[derive(Clone)]
+pub struct Hold {
+    call: String,
+    reached: Arc<Notify>,
+    released: Arc<Semaphore>,
+}
+
+impl Hold {
+    /// 等到假 Docker 收到这个请求。
+    pub async fn reached(&self) {
+        self.reached.notified().await;
+    }
+
+    /// 放行停住的请求，之后的同样请求也不再停。
+    pub fn release(&self) {
+        self.released.close();
+    }
 }
 
 /// 资源的标签。
@@ -78,6 +99,7 @@ struct Resources {
     pull_error: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
+    hold: Option<Hold>,
 }
 
 impl FakeDocker {
@@ -133,6 +155,23 @@ impl FakeDocker {
         aliases
             .and_then(|a| serde_json::from_value(a).ok())
             .unwrap_or_default()
+    }
+
+    /// 最近一次接入这个网络时要的网关优先级（`EndpointConfig.GwPriority`），没写时为空。
+    pub fn gateway_priority(&self, network: &str) -> Option<i64> {
+        let connection = self.lock().connections.get(network).cloned();
+        connection.and_then(|c| c["EndpointConfig"]["GwPriority"].as_i64())
+    }
+
+    /// 收到这个请求（如 `DELETE /containers/x`）时先停住，等 [`Hold::release`] 再处理。
+    pub fn hold(&self, call: &str) -> Hold {
+        let hold = Hold {
+            call: call.to_owned(),
+            reached: Arc::new(Notify::new()),
+            released: Arc::new(Semaphore::new(0)),
+        };
+        self.lock().hold = Some(hold.clone());
+        hold
     }
 
     /// 最近一次写进这个容器的 tar 归档。
@@ -258,6 +297,12 @@ async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
             .push(format!("{method} /exec/{id}/start"));
         return start_exec(fake, &id, request);
     }
+    let hold = fake.lock().hold.clone();
+    if let Some(hold) = hold.filter(|h| h.call == format!("{method} {}", api_path(&uri))) {
+        hold.reached.notify_one();
+        // 放行时信号量关闭，acquire 返回错误。
+        hold.released.acquire().await.ok();
+    }
     let body = request
         .into_body()
         .collect()
@@ -267,15 +312,19 @@ async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
     serve(&fake, &method, &uri, &body)
 }
 
-fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Response {
-    // bollard 的请求路径可能带 API 版本前缀（/v1.51/...）。
+/// 去掉 bollard 的请求路径可能带的 API 版本前缀（/v1.51/...）。
+fn api_path(uri: &Uri) -> &str {
     let path = uri.path();
-    let path = match path.strip_prefix("/v") {
+    match path.strip_prefix("/v") {
         Some(rest) if rest.starts_with(|c: char| c.is_ascii_digit()) => {
             rest.find('/').map_or("/", |i| &rest[i..])
         }
         _ => path,
-    };
+    }
+}
+
+fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Response {
+    let path = api_path(uri);
     let call = format!("{method} {path}");
     let query = uri.query().unwrap_or_default();
     let mut docker = fake.lock();

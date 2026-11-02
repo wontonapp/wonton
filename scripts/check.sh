@@ -41,6 +41,7 @@ $(indent <<<"$reason")
     有 Docker 的机器上手动运行：
       cargo test -p wonton-matrix --test tuwunel -- --include-ignored
       cargo test -p wonton-client --test chat -- --include-ignored
+      cargo test -p wonton-core --test docker_network -- --include-ignored
     CI 的 Docker 集成测试作业会运行它们，那里 Docker 不可用即失败。
 EOF
 }

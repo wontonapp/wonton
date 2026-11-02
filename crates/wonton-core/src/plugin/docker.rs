@@ -315,6 +315,10 @@ impl Engine {
         )
     }
 
+    /// 以低于默认的网关优先级接入：容器接了几个网络时，Docker 让优先级最高的端点提供默认路由和发布的端口，
+    /// 一样高时取网络名按字典序排第一的。插件网络 `wonton-<slug>` 排在核心自己的 `wonton_core` 前面（`-` 小于 `_`），
+    /// 不压低的话，装了能出网的插件，核心的默认路由和发布端口就到了插件网络上；卸载插件、核心退出它的网络时，
+    /// 经发布端口的连接全部断开（#90）。`gw_priority` 是 Engine 28（API 1.48）加的，见 [`MIN_ENGINE_MAJOR`]。
     pub async fn connect_network(
         &self,
         network: &str,
@@ -325,6 +329,7 @@ impl Engine {
             container: container.to_owned(),
             endpoint_config: Some(EndpointSettings {
                 aliases: Some(aliases),
+                gw_priority: Some(-1),
                 ..Default::default()
             }),
         };
