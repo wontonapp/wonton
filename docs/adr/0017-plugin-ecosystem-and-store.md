@@ -4,7 +4,7 @@
 
 ## 背景
 
-M1 第 5 项是插件商店：官方目录至少有 Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba，能导入 CasaOS 应用，
+M1 第 4 项是插件商店：官方目录至少有 Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba，能导入 CasaOS 应用，
 安装前确认权限，插件网页在 App 里打开。主人 2026-10-30 定的方向：
 
 - 插件系统是为了解耦。插件代码不放主仓库，每个插件一个独立仓库，相当于外部开发者写的，做插件不需要改主仓库。
