@@ -25,3 +25,4 @@
 | [0016](0016-mcp-bus-and-confirmations.md) | MCP 总线与敏感操作的确认 | 已接受 |
 | [0017](0017-plugin-ecosystem-and-store.md) | 插件生态：独立仓库、商店和来源 | 已接受 |
 | [0018](0018-gpu-for-plugins.md) | 显卡交给插件：核心按宿主的显卡给设备 | 已接受 |
+| [0019](0019-lan-services-for-plugins.md) | 插件在局域网上提供服务：只发布清单声明的端口 | 已接受 |

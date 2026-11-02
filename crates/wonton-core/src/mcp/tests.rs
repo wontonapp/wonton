@@ -393,20 +393,6 @@ async fn the_bot_installs_from_the_catalog_after_the_owner_confirms() {
     assert_eq!(s.cards.posted.lock().unwrap().len(), 1);
 }
 
-#[test]
-fn the_install_card_names_the_services_that_get_the_gpu() {
-    let compose = catalog_package("app.example.comfy", "画图", "devices.gpu")
-        .replace("  permissions:", "  gpu: {services: [web]}\n  permissions:");
-    let manifest = PluginPackage::parse(&compose).unwrap().manifest;
-    let card = super::cards::install("测试 Bot", &manifest);
-    let gpu = card
-        .lines
-        .iter()
-        .find(|l| l.text.contains("显卡交给服务 web"))
-        .unwrap_or_else(|| panic!("{:?}", card.lines));
-    assert!(gpu.emphasis, "高权限要醒目");
-}
-
 #[tokio::test]
 async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
     let (_docker, engine) = FakeDocker::start().await;

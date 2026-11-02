@@ -69,13 +69,6 @@ pub fn install(requester: &str, manifest: &Manifest) -> Draft {
             emphasis: p.is_high(),
         }));
     }
-    if let Some(gpu) = &manifest.gpu {
-        lines.push(emphasized(format!(
-            "· 显卡交给服务 {}：按本机的显卡给设备（AMD、Intel 是 /dev/dri、/dev/kfd 和所属的组，NVIDIA 经 \
-             NVIDIA Container Toolkit 给全部显卡）",
-            gpu.services.join("、")
-        )));
-    }
     Draft {
         title: format!("{requester} 想安装 {}", text(&manifest.title)),
         lines,
