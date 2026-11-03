@@ -1,4 +1,4 @@
-//! 连不上、换服务器时的行为：如实报原因，不反复重连，不把上一台的结果算到这一台头上。
+//! 连不上、换服务器时的行为：如实报原因，不把上一台的结果算到这一台头上。
 
 use std::net::{Ipv4Addr, UdpSocket};
 use std::time::{Duration, Instant};
@@ -12,28 +12,34 @@ use crate::rig::{Canned, FakeHome, Rig, core_error, installed, preview, running,
 /// 建连尝试可能要等到握手超时。
 const DIAL: Duration = Duration::from_secs(90);
 
-/// 等第一次建连失败，再看一段时间：隧道断着时发请求就会重连，所以状态不该再回到“连接中”。
-async fn stays_disconnected(rig: &Rig) -> PluginFailure {
+/// 等第一次建连失败和它报的原因。
+async fn first_failure(rig: &Rig) -> PluginFailure {
     let deadline = Instant::now() + DIAL;
     while !matches!(rig.app.home().status, HomeStatus::Disconnected { .. }) {
         assert!(Instant::now() < deadline, "{:?}", rig.app.home());
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     let view = rig.wait_for(|view| view.problem.is_some()).await;
-    let quiet = Instant::now() + Duration::from_secs(4);
+    view.problem.unwrap().reason
+}
+
+/// 服务器拒绝了这台设备，重连也没用，状态不该再回到“连接中”。
+async fn stays_rejected(rig: &Rig) {
+    assert_eq!(first_failure(rig).await, PluginFailure::Unauthorized);
+    let quiet = Instant::now() + Duration::from_secs(8);
     while Instant::now() < quiet {
         let status = rig.app.home().status;
         assert!(
             matches!(status, HomeStatus::Disconnected { .. }),
-            "没人用的时候又去重连了：{status:?}"
+            "被拒绝以后又去重连了：{status:?}"
         );
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    view.problem.unwrap().reason
 }
 
+/// 连不上可能只是网络断了，要自己再试；再试的时候原因还留在页面上。
 #[tokio::test]
-async fn an_unreachable_server_is_reported_without_redialing() {
+async fn an_unreachable_server_is_reported_and_tried_again() {
     let rig = Rig::new().await;
     // 地址上有人占着，但从不应答。
     let silent = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -42,8 +48,18 @@ async fn an_unreachable_server_is_reported_without_redialing() {
         silent.local_addr().unwrap(),
     ));
     assert_eq!(
-        stays_disconnected(&rig).await,
+        first_failure(&rig).await,
         PluginFailure::TransportUnavailable
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while rig.app.home().status != HomeStatus::Connecting {
+        assert!(Instant::now() < deadline, "没有再试：{:?}", rig.app.home());
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        rig.app.plugins().problem.map(|problem| problem.reason),
+        Some(PluginFailure::TransportUnavailable)
     );
 }
 
@@ -52,10 +68,10 @@ async fn a_server_that_rejects_this_device_is_reported_without_redialing() {
     let rig = Rig::new().await;
     let home = FakeHome::start(Vec::new()).await;
     rig.connect_to(home.ticket());
-    assert_eq!(stays_disconnected(&rig).await, PluginFailure::Unauthorized);
+    stays_rejected(&rig).await;
 }
 
-/// 不自动重连，所以主人的重试要能接回来；连上之后两个列表都要取到。
+/// 被拒绝时不自动重连，所以主人的重试要能接回来；连上之后两个列表都要取到。
 #[tokio::test]
 async fn retrying_reconnects_and_fetches_the_lists_again() {
     let rig = Rig::new().await;
@@ -65,7 +81,7 @@ async fn retrying_reconnects_and_fetches_the_lists_again() {
         .dispatch(Action::RefreshStore { force: false })
         .unwrap();
     rig.connect_to(home.ticket());
-    stays_disconnected(&rig).await;
+    stays_rejected(&rig).await;
 
     home.allowed.allow(rig.device());
     rig.app.dispatch(Action::RefreshPlugins).unwrap();

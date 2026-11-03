@@ -6,4 +6,5 @@ mod forwarding;
 mod local_proxy;
 mod pairing;
 mod resume;
+mod stall;
 mod support;

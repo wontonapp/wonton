@@ -85,7 +85,8 @@ pub enum HomeStatus {
     Connecting,
     /// 隧道可用，服务端已确认本设备。
     Connected,
-    /// 连接失败或断开。下一次使用时自动重连；`Unauthorized` 要主人重新登记这台设备。
+    /// 连接失败或断开。隔一会儿自动再试，试的时候回到 [`Self::Connecting`]；`Unauthorized` 不再试，要主人重新登记
+    /// 这台设备。
     Disconnected {
         reason: HomeFailure,
         message: String,

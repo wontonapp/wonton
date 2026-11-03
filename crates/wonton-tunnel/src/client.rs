@@ -13,7 +13,7 @@ use std::{
 
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, TransportAddr,
-    endpoint::{Connection, RecvStream, SendStream},
+    endpoint::{Connection, ConnectionError, RecvStream, SendStream},
 };
 use tokio::sync::{OnceCell, watch};
 use tracing::{debug, info};
@@ -194,6 +194,33 @@ impl TunnelClient {
         // 换了新连接时，这一次往返确认服务端仍接受本设备，并更新状态。
         self.ping().await?;
         Ok(started.elapsed())
+    }
+
+    /// 限时确认隧道真的通：有连接时在它上面做一次往返，没有回应就断开它，连接状态和路径随之更新；没有连接时
+    /// 等同于 [`ping`]。
+    ///
+    /// QUIC 自己的判断不够：心跳和确认这些小包还能往返时，连接算活着，请求却可能过不去（#154）。和
+    /// [`revalidate`] 不同，检查期间新开的流照常走现有连接，所以可以定时调用，不拖慢请求。
+    ///
+    /// [`ping`]: Self::ping
+    /// [`revalidate`]: Self::revalidate
+    pub async fn probe(&self, deadline: Duration) -> Result<Duration, TunnelError> {
+        let Some(conn) = self.inner.live_connection() else {
+            return self.ping().await;
+        };
+        let started = Instant::now();
+        match tokio::time::timeout(deadline, self.ping_on(&conn)).await {
+            Ok(result) => result.map(|()| started.elapsed()),
+            Err(_) => {
+                info!(?deadline, "现有连接限时内没有回应，断开");
+                let err = TunnelError::transport("连接限时内没有回应");
+                // 先断开再写状态：订阅状态的人读路径时，这条连接已经不算了。
+                conn.close(CLOSE_NORMAL, b"no response");
+                self.inner
+                    .mark(conn.stable_id(), TunnelStatus::Disconnected(err.clone()));
+                Err(err)
+            }
+        }
     }
 
     /// 当前连接正在使用的传输路径。没有可用连接时返回 `None`。
@@ -380,6 +407,10 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
         let Some(inner) = inner.upgrade() else {
             return;
         };
+        // 本机断开的连接，断开的地方已经写了状态和原因。
+        if matches!(closed.reason, ConnectionError::LocallyClosed) {
+            return;
+        }
         let err = from_connection_error(&closed.reason);
         info!(server = %inner.server.id.fmt_short(), "隧道连接已断开：{err}");
         inner.mark(conn_id, TunnelStatus::Disconnected(err));

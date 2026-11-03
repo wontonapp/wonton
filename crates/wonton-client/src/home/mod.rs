@@ -11,7 +11,7 @@ mod ticket;
 
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, SecretKey};
@@ -37,6 +37,16 @@ pub enum Network {
     DirectOnly,
 }
 
+/// 多久确认一次隧道真的通。iroh 每 5 秒发一次心跳，无线电反正醒着，这个检查不多耗电。
+const CHECK_INTERVAL: Duration = Duration::from_secs(5);
+/// 等回应的时限。n0 中继的往返在负载下出现过 2.8 秒（ADR-0004），大文件传输时还要排队；判错的代价是断开正在传的
+/// 流，所以取得宽，不通的时候最晚 `CHECK_INTERVAL + CHECK_DEADLINE` 发现。
+const CHECK_DEADLINE: Duration = Duration::from_secs(8);
+/// 连不上时第一次重试前等多久，连续失败时间隔加倍。
+const FIRST_RETRY: Duration = Duration::from_secs(1);
+/// 重试的间隔最长这么久，网络恢复后最晚这么久连上。
+const MAX_RETRY: Duration = Duration::from_secs(15);
+
 pub(crate) struct HomeLink {
     runtime: Handle,
     storage: Storage,
@@ -57,6 +67,7 @@ struct Link {
     client: TunnelClient,
     proxy: LocalProxy,
     watcher: JoinHandle<()>,
+    checker: JoinHandle<()>,
 }
 
 impl HomeLink {
@@ -108,7 +119,7 @@ impl HomeLink {
     }
 
     /// `ConnectHome`：校验并保存连接信息，然后在后台建连。和当前用的连接信息相同时什么都不做：
-    /// 连接断了会在下一次使用时自动重连，重建反而会让正在用本地代理的 WebView 断开。
+    /// 连接断了会自动重连，重建反而会让正在用本地代理的 WebView 断开。
     pub(crate) fn connect(self: &Arc<Self>, text: &str) -> Result<(), CoreError> {
         let ticket = Ticket::parse(text).map_err(|reason| CoreError::InvalidInput { reason })?;
         if self.lock_ticket().as_deref() == Some(text) {
@@ -203,11 +214,17 @@ impl HomeLink {
         let watcher = self
             .runtime
             .spawn(watch_status(Arc::downgrade(self), client.clone()));
+        let checker = self.runtime.spawn(keep_checking(
+            Arc::downgrade(self),
+            endpoint.clone(),
+            client.clone(),
+        ));
         Ok(Link {
             endpoint,
             client,
             proxy,
             watcher,
+            checker,
         })
     }
 
@@ -264,13 +281,18 @@ impl HomeLink {
 
     fn update_path(&self, client: &TunnelClient) {
         let path = client.path().map(path_view);
-        self.view.send_modify(|view| view.path = path);
+        self.view.send_if_modified(|view| {
+            let changed = view.path != path;
+            view.path = path;
+            changed
+        });
     }
 }
 
 impl Link {
     async fn close(self) {
         self.watcher.abort();
+        self.checker.abort();
         self.proxy.shutdown().await;
         self.client.close();
         self.endpoint.close().await;
@@ -294,6 +316,42 @@ async fn watch_status(home: Weak<HomeLink>, client: TunnelClient) {
         if status.changed().await.is_err() {
             return;
         }
+    }
+}
+
+/// 一直确认隧道真的通：不通就断开换新连接，连不上就接着重试，不等 App 回到前台，也不等下一个请求。连接状态和路径
+/// 因此如实（#154）。服务端不认这台设备时重试也没用，等它重新配对。只持有弱引用，核心释放后自动结束。
+async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelClient) {
+    let revoked = TunnelStatus::Disconnected(TunnelError::Unauthorized);
+    let mut status = client.watch_status();
+    let mut wait = CHECK_INTERVAL;
+    loop {
+        tokio::time::sleep(wait).await;
+        if status.wait_for(|status| *status != revoked).await.is_err() {
+            return;
+        }
+        if home.strong_count() == 0 {
+            return;
+        }
+        let result = client.probe(CHECK_DEADLINE).await;
+        let Some(link) = home.upgrade() else {
+            return;
+        };
+        link.update_path(&client);
+        drop(link);
+        wait = match result {
+            Err(err) if err != TunnelError::Unauthorized => {
+                tracing::info!("隧道检查失败：{err}");
+                // 可能是网络变了，让 iroh 重新检查网卡和路径。
+                endpoint.network_change().await;
+                if wait == CHECK_INTERVAL {
+                    FIRST_RETRY
+                } else {
+                    (wait * 2).min(MAX_RETRY)
+                }
+            }
+            _ => CHECK_INTERVAL,
+        };
     }
 }
 

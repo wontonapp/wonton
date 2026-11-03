@@ -100,6 +100,31 @@ async fn an_unregistered_device_is_told_it_needs_pairing() {
 }
 
 #[tokio::test]
+async fn an_unregistered_device_stops_trying_until_it_is_paired() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| matches!(view.status, HomeStatus::Disconnected { .. }))
+        .await;
+    let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
+    let before = opened.get();
+
+    // 比定时检查的间隔长：重试也没用，状态也不该在“连接中”和“要配对”之间跳。
+    tokio::time::sleep(Duration::from_secs(7)).await;
+
+    assert_eq!(opened.get(), before);
+    assert!(matches!(
+        phone.home().status,
+        HomeStatus::Disconnected {
+            reason: HomeFailure::Unauthorized,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
 async fn the_server_is_remembered_across_restarts() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
@@ -168,6 +193,24 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
         "回到前台后 {:?} 才恢复",
         started.elapsed()
     );
+}
+
+#[tokio::test]
+async fn a_dropped_connection_is_replaced_without_coming_back_to_the_foreground() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+
+    // 手机一无所知，也没有回前台、没有发请求：定时检查发现连接不通，换上新连接。
+    home.drop_connections_silently().await;
+    home.wait_for_a_connection().await;
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
+        .await;
 }
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
