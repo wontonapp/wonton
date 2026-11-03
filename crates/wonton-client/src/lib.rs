@@ -5,7 +5,7 @@
 //!
 //! - 操作进：壳调用 [`ClientCore::dispatch`]，参数是 [`Action`]。
 //! - ViewModel 出：壳调用 [`ClientCore::subscribe_session_list`]、[`ClientCore::subscribe_home`]、
-//!   [`ClientCore::subscribe_chat`]、[`ClientCore::subscribe_plugins`]、[`ClientCore::subscribe_transfers`]，循环等待订阅的 `next()`，包装成 Swift 的
+//!   [`ClientCore::subscribe_chat`]、[`ClientCore::subscribe_plugins`]、[`ClientCore::subscribe_transfers`]、[`ClientCore::subscribe_appearance`]，循环等待订阅的 `next()`，包装成 Swift 的
 //!   `AsyncSequence` 或 Kotlin 的 `Flow`。打开的房间的时间线用 [`ClientCore::subscribe_timeline`]，推的是不能合并的
 //!   增量批次。
 //!
@@ -19,6 +19,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod appearance;
 mod chat;
 mod client;
 mod files;
@@ -29,6 +30,7 @@ mod push;
 mod session_store;
 mod subscription;
 
+pub use appearance::{accent_hex, default_appearance, parse_accent, preview_accent};
 pub use chat::TimelineSubscription;
 pub use client::ClientCore;
 pub use files::{FileOpenError, FileOpener};

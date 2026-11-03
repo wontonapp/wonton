@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
@@ -56,6 +57,15 @@ fun ClientCore.homeUpdates(): Flow<HomeViewModel> = flow {
 /** 把传输列表的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
 fun ClientCore.transfersUpdates(): Flow<TransfersViewModel> = flow {
     subscribeTransfers().use { subscription ->
+        while (true) {
+            emit(subscription.next() ?: break)
+        }
+    }
+}
+
+/** 把外观的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
+fun ClientCore.appearanceUpdates(): Flow<AppearanceViewModel> = flow {
+    subscribeAppearance().use { subscription ->
         while (true) {
             emit(subscription.next() ?: break)
         }

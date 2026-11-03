@@ -55,6 +55,7 @@ fun LauncherScreen(
     plugins: PluginsState,
     navigation: PluginNavigation,
     onShowStore: () -> Unit,
+    onAppearance: () -> Unit,
     onConnection: () -> Unit,
 ) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
@@ -63,6 +64,7 @@ fun LauncherScreen(
             TopAppBar(
                 title = { Text("家") },
                 actions = {
+                    TextButton(onClick = onAppearance) { Text("外观") }
                     TextButton(onClick = onConnection) {
                         Text("连接", color = if (status is HomeStatus.Disconnected) Red else Color.Unspecified)
                     }

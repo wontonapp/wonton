@@ -3,6 +3,7 @@ package app.wonton.ui
 import android.graphics.ImageDecoder
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,10 +20,12 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -115,18 +118,21 @@ private fun MessageBubble(
         if (showsSender && !message.isOwn) {
             Text(message.senderName, style = MaterialTheme.typography.labelSmall)
         }
-        val background = if (message.isOwn) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        }
+        val colors = WontonTheme.colors
+        val background = if (message.isOwn) colors.accentFill else colors.surfaceSubtle
+        val border = colors.accentFillBorder?.takeIf { message.isOwn }
+        val bubble = RoundedCornerShape(14.dp)
         Box(
             Modifier.widthIn(max = 280.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(background)
+                .clip(bubble)
+                .background(background.toColor())
+                .then(if (border != null) Modifier.border(1.dp, border.toColor(), bubble) else Modifier)
                 .padding(10.dp),
         ) {
-            MessageBody(message.body, core, message.sendState, onAnswer)
+            val content = if (message.isOwn) colors.textOnAccentFill else colors.textPrimary
+            CompositionLocalProvider(LocalContentColor provides content.toColor()) {
+                MessageBody(message.body, core, message.sendState, onAnswer)
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             val small = MaterialTheme.typography.labelSmall

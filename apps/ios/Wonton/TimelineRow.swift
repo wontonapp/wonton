@@ -47,6 +47,18 @@ private struct MessageBubble: View {
     let retry: () -> Void
     let cancel: () -> Void
     let answer: (String, Answer) -> Void
+    @Environment(\.wontonColors) private var colors
+
+    private var bubble: some View {
+        let shape = RoundedRectangle(cornerRadius: 14)
+        return shape
+            .fill(Color(message.isOwn ? colors.accentFill : colors.surfaceSubtle))
+            .overlay {
+                if message.isOwn, let border = colors.accentFillBorder {
+                    shape.strokeBorder(Color(border), lineWidth: 1)
+                }
+            }
+    }
 
     var body: some View {
         HStack {
@@ -56,11 +68,9 @@ private struct MessageBubble: View {
                     Text(message.senderName).font(.caption).foregroundStyle(.secondary)
                 }
                 content
+                    .foregroundStyle(Color(message.isOwn ? colors.textOnAccentFill : colors.textPrimary))
                     .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(message.isOwn ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
-                    )
+                    .background(bubble)
                 footer
             }
             if !message.isOwn { Spacer(minLength: 48) }

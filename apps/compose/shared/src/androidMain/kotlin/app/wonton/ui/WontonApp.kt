@@ -10,6 +10,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 
@@ -40,7 +42,10 @@ private val tabs = listOf("聊天", "家", "商店")
  */
 @Composable
 fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
-    MaterialTheme {
+    val appearanceUpdates = remember(core) { core.appearanceUpdates() }
+    val initialAppearance = remember(core) { core.appearance() }
+    val appearance by appearanceUpdates.collectAsState(initial = initialAppearance)
+    WontonTheme(appearance) {
         val updates = remember(core) { core.homeUpdates() }
         val initial = remember(core) { core.home() }
         val home by updates.collectAsState(initial = initial)
@@ -81,7 +86,7 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
         if (shown != null && proxy != null) {
             BackHandler { page = null }
             PluginPage(shown.title, shown.url, proxy, onClose = { page = null })
-            return@MaterialTheme
+            return@WontonTheme
         }
         Scaffold(
             bottomBar = {
@@ -92,6 +97,11 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
                             onClick = { tab = index },
                             icon = {},
                             label = { Text(label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedTextColor = WontonTheme.colors.accentInk.toColor(),
+                                selectedIconColor = WontonTheme.colors.accentInkOnFill.toColor(),
+                                indicatorColor = WontonTheme.colors.accentFill.toColor(),
+                            ),
                         )
                     }
                 }
@@ -101,7 +111,7 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
             Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
                 when (tab) {
                     CHAT -> ChatRoute(core, chat)
-                    HOME -> HomeRoute(core, home, plugins, homePlugins, onShowStore = { tab = STORE })
+                    HOME -> HomeRoute(core, home, plugins, homePlugins, appearance, onShowStore = { tab = STORE })
                     else -> StoreRoute(plugins, storePlugins)
                 }
             }
@@ -135,7 +145,7 @@ private fun Notice(title: String, reason: String, onDismiss: () -> Unit) {
 /** 核心起不来或开发时传入的配对码被拒绝：如实显示原因，不进入主界面。 */
 @Composable
 fun StartupFailure(reason: String) {
-    MaterialTheme {
+    WontonTheme(defaultAppearance()) {
         Box(Modifier.fillMaxSize().padding(24.dp)) {
             Text(reason, color = MaterialTheme.colorScheme.error)
         }

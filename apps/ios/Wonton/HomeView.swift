@@ -6,6 +6,7 @@ import WontonClient
 struct HomeView: View {
     @Bindable var model: HomeModel
     let plugins: PluginsModel
+    let appearance: AppearanceModel
     let open: (PluginEntry) -> Void
     let showStore: () -> Void
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
@@ -28,14 +29,23 @@ struct HomeView: View {
             }
             .navigationTitle("家")
             .toolbar {
+                // 外观不依赖家里的服务器，没配对时也能进。
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink("外观", value: HomeRoute.appearance)
+                }
                 if model.viewModel.status != .notConfigured {
                     ToolbarItem(placement: .topBarTrailing) {
                         NavigationLink(value: HomeRoute.connection) { connectionLabel }
                     }
                 }
             }
-            .navigationDestination(for: HomeRoute.self) { _ in
-                ConnectionView(model: model, isPairing: $isPairing, isInviting: $isInviting)
+            .navigationDestination(for: HomeRoute.self) { route in
+                switch route {
+                case .connection:
+                    ConnectionView(model: model, isPairing: $isPairing, isInviting: $isInviting)
+                case .appearance:
+                    AppearanceView(model: appearance)
+                }
             }
             .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
             .onChange(of: model.viewModel.proxy, initial: true) { _, proxy in
@@ -190,6 +200,7 @@ struct HomeView: View {
 
 private enum HomeRoute: Hashable {
     case connection
+    case appearance
 }
 
 /// 主屏上的一个插件：圆角方形的图标和名字。能升级的、出了问题的在图标角上标出来，正在装、升级、卸载的转圈。

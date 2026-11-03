@@ -5,12 +5,13 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, ChatViewModel, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
-    FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle,
-    PluginDetail, PluginImage, PluginsViewModel, PushNotification, RoomTransfers,
-    SessionListViewModel, StoreItem, TransfersViewModel,
+    Action, AppearanceViewModel, ChatViewModel, CoreError, FileCard, FileCardActions, FileFailure,
+    FileId, FileInfo, FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice,
+    LanSettings, MediaHandle, PluginDetail, PluginImage, PluginsViewModel, PushNotification,
+    RoomTransfers, SessionListViewModel, StoreItem, TransfersViewModel,
 };
 
+use crate::appearance::AppearanceLink;
 use crate::chat::{ChatLink, TimelineSubscription};
 use crate::files::{FileOpener, FilesLink};
 use crate::home::{HomeLink, Network, Storage};
@@ -18,8 +19,8 @@ use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    ChatSubscription, HomeSubscription, PluginsSubscription, SessionListSubscription,
-    TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, HomeSubscription, PluginsSubscription,
+    SessionListSubscription, TransfersSubscription,
 };
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
@@ -34,6 +35,7 @@ pub struct ClientCore {
     push: Arc<PushLink>,
     plugins: Arc<PluginsLink>,
     files: Arc<FilesLink>,
+    appearance: AppearanceLink,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -103,11 +105,20 @@ impl ClientCore {
             Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade => Err(core_upgrade_unsupported()),
-            Action::SetAccentColor { .. } | Action::ResetAccentColor => {
-                Err(appearance_unsupported())
-            }
+            Action::SetAccentColor { color } => self.appearance.set_accent(color),
+            Action::ResetAccentColor => self.appearance.reset_accent(),
             chat => self.chat.dispatch(chat),
         }
+    }
+
+    /// 当前的外观（重点色和颜色令牌），用于首帧渲染。
+    pub fn appearance(&self) -> AppearanceViewModel {
+        self.appearance.view()
+    }
+
+    /// 订阅外观，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_appearance(&self) -> Arc<AppearanceSubscription> {
+        Arc::new(AppearanceSubscription::new(self.appearance.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -321,6 +332,7 @@ impl ClientCore {
             chat.clone(),
             Path::new(data_dir),
         );
+        let appearance = AppearanceLink::new(Path::new(data_dir));
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
@@ -328,6 +340,7 @@ impl ClientCore {
             push,
             plugins,
             files,
+            appearance,
             runtime: Some(runtime),
         }))
     }
@@ -367,13 +380,6 @@ impl ClientCore {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
-    }
-}
-
-/// 外观的接口同样先于实现合并（ADR-0026）。
-fn appearance_unsupported() -> CoreError {
-    CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持外观设置".into(),
     }
 }
 

@@ -18,16 +18,21 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(chat, home, plugins):
-                MainView(chat: chat, home: home, plugins: plugins, tab: $tab)
-                    .onChange(of: scenePhase) { old, phase in
-                        // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
-                        // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
-                        if old == .background, phase != .background { home.send(.appForegrounded) }
-                    }
+            case let .ready(chat, home, plugins, appearance):
+                WontonTheme(appearance: appearance.viewModel) {
+                    MainView(chat: chat, home: home, plugins: plugins, appearance: appearance, tab: $tab)
+                }
+                .task { await appearance.observe() }
+                .onChange(of: scenePhase) { old, phase in
+                    // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
+                    // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
+                    if old == .background, phase != .background { home.send(.appForegrounded) }
+                }
             case let .failed(reason):
-                ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
-                                       description: Text(reason))
+                WontonTheme(appearance: defaultAppearance()) {
+                    ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
+                                           description: Text(reason))
+                }
             }
         }
     }
@@ -44,24 +49,32 @@ private struct MainView: View {
     let chat: ChatModel
     let home: HomeModel
     let plugins: PluginsModel
+    let appearance: AppearanceModel
     @Binding var tab: AppTab
+    @Environment(\.wontonColors) private var colors
     @State private var page: OpenedPage?
     @State private var unavailable: String?
 
     var body: some View {
         TabView(selection: $tab) {
             ChatListView(model: chat)
+                .tint(Color(colors.primary))
                 .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
                 .tag(AppTab.chat)
             HomeView(
-                model: home, plugins: plugins, open: open, showStore: { tab = .store }, devWebURL: Launch.devWebURL
+                model: home, plugins: plugins, appearance: appearance, open: open, showStore: { tab = .store },
+                devWebURL: Launch.devWebURL
             )
+            .tint(Color(colors.primary))
             .tabItem { Label("家", systemImage: "house") }
             .tag(AppTab.home)
             StoreView(model: plugins, open: open)
+                .tint(Color(colors.primary))
                 .tabItem { Label("商店", systemImage: "bag") }
                 .tag(AppTab.store)
         }
+        // 选中的页签是重点色的用处之一；页面里面的按钮不是，上面逐页设回主色。
+        .tint(Color(colors.accentInk))
         .fullScreenCover(item: $page) { page in
             // 核心重建了本地代理时换上新的凭据。
             PluginPage(title: page.title, url: page.url, proxy: home.viewModel.proxy ?? page.proxy) { self.page = nil }
@@ -112,12 +125,12 @@ private struct OpenedPage: Identifiable {
 /// 启动核心。核心失败时如实显示原因，不进入主界面。
 @MainActor
 private enum Launch {
-    case ready(ChatModel, HomeModel, PluginsModel)
+    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel)
     case failed(String)
 
     /// 还没配对时先到“家”的配对页；开发时要自动打开网页的也停在“家”。
     var initialTab: AppTab {
-        guard case let .ready(_, home, _) = self else { return .chat }
+        guard case let .ready(_, home, _, _) = self else { return .chat }
         if case .notConfigured = home.viewModel.status { return .home }
         return Self.devWebURL == nil ? .chat : .home
     }
@@ -154,7 +167,9 @@ private enum Launch {
             }
         }
         #endif
-        return .ready(ChatModel(core: core), HomeModel(core: core), PluginsModel(core: core))
+        return .ready(
+            ChatModel(core: core), HomeModel(core: core), PluginsModel(core: core), AppearanceModel(core: core)
+        )
     }
 
     /// App 私有的数据目录，存设备密钥和连接信息。
