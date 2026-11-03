@@ -11,7 +11,10 @@ use matrix_sdk::{
     ruma::{
         MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
         api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
-        events::{GlobalAccountDataEvent, direct::DirectEventContent},
+        events::{
+            GlobalAccountDataEvent, direct::DirectEventContent,
+            room::message::RoomMessageEventContent,
+        },
     },
 };
 use matrix_sdk_ui::{
@@ -197,6 +200,17 @@ impl MatrixSession {
             .set_room_subscriptions(&[room_id])
             .await;
         ChatRoom::open(room).await
+    }
+
+    /// 往已加入的房间发一条文字，不打开它：不动 Sliding Sync 的房间订阅，正在看的房间的时间线不受影响。不经发送队列，也没有本地
+    /// 回显，发出去之后经同步出现；失败当场返回。
+    pub async fn send_text_to(&self, room_id: &RoomId, body: &str) -> Result<()> {
+        let room = self.room(room_id)?;
+        if room.state() != RoomState::Joined {
+            return Err(Error::NotReady(format!("还没有加入房间 {room_id}")));
+        }
+        room.send(RoomMessageEventContent::text_plain(body)).await?;
+        Ok(())
     }
 
     fn room(&self, room_id: &RoomId) -> Result<Room> {

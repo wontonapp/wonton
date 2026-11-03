@@ -212,3 +212,35 @@ async fn wait_for_encryption(
     })
     .await
 }
+
+/// 传完文件后发链接时，主人可能在看别的房间：发消息不能动 Sliding Sync 的房间订阅，加密房间里照样加密。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn text_goes_into_an_encrypted_room_without_opening_it() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let room_id = direct_chat(&alice, &bob, true).await;
+    wait_for_room(&bob, "私聊是加密的", &room_id, |row| row.is_encrypted).await;
+
+    alice
+        .send_text_to(&room_id, "wonton://file/aaaaaaaaaaaaaaaaaaaaaaaaaa")
+        .await
+        .expect("不打开房间也能发");
+
+    let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
+    bob_room.paginate_backwards(20).await.expect("向前翻页");
+    eventually(
+        "Bob 解密文字",
+        bob_room.message_updates().await,
+        |messages| {
+            messages.iter().find_map(|message| match &message.body {
+                MessageBody::Text(text) if text.starts_with("wonton://file/") => Some(()),
+                _ => None,
+            })
+        },
+    )
+    .await;
+}

@@ -82,7 +82,7 @@ pub enum FileCardAction {
 pub struct FileCardActions {
     /// 点卡片做什么。
     pub tap: FileCardAction,
-    /// “用其他 App 打开”做什么。`tap` 已经是下载或打开时为空。
+    /// “用其他 App 打开”做什么：下载、打开，或者正在下载时等它下完。`tap` 已经是这几种之一时为空。
     pub open_elsewhere: Option<FileCardAction>,
     /// 这个文件最近一次下载；没下载过，或者记录清掉了时为空。
     pub download: Option<Transfer>,
@@ -238,10 +238,14 @@ pub struct Transfer {
     pub file: Option<FileId>,
     pub name: String,
     pub direction: TransferDirection,
+    /// 上传的目标房间，链接发到这里；下载和不发进房间的上传为空。
+    pub room: Option<String>,
     pub transferred_bytes: u64,
     /// 总字节数；下载还没拿到响应头时为空，核心没给 `Content-Length` 时一直为空。
     pub total_bytes: Option<u64>,
     pub state: TransferState,
+    /// [`TransferState::Paused`] 时家里的服务出了什么问题；为空就是在等连接恢复。
+    pub paused_because: Option<String>,
     /// 下载放在 App 目录里的绝对路径，[`TransferState::Done`] 之后壳交给系统打开或分享；上传时、下载还没拿到文件名时为空。
     /// 不要存下来：iOS 上 App 更新后容器的路径会变。
     pub destination: Option<String>,
@@ -262,6 +266,9 @@ pub enum TransferAction {
     DismissDownloaded,
     /// 发 [`Action::ResendFileLink`](crate::Action::ResendFileLink)。
     ResendLink,
+    /// 字节已经传完，只差发链接时的“不发了”：发 [`Action::CancelTransfer`](crate::Action::CancelTransfer)。文件留在服务器上，
+    /// 不是删了。
+    StopSending,
     /// 把 [`Transfer::destination`] 交给系统打开。
     Open,
     /// 把 [`Transfer::destination`] 交给系统的分享或保存。
@@ -281,7 +288,7 @@ pub enum TransferDirection {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TransferState {
     Running,
-    /// App 进了后台或者断了网，回到前台、连上之后接着传。
+    /// App 进了后台、断了网，或者家里的服务不可用（[`Transfer::paused_because`]）。回到前台、连上之后接着传。
     Paused,
     Done,
     /// 文件已经传完，在服务器上；授权或发进房间这一步没成。不自动再试：用
@@ -321,7 +328,7 @@ impl TransfersViewModel {
     }
 }
 
-/// 不落在某条传输上的文件操作。
+/// 不落在某条传输上的文件操作。`Play` 只出现在 `file_playback_problem` 的结果里，不进 [`TransfersViewModel::problem`]。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]

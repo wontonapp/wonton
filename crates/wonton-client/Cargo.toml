@@ -32,14 +32,20 @@ bindgen = ["uniffi/cli"]
 base64 = { workspace = true }
 # MIT OR Apache-2.0。
 futures-util = "0.3.34"
+# MIT OR Apache-2.0。文件传输本地编号和播放地址的令牌；wonton-tunnel 已经用它。
+getrandom = { workspace = true }
+# MIT。给播放器的回环地址（ADR-0020 的 `file_stream_url`）：核心、wonton-tunnel 的依赖里已有。
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 iroh = { workspace = true }
-# MIT OR Apache-2.0。经本地代理向核心要 Matrix 登录令牌；matrix-sdk 已经用它，不带额外特性。
-reqwest = { workspace = true }
+# MIT OR Apache-2.0。经本地代理调核心的接口；matrix-sdk 已经用它。文件上传下载要流式读写。
+reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # MIT OR Apache-2.0。
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "sync", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "sync", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uniffi = { workspace = true }
@@ -54,7 +60,7 @@ wonton-tunnel = { path = "../wonton-tunnel" }
 libc = "=0.2.189"
 
 [dev-dependencies]
-# MIT。插件接口的行为测试用它在本机假扮核心的管理接口。
+# MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }

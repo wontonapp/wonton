@@ -253,6 +253,19 @@ impl ChatLink {
             .map_err(|e| core_error(&e))
     }
 
+    /// 发一条文字，不打开房间：传完文件发链接时，主人可能已经在看别的房间了，打开这个房间会打断那边的时间线。
+    pub(crate) async fn send_text_unopened(
+        &self,
+        room_id: &str,
+        body: &str,
+    ) -> Result<(), CoreError> {
+        let (session, room_id) = self.target(room_id)?;
+        session
+            .send_text_to(&room_id, body)
+            .await
+            .map_err(|e| core_error(&e))
+    }
+
     fn start_direct_chat(self: &Arc<Self>, user_id: &str) -> Result<(), CoreError> {
         let user: OwnedUserId = user_id
             .parse()

@@ -183,6 +183,7 @@ fn failure_kinds_and_http_statuses_are_stable() {
             None,
         ),
         (FileFailure::Protocol, "protocol", None),
+        (FileFailure::UnsupportedFormat, "unsupported_format", None),
         (
             FileFailure::LocalSourceUnavailable,
             "local_source_unavailable",
@@ -319,11 +320,13 @@ fn cards_transfers_and_actions_round_trip_through_json() {
             file: None,
             name: "a.mov".into(),
             direction: TransferDirection::Upload,
+            room: Some("!room:home.example".into()),
             transferred_bytes: 1024,
             total_bytes: Some(4096),
             state,
+            paused_because: Some("连不上 tusd".into()),
             destination: None,
-            actions: vec![TransferAction::ResendLink, TransferAction::Dismiss],
+            actions: vec![TransferAction::ResendLink, TransferAction::StopSending],
         };
         assert_eq!(round_trip(&transfer), transfer);
     }
@@ -354,6 +357,56 @@ fn cards_transfers_and_actions_round_trip_through_json() {
         }),
     };
     assert_eq!(round_trip(&view), view);
+}
+
+/// 契约：这些写进手机上的 `transfers.json`。改了写法，旧文件就读不懂，整个列表会被挪到 `.bad`。
+#[test]
+fn what_is_stored_on_the_phone_keeps_its_spelling() {
+    let failed = |kind: &str| json!({"type": kind, "reason": "storage_full", "message": "满了"});
+    let reason = || (FileFailure::StorageFull, "满了".to_owned());
+    for (state, stored) in [
+        (TransferState::Running, json!({"type": "running"})),
+        (TransferState::Paused, json!({"type": "paused"})),
+        (TransferState::Done, json!({"type": "done"})),
+        (
+            TransferState::LinkNotSent {
+                reason: reason().0,
+                message: reason().1,
+            },
+            failed("link_not_sent"),
+        ),
+        (
+            TransferState::Failed {
+                reason: reason().0,
+                message: reason().1,
+            },
+            failed("failed"),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&state).unwrap(), stored);
+        assert_eq!(
+            serde_json::from_value::<TransferState>(stored).unwrap(),
+            state
+        );
+    }
+    for (source, stored) in [
+        (
+            UploadSource::Path { path: "/a".into() },
+            json!({"type": "path", "path": "/a"}),
+        ),
+        (
+            UploadSource::Opaque {
+                handle: "content://a".into(),
+            },
+            json!({"type": "opaque", "handle": "content://a"}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&source).unwrap(), stored);
+        assert_eq!(
+            serde_json::from_value::<UploadSource>(stored).unwrap(),
+            source
+        );
+    }
 }
 
 #[test]

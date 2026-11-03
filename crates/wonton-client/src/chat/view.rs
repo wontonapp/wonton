@@ -6,9 +6,9 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, CoreError, DeviceVerification, ImageContent, MediaHandle, MessageContent,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage,
+    ChatFailure, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
+    MessageContent, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
 pub(crate) fn room_row(room: RoomInfo) -> RoomRow {
@@ -45,7 +45,14 @@ fn preview(latest: LatestMessage) -> Option<RoomPreview> {
 /// 消息的一行文字：房间列表的预览和通知的正文都用它。
 pub(crate) fn summary(body: MessageBody) -> String {
     match body {
-        MessageBody::Text(text) => text,
+        MessageBody::Text(text) => {
+            let FileLinks { body, files } = extract_file_links(&text);
+            if body.is_empty() && !files.is_empty() {
+                "[文件]".to_owned()
+            } else {
+                body
+            }
+        }
         MessageBody::Image(_) => "[图片]".to_owned(),
         MessageBody::Undecryptable => "[加密消息]".to_owned(),
         MessageBody::Redacted => "[已撤回]".to_owned(),
@@ -101,10 +108,10 @@ fn timeline_message(message: Message, cards: &CardsView) -> TimelineMessage {
 
 fn message_content(body: MessageBody) -> MessageContent {
     match body {
-        MessageBody::Text(body) => MessageContent::Text {
-            body,
-            files: Vec::new(),
-        },
+        MessageBody::Text(text) => {
+            let FileLinks { body, files } = extract_file_links(&text);
+            MessageContent::Text { body, files }
+        }
         MessageBody::Image(image) => MessageContent::Image {
             image: ImageContent {
                 media: MediaHandle {
@@ -202,6 +209,7 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
 mod tests {
     use super::*;
     use wonton_matrix::UploadProgress;
+    use wonton_protocol::FileId;
 
     #[test]
     fn timeline_exposes_upload_fractions_without_hiding_regressions() {
@@ -259,5 +267,15 @@ mod tests {
                 read_by: Vec::new(),
             })),
         }
+    }
+
+    #[test]
+    fn previews_do_not_show_file_links() {
+        let link = FileId::from_bytes([1; 16]).link();
+        let with_text = summary(MessageBody::Text(format!("给你 {link}")));
+        assert_eq!(with_text, "给你");
+        let only_link = summary(MessageBody::Text(link));
+        assert!(!only_link.contains("wonton://"), "{only_link}");
+        assert!(!only_link.is_empty());
     }
 }

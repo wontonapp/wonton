@@ -5,14 +5,14 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, ChatViewModel, CoreError, FileCard, FileCardAction, FileCardActions, FileFailure,
-    FileId, FileInfo, FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice,
-    LanSettings, MediaHandle, PluginDetail, PluginImage, PluginsViewModel, PushNotification,
-    SessionListViewModel, StoreItem, TransfersViewModel,
+    Action, ChatViewModel, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
+    FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle,
+    PluginDetail, PluginImage, PluginsViewModel, PushNotification, SessionListViewModel, StoreItem,
+    TransfersViewModel,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
-use crate::files::FileOpener;
+use crate::files::{FileOpener, FilesLink};
 use crate::home::{HomeLink, Network, Storage};
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
@@ -33,7 +33,7 @@ pub struct ClientCore {
     chat: Arc<ChatLink>,
     push: Arc<PushLink>,
     plugins: Arc<PluginsLink>,
-    transfers: watch::Sender<TransfersViewModel>,
+    files: Arc<FilesLink>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -67,6 +67,7 @@ impl ClientCore {
                 self.chat.foregrounded();
                 self.push.foregrounded();
                 self.plugins.foregrounded();
+                self.files.foregrounded();
                 Ok(())
             }
             Action::SetPushEndpoint { endpoint } => self.push.set_endpoint(endpoint),
@@ -90,7 +91,7 @@ impl ClientCore {
             Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
             Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
-            Action::UploadFile { .. }
+            action @ (Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
             | Action::DismissTransfer { .. }
@@ -98,7 +99,7 @@ impl ClientCore {
             | Action::DeleteFile { .. }
             | Action::SendFileToDevices { .. }
             | Action::GrantFileToRoom { .. }
-            | Action::DismissFileProblem => Err(files_unsupported()),
+            | Action::DismissFileProblem) => self.files.dispatch(action),
             Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade => Err(core_upgrade_unsupported()),
@@ -202,58 +203,60 @@ impl ClientCore {
     /// 给 [`UploadSource::Opaque`](wonton_protocol::UploadSource::Opaque) 的来源换文件描述符。壳在创建核心之后、发出
     /// 第一个操作之前设置：App 重启后核心要接着传。
     pub fn set_file_opener(&self, opener: Arc<dyn FileOpener>) {
-        let _ = opener;
+        self.files.set_opener(opener);
     }
 
     /// 当前的传输列表，用于首帧渲染。
     pub fn transfers(&self) -> TransfersViewModel {
-        self.transfers.borrow().clone()
+        self.files.view()
     }
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_transfers(&self) -> Arc<TransfersSubscription> {
-        Arc::new(TransfersSubscription::new(self.transfers.subscribe()))
+        Arc::new(TransfersSubscription::new(self.files.subscribe()))
     }
 
     /// 消息下面的文件卡片：取信息并缓存。结果写在卡片里，壳等待时画 [`FileCard::Loading`]。
     pub async fn file_card(&self, id: FileId) -> FileCard {
-        let _ = id;
-        FileCard::Failed {
+        let files = self.files.clone();
+        let card = self.run(async move { Ok(files.card(id).await) }).await;
+        card.unwrap_or_else(|error| FileCard::Failed {
             reason: FileFailure::Other,
-            message: files_unsupported().to_string(),
-        }
+            message: error.to_string(),
+        })
     }
 
     /// 卡片上的按钮和下载进展。不走网络，传输列表一变就可以重新取。
     pub fn file_card_actions(&self, info: FileInfo) -> FileCardActions {
-        let _ = info;
-        FileCardActions {
-            tap: FileCardAction::Download,
-            open_elsewhere: None,
-            download: None,
-        }
+        self.files.card_actions(&info)
     }
 
-    /// 文件的缩略图：JPEG 字节。
+    /// 文件的缩略图：JPEG 字节。不在访问范围里时返回 `Unauthorized`；文件没了、这个类型没有缩略图时返回 `InvalidInput`。
     pub async fn file_thumbnail(&self, id: FileId) -> Result<Vec<u8>, CoreError> {
-        let _ = id;
-        Err(files_unsupported())
+        let files = self.files.clone();
+        self.run(async move { files.thumbnail(id).await }).await
     }
 
-    /// 给 App 自己的播放器用的回环地址，带 `Range`：播放器不能给单个请求设代理。令牌每次启动换一个。
+    /// 给 App 自己的播放器用的回环地址，带 `Range`：播放器不能给单个请求设代理。令牌每次启动换一个；App 回到前台后要重新取，
+    /// 端口可能变了。
     pub async fn file_stream_url(&self, id: FileId) -> Result<String, CoreError> {
-        let _ = id;
-        Err(files_unsupported())
+        let files = self.files.clone();
+        self.run(async move { files.stream_url(id).await }).await
     }
 
     /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。说明里写着可以下载后用其他 App 打开。
     pub async fn file_playback_problem(&self, id: FileId) -> FileProblem {
-        FileProblem {
+        let files = self.files.clone();
+        let asked = id.clone();
+        let problem = self
+            .run(async move { Ok(files.playback_problem(asked).await) })
+            .await;
+        problem.unwrap_or_else(|error| FileProblem {
             operation: FileOperation::Play,
             file: id,
             reason: FileFailure::Other,
-            message: files_unsupported().to_string(),
-        }
+            message: error.to_string(),
+        })
     }
 
     /// 局域网设置：插件的局域网端口开在哪些地址上、可以选的网卡，以及开了端口的插件。
@@ -302,13 +305,19 @@ impl ClientCore {
         let chat = ChatLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir))?;
         let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
         let plugins = PluginsLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir));
+        let files = FilesLink::new(
+            runtime.handle().clone(),
+            home.clone(),
+            chat.clone(),
+            Path::new(data_dir),
+        );
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
             chat,
             push,
             plugins,
-            transfers: watch::Sender::new(TransfersViewModel::default()),
+            files,
             runtime: Some(runtime),
         }))
     }
@@ -351,13 +360,6 @@ fn lan_unsupported() -> CoreError {
     }
 }
 
-/// 文件服务的接口同样先于实现合并（ADR-0020）。
-fn files_unsupported() -> CoreError {
-    CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持文件传输".into(),
-    }
-}
-
 fn core_upgrade_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持升级家里的服务器".into(),
@@ -366,6 +368,7 @@ fn core_upgrade_unsupported() -> CoreError {
 
 impl Drop for ClientCore {
     fn drop(&mut self) {
+        self.files.close();
         // 不等后台任务结束：壳可能在主线程上释放核心，测试可能在异步上下文里释放。
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();

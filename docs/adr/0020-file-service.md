@@ -222,8 +222,8 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 - `FileId`，以及解析和生成链接的函数：格式有契约测试。
 - `FileInfo`：编号、名字、类型、大小、来源（`Device`、`Bot { name, plugin }`）、有没有缩略图。
 - `FileCard`：`Loading`、`Ready(FileInfo)`、`Failed(FileFailure, 说明)`。
-- `FileFailure`：和“错误”一节一一对应，加 `TransportUnavailable`、`Protocol`，以及给比 App 新的核心用的 `Other`。手机这一侧的失败单独成类：`LocalSourceUnavailable`（要传的文件读不了）、`LocalPermissionDenied`（系统不让读写）、`LocalStorageFull`（手机放不下）、`LocalIo`（读写出了别的错）。`storage_full`、`permission_denied` 说的是家里的服务器，混用的话主人会去服务器上删文件，问题却在手机上。
-- `Transfer`：本机给这次传输的标识、文件编号、名字、方向、已传字节、总字节、状态（`Running`、`Paused`、`Done`、`LinkNotSent`、`Failed`）、下载放在 App 目录里的路径、这条传输上放哪些按钮。标识不用文件编号：上传在核心发编号之前就要显示进度，
+- `FileFailure`：和“错误”一节一一对应，加 `TransportUnavailable`、`Protocol`，以及给比 App 新的核心用的 `Other`。`UnsupportedFormat` 只来自手机这边的播放，核心不会回。手机这一侧的失败单独成类：`LocalSourceUnavailable`（要传的文件读不了）、`LocalPermissionDenied`（系统不让读写）、`LocalStorageFull`（手机放不下）、`LocalIo`（读写出了别的错）。`storage_full`、`permission_denied` 说的是家里的服务器，混用的话主人会去服务器上删文件，问题却在手机上。
+- `Transfer`：本机给这次传输的标识、文件编号、名字、方向、上传的目标房间、已传字节、总字节、状态（`Running`、`Paused`、`Done`、`LinkNotSent`、`Failed`）、家里的服务出问题而暂停时的说明、下载放在 App 目录里的路径、这条传输上放哪些按钮。标识不用文件编号：上传在核心发编号之前就要显示进度，
   创建时的 `storage_full` 也要落在这条传输上，所以文件编号可以为空。`CancelTransfer`、`DismissTransfer`、`ResendFileLink` 收的是这个标识。
 
 **时间线（`timeline.rs`）**
@@ -234,13 +234,20 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 
 - `Action`：`UploadFile { source, name, mime_type, room }`、`DownloadFile { id }`、`CancelTransfer { id }`、`DismissTransfer { id, delete_local_file }`、`ResendFileLink { id }`、`DeleteFile { id }`、`SendFileToDevices { id }`、`GrantFileToRoom { id, room }`、`DismissFileProblem`。`room` 不为空时，传完由客户端核心授权并把链接发进这个房间：这一步放在壳里的话，App 中途重启就忘了。这一步没成时传输标成 `LinkNotSent`（已传完，链接没发出），不自动再试，`ResendFileLink` 只重发链接，不重传文件：标成失败的话，主人会把几个 G 的文件再传一遍。隧道断着时除外，这时状态是暂停，连上后接着做。
 - 下载的文件由客户端核心放进 App 自己的目录，壳不给路径；记录里只存相对路径，出 ViewModel 时才拼上数据目录，iOS 更新后容器路径变了也找得到。要存到别处，壳调用系统的分享或保存。
-- `CancelTransfer` 取消进行中的传输，上传时连服务器上传了一半的内容一起删；`DismissTransfer` 清掉列表里不再进行的条目，不碰服务器上的文件。两个分开，壳不会以为清掉一条做完的上传会删掉服务器上的文件。清下载完的条目时壳先问主人：只清记录（文件留着，卡片还能打开），还是 `delete_local_file` 连手机上的文件一起删。下载完的不自动清：那是主人手机上的文件。
+- `CancelTransfer` 取消进行中的传输，上传时连服务器上传了一半的内容一起删。字节已经传完、只差发链接时，按钮是“不发了”（`StopSending`），也发 `CancelTransfer`：只清这条传输，手机不删文件，文件留在服务器上由核心到期清掉（这项清理见 [#150](https://github.com/geraldpeng6/wonton/issues/150)）。`DismissTransfer` 清掉列表里不再进行的条目，不碰服务器上的文件。两个分开，壳不会以为清掉一条做完的上传会删掉服务器上的文件。清下载完的条目时壳先问主人：只清记录（文件留着，卡片还能打开），还是 `delete_local_file` 连手机上的文件一起删。下载完的不自动清：那是主人手机上的文件。
 - `source` 是 `UploadSource`：`Path` 是核心自己能打开的本机路径，`Opaque`（Android 的内容 URI、iOS 的书签）核心不解析，经壳实现的 `FileOpener`（`set_file_opener`）换成文件描述符：Rust 打不开内容 URI，App 重启后接着传时要再打开一次。不靠字符串前缀区分：书签编码后可能以 `/` 开头。iOS 上 App 容器的路径更新后会变，接着传要用书签。没选把文件先复制进 App 的目录：大视频要多占一倍空间，手机放不下时传不了。
-- `TransfersViewModel`（`transfers()`、`subscribe_transfers()`）：传输列表，存在本机，App 重启、回到前台时接着传。分成进行中和要主人处理的（`active`）、下载完的（`downloaded`）、上传完的（`uploaded`），每条带上该放哪些按钮，壳不自己按状态判断。还有不落在某条传输上的操作（删除、发到设备、授权）最近一次为什么失败（`FileProblem`：哪个操作、哪个文件、原因），壳可以把错误放到对应的卡片上。
+- `TransfersViewModel`（`transfers()`、`subscribe_transfers()`）：传输列表，存在本机，App 重启、回到前台时接着传。分成进行中和要主人处理的（`active`）、下载完的（`downloaded`）、上传完的（`uploaded`），每条带上该放哪些按钮，壳不自己按状态判断。还有不落在某条传输上的操作（删除、发到设备、授权）最近一次为什么失败（`FileProblem`：哪个操作、哪个文件、原因），壳可以把错误放到对应的卡片上；`FileOperation::Play` 只由 `file_playback_problem` 返回，不进这里。
 - `file_card(id)`：取信息，结果缓存。`file_thumbnail(id)` 返回图片字节。
 - `file_card_actions(info)`：点卡片做什么、“用其他 App 打开”做什么、这个文件最近一次下载。音视频能不能在 App 里播、文件在不在手机上都由核心判断，两端的壳不各写一份。能播的默认边下边播，其他文件下载后交给系统打开。
 - `file_playback_problem(id)`：播放器放不了时问为什么（`FileProblem`）：连不上家、家里的服务器报错、这台手机不支持这个格式（`unsupported_format`）。按 MIME 判断能播的，实际编码也可能放不了，所以要有这一步。
 - `file_stream_url(id)`：客户端核心在回环地址上开一个只给本 App 播放器用的地址（每次启动一个随机令牌），带上设备身份和 `X-Wonton-Files`，把 `Range` 转给核心。播放器不能给单个请求设代理。
+
+**客户端核心（`wonton-client`）**
+
+- 断了和失败分开：隧道断了、超时、核心暂时不回答都是暂停（`Paused`），连上、回到前台、隔一会儿再试，这次传动了一些的很快就试；核心写明了类别的和手机这一侧的问题是失败（`Failed`），不再试。例外是上传创建之后和下载的请求（上传的 `HEAD`、`PATCH`，下载的取文件名、取内容）碰上 `service_unavailable`：整套服务重启时有几秒隧道通了而 tusd 还没起来，也算暂停，不然主人要重新选文件从头传。tusd 真坏了也会一直暂停，所以这种暂停带上核心的说明，App 显示它，不写“等连接恢复”。
+- 上传先创建、把编号写盘，再一次 PATCH 传完剩下的；接着传之前问核心传到哪了。原文件的大小和修改时间和第一次打开时不一样，就不再接着传：拼出来的不是任何一个文件。
+- 下载先问文件名，定下放在哪，名字清洗后才用（Bot 也能影响名字，不能写到下载目录外面）；先写 `<目标>.part`，传完才改名，目标路径上出现的总是完整的文件。没有 ETag 的响应接不上，从头下。
+- 带 `room` 的上传，字节传完后才授权、发链接；发链接不打开房间（`MatrixSession::send_text_to`），不打断主人正在看的时间线。
 
 **壳（Swift、Kotlin）**
 

@@ -111,8 +111,8 @@ pub enum Action {
     /// 下载到 App 自己的目录，路径在 [`Transfer::destination`](crate::Transfer::destination)，传完才出现在这个路径上。断了从断点
     /// 接着下，文件变了从头下。要存到别处，壳调用系统的分享或保存。这个文件正在下载时返回 `InvalidInput`。
     DownloadFile { id: FileId },
-    /// 取消进行中或暂停的传输，并从列表里拿掉；上传时连服务器上传了一半的内容一起删。已经做完或失败的不受影响：取消和传完
-    /// 撞上时不算错。`id` 是 [`Transfer::id`](crate::Transfer::id)，不是文件编号。
+    /// 取消进行中、暂停或者链接没发出的传输，并从列表里拿掉；上传时连服务器上传了一半的内容一起删，字节已经传完的不删，文件留在
+    /// 服务器上。已经做完或失败的不受影响：取消和传完撞上时不算错。`id` 是 [`Transfer::id`](crate::Transfer::id)，不是文件编号。
     CancelTransfer { id: String },
     /// 从列表里清掉不再进行的传输。服务器上的文件不受影响，要删用 [`Action::DeleteFile`]。`delete_local_file` 为真时连 App
     /// 目录里下载的文件一起删，只对下载有效，上传时返回 `InvalidInput`：手机上的原文件不归 App 管。为假时文件留着，卡片还能
