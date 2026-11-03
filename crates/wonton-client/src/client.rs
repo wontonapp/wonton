@@ -5,17 +5,20 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, ChatViewModel, CoreError, HomeViewModel, InstallPreview, LanChoice, LanSettings,
-    MediaHandle, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginsViewModel,
-    PushNotification, SessionListViewModel, StoreItem,
+    Action, ChatViewModel, CoreError, FileCard, FileCardAction, FileCardActions, FileFailure,
+    FileId, FileInfo, FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice,
+    LanSettings, MediaHandle, PluginDetail, PluginFailure, PluginImage, PluginProblem,
+    PluginsViewModel, PushNotification, SessionListViewModel, StoreItem, TransfersViewModel,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
+use crate::files::FileOpener;
 use crate::home::{HomeLink, Network, Storage};
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{
     ChatSubscription, HomeSubscription, PluginsSubscription, SessionListSubscription,
+    TransfersSubscription,
 };
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
@@ -29,6 +32,7 @@ pub struct ClientCore {
     chat: Arc<ChatLink>,
     push: Arc<PushLink>,
     plugins: watch::Sender<PluginsViewModel>,
+    transfers: watch::Sender<TransfersViewModel>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -78,9 +82,12 @@ impl ClientCore {
             Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
+            | Action::DismissTransfer { .. }
+            | Action::ResendFileLink { .. }
             | Action::DeleteFile { .. }
             | Action::SendFileToDevices { .. }
-            | Action::GrantFileToRoom { .. } => Err(files_unsupported()),
+            | Action::GrantFileToRoom { .. }
+            | Action::DismissFileProblem => Err(files_unsupported()),
             chat => self.chat.dispatch(chat),
         }
     }
@@ -173,6 +180,63 @@ impl ClientCore {
         Err(plugins_unsupported())
     }
 
+    /// 给 [`UploadSource::Opaque`](wonton_protocol::UploadSource::Opaque) 的来源换文件描述符。壳在创建核心之后、发出
+    /// 第一个操作之前设置：App 重启后核心要接着传。
+    pub fn set_file_opener(&self, opener: Arc<dyn FileOpener>) {
+        let _ = opener;
+    }
+
+    /// 当前的传输列表，用于首帧渲染。
+    pub fn transfers(&self) -> TransfersViewModel {
+        self.transfers.borrow().clone()
+    }
+
+    /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_transfers(&self) -> Arc<TransfersSubscription> {
+        Arc::new(TransfersSubscription::new(self.transfers.subscribe()))
+    }
+
+    /// 消息下面的文件卡片：取信息并缓存。结果写在卡片里，壳等待时画 [`FileCard::Loading`]。
+    pub async fn file_card(&self, id: FileId) -> FileCard {
+        let _ = id;
+        FileCard::Failed {
+            reason: FileFailure::Other,
+            message: files_unsupported().to_string(),
+        }
+    }
+
+    /// 卡片上的按钮和下载进展。不走网络，传输列表一变就可以重新取。
+    pub fn file_card_actions(&self, info: FileInfo) -> FileCardActions {
+        let _ = info;
+        FileCardActions {
+            tap: FileCardAction::Download,
+            open_elsewhere: None,
+            download: None,
+        }
+    }
+
+    /// 文件的缩略图：JPEG 字节。
+    pub async fn file_thumbnail(&self, id: FileId) -> Result<Vec<u8>, CoreError> {
+        let _ = id;
+        Err(files_unsupported())
+    }
+
+    /// 给 App 自己的播放器用的回环地址，带 `Range`：播放器不能给单个请求设代理。令牌每次启动换一个。
+    pub async fn file_stream_url(&self, id: FileId) -> Result<String, CoreError> {
+        let _ = id;
+        Err(files_unsupported())
+    }
+
+    /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。说明里写着可以下载后用其他 App 打开。
+    pub async fn file_playback_problem(&self, id: FileId) -> FileProblem {
+        FileProblem {
+            operation: FileOperation::Play,
+            file: id,
+            reason: FileFailure::Other,
+            message: files_unsupported().to_string(),
+        }
+    }
+
     /// 局域网设置：插件的局域网端口开在哪些地址上、可以选的网卡，以及开了端口的插件。
     pub async fn lan_settings(&self) -> Result<LanSettings, CoreError> {
         Err(lan_unsupported())
@@ -231,6 +295,7 @@ impl ClientCore {
                 }),
                 ..PluginsViewModel::default()
             }),
+            transfers: watch::Sender::new(TransfersViewModel::default()),
             runtime: Some(runtime),
         }))
     }

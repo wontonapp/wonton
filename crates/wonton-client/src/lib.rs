@@ -5,7 +5,7 @@
 //!
 //! - 操作进：壳调用 [`ClientCore::dispatch`]，参数是 [`Action`]。
 //! - ViewModel 出：壳调用 [`ClientCore::subscribe_session_list`]、[`ClientCore::subscribe_home`]、
-//!   [`ClientCore::subscribe_chat`]、[`ClientCore::subscribe_plugins`]，循环等待订阅的 `next()`，包装成 Swift 的
+//!   [`ClientCore::subscribe_chat`]、[`ClientCore::subscribe_plugins`]、[`ClientCore::subscribe_transfers`]，循环等待订阅的 `next()`，包装成 Swift 的
 //!   `AsyncSequence` 或 Kotlin 的 `Flow`。打开的房间的时间线用 [`ClientCore::subscribe_timeline`]，推的是不能合并的
 //!   增量批次。
 //!
@@ -21,6 +21,7 @@ uniffi::setup_scaffolding!();
 
 mod chat;
 mod client;
+mod files;
 mod home;
 mod logging;
 mod push;
@@ -29,23 +30,28 @@ mod subscription;
 
 pub use chat::TimelineSubscription;
 pub use client::ClientCore;
+pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use logging::init_logging;
 pub use subscription::{
     ChatSubscription, HomeSubscription, PluginsSubscription, SessionListSubscription,
+    TransfersSubscription,
 };
 pub use wonton_protocol::{
     Action, Answer, BackPagination, CardChoice, CardLine, ChatAccount, ChatFailure, ChatProblem,
     ChatSync, ChatViewModel, ConfirmationCard, ConfirmationState, ConfirmationView, CoreError,
-    DeviceInvite, DeviceVerification, EncryptionStatus, HomeFailure, HomePath, HomeStatus,
-    HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin,
-    InstalledPlugins, LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin,
-    LanPort, LanProblem, LanProtocol, LanSettings, MediaHandle, MessageContent, PairingFailure,
-    PairingStatus, PermissionLine, PluginAuthor, PluginCategory, PluginDetail, PluginFailure,
-    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState,
-    PluginTask, PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushContent,
-    PushEndpoint, PushNotification, PushStatus, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow, SecretString, SendState, SessionListViewModel, SessionRow, StoreFailure, StoreItem,
-    StoreListing, StoreProblem, StoreSection, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineUpdate, UpgradeOffer,
+    DeviceInvite, DeviceVerification, EncryptionStatus, FileCard, FileCardAction, FileCardActions,
+    FileFailure, FileId, FileInfo, FileOperation, FileProblem, FileSource, HomeFailure, HomePath,
+    HomeStatus, HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview,
+    InstalledPlugin, InstalledPlugins, LanAddress, LanChoice, LanFailure, LanInterface,
+    LanInterfaceKind, LanPlugin, LanPort, LanProblem, LanProtocol, LanSettings, MediaHandle,
+    MessageContent, PairingFailure, PairingStatus, PermissionLine, PluginAuthor, PluginCategory,
+    PluginDetail, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
+    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, PluginTrust,
+    PluginsViewModel, ProxySettings, PushContent, PushEndpoint, PushNotification, PushStatus,
+    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString, SendState,
+    SessionListViewModel, SessionRow, StoreFailure, StoreItem, StoreListing, StoreProblem,
+    StoreSection, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+    Transfer, TransferAction, TransferDirection, TransferState, TransfersViewModel, UpgradeOffer,
+    UploadSource,
 };

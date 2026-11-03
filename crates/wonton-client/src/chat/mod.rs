@@ -215,9 +215,12 @@ impl ChatLink {
             | Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
+            | Action::DismissTransfer { .. }
+            | Action::ResendFileLink { .. }
             | Action::DeleteFile { .. }
             | Action::SendFileToDevices { .. }
-            | Action::GrantFileToRoom { .. } => Err(invalid("不是聊天操作")),
+            | Action::GrantFileToRoom { .. }
+            | Action::DismissFileProblem => Err(invalid("不是聊天操作")),
         }
     }
 

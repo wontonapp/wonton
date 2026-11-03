@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Answer, FileId, ImageUpload, InstallPreview, PushEndpoint, SecretString};
+use crate::{
+    Answer, FileId, ImageUpload, InstallPreview, PushEndpoint, SecretString, UploadSource,
+};
 
 /// 原生壳发给客户端核心的用户操作。
 ///
@@ -98,16 +100,33 @@ pub enum Action {
     DismissPluginTask { id: String },
 
     // 文件（ADR-0020）。网络操作都在后台执行，进展和结果在传输列表和文件卡片里。
-    /// 上传一个文件。`source` 是壳选到的文件：路径或内容 URI。传完放进共享文件夹 `transfers`。
-    UploadFile { source: String },
-    /// 下载到 `destination`（路径或内容 URI）。断了从断点接着下，文件变了从头下。
-    DownloadFile { id: FileId, destination: String },
-    /// 取消一次传输。`id` 是 [`Transfer::id`](crate::Transfer::id)，不是文件编号。
+    /// 上传一个文件，传完放进共享文件夹 `transfers`。`name`、`mime_type` 是系统给的文件名和类型，核心读不到内容 URI 的这些
+    /// 信息。`room` 不为空时，传完把这个房间的 Bot 加进访问范围，再把链接发进这个房间。
+    UploadFile {
+        source: UploadSource,
+        name: String,
+        mime_type: Option<String>,
+        room: Option<String>,
+    },
+    /// 下载到 App 自己的目录，路径在 [`Transfer::destination`](crate::Transfer::destination)，传完才出现在这个路径上。断了从断点
+    /// 接着下，文件变了从头下。要存到别处，壳调用系统的分享或保存。这个文件正在下载时返回 `InvalidInput`。
+    DownloadFile { id: FileId },
+    /// 取消进行中或暂停的传输，并从列表里拿掉；上传时连服务器上传了一半的内容一起删。已经做完或失败的不受影响：取消和传完
+    /// 撞上时不算错。`id` 是 [`Transfer::id`](crate::Transfer::id)，不是文件编号。
     CancelTransfer { id: String },
+    /// 从列表里清掉不再进行的传输。服务器上的文件不受影响，要删用 [`Action::DeleteFile`]。`delete_local_file` 为真时连 App
+    /// 目录里下载的文件一起删，只对下载有效，上传时返回 `InvalidInput`：手机上的原文件不归 App 管。为假时文件留着，卡片还能
+    /// 打开。还在进行的传输要先取消，否则返回 `InvalidInput`。
+    DismissTransfer { id: String, delete_local_file: bool },
+    /// 只重发链接：再授权一次，再把链接发进上传时的房间，不重传文件。只对
+    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有效，其他返回 `InvalidInput`。
+    ResendFileLink { id: String },
     /// 删掉编号。设备上传的文件核对没变过后连文件一起删，其他来源的原文件不动。
     DeleteFile { id: FileId },
     /// 把链接发到和主人的“Wonton”私聊，主人所有设备都看得到卡片。
     SendFileToDevices { id: FileId },
     /// 把这个房间的 Bot 加进文件的访问范围。在 Bot 的房间里发链接时一起调，Bot 才能看和再分享。
     GrantFileToRoom { id: FileId, room: String },
+    /// 清掉 [`TransfersViewModel::problem`](crate::TransfersViewModel::problem)。
+    DismissFileProblem,
 }

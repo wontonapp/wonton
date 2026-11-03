@@ -61,6 +61,33 @@ pub enum FileCard {
     },
 }
 
+/// 卡片上一个按钮做什么。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileCardAction {
+    /// 用 `file_stream_url` 的地址放进 App 自己的播放器，边下边播。
+    Play,
+    /// 发 [`Action::DownloadFile`](crate::Action::DownloadFile)，下完交给系统打开。
+    Download,
+    /// 文件已经在手机上，把 `path` 交给系统打开。
+    Open { path: String },
+    /// 这个文件正在下载：等它下完。
+    Wait,
+}
+
+/// 一张 [`FileCard::Ready`] 上的按钮和下载进展，核心按文件类型、下载记录和手机上的文件给出，壳照着画。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FileCardActions {
+    /// 点卡片做什么。
+    pub tap: FileCardAction,
+    /// “用其他 App 打开”做什么。`tap` 已经是下载或打开时为空。
+    pub open_elsewhere: Option<FileCardAction>,
+    /// 这个文件最近一次下载；没下载过，或者记录清掉了时为空。
+    pub download: Option<Transfer>,
+}
+
 /// 文件操作失败的原因。JSON 写法就是 HTTP 错误体的 `kind`、`X-Wonton-Error` 和 Bot 工具错误开头的类别。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -70,7 +97,7 @@ pub enum FileFailure {
     Unauthenticated,
     /// 这台设备的用户不在访问范围里。
     NotShared,
-    /// 路径不合法；Bot 调工具时，来源插件的授权收回了。
+    /// 家里的服务器上路径不合法；Bot 调工具时，来源插件的授权收回了。
     PermissionDenied,
     /// 没有这个编号。
     FileUnknown,
@@ -82,7 +109,7 @@ pub enum FileFailure {
     FileChanged,
     /// 这个类型没有预览或缩略图（`wonton__view_file`、`/thumbnail`）。
     NotViewable,
-    /// 磁盘放不下这个上传。
+    /// 家里服务器的磁盘放不下这个上传。
     StorageFull,
     /// 来源插件给不了这个文件：卸了、没在运行、连不上、响应中途断了、读取超过期限，占着名额的读取超过 30 秒没结束，或者不再提供 MCP 服务。说明里写是哪一种。
     PluginUnavailable,
@@ -92,7 +119,7 @@ pub enum FileFailure {
     ResourceTooLarge,
     /// 核心依赖的系统服务（tusd、Matrix 服务器）没配置或连不上，或者读取、解码的名额满了（忙，不归给来源，稍后再试）。
     ServiceUnavailable,
-    /// 核心自己的问题：读写不了记录、读不了插件记录、Docker 出错、起不了进程。
+    /// 家里核心自己的问题：读写不了记录、读不了插件记录、Docker 出错、起不了进程。
     Internal,
     /// 请求本身不合法：请求体读不懂或者没有传完，或者上传没有声明长度。
     InvalidInput,
@@ -100,6 +127,16 @@ pub enum FileFailure {
     TransportUnavailable,
     /// 客户端核心读不懂核心的响应。不会出现在核心的响应里。
     Protocol,
+    /// 手机上要上传的文件读不了：被删了、被改过，或者内容 URI、书签失效了，要重新选择。不会出现在核心的响应里。
+    LocalSourceUnavailable,
+    /// 系统不让 App 读写手机上的这个文件：选文件时给的读权限丢了，或者下载的位置写不了。不会出现在核心的响应里。
+    LocalPermissionDenied,
+    /// 手机放不下下载的文件。不会出现在核心的响应里。
+    LocalStorageFull,
+    /// 手机上读写文件出了别的错，说明里附上系统的原话。不会出现在核心的响应里。
+    LocalIo,
+    /// 文件拿得到，这台手机的播放器放不了这个格式。不会出现在核心的响应里。
+    UnsupportedFormat,
     /// 比这个 App 新的核心给的类别。
     #[serde(other)]
     Other,
@@ -126,6 +163,11 @@ impl FileFailure {
             Self::InvalidInput => "invalid_input",
             Self::TransportUnavailable => "transport_unavailable",
             Self::Protocol => "protocol",
+            Self::LocalSourceUnavailable => "local_source_unavailable",
+            Self::LocalPermissionDenied => "local_permission_denied",
+            Self::LocalStorageFull => "local_storage_full",
+            Self::LocalIo => "local_io",
+            Self::UnsupportedFormat => "unsupported_format",
             Self::Other => "other",
         }
     }
@@ -143,7 +185,15 @@ impl FileFailure {
             Self::UpstreamError | Self::ResourceTooLarge => Some(502),
             Self::Internal => Some(500),
             Self::InvalidInput => Some(400),
-            Self::FileExpired | Self::TransportUnavailable | Self::Protocol | Self::Other => None,
+            Self::FileExpired
+            | Self::TransportUnavailable
+            | Self::Protocol
+            | Self::LocalSourceUnavailable
+            | Self::LocalPermissionDenied
+            | Self::LocalStorageFull
+            | Self::LocalIo
+            | Self::UnsupportedFormat
+            | Self::Other => None,
         }
     }
 }
@@ -166,12 +216,23 @@ pub struct FileGrantRequest {
     pub room: String,
 }
 
+/// 要上传的文件从哪里读。App 重启后接着传时再打开一次。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UploadSource {
+    /// 客户端核心自己能打开的本机绝对路径。iOS 上 App 容器的路径在 App 更新后会变，接着传就找不到了，要用书签。
+    Path { path: String },
+    /// Android 的内容 URI、iOS 的书签：客户端核心不解析，原样交给壳的 `FileOpener`。
+    Opaque { handle: String },
+}
+
 /// 一次上传或下载，存在本机。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Transfer {
-    /// 本机给这次传输的标识，交给 [`Action::CancelTransfer`](crate::Action::CancelTransfer)。不用文件编号：上传在核心发
-    /// 编号之前就要显示进度，创建时的 `storage_full` 也要落在这条传输上；同一个文件也可以同时下载到两个地方。
+    /// 本机给这次传输的标识，交给 [`actions`](Self::actions) 对应的操作。不用文件编号：上传在核心发编号之前就要显示进度，
+    /// 创建时的 `storage_full` 也要落在这条传输上。
     pub id: String,
     /// 文件的编号；上传还没创建时为空。
     pub file: Option<FileId>,
@@ -181,6 +242,30 @@ pub struct Transfer {
     /// 总字节数；下载还没拿到响应头时为空，核心没给 `Content-Length` 时一直为空。
     pub total_bytes: Option<u64>,
     pub state: TransferState,
+    /// 下载放在 App 目录里的绝对路径，[`TransferState::Done`] 之后壳交给系统打开或分享；上传时、下载还没拿到文件名时为空。
+    /// 不要存下来：iOS 上 App 更新后容器的路径会变。
+    pub destination: Option<String>,
+    /// 这条传输上放哪些按钮，按这个顺序。
+    pub actions: Vec<TransferAction>,
+}
+
+/// 传输上的一个按钮。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum TransferAction {
+    /// 发 [`Action::CancelTransfer`](crate::Action::CancelTransfer)。
+    Cancel,
+    /// 发 `delete_local_file` 为假的 [`Action::DismissTransfer`](crate::Action::DismissTransfer)。
+    Dismiss,
+    /// 先问主人只清记录，还是连手机上的文件一起删，再发 [`Action::DismissTransfer`](crate::Action::DismissTransfer)。
+    DismissDownloaded,
+    /// 发 [`Action::ResendFileLink`](crate::Action::ResendFileLink)。
+    ResendLink,
+    /// 把 [`Transfer::destination`] 交给系统打开。
+    Open,
+    /// 把 [`Transfer::destination`] 交给系统的分享或保存。
+    Share,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,8 +284,61 @@ pub enum TransferState {
     /// App 进了后台或者断了网，回到前台、连上之后接着传。
     Paused,
     Done,
+    /// 文件已经传完，在服务器上；授权或发进房间这一步没成。不自动再试：用
+    /// [`Action::ResendFileLink`](crate::Action::ResendFileLink) 只重发链接，不用重传文件。
+    LinkNotSent {
+        reason: FileFailure,
+        message: String,
+    },
     Failed {
         reason: FileFailure,
         message: String,
     },
+}
+
+/// 传输列表，存在本机：App 重启后还在，接着传。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TransfersViewModel {
+    /// 进行中的，和要主人处理的（失败、链接没发出）。
+    pub active: Vec<Transfer>,
+    /// 下载完的：文件在 App 自己的目录里，主人清理之前一直留着。
+    pub downloaded: Vec<Transfer>,
+    /// 上传完的。不占主人的地方，只留最近的一些。
+    pub uploaded: Vec<Transfer>,
+    /// 最近一次不落在某条传输上的文件操作为什么失败，壳显示后用
+    /// [`Action::DismissFileProblem`](crate::Action::DismissFileProblem) 清掉。
+    pub problem: Option<FileProblem>,
+}
+
+impl TransfersViewModel {
+    /// 三个列表里的所有传输。
+    pub fn all(&self) -> impl Iterator<Item = &Transfer> {
+        self.active
+            .iter()
+            .chain(&self.downloaded)
+            .chain(&self.uploaded)
+    }
+}
+
+/// 不落在某条传输上的文件操作。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum FileOperation {
+    Delete,
+    SendToDevices,
+    GrantToRoom,
+    Play,
+}
+
+/// 一次文件操作失败的原因。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FileProblem {
+    pub operation: FileOperation,
+    pub file: FileId,
+    pub reason: FileFailure,
+    /// 给人看的说明，包含失败的操作、文件和原因。
+    pub message: String,
 }

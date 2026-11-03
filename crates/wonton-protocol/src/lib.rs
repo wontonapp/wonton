@@ -33,9 +33,10 @@ pub use confirmation::{
 };
 pub use error::CoreError;
 pub use file::{
-    FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileError, FileErrorBody, FileFailure,
-    FileGrantRequest, FileId, FileInfo, FileLinks, FileSource, InvalidFileId, Transfer,
-    TransferDirection, TransferState, extract_file_links,
+    FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
+    FileErrorBody, FileFailure, FileGrantRequest, FileId, FileInfo, FileLinks, FileOperation,
+    FileProblem, FileSource, InvalidFileId, Transfer, TransferAction, TransferDirection,
+    TransferState, TransfersViewModel, UploadSource, extract_file_links,
 };
 pub use home::{
     DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,

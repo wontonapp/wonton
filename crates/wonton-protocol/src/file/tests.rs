@@ -183,6 +183,18 @@ fn failure_kinds_and_http_statuses_are_stable() {
             None,
         ),
         (FileFailure::Protocol, "protocol", None),
+        (
+            FileFailure::LocalSourceUnavailable,
+            "local_source_unavailable",
+            None,
+        ),
+        (
+            FileFailure::LocalPermissionDenied,
+            "local_permission_denied",
+            None,
+        ),
+        (FileFailure::LocalStorageFull, "local_storage_full", None),
+        (FileFailure::LocalIo, "local_io", None),
     ];
     for (failure, kind, status) in table {
         assert_eq!(failure.as_str(), kind);
@@ -293,6 +305,10 @@ fn cards_transfers_and_actions_round_trip_through_json() {
         TransferState::Running,
         TransferState::Paused,
         TransferState::Done,
+        TransferState::LinkNotSent {
+            reason: FileFailure::ServiceUnavailable,
+            message: "Matrix 服务器连不上".into(),
+        },
         TransferState::Failed {
             reason: FileFailure::StorageFull,
             message: "磁盘放不下".into(),
@@ -306,18 +322,68 @@ fn cards_transfers_and_actions_round_trip_through_json() {
             transferred_bytes: 1024,
             total_bytes: Some(4096),
             state,
+            destination: None,
+            actions: vec![TransferAction::ResendLink, TransferAction::Dismiss],
         };
         assert_eq!(round_trip(&transfer), transfer);
     }
+    for tap in [
+        FileCardAction::Play,
+        FileCardAction::Download,
+        FileCardAction::Open {
+            path: "/data/downloads/a.mov".into(),
+        },
+        FileCardAction::Wait,
+    ] {
+        let actions = FileCardActions {
+            tap: tap.clone(),
+            open_elsewhere: Some(tap),
+            download: None,
+        };
+        assert_eq!(round_trip(&actions), actions);
+    }
+    let view = TransfersViewModel {
+        active: Vec::new(),
+        downloaded: Vec::new(),
+        uploaded: Vec::new(),
+        problem: Some(FileProblem {
+            operation: FileOperation::Delete,
+            file: id(),
+            reason: FileFailure::FileChanged,
+            message: "已经是别的文件了".into(),
+        }),
+    };
+    assert_eq!(round_trip(&view), view);
+}
+
+#[test]
+fn file_actions_round_trip_through_json() {
     for action in [
         Action::UploadFile {
-            source: "content://media/external/images/1".into(),
+            source: UploadSource::Opaque {
+                handle: "content://media/external/images/1".into(),
+            },
+            name: "a.jpg".into(),
+            mime_type: Some("image/jpeg".into()),
+            room: Some("!room:home.example".into()),
         },
-        Action::DownloadFile {
-            id: id(),
-            destination: "/tmp/a.mov".into(),
+        Action::UploadFile {
+            source: UploadSource::Path {
+                path: "/tmp/a.mov".into(),
+            },
+            name: "a.mov".into(),
+            mime_type: None,
+            room: None,
         },
+        Action::DownloadFile { id: id() },
         Action::CancelTransfer {
+            id: "local-1".into(),
+        },
+        Action::DismissTransfer {
+            id: "local-1".into(),
+            delete_local_file: true,
+        },
+        Action::ResendFileLink {
             id: "local-1".into(),
         },
         Action::DeleteFile { id: id() },
@@ -326,6 +392,7 @@ fn cards_transfers_and_actions_round_trip_through_json() {
             id: id(),
             room: "!room:home.example".into(),
         },
+        Action::DismissFileProblem,
     ] {
         assert_eq!(round_trip(&action), action);
     }
