@@ -417,6 +417,8 @@ pub enum PluginFailure {
     Invalid,
     /// 家里的服务器选不出局域网地址，申请了 `network.lan` 的插件装不上：要主人在局域网设置里选网卡或地址。
     LanUnavailable,
+    /// 家里的服务器正在升级，升级结束前不能动插件（ADR-0025）。
+    CoreUpgrading,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// App 和家里服务器的版本对不上，有一边要更新。

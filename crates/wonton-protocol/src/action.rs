@@ -129,4 +129,12 @@ pub enum Action {
     GrantFileToRoom { id: FileId, room: String },
     /// 清掉 [`TransfersViewModel::problem`](crate::TransfersViewModel::problem)。
     DismissFileProblem,
+
+    // 核心的一键升级（ADR-0025）。网络操作都在后台执行，进展和结果在 `CoreUpgradeViewModel` 里。
+    /// 取升级状态、查新版本。打开升级页时 `manual` 为假，主人点“检查”时为真。
+    RefreshCoreUpgrade { manual: bool },
+    /// 主人在确认页上点了“升级”。`digest` 是 [`CoreUpgradeOffer::digest`](crate::CoreUpgradeOffer::digest)。
+    StartCoreUpgrade { digest: String },
+    /// 请求取消，只在 [`CoreUpgradePhase::Pulling`](crate::CoreUpgradePhase::Pulling) 阶段有效。
+    CancelCoreUpgrade,
 }

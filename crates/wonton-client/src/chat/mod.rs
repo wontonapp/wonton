@@ -220,7 +220,10 @@ impl ChatLink {
             | Action::DeleteFile { .. }
             | Action::SendFileToDevices { .. }
             | Action::GrantFileToRoom { .. }
-            | Action::DismissFileProblem => Err(invalid("不是聊天操作")),
+            | Action::DismissFileProblem
+            | Action::RefreshCoreUpgrade { .. }
+            | Action::StartCoreUpgrade { .. }
+            | Action::CancelCoreUpgrade => Err(invalid("不是聊天操作")),
         }
     }
 

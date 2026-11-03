@@ -11,6 +11,7 @@ uniffi::setup_scaffolding!();
 mod action;
 mod chat;
 mod confirmation;
+mod core_upgrade;
 mod error;
 mod file;
 mod home;
@@ -30,6 +31,12 @@ pub use chat::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
     ConfirmationReply, ConfirmationState, ConfirmationView, answer_path,
+};
+pub use core_upgrade::{
+    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
+    CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem,
+    CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
+    CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
 };
 pub use error::CoreError;
 pub use file::{

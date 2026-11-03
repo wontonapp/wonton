@@ -260,6 +260,10 @@ fn wire_format_is_stable() {
         json!("ai")
     );
     assert_eq!(
+        serde_json::to_value(PluginFailure::CoreUpgrading).unwrap(),
+        json!("core_upgrading")
+    );
+    assert_eq!(
         serde_json::to_value(PluginTrust::Community).unwrap(),
         json!("community")
     );

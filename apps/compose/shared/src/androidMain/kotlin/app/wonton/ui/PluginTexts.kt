@@ -63,6 +63,7 @@ val PluginFailure.nextStep: String
         PluginFailure.CONFLICT -> "它已经装了，或者正在安装、升级、卸载，等那边做完。"
         PluginFailure.INVALID -> "插件包不合法，请联系插件的作者。"
         PluginFailure.LAN_UNAVAILABLE -> "在局域网设置里选好网卡或地址后再试。"
+        PluginFailure.CORE_UPGRADING -> "家里的服务器正在升级，升级结束后再试。"
         PluginFailure.UPSTREAM -> "家里的服务器出了错，稍后再试。"
         PluginFailure.PROTOCOL -> "App 和家里的服务器版本对不上，请更新 App 或家里的服务器。"
     }

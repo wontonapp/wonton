@@ -88,6 +88,9 @@ impl ClientCore {
             | Action::SendFileToDevices { .. }
             | Action::GrantFileToRoom { .. }
             | Action::DismissFileProblem => Err(files_unsupported()),
+            Action::RefreshCoreUpgrade { .. }
+            | Action::StartCoreUpgrade { .. }
+            | Action::CancelCoreUpgrade => Err(core_upgrade_unsupported()),
             chat => self.chat.dispatch(chat),
         }
     }
@@ -349,6 +352,12 @@ fn lan_unsupported() -> CoreError {
 fn files_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持文件传输".into(),
+    }
+}
+
+fn core_upgrade_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持升级家里的服务器".into(),
     }
 }
 
