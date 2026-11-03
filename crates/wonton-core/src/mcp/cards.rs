@@ -122,6 +122,7 @@ pub fn body(card: &ConfirmationCard) -> String {
         ConfirmationState::Running => "已确认，正在执行……".to_owned(),
         ConfirmationState::Succeeded { message } => format!("已完成：{message}"),
         ConfirmationState::Failed { message } => format!("没有成功：{message}"),
+        ConfirmationState::Uncertain { message } => format!("结果不确定：{message}"),
         ConfirmationState::Rejected => "已拒绝，没有执行。".to_owned(),
         ConfirmationState::Expired => "没有在期限内确认，已过期，没有执行。".to_owned(),
     });

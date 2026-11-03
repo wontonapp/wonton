@@ -75,6 +75,8 @@ pub enum ConfirmationState {
     Succeeded { message: String },
     /// 执行失败；`message` 是原因。
     Failed { message: String },
+    /// 发给插件了，但没等到结果（超时、连接断了）：可能已经执行了。`message` 写明为什么不确定。
+    Uncertain { message: String },
     /// 主人拒绝了，没有执行。
     Rejected,
     /// 主人没在期限内回答，没有执行。
@@ -112,6 +114,13 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&state).unwrap(),
             json!({"type": "failed", "message": "x"})
+        );
+        let state = ConfirmationState::Uncertain {
+            message: "x".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&state).unwrap(),
+            json!({"type": "uncertain", "message": "x"})
         );
         assert_eq!(answer_path("abc"), "/_wonton/confirmations/abc");
     }
