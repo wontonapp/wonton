@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use super::api::MatrixError;
 use super::{Matrix, Session};
 
-/// 通知房间的名字。
+/// 通知房间的名字，也是核心账号的显示名：通知的标题用发送者的显示名，没设时主人看到的是 `wonton-core`。
 const ROOM_NAME: &str = "Wonton";
 
 /// 发出去的一条消息在哪。
@@ -118,6 +118,7 @@ impl NoticeRoom {
     }
 
     async fn create(&self, core: &Session<'_>, owner: &str) -> Result<String, MatrixError> {
+        core.set_display_name(ROOM_NAME).await?;
         let id = core.create_notice_room(ROOM_NAME, owner).await?;
         let handed_over = async {
             core.add_direct(owner, &id).await?;
@@ -214,6 +215,17 @@ mod tests {
         let (second, members) = last_sent(&fake);
         assert_ne!(second, first);
         assert!(members.iter().any(|m| m == OWNER));
+    }
+
+    #[tokio::test]
+    async fn notifications_from_the_core_account_are_titled_wonton() {
+        let dir = tempfile::tempdir().unwrap();
+        let (fake, notices) = notices(&dir).await;
+        notices.send(&text()).await.unwrap();
+        let core = notices.matrix.core_session();
+        let state = fake.state();
+        let name = state.user(core.user_id()).display_name.as_deref();
+        assert_eq!(name, Some(ROOM_NAME));
     }
 
     #[tokio::test]

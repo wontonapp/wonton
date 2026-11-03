@@ -1,6 +1,6 @@
 //! 敏感操作的确认（ADR-0016）：核心发给主人的确认卡片，以及主人的回答。
 //!
-//! 卡片是核心账号（`@<CORE_LOCALPART>:<server_name>`）发的一条 `m.notice`，结构化内容放在消息内容的
+//! 卡片是核心账号（`@<CORE_LOCALPART>:<server_name>`）发的一条 `m.text`，结构化内容放在消息内容的
 //! [`CARD_FIELD`] 字段，`body` 是给其他客户端看的纯文本。状态变化时核心编辑这条消息（`m.replace`）。客户端只认
 //! 核心账号发的卡片，别人发的同样结构的内容当普通消息显示。主人点了按钮，客户端经隧道请求
 //! `POST <核心地址>/_wonton/confirmations/{id}`（[`answer_path`]），请求体是 [`ConfirmationAnswer`]，

@@ -29,8 +29,8 @@ pub struct Message {
     pub status: SendStatus,
     /// 内容；被编辑过时是最新的内容。
     pub body: MessageBody,
-    /// `m.notice` 内容里带命名空间的自定义字段（如 `app.wonton.confirmation`），被编辑过时是最新的内容。SDK 解析消息时
-    /// 丢掉了它们，这里从原始事件里取。别的消息类型没有。
+    /// `m.text`、`m.notice` 内容里带命名空间的自定义字段（如 `app.wonton.confirmation`），被编辑过时是最新的内容。SDK
+    /// 解析消息时丢掉了它们，这里从原始事件里取。别的消息类型没有。
     pub custom: Map<String, Value>,
     /// 是否被编辑过。
     pub edited: bool,
@@ -189,9 +189,9 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
 }
 
 fn custom(event: &EventTimelineItem, kind: &MsgLikeKind) -> Map<String, Value> {
-    let is_notice = matches!(kind, MsgLikeKind::Message(message)
-        if matches!(message.msgtype(), MessageType::Notice(_)));
-    if !is_notice {
+    let is_text = matches!(kind, MsgLikeKind::Message(message)
+        if matches!(message.msgtype(), MessageType::Text(_) | MessageType::Notice(_)));
+    if !is_text {
         return Map::new();
     }
     // SDK 核对过编辑：发送者和原消息相同才算数。

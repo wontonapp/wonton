@@ -17,7 +17,7 @@ const P256DH: &str =
 const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
 const ENDPOINT: &str = "https://ntfy.example/upWonton123?up=1";
 
-fn endpoint() -> PushEndpoint {
+pub(crate) fn endpoint() -> PushEndpoint {
     PushEndpoint {
         url: ENDPOINT.to_owned(),
         p256dh: P256DH.to_owned(),
@@ -26,7 +26,7 @@ fn endpoint() -> PushEndpoint {
 }
 
 /// 推送代理会转给设备的明文（字段同核心的 `DevicePayload`），从它收到的通知里取。
-fn device_payload(received: &Received) -> Vec<u8> {
+pub(crate) fn device_payload(received: &Received) -> Vec<u8> {
     let notification = &received.notification;
     let field = |name: &str| notification.get(name).cloned().unwrap_or(Value::Null);
     json!({

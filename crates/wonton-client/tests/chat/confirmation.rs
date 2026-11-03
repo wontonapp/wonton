@@ -6,10 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use wonton_client::{
     Action, Answer, ChatFailure, ConfirmationState, ConfirmationView, CoreError, MessageContent,
-    RoomMembership, TimelineContent, TimelineItem,
+    PushContent, PushStatus, RoomMembership, TimelineContent, TimelineItem,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedEventId, OwnedRoomId, OwnedUserId};
 
+use super::push::{device_payload, endpoint};
 use super::support::{Home, OWNER, Phone, Timeline};
 
 const CARD_FIELD: &str = "app.wonton.confirmation";
@@ -248,6 +249,93 @@ async fn only_the_core_account_can_show_a_card() {
         .await;
 }
 
+/// 主人不开 App 也要知道有卡片在等。不响的两种靠 Tuwunel 真实的默认推送规则：后面那张卡片的推送到了，说明前面的已经判定过。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    phone
+        .dispatch(Action::SetPushEndpoint {
+            endpoint: endpoint(),
+        })
+        .unwrap();
+    phone
+        .wait_chat("推送已登记", |view| {
+            (view.push == PushStatus::Registered).then_some(())
+        })
+        .await;
+    let (core, room_id) = core_room(&phone, &home).await;
+    let room = core.open_room(&room_id).await.expect("核心打开私聊");
+    drop(phone);
+
+    let waiting = card("install", in_ten_minutes());
+    let posted = send(&room, content(&waiting)).await;
+    let pushed = home
+        .push
+        .wait_for("卡片的推送", |received| {
+            received.notification["event_id"] == posted.as_str()
+        })
+        .await;
+
+    edit(
+        &room,
+        &posted,
+        &with_state(&waiting, json!({"type": "running"})),
+    )
+    .await;
+    send(&room, json!({"msgtype": "m.notice", "body": "不打扰主人"})).await;
+    let next = send(&room, content(&card("next", in_ten_minutes()))).await;
+    home.push
+        .wait_for("下一张卡片的推送", |received| {
+            received.notification["event_id"] == next.as_str()
+        })
+        .await;
+    let messages: Vec<_> = home
+        .push
+        .received()
+        .into_iter()
+        .filter(|received| received.notification["type"] == "m.room.message")
+        .map(|received| received.notification["event_id"].clone())
+        .collect();
+    assert_eq!(messages, [json!(posted), json!(next)]);
+
+    let woken = Phone::open(dir.path());
+    let notification = woken
+        .resolve_push(device_payload(&pushed))
+        .await
+        .expect("推送内容是对的")
+        .expect("卡片要通知");
+    assert_eq!(notification.room_id, room_id.as_str());
+    assert_eq!(notification.sender, "Wonton");
+    let PushContent::Message { body } = notification.content else {
+        panic!("通知要有卡片的文字：{:?}", notification.content);
+    };
+    assert!(body.contains("请在 Wonton App"), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_card_from_an_older_core_still_shows() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let (core, room_id) = core_room(&phone, &home).await;
+    let room = core.open_room(&room_id).await.expect("核心打开私聊");
+    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
+
+    let mut older = content(&card("older", in_ten_minutes()));
+    older["msgtype"] = json!("m.notice");
+    send(&room, older).await;
+    let view = card_view(&mut timeline, "older", "m.notice 卡片出现").await;
+    assert_eq!(view.card.state, ConfirmationState::Pending);
+}
+
 /// 比这个 App 新的核心写的：多了一个按钮和一个字段，别的按钮照常能点。
 fn install_card() -> Value {
     let mut install = card("install", in_ten_minutes());
@@ -342,7 +430,7 @@ fn with_state(card: &Value, state: Value) -> Value {
 /// 同 `wonton-core` 的 `cards::content`。
 fn content(card: &Value) -> Value {
     json!({
-        "msgtype": "m.notice",
+        "msgtype": "m.text",
         "body": format!("{}\n请在 Wonton App 里确认。", card["title"].as_str().unwrap()),
         CARD_FIELD: card,
     })

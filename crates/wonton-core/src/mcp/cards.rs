@@ -129,11 +129,32 @@ pub fn body(card: &ConfirmationCard) -> String {
     out
 }
 
-/// 卡片的 Matrix 消息内容。
+/// 卡片的 Matrix 消息内容。用 `m.text` 的原因见 ADR-0016。
 pub fn content(card: &ConfirmationCard) -> Value {
     json!({
-        "msgtype": "m.notice",
+        "msgtype": "m.text",
         "body": body(card),
         CARD_FIELD: card,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use wonton_protocol::ConfirmationState;
+
+    use super::*;
+
+    /// 契约：`wonton-client` 的 `a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet` 证明这种消息推得到手机。
+    #[test]
+    fn a_card_is_a_message_the_default_push_rules_notify() {
+        let card = ConfirmationCard {
+            id: "abc".into(),
+            state: ConfirmationState::Pending,
+            title: "Hermes 想安装 Grafana".into(),
+            lines: Vec::new(),
+            choices: choices("安装", "不装"),
+            expires_at_ms: 1,
+        };
+        assert_eq!(content(&card)["msgtype"], "m.text");
+    }
 }
