@@ -63,6 +63,8 @@ const MAX_THUMBNAIL_READS: usize = 4;
 const MAX_THUMBNAIL_DECODES: usize = 8;
 /// 等解码加解码最多这么久，比 [`ImageWorker`] 自己等子进程的 10 秒长：解码的毛病由它报。
 const THUMBNAIL_DECODE_TIMEOUT: Duration = Duration::from_secs(30);
+/// 一个工具结果的预览一共等多久（ADR-0020 的“预览”）。
+const PREVIEW_BUDGET: Duration = Duration::from_secs(10);
 
 /// 文件操作失败：类别加给人看的说明。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -201,6 +203,8 @@ pub struct Files {
     thumbnail_read_timeout: Duration,
     thumbnail_slot_wait: Duration,
     thumbnail_decode_timeout: Duration,
+    /// 一个工具结果的预览一共等多久。
+    pub(crate) preview_budget: Duration,
     /// 测试用：拿着写锁时，读本地文件做缩略图的线程卡住，就像存储不回答。
     #[cfg(test)]
     local_reads_stalled: Arc<tokio::sync::RwLock<()>>,
@@ -243,6 +247,7 @@ impl Files {
             thumbnail_read_timeout: THUMBNAIL_READ_TIMEOUT,
             thumbnail_slot_wait: slots::SLOT_WAIT,
             thumbnail_decode_timeout: THUMBNAIL_DECODE_TIMEOUT,
+            preview_budget: PREVIEW_BUDGET,
             #[cfg(test)]
             local_reads_stalled: Arc::default(),
         })
@@ -383,7 +388,7 @@ impl Files {
         .await
         .map_err(|_| thumbnail_read_timed_out(&record.origin, self.thumbnail_read_timeout))??;
         drop(reading);
-        let decode_busy = || Failure::new(FileFailure::ServiceUnavailable, "缩略图解码忙");
+        let decode_busy = || Failure::new(FileFailure::ServiceUnavailable, "图片解码忙");
         let _decoding = self
             .thumbnail_decodes
             .clone()
@@ -399,7 +404,7 @@ impl Files {
             .await
             .map_err(|_| decode_busy())?
             .map_err(|e| match e {
-                ImageError::Refused(why) => not_viewable(format!("做不了缩略图：{why}")),
+                ImageError::Refused(why) => not_viewable(format!("做不了预览或缩略图：{why}")),
                 ImageError::Unavailable(why) => Failure::internal(why),
             })
     }
@@ -413,7 +418,7 @@ impl Files {
                 tokio::time::timeout(wait, pool.acquire_owned())
                     .await
                     .map(|permit| ThumbnailSlot::Local(permit.expect("信号量不会关闭")))
-                    .map_err(|_| Failure::new(FileFailure::ServiceUnavailable, "缩略图读取忙"))
+                    .map_err(|_| Failure::new(FileFailure::ServiceUnavailable, "图片读取忙"))
             }
             Origin::Plugin { plugin, .. } => self
                 .plugin_thumbnail_reads
@@ -499,10 +504,25 @@ impl Files {
             for bot in &bots {
                 files
                     .registry
-                    .grant(&id, Accessor::Bot(bot.clone()), now_secs())?
+                    .grant_by_owner(&id, bot, now_secs())?
                     .ok_or_else(Failure::unknown)?;
             }
             Ok(bots)
+        })
+        .await
+    }
+
+    /// 单独收回一个 Bot 的访问：来源插件的授权收回时，主人亲手授权过的 Bot 不受影响，要靠这个。这个 Bot 再经工具找到同一个文件时，
+    /// 按来源插件的授权算。
+    pub async fn revoke_bot(self: &Arc<Self>, id: &FileId, bot: &str) -> Result<(), Failure> {
+        let (id, bot) = (id.clone(), bot.to_owned());
+        self.blocking(move |files| {
+            files.authorize(&id, &Accessor::Owner)?;
+            files
+                .registry
+                .revoke_bot(&id, &bot)?
+                .ok_or_else(Failure::unknown)?;
+            Ok(())
         })
         .await
     }

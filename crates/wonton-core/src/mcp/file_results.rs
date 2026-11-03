@@ -135,7 +135,7 @@ async fn register(
         .await
 }
 
-/// 每张能解的图片的预览，和 `parts` 一一对应，前 [`MAX_PREVIEWS`] 张之外都是空的。解不了的不附，文字照常。
+/// 每张图片的预览，和 `parts` 一一对应，前 [`MAX_PREVIEWS`] 张之外都是空的。解不了的也占名额、不附，文字照常。
 async fn previews(files: Option<&Arc<Files>>, parts: &[Part]) -> Vec<Option<String>> {
     let mut left = MAX_PREVIEWS;
     let jobs = parts.iter().map(|part| {
@@ -148,10 +148,16 @@ async fn previews(files: Option<&Arc<Files>>, parts: &[Part]) -> Vec<Option<Stri
         };
         async move {
             let (files, record) = wanted?;
-            match files.preview(record).await {
-                Ok(jpeg) => Some(STANDARD.encode(jpeg)),
-                Err(e) => {
+            // 插件已经回答了，Agent 和确认卡片不该等预览：单张的读取和解码期限加起来有两分钟。到时没做完的不附，想看再调 view_file。
+            let preview = tokio::time::timeout(files.preview_budget, files.preview(record)).await;
+            match preview {
+                Ok(Ok(jpeg)) => Some(STANDARD.encode(jpeg)),
+                Ok(Err(e)) => {
                     tracing::info!(file = %record.id, error = %e, "这个文件不附预览");
+                    None
+                }
+                Err(_) => {
+                    tracing::info!(file = %record.id, "预览没在期限内做完，不附");
                     None
                 }
             }
@@ -169,10 +175,14 @@ fn is_web(uri: &str) -> bool {
     scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
 }
 
-/// 这个文件的一行文字：编号、文件名、类型、大小。文件名经过 `sanitize_name`，不会多出一行。
+/// 这个文件的一行文字：编号、文件名、类型、大小。文件名经过 `sanitize_name`，插件给的类型只认没有空白的 ASCII，不会多出一行。
 fn file_line(record: &FileRecord) -> String {
+    let declared = record
+        .mime_type
+        .as_deref()
+        .filter(|mime| mime.chars().all(|c| c.is_ascii_graphic()));
     let mime = served_type(&record.name, record.mime_type.as_deref())
-        .or(record.mime_type.as_deref())
+        .or(declared)
         .unwrap_or("类型未知");
     let size = record
         .registered
@@ -208,7 +218,7 @@ fn refused(link: &Resource, failure: &Failure) -> String {
     )
 }
 
-fn human_size(bytes: u64) -> String {
+pub(super) fn human_size(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
     if bytes < 1024 {
         return format!("{bytes} B");

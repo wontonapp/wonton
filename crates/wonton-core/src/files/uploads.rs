@@ -76,6 +76,7 @@ impl Pending {
                 placed,
             },
             access: [Accessor::Owner].into(),
+            owner_granted: Default::default(),
             registered: None,
             created_at: now_secs(),
             expires_at: None,

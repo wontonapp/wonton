@@ -84,10 +84,13 @@ impl Files {
             &looked_up,
             now,
             |old| {
-                // 分享过的不再过期。Bot 重新看到了这个文件，改过的也不算改过了；之后核对授权看这次给它引用的插件。
-                old.expires_at = old.expires_at.map(|_| expires_at);
+                // Bot 重新看到了这个文件，改过的也不算改过了。分享过的不再过期，来源也不变：卡片上的来源是主人判断内容可不可信的
+                // 依据，不能事后被另一个插件改掉。没分享的之后核对授权看这次给它引用的插件。
                 old.registered = registered;
-                old.source = renewed;
+                if old.expires_at.is_some() {
+                    old.expires_at = Some(expires_at);
+                    old.source = renewed;
+                }
             },
             || FileRecord {
                 id: new_id(),
@@ -97,6 +100,7 @@ impl Files {
                 source,
                 origin,
                 access: [Accessor::Bot(bot.name.clone())].into(),
+                owner_granted: Default::default(),
                 registered,
                 created_at: now,
                 expires_at: Some(expires_at),
@@ -105,10 +109,14 @@ impl Files {
         Ok(record)
     }
 
-    /// Bot 调工具时查编号：不在范围里、过期了，还有这之后才出的问题（来源插件的授权收回了、文件改过或者没了）。
+    /// Bot 调工具时查编号：不在范围里、过期了，还有这之后才出的问题（来源插件的授权收回了、文件改过或者没了）。主人亲手授权的 Bot
+    /// 不核对来源插件的授权，也不核对文件改没改过：这是主人给的文件，读得到就行。
     pub async fn for_bot(&self, id: &FileId, bot: &str) -> Result<FileRecord, Failure> {
         let record = self.authorize(id, &Accessor::Bot(bot.to_owned()))?;
         match &record.origin {
+            Origin::Share { reference } if record.owner_granted.contains(bot) => {
+                self.open_share(reference.clone()).await?;
+            }
             Origin::Share { reference } => {
                 if let FileSource::Bot { plugin, .. } = &record.source {
                     let plugin = PluginId::parse(plugin)

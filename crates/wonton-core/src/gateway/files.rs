@@ -21,7 +21,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Extension, Path, Request, State};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete as delete_route, get, post};
 use futures_util::stream;
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use hyper::{Method, StatusCode};
@@ -86,6 +86,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
         .route("/_wonton/files/{id}/content", get(content))
         .route("/_wonton/files/{id}/thumbnail", get(thumbnail))
         .route("/_wonton/files/{id}/grants", post(grant))
+        .route("/_wonton/files/{id}/grants/{bot}", delete_route(revoke))
         .route("/_wonton/files/{id}/send-to-devices", post(send_to_devices))
         .merge(uploads::routes())
         .layer(middleware::from_fn_with_state(gateway, require_device))
@@ -207,6 +208,27 @@ async fn grant(
         outcome: outcome_of(&bots),
     });
     respond(bots.map(|bots| axum::Json(json!({"bots": bots})).into_response()))
+}
+
+async fn revoke(
+    Extension(caller): Extension<Caller>,
+    Path((id, bot)): Path<(String, String)>,
+) -> Response {
+    let revoked = async {
+        let parsed = parse_id(&id)?;
+        caller.files.revoke_bot(&parsed, &bot).await
+    }
+    .await;
+    let bots = [bot];
+    caller.files.audit(&FileEvent {
+        event: "file_revoke",
+        device: device_label(&caller.device),
+        file: &id,
+        range: None,
+        bots: Some(&bots),
+        outcome: outcome_of(&revoked),
+    });
+    respond(revoked.map(|()| StatusCode::NO_CONTENT.into_response()))
 }
 
 async fn send_to_devices(Extension(caller): Extension<Caller>, Path(id): Path<String>) -> Response {

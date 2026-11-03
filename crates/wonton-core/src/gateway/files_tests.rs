@@ -484,6 +484,23 @@ async fn grants_add_the_bots_of_a_room() {
             .is_ok()
     );
 
+    let bot = format!("{path}/hermes");
+    assert_eq!(
+        home.call(Method::DELETE, &bot).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        home.f
+            .files
+            .authorize(&id, &Accessor::Bot("hermes".into()))
+            .is_err()
+    );
+    assert_eq!(
+        home.call(Method::DELETE, &bot).await.status,
+        StatusCode::NO_CONTENT
+    );
+    home.post(&path, &json!({"room": "!room:home"})).await;
+
     // 普通聊天里发链接：没有 Bot，什么都不加。
     let reply = home.post(&path, &json!({"room": "!people:home"})).await;
     assert_eq!(reply.status, StatusCode::OK);

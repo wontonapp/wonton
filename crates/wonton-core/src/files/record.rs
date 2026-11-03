@@ -99,6 +99,9 @@ pub struct FileRecord {
     pub source: FileSource,
     pub origin: Origin,
     pub access: BTreeSet<Accessor>,
+    /// 主人亲手授权的 Bot（App 调 `grants`）。它们不再依赖来源插件的授权，要收回就单独收（ADR-0020 的“鉴权”）。
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub owner_granted: BTreeSet<String>,
     /// 登记时文件的样子：文件登记后改过，Bot 的工具返回 `file_changed`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registered: Option<Snapshot>,
@@ -290,6 +293,37 @@ impl Registry {
                 record.expires_at = None;
             }
             record.access.insert(accessor);
+            (Some(record.clone()), Some(record))
+        })
+    }
+
+    /// 主人亲手把这个 Bot 加进访问范围。
+    pub fn grant_by_owner(
+        &self,
+        id: &FileId,
+        bot: &str,
+        now: u64,
+    ) -> Result<Option<FileRecord>, RegistryError> {
+        self.change(|records| {
+            let Some(record) = records.by_id.get(id).filter(|r| !r.expired(now)) else {
+                return (None, None);
+            };
+            let mut record = record.clone();
+            record.access.insert(Accessor::Bot(bot.to_owned()));
+            record.owner_granted.insert(bot.to_owned());
+            (Some(record.clone()), Some(record))
+        })
+    }
+
+    /// 把这个 Bot 移出访问范围。不在范围里时什么都不做。
+    pub fn revoke_bot(&self, id: &FileId, bot: &str) -> Result<Option<FileRecord>, RegistryError> {
+        self.change(|records| {
+            let Some(record) = records.by_id.get(id) else {
+                return (None, None);
+            };
+            let mut record = record.clone();
+            record.access.remove(&Accessor::Bot(bot.to_owned()));
+            record.owner_granted.remove(bot);
             (Some(record.clone()), Some(record))
         })
     }

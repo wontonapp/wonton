@@ -466,6 +466,7 @@ async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathB
                     placed,
                 },
                 access: [Accessor::Owner].into(),
+                owner_granted: Default::default(),
                 registered: None,
                 created_at: now_secs(),
                 expires_at: None,

@@ -60,7 +60,7 @@ x-wonton:
 
 pub(super) struct Setup {
     pub(super) bus: Arc<Bus>,
-    cards: Arc<Cards>,
+    pub(super) cards: Arc<Cards>,
     pub(super) notes: Notes,
     manager: Arc<PluginManager>,
     caller: Caller,
@@ -176,14 +176,18 @@ impl Setup {
     }
 
     /// 在后台调用，好在等确认时回答。
-    fn spawn(&self, name: &str, args: Value) -> tokio::task::JoinHandle<CallToolResult> {
+    pub(super) fn spawn(&self, name: &str, args: Value) -> tokio::task::JoinHandle<CallToolResult> {
         let (bus, caller, name) = (self.bus.clone(), self.caller.clone(), name.to_owned());
         let request = CallToolRequestParams::new(name)
             .with_arguments(args.as_object().cloned().unwrap_or_default());
         tokio::spawn(async move { bus.call(&caller, request, std::future::pending()).await })
     }
 
-    fn answer(&self, id: &str, answer: Answer) -> Result<ConfirmationState, AnswerError> {
+    pub(super) fn answer(
+        &self,
+        id: &str,
+        answer: Answer,
+    ) -> Result<ConfirmationState, AnswerError> {
         self.bus.confirmations().answer(id, answer)
     }
 

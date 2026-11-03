@@ -57,15 +57,22 @@ pub(super) async fn call(
         caller: caller.id.as_str(),
         tool: &name,
         arguments: &value,
-        decision: if done.is_ok() {
-            Decision::Allowed
-        } else {
-            Decision::Denied
-        },
+        decision: done.as_ref().err().map_or(Decision::Allowed, decision),
         outcome: Some(outcome),
         files: &files,
     });
     done.map_or_else(|failure| error(&failure.to_string()), |(result, _)| result)
+}
+
+/// 文件不在范围里、没有授权、参数不对才算拒绝。文件没了、解码忙是执行时出的问题，类别写在 `outcome` 里。
+fn decision(failure: &Failure) -> Decision {
+    match failure.kind {
+        FileFailure::FileUnknown
+        | FileFailure::FileExpired
+        | FileFailure::PermissionDenied
+        | FileFailure::InvalidInput => Decision::Denied,
+        _ => Decision::Allowed,
+    }
 }
 
 async fn run(

@@ -20,7 +20,7 @@ use wonton_protocol::{ConfirmationCard, ConfirmationState};
 
 use super::Notifier;
 
-/// 假插件：`search` 标了只读，`delete` 没标（会改数据）。`deleted` 记下删过的笔记。
+/// 假插件：`search`、`find` 标了只读，`delete`、`archive` 没标（会改数据）。`deleted` 记下删过的笔记。
 #[derive(Clone)]
 pub struct Notes {
     pub deleted: Arc<Mutex<Vec<String>>>,
@@ -28,7 +28,7 @@ pub struct Notes {
     pub hang: Arc<std::sync::atomic::AtomicBool>,
     /// 调用方取消了几次还在跑的调用。
     pub cancelled: Arc<std::sync::atomic::AtomicUsize>,
-    /// 工具 `find` 返回的结果。
+    /// 工具 `find`、`archive` 返回的结果。
     pub found: Arc<Mutex<CallToolResult>>,
 }
 
@@ -68,7 +68,10 @@ impl ServerHandler for Notes {
         let delete = Tool::new("delete", "删笔记", schema());
         let find = Tool::new("find", "找文件", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
-        Ok(ListToolsResult::with_all_items(vec![search, delete, find]))
+        let archive = Tool::new("archive", "归档文件", schema());
+        Ok(ListToolsResult::with_all_items(vec![
+            search, delete, find, archive,
+        ]))
     }
 
     async fn call_tool(
@@ -90,7 +93,7 @@ impl ServerHandler for Notes {
             .unwrap_or_default()
             .to_owned();
         let text = match request.name.as_ref() {
-            "find" => return Ok(self.found.lock().unwrap().clone().into()),
+            "find" | "archive" => return Ok(self.found.lock().unwrap().clone().into()),
             "search" => format!("找到 {name}.txt"),
             "delete" => {
                 self.deleted.lock().unwrap().push(name.clone());

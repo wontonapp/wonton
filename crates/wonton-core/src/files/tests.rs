@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use wonton_protocol::{FileFailure, FileSource};
 
-use super::record::{Accessor, Lookup, Origin};
+use super::record::{Accessor, FileRecord, Lookup, Origin};
 use super::resource::RemoteRequest;
 use super::share_fs::ShareRef;
 use super::test_support::Fixture;
@@ -573,4 +573,40 @@ async fn a_restart_finds_the_file_a_crashed_delete_left_hidden() {
     assert!(!hidden.exists());
     assert_eq!(std::fs::read(transfers.join("a.txt")).unwrap(), b"content");
     assert!(reopened.info(&id, &Accessor::Owner).await.is_ok());
+}
+
+/// 卡片上的来源是主人判断内容可不可信的依据，分享之后不能被另一个插件改掉。
+#[tokio::test]
+async fn a_shared_files_source_stays_when_another_plugin_gives_the_same_reference() {
+    let f = Fixture::new();
+    f.put("photos/a.jpg", b"a");
+    let give = |plugin: &'static str| {
+        let files = f.files.clone();
+        async move {
+            let bot = BotRef {
+                name: "hermes".to_owned(),
+                plugin: PluginId::parse(plugin).unwrap(),
+            };
+            let reference = ShareRef::parse("wonton-share:photos/a.jpg").unwrap();
+            files
+                .register_share(&bot, reference, None, None)
+                .await
+                .unwrap()
+        }
+    };
+    let plugin_of = |record: &FileRecord| match &record.source {
+        FileSource::Bot { plugin, .. } => plugin.clone(),
+        other => panic!("{other:?}"),
+    };
+    let first = give("app.first").await;
+    assert_eq!(
+        plugin_of(&give("app.second").await),
+        "app.second",
+        "没分享的看最近给 Bot 引用的插件"
+    );
+    assert_eq!(plugin_of(&give("app.first").await), "app.first");
+    f.files.share_with_owner(&first.id, "hermes").await.unwrap();
+    let again = give("app.second").await;
+    assert_eq!(again.id, first.id);
+    assert_eq!(plugin_of(&again), "app.first");
 }
