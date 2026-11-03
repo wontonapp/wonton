@@ -10,7 +10,9 @@
 //! | DELETE | `/_wonton/files/{id}` | 删掉编号，设备上传的文件核对后连文件一起删 |
 //!
 //! 隧道身份随 WebView 的每个请求自动带上，跨站带自定义请求头却要先过预检，这里不回 CORS 头，插件网页因此碰不到这些接口。
-//! 文件内容不可信：响应一律 `nosniff`、`CSP: sandbox`，只有媒体写真实类型。
+//! 上传在 [`uploads`]。文件内容不可信：响应一律 `nosniff`、`CSP: sandbox`，只有媒体写真实类型。
+
+mod uploads;
 
 use std::sync::Arc;
 
@@ -37,6 +39,8 @@ use crate::files::record::{Accessor, FileRecord};
 use crate::files::resource::RemoteRequest;
 use crate::files::share_fs::Opened;
 use crate::files::{Content, Failure, FileEvent, Files, device_label};
+
+pub(super) use uploads::hook_request;
 
 /// 流式发文件时每次读这么多。
 const CHUNK_BYTES: usize = 64 << 10;
@@ -83,6 +87,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
         .route("/_wonton/files/{id}/thumbnail", get(thumbnail))
         .route("/_wonton/files/{id}/grants", post(grant))
         .route("/_wonton/files/{id}/send-to-devices", post(send_to_devices))
+        .merge(uploads::routes())
         .layer(middleware::from_fn_with_state(gateway, require_device))
         .layer(middleware::map_response(no_sniff))
 }

@@ -3,8 +3,10 @@ use std::io::Read;
 use std::os::unix::fs::{MetadataExt, symlink};
 use std::path::PathBuf;
 
+use super::placing::{link_checked, link_to_temp};
 use super::removal::TRASH;
 use super::*;
+use crate::plugin::hostdir::Owner;
 
 mod removal_tests;
 
@@ -219,7 +221,17 @@ fn put_upload(f: &Fixture, id: &str, text: &str) -> u64 {
 }
 
 fn place(f: &Fixture, id: &str, size: u64, name: &str) -> Result<(String, Snapshot), ShareError> {
-    f.shares.place_upload(&uploads(f), id, size, name, f.owner)
+    f.shares.place_upload(
+        &uploads(f),
+        id,
+        size,
+        Names {
+            preferred: name,
+            owner: f.owner,
+            placing_inode: None,
+        },
+        &mut |_, _| Ok(()),
+    )
 }
 
 fn names_in(path: &std::path::Path) -> Vec<String> {
@@ -353,7 +365,7 @@ fn placing_refuses_data_that_is_not_a_regular_file_of_the_declared_size() {
 
     let size = put_upload(&f, OTHER_ID, "short");
     let err = place(&f, OTHER_ID, size + 1, "a.txt").unwrap_err();
-    assert!(matches!(err, ShareError::Refused(_)), "{err}");
+    assert!(matches!(err, ShareError::Io(_)), "{err}");
 
     let err = place(&f, "77777777777777777777777775", 0, "a.txt").unwrap_err();
     assert!(matches!(err, ShareError::Gone), "{err}");
@@ -361,11 +373,39 @@ fn placing_refuses_data_that_is_not_a_regular_file_of_the_declared_size() {
 }
 
 fn copy_upload(f: &Fixture, text: &str, name: &str) -> (String, Snapshot) {
+    copy_again(f, text, name, None)
+}
+
+/// 现在的临时文件的 inode。
+fn temp_inode(f: &Fixture) -> Option<u64> {
+    let temp = format!("{UPLOAD_TEMP_PREFIX}{ID}");
+    Some(
+        fs::metadata(f.root.join(TRANSFERS).join(temp))
+            .unwrap()
+            .ino(),
+    )
+}
+
+/// `placing_inode`：上次走到链接这一步时记下的 inode。
+fn copy_again(
+    f: &Fixture,
+    text: &str,
+    name: &str,
+    placing_inode: Option<u64>,
+) -> (String, Snapshot) {
     let size = put_upload(f, ID, text);
     let source = open_regular(open_absolute(&uploads(f), "上传目录").unwrap().as_fd(), ID).unwrap();
     assert_eq!(source.snapshot.size, size);
     let dir = f.shares.open_dir(TRANSFERS, &[]).unwrap();
-    through_temp(&source, ID, dir.as_fd(), name, f.owner, |_| Ok(None)).unwrap()
+    let names = Names {
+        preferred: name,
+        owner: f.owner,
+        placing_inode,
+    };
+    placing::through_temp(&source, ID, dir.as_fd(), names, &mut |_, _| Ok(()), |_| {
+        Ok(None)
+    })
+    .unwrap()
 }
 
 /// 跨卷的路径：单元测试里造不出第二个卷，让链接这一步报不在同一个卷上（ADR-0020 的“验证结果”有两个真卷上的结果）。
@@ -385,7 +425,11 @@ fn copying_across_volumes_converges_and_leaves_nothing_behind() {
     );
 
     // 放好了但记录没写成：再来一次认得出临时文件放好的那个，不多复制一份。
-    assert_eq!(copy_upload(&f, "content", "big.bin"), (name, snapshot));
+    let placing = temp_inode(&f);
+    assert_eq!(
+        copy_again(&f, "content", "big.bin", placing),
+        (name, snapshot)
+    );
     assert_eq!(names_in(&transfers), [temp.as_str(), "big.bin"]);
 
     f.shares.remove_upload_temp(ID).unwrap();
@@ -393,7 +437,20 @@ fn copying_across_volumes_converges_and_leaves_nothing_behind() {
     assert_eq!(names_in(&transfers), ["big.bin"]);
 }
 
-/// 临时文件有别的硬链接，大小却不对：那不是放好的文件，不能登记成完整的。
+/// 放好之后主人改了内容，大小和声明的不一样了：还是放好的那个文件，不再复制成 `big (1).bin`。同一个卷上的路径也是这样。
+#[test]
+fn a_placed_copy_the_owner_edited_is_not_copied_again() {
+    let f = fixture();
+    let transfers = f.root.join(TRANSFERS);
+    copy_upload(&f, "content", "big.bin");
+    fs::write(transfers.join("big.bin"), "content, and more").unwrap();
+    let placing = temp_inode(&f);
+    let (name, snapshot) = copy_again(&f, "content", "big.bin", placing);
+    assert_eq!((name.as_str(), snapshot.size), ("big.bin", 17));
+    assert_eq!(visible_in(&transfers), ["big.bin"]);
+}
+
+/// 没走到链接这一步的临时文件有别的硬链接（插件能链接它）：那不是放好的文件，不能登记成完整的。
 #[test]
 fn a_short_temporary_file_with_another_link_does_not_count_as_placed() {
     let f = fixture();
@@ -404,6 +461,23 @@ fn a_short_temporary_file_with_another_link_does_not_count_as_placed() {
     let (name, snapshot) = copy_upload(&f, "content", "big.bin");
     assert_eq!((name.as_str(), snapshot.size), ("big.bin", 7));
     assert_eq!(fs::read_to_string(transfers.join("other")).unwrap(), "half");
+}
+
+/// 上次的临时文件被删了，插件自己建了一个，再硬链接到公开的名字上：不是记下的那个 inode，不能算放好了。
+#[test]
+fn a_temporary_file_someone_planted_does_not_count_as_placed() {
+    let f = fixture();
+    let transfers = f.root.join(TRANSFERS);
+    let temp = transfers.join(format!("{UPLOAD_TEMP_PREFIX}{ID}"));
+    fs::write(&temp, "planted").unwrap();
+    fs::hard_link(&temp, transfers.join("invoice.pdf")).unwrap();
+    let recorded = temp_inode(&f).map(|inode| inode + 1);
+    let (name, snapshot) = copy_again(&f, "content", "big.bin", recorded);
+    assert_eq!((name.as_str(), snapshot.size), ("big.bin", 7));
+    assert_eq!(
+        fs::read_to_string(transfers.join("big.bin")).unwrap(),
+        "content"
+    );
 }
 
 /// 临时文件名由上传编号派生，和文件名无关。
@@ -457,7 +531,7 @@ fn a_file_swapped_onto_the_target_name_is_left_alone() {
     fs::write(transfers.join("ours"), "ours").unwrap();
     let ours = fs::File::open(transfers.join("ours")).unwrap();
     // 把“名字上已经是别的文件”造出来：链接的是别的文件，核对的是 `ours`。
-    let err = link_checked(dir.as_fd(), "theirs", "a.txt", &ours).unwrap_err();
+    let err = link_checked(dir.as_fd(), "theirs", "a.txt", &ours, &mut |_, _| Ok(())).unwrap_err();
     assert!(matches!(err, ShareError::Refused(_)), "{err}");
     assert_eq!(
         fs::read_to_string(transfers.join("a.txt")).unwrap(),

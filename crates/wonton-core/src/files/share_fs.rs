@@ -4,24 +4,23 @@
 //! 相对上一级已经打开的目录。不用 `openat2`：老内核（如群晖）没有它。
 
 use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
-use std::os::unix::fs::{MetadataExt, fchown};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use percent_encoding::percent_decode_str;
-use rustix::fs::{
-    AtFlags, CWD, Dir, FileType, Mode, OFlags, Stat, linkat, openat, statat, unlinkat,
-};
+use rustix::fs::{AtFlags, CWD, FileType, Mode, OFlags, Stat, openat, statat};
 use rustix::io::Errno;
 use serde::{Deserialize, Serialize};
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
-use crate::plugin::hostdir::Owner;
 use crate::plugin::store;
-use removal::{prepare_trash, recover_trash, remove_entry, remove_if_same};
+pub use placing::{Abandoned, BeforeLink, Names};
+use removal::{prepare_trash, recover_trash, remove_if_same};
 
+mod placing;
 mod removal;
 
 /// 工具结果里共享文件夹引用的前缀（插件规范的“工具结果里的文件”）。
@@ -36,7 +35,7 @@ const MAX_NAME_TRIES: u32 = 10_000;
 const PRIVATE_PREFIX: &str = ".wonton-";
 /// 放进 `transfers` 之前的临时名字：同一个卷上是数据的硬链接，不在同一个卷上是复制出来的文件。长度固定；上传编号是 128 位
 /// 随机数，这个名字上的文件只可能是核心自己建的。
-const UPLOAD_TEMP_PREFIX: &str = ".wonton-upload-";
+pub(super) const UPLOAD_TEMP_PREFIX: &str = ".wonton-upload-";
 
 /// 只读打开路径上的一级。`O_NONBLOCK`：换成命名管道时不能卡住；`O_NOCTTY`：换成终端时不能接管它。
 fn walk_flags() -> OFlags {
@@ -69,7 +68,7 @@ fn classify(e: Errno, what: &str) -> ShareError {
     }
 }
 
-fn from_io(e: &io::Error, what: &str) -> ShareError {
+pub(super) fn from_io(e: &io::Error, what: &str) -> ShareError {
     match e.raw_os_error() {
         Some(raw) => classify(Errno::from_raw_os_error(raw), what),
         None => ShareError::Io(format!("{what}：{e}")),
@@ -197,6 +196,10 @@ pub struct Shares {
 }
 
 impl Shares {
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
@@ -257,40 +260,6 @@ impl Shares {
         remove_if_same(transfers.as_fd(), dir.as_fd(), leaf, expected)
     }
 
-    /// 把传完的数据（`uploads` 目录下的 `id`）放进 `transfers`，返回最后的名字和文件的样子。数据不搬走：调用方写好记录之后
-    /// 再删，这样任何一步失败或者崩溃，再调一次都能收敛到同一个文件（见 [`already_placed`]）。
-    ///
-    /// tusd 的数据目录归 `PUID`，里面的东西能被换掉，所以相对打开的目录、不跟随软链接地打开数据，之后只认这个 fd。
-    ///
-    /// 先放到私有的临时名字上（同一个卷上是硬链接，不在同一个卷上是复制），核对是打开时的那个文件，再用 `linkat` 放到目标名上：
-    /// 名字已经有东西时报 `EEXIST`，盖不到主人的文件，别的插件也看不到写了一半的文件。放好之后目标名字就是主人的了，核对不符也
-    /// 不碰它。
-    pub fn place_upload(
-        &self,
-        uploads: &Path,
-        id: &str,
-        size: u64,
-        preferred: &str,
-        owner: Owner,
-    ) -> Result<(String, Snapshot), ShareError> {
-        let uploads = open_absolute(uploads, "上传目录")?;
-        let source = open_regular(uploads.as_fd(), id)?;
-        if source.snapshot.size != size {
-            return Err(ShareError::Refused(format!(
-                "传完的数据有 {} 字节，创建时声明的是 {size} 字节",
-                source.snapshot.size
-            )));
-        }
-        let dir = self.open_dir(TRANSFERS, &[])?;
-        if let Some(name) = already_placed(dir.as_fd(), &source.file)? {
-            return placed(dir.as_fd(), name, &source.file, owner);
-        }
-        source.file.sync_all().map_err(|e| from_io(&e, id))?;
-        through_temp(&source, id, dir.as_fd(), preferred, owner, |temp| {
-            link_to_temp(uploads.as_fd(), id, dir.as_fd(), temp, &source.file)
-        })
-    }
-
     /// 启动时：建好回收槽，建不了要让启动失败：磁盘满了再建就晚了，主人会删不了文件。
     pub fn prepare_removal(&self) -> Result<(), ShareError> {
         let dir = self.open_dir(TRANSFERS, &[])?;
@@ -301,16 +270,6 @@ impl Shares {
     pub fn recover_deleting(&self) -> Result<(), ShareError> {
         let dir = self.open_dir(TRANSFERS, &[])?;
         recover_trash(dir.as_fd())
-    }
-
-    /// 上传结束后删掉临时文件。
-    pub fn remove_upload_temp(&self, id: &str) -> Result<(), ShareError> {
-        let dir = match self.open_dir(TRANSFERS, &[]) {
-            Ok(dir) => dir,
-            Err(ShareError::Gone) => return Ok(()),
-            Err(e) => return Err(e),
-        };
-        remove_entry(dir.as_fd(), &format!("{UPLOAD_TEMP_PREFIX}{id}"))
     }
 }
 
@@ -386,175 +345,6 @@ fn sync_dir(dir: BorrowedFd<'_>, what: &str) -> Result<(), ShareError> {
     store::sync_dir(dir).map_err(|e| classify(e, what))
 }
 
-fn no_hard_links(name: &str) -> ShareError {
-    ShareError::Io(format!(
-        "{name}：共享文件夹 {TRANSFERS} 所在的文件系统不支持硬链接"
-    ))
-}
-
-/// 把 `from` 链接到第一个空着的名字（重名时加序号）。软链接也算重名。已经有一个名字就是它（上次在链接之后崩溃了）就用那个名字，
-/// 同一个文件不出现两个名字。
-fn pick_name(dir: BorrowedFd<'_>, from: &str, preferred: &str) -> Result<String, ShareError> {
-    let source = stat_entry(dir, from)?;
-    for attempt in 0..MAX_NAME_TRIES {
-        let name = numbered(preferred, attempt);
-        match linkat(dir, from, dir, name.as_str(), AtFlags::empty()) {
-            Ok(()) => return Ok(name),
-            Err(Errno::EXIST) => {
-                if stat_entry(dir, &name).is_ok_and(|taken| {
-                    taken.st_ino == source.st_ino && taken.st_dev == source.st_dev
-                }) {
-                    return Ok(name);
-                }
-            }
-            Err(Errno::PERM | Errno::NOTSUP | Errno::MLINK) => return Err(no_hard_links(&name)),
-            Err(e) => return Err(classify(e, &name)),
-        }
-    }
-    Err(ShareError::Io(format!(
-        "{preferred} 已经有 {MAX_NAME_TRIES} 个重名的文件"
-    )))
-}
-
-/// [`pick_name`]，再核对名字上的还是 `file`。不是的话那已经是别人（Samba 另存、插件）的文件：报错，不删。
-fn link_checked(
-    dir: BorrowedFd<'_>,
-    from: &str,
-    preferred: &str,
-    file: &File,
-) -> Result<String, ShareError> {
-    let name = pick_name(dir, from, preferred)?;
-    let meta = file.metadata().map_err(|e| from_io(&e, &name))?;
-    if !is_same_file(&stat_entry(dir, &name)?, &meta) {
-        return Err(ShareError::Refused(format!("{name} 刚被换掉了")));
-    }
-    Ok(name)
-}
-
-/// 同一个卷上：把数据链接成临时文件，用打开时的 fd 核对，`linkat` 按名字找，这之间名字可能被换掉。不在同一个卷上时为空。
-fn link_to_temp(
-    data_dir: BorrowedFd<'_>,
-    id: &str,
-    dir: BorrowedFd<'_>,
-    temp: &str,
-    source: &File,
-) -> Result<Option<File>, ShareError> {
-    match linkat(data_dir, id, dir, temp, AtFlags::empty()) {
-        Ok(()) => {}
-        Err(Errno::XDEV) => return Ok(None),
-        Err(Errno::PERM | Errno::NOTSUP | Errno::MLINK) => return Err(no_hard_links(temp)),
-        Err(e) => return Err(classify(e, temp)),
-    }
-    let meta = source.metadata().map_err(|e| from_io(&e, id))?;
-    if !is_same_file(&stat_entry(dir, temp)?, &meta) {
-        unlinkat(dir, temp, AtFlags::empty()).map_err(|e| classify(e, temp))?;
-        return Err(ShareError::Refused(format!("{id} 刚被换掉了")));
-    }
-    source.try_clone().map(Some).map_err(|e| from_io(&e, id))
-}
-
-/// 经临时文件放到目标名上。`link` 准备临时文件，不在同一个卷上时给不出，就复制一份。
-fn through_temp(
-    source: &Opened,
-    id: &str,
-    dir: BorrowedFd<'_>,
-    preferred: &str,
-    owner: Owner,
-    link: impl FnOnce(&str) -> Result<Option<File>, ShareError>,
-) -> Result<(String, Snapshot), ShareError> {
-    let temp = format!("{UPLOAD_TEMP_PREFIX}{id}");
-    if let Some((name, file)) = earlier_temp(dir, &temp, source.snapshot.size)? {
-        return placed(dir, name, &file, owner);
-    }
-    let file = match link(&temp)? {
-        Some(file) => file,
-        None => copy_to_temp(source, dir, &temp, owner)?,
-    };
-    match link_checked(dir, &temp, preferred, &file) {
-        Ok(name) => placed(dir, name, &file, owner),
-        Err(e) => {
-            remove_temp(dir, &temp, &file);
-            Err(e)
-        }
-    }
-}
-
-/// 删掉没用上的临时文件（可能很大），名字上还是它才删。
-fn remove_temp(dir: BorrowedFd<'_>, temp: &str, file: &File) {
-    let ours = match (stat_entry(dir, temp), file.metadata()) {
-        (Ok(stat), Ok(meta)) => is_same_file(&stat, &meta),
-        _ => false,
-    };
-    if ours && let Err(error) = unlinkat(dir, temp, AtFlags::empty()) {
-        tracing::warn!(name = temp, %error, "删除没用上的临时文件失败");
-    }
-}
-
-/// 上次留下的临时文件。已经放好了（崩溃在写记录之前）就给出它放到的名字和文件。否则删掉重来：可能是半个文件，也可能放好之后
-/// 又被主人移走了。半个文件不会有别的硬链接，除非插件动过，所以也比一下大小。
-fn earlier_temp(
-    dir: BorrowedFd<'_>,
-    temp: &str,
-    size: u64,
-) -> Result<Option<(String, File)>, ShareError> {
-    let old = match open_regular(dir, temp) {
-        Ok(old) => old,
-        Err(ShareError::Gone) => return Ok(None),
-        // 这个名字只属于核心，上面不是普通文件就是别人放的：清掉，否则这个上传永远放不进去。
-        Err(ShareError::Refused(_)) => {
-            remove_entry(dir, temp)?;
-            return Ok(None);
-        }
-        Err(e) => return Err(e),
-    };
-    if old.snapshot.size == size
-        && let Some(name) = already_placed(dir, &old.file)?
-    {
-        return Ok(Some((name, old.file)));
-    }
-    unlinkat(dir, temp, AtFlags::empty()).map_err(|e| classify(e, temp))?;
-    Ok(None)
-}
-
-/// 这个文件已经链接到 `transfers` 里主人看得到的名字上了吗（放好之后、写好记录之前失败或者崩溃过）。只有链接数大于 1 才翻
-/// 目录。主人这时改了名也认得出；移走了或者删了就算没放过，再放一次。
-fn already_placed(dir: BorrowedFd<'_>, file: &File) -> Result<Option<String>, ShareError> {
-    let meta = file.metadata().map_err(|e| from_io(&e, "传完的文件"))?;
-    if meta.nlink() < 2 {
-        return Ok(None);
-    }
-    let entries = Dir::read_from(dir).map_err(|e| classify(e, TRANSFERS))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| classify(e, TRANSFERS))?;
-        let Ok(name) = entry.file_name().to_str() else {
-            continue;
-        };
-        if matches!(name, "." | "..") || is_private(name) {
-            continue;
-        }
-        let Ok(stat) = statat(dir, name, AtFlags::SYMLINK_NOFOLLOW) else {
-            continue;
-        };
-        if is_same_file(&stat, &meta) {
-            return Ok(Some(name.to_owned()));
-        }
-    }
-    Ok(None)
-}
-
-/// 文件已经在目标名字上了：属主、快照都用这个 fd，不按名字再开一次，然后把目录项落盘。
-fn placed(
-    dir: BorrowedFd<'_>,
-    name: String,
-    file: &File,
-    owner: Owner,
-) -> Result<(String, Snapshot), ShareError> {
-    give_to(file, owner).map_err(|e| from_io(&e, &name))?;
-    let (snapshot, _) = Snapshot::of(file).map_err(|e| from_io(&e, &name))?;
-    sync_dir(dir, &name)?;
-    Ok((name, snapshot))
-}
-
 /// `a.txt`、`a (1).txt`、`a (2).txt`……
 fn numbered(name: &str, attempt: u32) -> String {
     if attempt == 0 {
@@ -564,44 +354,6 @@ fn numbered(name: &str, attempt: u32) -> String {
         Some((stem, extension)) if !stem.is_empty() => format!("{stem} ({attempt}).{extension}"),
         _ => format!("{name} ({attempt})"),
     }
-}
-
-/// 不在同一个卷上：复制成临时文件，写完落盘。失败时删掉，不占着空间。
-fn copy_to_temp(
-    source: &Opened,
-    dir: BorrowedFd<'_>,
-    temp: &str,
-    owner: Owner,
-) -> Result<File, ShareError> {
-    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let fd = openat(dir, temp, flags, Mode::from_raw_mode(0o664)).map_err(|e| classify(e, temp))?;
-    let mut target = File::from(fd);
-    let size = source.snapshot.size;
-    let copied = (|| {
-        let mut from = (&source.file).take(size);
-        let copied = io::copy(&mut from, &mut target)?;
-        if copied != size {
-            return Err(io::Error::other(format!(
-                "只读到 {copied} 字节，应该有 {size} 字节"
-            )));
-        }
-        give_to(&target, owner)?;
-        target.sync_all()
-    })();
-    if let Err(e) = copied {
-        remove_temp(dir, temp, &target);
-        return Err(from_io(&e, temp));
-    }
-    Ok(target)
-}
-
-/// 属主已经对了就不改：核心不以 root 运行时也能工作。
-fn give_to(file: &File, owner: Owner) -> io::Result<()> {
-    let meta = file.metadata()?;
-    if meta.uid() == owner.uid && meta.gid() == owner.gid {
-        return Ok(());
-    }
-    fchown(file, Some(owner.uid), Some(owner.gid))
 }
 
 /// 按 Unicode 类别过滤，不列黑名单：格式字符（bidi 覆盖和隔离能把 `exe.jpg` 显示成 `gpj.exe`，零宽字符和标签字符能让两个名字

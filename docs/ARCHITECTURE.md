@@ -212,6 +212,7 @@ scripts/             CI 与开发脚本
 | MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006），M1 实现 |
 | 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
 | OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |
+| 可续传上传 | tus 1.0、tusd | MIT，独立容器 | 已定（ADR-0020） |
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |

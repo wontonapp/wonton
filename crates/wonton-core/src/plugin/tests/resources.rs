@@ -1,8 +1,10 @@
 //! 文件服务访问插件内网地址前的核对（ADR-0020 的“鉴权”）：挡 SSRF 就靠这里。
 
-use super::super::PluginId;
+use super::super::bot_services::bot_alias;
 use super::super::fake_docker::FakeDocker;
+use super::super::package::PackageError;
 use super::super::upstreams::ResourceUpstreamError;
+use super::super::{PluginId, PluginPackage};
 use super::manager::{manager_in_container, manager_with};
 use super::package;
 use crate::files::{CoreHost, FileHost, resource::InternalUrl};
@@ -17,6 +19,34 @@ fn app(id: &str, service: &str) -> String {
         "  permissions: []",
     )
     .replace("id: app.test", &format!("id: {id}"))
+}
+
+/// 核心接在每个插件网络上，插件的服务名会成为那里的别名。不能和系统服务的别名（带点）、别的插件的容器名（带 `--`）一样。
+#[test]
+fn a_service_cannot_take_the_name_of_a_system_service_or_another_plugins_container() {
+    for name in [
+        "tusd.wonton.internal",
+        "wonton-app-other--web",
+        "wonton-app-other-",
+    ] {
+        let err = PluginPackage::parse(&app("app.mine", name)).unwrap_err();
+        assert!(matches!(err, PackageError::Service { .. }), "{name}: {err}");
+    }
+    PluginPackage::parse(&app("app.mine", "my-web_1")).unwrap();
+}
+
+/// Bot 服务多一个别名 `<服务名>-default`：不能和别的插件的容器名 `wonton-app-b--default` 一样。
+#[test]
+fn a_generated_alias_cannot_take_the_name_of_another_plugins_container() {
+    assert_eq!(bot_alias("wonton-app-b-"), "wonton-app-b--default");
+
+    let bot = package(
+        "  wonton-app-b-:\n    image: hermes",
+        "  bot: {display_name: {zh: 测试, en: Test}}\n  bots: {services: [wonton-app-b-]}\n  \
+         permissions: [matrix.bot]",
+    );
+    let err = PluginPackage::parse(&bot).unwrap_err();
+    assert!(matches!(err, PackageError::Service { .. }), "{err}");
 }
 
 #[tokio::test]

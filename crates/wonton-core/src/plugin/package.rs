@@ -450,14 +450,21 @@ fn check_service_name(name: &str) -> Result<(), PackageError> {
         && name
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
-    if valid {
-        Ok(())
-    } else {
-        Err(PackageError::Service {
+    if !valid {
+        return Err(PackageError::Service {
             service: name.to_owned(),
             message: "服务名只能包含小写字母、数字、- 和 _".to_owned(),
-        })
+        });
     }
+    // 容器名是 `<插件网络>--<服务名>`，核心在容器里时按它访问插件。带 `--` 的网络别名可以和别的插件的容器名一样，抢走发给它的
+    // 请求。Bot 服务的别名是 `<服务名>-default`，所以结尾也不能是 `-`。
+    if name.ends_with('-') || name.contains("--") {
+        return Err(PackageError::Service {
+            service: name.to_owned(),
+            message: "服务名不能以 - 结尾，也不能含 --".to_owned(),
+        });
+    }
+    Ok(())
 }
 
 fn check_service_keys(name: &str, service: &Value) -> Result<(), PackageError> {

@@ -143,7 +143,7 @@ expect "插件容器只在自己的网络里" \
 aliases="$(docker inspect -f '{{json (index .NetworkSettings.Networks "wonton-app-grafana").Aliases}}' "$core")"
 [[ "$aliases" == *"\"auth.$WONTON_DEV_DOMAIN\""* ]] || fail "核心没有以 auth.$WONTON_DEV_DOMAIN 加入插件网络：$aliases"
 ok "核心加入插件网络，别名 auth.$WONTON_DEV_DOMAIN（插件经它访问身份提供方）"
-if docker exec wonton-app-grafana--grafana wget -q -T 3 -O /dev/null http://hydra:4445/health/ready 2>/dev/null; then
+if docker exec wonton-app-grafana--grafana wget -q -T 3 -O /dev/null http://hydra.wonton.internal:4445/health/ready 2>/dev/null; then
   fail "插件能访问身份提供方的管理端口"
 fi
 ok "插件访问不到身份提供方的管理端口"

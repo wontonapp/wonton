@@ -38,6 +38,11 @@ pub(super) struct Home {
 }
 
 pub(super) async fn home() -> Home {
+    home_with(None).await
+}
+
+/// `tusd` 是 tusd 的 `host:port`。
+pub(super) async fn home_with(tusd: Option<String>) -> Home {
     let f = Fixture::new();
     let public = PublicUrls {
         scheme: "http".into(),
@@ -80,7 +85,8 @@ pub(super) async fn home() -> Home {
         http,
         tunnel.clone(),
     )
-    .with_files(Some(f.files.clone()));
+    .with_files(Some(f.files.clone()))
+    .with_tusd(tusd);
     Home {
         app: router(Arc::new(gateway)),
         tunnel,

@@ -148,6 +148,7 @@ async fn serve() -> anyhow::Result<()> {
     let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     let host = Arc::new(CoreHost::new(manager.clone(), bus.upstreams(), notices));
     let files = open_files(&cfg, host, http.clone(), audit, images)?;
+    files.spawn_sweeper();
     let tunnel = bind_tunnel(&cfg).await?;
     let push_path = cfg.core_state_dir().join("push.json");
     let push = Push::open(&push_path, tunnel.devices.clone())
@@ -165,7 +166,8 @@ async fn serve() -> anyhow::Result<()> {
         .with_matrix(matrix)
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
-        .with_files(Some(files)),
+        .with_files(Some(files))
+        .with_tusd(cfg.tusd.clone()),
     );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)

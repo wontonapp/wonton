@@ -82,6 +82,8 @@ pub struct Gateway {
     pub mcp: Option<crate::mcp::Endpoint>,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
+    /// tusd 的 `host:port`；没配置时上传如实报不可用。
+    pub tusd: Option<String>,
     sessions: session::SessionStore,
 }
 
@@ -118,6 +120,7 @@ impl Gateway {
             push: None,
             mcp: None,
             files: None,
+            tusd: None,
             sessions: session::SessionStore::default(),
         }
     }
@@ -147,6 +150,12 @@ impl Gateway {
     #[must_use]
     pub fn with_files(mut self, files: Option<Arc<crate::files::Files>>) -> Self {
         self.files = files;
+        self
+    }
+
+    /// 接上 tusd：`authority` 是 `host:port`，见 [`crate::config::http_authority`]。
+    pub fn with_tusd(mut self, authority: Option<String>) -> Self {
+        self.tusd = authority;
         self
     }
 
@@ -218,6 +227,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::Push => push::gateway_request(&gateway, req).await,
         HostKind::PluginMcp => mcp::request(&gateway, req).await,
+        HostKind::FileHooks => files::hook_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
         HostKind::Unknown => pages::error(
@@ -232,6 +242,20 @@ fn client_addr(req: &Request) -> Option<SocketAddr> {
     req.extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(addr)| *addr)
+}
+
+/// TCP 来源是不是这个内部服务：地址现查，容器重建后会变。服务没配置时谁都不是。
+async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &str) -> bool {
+    let (Some(authority), Some(peer)) = (authority, peer) else {
+        return false;
+    };
+    match tokio::net::lookup_host(authority).await {
+        Ok(mut addrs) => addrs.any(|addr| addr.ip().to_canonical() == peer.ip().to_canonical()),
+        Err(e) => {
+            tracing::warn!(service = name, error = %e, "查不到内部服务的地址，拒绝它的请求");
+            false
+        }
+    }
 }
 
 /// `auth.<base>`：身份提供方的公开端点（授权、令牌、用户信息、JWKS、发现文档）。
@@ -362,7 +386,13 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 #[cfg(test)]
 mod files_plugin_tests;
 #[cfg(test)]
+mod files_revoke_tests;
+#[cfg(test)]
 mod files_tests;
+#[cfg(test)]
+mod files_upload_failure_tests;
+#[cfg(test)]
+mod files_upload_tests;
 #[cfg(test)]
 mod isolation_tests;
 #[cfg(test)]
@@ -383,3 +413,5 @@ mod push_tests;
 mod tests;
 #[cfg(test)]
 mod tunnel_tests;
+#[cfg(test)]
+mod tusd_tests;

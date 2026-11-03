@@ -40,7 +40,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 
 ## 拉不到镜像
 
-核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
+核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra、tusd 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
 安装时拉镜像失败，先给 Docker 配镜像加速或代理，再执行一次安装命令。magpie 和 Hermes 由核心拉：拉不到时插件列表里
 如实显示原因，核心隔一段时间（最长 10 分钟）自动重试，配好代理后不用重装。国内的镜像仓库按 ADR-0012 以后加上。
 

@@ -12,7 +12,7 @@ use wonton_protocol::{FileFailure, FileId, FileSource};
 
 use super::record::{Accessor, FileRecord, Origin};
 use super::resource::InternalUrl;
-use super::share_fs::{ShareRef, Shares, TRANSFERS};
+use super::share_fs::{Names, ShareRef, Shares, TRANSFERS};
 use super::{Failure, FileHost, Files, FilesConfig};
 use crate::http::HttpClient;
 use crate::mcp::audit::Audit;
@@ -235,8 +235,12 @@ impl Fixture {
                 &incoming,
                 data.as_str(),
                 content.len() as u64,
-                name,
-                self.owner,
+                Names {
+                    preferred: name,
+                    owner: self.owner,
+                    placing_inode: None,
+                },
+                &mut |_, _| Ok(()),
             )
             .unwrap();
         fs::remove_file(incoming.join(data.as_str())).unwrap();
@@ -285,6 +289,11 @@ impl Fixture {
         };
         record.declared_size = Some(size);
         self.files.registry.save(record).unwrap();
+    }
+
+    /// tusd 存字节的目录。
+    pub fn uploads_dir(&self) -> PathBuf {
+        self.dir.path().join("files/uploads")
     }
 
     /// 审计日志的每一行。

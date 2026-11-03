@@ -174,7 +174,11 @@ pub(super) struct Phone {
 
 impl Phone {
     pub(super) async fn start(key: SecretKey, home: &Home) -> Self {
-        let client = TunnelClient::new(loopback_endpoint(key).await, home.tunnel.endpoint.addr());
+        Self::connect(key, &home.tunnel).await
+    }
+
+    pub(super) async fn connect(key: SecretKey, tunnel: &Tunnel) -> Self {
+        let client = TunnelClient::new(loopback_endpoint(key).await, tunnel.endpoint.addr());
         let credential = ProxyCredential::generate();
         let pair = format!("{}:{}", credential.username(), credential.password());
         let authorization = format!("Basic {}", STANDARD.encode(pair));
@@ -204,6 +208,24 @@ impl Phone {
         .await
         .expect("等待服务端断开连接超时")
         .unwrap();
+    }
+
+    /// 经本地代理发请求的开头：`Host` 原样带到网关。
+    pub(super) fn request(
+        &self,
+        method: Method,
+        host: &str,
+        path: &str,
+    ) -> hyper::http::request::Builder {
+        hyper::Request::builder()
+            .method(method)
+            .uri(format!("http://{}{path}", self.proxy.local_addr()))
+            .header(header::HOST, format!("{host}:{PORT}"))
+            .header(header::PROXY_AUTHORIZATION, &self.authorization)
+    }
+
+    pub(super) fn http(&self) -> HttpClient {
+        self.http.clone()
     }
 
     /// 经本地代理打开一个页面。

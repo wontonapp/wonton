@@ -11,6 +11,11 @@ use super::manifest::Manifest;
 /// 安装时核心建的 Bot。
 pub const DEFAULT_BOT: &str = "default";
 
+/// 服务名之外，Bot 服务的另一个网络别名：同一个 Bot 的服务之间用它互访。
+pub fn bot_alias(service: &str) -> String {
+    format!("{service}-{DEFAULT_BOT}")
+}
+
 fn bot_services(manifest: &Manifest) -> BTreeSet<&str> {
     manifest
         .bots
@@ -67,7 +72,7 @@ impl<'a> ServiceVars<'a> {
     pub fn aliases(&self, service: &str) -> Vec<String> {
         let mut aliases = vec![service.to_owned()];
         if self.bot_services.contains(service) {
-            aliases.push(format!("{service}-{DEFAULT_BOT}"));
+            aliases.push(bot_alias(service));
         }
         aliases
     }

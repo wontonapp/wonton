@@ -26,11 +26,35 @@ docker_reachable() {
 
 indent() { sed 's/^/      /'; }
 
-# 没有 Docker 时说明跳过了哪些测试、为什么、怎样手动运行。放在输出最后，不会被前面的日志淹没。
+# 只在 Linux 上编译的 Docker 测试（比如要用主机网络的）：别的平台上 `--list` 看不到它们，只能从源码里列。
+# 文件开头有 #![cfg(target_os = "linux")]，或者函数上有 #[cfg(target_os = "linux")]，又标了 #[ignore] 的函数。
+linux_only_docker_tests() {
+  [[ "$(uname -s)" == Linux ]] && return 0
+  git ls-files 'crates/*.rs' | xargs awk '
+    FNR == 1 { whole_file = 0; linux = 0; ignored = 0 }
+    /^#!\[cfg\(target_os = "linux"\)\]/ { whole_file = 1 }
+    /^[[:space:]]*#\[cfg\(target_os = "linux"\)\]/ { linux = 1 }
+    /^[[:space:]]*#\[ignore/ { ignored = 1 }
+    /^[[:space:]]*(pub(\([a-z ]*\))? )?(async )?fn / {
+      if (ignored && (whole_file || linux)) {
+        name = $0
+        sub(/^.*fn /, "", name)
+        sub(/[(<].*$/, "", name)
+        print FILENAME " " name
+      }
+      linux = 0
+      ignored = 0
+    }
+    /^[[:space:]]*(pub(\([a-z ]*\))? )?(mod|struct|enum|impl|trait|use|const|static|type) / { linux = 0; ignored = 0 }
+  '
+}
+
+# 说明跳过了哪些测试、为什么、怎样手动运行。放在输出最后，不会被前面的日志淹没。
 print_docker_tests_skipped() {
   local reason="$1" skipped
   skipped="$(cargo test -q --workspace --locked --lib --bins --tests -- --list --ignored | sed -n 's/: test$//p')"
-  [[ -n "$skipped" ]] || return 0
+  skipped="$skipped"$'\n'"$(linux_only_docker_tests)"
+  [[ -n "${skipped//[[:space:]]/}" ]] || return 0
   cat <<EOF
 
 ==> 跳过了依赖 Docker 的集成测试：它们没有运行，这次检查不覆盖它们
@@ -42,7 +66,24 @@ $(indent <<<"$reason")
       cargo test -p wonton-matrix --test tuwunel -- --include-ignored
       cargo test -p wonton-client --test chat -- --include-ignored
       cargo test -p wonton-core --test docker_network -- --include-ignored
+    只在 Linux 上编译的，在 Linux 上运行 bash scripts/check.sh。
     CI 的 Docker 集成测试作业会运行它们，那里 Docker 不可用即失败。
+EOF
+}
+
+# Docker 可用也跑不了只在 Linux 上编译的那些。
+print_linux_only_tests_skipped() {
+  local skipped
+  skipped="$(linux_only_docker_tests)"
+  [[ -n "$skipped" ]] || return 0
+  cat <<EOF
+
+==> 跳过了只在 Linux 上编译的 Docker 测试：它们没有运行，这次检查不覆盖它们
+    跳过的测试：
+$(indent <<<"$skipped")
+    原因：它们只在 Linux 上编译
+    在 Linux 上运行 bash scripts/check.sh 会带上它们。
+    CI 的 Docker 集成测试作业会运行它们。
 EOF
 }
 
@@ -62,6 +103,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 if docker_error="$(docker_reachable)"; then
   echo "==> Docker 可用：连同依赖 Docker 的集成测试一起运行"
   cargo test --workspace --locked -- --include-ignored
+  print_linux_only_tests_skipped
 else
   cargo test --workspace --locked
   print_docker_tests_skipped "$docker_error"

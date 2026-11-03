@@ -24,7 +24,7 @@ use serde_json::json;
 
 use super::api::error_response;
 use super::matrix::matrix_error;
-use super::{Gateway, TunnelPeer, client_addr};
+use super::{Gateway, TunnelPeer, client_addr, from_service};
 use crate::config::PUSH_GATEWAY_HOST;
 use crate::push::{NotifyRequest, NotifyResponse, PushError, Subscription};
 
@@ -148,16 +148,8 @@ pub(super) fn forget_device(gateway: &Gateway, device: &EndpointId) {
 /// TCP 来源是不是 Matrix 服务器（Tuwunel）。地址按核心配置里的 Matrix 服务器现查，Tuwunel 的容器重建后地址会变；
 /// 核心没接 Matrix 时谁都不是。
 async fn from_matrix_server(gateway: &Gateway, peer: Option<SocketAddr>) -> bool {
-    let (Some(matrix), Some(peer)) = (&gateway.matrix, peer) else {
-        return false;
-    };
-    match tokio::net::lookup_host(matrix.authority()).await {
-        Ok(mut addrs) => addrs.any(|addr| addr.ip().to_canonical() == peer.ip().to_canonical()),
-        Err(e) => {
-            tracing::warn!(error = %e, "查不到 Matrix 服务器的地址，拒绝推送代理的请求");
-            false
-        }
-    }
+    let authority = gateway.matrix.as_ref().map(|matrix| matrix.authority());
+    from_service(authority, peer, "Matrix 服务器").await
 }
 
 /// `push.wonton.internal`：推送代理。错误按 Matrix 的格式给出。

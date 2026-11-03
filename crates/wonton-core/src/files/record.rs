@@ -93,7 +93,7 @@ pub struct FileRecord {
     /// 登记或上传时声明的类型，不可信：下载时的类型由核心决定（[`super::content::served_type`]）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
-    /// 插件声明的大小；其他来源的大小看当前的文件。
+    /// 插件声明的大小，或者设备上传时 tus 声明的长度（创建后不变）；文件现在的大小看当前的文件。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_size: Option<u64>,
     pub source: FileSource,

@@ -36,6 +36,8 @@ pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
 /// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。
 pub const PLUGIN_MCP_HOST: &str = "mcp.wonton.internal";
+/// tusd 经核心在私有网络里的这个别名调文件钩子（ADR-0020）。
+pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
 
 /// 网关按 Host 头区分的目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +56,8 @@ pub enum HostKind {
     Lan(std::net::IpAddr),
     /// 插件网络里的 Agent 访问 MCP 总线（[`PLUGIN_MCP_HOST`]）。
     PluginMcp,
+    /// tusd 调文件钩子（[`FILE_HOOKS_HOST`]）。
+    FileHooks,
     Unknown,
 }
 
@@ -111,6 +115,9 @@ impl PublicUrls {
         }
         if host == PLUGIN_MCP_HOST {
             return HostKind::PluginMcp;
+        }
+        if host == FILE_HOOKS_HOST {
+            return HostKind::FileHooks;
         }
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
@@ -183,6 +190,8 @@ pub struct Config {
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
     pub matrix: Option<MatrixConfig>,
+    /// tusd 的 `host:port`（`WONTON_TUSD_URL`）：设备上传转发到这里，文件钩子只接受这个地址（ADR-0020）。
+    pub tusd: Option<String>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
     pub system_plugins: Option<PathBuf>,
     /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
@@ -290,6 +299,10 @@ impl Config {
             )?),
             oidc,
             matrix,
+            tusd: get("WONTON_TUSD_URL")
+                .map(|url| http_authority(&url))
+                .transpose()
+                .map_err(|e| invalid("WONTON_TUSD_URL", &e))?,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
@@ -506,6 +519,10 @@ mod tests {
             HostKind::PluginModels
         );
         assert_eq!(urls.classify("push.wonton.internal"), HostKind::Push);
+        assert_eq!(
+            urls.classify("files-hooks.wonton.internal:8080"),
+            HostKind::FileHooks
+        );
         for other in [
             "a.b.wonton.localhost",
             "evil.example",

@@ -68,3 +68,5 @@ jobs:
         run: cargo test -p wonton-client --locked --test chat -- --include-ignored
       - name: 核心接入、退出插件网络时发布端口的连接不断
         run: cargo test -p wonton-core --locked --test docker_network -- --include-ignored
+      - name: 设备经隧道、tusd 上传文件
+        run: cargo test -p wonton-core --locked --lib gateway::tusd_tests -- --include-ignored

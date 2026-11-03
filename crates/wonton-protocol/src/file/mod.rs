@@ -84,17 +84,17 @@ pub enum FileFailure {
     NotViewable,
     /// 磁盘放不下这个上传。
     StorageFull,
-    /// 来源插件给不了这个文件：卸了、没在运行、连不上，或者不再提供 MCP 服务。说明里写是哪一种。
+    /// 来源插件给不了这个文件：卸了、没在运行、连不上、响应中途断了、读取超过期限，占着名额的读取超过 30 秒没结束，或者不再提供 MCP 服务。说明里写是哪一种。
     PluginUnavailable,
     /// 来源插件返回错误，说明里附上原话。
     UpstreamError,
     /// 插件的资源超过 `resources/read` 的上限：插件要给内网地址。
     ResourceTooLarge,
-    /// 核心依赖的系统服务（tusd、Matrix 服务器）没配置或连不上。
+    /// 核心依赖的系统服务（tusd、Matrix 服务器）没配置或连不上，或者读取、解码的名额满了（忙，不归给来源，稍后再试）。
     ServiceUnavailable,
     /// 核心自己的问题：读写不了记录、读不了插件记录、Docker 出错、起不了进程。
     Internal,
-    /// 请求本身不合法：请求体读不懂，或者上传没有声明长度。
+    /// 请求本身不合法：请求体读不懂或者没有传完，或者上传没有声明长度。
     InvalidInput,
     /// 客户端核心连不上家里的服务器：隧道没连上、网络断开或请求超时。不会出现在核心的响应里。
     TransportUnavailable,

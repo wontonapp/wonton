@@ -13,6 +13,7 @@ pub mod record;
 pub mod resource;
 pub mod share_fs;
 mod slots;
+pub mod uploads;
 
 use std::fs;
 use std::io::Read;
@@ -187,6 +188,7 @@ pub struct FileEvent<'a> {
 pub struct Files {
     registry: Registry,
     shares: Shares,
+    uploads: uploads::Uploads,
     host: Arc<dyn FileHost>,
     http: crate::http::HttpClient,
     audit: Arc<Audit>,
@@ -228,6 +230,7 @@ impl Files {
         Ok(Self {
             registry,
             shares,
+            uploads: uploads::Uploads::open(&config.dir, config.owner)?,
             host,
             http,
             audit,
@@ -503,6 +506,8 @@ impl Files {
         let files = self.clone();
         let id = id.clone();
         tokio::spawn(async move {
+            // 和放文件排同一个队：不然放到一半的文件可能删完之后才冒出来。
+            let _turn = files.uploads.turn(&id).await;
             let task = id.clone();
             let removed = files.blocking(move |files| files.delete_now(&task)).await;
             let outcome = match &removed {
@@ -529,6 +534,10 @@ impl Files {
         // 删失败了记录留着：文件还在，主人可以再删一次。
         let removed = match &record.origin {
             Origin::Upload { reference, placed } => {
+                // 放好之后清理没做完（崩溃了）的残留先清掉：待完成记录和数据还在的话，下次清理会把删掉的文件再放回来。
+                if !self.forget_now(id, true) {
+                    return Err(Failure::internal("清不掉这个上传的残留，文件没有删"));
+                }
                 self.shares.delete_if_unchanged(reference, placed)?
             }
             _ => Deleted::AlreadyGone,
@@ -649,18 +658,17 @@ impl Files {
         })
         .await
     }
-
-    /// 定期清理过期够久的记录。
-    pub async fn purge_expired(self: &Arc<Self>) -> Result<usize, Failure> {
-        self.blocking(|files| Ok(files.registry.purge_expired(now_secs())?))
-            .await
-    }
 }
 
 /// 占着的读取名额，读完才放下。
 enum ThumbnailSlot {
     Local(#[allow(dead_code)] OwnedSemaphorePermit),
     Plugin(#[allow(dead_code)] PluginSlot),
+}
+
+/// 新的上传编号。网关在转发创建请求之前就定好，tusd 回 500、可能不回 `Location` 时也知道是哪个上传。
+pub fn new_upload_id() -> FileId {
+    new_id()
 }
 
 /// 128 位随机数：编号不可猜全靠它。
