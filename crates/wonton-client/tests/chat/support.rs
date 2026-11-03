@@ -34,7 +34,11 @@ pub struct Home {
     /// 扮演核心的推送代理：Tuwunel 经出站代理把通知发到这里，和产品里一样。
     pub push: PushGateway,
     core: Arc<Core>,
-    tunnel: TunnelServer,
+    tunnel: Option<TunnelServer>,
+    tunnel_key: SecretKey,
+    tunnel_port: u16,
+    allowlist: Allowlist,
+    core_addr: SocketAddr,
     _core: JoinHandle<()>,
 }
 
@@ -54,6 +58,8 @@ struct Core {
     /// 为真时回答先不回，手机上这时是“正在发”。
     hold_answers: watch::Sender<bool>,
     uploads_paused: watch::Sender<bool>,
+    /// 为真时 Tuwunel 像挂了一样：转发中的请求断开，新请求一接上就断开。
+    matrix_down: watch::Sender<bool>,
 }
 
 impl Home {
@@ -70,17 +76,54 @@ impl Home {
             answer_replies: Mutex::default(),
             hold_answers: watch::Sender::new(false),
             uploads_paused: watch::Sender::new(false),
+            matrix_down: watch::Sender::new(false),
         });
         let (addr, task) = fake_core(core.clone()).await;
-        let endpoint = loopback_endpoint(SecretKey::generate()).await;
-        let tunnel = TunnelServer::spawn(endpoint, Allowlist::new(devices.iter().copied()), addr);
+        let tunnel_key = SecretKey::generate();
+        let endpoint = loopback_endpoint(tunnel_key.clone(), 0).await;
+        let tunnel_port = endpoint.bound_sockets()[0].port();
+        let allowlist = Allowlist::new(devices.iter().copied());
+        let tunnel = TunnelServer::spawn(endpoint, allowlist.clone(), addr);
         Self {
             matrix,
             push,
             core,
-            tunnel,
+            tunnel: Some(tunnel),
+            tunnel_key,
+            tunnel_port,
+            allowlist,
+            core_addr: addr,
             _core: task,
         }
+    }
+
+    /// Tuwunel 挂了或恢复了，隧道不受影响。
+    pub fn set_matrix_down(&self, down: bool) {
+        self.core.matrix_down.send_replace(down);
+    }
+
+    /// 家里的隧道断了：手机连不上，Tuwunel 和直连它的 Bot 不受影响。
+    pub async fn stop_tunnel(&mut self) {
+        self.tunnel.take().expect("隧道没在运行").shutdown().await;
+    }
+
+    /// 用同样的身份和端口恢复隧道。
+    pub async fn start_tunnel(&mut self) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        // iroh 关闭后要再过一小会儿才释放 UDP 端口。
+        while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, self.tunnel_port)).is_err() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "隧道的端口一直没有释放"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        let endpoint = loopback_endpoint(self.tunnel_key.clone(), self.tunnel_port).await;
+        self.tunnel = Some(TunnelServer::spawn(
+            endpoint,
+            self.allowlist.clone(),
+            self.core_addr,
+        ));
     }
 
     /// 登记推送时核心回给设备的 pushkey。
@@ -94,8 +137,9 @@ impl Home {
     }
 
     pub fn ticket(&self) -> String {
-        let id = self.tunnel.endpoint().id();
-        let addr = self.tunnel.endpoint().bound_sockets()[0];
+        let tunnel = self.tunnel.as_ref().expect("隧道没在运行");
+        let id = tunnel.endpoint().id();
+        let addr = tunnel.endpoint().bound_sockets()[0];
         format!(
             r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["{addr}"]}},
                 "base_domain": "{BASE_DOMAIN}", "core_url": "http://{BASE_DOMAIN}"}}"#
@@ -180,11 +224,16 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
             let mut paused = core.uploads_paused.subscribe();
             paused.wait_for(|paused| !paused).await.unwrap();
         }
+        let mut down = core.matrix_down.subscribe();
+        if *down.borrow() {
+            return;
+        }
         let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();
         upstream.write_all(&head).await.unwrap();
-        tokio::io::copy_bidirectional(&mut tcp, &mut upstream)
-            .await
-            .ok();
+        tokio::select! {
+            _ = tokio::io::copy_bidirectional(&mut tcp, &mut upstream) => {}
+            _ = down.wait_for(|down| *down) => {}
+        }
         return;
     }
     let length = text
@@ -264,11 +313,11 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
     Some((200, response.to_string()))
 }
 
-async fn loopback_endpoint(key: SecretKey) -> Endpoint {
+async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
     Endpoint::builder(presets::Minimal)
         .secret_key(key)
         .clear_ip_transports()
-        .bind_addr((Ipv4Addr::LOCALHOST, 0))
+        .bind_addr((Ipv4Addr::LOCALHOST, port))
         .unwrap()
         .bind()
         .await

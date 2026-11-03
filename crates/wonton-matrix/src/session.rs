@@ -13,7 +13,10 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
-use tokio::{sync::broadcast::error::RecvError, task::JoinHandle};
+use tokio::{
+    sync::{Notify, broadcast::error::RecvError},
+    task::JoinHandle,
+};
 
 use crate::{Error, Result, send_queue};
 
@@ -112,6 +115,10 @@ pub struct MatrixSession {
     device_id: OwnedDeviceId,
     /// 发送出错以后接着发（[`send_queue`](crate::send_queue)），会话释放时停止。
     sending: JoinHandle<()>,
+    /// 叫醒等着重开发送队列的任务，见 [`MatrixSession::resume`]。
+    pub(crate) resume_sending: Arc<Notify>,
+    /// 叫醒等着重启同步的任务，见 [`MatrixSession::resume`]。
+    pub(crate) resume_sync: Notify,
 }
 
 impl Drop for MatrixSession {
@@ -162,13 +169,19 @@ impl MatrixSession {
         let sync = Arc::new(sync);
         // 上传附件时时间线本地回显带上进度（#92）：开关是 client 级的，每次上传开始时读一次。
         client.send_queue().enable_upload_progress(true);
-        let sending = tokio::spawn(send_queue::keep_sending(client.clone()));
+        let resume_sending = Arc::new(Notify::new());
+        let sending = tokio::spawn(send_queue::keep_sending(
+            client.clone(),
+            resume_sending.clone(),
+        ));
         Ok(Self {
             client,
             sync,
             user_id,
             device_id,
             sending,
+            resume_sending,
+            resume_sync: Notify::new(),
         })
     }
 

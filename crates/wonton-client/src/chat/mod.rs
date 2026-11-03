@@ -113,20 +113,24 @@ impl ChatLink {
         self.view.subscribe()
     }
 
-    /// App 回到前台：登录失败（不是被吊销）或同步停了的话重试。
+    /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）的话重新登录；已经登录的接着用同一个会话，同步和发送队列
+    /// 马上恢复。换会话的话，打开着的房间还订阅着旧会话，再也收不到更新。
     pub(crate) fn foregrounded(self: &Arc<Self>) {
         let view = self.view();
         // 还没连上家里、或者正在登录（家里的连接一就绪就会登录）时不插手；被吊销只能重新配对。Android 启动时
         // 也会发一次“回到前台”，正赶上第一次登录，这时再登录一遍会在同一个存储上开两个会话。
-        let retry = match &view.account {
-            ChatAccount::Failed { reason, .. } => *reason != ChatFailure::Unauthorized,
-            ChatAccount::SignedIn { .. } => {
-                matches!(view.sync, ChatSync::Idle | ChatSync::Failed { .. })
+        match &view.account {
+            ChatAccount::Failed { reason, .. } if *reason != ChatFailure::Unauthorized => {
+                if let Some(proxy) = self.home.view().proxy {
+                    self.runtime.spawn(self.clone().connect(proxy));
+                }
             }
-            ChatAccount::SignedOut | ChatAccount::SigningIn => false,
-        };
-        if retry && let Some(proxy) = self.home.view().proxy {
-            self.runtime.spawn(self.clone().connect(proxy));
+            ChatAccount::SignedIn { .. } => {
+                if let Some(session) = lock(&self.session).clone() {
+                    session.resume();
+                }
+            }
+            ChatAccount::Failed { .. } | ChatAccount::SignedOut | ChatAccount::SigningIn => {}
         }
     }
 
@@ -468,7 +472,7 @@ async fn follow_home(chat: Weak<ChatLink>, mut home: watch::Receiver<HomeViewMod
                 }
                 None => link.disconnect().await,
             }
-        } else if reconnected && matches!(link.view().account, ChatAccount::Failed { .. }) {
+        } else if reconnected {
             link.foregrounded();
         }
         drop(link);
@@ -652,7 +656,12 @@ impl ChatLink {
         let events = self
             .runtime
             .spawn(watch_session(Arc::downgrade(self), session.clone()));
-        vec![rooms, encryption, sync, events]
+        let syncing = {
+            let session = session.clone();
+            self.runtime
+                .spawn(async move { session.keep_syncing().await })
+        };
+        vec![rooms, encryption, sync, events, syncing]
     }
 }
 

@@ -3,9 +3,10 @@
 
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use wonton_matrix::{
     ChatRoom, EntryKind, ImageThumbnail, ImageUpload, MatrixSession, Message, MessageBody,
-    OwnedRoomId, SendStatus, SessionConfig, StoreConfig,
+    OwnedRoomId, SendStatus, SessionConfig, StoreConfig, SyncStatus,
 };
 
 use crate::chat::{direct_chat, entry_snapshots, is_text};
@@ -28,6 +29,66 @@ async fn messages_sent_while_offline_go_out_after_reconnecting() {
     chat.relay.restore();
     send(&chat.alice_room, "恢复后发的").await;
     receives_in_order(&chat.bob_room, &["断网时发的", "恢复后发的"]).await;
+}
+
+/// 连接恢复时调用方说一声：不等退避的间隔（这时已经涨到十几秒），马上发出去。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn resuming_sends_at_once_instead_of_waiting_out_the_backoff() {
+    let chat = Chat::open(StoreConfig::InMemory).await;
+    chat.relay.cut();
+    send(&chat.alice_room, "断网时发的").await;
+    failed(&chat.alice_room, "断网时发的", true).await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    chat.relay.restore();
+    chat.alice.resume();
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        receives_in_order(&chat.bob_room, &["断网时发的"]),
+    )
+    .await
+    .expect("恢复后还在等退避的间隔");
+}
+
+/// 同步因网络错误停下后自己重启，还在同一个会话上：打开着的房间收到断开期间别人发的消息。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn sync_restarts_by_itself_and_the_open_room_catches_up() {
+    let chat = Chat::open(StoreConfig::InMemory).await;
+    let keeping = async {
+        chat.alice.keep_syncing().await;
+    };
+    let scenario = async {
+        chat.relay.cut();
+        wait_for_sync(&chat.alice, |status| {
+            matches!(status, SyncStatus::Failed(_))
+        })
+        .await;
+        send(&chat.bob_room, "断开时对方发的").await;
+        chat.relay.restore();
+        receives_in_order(&chat.alice_room, &["断开时对方发的"]).await;
+    };
+    tokio::select! {
+        () = keeping => panic!("同步的重启任务提前结束了"),
+        () = scenario => {}
+    }
+    assert_eq!(
+        chat.alice.sync_status().next().await,
+        Some(SyncStatus::Running)
+    );
+}
+
+/// 服务器拒绝身份时重启也没用，不重试。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn sync_stays_stopped_when_the_server_rejects_the_device() {
+    let chat = Chat::open(StoreConfig::InMemory).await;
+    chat.relay.reject();
+    tokio::time::timeout(Duration::from_secs(60), chat.alice.keep_syncing())
+        .await
+        .expect("服务器拒绝身份后还在重启同步");
 }
 
 /// 服务器拒收的一条不自动重发，之后发的排在它后面；主人重发后两条按顺序发出去。
@@ -296,6 +357,19 @@ impl Chat {
             server,
         }
     }
+}
+
+async fn wait_for_sync(session: &MatrixSession, mut done: impl FnMut(&SyncStatus) -> bool) {
+    let mut statuses = std::pin::pin!(session.sync_status());
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while let Some(status) = statuses.next().await {
+            if done(&status) {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("等同步状态超时");
 }
 
 async fn send(room: &ChatRoom, text: &str) {

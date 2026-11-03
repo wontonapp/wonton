@@ -9,6 +9,7 @@
 
 mod confirmation;
 mod push;
+mod resume;
 mod send;
 mod support;
 mod upload_progress;

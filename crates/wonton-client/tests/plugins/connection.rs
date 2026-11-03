@@ -5,27 +5,39 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use iroh::SecretKey;
-use wonton_client::{Action, HomeStatus, PluginFailure, PluginState, PluginTaskState};
+use wonton_client::{Action, HomeFailure, HomeStatus, PluginFailure, PluginState, PluginTaskState};
 
 use crate::rig::{Canned, FakeHome, Rig, core_error, installed, preview, running, ticket};
 
 /// 建连尝试可能要等到握手超时。
 const DIAL: Duration = Duration::from_secs(90);
 
-/// 等第一次建连失败和它报的原因。
-async fn first_failure(rig: &Rig) -> PluginFailure {
+/// 等第一次建连失败，返回隧道报的原因。
+async fn first_failure(rig: &Rig) -> HomeFailure {
     let deadline = Instant::now() + DIAL;
-    while !matches!(rig.app.home().status, HomeStatus::Disconnected { .. }) {
+    loop {
+        if let HomeStatus::Disconnected { reason, .. } = rig.app.home().status {
+            return reason;
+        }
         assert!(Instant::now() < deadline, "{:?}", rig.app.home());
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    let view = rig.wait_for(|view| view.problem.is_some()).await;
-    view.problem.unwrap().reason
+}
+
+/// 等页面上的问题变成 `reason`：连接之前取列表也会留下问题，只看有没有分不清是哪一个。
+async fn shows(rig: &Rig, reason: PluginFailure) {
+    rig.wait_for(|view| {
+        view.problem
+            .as_ref()
+            .is_some_and(|problem| problem.reason == reason)
+    })
+    .await;
 }
 
 /// 服务器拒绝了这台设备，重连也没用，状态不该再回到“连接中”。
 async fn stays_rejected(rig: &Rig) {
-    assert_eq!(first_failure(rig).await, PluginFailure::Unauthorized);
+    assert_eq!(first_failure(rig).await, HomeFailure::Unauthorized);
+    shows(rig, PluginFailure::Unauthorized).await;
     let quiet = Instant::now() + Duration::from_secs(8);
     while Instant::now() < quiet {
         let status = rig.app.home().status;
@@ -47,10 +59,8 @@ async fn an_unreachable_server_is_reported_and_tried_again() {
         SecretKey::generate().public(),
         silent.local_addr().unwrap(),
     ));
-    assert_eq!(
-        first_failure(&rig).await,
-        PluginFailure::TransportUnavailable
-    );
+    assert_eq!(first_failure(&rig).await, HomeFailure::TransportUnavailable);
+    shows(&rig, PluginFailure::TransportUnavailable).await;
 
     let deadline = Instant::now() + Duration::from_secs(20);
     while rig.app.home().status != HomeStatus::Connecting {
