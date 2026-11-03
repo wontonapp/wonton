@@ -17,6 +17,7 @@ use super::image_worker::ImageWorker;
 use super::lan::Lan;
 use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind};
+use super::mcp_server::{McpServer, ToolLimits};
 use super::models::{ModelsRoute, ProviderState};
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
@@ -107,15 +108,6 @@ pub struct Route {
     pub upstream: Option<String>,
     /// `sso: proxy` 时网关代加的凭据。
     pub proxy: Option<Arc<ProxyAuth>>,
-}
-
-/// 在运行、声明了 `mcp` 的插件：MCP 总线连它的地址。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct McpServer {
-    pub id: PluginId,
-    pub title: LocalizedText,
-    /// `http://主机:端口/路径`。
-    pub url: String,
 }
 
 pub(super) struct Entry {
@@ -260,7 +252,7 @@ impl PluginManager {
         http: HttpClient,
         oidc: Option<Hydra>,
         cfg: LifecycleConfig,
-        images: ImageWorker,
+        images: impl Into<std::sync::Arc<ImageWorker>>,
     ) -> Self {
         // 核心直接跑在宿主上时 /dev 就是宿主的；在容器里要由 compose 挂载进来，见 [`Self::with_host`]。
         let host_dev = cfg.core_container.is_none().then(|| PathBuf::from("/dev"));
@@ -303,10 +295,13 @@ impl PluginManager {
             .filter_map(|(id, entry)| {
                 let url = entry.mcp.clone()?;
                 let title = entry.title.clone();
+                let listed = entry.listed.as_ref();
+                let tool_limits = ToolLimits::of(listed.and_then(|l| l.manifest.mcp.as_ref()));
                 Some(McpServer {
                     id: id.clone(),
                     title,
                     url,
+                    tool_limits,
                 })
             })
             .collect()

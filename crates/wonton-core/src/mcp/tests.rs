@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use wonton_protocol::{Answer, ConfirmationState};
 
 use super::test_support::{Cards, Notes, serve_notes};
+use super::upstream::{ReadError, Upstreams};
 use super::{AnswerError, Bus, Caller, Confirmations};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
@@ -22,7 +23,7 @@ use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
 use crate::plugin::storefront::index::IndexEntry;
-use crate::plugin::{PluginId, PluginManager, PluginPackage, PluginStatus};
+use crate::plugin::{McpServer, PluginId, PluginManager, PluginPackage, PluginStatus};
 
 /// 提供工具的假插件，登记成在运行。
 const NOTES: &str = "name: notes
@@ -125,7 +126,16 @@ fn write_index(dir: &tempfile::TempDir) {
     }
 }
 
+async fn setup_with_upstreams(upstreams: Upstreams) -> Setup {
+    let (_docker, engine) = FakeDocker::start().await;
+    setup_with(engine, Duration::from_secs(5), upstreams).await
+}
+
 async fn setup(engine: Engine, ttl: Duration) -> Setup {
+    setup_with(engine, ttl, Upstreams::new()).await
+}
+
+async fn setup_with(engine: Engine, ttl: Duration, upstreams: Upstreams) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let manager = manager(engine, &dir);
     let notes = Notes::default();
@@ -138,7 +148,12 @@ async fn setup(engine: Engine, ttl: Duration) -> Setup {
     let confirmations = Arc::new(Confirmations::new(cards.clone(), ttl));
     let audit = dir.path().join("audit.jsonl");
     write_index(&dir);
-    let bus = Bus::new(manager.clone(), confirmations, audit);
+    let bus = Bus::with_upstreams(
+        manager.clone(),
+        confirmations,
+        Arc::new(crate::mcp::audit::Audit::new(audit)),
+        Arc::new(upstreams),
+    );
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
     Setup {
@@ -155,7 +170,9 @@ impl Setup {
     async fn call(&self, name: &str, args: Value) -> CallToolResult {
         let request = CallToolRequestParams::new(name.to_owned())
             .with_arguments(args.as_object().cloned().unwrap_or_default());
-        self.bus.call(&self.caller, request).await
+        self.bus
+            .call(&self.caller, request, std::future::pending())
+            .await
     }
 
     /// 在后台调用，好在等确认时回答。
@@ -163,7 +180,7 @@ impl Setup {
         let (bus, caller, name) = (self.bus.clone(), self.caller.clone(), name.to_owned());
         let request = CallToolRequestParams::new(name)
             .with_arguments(args.as_object().cloned().unwrap_or_default());
-        tokio::spawn(async move { bus.call(&caller, request).await })
+        tokio::spawn(async move { bus.call(&caller, request, std::future::pending()).await })
     }
 
     fn answer(&self, id: &str, answer: Answer) -> Result<ConfirmationState, AnswerError> {
@@ -215,6 +232,167 @@ async fn agents_see_the_core_tools_and_the_tools_of_running_plugins() {
         "插件的注解原样带过来"
     );
     assert_eq!(read_only("wonton__install_plugin"), Some(false));
+}
+
+/// 插件的会话不回答、TCP 没断：只是不列它的工具，别的插件和核心自己的工具照常。
+#[tokio::test]
+async fn stuck_plugins_do_not_hold_up_everyone_elses_tools() {
+    async fn silent_on_lists(body: String) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        let message: Value = serde_json::from_str(&body).unwrap();
+        match message["method"].as_str().unwrap_or_default() {
+            "initialize" => axum::Json(json!({
+                "jsonrpc": "2.0",
+                "id": message["id"],
+                "result": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "stuck", "version": "1"},
+                },
+            }))
+            .into_response(),
+            "tools/list" => std::future::pending().await,
+            _ => hyper::StatusCode::ACCEPTED.into_response(),
+        }
+    }
+    let app = axum::Router::new().route("/mcp", axum::routing::post(silent_on_lists));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    const PERIOD: Duration = Duration::from_secs(1);
+    let s = setup_with_upstreams(Upstreams::with_tools_timeout(PERIOD)).await;
+    for name in ["stuck", "stuck2"] {
+        let stuck = NOTES
+            .replace("name: notes", &format!("name: {name}"))
+            .replace("app.example.notes", &format!("app.example.{name}"));
+        let manifest = PluginPackage::parse(&stuck).unwrap().manifest;
+        let id = manifest.id.clone();
+        s.manager
+            .register_for_test(manifest, PluginStatus::Running, None);
+        s.manager.mcp_for_test(&id, format!("http://{address}/mcp"));
+    }
+
+    let started = std::time::Instant::now();
+    let tools = s.bus.tools(&s.caller).await;
+    assert!(
+        started.elapsed() < PERIOD * 2,
+        "两个卡住的插件要并发地等，等了 {:?}",
+        started.elapsed()
+    );
+    let names: Vec<_> = tools.iter().map(|t| t.name.to_string()).collect();
+    assert!(names.iter().any(|n| n.ends_with("search")), "{names:?}");
+    assert!(!names.iter().any(|n| n.contains("stuck")), "{names:?}");
+
+    // 工具不见了要看得到原因，不只是核心日志里有。
+    let listed = s.call("wonton__list_plugins", json!({})).await;
+    let listed: Value = serde_json::from_str(&text(&listed)).unwrap();
+    let error_of = |id: &str| {
+        let plugins = listed["plugins"].as_array().unwrap();
+        let plugin = plugins.iter().find(|p| p["id"] == id).unwrap();
+        plugin["tools_error"].clone()
+    };
+    assert!(error_of("app.example.notes").is_null());
+    assert!(
+        error_of("app.example.stuck")
+            .as_str()
+            .unwrap()
+            .contains("没有列出工具"),
+        "{listed}"
+    );
+}
+
+/// 确认过的调用到期了：副作用可能已经发生，卡片和给 Agent 的结果都说不确定，不说失败。Agent 断开时它不跟着取消（ADR-0016）。
+#[tokio::test]
+async fn a_confirmed_call_that_times_out_leaves_the_card_uncertain() {
+    let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
+    let hanging = Notes::default();
+    hanging.hang.store(true, Ordering::SeqCst);
+    let manifest = NOTES
+        .replace("name: notes", "name: hanging")
+        .replace("app.example.notes", "app.example.hanging")
+        .replace("streamable-http}", "streamable-http, tool_idle_seconds: 1}");
+    let manifest = PluginPackage::parse(&manifest).unwrap().manifest;
+    let id = manifest.id.clone();
+    s.manager
+        .register_for_test(manifest, PluginStatus::Running, None);
+    s.manager
+        .mcp_for_test(&id, serve_notes(hanging.clone()).await);
+
+    let call = s.spawn("app-example-hanging__delete", json!({"name": "a"}));
+    let card = s.cards.wait_for(1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    // 不写外层期限的话，空闲期限被忽略时这里要等 30 分钟的总期限。
+    let result = tokio::time::timeout(Duration::from_secs(30), call)
+        .await
+        .expect("空闲期限到了就要有结果")
+        .unwrap();
+    assert!(failed(&result), "{result:?}");
+    assert!(text(&result).contains("是否已执行不确定"), "{result:?}");
+    let meta = result.meta.as_ref().unwrap();
+    assert_eq!(meta.0["app.wonton/failure"], "tool_timed_out");
+    let states = s.cards.states(&card.id);
+    assert!(
+        matches!(states.last(), Some(ConfirmationState::Uncertain { .. })),
+        "{states:?}"
+    );
+    assert_eq!(s.audit().last().unwrap()["decision"], "approved");
+}
+
+/// 卡片重发到了别的房间：之后的更新发给重发的那张。
+#[tokio::test]
+async fn a_card_that_moved_is_updated_where_it_now_is() {
+    let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
+    *s.cards.moves_to.lock().unwrap() = Some("$moved".to_owned());
+    let call = s.spawn("app-example-notes__delete", json!({"name": "a"}));
+    let card = s.cards.wait_for(1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    call.await.unwrap();
+    let handles = s.cards.update_handles.lock().unwrap();
+    assert!(handles.len() >= 2, "{handles:?}");
+    assert_eq!(handles[0], "$card1");
+    assert_eq!(handles[1], "$moved");
+}
+
+/// Agent 取消了只读的调用（或者断开了）：取消传给插件，不留一个没人要结果的调用在那里跑。
+#[tokio::test]
+async fn an_agent_cancelling_a_read_only_call_cancels_it_in_the_plugin() {
+    let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
+    s.notes.hang.store(true, Ordering::SeqCst);
+    let request = CallToolRequestParams::new("app-example-notes__search".to_owned());
+    let cancelled = tokio::time::sleep(Duration::from_millis(100));
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        s.bus.call(&s.caller, request, cancelled),
+    )
+    .await
+    .expect("取消之后不再等插件");
+    assert!(failed(&result), "{result:?}");
+    for _ in 0..500 {
+        if s.notes.cancelled.load(Ordering::SeqCst) == 1 {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("插件没有收到取消");
+}
+
+#[test]
+fn a_plugin_can_declare_longer_tool_limits_within_reason() {
+    let parse = |extra: &str| {
+        let text = NOTES.replace("streamable-http}", &format!("streamable-http{extra}}}"));
+        PluginPackage::parse(&text).map(|package| package.manifest.mcp.unwrap())
+    };
+    let mcp = parse(", tool_idle_seconds: 3600, tool_total_seconds: 7200").unwrap();
+    assert_eq!(mcp.tool_idle_seconds, Some(3600));
+    assert_eq!(mcp.tool_total_seconds, Some(7200));
+    assert!(parse(", tool_idle_seconds: 0").is_err());
+    assert!(parse(", tool_total_seconds: 99999999").is_err());
+    // 总期限先到，空闲期限就白写了。不写总期限时按默认的 30 分钟算。
+    assert!(parse(", tool_idle_seconds: 7200, tool_total_seconds: 3600").is_err());
+    assert!(parse(", tool_idle_seconds: 7200").is_err());
+    assert!(parse(", tool_idle_seconds: 1800").is_ok());
+    assert!(parse(", tool_idle_seconds: 3600, tool_total_seconds: 3600").is_ok());
 }
 
 #[tokio::test]
@@ -474,4 +652,38 @@ async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
         "{result:?}"
     );
     assert_eq!(s.cards.posted.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn plugin_resources_are_read_with_a_size_limit() {
+    let server = McpServer {
+        id: PluginId::parse("app.example.notes").unwrap(),
+        title: Default::default(),
+        url: serve_notes(Notes::default()).await,
+        tool_limits: Default::default(),
+    };
+    let upstreams = Upstreams::new();
+    let read = |uri: &'static str, limit| {
+        let (upstreams, server) = (&upstreams, &server);
+        async move { upstreams.read_resource(server, uri, limit).await }
+    };
+    assert_eq!(
+        read("notes://text", 64).await.unwrap(),
+        "一条笔记".as_bytes()
+    );
+    assert_eq!(read("notes://blob", 64).await.unwrap(), b"abc");
+    assert!(matches!(
+        read("notes://blob", 2).await,
+        Err(ReadError::TooLarge)
+    ));
+    assert!(matches!(
+        read("notes://missing", 64).await,
+        Err(ReadError::Upstream(_))
+    ));
+    let dead = McpServer {
+        url: "http://127.0.0.1:1/mcp".into(),
+        ..server.clone()
+    };
+    let unreachable = upstreams.read_resource(&dead, "notes://text", 64).await;
+    assert!(matches!(unreachable, Err(ReadError::Unreachable(_))));
 }

@@ -20,7 +20,7 @@ pub use admin::ADMIN_LOCALPART;
 pub use api::{JWT_LOGIN_TYPE, Login, MatrixError};
 pub use bot::{Avatar, BotAccount, BotSpec, ProvisionedBot};
 pub use issuer::LOGIN_TOKEN_TTL_SECS;
-pub use notices::NoticeRoom;
+pub use notices::{Edited, NoticeRoom, Posted};
 pub use session::Session;
 
 use crate::config::MatrixConfig;

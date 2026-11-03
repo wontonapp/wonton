@@ -6,13 +6,25 @@ use wonton_protocol::ConfirmationCard;
 
 use super::cards;
 use super::confirm::Notifier;
-use crate::matrix::NoticeRoom;
+use crate::matrix::{Edited, NoticeRoom, Posted};
+
+/// 卡片在哪：房间和事件。编辑只能发在原房间里。
+fn encode(posted: &Posted) -> String {
+    serde_json::json!([posted.room, posted.event]).to_string()
+}
+
+fn decode(handle: &str) -> Result<Posted, String> {
+    let (room, event) = serde_json::from_str(handle)
+        .map_err(|e| format!("确认卡片的句柄读不懂（{handle}）：{e}"))?;
+    Ok(Posted { room, event })
+}
 
 impl Notifier for NoticeRoom {
     fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
         async move {
             self.send(&cards::content(card))
                 .await
+                .map(|posted| encode(&posted))
                 .map_err(|e| format!("确认卡片发不到 Wonton 房间：{e}"))
         }
         .boxed()
@@ -22,11 +34,16 @@ impl Notifier for NoticeRoom {
         &'a self,
         handle: &'a str,
         card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
         async move {
-            self.edit(handle, &cards::content(card))
+            let edited = self
+                .edit(&decode(handle)?, &cards::content(card))
                 .await
-                .map_err(|e| format!("更新确认卡片失败：{e}"))
+                .map_err(|e| format!("更新确认卡片失败：{e}"))?;
+            Ok(match edited {
+                Edited::InPlace => None,
+                Edited::Reposted(posted) => Some(encode(&posted)),
+            })
         }
         .boxed()
     }
@@ -47,7 +64,7 @@ impl Notifier for NoMatrix {
         &'a self,
         _handle: &'a str,
         _card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        async { Ok(()) }.boxed()
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
+        async { Ok(None) }.boxed()
     }
 }

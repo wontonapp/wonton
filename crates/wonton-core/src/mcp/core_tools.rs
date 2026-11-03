@@ -117,6 +117,7 @@ fn list(bus: &Bus) -> Value {
                 "version": p.version,
                 "status": p.status,
                 "url": p.url,
+                "tools_error": bus.upstreams.tools_problem(&p.id),
             })
         })
         .collect();

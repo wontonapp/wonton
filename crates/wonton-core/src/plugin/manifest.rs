@@ -178,6 +178,11 @@ pub enum McpTransport {
     StreamableHttp,
 }
 
+/// 工具调用的期限最多声明这么长：一周。总线不能无限期地等一个调用。
+const MAX_TOOL_SECONDS: u64 = 7 * 24 * 3600;
+/// 不写 `tool_total_seconds` 时的总期限。
+pub(super) const DEFAULT_TOOL_TOTAL_SECONDS: u64 = 30 * 60;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpEndpoint {
@@ -186,6 +191,12 @@ pub struct McpEndpoint {
     #[serde(default)]
     pub path: Option<String>,
     pub transport: McpTransport,
+    /// 工具调用多少秒没有进度就算没有结果；不写时用默认值（[`super::ToolLimits`]）。
+    #[serde(default)]
+    pub tool_idle_seconds: Option<u64>,
+    /// 工具调用最多多少秒；不写时用默认值。
+    #[serde(default)]
+    pub tool_total_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -554,18 +565,41 @@ impl Manifest {
         if let Some(webui) = &self.webui {
             validate_webui(webui)?;
         }
-        if let Some(mcp) = &self.mcp
-            && mcp
-                .path
-                .as_deref()
-                .is_some_and(|path| !path.starts_with('/'))
-        {
-            return Err(ManifestError::Invalid("mcp.path 必须以 / 开头".to_owned()));
+        if let Some(mcp) = &self.mcp {
+            validate_mcp(mcp)?;
         }
         self.secrets
             .iter()
             .try_for_each(|(n, s)| validate_secret(n, s))
     }
+}
+
+fn validate_mcp(mcp: &McpEndpoint) -> Result<(), ManifestError> {
+    if mcp
+        .path
+        .as_deref()
+        .is_some_and(|path| !path.starts_with('/'))
+    {
+        return Err(ManifestError::Invalid("mcp.path 必须以 / 开头".to_owned()));
+    }
+    for (name, seconds) in [
+        ("mcp.tool_idle_seconds", mcp.tool_idle_seconds),
+        ("mcp.tool_total_seconds", mcp.tool_total_seconds),
+    ] {
+        if seconds.is_some_and(|seconds| seconds == 0 || seconds > MAX_TOOL_SECONDS) {
+            return Err(ManifestError::Invalid(format!(
+                "{name} 要在 1 到 {MAX_TOOL_SECONDS} 之间"
+            )));
+        }
+    }
+    // 总期限先到，空闲期限就白写了：长工具每次到总期限都被截断。
+    let total = mcp.tool_total_seconds.unwrap_or(DEFAULT_TOOL_TOTAL_SECONDS);
+    if mcp.tool_idle_seconds.is_some_and(|idle| idle > total) {
+        return Err(ManifestError::Invalid(format!(
+            "mcp.tool_idle_seconds 不能超过总期限（{total} 秒），把 mcp.tool_total_seconds 也写上"
+        )));
+    }
+    Ok(())
 }
 
 /// `bot`、`bots` 和 `agent.protocol: matrix` 都以 Bot 身份收发消息，必须申请 `matrix.bot`。

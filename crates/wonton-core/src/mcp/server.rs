@@ -80,7 +80,8 @@ impl ServerHandler for Handler {
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let caller = caller(&ctx)?;
-        Ok(self.bus.call(&caller, request).await.into())
+        let cancelled = ctx.ct.clone().cancelled_owned();
+        Ok(self.bus.call(&caller, request, cancelled).await.into())
     }
 
     async fn on_initialized(&self, context: NotificationContext<RoleServer>) {

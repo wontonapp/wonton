@@ -8,8 +8,8 @@ use futures_util::future::BoxFuture;
 use rmcp::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData,
-    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
-    ToolAnnotations,
+    ListToolsResult, PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse,
+    ReadResourceResult, ResourceContents, ServerCapabilities, ServerConfig, Tool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -24,6 +24,10 @@ use super::Notifier;
 #[derive(Clone, Default)]
 pub struct Notes {
     pub deleted: Arc<Mutex<Vec<String>>>,
+    /// 为真时工具一直不回答。
+    pub hang: Arc<std::sync::atomic::AtomicBool>,
+    /// 调用方取消了几次还在跑的调用。
+    pub cancelled: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 fn schema() -> Arc<rmcp::model::JsonObject> {
@@ -33,7 +37,12 @@ fn schema() -> Arc<rmcp::model::JsonObject> {
 
 impl ServerHandler for Notes {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
     }
 
     async fn list_tools(
@@ -50,8 +59,14 @@ impl ServerHandler for Notes {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _ctx: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        if self.hang.load(std::sync::atomic::Ordering::SeqCst) {
+            ctx.ct.cancelled().await;
+            self.cancelled
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            return Err(ErrorData::internal_error("取消了", None));
+        }
         let name = request
             .arguments
             .as_ref()
@@ -68,6 +83,33 @@ impl ServerHandler for Notes {
             other => return Err(ErrorData::invalid_params(format!("没有 {other}"), None)),
         };
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _ctx: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        Ok(ReadResourceResult::new(vec![resource(&request.uri)?]).into())
+    }
+}
+
+/// 假插件的资源：`notes://text` 是文字，`notes://blob` 是 base64 的 `abc`，`notes://huge` 超过 `resources/read` 的上限，其余
+/// 读不了。
+fn resource(uri: &str) -> Result<ResourceContents, ErrorData> {
+    match uri {
+        "notes://text" => Ok(ResourceContents::text("一条笔记", uri)),
+        "notes://huge" => Ok(ResourceContents::text(
+            "x".repeat(crate::files::MAX_RESOURCE_BYTES + 1),
+            uri,
+        )),
+        "notes://blob" => Ok(ResourceContents::BlobResourceContents {
+            uri: uri.to_owned(),
+            mime_type: None,
+            blob: "YWJj".to_owned(),
+            meta: None,
+        }),
+        _ => Err(ErrorData::resource_not_found(format!("没有 {uri}"), None)),
     }
 }
 
@@ -91,6 +133,10 @@ pub async fn serve_notes(notes: Notes) -> String {
 pub struct Cards {
     pub posted: Mutex<Vec<ConfirmationCard>>,
     pub updates: Mutex<Vec<ConfirmationCard>>,
+    /// 每次更新用的标识。
+    pub update_handles: Mutex<Vec<String>>,
+    /// 下一次更新时卡片换了地方，给出这个新标识。
+    pub moves_to: Mutex<Option<String>>,
     /// 为真时发卡片失败，模拟 Matrix 不可用。
     pub broken: std::sync::atomic::AtomicBool,
 }
@@ -133,12 +179,13 @@ impl Notifier for Cards {
 
     fn update<'a>(
         &'a self,
-        _handle: &'a str,
+        handle: &'a str,
         card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
         async move {
             self.updates.lock().unwrap().push(card.clone());
-            Ok(())
+            self.update_handles.lock().unwrap().push(handle.to_owned());
+            Ok(self.moves_to.lock().unwrap().take())
         }
         .boxed()
     }

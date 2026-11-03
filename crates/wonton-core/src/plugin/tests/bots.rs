@@ -1,12 +1,15 @@
 //! Bot 服务的变量和规则，以及模型网关的变量。安装、卸载时 Bot 在 Matrix 上的副作用见
 //! [`super::bot_lifecycle`]，模型网关的凭据见 [`super::models`]。
 
+use super::super::PluginId;
+use super::super::bots::{BotRecord, BotStore};
 use super::super::package::{PackageError, PluginPackage};
 use super::super::render::{
     ContainerPlan, Deployment, InstallContext, MatrixVars, ModelVars, OidcVars, RenderError,
     dry_run,
 };
 use super::{env_of, package};
+use crate::matrix::BotAccount;
 
 /// `init` 和 `gateway` 每个 Bot 一份，`web` 全插件一份。
 const SERVICES: &str = "  init:\n    image: busybox\n    restart: 'no'\n    \
@@ -197,4 +200,26 @@ fn install_contexts_print_no_tokens_or_secrets() {
         assert!(!printed.contains(secret), "{printed}");
     }
     assert!(printed.contains("web_key"), "只打印密钥的名字：{printed}");
+}
+
+#[test]
+fn a_room_only_has_the_bots_whose_home_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = BotStore::new(dir.path().to_owned());
+    let bot = |user_id: &str, home_room: &str| BotRecord {
+        account: BotAccount {
+            user_id: user_id.to_owned(),
+            home_room: home_room.to_owned(),
+        },
+        device_id: None,
+    };
+    let id = |name: &str| PluginId::parse(name).unwrap();
+    store
+        .save(&id("app.a"), &bot("@a:home", "!a:home"))
+        .unwrap();
+    store
+        .save(&id("app.b"), &bot("@b:home", "!b:home"))
+        .unwrap();
+    assert_eq!(store.in_home_room("!a:home").unwrap(), ["a"]);
+    assert!(store.in_home_room("!people:home").unwrap().is_empty());
 }

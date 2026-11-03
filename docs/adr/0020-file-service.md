@@ -48,7 +48,7 @@ Raft（raft.build）的做法值得参考：文件存在平台上，Agent 只拿
 | GET | `/_wonton/files/{id}` | 文件信息：名字、类型、大小、来源、有没有缩略图 |
 | GET、HEAD | `/_wonton/files/{id}/content` | 字节。支持 `Range`、`If-Range`，带强 `ETag` |
 | GET | `/_wonton/files/{id}/thumbnail` | 长边 800 像素的 JPEG（同 ADR-0005），不带原文件的元数据 |
-| POST | `/_wonton/files/{id}/grants` | 请求体 `{"room": …}`：把这个房间的 Bot 加进访问范围 |
+| POST | `/_wonton/files/{id}/grants` | 请求体 `{"room": …}`，返回 `{"bots": […]}`：把这个房间的 Bot 加进访问范围。M1 的房间就是 Bot 的主房间，别的房间没有可加的 Bot |
 | POST | `/_wonton/files/{id}/send-to-devices` | 把链接发到“Wonton”私聊 |
 | DELETE | `/_wonton/files/{id}` | 删掉编号。设备上传的文件核对后连文件一起删（见“生命周期”），其他来源的原文件不动 |
 
@@ -56,7 +56,7 @@ Raft（raft.build）的做法值得参考：文件存在平台上，Agent 只拿
   从头下。
 - 响应一律带 `X-Content-Type-Options: nosniff`。只有图片、音频、视频才写真实类型，其余一律 `application/octet-stream` 加
   `Content-Disposition: attachment`，并带 `Content-Security-Policy: sandbox`：文件内容不可信，核心地址上不能渲染出它的 HTML。
-- 缩略图和预览在单独的进程里解码，内存和时间的限制同插件图标（插件规范的“图标和截图”）。
+- 缩略图和预览在单独的进程里解码，内存和时间的限制同插件图标（插件规范的“图标和截图”）。读原文件时本地文件和插件资源各有 4 个名额，存储卡住不影响插件的缩略图，插件慢也不影响本地的。等不到名额报 `service_unavailable`（“缩略图读取忙”），不归给来源；读的期限从拿到名额算。
 
 ### 上传
 
@@ -150,7 +150,7 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 | `file_changed` | 409 | 文件登记后改过（工具）；要删的已经不是上传的那个文件，编号删了、文件没删（`DELETE`） |
 | `not_viewable` | 404 | 这个类型没有预览或缩略图（`view_file`、`thumbnail`） |
 | `storage_full` | 507 | 磁盘放不下这个上传 |
-| `plugin_unavailable` | 503 | 来源插件给不了这个文件：卸了、没在运行、连不上，或者不再提供 MCP 服务，说明里写是哪一种 |
+| `plugin_unavailable` | 503 | 来源插件给不了这个文件：卸了、没在运行、连不上、响应中途断了或者卡住，或者不再提供 MCP 服务，说明里写是哪一种 |
 | `upstream_error` | 502 | 来源插件返回错误，附上原话 |
 | `resource_too_large` | 502 | 插件的资源超过 `resources/read` 的上限，插件要给内网地址 |
 | `service_unavailable` | 503 | 核心依赖的系统服务（tusd、Matrix 服务器）没配置或连不上 |

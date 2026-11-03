@@ -4,9 +4,11 @@
 
 use std::fs;
 use std::io::Write;
+use std::os::fd::BorrowedFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use rustix::io::Errno;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::LanChoice;
@@ -163,7 +165,7 @@ impl Store {
 }
 
 /// 只有核心能读写的目录（0700）。
-pub(super) fn create_private_dir(dir: &Path) -> Result<(), StoreError> {
+pub(crate) fn create_private_dir(dir: &Path) -> Result<(), StoreError> {
     let io = |source| StoreError::Io {
         path: dir.to_owned(),
         source,
@@ -173,7 +175,13 @@ pub(super) fn create_private_dir(dir: &Path) -> Result<(), StoreError> {
 }
 
 /// 以 0600 写 JSON：先写临时文件再改名，避免写到一半断电留下损坏的文件。
-pub(super) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> {
+pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> {
+    write_json_synced(path, value).map(|_| ())
+}
+
+/// 同 [`write_json`]，再告诉调用方目录项落盘了没有。要删掉记录以外的东西的调用方看这个结果。`fsync` 的错误只报告一次，别的 fd
+/// 过后再 `fsync` 可能返回成功，其实没写到盘上，所以结果只能在这里拿，重试要重新写一次。
+pub(crate) fn write_json_synced<T: Serialize>(path: &Path, value: &T) -> Result<bool, StoreError> {
     let tmp = path.with_extension("json.tmp");
     let io = |source| StoreError::Io {
         path: path.to_owned(),
@@ -192,11 +200,46 @@ pub(super) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), Sto
         .map_err(io)?;
     file.write_all(text.as_bytes()).map_err(io)?;
     file.sync_all().map_err(io)?;
-    fs::rename(&tmp, path).map_err(io)
+    fs::rename(&tmp, path).map_err(io)?;
+    Ok(sync_parent(path))
+}
+
+/// 目录项写到盘上。有的文件系统（如网络文件系统）不支持对目录 `fsync`，那里本来也保证不了这一步。
+pub(crate) fn sync_dir(dir: BorrowedFd<'_>) -> Result<(), Errno> {
+    match rustix::fs::fsync(dir) {
+        Ok(()) | Err(Errno::INVAL | Errno::NOTSUP) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// 测试用：这个目录接下来的几次 `fsync` 失败。
+#[cfg(test)]
+pub(crate) static DIR_SYNC_FAILURES: std::sync::Mutex<std::collections::BTreeMap<PathBuf, usize>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// 改名或删除记在目录里，断电时目录没落盘，这一步就白做了。但这一步已经生效，读的人看得到：这时报失败，调用方会以为没做成，
+/// 内存和盘上就不一致了（比如再生成一个编号）。所以这里不报错，只记日志并返回有没有落盘，最坏是断电丢掉这一步。
+fn sync_parent(path: &Path) -> bool {
+    use std::os::fd::AsFd;
+    let parent = path.parent().unwrap_or(Path::new("."));
+    #[cfg(test)]
+    if let Some(left) = DIR_SYNC_FAILURES.lock().unwrap().get_mut(parent)
+        && *left > 0
+    {
+        *left -= 1;
+        return false;
+    }
+    let synced = fs::File::open(parent)
+        .map_err(|e| e.to_string())
+        .and_then(|dir| sync_dir(dir.as_fd()).map_err(|e| e.to_string()));
+    if let Err(error) = &synced {
+        tracing::warn!(path = %parent.display(), %error, "目录落盘失败，断电可能丢掉刚才的修改");
+    }
+    synced.is_ok()
 }
 
 /// 读 JSON；文件不存在时返回 `None`。
-pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, StoreError> {
+pub(crate) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, StoreError> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -216,9 +259,12 @@ pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, S
 }
 
 /// 删除文件；本来就没有也算成功。
-pub(super) fn remove_file(path: &Path) -> Result<(), StoreError> {
+pub(crate) fn remove_file(path: &Path) -> Result<(), StoreError> {
     match fs::remove_file(path) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            sync_parent(path);
+            Ok(())
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(source) => Err(StoreError::Io {
             path: path.to_owned(),

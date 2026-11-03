@@ -98,6 +98,11 @@ pub struct PluginPackage {
 }
 
 impl PluginPackage {
+    /// compose 里有没有这个服务。
+    pub fn has_service(&self, name: &str) -> bool {
+        self.services.contains_key(name)
+    }
+
     /// 只有 compose 文本的插件包：引用了包里的文件时失败。
     pub fn parse(source: &str) -> Result<Self, PackageError> {
         Self::with_files(source, PackageFiles::new())

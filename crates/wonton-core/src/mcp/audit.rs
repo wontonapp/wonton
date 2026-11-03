@@ -1,4 +1,5 @@
-//! 总线的审计日志：每次 `tools/call` 一行 JSON（ADR-0016），只追加，文件只有核心能读。
+//! 审计日志（`core/audit.jsonl`）：总线每次 `tools/call` 一行 JSON（ADR-0016），文件服务的下载、上传、删除、授权也写进来
+//! （ADR-0020）。只追加，文件只有核心能读。总线和文件服务共用一个 [`Audit`]：一行一次写入，彼此不会交错。
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -51,7 +52,7 @@ impl Audit {
     }
 
     /// 写一行。写不进去时记一条错误日志，不影响这次调用：审计日志坏了不该让主人用不了工具。
-    pub fn record(&self, record: &Record<'_>) {
+    pub fn record(&self, record: &impl Serialize) {
         let mut line = serde_json::json!({ "ts": crate::plugin::manager::now_secs() });
         if let (Some(line), Ok(Value::Object(fields))) =
             (line.as_object_mut(), serde_json::to_value(record))
@@ -59,7 +60,9 @@ impl Audit {
             line.extend(fields);
         }
         let mut file = self.file.lock().expect("审计日志锁中毒");
-        let written = self.open(&mut file).and_then(|f| writeln!(f, "{line}"));
+        let written = self
+            .open(&mut file)
+            .and_then(|f| f.write_all(format!("{line}\n").as_bytes()));
         if let Err(e) = written {
             tracing::error!(path = %self.path.display(), error = %e, "写审计日志失败");
             *file = None;

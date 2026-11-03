@@ -55,6 +55,10 @@ pub struct Tuwunel {
     pub registrations: usize,
     /// 为真时建房失败，测试中途失败的处理。
     pub refuse_rooms: bool,
+    /// 发出的消息：（房间，内容）。
+    pub sent: Vec<(String, Value)>,
+    /// 为真时拒绝下一条消息（`M_FORBIDDEN`）：核对之后才被踢出去。
+    pub refuse_next_send: bool,
     next: usize,
 }
 
@@ -389,6 +393,28 @@ async fn membership(
     }))
 }
 
+/// 不在房间里时发不了。
+async fn send_message(
+    State(fake): State<Fake>,
+    headers: HeaderMap,
+    Path((room, _txn)): Path<(String, String)>,
+    Json(content): Json<Value>,
+) -> Reply {
+    let mut state = fake.state();
+    reply(auth(&state, &headers).and_then(|(user, _)| {
+        let room_state = state
+            .rooms
+            .get(&room)
+            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
+        if !room_state.members.contains(&user) || std::mem::take(&mut state.refuse_next_send) {
+            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
+        }
+        let event = format!("$event{}", state.sent.len());
+        state.sent.push((room.clone(), content));
+        Ok(ok(json!({"event_id": event})))
+    }))
+}
+
 /// 房间成员才能查别人的成员状态；从来没进过房间的人没有这个状态事件（404）。
 async fn member_state(
     State(fake): State<Fake>,
@@ -515,6 +541,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(
             &format!("{client}/rooms/{{room}}/{{action}}"),
             post(membership),
+        )
+        .route(
+            &format!("{client}/rooms/{{room}}/send/m.room.message/{{txn}}"),
+            put(send_message),
         )
         .route(
             &format!("{client}/rooms/{{room}}/state/m.room.member/{{user}}"),

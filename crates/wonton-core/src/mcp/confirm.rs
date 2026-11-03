@@ -22,13 +22,14 @@ const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
 
 /// 把卡片交给主人：发出去，状态变了再更新。
 pub trait Notifier: Send + Sync {
-    /// 发一张新卡片，返回它的标识（Matrix 事件 ID），之后用来更新。
+    /// 发一张新卡片，返回它的标识，之后用来更新。
     fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>>;
+    /// 更新卡片。原来那张改不了、重发了一张时返回新的标识，之后的更新都用它。
     fn update<'a>(
         &'a self,
         handle: &'a str,
         card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<(), String>>;
+    ) -> BoxFuture<'a, Result<Option<String>, String>>;
 }
 
 /// 没能执行的原因。
@@ -224,8 +225,15 @@ impl Confirmations {
         let Some((handle, card)) = current else {
             return;
         };
-        if let Err(e) = self.notifier.update(&handle, &card).await {
-            tracing::error!(confirmation = %id, error = %e, "更新确认卡片失败");
+        match self.notifier.update(&handle, &card).await {
+            Ok(None) => {}
+            Ok(Some(moved)) => {
+                tracing::warn!(confirmation = %id, "原房间不能用了，确认卡片重发到了当前的房间");
+                if let Some(slot) = self.lock().get_mut(id) {
+                    slot.handle = Some(moved);
+                }
+            }
+            Err(e) => tracing::error!(confirmation = %id, error = %e, "更新确认卡片失败"),
         }
     }
 }

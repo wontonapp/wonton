@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, confirmations, devices, isolation, matrix, pages, push,
+    Gateway, TunnelPeer, api, confirmations, devices, files, isolation, matrix, pages, push,
     same_origin_path, sso, with_cookie,
 };
 
@@ -64,6 +64,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/api/pairing-codes/first",
             post(devices::first_pairing_code),
         )
+        .merge(files::routes(gateway.clone()))
         .fallback(|| async {
             pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面")
         })

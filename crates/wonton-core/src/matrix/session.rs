@@ -192,7 +192,7 @@ impl<'a> Session<'a> {
             .map(|_| ())
     }
 
-    /// 房间里已加入的成员；自己不在房间里时 Tuwunel 拒绝（`M_FORBIDDEN`）。
+    /// 房间里已加入的成员。
     pub async fn joined_members(&self, room: &str) -> Result<Vec<String>, MatrixError> {
         let path = format!("/_matrix/client/v3/rooms/{}/joined_members", encode(room));
         let value = self.json(Method::GET, &path, None, "查询房间成员").await?;
@@ -220,6 +220,47 @@ impl<'a> Session<'a> {
             Some(list) => list.push(json!(room)),
             None => *rooms = json!([room]),
         }
+        self.json(
+            Method::PUT,
+            &path,
+            Some(&Value::Object(direct)),
+            "写入 m.direct",
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// 不再用这个和 `other` 的私聊：退出房间，从 `m.direct` 去掉。收拾不掉只记日志，新的房间已经能用了。
+    pub async fn retire_direct(&self, other: &str, room: &str) {
+        let path = format!("/_matrix/client/v3/rooms/{}/leave", encode(room));
+        let left = self
+            .json(Method::POST, &path, Some(&json!({})), "退出房间")
+            .await;
+        match left {
+            Err(e) if e.errcode() != "M_FORBIDDEN" && e.errcode() != "M_NOT_FOUND" => {
+                tracing::warn!(room, error = %e, "退出旧的私聊失败");
+            }
+            _ => {}
+        }
+        if let Err(e) = self.remove_direct(other, room).await {
+            tracing::warn!(room, error = %e, "从 m.direct 去掉旧的私聊失败");
+        }
+    }
+
+    async fn remove_direct(&self, other: &str, room: &str) -> Result<(), MatrixError> {
+        let path = format!(
+            "/_matrix/client/v3/user/{}/account_data/m.direct",
+            encode(&self.user_id)
+        );
+        let mut direct = match self.json(Method::GET, &path, None, "读取 m.direct").await {
+            Ok(Value::Object(map)) => map,
+            Err(e) if e.errcode() != "M_NOT_FOUND" => return Err(e),
+            _ => return Ok(()),
+        };
+        let Some(rooms) = direct.get_mut(other).and_then(Value::as_array_mut) else {
+            return Ok(());
+        };
+        rooms.retain(|r| r != room);
         self.json(
             Method::PUT,
             &path,

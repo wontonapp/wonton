@@ -23,11 +23,14 @@ qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }
-# MIT OR Apache-2.0。插件的图标和截图解码、缩放后重新编码（ADR-0017），只开 PNG 和 JPEG。
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+# MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
+# 缩放后重新编码。
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 iroh = { workspace = true }
 # MIT。签发 Tuwunel 登录用的 JWT（EdDSA）。
 jsonwebtoken = { workspace = true }
+# MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
+percent-encoding = "2.3.2"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。
 reqwest = { workspace = true, features = ["rustls"] }
 semver = "1.0.28"
@@ -36,8 +39,11 @@ semver = "1.0.28"
 resvg = { version = "0.49.0", default-features = false }
 # Apache-2.0。MCP 总线（ADR-0006、ADR-0016）：对 Agent 是 Streamable HTTP 服务器，对插件是客户端。
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
-# Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理插件图片的子进程给自己设资源上限（setrlimit），不用写 unsafe。
-rustix = { version = "1.1.6", default-features = false, features = ["process", "std"] }
+# Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理图片的子进程给自己设资源上限（setrlimit）；逐级 openat 打开共享文件夹
+# 里的文件。都不用写 unsafe。
+rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
+# MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
+sse-stream = "0.2.6"
 serde = { workspace = true }
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 serde_json = { workspace = true }
@@ -53,6 +59,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs"
 tower = { version = "0.5.3", features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+# MIT OR Apache-2.0。按 Unicode 类别过滤文件名里看不见的字符。
+unicode-properties = { version = "0.1.5", default-features = false, features = ["general-category"] }
 url = { workspace = true }
 # MIT OR Apache-2.0。推送内容按 RFC 8291 加密给设备（RustCrypto 的 P-256、HKDF、AES-GCM）；不用 VAPID。
 web-push-native = { version = "0.5.0", default-features = false }

@@ -21,6 +21,7 @@ mod lan;
 mod manager;
 mod models;
 mod preinstall;
+mod resources;
 mod secrets;
 mod store;
 mod views;

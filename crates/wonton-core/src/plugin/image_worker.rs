@@ -1,5 +1,5 @@
-//! 在子进程里处理插件的图片（[`super::images`]）：`wonton-core image <icon.png|icon.svg|screenshot>` 从标准输入读原文件，
-//! 把结果写到标准输出。图片是不可信的输入，预检挡不住所有费时费内存的写法（比如很细的虚线），所以解码和渲染放进单独的
+//! 在子进程里处理不可信的图片（[`super::images`]）：`wonton-core image <icon.png|icon.svg|screenshot|thumbnail>` 从标准输入读
+//! 原文件，把结果写到标准输出。图片是不可信的输入，预检挡不住所有费时费内存的写法（比如很细的虚线），所以解码和渲染放进单独的
 //! 进程：它先给自己设内存和 CPU 时间的上限，到时没做完由核心杀掉。超时、内存不够、崩溃都算这张图处理不了。
 //!
 //! 子进程只限资源，不是沙箱：它和核心是同一个用户，文件和网络的权限也一样。
@@ -19,7 +19,7 @@ use super::images::{self, Icon, IconFormat, Screenshot};
 
 /// 子命令（`wonton-core image …`），核心内部用。
 pub const COMMAND: &str = "image";
-/// 子进程的地址空间上限。上限内最大的图片（4096×4096 的 16 位 PNG 截图）处理时要两三百 MB。
+/// 子进程的地址空间上限。上限内最大的插件图片（4096×4096 的 16 位 PNG 截图）处理时要两三百 MB；再大的照片做不了缩略图。
 const MEMORY_LIMIT: u64 = 512 << 20;
 /// 子进程的 CPU 时间上限。核心按墙钟时间先杀掉它；核心自己没了时由这个兜底。
 const CPU_SECONDS: u64 = 10;
@@ -52,6 +52,7 @@ pub enum ImageError {
 enum Job {
     Icon(IconFormat),
     Screenshot,
+    Thumbnail,
 }
 
 impl Job {
@@ -60,7 +61,17 @@ impl Job {
             Self::Icon(IconFormat::Png) => "icon.png",
             Self::Icon(IconFormat::Svg) => "icon.svg",
             Self::Screenshot => "screenshot",
+            Self::Thumbnail => "thumbnail",
         }
+    }
+
+    /// 最多从标准输入读这么多。多读一个字节：超了由各自的大小检查报出来。
+    fn input_limit(self) -> u64 {
+        let limit = match self {
+            Self::Thumbnail => images::MAX_THUMBNAIL_INPUT,
+            Self::Icon(_) | Self::Screenshot => images::MAX_FILE_BYTES,
+        };
+        limit as u64 + 1
     }
 
     fn parse(arg: &str) -> Option<Self> {
@@ -68,6 +79,7 @@ impl Job {
             Self::Icon(IconFormat::Png),
             Self::Icon(IconFormat::Svg),
             Self::Screenshot,
+            Self::Thumbnail,
         ]
         .into_iter()
         .find(|job| job.arg() == arg)
@@ -88,6 +100,7 @@ impl Job {
                 put(&mut out, &shot.width.to_le_bytes());
                 put(&mut out, &shot.height.to_le_bytes());
             }
+            Self::Thumbnail => put(&mut out, &images::thumbnail(input)?),
         }
         Ok(out)
     }
@@ -100,17 +113,20 @@ pub fn child(args: &[String]) -> ExitCode {
         _ => None,
     };
     let Some(job) = job else {
-        eprintln!("用法：wonton-core {COMMAND} <icon.png|icon.svg|screenshot>（核心内部用）");
+        eprintln!(
+            "用法：wonton-core {COMMAND} <icon.png|icon.svg|screenshot|thumbnail>（核心内部用）"
+        );
         return ExitCode::from(BROKEN);
     };
     if let Err(e) = limit_resources() {
         eprintln!("设不了资源上限：{e}");
         return ExitCode::from(BROKEN);
     }
-    // 多读一个字节：超了由各自的大小检查报出来。
     let mut input = Vec::new();
-    let limit = images::MAX_FILE_BYTES as u64 + 1;
-    if let Err(e) = std::io::stdin().take(limit).read_to_end(&mut input) {
+    if let Err(e) = std::io::stdin()
+        .take(job.input_limit())
+        .read_to_end(&mut input)
+    {
         eprintln!("读标准输入失败：{e}");
         return ExitCode::from(BROKEN);
     }
@@ -222,8 +238,17 @@ impl ImageWorker {
         Ok(shot)
     }
 
+    pub async fn thumbnail(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let output = self.run(Job::Thumbnail, data).await?;
+        Ok(Fields(&output).bytes()?.to_vec())
+    }
+
     async fn run(&self, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
         let _permit = self.running.acquire().await.expect("信号量不会关闭");
+        self.execute(job, input).await
+    }
+
+    async fn execute(&self, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
         match &self.program {
             Program::Path(program) => self.spawn(program, job, input).await,
             #[cfg(test)]

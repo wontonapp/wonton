@@ -9,7 +9,7 @@ use std::io::Cursor;
 
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::{self, FilterType};
-use image::{DynamicImage, ImageFormat, ImageReader, Limits, RgbImage, RgbaImage};
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, RgbImage, RgbaImage};
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::{self, ImageHrefResolver, roxmltree};
 
@@ -31,6 +31,12 @@ const MAX_EDGE: u32 = 4096;
 /// 截图的长边缩到不超过它。
 const SCREENSHOT_EDGE: u32 = 1280;
 const JPEG_QUALITY: u8 = 85;
+/// 文件缩略图的长边（ADR-0020，同 ADR-0005）。
+const THUMBNAIL_EDGE: u32 = 800;
+/// 做缩略图时原图的大小上限，手机和相机的照片都在里面。
+pub const MAX_THUMBNAIL_INPUT: usize = 64 << 20;
+/// 做缩略图时原图的宽和高的上限。
+const THUMBNAIL_MAX_EDGE: u32 = 16384;
 /// 交给 XML 解析器的节点数上限（含文字和注释），在数元素之前挡住超大的文件。
 const MAX_XML_NODES: u32 = 100_000;
 
@@ -121,6 +127,44 @@ pub fn screenshot(data: &[u8]) -> Result<Screenshot, String> {
         width,
         height,
     })
+}
+
+/// 文件的缩略图：长边 800 像素的 JPEG，按 EXIF 转正。重新编码后不带原文件的元数据（拍摄地点这些）。
+pub fn thumbnail(data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() > MAX_THUMBNAIL_INPUT {
+        return Err(format!("超过 {} MiB", MAX_THUMBNAIL_INPUT >> 20));
+    }
+    let format = image::guess_format(data).map_err(|_| "不是支持的图片格式".to_owned())?;
+    if !matches!(
+        format,
+        ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Gif | ImageFormat::WebP
+    ) {
+        return Err(format!("{format:?} 做不了缩略图"));
+    }
+    let mut reader = ImageReader::with_format(Cursor::new(data), format);
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(THUMBNAIL_MAX_EDGE);
+    limits.max_image_height = Some(THUMBNAIL_MAX_EDGE);
+    limits.max_alloc = Some(384 << 20);
+    reader.limits(limits);
+    let failed = |e: image::ImageError| match e {
+        image::ImageError::Limits(_) => {
+            format!("超过 {THUMBNAIL_MAX_EDGE}×{THUMBNAIL_MAX_EDGE} 像素或内存上限")
+        }
+        other => format!("解码失败：{other}"),
+    };
+    let mut decoder = reader.into_decoder().map_err(failed)?;
+    let orientation = decoder.orientation().map_err(failed)?;
+    let mut image = DynamicImage::from_decoder(decoder).map_err(failed)?;
+    image.apply_orientation(orientation);
+    if image.width().max(image.height()) > THUMBNAIL_EDGE {
+        image = image.resize(THUMBNAIL_EDGE, THUMBNAIL_EDGE, FilterType::Triangle);
+    }
+    let mut jpeg = Vec::new();
+    JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
+        .encode_image(&on_white(&image.to_rgba8()))
+        .map_err(|e| format!("编码 JPEG 失败：{e}"))?;
+    Ok(jpeg)
 }
 
 fn png_icon(data: &[u8]) -> Result<RgbaImage, String> {

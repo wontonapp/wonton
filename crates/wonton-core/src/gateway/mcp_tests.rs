@@ -5,6 +5,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::body::Body;
@@ -12,8 +13,11 @@ use http_body_util::BodyExt;
 use hyper::header::{self, HeaderValue};
 use hyper::{Method, StatusCode};
 use iroh::SecretKey;
-use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation};
-use rmcp::service::{RoleClient, RunningService};
+use rmcp::model::{
+    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientConfig, ClientRequest,
+    Implementation,
+};
+use rmcp::service::{PeerRequestOptions, RoleClient, RunningService};
 use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
@@ -52,6 +56,7 @@ struct Home {
     addr: SocketAddr,
     gateway: Arc<Gateway>,
     cards: Arc<Cards>,
+    notes: Notes,
     _dir: tempfile::TempDir,
 }
 
@@ -93,14 +98,19 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
     let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
     let id = manifest.id.clone();
     manager.register_for_test(manifest, PluginStatus::Running, None);
-    manager.mcp_for_test(&id, serve_notes(Notes::default()).await);
+    let notes = Notes::default();
+    manager.mcp_for_test(&id, serve_notes(notes.clone()).await);
     if let Some(permissions) = permissions {
         manager.register_source_for_test("com.example.agent", "127.0.0.0/8", permissions);
     }
     let cards = Arc::new(Cards::default());
     let confirmations = Arc::new(Confirmations::new(cards.clone(), Duration::from_secs(60)));
     let audit = dir.path().join("audit.jsonl");
-    let bus = Bus::new(manager.clone(), confirmations, audit);
+    let bus = Bus::new(
+        manager.clone(),
+        confirmations,
+        Arc::new(crate::mcp::audit::Audit::new(audit)),
+    );
     let gateway = Gateway::new(
         public,
         owner(),
@@ -121,6 +131,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         addr,
         gateway,
         cards,
+        notes,
         _dir: dir,
     }
 }
@@ -132,6 +143,22 @@ impl Home {
 
     /// 像 Agent 一样连上总线：`mcp.wonton.internal` 解析到网关。
     async fn agent(&self) -> RunningService<RoleClient, ClientConfig> {
+        self.agent_with(ClientLifecycleMode::Auto {
+            preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
+            legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
+        })
+        .await
+    }
+
+    /// `initialize` 握手的旧协议：有状态的会话。
+    async fn legacy_agent(&self) -> RunningService<RoleClient, ClientConfig> {
+        self.agent_with(ClientLifecycleMode::Initialize).await
+    }
+
+    async fn agent_with(
+        &self,
+        lifecycle: ClientLifecycleMode,
+    ) -> RunningService<RoleClient, ClientConfig> {
         let http = reqwest::Client::builder()
             .no_proxy()
             .resolve(PLUGIN_MCP_HOST, self.addr)
@@ -143,10 +170,6 @@ impl Home {
             ClientCapabilities::default(),
             Implementation::new("test-agent", "0"),
         );
-        let lifecycle = ClientLifecycleMode::Auto {
-            preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
-            legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
-        };
         info.serve_with_lifecycle(transport, lifecycle)
             .await
             .unwrap()
@@ -213,6 +236,57 @@ async fn agents_with_the_tools_permission_use_the_bus_through_the_gateway() {
         .with_arguments(json!({"name": "x"}).as_object().cloned().unwrap());
     let result = agent.peer().call_tool(request).await.unwrap();
     assert_eq!(text(&result), "找到 x.txt");
+}
+
+/// 让假插件一直不回答，再发一个只读调用，等它到了插件。
+async fn hanging_call(
+    home: &Home,
+    agent: &RunningService<RoleClient, ClientConfig>,
+) -> rmcp::service::RequestHandle<RoleClient> {
+    home.notes.hang.store(true, Ordering::SeqCst);
+    let request = CallToolRequestParams::new("app-example-notes__search");
+    let handle = agent
+        .peer()
+        .send_request_with_option(
+            ClientRequest::CallToolRequest(CallToolRequest::new(request)),
+            PeerRequestOptions::no_options(),
+        )
+        .await
+        .unwrap();
+    // 第一次调用要连插件。
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    handle
+}
+
+async fn plugin_told_to_cancel(home: &Home) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while home.notes.cancelled.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("插件没有收到取消");
+}
+
+/// 走真实的 handler：Agent 取消，取消传到插件（插件规范的“工具调用的期限”）。
+#[tokio::test]
+async fn an_agent_cancelling_a_call_reaches_the_plugin_through_the_handler() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let agent = home.legacy_agent().await;
+    let handle = hanging_call(&home, &agent).await;
+    handle.cancel(Some("不要了".to_owned())).await.unwrap();
+    plugin_told_to_cancel(&home).await;
+}
+
+/// Agent 关闭会话也一样。
+#[tokio::test]
+async fn an_agent_closing_its_session_cancels_what_it_was_running() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let agent = home.legacy_agent().await;
+    let handle = hanging_call(&home, &agent).await;
+    agent.cancel().await.unwrap();
+    plugin_told_to_cancel(&home).await;
+    drop(handle);
 }
 
 #[tokio::test]

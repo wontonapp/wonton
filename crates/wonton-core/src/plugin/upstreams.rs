@@ -1,9 +1,11 @@
 //! 核心和插件之间的入口：核心在插件网络里的别名（插件经它们访问核心转发的服务），以及核心访问插件的地址
 //! （网页、模型网关、MCP 服务）。
 
-use super::manager::{InstallError, PluginManager};
+use super::PluginId;
+use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
+use super::package::PluginPackage;
 use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PublicUrls};
 
 /// MCP 服务没写 `path` 时的路径。
@@ -32,6 +34,18 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
         aliases.push(PLUGIN_MCP_HOST.to_owned());
     }
     aliases
+}
+
+/// [`PluginManager::resource_upstream`] 给不出地址的原因。
+#[derive(Debug, thiserror::Error)]
+pub enum ResourceUpstreamError {
+    #[error("插件卸了或没在运行")]
+    Unavailable,
+    #[error("主机名不是这个插件 compose 里的服务名")]
+    NotItsService,
+    /// 读不了插件记录、解析不了插件包、Docker 出错：核心这边的问题，和插件是否在运行无关。
+    #[error("{0}")]
+    Internal(String),
 }
 
 impl PluginManager {
@@ -94,6 +108,41 @@ impl PluginManager {
         Ok(Some(format!("http://{upstream}{path}")))
     }
 
+    pub(crate) fn is_running(&self, id: &PluginId) -> bool {
+        self.status_of(id) == Some(PluginStatus::Running)
+    }
+
+    /// 核心访问插件资源的内网地址（ADR-0020）。主机名必须是这个插件 compose 里的服务名；不同插件可能有同名的服务，所以换成这个
+    /// 插件的容器的地址，不按主机名解析。
+    pub async fn resource_upstream(
+        &self,
+        id: &PluginId,
+        service: &str,
+        port: u16,
+    ) -> Result<String, ResourceUpstreamError> {
+        if !self.is_running(id) {
+            return Err(ResourceUpstreamError::Unavailable);
+        }
+        let internal = |why: String| ResourceUpstreamError::Internal(why);
+        let record = self
+            .store
+            .load(id)
+            .map_err(|e| internal(e.to_string()))?
+            .ok_or(ResourceUpstreamError::Unavailable)?;
+        let package = PluginPackage::with_files(&record.source, record.files)
+            .map_err(|e| internal(e.to_string()))?;
+        if !package.has_service(service) {
+            return Err(ResourceUpstreamError::NotItsService);
+        }
+        let slug = id.slug();
+        let name = self.cfg.instance.container(&slug, service);
+        let network = self.cfg.instance.network(&slug);
+        self.service_address(&name, port, &network)
+            .await
+            .map_err(|e| internal(e.to_string()))?
+            .ok_or(ResourceUpstreamError::Unavailable)
+    }
+
     /// 核心访问容器里一个端口的地址：核心在容器里时用容器名（同一网络内的 DNS），否则用容器 IP。
     pub(super) async fn service_upstream(
         &self,
@@ -101,23 +150,32 @@ impl PluginManager {
         port: u16,
         network: &str,
     ) -> Result<String, InstallError> {
-        if self.cfg.core_container.is_some() {
-            return Ok(format!("{name}:{port}"));
-        }
-        let info = self
-            .engine
-            .inspect_container(name)
+        self.service_address(name, port, network)
             .await?
-            .ok_or_else(|| InstallError::Docker(format!("容器 {name} 不存在")))?;
+            .ok_or_else(|| {
+                InstallError::Docker(format!(
+                    "容器 {name} 不存在，或者在网络 {network} 中没有地址"
+                ))
+            })
+    }
+
+    /// 容器不在或者在这个网络里没有地址时为空。
+    async fn service_address(
+        &self,
+        name: &str,
+        port: u16,
+        network: &str,
+    ) -> Result<Option<String>, InstallError> {
+        if self.cfg.core_container.is_some() {
+            return Ok(Some(format!("{name}:{port}")));
+        }
+        let info = self.engine.inspect_container(name).await?;
         let ip = info
-            .network_settings
+            .and_then(|info| info.network_settings)
             .and_then(|s| s.networks)
             .and_then(|mut n| n.remove(network))
             .and_then(|e| e.ip_address)
-            .filter(|ip| !ip.is_empty())
-            .ok_or_else(|| {
-                InstallError::Docker(format!("容器 {name} 在网络 {network} 中没有地址"))
-            })?;
-        Ok(format!("{ip}:{port}"))
+            .filter(|ip| !ip.is_empty());
+        Ok(ip.map(|ip| format!("{ip}:{port}")))
     }
 }

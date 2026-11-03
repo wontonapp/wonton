@@ -58,9 +58,27 @@ impl BotStore {
 
     /// 除 `id` 以外的插件的 Bot 用掉的用户名。
     fn localparts_except(&self, id: &PluginId) -> Result<BTreeSet<String>, StoreError> {
+        Ok(self
+            .records_except(Some(id))?
+            .iter()
+            .filter_map(|record| localpart(&record.account.user_id).map(str::to_owned))
+            .collect())
+    }
+
+    /// 主房间是 `room` 的 Bot 的用户名。
+    pub fn in_home_room(&self, room: &str) -> Result<Vec<String>, StoreError> {
+        Ok(self
+            .records_except(None)?
+            .iter()
+            .filter(|record| record.account.home_room == room)
+            .filter_map(|record| localpart(&record.account.user_id).map(str::to_owned))
+            .collect())
+    }
+
+    fn records_except(&self, id: Option<&PluginId>) -> Result<Vec<BotRecord>, StoreError> {
         let entries = match fs::read_dir(&self.dir) {
             Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(source) => {
                 return Err(StoreError::Io {
                     path: self.dir.clone(),
@@ -68,7 +86,7 @@ impl BotStore {
                 });
             }
         };
-        let mut taken = BTreeSet::new();
+        let mut records = Vec::new();
         for entry in entries {
             let path = entry
                 .map_err(|source| StoreError::Io {
@@ -76,17 +94,14 @@ impl BotStore {
                     source,
                 })?
                 .path();
-            let own = path.file_stem().and_then(|s| s.to_str()) == Some(id.as_str());
+            let own =
+                id.is_some_and(|id| path.file_stem().and_then(|s| s.to_str()) == Some(id.as_str()));
             if own || path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            if let Some(record) = read_json::<BotRecord>(&path)?
-                && let Some(localpart) = localpart(&record.account.user_id)
-            {
-                taken.insert(localpart.to_owned());
-            }
+            records.extend(read_json::<BotRecord>(&path)?);
         }
-        Ok(taken)
+        Ok(records)
     }
 }
 
@@ -211,6 +226,11 @@ impl PluginManager {
         store.save(id, &record)?;
         tracing::info!(plugin = %id, user = %bot.account.user_id, room = %bot.account.home_room, "Bot 已就绪");
         Ok(Some(bot))
+    }
+
+    /// 这个房间里的 Bot 的名字（Matrix 用户名）。M1 的 Bot 只在自己的主房间里，核心不在别的房间里，也查不了成员。
+    pub fn bots_in_room(&self, room: &str) -> Result<Vec<String>, StoreError> {
+        self.store.bots().in_home_room(room)
     }
 
     /// 注入给插件的 `WONTON_MATRIX_*`：经核心在插件网络里的别名访问 Matrix 客户端接口。

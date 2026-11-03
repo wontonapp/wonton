@@ -23,6 +23,7 @@ pub mod languages;
 pub mod lifecycle;
 pub mod manager;
 pub mod manifest;
+mod mcp_server;
 pub mod models;
 pub mod mounts;
 pub mod names;
@@ -38,7 +39,7 @@ pub mod store;
 pub mod store_info;
 pub mod storefront;
 pub mod system;
-mod upstreams;
+pub(crate) mod upstreams;
 pub mod views;
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ pub(crate) mod fake_docker;
 #[cfg(test)]
 mod tests;
 
-pub use manager::{Health, InstallError, McpServer, PluginManager, PluginStatus, PluginView};
+pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
 pub use manifest::{Manifest, Permission, PluginId};
+pub use mcp_server::{McpServer, ToolLimits};
 pub use package::PluginPackage;

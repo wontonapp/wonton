@@ -2,20 +2,22 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读的工具先请主人确认（[`confirm`]）；每次
 //! 调用写一行审计（[`audit`]）。
 
-mod audit;
+pub mod audit;
+mod bounded_http;
 mod cards;
 mod confirm;
 mod core_tools;
 mod naming;
 mod notifier;
 mod server;
-mod upstream;
+pub mod upstream;
 
 use std::future::Future;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, JsonObject, Tool};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ContentBlock, JsonObject, MetaObject, Tool,
+};
 use rmcp::service::{Peer, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
@@ -30,7 +32,7 @@ pub use cards::content as card_content;
 pub use confirm::{AnswerError, Confirmations, Notifier};
 pub use notifier::NoMatrix;
 pub use server::Caller;
-use upstream::Upstreams;
+use upstream::{CallError, UncertainKind, Upstreams};
 
 /// 挂到网关上的 Streamable HTTP 服务。
 pub type McpService = StreamableHttpService<server::Handler, LocalSessionManager>;
@@ -45,8 +47,8 @@ pub struct Endpoint {
 pub struct Bus {
     plugins: Arc<PluginManager>,
     confirmations: Arc<Confirmations>,
-    upstreams: Upstreams,
-    audit: Audit,
+    upstreams: Arc<Upstreams>,
+    audit: Arc<Audit>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -73,6 +75,49 @@ impl Outcome {
     }
 }
 
+/// 转给插件。
+async fn forward(
+    bus: &Bus,
+    server: &McpServer,
+    tool: &str,
+    arguments: JsonObject,
+    cancelled: impl Future<Output = ()> + Send,
+) -> Outcome {
+    let called = bus
+        .upstreams
+        .call(server, tool, Some(arguments), cancelled)
+        .await;
+    match called {
+        Ok(result) if result.is_error == Some(true) => Outcome {
+            result,
+            state: ConfirmationState::Failed {
+                message: "工具报告执行失败".to_owned(),
+            },
+        },
+        Ok(result) => Outcome {
+            result,
+            state: ConfirmationState::Succeeded {
+                message: "已执行".to_owned(),
+            },
+        },
+        Err(CallError::Uncertain { kind, message }) => Outcome {
+            result: uncertain(&message, kind),
+            state: ConfirmationState::Uncertain { message },
+        },
+        Err(e) => Outcome::failed(e.to_string()),
+    }
+}
+
+/// 工具结果里给 Agent 看的类别，结果不确定时才有：和工具自己报的错分开，Agent 不该直接重试。
+const FAILURE_META: &str = "app.wonton/failure";
+
+fn uncertain(message: &str, kind: UncertainKind) -> CallToolResult {
+    let mut result = error(message);
+    let meta = [(FAILURE_META.to_owned(), Value::from(kind.as_str()))];
+    result.meta = Some(MetaObject(meta.into_iter().collect()));
+    result
+}
+
 /// 工具执行失败：Agent 能读到原因（MCP 的 `isError`）。
 fn error(message: &str) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.to_owned())])
@@ -82,17 +127,31 @@ impl Bus {
     pub fn new(
         plugins: Arc<PluginManager>,
         confirmations: Arc<Confirmations>,
-        audit_path: PathBuf,
+        audit: Arc<Audit>,
+    ) -> Arc<Self> {
+        Self::with_upstreams(plugins, confirmations, audit, Arc::new(Upstreams::new()))
+    }
+
+    fn with_upstreams(
+        plugins: Arc<PluginManager>,
+        confirmations: Arc<Confirmations>,
+        audit: Arc<Audit>,
+        upstreams: Arc<Upstreams>,
     ) -> Arc<Self> {
         let bus = Arc::new(Self {
             plugins,
             confirmations,
-            upstreams: Upstreams::new(),
-            audit: Audit::new(audit_path),
+            upstreams,
+            audit,
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
         bus
+    }
+
+    /// 插件的 MCP 客户端：文件服务读资源也用它，一个插件一条连接。
+    pub fn upstreams(&self) -> Arc<Upstreams> {
+        self.upstreams.clone()
     }
 
     pub fn confirmations(&self) -> &Confirmations {
@@ -127,7 +186,7 @@ impl Bus {
         tokio::spawn(async move {
             while changes.changed().await.is_ok() {
                 let Some(bus) = bus.upgrade() else { break };
-                bus.upstreams.retain(&bus.plugins.mcp_servers()).await;
+                bus.upstreams.retain(&bus.plugins.mcp_servers());
                 let peers: Vec<_> = bus.peers.lock().expect("会话表锁中毒").clone();
                 let mut alive = Vec::new();
                 for peer in peers {
@@ -144,12 +203,15 @@ impl Bus {
         self.peers.lock().expect("会话表锁中毒").push(peer);
     }
 
-    /// 调用方能看到的工具：核心自己的，加上所有在运行的插件的。列不出工具的插件记一条警告后跳过，它的工具
-    /// 这时本来也调不通。
+    /// 调用方能看到的工具：核心自己的，加上所有在运行的插件的。并发地问，一个插件卡住挡不住别的（每个插件有期限，见
+    /// [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
+        let servers = self.plugins.mcp_servers();
+        let listed = servers.iter().map(|server| self.upstreams.tools(server));
+        let listed = futures_util::future::join_all(listed).await;
         let mut tools = core_tools::definitions();
-        for server in self.plugins.mcp_servers() {
-            match self.upstreams.tools(&server).await {
+        for (server, list) in servers.iter().zip(listed) {
+            match list {
                 Ok(list) => tools.extend(list.into_iter().map(|mut tool| {
                     tool.name = naming::join(&server.id.slug(), &tool.name).into();
                     tool
@@ -160,10 +222,12 @@ impl Bus {
         tools
     }
 
+    /// `cancelled` 完成时调用方已经不要结果了（取消了，或者断开了）。
     async fn call(
         self: &Arc<Self>,
         caller: &Caller,
         request: CallToolRequestParams,
+        cancelled: impl Future<Output = ()> + Send,
     ) -> CallToolResult {
         let name = request.name.to_string();
         let arguments = request.arguments.unwrap_or_default();
@@ -187,7 +251,7 @@ impl Bus {
                 &format!("没有在运行的插件提供 {name}"),
             );
         };
-        self.call_plugin(caller, &server, &name, tool, arguments)
+        self.call_plugin(caller, &server, &name, tool, arguments, cancelled)
             .await
     }
 
@@ -198,6 +262,7 @@ impl Bus {
         name: &str,
         tool: &str,
         arguments: JsonObject,
+        cancelled: impl Future<Output = ()> + Send,
     ) -> CallToolResult {
         let args = Value::Object(arguments.clone());
         let definition = match self.upstreams.tools(server).await {
@@ -217,35 +282,19 @@ impl Bus {
             .as_ref()
             .and_then(|a| a.read_only_hint)
             == Some(true);
-        let forward = {
-            let server = server.clone();
-            let tool = tool.to_owned();
-            move |bus: Arc<Bus>| async move {
-                match bus.upstreams.call(&server, &tool, Some(arguments)).await {
-                    Ok(result) if result.is_error == Some(true) => Outcome {
-                        result,
-                        state: ConfirmationState::Failed {
-                            message: "工具报告执行失败".to_owned(),
-                        },
-                    },
-                    Ok(result) => Outcome {
-                        result,
-                        state: ConfirmationState::Succeeded {
-                            message: "已执行".to_owned(),
-                        },
-                    },
-                    Err(e) => Outcome::failed(e),
-                }
-            }
-        };
         if read_only {
-            let outcome = forward(self.clone()).await;
+            let outcome = forward(self, server, tool, arguments, cancelled).await;
             self.record(caller, name, &args, Decision::Allowed, &outcome);
             return outcome.result;
         }
         let plugin = cards::text(&server.title);
         let draft = cards::tool_call(&caller.name, &plugin, tool, &args);
-        self.confirmed(caller, name, args, draft, forward).await
+        // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
+        let (server, tool) = (server.clone(), tool.to_owned());
+        let run = move |bus: Arc<Bus>| async move {
+            forward(&bus, &server, &tool, arguments, std::future::pending()).await
+        };
+        self.confirmed(caller, name, args, draft, run).await
     }
 
     /// 请主人确认，确认了再执行 `run`。整个过程在后台任务里跑：Agent 等不及断开了，确认照样有效到过期，主人确认后
@@ -316,7 +365,9 @@ impl Bus {
         outcome: &Outcome,
     ) {
         let outcome = match &outcome.state {
-            ConfirmationState::Failed { message } => message.as_str(),
+            ConfirmationState::Failed { message } | ConfirmationState::Uncertain { message } => {
+                message.as_str()
+            }
             _ => "ok",
         };
         self.audit.record(&Record {
@@ -333,3 +384,5 @@ impl Bus {
 pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod upstream_tests;

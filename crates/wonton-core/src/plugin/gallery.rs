@@ -83,7 +83,7 @@ impl Variant {
 }
 
 pub struct Gallery {
-    images: ImageWorker,
+    images: Arc<ImageWorker>,
     previews: Mutex<VecDeque<IconSource>>,
     /// 商店最近一次列出的插件的图标。
     store: Mutex<HashMap<String, IconSource>>,
@@ -100,9 +100,9 @@ struct Rendered {
 }
 
 impl Gallery {
-    pub fn new(images: ImageWorker) -> Self {
+    pub fn new(images: impl Into<Arc<ImageWorker>>) -> Self {
         Self {
-            images,
+            images: images.into(),
             previews: Mutex::default(),
             store: Mutex::default(),
             rendered: Mutex::default(),

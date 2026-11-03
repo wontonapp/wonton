@@ -11,7 +11,7 @@
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
 //! （[`TunnelPeer`]），网关据此直接认出主人。局域网浏览器仍走核心会话加插件会话交接。
 //! 本地代理可能被同机其他 App 借用，所以设备一侧的本地代理要校验会话凭据（ADR-0004、#20）；
-//! 网关只在插件网页、OIDC 登录和授权确认端点、Matrix 登录令牌和 Matrix 客户端接口上接受隧道身份，管理
+//! 网关只在插件网页、OIDC 登录和授权确认端点、Matrix 登录令牌、Matrix 客户端接口和文件接口上接受隧道身份，管理
 //! API 仍要主人令牌。
 //!
 //! 插件子域名彼此同站，也和核心同站：插件网页能让浏览器带着 Cookie 或隧道身份向别处发请求。浏览器里的
@@ -22,6 +22,7 @@ mod api;
 mod confirmations;
 mod core_routes;
 mod devices;
+mod files;
 mod isolation;
 mod lan;
 pub mod matrix;
@@ -79,6 +80,8 @@ pub struct Gateway {
     pub push: Option<Arc<Push>>,
     /// MCP 总线；没启用时 `mcp.wonton.internal` 如实报不可用。
     pub mcp: Option<crate::mcp::Endpoint>,
+    /// 文件服务；没启用时文件接口如实报不可用。
+    pub files: Option<Arc<crate::files::Files>>,
     sessions: session::SessionStore,
 }
 
@@ -114,6 +117,7 @@ impl Gateway {
             matrix: None,
             push: None,
             mcp: None,
+            files: None,
             sessions: session::SessionStore::default(),
         }
     }
@@ -136,6 +140,13 @@ impl Gateway {
     #[must_use]
     pub fn with_mcp(mut self, mcp: Option<crate::mcp::Endpoint>) -> Self {
         self.mcp = mcp;
+        self
+    }
+
+    /// 接上文件服务：`/_wonton/files/…` 这才可用。
+    #[must_use]
+    pub fn with_files(mut self, files: Option<Arc<crate::files::Files>>) -> Self {
+        self.files = files;
         self
     }
 
@@ -348,6 +359,10 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
     response
 }
 
+#[cfg(test)]
+mod files_plugin_tests;
+#[cfg(test)]
+mod files_tests;
 #[cfg(test)]
 mod isolation_tests;
 #[cfg(test)]

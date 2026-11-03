@@ -86,7 +86,7 @@ x-wonton:
 | `category` | 否 | 商店分类，取“商店信息”里的一项。官方索引要求必填。 |
 | `screenshots`、`author`、`homepage`、`license`、`tags`、`about`、`release_notes` | 否 | 商店信息，见“商店信息”。官方索引要求有 `author` 和 `license`。 |
 | `webui` | 否 | 作为小程序打开的入口：`service`、`port`、`path`（默认 `/`）、`sso`（`oidc`、`proxy`、`none`，默认 `none`）、`oidc`、`proxy`（见“网页入口与单点登录”）。 |
-| `mcp` | 否 | 给 Agent 的工具入口：`service`、`port`、`path`（默认 `/mcp`）、`transport`（`streamable-http`），见“工具与 MCP 总线”。 |
+| `mcp` | 否 | 给 Agent 的工具入口：`service`、`port`、`path`（默认 `/mcp`）、`transport`（`streamable-http`），可选 `tool_idle_seconds`、`tool_total_seconds`，见“工具与 MCP 总线”。 |
 | `bot` | 否 | Bot 的显示名（`display_name`，多语言）和头像（`avatar`，插件包里的文件）。只能和 `matrix.bot` 权限一起声明。 |
 | `bots` | 否 | 一个插件多个 Bot：`services` 列出每个 Bot 一份的服务（见“一个插件多个 Bot”）。 |
 | `agent` | `kind=agent` 时必填 | `protocol`：`matrix`（Agent 自己登录 Matrix，须声明 `matrix.bot`）或 `acp`（经 ACP 桥接入）。 |
@@ -589,6 +589,8 @@ x-wonton:
     port: 8080
     path: /mcp             # 默认 /mcp
     transport: streamable-http
+    tool_idle_seconds: 600    # 可选，见“工具调用的期限”
+    tool_total_seconds: 1800  # 可选
 ```
 
 - 核心经插件网络连这个服务（同网页入口），它只对核心可见；插件在运行时它的工具才出现在总线上。只说 stdio 的
@@ -599,6 +601,22 @@ x-wonton:
 - 没有标 `readOnlyHint: true`（MCP 的工具注解）的工具算敏感：总线先请主人确认，确认了才转给插件。会改数据的工具
   不要标成只读。
 - 工具返回的内容交给 Agent，Agent 把它当不可信输入（ADR-0011）。除了下面的文件引用，总线不改内容。
+
+**列工具**
+
+- 每个 Agent 列工具时，总线并发地问所有插件。一个插件最多 15 秒，包括没连上时的握手；最多 50 页、2000 个工具、8 MiB。超时或超限的插件，它的工具这次不出现，原因在 `wonton__list_plugins` 的 `tools_error` 里。翻页翻回同一个 `cursor` 算插件的错。
+
+**连接**
+
+- 一个请求的回答不对（非 2xx、`Content-Type` 不对、JSON 解析不了、回答的 `id` 不是这个请求的）算插件对这一个请求的错误，连接照用，别的请求不受影响。连接断了才重连。
+- 连续 3 次带期限的请求（`tools/list`、`resources/read`、`tools/call`）没等到回答，中间也没有任何请求拿到回答，总线就当这个会话卡死了：取消它，下次新建一个，有状态的 stdio 子进程跟着丢。同时超时的算一次。有更早开始的 `tools/call` 或 `resources/read` 还在跑时，超时不算：串行的服务器做长调用时 `tools/list` 排在后面，这段时间工具不出现，但会话和调用都留着。
+
+**工具调用的期限**
+
+- 总线等一个 `tools/call` 有两个期限：空闲期限（默认 10 分钟，`tool_idle_seconds`），收到这个调用的 `notifications/progress` 就重新计时，总线的请求都带 `progressToken`；总期限（默认 30 分钟，`tool_total_seconds`），不管有没有进度。都可以声明得更长，最多一周。长的工具要么发进度，要么把两个期限都写长：只写总期限，空闲期限先到；空闲期限超过总期限（不写时按 30 分钟算）的清单不合法。
+- 到期后总线给插件发 `notifications/cancelled`，工具要尽量停下来。这时不知道工具做到了哪一步，结果算不确定，不算失败：Agent 收到 `isError: true`，`_meta` 的 `app.wonton/failure` 写明原因（`tool_timed_out`，或者 `session_replaced`、`connection_lost`、`result_too_large`）；需要确认的调用，卡片标“结果不确定”。
+- 请求没到插件（连接已经关了、连不上插件）不算不确定，算失败。
+- 只读的调用，Agent 发了 `notifications/cancelled` 或者关闭了会话，总线把取消传给插件。确认过的调用不跟着 Agent 走（ADR-0016）：它取消了或者关闭了会话都照样执行，结果在卡片上。
 
 **工具结果里的文件**（ADR-0020）
 
@@ -657,7 +675,7 @@ Agent 用编号调 `wonton__view_file`、`wonton__share_file`，主人的设备�
 
   | 工具 | 敏感 | 说明 |
   | --- | --- | --- |
-  | `wonton__list_plugins` | 否 | 已装的插件、版本、状态和网页地址。 |
+  | `wonton__list_plugins` | 否 | 已装的插件、版本、状态和网页地址；工具列不出来时带 `tools_error`。 |
   | `wonton__search_catalog` | 否 | 按关键词在官方索引里找插件：ID、名字、说明和要申请的权限。 |
   | `wonton__install_plugin` | 是 | 按官方索引里的 ID 安装，授予它声明的全部权限。声明了高权限的插件只能由主人在 App 里装。 |
   | `wonton__uninstall_plugin` | 是 | 卸载，`delete_data` 为真时同时删除它的数据。 |

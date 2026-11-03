@@ -21,14 +21,17 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
 use wonton_core::device::Devices;
+use wonton_core::files::{CoreHost, Files, FilesConfig};
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
 use wonton_core::matrix::{Matrix, NoticeRoom};
 use wonton_core::mcp;
+use wonton_core::mcp::audit::Audit;
 use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::gpu::HostPaths;
+use wonton_core::plugin::hostdir::Owner;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
 use wonton_core::plugin::lan::{self, Lan};
 use wonton_core::plugin::lifecycle::LifecycleConfig;
@@ -117,30 +120,16 @@ async fn serve() -> anyhow::Result<()> {
     let matrix = connect_matrix(&cfg, &http).await?;
 
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
-    let lifecycle = LifecycleConfig {
-        public: cfg.public.clone(),
-        apps_dir: cfg.apps_dir(),
-        shares_dir: cfg.shares_dir(),
-        core_container: cfg.core_container.clone(),
-        tz: cfg.tz.clone(),
-        puid: cfg.puid,
-        pgid: cfg.pgid,
-        install_timeout: cfg.install_timeout,
-        owner: cfg.owner.username.clone(),
-        owner_email: cfg.owner.email.clone(),
-        gateway_port: cfg.listen.port(),
-        instance: cfg.instance.clone(),
-    };
     let images =
-        ImageWorker::current().context("找不到核心自己的可执行文件（处理插件图片要用）")?;
+        Arc::new(ImageWorker::current().context("找不到核心自己的可执行文件（处理图片要用）")?);
     let manager = Arc::new(
         PluginManager::new(
             engine,
             store,
             http.clone(),
             hydra.as_ref().map(|(h, _)| h.clone()),
-            lifecycle,
-            images,
+            lifecycle_config(&cfg),
+            images.clone(),
         )
         .with_matrix(matrix.clone())
         .with_host(HostPaths::new(cfg.host_dev.clone()))
@@ -151,7 +140,14 @@ async fn serve() -> anyhow::Result<()> {
     manager.spawn_lan_monitor();
     preinstall(&cfg, manager.clone())?;
 
-    let bus = mcp_bus(&cfg, manager.clone(), matrix.clone());
+    let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
+    let notices = matrix.clone().map(|matrix| {
+        let saved = cfg.core_state_dir().join("matrix-notice-room");
+        Arc::new(NoticeRoom::new(matrix, &cfg.owner.username, saved))
+    });
+    let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    let host = Arc::new(CoreHost::new(manager.clone(), bus.upstreams(), notices));
+    let files = open_files(&cfg, host, http.clone(), audit, images)?;
     let tunnel = bind_tunnel(&cfg).await?;
     let push_path = cfg.core_state_dir().join("push.json");
     let push = Push::open(&push_path, tunnel.devices.clone())
@@ -168,7 +164,8 @@ async fn serve() -> anyhow::Result<()> {
         )
         .with_matrix(matrix)
         .with_push(Some(Arc::new(push)))
-        .with_mcp(Some(bus.endpoint())),
+        .with_mcp(Some(bus.endpoint()))
+        .with_files(Some(files)),
     );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)
@@ -189,6 +186,23 @@ async fn serve() -> anyhow::Result<()> {
     .context("网关异常退出");
     entry.shutdown().await;
     served
+}
+
+fn lifecycle_config(cfg: &Config) -> LifecycleConfig {
+    LifecycleConfig {
+        public: cfg.public.clone(),
+        apps_dir: cfg.apps_dir(),
+        shares_dir: cfg.shares_dir(),
+        core_container: cfg.core_container.clone(),
+        tz: cfg.tz.clone(),
+        puid: cfg.puid,
+        pgid: cfg.pgid,
+        install_timeout: cfg.install_timeout,
+        owner: cfg.owner.username.clone(),
+        owner_email: cfg.owner.email.clone(),
+        gateway_port: cfg.listen.port(),
+        instance: cfg.instance.clone(),
+    }
 }
 
 fn lan_state(cfg: &Config) -> Lan {
@@ -270,23 +284,39 @@ fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间，审计写在核心的状态目录里。没接 Matrix 时敏感的调用如实报
-/// “没法请主人确认”。
+/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。
 fn mcp_bus(
     cfg: &Config,
     manager: Arc<PluginManager>,
-    matrix: Option<Arc<Matrix>>,
+    notices: Option<Arc<NoticeRoom>>,
+    audit: Arc<Audit>,
 ) -> Arc<mcp::Bus> {
-    let notifier: Arc<dyn mcp::Notifier> = match matrix {
-        Some(matrix) => {
-            let saved = cfg.core_state_dir().join("matrix-notice-room");
-            Arc::new(NoticeRoom::new(matrix, &cfg.owner.username, saved))
-        }
+    let notifier: Arc<dyn mcp::Notifier> = match notices {
+        Some(notices) => notices,
         None => Arc::new(mcp::NoMatrix),
     };
     let confirmations = Arc::new(mcp::Confirmations::new(notifier, cfg.confirmation_ttl));
-    let audit = cfg.core_state_dir().join("audit.jsonl");
     mcp::Bus::new(manager, confirmations, audit)
+}
+
+/// 文件服务（ADR-0020）。读不出编号记录、建不了 `transfers` 就启动失败。
+fn open_files(
+    cfg: &Config,
+    host: Arc<CoreHost>,
+    http: HttpClient,
+    audit: Arc<Audit>,
+    images: Arc<ImageWorker>,
+) -> anyhow::Result<Arc<Files>> {
+    let config = FilesConfig {
+        dir: cfg.core_state_dir().join("files"),
+        shares_dir: cfg.shares_dir(),
+        owner: Owner {
+            uid: cfg.puid,
+            gid: cfg.pgid,
+        },
+    };
+    let files = Files::open(&config, host, http, audit, images).context("打开文件服务")?;
+    Ok(Arc::new(files))
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。
