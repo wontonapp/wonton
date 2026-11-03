@@ -7,7 +7,7 @@ use bollard::Docker;
 use bollard::errors::Error as BollardError;
 use bollard::models::{
     ContainerCreateBody, ContainerInspectResponse, EndpointSettings, HealthConfig,
-    NetworkConnectRequest, NetworkCreateRequest, NetworkDisconnectRequest, VolumeCreateRequest,
+    NetworkConnectRequest, NetworkDisconnectRequest, VolumeCreateRequest,
 };
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder,
@@ -24,7 +24,7 @@ use super::sources::Subnet;
 /// （moby#48724），内部网络也才有 `isolated` 网关模式。
 pub const MIN_ENGINE_MAJOR: u32 = 28;
 
-const GATEWAY_MODES: [&str; 2] = [
+pub(super) const GATEWAY_MODES: [&str; 2] = [
     "com.docker.network.bridge.gateway_mode_ipv4",
     "com.docker.network.bridge.gateway_mode_ipv6",
 ];
@@ -219,28 +219,6 @@ impl Engine {
             })?;
         }
         Ok(())
-    }
-
-    pub async fn create_network(
-        &self,
-        name: &str,
-        labels: &HashMap<String, String>,
-        reach: NetworkReach,
-    ) -> Result<()> {
-        let isolated = GATEWAY_MODES.map(|mode| (mode.to_owned(), "isolated".to_owned()));
-        let request = NetworkCreateRequest {
-            name: name.to_owned(),
-            driver: Some("bridge".to_owned()),
-            labels: Some(labels.clone()),
-            internal: Some(reach != NetworkReach::Egress),
-            options: (reach == NetworkReach::Isolated).then(|| isolated.into()),
-            ..Default::default()
-        };
-        self.docker
-            .create_network(request)
-            .await
-            .map(|_| ())
-            .map_err(|e| EngineError::from_bollard(&format!("创建网络 {name}"), e))
     }
 
     /// 查询网络的标签；网络不存在时返回 `None`。

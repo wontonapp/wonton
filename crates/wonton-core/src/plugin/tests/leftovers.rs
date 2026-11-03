@@ -126,11 +126,12 @@ async fn resources_of_another_core_are_not_leftovers() {
     let (formal_dir, dev_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let formal = manager_with(engine.clone(), &formal_dir);
     formal.install(&app(), &[]).await.unwrap();
+    let before = docker.writes().len();
     let dev = manager_in_instance(engine, &dev_dir, "alice");
     dev.install(&app(), &[]).await.unwrap();
     let web = container_name("app-test", "web");
     assert!(docker.containers().contains(&web));
-    let writes = docker.writes();
+    let writes = docker.writes().split_off(before);
     assert!(!writes.contains(&format!("DELETE /containers/{web}")));
     assert!(!writes.contains(&format!("DELETE /networks/{NETWORK}")));
 }
@@ -259,9 +260,10 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
         m.restore().await.unwrap();
         assert_eq!(degraded(&status(&m)), failed);
 
+        let before = docker.writes().len();
         let err = m.install(&app(), &[]).await.unwrap_err();
         assert_eq!(err.kind(), "conflict", "{err}");
-        let writes = docker.writes();
+        let writes = docker.writes().split_off(before);
         assert!(
             !writes.iter().any(|w| w.starts_with("DELETE")),
             "{writes:?}"

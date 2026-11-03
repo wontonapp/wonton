@@ -190,6 +190,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         gpu: None,
         lan: None,
         egress: None,
+        core_address: None,
     };
     let printed = format!("{ctx:?}");
     for secret in [

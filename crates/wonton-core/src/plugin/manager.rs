@@ -558,11 +558,12 @@ impl PluginManager {
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
                 let manifest = &package.manifest;
                 let network = self.cfg.instance.network(&manifest.id.slug());
+                let migrated = self.migrate_network(&network, manifest).await;
                 if let Err(e) = self.register_source(manifest, &network).await {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
                 let listed = Listed::new(&package, record.installed_at);
-                match self.reconcile(&package, record).await {
+                match self.reconcile_migrated(migrated, &package, record).await {
                     Ok(deployed) => Entry::running(listed, deployed),
                     Err(e) => {
                         // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。

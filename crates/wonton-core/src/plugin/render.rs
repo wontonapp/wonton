@@ -16,6 +16,7 @@ use super::compose::{
     parse_duration,
 };
 use super::configs::{self, ConfigError, ConfigFile};
+use super::core_address;
 use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
 use super::hostdir::Owner;
@@ -174,6 +175,8 @@ pub struct InstallContext {
     pub lan: Option<LanGrant>,
     /// 声明了 `network.egress` 且主人配了代理时：要注入的代理变量（见 [`super::egress`]）。
     pub egress: Option<EgressVars>,
+    /// 声明了 `webui.sso: proxy` 时：核心在这个插件网络里的地址（见 [`super::core_address`]）。
+    pub core_address: Option<String>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -197,6 +200,7 @@ impl std::fmt::Debug for InstallContext {
             .field("gpu", &self.gpu)
             .field("lan", &self.lan)
             .field("egress", &self.egress)
+            .field("core_address", &self.core_address)
             .finish()
     }
 }
@@ -287,6 +291,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(grant) = &ctx.lan {
         set(lan::ADDRESSES_VAR, grant.var());
+    }
+    if let Some(address) = &ctx.core_address {
+        set(core_address::VAR, address.clone());
     }
     if manifest.permissions.contains(&Permission::NetworkEgress) {
         let url = ctx.egress.as_ref().map_or("", |_| egress::PROXY_URL);
@@ -392,6 +399,9 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
                 .then(|| Instance::default().lan_network(&slug)),
         }),
         egress: None,
+        core_address: webui
+            .filter(|w| w.sso == Sso::Proxy)
+            .map(|_| core_address::PLACEHOLDER.to_owned()),
         slug,
     }
 }

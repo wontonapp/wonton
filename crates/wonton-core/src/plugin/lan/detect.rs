@@ -169,7 +169,7 @@ impl Engine {
     }
 
     /// 发布局域网端口的网络：普通桥接，关掉地址伪装。接进来的服务主动连外网或局域网的其他主机都收不到回包。
-    pub(in crate::plugin) async fn create_lan_network(
+    pub async fn create_lan_network(
         &self,
         name: &str,
         labels: &HashMap<String, String>,

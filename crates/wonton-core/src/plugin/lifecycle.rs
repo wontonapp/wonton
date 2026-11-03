@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::configs;
+use super::core_address;
 use super::docker::{LabeledResources, NetworkReach};
 use super::gpu::GpuGrant;
 use super::health::{self, Checked, Readiness, Target};
@@ -16,7 +17,7 @@ use super::hostdir::{self, Owner};
 use super::lan::LanGrant;
 use super::leftovers::name_taken;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
 use super::proxy_auth::{self, ProxyAuth};
@@ -173,15 +174,14 @@ impl PluginManager {
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
         undo.source = Some(manifest.id.clone());
-        let hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
-        if !hosts.is_empty() {
-            ctx.extra_hosts = hosts;
-            plan = render(package, &ctx)?;
-        }
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&plan.network, core, manifest).await?;
             undo.core_attached = true;
         }
+        // 网络建好才知道的：核心在网络里的地址和网关。
+        ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
+        ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
+        plan = render(package, &ctx)?;
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;
             if volume_action(volume, labels.as_ref(), &manifest.id)? == VolumeAction::Create {
@@ -344,6 +344,8 @@ impl PluginManager {
             gpu: None,
             lan: None,
             egress: None,
+            core_address: (manifest.webui.as_ref().is_some_and(|w| w.sso == Sso::Proxy))
+                .then(|| core_address::PLACEHOLDER.to_owned()),
         })
     }
 
@@ -417,23 +419,6 @@ impl PluginManager {
             undo.app_dir_created = Some(ctx.app_data.clone());
         }
         hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
-    }
-
-    async fn attach_core(
-        &self,
-        network: &str,
-        core: &str,
-        manifest: &Manifest,
-    ) -> Result<(), InstallError> {
-        let aliases = core_aliases(&self.cfg.public, manifest);
-        match self.engine.connect_network(network, core, aliases).await {
-            Err(super::docker::EngineError::Rejected { message, .. })
-                if message.contains("already exists") =>
-            {
-                Ok(())
-            }
-            other => other.map_err(Into::into),
-        }
     }
 
     pub(super) async fn start_containers(

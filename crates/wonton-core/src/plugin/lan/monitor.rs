@@ -244,6 +244,7 @@ impl PluginManager {
         ctx.lan = Some(grant);
         let network = self.cfg.instance.network(&ctx.slug);
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
+        ctx.core_address = self.core_address_var(manifest, &network).await?;
         let mut plan = render(package, &ctx)?;
         let services = manifest.lan.as_ref().map(lan_services).unwrap_or_default();
         plan.containers

@@ -19,6 +19,10 @@ services:
     # 核心要知道自己的容器名，才能把自己接入每个插件网络。
     container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
     restart: unless-stopped
+    # 核心接在所有插件网络上，不能替别的插件转发：带 NET_RAW 的插件可以把源地址写成核心在 B 网络里的地址、发给核心，
+    # 由核心转进 B 的网络，冒充核心（ADR-0023 的“只信任核心的地址”）。
+    sysctls:
+      - net.ipv4.ip_forward=0
     environment:
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}

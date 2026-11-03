@@ -26,6 +26,8 @@ hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# 算插件网络里留给核心的地址和出口容器的名单。
+ipnet = { version = "2.12.2", features = ["serde"] }
 iroh = { workspace = true }
 # MIT。签发 Tuwunel 登录用的 JWT（EdDSA）。
 jsonwebtoken = { workspace = true }
