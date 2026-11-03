@@ -2,7 +2,7 @@
 
 本地开发用的 `wonton-core`、Ory Hydra（小程序单点登录）和 Tuwunel（Matrix 服务器），见 ADR-0009；核心还会预装
 模型网关 magpie（ADR-0008），再装一次默认 Agent Hermes（ADR-0007）。核心在容器里
-运行，和产品一致：唯一挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
+运行，和产品一致：系统服务里只有它挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
 核心网关访问 Tuwunel。
 
 ```bash

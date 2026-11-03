@@ -48,7 +48,7 @@ services:
       # 隧道入口（iroh，UDP）：手机在局域网里直连，在外面打洞或经中继。
       - "${WONTON_TUNNEL_PORT}:${WONTON_TUNNEL_PORT}/udp"
     volumes:
-      # 唯一挂载 Docker socket 的容器（ADR-0011）。
+      # 系统服务里只有核心挂载 Docker socket（ADR-0011）。
       - /var/run/docker.sock:/var/run/docker.sock
       # 容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}

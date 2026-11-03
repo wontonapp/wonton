@@ -32,7 +32,7 @@ flowchart LR
   subgraph Cloud["我们运营的云端（不存业务数据）"]
     Relay["iroh-relay\niroh-dns-server"]
     PushRelay["推送中继\ngorush"]
-    Catalog["节点列表与版本信息\n签名静态文件"]
+    Catalog["节点列表\n签名静态文件"]
   end
 
   GitHub["GitHub\n插件仓库 · 官方索引"]
@@ -56,14 +56,14 @@ flowchart LR
 
 | 容器 | 类型 | 职责 |
 | --- | --- | --- |
-| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。唯一挂载 Docker socket 的容器。 |
+| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。系统服务里唯一挂载 Docker socket 的容器（升级器见下）。 |
 | `tusd` | 核心组件 | 设备上传文件的可续传接口（tus），只在核心的私有网络里，鉴权和编号由核心决定（ADR-0020）。 |
 | `wonton-egress` | 核心组件（配了代理才有） | 出口容器：把出网插件的请求转给主人的代理（ADR-0023）。 |
 | `tuwunel` | 系统插件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
 | `hermes` | 默认插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。核心启动后自动装一次，主人卸掉就不再装（ADR-0007）。 |
 | `magpie` | 系统插件（可替换） | 模型网关：provider 和 key 只配一次，所有插件共用。 |
 | 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba，以及任意 CasaOS 应用。 |
-| `wonton-updater` | 一次性容器 | 升级核心时拉起：拉新镜像、重建核心、健康检查，失败回滚。 |
+| `wonton-updater` | 一次性容器 | 升级核心时拉起，用核心自己的镜像：拉新镜像、重建核心、健康检查，失败回滚（ADR-0025）。 |
 
 ### 云端
 
@@ -74,7 +74,7 @@ flowchart LR
 | 中继 | 官方 `iroh-relay` 镜像 | 打洞失败时转发隧道流量。共享令牌加限速。 |
 | 发现 | 官方 `iroh-dns-server` 镜像 | 家里服务器换网络后，App 靠它找到新地址。 |
 | 推送中继 | gorush 加一层鉴权 | 只接收密文，转发到 APNs、FCM、华为 HMS。 |
-| 目录 | 签名静态文件 | 中继节点列表、核心版本信息。插件的官方索引在 GitHub 上，签名以后也能经这里分发（ADR-0017）。 |
+| 目录 | 签名静态文件 | 中继节点列表。插件的官方索引在 GitHub 上，签名以后也能经这里分发（ADR-0017）。 |
 | 镜像 | GHCR 加国内镜像仓库 | 安装脚本按网络选择。 |
 
 开发和 MVP 内测期，中继和发现先用 n0 的公共节点，推送中继从 M2 起部署在我们的一台公网主机上；
@@ -156,8 +156,8 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放�
 
 ### 升级
 
-核心按渠道（stable / beta）从目录检查新版本并通知主人。主人确认后，核心拉起 `wonton-updater`：
-拉新镜像、重建核心容器、健康检查，失败就回滚到旧镜像。插件按官方索引里的版本或仓库的新 tag 提示升级，主人确认后
+核心经 Docker 查渠道（stable / beta）的 tag 指向哪个 digest，有新版本时 App 里显示。主人确认后，核心拉起 `wonton-updater`：
+拉新镜像、重建核心容器、健康检查，失败就回滚到旧镜像；核心断开期间状态记在文件里（ADR-0025）。插件按官方索引里的版本或仓库的新 tag 提示升级，主人确认后
 只换容器，失败回滚（ADR-0017）。
 
 ## Bot 与 Agent

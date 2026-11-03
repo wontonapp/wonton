@@ -37,9 +37,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 ## 升级
 
 再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（1.0 之前默认 `beta` 渠道）的最新版本，已有的密钥、
-数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，Matrix 的服务器名（基础域名）和主人的用户名不能改。App 里的一键升级
-（ADR-0012）按同样的顺序做：拉新镜像，改 `.env` 里的 `WONTON_CORE_IMAGE`，在新镜像里执行 `wonton-core init`，
-再 `docker compose -f /opt/wonton/compose.yaml up -d`；健康检查不过就把 `.env` 改回旧的 digest 再 `up`。
+数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，Matrix 的服务器名（基础域名）和主人的用户名不能改。App 里的一键升级由一次性的 `wonton-updater` 容器执行，步骤、回滚和手动兜底见 ADR-0025。
 
 ## 拉不到镜像
 
