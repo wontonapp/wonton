@@ -239,6 +239,59 @@ services:
   时详情页里不显示它。`wonton-core plugin check` 按同样的规则、同样在单独的进程里检查。
 - `bot.avatar` 的格式不变（见“Matrix Bot”）。
 
+#### 图标用什么
+
+官方插件照这一节做，第三方插件建议照做。`wonton-core plugin check` 不检查这些，官方插件在代码审查时看。
+
+上游有标志时用上游的官方标志：
+
+- 原样使用，不改色、不变形，不和别的图形拼在一起。透明或不是正方形的标志，等比放在纯色底上，用上游规定的底色；没有规定时用白色，标志是白色或很浅时用 `#111111`。
+- 上游的 SVG 含文字、内嵌位图或滤镜时改用 PNG 版，上面的 SVG 规则不收这些内容。
+- 不暗示 Wonton 是对方官方出品，也不暗示得到了对方背书。
+- README 写明标志的来源，并注明它是对方的商标。
+
+图标放好后缩到 62×62（主屏的显示尺寸）看一眼。
+
+上游没有标志时（如示例插件）按下面的线条风格画：
+
+| 项目 | 规矩 |
+| --- | --- |
+| 文件 | 优先 `icon.svg`，所有尺寸都清晰；`viewBox="0 0 512 512"` |
+| 底色 | 满幅 `#F4F4F4`，不画圆角和阴影 |
+| 线条 | `#111111`，线宽 18，圆头圆角，全图同一种线宽；小实心点只用 `#111111` |
+| 色块 | 一种浅色，平铺无渐变，形状跟随主体，比线条往右下错开 14（`translate(14 14)`），放在线条下面 |
+| 范围 | 主体放在中间 112 到 400 的范围里，约占画面 55% |
+| 内容 | 一个主体，笔画尽量少，不放文字和字母 |
+
+色块从下面八种里选一种。图标是固定的图片，颜色不随用户在 App 里选的重点色变化。
+
+| 粉 | 橙 | 黄 | 绿 | 青 | 蓝 | 紫 | 灰 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `#FFBEBD` | `#FEC89C` | `#F5DF8A` | `#B2E4B2` | `#8FE7E1` | `#A5DBFF` | `#D8CAFF` | `#D4D4D4` |
+
+模板：
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#F4F4F4"/>
+  <circle cx="270" cy="270" r="132" fill="#A5DBFF"/>
+  <g fill="none" stroke="#111111" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="256" cy="256" r="132"/>
+    <circle cx="256" cy="256" r="34"/>
+    <path d="M256 170A86 86 0 0 1 342 256"/>
+    <path d="M256 342A86 86 0 0 1 170 256"/>
+  </g>
+</svg>
+```
+
+形状难画时可以先让图像模型出稿找方向，再照着写成 SVG。模型的线宽和底色不够准，它的位图不直接当图标。提示词：
+
+```text
+Minimal app icon, flat vector. Solid plain light grey background #F4F4F4 filling the whole square edge to edge, no rounded corners, no border, no shadow, no gradient, no text, no letters. One centered subject occupying the central 55 percent, drawn only with a uniform thick black monoline (#111111) with round caps and round joins, about 3.5 percent of the canvas width, in the style of Phosphor icons. Behind the lines, one flat solid {色块的颜色} shape following the subject, printed slightly misaligned toward the lower right like a riso print. No other colors, no shading. Subject: {用英文描述形状}.
+```
+
+线条在 62×62 上糊成一团就减笔画。
+
 ## 网页入口与单点登录
 
 插件网页的地址是 `<scheme>://<slug>.<基础域名>[:端口]`，`slug` 是把 `id` 里的 `.` 换成 `-`
