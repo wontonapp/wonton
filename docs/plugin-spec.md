@@ -1,10 +1,11 @@
-# 插件规范 `x-wonton`（草案 v0.2）
+# 插件规范 `x-wonton`（草案 v0.3）
 
 > 草案，M1 前定稿。字段可能调整，调整时同步更新本文和清单类型。清单类型在
 > `crates/wonton-core/src/plugin/manifest.rs`，迁到 `crates/wonton-protocol` 见“实现计划”第 1 项。
 > v0.1 补上了 M0-4 实测 Hermes 和 magpie 时发现的缺口，没落地的部分见末尾的“实现计划”。三处取舍已由
 > 主人确认（2026-10-28）：插件默认不能出网，每个 Bot 一组容器，模型凭据默认可以用网关里的所有模型。
 > v0.2 加上规范版本（`spec`）、商店信息和插件的发布与来源（ADR-0017）。
+> v0.3 加上权限 `owner.identity`（ADR-0022）。
 
 一个插件就是一个 `docker-compose.yml`，在顶层加一个 `x-wonton` 扩展字段描述它在 Wonton 里的身份、
 入口、能力和权限。compose 引用的配置文件、图标和设置表单与它放在同一个目录里，合称插件包。
@@ -186,7 +187,7 @@ services:
 
 | 字段 | 说明 |
 | --- | --- |
-| `spec` | 清单按哪一版规范写成，字符串，如 `"0.2"`（YAML 里要加引号，不然读成数字）。没写时按 `"0.1"`。核心先读它：比核心支持的版本新时安装失败（`unsupported`），提示先升级核心，不再逐项报未知字段。用到 v0.2 的字段时写 `"0.2"`。 |
+| `spec` | 清单按哪一版规范写成，字符串，如 `"0.2"`（YAML 里要加引号，不然读成数字）。没写时按 `"0.1"`。核心先读它：比核心支持的版本新时安装失败（`unsupported`），提示先升级核心，不再逐项报未知字段。用到 v0.2 的字段时写 `"0.2"`，用到 v0.3 的写 `"0.3"`。 |
 | `icon` | 图标，见下节。 |
 | `screenshots` | 截图：仓库里的 PNG 或 JPEG（路径规则同插件包里的文件），1 到 6 张，按顺序显示。截图不算插件包的一部分：不参与插件包摘要，安装时不取，上传插件包时忽略；商店的详情页要显示时，核心按同一个提交去取。 |
 | `author` | 插件包的作者：`name`（必填）、`url`（HTTPS，可选）。不一定是应用的作者。 |
@@ -245,12 +246,28 @@ services:
 不会到达插件；转发时去掉网关自己的 Cookie 和客户端伪造的 `X-Forwarded-*`，重新设置 `X-Forwarded-For`、
 `X-Forwarded-Host`、`X-Forwarded-Proto`，保留原始 `Host`，支持 WebSocket。
 
-`webui.sso` 决定用户怎样登进应用：
+`webui.sso` 决定用户怎样登进应用（ADR-0022）：
 
-- `oidc`：应用支持 OIDC 时首选，由核心的身份提供方登录（下一节）。
-- `proxy`：应用不支持 OIDC，但认反向代理传来的用户名或一个固定的密钥时，由网关代为带上
-  （见“网关代登录”）。
-- `none`：网关只校验会话，应用保留自己的登录，或者本来不需要登录。
+| 写法 | 什么时候用 |
+| --- | --- |
+| `none` | 默认，新插件都从它开始。网关只校验会话，应用用自己的登录，或者本来不需要登录（下一节）。 |
+| `oidc` | 应用官方支持 OIDC，由核心的身份提供方登录（见“OIDC”）。 |
+| `proxy` | 应用官方支持反向代理传来的用户名，或者认一个固定的密钥，由网关代为带上（见“网关代登录”）。 |
+
+声明 `oidc` 或 `proxy` 要同时满足：应用官方支持这种接法；接上后打开网页不会再看到应用的登录页，角色也对；不用脚本
+往应用里预建账号，不用改应用的数据，不用每次启动核对。做不到就用 `none`。
+
+### 应用自带的登录（`sso: none`）
+
+主人装好后第一次打开网页时，在应用里自己注册管理员。网关挡在前面，只有主人打得开注册页。
+
+- 不要带默认账号和默认密码。应用非要预建管理员时，用 `secrets` 生成密码，不要写死。
+- 注册页只在 `webui` 端口上。`lan.ports` 列出的端口装好就开在局域网上，不能提供未认证的管理员注册。
+- 应用能关自助注册时，默认关掉第一个账号以外的注册。
+- 应用的登录页关不掉就留着，局域网浏览器里主人登两次。不要为了去掉它去改应用。
+- 插件自己的服务要访问应用（比如 MCP 服务调应用的接口）时，用 `secrets` 里的密钥，不要用主人的账号。
+- 要主人的用户名或邮箱时（比如拿用户名建系统账号），申请 `owner.identity`，不要为此声明 `sso: proxy`。
+- 忘了密码按应用自己的办法找回。不删数据重装还是原来的账号，删了数据就要重新注册。
 
 ### OIDC
 
@@ -298,9 +315,10 @@ webui:
 | `webui.proxy.headers` | 请求头名 → 值模板。不能是 `Host`、`Cookie`、`Forwarded`、`X-Real-IP`、`X-Forwarded-*` 和逐跳头部。 |
 | `webui.proxy.cookies` | Cookie 名 → 值模板。名字不能以 `wonton_` 开头。和浏览器发来的其他 Cookie 合并成一个 `Cookie` 头。 |
 
-两项至少写一项。值模板里可以用 `{user}`（用户名，同 OIDC 的 `preferred_username`）、`{name}`、
-`{email}`，以及 `{secret:<名字>}`，其余文字原样保留，如 `"Bearer {secret:api_token}"`；`{`、`}` 只能用来写
-占位符。
+`sso: proxy` 至少写一项头或 Cookie。
+值模板里可以用 `{user}`（用户名，同 OIDC 的 `preferred_username`）、`{name}`、`{email}`，以及
+`{secret:<名字>}`，其余文字原样保留，如 `"Bearer {secret:api_token}"`；`{`、`}` 只能用来写占位符。主人没配邮箱时，
+用了 `{email}` 的插件装不上。
 
 - `{secret:…}` 只能引用插件自己的 `secrets` 里由核心生成（`generate`）、至少 16 字节的一项：引用不到别的插件的
   密钥，也引用不到插件交给核心保管（`collect`）的秘密。网关按值从响应里找出并去掉它（见下），值太短会误伤。
@@ -331,6 +349,7 @@ webui:
 | `tools` | 经核心的 MCP 总线调用核心和其他插件的工具，见“工具与 MCP 总线”。 |
 | `matrix.bot` | 以 Bot 身份收发消息，见“Matrix Bot”。 |
 | `notify` | 给主人发通知。 |
+| `owner.identity` | 知道主人的用户名和邮箱，见“安装时注入的变量”。 |
 | `network.egress` | 访问外网和局域网，见“网络”。 |
 | `network.lan` | 在局域网上开放 `lan.ports` 列出的端口，见“局域网”。高权限。 |
 | `network.host` | 使用宿主网络。高权限，不开放（ADR-0019）。 |
@@ -342,7 +361,7 @@ webui:
 少一项或多一项都拒绝安装。
 
 核心兑现 `storage.share.*`、`network.egress`（见“网络”）、`network.lan`（见“局域网”）、`models`（见“模型网关”）、
-`matrix.bot`（见“Matrix Bot”）、`tools`（见“工具与 MCP 总线”）和 `devices.gpu`（见“显卡”）。共享文件夹在数据目录的 `shares/<名称>` 下，
+`matrix.bot`（见“Matrix Bot”）、`tools`（见“工具与 MCP 总线”）、`owner.identity` 和 `devices.gpu`（见“显卡”）。共享文件夹在数据目录的 `shares/<名称>` 下，
 只授权读时必须以 `:ro` 挂载，而且只能整个挂载，不能挂其中的子路径（ADR-0011）。其余权限清单里可以声明，
 但安装时如实报“尚未支持”。
 
@@ -353,11 +372,12 @@ webui:
 | `WONTON_APP_ID` | 总是 | 插件 `id`。 |
 | `WONTON_APP_DATA` | 总是 | 插件私有数据目录（宿主路径）。绑定挂载的子目录由核心逐级预先创建，属主见下文；路径上有软链接或不是目录时拒绝安装（ADR-0011）。 |
 | `WONTON_SHARE_<名称>` | 授权了该共享文件夹 | 共享文件夹路径（大写，`-` 换成 `_`，如 `WONTON_SHARE_PHOTOS`）。 |
-| `TZ`、`PUID`、`PGID` | 总是 | 时区与运行用户。 |
+| `TZ`、`PUID`、`PGID` | 总是 | 时区与运行用户。`TZ` 是 IANA 时区名，如 `Asia/Shanghai`、`UTC`。 |
 | `WONTON_APP_URL` | 声明了 `webui` | 插件网页的公开地址，不带末尾 `/`。应用生成回调地址、外部链接时使用。 |
 | `WONTON_OIDC_ISSUER`、`WONTON_OIDC_CLIENT_ID`、`WONTON_OIDC_CLIENT_SECRET` | `webui.sso: oidc` | OIDC 客户端配置。 |
 | `WONTON_OIDC_AUTH_URL`、`WONTON_OIDC_TOKEN_URL`、`WONTON_OIDC_USERINFO_URL` | `webui.sso: oidc` | 各端点地址，给不支持发现文档的应用（如 Grafana）。 |
-| `WONTON_OWNER_NAME`、`WONTON_OWNER_EMAIL` | `webui.sso` 是 `oidc` 或 `proxy` | 主人的用户名和邮箱，和 OIDC 的 `preferred_username`、`email` 以及代登录模板的 `{user}`、`{email}` 同值。应用要预先建好主人的账号时用。值是建容器时的快照，见下文。 |
+| `WONTON_OWNER_NAME` | `owner.identity`；`spec` 低于 `0.3` 的清单，`webui.sso` 是 `oidc`、`proxy` 时也给 | 主人的用户名，装好后不变，和 OIDC 的 `sub`、`preferred_username` 以及代登录模板的 `{user}` 同值，见下文。 |
+| `WONTON_OWNER_EMAIL` | 同上，且主人配了邮箱 | 主人的邮箱，和 OIDC 的 `email`、代登录模板的 `{email}` 同值。值是建容器时的快照，见下文。 |
 | `WONTON_MODEL_BASE_URL` | `models` | 模型网关 OpenAI 兼容接口的地址，以 `/v1` 结尾，如 `http://models.wonton.internal:8080/v1`。 |
 | `WONTON_MODEL_ANTHROPIC_BASE_URL`、`WONTON_MODEL_GEMINI_BASE_URL` | `models`，且网关提供该接口 | Anthropic Messages、Gemini 接口的地址，按各自 SDK 的约定不带 `/v1`。 |
 | `WONTON_MODEL_API_KEY` | `models` | 只属于本插件（多 Bot 时只属于这个 Bot）的网关凭据。 |
@@ -377,14 +397,19 @@ webui:
   `sso: oidc` 却引用 `WONTON_OIDC_CLIENT_SECRET`，或者模型网关不提供 Anthropic 接口却引用
   `WONTON_MODEL_ANTHROPIC_BASE_URL`。核心不把自己的环境变量传给插件。
 - 地址和令牌以注入值为准，插件不要自己拼：主机名、端口和格式都可能变。
-- 主人的用户名和邮箱同样以注入值为准，不要写死或按规则拼。没声明 `webui.sso` 的插件拿不到它们：这样的插件从登录
-  里也得不到主人的身份，安装不多给一份个人信息。
-- 主人改了用户名或邮箱、核心重启之后，OIDC 声明和代登录的请求头马上换成新值，容器里的 `WONTON_OWNER_*` 还是
-  旧值：核心重启只核对容器，不重建。升级或重装（可以不删数据）时新建的容器才拿到新值；局域网地址变化只重建
-  `lan.ports` 里的服务，同一个插件的其他服务还是旧值。只在首次启动时读这两个变量建账号的应用，重建后也不会改已有的
-  账号，要在每次启动时按注入值核对，或者请主人在应用里改。
-- 核心不注入 `WONTON_OWNER_ID`：OIDC 的 `sub` 就是主人的用户名，改用户名时一起变，另起一个变量只是同一个值，还会让
-  插件以为它不变。
+- 主人的用户名和邮箱同样以注入值为准，不要写死或按规则拼。没申请 `owner.identity` 的插件拿不到它们，安装不多给一份
+  个人信息，引用了就装不上，错误写明“插件没申请 `owner.identity`”。规范版本升到 `0.3` 的插件，靠 `sso` 拿身份变量的要补上
+  这项权限。应用登录时从 OIDC 或代登录模板拿到的身份不归这项权限管，预览怎么列见 ADR-0022。
+- 用户名是固定 ID，装好后不变，插件不用处理它变化的情况。它只含小写字母、数字、`_` 和 `-`，以字母开头，最长 32 个
+  字符，不是常见的系统用户名，可以直接用来建系统账号；镜像里自带的用户（`postgres`、`node`）可能重名，要插件自己
+  处理。应用按用户名或 OIDC 的 `sub` 认人，不要按邮箱认：邮箱会变。
+- 主人没配邮箱时不注入 `WONTON_OWNER_EMAIL`，OIDC 也没有 `email` 声明。应用非要邮箱时写 `${WONTON_OWNER_EMAIL:?}`，
+  插件这时装不上，错误写明“主人还没配邮箱”和怎么配：OIDC 登录要 `email` 声明的应用也这样写，不要等到登录时才失败。
+  能没有邮箱的写 `${WONTON_OWNER_EMAIL:-}`。已装的插件升级或重建时遇到这种情况怎么显示，见 ADR-0022。
+- 主人改了邮箱或显示名（怎么改见 ADR-0022）之后，OIDC 声明和代登录的请求头马上换成新值，容器里的 `WONTON_OWNER_EMAIL`
+  还是旧值：核心重启只核对插件容器，不重建。升级或重装（可以不删数据）时新建的容器才拿到新值；局域网地址变化只重建
+  `lan.ports` 里的服务，同一个插件的其他服务还是旧值。应用里已有账号的资料由主人在应用里改，插件不写对账代码。
+- 核心不注入 `WONTON_OWNER_ID`：OIDC 的 `sub` 就是主人的用户名，另起一个变量只是同一个值。
 
 **数据目录属主**：核心预先创建的绑定挂载目录（`WONTON_APP_DATA` 下）交给谁，看挂载它的服务的
 `user`：
@@ -1097,6 +1122,11 @@ v0.2（ADR-0017）的部分同样每项一个 PR：
 3. **升级**：检查新版本、升级预览、升级和回滚，系统插件随核心升级；安装记录写下每个服务实际用的镜像摘要，回滚时用它。
 4. **客户端核心**：`PluginsViewModel` 和插件相关的操作。
 6. **插件移出主仓库**：预装的 magpie、Hermes 改由锁文件固定。
+
+ADR-0022 的部分：
+
+- **主人的身份**（#123）：记下并核对用户名，用户名、邮箱和 `TZ` 的校验，`owner.identity`，安装预览，`deploy/install`
+  传入这些变量。
 
 ADR-0020 的部分：
 

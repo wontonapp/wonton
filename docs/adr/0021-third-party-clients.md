@@ -1,6 +1,6 @@
 # ADR-0021 第三方原生 App 连回家：公网子域名、公共证书和专用密码
 
-- 状态：已接受（2026-11-03）
+- 状态：已接受（2026-11-03）；`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 ADR-0022 补充
 
 ## 背景
 
@@ -80,7 +80,7 @@ HAProxy 不做 ACME，证书还是 lego。核心从清单生成它的配置，�
 
 ### 入口的开关
 
-每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** `credentials` 模式下，第一次 `issue` 成功之前不能打开。
+每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** `credentials` 模式下，第一次 `issue` 成功之前不能打开；`app` 模式下，`setup_done` 通过之前不能打开（ADR-0022）。
 
 **`network.clients` 和 `network.lan`（ADR-0019）为什么权限等级不同。** `network.lan` 在安装时就把端口开到局域网，所以算高权限，Bot 装不了。`network.clients` 只是声明“有这个能力”，安装后什么都没暴露，要主人再开一次开关才有效；打开开关这一步单独醒目确认，相当于高权限确认。所以 `network.clients` 不算高权限，Bot 能装（M1 第 5 条“帮我装 Immich”不多一道确认），ADR-0016 的规则不用改。没选“`network.clients` 算高权限”：那样 Bot 就装不了 Immich。局域网入口也要开关，而不是装好就开：不然局域网里任何设备装完就能碰到应用的登录页，这和 `network.lan` 的暴露是同一类。这个权限要列进规范的权限表。
 
@@ -356,7 +356,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 
 ### 清单怎么声明
 
-新字段 `clients`，新权限 `network.clients`，规范版本加到 `"0.3"`。
+新字段 `clients`，新权限 `network.clients`，规范版本加一（ADR-0022 用了 `"0.3"`，`clients` 不和它一起发布时就是 `"0.4"`）。
 
 ```yaml
 x-wonton:
@@ -445,7 +445,7 @@ auth:
 - 命令超时 30 秒。`revoke` 和 `rotate` 失败时，App 如实显示失败和命令的标准错误输出。
 - **吊销不能丢。** 脚本可能已经改了密码，只是后面一步出错或超时，所以失败和超时都算结果未知。执行 `rotate` 之前，核心先把新值记成“待换”并落盘（`generates: true` 时只记“待换”，新值以成功时的输出为准）；`revoke` 同样先记“待吊销”。退出码 0 才转正。插件没在运行时也先记下。没完成的隔一段时间重试，插件启动时先重跑，再对账，所以这两个命令都必须能重复执行；对账绝不 `issue` 已被待换值取代的旧值；标着待吊销的条目，对账不 `issue`、不 `verify`、不重新生成，只重试 `revoke`。吊销的接口如实报“待完成”（202），不报已吊销。
 
-**3. `app`：应用自己的账号。** 核心不发密码，App 只给地址，写明“用这个应用自己的账号”。`clients.tcp` 都按这个算。
+**3. `app`：应用自己的账号。** 核心不发密码，App 只给地址，写明“用这个应用自己的账号”。`clients.tcp` 都按这个算。`clients.http` 的 `app` 必须写 `setup_done`，首次注册没完成时入口打不开（ADR-0022 的“和公网入口的关系”）。
 
 | 应用 | 方式 | 说明 |
 | --- | --- | --- |
@@ -487,9 +487,9 @@ auth:
 
 吊销设备的接口加一个参数 `keep_shared_passwords`，默认 false，响应列出待完成的吊销和登录没结束的应用。
 
-错误用 ADR-0017 的格式：`unauthenticated`（401）、`plugin_unavailable`（503）、`credentials_failed`（502，附上命令的标准错误输出）、`invalid_input`（400）、`conflict`（409）、`lan_unavailable`（422）、`port_quota_exceeded`（409）、`home_suspended`（403，写明原因）、`quota_exceeded`（403）、`invite_invalid`（403，邀请码不存在、用过或过期）、`not_registered`（409）、`core_not_in_container`（422）。
+错误用 ADR-0017 的格式：`unauthenticated`（401）、`plugin_unavailable`（503，包括 `setup_done` 查不出结果，附上标准错误输出，ADR-0022）、`credentials_failed`（502，附上命令的标准错误输出）、`invalid_input`（400）、`conflict`（409）、`lan_unavailable`（422）、`port_quota_exceeded`（409）、`home_suspended`（403，写明原因）、`quota_exceeded`（403）、`invite_invalid`（403，邀请码不存在、用过或过期）、`not_registered`（409）、`setup_pending`（409，应用的首次注册没完成，ADR-0022）、`core_not_in_container`（422）。
 
-**入口的状态分开显示，不合并成“连不上”。** 核心定期从家里按公网地址连回自己（一个专门的探测标签，经 DNS、中继、连接器、入口容器再回到核心，验证证书），这样不用认识连接器是什么。分清：证书快过期或已过期、DNS 不对、中继或连接器不通、这个家被停用、超配额、插件没在运行。这个自检只说明从家里绕出去是通的，不代表外面所有网络都通，App 这样写。
+**入口的状态分开显示，不合并成“连不上”。** 核心定期从家里按公网地址连回自己（一个专门的探测标签，经 DNS、中继、连接器、入口容器再回到核心，验证证书），这样不用认识连接器是什么。分清：证书快过期或已过期、DNS 不对、中继或连接器不通、这个家被停用、超配额、插件没在运行、应用的首次注册状态不确定（ADR-0022）。这个自检只说明从家里绕出去是通的，不代表外面所有网络都通，App 这样写。
 
 ### 公网暴露面
 
@@ -646,7 +646,7 @@ M2 及以后：家人（专用密码按人分，`gateway` 的 `{user}` 跟着变
 这几份写的是已经实现的行为，随对应的实现 PR 更新：
 
 - `docs/plugin-spec.md`：
-  - `clients`（`http`、`tcp`、`public`、`auth_failures`），规范版本 `0.3`。
+  - `clients`（`http`、`tcp`、`public`、`auth_failures`、`setup_done`），规范版本加一。
   - 权限表加 `network.clients`，写明不算高权限和原因。
   - `credentials` 的 `verify`、`generates`、`rotate`、必须写的 `ends_sessions`、待换值的恢复。`clients` 的 `issue` 是覆盖写，和模型网关的“已有时不改动”、“不解析输出”不同。
   - 声明 `network.clients` 的插件默认关掉自助注册；防暴力破解二选一；Vaultwarden 这类的必配项。
