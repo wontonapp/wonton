@@ -1,5 +1,5 @@
-//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载。安装和卸载要主人
-//! 确认。Bot 只能装官方索引里的插件，申请高权限的插件只能由主人在 App 里装（ADR-0016）。
+//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载，文件工具在 [`file_tools`]。安装和卸载要
+//! 主人确认。Bot 只能装官方索引里的插件，申请高权限的插件只能由主人在 App 里装（ADR-0016）。
 
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
-use super::{Bus, Caller, Outcome, cards, naming};
+use super::{Bus, Caller, Outcome, cards, file_tools, naming};
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
@@ -25,7 +25,7 @@ fn schema(value: Value) -> Arc<JsonObject> {
     }
 }
 
-fn tool(name: &str, description: &str, input: Value, read_only: bool) -> Tool {
+pub(super) fn tool(name: &str, description: &str, input: Value, read_only: bool) -> Tool {
     Tool::new(
         naming::join(naming::CORE, name),
         description.to_owned(),
@@ -41,7 +41,7 @@ fn tool(name: &str, description: &str, input: Value, read_only: bool) -> Tool {
 
 pub fn definitions() -> Vec<Tool> {
     let id = json!({"type": "string", "description": "插件 ID，如 app.example.files"});
-    vec![
+    let mut tools = vec![
         tool(
             LIST,
             "列出家里服务器上已经装的插件：ID、名字、版本、状态和网页地址。",
@@ -73,7 +73,9 @@ pub fn definitions() -> Vec<Tool> {
             }, "required": ["id"]}),
             false,
         ),
-    ]
+    ];
+    tools.extend(file_tools::definitions());
+    tools
 }
 
 fn success(value: &Value) -> CallToolResult {
@@ -88,6 +90,9 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
         SEARCH => search(bus, &args).await,
         INSTALL => return install(bus, caller, &name, args).await,
         UNINSTALL => return uninstall(bus, caller, &name, args).await,
+        file_tools::VIEW | file_tools::SHARE => {
+            return file_tools::call(bus, caller, tool, args).await;
+        }
         _ => Err(format!("没有工具 {name}")),
     };
     match read {
@@ -98,6 +103,7 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
                 arguments: &value,
                 decision: Decision::Allowed,
                 outcome: Some("ok"),
+                files: &[],
             });
             success(&result)
         }

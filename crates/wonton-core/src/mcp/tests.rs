@@ -58,10 +58,10 @@ x-wonton:
     )
 }
 
-struct Setup {
-    bus: Arc<Bus>,
+pub(super) struct Setup {
+    pub(super) bus: Arc<Bus>,
     cards: Arc<Cards>,
-    notes: Notes,
+    pub(super) notes: Notes,
     manager: Arc<PluginManager>,
     caller: Caller,
     dir: tempfile::TempDir,
@@ -131,7 +131,7 @@ async fn setup_with_upstreams(upstreams: Upstreams) -> Setup {
     setup_with(engine, Duration::from_secs(5), upstreams).await
 }
 
-async fn setup(engine: Engine, ttl: Duration) -> Setup {
+pub(super) async fn setup(engine: Engine, ttl: Duration) -> Setup {
     setup_with(engine, ttl, Upstreams::new()).await
 }
 
@@ -167,7 +167,7 @@ async fn setup_with(engine: Engine, ttl: Duration, upstreams: Upstreams) -> Setu
 }
 
 impl Setup {
-    async fn call(&self, name: &str, args: Value) -> CallToolResult {
+    pub(super) async fn call(&self, name: &str, args: Value) -> CallToolResult {
         let request = CallToolRequestParams::new(name.to_owned())
             .with_arguments(args.as_object().cloned().unwrap_or_default());
         self.bus
@@ -187,7 +187,7 @@ impl Setup {
         self.bus.confirmations().answer(id, answer)
     }
 
-    fn audit(&self) -> Vec<Value> {
+    pub(super) fn audit(&self) -> Vec<Value> {
         let text = fs::read_to_string(self.dir.path().join("audit.jsonl")).unwrap_or_default();
         text.lines()
             .map(|l| serde_json::from_str(l).unwrap())
@@ -195,7 +195,7 @@ impl Setup {
     }
 }
 
-fn text(result: &CallToolResult) -> String {
+pub(super) fn text(result: &CallToolResult) -> String {
     result
         .content
         .iter()
@@ -203,7 +203,7 @@ fn text(result: &CallToolResult) -> String {
         .collect()
 }
 
-fn failed(result: &CallToolResult) -> bool {
+pub(super) fn failed(result: &CallToolResult) -> bool {
     result.is_error == Some(true)
 }
 

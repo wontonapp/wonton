@@ -34,7 +34,8 @@ Bot 能在已授权的文件夹里查找文件，并通过 MCP 在 Immich 里按
   - `wonton__list_plugins`：已装的插件和状态；
   - `wonton__search_catalog`：在官方索引里按关键词找插件；
   - `wonton__install_plugin`：按官方索引里的 ID 安装，敏感；
-  - `wonton__uninstall_plugin`：卸载，可以要求删除数据，敏感。
+  - `wonton__uninstall_plugin`：卸载，可以要求删除数据，敏感；
+  - `wonton__view_file`、`wonton__share_file`：看预览、发给主人，不敏感，见 ADR-0020。
 - **哪些工具敏感**：核心的安装、卸载；插件的工具里没有标 `readOnlyHint: true` 的（MCP 的工具注解）。敏感的调用
   不直接执行，先走下面的确认。注解由插件声明，核心不判断语义：插件把会改数据的工具标成只读，等于在自己的数据上
   不设防，审核目录时把关。

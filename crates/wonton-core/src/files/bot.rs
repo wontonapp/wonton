@@ -1,0 +1,168 @@
+//! Bot 碰文件的两件事（ADR-0020 的“Bot”）：工具结果里的引用登记成编号，调工具时核对编号还用得了。
+
+use std::sync::Arc;
+
+use wonton_protocol::{FileFailure, FileId, FileSource};
+
+use super::record::{Accessor, BOT_TTL_SECS, FileRecord, Origin};
+use super::resource::InternalUrl;
+use super::share_fs::{self, ShareRef, sanitize_name};
+use super::{BotRef, Failure, Files, Scale, new_id};
+use crate::plugin::PluginId;
+use crate::plugin::manager::now_secs;
+
+impl Files {
+    /// Bot 经工具结果登记共享文件夹里的文件。来源插件要有这个共享文件夹的授权。同一个 Bot 再次拿到同一个引用，还是原来的编号，有效期
+    /// 重新算。
+    pub async fn register_share(
+        self: &Arc<Self>,
+        bot: &BotRef,
+        reference: ShareRef,
+        name: Option<&str>,
+        mime_type: Option<&str>,
+    ) -> Result<FileRecord, Failure> {
+        self.require_share(&bot.plugin, &reference.share)?;
+        let bot = bot.clone();
+        let name = sanitize_name(name.unwrap_or_else(|| reference.file_name()));
+        let mime_type = mime_type.map(str::to_owned);
+        self.blocking(move |files| {
+            let snapshot = files.shares.open(&reference)?.snapshot;
+            let origin = Origin::Share { reference };
+            files.register(&bot, origin, name, mime_type, None, Some(snapshot))
+        })
+        .await
+    }
+
+    /// Bot 经工具结果登记插件的资源。内网地址只认来源插件自己的服务（ADR-0020 的“鉴权”）。
+    #[allow(clippy::too_many_arguments)] // 一个 `resource_link` 的几个字段，再包一层也是逐个填。
+    pub async fn register_resource(
+        self: &Arc<Self>,
+        bot: &BotRef,
+        plugin: &PluginId,
+        uri: &str,
+        internal_url: Option<&str>,
+        name: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+    ) -> Result<FileRecord, Failure> {
+        if let Some(url) = internal_url {
+            let parsed = InternalUrl::parse(url)
+                .map_err(|e| Failure::new(FileFailure::PermissionDenied, e))?;
+            self.host.service_upstream(plugin, &parsed).await?;
+        }
+        let origin = Origin::Plugin {
+            plugin: plugin.clone(),
+            uri: uri.to_owned(),
+            internal_url: internal_url.map(str::to_owned),
+        };
+        let bot = bot.clone();
+        let name = sanitize_name(name);
+        let mime_type = mime_type.map(str::to_owned);
+        self.blocking(move |files| files.register(&bot, origin, name, mime_type, size, None))
+            .await
+    }
+
+    fn register(
+        &self,
+        bot: &BotRef,
+        origin: Origin,
+        name: String,
+        mime_type: Option<String>,
+        declared_size: Option<u64>,
+        registered: Option<share_fs::Snapshot>,
+    ) -> Result<FileRecord, Failure> {
+        let now = now_secs();
+        let expires_at = now + BOT_TTL_SECS;
+        let looked_up = origin.clone();
+        let source = FileSource::Bot {
+            name: bot.name.clone(),
+            plugin: bot.plugin.as_str().to_owned(),
+        };
+        let renewed = source.clone();
+        let record = self.registry.register_bot(
+            &bot.name,
+            &looked_up,
+            now,
+            |old| {
+                // 分享过的不再过期。Bot 重新看到了这个文件，改过的也不算改过了；之后核对授权看这次给它引用的插件。
+                old.expires_at = old.expires_at.map(|_| expires_at);
+                old.registered = registered;
+                old.source = renewed;
+            },
+            || FileRecord {
+                id: new_id(),
+                name,
+                mime_type,
+                declared_size,
+                source,
+                origin,
+                access: [Accessor::Bot(bot.name.clone())].into(),
+                registered,
+                created_at: now,
+                expires_at: Some(expires_at),
+            },
+        )?;
+        Ok(record)
+    }
+
+    /// Bot 调工具时查编号：不在范围里、过期了，还有这之后才出的问题（来源插件的授权收回了、文件改过或者没了）。
+    pub async fn for_bot(&self, id: &FileId, bot: &str) -> Result<FileRecord, Failure> {
+        let record = self.authorize(id, &Accessor::Bot(bot.to_owned()))?;
+        match &record.origin {
+            Origin::Share { reference } => {
+                if let FileSource::Bot { plugin, .. } = &record.source {
+                    let plugin = PluginId::parse(plugin)
+                        .map_err(|e| Failure::internal(format!("记录里的插件 ID 不对：{e}")))?;
+                    self.require_share(&plugin, &reference.share)?;
+                }
+                let now = self.open_share(reference.clone()).await?.snapshot;
+                let changed = record.registered.is_some_and(|then| {
+                    then.size != now.size || then.modified_ns != now.modified_ns
+                });
+                if changed {
+                    return Err(Failure::new(
+                        FileFailure::FileChanged,
+                        "文件登记后改过，你看过的可能不是现在的内容，再找一次",
+                    ));
+                }
+            }
+            Origin::Upload { reference, .. } => {
+                self.open_share(reference.clone()).await?;
+            }
+            Origin::Plugin { plugin, .. } => self.host.check_plugin(plugin)?,
+        }
+        Ok(record)
+    }
+
+    fn require_share(&self, plugin: &PluginId, share: &str) -> Result<(), Failure> {
+        if self.host.share_granted(plugin, share)? {
+            return Ok(());
+        }
+        Err(Failure::new(
+            FileFailure::PermissionDenied,
+            format!("插件 {plugin} 没有共享文件夹 {share} 的授权"),
+        ))
+    }
+
+    /// 给 Bot 看的预览：长边 1024 像素的 JPEG，不带原文件的元数据。
+    pub async fn preview(&self, record: &FileRecord) -> Result<Vec<u8>, Failure> {
+        self.scaled(record, Scale::Preview).await
+    }
+
+    /// Bot 把文件分享给主人：加进范围，不再过期。
+    pub async fn share_with_owner(
+        self: &Arc<Self>,
+        id: &FileId,
+        bot: &str,
+    ) -> Result<FileRecord, Failure> {
+        self.authorize(id, &Accessor::Bot(bot.to_owned()))?;
+        let id = id.clone();
+        self.blocking(move |files| {
+            files
+                .registry
+                .grant(&id, Accessor::Owner, now_secs())?
+                .ok_or_else(Failure::unknown)
+        })
+        .await
+    }
+}

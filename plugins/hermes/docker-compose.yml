@@ -63,6 +63,9 @@ services:
       WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
       # tools：核心的 MCP 总线（核心和其他插件的工具），config.yaml 的 mcp_servers.wonton 引用。
       WONTON_MCP_URL: ${WONTON_MCP_URL}
+      # 默认放行 MEDIA: 发黑名单以外的任何文件，恢复密钥 platforms/matrix/recovery-key.txt 不在黑名单里（ADR-0020）。这样只放行缓存目录
+      # 和刚产生的文件。
+      HERMES_MEDIA_DELIVERY_STRICT: "1"
     volumes:
       - ${WONTON_BOT_DATA}:/opt/data
     healthcheck:
@@ -88,7 +91,7 @@ configs:
 
 x-wonton:
   id: com.nousresearch.hermes
-  version: 0.4.0
+  version: 0.5.0
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:

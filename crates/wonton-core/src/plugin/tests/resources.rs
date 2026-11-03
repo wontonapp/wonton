@@ -108,6 +108,31 @@ async fn inside_a_container_the_core_reaches_a_service_by_its_container_name() {
     assert!(matches!(refused, Err(ResourceUpstreamError::NotItsService)));
 }
 
+/// Bot 每次调文件工具都看来源插件现在的授权：读或写都算，别的共享文件夹、卸了的插件都不算。
+#[tokio::test]
+async fn share_grants_come_from_what_the_plugin_was_granted() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    let package = app("app.mine", "server").replace(
+        "permissions: []",
+        "permissions: [\"storage.share.photos:read\", \"storage.share.docs:write\"]",
+    );
+    let granted = crate::plugin::PluginPackage::parse(&package)
+        .unwrap()
+        .manifest
+        .permissions;
+    m.install(&package, &granted).await.unwrap();
+    let mine = PluginId::parse("app.mine").unwrap();
+    let host = CoreHost::new(Arc::new(m), Arc::new(Upstreams::new()), None);
+
+    assert!(host.share_granted(&mine, "photos").unwrap());
+    assert!(host.share_granted(&mine, "docs").unwrap());
+    assert!(!host.share_granted(&mine, "music").unwrap());
+    let gone = PluginId::parse("app.gone").unwrap();
+    assert!(!host.share_granted(&gone, "photos").unwrap());
+}
+
 /// 插件的记录读不出来：不是插件不在，也不是地址不对，是核心这边出了问题。
 #[tokio::test]
 async fn an_unreadable_plugin_record_is_the_cores_problem() {

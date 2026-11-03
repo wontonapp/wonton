@@ -148,6 +148,7 @@ async fn serve() -> anyhow::Result<()> {
     let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     let host = Arc::new(CoreHost::new(manager.clone(), bus.upstreams(), notices));
     let files = open_files(&cfg, host, http.clone(), audit, images)?;
+    bus.attach_files(files.clone());
     files.spawn_sweeper();
     let tunnel = bind_tunnel(&cfg).await?;
     let push_path = cfg.core_state_dir().join("push.json");

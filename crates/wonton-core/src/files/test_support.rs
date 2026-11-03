@@ -44,6 +44,8 @@ pub struct FakeHost {
     pub reads_hang_for: Mutex<Option<String>>,
     /// `resources/read` 超过上限。
     pub reads_too_large: std::sync::atomic::AtomicBool,
+    /// 授权收回了的共享文件夹。
+    pub revoked_shares: Mutex<Vec<String>>,
 }
 
 impl FileHost for FakeHost {
@@ -114,6 +116,11 @@ impl FileHost for FakeHost {
                 .ok_or_else(|| Failure::new(FileFailure::UpstreamError, "插件读不了这个资源"))
         }
         .boxed()
+    }
+
+    fn share_granted(&self, _plugin: &PluginId, share: &str) -> Result<bool, Failure> {
+        let revoked = self.revoked_shares.lock().unwrap();
+        Ok(!revoked.iter().any(|s| s == share))
     }
 
     fn bots_in_room(&self, room: &str) -> Result<Vec<String>, Failure> {

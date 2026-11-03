@@ -33,6 +33,7 @@ const SCREENSHOT_EDGE: u32 = 1280;
 const JPEG_QUALITY: u8 = 85;
 /// 文件缩略图的长边（ADR-0020，同 ADR-0005）。
 const THUMBNAIL_EDGE: u32 = 800;
+const PREVIEW_EDGE: u32 = 1024;
 /// 做缩略图时原图的大小上限，手机和相机的照片都在里面。
 pub const MAX_THUMBNAIL_INPUT: usize = 64 << 20;
 /// 做缩略图时原图的宽和高的上限。
@@ -129,8 +130,18 @@ pub fn screenshot(data: &[u8]) -> Result<Screenshot, String> {
     })
 }
 
-/// 文件的缩略图：长边 800 像素的 JPEG，按 EXIF 转正。重新编码后不带原文件的元数据（拍摄地点这些）。
+/// 文件的缩略图：长边 800 像素的 JPEG。
 pub fn thumbnail(data: &[u8]) -> Result<Vec<u8>, String> {
+    scaled_jpeg(data, THUMBNAIL_EDGE)
+}
+
+/// 给 Bot 看的预览：长边 1024 像素的 JPEG（ADR-0020 的“Bot”）。
+pub fn preview(data: &[u8]) -> Result<Vec<u8>, String> {
+    scaled_jpeg(data, PREVIEW_EDGE)
+}
+
+/// 缩到长边 `edge` 的 JPEG，按 EXIF 转正。重新编码后不带原文件的元数据（拍摄地点这些）。
+fn scaled_jpeg(data: &[u8], edge: u32) -> Result<Vec<u8>, String> {
     if data.len() > MAX_THUMBNAIL_INPUT {
         return Err(format!("超过 {} MiB", MAX_THUMBNAIL_INPUT >> 20));
     }
@@ -157,8 +168,8 @@ pub fn thumbnail(data: &[u8]) -> Result<Vec<u8>, String> {
     let orientation = decoder.orientation().map_err(failed)?;
     let mut image = DynamicImage::from_decoder(decoder).map_err(failed)?;
     image.apply_orientation(orientation);
-    if image.width().max(image.height()) > THUMBNAIL_EDGE {
-        image = image.resize(THUMBNAIL_EDGE, THUMBNAIL_EDGE, FilterType::Triangle);
+    if image.width().max(image.height()) > edge {
+        image = image.resize(edge, edge, FilterType::Triangle);
     }
     let mut jpeg = Vec::new();
     JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)

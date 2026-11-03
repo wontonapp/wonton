@@ -1,4 +1,4 @@
-//! 在子进程里处理不可信的图片（[`super::images`]）：`wonton-core image <icon.png|icon.svg|screenshot|thumbnail>` 从标准输入读
+//! 在子进程里处理不可信的图片（[`super::images`]）：`wonton-core image <icon.png|icon.svg|screenshot|thumbnail|preview>` 从标准输入读
 //! 原文件，把结果写到标准输出。图片是不可信的输入，预检挡不住所有费时费内存的写法（比如很细的虚线），所以解码和渲染放进单独的
 //! 进程：它先给自己设内存和 CPU 时间的上限，到时没做完由核心杀掉。超时、内存不够、崩溃都算这张图处理不了。
 //!
@@ -53,6 +53,7 @@ enum Job {
     Icon(IconFormat),
     Screenshot,
     Thumbnail,
+    Preview,
 }
 
 impl Job {
@@ -62,13 +63,14 @@ impl Job {
             Self::Icon(IconFormat::Svg) => "icon.svg",
             Self::Screenshot => "screenshot",
             Self::Thumbnail => "thumbnail",
+            Self::Preview => "preview",
         }
     }
 
     /// 最多从标准输入读这么多。多读一个字节：超了由各自的大小检查报出来。
     fn input_limit(self) -> u64 {
         let limit = match self {
-            Self::Thumbnail => images::MAX_THUMBNAIL_INPUT,
+            Self::Thumbnail | Self::Preview => images::MAX_THUMBNAIL_INPUT,
             Self::Icon(_) | Self::Screenshot => images::MAX_FILE_BYTES,
         };
         limit as u64 + 1
@@ -80,6 +82,7 @@ impl Job {
             Self::Icon(IconFormat::Svg),
             Self::Screenshot,
             Self::Thumbnail,
+            Self::Preview,
         ]
         .into_iter()
         .find(|job| job.arg() == arg)
@@ -101,6 +104,7 @@ impl Job {
                 put(&mut out, &shot.height.to_le_bytes());
             }
             Self::Thumbnail => put(&mut out, &images::thumbnail(input)?),
+            Self::Preview => put(&mut out, &images::preview(input)?),
         }
         Ok(out)
     }
@@ -114,7 +118,7 @@ pub fn child(args: &[String]) -> ExitCode {
     };
     let Some(job) = job else {
         eprintln!(
-            "用法：wonton-core {COMMAND} <icon.png|icon.svg|screenshot|thumbnail>（核心内部用）"
+            "用法：wonton-core {COMMAND} <icon.png|icon.svg|screenshot|thumbnail|preview>（核心内部用）"
         );
         return ExitCode::from(BROKEN);
     };
@@ -240,6 +244,11 @@ impl ImageWorker {
 
     pub async fn thumbnail(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
         let output = self.run(Job::Thumbnail, data).await?;
+        Ok(Fields(&output).bytes()?.to_vec())
+    }
+
+    pub async fn preview(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let output = self.run(Job::Preview, data).await?;
         Ok(Fields(&output).bytes()?.to_vec())
     }
 

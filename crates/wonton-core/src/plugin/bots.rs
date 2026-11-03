@@ -228,6 +228,12 @@ impl PluginManager {
         Ok(Some(bot))
     }
 
+    /// 这个插件的 Bot 的名字（Matrix 用户名）；它没有 Bot 时为空。
+    pub fn bot_name(&self, id: &PluginId) -> Result<Option<String>, StoreError> {
+        let record = self.store.bots().load(id)?;
+        Ok(record.and_then(|r| localpart(&r.account.user_id).map(str::to_owned)))
+    }
+
     /// 这个房间里的 Bot 的名字（Matrix 用户名）。M1 的 Bot 只在自己的主房间里，核心不在别的房间里，也查不了成员。
     pub fn bots_in_room(&self, room: &str) -> Result<Vec<String>, StoreError> {
         self.store.bots().in_home_room(room)

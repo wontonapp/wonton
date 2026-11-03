@@ -7,13 +7,15 @@ mod bounded_http;
 mod cards;
 mod confirm;
 mod core_tools;
+mod file_results;
+mod file_tools;
 mod naming;
 mod notifier;
 mod server;
 pub mod upstream;
 
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, JsonObject, MetaObject, Tool,
@@ -22,11 +24,12 @@ use rmcp::service::{Peer, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::Value;
-use wonton_protocol::ConfirmationState;
+use wonton_protocol::{ConfirmationState, FileFailure};
 
 use crate::config::PLUGIN_MCP_HOST;
-use crate::plugin::{McpServer, PluginManager};
-use audit::{Audit, Decision, Record};
+use crate::files::{BotRef, Failure, Files};
+use crate::plugin::{McpServer, PluginId, PluginManager};
+use audit::{Audit, AuditedFile, Decision, Record};
 use cards::Draft;
 pub use cards::content as card_content;
 pub use confirm::{AnswerError, Confirmations, Notifier};
@@ -49,6 +52,8 @@ pub struct Bus {
     confirmations: Arc<Confirmations>,
     upstreams: Arc<Upstreams>,
     audit: Arc<Audit>,
+    /// 文件服务。它读插件的资源要用这里的 [`Upstreams`]，所以总线先建好，文件服务后接上（[`Bus::attach_files`]）。
+    files: OnceLock<Arc<Files>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -57,6 +62,8 @@ pub struct Bus {
 struct Outcome {
     result: CallToolResult,
     state: ConfirmationState,
+    /// 这次调用登记的文件，写进审计。
+    files: Vec<AuditedFile>,
 }
 
 impl Outcome {
@@ -64,6 +71,7 @@ impl Outcome {
         Self {
             result: CallToolResult::success(vec![ContentBlock::text(text)]),
             state: ConfirmationState::Succeeded { message },
+            files: Vec::new(),
         }
     }
 
@@ -71,13 +79,15 @@ impl Outcome {
         Self {
             result: error(&message),
             state: ConfirmationState::Failed { message },
+            files: Vec::new(),
         }
     }
 }
 
-/// 转给插件。
+/// 转给插件。结果里的文件引用换成编号（[`file_results`]）。
 async fn forward(
-    bus: &Bus,
+    bus: &Arc<Bus>,
+    caller: &Caller,
     server: &McpServer,
     tool: &str,
     arguments: JsonObject,
@@ -88,21 +98,27 @@ async fn forward(
         .call(server, tool, Some(arguments), cancelled)
         .await;
     match called {
-        Ok(result) if result.is_error == Some(true) => Outcome {
-            result,
-            state: ConfirmationState::Failed {
-                message: "工具报告执行失败".to_owned(),
-            },
-        },
-        Ok(result) => Outcome {
-            result,
-            state: ConfirmationState::Succeeded {
-                message: "已执行".to_owned(),
-            },
-        },
+        Ok(result) => {
+            let state = if result.is_error == Some(true) {
+                ConfirmationState::Failed {
+                    message: "工具报告执行失败".to_owned(),
+                }
+            } else {
+                ConfirmationState::Succeeded {
+                    message: "已执行".to_owned(),
+                }
+            };
+            let (result, files) = file_results::rewrite(bus, caller, &server.id, result).await;
+            Outcome {
+                result,
+                state,
+                files,
+            }
+        }
         Err(CallError::Uncertain { kind, message }) => Outcome {
             result: uncertain(&message, kind),
             state: ConfirmationState::Uncertain { message },
+            files: Vec::new(),
         },
         Err(e) => Outcome::failed(e.to_string()),
     }
@@ -143,10 +159,41 @@ impl Bus {
             confirmations,
             upstreams,
             audit,
+            files: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
         bus
+    }
+
+    /// 接上文件服务。没接上时工具结果里的文件登记不了，Bot 的文件工具报 `service_unavailable`。
+    pub fn attach_files(&self, files: Arc<Files>) {
+        if self.files.set(files).is_err() {
+            tracing::error!("文件服务接了两次，用先接上的");
+        }
+    }
+
+    fn files(&self) -> Result<&Arc<Files>, Failure> {
+        self.files
+            .get()
+            .ok_or_else(|| Failure::new(FileFailure::ServiceUnavailable, "核心没有启用文件服务"))
+    }
+
+    /// 文件访问范围里的这个调用方：有 Bot 账号的插件是它的 Matrix 用户名，和 `grants` 查到的一样；没有的（比如不进聊天的 Agent）是插件
+    /// ID，它有点，用户名里没有，不会重名。
+    fn bot_name(&self, caller: &Caller) -> Result<String, Failure> {
+        let name = self
+            .plugins
+            .bot_name(&caller.id)
+            .map_err(|e| Failure::new(FileFailure::Internal, e.to_string()))?;
+        Ok(name.unwrap_or_else(|| caller.id.to_string()))
+    }
+
+    fn bot_ref(&self, caller: &Caller, plugin: &PluginId) -> Result<BotRef, Failure> {
+        Ok(BotRef {
+            name: self.bot_name(caller)?,
+            plugin: plugin.clone(),
+        })
     }
 
     /// 插件的 MCP 客户端：文件服务读资源也用它，一个插件一条连接。
@@ -283,16 +330,24 @@ impl Bus {
             .and_then(|a| a.read_only_hint)
             == Some(true);
         if read_only {
-            let outcome = forward(self, server, tool, arguments, cancelled).await;
+            let outcome = forward(self, caller, server, tool, arguments, cancelled).await;
             self.record(caller, name, &args, Decision::Allowed, &outcome);
             return outcome.result;
         }
         let plugin = cards::text(&server.title);
         let draft = cards::tool_call(&caller.name, &plugin, tool, &args);
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
-        let (server, tool) = (server.clone(), tool.to_owned());
+        let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>| async move {
-            forward(&bus, &server, &tool, arguments, std::future::pending()).await
+            forward(
+                &bus,
+                &agent,
+                &server,
+                &tool,
+                arguments,
+                std::future::pending(),
+            )
+            .await
         };
         self.confirmed(caller, name, args, draft, run).await
     }
@@ -336,6 +391,7 @@ impl Bus {
                         arguments: &args,
                         decision,
                         outcome: Some(&message),
+                        files: &[],
                     });
                     error(&message)
                 }
@@ -352,6 +408,7 @@ impl Bus {
             arguments: args,
             decision: Decision::Denied,
             outcome: Some(message),
+            files: &[],
         });
         error(message)
     }
@@ -364,6 +421,7 @@ impl Bus {
         decision: Decision,
         outcome: &Outcome,
     ) {
+        let files = &outcome.files;
         let outcome = match &outcome.state {
             ConfirmationState::Failed { message } | ConfirmationState::Uncertain { message } => {
                 message.as_str()
@@ -376,10 +434,13 @@ impl Bus {
             arguments: args,
             decision,
             outcome: Some(outcome),
+            files,
         });
     }
 }
 
+#[cfg(test)]
+mod file_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

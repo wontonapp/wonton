@@ -21,13 +21,26 @@ use wonton_protocol::{ConfirmationCard, ConfirmationState};
 use super::Notifier;
 
 /// 假插件：`search` 标了只读，`delete` 没标（会改数据）。`deleted` 记下删过的笔记。
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Notes {
     pub deleted: Arc<Mutex<Vec<String>>>,
     /// 为真时工具一直不回答。
     pub hang: Arc<std::sync::atomic::AtomicBool>,
     /// 调用方取消了几次还在跑的调用。
     pub cancelled: Arc<std::sync::atomic::AtomicUsize>,
+    /// 工具 `find` 返回的结果。
+    pub found: Arc<Mutex<CallToolResult>>,
+}
+
+impl Default for Notes {
+    fn default() -> Self {
+        Self {
+            deleted: Arc::default(),
+            hang: Arc::default(),
+            cancelled: Arc::default(),
+            found: Arc::new(Mutex::new(CallToolResult::success(Vec::new()))),
+        }
+    }
 }
 
 fn schema() -> Arc<rmcp::model::JsonObject> {
@@ -53,7 +66,9 @@ impl ServerHandler for Notes {
         let search = Tool::new("search", "找笔记", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
         let delete = Tool::new("delete", "删笔记", schema());
-        Ok(ListToolsResult::with_all_items(vec![search, delete]))
+        let find = Tool::new("find", "找文件", schema())
+            .with_annotations(ToolAnnotations::new().read_only(true));
+        Ok(ListToolsResult::with_all_items(vec![search, delete, find]))
     }
 
     async fn call_tool(
@@ -75,6 +90,7 @@ impl ServerHandler for Notes {
             .unwrap_or_default()
             .to_owned();
         let text = match request.name.as_ref() {
+            "find" => return Ok(self.found.lock().unwrap().clone().into()),
             "search" => format!("找到 {name}.txt"),
             "delete" => {
                 self.deleted.lock().unwrap().push(name.clone());

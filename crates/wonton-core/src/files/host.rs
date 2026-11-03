@@ -32,6 +32,8 @@ pub trait FileHost: Send + Sync {
         plugin: &'a PluginId,
         uri: &'a str,
     ) -> BoxFuture<'a, Result<Vec<u8>, Failure>>;
+    /// 插件现在有没有这个共享文件夹的授权，读或写都算。
+    fn share_granted(&self, plugin: &PluginId, share: &str) -> Result<bool, Failure>;
     /// 这个房间里的 Bot 的名字。
     fn bots_in_room(&self, room: &str) -> Result<Vec<String>, Failure>;
     /// 在和主人的“Wonton”私聊里发一条文字。
@@ -124,6 +126,12 @@ impl FileHost for CoreHost {
                 .map_err(read_failure)
         }
         .boxed()
+    }
+
+    fn share_granted(&self, plugin: &PluginId, share: &str) -> Result<bool, Failure> {
+        self.plugins
+            .share_granted(plugin, share)
+            .map_err(|e| Failure::internal(e.to_string()))
     }
 
     fn bots_in_room(&self, room: &str) -> Result<Vec<String>, Failure> {

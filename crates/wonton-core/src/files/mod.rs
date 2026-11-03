@@ -1,12 +1,14 @@
 //! 文件服务（ADR-0020）：每个文件一个不可猜的编号，指向共享文件夹里的原文件、插件的资源或设备上传的文件，都不复制。
 //!
-//! 这里只管编号、访问范围和字节从哪来；HTTP 接口在 `gateway::files`，Bot 的工具在 MCP 总线上，都只经这里碰文件。
+//! 这里只管编号、访问范围和字节从哪来；HTTP 接口在 `gateway::files`，Bot 的工具在 MCP 总线上（登记和核对在 [`bot`]），都只经这里
+//! 碰文件。
 //!
 //! | 访问者 | 不在范围里 | 编号过期 |
 //! | --- | --- | --- |
 //! | 主人（已配对的设备） | `not_shared` | `file_unknown` |
 //! | Bot | `file_unknown` | `file_expired` |
 
+mod bot;
 pub mod content;
 mod host;
 pub mod record;
@@ -26,7 +28,7 @@ use hyper::Method;
 use iroh::EndpointId;
 use serde::Serialize;
 use tokio::sync::OwnedSemaphorePermit;
-use wonton_protocol::{FileFailure, FileId, FileInfo, FileSource};
+use wonton_protocol::{FileFailure, FileId, FileInfo};
 
 pub use host::{CoreHost, FileHost};
 
@@ -38,9 +40,9 @@ use crate::plugin::images::MAX_THUMBNAIL_INPUT;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::StoreError;
 use content::{can_thumbnail, served_type};
-use record::{Accessor, BOT_TTL_SECS, FileRecord, Lookup, Origin, Registry, RegistryError};
+use record::{Accessor, FileRecord, Lookup, Origin, Registry, RegistryError};
 use resource::{InternalUrl, RemoteRequest};
-use share_fs::{Deleted, Opened, ShareError, ShareRef, Shares, TRANSFERS, sanitize_name};
+use share_fs::{Deleted, Opened, ShareError, ShareRef, Shares, TRANSFERS};
 use slots::{PluginSlot, PluginSlots};
 
 /// `resources/read` 最多读这么多（插件规范）。
@@ -364,9 +366,14 @@ impl Files {
 
     /// 缩略图：长边 800 像素的 JPEG，不带原文件的元数据，在单独的进程里解码。
     pub async fn thumbnail(&self, record: &FileRecord) -> Result<Vec<u8>, Failure> {
+        self.scaled(record, Scale::Thumbnail).await
+    }
+
+    /// 缩小的图片，名额和期限在 [`Self::thumbnail`] 和 [`Self::preview`] 之间共用。
+    async fn scaled(&self, record: &FileRecord, scale: Scale) -> Result<Vec<u8>, Failure> {
         let not_viewable = |why: String| Failure::new(FileFailure::NotViewable, why);
         if !can_thumbnail(&record.name, record.mime_type.as_deref()) {
-            return Err(not_viewable("这个类型没有缩略图".to_owned()));
+            return Err(not_viewable("这个类型没有预览或缩略图".to_owned()));
         }
         let reading = self.thumbnail_slot(&record.origin).await?;
         let (data, reading) = tokio::time::timeout(
@@ -382,7 +389,13 @@ impl Files {
             .clone()
             .try_acquire_owned()
             .map_err(|_| decode_busy())?;
-        tokio::time::timeout(self.thumbnail_decode_timeout, self.images.thumbnail(&data))
+        let decoded = async {
+            match scale {
+                Scale::Thumbnail => self.images.thumbnail(&data).await,
+                Scale::Preview => self.images.preview(&data).await,
+            }
+        };
+        tokio::time::timeout(self.thumbnail_decode_timeout, decoded)
             .await
             .map_err(|_| decode_busy())?
             .map_err(|e| match e {
@@ -552,112 +565,13 @@ impl Files {
             )),
         }
     }
+}
 
-    /// Bot 经工具结果登记共享文件夹里的文件。同一个 Bot 再次拿到同一个引用，还是原来的编号，有效期重新算。核对插件有没有这个
-    /// 共享文件夹的授权是调用方（总线）的事。
-    pub async fn register_share(
-        self: &Arc<Self>,
-        bot: &BotRef,
-        reference: ShareRef,
-        name: Option<&str>,
-        mime_type: Option<&str>,
-    ) -> Result<FileRecord, Failure> {
-        let bot = bot.clone();
-        let name = sanitize_name(name.unwrap_or_else(|| reference.file_name()));
-        let mime_type = mime_type.map(str::to_owned);
-        self.blocking(move |files| {
-            let snapshot = files.shares.open(&reference)?.snapshot;
-            let origin = Origin::Share { reference };
-            files.register(&bot, origin, name, mime_type, None, Some(snapshot))
-        })
-        .await
-    }
-
-    /// Bot 经工具结果登记插件的资源。内网地址只认来源插件自己的服务（ADR-0020 的“鉴权”）。
-    #[allow(clippy::too_many_arguments)] // 一个 `resource_link` 的几个字段，再包一层也是逐个填。
-    pub async fn register_resource(
-        self: &Arc<Self>,
-        bot: &BotRef,
-        plugin: &PluginId,
-        uri: &str,
-        internal_url: Option<&str>,
-        name: &str,
-        mime_type: Option<&str>,
-        size: Option<u64>,
-    ) -> Result<FileRecord, Failure> {
-        if let Some(url) = internal_url {
-            let parsed = InternalUrl::parse(url)
-                .map_err(|e| Failure::new(FileFailure::PermissionDenied, e))?;
-            self.host.service_upstream(plugin, &parsed).await?;
-        }
-        let origin = Origin::Plugin {
-            plugin: plugin.clone(),
-            uri: uri.to_owned(),
-            internal_url: internal_url.map(str::to_owned),
-        };
-        let bot = bot.clone();
-        let name = sanitize_name(name);
-        let mime_type = mime_type.map(str::to_owned);
-        self.blocking(move |files| files.register(&bot, origin, name, mime_type, size, None))
-            .await
-    }
-
-    fn register(
-        &self,
-        bot: &BotRef,
-        origin: Origin,
-        name: String,
-        mime_type: Option<String>,
-        declared_size: Option<u64>,
-        registered: Option<share_fs::Snapshot>,
-    ) -> Result<FileRecord, Failure> {
-        let now = now_secs();
-        let expires_at = now + BOT_TTL_SECS;
-        let looked_up = origin.clone();
-        let record = self.registry.register_bot(
-            &bot.name,
-            &looked_up,
-            now,
-            |old| {
-                // 分享过的不再过期。Bot 重新看到了这个文件，改过的也不算改过了。
-                old.expires_at = old.expires_at.map(|_| expires_at);
-                old.registered = registered;
-            },
-            || FileRecord {
-                id: new_id(),
-                name,
-                mime_type,
-                declared_size,
-                source: FileSource::Bot {
-                    name: bot.name.clone(),
-                    plugin: bot.plugin.as_str().to_owned(),
-                },
-                origin,
-                access: [Accessor::Bot(bot.name.clone())].into(),
-                registered,
-                created_at: now,
-                expires_at: Some(expires_at),
-            },
-        )?;
-        Ok(record)
-    }
-
-    /// Bot 把文件分享给主人：加进范围，不再过期。
-    pub async fn share_with_owner(
-        self: &Arc<Self>,
-        id: &FileId,
-        bot: &str,
-    ) -> Result<FileRecord, Failure> {
-        self.authorize(id, &Accessor::Bot(bot.to_owned()))?;
-        let id = id.clone();
-        self.blocking(move |files| {
-            files
-                .registry
-                .grant(&id, Accessor::Owner, now_secs())?
-                .ok_or_else(Failure::unknown)
-        })
-        .await
-    }
+/// 缩到多大。
+#[derive(Clone, Copy)]
+enum Scale {
+    Thumbnail,
+    Preview,
 }
 
 /// 占着的读取名额，读完才放下。

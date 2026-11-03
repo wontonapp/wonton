@@ -107,6 +107,11 @@ impl ShareRef {
         Ok(Self { share, path })
     }
 
+    /// 工具结果里的 `uri` 是不是共享文件夹的引用。
+    pub fn is_reference(uri: &str) -> bool {
+        uri.starts_with(SHARE_SCHEME)
+    }
+
     /// 路径的最后一段，`name` 没写时当文件名。
     pub fn file_name(&self) -> &str {
         self.path.last().map_or("", String::as_str)

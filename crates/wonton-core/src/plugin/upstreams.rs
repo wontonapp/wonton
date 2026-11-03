@@ -6,6 +6,7 @@ use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
 use super::package::PluginPackage;
+use super::store::StoreError;
 use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PublicUrls};
 
 /// MCP 服务没写 `path` 时的路径。
@@ -110,6 +111,17 @@ impl PluginManager {
 
     pub(crate) fn is_running(&self, id: &PluginId) -> bool {
         self.status_of(id) == Some(PluginStatus::Running)
+    }
+
+    /// 这个插件现在有没有这个共享文件夹的授权，读或写都算（ADR-0020 的“鉴权”）。卸了的插件没有。
+    pub fn share_granted(&self, id: &PluginId, share: &str) -> Result<bool, StoreError> {
+        let Some(record) = self.store.load(id)? else {
+            return Ok(false);
+        };
+        Ok(record
+            .granted_permissions
+            .iter()
+            .any(|p| matches!(p, Permission::StorageShare { name, .. } if name == share)))
     }
 
     /// 核心访问插件资源的内网地址（ADR-0020）。主机名必须是这个插件 compose 里的服务名；不同插件可能有同名的服务，所以换成这个

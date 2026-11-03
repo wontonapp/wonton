@@ -9,6 +9,9 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use serde_json::Value;
+use wonton_protocol::FileSource;
+
+use crate::files::record::{FileRecord, Origin};
 
 /// 对一次调用的决定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -36,6 +39,39 @@ pub struct Record<'a> {
     pub decision: Decision,
     /// 执行了的话：`ok` 或者失败的原因。
     pub outcome: Option<&'a str>,
+    /// 这次调用碰到的文件（ADR-0020 的“审计”）。
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub files: &'a [AuditedFile],
+}
+
+/// 审计里的一个文件：编号、来源插件和引用。
+#[derive(Debug, Clone, Serialize)]
+pub struct AuditedFile {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
+    pub reference: String,
+}
+
+impl AuditedFile {
+    pub fn of(record: &FileRecord) -> Self {
+        let (plugin, reference) = match &record.origin {
+            Origin::Share { reference } | Origin::Upload { reference, .. } => (
+                None,
+                format!("{}/{}", reference.share, reference.path.join("/")),
+            ),
+            Origin::Plugin { plugin, uri, .. } => (Some(plugin.to_string()), uri.clone()),
+        };
+        let plugin = plugin.or_else(|| match &record.source {
+            FileSource::Bot { plugin, .. } => Some(plugin.clone()),
+            _ => None,
+        });
+        Self {
+            id: record.id.to_string(),
+            plugin,
+            reference,
+        }
+    }
 }
 
 pub struct Audit {
