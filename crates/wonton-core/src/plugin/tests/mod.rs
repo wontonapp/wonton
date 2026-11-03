@@ -13,6 +13,7 @@ mod bots;
 mod check;
 mod configs;
 mod egress;
+mod egress_probe;
 mod egress_relay;
 mod egress_switch;
 mod github;

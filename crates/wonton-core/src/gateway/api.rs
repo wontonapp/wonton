@@ -10,6 +10,8 @@
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
+//! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
+//! | PUT | `/_wonton/api/egress-proxy` | 请求体是 `EgressProxyUpdate`，改地址和额外直连的网段，做完再返回 |
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
@@ -30,7 +32,9 @@ use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use wonton_protocol::{InstallRequest, InstallSource, LanChoice, LanWebuiUpdate};
+use wonton_protocol::{
+    EgressProxyUpdate, InstallRequest, InstallSource, LanChoice, LanWebuiUpdate,
+};
 
 use super::{Gateway, TunnelPeer, isolation, pages};
 use crate::plugin::gallery::Variant;
@@ -86,7 +90,20 @@ pub(super) fn error_response(status: StatusCode, kind: &'static str, message: &s
 }
 
 fn install_error(error: &InstallError) -> Response {
+    if let InstallError::EgressProxyUnavailable { reason, message } = error {
+        let body = json!({"error": {
+            "kind": error.kind(),
+            "message": message,
+            "detail": reason,
+        }});
+        let mut response = (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response();
+        response
+            .headers_mut()
+            .insert(pages::ERROR_HEADER, HeaderValue::from_static(error.kind()));
+        return response;
+    }
     let status = match error {
+        InstallError::EgressProxyUnavailable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Invalid(_) => StatusCode::BAD_REQUEST,
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
         InstallError::Unsupported(_)
@@ -372,6 +389,39 @@ pub async fn set_lan(
         .set_lan_choice(choice, languages(&headers))
         .await
     {
+        Ok(settings) => Json(settings).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+/// 出网代理的设置（ADR-0023）：先返回最近一次探测的结果。
+pub async fn egress_proxy(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    match gateway.plugins.egress_settings(&languages(&headers)) {
+        Ok(settings) => Json(settings).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+/// 改出网代理。探测过、存下、需要时重启完插件才返回。
+pub async fn set_egress_proxy(
+    State(gateway): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    let update = match serde_json::from_slice::<EgressProxyUpdate>(&body) {
+        Ok(update) => update,
+        Err(e) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string());
+        }
+    };
+    let langs = languages(&headers);
+    match gateway.plugins.set_egress_proxy(update, langs).await {
         Ok(settings) => Json(settings).into_response(),
         Err(e) => install_error(&e),
     }

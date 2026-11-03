@@ -18,10 +18,17 @@ use super::probe::{self, HostNetwork};
 use super::select::DockerBridges;
 use crate::plugin::docker::{Engine, EngineError};
 
-/// 检测容器最多跑这么久：它只读几个文件、发一次 netlink 请求，正常不到一秒。
+/// 一次性容器最多跑这么久：检测容器只读几个文件、发一次 netlink 请求，正常不到一秒；查代理的最多 20 秒。
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 const MASQUERADE: &str = "com.docker.network.bridge.enable_ip_masquerade";
+
+/// 一次性容器跑完的结果。
+pub(in crate::plugin) struct OneShot {
+    pub code: i64,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
 
 /// 怎么检测宿主的网络。
 #[derive(Clone)]
@@ -67,7 +74,7 @@ impl Detector {
 }
 
 impl Engine {
-    /// 用核心容器的镜像起检测容器，读它打印的结果。不论成败都删掉它；开始前先删掉上次核心在检测中途退出留下的。
+    /// 用核心容器的镜像起检测容器，读它打印的结果。
     async fn run_probe(
         &self,
         core: &str,
@@ -77,11 +84,10 @@ impl Engine {
         let Some(image) = self.inspect_container(core).await?.and_then(|c| c.image) else {
             return Ok(Err(format!("查不到核心容器 {core} 的镜像")));
         };
-        self.remove_container(name).await?;
         let body = ContainerCreateBody {
             image: Some(image),
             cmd: Some(vec![probe::COMMAND.to_owned()]),
-            user: Some("65534:65534".to_owned()),
+            user: Some(probe::NOBODY_USER.to_owned()),
             labels: Some(labels),
             host_config: Some(HostConfig {
                 network_mode: Some("host".to_owned()),
@@ -92,17 +98,37 @@ impl Engine {
             }),
             ..Default::default()
         };
+        let output = match self.run_once(name, body).await? {
+            Ok(output) => output,
+            Err(failure) => return Ok(Err(failure)),
+        };
+        if output.code != 0 {
+            let reason = String::from_utf8_lossy(&output.stderr);
+            let code = output.code;
+            return Ok(Err(format!("检测容器以 {code} 退出：{}", reason.trim())));
+        }
+        Ok(serde_json::from_slice(&output.stdout).map_err(|e| format!("检测容器的输出不对：{e}")))
+    }
+
+    /// 起一个一次性容器，等它跑完，读它的输出。不论成败都删掉它；开始前先删掉上次核心在中途退出留下的。Docker 连不上时报错；
+    /// Docker 拒绝了（镜像没了、宿主不让用宿主网络等）时为 `Ok(Err(原因))`。
+    pub(in crate::plugin) async fn run_once(
+        &self,
+        name: &str,
+        body: ContainerCreateBody,
+    ) -> Result<Result<OneShot, String>, EngineError> {
+        self.remove_container(name).await?;
         if let Err(e) = self.create_container(name, body).await {
             return unless_unavailable(e);
         }
-        let result = self.finish_probe(name).await;
+        let result = self.finish_once(name).await;
         let removed = self.remove_container(name).await;
-        let network = result?;
+        let output = result?;
         removed?;
-        Ok(network)
+        Ok(output)
     }
 
-    async fn finish_probe(&self, name: &str) -> Result<Result<HostNetwork, String>, EngineError> {
+    async fn finish_once(&self, name: &str) -> Result<Result<OneShot, String>, EngineError> {
         if let Err(e) = self.start_container(name).await {
             return unless_unavailable(e);
         }
@@ -110,13 +136,13 @@ impl Engine {
         let code = match tokio::time::timeout(PROBE_TIMEOUT, wait.next()).await {
             Err(_) => {
                 let seconds = PROBE_TIMEOUT.as_secs();
-                return Ok(Err(format!("检测容器 {seconds} 秒没跑完")));
+                return Ok(Err(format!("容器 {name} {seconds} 秒没跑完")));
             }
-            Ok(None) => return Ok(Err("Docker 没给出检测容器的退出码".to_owned())),
+            Ok(None) => return Ok(Err(format!("Docker 没给出容器 {name} 的退出码"))),
             Ok(Some(Ok(exit))) => exit.status_code,
             // bollard 把非 0 的退出码当成错误交回来。
             Ok(Some(Err(BollardError::DockerContainerWaitError { code, .. }))) => code,
-            Ok(Some(Err(e))) => return Err(EngineError::from_bollard("等检测容器退出", e)),
+            Ok(Some(Err(e))) => return Err(EngineError::from_bollard("等一次性容器退出", e)),
         };
         let options = LogsOptionsBuilder::default()
             .stdout(true)
@@ -125,16 +151,16 @@ impl Engine {
         let mut logs = self.docker.logs(name, Some(options));
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         while let Some(chunk) = logs.next().await {
-            match chunk.map_err(|e| EngineError::from_bollard("读检测容器的输出", e))? {
+            match chunk.map_err(|e| EngineError::from_bollard("读一次性容器的输出", e))? {
                 LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
                 other => stderr.extend_from_slice(other.as_ref()),
             }
         }
-        if code != 0 {
-            let reason = String::from_utf8_lossy(&stderr);
-            return Ok(Err(format!("检测容器以 {code} 退出：{}", reason.trim())));
-        }
-        Ok(serde_json::from_slice(&stdout).map_err(|e| format!("检测容器的输出不对：{e}")))
+        Ok(Ok(OneShot {
+            code,
+            stdout,
+            stderr,
+        }))
     }
 
     /// Docker 的网桥：按 Docker 的网络列表认，不按网卡名字的样子猜。
@@ -190,8 +216,8 @@ impl Engine {
     }
 }
 
-/// Docker 连不上照常报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）算检测失败。
-fn unless_unavailable(e: EngineError) -> Result<Result<HostNetwork, String>, EngineError> {
+/// Docker 连不上照常报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）算没跑成。
+fn unless_unavailable(e: EngineError) -> Result<Result<OneShot, String>, EngineError> {
     match e {
         EngineError::Unavailable(_) => Err(e),
         other => Ok(Err(other.to_string())),

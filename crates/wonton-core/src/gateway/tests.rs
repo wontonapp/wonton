@@ -22,6 +22,7 @@ use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
 use crate::config::{OidcProviderConfig, Owner, PublicUrls};
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
+use crate::plugin::egress::settings::Egress;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
@@ -199,6 +200,10 @@ pub(super) fn owner() -> Owner {
 
 impl Harness {
     pub async fn start(hydra_admin: Option<SocketAddr>) -> Self {
+        Self::start_with(hydra_admin, Egress::default()).await
+    }
+
+    pub async fn start_with(hydra_admin: Option<SocketAddr>, egress: Egress) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
         let (listener, addr) = bind().await;
@@ -241,7 +246,8 @@ impl Harness {
                 lifecycle,
                 ImageWorker::in_process(),
             )
-            .with_lan(super::lan_api_tests::lan()),
+            .with_lan(super::lan_api_tests::lan())
+            .with_egress(egress),
         );
         let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));

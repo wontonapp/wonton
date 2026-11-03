@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 /// 子命令名：`wonton-core lan-probe`。
 pub const COMMAND: &str = "lan-probe";
 
+/// 一次性容器的用户：nobody。
+pub const NOBODY_USER: &str = "65534:65534";
+
 /// 宿主的网络：检测容器打印的 JSON。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostNetwork {

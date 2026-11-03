@@ -3,12 +3,14 @@
 //! 额外直连的网段只在 App 里设。
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
-use wonton_protocol::EgressProxySource;
+use wonton_protocol::{EgressProbe, EgressProxySource};
 
 use super::address::ProxyAddress;
+use super::probe::Prober;
 
 /// 主人在 App 里存下的设置。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,8 +40,23 @@ pub struct Egress {
     pub(super) pass: tokio::sync::Mutex<()>,
     /// 改设置一次做一个：要重启插件，可能很久。
     pub(super) applying: tokio::sync::Mutex<()>,
+    /// 改设置时，核对要重启的插件和存下设置之间不能插进别的修改。
+    pub(super) changing: tokio::sync::Mutex<()>,
+    /// 查原因的容器名字是固定的，一次起一个。
+    pub(super) diagnosing: tokio::sync::Mutex<()>,
+    prober: Prober,
+    probing: AtomicBool,
+    memory: Mutex<Memory>,
+}
+
+#[derive(Default)]
+struct Memory {
     /// 宿主所在网段，局域网检测时更新；还没检测过时为空。
-    host_cidrs: Mutex<Option<Vec<IpNet>>>,
+    host_cidrs: Option<Vec<IpNet>>,
+    plugin_path: Option<EgressProbe>,
+    core_path: Option<EgressProbe>,
+    /// 放不了行的网段。
+    notices: Vec<String>,
 }
 
 impl Egress {
@@ -51,15 +68,68 @@ impl Egress {
         }
     }
 
+    /// 测试用：探测的结果由测试给出。
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_prober(mut self, prober: Prober) -> Self {
+        self.prober = prober;
+        self
+    }
+
+    fn memory(&self) -> std::sync::MutexGuard<'_, Memory> {
+        self.memory.lock().expect("出网代理状态锁中毒")
+    }
+
     pub(super) fn host_cidrs(&self) -> Option<Vec<IpNet>> {
-        self.host_cidrs.lock().expect("出网代理状态锁中毒").clone()
+        self.memory().host_cidrs.clone()
+    }
+
+    pub(super) fn prober(&self) -> &Prober {
+        &self.prober
+    }
+
+    pub(super) fn plugin_path(&self) -> Option<EgressProbe> {
+        self.memory().plugin_path.clone()
+    }
+
+    pub(super) fn core_path(&self) -> Option<EgressProbe> {
+        self.memory().core_path.clone()
+    }
+
+    pub(super) fn record_probes(&self, plugin: Option<EgressProbe>, core: Option<EgressProbe>) {
+        let mut memory = self.memory();
+        memory.plugin_path = plugin;
+        memory.core_path = core;
+    }
+
+    pub(super) fn notices(&self) -> Vec<String> {
+        self.memory().notices.clone()
+    }
+
+    pub(super) fn set_notices(&self, notices: Vec<String>) {
+        self.memory().notices = notices;
+    }
+
+    /// 同一时间只在后台探测一次。
+    pub(super) fn begin_probe(&self) -> bool {
+        !self.probing.swap(true, Ordering::SeqCst)
+    }
+
+    pub(super) fn end_probe(&self) {
+        self.probing.store(false, Ordering::SeqCst);
+    }
+
+    /// 安装脚本检测到的地址，原文。
+    pub(super) fn detected_text(&self) -> Option<String> {
+        let detected = self.detected.as_ref();
+        detected.map(|address| address.text().to_owned())
     }
 
     /// 记下这次检测到的网段，返回和上次比变了没有。
     pub(super) fn set_host_cidrs(&self, cidrs: Vec<IpNet>) -> bool {
-        let mut current = self.host_cidrs.lock().expect("出网代理状态锁中毒");
-        let changed = current.as_ref() != Some(&cidrs);
-        *current = Some(cidrs);
+        let mut memory = self.memory();
+        let changed = memory.host_cidrs.as_ref() != Some(&cidrs);
+        memory.host_cidrs = Some(cidrs);
         changed
     }
 

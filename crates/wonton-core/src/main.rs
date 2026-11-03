@@ -9,6 +9,8 @@
 //!   （`wonton_core::plugin::image_worker`）。
 //! - `wonton-core lan-probe`：核心内部用，在宿主网络里的一次性容器里读宿主的路由和网卡
 //!   （`wonton_core::plugin::lan::probe`）。
+//! - `wonton-core egress-proxy-check`：查代理连不连得上，安装脚本和核心都在出口网络上的一次性容器里跑它
+//!   （`wonton_core::plugin::egress::check`）。
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
@@ -30,6 +32,7 @@ use wonton_core::mcp::audit::Audit;
 use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
+use wonton_core::plugin::egress::check;
 use wonton_core::plugin::egress::settings::Egress;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::hostdir::Owner;
@@ -58,6 +61,7 @@ fn main() -> ExitCode {
         Some(image_worker::COMMAND) => return image_worker::child(&args[2..]),
         // 检测容器的结果打印在标准输出上，同样不初始化日志。
         Some(lan::probe::COMMAND) => return lan::probe::command(),
+        Some(check::COMMAND) => return check::command(),
         _ => {}
     }
     run()
@@ -144,7 +148,7 @@ async fn serve() -> anyhow::Result<()> {
     );
     manager.restore().await.context("恢复已安装的插件")?;
     manager.spawn_lan_monitor();
-    manager.spawn_egress_reconcile();
+    manager.spawn_egress_monitor();
     preinstall(&cfg, manager.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));

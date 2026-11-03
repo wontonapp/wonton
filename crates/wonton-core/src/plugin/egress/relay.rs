@@ -46,7 +46,7 @@ impl PluginManager {
     }
 
     /// 出网插件的网络：卸载中的不算。
-    fn egress_networks(&self) -> BTreeSet<String> {
+    pub(super) fn egress_networks(&self) -> BTreeSet<String> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
             .iter()
@@ -95,26 +95,16 @@ impl PluginManager {
         match &config.url {
             Some(proxy) => self.sync_relay(proxy, &config, None).await,
             None => {
-                self.engine
-                    .remove_container(&self.cfg.instance.egress())
-                    .await?;
+                let name = self.cfg.instance.egress();
+                self.engine.remove_container(&name).await?;
+                if let Some(core) = &self.cfg.core_container
+                    && self.engine.endpoint(core, &name).await?.is_some()
+                {
+                    self.engine.disconnect_network(&name, core).await?;
+                }
                 self.relay_files().remove().map_err(InstallError::Storage)
             }
         }
-    }
-
-    /// 在后台核对：拉 gost 的镜像、重启插件可能要等很久，不能拖慢核心启动。没核对成的，安装出网插件时会再做一次，原因如实报给
-    /// 主人。
-    pub fn spawn_egress_reconcile(self: &std::sync::Arc<Self>) {
-        let this = std::sync::Arc::downgrade(self);
-        tokio::spawn(async move {
-            let Some(manager) = this.upgrade() else {
-                return;
-            };
-            if let Err(e) = manager.apply_egress().await {
-                tracing::warn!(error = %e, "核对出口容器失败");
-            }
-        });
     }
 
     async fn sync_relay(
@@ -125,11 +115,7 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let name = self.cfg.instance.egress();
         let labels = self.cfg.instance.component_labels();
-        match self.engine.network_labels(&name).await? {
-            None => self.engine.create_relay_network(&name, &labels).await?,
-            Some(found) if self.cfg.instance.is_component(&found) => {}
-            Some(found) => return Err(name_taken("网络", &name, &found)),
-        }
+        self.ensure_relay_network().await?;
         let found = self.engine.inspect_container(&name).await?;
         let created = found.as_ref().and_then(|c| c.config.as_ref());
         if found.is_some() {
@@ -162,10 +148,40 @@ impl PluginManager {
             tracing::info!(proxy = %proxy.masked(), "出口容器已启动");
         }
         let networks = self.egress_networks();
-        for network in networks.iter().map(String::as_str).chain(extra) {
+        let own = std::iter::once(name.as_str());
+        for network in networks.iter().map(String::as_str).chain(extra).chain(own) {
             self.connect_relay(&name, network).await?;
         }
+        // 核心探测插件的路径：在出口网络上发起，这个网络上的来源不算任何插件。
+        if let Some(core) = &self.cfg.core_container {
+            self.connect_relay_network(core, &name).await?;
+        }
         self.write_relay_lists(config).await
+    }
+
+    /// 出口容器自己的网络：安装脚本可能先建好了，沿用。
+    pub(in crate::plugin) async fn ensure_relay_network(&self) -> Result<(), InstallError> {
+        let name = self.cfg.instance.egress();
+        let labels = self.cfg.instance.component_labels();
+        match self.engine.network_labels(&name).await? {
+            None => self.engine.create_relay_network(&name, &labels).await?,
+            Some(found) if self.cfg.instance.is_component(&found) => {}
+            Some(found) => return Err(name_taken("网络", &name, &found)),
+        }
+        Ok(())
+    }
+
+    async fn connect_relay_network(&self, core: &str, network: &str) -> Result<(), InstallError> {
+        if self.engine.endpoint(core, network).await?.is_none() {
+            let endpoint = Endpoint {
+                gw_priority: Some(-1),
+                ..Endpoint::default()
+            };
+            self.engine
+                .connect_network_at(network, core, endpoint)
+                .await?;
+        }
+        Ok(())
     }
 
     /// 接入一个插件网络。网关优先级 `-1`：默认路由留在它自己的网络上（理由同插件规范里核心的 `gw_priority`，#90）。
@@ -206,12 +222,15 @@ impl PluginManager {
                 .extend(gateway.and_then(|g| g.parse::<IpAddr>().ok()));
         }
         let lists = lists::build(&self.cfg.public.base_domain, &reach);
-        if !lists.not_allowed.is_empty() {
-            tracing::warn!(
-                cidrs = ?lists.not_allowed,
-                "这些网段和出口容器接入的 Docker 网络重叠，没有放行：放行的话它会直接拨到别的插件"
-            );
-        }
+        self.egress.set_notices(
+            lists
+                .not_allowed
+                .iter()
+                .map(|cidr| {
+                    format!("网段 {cidr} 和出口容器接入的 Docker 网络重叠，没有放行：放行的话它会直接拨到别的插件")
+                })
+                .collect(),
+        );
         self.relay_files()
             .write_lists(&lists)
             .map_err(InstallError::Storage)

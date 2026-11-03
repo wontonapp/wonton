@@ -8,6 +8,7 @@ use wonton_protocol::{
     PluginCategory, PluginDetail, PluginHealth, PluginKind as Kind, PluginState, PluginTrust,
 };
 
+use super::egress::probe::blocks;
 use super::gallery::{IconSource, Variant};
 use super::github_source::{Origin, Trust};
 use super::image_worker::ImageError;
@@ -160,9 +161,12 @@ impl PluginManager {
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m).await?;
         let lan = self.lan_preview(package).await?;
+        let egress = self.egress_problem_for(m).await?;
+        let egress_block = egress.as_ref().filter(|p| blocks(p));
         let blocked = blocked
             .or(gpu.blocked)
             .or(lan.blocked)
+            .or_else(|| egress_block.map(|p| p.message.clone()))
             .or_else(|| self.no_email_block(package));
         let unpinned: Vec<String> = plan
             .containers
@@ -194,6 +198,9 @@ impl PluginManager {
         notices.extend(requirement_lines(m).into_iter().map(line));
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
+        // 不挡安装的问题：探测只试了一个网站。
+        let uncertain = egress.filter(|p| !blocks(p));
+        notices.extend(uncertain.map(|p| line(p.message)));
         Ok(InstallPreview {
             source: package.origin.as_ref().map(Origin::source),
             commit: package.origin.as_ref().map(|o| o.commit.clone()),

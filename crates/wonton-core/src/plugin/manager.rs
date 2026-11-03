@@ -607,6 +607,7 @@ impl PluginManager {
         let manifest = package.manifest.clone();
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
+        self.check_egress(&manifest).await?;
         let gpu = self.gpu_grant(&manifest).await?;
         // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
         let lan_webui = lan_webui && switched(&package).is_some();

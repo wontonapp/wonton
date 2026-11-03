@@ -1,5 +1,7 @@
 //! 插件管理操作的错误。
 
+use wonton_protocol::EgressFailure;
+
 use super::docker::EngineError;
 use super::health::HealthError;
 use super::manifest::ManifestError;
@@ -46,6 +48,12 @@ pub enum InstallError {
     /// 不在了、检测不了网卡等。主人在局域网设置里选网卡或地址后再试。
     #[error("选不出局域网地址：{0}")]
     LanUnavailable(String),
+    /// 配了代理，插件的路径不通（ADR-0023）。`reason` 是错误的 `detail`。
+    #[error("{message}")]
+    EgressProxyUnavailable {
+        reason: EgressFailure,
+        message: String,
+    },
     #[error("处理图片的进程不可用：{0}")]
     ImagesUnavailable(String),
     #[error("插件没有通过健康检查：{0}")]
@@ -80,6 +88,7 @@ impl InstallError {
             Self::ModelsUnavailable(_) => "models_unavailable",
             Self::GpuUnavailable(_) => "gpu_unavailable",
             Self::LanUnavailable(_) => "lan_unavailable",
+            Self::EgressProxyUnavailable { .. } => "egress_proxy_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
             Self::Storage(_) => "storage",
@@ -109,6 +118,10 @@ impl InstallError {
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::GpuUnavailable(m) => Self::GpuUnavailable(add(m)),
             Self::LanUnavailable(m) => Self::LanUnavailable(add(m)),
+            Self::EgressProxyUnavailable { reason, message } => Self::EgressProxyUnavailable {
+                reason,
+                message: add(message),
+            },
             Self::ImagesUnavailable(m) => Self::ImagesUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),

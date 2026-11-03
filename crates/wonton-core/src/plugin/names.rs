@@ -88,6 +88,14 @@ impl Instance {
         self.network("egress")
     }
 
+    /// 查代理为什么连不上的一次性容器。名字里没有 `--`，不会和插件的容器重名。
+    pub fn egress_check(&self) -> String {
+        match &self.0 {
+            None => "wonton-egress-check".to_owned(),
+            Some(instance) => format!("wonton-{instance}-egress-check"),
+        }
+    }
+
     /// 出口容器和它的网络的标签。
     pub fn component_labels(&self) -> HashMap<String, String> {
         let mut labels = self.core_labels();

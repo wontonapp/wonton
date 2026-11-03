@@ -137,6 +137,10 @@ fn status_items(gateway: &Gateway) -> String {
     if degraded > 0 {
         items.push(format!("<strong>{degraded} 个插件异常</strong>"));
     }
+    if let Some(problem) = gateway.plugins.egress_problem() {
+        let message = pages::escape(&problem.message);
+        items.push(format!("<strong>出网代理：{message}</strong>"));
+    }
     items.extend(gateway.plugins.bundled_not_running().iter().map(|p| {
         // 原因的第一行说清是什么错。没通过健康检查时后面跟着容器日志，Agent 的日志里可能有聊天内容，只在主人登录后
         // 的插件列表里给。

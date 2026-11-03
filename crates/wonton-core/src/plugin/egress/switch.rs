@@ -107,7 +107,7 @@ impl PluginManager {
     }
 
     /// 声明了出网、容器的环境变量和设置对不上的插件。
-    fn egress_pending(&self, configured: bool) -> Result<Vec<PluginId>, InstallError> {
+    pub(super) fn egress_pending(&self, configured: bool) -> Result<Vec<PluginId>, InstallError> {
         let declared: Vec<PluginId> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins

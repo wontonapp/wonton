@@ -96,7 +96,8 @@ pub struct EgressRestart {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct EgressProxyUpdate {
-    /// `http://`、`https://` 或 `socks5://`，可以带用户名和密码；空串或空值表示取消代理。
+    /// `http://`、`https://` 或 `socks5://`，可以带用户名和密码；空串或空值表示取消代理。和 [`EgressProxySettings::url`]
+    /// 给的打码地址一样时表示不改：壳拿不到密码，只改网段时带回来的就是它。
     pub url: Option<String>,
     /// 额外直连的网段，CIDR 写法。和 Docker 网络重叠时回 400 `invalid_input`。
     pub direct_cidrs: Vec<String>,

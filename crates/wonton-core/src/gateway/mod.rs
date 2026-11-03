@@ -384,6 +384,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 }
 
 #[cfg(test)]
+mod egress_api_tests;
+#[cfg(test)]
 mod files_plugin_tests;
 #[cfg(test)]
 mod files_revoke_tests;

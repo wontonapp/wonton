@@ -457,6 +457,20 @@ fn containers(
                     .or_default()
                     .insert(name.clone(), endpoint.clone());
             }
+            // 和 Docker 一样：`NetworkMode` 写网络名时，容器接在这个网络上。
+            if let Some(mode) = body["HostConfig"]["NetworkMode"].as_str()
+                && docker.networks.contains_key(mode)
+                && !docker
+                    .endpoints
+                    .get(mode)
+                    .is_some_and(|e| e.contains_key(&name))
+            {
+                docker
+                    .endpoints
+                    .entry(mode.to_owned())
+                    .or_default()
+                    .insert(name.clone(), json!({}));
+            }
             docker.created.insert(name.clone(), body);
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
         }
