@@ -19,6 +19,8 @@ repo="$(cd "$here/../../.." && pwd)"
 dev="$here/dev.sh"
 
 export WONTON_DEV_PROJECT=wonton-smoke
+# 下面按没有实例名的资源名检查插件；冒烟一次只跑一个。
+export WONTON_DEV_INSTANCE=
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN=wonton.localhost

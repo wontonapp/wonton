@@ -2,7 +2,7 @@
 //! （连同标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
 //! 测试可以按容器名改成别的状态（已退出、没有健康检查等）。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use axum::body::{Body, Bytes};
@@ -91,6 +91,8 @@ struct Resources {
     states: BTreeMap<String, Value>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
+    /// 接入（`connect`）后还没退出（`disconnect`）的（网络名，容器名）。
+    connected: BTreeSet<(String, String)>,
     /// exec ID → 这次执行，按创建顺序编号。
     execs: BTreeMap<String, FakeExec>,
     /// 没设时命令都以 0 退出。
@@ -139,6 +141,27 @@ impl FakeDocker {
         let mut docker = self.lock();
         docker.networks.insert(name.to_owned(), owned_by(plugin));
         docker.network_bodies.insert(name.to_owned(), body);
+    }
+
+    /// 放进一个没有标签的网络，比如主人自己建的。
+    pub fn add_unlabeled_network(&self, name: &str) {
+        let mut docker = self.lock();
+        docker.networks.insert(name.to_owned(), Labels::new());
+        docker.network_bodies.insert(name.to_owned(), json!({}));
+    }
+
+    /// 放进一个已有的卷，比如别的插件的。
+    pub fn add_volume(&self, name: &str, plugin: &str) {
+        self.lock()
+            .volumes
+            .insert(name.to_owned(), owned_by(plugin));
+    }
+
+    /// 放进一个不是核心创建的容器，`body` 是创建它的请求。
+    pub fn add_stranger_container(&self, name: &str, body: Value) {
+        let mut docker = self.lock();
+        docker.containers.insert(name.to_owned(), Labels::new());
+        docker.created.insert(name.to_owned(), body);
     }
 
     /// 创建网络时的请求。
@@ -351,6 +374,7 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let reply = match parts.as_slice() {
         ["containers", rest @ ..] => containers(&mut docker, method, rest, query, body),
+        ["networks", rest @ ..] => networks(&mut docker, method, rest, query, body),
         _ => others(&mut docker, method, &parts, query, body),
     };
     reply.unwrap_or_else(|| {
@@ -371,6 +395,13 @@ fn containers(
 ) -> Option<Response> {
     let exists = |name: &str| docker.containers.contains_key(name);
     let reply = match (method, parts) {
+        (&Method::POST, ["create"])
+            if query_param(query, "name").is_some_and(|name| exists(&name)) =>
+        {
+            let name = query_param(query, "name").unwrap_or_default();
+            let message = format!("Conflict. The container name \"/{name}\" is already in use");
+            json_reply(StatusCode::CONFLICT, json!({"message": message}))
+        }
         (&Method::POST, ["create"]) => {
             let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
             let name = query_param(query, "name").unwrap_or_default();
@@ -456,7 +487,86 @@ fn containers(
     Some(reply)
 }
 
-/// 版本、镜像、网络、卷。
+/// `/networks/...` 的端点。
+fn networks(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+    raw: &Bytes,
+) -> Option<Response> {
+    let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+    let reply = match (method, parts) {
+        (&Method::POST, ["create"])
+            if body["Name"]
+                .as_str()
+                .is_some_and(|name| docker.networks.contains_key(name)) =>
+        {
+            let name = body["Name"].as_str().unwrap_or_default();
+            let message = format!("network with name {name} already exists");
+            json_reply(StatusCode::CONFLICT, json!({"message": message}))
+        }
+        (&Method::POST, ["create"]) => {
+            let name = body["Name"].as_str().unwrap_or_default().to_owned();
+            docker.networks.insert(name.clone(), labels_of(&body));
+            docker.network_bodies.insert(name.clone(), body);
+            json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
+        }
+        (&Method::POST, [name, action @ ("connect" | "disconnect")]) => {
+            let found = docker.networks.contains_key(*name);
+            if found && *action == "connect" {
+                let container = body["Container"].as_str().unwrap_or_default().to_owned();
+                docker.connected.insert(((*name).to_owned(), container));
+                docker.connections.insert((*name).to_owned(), body);
+            } else if found {
+                let container = body["Container"].as_str().unwrap_or_default().to_owned();
+                docker.connected.remove(&((*name).to_owned(), container));
+            }
+            if found {
+                StatusCode::OK.into_response()
+            } else {
+                gone(false)
+            }
+        }
+        (&Method::GET, [name]) if docker.networks.contains_key(*name) => {
+            let created = &docker.network_bodies[*name];
+            json_reply(
+                StatusCode::OK,
+                json!({
+                    "Name": name, "Internal": created["Internal"], "Options": created["Options"],
+                    "Labels": docker.networks[*name],
+                    "Containers": endpoints_of(docker, name).iter()
+                        .map(|c| (format!("id-{c}"), json!({"Name": c})))
+                        .collect::<serde_json::Map<String, Value>>(),
+                    "IPAM": {"Config": [{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]}
+                }),
+            )
+        }
+        (&Method::DELETE, [name]) if !endpoints_of(docker, name).is_empty() => {
+            let message =
+                format!("error while removing network: network {name} has active endpoints");
+            json_reply(StatusCode::FORBIDDEN, json!({"message": message}))
+        }
+        (&Method::DELETE, [name]) => {
+            docker.network_bodies.remove(*name);
+            gone(docker.networks.remove(*name).is_some())
+        }
+        (&Method::GET, []) => {
+            let list: Vec<Value> = labeled(&docker.networks, query)
+                .map(|(n, labels)| {
+                    json!({"Name": n, "Id": n, "Driver": "bridge", "Labels": labels,
+                           "Options": docker.network_bodies[n]["Options"],
+                           "IPAM": {"Config": [{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]}})
+                })
+                .collect();
+            json_reply(StatusCode::OK, json!(list))
+        }
+        _ => return None,
+    };
+    Some(reply)
+}
+
+/// 版本、镜像、卷。
 fn others(
     docker: &mut Resources,
     method: &Method,
@@ -496,47 +606,6 @@ fn others(
                 json!({"ExitCode": code, "Running": code.is_none()}),
             )
         }
-        (&Method::POST, ["networks", "create"]) => {
-            let name = body["Name"].as_str().unwrap_or_default().to_owned();
-            docker.networks.insert(name.clone(), labels_of(&body));
-            docker.network_bodies.insert(name.clone(), body);
-            json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
-        }
-        (&Method::POST, ["networks", name, action @ ("connect" | "disconnect")]) => {
-            let found = docker.networks.contains_key(*name);
-            if found && *action == "connect" {
-                docker.connections.insert((*name).to_owned(), body);
-            }
-            if found {
-                StatusCode::OK.into_response()
-            } else {
-                gone(false)
-            }
-        }
-        (&Method::GET, ["networks", name]) if docker.networks.contains_key(*name) => {
-            let created = &docker.network_bodies[*name];
-            json_reply(
-                StatusCode::OK,
-                json!({
-                    "Name": name, "Internal": created["Internal"], "Options": created["Options"],
-                    "IPAM": {"Config": [{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]}
-                }),
-            )
-        }
-        (&Method::DELETE, ["networks", name]) => {
-            docker.network_bodies.remove(*name);
-            gone(docker.networks.remove(*name).is_some())
-        }
-        (&Method::GET, ["networks"]) => {
-            let list: Vec<Value> = labeled(&docker.networks, query)
-                .map(|(n, labels)| {
-                    json!({"Name": n, "Id": n, "Driver": "bridge", "Labels": labels,
-                           "Options": docker.network_bodies[n]["Options"],
-                           "IPAM": {"Config": [{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]}})
-                })
-                .collect();
-            json_reply(StatusCode::OK, json!(list))
-        }
         (&Method::POST, ["volumes", "create"]) => {
             let name = body["Name"].as_str().unwrap_or_default().to_owned();
             let labels = labels_of(&body);
@@ -557,6 +626,19 @@ fn others(
         _ => return None,
     };
     Some(reply)
+}
+
+/// 接在网络上的容器：创建时接进来还没删的，和接入（`connect`）后没退出的。
+fn endpoints_of(docker: &Resources, network: &str) -> BTreeSet<String> {
+    let joined = |name: &&String| {
+        let created = docker.created.get(*name);
+        created.is_some_and(|c| !c["NetworkingConfig"]["EndpointsConfig"][network].is_null())
+    };
+    let created = docker.containers.keys().filter(joined).cloned();
+    let connected = docker.connected.iter().filter(|(n, _)| n == network);
+    created
+        .chain(connected.map(|(_, container)| container.clone()))
+        .collect()
 }
 
 /// 和 Docker 一样：归档里只有这一项，名字是路径的最后一级。

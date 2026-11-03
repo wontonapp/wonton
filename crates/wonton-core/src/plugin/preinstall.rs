@@ -112,7 +112,9 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::NotFound(_)
         | InstallError::Changed(_)
         // 本机没有可用的显卡：装驱动、插显卡都要主人动手，下次启动再试。
-        | InstallError::GpuUnavailable(_) => false,
+        | InstallError::GpuUnavailable(_)
+        // 同名的网络或卷不是本插件的：也要主人动手。
+        | InstallError::NameTaken(_) => false,
         InstallError::DockerUnavailable(_)
         | InstallError::Docker(_)
         | InstallError::ImagePull(_)

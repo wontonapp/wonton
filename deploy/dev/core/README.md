@@ -20,6 +20,9 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
 
 - 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认 `wonton.localhost`）。
   端口也是浏览器看到的地址的一部分，Hydra 的签发方地址随之变化，改端口后要重新安装 SSO 插件。
+- 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。实例名 `WONTON_DEV_INSTANCE` 默认取
+  项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符，太长会撞名时自己设），插件的资源名和标签都带上它，各管各的。
+  默认项目 `wonton-dev-core` 没有实例名。已有数据的环境换了实例名，插件要重装；想留着旧的资源名，把它设成空。
 - 数据目录 `WONTON_DEV_DATA`（默认本目录下的 `.data`）在核心容器内外路径相同，因为插件的绑定挂载由
   宿主上的 Docker 解析。Hydra 的系统密钥、核心签发 Matrix 登录用的 Ed25519 密钥对和 Tuwunel 的注册共享密钥
   在 `.secrets/`，首次 `up` 时生成（Ed25519 要 OpenSSL 3 及以上，macOS 自带的 LibreSSL 不行：

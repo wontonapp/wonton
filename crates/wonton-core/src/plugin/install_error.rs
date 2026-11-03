@@ -20,6 +20,10 @@ pub enum InstallError {
     Unsupported(String),
     #[error("{0}")]
     Conflict(String),
+    /// 插件要用的网络或卷的名字被别的插件或主人占了（见 [`super::leftovers`]）。对外也是 `conflict`；预装时和
+    /// [`Self::Conflict`] 不同，不是“别人已经在装它”，要标成异常让主人看到。
+    #[error("{0}")]
+    NameTaken(String),
     #[error("插件 {0} 没有安装")]
     NotInstalled(String),
     #[error("Docker 不可用：{0}")]
@@ -66,7 +70,7 @@ impl InstallError {
             Self::Invalid(_) => "invalid_input",
             Self::PermissionNotGranted(_) => "permission_denied",
             Self::Unsupported(_) => "unsupported",
-            Self::Conflict(_) => "conflict",
+            Self::Conflict(_) | Self::NameTaken(_) => "conflict",
             Self::NotInstalled(_) => "not_installed",
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
@@ -95,6 +99,7 @@ impl InstallError {
             Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
             Self::Unsupported(m) => Self::Unsupported(add(m)),
             Self::Conflict(m) => Self::Conflict(add(m)),
+            Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),

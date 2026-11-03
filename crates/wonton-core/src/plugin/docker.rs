@@ -233,6 +233,32 @@ impl Engine {
             .map_err(|e| EngineError::from_bollard(&format!("创建网络 {name}"), e))
     }
 
+    /// 查询网络的标签；网络不存在时返回 `None`。
+    pub async fn network_labels(&self, name: &str) -> Result<Option<HashMap<String, String>>> {
+        match self.docker.inspect_network(name, None).await {
+            Ok(network) => Ok(Some(network.labels.unwrap_or_default())),
+            Err(e) => match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
+                EngineError::NotFound(_) => Ok(None),
+                other => Err(other),
+            },
+        }
+    }
+
+    /// 接在网络上的容器的名字；网络不存在时为空。容器停着时不算，和 Docker 删网络时的判断一样。
+    pub async fn network_endpoints(&self, name: &str) -> Result<Vec<String>> {
+        let network = match self.docker.inspect_network(name, None).await {
+            Ok(network) => network,
+            Err(e) => {
+                return match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
+                    EngineError::NotFound(_) => Ok(Vec::new()),
+                    other => Err(other),
+                };
+            }
+        };
+        let endpoints = network.containers.unwrap_or_default().into_values();
+        Ok(endpoints.filter_map(|endpoint| endpoint.name).collect())
+    }
+
     /// 网络能连到哪里；网络不存在时返回 `None`。
     pub async fn network_reach(&self, name: &str) -> Result<Option<NetworkReach>> {
         let network = match self.docker.inspect_network(name, None).await {

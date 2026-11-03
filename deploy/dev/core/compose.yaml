@@ -25,6 +25,7 @@ services:
       WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
       WONTON_TUNNEL_PORT: ${WONTON_DEV_TUNNEL_PORT:-18482}
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+      WONTON_INSTANCE: ${WONTON_DEV_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。

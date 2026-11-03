@@ -186,6 +186,32 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
     assert!(state.rooms[&failed["ROOM"]].members.contains("@owner:test"));
 }
 
+/// 核心在安装半路重启：上次登录的设备没人吊销，它的令牌还在残留的容器里。再装时吊销，只留这次的一台。
+#[tokio::test]
+async fn a_core_restart_midway_through_an_install_revokes_the_device_it_left_behind() {
+    let bed = Bed::start().await;
+    let bot = container_name("app-echo", "bot");
+    let held = bed.docker.hold(&format!("POST /containers/{bot}/start"));
+    let m = Arc::new(bed.manager());
+    let task = tokio::spawn({
+        let m = m.clone();
+        async move { m.install(&echo(), &granted()).await }
+    });
+    held.reached().await;
+    task.abort();
+    task.await.unwrap_err();
+    held.release();
+    let orphan = bed.env();
+    assert!(bed.token_valid(&orphan["TOKEN"]));
+
+    bed.manager().install(&echo(), &granted()).await.unwrap();
+    let env = bed.env();
+    assert!(!bed.token_valid(&orphan["TOKEN"]), "上次的令牌不能还能用");
+    assert!(bed.token_valid(&env["TOKEN"]));
+    assert_eq!(env["ROOM"], orphan["ROOM"], "账号和主房间沿用");
+    assert_eq!(bed.tuwunel.state().devices("@echo:test").len(), 1);
+}
+
 #[tokio::test]
 async fn an_install_failing_after_the_handover_takes_the_chat_back() {
     let bed = Bed::start().await;

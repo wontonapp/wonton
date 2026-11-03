@@ -122,10 +122,8 @@ async fn a_failed_record_write_rolls_back_the_deployment() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    // 记录目录被换成普通文件：写记录必然失败，以 root 运行也一样。
-    let records = dir.path().join("plugins");
-    fs::remove_dir(&records).unwrap();
-    fs::write(&records, "").unwrap();
+    // 记录的位置被一个目录占着：写记录必然失败，以 root 运行也一样。
+    fs::create_dir_all(dir.path().join("plugins/app.test.json")).unwrap();
     let err = m.install(&app("app.test"), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "storage", "{err}");
     let started = format!(

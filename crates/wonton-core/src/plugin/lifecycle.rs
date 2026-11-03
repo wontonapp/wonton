@@ -14,6 +14,7 @@ use super::gpu::GpuGrant;
 use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::lan::LanGrant;
+use super::leftovers::name_taken;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId};
 use super::names::{Instance, LABEL_PLUGIN};
@@ -89,14 +90,10 @@ fn volume_action(
     let Some(labels) = labels else {
         return Ok(VolumeAction::Create);
     };
-    match labels.get(LABEL_PLUGIN) {
-        Some(owner) if owner == plugin.as_str() => Ok(VolumeAction::Reuse),
-        Some(owner) => Err(InstallError::Conflict(format!(
-            "卷 {volume} 属于插件 {owner}，和本插件的卷重名"
-        ))),
-        None => Err(InstallError::Conflict(format!(
-            "卷 {volume} 已存在，且不是核心为插件创建的"
-        ))),
+    if labels.get(LABEL_PLUGIN).map(String::as_str) == Some(plugin.as_str()) {
+        Ok(VolumeAction::Reuse)
+    } else {
+        Err(name_taken("卷", volume, labels))
     }
 }
 
@@ -145,6 +142,7 @@ impl PluginManager {
         undo: &mut Undo,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
+        self.clear_leftovers(&manifest.id).await?;
         let secret = uses_sso(manifest).then(random_token);
         let mut secrets = self.prepare_secrets(manifest, undo)?;
         let generated =
@@ -155,6 +153,7 @@ impl PluginManager {
             .await?;
         ctx.gpu = gpu;
         ctx.lan = lan;
+        self.check_network_names(&ctx).await?;
         if let Some(bot) = self.provision_bot(package).await? {
             ctx.matrix = Some(self.matrix_vars(&bot));
             undo.bot = Some((manifest.id.clone(), bot));
@@ -170,16 +169,7 @@ impl PluginManager {
                 .await?;
         }
         self.prepare_dirs(&ctx, &plan.dirs, undo)?;
-        self.engine
-            .create_network(&plan.network, &plan.labels, self.network_reach(manifest))
-            .await?;
-        undo.network = Some(plan.network.clone());
-        if let Some(network) = ctx.lan.as_ref().and_then(|l| l.network.clone()) {
-            self.engine
-                .create_lan_network(&network, &plan.labels)
-                .await?;
-            undo.lan_network = Some(network);
-        }
+        self.create_networks(manifest, &plan, &ctx, undo).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
         undo.source = Some(manifest.id.clone());
@@ -237,6 +227,27 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
         })
+    }
+
+    /// 建插件网络，以及局域网端口要用的网络（见 [`super::lan`]）。
+    async fn create_networks(
+        &self,
+        manifest: &Manifest,
+        plan: &Deployment,
+        ctx: &InstallContext,
+        undo: &mut Undo,
+    ) -> Result<(), InstallError> {
+        self.engine
+            .create_network(&plan.network, &plan.labels, self.network_reach(manifest))
+            .await?;
+        undo.network = Some(plan.network.clone());
+        if let Some(network) = ctx.lan.as_ref().and_then(|l| l.network.clone()) {
+            self.engine
+                .create_lan_network(&network, &plan.labels)
+                .await?;
+            undo.lan_network = Some(network);
+        }
+        Ok(())
     }
 
     /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
@@ -629,7 +640,10 @@ impl PluginManager {
     }
 
     /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
-    async fn own_resources(&self, id: &PluginId) -> Result<LabeledResources, InstallError> {
+    pub(super) async fn own_resources(
+        &self,
+        id: &PluginId,
+    ) -> Result<LabeledResources, InstallError> {
         let instance = &self.cfg.instance;
         let found = self
             .engine
@@ -650,12 +664,7 @@ impl PluginManager {
         // 容器都停了再吊销 Bot 的设备和模型网关凭据。
         let bot = self.remove_bot(id, purge).await?;
         self.revoke_models(id).await?;
-        for network in &found.networks {
-            if let Some(core) = &self.cfg.core_container {
-                self.engine.disconnect_network(network, core).await?;
-            }
-            self.engine.remove_network(network).await?;
-        }
+        self.remove_networks(&found.networks).await?;
         self.sources.remove(id);
         let mut report = UninstallReport {
             containers: found.containers.clone(),

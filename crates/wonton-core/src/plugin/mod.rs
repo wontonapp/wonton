@@ -20,6 +20,7 @@ mod install_error;
 pub mod interpolate;
 pub mod lan;
 pub mod languages;
+mod leftovers;
 pub mod lifecycle;
 pub mod manager;
 pub mod manifest;

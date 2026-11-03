@@ -90,7 +90,9 @@ fn install_error(error: &InstallError) -> Response {
         InstallError::Unsupported(_)
         | InstallError::GpuUnavailable(_)
         | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
-        InstallError::Conflict(_) | InstallError::Changed(_) => StatusCode::CONFLICT,
+        InstallError::Conflict(_) | InstallError::NameTaken(_) | InstallError::Changed(_) => {
+            StatusCode::CONFLICT
+        }
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
         | InstallError::OidcUnavailable(_)

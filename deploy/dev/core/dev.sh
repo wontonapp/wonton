@@ -21,6 +21,7 @@
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
 # WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）、
+# WONTON_DEV_INSTANCE（核心的实例名，插件的资源名和标签都带上它；默认按项目名取，默认项目没有实例名，设成空也没有）、
 # WONTON_BUILD_COMMIT（编进核心、打在启动日志里的提交号，默认按当前检出算）、
 # WONTON_DEV_BUILD_PROXY（构建镜像时经 Docker 主机上的这个代理下载依赖，如 npchy 本机的 http://127.0.0.1:7899）、
 # WONTON_DEV_BUILD_JOBS（构建镜像时编译的并发数，和别的任务共用一台主机时用）、
@@ -35,6 +36,14 @@ secrets="$here/.secrets"
 curl_image="curlimages/curl:8.23.0"
 
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-dev-core}"
+# 实例名只能有小写字母和数字，最长 16 个字符（WONTON_INSTANCE）。
+default_instance() {
+  [[ "$WONTON_DEV_PROJECT" == wonton-dev-core ]] && return
+  local name="${WONTON_DEV_PROJECT#wonton-}"
+  name="${name//[^a-z0-9]/}"
+  printf '%s' "${name:0:16}"
+}
+export WONTON_DEV_INSTANCE="${WONTON_DEV_INSTANCE-$(default_instance)}"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18480}"
 export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18482}"

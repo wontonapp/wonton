@@ -164,6 +164,27 @@ async fn egress_plugins_publish_on_their_own_network() {
     assert_eq!(bindings["445/tcp"], binding("192.168.0.193", "445"));
 }
 
+/// 和插件网络一样：上次没装完留下的清掉，主人建的不动。
+#[tokio::test]
+async fn a_leftover_lan_network_is_replaced_but_one_the_owner_created_is_refused() {
+    const LAN: &str = "wonton-app-test--lan";
+    let (docker, m, _, _dir) = on(office()).await;
+    docker.add_network(LAN, "app.test", json!({}));
+    let compose = samba("");
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    assert_eq!(docker.network(LAN).unwrap()["Name"], json!(LAN));
+
+    m.uninstall(&PluginId::parse("app.test").unwrap(), false)
+        .await
+        .unwrap();
+    docker.add_unlabeled_network(LAN);
+    let err = m.install(&compose, &granted(&compose)).await.unwrap_err();
+    assert_eq!(err.kind(), "conflict", "{err}");
+    assert!(err.to_string().contains(LAN), "{err}");
+    assert_eq!(docker.network(LAN), Some(json!({})));
+    assert_eq!(docker.network("wonton-app-test"), None);
+}
+
 #[tokio::test]
 async fn previews_show_each_port_and_why_it_cannot_be_installed() {
     let (_docker, m, detected, _dir) = on(office()).await;
