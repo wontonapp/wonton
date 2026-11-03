@@ -11,6 +11,7 @@ mod confirmation;
 mod push;
 mod send;
 mod support;
+mod upload_progress;
 
 use wonton_client::{
     Action, ImageContent, ImageThumbnail, ImageUpload, MessageContent, RecoveryStatus,

@@ -19,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -126,7 +127,7 @@ private fun MessageBubble(
                 .background(background)
                 .padding(10.dp),
         ) {
-            MessageBody(message.body, core, onAnswer)
+            MessageBody(message.body, core, message.sendState, onAnswer)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             val small = MaterialTheme.typography.labelSmall
@@ -172,10 +173,15 @@ private fun FailedSend(state: SendState.Failed, style: TextStyle, onRetry: () ->
 }
 
 @Composable
-private fun MessageBody(body: MessageContent, core: ClientCore, onAnswer: (String, Answer) -> Unit) {
+private fun MessageBody(
+    body: MessageContent,
+    core: ClientCore,
+    sendState: SendState,
+    onAnswer: (String, Answer) -> Unit,
+) {
     when (body) {
         is MessageContent.Text -> SelectionContainer { Text(body.body) }
-        is MessageContent.Image -> MessageImage(body.image, core)
+        is MessageContent.Image -> MessageImage(body.image, core, sendState)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
         MessageContent.Undecryptable -> Text("无法解密：本设备还没有这条消息的密钥", fontStyle = FontStyle.Italic)
         MessageContent.Redacted -> Text("消息已撤回", fontStyle = FontStyle.Italic)
@@ -184,7 +190,7 @@ private fun MessageBody(body: MessageContent, core: ClientCore, onAnswer: (Strin
 }
 
 @Composable
-private fun MessageImage(image: ImageContent, core: ClientCore) {
+private fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
     val shown = image.thumbnail ?: image.media
     val preview by loadedImage(core, shown)
     var showingOriginal by remember { mutableStateOf(false) }
@@ -196,6 +202,12 @@ private fun MessageImage(image: ImageContent, core: ClientCore) {
         contentAlignment = Alignment.Center,
     ) {
         LoadedImage(preview, ContentScale.Crop)
+        if (sendState is SendState.Sending) {
+            val bar = Modifier.align(Alignment.BottomStart).fillMaxWidth()
+            val progress = sendState.progress
+            if (progress == null) LinearProgressIndicator(bar)
+            else LinearProgressIndicator({ progress }, bar)
+        }
     }
     if (showingOriginal) {
         Dialog(

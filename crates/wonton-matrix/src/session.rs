@@ -160,6 +160,8 @@ impl MatrixSession {
             .await
             .map_err(|error| Error::from(&error))?;
         let sync = Arc::new(sync);
+        // 上传附件时时间线本地回显带上进度（#92）：开关是 client 级的，每次上传开始时读一次。
+        client.send_queue().enable_upload_progress(true);
         let sending = tokio::spawn(send_queue::keep_sending(client.clone()));
         Ok(Self {
             client,

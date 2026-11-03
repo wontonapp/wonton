@@ -53,6 +53,7 @@ struct Core {
     answer_replies: Mutex<VecDeque<(u16, Value)>>,
     /// 为真时回答先不回，手机上这时是“正在发”。
     hold_answers: watch::Sender<bool>,
+    uploads_paused: watch::Sender<bool>,
 }
 
 impl Home {
@@ -68,6 +69,7 @@ impl Home {
             answers: Mutex::default(),
             answer_replies: Mutex::default(),
             hold_answers: watch::Sender::new(false),
+            uploads_paused: watch::Sender::new(false),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let endpoint = loopback_endpoint(SecretKey::generate()).await;
@@ -123,6 +125,15 @@ impl Home {
         self.core.login_tokens.load(Ordering::SeqCst)
     }
 
+    /// 停在上传请求体前，避免取消测试和上传完成竞跑。
+    pub fn pause_uploads(&self) {
+        self.core.uploads_paused.send_replace(true);
+    }
+
+    pub fn resume_uploads(&self) {
+        self.core.uploads_paused.send_replace(false);
+    }
+
     /// 一个 Bot 账号：直接连 Tuwunel（Bot 跑在家里的服务器上，不经隧道），设好显示名并开始同步。
     pub async fn bot(&self, localpart: &str, display_name: &str) -> MatrixSession {
         let bot = self.matrix.login(localpart, display_name).await;
@@ -160,6 +171,15 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     }
     let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
     if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
+        if text.starts_with("post /_matrix/media/")
+            && text
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("/upload"))
+        {
+            let mut paused = core.uploads_paused.subscribe();
+            paused.wait_for(|paused| !paused).await.unwrap();
+        }
         let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();
         upstream.write_all(&head).await.unwrap();
         tokio::io::copy_bidirectional(&mut tcp, &mut upstream)

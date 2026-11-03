@@ -38,11 +38,19 @@ pub struct Message {
     pub read_by: Vec<String>,
 }
 
+/// SDK 按加密前文件大小估算的进度，包含原图和缩略图；重试时可倒退，总量为零时未知。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UploadProgress {
+    pub current: u64,
+    pub total: u64,
+}
+
 /// 发送状态。别人发的消息和从服务器同步来的消息都是 [`SendStatus::Sent`]。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SendStatus {
-    /// 本地回显，在排队或正在发送（含上传附件）。
-    Sending,
+    /// 本地回显，在排队或正在发送（含上传附件）。`progress` 是附件的上传进度；文字消息没有上传，排队中或还没开始
+    /// 传时是 None。
+    Sending { progress: Option<UploadProgress> },
     /// 服务器已接收。
     Sent,
     /// 发送失败。
@@ -177,7 +185,12 @@ pub(crate) fn sender_name(event: &EventTimelineItem, names: &MemberNames) -> Str
 fn status(state: Option<&EventSendState>) -> SendStatus {
     match state {
         None | Some(EventSendState::Sent { .. }) => SendStatus::Sent,
-        Some(EventSendState::NotSentYet { .. }) => SendStatus::Sending,
+        Some(EventSendState::NotSentYet { progress }) => SendStatus::Sending {
+            progress: progress.as_ref().map(|p| UploadProgress {
+                current: p.progress.current as u64,
+                total: p.progress.total as u64,
+            }),
+        },
         Some(EventSendState::SendingFailed {
             error,
             is_recoverable,

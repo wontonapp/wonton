@@ -56,7 +56,7 @@ async fn later_messages_wait_behind_a_rejected_one_until_it_is_resent() {
     );
     assert_eq!(
         status(&messages, "排在后面的"),
-        Some(SendStatus::Sending),
+        Some(SendStatus::Sending { progress: None }),
         "{messages:#?}"
     );
 
@@ -162,6 +162,58 @@ async fn an_image_sent_while_offline_shows_up_at_once_and_goes_out_after_reconne
     assert_eq!(downloaded.as_deref(), Ok(PNG), "Bob 下载到的和原图一样");
 }
 
+/// 发一张大图：本地回显带着上传进度（缩略图和原图合并计算，total 里有原图），最后变成已发送（#92）。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_image_upload_reports_progress_until_it_is_sent() {
+    let chat = Chat::open(StoreConfig::InMemory).await;
+    let updates = chat.alice_room.message_updates().await;
+    // Tuwunel 的上限最低 10 MB，8 MB 能进队列又够上传走几步。内容对 Matrix 不透明。
+    const BIG: usize = 8 * 1024 * 1024;
+    chat.alice_room
+        .send_image(ImageUpload {
+            filename: "big.png".to_owned(),
+            mime_type: "image/png".to_owned(),
+            data: vec![0xA5; BIG],
+            width: None,
+            height: None,
+            thumbnail: Some(ImageThumbnail {
+                mime_type: "image/png".to_owned(),
+                data: THUMBNAIL.to_vec(),
+                width: 1,
+                height: 1,
+            }),
+        })
+        .await
+        .expect("放进发送队列");
+    let mut uploaded = 0u64;
+    let mut total = 0u64;
+    eventually("上传进度推进到已发送", updates, |messages| {
+        let message = messages
+            .iter()
+            .find(|message| message.is_own && image_named(message, "big.png").is_some())?;
+        match &message.status {
+            SendStatus::Sending {
+                progress: Some(progress),
+            } => {
+                assert!(progress.total >= progress.current, "进度倒挂：{progress:?}");
+                uploaded = progress.current;
+                total = progress.total;
+                None
+            }
+            SendStatus::Sent => Some(()),
+            SendStatus::Sending { progress: None } => None,
+            SendStatus::Failed { error, .. } => panic!("发送失败：{error}"),
+        }
+    })
+    .await;
+    assert!(uploaded > 0, "已发送之前没见过上传进度");
+    assert!(
+        total >= BIG as u64,
+        "总字节数里没有原图（原图 {BIG} 字节，total {total}）"
+    );
+}
+
 /// 图片和文字一样：服务器拒收的停在队首，重发后发出去；排在它后面的可以取消，取消的从时间线里消失，不会发出去。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -185,7 +237,8 @@ async fn a_rejected_image_goes_out_once_resent_and_a_cancelled_one_never_does() 
         &chat.alice_room,
         "后一张排在被拒收的后面",
         |message| {
-            image_named(message, "cancelled.png").is_some() && message.status == SendStatus::Sending
+            image_named(message, "cancelled.png").is_some()
+                && message.status == SendStatus::Sending { progress: None }
         },
     )
     .await;

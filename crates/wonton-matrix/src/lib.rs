@@ -35,7 +35,7 @@ pub use matrix_sdk::ruma::{
     DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
-pub use message::{ImageContent, Message, MessageBody, SendStatus};
+pub use message::{ImageContent, Message, MessageBody, SendStatus, UploadProgress};
 pub use push::{Notification, PusherConfig};
 pub use rooms::{LatestMessage, Membership, RoomInfo};
 pub use session::{MatrixSession, SavedSession, SessionConfig, SessionEvent, StoreConfig};

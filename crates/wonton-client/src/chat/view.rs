@@ -78,7 +78,11 @@ fn timeline_message(message: Message, cards: &CardsView) -> TimelineMessage {
         is_own: message.is_own,
         timestamp_ms: message.timestamp_ms,
         send_state: match message.status {
-            SendStatus::Sending => SendState::Sending { progress: None },
+            SendStatus::Sending { progress } => SendState::Sending {
+                progress: progress.and_then(|p| {
+                    (p.total > 0).then(|| (p.current.min(p.total) as f64 / p.total as f64) as f32)
+                }),
+            },
             SendStatus::Sent => SendState::Sent,
             SendStatus::Failed { error, recoverable } => SendState::Failed {
                 message: error,
@@ -191,5 +195,69 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
         ChatFailure::NotReady => CoreError::NotReady { reason },
         ChatFailure::Upstream => CoreError::Upstream { reason },
         ChatFailure::InvalidInput => CoreError::InvalidInput { reason },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wonton_matrix::UploadProgress;
+
+    #[test]
+    fn timeline_exposes_upload_fractions_without_hiding_regressions() {
+        let owner: wonton_matrix::OwnedUserId = "@owner:wonton.localhost".parse().unwrap();
+        let (_, answers) = tokio::sync::watch::channel(Default::default());
+        let cards = crate::chat::confirmation::Cards::new(&owner, answers).view();
+        for (counters, expected) in [
+            (None, None),
+            (Some((0, 0)), None),
+            (Some((8, 0)), None),
+            (Some((0, 8)), Some(0.0)),
+            (Some((4, 8)), Some(0.5)),
+            (Some((2, 8)), Some(0.25)),
+            (Some((8, 8)), Some(1.0)),
+            (Some((9, 8)), Some(1.0)),
+            (Some((u64::MAX, 1)), Some(1.0)),
+            (Some((u64::MAX, u64::MAX)), Some(1.0)),
+        ] {
+            let item = timeline_item(
+                entry(SendStatus::Sending {
+                    progress: counters.map(|(current, total)| UploadProgress { current, total }),
+                }),
+                &cards,
+            );
+            let TimelineContent::Message { message } = item.content else {
+                panic!("消息必须保留在时间线里");
+            };
+            assert_eq!(
+                message.send_state,
+                SendState::Sending { progress: expected }
+            );
+            if let SendState::Sending {
+                progress: Some(value),
+            } = message.send_state
+            {
+                assert!(value.is_finite() && (0.0..=1.0).contains(&value));
+            }
+            assert!(message.event_id.is_none());
+        }
+    }
+
+    fn entry(status: SendStatus) -> TimelineEntry {
+        TimelineEntry {
+            id: "upload".to_owned(),
+            kind: EntryKind::Message(Box::new(Message {
+                event_id: None,
+                sender: "@owner:wonton.localhost".parse().unwrap(),
+                sender_name: "主人".to_owned(),
+                is_own: true,
+                timestamp_ms: 0,
+                status,
+                body: MessageBody::Text("attachment".to_owned()),
+                custom: Default::default(),
+                edited: false,
+                read_by: Vec::new(),
+            })),
+        }
     }
 }

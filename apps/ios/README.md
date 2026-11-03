@@ -76,6 +76,8 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 [ADR-0005](../../docs/adr/0005-native-clients-thick-core.md) 的“App 内聊天的核心接口”。要有个能聊的对象，装上
 [回声 Bot 示例插件](../../plugins/examples/echo-bot/README.md)。
 
+图片上传进度未知不等于 0%：已知比例时显示线性条，未知时显示转圈。
+
 ## 检查
 
 ```bash

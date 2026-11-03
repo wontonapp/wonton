@@ -72,7 +72,7 @@ private struct MessageBubble: View {
         case let .text(body, _):
             Text(body).textSelection(.enabled)
         case let .image(image):
-            MediaImage(image: image, core: core)
+            MediaImage(image: image, core: core, sendState: message.sendState)
         case let .confirmation(view):
             ConfirmationCardView(view: view) { answer(view.card.id, $0) }
         case .undecryptable:
@@ -113,6 +113,7 @@ private struct MessageBubble: View {
 private struct MediaImage: View {
     let image: ImageContent
     let core: ClientCore
+    let sendState: SendState
     @State private var preview: Result<UIImage, MediaFailure>?
     @State private var isShowingOriginal = false
 
@@ -130,6 +131,19 @@ private struct MediaImage: View {
         .frame(maxWidth: 240)
         .aspectRatio(ratio, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .bottom) {
+            if case let .sending(progress) = sendState {
+                if let progress {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .frame(maxWidth: .infinity)
+                        .padding(4)
+                } else {
+                    ProgressView()
+                        .padding(4)
+                }
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { isShowingOriginal = true }
         .accessibilityAddTraits(.isButton)
