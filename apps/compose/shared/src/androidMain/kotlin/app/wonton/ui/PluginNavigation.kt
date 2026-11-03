@@ -110,6 +110,8 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
                 TextButton(onClick = onReview) { Text("重新查看") }
             }
         }
+        is PluginTaskState.Uncertain ->
+            Text("结果不确定：${state.message}", style = style, color = MaterialTheme.colorScheme.tertiary)
     }
 }
 

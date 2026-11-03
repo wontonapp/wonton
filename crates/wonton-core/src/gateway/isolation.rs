@@ -1,10 +1,11 @@
 //! 插件网页在浏览器里的隔离（ADR-0011“插件隔离的约束”）。
 //!
 //! 插件子域名彼此同站，也和核心同站，`SameSite=Lax` 拦不住一个插件的页面让浏览器带着 Cookie 向另一个
-//! 插件或核心发请求；隧道身份同样随请求自动带上。这里集中三条规则：
+//! 插件或核心发请求；隧道身份同样随请求自动带上。这里集中四条规则：
 //!
 //! - 插件子域名上，登录状态只给本插件页面发起的请求和导航：[`credentials_allowed`]。
 //! - 核心域名上改状态的请求只接受同源：[`write_allowed`]。
+//! - 经隧道调插件管理接口的请求不能是别的网页发起的，读也一样：[`not_from_another_page`]。
 //! - 插件响应里的 `Set-Cookie` 不能用网关保留的名字，也不能指定 `Domain`：[`sanitize_set_cookies`]。
 //!
 //! 浏览器只对 https 和 `localhost` 发 Fetch Metadata（`Sec-Fetch-*`），局域网 http 下只能看 `Origin`。
@@ -54,6 +55,13 @@ pub fn write_allowed(method: &Method, headers: &HeaderMap, origin: &str) -> bool
         Some(site) => matches!(site, b"same-origin" | b"none"),
         None => origin_absent_or(headers, origin),
     }
+}
+
+/// 这个请求不是别的网页发起的：`Sec-Fetch-Site` 是 `same-origin` 或 `none`（或者没有），`Origin` 是 `origin`（或者没有）。
+/// 客户端核心的请求两个头都不带。
+pub fn not_from_another_page(headers: &HeaderMap, origin: &str) -> bool {
+    let site = headers.get(SEC_FETCH_SITE).map(HeaderValue::as_bytes);
+    matches!(site, None | Some(b"same-origin" | b"none")) && origin_absent_or(headers, origin)
 }
 
 /// 没有 `Origin`，或者它就是 `origin`。浏览器总是按 `scheme://host[:port]` 写出 `Origin`（省略默认端口），

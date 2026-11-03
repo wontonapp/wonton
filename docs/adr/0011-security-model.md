@@ -57,7 +57,8 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
     未登录处理，到不了插件，也不跳去核心换会话。
   - 核心域名上改状态的请求（`POST`、`DELETE` 等）只接受同源：`Sec-Fetch-Site` 为 `same-origin` 或 `none`；
     没有它时，`Origin` 要么没有、要么是核心地址；否则回 403 `cross_site`。插件页面因此不能替主人退出登录。
-    管理 API 另外只认 `Authorization: Bearer`，浏览器不会自动带上它。
+    管理 API 另外要 `Authorization: Bearer`，浏览器不会自动带上它；插件管理接口还接受已配对设备，但不接受网页发起的
+    请求（ADR-0017）。
   - 插件响应里的 `Set-Cookie` 去掉 `Domain` 属性，只对插件自己的子域名有效；名字以 `wonton_` 开头的整条
     丢弃，转发给插件的请求里也去掉这些 Cookie。插件页面的脚本仍能用 `document.cookie` 给父域写 Cookie，
     所以网关按字节解析 `Cookie` 头，同名的会话 Cookie 逐个试：别处写进来的 Cookie 冒充不了会话，也挤不掉

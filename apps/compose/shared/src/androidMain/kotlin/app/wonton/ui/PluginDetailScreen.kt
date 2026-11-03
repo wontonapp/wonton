@@ -24,8 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,7 +42,10 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginImage
+import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
+import app.wonton.protocol.PluginTask
+import app.wonton.protocol.PluginTaskState
 
 /** 截图按手机竖屏的比例占位。 */
 private const val SCREENSHOT_RATIO = 9f / 19.5f
@@ -50,6 +55,7 @@ private const val SCREENSHOT_RATIO = 9f / 19.5f
 @Composable
 fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, route: PluginRoute) {
     var attempt by remember { mutableIntStateOf(0) }
+    var pluginId by remember(route) { mutableStateOf<String?>(null) }
     val loaded by produceState<Result<PluginDetail>?>(null, route, attempt) {
         value = null
         value = try {
@@ -57,11 +63,22 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
                 when (route) {
                     is PluginRoute.Store -> plugins.core.storePlugin(route.source)
                     is PluginRoute.Installed -> plugins.core.installedPlugin(route.id)
-                },
+                }.also { pluginId = it.id },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
         }
+    }
+    val task = plugins.viewModel.tasks.firstOrNull { it.id == pluginId }
+    val working = task?.state is PluginTaskState.Running
+    var wasWorking by remember { mutableStateOf(false) }
+    // 详情只在打开时取一次，任务做完要重取，按钮才对。主屏上打开的插件卸载以后，这一页没有东西可看了。
+    LaunchedEffect(working) {
+        if (wasWorking && !working) {
+            val removed = task?.operation == PluginOperation.UNINSTALL && task.state is PluginTaskState.Succeeded
+            if (route is PluginRoute.Installed && removed) navigation.detail = null else attempt++
+        }
+        wasWorking = working
     }
     Scaffold(
         topBar = {
@@ -76,19 +93,28 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
             when {
                 result == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 result.isFailure -> ProblemView(result.exceptionOrNull().toString(), null, onRetry = { attempt++ })
-                else -> DetailContent(result.getOrThrow(), plugins, navigation)
+                else -> DetailContent(result.getOrThrow(), task, plugins, navigation)
             }
         }
     }
 }
 
 @Composable
-private fun DetailContent(detail: PluginDetail, plugins: PluginsState, navigation: PluginNavigation) {
+private fun DetailContent(
+    detail: PluginDetail,
+    task: PluginTask?,
+    plugins: PluginsState,
+    navigation: PluginNavigation,
+) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        DetailHeader(detail, plugins, detailAction(detail, navigation))
+        val working = task?.state is PluginTaskState.Running
+        DetailHeader(detail, plugins, detailAction(detail, working, navigation))
+        task?.takeIf { it.state !is PluginTaskState.Succeeded }?.let {
+            TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
+        }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -97,7 +123,7 @@ private fun DetailContent(detail: PluginDetail, plugins: PluginsState, navigatio
         }
         detail.about?.let { Text(it) }
         DetailSections(detail)
-        detail.installed?.takeIf { it.removable }?.let { installed ->
+        detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             TextButton(onClick = { navigation.uninstalling = UninstallTarget(installed.id, installed.title) }) {
                 Text("卸载", color = Red)
             }
@@ -108,7 +134,7 @@ private fun DetailContent(detail: PluginDetail, plugins: PluginsState, navigatio
 private class DetailAction(val title: String, val enabled: Boolean, val perform: () -> Unit)
 
 /** 标题旁的按钮：没装的“获取”，能升级的“更新”，装着的“打开”。 */
-private fun detailAction(detail: PluginDetail, navigation: PluginNavigation): DetailAction? {
+private fun detailAction(detail: PluginDetail, working: Boolean, navigation: PluginNavigation): DetailAction? {
     val installed = detail.installed
     val source = detail.source
     val entry = installed?.entries?.firstOrNull()
@@ -117,7 +143,7 @@ private fun detailAction(detail: PluginDetail, navigation: PluginNavigation): De
             navigation.confirmation = PluginConfirmation.Upgrade(installed.id)
         }
         installed != null -> entry?.let { DetailAction("打开", !installed.isBusy) { navigation.open(it) } }
-        source != null -> DetailAction("获取", detail.blocked == null) {
+        source != null -> DetailAction("获取", detail.blocked == null && !working) {
             navigation.confirmation = PluginConfirmation.Install(source)
         }
         else -> null

@@ -24,6 +24,7 @@ mod client;
 mod files;
 mod home;
 mod logging;
+mod plugins;
 mod push;
 mod session_store;
 mod subscription;

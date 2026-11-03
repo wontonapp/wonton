@@ -86,9 +86,6 @@ fun LauncherScreen(
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (status is HomeStatus.Disconnected) {
-                        item(key = "status", span = { GridItemSpan(maxLineSpan) }) { ProblemRow(status.text, null) }
-                    }
                     plugins.viewModel.problem?.let { problem ->
                         item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
                             ProblemRow(problem.message, problem.reason.nextStep)

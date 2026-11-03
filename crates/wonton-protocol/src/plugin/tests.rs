@@ -290,6 +290,17 @@ fn wire_format_is_stable() {
 
 /// 核心可能比 App 新：不认识的取值落到兜底的变体，多出来的字段被忽略，整份列表照样能读。
 #[test]
+fn an_uncertain_task_keeps_its_wire_format() {
+    assert_eq!(
+        serde_json::to_value(PluginTaskState::Uncertain {
+            message: "x".to_owned(),
+        })
+        .unwrap(),
+        json!({"type": "uncertain", "message": "x"})
+    );
+}
+
+#[test]
 fn values_from_a_newer_core_still_parse() {
     let parse = |value| serde_json::from_value::<StoreItem>(value).unwrap();
     let mut item = serde_json::to_value(&store().official.plugins[0]).unwrap();

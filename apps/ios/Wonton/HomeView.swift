@@ -72,9 +72,6 @@ struct HomeView: View {
     private var launcher: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if case .disconnected = model.viewModel.status {
-                    ProblemRow(message: model.viewModel.status.text, nextStep: nil)
-                }
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
                 }

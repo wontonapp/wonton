@@ -9,6 +9,8 @@ struct PluginDetailView: View {
     @State private var loaded: Result<PluginDetail, Error>?
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
+    @State private var pluginId: String?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         content
@@ -16,6 +18,26 @@ struct PluginDetailView: View {
             .task(id: route) { await load() }
             .sheet(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
             .uninstallDialog($uninstalling, model: model)
+            .onChange(of: isWorking) { wasWorking, working in
+                if wasWorking, !working { taskEnded() }
+            }
+    }
+
+    private var task: PluginTask? {
+        model.viewModel.tasks.first { $0.id == pluginId }
+    }
+
+    private var isWorking: Bool {
+        task?.state == .running
+    }
+
+    /// 详情只在打开时取一次，任务做完要重取，按钮才对。主屏上打开的插件卸载以后，这一页没有东西可看了。
+    private func taskEnded() {
+        if case .installed = route, task?.operation == .uninstall, task?.state == .succeeded {
+            dismiss()
+        } else {
+            Task { await load() }
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -30,6 +52,11 @@ struct PluginDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
+                    if let task, task.state != .succeeded {
+                        TaskRow(model: model, task: task) {
+                            confirmation = model.reconfirmation(for: task)
+                        }
+                    }
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         VStack(alignment: .leading, spacing: 8) { NoticeLines(lines: installed.notices) }
                     }
@@ -38,7 +65,7 @@ struct PluginDetailView: View {
                     }
                     if let about = detail.about { Text(about) }
                     DetailSections(detail: detail)
-                    if let installed = detail.installed, installed.removable {
+                    if let installed = detail.installed, installed.removable, !isWorking {
                         Button("卸载", role: .destructive) {
                             uninstalling = UninstallTarget(id: installed.id, title: installed.title)
                         }
@@ -55,7 +82,9 @@ struct PluginDetailView: View {
             switch route {
             case let .store(source):
                 loaded = .success(try await model.core.storePlugin(source: source))
+                pluginId = try loaded?.get().id
             case let .installed(id):
+                pluginId = id
                 loaded = .success(try await model.core.installedPlugin(id: id))
             }
         } catch {
@@ -75,7 +104,7 @@ struct PluginDetailView: View {
             return DetailAction(title: "打开", enabled: !installed.isBusy) { open(entry) }
         }
         guard let source = detail.source else { return nil }
-        return DetailAction(title: "获取", enabled: detail.blocked == nil) {
+        return DetailAction(title: "获取", enabled: detail.blocked == nil && !isWorking) {
             confirmation = .install(source: source)
         }
     }

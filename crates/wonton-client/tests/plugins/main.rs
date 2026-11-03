@@ -1,0 +1,378 @@
+//! 插件页面的行为测试：只经由导出给原生壳的接口驱动，隧道的对面是本机假扮的核心管理接口，只走回环地址。
+
+mod connection;
+mod rig;
+
+use std::time::{Duration, Instant};
+
+use axum::http::Method;
+use wonton_client::{
+    Action, CoreError, PluginFailure, PluginImage, PluginOperation, PluginState, PluginTaskState,
+};
+
+use rig::{Canned, IMAGE, Rig, WAIT, core_error, installed, preview, running};
+
+#[tokio::test]
+async fn the_list_arrives_once_the_tunnel_is_up_and_says_why_before_that() {
+    let rig = Rig::new().await;
+    rig.core
+        .set_lists(vec![vec![running("ai.usemagpie.magpie")]]);
+    rig.app
+        .dispatch(Action::SetLanguages {
+            languages: vec!["zh-Hans-CN".to_owned(), "en".to_owned()],
+        })
+        .unwrap();
+
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    let view = rig.wait_for(|view| view.problem.is_some()).await;
+    assert_eq!(
+        view.problem.unwrap().reason,
+        PluginFailure::TransportUnavailable,
+        "没有配对时如实说连不上"
+    );
+
+    rig.connect();
+    let view = rig
+        .wait_for(|view| view.installed.is_some() && view.problem.is_none() && !view.refreshing)
+        .await;
+    assert_eq!(view.installed.unwrap().plugins[0].id, "ai.usemagpie.magpie");
+
+    let seen = rig.core.seen(&Method::GET, "/_wonton/api/plugins");
+    assert_eq!(seen[0].language.as_deref(), Some("zh-Hans-CN,en"));
+    assert!(!seen[0].from_page, "核心靠这个认出请求不是网页发的");
+}
+
+#[tokio::test]
+async fn a_plugin_that_is_still_installing_updates_without_a_refresh() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![
+        vec![installed(
+            "com.nousresearch.hermes",
+            PluginState::Installing,
+        )],
+        vec![running("com.nousresearch.hermes")],
+    ]);
+    rig.connected().await;
+    let view = rig
+        .wait_for(|view| {
+            view.installed.as_ref().is_some_and(|installed| {
+                matches!(installed.plugins[0].status, PluginState::Running { .. })
+            })
+        })
+        .await;
+    assert!(view.problem.is_none());
+}
+
+#[tokio::test]
+async fn the_store_is_fetched_refreshed_and_searched() {
+    let rig = Rig::new().await;
+    assert!(
+        rig.app.search_store("photos".to_owned()).is_empty(),
+        "还没取过"
+    );
+    rig.connected().await;
+
+    rig.app
+        .dispatch(Action::RefreshStore { force: false })
+        .unwrap();
+    rig.wait_for(|view| view.store.is_some()).await;
+    rig.app
+        .dispatch(Action::RefreshStore { force: true })
+        .unwrap();
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .core
+        .seen(&Method::GET, "/_wonton/api/store?refresh=true")
+        .is_empty()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "下拉刷新要让家里的服务器不等缓存"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let found: Vec<_> = rig
+        .app
+        .search_store(" PhOtOs ".to_owned())
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+    assert_eq!(
+        found,
+        ["app.photos", "app.more-photos"],
+        "按名字和标签找，官方的在前"
+    );
+    assert_eq!(rig.app.search_store("音乐".to_owned())[0].id, "app.music");
+}
+
+#[tokio::test]
+async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.app
+        .dispatch(Action::RefreshStore { force: false })
+        .unwrap();
+    rig.wait_for(|view| view.store.is_some()).await;
+
+    let shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    let asked = &rig.core.seen(&Method::POST, "/_wonton/api/plugins/preview")[0];
+    assert!(asked.body.contains("github:owner/app.photos"), "{asked:?}");
+
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: shown.clone(),
+        })
+        .unwrap();
+    let view = rig.app.plugins();
+    assert_eq!(view.tasks[0].operation, PluginOperation::Install);
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+    let deadline = Instant::now() + WAIT;
+    while rig.core.seen(&Method::GET, "/_wonton/api/store").len() < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "装完要重取商店，那一行才不再显示“获取”"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0].body)
+            .unwrap();
+    assert_eq!(sent["source"], "github:owner/app.photos@v1.0.0");
+    assert_eq!(sent["digest"], "sha256:abc");
+    assert_eq!(
+        sent["grant"],
+        serde_json::json!(["storage.share.photos:read"])
+    );
+
+    rig.app
+        .dispatch(Action::DismissPluginTask {
+            id: "app.photos".to_owned(),
+        })
+        .unwrap();
+    assert!(rig.app.plugins().tasks.is_empty());
+    assert!(matches!(
+        rig.app.dispatch(Action::DismissPluginTask {
+            id: "app.photos".to_owned()
+        }),
+        Err(CoreError::InvalidInput { .. })
+    ));
+}
+
+#[tokio::test]
+async fn a_preview_that_says_no_is_not_sent() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut blocked = preview("app.photos");
+    blocked.blocked = Some("宿主架构不符".to_owned());
+    assert!(matches!(
+        rig.app.dispatch(Action::InstallPlugin { preview: blocked }),
+        Err(CoreError::NotReady { .. })
+    ));
+    assert!(rig.app.plugins().tasks.is_empty());
+    assert!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn failures_keep_their_reason() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+
+    for (error, expected) in [
+        (
+            core_error(409, "changed", "插件包变了"),
+            PluginFailure::Changed,
+        ),
+        (
+            core_error(409, "conflict", "已经装了"),
+            PluginFailure::Conflict,
+        ),
+        (
+            core_error(503, "source_unavailable", "连不上 GitHub"),
+            PluginFailure::SourceUnavailable,
+        ),
+        (
+            core_error(502, "image_pull_failed", "拉不下镜像"),
+            PluginFailure::Upstream,
+        ),
+        (
+            core_error(403, "permission_denied", "权限对不上"),
+            PluginFailure::Changed,
+        ),
+    ] {
+        let message =
+            serde_json::from_str::<serde_json::Value>(&error.1).unwrap()["error"]["message"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+        rig.core.answer(Method::POST, "/_wonton/api/plugins", error);
+        rig.app
+            .dispatch(Action::InstallPlugin {
+                preview: preview("app.photos"),
+            })
+            .unwrap();
+        let state = rig
+            .task("app.photos", |state| *state != PluginTaskState::Running)
+            .await;
+        assert_eq!(
+            state,
+            PluginTaskState::Failed {
+                reason: expected,
+                message
+            }
+        );
+    }
+
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        core_error(401, "unauthenticated", "不认这台设备"),
+    );
+    rig.app
+        .dispatch(Action::RefreshStore { force: false })
+        .unwrap();
+    let view = rig.wait_for(|view| view.problem.is_some()).await;
+    assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store/plugin",
+        core_error(404, "not_found", "来源里没有"),
+    );
+    let detail = rig.app.store_plugin("github:owner/none".to_owned()).await;
+    assert!(matches!(detail, Err(CoreError::InvalidInput { reason }) if reason == "来源里没有"));
+}
+
+/// 家里的服务器单独执行安装：请求断了不算失败，结果从已安装列表里看（ADR-0017）。
+#[tokio::test]
+async fn a_dropped_connection_waits_for_the_result_on_the_server() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.core.set_lists(vec![
+        vec![installed("app.photos", PluginState::Installing)],
+        vec![running("app.photos")],
+    ]);
+    // 本地代理连不上隧道时回没有错误体的 502。
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+        })
+        .unwrap();
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+
+    rig.core.set_lists(vec![vec![]]);
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.other"),
+        })
+        .unwrap();
+    let state = rig
+        .task("app.other", |state| *state != PluginTaskState::Running)
+        .await;
+    assert!(
+        matches!(state, PluginTaskState::Uncertain { .. }),
+        "服务器上一直没有它，如实说不确定：{state:?}"
+    );
+}
+
+#[tokio::test]
+async fn uninstalling_deletes_data_only_when_asked() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![running("app.photos")]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.app
+        .dispatch(Action::UninstallPlugin {
+            id: "app.photos".to_owned(),
+            delete_data: false,
+        })
+        .unwrap();
+    assert_eq!(rig.app.plugins().tasks[0].title, "标题 app.photos");
+    rig.task("app.photos", |state| *state == PluginTaskState::Succeeded)
+        .await;
+    assert_eq!(
+        rig.core
+            .seen(&Method::DELETE, "/_wonton/api/plugins/app.photos")
+            .len(),
+        1
+    );
+
+    rig.app
+        .dispatch(Action::UninstallPlugin {
+            id: "app.photos".to_owned(),
+            delete_data: true,
+        })
+        .unwrap();
+    rig.wait_for(|_| {
+        !rig.core
+            .seen(
+                &Method::DELETE,
+                "/_wonton/api/plugins/app.photos?purge=true",
+            )
+            .is_empty()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn images_are_cached_and_only_come_from_the_image_api() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let image = PluginImage {
+        path: IMAGE.to_owned(),
+    };
+    for _ in 0..2 {
+        assert_eq!(
+            rig.app.load_plugin_image(image.clone()).await.unwrap(),
+            [0x89, 0x50]
+        );
+    }
+    assert_eq!(
+        rig.core.seen(&Method::GET, IMAGE).len(),
+        1,
+        "同一个地址内容不变"
+    );
+
+    for elsewhere in ["/_wonton/api/devices", "/_wonton/api/images/../devices"] {
+        let elsewhere = PluginImage {
+            path: elsewhere.to_owned(),
+        };
+        assert!(matches!(
+            rig.app.load_plugin_image(elsewhere).await,
+            Err(CoreError::InvalidInput { .. })
+        ));
+    }
+    assert!(
+        rig.core
+            .seen(&Method::GET, "/_wonton/api/devices")
+            .is_empty()
+    );
+}

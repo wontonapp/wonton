@@ -254,8 +254,12 @@ expect "经 CONNECT（iOS WKWebView 的方式）同样直接进入 Grafana" "$re
 expect "经 CONNECT 时用户也是主人" "$(tc "$grafana_url/api/user" | json login)" owner
 ! docker exec "$browser" grep -q 'wonton_' /tmp/phone-jar /tmp/ios-jar || fail "经隧道时网关不应发会话 Cookie"
 ok "手机没有拿到任何网关 Cookie"
-expect "管理 API 不接受隧道身份" \
-  "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 401
+expect "已配对设备能调插件管理接口" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 200
+expect "插件网页经隧道也调不了" \
+  "$(t -o /dev/null -w '%{http_code}' -H "Origin: $grafana_url" "$core_url/_wonton/api/plugins")" 403
+for api in devices tunnel; do
+  expect "主人专属的 $api 接口不接受隧道身份" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/$api")" 401
+done
 
 step "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"
 matrix_url="http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"

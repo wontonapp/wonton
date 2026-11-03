@@ -132,7 +132,9 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   隧道上的每个请求自动带上，App 的 WebView 里打开的插件网页发的请求也带着它，所以经隧道的请求还要不是网页发起的：
   `Sec-Fetch-Site` 不是 `same-origin` 或 `none` 的、`Origin` 不是核心地址的，一律拒绝，读也拒绝（插件网页不能拿商店
   刷新消耗限速，也不能探测装了哪些插件）。客户端核心的请求不带这两个头。接口都不带 CORS 头，跨站的修改另外还被拦下
-  （ADR-0011）。
+  （ADR-0011）。浏览器只对 https 和 `localhost` 发 `Sec-Fetch-Site`；自定义域名走 http 时，跨站的 no-cors GET（`<img>`、
+  `<script>`）两个头都不带，和客户端核心分不开。这种环境下插件网页读不到响应，但能触发商店刷新，也能凭加载成败探测装了
+  哪些插件；修改不受影响，因为 POST、DELETE 浏览器总会带 `Origin`。
 
 ### 国内的主机
 

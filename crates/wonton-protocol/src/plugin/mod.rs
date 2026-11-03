@@ -460,6 +460,8 @@ pub enum PluginTaskState {
         reason: PluginFailure,
         message: String,
     },
+    /// 等不到结果：家里的服务器可能已经做完了，要看已安装列表。
+    Uncertain { message: String },
 }
 
 #[cfg(test)]

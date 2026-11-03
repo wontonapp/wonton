@@ -415,21 +415,77 @@ async fn device_identity_signs_in_to_oidc_without_a_core_session() {
 }
 
 #[tokio::test]
-async fn management_api_still_requires_the_owner_token() {
+async fn device_and_tunnel_management_still_require_the_owner_token() {
     let home = Home::start(None).await;
     let device = SecretKey::generate();
     home.register(&device).await;
     let phone = Phone::start(device, &home).await;
 
-    for path in [
-        "/_wonton/api/plugins",
-        "/_wonton/api/devices",
-        "/_wonton/api/tunnel",
-    ] {
+    for path in ["/_wonton/api/devices", "/_wonton/api/tunnel"] {
         let (status, headers, _) = phone.get(CORE, path).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
         assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
     }
+}
+
+/// ADR-0017：App 经隧道管理插件；插件网页的请求同样带着设备身份，读也要拒绝。
+#[tokio::test]
+async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
+    let home = Home::start(None).await;
+    let device = SecretKey::generate();
+    home.register(&device).await;
+    let phone = Phone::start(device, &home).await;
+    let path = "/_wonton/api/plugins";
+
+    let (status, _, text) = phone.send(Method::GET, CORE, path, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert!(
+        serde_json::from_str::<wonton_protocol::InstalledPlugins>(&text).is_ok(),
+        "{text}"
+    );
+    let same_origin = format!("http://{CORE}:{PORT}");
+    for page in [("origin", same_origin.as_str()), ("sec-fetch-site", "none")] {
+        let (status, _, text) = phone.send(Method::GET, CORE, path, &[page]).await;
+        assert_eq!(status, StatusCode::OK, "{page:?}: {text}");
+    }
+
+    let plugin_page = format!("http://{PLUGIN}:{PORT}");
+    for (method, route) in [
+        (Method::GET, path),
+        (Method::POST, path),
+        (Method::POST, "/_wonton/api/plugins/preview"),
+        (Method::GET, "/_wonton/api/plugins/app.whoami"),
+        (Method::DELETE, "/_wonton/api/plugins/app.whoami"),
+        (Method::GET, "/_wonton/api/images/abc/icon-192.png"),
+        (Method::GET, "/_wonton/api/store"),
+        (
+            Method::GET,
+            "/_wonton/api/store/plugin?source=github:owner/repo",
+        ),
+    ] {
+        for page in [
+            ("origin", plugin_page.as_str()),
+            ("origin", "null"),
+            ("sec-fetch-site", "same-site"),
+            ("sec-fetch-site", "cross-site"),
+        ] {
+            let (status, headers, _) = phone.send(method.clone(), CORE, route, &[page]).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {route} {page:?}");
+            assert_eq!(header(&headers, "x-wonton-error"), Some("cross_site"));
+        }
+    }
+
+    for route in [
+        "/_wonton/api/devices",
+        "/_wonton/api/tunnel",
+        "/_wonton/api/lan",
+    ] {
+        let (status, _, _) = phone.send(Method::GET, CORE, route, &[]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{route} 只给主人");
+    }
+
+    let (status, _, _) = lan(&home, Method::GET, CORE, path).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "局域网请求没有设备身份");
 }
 
 #[tokio::test]

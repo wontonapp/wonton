@@ -23,6 +23,21 @@ final class PluginsModel {
         viewModel = core.plugins()
     }
 
+    /// 失败的任务里，插件包在确认之后变了的要重新确认。
+    func reconfirmation(for task: PluginTask) -> PluginConfirmation? {
+        switch task.operation {
+        case .install:
+            let item = viewModel.store.flatMap { store in
+                (store.official.plugins + store.community.plugins).first { $0.id == task.id }
+            }
+            return item.map { .install(source: $0.source) }
+        case .upgrade:
+            return .upgrade(id: task.id)
+        case .uninstall:
+            return nil
+        }
+    }
+
     /// 在主界面的 `.task` 里调用，App 在前台时一直订阅。
     func observe() async {
         // 名字和说明按主人的语言挑。iOS 改了系统语言会重启 App，启动时告诉核心一次就够。

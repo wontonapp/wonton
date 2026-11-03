@@ -7,13 +7,14 @@ use tokio::sync::watch;
 use wonton_protocol::{
     Action, ChatViewModel, CoreError, FileCard, FileCardAction, FileCardActions, FileFailure,
     FileId, FileInfo, FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice,
-    LanSettings, MediaHandle, PluginDetail, PluginFailure, PluginImage, PluginProblem,
-    PluginsViewModel, PushNotification, SessionListViewModel, StoreItem, TransfersViewModel,
+    LanSettings, MediaHandle, PluginDetail, PluginImage, PluginsViewModel, PushNotification,
+    SessionListViewModel, StoreItem, TransfersViewModel,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
 use crate::files::FileOpener;
 use crate::home::{HomeLink, Network, Storage};
+use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{
@@ -31,7 +32,7 @@ pub struct ClientCore {
     home: Arc<HomeLink>,
     chat: Arc<ChatLink>,
     push: Arc<PushLink>,
-    plugins: watch::Sender<PluginsViewModel>,
+    plugins: Arc<PluginsLink>,
     transfers: watch::Sender<TransfersViewModel>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
@@ -65,6 +66,7 @@ impl ClientCore {
                 self.home.foregrounded();
                 self.chat.foregrounded();
                 self.push.foregrounded();
+                self.plugins.foregrounded();
                 Ok(())
             }
             Action::SetPushEndpoint { endpoint } => self.push.set_endpoint(endpoint),
@@ -72,13 +74,22 @@ impl ClientCore {
                 self.push.unavailable(message);
                 Ok(())
             }
-            Action::SetLanguages { .. }
-            | Action::RefreshPlugins
-            | Action::RefreshStore { .. }
-            | Action::InstallPlugin { .. }
-            | Action::UpgradePlugin { .. }
-            | Action::UninstallPlugin { .. }
-            | Action::DismissPluginTask { .. } => Err(plugins_unsupported()),
+            Action::SetLanguages { languages } => {
+                self.plugins.set_languages(languages);
+                Ok(())
+            }
+            Action::RefreshPlugins => {
+                self.plugins.refresh_installed();
+                Ok(())
+            }
+            Action::RefreshStore { force } => {
+                self.plugins.refresh_store(force);
+                Ok(())
+            }
+            Action::InstallPlugin { preview } => self.plugins.install(preview),
+            Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
+            Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
+            Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
             Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
@@ -144,7 +155,7 @@ impl ClientCore {
 
     /// 当前的插件页面（已安装的插件、商店、安装的进展），用于首帧渲染。
     pub fn plugins(&self) -> PluginsViewModel {
-        self.plugins.borrow().clone()
+        self.plugins.view()
     }
 
     /// 订阅插件页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
@@ -154,33 +165,38 @@ impl ClientCore {
 
     /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
     pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
-        let _ = source;
-        Err(plugins_unsupported())
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.store_plugin(&source).await })
+            .await
     }
 
     /// 一个已安装插件的详情（装着的版本）。
     pub async fn installed_plugin(&self, id: String) -> Result<PluginDetail, CoreError> {
-        let _ = id;
-        Err(plugins_unsupported())
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.installed_plugin(&id).await })
+            .await
     }
 
     /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是
     /// [`StoreItem::source`]，或者主人输入的 `github:<owner>/<repo>[@<tag>]`。
     pub async fn preview_install(&self, source: String) -> Result<InstallPreview, CoreError> {
-        let _ = source;
-        Err(plugins_unsupported())
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.preview_install(source).await })
+            .await
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。
     pub async fn preview_upgrade(&self, id: String) -> Result<InstallPreview, CoreError> {
-        let _ = id;
-        Err(plugins_unsupported())
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.preview_upgrade(&id).await })
+            .await
     }
 
     /// 取插件的图标或截图：PNG 或 JPEG 的字节，经隧道取回并缓存，同 [`load_media`](Self::load_media)。
     pub async fn load_plugin_image(&self, image: PluginImage) -> Result<Vec<u8>, CoreError> {
-        let _ = image;
-        Err(plugins_unsupported())
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.load_image(&image).await })
+            .await
     }
 
     /// 给 [`UploadSource::Opaque`](wonton_protocol::UploadSource::Opaque) 的来源换文件描述符。壳在创建核心之后、发出
@@ -256,8 +272,7 @@ impl ClientCore {
 
     /// 在最近取到的商店列表里按关键词找插件：名字、说明、标签和 ID，不分大小写，官方的在前。还没取过商店时为空。
     pub fn search_store(&self, query: String) -> Vec<StoreItem> {
-        let _ = query;
-        Vec::new()
+        self.plugins.search_store(&query)
     }
 
     /// 处理收到的一条推送：`payload` 是壳在本机解开后的明文（Android 上 UnifiedPush 连接库已经按 RFC 8291 解开）。
@@ -286,18 +301,13 @@ impl ClientCore {
         let home = HomeLink::new(runtime.handle().clone(), storage, network)?;
         let chat = ChatLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir))?;
         let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
+        let plugins = PluginsLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir));
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
             chat,
             push,
-            plugins: watch::Sender::new(PluginsViewModel {
-                problem: Some(PluginProblem {
-                    reason: PluginFailure::Protocol,
-                    message: plugins_unsupported().to_string(),
-                }),
-                ..PluginsViewModel::default()
-            }),
+            plugins,
             transfers: watch::Sender::new(TransfersViewModel::default()),
             runtime: Some(runtime),
         }))
@@ -334,14 +344,7 @@ impl ClientCore {
     }
 }
 
-/// 插件商店的接口先于实现合并（ADR-0017）：实现之前，插件相关的调用都如实失败。
-fn plugins_unsupported() -> CoreError {
-    CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持插件商店".into(),
-    }
-}
-
-/// 局域网设置的接口同样先于实现合并（ADR-0019）。
+/// 局域网设置的接口先于实现合并（ADR-0019）：实现之前如实失败。
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),

@@ -1,5 +1,6 @@
-//! 插件管理 API（ADR-0017 的“接口：App 和核心”；M0 用主人令牌鉴权，App 经隧道接入后改用设备身份）。响应是
-//! `wonton-protocol` 的类型，文字按 `Accept-Language` 挑语言。
+//! 插件管理 API（ADR-0017 的“接口：App 和核心”）。接受主人令牌和经隧道的已配对设备（不能是网页发起的，见
+//! [`plugin_denied`]）；局域网设置和设备管理只认主人令牌。响应是 `wonton-protocol` 的类型，文字按 `Accept-Language`
+//! 挑语言。
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
@@ -19,10 +20,10 @@
 
 use std::sync::Arc;
 
-use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
 use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
@@ -30,7 +31,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{InstallRequest, InstallSource, LanChoice};
 
-use super::{Gateway, pages};
+use super::{Gateway, TunnelPeer, isolation, pages};
 use crate::plugin::gallery::Variant;
 use crate::plugin::image_worker::ImageError;
 use crate::plugin::languages::Languages;
@@ -108,8 +109,8 @@ fn install_error(error: &InstallError) -> Response {
     error_response(status, error.kind(), &error.to_string())
 }
 
-/// 只接受 `Authorization: Bearer <主人令牌>`；浏览器 Cookie 和隧道设备身份都不能调用 API：它们都会
-/// 随请求自动带上，插件网页可以借此发起跨站请求。未授权时返回要直接回给客户端的响应。
+/// 只接受 `Authorization: Bearer <主人令牌>`：浏览器 Cookie 随请求自动带上，插件网页可以借此发起跨站请求。未授权时
+/// 返回要直接回给客户端的响应。
 pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response> {
     let token = headers
         .get(AUTHORIZATION)
@@ -125,8 +126,37 @@ pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
     }
 }
 
-pub async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+/// 插件管理接口的鉴权：主人令牌，或者经隧道的已配对设备。设备身份随隧道上的每个请求自动带上，App 的 WebView 里打开的
+/// 插件网页发的请求也带着它，所以设备的请求还要不是别的网页发起的，读也一样（ADR-0017）：插件网页不能拿商店刷新消耗
+/// 限速，也不能探测装了哪些插件。
+fn plugin_denied(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+) -> Option<Response> {
+    let denied = denied(gateway, headers)?;
+    if gateway
+        .device_user(peer.map(|Extension(peer)| peer))
+        .is_none()
+    {
+        return Some(denied);
+    }
+    if isolation::not_from_another_page(headers, &gateway.core_origin()) {
+        return None;
+    }
+    Some(error_response(
+        StatusCode::FORBIDDEN,
+        "cross_site",
+        "插件管理接口不接受其他网页发来的请求",
+    ))
+}
+
+pub async fn list(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     Json(gateway.plugins.installed(&languages(&headers))).into_response()
@@ -134,10 +164,11 @@ pub async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Re
 
 pub async fn detail(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -152,10 +183,11 @@ pub async fn detail(
 
 pub async fn preview(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let langs = languages(&headers);
@@ -186,11 +218,12 @@ pub struct InstallQuery {
 
 pub async fn install(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let installed = match json_body::<InstallRequest>(&headers, &body) {
@@ -238,10 +271,11 @@ pub struct StoreQuery {
 
 pub async fn store(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Query(query): Query<StoreQuery>,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let listing = gateway
@@ -258,10 +292,11 @@ pub struct StorePluginQuery {
 
 pub async fn store_plugin(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Query(query): Query<StorePluginQuery>,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     match gateway
@@ -282,11 +317,12 @@ pub struct UninstallQuery {
 
 pub async fn uninstall(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<UninstallQuery>,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -337,10 +373,11 @@ pub async fn set_lan(
 /// 插件的图标。地址里有原文件的 sha256，同一个地址的内容不变，所以可以一直缓存。
 pub async fn image(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Path((sha256, file)): Path<(String, String)>,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let not_found = || error_response(StatusCode::NOT_FOUND, "not_found", "没有这张图片");

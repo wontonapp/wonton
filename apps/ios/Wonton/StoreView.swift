@@ -16,7 +16,9 @@ struct StoreView: View {
                 if !model.viewModel.tasks.isEmpty {
                     Section {
                         ForEach(model.viewModel.tasks, id: \.id) { task in
-                            TaskRow(model: model, task: task, review: { confirmation = reconfirmation(for: task) })
+                            TaskRow(model: model, task: task) {
+                                confirmation = model.reconfirmation(for: task)
+                            }
                         }
                     }
                 }
@@ -116,21 +118,6 @@ struct StoreView: View {
         let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
         return .get(title: "打开") { open(entry) }
-    }
-
-    /// 失败的任务里，插件包在确认之后变了的要重新确认。
-    private func reconfirmation(for task: PluginTask) -> PluginConfirmation? {
-        switch task.operation {
-        case .install:
-            let item = model.viewModel.store.flatMap { store in
-                (store.official.plugins + store.community.plugins).first { $0.id == task.id }
-            }
-            return item.map { .install(source: $0.source) }
-        case .upgrade:
-            return .upgrade(id: task.id)
-        case .uninstall:
-            return nil
-        }
     }
 
     /// 列表里出现过的分类，按第一次出现的顺序。
@@ -233,7 +220,7 @@ private struct StoreItemRow: View {
     }
 }
 
-private struct TaskRow: View {
+struct TaskRow: View {
     let model: PluginsModel
     let task: PluginTask
     let review: () -> Void
@@ -273,7 +260,9 @@ private struct TaskRow: View {
                     Button("重新查看", action: review).buttonStyle(.borderless)
                 }
             }
-            .font(.footnote)
+        case let .uncertain(message):
+            Label("结果不确定：\(message)", systemImage: "questionmark.circle").foregroundStyle(.orange)
+                .font(.footnote)
         }
     }
 }
