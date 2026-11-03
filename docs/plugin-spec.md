@@ -1110,7 +1110,7 @@ x-wonton:
 ```
 
 - `format` 是索引格式的版本，核心读不懂的格式按取不到处理，并提示升级核心。
-- 一个插件一项，`source` 和插件 ID 都不重复，商店按这里的顺序列出官方插件。`files` 是插件包的全部文件，`compose` 必须
+- 一个插件一项，`source` 和插件 ID 都不重复，商店按这里的顺序列出官方插件，标为“已审核”。`files` 是插件包的全部文件，`compose` 必须
   和 `files` 里的 `docker-compose.yml` 一致。核心按 `files` 核对取到的每个文件，所以文件可以从任何地方取（GitHub、
   jsDelivr、核心内置的副本）。
 - 条目用 `wonton-core plugin index-entry <插件包目录> github:<owner>/<repo> <提交号>` 生成，不手写：目录是那个提交的

@@ -69,7 +69,7 @@ val PluginFailure.nextStep: String
 
 val PluginTrust.label: String
     get() = when (this) {
-        PluginTrust.OFFICIAL -> "官方"
+        PluginTrust.OFFICIAL -> "已审核"
         PluginTrust.COMMUNITY, PluginTrust.UNKNOWN -> "未审核"
         PluginTrust.LOCAL -> "本地"
         PluginTrust.SYSTEM -> "系统"

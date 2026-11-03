@@ -46,7 +46,7 @@ extension PluginFailure {
 extension PluginTrust {
     var label: String {
         switch self {
-        case .official: return "官方"
+        case .official: return "已审核"
         case .community, .unknown: return "未审核"
         case .local: return "本地"
         case .system: return "系统"

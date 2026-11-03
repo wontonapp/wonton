@@ -44,7 +44,7 @@ import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreSection
 
-/** “商店”：官方插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。 */
+/** “商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。 */
 @Composable
 fun StoreRoute(plugins: PluginsState, navigation: PluginNavigation) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshStore(force = false)) }
@@ -121,7 +121,7 @@ private fun LazyListScope.listing(
     if (present.size > 1) {
         item(key = "categories") { CategoryChips(present, category, onCategory) }
     }
-    section("官方", store.official, category, row)
+    section("已审核", store.official, category, row)
     section("社区", store.community, category, row)
 }
 
@@ -220,7 +220,7 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
     }
 }
 
-/** 官方插件在自己的分组里，不再标来源。 */
+/** 已审核的插件在自己的分组里，不再标来源。 */
 @Composable
 private fun ItemTags(item: StoreItem) {
     val showsTrust = item.trust != PluginTrust.OFFICIAL

@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// “商店”：官方插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。
+/// “商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。
 struct StoreView: View {
     let model: PluginsModel
     let open: (PluginEntry) -> Void
@@ -70,7 +70,7 @@ struct StoreView: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
         }
-        section("官方", store.official)
+        section("已审核", store.official)
         section("社区", store.community)
     }
 
@@ -216,7 +216,7 @@ private struct StoreItemRow: View {
         .padding(.vertical, 2)
     }
 
-    /// 官方插件在自己的分组里，不再标来源。
+    /// 已审核的插件在自己的分组里，不再标来源。
     @ViewBuilder private var tags: some View {
         let showsTrust = item.trust != .official
         if showsTrust || item.highPermissions || item.stars != nil {
