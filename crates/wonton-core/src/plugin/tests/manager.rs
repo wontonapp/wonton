@@ -95,7 +95,7 @@ fn manager_for(
         pgid: owner.gid(),
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
-        owner_email: "owner@example.com".into(),
+        owner_email: Some("owner@example.com".into()),
         gateway_port: 8080,
         instance,
     };
@@ -355,15 +355,15 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         id: "owner".into(),
         username: "owner".into(),
         display_name: "主人".into(),
-        email: "owner@wonton.localhost".into(),
+        email: Some("owner@wonton.localhost".into()),
     };
     let auth = m.route("app-test").unwrap().proxy.unwrap();
-    let header = auth.headers(&owner);
+    let header = auth.headers(&owner).unwrap();
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
         ("remote-user", "owner")
     );
-    let cookies = auth.cookies(&owner);
+    let cookies = auth.cookies(&owner).unwrap();
     let (name, key) = (&cookies[0].0, cookies[0].1.clone());
     assert_eq!((*name, key.len()), ("app_web", 64), "32 字节的十六进制");
     assert_eq!(auth.secrets(), [key.as_str()]);
@@ -371,7 +371,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
     let auth = restarted.route("app-test").unwrap().proxy.unwrap();
-    assert_eq!(auth.cookies(&owner)[0].1, key);
+    assert_eq!(auth.cookies(&owner).unwrap()[0].1, key);
 }
 
 #[tokio::test]

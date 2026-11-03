@@ -7612,6 +7612,7 @@ dependencies = [
  "hyper-util",
  "image",
  "iroh",
+ "jiff-tzdb",
  "jsonwebtoken",
  "netlink-packet-core 0.9.0",
  "netlink-packet-route 0.33.0",

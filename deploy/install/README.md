@@ -26,15 +26,18 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 | --- | --- |
 | `/opt/wonton/compose.yaml`、`/opt/wonton/wonton` | 由当前的核心镜像写出，每次 `init` 重写 |
 | `/usr/local/bin/wonton` | 链接到 `/opt/wonton/wonton` |
-| `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、数据目录，由 `install.sh` 写 |
+| `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、主人的用户名、显示名和邮箱、时区、数据目录，由 `install.sh` 写 |
 | `/opt/wonton/secrets/` | Matrix 签发私钥、Tuwunel 配置（含公钥和注册共享密钥）、Hydra 的系统密钥；0700 |
 | `/var/lib/wonton/`（`WONTON_DATA_DIR`） | 核心和插件的数据，容器内外路径相同 |
 | Docker 卷 `wonton_hydra`、`wonton_tuwunel` | Hydra 的 SQLite、Tuwunel 的数据库 |
 
+主人的显示名和邮箱可以改：改 `.env` 再 `docker compose -f /opt/wonton/compose.yaml up -d`。用户名不能改（ADR-0022）：核心把它记在
+`<数据目录>/core/owner.json`，对不上就拒绝启动，要换只能用新的数据目录重新安装。
+
 ## 升级
 
 再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（1.0 之前默认 `beta` 渠道）的最新版本，已有的密钥、
-数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，Matrix 的服务器名（基础域名）不能改。App 里的一键升级
+数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，Matrix 的服务器名（基础域名）和主人的用户名不能改。App 里的一键升级
 （ADR-0012）按同样的顺序做：拉新镜像，改 `.env` 里的 `WONTON_CORE_IMAGE`，在新镜像里执行 `wonton-core init`，
 再 `docker compose -f /opt/wonton/compose.yaml up -d`；健康检查不过就把 `.env` 改回旧的 digest 再 `up`。
 

@@ -233,6 +233,7 @@ pub(super) fn supported(permission: &Permission) -> bool {
             | Permission::MatrixBot
             | Permission::Models
             | Permission::Tools
+            | Permission::OwnerIdentity
             | Permission::DevicesGpu
             | Permission::NetworkLan
     )

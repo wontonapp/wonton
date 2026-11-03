@@ -18,6 +18,16 @@ pub enum InterpolateError {
     Syntax(String),
 }
 
+impl InterpolateError {
+    /// 因为这个变量没有注入而失败时，变量的名字。
+    pub fn variable(&self) -> Option<&str> {
+        match self {
+            Self::Missing(name) | Self::Required { name, .. } => Some(name),
+            Self::Syntax(_) => None,
+        }
+    }
+}
+
 /// 插值用的变量表。
 pub type Vars = BTreeMap<String, String>;
 

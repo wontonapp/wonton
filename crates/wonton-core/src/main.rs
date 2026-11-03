@@ -97,7 +97,8 @@ async fn run() -> ExitCode {
 
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
-    let cfg = Config::from_env()?;
+    let cfg = Config::from_env()?.lock_owner()?;
+    tracing::info!(owner = %cfg.owner.username, "主人的用户名已核对");
     if let Some(dev) = &cfg.host_dev
         && !dev.is_dir()
     {
@@ -364,10 +365,24 @@ async fn healthcheck() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// 安装脚本把要写进 `.env` 的主人设置传给 `init`：不合规则或者和记录对不上时当场报错，不用等容器反复重启。`init` 也
+/// 由一键升级执行，那时什么都不传，这里什么都不查。
+fn check_owner_before_install() -> anyhow::Result<()> {
+    let get = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    wonton_core::config::check_owner_settings(&get)?;
+    if let Some(data_dir) = get("WONTON_DATA_DIR") {
+        let state = std::path::Path::new(&data_dir).join("core");
+        let configured = get("WONTON_OWNER_NAME");
+        wonton_core::owner::check_before_install(&state, configured.as_deref())?;
+    }
+    Ok(())
+}
+
 fn init(args: &[String]) -> anyhow::Result<()> {
     let [dir, server_name] = args else {
         bail!("用法：wonton-core init <安装目录> <基础域名>");
     };
+    check_owner_before_install()?;
     let report = wonton_core::install::init(std::path::Path::new(dir), server_name)?;
     for path in &report.created {
         println!("已生成 {}", path.display());

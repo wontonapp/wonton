@@ -394,6 +394,8 @@ mod files_upload_failure_tests;
 #[cfg(test)]
 mod files_upload_tests;
 #[cfg(test)]
+mod first_run_tests;
+#[cfg(test)]
 mod isolation_tests;
 #[cfg(test)]
 mod lan_api_tests;

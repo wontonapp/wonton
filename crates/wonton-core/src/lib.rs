@@ -11,6 +11,7 @@ pub mod install;
 pub mod matrix;
 pub mod mcp;
 pub mod oidc;
+pub mod owner;
 pub mod pairing;
 pub mod plugin;
 pub mod push;

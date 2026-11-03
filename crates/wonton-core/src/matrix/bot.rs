@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::admin::ADMIN_LOCALPART;
+use super::admin::{ADMIN_LOCALPART, SERVER_USER_LOCALPART};
 use super::api::{Login, MatrixError};
 use super::{Matrix, Session};
 
@@ -97,7 +97,7 @@ impl Matrix {
             let localpart = localpart(&previous.user_id)?;
             return self.login(localpart, spec.device_name).await;
         }
-        let reserved = [ADMIN_LOCALPART, spec.owner];
+        let reserved = [ADMIN_LOCALPART, SERVER_USER_LOCALPART, spec.owner];
         for n in 1..=MAX_CANDIDATES {
             let candidate = match n {
                 1 => spec.localpart.to_owned(),

@@ -271,8 +271,10 @@ pub fn id_token_claims(owner: &Owner, granted: &[String]) -> Value {
         claims.insert("name".into(), json!(owner.display_name));
         claims.insert("preferred_username".into(), json!(owner.username));
     }
-    if has("email") {
-        claims.insert("email".into(), json!(owner.email));
+    if has("email")
+        && let Some(email) = &owner.email
+    {
+        claims.insert("email".into(), json!(email));
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
@@ -291,7 +293,7 @@ mod tests {
             id: "owner".into(),
             username: "owner".into(),
             display_name: "主人".into(),
-            email: "owner@wonton.localhost".into(),
+            email: Some("owner@wonton.localhost".into()),
         };
         let requested: Vec<String> = ["openid", "email", "admin:all"].map(String::from).into();
         let granted = granted_scopes(&requested);
@@ -299,5 +301,11 @@ mod tests {
         let claims = id_token_claims(&owner, &granted);
         assert_eq!(claims["email"], "owner@wonton.localhost");
         assert!(claims.get("name").is_none() && claims.get("groups").is_none());
+        let no_email = Owner {
+            email: None,
+            ..owner
+        };
+        let claims = id_token_claims(&no_email, &granted);
+        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
     }
 }

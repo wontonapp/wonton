@@ -44,6 +44,10 @@ services:
       WONTON_DEFAULT_PLUGINS: ${WONTON_DEV_DEFAULT_PLUGINS-/usr/share/wonton/default-plugins}
       WONTON_PUID: ${WONTON_DEV_PUID:-1000}
       WONTON_PGID: ${WONTON_DEV_PGID:-1000}
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:-}
+      WONTON_OWNER_DISPLAY_NAME: ${WONTON_OWNER_DISPLAY_NAME:-}
+      # 开发环境给一个邮箱，要邮箱的插件（Grafana 的 OIDC 登录）才用得了。
+      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:-owner@${WONTON_DEV_DOMAIN:-wonton.localhost}}
       TZ: ${TZ:-UTC}
       RUST_LOG: ${RUST_LOG:-info}
     ports:

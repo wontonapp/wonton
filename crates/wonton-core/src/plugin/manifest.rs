@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::provides::Provides;
-use super::store_info::{Author, Category};
+use super::store_info::{self, Author, Category};
 
 /// 插件 ID 的最大长度。网关用它派生子域名，必须放得进一个 DNS 标签。
 pub const MAX_ID_LEN: usize = 63;
@@ -367,6 +367,7 @@ pub enum Permission {
     Tools,
     MatrixBot,
     Notify,
+    OwnerIdentity,
     NetworkEgress,
     NetworkLan,
     NetworkHost,
@@ -407,6 +408,7 @@ impl FromStr for Permission {
             "tools" => Some(Self::Tools),
             "matrix.bot" => Some(Self::MatrixBot),
             "notify" => Some(Self::Notify),
+            "owner.identity" => Some(Self::OwnerIdentity),
             "network.egress" => Some(Self::NetworkEgress),
             "network.lan" => Some(Self::NetworkLan),
             "network.host" => Some(Self::NetworkHost),
@@ -458,6 +460,7 @@ impl fmt::Display for Permission {
             Self::Tools => f.write_str("tools"),
             Self::MatrixBot => f.write_str("matrix.bot"),
             Self::Notify => f.write_str("notify"),
+            Self::OwnerIdentity => f.write_str("owner.identity"),
             Self::NetworkEgress => f.write_str("network.egress"),
             Self::NetworkLan => f.write_str("network.lan"),
             Self::NetworkHost => f.write_str("network.host"),
@@ -544,6 +547,13 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// 容器拿不拿得到主人的身份变量。低于 0.3 的清单声明了单点登录就有：已经装着的插件重建容器时不能因此失败（ADR-0022）。
+    pub fn gets_owner_identity(&self) -> bool {
+        self.permissions.contains(&Permission::OwnerIdentity)
+            || (store_info::spec_of(self) < store_info::SPEC_EXPLICIT_OWNER_IDENTITY
+                && self.webui.as_ref().is_some_and(|w| w.sso != Sso::None))
+    }
+
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。
     pub fn validate(&self) -> Result<(), ManifestError> {
         if !is_semver(&self.version) {

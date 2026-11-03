@@ -105,7 +105,7 @@ impl Home {
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
-            owner_email: "owner@example.com".into(),
+            owner_email: Some("owner@example.com".into()),
             gateway_port: 8080,
             instance: Default::default(),
         };

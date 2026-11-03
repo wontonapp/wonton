@@ -15,10 +15,10 @@ use super::health::{self, Checked, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::lan::LanGrant;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
-use super::manifest::{Manifest, Permission, PluginId, Sso};
+use super::manifest::{Manifest, Permission, PluginId};
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
-use super::proxy_auth::ProxyAuth;
+use super::proxy_auth::{self, ProxyAuth};
 use super::render::{Deployment, InstallContext, OidcVars, OwnerVars, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
@@ -42,7 +42,7 @@ pub struct LifecycleConfig {
     /// 主人的用户名，也是主人的 Matrix 用户名（localpart）。
     pub owner: String,
     /// 主人的邮箱，注入给声明了单点登录的插件。
-    pub owner_email: String,
+    pub owner_email: Option<String>,
     /// 核心网关监听的端口：插件经核心在插件网络里的别名（如 `matrix.wonton.internal`）访问它。
     pub gateway_port: u16,
     /// 核心的实例名（`WONTON_INSTANCE`），决定插件的资源名和标签。
@@ -264,6 +264,9 @@ impl PluginManager {
         secret: Option<&str>,
         generated: BTreeMap<String, String>,
     ) -> Result<InstallContext, InstallError> {
+        if self.cfg.owner_email.is_none() && proxy_auth::uses_email(manifest) {
+            return Err(InstallError::Unsupported(crate::owner::NO_EMAIL.to_owned()));
+        }
         let public = &self.cfg.public;
         let slug = manifest.id.slug();
         let app_url = manifest
@@ -311,14 +314,10 @@ impl PluginManager {
             shares,
             app_url,
             oidc,
-            owner: manifest
-                .webui
-                .as_ref()
-                .filter(|w| w.sso != Sso::None)
-                .map(|_| OwnerVars {
-                    name: self.cfg.owner.clone(),
-                    email: self.cfg.owner_email.clone(),
-                }),
+            owner: manifest.gets_owner_identity().then(|| OwnerVars {
+                name: self.cfg.owner.clone(),
+                email: self.cfg.owner_email.clone(),
+            }),
             matrix: None,
             models: None,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {

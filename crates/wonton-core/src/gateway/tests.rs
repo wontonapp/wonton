@@ -193,7 +193,7 @@ pub(super) fn owner() -> Owner {
         id: "owner".into(),
         username: "owner".into(),
         display_name: "主人".into(),
-        email: "owner@wonton.localhost".into(),
+        email: Some("owner@wonton.localhost".into()),
     }
 }
 
@@ -226,7 +226,7 @@ impl Harness {
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
-            owner_email: "owner@example.com".into(),
+            owner_email: Some("owner@example.com".into()),
             gateway_port: 8080,
             instance: Default::default(),
         };

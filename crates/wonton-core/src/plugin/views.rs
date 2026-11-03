@@ -17,7 +17,8 @@ use super::manifest::{
     Access, Arch, GpuRequirement, Manifest, Permission, PluginId, PluginKind, Sso,
 };
 use super::package::PluginPackage;
-use super::render::dry_run;
+use super::proxy_auth;
+use super::render::{dry_run, dry_run_with_email};
 use super::store_info::Category;
 
 /// 已安装插件在列表和详情页里显示的信息，装上时从插件包里取出。
@@ -141,7 +142,10 @@ impl PluginManager {
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m).await?;
         let lan = self.lan_preview(m).await?;
-        let blocked = blocked.or(gpu.blocked).or(lan.blocked);
+        let blocked = blocked
+            .or(gpu.blocked)
+            .or(lan.blocked)
+            .or_else(|| self.no_email_block(package));
         let unpinned: Vec<String> = plan
             .containers
             .iter()
@@ -164,6 +168,10 @@ impl PluginManager {
         }
         if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
             notices.push(line("在 App 里打开它的网页时自动登录".to_owned()));
+        }
+        // 写了权限的，已经在权限列表里了。
+        if reveals_owner_identity(m) && !m.permissions.contains(&Permission::OwnerIdentity) {
+            notices.push(line(permission_text(&Permission::OwnerIdentity)));
         }
         notices.extend(requirement_lines(m).into_iter().map(line));
         notices.extend(gpu.notice);
@@ -229,6 +237,13 @@ impl PluginManager {
     }
 
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
+    /// 主人没配邮箱、插件又非要不可时，装不上的原因。
+    fn no_email_block(&self, package: &PluginPackage) -> Option<String> {
+        let needs_email =
+            proxy_auth::uses_email(&package.manifest) || dry_run_with_email(package, None).is_err();
+        (self.cfg.owner_email.is_none() && needs_email).then(|| crate::owner::NO_EMAIL.to_owned())
+    }
+
     async fn precheck(&self, m: &Manifest) -> Result<(), InstallError> {
         if m.kind == PluginKind::System {
             return Err(InstallError::Unsupported(
@@ -313,6 +328,7 @@ pub fn permission_text(permission: &Permission) -> String {
         Permission::Tools => "调用核心和其他插件的工具".to_owned(),
         Permission::MatrixBot => "以 Bot 身份收发消息".to_owned(),
         Permission::Notify => "给你发通知".to_owned(),
+        Permission::OwnerIdentity => "知道你的用户名和邮箱".to_owned(),
         Permission::NetworkEgress => "访问外网和局域网".to_owned(),
         Permission::NetworkLan => "在局域网上开放端口（高权限）".to_owned(),
         Permission::NetworkHost => "使用宿主的网络（高权限）".to_owned(),
@@ -320,6 +336,13 @@ pub fn permission_text(permission: &Permission) -> String {
         Permission::Device { path } => format!("访问宿主设备 {path}（高权限）"),
         Permission::DockerSocket => "控制 Docker（最高权限）".to_owned(),
     }
+}
+
+/// 应用拿不拿得到主人的身份：容器里的变量之外，还有登录时给的 OIDC 声明和代登录模板（ADR-0022）。
+fn reveals_owner_identity(m: &Manifest) -> bool {
+    m.gets_owner_identity()
+        || m.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc)
+        || proxy_auth::uses_identity(m)
 }
 
 pub(super) fn permission_line(permission: &Permission) -> PermissionLine {

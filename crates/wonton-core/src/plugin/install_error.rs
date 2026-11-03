@@ -128,7 +128,11 @@ impl From<PackageError> for InstallError {
 
 impl From<RenderError> for InstallError {
     fn from(e: RenderError) -> Self {
-        Self::Invalid(e.to_string())
+        match e {
+            // 插件没写错，这台主机上缺邮箱。
+            RenderError::NoOwnerEmail => Self::Unsupported(e.to_string()),
+            e => Self::Invalid(e.to_string()),
+        }
     }
 }
 

@@ -18,6 +18,10 @@ use crate::secret::random_token;
 /// 管理账号的用户名。
 pub const ADMIN_LOCALPART: &str = wonton_protocol::CORE_LOCALPART;
 
+/// Tuwunel 自己的服务器用户（v1.9.4 配置项 `server_user_localpart` 的默认值，核心不改它）。JWT 登录能进这个账号，
+/// 主人和 Bot 都不能叫这个名字。
+pub const SERVER_USER_LOCALPART: &str = "conduit";
+
 /// 读出能用的管理令牌，没有或失效时注册（首次）或重新登录，并保存。
 pub async fn admin_token(
     api: &Api,

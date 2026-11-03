@@ -20,6 +20,7 @@ mod instances;
 mod lan;
 mod manager;
 mod models;
+mod owner;
 mod preinstall;
 mod resources;
 mod secrets;

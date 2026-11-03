@@ -101,18 +101,18 @@ impl ProxyAuth {
     }
 
     /// 代加的请求头：名字和这次请求的值。
-    pub fn headers(&self, owner: &Owner) -> Vec<(HeaderName, String)> {
+    pub fn headers(&self, owner: &Owner) -> Result<Vec<(HeaderName, String)>, NoEmail> {
         self.headers
             .iter()
-            .map(|(name, parts)| (name.clone(), render(parts, owner)))
+            .map(|(name, parts)| Ok((name.clone(), render(parts, owner)?)))
             .collect()
     }
 
     /// 代加的 Cookie：名字和这次请求的值。
-    pub fn cookies(&self, owner: &Owner) -> Vec<(&str, String)> {
+    pub fn cookies(&self, owner: &Owner) -> Result<Vec<(&str, String)>, NoEmail> {
         self.cookies
             .iter()
-            .map(|(name, parts)| (name.as_str(), render(parts, owner)))
+            .map(|(name, parts)| Ok((name.as_str(), render(parts, owner)?)))
             .collect()
     }
 
@@ -136,16 +136,46 @@ impl ProxyAuth {
     }
 }
 
-fn render(parts: &[Part], owner: &Owner) -> String {
+/// 模板用了 `{email}`，主人却没配邮箱：不代加一个空值。
+#[derive(Debug, thiserror::Error)]
+#[error("{}", crate::owner::NO_EMAIL)]
+pub struct NoEmail;
+
+fn render(parts: &[Part], owner: &Owner) -> Result<String, NoEmail> {
     parts
         .iter()
-        .map(|part| match part {
-            Part::Text(text) | Part::Secret(text) => text.as_str(),
-            Part::User => owner.username.as_str(),
-            Part::Name => owner.display_name.as_str(),
-            Part::Email => owner.email.as_str(),
+        .map(|part| {
+            Ok(match part {
+                Part::Text(text) | Part::Secret(text) => text.as_str(),
+                Part::User => owner.username.as_str(),
+                Part::Name => owner.display_name.as_str(),
+                Part::Email => owner.email.as_deref().ok_or(NoEmail)?,
+            })
         })
         .collect()
+}
+
+/// 清单的代登录模板用没用 `{email}`。
+pub fn uses_email(manifest: &Manifest) -> bool {
+    any_part(manifest, |part| matches!(part, Part::Email))
+}
+
+/// 清单的代登录模板会不会把主人的身份带给应用。
+pub fn uses_identity(manifest: &Manifest) -> bool {
+    any_part(manifest, |part| {
+        matches!(part, Part::User | Part::Name | Part::Email)
+    })
+}
+
+fn any_part(manifest: &Manifest, matches: impl Fn(&Part) -> bool) -> bool {
+    let Some(proxy) = manifest.webui.as_ref().and_then(|w| w.proxy.as_ref()) else {
+        return false;
+    };
+    proxy
+        .headers
+        .values()
+        .chain(proxy.cookies.values())
+        .any(|template| parse(template).is_ok_and(|parts| parts.iter().any(&matches)))
 }
 
 /// 拆开一个值模板。`{`、`}` 只能用来写占位符。

@@ -35,6 +35,28 @@ pub enum RenderError {
     Package(#[from] PackageError),
     #[error("服务 `{service}`：{message}")]
     Service { service: String, message: String },
+    #[error("插件没申请 owner.identity，不能引用 `{0}`：在清单的 permissions 里加上它")]
+    NoOwnerIdentity(String),
+    #[error("{}", crate::owner::NO_EMAIL)]
+    NoOwnerEmail,
+}
+
+/// 引用了主人的身份变量却没注入时，分清是插件没申请还是主人没配（ADR-0022）。
+fn explain_owner_vars(error: RenderError, ctx: &InstallContext) -> RenderError {
+    let variable = match &error {
+        RenderError::Package(
+            PackageError::Interpolate { source, .. }
+            | PackageError::ConfigInterpolate { source, .. },
+        ) => source.variable(),
+        _ => None,
+    };
+    match (variable, &ctx.owner) {
+        (Some("WONTON_OWNER_EMAIL"), Some(_)) => RenderError::NoOwnerEmail,
+        (Some(name @ ("WONTON_OWNER_NAME" | "WONTON_OWNER_EMAIL")), None) => {
+            RenderError::NoOwnerIdentity(name.to_owned())
+        }
+        _ => error,
+    }
 }
 
 pub(super) fn service_err(service: &str, message: impl Into<String>) -> RenderError {
@@ -64,11 +86,11 @@ impl std::fmt::Debug for OidcVars {
     }
 }
 
-/// 注入给声明了单点登录的插件的主人身份，和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
+/// 注入给插件的主人身份（[`Manifest::gets_owner_identity`]），和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnerVars {
     pub name: String,
-    pub email: String,
+    pub email: Option<String>,
 }
 
 /// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
@@ -239,7 +261,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(owner) = &ctx.owner {
         set("WONTON_OWNER_NAME", owner.name.clone());
-        set("WONTON_OWNER_EMAIL", owner.email.clone());
+        if let Some(email) = &owner.email {
+            set("WONTON_OWNER_EMAIL", email.clone());
+        }
     }
     if let Some(models) = &ctx.models {
         set("WONTON_MODEL_BASE_URL", models.base_url.clone());
@@ -272,6 +296,14 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
 
 /// 用占位环境渲染一遍，在不接触 Docker 的情况下检查插件包能否安装。
 pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
+    dry_run_with_email(package, Some("owner@wonton.invalid"))
+}
+
+/// 同 [`dry_run`]，主人的邮箱用 `email`：主人没配邮箱时，看插件在这台主机上装不装得上。
+pub(super) fn dry_run_with_email(
+    package: &PluginPackage,
+    email: Option<&str>,
+) -> Result<Deployment, RenderError> {
     let manifest = &package.manifest;
     let slug = manifest.id.slug();
     let root = PathBuf::from("/wonton-dry-run");
@@ -299,9 +331,9 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
             token_url: "http://auth.wonton.invalid/token".into(),
             userinfo_url: "http://auth.wonton.invalid/userinfo".into(),
         }),
-        owner: webui.filter(|w| w.sso != Sso::None).map(|_| OwnerVars {
+        owner: manifest.gets_owner_identity().then(|| OwnerVars {
             name: "owner".into(),
-            email: "owner@wonton.invalid".into(),
+            email: email.map(str::to_owned),
         }),
         matrix: manifest
             .permissions
@@ -352,6 +384,10 @@ pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
 }
 
 pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
+    render_plan(package, ctx).map_err(|e| explain_owner_vars(e, ctx))
+}
+
+fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
     let manifest = &package.manifest;
     let bot_key = ctx.models.as_ref().and_then(|m| m.bot_key.clone());
     let vars = ServiceVars::new(

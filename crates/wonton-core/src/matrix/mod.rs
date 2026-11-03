@@ -16,7 +16,7 @@ use std::time::Duration;
 use hyper::Method;
 use serde_json::json;
 
-pub use admin::ADMIN_LOCALPART;
+pub use admin::{ADMIN_LOCALPART, SERVER_USER_LOCALPART};
 pub use api::{JWT_LOGIN_TYPE, Login, MatrixError};
 pub use bot::{Avatar, BotAccount, BotSpec, ProvisionedBot};
 pub use issuer::LOGIN_TOKEN_TTL_SECS;

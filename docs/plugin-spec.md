@@ -1123,11 +1123,6 @@ v0.2（ADR-0017）的部分同样每项一个 PR：
 4. **客户端核心**：`PluginsViewModel` 和插件相关的操作。
 6. **插件移出主仓库**：预装的 magpie、Hermes 改由锁文件固定。
 
-ADR-0022 的部分：
-
-- **主人的身份**（#123）：记下并核对用户名，用户名、邮箱和 `TZ` 的校验，`owner.identity`，安装预览，`deploy/install`
-  传入这些变量。
-
 ADR-0020 的部分：
 
 - **文件服务**：先提只改接口的 PR（`wonton-protocol` 的 `file` 模块）。核心的编号、下载接口和 tusd；总线登记编号、改写结果，`wonton__view_file`、

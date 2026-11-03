@@ -10,10 +10,19 @@ use super::manifest::{LocalizedText, Manifest, ManifestError, PluginKind, requir
 use super::package_files;
 
 /// 核心支持的最新规范版本。
-pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 2);
+pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 3);
 
 /// 没写 `spec` 的清单按这一版理解。
 const SPEC_DEFAULT: SpecVersion = SpecVersion(0, 1);
+
+/// 从这一版起，只有写了 `owner.identity` 的清单才拿到主人的身份变量（ADR-0022）。
+pub const SPEC_EXPLICIT_OWNER_IDENTITY: SpecVersion = SpecVersion(0, 3);
+
+/// 清单写成的规范版本。
+pub fn spec_of(manifest: &Manifest) -> SpecVersion {
+    let written = manifest.spec.as_deref().and_then(SpecVersion::parse);
+    written.unwrap_or(SPEC_DEFAULT)
+}
 
 /// 规范版本 `主.次`，如 `0.2`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

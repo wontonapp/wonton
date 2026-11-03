@@ -9,6 +9,11 @@
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
 #   WONTON_TUNNEL_PORT  隧道的 UDP 端口（默认 8482）
 #   WONTON_BASE_DOMAIN  基础域名，同时是 Matrix 的服务器名，装好后不能改（默认 wonton.localhost）
+#   WONTON_OWNER_NAME   主人的用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
+#                       最长 32 个字符，装好后不能改（默认 owner）
+#   WONTON_OWNER_DISPLAY_NAME  主人的显示名（默认 Owner）。设成空就取消
+#   WONTON_OWNER_EMAIL  主人的邮箱（默认没有；要邮箱的插件这时装不上）。设成空就取消
+#   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
 #   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改；
 #                       ADR-0019）。设成空就取消
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
@@ -71,12 +76,30 @@ tunnel_port=${WONTON_TUNNEL_PORT:-$(saved WONTON_TUNNEL_PORT)}
 tunnel_port=${tunnel_port:-8482}
 domain=${WONTON_BASE_DOMAIN:-$(saved WONTON_BASE_DOMAIN)}
 domain=${domain:-wonton.localhost}
+# 没给也没记下时留空：核心用数据目录里记下的，第一次启动时是 owner。
+owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
 lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
+owner_display_name=${WONTON_OWNER_DISPLAY_NAME-$(saved WONTON_OWNER_DISPLAY_NAME)}
+owner_email=${WONTON_OWNER_EMAIL-$(saved WONTON_OWNER_EMAIL)}
+tz=${TZ:-$(saved TZ)}
+# `curl | sudo sh` 的环境里通常没有 TZ。都读不到时留空，由 compose 给 UTC。
+if [ -z "$tz" ]; then
+  tz=$(timedatectl show --property=Timezone --value 2>/dev/null) || tz=
+  [ "$tz" != n/a ] || tz=
+  [ -n "$tz" ] || [ ! -f /etc/timezone ] || tz=$(sed -n 1p /etc/timezone)
+  [ -z "$tz" ] || info "用宿主的时区 $tz（不对的话用 TZ=Asia/Shanghai 这样再执行一次）"
+fi
 case "$data_dir" in
   /*) ;;
   *) die "WONTON_DATA_DIR 要是绝对路径：$data_dir" ;;
 esac
+# 字符规则和数据目录里的记录由下面的 `init` 查。这一条查的是核心还没记下用户名的老安装：旧 compose 没把这个变量传进
+# 核心，主机一直是 owner，.env 里手写的这一行从没生效过。下面的 `init` 会覆盖 compose，所以在这里看。
+if [ -f "$install_dir/compose.yaml" ] && ! grep -q 'WONTON_OWNER_NAME:' "$install_dir/compose.yaml" &&
+  [ -n "$owner_name" ] && [ "$owner_name" != owner ]; then
+  die "这台主机上主人的用户名一直是 owner，这次给的是 $owner_name：旧版本没用过这个设置，用户名装好后不能改。去掉命令里的 WONTON_OWNER_NAME 和 $env_file 里的这一行；要换用户名只能用新的数据目录重新安装"
+fi
 
 mkdir -p "$install_dir" "$data_dir"
 chmod 700 "$install_dir"
@@ -92,7 +115,10 @@ pinned=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 
 pinned=${pinned:-$image}
 
 info "生成密钥和配置（已有的沿用）"
-docker run --rm -v "$install_dir:$install_dir" "$pinned" init "$install_dir" "$domain"
+# 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
+docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
+  -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e WONTON_OWNER_EMAIL="$owner_email" -e TZ="$tz" \
+  "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
 umask 077
 cat >"$env_file" <<EOF
@@ -105,12 +131,16 @@ WONTON_DATA_DIR=$data_dir
 WONTON_PORT=$port
 WONTON_TUNNEL_PORT=$tunnel_port
 WONTON_BASE_DOMAIN=$domain
+WONTON_OWNER_NAME=$owner_name
+WONTON_OWNER_DISPLAY_NAME=$owner_display_name
+WONTON_OWNER_EMAIL=$owner_email
+TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
 EOF
 
 # docker compose 先看环境变量再看 .env：调用时带着的 WONTON_* 会盖过上面按 digest 写下的镜像。
 unset WONTON_CORE_IMAGE WONTON_INSTALL_DIR WONTON_DATA_DIR WONTON_PORT WONTON_TUNNEL_PORT WONTON_BASE_DOMAIN \
-  WONTON_LAN_ADDRESSES
+  WONTON_OWNER_NAME WONTON_OWNER_DISPLAY_NAME WONTON_OWNER_EMAIL TZ WONTON_LAN_ADDRESSES
 info "启动核心、身份提供方和 Matrix 服务器（第一次要拉镜像，几分钟）"
 docker compose -f "$install_dir/compose.yaml" up -d --wait --wait-timeout 600 ||
   die "服务没有在 10 分钟内就绪，看看日志：docker compose -f $install_dir/compose.yaml logs"

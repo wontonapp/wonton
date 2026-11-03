@@ -264,6 +264,27 @@ async fn an_address_change_rebuilds_only_the_lan_containers() {
 }
 
 #[tokio::test]
+async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
+    let (docker, mut m, detected, _dir) = on(office()).await;
+    let compose = package(
+        "  samba:\n    image: example/samba\n    environment: {MAIL: '${WONTON_OWNER_EMAIL:?}'}",
+        "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
+         permissions: [network.lan, owner.identity]",
+    );
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    Arc::get_mut(&mut m).unwrap().cfg.owner_email = None;
+
+    let before = docker.writes().len();
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
+    m.lan_pass().await.unwrap();
+    assert_eq!(docker.writes().len(), before, "旧容器不动");
+    let PluginStatus::Degraded { reason } = status(&m) else {
+        panic!("应标为异常：{:?}", status(&m));
+    };
+    assert!(reason.contains(crate::owner::NO_EMAIL), "{reason}");
+}
+
+#[tokio::test]
 async fn a_lost_address_degrades_the_plugin_until_it_comes_back() {
     let (docker, m, detected, _dir) = on(office()).await;
     let compose = samba("");

@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::owner;
 use crate::plugin::names::Instance;
 use crate::plugin::storefront::StoreConfig;
 
@@ -167,7 +168,8 @@ pub struct Owner {
     pub id: String,
     pub username: String,
     pub display_name: String,
-    pub email: String,
+    /// 主人没配时没有：核心不拼一个收不到信的地址（ADR-0022）。
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +207,8 @@ pub struct Config {
     pub puid: u32,
     pub pgid: u32,
     pub owner: Owner,
+    /// `WONTON_OWNER_NAME` 的值。`owner.username` 要等 [`Self::lock_owner`] 对过数据目录里的记录才算数。
+    pub owner_name: Option<String>,
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
@@ -254,14 +258,15 @@ impl Config {
             }
         };
         let matrix = matrix_config(&get, &base_domain)?;
-        let username = get("WONTON_OWNER_NAME").unwrap_or_else(|| "owner".into());
-        if matrix.is_some() {
-            check_owner_localpart(&username)?;
-        }
+        check_owner_settings(&get)?;
+        let owner_name = get("WONTON_OWNER_NAME");
+        let username = owner_name
+            .clone()
+            .unwrap_or_else(|| owner::DEFAULT_USERNAME.into());
         let owner = Owner {
             id: username.clone(),
             display_name: get("WONTON_OWNER_DISPLAY_NAME").unwrap_or_else(|| "Owner".into()),
-            email: get("WONTON_OWNER_EMAIL").unwrap_or_else(|| format!("{username}@{base_domain}")),
+            email: get("WONTON_OWNER_EMAIL"),
             username,
         };
         let core_container = get("WONTON_CORE_CONTAINER");
@@ -307,9 +312,18 @@ impl Config {
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
             owner,
+            owner_name,
             install_timeout: Duration::from_secs(parse(&get, "WONTON_INSTALL_TIMEOUT_SECS", 300)?),
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
         })
+    }
+
+    /// 按数据目录里的记录定下主人的用户名，第一次启动时记下来（ADR-0022）。对不上就启动失败。
+    pub fn lock_owner(mut self) -> Result<Self, owner::LockError> {
+        let username = owner::lock_username(&self.core_state_dir(), self.owner_name.as_deref())?;
+        self.owner.id.clone_from(&username);
+        self.owner.username = username;
+        Ok(self)
     }
 
     pub fn core_state_dir(&self) -> PathBuf {
@@ -350,26 +364,15 @@ fn store_config(get: &impl Fn(&str) -> Option<String>) -> Result<StoreConfig, Co
     })
 }
 
-/// 接了 Matrix 时主人的用户名就是主人的 Matrix 用户名：要是合法的 localpart（小写字母、数字和 `._=-/+`），也不能
-/// 是核心的管理账号，否则主人的设备会登录成管理账号。
-fn check_owner_localpart(username: &str) -> Result<(), ConfigError> {
-    let valid = !username.is_empty()
-        && username
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._=-/+".contains(&b));
-    if !valid {
-        return Err(invalid(
-            "WONTON_OWNER_NAME",
-            "接入 Matrix 时必须是合法的 Matrix 用户名：小写字母、数字和 ._=-/+",
-        ));
-    }
-    if username == crate::matrix::ADMIN_LOCALPART {
-        return Err(invalid(
-            "WONTON_OWNER_NAME",
-            "不能和核心在 Matrix 上的管理账号同名",
-        ));
-    }
-    Ok(())
+/// 主人的用户名、邮箱和时区的规则。`wonton-core init` 也查：安装脚本在启动容器前就能报错。
+pub fn check_owner_settings(get: &impl Fn(&str) -> Option<String>) -> Result<(), ConfigError> {
+    let check = |name: &'static str, rule: fn(&str) -> Result<(), String>| match get(name) {
+        Some(value) => rule(&value).map_err(|message| ConfigError::Invalid { name, message }),
+        None => Ok(()),
+    };
+    check("WONTON_OWNER_NAME", owner::check_username)?;
+    check("WONTON_OWNER_EMAIL", owner::check_email)?;
+    check("TZ", owner::check_time_zone)
 }
 
 /// `WONTON_MATRIX_URL` 设了就要同时给出签发私钥和注册共享密钥；都没设表示核心不接 Matrix。
@@ -536,7 +539,6 @@ mod tests {
             urls.origin("auth.wonton.localhost"),
             "http://auth.wonton.localhost:8080"
         );
-        assert_eq!(cfg.owner.email, "owner@wonton.localhost");
     }
 
     #[test]
@@ -606,25 +608,70 @@ mod tests {
     }
 
     #[test]
-    fn with_matrix_the_owner_name_must_be_a_matrix_localpart_other_than_the_core() {
+    fn the_owner_name_is_checked_with_or_without_matrix() {
         let matrix = [
             ("WONTON_DATA_DIR", "/d"),
             ("WONTON_MATRIX_URL", "http://tuwunel:8008"),
             ("WONTON_MATRIX_JWT_KEY", "-----BEGIN PRIVATE KEY-----"),
             ("WONTON_MATRIX_REGISTRATION_SECRET", "s3cret"),
         ];
-        let with_owner = |name: &'static str| {
-            let mut settings = matrix.to_vec();
-            settings.push(("WONTON_OWNER_NAME", name));
-            config(&settings)
-        };
-        assert_eq!(with_owner("alice.b-1").unwrap().owner.username, "alice.b-1");
-        for bad in ["Alice", "a b", "", "wonton-core"] {
-            assert!(with_owner(bad).is_err(), "{bad}");
+        for base in [&matrix[..], &matrix[..1]] {
+            let with_owner = |name: &'static str| {
+                let mut settings = base.to_vec();
+                settings.push(("WONTON_OWNER_NAME", name));
+                config(&settings)
+            };
+            assert_eq!(with_owner("alice-1").unwrap().owner.username, "alice-1");
+            for bad in ["Alice", "a/b", "a+b", "a=b", "_foo"] {
+                let error = with_owner(bad).unwrap_err().to_string();
+                assert!(error.contains("WONTON_OWNER_NAME"), "{bad}：{error}");
+            }
         }
-        // 没接 Matrix 时不受这条限制。
-        let plain = [("WONTON_DATA_DIR", "/d"), ("WONTON_OWNER_NAME", "Alice")];
-        assert!(config(&plain).is_ok());
+    }
+
+    #[test]
+    fn the_owner_name_is_locked_against_the_record_in_the_data_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().to_str().unwrap();
+        let start = |name: Option<&'static str>| {
+            let mut settings = vec![("WONTON_DATA_DIR", data)];
+            settings.extend(name.map(|name| ("WONTON_OWNER_NAME", name)));
+            config(&settings).unwrap().lock_owner()
+        };
+        let first = start(Some("alice")).unwrap();
+        assert_eq!(
+            (first.owner.id.as_str(), first.owner.username.as_str()),
+            ("alice", "alice")
+        );
+        let unset = start(None).unwrap();
+        assert_eq!(
+            (unset.owner.id.as_str(), unset.owner.username.as_str()),
+            ("alice", "alice")
+        );
+        assert!(start(Some("bob")).is_err());
+    }
+
+    #[test]
+    fn without_an_email_the_core_does_not_make_one_up() {
+        let base = ("WONTON_DATA_DIR", "/d");
+        assert_eq!(config(&[base]).unwrap().owner.email, None);
+        let set = config(&[base, ("WONTON_OWNER_EMAIL", "me@example.com")]).unwrap();
+        assert_eq!(set.owner.email.as_deref(), Some("me@example.com"));
+        assert!(config(&[base, ("WONTON_OWNER_EMAIL", "not-an-email")]).is_err());
+    }
+
+    #[test]
+    fn the_time_zone_must_be_an_iana_name() {
+        let base = ("WONTON_DATA_DIR", "/d");
+        assert_eq!(config(&[base]).unwrap().tz, "UTC");
+        assert_eq!(
+            config(&[base, ("TZ", "Asia/Shanghai")]).unwrap().tz,
+            "Asia/Shanghai"
+        );
+        for bad in ["CST-8", ":/etc/localtime"] {
+            let error = config(&[base, ("TZ", bad)]).unwrap_err().to_string();
+            assert!(error.contains("TZ"), "{bad}：{error}");
+        }
     }
 
     #[test]
