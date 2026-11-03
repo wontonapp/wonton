@@ -8,7 +8,10 @@ struct ChatRoomView: View {
     let title: String
     @State private var timeline: TimelineModel
     @State private var draft = ""
+    @State private var isAtBottom = true
     @State private var photo: PhotosPickerItem?
+
+    private static let bottom = "bottom"
 
     init(model: ChatModel, roomId: String, title: String) {
         self.model = model
@@ -29,6 +32,8 @@ struct ChatRoomView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
+        .toolbar(.hidden, for: .tabBar)
         .task { await timeline.observe() }
         .onChange(of: photo) { _, item in
             guard let item else { return }
@@ -60,14 +65,25 @@ struct ChatRoomView: View {
                         )
                         .id(item.id)
                     }
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottom)
+                        .onAppear { isAtBottom = true }
+                        .onDisappear { isAtBottom = false }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
             }
             .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: timeline.items.last?.id) { _, last in
-                guard let last else { return }
-                withAnimation { scroller.scrollTo(last, anchor: .bottom) }
+                guard last != nil else { return }
+                // 这里先于列表测量新条目运行：当场滚动只滚到估算的高度，长回复的后半截留在输入框下面（iOS 26.5 模拟器实测）。
+                // 下一轮才滚，那时这一行可能已被挤出屏幕，所以先记下判断。往上翻着看历史时不打扰。
+                let follows = isAtBottom
+                DispatchQueue.main.async {
+                    if follows { withAnimation { scroller.scrollTo(Self.bottom, anchor: .bottom) } }
+                }
                 model.send(.markRoomRead(roomId: roomId))
             }
         }
@@ -87,6 +103,7 @@ struct ChatRoomView: View {
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
             Button("发送") {
+                isAtBottom = true
                 model.send(.sendText(roomId: roomId, body: draft))
                 draft = ""
             }
