@@ -9,9 +9,10 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use serde_json::Value;
-use wonton_protocol::FileSource;
+use wonton_protocol::{FileFailure, FileSource};
 
 use crate::files::record::{FileRecord, Origin};
+use crate::plugin::PluginId;
 
 /// 对一次调用的决定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -44,13 +45,16 @@ pub struct Record<'a> {
     pub files: &'a [AuditedFile],
 }
 
-/// 审计里的一个文件：编号、来源插件和引用。
+/// 审计里的一个文件：编号、来源插件和引用。登记不了的没有编号，写明类别。
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditedFile {
-    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
     pub reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refused: Option<&'static str>,
 }
 
 impl AuditedFile {
@@ -67,9 +71,20 @@ impl AuditedFile {
             _ => None,
         });
         Self {
-            id: record.id.to_string(),
+            id: Some(record.id.to_string()),
             plugin,
             reference,
+            refused: None,
+        }
+    }
+
+    /// 插件给了引用，登记不了。
+    pub fn refused(plugin: &PluginId, uri: &str, kind: FileFailure) -> Self {
+        Self {
+            id: None,
+            plugin: Some(plugin.to_string()),
+            reference: uri.to_owned(),
+            refused: Some(kind.as_str()),
         }
     }
 }

@@ -27,6 +27,12 @@ const MEDIA: &[(&str, &str)] = &[
 /// 能做缩略图的类型：缩略图子进程解得了的格式。
 const THUMBNAIL_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
 
+/// 插件声明的类型，不带参数。只认没有空白的 ASCII：要写进给 Agent 的文字和给 App 的信息，不能多出一行。
+pub fn declared_type(declared: &str) -> Option<&str> {
+    let bare = declared.split(';').next()?.trim();
+    (!bare.is_empty() && bare.chars().all(|c| c.is_ascii_graphic())).then_some(bare)
+}
+
 /// 下载时写的类型：声明的类型或扩展名在 [`MEDIA`] 里才写，否则为空，按附件下载。声明的类型和内容对不上也不要紧：响应带
 /// `nosniff`，这些类型都不会被当成网页。
 pub fn served_type(name: &str, declared: Option<&str>) -> Option<&'static str> {

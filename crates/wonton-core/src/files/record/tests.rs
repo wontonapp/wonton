@@ -133,6 +133,7 @@ fn register(registry: &Registry, new: u8, bot: &str, origin: &Origin, now: u64) 
         .register_bot(
             bot,
             origin,
+            "app.files",
             now,
             |_| {},
             || bot_record(id(new), bot, origin.clone(), now),
@@ -194,7 +195,7 @@ fn a_bot_finds_its_record_through_every_change() {
     let register = |registry: &Registry, new: u8, bot: &str, now: u64| {
         let fresh = || bot_record(id(new), bot, origin.clone(), now);
         registry
-            .register_bot(bot, &origin, now, |_| {}, fresh)
+            .register_bot(bot, &origin, "app.files", now, |_| {}, fresh)
             .unwrap()
             .id
     };
@@ -205,7 +206,7 @@ fn a_bot_finds_its_record_through_every_change() {
     assert_eq!(register(&registry, 3, "other", 100), id(3));
     let elsewhere = share_origin("b.jpg");
     let fresh = || bot_record(id(4), "hermes", elsewhere.clone(), 100);
-    let found = registry.register_bot("hermes", &elsewhere, 100, |_| {}, fresh);
+    let found = registry.register_bot("hermes", &elsewhere, "app.files", 100, |_| {}, fresh);
     assert_eq!(found.unwrap().id, id(4));
 
     // 过期的不算；旧记录清掉之后，新记录还查得到。

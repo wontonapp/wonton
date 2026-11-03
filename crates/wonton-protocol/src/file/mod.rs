@@ -97,7 +97,7 @@ pub enum FileFailure {
     Unauthenticated,
     /// 这台设备的用户不在访问范围里。
     NotShared,
-    /// 家里的服务器上路径不合法；Bot 调工具时，来源插件的授权收回了。
+    /// 家里的服务器上路径不合法；经插件拿到文件的 Bot 调工具时，来源插件的授权收回了。
     PermissionDenied,
     /// 没有这个编号。
     FileUnknown,

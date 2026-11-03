@@ -13,7 +13,7 @@ use wonton_protocol::FileFailure;
 
 use super::audit::AuditedFile;
 use super::{Bus, Caller};
-use crate::files::content::{can_thumbnail, served_type};
+use crate::files::content::{can_thumbnail, declared_type, served_type};
 use crate::files::record::FileRecord;
 use crate::files::share_fs::ShareRef;
 use crate::files::{BotRef, Failure, Files};
@@ -48,6 +48,7 @@ pub(super) async fn rewrite(
         .and_then(|files| Ok((files.clone(), bus.bot_ref(caller, plugin)?)));
     let deadline = Instant::now() + REGISTER_BUDGET;
     let (mut parts, mut seen) = (Vec::with_capacity(result.content.len()), 0);
+    let mut refusals = Vec::new();
     for block in std::mem::take(&mut result.content) {
         let link = match block {
             ContentBlock::ResourceLink(link) if !is_web(&link.uri) => link,
@@ -72,14 +73,16 @@ pub(super) async fn rewrite(
             }
             Err(failure) => Ok(Err(failure.clone())),
         };
-        parts.push(match registered {
-            Ok(Ok(record)) => Part::File(record),
-            Ok(Err(failure)) => Part::Block(ContentBlock::text(refused(&link, &failure))),
-            Err(_) => Part::Block(ContentBlock::text(refused(
-                &link,
-                &Failure::new(FileFailure::ServiceUnavailable, "登记超时，稍后再试"),
-            ))),
-        });
+        let failure = match registered {
+            Ok(Ok(record)) => {
+                parts.push(Part::File(record));
+                continue;
+            }
+            Ok(Err(failure)) => failure,
+            Err(_) => Failure::new(FileFailure::ServiceUnavailable, "登记超时，稍后再试"),
+        };
+        refusals.push(AuditedFile::refused(plugin, &link.uri, failure.kind));
+        parts.push(Part::Block(ContentBlock::text(refused(&link, &failure))));
     }
     let previews = previews(target.as_ref().ok().map(|(files, _)| files), &parts).await;
     let mut audited = Vec::new();
@@ -106,6 +109,7 @@ pub(super) async fn rewrite(
     if !audited.is_empty() {
         content.push(ContentBlock::text(hint(previewed)));
     }
+    audited.extend(refusals);
     result.content = content;
     (result, audited)
 }
@@ -149,11 +153,20 @@ async fn previews(files: Option<&Arc<Files>>, parts: &[Part]) -> Vec<Option<Stri
         async move {
             let (files, record) = wanted?;
             // 插件已经回答了，Agent 和确认卡片不该等预览：单张的读取和解码期限加起来有两分钟。到时没做完的不附，想看再调 view_file。
-            let preview = tokio::time::timeout(files.preview_budget, files.preview(record)).await;
-            match preview {
-                Ok(Ok(jpeg)) => Some(STANDARD.encode(jpeg)),
-                Ok(Err(e)) => {
+            // 只是不等了，读取留在后台：丢掉 `resources/read` 的 future 时插件收不到取消，还在读，名额和“占着会话”的记号却提前没了，
+            // 同时读的就超过名额，串行的插件还会被误判超时。后台的这次仍受名额和读取期限的约束。
+            let job = tokio::spawn({
+                let (files, record) = (files.clone(), record.clone());
+                async move { files.preview(&record).await }
+            });
+            match tokio::time::timeout(files.preview_budget, job).await {
+                Ok(Ok(Ok(jpeg))) => Some(STANDARD.encode(jpeg)),
+                Ok(Ok(Err(e))) => {
                     tracing::info!(file = %record.id, error = %e, "这个文件不附预览");
+                    None
+                }
+                Ok(Err(e)) => {
+                    tracing::error!(file = %record.id, error = %e, "做预览的任务异常退出");
                     None
                 }
                 Err(_) => {
@@ -175,14 +188,11 @@ fn is_web(uri: &str) -> bool {
     scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
 }
 
-/// 这个文件的一行文字：编号、文件名、类型、大小。文件名经过 `sanitize_name`，插件给的类型只认没有空白的 ASCII，不会多出一行。
+/// 这个文件的一行文字：编号、文件名、类型、大小。文件名经过 `sanitize_name`，插件给的类型经过 [`declared_type`]，不会多出一行。
 fn file_line(record: &FileRecord) -> String {
-    let declared = record
-        .mime_type
-        .as_deref()
-        .filter(|mime| mime.chars().all(|c| c.is_ascii_graphic()));
-    let mime = served_type(&record.name, record.mime_type.as_deref())
-        .or(declared)
+    let declared = record.mime_type.as_deref();
+    let mime = served_type(&record.name, declared)
+        .or_else(|| declared.and_then(declared_type))
         .unwrap_or("类型未知");
     let size = record
         .registered
@@ -206,10 +216,15 @@ fn hint(previewed: bool) -> String {
 
 /// 登记不了时 Agent 看到的说明。不写引用本身：内网地址不能给 Agent。
 fn refused(link: &Resource, failure: &Failure) -> String {
-    let why = if ShareRef::is_reference(&link.uri) {
-        failure.message.as_str()
+    // 说明里可能带着引用里的共享文件夹名字，它是插件给的。
+    let why: String = if ShareRef::is_reference(&link.uri) {
+        failure
+            .message
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect()
     } else {
-        "插件给的资源引用用不了"
+        "插件给的资源引用用不了".to_owned()
     };
     format!(
         "文件 {} 登记不了（{}）：{why}",

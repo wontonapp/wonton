@@ -13,7 +13,7 @@ use crate::plugin::manager::now_secs;
 
 impl Files {
     /// Bot 经工具结果登记共享文件夹里的文件。来源插件要有这个共享文件夹的授权。同一个 Bot 再次拿到同一个引用，还是原来的编号，有效期
-    /// 重新算。
+    /// 重新算；分享过的换了插件再给时发新编号（见 [`Registry::register_bot`](super::record::Registry::register_bot)）。
     pub async fn register_share(
         self: &Arc<Self>,
         bot: &BotRef,
@@ -82,11 +82,13 @@ impl Files {
         let record = self.registry.register_bot(
             &bot.name,
             &looked_up,
+            bot.plugin.as_str(),
             now,
             |old| {
-                // Bot 重新看到了这个文件，改过的也不算改过了。分享过的不再过期，来源也不变：卡片上的来源是主人判断内容可不可信的
-                // 依据，不能事后被另一个插件改掉。没分享的之后核对授权看这次给它引用的插件。
+                // Bot 重新看到了这个文件，改过的也不算改过了，单独收回过的也回到范围里。主人亲手的授权不恢复：之后按来源插件的授权算。
+                // 没分享的之后核对授权看这次给它引用的插件；分享过的不再过期，来源本来就是这个插件。
                 old.registered = registered;
+                old.access.insert(Accessor::Bot(bot.name.clone()));
                 if old.expires_at.is_some() {
                     old.expires_at = Some(expires_at);
                     old.source = renewed;

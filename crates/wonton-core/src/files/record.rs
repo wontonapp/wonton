@@ -188,12 +188,23 @@ impl Records {
         }
     }
 
-    /// 这个 Bot 对这个来源的没过期的记录。
-    fn find_bot_record(&self, bot: &str, origin: &Origin, now: u64) -> Option<&FileRecord> {
+    /// 这个 Bot 从 `plugin` 拿到这个来源时接着用的记录：同一个插件给过的优先，其次是没分享的。
+    fn find_bot_record(
+        &self,
+        bot: &str,
+        origin: &Origin,
+        plugin: &str,
+        now: u64,
+    ) -> Option<&FileRecord> {
         let ids = self.by_bot.get(&(bot.to_owned(), origin.clone()))?;
-        ids.iter()
-            .filter_map(|id| self.by_id.get(id))
-            .find(|record| !record.expired(now))
+        let live = || {
+            ids.iter()
+                .filter_map(|id| self.by_id.get(id))
+                .filter(|record| !record.expired(now))
+        };
+        live()
+            .find(|record| matches!(&record.source, FileSource::Bot { plugin: from, .. } if from == plugin))
+            .or_else(|| live().find(|record| record.expires_at.is_some()))
     }
 }
 
@@ -255,17 +266,19 @@ impl Registry {
     }
 
     /// Bot 拿到一个引用：同一个 Bot 上次的记录还在就用 `renew` 改它，否则写 `fresh` 给的新记录。过期了的不算：Bot 再找一次就有
-    /// 新编号。
+    /// 新编号。分享过的记录只有同一个插件再给才算：卡片上的来源是主人判断内容可不可信的依据，不能事后换，新内容也不能挂着旧来源再分享；
+    /// 授权也按来源核对，留着旧编号的话，原来的插件没了授权，Bot 就永远用不了这个文件。
     pub fn register_bot(
         &self,
         bot: &str,
         origin: &Origin,
+        plugin: &str,
         now: u64,
         renew: impl FnOnce(&mut FileRecord),
         fresh: impl FnOnce() -> FileRecord,
     ) -> Result<FileRecord, RegistryError> {
         self.change(|records| {
-            let record = match records.find_bot_record(bot, origin, now) {
+            let record = match records.find_bot_record(bot, origin, plugin, now) {
                 Some(old) => {
                     let mut old = old.clone();
                     renew(&mut old);

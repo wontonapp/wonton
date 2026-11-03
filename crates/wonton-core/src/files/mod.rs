@@ -39,7 +39,7 @@ use crate::plugin::image_worker::{ImageError, ImageWorker};
 use crate::plugin::images::MAX_THUMBNAIL_INPUT;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::StoreError;
-use content::{can_thumbnail, served_type};
+use content::{can_thumbnail, declared_type, served_type};
 use record::{Accessor, FileRecord, Lookup, Origin, Registry, RegistryError};
 use resource::{InternalUrl, RemoteRequest};
 use share_fs::{Deleted, Opened, ShareError, ShareRef, Shares, TRANSFERS};
@@ -300,7 +300,7 @@ impl Files {
             && size.is_none_or(|size| size <= thumbnail_input_limit(&record.origin));
         let mime_type = served_type(&record.name, declared)
             .map(str::to_owned)
-            .or_else(|| record.mime_type.clone());
+            .or_else(|| declared.and_then(declared_type).map(str::to_owned));
         Ok(FileInfo {
             id: record.id,
             name: record.name,

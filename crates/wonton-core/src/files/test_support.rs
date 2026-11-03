@@ -44,8 +44,28 @@ pub struct FakeHost {
     pub reads_hang_for: Mutex<Option<String>>,
     /// `resources/read` 超过上限。
     pub reads_too_large: std::sync::atomic::AtomicBool,
-    /// 授权收回了的共享文件夹。
+    /// 所有插件的授权都收回了的共享文件夹。
     pub revoked_shares: Mutex<Vec<String>>,
+    /// 这个插件的授权收回了的共享文件夹。
+    pub revoked_for: Mutex<Vec<(String, String)>>,
+    /// 正在做的 `resources/read`。
+    pub reads_running: std::sync::atomic::AtomicUsize,
+}
+
+/// 读取结束或者被丢掉时减一。
+struct RunningRead<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> RunningRead<'a> {
+    fn start(count: &'a std::sync::atomic::AtomicUsize) -> Self {
+        count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self(count)
+    }
+}
+
+impl Drop for RunningRead<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl FileHost for FakeHost {
@@ -97,6 +117,7 @@ impl FileHost for FakeHost {
     ) -> BoxFuture<'a, Result<Vec<u8>, Failure>> {
         async move {
             self.check_mcp(plugin)?;
+            let _running = RunningRead::start(&self.reads_running);
             let stuck = self.reads_hang_for.lock().unwrap().as_deref() == Some(plugin.as_str());
             if stuck || self.reads_hang.load(std::sync::atomic::Ordering::SeqCst) {
                 std::future::pending::<()>().await;
@@ -118,9 +139,13 @@ impl FileHost for FakeHost {
         .boxed()
     }
 
-    fn share_granted(&self, _plugin: &PluginId, share: &str) -> Result<bool, Failure> {
+    fn share_granted(&self, plugin: &PluginId, share: &str) -> Result<bool, Failure> {
         let revoked = self.revoked_shares.lock().unwrap();
-        Ok(!revoked.iter().any(|s| s == share))
+        let revoked_for = self.revoked_for.lock().unwrap();
+        Ok(!revoked.iter().any(|s| s == share)
+            && !revoked_for
+                .iter()
+                .any(|(p, s)| p == plugin.as_str() && s == share))
     }
 
     fn bots_in_room(&self, room: &str) -> Result<Vec<String>, Failure> {
