@@ -23,6 +23,7 @@ use bollard::models::{ContainerCreateBody, EndpointSettings, PortBinding};
 use serde::{Deserialize, Serialize};
 
 pub use detect::Detector;
+pub(in crate::plugin) use monitor::Detected;
 pub use state::Lan;
 
 use super::compose::{NetworkMode, Service};

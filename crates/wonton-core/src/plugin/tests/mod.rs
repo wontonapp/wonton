@@ -13,6 +13,7 @@ mod bots;
 mod check;
 mod configs;
 mod egress;
+mod egress_relay;
 mod github;
 mod gpu;
 mod health;

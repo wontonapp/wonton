@@ -9,6 +9,11 @@ use super::manifest::PluginId;
 pub const LABEL_PLUGIN: &str = "wonton.plugin";
 /// 资源属于哪套核心：只有设了实例名的核心才打这个标签。
 pub const LABEL_INSTANCE: &str = "wonton.instance";
+/// 核心管理的其他组件（ADR-0025）：切到不支持这个组件的核心镜像之前，升级器按标签删掉容器。这两个标签的名字和含义是跨版本的接口。
+pub const LABEL_MANAGED_BY: &str = "wonton.managed-by";
+pub const LABEL_COMPONENT: &str = "wonton.core.component";
+/// 出口容器（ADR-0023）这个组件的名字。
+pub const EGRESS_COMPONENT: &str = "wonton-egress";
 
 const MAX_INSTANCE_LEN: usize = 16;
 
@@ -76,6 +81,26 @@ impl Instance {
             .iter()
             .map(|i| (LABEL_INSTANCE.to_owned(), i.clone()));
         instance.collect()
+    }
+
+    /// 出口容器和它的网络 `wonton-egress`，有实例名时 `wonton-<实例名>--egress`。slug 至少两段，不会和插件重名。
+    pub fn egress(&self) -> String {
+        self.network("egress")
+    }
+
+    /// 出口容器和它的网络的标签。
+    pub fn component_labels(&self) -> HashMap<String, String> {
+        let mut labels = self.core_labels();
+        labels.insert(LABEL_MANAGED_BY.to_owned(), "core".to_owned());
+        labels.insert(LABEL_COMPONENT.to_owned(), EGRESS_COMPONENT.to_owned());
+        labels
+    }
+
+    /// 带这些标签的资源是不是这套核心的出口容器或它的网络。
+    pub fn is_component(&self, labels: &HashMap<String, String>) -> bool {
+        self.owns(labels)
+            && labels.get(LABEL_MANAGED_BY).map(String::as_str) == Some("core")
+            && labels.get(LABEL_COMPONENT).map(String::as_str) == Some(EGRESS_COMPONENT)
     }
 
     /// 核心给插件的容器、网络和命名卷打的标签。

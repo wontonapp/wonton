@@ -79,6 +79,8 @@ COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
 # 随核心附带、只自动装一次的默认插件（WONTON_DEFAULT_PLUGINS）：默认 Agent Hermes。
 COPY plugins/hermes /usr/share/wonton/default-plugins/hermes
+# 这个核心支持哪些核心管理的组件（ADR-0025）：切到不声明某个组件的镜像之前，升级器删掉它的容器。
+LABEL wonton.core.components="wonton-egress"
 ENTRYPOINT ["wonton-core"]
 CMD ["serve"]
 

@@ -1,9 +1,16 @@
 //! 出网插件走宿主的代理（ADR-0023）：主人配了代理时，声明了 `network.egress` 的插件经出口容器出去。
 //!
 //! - 这里：注入给插件的环境变量和插值变量；
-//! - [`healthcheck`]：改写健康检查，让它不走代理。
+//! - [`healthcheck`]：改写健康检查，让它不走代理；
+//! - [`settings`]、[`address`]：用哪个代理；
+//! - [`gost`]、[`lists`]、[`relay`]：出口容器，它的配置和名单，核心怎么管它。
 
+pub mod address;
+pub mod gost;
 pub mod healthcheck;
+pub mod lists;
+mod relay;
+pub mod settings;
 
 use std::collections::BTreeSet;
 

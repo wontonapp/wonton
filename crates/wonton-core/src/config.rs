@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::owner;
+use crate::plugin::egress::address::ProxyAddress;
 use crate::plugin::names::Instance;
 use crate::plugin::storefront::StoreConfig;
 
@@ -188,6 +189,10 @@ pub struct Config {
     pub host_dev: Option<PathBuf>,
     /// 局域网端口只开在这些地址上，不再自动选（`WONTON_LAN_ADDRESSES`，ADR-0019）。必须都是私有地址。
     pub lan_addresses: Option<Vec<IpAddr>>,
+    /// 出网插件走的代理（`WONTON_EGRESS_PROXY`，ADR-0023）。设了就只用它，App 里不能改。
+    pub egress_proxy: Option<ProxyAddress>,
+    /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
+    pub egress_proxy_detected: Option<ProxyAddress>,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
@@ -212,6 +217,16 @@ pub struct Config {
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
+}
+
+fn proxy_address(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+) -> Result<Option<ProxyAddress>, ConfigError> {
+    get(name)
+        .map(|text| ProxyAddress::parse(&text))
+        .transpose()
+        .map_err(|e| invalid(name, &e))
 }
 
 impl Config {
@@ -292,6 +307,8 @@ impl Config {
                 .map(|text| crate::plugin::lan::parse_addresses(&text))
                 .transpose()
                 .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?,
+            egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
+            egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
@@ -539,6 +556,15 @@ mod tests {
             urls.origin("auth.wonton.localhost"),
             "http://auth.wonton.localhost:8080"
         );
+    }
+
+    #[test]
+    fn a_proxy_that_is_not_an_address_stops_the_core_from_starting() {
+        for name in ["WONTON_EGRESS_PROXY", "WONTON_EGRESS_PROXY_DETECTED"] {
+            let with = |value| config(&[("WONTON_DATA_DIR", "/d"), (name, value)]);
+            assert!(with("ftp://proxy:21").is_err(), "{name}");
+            assert!(with("http://proxy:7899").is_ok(), "{name}");
+        }
     }
 
     #[test]

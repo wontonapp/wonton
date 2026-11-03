@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use super::docker::Engine;
+use super::egress::settings::Egress;
 use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
@@ -223,6 +224,8 @@ pub struct PluginManager {
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
     pub(super) lan: Lan,
+    /// 出网插件走哪个代理，见 [`super::egress`]。
+    pub(super) egress: Egress,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -276,6 +279,7 @@ impl PluginManager {
             changes: tokio::sync::watch::Sender::new(0),
             bundled: RwLock::new(BTreeSet::new()),
             lan,
+            egress: Egress::default(),
         }
     }
 
@@ -343,6 +347,13 @@ impl PluginManager {
     #[must_use]
     pub fn with_lan(mut self, lan: Lan) -> Self {
         self.lan = lan;
+        self
+    }
+
+    /// `WONTON_EGRESS_PROXY` 和安装脚本检测到的代理（见 [`super::egress`]）。
+    #[must_use]
+    pub fn with_egress(mut self, egress: Egress) -> Self {
+        self.egress = egress;
         self
     }
 

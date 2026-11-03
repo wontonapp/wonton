@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use wonton_protocol::LanChoice;
 
 use super::bots::BotStore;
+use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
 use super::manifest::{Permission, PluginId};
 use super::models::ModelKeyStore;
@@ -160,6 +161,22 @@ impl Store {
     }
 
     /// 主人的局域网设置（ADR-0019），在记录目录下的 `lan/choice.json` 里：放进子目录，不和插件记录混在一起。
+    /// 出口容器只读挂载的目录：配置和两份名单。
+    pub fn relay_dir(&self) -> PathBuf {
+        self.dir.join("egress").join("relay")
+    }
+
+    /// 主人在 App 里存下的出网代理设置。
+    pub fn egress_settings(&self) -> Result<Option<StoredEgress>, StoreError> {
+        read_json(&self.dir.join("egress").join("settings.json"))
+    }
+
+    pub fn save_egress_settings(&self, settings: &StoredEgress) -> Result<(), StoreError> {
+        let dir = self.dir.join("egress");
+        create_private_dir(&dir)?;
+        write_json(&dir.join("settings.json"), settings)
+    }
+
     pub fn lan_choice(&self) -> Result<Option<LanChoice>, StoreError> {
         read_json(&self.dir.join("lan").join("choice.json"))
     }

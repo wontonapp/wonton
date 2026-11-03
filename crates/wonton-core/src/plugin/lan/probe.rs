@@ -51,6 +51,8 @@ pub struct HostAddress {
     pub ip: IpAddr,
     /// IPv4 的从地址：同一网段里后加上去的地址。
     pub secondary: bool,
+    /// 网段的前缀长度：出口容器放行宿主所在网段时用（ADR-0023）。
+    pub prefix: u8,
 }
 
 /// 子命令的入口：结果以 JSON 打印在标准输出上，出错时原因写在标准错误上、以 1 退出。
@@ -230,7 +232,13 @@ fn host_address(
     });
     let ip = local.or(address)?;
     let secondary = message.header.flags.contains(AddressHeaderFlags::Secondary);
-    Some((message.header.index, HostAddress { ip, secondary }))
+    let prefix = message.header.prefix_len;
+    let address = HostAddress {
+        ip,
+        secondary,
+        prefix,
+    };
+    Some((message.header.index, address))
 }
 
 /// 宿主服务端只支持 Linux（ADR-0002）；在别的系统上编译时如实报错，不猜。
@@ -303,6 +311,7 @@ eno1\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0
                 HostAddress {
                     ip: "192.168.0.193".parse().unwrap(),
                     secondary: false,
+                    prefix: 24,
                 },
             ),
             (
@@ -310,6 +319,7 @@ eno1\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0
                 HostAddress {
                     ip: "10.9.9.9".parse().unwrap(),
                     secondary: false,
+                    prefix: 24,
                 },
             ),
         ];

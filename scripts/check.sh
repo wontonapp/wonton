@@ -67,6 +67,7 @@ $(indent <<<"$reason")
       cargo test -p wonton-client --test chat -- --include-ignored
       cargo test -p wonton-core --test docker_network -- --include-ignored
       cargo test -p wonton-core --test docker_leftovers -- --include-ignored
+      cargo test -p wonton-core --test docker_egress -- --include-ignored
     只在 Linux 上编译的，在 Linux 上运行 bash scripts/check.sh。
     CI 的 Docker 集成测试作业会运行它们，那里 Docker 不可用即失败。
 EOF

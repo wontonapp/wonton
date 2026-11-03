@@ -28,6 +28,7 @@ fn nic(name: &str, addresses: &[&str]) -> HostInterface {
             .map(|a| HostAddress {
                 ip: a.parse().unwrap(),
                 secondary: false,
+                prefix: 24,
             })
             .collect(),
         ..Default::default()
@@ -64,7 +65,7 @@ pub(super) fn office() -> HostNetwork {
 }
 
 /// Docker 的默认网桥：网卡名写在网络的选项里。
-fn add_default_bridge(docker: &FakeDocker) {
+pub(super) fn add_default_bridge(docker: &FakeDocker) {
     let options = json!({"Options": {"com.docker.network.bridge.name": "docker0"}});
     docker.add_network("bridge", "", options);
 }

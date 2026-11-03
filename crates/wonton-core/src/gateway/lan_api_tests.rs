@@ -18,6 +18,7 @@ pub(super) fn lan() -> Lan {
         addresses: vec![HostAddress {
             ip: ip.parse().unwrap(),
             secondary: false,
+            prefix: 24,
         }],
         ..Default::default()
     };

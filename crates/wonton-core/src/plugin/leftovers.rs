@@ -52,6 +52,7 @@ impl PluginManager {
                 .filter(|name| {
                     !found.containers.contains(name)
                         && self.cfg.core_container.as_ref() != Some(name)
+                        && *name != self.cfg.instance.egress()
                 })
                 .collect();
             if !strangers.is_empty() {
@@ -70,6 +71,7 @@ impl PluginManager {
             if let Some(core) = &self.cfg.core_container {
                 self.engine.disconnect_network(network, core).await?;
             }
+            self.detach_relay(network).await?;
             self.engine.remove_network(network).await?;
         }
         Ok(())

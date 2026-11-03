@@ -30,6 +30,7 @@ use wonton_core::mcp::audit::Audit;
 use wonton_core::oidc::Hydra;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
+use wonton_core::plugin::egress::settings::Egress;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::hostdir::Owner;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
@@ -135,10 +136,15 @@ async fn serve() -> anyhow::Result<()> {
         .with_matrix(matrix.clone())
         .with_host(HostPaths::new(cfg.host_dev.clone()))
         .with_lan(lan_state(&cfg))
+        .with_egress(Egress::new(
+            cfg.egress_proxy.clone(),
+            cfg.egress_proxy_detected.clone(),
+        ))
         .with_store(cfg.store.clone()),
     );
     manager.restore().await.context("恢复已安装的插件")?;
     manager.spawn_lan_monitor();
+    manager.spawn_relay_reconcile();
     preinstall(&cfg, manager.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));

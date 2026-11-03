@@ -243,6 +243,9 @@ impl PluginManager {
             .create_network(&plan.network, &plan.labels, self.network_reach(manifest))
             .await?;
         undo.network = Some(plan.network.clone());
+        if ctx.egress.is_some() {
+            self.attach_relay(&plan.network).await?;
+        }
         if let Some(network) = ctx.lan.as_ref().and_then(|l| l.network.clone()) {
             self.engine
                 .create_lan_network(&network, &plan.labels)
@@ -344,7 +347,7 @@ impl PluginManager {
             extra_hosts: Vec::new(),
             gpu: None,
             lan: None,
-            egress: None,
+            egress: self.egress_vars(manifest)?,
             core_address: (manifest.webui.as_ref().is_some_and(|w| w.sso == Sso::Proxy))
                 .then(|| core_address::PLACEHOLDER.to_owned()),
         })
@@ -528,6 +531,11 @@ impl PluginManager {
                     result.map_err(|e| e.to_string()),
                 );
             }
+            let result = self.detach_relay(network).await;
+            note(
+                format!("出口容器退出网络 {network}"),
+                result.map_err(|e| e.to_string()),
+            );
             note(
                 format!("网络 {network}"),
                 self.engine

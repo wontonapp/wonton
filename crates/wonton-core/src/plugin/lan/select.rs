@@ -323,6 +323,7 @@ mod tests {
         HostAddress {
             ip: ip.parse().unwrap(),
             secondary: false,
+            prefix: 24,
         }
     }
 

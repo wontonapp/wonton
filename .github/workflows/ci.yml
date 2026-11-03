@@ -72,5 +72,7 @@ jobs:
         run: cargo test -p wonton-core --locked --test docker_network -- --include-ignored
       - name: 安装途中核心重启后再装能恢复，同名网络不是本插件的就不动
         run: cargo test -p wonton-core --locked --test docker_leftovers -- --include-ignored
+      - name: 真的 gost 上的出口容器：经主人的代理、名单、直连
+        run: cargo test -p wonton-core --locked --test docker_egress -- --include-ignored
       - name: 设备经隧道、tusd 上传文件
         run: cargo test -p wonton-core --locked --lib gateway::tusd_tests -- --include-ignored
