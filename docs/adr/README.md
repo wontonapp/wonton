@@ -27,3 +27,4 @@
 | [0018](0018-gpu-for-plugins.md) | 显卡交给插件：核心按宿主的显卡给设备 | 已接受 |
 | [0019](0019-lan-services-for-plugins.md) | 插件在局域网上提供服务：只发布清单声明的端口 | 已接受 |
 | [0020](0020-file-service.md) | 文件服务：Bot 和 App 按编号共用 | 已接受 |
+| [0021](0021-third-party-clients.md) | 第三方原生 App 连回家：公网子域名、公共证书和专用密码 | 已接受 |
