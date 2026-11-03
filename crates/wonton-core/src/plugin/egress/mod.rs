@@ -1,0 +1,141 @@
+//! 出网插件走宿主的代理（ADR-0023）：主人配了代理时，声明了 `network.egress` 的插件经出口容器出去。
+//!
+//! - 这里：注入给插件的环境变量和插值变量；
+//! - [`healthcheck`]：改写健康检查，让它不走代理。
+
+pub mod healthcheck;
+
+use std::collections::BTreeSet;
+
+use bollard::models::ContainerCreateBody;
+
+/// 给有自己代理设置、不读 `HTTP_PROXY` 的程序用的插值变量。声明了 `network.egress` 时注入，没配代理时是空串。
+pub const URL_VAR: &str = "WONTON_PROXY_URL";
+
+/// 插件经出口容器的这个地址出去。它不含宿主的地址，换代理不用改插件。
+pub const PROXY_URL: &str = "http://egress.wonton.internal:3128";
+
+/// 代理变量的名字。大小写都写：apt、wget 和 curl 的明文 HTTP 只认小写，只写大写时这些程序就直接连（ADR-0023 实测）。
+pub const PROXY_VARS: [&str; 4] = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"];
+
+const NO_PROXY_VARS: [&str; 2] = ["NO_PROXY", "no_proxy"];
+
+/// Node 22.21、24.5 起有这个开关，不设就不读代理变量。
+const NODE_SWITCH: (&str, &str) = ("NODE_USE_ENV_PROXY", "1");
+
+/// 不走代理的地址，放在 `NO_PROXY` 的两头：中间是核心的身份提供方和本插件的服务名。
+const NO_PROXY_LOOPBACK: &str = "localhost,127.0.0.1,::1,.wonton.internal";
+const NO_PROXY_PRIVATE: &str = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
+                                172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
+
+/// 主人配了代理时，注入给出网插件的内容。没配代理时没有它，插件和没有这个功能时一样直连。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EgressVars {
+    /// 身份提供方在插件网络里的别名 `auth.<基础域名>`：插件经核心访问它，不能走代理。
+    pub auth_host: String,
+}
+
+impl EgressVars {
+    fn no_proxy<'a>(&self, services: impl Iterator<Item = &'a str>) -> String {
+        let mut parts = vec![NO_PROXY_LOOPBACK, self.auth_host.as_str()];
+        parts.extend(services.map(|service| -> &str { service }));
+        parts.push(NO_PROXY_PRIVATE);
+        parts.join(",")
+    }
+
+    /// 给容器写上代理变量。`services` 是本插件所有的服务名。compose 里写了同名变量时以 compose 为准，写成空就是这个
+    /// 服务不走代理。
+    pub fn inject<'a>(
+        &self,
+        body: &mut ContainerCreateBody,
+        services: impl Iterator<Item = &'a str>,
+    ) {
+        let env = body.env.get_or_insert_with(Vec::new);
+        let written: BTreeSet<String> = env
+            .iter()
+            .filter_map(|line| line.split_once('='))
+            .map(|(name, _)| name.to_owned())
+            .collect();
+        let no_proxy = self.no_proxy(services);
+        let pairs = PROXY_VARS
+            .iter()
+            .map(|name| (*name, PROXY_URL))
+            .chain(NO_PROXY_VARS.iter().map(|name| (*name, no_proxy.as_str())))
+            .chain([NODE_SWITCH]);
+        for (name, value) in pairs {
+            if !written.contains(name) {
+                env.push(format!("{name}={value}"));
+            }
+        }
+    }
+}
+
+/// 这行环境变量是写了具体地址的代理变量：只要值不是空的，也不是经核心注入的 [`PROXY_URL`]，就是作者写死的代理。
+pub fn hardcoded_proxy(line: &str) -> bool {
+    line.split_once('=').is_some_and(|(name, value)| {
+        PROXY_VARS.contains(&name) && !value.is_empty() && value != PROXY_URL
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vars() -> EgressVars {
+        EgressVars {
+            auth_host: "auth.wonton.example".to_owned(),
+        }
+    }
+
+    fn injected(env: &[&str]) -> Vec<String> {
+        let mut body = ContainerCreateBody {
+            env: Some(env.iter().map(|s| (*s).to_owned()).collect()),
+            ..Default::default()
+        };
+        vars().inject(&mut body, ["web", "db"].into_iter());
+        body.env.unwrap()
+    }
+
+    fn value<'a>(env: &'a [String], name: &str) -> Option<&'a str> {
+        env.iter().find_map(|line| {
+            let (n, v) = line.split_once('=')?;
+            (n == name).then_some(v)
+        })
+    }
+
+    #[test]
+    fn both_cases_and_the_node_switch_are_written() {
+        let env = injected(&[]);
+        for name in PROXY_VARS {
+            assert_eq!(value(&env, name), Some(PROXY_URL), "{name}");
+        }
+        assert_eq!(value(&env, "NODE_USE_ENV_PROXY"), Some("1"));
+        let expected = "localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.example,web,db,\
+                        .local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
+                        172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
+        assert_eq!(value(&env, "NO_PROXY"), Some(expected));
+        assert_eq!(value(&env, "no_proxy"), Some(expected));
+    }
+
+    #[test]
+    fn what_compose_wrote_wins() {
+        let env = injected(&["HTTP_PROXY=", "no_proxy=only-this", "KEEP=1"]);
+        assert_eq!(value(&env, "HTTP_PROXY"), Some(""));
+        assert_eq!(value(&env, "no_proxy"), Some("only-this"));
+        assert_eq!(value(&env, "HTTPS_PROXY"), Some(PROXY_URL));
+        assert_eq!(value(&env, "KEEP"), Some("1"));
+        assert_eq!(
+            env.iter().filter(|l| l.starts_with("HTTP_PROXY=")).count(),
+            1
+        );
+    }
+
+    #[test]
+    fn only_concrete_proxy_addresses_count_as_hardcoded() {
+        assert!(hardcoded_proxy("HTTP_PROXY=http://172.17.0.1:7899"));
+        assert!(hardcoded_proxy("https_proxy=http://proxy.example:3128"));
+        assert!(!hardcoded_proxy("HTTP_PROXY="));
+        assert!(!hardcoded_proxy(&format!("http_proxy={PROXY_URL}")));
+        assert!(!hardcoded_proxy("NO_PROXY=localhost"));
+    }
+}

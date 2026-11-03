@@ -254,6 +254,7 @@ impl PluginManager {
                 .await?;
             self.engine.remove_container(&container.name).await?;
         }
+        self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
         self.start_containers(&plan, &mut Undo::default(), deadline)
             .await?;

@@ -16,6 +16,7 @@ use super::compose::{
     parse_duration,
 };
 use super::configs::{self, ConfigError, ConfigFile};
+use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
 use super::hostdir::Owner;
 use super::interpolate::Vars;
@@ -171,6 +172,8 @@ pub struct InstallContext {
     pub gpu: Option<GpuGrant>,
     /// 申请了 `network.lan` 时：局域网端口开在哪里（见 [`super::lan`]）。
     pub lan: Option<LanGrant>,
+    /// 声明了 `network.egress` 且主人配了代理时：要注入的代理变量（见 [`super::egress`]）。
+    pub egress: Option<EgressVars>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -193,6 +196,7 @@ impl std::fmt::Debug for InstallContext {
             .field("extra_hosts", &self.extra_hosts)
             .field("gpu", &self.gpu)
             .field("lan", &self.lan)
+            .field("egress", &self.egress)
             .finish()
     }
 }
@@ -284,6 +288,10 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     if let Some(grant) = &ctx.lan {
         set(lan::ADDRESSES_VAR, grant.var());
     }
+    if manifest.permissions.contains(&Permission::NetworkEgress) {
+        let url = ctx.egress.as_ref().map_or("", |_| egress::PROXY_URL);
+        set(egress::URL_VAR, url.to_owned());
+    }
     if let Some(matrix) = &ctx.matrix {
         set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
         set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
@@ -304,6 +312,11 @@ pub(super) fn dry_run_with_email(
     package: &PluginPackage,
     email: Option<&str>,
 ) -> Result<Deployment, RenderError> {
+    render(package, &dry_run_context(package, email))
+}
+
+/// [`dry_run`] 用的占位环境。
+pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> InstallContext {
     let manifest = &package.manifest;
     let slug = manifest.id.slug();
     let root = PathBuf::from("/wonton-dry-run");
@@ -319,7 +332,7 @@ pub(super) fn dry_run_with_email(
         .collect();
     let webui = manifest.webui.as_ref();
     let url = format!("http://{slug}.wonton.invalid");
-    let ctx = InstallContext {
+    InstallContext {
         app_data: root.join("apps").join(&slug),
         shares,
         app_url: webui.map(|_| url.clone()),
@@ -378,9 +391,9 @@ pub(super) fn dry_run_with_email(
             network: (!manifest.permissions.contains(&Permission::NetworkEgress))
                 .then(|| Instance::default().lan_network(&slug)),
         }),
+        egress: None,
         slug,
-    };
-    render(package, &ctx)
+    }
 }
 
 pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
@@ -444,6 +457,12 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels, gpu)?;
         if let Some(grant) = &ctx.lan {
             lan::publish(manifest, &name, service, grant, &mut plan.body)?;
+        }
+        if let Some(vars) = ctx.egress.as_ref()
+            && service.network_mode != Some(NetworkMode::None)
+        {
+            vars.inject(&mut plan.body, services.keys().map(String::as_str));
+            egress::healthcheck::apply(&mut plan.body);
         }
         plan.files = files;
         plan.one_shot = one_shot;

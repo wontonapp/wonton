@@ -101,6 +101,8 @@ struct Resources {
     pull_error: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
+    /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
+    image_healthchecks: BTreeMap<String, Value>,
     /// 容器名 → 跑完时的（退出码，标准输出，标准错误），`wait` 和 `logs` 按它回答；没设的以 0 退出、没有输出。
     outputs: BTreeMap<String, (i64, String, String)>,
     hold: Option<Hold>,
@@ -273,6 +275,13 @@ impl FakeDocker {
     }
 
     /// 让 `GET /info` 报告这些运行时（如 `runc`、`nvidia`）。
+    /// 给镜像设上它自带的 `HEALTHCHECK`（Docker 的 JSON 写法）。
+    pub fn set_image_healthcheck(&self, image: &str, check: Value) {
+        self.lock()
+            .image_healthchecks
+            .insert(image.to_owned(), check);
+    }
+
     pub fn set_runtimes(&self, runtimes: &[&str]) {
         self.lock().runtimes = Some(runtimes.iter().map(|r| (*r).to_owned()).collect());
     }
@@ -594,7 +603,10 @@ fn others(
                 .collect();
             json_reply(StatusCode::OK, json!({"Runtimes": map}))
         }
-        (&Method::GET, ["images", .., "json"]) => json_reply(StatusCode::OK, json!({})),
+        (&Method::GET, ["images", image @ .., "json"]) => {
+            let check = docker.image_healthchecks.get(&image.join("/"));
+            json_reply(StatusCode::OK, json!({"Config": {"Healthcheck": check}}))
+        }
         (&Method::POST, ["images", "create"]) if docker.pull_error.is_some() => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
             json!({"message": docker.pull_error}),

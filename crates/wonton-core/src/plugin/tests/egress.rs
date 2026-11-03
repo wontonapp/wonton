@@ -6,8 +6,11 @@ use hyper::StatusCode;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
+use super::super::egress::{EgressVars, PROXY_URL};
 use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
+use super::super::package::PluginPackage;
+use super::super::render::{Deployment, InstallContext, dry_run_context, render};
 use super::super::store::{InstalledRecord, Store};
 use super::super::{PluginId, PluginStatus};
 use super::manager::{manager_in_container, manager_with, manager_with_oidc};
@@ -168,4 +171,121 @@ async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gatew
         json!(["auth.wonton.localhost:172.30.0.1"])
     );
     assert_eq!(created["HostConfig"]["NetworkMode"], "wonton-app-test");
+}
+
+fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
+    let mut ctx = dry_run_context(package, None);
+    ctx.egress = Some(EgressVars {
+        auth_host: "auth.wonton.localhost".to_owned(),
+    });
+    let plan = render(package, &ctx).unwrap();
+    (ctx, plan)
+}
+
+fn service<'a>(plan: &'a Deployment, name: &str) -> &'a super::super::render::ContainerPlan {
+    plan.containers.iter().find(|c| c.service == name).unwrap()
+}
+
+#[test]
+fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables() {
+    let compose = package(
+        "  web:\n    image: nginx\n    environment:\n      SEARX_PROXY: ${WONTON_PROXY_URL}\n    \
+         healthcheck:\n      test: wget -q http://127.0.0.1/\n  \
+         db:\n    image: postgres\n    environment:\n      HTTP_PROXY: \"\"\n  \
+         sealed:\n    image: busybox\n    network_mode: none\n    \
+         healthcheck:\n      test: wget -q http://127.0.0.1/",
+        "  permissions: [network.egress]",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let (_, plan) = with_proxy(&package);
+
+    let web = super::env_of(service(&plan, "web"));
+    assert!(web.contains(&format!("HTTP_PROXY={PROXY_URL}")), "{web:?}");
+    assert!(web.contains(&format!("SEARX_PROXY={PROXY_URL}")), "{web:?}");
+    let no_proxy = web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap();
+    assert!(
+        no_proxy.contains(",auth.wonton.localhost,db,sealed,web,"),
+        "{no_proxy}"
+    );
+    let db = super::env_of(service(&plan, "db"));
+    assert!(
+        db.contains(&"HTTP_PROXY=".to_owned()),
+        "compose 写的优先：{db:?}"
+    );
+    let test = |name| {
+        service(&plan, name)
+            .body
+            .healthcheck
+            .clone()
+            .unwrap()
+            .test
+            .unwrap()
+    };
+    assert!(
+        test("web")[1].starts_with("unset http_proxy"),
+        "{:?}",
+        test("web")
+    );
+
+    // 没有网络的服务不写，健康检查也不改。
+    let sealed = super::env_of(service(&plan, "sealed"));
+    assert!(sealed.iter().all(|l| !l.contains("PROXY")), "{sealed:?}");
+    assert_eq!(test("sealed")[1], "wget -q http://127.0.0.1/");
+}
+
+#[test]
+fn without_a_proxy_only_the_empty_url_variable_is_injected() {
+    let compose = package(
+        "  web:\n    image: nginx\n    environment:\n      SEARX_PROXY: ${WONTON_PROXY_URL}\n    \
+         healthcheck:\n      test: wget -q http://127.0.0.1/",
+        "  permissions: [network.egress]",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let plan = render(&package, &dry_run_context(&package, None)).unwrap();
+    let web = service(&plan, "web");
+    assert_eq!(super::env_of(web), ["SEARX_PROXY="]);
+    let test = web.body.healthcheck.clone().unwrap().test.unwrap();
+    assert_eq!(test[1], "wget -q http://127.0.0.1/");
+}
+
+#[test]
+fn a_plugin_without_egress_cannot_reference_the_proxy_url() {
+    let compose = package(
+        "  web:\n    image: nginx\n    environment:\n      P: ${WONTON_PROXY_URL}",
+        "  permissions: []",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let error = render(&package, &dry_run_context(&package, None)).unwrap_err();
+    assert!(error.to_string().contains("WONTON_PROXY_URL"), "{error}");
+}
+
+#[tokio::test]
+async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
+    let compose = package(
+        "  web:\n    image: nginx\n  sealed:\n    image: nginx\n    network_mode: none",
+        "  permissions: [network.egress]",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let (docker, engine) = FakeDocker::start().await;
+    docker.set_image_healthcheck(
+        "nginx",
+        json!({"Test": ["CMD", "wget", "http://127.0.0.1/"], "Interval": 5_000_000_000_i64}),
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+
+    let (ctx, mut plan) = with_proxy(&package);
+    m.rewrite_image_healthchecks(&ctx, &mut plan).await.unwrap();
+    let check = service(&plan, "web").body.healthcheck.clone().unwrap();
+    assert_eq!(
+        check.test.unwrap(),
+        ["CMD", "wget", "-Y", "off", "http://127.0.0.1/"]
+    );
+    assert_eq!(check.interval, Some(5_000_000_000));
+    assert_eq!(service(&plan, "sealed").body.healthcheck, None);
+
+    let ctx = dry_run_context(&package, None);
+    let mut plan = render(&package, &ctx).unwrap();
+    m.rewrite_image_healthchecks(&ctx, &mut plan).await.unwrap();
+    assert_eq!(service(&plan, "web").body.healthcheck, None);
 }

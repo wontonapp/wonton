@@ -107,6 +107,33 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
 }
 
 #[tokio::test]
+async fn the_official_index_refuses_hardcoded_proxy_addresses() {
+    let services = |environment: &str| {
+        format!(
+            "  web:\n    image: nginx:1.27@sha256:{}\n    healthcheck:\n      test: [CMD, nginx, -t]\n    \
+             environment:\n{environment}",
+            "a".repeat(64)
+        )
+    };
+    let complete = "  category: tools\n  license: MIT\n  author: {name: Example}";
+    let hardcoded = services("      http_proxy: http://172.17.0.1:7899");
+    let report = run(repo(&compose(&hardcoded, complete)).path(), true)
+        .await
+        .unwrap();
+    assert!(
+        report.problems.iter().any(|p| p.contains("http_proxy")),
+        "{report:?}"
+    );
+    // 写成空是这个服务不走代理；引用 WONTON_PROXY_URL 是核心给的地址。两种都收。
+    let allowed = services("      HTTP_PROXY: \"\"\n      APP_PROXY: ${WONTON_PROXY_URL}")
+        .replace("permissions: []", "");
+    let permitted =
+        compose(&allowed, complete).replace("permissions: []", "permissions: [network.egress]");
+    let report = run(repo(&permitted).path(), true).await.unwrap();
+    assert!(report.problems.is_empty(), "{report:?}");
+}
+
+#[tokio::test]
 async fn icons_and_screenshots_are_processed_like_the_store_does() {
     let shots = compose(UNPINNED, "").replace(
         "[shots/1.png]",

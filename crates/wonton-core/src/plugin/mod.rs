@@ -8,6 +8,7 @@ pub mod compose;
 pub mod configs;
 pub mod docker;
 pub mod docker_exec;
+pub mod egress;
 pub mod gallery;
 pub mod github;
 pub mod github_source;

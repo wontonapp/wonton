@@ -195,6 +195,7 @@ impl PluginManager {
                 .await?;
             undo.oidc_client = Some(manifest.id.to_string());
         }
+        self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
         let health = self.start_containers(&plan, undo, deadline).await?;
         if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
@@ -342,6 +343,7 @@ impl PluginManager {
             extra_hosts: Vec::new(),
             gpu: None,
             lan: None,
+            egress: None,
         })
     }
 

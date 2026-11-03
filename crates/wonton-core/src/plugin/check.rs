@@ -6,6 +6,7 @@ use std::path::Path;
 
 use bollard::models::ContainerCreateBody;
 
+use super::egress::hardcoded_proxy;
 use super::image_worker::ImageWorker;
 use super::images::IconFormat;
 use super::manager::supported;
@@ -98,6 +99,16 @@ fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
                 "服务 {} 没有健康检查，装上后状态显示“健康未知”",
                 container.service
             ));
+        }
+        if official {
+            let env = container.body.env.iter().flatten();
+            for line in env.filter(|line| hardcoded_proxy(line)) {
+                let name = line.split('=').next().unwrap_or_default();
+                list.push(format!(
+                    "服务 {} 的 {name} 写了具体的代理地址：核心会给出网插件注入代理变量，换一台主机这个地址也用不了（ADR-0023）",
+                    container.service
+                ));
+            }
         }
     }
 }

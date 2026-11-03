@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use bollard::Docker;
 use bollard::errors::Error as BollardError;
 use bollard::models::{
-    ContainerCreateBody, ContainerInspectResponse, EndpointSettings, NetworkConnectRequest,
-    NetworkCreateRequest, NetworkDisconnectRequest, VolumeCreateRequest,
+    ContainerCreateBody, ContainerInspectResponse, EndpointSettings, HealthConfig,
+    NetworkConnectRequest, NetworkCreateRequest, NetworkDisconnectRequest, VolumeCreateRequest,
 };
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder,
@@ -190,6 +190,16 @@ impl Engine {
             (PullPolicy::Never, true) | (PullPolicy::Missing, true) => Ok(()),
             _ => self.pull(image).await,
         }
+    }
+
+    /// 镜像自带的 `HEALTHCHECK`；没有时为空。镜像要先拉下来（[`Self::ensure_image`]）。
+    pub async fn image_healthcheck(&self, image: &str) -> Result<Option<HealthConfig>> {
+        let inspect = self
+            .docker
+            .inspect_image(image)
+            .await
+            .map_err(|e| EngineError::from_bollard(&format!("检查镜像 {image}"), e))?;
+        Ok(inspect.config.and_then(|config| config.healthcheck))
     }
 
     async fn pull(&self, image: &str) -> Result<()> {
