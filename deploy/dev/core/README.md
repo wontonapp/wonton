@@ -101,6 +101,7 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 发布的镜像不带。装卸插件和会改数据的工具要主人
 确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
+没有 App 的主机上用真实的客户端核心回答：`cargo run -p wonton-client --example confirm-card -- <数据目录> <配对码> approve`。
 
 开发索引里的文件搜索插件在私有仓库 `geraldpeng6/wonton-plugin-files`，镜像没有发布，要先在本机按索引记的提交构建，
 见 [store/README.md](store/README.md)。

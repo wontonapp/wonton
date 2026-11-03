@@ -179,6 +179,7 @@ private fun Messages(
                 showsSender,
                 onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
                 onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+                onAnswer = { id, answer -> onAction(Action.AnswerConfirmation(id, answer)) },
             )
         }
         if (timeline.backPagination != BackPagination.REACHED_START) {

@@ -55,10 +55,7 @@ pub struct CardChoice {
     pub label: String,
 }
 
-/// 主人的回答。
-///
-/// 核心和 App 分开升级（ADR-0012）：核心可能给出这个 App 不认识的按钮，App 不显示它，卡片上别的按钮照常能点；核心
-/// 收到不认识的回答返回 400，绝不当成同意。
+/// 主人的回答。不认识的值怎么处理见 ADR-0016 第 3 步。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -110,7 +107,7 @@ pub struct ConfirmationReply {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ConfirmationView {
     /// 客户端核心已经算上了自己知道的：期限过了没等到核心的更新，`state` 就是过期；核心收下回答后，`state` 不等卡片
-    /// 更新就变。`choices` 只有现在能回答的按钮，不等回答时为空。
+    /// 更新就变。`choices` 只有现在能回答的按钮，不等回答时为空，[`Answer::Unknown`] 的按钮也已去掉，壳直接渲染。
     pub card: ConfirmationCard,
     /// 正在发给核心的回答。这时按钮还在，但不能点。
     pub sending: Option<Answer>,

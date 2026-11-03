@@ -1,6 +1,7 @@
 //! 测试里的家：一次性的 Tuwunel，加一个模拟的核心（签发 Matrix 登录令牌，把 `matrix.<基础域名>` 转给 Tuwunel），
 //! 前面接真实的隧道服务端。手机是真实的客户端核心，经隧道和本地代理访问，和 App 一样。
 
+use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
@@ -13,6 +14,7 @@ use iroh::{Endpoint, EndpointId, SecretKey};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{
     Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, Network, TimelineDiff, TimelineItem,
@@ -45,6 +47,12 @@ struct Core {
     pushkey: String,
     /// 推送登记接口收到的请求：方法和请求体（`DELETE` 没有请求体，是 `Null`）。
     push_requests: Mutex<Vec<(String, Value)>>,
+    /// 确认卡片收到的回答：卡片 ID 和请求体。
+    answers: Mutex<Vec<(String, Value)>>,
+    /// 接下来的回答怎么回；排空了就照常收下。
+    answer_replies: Mutex<VecDeque<(u16, Value)>>,
+    /// 为真时回答先不回，手机上这时是“正在发”。
+    hold_answers: watch::Sender<bool>,
 }
 
 impl Home {
@@ -57,6 +65,9 @@ impl Home {
             login_tokens: AtomicUsize::new(0),
             pushkey: random_hex(32),
             push_requests: Mutex::default(),
+            answers: Mutex::default(),
+            answer_replies: Mutex::default(),
+            hold_answers: watch::Sender::new(false),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let endpoint = loopback_endpoint(SecretKey::generate()).await;
@@ -87,6 +98,24 @@ impl Home {
             r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["{addr}"]}},
                 "base_domain": "{BASE_DOMAIN}", "core_url": "http://{BASE_DOMAIN}"}}"#
         )
+    }
+
+    /// 确认卡片收到的回答：卡片 ID 和请求体。
+    pub fn confirmation_answers(&self) -> Vec<(String, Value)> {
+        self.core.answers.lock().unwrap().clone()
+    }
+
+    /// 下一个回答这样回。
+    pub fn reply_to_next_answer(&self, status: u16, body: Value) {
+        self.core
+            .answer_replies
+            .lock()
+            .unwrap()
+            .push_back((status, body));
+    }
+
+    pub fn hold_answers(&self, hold: bool) {
+        self.core.hold_answers.send_replace(hold);
     }
 
     /// 核心签发过几次登录令牌。
@@ -147,9 +176,13 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     if tcp.read_exact(&mut body).await.is_err() {
         return;
     }
+    if text.starts_with("post /_wonton/confirmations/") {
+        let mut released = core.hold_answers.subscribe();
+        released.wait_for(|hold| !hold).await.ok();
+    }
     let response = match respond(&core, &text, &body) {
-        Some(body) => format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+        Some((status, body)) => format!(
+            "HTTP/1.1 {status} Whatever\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
              connection: close\r\n\r\n{body}",
             body.len()
         ),
@@ -162,13 +195,33 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
 }
 
 /// 核心自己的接口；不认识的请求回 `None`（404）。
-fn respond(core: &Core, head: &str, body: &[u8]) -> Option<String> {
+fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
     let push = |method: &str, body: Value| {
         core.push_requests
             .lock()
             .unwrap()
             .push((method.to_owned(), body));
     };
+    if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
+        let id = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        let answer: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+        let state = match answer["answer"].as_str() {
+            Some("approve") => "running",
+            _ => "rejected",
+        };
+        core.answers.lock().unwrap().push((id, answer));
+        let (status, reply) = core
+            .answer_replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
+        return Some((status, reply.to_string()));
+    }
     let response = if head.starts_with("post /_wonton/matrix/login-token ") {
         core.login_tokens.fetch_add(1, Ordering::SeqCst);
         json!({
@@ -188,7 +241,7 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<String> {
     } else {
         return None;
     };
-    Some(response.to_string())
+    Some((200, response.to_string()))
 }
 
 async fn loopback_endpoint(key: SecretKey) -> Endpoint {

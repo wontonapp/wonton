@@ -262,7 +262,23 @@ mod tests {
                     SendState::Sending { progress: None },
                 ),
             ),
-            item("4a", message(confirmation(), SendState::Sent)),
+            item(
+                "4a",
+                message(confirmation(Some(Answer::Approve), None), SendState::Sent),
+            ),
+            item(
+                "4b",
+                message(
+                    confirmation(
+                        None,
+                        Some(ChatProblem {
+                            reason: ChatFailure::TransportUnavailable,
+                            message: "连不上".into(),
+                        }),
+                    ),
+                    SendState::Sent,
+                ),
+            ),
             item("5", TimelineContent::ReadMarker),
             item(
                 "6",
@@ -311,14 +327,12 @@ mod tests {
         );
     }
 
-    fn confirmation() -> MessageContent {
+    fn confirmation(sending: Option<Answer>, problem: Option<ChatProblem>) -> MessageContent {
         MessageContent::Confirmation {
             view: ConfirmationView {
                 card: ConfirmationCard {
                     id: "abc".into(),
-                    state: ConfirmationState::Uncertain {
-                        message: "连接断了".into(),
-                    },
+                    state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),
                     lines: vec![CardLine {
                         text: "能访问 Docker".into(),
@@ -330,11 +344,8 @@ mod tests {
                     }],
                     expires_at_ms: 1_793_000_600_000,
                 },
-                sending: Some(Answer::Approve),
-                problem: Some(ChatProblem {
-                    reason: ChatFailure::TransportUnavailable,
-                    message: "连不上".into(),
-                }),
+                sending,
+                problem,
             },
         }
     }

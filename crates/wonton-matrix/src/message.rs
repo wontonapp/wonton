@@ -10,6 +10,7 @@ use matrix_sdk::ruma::{
     },
 };
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeKind, TimelineDetails};
+use serde_json::{Map, Value};
 
 /// 时间线里的一条消息。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,6 +29,9 @@ pub struct Message {
     pub status: SendStatus,
     /// 内容；被编辑过时是最新的内容。
     pub body: MessageBody,
+    /// `m.notice` 内容里带命名空间的自定义字段（如 `app.wonton.confirmation`），被编辑过时是最新的内容。SDK 解析消息时
+    /// 丢掉了它们，这里从原始事件里取。别的消息类型没有。
+    pub custom: Map<String, Value>,
     /// 是否被编辑过。
     pub edited: bool,
     /// 读到这条为止的其他人（显示名）。
@@ -153,6 +157,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         timestamp_ms: event.timestamp().get().into(),
         status: status(event.send_state()),
         body: body(kind),
+        custom: custom(event, kind),
         edited,
         read_by,
     })
@@ -181,6 +186,38 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
             recoverable: *is_recoverable,
         },
     }
+}
+
+fn custom(event: &EventTimelineItem, kind: &MsgLikeKind) -> Map<String, Value> {
+    let is_notice = matches!(kind, MsgLikeKind::Message(message)
+        if matches!(message.msgtype(), MessageType::Notice(_)));
+    if !is_notice {
+        return Map::new();
+    }
+    // SDK 核对过编辑：发送者和原消息相同才算数。
+    let edit = event.latest_edit_json();
+    let Some(raw) = edit.or(event.original_json()) else {
+        return Map::new();
+    };
+    let content = match raw.get_field::<Map<String, Value>>("content") {
+        Ok(content) => content.unwrap_or_default(),
+        Err(error) => {
+            tracing::warn!("消息内容读不了：{error}");
+            return Map::new();
+        }
+    };
+    let content = if edit.is_some() {
+        match content.into_iter().find(|(key, _)| key == "m.new_content") {
+            Some((_, Value::Object(new_content))) => new_content,
+            _ => Map::new(),
+        }
+    } else {
+        content
+    };
+    content
+        .into_iter()
+        .filter(|(key, _)| key.contains('.') && !key.starts_with("m."))
+        .collect()
 }
 
 pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {

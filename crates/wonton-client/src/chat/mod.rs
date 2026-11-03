@@ -5,6 +5,7 @@
 //! 隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
 
+mod confirmation;
 mod login;
 mod storage;
 mod timeline;
@@ -23,7 +24,7 @@ use wonton_matrix::{
     StoreConfig, SyncStatus,
 };
 use wonton_protocol::{
-    Action, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, CoreError,
+    Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, CoreError,
     DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel, ImageUpload, MediaHandle,
     ProxySettings, PushStatus, RecoveryStatus, SecretString,
 };
@@ -33,6 +34,7 @@ pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
+use confirmation::{Answers, Cards};
 use storage::{ChatStorage, StoredSession};
 use view::{core_error, recovery, room_row, verification};
 
@@ -52,6 +54,8 @@ pub(crate) struct ChatLink {
     session: Mutex<Option<Arc<MatrixSession>>>,
     /// 订阅着时间线的房间。同一时间只打开一个房间。
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
+    /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
+    answers: watch::Sender<Answers>,
 }
 
 struct Active {
@@ -93,6 +97,7 @@ impl ChatLink {
             active: tokio::sync::Mutex::new(None),
             session: Mutex::new(None),
             open_room: Mutex::new(None),
+            answers: watch::Sender::default(),
         });
         runtime.spawn(follow_home(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -190,9 +195,7 @@ impl ChatLink {
                 Ok(())
             }
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
-            Action::AnswerConfirmation { .. } => Err(CoreError::NotReady {
-                reason: "这个版本的客户端核心不支持回答确认卡片".to_owned(),
-            }),
+            Action::AnswerConfirmation { id, answer } => self.answer_confirmation(id, answer),
             Action::SetPushEndpoint { .. }
             | Action::PushUnavailable { .. }
             | Action::CreateSession { .. }
@@ -231,7 +234,8 @@ impl ChatLink {
                 .map_err(|e| core_error(&e))?,
         );
         *lock(&self.open_room) = Some((room_id, room.clone()));
-        Ok(TimelineSubscription::start(&self.runtime, room))
+        let cards = Cards::new(session.user_id(), self.answers.subscribe());
+        Ok(TimelineSubscription::start(&self.runtime, room, cards))
     }
 
     /// 凭句柄下载媒体原文件（加密附件在本机解密）。
@@ -281,6 +285,31 @@ impl ChatLink {
         };
         self.spawn_op("发送图片", async move {
             chat.room(&room_id).await?.send_image(upload).await
+        });
+        Ok(())
+    }
+
+    /// 主人点了确认卡片上的按钮：经隧道发给核心，进展放进 `answers`。同一张卡片在发或者答完了就不再发：核心那边
+    /// 也只收一次，这里是不让连点变成“回答过了”的报错。
+    fn answer_confirmation(&self, id: String, answer: Answer) -> Result<(), CoreError> {
+        if answer == Answer::Unknown {
+            return Err(invalid("这个 App 不认识这个回答"));
+        }
+        let not_connected = || CoreError::NotReady {
+            reason: "还没连上家里的服务器".to_owned(),
+        };
+        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
+        let core_url = self.home.core_url().ok_or_else(not_connected)?;
+        if !self
+            .answers
+            .send_if_modified(|answers| answers.start(&id, answer))
+        {
+            return Ok(());
+        }
+        let answers = self.answers.clone();
+        self.runtime.spawn(async move {
+            let outcome = confirmation::send_answer(&core_url, &proxy, &id, answer).await;
+            answers.send_modify(|answers| answers.finish(id, outcome));
         });
         Ok(())
     }

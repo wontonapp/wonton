@@ -133,6 +133,20 @@ impl ChatRoom {
         Ok(())
     }
 
+    /// 不经发送队列发一条内容任意的 `m.room.message`，返回事件 ID。测试里扮演核心、发确认卡片和编辑用。
+    #[cfg(feature = "testkit")]
+    pub async fn send_raw_message(
+        &self,
+        content: serde_json::Value,
+    ) -> Result<matrix_sdk::ruma::OwnedEventId> {
+        let sent = self
+            .room
+            .send_raw("m.room.message", content)
+            .await
+            .map_err(|error| Error::Upstream(format!("发送失败：{error}")))?;
+        Ok(sent.response.event_id)
+    }
+
     /// 发送图片：和文字一样经发送队列，原图和缩略图先存进本机的媒体缓存，马上以本地回显出现在时间线里（取图的句柄
     /// 指向缓存），之后在后台上传（加密房间里先在本机加密）、发 `m.image` 消息，结果见 [`Message::status`]。
     ///

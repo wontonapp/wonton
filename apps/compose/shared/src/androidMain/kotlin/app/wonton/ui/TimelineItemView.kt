@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
+import app.wonton.protocol.Answer
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MediaHandle
@@ -57,7 +58,10 @@ import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`onRetry`、`onCancel` 处理发送失败的这一条。 */
+/**
+ * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`onRetry`、`onCancel` 处理发送失败的这一条，
+ * `onAnswer` 回答确认卡片。
+ */
 @Composable
 fun TimelineItemView(
     item: TimelineItem,
@@ -65,9 +69,10 @@ fun TimelineItemView(
     showsSender: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
+    onAnswer: (String, Answer) -> Unit,
 ) {
     when (val content = item.content) {
-        is TimelineContent.Message -> MessageBubble(content.message, core, showsSender, onRetry, onCancel)
+        is TimelineContent.Message -> MessageBubble(content.message, core, showsSender, onRetry, onCancel, onAnswer)
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.DateDivider ->
             CenteredNote(DateFormat.getDateInstance(DateFormat.FULL).format(Date(content.timestampMs.toLong())))
@@ -103,6 +108,7 @@ private fun MessageBubble(
     showsSender: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
+    onAnswer: (String, Answer) -> Unit,
 ) {
     val alignment = if (message.isOwn) Alignment.End else Alignment.Start
     Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
@@ -120,7 +126,7 @@ private fun MessageBubble(
                 .background(background)
                 .padding(10.dp),
         ) {
-            MessageBody(message.body, core)
+            MessageBody(message.body, core, onAnswer)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             val small = MaterialTheme.typography.labelSmall
@@ -166,11 +172,11 @@ private fun FailedSend(state: SendState.Failed, style: TextStyle, onRetry: () ->
 }
 
 @Composable
-private fun MessageBody(body: MessageContent, core: ClientCore) {
+private fun MessageBody(body: MessageContent, core: ClientCore, onAnswer: (String, Answer) -> Unit) {
     when (body) {
         is MessageContent.Text -> SelectionContainer { Text(body.body) }
         is MessageContent.Image -> MessageImage(body.image, core)
-        is MessageContent.Confirmation -> Text(body.view.card.title)
+        is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
         MessageContent.Undecryptable -> Text("无法解密：本设备还没有这条消息的密钥", fontStyle = FontStyle.Italic)
         MessageContent.Redacted -> Text("消息已撤回", fontStyle = FontStyle.Italic)
         is MessageContent.Unsupported -> Text("暂不支持显示的消息（${body.kind}）", fontStyle = FontStyle.Italic)

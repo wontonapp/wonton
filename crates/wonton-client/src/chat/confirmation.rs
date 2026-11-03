@@ -1,0 +1,270 @@
+//! 确认卡片（ADR-0016）：从时间线里认出核心发的卡片，算出现在该怎么显示，把主人的回答发回去。
+//!
+//! 卡片的状态以核心编辑后的消息为准。这台设备还知道两件核心的编辑可能没来得及告诉它的事：期限到了，以及自己回答的
+//! 结果。核心重启后等着的确认没了，卡片不会再被编辑，所以期限由这里来算。手机的时钟快过 10 分钟时，还能回答的卡片会
+//! 显示成过期；这时宁可让这次操作不执行，Bot 会收到“主人没有确认”，可以再发起一次。
+
+use std::collections::HashMap;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use reqwest::header::CONTENT_TYPE;
+use tokio::sync::watch;
+use url::Url;
+use wonton_matrix::{EntryKind, Message, OwnedUserId, TimelineEntry, UserId, Vector};
+use wonton_protocol::{
+    Answer, CARD_FIELD, CORE_LOCALPART, ChatFailure, ChatProblem, ConfirmationAnswer,
+    ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, ProxySettings,
+    answer_path,
+};
+
+use super::login::{ErrorBody, proxy_url};
+
+/// 回答的整个请求最多等这么久。核心收到回答马上返回，不等执行。
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 这台设备回答过的卡片，按卡片 ID。随 App 的进程结束：重启后核心已经把卡片编辑好了，或者期限过了。
+#[derive(Clone, Default)]
+pub(crate) struct Answers(HashMap<String, AnswerProgress>);
+
+#[derive(Clone)]
+pub(super) enum AnswerProgress {
+    Sending(Answer),
+    /// 结果来自核心的回复，卡片的编辑可能还在路上。
+    Settled(ConfirmationState),
+    /// 核心不收这个回答，但不知道卡片现在是什么状态。
+    Refused(ChatProblem),
+    /// 没送到或者核心出错：可以再点。
+    Failed(ChatProblem),
+}
+
+impl Answers {
+    /// 开始回答 `id`。这张卡片在发或者答完了时返回假。
+    pub(super) fn start(&mut self, id: &str, answer: Answer) -> bool {
+        if matches!(self.0.get(id), None | Some(AnswerProgress::Failed(_))) {
+            self.0
+                .insert(id.to_owned(), AnswerProgress::Sending(answer));
+            return true;
+        }
+        false
+    }
+
+    pub(super) fn finish(&mut self, id: String, outcome: AnswerProgress) {
+        self.0.insert(id, outcome);
+    }
+}
+
+/// 一条时间线订阅看卡片要用的东西。
+pub(crate) struct Cards {
+    core_account: OwnedUserId,
+    answers: watch::Receiver<Answers>,
+}
+
+impl Cards {
+    /// `own_user`：登录的账号。核心账号和它在同一台服务器上。
+    pub(super) fn new(own_user: &UserId, answers: watch::Receiver<Answers>) -> Self {
+        let core_account = format!("@{CORE_LOCALPART}:{}", own_user.server_name())
+            .parse()
+            .expect("合法用户 ID 的服务器名拼上固定的用户名还是合法用户 ID");
+        Self {
+            core_account,
+            answers,
+        }
+    }
+
+    /// 现在的回答进展和时间。
+    pub(super) fn view(&self) -> CardsView {
+        CardsView {
+            core_account: self.core_account.clone(),
+            answers: self.answers.borrow().clone(),
+            now_ms: now_ms(),
+        }
+    }
+
+    pub(super) async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
+        self.answers.changed().await
+    }
+}
+
+/// 某一刻的回答进展和时间，同一份输入算出同样的显示。
+pub(crate) struct CardsView {
+    core_account: OwnedUserId,
+    answers: Answers,
+    now_ms: u64,
+}
+
+impl CardsView {
+    /// `entry` 是不是一张卡片：核心账号发的，内容读得懂。别人发的同样结构的内容是普通消息。比这个 App 新的核心写的、
+    /// 读不懂的卡片也当普通消息显示：`body` 是写给其他客户端看的纯文本，主人看得到，只是这里答不了。
+    fn card(&self, message: &Message) -> Option<ConfirmationCard> {
+        if message.sender != self.core_account {
+            return None;
+        }
+        let field = message.custom.get(CARD_FIELD)?;
+        match serde_json::from_value(field.clone()) {
+            Ok(card) => Some(card),
+            Err(error) => {
+                tracing::warn!("核心发的确认卡片读不懂：{error}");
+                None
+            }
+        }
+    }
+
+    pub(super) fn is_card(&self, entry: &TimelineEntry) -> bool {
+        matches!(&entry.kind, EntryKind::Message(message) if self.card(message).is_some())
+    }
+
+    /// `message` 是卡片时，它现在该怎么显示。
+    pub(super) fn view_of(&self, message: &Message) -> Option<ConfirmationView> {
+        let mut card = self.card(message)?;
+        let mut sending = None;
+        let mut problem = None;
+        if card.state == ConfirmationState::Pending {
+            if self.now_ms >= card.expires_at_ms {
+                card.state = ConfirmationState::Expired;
+            }
+            match self.answers.0.get(&card.id) {
+                Some(AnswerProgress::Sending(answer)) => sending = Some(*answer),
+                Some(AnswerProgress::Settled(state)) => card.state = state.clone(),
+                Some(AnswerProgress::Refused(refused)) => {
+                    card.choices.clear();
+                    problem = Some(refused.clone());
+                }
+                Some(AnswerProgress::Failed(failed)) => problem = Some(failed.clone()),
+                None => {}
+            }
+        }
+        if card.state == ConfirmationState::Pending {
+            card.choices
+                .retain(|choice| choice.answer != Answer::Unknown);
+        } else {
+            card.choices.clear();
+            problem = None;
+            sending = None;
+        }
+        Some(ConfirmationView {
+            card,
+            sending,
+            problem,
+        })
+    }
+
+    /// 还有多久有一张显示着等回答的卡片到期，到时候显示要变。已经到期的是零，尽快刷新。
+    pub(super) fn next_expiry(&self, entries: &Vector<TimelineEntry>) -> Option<Duration> {
+        let now = now_ms();
+        entries
+            .iter()
+            .filter_map(|entry| match &entry.kind {
+                EntryKind::Message(message) => self.card(message),
+                _ => None,
+            })
+            .filter(|card| {
+                card.state == ConfirmationState::Pending && card.expires_at_ms > self.now_ms
+            })
+            .map(|card| card.expires_at_ms.saturating_sub(now))
+            .min()
+            .map(Duration::from_millis)
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or_default()
+}
+
+/// `POST <核心地址>/_wonton/confirmations/{id}`：请求走本地代理，核心凭隧道身份认出这台已配对设备。
+pub(super) async fn send_answer(
+    core_url: &Url,
+    proxy: &ProxySettings,
+    id: &str,
+    answer: Answer,
+) -> AnswerProgress {
+    let failed = |reason, message: String| {
+        AnswerProgress::Failed(ChatProblem {
+            reason,
+            message: format!("回答没有成功：{message}"),
+        })
+    };
+    let url = match core_url.join(&answer_path(id)) {
+        Ok(url) => url,
+        Err(error) => return failed(ChatFailure::InvalidInput, error.to_string()),
+    };
+    let client = reqwest::Proxy::all(proxy_url(proxy)).and_then(|proxy| {
+        reqwest::Client::builder()
+            .proxy(proxy)
+            .timeout(ANSWER_TIMEOUT)
+            .build()
+    });
+    let client = match client {
+        Ok(client) => client,
+        Err(error) => return failed(ChatFailure::Upstream, error.to_string()),
+    };
+    let body = serde_json::to_vec(&ConfirmationAnswer { answer }).expect("回答总能写成 JSON");
+    let response = client
+        .post(url)
+        .header(CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await;
+    // 请求可能已经到了核心，只是回应没回来。再点一次是安全的：核心只收一次，已经收下的会回“回答过了”。
+    let lost = |error: reqwest::Error| {
+        failed(
+            ChatFailure::TransportUnavailable,
+            format!("没等到家里服务器的回应，不确定答上了没有，可以再点一次（{error}）"),
+        )
+    };
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => return lost(error),
+    };
+    let status = response.status().as_u16();
+    match response.bytes().await {
+        Ok(body) => outcome(status, &body),
+        Err(error) => lost(error),
+    }
+}
+
+/// 按核心的回应区分结果。
+fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
+    if (200..300).contains(&status) {
+        return match serde_json::from_slice::<ConfirmationReply>(body) {
+            Ok(reply) => AnswerProgress::Settled(reply.state),
+            Err(error) => AnswerProgress::Failed(ChatProblem {
+                reason: ChatFailure::Upstream,
+                message: format!("回答没有成功：核心的回应读不懂（{error}）"),
+            }),
+        };
+    }
+    let detail = serde_json::from_slice::<ErrorBody>(body)
+        .ok()
+        .map(|body| body.error);
+    let kind = detail.as_ref().map(|detail| detail.kind.as_str());
+    let message = detail.as_ref().map_or_else(
+        || format!("核心回了 {status}"),
+        |detail| detail.message.clone(),
+    );
+    match (status, kind) {
+        // 核心说过期了：和卡片被编辑成过期是一回事。
+        (409, Some("expired")) => AnswerProgress::Settled(ConfirmationState::Expired),
+        // 回答过了（比如主人的另一台设备），或者核心已经没有这个确认（比如重启过）：再点也没用。
+        (404 | 409, _) => AnswerProgress::Refused(ChatProblem {
+            reason: ChatFailure::InvalidInput,
+            message,
+        }),
+        _ => {
+            let reason = match status {
+                401 | 403 => ChatFailure::Unauthorized,
+                400 => ChatFailure::InvalidInput,
+                // 本地代理连不上隧道时回 502，并在 x-wonton-tunnel-error 里写明原因。
+                502 => ChatFailure::TransportUnavailable,
+                503 => ChatFailure::NotReady,
+                _ => ChatFailure::Upstream,
+            };
+            AnswerProgress::Failed(ChatProblem {
+                reason,
+                message: format!("回答没有成功：{message}"),
+            })
+        }
+    }
+}

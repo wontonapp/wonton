@@ -19,14 +19,14 @@ pub(crate) struct LoginToken {
 
 /// 核心的错误响应：`{"error": {"kind": …, "message": …}}`。
 #[derive(Deserialize)]
-struct ErrorBody {
-    error: ErrorDetail,
+pub(super) struct ErrorBody {
+    pub(super) error: ErrorDetail,
 }
 
 #[derive(Deserialize)]
-struct ErrorDetail {
-    kind: String,
-    message: String,
+pub(super) struct ErrorDetail {
+    pub(super) kind: String,
+    pub(super) message: String,
 }
 
 const JWT_LOGIN: &str = "org.matrix.login.jwt";

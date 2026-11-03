@@ -5,9 +5,10 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, mpsc, watch};
-use wonton_matrix::{BackPaginationStatus, ChatRoom};
+use wonton_matrix::{BackPaginationStatus, ChatRoom, TimelineEntry, Vector};
 use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
 
+use super::confirmation::{Cards, CardsView};
 use super::view::{timeline_diff, timeline_item};
 
 /// 一个房间的时间线订阅。壳循环调用 [`next`](Self::next)，把每一批增量按顺序应用到自己的列表上；不再需要时
@@ -20,12 +21,12 @@ pub struct TimelineSubscription {
 
 impl TimelineSubscription {
     /// 在核心的运行时里开始转发 `room` 的时间线。订阅释放或取消后转发自动停止。
-    pub(crate) fn start(runtime: &Handle, room: Arc<ChatRoom>) -> Arc<Self> {
+    pub(crate) fn start(runtime: &Handle, room: Arc<ChatRoom>, cards: Cards) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
         runtime.spawn(async move {
             tokio::select! {
-                () = forward(&room, &sender) => {}
+                () = forward(&room, cards, &sender) => {}
                 () = sender.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -57,26 +58,42 @@ impl TimelineSubscription {
     }
 }
 
-/// 先发当前条目，再逐批转发增量；翻页状态变了也发一批（增量为空）。
-async fn forward(room: &ChatRoom, sender: &mpsc::UnboundedSender<TimelineUpdate>) {
+/// 先发当前条目，再逐批转发增量；翻页状态变了也发一批（增量为空）。确认卡片的显示还取决于这台设备回答的进展和
+/// 现在的时间，它们变了时比较前后的显示，变了的卡片发 `Set`，所以这里留着一份 SDK 的条目。
+async fn forward(
+    room: &ChatRoom,
+    mut cards: Cards,
+    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+) {
     let (entries, diffs) = room.entries().await;
+    let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
+    let mut shown = cards.view();
     let mut statuses = std::pin::pin!(room.back_pagination_status().await);
     let mut status = match statuses.next().await {
         Some(status) => back_pagination(status),
         None => BackPagination::Idle,
     };
     let reset = TimelineDiff::Reset {
-        items: entries.into_iter().map(timeline_item).collect(),
+        items: entries
+            .iter()
+            .map(|entry| timeline_item(entry.clone(), &shown))
+            .collect(),
     };
     if send(sender, vec![reset], status).is_err() {
         return;
     }
     let mut diffs = std::pin::pin!(diffs);
     loop {
+        let next_expiry = shown.next_expiry(&entries);
         let sent = tokio::select! {
             batch = diffs.next() => {
                 let Some(batch) = batch else { return };
-                send(sender, batch.into_iter().map(timeline_diff).collect(), status)
+                let mut out = refresh(&entries, &mut shown, &cards);
+                for diff in batch {
+                    out.push(timeline_diff(diff.clone(), &shown));
+                    diff.apply(&mut entries);
+                }
+                send(sender, out, status)
             }
             next = statuses.next() => {
                 let Some(next) = next else { return };
@@ -87,11 +104,53 @@ async fn forward(room: &ChatRoom, sender: &mpsc::UnboundedSender<TimelineUpdate>
                 status = next;
                 send(sender, Vec::new(), status)
             }
+            changed = cards.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                let refreshed = refresh(&entries, &mut shown, &cards);
+                if refreshed.is_empty() {
+                    continue;
+                }
+                send(sender, refreshed, status)
+            }
+            () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
+                let refreshed = refresh(&entries, &mut shown, &cards);
+                if refreshed.is_empty() {
+                    continue;
+                }
+                send(sender, refreshed, status)
+            }
         };
         if sent.is_err() {
             return;
         }
     }
+}
+
+/// 换成卡片现在的显示，返回显示变了的卡片。
+fn refresh(
+    entries: &Vector<TimelineEntry>,
+    shown: &mut CardsView,
+    cards: &Cards,
+) -> Vec<TimelineDiff> {
+    let now = cards.view();
+    let mut diffs = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if !now.is_card(entry) {
+            continue;
+        }
+        let before = timeline_item(entry.clone(), shown);
+        let after = timeline_item(entry.clone(), &now);
+        if before != after {
+            diffs.push(TimelineDiff::Set {
+                index: u32::try_from(index).unwrap_or(u32::MAX),
+                item: after,
+            });
+        }
+    }
+    *shown = now;
+    diffs
 }
 
 fn send(

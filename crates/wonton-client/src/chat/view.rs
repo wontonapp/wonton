@@ -1,5 +1,6 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
+use super::confirmation::CardsView;
 use wonton_matrix::{
     EntryKind, Error, LatestMessage, Membership, Message, MessageBody, Recovery, RoomInfo,
     SendStatus, TimelineEntry, VectorDiff, Verification,
@@ -52,10 +53,10 @@ pub(crate) fn summary(body: MessageBody) -> String {
     }
 }
 
-pub(crate) fn timeline_item(entry: TimelineEntry) -> TimelineItem {
+pub(crate) fn timeline_item(entry: TimelineEntry, cards: &CardsView) -> TimelineItem {
     let content = match entry.kind {
         EntryKind::Message(message) => TimelineContent::Message {
-            message: timeline_message(*message),
+            message: timeline_message(*message, cards),
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
         EntryKind::DateDivider(timestamp_ms) => TimelineContent::DateDivider { timestamp_ms },
@@ -68,7 +69,8 @@ pub(crate) fn timeline_item(entry: TimelineEntry) -> TimelineItem {
     }
 }
 
-fn timeline_message(message: Message) -> TimelineMessage {
+fn timeline_message(message: Message, cards: &CardsView) -> TimelineMessage {
+    let card = cards.view_of(&message);
     TimelineMessage {
         event_id: message.event_id.map(|id| id.to_string()),
         sender_id: message.sender.to_string(),
@@ -83,30 +85,38 @@ fn timeline_message(message: Message) -> TimelineMessage {
                 recoverable,
             },
         },
-        body: match message.body {
-            MessageBody::Text(body) => MessageContent::Text {
-                body,
-                files: Vec::new(),
-            },
-            MessageBody::Image(image) => MessageContent::Image {
-                image: ImageContent {
-                    media: MediaHandle {
-                        token: image.media_token(),
-                    },
-                    thumbnail: image.thumbnail_token().map(|token| MediaHandle { token }),
-                    filename: image.filename,
-                    mime_type: image.mime_type,
-                    size: image.size,
-                    width: image.width,
-                    height: image.height,
-                },
-            },
-            MessageBody::Undecryptable => MessageContent::Undecryptable,
-            MessageBody::Redacted => MessageContent::Redacted,
-            MessageBody::Other { kind } => MessageContent::Unsupported { kind },
+        // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
+        edited: message.edited && card.is_none(),
+        body: match (card, message.body) {
+            (Some(view), _) => MessageContent::Confirmation { view },
+            (None, body) => message_content(body),
         },
-        edited: message.edited,
         read_by: message.read_by,
+    }
+}
+
+fn message_content(body: MessageBody) -> MessageContent {
+    match body {
+        MessageBody::Text(body) => MessageContent::Text {
+            body,
+            files: Vec::new(),
+        },
+        MessageBody::Image(image) => MessageContent::Image {
+            image: ImageContent {
+                media: MediaHandle {
+                    token: image.media_token(),
+                },
+                thumbnail: image.thumbnail_token().map(|token| MediaHandle { token }),
+                filename: image.filename,
+                mime_type: image.mime_type,
+                size: image.size,
+                width: image.width,
+                height: image.height,
+            },
+        },
+        MessageBody::Undecryptable => MessageContent::Undecryptable,
+        MessageBody::Redacted => MessageContent::Redacted,
+        MessageBody::Other { kind } => MessageContent::Unsupported { kind },
     }
 }
 
@@ -115,34 +125,31 @@ fn index(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX)
 }
 
-pub(crate) fn timeline_diff(diff: VectorDiff<TimelineEntry>) -> TimelineDiff {
+pub(crate) fn timeline_diff(diff: VectorDiff<TimelineEntry>, cards: &CardsView) -> TimelineDiff {
+    let item = |entry| timeline_item(entry, cards);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
-            items: values.into_iter().map(timeline_item).collect(),
+            items: values.into_iter().map(item).collect(),
         },
         VectorDiff::Clear => TimelineDiff::Clear,
-        VectorDiff::PushFront { value } => TimelineDiff::PushFront {
-            item: timeline_item(value),
-        },
-        VectorDiff::PushBack { value } => TimelineDiff::PushBack {
-            item: timeline_item(value),
-        },
+        VectorDiff::PushFront { value } => TimelineDiff::PushFront { item: item(value) },
+        VectorDiff::PushBack { value } => TimelineDiff::PushBack { item: item(value) },
         VectorDiff::PopFront => TimelineDiff::PopFront,
         VectorDiff::PopBack => TimelineDiff::PopBack,
         VectorDiff::Insert { index: at, value } => TimelineDiff::Insert {
             index: index(at),
-            item: timeline_item(value),
+            item: item(value),
         },
         VectorDiff::Set { index: at, value } => TimelineDiff::Set {
             index: index(at),
-            item: timeline_item(value),
+            item: item(value),
         },
         VectorDiff::Remove { index: at } => TimelineDiff::Remove { index: index(at) },
         VectorDiff::Truncate { length } => TimelineDiff::Truncate {
             length: index(length),
         },
         VectorDiff::Reset { values } => TimelineDiff::Reset {
-            items: values.into_iter().map(timeline_item).collect(),
+            items: values.into_iter().map(item).collect(),
         },
     }
 }

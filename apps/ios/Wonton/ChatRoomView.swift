@@ -55,7 +55,8 @@ struct ChatRoomView: View {
                         TimelineRow(
                             item: item, core: model.core, showsSender: !isDirect,
                             retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
-                            cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) }
+                            cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
+                            answer: { model.send(.answerConfirmation(id: $0, answer: $1)) }
                         )
                         .id(item.id)
                     }

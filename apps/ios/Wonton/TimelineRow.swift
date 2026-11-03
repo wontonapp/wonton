@@ -9,11 +9,14 @@ struct TimelineRow: View {
     /// 重发、删除发送失败的这一条。
     let retry: () -> Void
     let cancel: () -> Void
+    /// 回答这张确认卡片。
+    let answer: (String, Answer) -> Void
 
     var body: some View {
         switch item.content {
         case let .message(message):
-            MessageBubble(message: message, core: core, showsSender: showsSender, retry: retry, cancel: cancel)
+            MessageBubble(message: message, core: core, showsSender: showsSender, retry: retry, cancel: cancel,
+                          answer: answer)
         case let .notice(text):
             Text(text).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
         case let .dateDivider(timestampMs):
@@ -43,6 +46,7 @@ private struct MessageBubble: View {
     let showsSender: Bool
     let retry: () -> Void
     let cancel: () -> Void
+    let answer: (String, Answer) -> Void
 
     var body: some View {
         HStack {
@@ -70,7 +74,7 @@ private struct MessageBubble: View {
         case let .image(image):
             MediaImage(image: image, core: core)
         case let .confirmation(view):
-            Text(view.card.title)
+            ConfirmationCardView(view: view) { answer(view.card.id, $0) }
         case .undecryptable:
             Label("无法解密：本设备还没有这条消息的密钥", systemImage: "lock.slash").font(.footnote)
         case .redacted:
