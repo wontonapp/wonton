@@ -54,8 +54,9 @@ pub use wonton_protocol::{
     PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTask,
     PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushContent, PushEndpoint,
     PushNotification, PushStatus, RecoveryStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
-    SecretString, SendState, SessionListViewModel, SessionRow, StoreFailure, StoreItem,
-    StoreListing, StoreProblem, StoreSection, ThemeColors, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, TimelineUpdate, Transfer, TransferAction, TransferDirection,
-    TransferState, TransfersViewModel, UpgradeOffer, UploadSource,
+    RoomTransfers, SecretString, SendState, SessionListViewModel, SessionRow, StoreFailure,
+    StoreItem, StoreListing, StoreProblem, StoreSection, ThemeColors, TimelineContent,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, Transfer, TransferAction,
+    TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer,
+    UploadSource,
 };

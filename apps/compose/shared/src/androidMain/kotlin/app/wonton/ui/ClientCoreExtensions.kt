@@ -7,6 +7,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.TimelineUpdate
+import app.wonton.protocol.TransfersViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -46,6 +47,15 @@ fun ClientCore.send(action: Action): String? =
 /** 把和家里服务器连接的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
 fun ClientCore.homeUpdates(): Flow<HomeViewModel> = flow {
     subscribeHome().use { subscription ->
+        while (true) {
+            emit(subscription.next() ?: break)
+        }
+    }
+}
+
+/** 把传输列表的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
+fun ClientCore.transfersUpdates(): Flow<TransfersViewModel> = flow {
+    subscribeTransfers().use { subscription ->
         while (true) {
             emit(subscription.next() ?: break)
         }

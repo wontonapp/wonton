@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 核心放下载文件的目录（ADR-0020），只把它交给系统打开。 -->
+    <files-path name="downloads" path="downloads/" />
+</paths>

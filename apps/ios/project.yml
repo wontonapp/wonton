@@ -30,6 +30,8 @@ targets:
         # M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），只对 WebView 里的内容放开。
         NSAppTransportSecurity:
           NSAllowsArbitraryLoadsInWebContent: true
+          # 文件的播放器经核心在回环地址上的 http 地址取数据（ADR-0020）。
+          NSAllowsLocalNetworking: true
         # iroh 经局域网直连家里的服务器时，iOS 要先征得用户同意。
         NSLocalNetworkUsageDescription: 云吞经局域网直连你家里的服务器。
         NSCameraUsageDescription: 云吞用相机扫家里服务器上的配对二维码。

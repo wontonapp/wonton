@@ -444,3 +444,41 @@ async fn players_asking_at_the_same_time_get_one_address() {
     let port = |url: String| url::Url::parse(&url).unwrap().port();
     assert_eq!(port(one.unwrap()), port(other.unwrap()));
 }
+
+/// 发到别的房间的上传，进行中的只在目标房间列。
+#[tokio::test]
+async fn a_running_upload_is_listed_only_in_its_room() {
+    let world = World::start().await;
+    let source = world.write("a.mp4", &source_bytes(1024));
+    world.core.lock().hold_patch_after = Some(512);
+    world.phone().dispatch(room_upload(&source)).unwrap();
+    world.wait_core(|core| core.uploaded_bytes() >= 512).await;
+    let elsewhere = world.phone().room_transfers("!other:home".to_owned());
+    assert!(elsewhere.here.is_empty() && elsewhere.elsewhere.is_empty());
+    assert_eq!(
+        world
+            .phone()
+            .room_transfers("!bot:home".to_owned())
+            .here
+            .len(),
+        1
+    );
+}
+
+/// 出了问题的每个房间都列，不然主人不知道 Bot 没收到。这里的聊天没登录，发不出去，也没有房间列表。
+#[tokio::test]
+async fn an_upload_whose_link_was_not_sent_is_listed_outside_its_room() {
+    let world = World::start().await;
+    let source = world.write("a.mp4", &source_bytes(1024));
+    world.phone().dispatch(room_upload(&source)).unwrap();
+    let transfer = world
+        .wait_transfer(|t| matches!(t.state, TransferState::LinkNotSent { .. }))
+        .await;
+    let elsewhere = world.phone().room_transfers("!other:home".to_owned());
+    assert!(elsewhere.here.is_empty());
+    assert_eq!(elsewhere.elsewhere[0].transfer.id, transfer.id);
+    assert_eq!(elsewhere.elsewhere[0].room_name, None);
+    let home = world.phone().room_transfers("!bot:home".to_owned());
+    assert_eq!(home.here[0].id, transfer.id);
+    assert!(home.elsewhere.is_empty());
+}

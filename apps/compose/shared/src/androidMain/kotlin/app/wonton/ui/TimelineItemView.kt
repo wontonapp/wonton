@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -180,7 +179,7 @@ private fun MessageBody(
     onAnswer: (String, Answer) -> Unit,
 ) {
     when (body) {
-        is MessageContent.Text -> SelectionContainer { Text(body.body) }
+        is MessageContent.Text -> TextMessageBody(body.body, body.files, core)
         is MessageContent.Image -> MessageImage(body.image, core, sendState)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
         MessageContent.Undecryptable -> Text("无法解密：本设备还没有这条消息的密钥", fontStyle = FontStyle.Italic)

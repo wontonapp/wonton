@@ -9,6 +9,8 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
+use crate::chat::RoomRow;
+
 pub use link::{FileId, FileLinks, InvalidFileId, extract_file_links};
 
 /// 所有文件接口都要带的请求头，值是 `1`。隧道身份随 WebView 的每个请求自动带上，跨站带自定义请求头却要先过预检，
@@ -318,7 +320,50 @@ pub struct TransfersViewModel {
     pub problem: Option<FileProblem>,
 }
 
+/// 一个房间的传输条要列什么（`ClientCore::room_transfers`）。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RoomTransfers {
+    /// 目标是这个房间的，和没有目标房间的（下载、不发进房间的上传）。
+    pub here: Vec<Transfer>,
+    /// 发到别的房间、出了问题的上传：链接传完才发，时间线上没有痕迹，主人不在那个房间就不知道。
+    pub elsewhere: Vec<TransferElsewhere>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TransferElsewhere {
+    pub transfer: Transfer,
+    /// 目标房间的名字。房间列表里没有它时为空：换了家里的服务器，或者退出了那个房间。
+    pub room_name: Option<String>,
+}
+
 impl TransfersViewModel {
+    /// 这个房间的传输条列什么。进行中的上传只在目标房间显示：在别处点“重发链接”会以为发到眼前这里，所以别处的都写明目标房间。
+    pub fn for_room(&self, room_id: &str, rooms: &[RoomRow]) -> RoomTransfers {
+        let mut listed = RoomTransfers::default();
+        for transfer in &self.active {
+            match &transfer.room {
+                Some(room) if room != room_id => {
+                    if matches!(
+                        transfer.state,
+                        TransferState::Failed { .. } | TransferState::LinkNotSent { .. }
+                    ) {
+                        listed.elsewhere.push(TransferElsewhere {
+                            transfer: transfer.clone(),
+                            room_name: rooms
+                                .iter()
+                                .find(|row| row.room_id == *room)
+                                .map(|row| row.name.clone()),
+                        });
+                    }
+                }
+                _ => listed.here.push(transfer.clone()),
+            }
+        }
+        listed
+    }
+
     /// 三个列表里的所有传输。
     pub fn all(&self) -> impl Iterator<Item = &Transfer> {
         self.active

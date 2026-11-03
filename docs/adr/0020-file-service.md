@@ -247,11 +247,12 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 - 断了和失败分开：隧道断了、超时、核心暂时不回答都是暂停（`Paused`），连上、回到前台、隔一会儿再试，这次传动了一些的很快就试；核心写明了类别的和手机这一侧的问题是失败（`Failed`），不再试。例外是上传创建之后和下载的请求（上传的 `HEAD`、`PATCH`，下载的取文件名、取内容）碰上 `service_unavailable`：整套服务重启时有几秒隧道通了而 tusd 还没起来，也算暂停，不然主人要重新选文件从头传。tusd 真坏了也会一直暂停，所以这种暂停带上核心的说明，App 显示它，不写“等连接恢复”。
 - 上传先创建、把编号写盘，再一次 PATCH 传完剩下的；接着传之前问核心传到哪了。原文件的大小和修改时间和第一次打开时不一样，就不再接着传：拼出来的不是任何一个文件。
 - 下载先问文件名，定下放在哪，名字清洗后才用（Bot 也能影响名字，不能写到下载目录外面）；先写 `<目标>.part`，传完才改名，目标路径上出现的总是完整的文件。没有 ETag 的响应接不上，从头下。
+- 传输条按房间列（`ClientCore::room_transfers`，规则在核心）：进行中的上传只在目标房间显示，下载和不发进房间的上传每个房间都显示。发到别的房间、失败或链接没发出的上传每个房间都显示，写明目标房间；房间列表里没有它（换了服务器、退出了房间）时写明，都能清除。链接传完才发，时间线上没有痕迹，不这样主人就不知道 Bot 没收到。
 - 带 `room` 的上传，字节传完后才授权、发链接；发链接不打开房间（`MatrixSession::send_text_to`），不打断主人正在看的时间线。
 
 **壳（Swift、Kotlin）**
 
-选文件、把来源交给核心（路径、内容 URI 或书签）、打开来源（`FileOpener`）、画卡片和传输进度、交给系统打开、把 `file_stream_url` 交给播放器。业务都在 Rust 里（ADR-0005）。
+选文件、把来源交给核心（路径、内容 URI 或书签）、打开来源（`FileOpener`）、照核心给的按钮画卡片和传输进度、交给系统打开或分享、把 `file_stream_url` 交给播放器。业务都在 Rust 里（ADR-0005）。
 
 **`wonton-core`**
 
@@ -298,7 +299,7 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 - **上传的文件不自动清理。** 磁盘满了要主人自己删。App 只在上传时提示。
 - **走中继时很慢。** 经中继的下载实测只有 80–260 KB/s（ADR-0004），大文件要花很久。能续传，但改变不了速度，卡片要如实显示路径和进度。
 - **后台传输有限。** 字节经客户端核心的隧道，iOS 的后台 URLSession 用不上，App 进后台不久传输就停了，回到前台接着传。
-- **文件搜索插件要改。** rust-mcp-filesystem v0.4.5 的工具不返回 `resource_link`：查找的结果是文字，媒体文件是内联 base64。所以 `geraldpeng6/wonton-plugin-files` 要加一层，或者换成自己写的只读小服务（ADR-0016 估算约 200 行）。不改的话，Bot 找得到文件，发不出来。
+- **文件搜索插件要自己写。** rust-mcp-filesystem v0.4.5 的工具不返回 `resource_link`：查找的结果是文字，媒体文件是内联 base64，Bot 找得到文件，发不出来。所以 `geraldpeng6/wonton-plugin-files` 换成了自己写的只读 MCP 服务。
 - **编号要占上下文。** 每个文件一行文字。搜索结果很多时，插件应该分页。
 
 ## 验证结果
@@ -317,15 +318,20 @@ tusd v2.10.1（`tusproject/tusd@sha256:7b1c552a…`）：OrbStack 上 Docker 29.
 - **完整的 compose。** Linux 主机、Docker 29，`dev.sh up`：tusd 以 `read_only`、`cap_drop: [ALL]`、`no-new-privileges` 运行，四个服务都健康，Docker 自动建的 `uploads` 由核心交给 `PUID`，接着 tusd 才启动。经 `tusd.wonton.internal` 创建上传、分两次 PATCH，钩子的来源检查通过；没有设备身份的回 401。数据目录所在的盘剩不到 5% 时创建回 507 `storage_full`。
 - **跨卷放置。** 同一份 compose，`uploads` 换成单独的 tmpfs 卷，和 `transfers` 是两个文件系统（挂载的设备号不同）：64 MiB 的文件内容一致，放好后链接数是 1，没有临时文件，`uploads` 和待完成记录清空，记录写好；同名上传加序号，原文件不动；最后一个 PATCH 时核心停着，tusd 照样回 204，核心重启后的清理把文件放好。同卷时结果一样。
 - **跨卷放置，经临时名。** `place_upload` 在 tmpfs 和 ext4 两个卷上（Linux 主机，设备号 32 和 56）：同名时加序号，原文件不动；重放认得出已经放好的文件；删掉临时文件后链接数是 1。
+- **和真实 Bot 收发（客户端核心）。** Hermes v0.22.5（`HERMES_MEDIA_DELIVERY_STRICT=1`），magpie v0.1.1327 经开发机的 magpie 路由到 `auto/glm-5.3-flashx`，OrbStack 上 Docker 29.8.2，手机和家经隧道在本机直连，`wonton-client` 的 `examples/file-smoke.rs` 扮演手机，跑了 5 次。5 次里 Bot 都调了 `search_files` 再调 `wonton__share_file`，链接原样进了回复，`body` 没被改动，App 认出卡片；回复里没有抄预览的 `MEDIA:` 路径。下载和用 `file_stream_url` 带 Range 取到的字节都对得上。上传后核心授权、发链接，Bot 调 `wonton__view_file` 经预览和 Hermes 的 `vision_analyze` 说对了颜色；文件名看不出颜色（`测试图.png`，纯绿）。
+- **大文件续传。** 同一条件，128 MiB：上传到 2.3 MiB、下载到 11 KiB 时释放核心（相当于 App 被杀），重启后都接着传完，内容逐字节相同。走的是本机直连，不是中继。
+- **Android App。** 同样的 Bot 和模型，模拟器（API 36，arm64），#143 接上文件和“下完直接打开”之后的 Debug 构建：Bot 分享的文本、图片、视频都画成卡片，写明来源，图片有缩略图。点文本卡片下载后交给系统选 App，HTML Viewer 经 `FileProvider` 打开，内容正确。视频经 `file_stream_url` 用 `VideoView` 播放，能拖到 1:34（17 MiB，整个文件走一次 Range 请求，拖动时没再发新的请求：回环上它一次读完了）。系统选择器选 `Download` 里的图片，经内容 URI 上传，核心把链接发进房间，自己和 Bot 的消息都是卡片，Bot 用 `wonton__view_file` 说对了颜色。家里的磁盘不够时传输列表如实显示 `storage_full` 的原因。
+- **Android App，核心决定按钮之后。** 同样的条件，#143 的 Debug 构建：视频卡片点开边下边播，旁边有“用其他 App 打开”；随机字节的 `bad.mp4` 由 `VideoView` 报错，核心再探一次服务端，说“这台手机放不了这个格式”，“下载后用其他 App 打开”交给系统（Google Photos）。下完的文件进“已下载”，可以打开、分享（系统分享面板）和清理：“只清记录”留下 App 目录里的文件，“连手机上的文件一起删”连文件删掉。上传时 `docker pause` Tuwunel：约 30 秒后传输显示“已传完，链接没发出”和“重发链接”；恢复后点重发，只发链接，不重传，链接进了房间。之后 Bot 读出了文本的最后一行，用 `wonton__view_file` 说对了图片的颜色（纯蓝 PNG）。
+- **Android App，转屏和回前台。** 同样的条件，#143 的 Debug 构建。播放状态在消息列表的行里，行被回收播放器就关了：不固定这一行时，卡片下面有 3 条消息，播放中转成横屏，播放器关掉，退回消息列表。固定之后：转成横屏再转回来，画面从 63 秒接着走到 69 秒；放着时 Bot 的 60 行回复把卡片顶出屏幕，播放器不关，放到了 66 秒。按 Home 放到后台 12 秒，从桌面图标回来，从进后台时的位置接着放；手动暂停在 00:20 后按 Home 再回来，还是停在 00:20。锁屏 11 分 20 秒（模拟器上按电源键，不代表真机的后台限制）：隧道约 30 秒后断开，解锁时重连，播放器还在，从锁屏前的位置接着放，没有报连不上。`docker pause` Tuwunel 时上传，传输先后显示“重发链接”和“不发了”；点“不发了”后这一行没了。发到 Hermes 房间的上传链接没发出时，另一个房间的传输条上也有这一行，写着“发到 Hermes”；在那里点“重发链接”，链接进了 Hermes 房间，Bot 回答了。
+- **iOS App。** 同样的 Bot 和模型，iOS 26.5 模拟器（arm64），#143 的 Debug 构建：Bot 的卡片有来源和缩略图。视频经 `file_stream_url` 用 `AVPlayer` 播放，拖到 1:42 接着放；`bad.mp4` 说“这台手机放不了这个格式”，“下载后用其他 App 打开”弹系统分享面板。文本卡片下完由 QuickLook 打开，内容正确。`fileImporter` 选图上传，链接进了房间，Bot 用 `wonton__view_file` 说对了颜色（红色）。“已下载”里能打开、分享和清理，“只清记录”和“连手机上的文件一起删”都核对过 `Library/Application Support/wonton/downloads/<编号>/`。Tuwunel 停着时上传，传输显示进度和“不发了”，点了这一行就没了。Tuwunel 停着时核心回 502，matrix-sdk 还在重试（`rooms.rs` 的发送没有超时，约 15 分钟才放弃），等了 2 分钟多还没到“已传完，链接没发出”，所以“重发链接”这一行只在 Android 上点过；Android 那次是 `docker pause`，约 30 秒请求超时后报错。
 - **抢名字。** 装一个服务叫 `tusd` 的插件后，在核心的网络命名空间里 `tusd.wonton.internal` 解析到真的 tusd；带点、带 `--`、以 `-` 结尾的服务名装不上（`invalid_input`）。
 
 ## 待验证
 
 都在实现时验证，结果写进这篇的“验证结果”。
 
-- 模型看到编号文字后，会不会用 `wonton__share_file`、原样抄链接，会不会抄预览的 `MEDIA:` 路径（Hermes v0.22.5）。
-- Hermes 把回复转成 Matrix 消息时，`body` 里的 `wonton://file/…` 不被改动。
+- 别的模型看到编号文字后，会不会用 `wonton__share_file`、原样抄链接，会不会抄预览的 `MEDIA:` 路径：`auto/glm-5.3-flashx` 的结果见“验证结果”，它不代表所有模型。
 - `HERMES_MEDIA_DELIVERY_STRICT=1` 下，Hermes 的生图和语音照常能发。
-- AVPlayer、ExoPlayer 经 `file_stream_url` 拖动播放，大文件经隧道续传。
+- 播放和续传走中继时的表现。
 - 插件网页在 WebView 里读不到文件接口：`<img>`、`fetch`、导航都被挡住。
 - Codex、Claude Code 经 ACP 桥（M2）拿到编号后能照样调工具，把链接放进回复。

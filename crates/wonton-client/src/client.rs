@@ -7,8 +7,8 @@ use tokio::sync::watch;
 use wonton_protocol::{
     Action, ChatViewModel, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
     FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle,
-    PluginDetail, PluginImage, PluginsViewModel, PushNotification, SessionListViewModel, StoreItem,
-    TransfersViewModel,
+    PluginDetail, PluginImage, PluginsViewModel, PushNotification, RoomTransfers,
+    SessionListViewModel, StoreItem, TransfersViewModel,
 };
 
 use crate::chat::{ChatLink, TimelineSubscription};
@@ -212,6 +212,13 @@ impl ClientCore {
     /// 当前的传输列表，用于首帧渲染。
     pub fn transfers(&self) -> TransfersViewModel {
         self.files.view()
+    }
+
+    /// 这个房间的传输条列什么。不走网络，传输列表一变就可以重新取。
+    pub fn room_transfers(&self, room_id: String) -> RoomTransfers {
+        self.files
+            .view()
+            .for_room(&room_id, &self.chat.view().rooms)
     }
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。

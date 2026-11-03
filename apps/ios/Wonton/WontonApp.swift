@@ -74,6 +74,7 @@ private struct MainView: View {
         // 主屏和商店都用这两份状态，切到别的页面时也要接着更新。
         .task { await home.observe() }
         .task { await plugins.observe() }
+        .task { await chat.files.observe() }
     }
 
     private func open(_ entry: PluginEntry) {
@@ -141,6 +142,8 @@ private enum Launch {
         } catch {
             return .failed("核心启动失败：\(error)")
         }
+        // 赶在核心接着传上次没传完的文件之前。
+        core.setFileOpener(opener: BookmarkFileOpener())
         #if DEBUG
         // 开发时由 `xcrun simctl launch` / `devicectl` 传入配对码（`dev.sh pair` 的输出），模拟器上不用扫码。
         if let code = ProcessInfo.processInfo.environment["WONTON_DEV_PAIRING_CODE"] {

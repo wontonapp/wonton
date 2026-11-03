@@ -11,6 +11,7 @@ struct ChatRoomView: View {
     @State private var isAtBottom = true
     @State private var followingScrolls = 0
     @State private var photo: PhotosPickerItem?
+    @State private var isPickingFiles = false
 
     private static let bottom = "bottom"
 
@@ -29,8 +30,10 @@ struct ChatRoomView: View {
             } else {
                 messages
             }
+            TransfersStrip(roomId: roomId)
             composer
         }
+        .environment(model.files)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
@@ -40,6 +43,15 @@ struct ChatRoomView: View {
             guard let item else { return }
             photo = nil
             Task { await send(item) }
+        }
+        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
+            switch $0 {
+            case let .success(urls):
+                isAtBottom = true
+                for url in urls { model.files.upload(url, room: roomId) }
+            case let .failure(error):
+                model.rejection = error.localizedDescription
+            }
         }
     }
 
@@ -107,6 +119,10 @@ struct ChatRoomView: View {
                 Image(systemName: "photo").font(.title3)
             }
             .accessibilityLabel("发照片")
+            Button { isPickingFiles = true } label: {
+                Image(systemName: "paperclip").font(.title3)
+            }
+            .accessibilityLabel("发文件")
             TextField("消息", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)

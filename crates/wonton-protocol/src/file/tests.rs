@@ -3,7 +3,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use super::*;
-use crate::Action;
+use crate::{Action, RoomRow};
 
 const ID: &str = "aaaqeayeaudaocajbifqydiob4";
 const OTHER_ID: &str = "77777777777777777777777774";
@@ -449,4 +449,80 @@ fn file_actions_round_trip_through_json() {
     ] {
         assert_eq!(round_trip(&action), action);
     }
+}
+
+fn upload_to(room: Option<&str>, state: TransferState) -> Transfer {
+    Transfer {
+        id: "local-1".into(),
+        file: None,
+        name: "a.mov".into(),
+        direction: TransferDirection::Upload,
+        room: room.map(str::to_owned),
+        transferred_bytes: 0,
+        total_bytes: None,
+        state,
+        paused_because: None,
+        destination: None,
+        actions: Vec::new(),
+    }
+}
+
+fn room_row(room_id: &str, name: &str) -> RoomRow {
+    RoomRow {
+        room_id: room_id.into(),
+        name: name.into(),
+        is_direct: true,
+        direct_user_id: None,
+        is_encrypted: true,
+        membership: crate::RoomMembership::Joined,
+        preview: None,
+        unread_count: 0,
+    }
+}
+
+#[test]
+fn a_room_lists_its_own_transfers_and_what_went_wrong_elsewhere() {
+    let failed = TransferState::Failed {
+        reason: FileFailure::StorageFull,
+        message: "磁盘放不下".into(),
+    };
+    let not_sent = TransferState::LinkNotSent {
+        reason: FileFailure::ServiceUnavailable,
+        message: "发不出去".into(),
+    };
+    let view = TransfersViewModel {
+        active: vec![
+            upload_to(Some("!here"), TransferState::Running),
+            upload_to(None, TransferState::Paused),
+            upload_to(Some("!other"), TransferState::Running),
+            upload_to(Some("!other"), TransferState::Paused),
+            upload_to(Some("!other"), failed.clone()),
+            upload_to(Some("!left"), not_sent.clone()),
+        ],
+        ..TransfersViewModel::default()
+    };
+    let listed = view.for_room(
+        "!here",
+        &[room_row("!other", "妈妈"), room_row("!here", "我")],
+    );
+    assert_eq!(
+        listed.here,
+        [
+            upload_to(Some("!here"), TransferState::Running),
+            upload_to(None, TransferState::Paused),
+        ]
+    );
+    assert_eq!(
+        listed.elsewhere,
+        [
+            TransferElsewhere {
+                transfer: upload_to(Some("!other"), failed),
+                room_name: Some("妈妈".into()),
+            },
+            TransferElsewhere {
+                transfer: upload_to(Some("!left"), not_sent),
+                room_name: None,
+            },
+        ]
+    );
 }

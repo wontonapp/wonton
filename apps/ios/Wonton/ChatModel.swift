@@ -12,6 +12,7 @@ final class ChatModel {
     @ObservationIgnored private var awaitedPeer: String?
 
     let core: ClientCore
+    @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)
 
     init(core: ClientCore) {
         self.core = core

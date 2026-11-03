@@ -40,6 +40,11 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
   还旧，就会直接用别人的产物。所以 Dockerfile 每次编译前把工作区的源码 touch 一遍，依赖仍命中缓存，只重编
   工作区的 crate；源码没变时整层命中 Docker 的构建缓存，不重编。
 
+## 文件的端到端
+
+装好文件搜索插件，共享文件夹里放好文件后，`wonton-client` 的 `examples/file-smoke.rs` 扮演手机和真实的 Bot 收发文件，用法写在文件开头。
+上传前核心要查磁盘留 5% 空闲。Mac 的磁盘快满时，把 `WONTON_DEV_DATA` 设成 OrbStack 虚拟机里的路径（如 `/var/tmp/wonton-dev`），不然传输会如实报 `storage_full`。
+
 ## 经隧道访问
 
 核心内置隧道入口（iroh，UDP `WONTON_DEV_TUNNEL_PORT`，默认 18482，只发布到本机；手机经局域网直连时设

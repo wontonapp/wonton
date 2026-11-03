@@ -8,7 +8,8 @@ Kotlin Multiplatform 工程：共享 UI 模块、Android 应用，以及桌面�
 
 - `shared/`：共享 UI 模块（KMP 库）。`buildRustCore` 任务用 cargo-ndk 编译 Rust 核心，并生成
   UniFFI 的 Kotlin 绑定，`.so` 和绑定都不提交。
-- `androidApp/`：Android 应用，只有 `Application`（持有唯一的核心实例）和 `Activity`。
+- `androidApp/`：Android 应用，只有 `Application`（持有唯一的核心实例）和 `Activity`，以及把下载好的文件交给系统打开的
+  `FileProvider`（ADR-0020）。
 - `scripts/build-core.sh`：被 `buildRustCore` 调用，一般不需要手动运行。
 
 UniFFI 的 Kotlin 绑定依赖 JNA，只能编译到 JVM 类目标，不能放进 `commonMain`。所以绑定和界面暂时

@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,10 +24,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -101,7 +104,11 @@ fun RoomRoute(
     LaunchedEffect(newest) {
         if (newest != null) onAction(Action.MarkRoomRead(roomId))
     }
-    RoomScreen(core, roomId, title, isDirect, timeline, onAction, onReject, onClose)
+    val first = remember(core) { core.transfers() }
+    val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
+    CompositionLocalProvider(LocalFiles provides FilesContext(transfers, onAction, onReject)) {
+        RoomScreen(core, roomId, title, isDirect, timeline, onAction, onReject, onClose)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,6 +140,7 @@ private fun RoomScreen(
             } else {
                 Messages(core, roomId, timeline, showsSender = !isDirect, onAction, Modifier.weight(1f))
             }
+            TransfersStrip(roomId, core)
             Composer(roomId, onAction, onReject)
         }
     }
@@ -214,6 +222,9 @@ private fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Stri
             }
         }
     }
+    val pickFiles = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris ->
+        uris.forEach { uri -> onAction(uploadAction(context, uri, roomId)) }
+    }
     Row(
         Modifier.fillMaxWidth().padding(8.dp),
         verticalAlignment = Alignment.Bottom,
@@ -221,6 +232,9 @@ private fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Stri
     ) {
         TextButton(onClick = { pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) }) {
             Text("图片")
+        }
+        TextButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
+            Text("文件")
         }
         OutlinedTextField(
             value = draft,
