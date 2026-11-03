@@ -8,10 +8,14 @@ docker build -t wonton-gpu-check:dev plugins/examples/gpu-check
 ```
 
 ```bash
-deploy/dev/core/dev.sh install plugins/examples/gpu-check/docker-compose.yml
+deploy/dev/core/dev.sh install plugins/examples/gpu-check
 ```
 
 镜像里的 `rocminfo` 来自 AMD 的 apt 仓库（ROCm 的最新版本）：Ubuntu 自带的是 ROCm 5.7，认不出新显卡。构建机要经
 代理下载时加 `--network host --build-arg http_proxy=… --build-arg https_proxy=…`。装好后
 `docker logs wonton-app-wonton-gpu-check--check` 是容器里看到的显卡；`docker inspect` 里的 `HostConfig.Devices`、
 `GroupAdd`（或 NVIDIA 的 `DeviceRequests`）是核心交给它的。
+
+## 图标
+
+`icon.svg` 的来源及许可见[自制图标](../../README.md#自制图标)。

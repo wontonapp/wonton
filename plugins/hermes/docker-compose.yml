@@ -97,6 +97,7 @@ x-wonton:
   description:
     zh: 默认 Agent：以 Matrix bot 身份和你对话，模型经 magpie
     en: Default agent that chats as a Matrix bot and reaches models through magpie
+  icon: icon.png
   category: agent
   agent:
     protocol: matrix

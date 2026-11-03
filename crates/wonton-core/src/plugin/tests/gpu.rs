@@ -16,10 +16,7 @@ use super::super::package::PackageError;
 use super::super::render::dry_run;
 use super::super::{PluginManager, PluginPackage};
 use super::manager::{manager_in_container, manager_with};
-use super::{SPEC, package};
-
-const GPU_CHECK: &str =
-    include_str!("../../../../../plugins/examples/gpu-check/docker-compose.yml");
+use super::{SPEC, example, package};
 
 /// 两个服务，只有 `comfy` 要显卡；它以非 root 用户运行，所以设备所属的组也得给它。
 fn gpu_plugin(extra_manifest: &str) -> String {
@@ -243,7 +240,7 @@ fn spec_and_example_gpu_plugins_are_valid() {
     assert_eq!(pkg.manifest.gpu.as_ref().unwrap().services, ["comfyui"]);
     dry_run(&pkg).unwrap();
 
-    let check = PluginPackage::parse(GPU_CHECK).unwrap();
+    let check = example("gpu-check");
     assert_eq!(check.manifest.id.as_str(), "app.wonton.gpu-check");
     assert_eq!(requirement(&check.manifest), Some(GpuRequirement::Required));
     dry_run(&check).unwrap();

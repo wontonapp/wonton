@@ -28,10 +28,14 @@ mod secrets;
 mod store;
 mod views;
 
-const GRAFANA: &str = include_str!("../../../../../plugins/examples/grafana/docker-compose.yml");
-const WHOAMI: &str = include_str!("../../../../../plugins/examples/whoami/docker-compose.yml");
-const ECHO_BOT: &str = include_str!("../../../../../plugins/examples/echo-bot/docker-compose.yml");
 const SPEC: &str = include_str!("../../../../../docs/plugin-spec.md");
+
+fn example(name: &str) -> PluginPackage {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins/examples")
+        .join(name);
+    PluginPackage::load_dir(&dir).unwrap()
+}
 
 fn package(services: &str, extra_manifest: &str) -> String {
     format!(
@@ -67,7 +71,7 @@ fn render_err(yaml: &str) -> String {
 
 #[test]
 fn grafana_example_injects_oidc_and_app_url() {
-    let pkg = PluginPackage::parse(GRAFANA).unwrap();
+    let pkg = example("grafana");
     let webui = pkg.manifest.webui.as_ref().unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.grafana");
     assert_eq!(webui.sso, Sso::Oidc);
@@ -124,7 +128,7 @@ fn spec_example_is_a_valid_plugin() {
 
 #[test]
 fn whoami_example_splits_command_like_compose() {
-    let pkg = PluginPackage::parse(WHOAMI).unwrap();
+    let pkg = example("whoami");
     let plan = dry_run(&pkg).unwrap();
     let cmd = plan.containers[0].body.cmd.clone().unwrap();
     assert_eq!(cmd, ["--port", "8000", "--name", "app.whoami"]);

@@ -117,7 +117,7 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
+        let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let tunnel = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(

@@ -33,6 +33,7 @@ x-wonton:
   description:
     zh: 把主人发来的话原样回过去的最小 Bot 示例
     en: Minimal bot that echoes its owner's messages
+  icon: icon.svg
   agent:
     protocol: matrix
   bot:

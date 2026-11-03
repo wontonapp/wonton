@@ -21,6 +21,7 @@ x-wonton:
   description:
     zh: 在容器里确认核心交给它的显卡能用（rocminfo、nvidia-smi）
     en: Confirms inside a container that the GPU handed over by the core works (rocminfo, nvidia-smi)
+  icon: icon.svg
   gpu:
     services: [check]
   permissions: [devices.gpu]

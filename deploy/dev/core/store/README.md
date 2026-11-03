@@ -14,4 +14,4 @@ deploy/dev/core/store/checkout.sh geraldpeng6/wonton-plugin-files /tmp/wonton-pl
 docker build -t wonton-files:dev /tmp/wonton-plugin-files/images/mcp
 ```
 
-示例插件 whoami 不在索引里，开发环境和冒烟测试按路径装它（`dev.sh install plugins/examples/whoami/docker-compose.yml`）。
+示例插件 whoami 不在索引里，开发环境和冒烟测试按插件包目录装它（`dev.sh install plugins/examples/whoami`）。

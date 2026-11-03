@@ -20,7 +20,7 @@ use super::super::package_files::PackageFiles;
 use super::super::store::{InstalledRecord, Store};
 use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::egress::serve;
-use super::{WHOAMI, env_of_container, package};
+use super::{env_of_container, example, package};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
@@ -264,7 +264,7 @@ async fn every_declared_permission_must_be_confirmed() {
     );
     let extra = vec!["models".parse().unwrap()];
     assert!(matches!(
-        m.install(WHOAMI, &extra).await,
+        m.install_package(example("whoami"), &extra).await,
         Err(InstallError::Invalid(_))
     ));
     let all = vec![
@@ -284,12 +284,17 @@ async fn every_declared_permission_must_be_confirmed() {
 async fn docker_outage_is_reported_and_leaves_nothing_behind() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager(&dir);
-    let err = m.install(WHOAMI, &[]).await.unwrap_err();
+    let err = m.install_package(example("whoami"), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "docker_unavailable", "{err}");
     assert!(m.list().is_empty());
-    let system = WHOAMI.replace("kind: app", "kind: system");
+    let whoami = example("whoami");
+    let system = PluginPackage::with_files(
+        &whoami.source.replace("kind: app", "kind: system"),
+        whoami.files().clone(),
+    )
+    .unwrap();
     assert_eq!(
-        m.install(&system, &[]).await.unwrap_err().kind(),
+        m.install_package(system, &[]).await.unwrap_err().kind(),
         "unsupported"
     );
     let id = super::super::PluginId::parse("app.whoami").unwrap();
@@ -305,7 +310,7 @@ async fn an_image_that_cannot_be_pulled_fails_the_install_with_dockers_reason() 
     docker.fail_pulls(Some("manifest unknown"));
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let err = m.install(WHOAMI, &[]).await.unwrap_err();
+    let err = m.install_package(example("whoami"), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "image_pull_failed", "{err}");
     assert!(
         err.to_string()

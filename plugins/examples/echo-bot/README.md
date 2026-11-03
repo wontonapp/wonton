@@ -8,8 +8,12 @@
 
 ```bash
 docker build -f deploy/dev/core/Dockerfile --target echo-bot -t wonton-echo-bot:dev .
-deploy/dev/core/dev.sh install plugins/examples/echo-bot/docker-compose.yml
+deploy/dev/core/dev.sh install plugins/examples/echo-bot
 ```
 
 装好后 App 里会出现和“回声”的加密私聊。`echo-bot probe` 在冒烟测试里扮演主人的设备，经隧道发一条加密消息、
 等回声，用法见 `crates/wonton-echo-bot/src/probe.rs`。
+
+## 图标
+
+`icon.svg` 的来源及许可见[自制图标](../../README.md#自制图标)。

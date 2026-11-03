@@ -11,7 +11,7 @@ use super::super::names::container_name;
 use super::super::store::Store;
 use super::super::{PluginId, PluginManager, PluginStatus};
 use super::manager::manager_in_container;
-use super::{ECHO_BOT, env_of, package};
+use super::{env_of, example, package};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::matrix::fake::{Fake, start};
@@ -271,7 +271,7 @@ async fn bot_plugins_need_the_core_to_reach_matrix() {
 
 #[tokio::test]
 async fn the_echo_bot_example_gets_only_its_matrix_identity() {
-    let package = super::super::PluginPackage::parse(ECHO_BOT).unwrap();
+    let package = example("echo-bot");
     let plan = dry_run(&package).unwrap();
     let env = env_of(&plan.containers[0]);
     for var in ["HOMESERVER", "USER_ID", "ACCESS_TOKEN", "OWNER"] {
@@ -286,7 +286,7 @@ async fn the_echo_bot_example_gets_only_its_matrix_identity() {
 
     let bed = Bed::start().await;
     let m = bed.manager();
-    m.install(ECHO_BOT, &granted()).await.unwrap();
+    m.install_package(package, &granted()).await.unwrap();
     let bot = container_name("agent-echo", "bot");
     let user = bed.docker.env(&bot);
     assert!(

@@ -45,6 +45,7 @@ x-wonton:
   description:
     zh: Grafana 示例插件，打开即以 Wonton 身份自动登录
     en: Grafana example plugin that signs you in with your Wonton identity
+  icon: icon.png
   category: tools
   webui:
     service: grafana

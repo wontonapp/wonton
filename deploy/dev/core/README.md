@@ -7,8 +7,8 @@
 
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
-deploy/dev/core/dev.sh install plugins/examples/grafana/docker-compose.yml   # 预览权限，确认后安装
-deploy/dev/core/dev.sh install plugins/hermes   # 插件包目录（compose 引用了包里的文件时）打成 tar 上传
+deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
+deploy/dev/core/dev.sh install plugins/hermes            # 插件包目录连同图标、配置打成 tar 上传
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh uninstall app.grafana --purge

@@ -14,6 +14,7 @@ x-wonton:
   description:
     zh: 回显请求头的最小示例插件
     en: Minimal example plugin that echoes request headers
+  icon: icon.svg
   webui:
     service: web
     port: 8000

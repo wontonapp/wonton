@@ -29,7 +29,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$dev" install "$here/../../../../plugins/examples/whoami/docker-compose.yml" --yes >/dev/null
+"$dev" install "$here/../../../../plugins/examples/whoami" --yes >/dev/null
 
 # 取一个插件会话：登录核心，走一遍会话交接，从 Cookie 罐里拿 wonton_app。
 docker run -d --name wonton-bench-browser --network "container:$core" --entrypoint sleep \

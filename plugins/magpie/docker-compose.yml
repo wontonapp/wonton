@@ -77,6 +77,7 @@ x-wonton:
   description:
     zh: magpie 模型网关：provider 和 key 只配一次，所有 Bot 和插件共用
     en: "magpie model gateway: set up providers and keys once, shared by every bot and plugin"
+  icon: icon.png
   category: system
   webui:
     service: magpie

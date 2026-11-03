@@ -132,7 +132,7 @@ ok "核心健康：$core_url"
 
 step "一条命令安装 Grafana 示例插件"
 started=$(date +%s)
-installed="$("$dev" install "$repo/plugins/examples/grafana/docker-compose.yml" --yes 2>/dev/null)"
+installed="$("$dev" install "$repo/plugins/examples/grafana" --yes 2>/dev/null)"
 install_seconds=$(($(date +%s) - started))
 expect "安装完成且健康检查通过（${install_seconds}s）" "$(json status.state <<<"$installed")" running
 expect "网页地址" "$(json web_url <<<"$installed")" "$grafana_url"
@@ -292,7 +292,7 @@ step "回声 Bot（matrix.bot）：核心代它登录、建好加密私聊，手
 build --target echo-bot --build-arg WONTON_BUILD_COMMIT -t "$echo_image" -f "$here/Dockerfile" "$repo"
 install_echo() {
   local installed
-  installed="$("$dev" install "$repo/plugins/examples/echo-bot/docker-compose.yml" --yes 2>/dev/null)" ||
+  installed="$("$dev" install "$repo/plugins/examples/echo-bot" --yes 2>/dev/null)" ||
     fail "回声 Bot 安装失败：$installed"
   expect "回声 Bot 安装完成，同步上了 Matrix" \
     "$(json status.state <<<"$installed") $(json status.health <<<"$installed")" "running healthy"
@@ -555,7 +555,7 @@ expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
 docker rm -f "$phone" >/dev/null
 
 step "没有 OIDC 的插件：网关转发并剥离网关 Cookie"
-installed="$("$dev" install "$repo/plugins/examples/whoami/docker-compose.yml" --yes 2>/dev/null)"
+installed="$("$dev" install "$repo/plugins/examples/whoami" --yes 2>/dev/null)"
 expect "whoami 安装完成" "$(json status.state <<<"$installed")" running
 echoed="$(b -L -H 'Accept: text/html' -H 'X-Forwarded-For: 6.6.6.6' "$whoami_url/")"
 grep -qi "^X-Forwarded-Host: app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" <<<"$echoed" || fail "缺少 X-Forwarded-Host：$echoed"

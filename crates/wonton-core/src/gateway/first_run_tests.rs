@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use axum::body::Body;
 use hyper::{Method, StatusCode};
 
-use super::tests::{Harness, PLUGIN, WHOAMI};
+use super::tests::{Harness, PLUGIN};
 use crate::plugin::manifest::Sso;
 use crate::plugin::package::PluginPackage;
 
@@ -17,7 +17,9 @@ async fn register(h: &Harness, headers: &[(&str, &str)]) -> StatusCode {
 
 #[tokio::test]
 async fn only_the_owner_reaches_the_registration_page_of_an_sso_none_plugin() {
-    let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/examples/whoami");
+    let manifest = PluginPackage::load_dir(&dir).unwrap().manifest;
     assert_eq!(manifest.webui.unwrap().sso, Sso::None);
     let h = Harness::start(None).await;
 

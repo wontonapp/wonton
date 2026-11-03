@@ -243,7 +243,7 @@ impl Harness {
             )
             .with_lan(super::lan_api_tests::lan()),
         );
-        let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
+        let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let gateway = Gateway::new(
             public,
@@ -401,12 +401,9 @@ async fn logged_in_requests_reach_plugin_without_gateway_cookies() {
     assert_eq!(h.hits.load(Ordering::SeqCst), 1);
 
     // 插件会话只在签发它的子域名有效。
-    let other = PluginPackage::parse(&WHOAMI.replace("app.whoami", "app.other")).unwrap();
-    h.manager.register_for_test(
-        other.manifest,
-        PluginStatus::Running,
-        Some("127.0.0.1:9".into()),
-    );
+    let other = PluginPackage::manifest_of(&WHOAMI.replace("app.whoami", "app.other")).unwrap();
+    h.manager
+        .register_for_test(other, PluginStatus::Running, Some("127.0.0.1:9".into()));
     let cross = h
         .get("app-other.wonton.localhost", "/", &[("cookie", &app)])
         .await;
@@ -510,7 +507,7 @@ async fn unknown_hosts_and_unready_plugins_report_the_reason() {
     let missing = h.get("app-missing.wonton.localhost", "/", &[]).await;
     assert_eq!(missing.error_kind(), Some("not_installed"));
     let app = h.app_session().await;
-    let manifest = PluginPackage::parse(WHOAMI).unwrap().manifest;
+    let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
     h.manager
         .register_for_test(manifest, PluginStatus::Installing, None);
     let busy = h.get(PLUGIN, "/", &[("cookie", &app)]).await;
@@ -556,13 +553,19 @@ async fn plugin_api_requires_owner_token() {
         .await;
     assert_eq!(listed.status, StatusCode::OK);
     assert_eq!(listed.json()["plugins"][0]["id"], "app.whoami");
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/examples/whoami");
+    let package = PluginPackage::load_dir(&dir).unwrap();
     let preview = h
         .send(
             Method::POST,
             CORE,
             "/_wonton/api/plugins/preview",
-            &[("authorization", &bearer)],
-            Body::from(WHOAMI),
+            &[
+                ("authorization", &bearer),
+                ("content-type", "application/x-tar"),
+            ],
+            Body::from(package.archive()),
         )
         .await;
     assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
