@@ -1,4 +1,3 @@
-import QuickLook
 import SwiftUI
 import WontonClient
 
@@ -50,41 +49,21 @@ private struct FileCardView: View {
 
 /// 按核心给的 `FileCardActions` 画按钮。Bot 给的文件内容不可信，下载后交给系统，不在 App 里渲染（ADR-0020）。
 private struct ReadyFileCard: View {
-    /// 下完之后做什么：用户已经点过了，不用再点一次。
-    private enum AfterDownload {
-        case preview
-        case openElsewhere
-    }
-
     let info: FileInfo
     let thumbnail: UIImage?
     @Environment(FilesModel.self) private var files
-    @State private var opened: URL?
-    @State private var sharing: SharedFile?
-    @State private var isPlaying = false
-    @State private var opensElsewhereAfterPlayer = false
-    @State private var afterDownload: AfterDownload?
+    @Environment(RoomPresenter.self) private var presenter
 
     var body: some View {
         let actions = files.actions(for: info)
         VStack(alignment: .leading, spacing: 4) {
-            Button { perform(actions.tap, after: .preview) } label: { summary(actions) }
+            Button { presenter.perform(actions.tap, on: info, after: .preview) } label: { summary(actions) }
                 .buttonStyle(.plain)
             if let elsewhere = actions.openElsewhere {
-                Button("用其他 App 打开") { perform(elsewhere, after: .openElsewhere) }
+                Button("用其他 App 打开") { presenter.perform(elsewhere, on: info, after: .openElsewhere) }
                     .font(.caption)
                     .disabled(elsewhere == .wait)
             }
-        }
-        .onChange(of: actions.openElsewhere ?? actions.tap) { _, action in finishDownload(action) }
-        .quickLookPreview($opened)
-        .sheet(item: $sharing) { ShareSheet(url: $0.url) }
-        .fullScreenCover(isPresented: $isPlaying, onDismiss: openElsewhereAfterPlayer) {
-            FilePlayer(info: info) {
-                opensElsewhereAfterPlayer = true
-                isPlaying = false
-            }
-            .environment(files)
         }
     }
 
@@ -131,47 +110,6 @@ private struct ReadyFileCard: View {
         case .done, .linkNotSent, nil:
             EmptyView()
         }
-    }
-
-    private func perform(_ action: FileCardAction, after: AfterDownload) {
-        switch action {
-        case .play:
-            isPlaying = true
-        case .download:
-            afterDownload = after
-            files.send(.downloadFile(id: info.id))
-        case let .open(path):
-            show(path, after)
-        case .wait:
-            break
-        }
-    }
-
-    private func finishDownload(_ action: FileCardAction) {
-        guard let after = afterDownload else { return }
-        switch action {
-        case let .open(path):
-            afterDownload = nil
-            show(path, after)
-        case .download:
-            afterDownload = nil
-        case .play, .wait:
-            break
-        }
-    }
-
-    private func show(_ path: String, _ after: AfterDownload) {
-        switch after {
-        case .preview: opened = URL(filePath: path)
-        case .openElsewhere: sharing = SharedFile(url: URL(filePath: path))
-        }
-    }
-
-    /// 全屏盖住时弹不出别的，等它关掉。
-    private func openElsewhereAfterPlayer() {
-        guard opensElsewhereAfterPlayer else { return }
-        opensElsewhereAfterPlayer = false
-        if let elsewhere = files.actions(for: info).openElsewhere { perform(elsewhere, after: .openElsewhere) }
     }
 
     private var sourceText: String? {

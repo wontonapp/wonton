@@ -114,8 +114,8 @@ private struct MediaImage: View {
     let image: ImageContent
     let core: ClientCore
     let sendState: SendState
+    @Environment(RoomPresenter.self) private var presenter
     @State private var preview: Result<UIImage, MediaFailure>?
-    @State private var isShowingOriginal = false
 
     var body: some View {
         Group {
@@ -145,13 +145,10 @@ private struct MediaImage: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { isShowingOriginal = true }
+        .onTapGesture { presenter.showOriginal(image) }
         .accessibilityAddTraits(.isButton)
         .task(id: image.thumbnail ?? image.media) {
             preview = await MediaFailure.load(image.thumbnail ?? image.media, from: core)
-        }
-        .fullScreenCover(isPresented: $isShowingOriginal) {
-            OriginalImage(image: image, core: core)
         }
     }
 
@@ -161,7 +158,7 @@ private struct MediaImage: View {
     }
 }
 
-private struct OriginalImage: View {
+struct OriginalImage: View {
     let image: ImageContent
     let core: ClientCore
     @Environment(\.dismiss) private var dismiss

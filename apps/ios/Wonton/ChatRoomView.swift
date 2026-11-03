@@ -7,6 +7,7 @@ struct ChatRoomView: View {
     let roomId: String
     let title: String
     @State private var timeline: TimelineModel
+    @State private var presenter: RoomPresenter
     @State private var draft = ""
     @State private var isAtBottom = true
     @State private var followingScrolls = 0
@@ -20,6 +21,7 @@ struct ChatRoomView: View {
         self.roomId = roomId
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId))
+        _presenter = State(initialValue: RoomPresenter(files: model.files))
     }
 
     var body: some View {
@@ -33,7 +35,9 @@ struct ChatRoomView: View {
             TransfersStrip(roomId: roomId)
             composer
         }
+        .modifier(RoomPresentations(presenter: presenter))
         .environment(model.files)
+        .environment(presenter)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
