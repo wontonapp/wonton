@@ -1,8 +1,10 @@
 package app.wonton.ui
 
 import android.annotation.SuppressLint
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.HttpAuthHandler
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -59,7 +61,16 @@ private fun PluginWebView(url: String, proxy: ProxySettings, modifier: Modifier 
     AndroidView(
         modifier = modifier,
         factory = { context ->
+            // 调试版才开：插件网页只在真机的旧 WebView 上出问题时，要靠 chrome://inspect 看。
+            val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+            WebView.setWebContentsDebuggingEnabled(debuggable)
             WebView(context).apply {
+                // AndroidView 默认给 WRAP_CONTENT，WebView 因此把网页的视口高度算成 0，`height: 100%` 的页面
+                // （比如 magpie）正文塌成一条，看上去是空白页（实测 Chrome 101 的 WebView）。
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 webViewClient = ProxyAuthClient(proxy)
