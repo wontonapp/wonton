@@ -119,6 +119,7 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed: Some(installed),
             blocked: None,
+            lan_webui: None,
         })
     }
 
@@ -193,6 +194,7 @@ impl PluginManager {
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
+            lan_webui: None,
         })
     }
 
@@ -431,6 +433,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         has_web: false,
         installed: Some(installed),
         blocked: None,
+        lan_webui: None,
     }
 }
 

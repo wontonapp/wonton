@@ -13,6 +13,7 @@ mod appearance;
 mod chat;
 mod confirmation;
 mod core_upgrade;
+mod egress;
 mod error;
 mod file;
 mod home;
@@ -40,6 +41,10 @@ pub use core_upgrade::{
     CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
     CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
 };
+pub use egress::{
+    EgressFailure, EgressProbe, EgressProblem, EgressProxySettings, EgressProxySource,
+    EgressProxyUpdate, EgressRestart, LanWebuiUpdate,
+};
 pub use error::CoreError;
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
@@ -58,10 +63,10 @@ pub use lan::{
 };
 pub use plugin::{
     InstallPreview, InstallRequest, InstallSource, InstalledPlugin, InstalledPlugins,
-    PermissionLine, PluginAuthor, PluginCategory, PluginDetail, PluginFailure, PluginHealth,
-    PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTask,
-    PluginTaskState, PluginTrust, PluginsViewModel, StoreFailure, StoreItem, StoreListing,
-    StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
+    LanWebuiOffer, PermissionLine, PluginAuthor, PluginCategory, PluginDetail, PluginFailure,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState,
+    PluginTask, PluginTaskState, PluginTrust, PluginsViewModel, StoreFailure, StoreItem,
+    StoreListing, StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

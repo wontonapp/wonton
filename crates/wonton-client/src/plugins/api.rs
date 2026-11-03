@@ -212,6 +212,7 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         Some("conflict") => PluginFailure::Conflict,
         Some("invalid_input") => PluginFailure::Invalid,
         Some("lan_unavailable") => PluginFailure::LanUnavailable,
+        Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
         Some("core_upgrading") => PluginFailure::CoreUpgrading,
         Some(_) if status >= 500 => PluginFailure::Upstream,
         Some(_) => PluginFailure::Protocol,
@@ -241,6 +242,7 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         PluginFailure::Unsupported
         | PluginFailure::Conflict
         | PluginFailure::LanUnavailable
+        | PluginFailure::EgressProxyUnavailable
         | PluginFailure::CoreUpgrading => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }

@@ -94,6 +94,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         source: preview.source.unwrap(),
         digest: preview.digest,
         grant: Vec::new(),
+        lan_webui: false,
     };
     m.install_source(&request).await.unwrap();
     let id = PluginId::parse("app.hello").unwrap();

@@ -130,6 +130,7 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed,
             blocked: blocked(m, arch.as_deref()),
+            lan_webui: None,
         }
     }
 

@@ -90,7 +90,7 @@ pub enum Action {
     /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
     RefreshStore { force: bool },
     /// 主人在确认页上点了“安装”：按预览安装，授予预览里列出的全部权限。插件包在预览之后变了时失败
-    /// （`PluginFailure::Changed`），要重新预览。
+    /// （`PluginFailure::Changed`），要重新预览。主人打开了确认页上的开关时，把预览的 `lan_webui.enabled` 改成 `true` 再发。
     InstallPlugin { preview: InstallPreview },
     /// 主人在升级确认页上点了“升级”，同 [`Action::InstallPlugin`]。
     UpgradePlugin { preview: InstallPreview },

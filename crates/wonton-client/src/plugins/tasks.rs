@@ -52,6 +52,7 @@ impl PluginsLink {
             source,
             digest: preview.digest,
             grant,
+            lan_webui: false,
         };
         let link = self.clone();
         let id = preview.id;
@@ -78,6 +79,7 @@ impl PluginsLink {
         let request = UpgradeRequest {
             digest: preview.digest,
             grant,
+            lan_webui: false,
         };
         let link = self.clone();
         let id = preview.id;

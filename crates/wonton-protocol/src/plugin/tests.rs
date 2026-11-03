@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::*;
-use crate::Action;
+use crate::{Action, LanPort, LanProtocol};
 
 fn icon(hash: &str) -> PluginIcon {
     PluginIcon {
@@ -124,6 +124,14 @@ fn preview() -> InstallPreview {
         upgrade_from: None,
         release_notes: None,
         blocked: None,
+        lan_webui: Some(LanWebuiOffer {
+            ports: vec![LanPort {
+                port: 8080,
+                protocol: LanProtocol::Tcp,
+            }],
+            risk: "局域网里的设备，以及这台主机上能出网的插件，不用密码就能以你的身份打开它".into(),
+            enabled: false,
+        }),
     }
 }
 
@@ -158,6 +166,7 @@ fn detail() -> PluginDetail {
         has_web: true,
         installed: Some(installed()),
         blocked: None,
+        lan_webui: None,
     }
 }
 
@@ -184,11 +193,13 @@ fn interface_types_round_trip_through_json() {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
         grant: vec!["network.host".into()],
+        lan_webui: true,
     };
     assert_eq!(round_trip(&request), request);
     let upgrade = UpgradeRequest {
         digest: preview().digest,
         grant: vec![],
+        lan_webui: false,
     };
     assert_eq!(round_trip(&upgrade), upgrade);
 
@@ -278,6 +289,7 @@ fn wire_format_is_stable() {
     }))
     .unwrap();
     assert_eq!(request.grant, ["models"]);
+    assert!(!request.lan_webui, "旧 App 不带这个字段，按关算");
     assert_eq!(
         serde_json::to_value(PluginTaskState::Failed {
             reason: PluginFailure::SourceUnavailable,
@@ -285,6 +297,10 @@ fn wire_format_is_stable() {
         })
         .unwrap(),
         json!({"type": "failed", "reason": "source_unavailable", "message": "x"})
+    );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::EgressProxyUnavailable).unwrap(),
+        json!("egress_proxy_unavailable")
     );
 }
 

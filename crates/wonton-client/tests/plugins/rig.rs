@@ -196,6 +196,7 @@ pub fn preview(id: &str) -> InstallPreview {
         upgrade_from: None,
         release_notes: None,
         blocked: None,
+        lan_webui: None,
     }
 }
 

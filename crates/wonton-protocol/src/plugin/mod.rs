@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::CardLine;
+use crate::{CardLine, LanPort};
 
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,6 +309,21 @@ pub struct PluginDetail {
     pub installed: Option<InstalledPlugin>,
     /// 装不了的原因；能装时为空。
     pub blocked: Option<String>,
+    /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
+    pub lan_webui: Option<LanWebuiOffer>,
+}
+
+/// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。
+/// 改开关时核心重建开端口的容器，数据不动。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LanWebuiOffer {
+    /// 要开关打开才开的端口。
+    pub ports: Vec<LanPort>,
+    /// 核心写的风险说明，放在开关旁边。
+    pub risk: String,
+    /// 开关现在的值：新装时是 `false`；升级时是装着的版本的值。
+    pub enabled: bool,
 }
 
 /// `POST /_wonton/api/plugins/preview` 的请求体（JSON）：按来源预览。
@@ -347,6 +362,8 @@ pub struct InstallPreview {
     pub release_notes: Option<String>,
     /// 装不了的原因；能装时为空，确认按钮这时不可点。
     pub blocked: Option<String>,
+    /// 有要主人打开开关才开的局域网端口时是开关的情况，确认页上显示；主人的选择放在 `lan_webui` 请求字段带回。
+    pub lan_webui: Option<LanWebuiOffer>,
 }
 
 /// `POST /_wonton/api/plugins` 的请求体（JSON）：按来源安装。
@@ -359,6 +376,9 @@ pub struct InstallRequest {
     pub digest: String,
     /// 主人确认的权限：预览里列出的全部权限，少一项多一项都装不上。
     pub grant: Vec<String>,
+    /// 打开开关 `lan_webui`。预览没有 [`LanWebuiOffer`] 时不起作用。
+    #[serde(default)]
+    pub lan_webui: bool,
 }
 
 /// `POST /_wonton/api/plugins/{id}/upgrade` 的请求体（JSON）：升到升级预览给的版本。
@@ -367,6 +387,9 @@ pub struct InstallRequest {
 pub struct UpgradeRequest {
     pub digest: String,
     pub grant: Vec<String>,
+    /// 同 [`InstallRequest::lan_webui`]。
+    #[serde(default)]
+    pub lan_webui: bool,
 }
 
 /// 插件页面的 ViewModel：已安装的插件、商店，以及安装、升级、卸载的进展。
@@ -419,6 +442,8 @@ pub enum PluginFailure {
     LanUnavailable,
     /// 家里的服务器正在升级，升级结束前不能动插件（ADR-0025）。
     CoreUpgrading,
+    /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
+    EgressProxyUnavailable,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// App 和家里服务器的版本对不上，有一边要更新。
