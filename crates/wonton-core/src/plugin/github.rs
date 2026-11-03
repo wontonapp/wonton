@@ -1,10 +1,12 @@
 //! 从 GitHub 上的公开仓库取插件包（插件规范的“来源”）：tag 经 git 协议 v2 的 `ls-refs` 解析成提交，文件按提交从
 //! `raw.githubusercontent.com` 取。两者都不计入 GitHub API 的额度（不带令牌时每小时 60 次），核心也不存 GitHub 令牌。
-//! 下载照常走 `HTTPS_PROXY`。
+//! 下载经主人的代理（[`CoreProxy`]）。
 
 use std::time::Duration;
 
 use reqwest::StatusCode;
+
+use super::egress::core_proxy::CoreProxy;
 
 /// 一次请求最多等这么久：GitHub 在国内时常很慢，但不能让预览一直挂着。
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -58,15 +60,10 @@ pub struct GitHub {
     api: String,
 }
 
-impl Default for GitHub {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl GitHub {
-    pub fn new() -> Self {
+    pub fn new(proxy: &CoreProxy) -> Self {
         let client = reqwest::Client::builder()
+            .proxy(proxy.for_client())
             .timeout(TIMEOUT)
             .user_agent(concat!("wonton-core/", env!("CARGO_PKG_VERSION")))
             .build()

@@ -93,6 +93,7 @@ impl PluginManager {
         };
         self.store
             .save_egress_settings(&StoredEgress { url, direct_cidrs })?;
+        self.follow_core_proxy();
         self.egress.record_probes(None, None);
         self.apply_egress().await?;
         self.probe_egress().await?;

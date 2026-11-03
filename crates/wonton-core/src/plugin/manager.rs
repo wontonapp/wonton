@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use super::docker::Engine;
+use super::egress::core_proxy::CoreProxy;
 use super::egress::settings::Egress;
 use super::gallery::Gallery;
 use super::github::GitHub;
@@ -211,6 +212,7 @@ pub struct PluginManager {
     pub(super) sources: Sources,
     /// 按来源取插件包。
     pub(super) github: GitHub,
+    pub(super) core_proxy: CoreProxy,
     /// 官方索引和社区插件。
     pub(super) storefront: Storefront,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
@@ -262,6 +264,8 @@ impl PluginManager {
         // 核心直接跑在宿主上时 /dev 就是宿主的；在容器里要由 compose 挂载进来，见 [`Self::with_host`]。
         let host_dev = cfg.core_container.is_none().then(|| PathBuf::from("/dev"));
         let lan = Lan::for_core(cfg.core_container.clone());
+        let core_proxy = CoreProxy::default();
+        let github = GitHub::new(&core_proxy);
         Self {
             engine,
             store,
@@ -271,8 +275,9 @@ impl PluginManager {
             host: HostPaths::new(host_dev),
             cfg,
             sources: Sources::default(),
-            github: GitHub::new(),
-            storefront: Storefront::new(GitHub::new(), StoreConfig::default()),
+            github: github.clone(),
+            storefront: Storefront::new(github, StoreConfig::default()),
+            core_proxy,
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
@@ -354,7 +359,13 @@ impl PluginManager {
     #[must_use]
     pub fn with_egress(mut self, egress: Egress) -> Self {
         self.egress = egress;
+        self.follow_core_proxy();
         self
+    }
+
+    /// 核心自己访问外网用的代理，跟着设置走。
+    pub fn core_proxy(&self) -> &CoreProxy {
+        &self.core_proxy
     }
 
     /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。

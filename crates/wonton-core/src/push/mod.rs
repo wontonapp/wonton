@@ -17,6 +17,7 @@ pub use notification::{DevicePayload, Notification, NotifyRequest, NotifyRespons
 pub use store::{Registration, Subscription};
 
 use crate::device::Devices;
+use crate::plugin::egress::core_proxy::CoreProxy;
 use store::Registrations;
 use webpush::{Delivery, WebPush};
 
@@ -50,8 +51,14 @@ impl Push {
         Ok(Self {
             registrations: Registrations::open(path)?,
             devices,
-            sender: WebPush::new()?,
+            sender: WebPush::new(&CoreProxy::default())?,
         })
+    }
+
+    /// 发推送走核心自己的代理（ADR-0023）。
+    pub fn with_proxy(mut self, proxy: &CoreProxy) -> Result<Self, PushError> {
+        self.sender = WebPush::new(proxy)?;
+        Ok(self)
     }
 
     /// 登记或更新一台设备的推送订阅。再次登记时 pushkey 不变。

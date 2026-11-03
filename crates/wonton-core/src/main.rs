@@ -164,6 +164,7 @@ async fn serve() -> anyhow::Result<()> {
     let tunnel = bind_tunnel(&cfg).await?;
     let push_path = cfg.core_state_dir().join("push.json");
     let push = Push::open(&push_path, tunnel.devices.clone())
+        .and_then(|push| push.with_proxy(manager.core_proxy()))
         .with_context(|| format!("打开推送登记表 {}", push_path.display()))?;
     let gateway = Arc::new(
         Gateway::new(

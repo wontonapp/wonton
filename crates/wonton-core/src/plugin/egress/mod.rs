@@ -10,6 +10,7 @@
 pub mod address;
 mod api;
 pub mod check;
+pub mod core_proxy;
 pub mod gost;
 pub mod healthcheck;
 pub mod lists;

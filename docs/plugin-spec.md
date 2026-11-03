@@ -1206,7 +1206,6 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
      （需要 UniFFI 导出的类型按它的约束调整）。
 12. **多 Bot**（M2，每个 Bot 一组容器）：按 `bots.services` 为每个 Bot 实例化容器、限制 Bot 服务的挂载、
     按 Bot 签发凭据和收存秘密。
-16. **出网走代理：安装和核心**：安装脚本检测；两份 compose 给核心传入 `WONTON_EGRESS_PROXY`、`WONTON_EGRESS_PROXY_DETECTED` 并加 `host.docker.internal:host-gateway`；核心显式用这个地址，同一个 PR 清空核心的代理变量（#121 里核心的那部分）。之后 vane 删掉写死的代理地址。
 
 v0.2（ADR-0017）的部分同样每项一个 PR：
 

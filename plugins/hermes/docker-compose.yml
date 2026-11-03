@@ -20,7 +20,8 @@ services:
       - >-
         mkdir -p /opt/data/plugins/wonton &&
         cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
-        { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; }
+        { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; } &&
+        /opt/hermes/.venv/bin/python /seed/gateway_trust_env.py
     volumes:
       - ${WONTON_BOT_DATA}:/opt/data
     configs:
@@ -30,6 +31,8 @@ services:
         target: /seed/wonton/plugin.yaml
       - source: wonton_hooks
         target: /seed/wonton/__init__.py
+      - source: gateway_trust_env
+        target: /seed/gateway_trust_env.py
     network_mode: none
     restart: "no"
 
@@ -88,10 +91,12 @@ configs:
     file: ./wonton/plugin.yaml
   wonton_hooks:
     file: ./wonton/__init__.py
+  gateway_trust_env:
+    file: ./gateway_trust_env.py
 
 x-wonton:
   id: com.nousresearch.hermes
-  version: 0.5.0
+  version: 0.5.1
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:

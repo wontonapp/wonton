@@ -168,6 +168,8 @@ docker save "$image" | ssh npchy docker load
 ssh npchy docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 ```
 
+核心和系统容器不继承 Docker 客户端配置里的代理。开发环境要经代理访问 GitHub 或者测出网插件时，设 `WONTON_EGRESS_PROXY`（ADR-0023）。
+
 远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
 Linux 主机上容器里没有 `host.docker.internal`，冒烟用 `WONTON_SMOKE_MODEL_RELAY` 指向那台主机上只监听回环地址的
 magpie，`WONTON_SMOKE_MODEL` 选它提供的模型。冒烟在主机网络里起一个 socat 转发，监听在冒烟 magpie 插件网络的网关上、

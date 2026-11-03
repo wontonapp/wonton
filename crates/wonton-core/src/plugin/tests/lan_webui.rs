@@ -9,6 +9,7 @@ use wonton_protocol::{LanPort, LanProtocol};
 use super::super::fake_docker::FakeDocker;
 use super::super::lan::webui::{open_ports, switched};
 use super::super::languages::Languages;
+use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::egress::serve;
 use super::lan::{binding, created, granted, office, on};
@@ -249,6 +250,58 @@ async fn opening_reports_why_it_failed_and_keeps_the_switch_off() {
         .await
         .unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
+}
+
+#[tokio::test]
+async fn closing_never_reopens_the_port_when_it_fails() {
+    let (docker, m, _detected, _dir) = on(office()).await;
+    let port = web_port().await;
+    let compose = app(port, OWN_LOGIN, "A: b", "");
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.set_lan_webui(id(), true, Languages::default())
+        .await
+        .unwrap();
+    let enabled = |m: &PluginManager| {
+        let detail = m.installed_detail(&id(), &Languages::default()).unwrap();
+        detail.lan_webui.unwrap().enabled
+    };
+
+    // 别的服务不健康：端口关了，报错，定期检测也不开回去；那个服务好了就恢复，网页不再重建。
+    let smb = container_name("app-test", "smb");
+    let health = |status| serde_json::json!({"Status": "running", "Running": true, "Health": {"Status": status}});
+    docker.set_state(&smb, health("unhealthy"));
+    m.set_lan_webui(id(), false, Languages::default())
+        .await
+        .unwrap_err();
+    assert!(!enabled(&m));
+    assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
+    let closed = docker.writes().len();
+    m.lan_pass().await.unwrap();
+    assert_eq!(published(&docker, "web"), Value::Null);
+    assert!(!enabled(&m));
+    assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
+    docker.set_state(&smb, health("healthy"));
+    m.lan_pass().await.unwrap();
+    assert_eq!(status(&m), PluginStatus::Running);
+    assert_eq!(published(&docker, "web"), Value::Null);
+    assert!(
+        !docker.writes()[closed..].iter().any(|w| w.contains("web")),
+        "端口已经关了，网页不重建"
+    );
+
+    // 重建失败，端口还开着：定期检测接着关。
+    m.set_lan_webui(id(), true, Languages::default())
+        .await
+        .unwrap();
+    docker.fail_pulls(Some("拉不到镜像"));
+    m.set_lan_webui(id(), false, Languages::default())
+        .await
+        .unwrap_err();
+    assert!(!enabled(&m));
+    docker.fail_pulls(None);
+    m.lan_pass().await.unwrap();
+    assert_eq!(status(&m), PluginStatus::Running);
+    assert_eq!(published(&docker, "web"), Value::Null);
 }
 
 #[tokio::test]

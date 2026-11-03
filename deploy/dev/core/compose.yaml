@@ -3,6 +3,14 @@
 # 项目名同时用作核心的容器名；冒烟脚本用另一个名字，和开发环境互不干扰。
 name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
 
+# Docker 客户端配了代理时（~/.docker/config.json），docker compose 会给容器设这些变量。系统服务之间只走内部地址，经代理
+# 到不了；busybox wget 还不看 no_proxy，连健康检查访问 127.0.0.1 也发给代理（#121）。写成空，客户端的配置就进不来。
+x-no-proxy: &no-proxy
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+
 services:
   core:
     build:
@@ -23,7 +31,11 @@ services:
     # 由核心转进 B 的网络，冒充核心（ADR-0023 的“只信任核心的地址”）。
     sysctls:
       - net.ipv4.ip_forward=0
+    # 主人的代理在宿主的回环地址上时，经这个名字连。
+    extra_hosts:
+      - host.docker.internal:host-gateway
     environment:
+      <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
@@ -32,6 +44,9 @@ services:
       WONTON_INSTANCE: ${WONTON_DEV_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
+      # 出网代理（ADR-0023）：开发环境没有安装脚本，要用时自己设 WONTON_EGRESS_PROXY。核心自己访问外网也用它。
+      WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
+      WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_LAN_ADDRESSES: ${WONTON_DEV_LAN_ADDRESSES:-}
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -98,10 +113,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    environment:
-      # Docker 客户端配了代理时（~/.docker/config.json）会给容器设 HTTP_PROXY。tusd 只调私有网络里的钩子，经代理到不了。
-      HTTP_PROXY: ""
-      http_proxy: ""
+    environment: *no-proxy
     command:
       - -upload-dir=/srv/uploads
       - -base-path=/_wonton/files/uploads/
@@ -133,6 +145,7 @@ services:
     image: oryd/hydra:v26.2.0
     command: migrate sql up -e --yes
     environment:
+      <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
     volumes:
       # 镜像以 nonroot 运行，卷挂在它的家目录才有写权限。
@@ -145,6 +158,7 @@ services:
     command: serve all --dev
     restart: unless-stopped
     environment:
+      <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
       # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
       URLS_SELF_ISSUER: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
@@ -176,6 +190,7 @@ services:
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
     environment:
+      <<: *no-proxy
       TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
       TUWUNEL_ADDRESS: 0.0.0.0

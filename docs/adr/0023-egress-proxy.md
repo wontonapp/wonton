@@ -104,6 +104,8 @@ Docker 的健康检查和容器共用环境变量，没有单独的设置。busy
 
 第 3 档要全覆盖只能走透明代理，见“没选的做法”。
 
+还有一类读了代理变量却不看 `NO_PROXY`：内部地址也发给出口容器，被 403 拒绝。Hermes 的 Matrix 适配器就是这样（v0.22.5 实测，Bot 一直连不上 Matrix，插件过不了健康检查）：它只认代理地址，不按目标判断。出口容器不能替它放行内部地址，放行后来源就成了 gost，核心认不出是哪个插件。这种程序要关掉自己读代理变量的开关，Hermes 插件写 `gateway.trust_env: false`。这个开关只管 Hermes 网关的连接，Agent 的工具和模型请求用 httpx、requests，还是读代理变量；其他聊天平台要走代理时用各自的 `<平台>_PROXY`。
+
 ### 出口容器
 
 配了代理才有这个容器，叫 `wonton-egress`，由核心经 Docker API 管理。它是一类新的核心组件：`tusd` 总在，放在 compose 里；这个容器要随 App 里的设置出现和消失，理由见“没选的做法”。容器打标签 `wonton.managed-by=core` 和 `wonton.core.component=wonton-egress`，核心升级时怎么处理见 [ADR-0025 的“核心管理的其他组件”](0025-core-upgrade.md#核心管理的其他组件)。用
@@ -143,7 +145,7 @@ gost -C /etc/gost/gost.yaml
 安装脚本只在 `.env` 里还没有这一项时检测一次，按这个顺序取第一个测得通的：
 
 1. 调用者的 `HTTPS_PROXY`、`HTTP_PROXY`（`sudo -E` 时才有）。
-2. Docker 客户端配置：用调用者（`SUDO_USER`）的 `DOCKER_CONFIG` 跑一次核心镜像，看 CLI 给容器注入了什么。这样不用在 POSIX sh 里解析 JSON（实测 CLI 把
+2. Docker 客户端配置：用调用者（`SUDO_USER`）的 `DOCKER_CONFIG` 建一个核心镜像的容器（不启动），看 CLI 给容器注入了什么。这样不用在 POSIX sh 里解析 JSON（实测 CLI 把
    `proxies.default` 注入成了 `HTTP_PROXY` 等变量）。
 3. Docker 守护进程的配置（`docker info` 的 `HTTPProxy`、`HTTPSProxy`）。
 
@@ -199,10 +201,9 @@ gost -C /etc/gost/gost.yaml
 
 ### 核心和系统容器
 
-- **Hydra、Tuwunel、tusd：** compose 里把四个代理变量都写成空，Docker 客户端的配置进不来。它们之间只走内部地址，不需要代理。这是 #121 提出的修法之一，这部分不依赖这篇，可以先合。
-  tusd 已经清了 `HTTP_PROXY` 和 `http_proxy`，还少 `HTTPS_PROXY` 和 `https_proxy`。
+- **Hydra、Tuwunel、tusd：** compose 里把四个代理变量都写成空，Docker 客户端的配置进不来。它们之间只走内部地址，不需要代理。这是 #121 提出的修法之一。
 - **核心：** 同样写成空，但必须和“核心显式用上面定下的地址”在同一个 PR。核心的 HTTP 客户端（reqwest）默认读环境变量，走代理的主机上它靠 compose 继承来的客户端代理访问 GitHub；先清空，这些主机就连不上 GitHub 和官方索引。
-- 核心自己访问外网的 HTTP 请求（GitHub、官方索引）直接连主人的代理，不经出口容器，也不再读 `HTTPS_PROXY`。iroh 隧道不走代理。为此两份 compose（`deploy/install`、`deploy/dev/core`）都要给核心传入 `WONTON_EGRESS_PROXY`、`WONTON_EGRESS_PROXY_DETECTED`，并加 `extra_hosts: host.docker.internal:host-gateway`。
+- 核心自己访问外网的 HTTP 请求（GitHub、官方索引、推送）直接连主人的代理，不经出口容器，也不再读 `HTTPS_PROXY`。iroh 隧道不走代理。为此两份 compose（`deploy/install`、`deploy/dev/core`）都要给核心传入 `WONTON_EGRESS_PROXY`、`WONTON_EGRESS_PROXY_DETECTED`，并加 `extra_hosts: host.docker.internal:host-gateway`。
 - 拉镜像走 Docker 守护进程自己的配置，核心和安装脚本不碰（ADR-0017、`deploy/install/README.md` 的“拉不到镜像”）。
 
 ## 决策：经主人的代理，只防冒充
@@ -273,7 +274,7 @@ gost -C /etc/gost/gost.yaml
 
 应用只信任核心的，局域网设备发来的请求头不算数，打开的是应用自己的登录，不用开关。`oidc` 和只用 `{secret:…}` 的也不用。核心分不出 `sso: none` 的网页有没有注册页，没有的也要主人点一下。
 
-- **开关 `lan_webui`，每个插件一个，默认关。** 在安装确认页和插件设置里，旁边写明上表的风险，主人打开后端口就开。改开关时重建开端口的容器（同 ADR-0019 地址变化时的做法），数据不动。
+- **开关 `lan_webui`，每个插件一个，默认关。** 在安装确认页和插件设置里，旁边写明上表的风险，主人打开后端口就开。改开关时重建开端口的容器（同 ADR-0019 地址变化时的做法），数据不动。打开失败时退回关；关失败时（比如别的服务不健康）不退回，开关保持关，插件标为异常，定期检测接着关，端口不会开回去。
 - **关着时：** 安装不受影响，网页照常经网关打开，这个插件别的局域网端口也照开。服务没有开着的局域网端口时，不出网的也不接 `--lan` 网络，宿主上的进程和经代理来的连接都到不了它。
 - **升级：** 新版本让端口变成要开关时，开关按关算，升级的确认页写明这些端口要关，主人可以当场打开。
 - **`plugin check`：** 第一种情况，不出网的给提醒，不判不合格；出网的 `--official` 判不合格：它接在普通桥接网络上，开关关着也防不住经代理的冒充，第三方插件照样能装。第二种情况不判不合格。

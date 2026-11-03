@@ -104,6 +104,7 @@ impl PluginManager {
             }
         }
         self.follow_egress(&detected).await;
+        self.finish_closing().await;
         let addresses = detected
             .result
             .as_ref()
@@ -115,7 +116,32 @@ impl PluginManager {
         Ok(detected)
     }
 
-    /// 开着局域网端口的插件和开着的端口。
+    /// 关开关失败、端口还发布着的插件接着关。已经关了的不再重建，网页不用每次检测都断一下；恢复交给 [`Self::follow_lan`]。
+    async fn finish_closing(&self) {
+        let closing: Vec<(PluginId, LanSpec)> = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            plugins
+                .iter()
+                .filter(|(id, _)| self.lan.is_degraded(id))
+                .filter_map(|(id, entry)| {
+                    let listed = entry.listed.as_ref().filter(|l| !l.lan_webui)?;
+                    let ports = listed.lan_switched.as_ref()?.ports.clone();
+                    Some((id.clone(), LanSpec { ports }))
+                })
+                .collect()
+        };
+        for (id, spec) in closing {
+            let closed = matches!(
+                self.lan_published(&id, &spec).await,
+                Ok(Some(addresses)) if addresses.is_empty()
+            );
+            if !closed && let Err(e) = self.change_lan_webui(&id, false).await {
+                tracing::warn!(plugin = %id, error = %e, "接着关网页的局域网端口失败");
+            }
+        }
+    }
+
+    /// 开着局域网端口的插件和开着的端口。因为局域网异常的插件端口全关了也在内：要靠检测恢复。
     pub(in crate::plugin) fn lan_plugins(&self) -> Vec<(PluginId, LanSpec)> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
@@ -123,7 +149,8 @@ impl PluginManager {
             .filter_map(|(id, entry)| {
                 let listed = entry.listed.as_ref()?;
                 let ports = listed.open_ports(listed.lan_webui);
-                (!ports.is_empty()).then(|| (id.clone(), LanSpec { ports }))
+                (!ports.is_empty() || self.lan.is_degraded(id))
+                    .then(|| (id.clone(), LanSpec { ports }))
             })
             .collect()
     }
@@ -140,32 +167,39 @@ impl PluginManager {
         if !running && !self.lan.is_degraded(id) {
             return;
         }
+        // 端口全关了（关开关失败后还异常着）：不看地址，只核对。
         let addresses = match addresses {
-            Ok(addresses) => addresses,
+            _ if spec.ports.is_empty() => None,
+            Ok(addresses) => Some(addresses),
             Err(reason) => {
                 return self.lan_failed(id, format!("选不出局域网地址：{reason}"));
             }
         };
-        let current = match self.lan_published(id, spec).await {
-            Ok(current) => current,
-            Err(e) => return self.lan_failed(id, format!("查不到局域网端口发布在哪里：{e}")),
+        let moved = match addresses {
+            None => None,
+            Some(addresses) => match self.lan_published(id, spec).await {
+                Ok(current) => (current.as_ref() != Some(addresses)).then_some(addresses),
+                Err(e) => return self.lan_failed(id, format!("查不到局域网端口发布在哪里：{e}")),
+            },
         };
-        let same = current.as_ref() == Some(addresses);
-        if same && running {
+        if moved.is_none() && running {
             return;
         }
         if !self.begin_rebuild(id) {
             return;
         }
-        let result = self.relocate(id, spec, (!same).then_some(addresses)).await;
+        let result = self.relocate(id, spec, moved).await;
         self.lan.end(id);
         match result {
             Ok(deployed) => {
-                tracing::info!(plugin = %id, rebuilt = !same, "插件已跟上局域网地址");
+                tracing::info!(plugin = %id, rebuilt = moved.is_some(), "插件已跟上局域网地址");
                 self.lan.clear_degraded(id);
                 self.lan_restored(id, deployed);
             }
-            Err(e) => self.lan_failed(id, format!("按新的局域网地址重建失败：{e}")),
+            Err(e) if moved.is_some() => {
+                self.lan_failed(id, format!("按新的局域网地址重建失败：{e}"));
+            }
+            Err(e) => self.lan_failed(id, format!("核对插件失败：{e}")),
         }
     }
 

@@ -9,6 +9,7 @@ use web_push_native::{Auth, WebPushBuilder};
 
 use super::PushError;
 use super::store::Subscription;
+use crate::plugin::egress::core_proxy::CoreProxy;
 
 /// 推送服务替离线的设备留多久（RFC 8030 的 `TTL`）。隔了一天的新消息通知意义不大，App 打开时会同步到。
 const TTL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -37,8 +38,9 @@ pub struct WebPush {
 }
 
 impl WebPush {
-    pub fn new() -> Result<Self, PushError> {
+    pub fn new(proxy: &CoreProxy) -> Result<Self, PushError> {
         let client = reqwest::Client::builder()
+            .proxy(proxy.for_client())
             .timeout(TIMEOUT)
             // 推送地址来自设备，不跟随跳转，免得核心被引去请求别的地址。
             .redirect(reqwest::redirect::Policy::none())

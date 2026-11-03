@@ -5,6 +5,14 @@
 # .env，由安装脚本写好（deploy/install/install.sh）。
 name: wonton
 
+# Docker 客户端配了代理时（~/.docker/config.json），docker compose 会给容器设这些变量。系统服务之间只走内部地址，经代理
+# 到不了；busybox wget 还不看 no_proxy，连健康检查访问 127.0.0.1 也发给代理（#121）。写成空，客户端的配置就进不来。
+x-no-proxy: &no-proxy
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+
 services:
   core:
     # 写成 digest，升级就是换掉 .env 里的这一行再 up（ADR-0012）。
@@ -17,7 +25,11 @@ services:
     # 由核心转进 B 的网络，冒充核心（ADR-0023 的“只信任核心的地址”）。
     sysctls:
       - net.ipv4.ip_forward=0
+    # 主人的代理在宿主的回环地址上时，经这个名字连。
+    extra_hosts:
+      - host.docker.internal:host-gateway
     environment:
+      <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DATA_DIR:?}
       WONTON_BASE_DOMAIN: ${WONTON_BASE_DOMAIN:?}
       # 没写用户名时核心用记下的，第一次启动时是 owner（ADR-0022），所以这里不写默认值。
@@ -30,6 +42,9 @@ services:
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
+      # 出网代理（ADR-0023）：前者是主人指定的，后者是安装脚本检测到的，只作初值。核心自己访问外网也用它们。
+      WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
+      WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES:-}
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
@@ -90,10 +105,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    environment:
-      # Docker 客户端配了代理时（~/.docker/config.json）会给容器设 HTTP_PROXY。tusd 只调私有网络里的钩子，经代理到不了。
-      HTTP_PROXY: ""
-      http_proxy: ""
+    environment: *no-proxy
     command:
       - -upload-dir=/srv/uploads
       - -base-path=/_wonton/files/uploads/
@@ -125,6 +137,7 @@ services:
     image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
     command: migrate sql up -e --yes
     environment:
+      <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
     volumes:
       # 镜像以 nonroot 运行，卷挂在它的家目录才有写权限。
@@ -139,6 +152,7 @@ services:
     # SECRETS_SYSTEM，由 `wonton-core init` 生成。
     env_file: secrets/hydra.env
     environment:
+      <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
       # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
       URLS_SELF_ISSUER: http://auth.${WONTON_BASE_DOMAIN}:${WONTON_PORT}
@@ -167,6 +181,7 @@ services:
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
     environment:
+      <<: *no-proxy
       # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
     volumes:

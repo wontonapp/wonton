@@ -2,6 +2,7 @@
 //! Docker 不可达、资源不存在、Docker 拒绝请求。
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use bollard::Docker;
 use bollard::errors::Error as BollardError;
@@ -109,6 +110,8 @@ impl LabeledResources {
 #[derive(Clone)]
 pub struct Engine {
     pub(super) docker: Docker,
+    /// 一次性容器一个跑完再跑下一个：局域网检测和出口容器的探测都可能同时要跑，容器名是固定的。
+    pub(super) one_shot: Arc<tokio::sync::Mutex<()>>,
 }
 
 type Result<T> = std::result::Result<T, EngineError>;
@@ -118,7 +121,14 @@ impl Engine {
     pub fn connect() -> Result<Self> {
         let docker =
             Docker::connect_with_defaults().map_err(|e| EngineError::Unavailable(e.to_string()))?;
-        Ok(Self { docker })
+        Ok(Self::new(docker))
+    }
+
+    fn new(docker: Docker) -> Self {
+        Self {
+            docker,
+            one_shot: Arc::default(),
+        }
     }
 
     /// 测试用：连到给定地址上的 Engine API（测试里的假 Docker）。
@@ -126,7 +136,7 @@ impl Engine {
     pub(crate) fn http_for_test(url: &str) -> Self {
         let docker = Docker::connect_with_http(url, 5, bollard::API_DEFAULT_VERSION)
             .expect("构造测试用 Docker 客户端");
-        Self { docker }
+        Self::new(docker)
     }
 
     /// 测试用：指向一个不存在的 Docker，用于不需要 Docker 的网关测试。
@@ -135,7 +145,7 @@ impl Engine {
         let docker =
             Docker::connect_with_http("http://127.0.0.1:9", 1, bollard::API_DEFAULT_VERSION)
                 .expect("构造测试用 Docker 客户端");
-        Self { docker }
+        Self::new(docker)
     }
 
     /// 检查 Docker 可达，返回宿主架构（如 `x86_64`、`aarch64`）。

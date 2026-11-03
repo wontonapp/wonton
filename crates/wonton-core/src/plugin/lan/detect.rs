@@ -117,6 +117,7 @@ impl Engine {
         name: &str,
         body: ContainerCreateBody,
     ) -> Result<Result<OneShot, String>, EngineError> {
+        let _one_at_a_time = self.one_shot.lock().await;
         self.remove_container(name).await?;
         if let Err(e) = self.create_container(name, body).await {
             return unless_unavailable(e);

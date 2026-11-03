@@ -120,6 +120,15 @@ impl PluginManager {
 
     async fn switch_lan_webui(&self, id: &PluginId, enabled: bool) -> Result<(), InstallError> {
         let _pass = self.lan.pass.lock().await;
+        self.change_lan_webui(id, enabled).await
+    }
+
+    /// 调用方拿着 `lan.pass`。
+    pub(super) async fn change_lan_webui(
+        &self,
+        id: &PluginId,
+        enabled: bool,
+    ) -> Result<(), InstallError> {
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(id).and_then(|entry| entry.listed.clone())
@@ -145,6 +154,12 @@ impl PluginManager {
                 tracing::info!(plugin = %id, enabled, "主人改了网页的局域网端口开关");
                 self.lan_webui_applied(id, enabled, deployed);
                 Ok(())
+            }
+            // 主人要关的端口不能开回去：别的服务不健康、Docker 出错时保持关，标为异常，定期检测接着关。
+            Err(e) if !enabled => {
+                self.set_listed_lan_webui(id, false);
+                self.lan_failed(id, format!("关网页的局域网端口时失败：{e}"));
+                Err(e)
             }
             Err(e) => {
                 // 比如端口被宿主的服务占着：退回原来的样子，开关不算改成。
@@ -200,18 +215,27 @@ impl PluginManager {
     }
 
     fn lan_webui_applied(&self, id: &PluginId, enabled: bool, deployed: Deployed) {
+        self.set_listed_lan_webui(id, enabled);
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id)
             && let Some(listed) = entry.listed.clone()
         {
-            let listed = Arc::new(Listed {
-                lan_webui: enabled,
-                ..(*listed).clone()
-            });
             *entry = Entry::running(listed, deployed);
         }
         drop(plugins);
         self.lan.clear_degraded(id);
         self.changed();
+    }
+
+    fn set_listed_lan_webui(&self, id: &PluginId, enabled: bool) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        if let Some(entry) = plugins.get_mut(id)
+            && let Some(listed) = entry.listed.as_mut()
+        {
+            *listed = Arc::new(Listed {
+                lan_webui: enabled,
+                ..(**listed).clone()
+            });
+        }
     }
 }
