@@ -44,6 +44,7 @@
 - Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
   分组、顺序、位置和图标已经说明了的，不再加副标题、说明文字或标签重复一遍。App 的原生界面和插件的网页都适用。
 - 错误、权限和来源（如“未审核”）的提示不算多余，照常写清楚（见“运行时原则：失败即停”）。
+- App 的界面走 [ADR-0026](docs/adr/0026-design-system.md) 的设计系统，哪些自己画、哪些用系统的以 ADR 为准。
 
 ## 开发环境与检查
 

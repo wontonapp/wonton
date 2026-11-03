@@ -190,6 +190,7 @@ crates/
 apps/
   ios/               SwiftUI 壳、通知扩展
   compose/           Kotlin Multiplatform：共享 UI 模块、android、desktop（M2）
+design/              App 设计系统的输入：令牌、图标白名单和上游 SVG（ADR-0026）
 plugins/             核心测试用的示例插件；正式的插件各在自己的仓库（ADR-0017）
 cloud/               中继、发现、推送中继、目录发布的部署配置
 deploy/              一行安装脚本、compose 模板、升级器
@@ -218,6 +219,7 @@ scripts/             CI 与开发脚本
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
+| 图标 | Phosphor（白名单加生成，无运行时依赖） | MIT | 已定（ADR-0026） |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
 | 文档 | Paperless-ngx（插件） | GPL-3.0，独立容器 | 已定 |
 | 音乐 | Navidrome（插件）+ Subsonic 原生页（M2） | GPL-3.0，独立容器 | 已定 |
