@@ -59,6 +59,10 @@ pub struct Tuwunel {
     pub sent: Vec<(String, Value)>,
     /// 为真时拒绝下一条消息（`M_FORBIDDEN`）：核对之后才被踢出去。
     pub refuse_next_send: bool,
+    /// 为真时读写资料都失败。
+    pub refuse_profile: bool,
+    /// 写过几次显示名。
+    pub display_name_writes: usize,
     next: usize,
 }
 
@@ -276,6 +280,24 @@ async fn deactivate(
     }))
 }
 
+async fn get_profile(
+    State(fake): State<Fake>,
+    headers: HeaderMap,
+    Path((user, field)): Path<(String, String)>,
+) -> Reply {
+    let state = fake.state();
+    reply(auth(&state, &headers).and_then(|_| {
+        if state.refuse_profile {
+            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
+        }
+        let name = state.users.get(&user).and_then(|u| u.display_name.clone());
+        match (field.as_str(), name) {
+            ("displayname", Some(name)) => Ok(ok(json!({"displayname": name}))),
+            _ => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
+        }
+    }))
+}
+
 async fn set_profile(
     State(fake): State<Fake>,
     headers: HeaderMap,
@@ -287,6 +309,10 @@ async fn set_profile(
         if caller != user {
             return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
         }
+        if state.refuse_profile {
+            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
+        }
+        state.display_name_writes += usize::from(field == "displayname");
         let account = state.users.entry(user).or_default();
         match field.as_str() {
             "displayname" => account.display_name = body["displayname"].as_str().map(str::to_owned),
@@ -529,7 +555,7 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(&format!("{client}/account/whoami"), get(whoami))
         .route(
             &format!("{client}/profile/{{user}}/{{field}}"),
-            put(set_profile),
+            get(get_profile).put(set_profile),
         )
         .route("/_matrix/media/v3/upload", post(upload))
         .route(&format!("{client}/createRoom"), post(create_room))

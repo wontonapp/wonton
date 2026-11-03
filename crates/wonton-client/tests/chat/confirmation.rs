@@ -314,7 +314,7 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
     let PushContent::Message { body } = notification.content else {
         panic!("通知要有卡片的文字：{:?}", notification.content);
     };
-    assert!(body.contains("请在 Wonton App"), "{body}");
+    assert_eq!(body, content(&waiting)["body"].as_str().unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -102,6 +102,10 @@ impl NoticeRoom {
         let core = self.matrix.core_session();
         let owner = self.matrix.user_id(&self.owner);
         let mut room = self.room.lock().await;
+        // 排在建房之前：新房间里不会多出一条改名记录。
+        if room.is_none() {
+            name_core_account(&core).await;
+        }
         let old = known(&self.saved, &room);
         let id = match &old {
             Some(id) if both_joined(&core, id, &owner).await? => id.clone(),
@@ -118,7 +122,6 @@ impl NoticeRoom {
     }
 
     async fn create(&self, core: &Session<'_>, owner: &str) -> Result<String, MatrixError> {
-        core.set_display_name(ROOM_NAME).await?;
         let id = core.create_notice_room(ROOM_NAME, owner).await?;
         let handed_over = async {
             core.add_direct(owner, &id).await?;
@@ -137,6 +140,21 @@ impl NoticeRoom {
             .map_err(|e| MatrixError::Invalid(format!("记下通知房间失败：{e}")))?;
         tracing::info!(room = %id, "建好了和主人的通知房间");
         Ok(id)
+    }
+}
+
+/// 给核心账号设显示名。已经是这个名字就不写：改名会在核心的每个房间里留一条记录。名字只影响通知的标题，设不上不能挡住
+/// 主人要确认的卡片，所以只记错误日志。
+async fn name_core_account(core: &Session<'_>) {
+    let named = async {
+        if core.display_name().await?.as_deref() != Some(ROOM_NAME) {
+            core.set_display_name(ROOM_NAME).await?;
+        }
+        Ok::<_, MatrixError>(())
+    }
+    .await;
+    if let Err(e) = named {
+        tracing::error!(error = %e, "设置核心账号的显示名失败");
     }
 }
 
@@ -217,15 +235,53 @@ mod tests {
         assert!(members.iter().any(|m| m == OWNER));
     }
 
+    /// 核心账号现在的显示名。
+    fn core_name(fake: &super::super::fake::Fake, notices: &NoticeRoom) -> Option<String> {
+        let core = notices.matrix.core_session();
+        fake.state().user(core.user_id()).display_name.clone()
+    }
+
     #[tokio::test]
     async fn notifications_from_the_core_account_are_titled_wonton() {
         let dir = tempfile::tempdir().unwrap();
         let (fake, notices) = notices(&dir).await;
         notices.send(&text()).await.unwrap();
-        let core = notices.matrix.core_session();
-        let state = fake.state();
-        let name = state.user(core.user_id()).display_name.as_deref();
-        assert_eq!(name, Some(ROOM_NAME));
+        assert_eq!(core_name(&fake, &notices).as_deref(), Some(ROOM_NAME));
+    }
+
+    #[tokio::test]
+    async fn a_core_that_already_has_a_room_gets_its_name_after_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let (fake, notices) = notices(&dir).await;
+        notices.send(&text()).await.unwrap();
+        let (room, _) = last_sent(&fake);
+        let core = notices.matrix.core_session().user_id().to_owned();
+        fake.state().users.get_mut(&core).unwrap().display_name = None;
+
+        let restarted = NoticeRoom::new(notices.matrix.clone(), "owner", notices.saved.clone());
+        restarted.send(&text()).await.unwrap();
+        assert_eq!(last_sent(&fake).0, room, "沿用原来的房间");
+        assert_eq!(core_name(&fake, &restarted).as_deref(), Some(ROOM_NAME));
+    }
+
+    #[tokio::test]
+    async fn a_core_with_the_right_name_is_not_renamed_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let (fake, notices) = notices(&dir).await;
+        notices.send(&text()).await.unwrap();
+        let restarted = NoticeRoom::new(notices.matrix.clone(), "owner", notices.saved.clone());
+        restarted.send(&text()).await.unwrap();
+        assert_eq!(fake.state().display_name_writes, 1);
+    }
+
+    #[tokio::test]
+    async fn a_name_that_cannot_be_set_does_not_hold_back_the_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let (fake, notices) = notices(&dir).await;
+        fake.state().refuse_profile = true;
+        notices.send(&text()).await.unwrap();
+        assert_eq!(fake.state().sent.len(), 1);
+        assert_eq!(core_name(&fake, &notices), None);
     }
 
     #[tokio::test]

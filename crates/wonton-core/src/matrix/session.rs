@@ -44,6 +44,16 @@ impl<'a> Session<'a> {
         )
     }
 
+    /// 账号的显示名。Matrix 规定没设时回 `M_NOT_FOUND`。
+    pub async fn display_name(&self) -> Result<Option<String>, MatrixError> {
+        let path = self.profile_path("displayname");
+        match self.json(Method::GET, &path, None, "读显示名").await {
+            Ok(profile) => Ok(profile["displayname"].as_str().map(str::to_owned)),
+            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn set_display_name(&self, name: &str) -> Result<(), MatrixError> {
         let body = json!({"displayname": name});
         self.json(
