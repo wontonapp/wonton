@@ -9,6 +9,7 @@ struct ChatRoomView: View {
     @State private var timeline: TimelineModel
     @State private var draft = ""
     @State private var isAtBottom = true
+    @State private var followingScrolls = 0
     @State private var photo: PhotosPickerItem?
 
     private static let bottom = "bottom"
@@ -69,7 +70,8 @@ struct ChatRoomView: View {
                         .frame(height: 1)
                         .id(Self.bottom)
                         .onAppear { isAtBottom = true }
-                        .onDisappear { isAtBottom = false }
+                        // 跟随滚动的途中这一行被新消息挤出屏幕，不算主人翻走了：不然紧接着到的下一条就不跟随。
+                        .onDisappear { if followingScrolls == 0 { isAtBottom = false } }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -80,9 +82,15 @@ struct ChatRoomView: View {
                 guard last != nil else { return }
                 // 这里先于列表测量新条目运行：当场滚动只滚到估算的高度，长回复的后半截留在输入框下面（iOS 26.5 模拟器实测）。
                 // 下一轮才滚，那时这一行可能已被挤出屏幕，所以先记下判断。往上翻着看历史时不打扰。
-                let follows = isAtBottom
-                DispatchQueue.main.async {
-                    if follows { withAnimation { scroller.scrollTo(Self.bottom, anchor: .bottom) } }
+                if isAtBottom {
+                    followingScrolls += 1
+                    DispatchQueue.main.async {
+                        withAnimation {
+                            scroller.scrollTo(Self.bottom, anchor: .bottom)
+                        } completion: {
+                            followingScrolls -= 1
+                        }
+                    }
                 }
                 model.send(.markRoomRead(roomId: roomId))
             }
@@ -124,6 +132,7 @@ struct ChatRoomView: View {
             let upload = try await Task.detached(priority: .userInitiated) {
                 try PhotoUpload.make(data: data, type: type)
             }.value
+            isAtBottom = true
             model.send(.sendImage(roomId: roomId, image: upload))
         } catch {
             model.rejection = String(describing: error)
