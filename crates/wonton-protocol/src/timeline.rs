@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{ConfirmationView, FileId};
 
 /// 一批时间线变化，以及向前翻页的状态。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TimelineUpdate {
     /// 按顺序应用的增量；只有翻页状态变化时为空。
@@ -18,7 +18,7 @@ pub struct TimelineUpdate {
 }
 
 /// 对条目列表的一次修改，语义同 `eyeball-im` 的 `VectorDiff`。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TimelineDiff {
@@ -60,7 +60,7 @@ pub enum TimelineDiff {
 }
 
 /// 时间线里的一条。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TimelineItem {
     /// 在这条时间线里稳定的标识，可以直接用作列表的 ID：本地回显发出后、内容被编辑后都不变。
@@ -69,7 +69,7 @@ pub struct TimelineItem {
 }
 
 /// 条目的内容。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[expect(
@@ -95,7 +95,7 @@ pub enum TimelineContent {
 }
 
 /// 一条消息。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TimelineMessage {
     /// 服务器分配的事件 ID；本地回显还没发出去时为空。
@@ -117,13 +117,17 @@ pub struct TimelineMessage {
 }
 
 /// 发送状态。别人的消息和从服务器同步来的消息都是 [`SendState::Sent`]。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendState {
-    /// 本地回显，在排队或正在发送（含上传附件）。排在一条发送失败的消息后面时一直是这个状态，直到那条发出去或者被
-    /// 取消。
-    Sending,
+    /// 本地回显，在排队或正在发送。排在失败消息后面时，直到那条发出或取消才继续。
+    /// `progress` 是核心合并原图和缩略图后算好的上传比例，范围 `0.0..=1.0`；`None` 表示不确定（文字、排队或总量未知）。
+    /// 重试、重发或重启后可能倒退或回到 `None`，壳原样绘制，不自行换算或保持单调。
+    /// `Some(1.0)` 不代表发送成功，成功和失败分别由 [`SendState::Sent`] 和 [`SendState::Failed`] 表示。
+    Sending {
+        progress: Option<f32>,
+    },
     Sent,
     /// 发送失败，`message` 是原因。没发出去的都可以取消（[`Action::CancelSend`](crate::Action::CancelSend)）。
     ///
@@ -224,26 +228,6 @@ mod tests {
         let media = MediaHandle {
             token: "mxc://home.example/abc#key".into(),
         };
-        let message = |body| TimelineContent::Message {
-            message: TimelineMessage {
-                event_id: Some("$event".into()),
-                sender_id: "@hermes:home.example".into(),
-                sender_name: "Hermes".into(),
-                is_own: false,
-                timestamp_ms: 1_793_000_000_000,
-                send_state: SendState::Failed {
-                    message: "网络断开".into(),
-                    recoverable: true,
-                },
-                body,
-                edited: true,
-                read_by: vec!["主人".into()],
-            },
-        };
-        let item = |id: &str, content| TimelineItem {
-            id: id.into(),
-            content,
-        };
         let items = vec![
             item("1", TimelineContent::TimelineStart),
             item(
@@ -254,20 +238,31 @@ mod tests {
             ),
             item(
                 "3",
-                message(MessageContent::Image {
-                    image: ImageContent {
-                        media: media.clone(),
-                        thumbnail: Some(media.clone()),
-                        filename: "cat.jpg".into(),
-                        mime_type: Some("image/jpeg".into()),
-                        size: Some(4096),
-                        width: Some(640),
-                        height: Some(480),
+                message(
+                    MessageContent::Image {
+                        image: ImageContent {
+                            media: media.clone(),
+                            thumbnail: Some(media.clone()),
+                            filename: "cat.jpg".into(),
+                            mime_type: Some("image/jpeg".into()),
+                            size: Some(4096),
+                            width: Some(640),
+                            height: Some(480),
+                        },
                     },
-                }),
+                    SendState::Sending {
+                        progress: Some(0.5),
+                    },
+                ),
             ),
-            item("4", message(MessageContent::Undecryptable)),
-            item("4a", message(confirmation())),
+            item(
+                "4",
+                message(
+                    MessageContent::Undecryptable,
+                    SendState::Sending { progress: None },
+                ),
+            ),
+            item("4a", message(confirmation(), SendState::Sent)),
             item("5", TimelineContent::ReadMarker),
             item(
                 "6",
@@ -286,15 +281,21 @@ mod tests {
                     index: 2,
                     item: item(
                         "3",
-                        message(MessageContent::Text {
-                            body: "你好".into(),
-                            files: vec![FileId::from_bytes([7; 16])],
-                        }),
+                        message(
+                            MessageContent::Text {
+                                body: "你好".into(),
+                                files: vec![FileId::from_bytes([7; 16])],
+                            },
+                            SendState::Failed {
+                                message: "网络断开".into(),
+                                recoverable: true,
+                            },
+                        ),
                     ),
                 },
                 TimelineDiff::Insert {
                     index: 0,
-                    item: item("0", message(MessageContent::Redacted)),
+                    item: item("0", message(MessageContent::Redacted, SendState::Sent)),
                 },
                 TimelineDiff::Remove { index: 1 },
                 TimelineDiff::Truncate { length: 3 },
@@ -338,7 +339,51 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sending_progress_has_a_stable_json_contract() {
+        for (state, json) in [
+            (
+                SendState::Sending {
+                    progress: Some(0.5),
+                },
+                serde_json::json!({"type": "sending", "progress": 0.5}),
+            ),
+            (
+                SendState::Sending { progress: None },
+                serde_json::json!({"type": "sending", "progress": null}),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(&state).unwrap(), json);
+            assert_eq!(serde_json::from_value::<SendState>(json).unwrap(), state);
+        }
+        let state: SendState = serde_json::from_str(r#"{"type":"sending"}"#).unwrap();
+        assert_eq!(state, SendState::Sending { progress: None });
+    }
+
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
         serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
+    }
+
+    fn message(body: MessageContent, send_state: SendState) -> TimelineContent {
+        TimelineContent::Message {
+            message: TimelineMessage {
+                event_id: Some("$event".into()),
+                sender_id: "@hermes:home.example".into(),
+                sender_name: "Hermes".into(),
+                is_own: false,
+                timestamp_ms: 1_793_000_000_000,
+                send_state,
+                body,
+                edited: true,
+                read_by: vec!["主人".into()],
+            },
+        }
+    }
+
+    fn item(id: &str, content: TimelineContent) -> TimelineItem {
+        TimelineItem {
+            id: id.into(),
+            content,
+        }
     }
 }

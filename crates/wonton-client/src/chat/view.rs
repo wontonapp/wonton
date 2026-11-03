@@ -76,7 +76,7 @@ fn timeline_message(message: Message) -> TimelineMessage {
         is_own: message.is_own,
         timestamp_ms: message.timestamp_ms,
         send_state: match message.status {
-            SendStatus::Sending => SendState::Sending,
+            SendStatus::Sending => SendState::Sending { progress: None },
             SendStatus::Sent => SendState::Sent,
             SendStatus::Failed { error, recoverable } => SendState::Failed {
                 message: error,

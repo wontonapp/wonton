@@ -127,7 +127,7 @@ private fun MessageBubble(
             if (message.edited) Text("已编辑", style = small)
             Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong())), style = small)
             when (val state = message.sendState) {
-                SendState.Sending -> Text("发送中", style = small)
+                is SendState.Sending -> Text("发送中", style = small)
                 is SendState.Failed -> FailedSend(state, small, onRetry, onCancel)
                 SendState.Sent -> if (message.isOwn && message.readBy.isNotEmpty()) Text("已读", style = small)
             }
