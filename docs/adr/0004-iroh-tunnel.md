@@ -176,9 +176,7 @@
   （API 36）实测同样以 `owner` 进入 Grafana（Grafana 日志里 WebSocket 的用户是 `owner`）。
   - Grafana 的 WebSocket 经 `CONNECT` 走代理，Chromium 对 ws 总是用 `CONNECT`。
   - 模拟器上从启动到首页通常 2–8 秒，偶尔卡 30 秒左右。卡顿时代理和网关都在 100 ms 内处理完，
-    卡在 iroh 的路径层：模拟器虚拟网卡第一次 GSO 发送报 EIO（noq-udp 随后关掉 GSO），iroh 又在向本机
-    代理 TUN 的公网出口地址（经中继看到的“公网地址”）做 NAT 穿越探测。这台开发机开着 fake-IP 代理 TUN，
-    属于上面说过的“代理 TUN 会干扰选路”；没有 Android 真机，留到真机上复测（#16）。
+    卡在 iroh 的路径层：模拟器虚拟网卡的 GSO 发送报 EIO，原因见下面的“手机上关掉 GSO”。
 - **构建**：
   - wonton-client 引入 iroh 之后，iOS 静态库要链接 `SystemConfiguration.framework`。
   - libc 0.2.190 起只在 macOS 上提供 `in6_ifreq`，iroh 依赖的 netdev 0.46 在 iOS 上也用它，iOS 编译失败，
@@ -234,3 +232,20 @@ main 上 #42 合并后的版本（`ddbeb67`）：`deploy/dev/core` 的编译缓�
 - **遗留问题**跟踪在 #45：回到前台后最先发出的请求失败一次、偶发页面加载卡顿、换连接后请求被服务端复位、
   固定 1.5 秒期限在慢中继上可能误判。
 
+### 手机上关掉 GSO（#154，iroh 1.4.1、noq-udp 1.4.0）
+
+- **现象**：Android 模拟器（virtio 网卡）冷启动后发一条消息，停在“发送中”几十秒到几分钟，连接页却显示“直连 · 3 ms”。
+  卡住时抓到的 UDP 只有几十字节的包来回，请求到不了服务端；回到前台通常能恢复。
+- **根因**：网卡不支持 GSO 时（内核对没有校验和卸载的网卡和 IPsec 都这样）多包的 `sendmsg` 报 EIO。noq-udp 随后
+  关掉这个 socket 的 GSO，但 iroh 的发送端把分段上限存在建连那一刻（`TransportsSender::max_transmit_segments`），这条
+  连接之后每一批多包发送都 EIO，错误还被吞掉当作丢包。拥塞窗口再小也有两个包，所以多包的请求一直发不出去，单包的心跳
+  和确认照常往返，QUIC 认为连接活着。之后建的连接读到关掉的 GSO，不再有这个问题：所以换连接（回到前台、空闲超时）就
+  恢复，而每次 App 启动的第一条连接都可能中招。
+- **决定**：客户端的 endpoint 关掉 GSO（`enable_segmentation_offload(false)`）。手机上行的流量用不上它省下的那点 CPU，
+  也不用按平台分。服务端不动：它跑在 Docker 的 veth 上，veth 有校验和卸载；下行大文件才用得上 GSO。
+- **对照**（模拟器 → 1k，局域网直连，每轮杀掉 App 冷启动，等 12 秒发一条，看“发送中”多久消失）：
+
+  | 版本 | 各轮耗时 |
+  | --- | --- |
+  | 关 GSO 之前 | 31 秒、168 秒，另有两轮 311 秒内没等到 |
+  | 关 GSO 之后 | 4、3、3、3、4 秒 |

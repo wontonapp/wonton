@@ -13,7 +13,7 @@ use std::net::Ipv4Addr;
 use std::sync::{Arc, Weak};
 use std::time::Instant;
 
-use iroh::endpoint::presets;
+use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, SecretKey};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
@@ -177,12 +177,8 @@ impl HomeLink {
     }
 
     async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
-        let builder = match self.network {
-            Network::Internet => Endpoint::builder(presets::N0),
-            Network::DirectOnly => Endpoint::builder(presets::Minimal),
-        };
-        let endpoint = builder
-            .secret_key(self.device_key.clone())
+        let endpoint = self
+            .endpoint_builder()
             .bind()
             .await
             .map_err(|e| format!("绑定网络失败：{e}"))?;
@@ -213,6 +209,25 @@ impl HomeLink {
             proxy,
             watcher,
         })
+    }
+
+    /// 本设备身份的 endpoint。
+    ///
+    /// 关掉 GSO：网卡不支持时（实测 Android 模拟器的 virtio 网卡；内核对没有校验和卸载的网卡和 IPsec 都这样）
+    /// 多包的发送报 EIO。noq-udp 随后关掉这个 socket 的 GSO，但 iroh 1.4.1 的发送端把分段上限存在建连那一刻，
+    /// 这条连接之后的多包发送每次都 EIO，错误还被吞掉：单包的心跳和确认照常往返，连接看着活着，请求却卡到连接
+    /// 被换掉（#154）。手机上的流量用不上 GSO 省下的那点 CPU。
+    fn endpoint_builder(&self) -> Builder {
+        let builder = match self.network {
+            Network::Internet => Endpoint::builder(presets::N0),
+            Network::DirectOnly => Endpoint::builder(presets::Minimal),
+        };
+        let transport = QuicTransportConfig::builder()
+            .enable_segmentation_offload(false)
+            .build();
+        builder
+            .secret_key(self.device_key.clone())
+            .transport_config(transport)
     }
 
     async fn resume(self: Arc<Self>) {

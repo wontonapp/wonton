@@ -3,14 +3,12 @@
 
 use std::sync::Arc;
 
-use iroh::Endpoint;
-use iroh::endpoint::presets;
 use serde_json::json;
 use wonton_protocol::{CoreError, PairingFailure, PairingStatus};
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
 
-use super::{HomeLink, Network};
+use super::HomeLink;
 
 impl HomeLink {
     pub(crate) fn pair(self: &Arc<Self>, text: &str, device_name: &str) -> Result<(), CoreError> {
@@ -59,17 +57,11 @@ impl HomeLink {
         code: &PairingCode,
         device_name: &str,
     ) -> Result<PairResponse, TunnelError> {
-        let builder = match self.network {
-            Network::Internet => Endpoint::builder(presets::N0),
-            Network::DirectOnly => Endpoint::builder(presets::Minimal),
-        };
-        let endpoint = builder
-            .secret_key(self.device_key.clone())
-            .bind()
-            .await
-            .map_err(|e| TunnelError::TransportUnavailable {
+        let endpoint = self.endpoint_builder().bind().await.map_err(|e| {
+            TunnelError::TransportUnavailable {
                 reason: format!("绑定网络失败：{e}"),
-            })?;
+            }
+        })?;
         let outcome = pair::pair(&endpoint, code, device_name).await;
         endpoint.close().await;
         outcome
