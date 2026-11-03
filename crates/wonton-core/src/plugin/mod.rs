@@ -18,6 +18,7 @@ pub mod health;
 pub mod hostdir;
 pub mod image_worker;
 pub mod images;
+mod install_entry;
 mod install_error;
 pub mod interpolate;
 pub mod lan;

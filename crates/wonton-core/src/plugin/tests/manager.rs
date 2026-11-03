@@ -215,6 +215,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lan_webui: false,
             id: good.clone(),
             version: "1.0.0".into(),
             source: app("app.good"),

@@ -4,16 +4,14 @@
 use std::sync::Arc;
 
 use wonton_protocol::{
-    LanAddress, LanChoice, LanInterface, LanInterfaceKind, LanPlugin, LanPort, LanProblem,
-    LanProtocol, LanSettings,
+    LanAddress, LanChoice, LanInterface, LanInterfaceKind, LanPlugin, LanProblem, LanSettings,
 };
 
-use super::Protocol;
 use super::monitor::Detected;
 use super::select::{self, Bound, Kind};
+use super::webui::lan_port;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager, PluginStatus};
-use crate::plugin::manifest::PluginId;
 
 fn address(bound: &Bound) -> LanAddress {
     LanAddress {
@@ -125,26 +123,15 @@ impl PluginManager {
     }
 
     fn lan_plugin_views(&self, langs: &Languages) -> Vec<LanPlugin> {
-        let ids: Vec<PluginId> = self.lan_plugins().into_iter().map(|(id, _)| id).collect();
+        let open = self.lan_plugins();
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        ids.iter()
-            .filter_map(|id| {
+        open.iter()
+            .filter_map(|(id, spec)| {
                 let entry = plugins.get(id)?;
-                let spec = entry.listed.as_ref()?.manifest.lan.as_ref()?;
                 Some(LanPlugin {
                     id: id.to_string(),
                     title: langs.pick_owned(&entry.title),
-                    ports: spec
-                        .ports
-                        .iter()
-                        .map(|p| LanPort {
-                            port: p.port,
-                            protocol: match p.protocol {
-                                Protocol::Tcp => LanProtocol::Tcp,
-                                Protocol::Udp => LanProtocol::Udp,
-                            },
-                        })
-                        .collect(),
+                    ports: spec.ports.iter().map(lan_port).collect(),
                     problem: match &entry.status {
                         PluginStatus::Degraded { reason } => Some(reason.clone()),
                         _ => None,

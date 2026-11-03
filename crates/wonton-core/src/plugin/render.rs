@@ -393,10 +393,12 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
         extra_hosts: Vec::new(),
         gpu: None,
         // 192.0.2.1 是文档用的地址（RFC 5737）。
-        lan: manifest.lan.as_ref().map(|_| LanGrant {
+        lan: manifest.lan.as_ref().map(|lan| LanGrant {
             addresses: vec![[192, 0, 2, 1].into()],
             network: (!manifest.permissions.contains(&Permission::NetworkEgress))
                 .then(|| Instance::default().lan_network(&slug)),
+            ports: lan.ports.clone(),
+            webui: false,
         }),
         egress: None,
         core_address: webui
@@ -466,7 +468,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         let endpoint = (network.as_str(), vars.aliases(&name));
         let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels, gpu)?;
         if let Some(grant) = &ctx.lan {
-            lan::publish(manifest, &name, service, grant, &mut plan.body)?;
+            lan::publish(&name, service, grant, &mut plan.body)?;
         }
         if let Some(vars) = ctx.egress.as_ref()
             && service.network_mode != Some(NetworkMode::None)

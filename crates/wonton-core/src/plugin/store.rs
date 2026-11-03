@@ -36,6 +36,9 @@ pub struct InstalledRecord {
     )]
     pub files: PackageFiles,
     pub granted_permissions: Vec<Permission>,
+    /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
+    #[serde(default)]
+    pub lan_webui: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oidc_client_secret: Option<String>,
     pub installed_at: u64,
@@ -338,6 +341,7 @@ mod tests {
 
     fn record(id: &str) -> InstalledRecord {
         InstalledRecord {
+            lan_webui: false,
             id: PluginId::parse(id).unwrap(),
             version: "1.0.0".into(),
             source: "services: {}".into(),

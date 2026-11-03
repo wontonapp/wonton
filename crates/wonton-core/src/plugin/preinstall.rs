@@ -201,7 +201,7 @@ impl PluginManager {
         loop {
             attempts += 1;
             let e = match self
-                .install_checked(package.clone(), &manifest.permissions)
+                .install_checked(package.clone(), &manifest.permissions, false)
                 .await
             {
                 Ok(_) => {

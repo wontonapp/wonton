@@ -81,3 +81,22 @@ async fn lan_settings_need_the_owner_and_report_bad_choices_by_kind() {
     assert_eq!(chosen["addresses"][1]["address"], "fd00::1");
     assert_eq!(chosen["addresses"][1]["proxied"], true);
 }
+
+#[tokio::test]
+async fn the_lan_webui_switch_needs_the_owner_and_says_what_is_wrong() {
+    let h = Harness::start(None).await;
+    let path = "/_wonton/api/plugins/app.nothing/lan-webui";
+    let send = |auth: &'static [(&'static str, &'static str)], body: &'static str| {
+        h.send(Method::PUT, CORE, path, auth, Body::from(body))
+    };
+    let unauthenticated = send(&[], r#"{"enabled": true}"#).await;
+    assert_eq!(unauthenticated.status, StatusCode::UNAUTHORIZED);
+    let bearer: &'static str = Box::leak(format!("Bearer {TOKEN}").into_boxed_str());
+    let auth: &'static [(&'static str, &'static str)] =
+        Box::leak(Box::new([("authorization", bearer)]));
+    let bad = send(auth, "{").await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    assert_eq!(bad.error_kind(), Some("invalid_input"));
+    let missing = send(auth, r#"{"enabled": true}"#).await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND, "{}", missing.text());
+}

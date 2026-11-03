@@ -270,6 +270,12 @@ impl PluginPackage {
         package_files::digest(self.source.as_bytes(), &self.files)
     }
 
+    /// 服务的 `environment` 的原文（没插值）：引用了哪些变量、写了什么字面值。
+    pub fn raw_environment(&self, service: &str) -> String {
+        let environment = self.services.get(service).map(|raw| &raw["environment"]);
+        environment.map(ToString::to_string).unwrap_or_default()
+    }
+
     pub fn service_names(&self) -> impl Iterator<Item = &str> {
         self.services.keys().map(String::as_str)
     }

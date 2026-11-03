@@ -5,7 +5,7 @@
 //! - [`detect`]：起检测容器，列出 Docker 的网桥；
 //! - [`select`]：按检测结果和主人的选择算出地址；
 //! - `state`：主人的选择和上次检测的结果；`grant`：安装和预览；`monitor`：定期检测、地址变了重建容器；
-//!   `settings`：管理接口。
+//!   `settings`：管理接口；[`webui`]：网页端口的开关。
 
 pub mod detect;
 mod grant;
@@ -14,6 +14,7 @@ pub mod probe;
 pub mod select;
 mod settings;
 mod state;
+pub mod webui;
 
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
@@ -74,7 +75,8 @@ impl LanPortSpec {
     }
 }
 
-/// `lan` 和 `network.lan` 要一起出现；端口不重复，也不能是网页和 MCP 的端口：它们只经核心访问。
+/// `lan` 和 `network.lan` 要一起出现；端口不重复，也不能是 MCP 的端口：它只经核心访问。网页的端口可以列，要不要开关见
+/// [`webui`]。
 /// 服务名是否存在由 [`super::package`] 对照 compose 检查。
 pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let invalid = |message: String| Err(ManifestError::Invalid(message));
@@ -97,13 +99,7 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     if lan.ports.is_empty() {
         return invalid("lan.ports 至少一项".into());
     }
-    let gateway_only = [
-        (
-            "webui",
-            manifest.webui.as_ref().map(|w| (&w.service, w.port)),
-        ),
-        ("mcp", manifest.mcp.as_ref().map(|m| (&m.service, m.port))),
-    ];
+    let mcp = manifest.mcp.as_ref().map(|m| (&m.service, m.port));
     let mut seen = BTreeSet::new();
     for port in &lan.ports {
         if port.port == 0 {
@@ -112,13 +108,9 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
         if !seen.insert((port.port, port.protocol)) {
             return invalid(format!("lan.ports 里的 {} 重复了", port.key()));
         }
-        let entry = (&port.service, port.port);
-        if let Some((field, _)) = gateway_only
-            .iter()
-            .find(|(_, e)| port.protocol == Protocol::Tcp && *e == Some(entry))
-        {
+        if port.protocol == Protocol::Tcp && mcp == Some((&port.service, port.port)) {
             return invalid(format!(
-                "{field} 的端口只经核心访问，不能列进 lan.ports（{} 的 {}）",
+                "mcp 的端口只经核心访问，不能列进 lan.ports（{} 的 {}）",
                 port.service,
                 port.key()
             ));
@@ -164,6 +156,10 @@ pub struct LanGrant {
     pub addresses: Vec<IpAddr>,
     /// 没声明 `network.egress` 的插件发布端口用的网络（`wonton-<slug>--lan`）：Docker 不在内部网络上发布端口。
     pub network: Option<String>,
+    /// 要开的端口。开关关着、没有要开的时为空，地址也为空，这时不接 `network`。
+    pub ports: Vec<LanPortSpec>,
+    /// 主人打开了开关 `lan_webui`。
+    pub webui: bool,
 }
 
 impl LanGrant {
@@ -174,21 +170,15 @@ impl LanGrant {
     }
 }
 
-/// 把 `lan.ports` 里这个服务的端口发布到选出的地址上；没发布在插件网络上时，再接上 [`LanGrant::network`]，
+/// 把 [`LanGrant::ports`] 里这个服务的端口发布到选出的地址上；没发布在插件网络上时，再接上 [`LanGrant::network`]，
 /// 让它提供默认路由和发布的端口。
 pub fn publish(
-    manifest: &Manifest,
     name: &str,
     service: &Service,
     grant: &LanGrant,
     body: &mut ContainerCreateBody,
 ) -> Result<(), RenderError> {
-    let ports: Vec<&LanPortSpec> = manifest
-        .lan
-        .iter()
-        .flat_map(|lan| &lan.ports)
-        .filter(|p| p.service == name)
-        .collect();
+    let ports: Vec<&LanPortSpec> = grant.ports.iter().filter(|p| p.service == name).collect();
     if ports.is_empty() {
         return Ok(());
     }

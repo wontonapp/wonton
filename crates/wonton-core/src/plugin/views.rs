@@ -11,6 +11,8 @@ use wonton_protocol::{
 use super::gallery::{IconSource, Variant};
 use super::github_source::{Origin, Trust};
 use super::image_worker::ImageError;
+use super::lan::LanPortSpec;
+use super::lan::webui::{self, Switched};
 use super::languages::Languages;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
 use super::manifest::{
@@ -22,7 +24,7 @@ use super::render::{dry_run, dry_run_with_email};
 use super::store_info::Category;
 
 /// 已安装插件在列表和详情页里显示的信息，装上时从插件包里取出。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Listed {
     pub manifest: Manifest,
     pub icon: Option<IconSource>,
@@ -30,16 +32,26 @@ pub struct Listed {
     pub installed_at: u64,
     /// 按来源装的从哪里来。
     pub origin: Option<Origin>,
+    /// 要开关 `lan_webui` 才开的局域网端口（见 [`webui`]）。
+    pub lan_switched: Option<Switched>,
+    pub lan_webui: bool,
 }
 
 impl Listed {
-    pub fn new(package: &PluginPackage, installed_at: u64) -> Arc<Self> {
+    pub fn new(package: &PluginPackage, installed_at: u64, lan_webui: bool) -> Arc<Self> {
         Arc::new(Self {
             manifest: package.manifest.clone(),
             icon: IconSource::of(package),
             installed_at,
             origin: package.origin.clone(),
+            lan_switched: webui::switched(package),
+            lan_webui,
         })
+    }
+
+    /// 开关是 `enabled` 时开着的局域网端口。
+    pub fn open_ports(&self, enabled: bool) -> Vec<LanPortSpec> {
+        webui::open_ports_of(&self.manifest, self.lan_switched.as_ref(), enabled)
     }
 
     #[cfg(test)]
@@ -49,6 +61,8 @@ impl Listed {
             icon: None,
             installed_at: 0,
             origin: None,
+            lan_switched: None,
+            lan_webui: false,
         })
     }
 }
@@ -119,7 +133,10 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed: Some(installed),
             blocked: None,
-            lan_webui: None,
+            lan_webui: listed
+                .lan_switched
+                .as_ref()
+                .map(|switched| switched.offer(listed.lan_webui)),
         })
     }
 
@@ -142,7 +159,7 @@ impl PluginManager {
         };
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m).await?;
-        let lan = self.lan_preview(m).await?;
+        let lan = self.lan_preview(package).await?;
         let blocked = blocked
             .or(gpu.blocked)
             .or(lan.blocked)
@@ -194,7 +211,7 @@ impl PluginManager {
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
-            lan_webui: None,
+            lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
         })
     }
 

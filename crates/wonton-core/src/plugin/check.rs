@@ -6,11 +6,13 @@ use std::path::Path;
 
 use bollard::models::ContainerCreateBody;
 
+use super::core_address::VAR;
 use super::egress::hardcoded_proxy;
 use super::image_worker::ImageWorker;
 use super::images::IconFormat;
+use super::lan::webui::impersonable;
 use super::manager::supported;
-use super::manifest::{Manifest, PluginKind};
+use super::manifest::{Manifest, Permission, PluginKind};
 use super::package::PluginPackage;
 use super::package_files::{self, COMPOSE_FILE};
 use super::render::{Deployment, dry_run};
@@ -64,6 +66,7 @@ pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<R
         Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
+    check_trusts_core(&package, official, &mut report);
     check_icon(&package, official, images, &mut report).await;
     check_screenshots(dir, m, images, &mut report).await;
     if official {
@@ -110,6 +113,31 @@ fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
                 ));
             }
         }
+    }
+}
+
+/// 用请求头认用户的应用，信任的代理地址只写核心的地址（ADR-0023 的“只信任核心的地址”）。出网插件能从宿主连到它，所以官方
+/// 索引不收；不出网的只有开了局域网端口才有人连得到，那些端口有开关。
+fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Report) {
+    if !impersonable(package) {
+        return;
+    }
+    let m = &package.manifest;
+    let advice = format!(
+        "网页用请求头认用户，但不是只信任核心：把信任的代理地址写成 ${{{VAR}}}，不写 0.0.0.0/0 和 ::/0"
+    );
+    if official && m.permissions.contains(&Permission::NetworkEgress) {
+        report.problems.push(format!(
+            "{advice}。出网插件做不到时改用 OIDC 或 {{secret:…}}（ADR-0023）"
+        ));
+    } else if m.lan.is_some() {
+        report.warnings.push(format!(
+            "{advice}。否则网页所在服务的局域网端口默认不开，要主人打开开关 lan_webui"
+        ));
+    } else {
+        report.warnings.push(format!(
+            "{advice}。做不到时要在索引的审核里登记（ADR-0023）"
+        ));
     }
 }
 

@@ -17,7 +17,7 @@ use super::super::{Permission, PluginId, PluginManager, PluginPackage, PluginSta
 use super::manager::{manager_in_container, manager_with};
 use super::{SPEC, env_of_container, package};
 
-type Host = Arc<Mutex<Result<HostNetwork, String>>>;
+pub(super) type Host = Arc<Mutex<Result<HostNetwork, String>>>;
 
 fn nic(name: &str, addresses: &[&str]) -> HostInterface {
     HostInterface {
@@ -59,7 +59,7 @@ fn host(eno1: &[&str]) -> HostNetwork {
     }
 }
 
-fn office() -> HostNetwork {
+pub(super) fn office() -> HostNetwork {
     host(&["192.168.0.193", "fd00::10", "2408:8207::1"])
 }
 
@@ -69,7 +69,9 @@ fn add_default_bridge(docker: &FakeDocker) {
     docker.add_network("bridge", "", options);
 }
 
-async fn on(network: HostNetwork) -> (FakeDocker, Arc<PluginManager>, Host, tempfile::TempDir) {
+pub(super) async fn on(
+    network: HostNetwork,
+) -> (FakeDocker, Arc<PluginManager>, Host, tempfile::TempDir) {
     let (docker, engine) = FakeDocker::start().await;
     add_default_bridge(&docker);
     let dir = tempfile::tempdir().unwrap();
@@ -92,17 +94,17 @@ fn samba(extra_permissions: &str) -> String {
     )
 }
 
-fn granted(compose: &str) -> Vec<Permission> {
+pub(super) fn granted(compose: &str) -> Vec<Permission> {
     PluginPackage::parse(compose).unwrap().manifest.permissions
 }
 
-fn created(docker: &FakeDocker, service: &str) -> Value {
+pub(super) fn created(docker: &FakeDocker, service: &str) -> Value {
     docker
         .created(&container_name("app-test", service))
         .expect("容器已创建")
 }
 
-fn binding(ip: &str, port: &str) -> Value {
+pub(super) fn binding(ip: &str, port: &str) -> Value {
     json!([{"HostIp": ip, "HostPort": port}])
 }
 
@@ -514,12 +516,16 @@ fn manifests_must_declare_ports_and_permission_together() {
     assert!(invalid(twice).contains("重复"));
     let zero = "  lan: {ports: [{service: samba, port: 0}]}\n  permissions: [network.lan]";
     assert!(invalid(zero).contains("0"));
-    let web = "  webui: {service: samba, port: 80}\n  lan: {ports: [{service: samba, port: 80}]}\n  \
+    let web = "  mcp: {service: samba, port: 80, transport: streamable-http}\n  lan: {ports: [{service: samba, port: 80}]}\n  \
                permissions: [network.lan]";
-    assert!(invalid(web).contains("webui"));
-    // 同一个端口号的 UDP 不是网页。
+    assert!(invalid(web).contains("mcp"));
+    // 同一个端口号的 UDP 不是 MCP。
     let udp = web.replace("port: 80}]", "port: 80, protocol: udp}]");
     assert!(matches!(parse(&udp), Ok(Ok(()))));
+    // 网页的端口可以列，默认不开（`lan_webui`）。
+    let webui = "  webui: {service: samba, port: 80}\n  lan: {ports: [{service: samba, port: 80}]}\n  \
+                 permissions: [network.lan]";
+    assert!(matches!(parse(webui), Ok(Ok(()))));
     let unknown = "  lan: {ports: [{service: nas, port: 445}]}\n  permissions: [network.lan]";
     assert!(matches!(
         parse(unknown),

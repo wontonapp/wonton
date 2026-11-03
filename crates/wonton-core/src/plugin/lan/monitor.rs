@@ -114,14 +114,15 @@ impl PluginManager {
         Ok(detected)
     }
 
-    /// 装了开局域网端口的插件。
+    /// 开着局域网端口的插件和开着的端口。
     pub(in crate::plugin) fn lan_plugins(&self) -> Vec<(PluginId, LanSpec)> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
             .iter()
             .filter_map(|(id, entry)| {
-                let spec = entry.listed.as_ref()?.manifest.lan.clone()?;
-                Some((id.clone(), spec))
+                let listed = entry.listed.as_ref()?;
+                let ports = listed.open_ports(listed.lan_webui);
+                (!ports.is_empty()).then(|| (id.clone(), LanSpec { ports }))
             })
             .collect()
     }
@@ -155,7 +156,7 @@ impl PluginManager {
         if !self.begin_rebuild(id) {
             return;
         }
-        let result = self.relocate(id, (!same).then_some(addresses)).await;
+        let result = self.relocate(id, spec, (!same).then_some(addresses)).await;
         self.lan.end(id);
         match result {
             Ok(deployed) => {
@@ -194,7 +195,7 @@ impl PluginManager {
     }
 
     /// 插件还在运行或异常（没在安装、卸载）时记为正在重建，返回记上了没有。和卸载一样在插件表的锁里判断。
-    fn begin_rebuild(&self, id: &PluginId) -> bool {
+    pub(super) fn begin_rebuild(&self, id: &PluginId) -> bool {
         let plugins = self.plugins.write().expect("插件表锁中毒");
         let idle = matches!(
             plugins.get(id).map(|e| &e.status),
@@ -207,6 +208,7 @@ impl PluginManager {
     async fn relocate(
         &self,
         id: &PluginId,
+        spec: &LanSpec,
         addresses: Option<&BTreeSet<IpAddr>>,
     ) -> Result<Deployed, InstallError> {
         let record = self
@@ -216,17 +218,20 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
         if let Some(addresses) = addresses {
-            self.rebuild_lan(&package, &record, addresses).await?;
+            let addresses: Vec<IpAddr> = addresses.iter().copied().collect();
+            self.rebuild_lan(&package, &record, &addresses, &lan_services(spec))
+                .await?;
         }
         self.reconcile(&package, &record).await
     }
 
-    /// 照安装时一样渲染，只删掉、重建开了局域网端口的容器。
-    async fn rebuild_lan(
+    /// 照安装时一样渲染，只删掉、重建 `services` 的容器。
+    pub(super) async fn rebuild_lan(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-        addresses: &BTreeSet<IpAddr>,
+        addresses: &[IpAddr],
+        services: &BTreeSet<&str>,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
         let generated = self.check_secrets(manifest).await?;
@@ -234,7 +239,7 @@ impl PluginManager {
         let mut ctx = self.install_context(manifest, secret, generated).await?;
         ctx.gpu = self.gpu_grant(manifest).await?;
         ctx.models = self.stored_model_vars(package)?;
-        let grant = self.lan_grant_on(manifest, addresses.iter().copied().collect());
+        let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
         if let Some(network) = &grant.network
             && self.engine.network_reach(network).await?.is_none()
         {
@@ -246,7 +251,6 @@ impl PluginManager {
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
         ctx.core_address = self.core_address_var(manifest, &network).await?;
         let mut plan = render(package, &ctx)?;
-        let services = manifest.lan.as_ref().map(lan_services).unwrap_or_default();
         plan.containers
             .retain(|c| services.contains(c.service.as_str()));
         for container in &plan.containers {
@@ -263,7 +267,7 @@ impl PluginManager {
     }
 
     /// 标为异常，以后每次检测都重新处理它。只改在运行的和已经因为局域网异常的插件。
-    fn lan_failed(&self, id: &PluginId, reason: String) {
+    pub(super) fn lan_failed(&self, id: &PluginId, reason: String) {
         tracing::warn!(plugin = %id, %reason, "插件的局域网端口异常");
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {

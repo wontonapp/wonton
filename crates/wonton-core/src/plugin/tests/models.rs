@@ -110,7 +110,10 @@ async fn bed() -> Bed {
         .await
         .unwrap();
     let manager = manager_with(engine, &dir).with_matrix(Some(Arc::new(matrix)));
-    manager.install_checked(provider(port), &[]).await.unwrap();
+    manager
+        .install_checked(provider(port), &[], false)
+        .await
+        .unwrap();
     Bed {
         docker,
         keys,
@@ -211,7 +214,11 @@ async fn consumers_need_a_gateway_that_accepts_the_credential() {
     // 同一时间只能有一个网关。
     let port = fake_gateway(Keys::default()).await;
     let second = provider(port);
-    let err = bed.manager.install_checked(second, &[]).await.unwrap_err();
+    let err = bed
+        .manager
+        .install_checked(second, &[], false)
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
 }
 

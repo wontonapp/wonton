@@ -83,6 +83,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lan_webui: false,
             id: id.clone(),
             version: "1.0.0".into(),
             source: app(""),
@@ -412,6 +413,7 @@ fn legacy_network(docker: &FakeDocker) {
 
 fn record_for(compose: String) -> InstalledRecord {
     InstalledRecord {
+        lan_webui: false,
         id: PluginId::parse("app.test").unwrap(),
         version: "1.0.0".into(),
         source: compose,

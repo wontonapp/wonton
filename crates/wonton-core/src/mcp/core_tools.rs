@@ -244,7 +244,11 @@ async fn install(bus: &Arc<Bus>, caller: &Caller, name: &str, args: JsonObject) 
     let permissions = package.manifest.permissions.clone();
     let id = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>| async move {
-        match bus.plugins.install_detached(package, permissions).await {
+        match bus
+            .plugins
+            .install_detached(package, permissions, false)
+            .await
+        {
             Ok(view) => {
                 let title = cards::text(&view.title);
                 let message = match &view.url {

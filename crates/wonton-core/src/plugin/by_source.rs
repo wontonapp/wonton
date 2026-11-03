@@ -64,6 +64,7 @@ impl PluginManager {
                 request.source
             )));
         }
-        self.install_detached(package, granted).await
+        self.install_detached(package, granted, request.lan_webui)
+            .await
     }
 }

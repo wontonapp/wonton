@@ -197,3 +197,42 @@ fn packing_keeps_only_the_package_and_installs_the_same_digest() {
     let uploaded = PluginPackage::from_archive(&archive).unwrap();
     assert_eq!(uploaded.digest(), package.digest());
 }
+
+#[tokio::test]
+async fn apps_that_trust_more_than_the_core_are_flagged_by_how_they_can_be_reached() {
+    const IDENTITY: &str =
+        "  webui: {service: web, port: 80, sso: proxy, proxy: {headers: {Remote-User: '{user}'}}}";
+    const VAR: &str = "WONTON_CORE_ADDRESS";
+    let report = |permissions: &'static str, extra: &'static str, env: &'static str, official| {
+        let compose = package(
+            &format!("  web:\n    image: nginx:1.27\n    environment: {{TRUST: '{env}'}}"),
+            &format!(
+                "  spec: \"0.2\"\n  icon: icon.svg\n  screenshots: [shots/1.png]\n  \
+                 permissions: [{permissions}]\n{IDENTITY}\n{extra}"
+            ),
+        );
+        async move {
+            let dir = repo(&compose);
+            run(dir.path(), official).await.unwrap()
+        }
+    };
+    let flagged = |list: &[String]| list.iter().any(|line| line.contains(VAR));
+
+    let egress = report("network.egress", "", "0.0.0.0/0", true).await;
+    assert!(flagged(&egress.problems), "{:?}", egress.problems);
+    let community = report("network.egress", "", "0.0.0.0/0", false).await;
+    assert!(flagged(&community.warnings), "{:?}", community.warnings);
+    assert!(!flagged(&community.problems));
+
+    let lan = "  lan: {ports: [{service: web, port: 139}]}";
+    let opened = report("network.lan", lan, "0.0.0.0/0", true).await;
+    assert!(flagged(&opened.warnings), "{:?}", opened.warnings);
+    assert!(!flagged(&opened.problems), "{:?}", opened.problems);
+
+    let inside = report("", "", "0.0.0.0/0", true).await;
+    assert!(flagged(&inside.warnings), "{:?}", inside.warnings);
+    assert!(!flagged(&inside.problems));
+
+    let good = report("network.egress", "", "${WONTON_CORE_ADDRESS}/32", true).await;
+    assert!(!flagged(&good.warnings) && !flagged(&good.problems));
+}

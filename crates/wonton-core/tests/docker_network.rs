@@ -736,28 +736,19 @@ async fn a_subnet_taken_during_migration_moves_the_network_to_another() {
         driver: Some("bridge".to_owned()),
         ..Default::default()
     };
-    docker().create_network(plain(&network)).await.unwrap();
-    sleeper(&engine, &app, &network).await;
-    let subnet = inspect(&network).await.ipam.unwrap().config.unwrap()[0]
+    // 记录写好、网络删了、还没重建时，网段被占了。占着的网段由 Docker 分配：先删再用同一段建，CI 上共用 Docker 的
+    // 别的作业可能抢先拿走。
+    docker().create_network(plain(&squatter)).await.unwrap();
+    let subnet = inspect(&squatter).await.ipam.unwrap().config.unwrap()[0]
         .subnet
         .clone()
         .unwrap();
-    let address = engine.endpoint_address(&app, &network).await.unwrap();
-
-    // 记录写好、网络删了、还没重建时，网段被占了。
+    let held: ipnet::IpNet = subnet.parse().unwrap();
+    let address = held.hosts().nth(5).map(|ip| ip.to_string());
+    docker().create_network(plain(&network)).await.unwrap();
+    sleeper(&engine, &app, &network).await;
     engine.disconnect_network(&network, &app).await.unwrap();
     engine.remove_network(&network).await.unwrap();
-    let taken = NetworkCreateRequest {
-        ipam: Some(bollard::models::Ipam {
-            config: Some(vec![bollard::models::IpamConfig {
-                subnet: Some(subnet.clone()),
-                ..Default::default()
-            }]),
-            ..Default::default()
-        }),
-        ..plain(&squatter)
-    };
-    docker().create_network(taken).await.unwrap();
     let dir = tempfile::tempdir().unwrap();
     let store = MigrationStore::new(dir.path().to_owned());
     let saved = serde_json::json!({

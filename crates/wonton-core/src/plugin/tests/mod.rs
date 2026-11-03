@@ -18,6 +18,7 @@ mod gpu;
 mod health;
 mod instances;
 mod lan;
+mod lan_webui;
 mod leftovers;
 mod manager;
 mod models;

@@ -7,8 +7,9 @@
 //! | GET | `/_wonton/api/plugins` | 已安装的插件（`InstalledPlugins`） |
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`） |
-//! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`；权限必须与清单声明的一致（201 `InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
+//! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
@@ -29,7 +30,7 @@ use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use wonton_protocol::{InstallRequest, InstallSource, LanChoice};
+use wonton_protocol::{InstallRequest, InstallSource, LanChoice, LanWebuiUpdate};
 
 use super::{Gateway, TunnelPeer, isolation, pages};
 use crate::plugin::gallery::Variant;
@@ -214,6 +215,9 @@ pub async fn preview(
 pub struct InstallQuery {
     #[serde(default)]
     grant: String,
+    /// 主人打开了开关 `lan_webui`。
+    #[serde(default)]
+    lan_webui: bool,
 }
 
 pub async fn install(
@@ -260,7 +264,10 @@ async fn install_upload(
         InstallError::Invalid(e.to_string())
     })?;
     let package = package(headers, body)?;
-    gateway.plugins.install_detached(package, granted).await
+    gateway
+        .plugins
+        .install_detached(package, granted, query.lan_webui)
+        .await
 }
 
 #[derive(Deserialize)]
@@ -366,6 +373,37 @@ pub async fn set_lan(
         .await
     {
         Ok(settings) => Json(settings).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+/// 改网页的局域网端口开关（ADR-0023），重建完返回详情。
+pub async fn set_lan_webui(
+    State(gateway): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = denied(&gateway, &headers) {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let update = match serde_json::from_slice::<LanWebuiUpdate>(&body) {
+        Ok(update) => update,
+        Err(e) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string());
+        }
+    };
+    let langs = languages(&headers);
+    match gateway
+        .plugins
+        .set_lan_webui(id, update.enabled, langs)
+        .await
+    {
+        Ok(detail) => Json(detail).into_response(),
         Err(e) => install_error(&e),
     }
 }

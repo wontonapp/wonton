@@ -15,6 +15,7 @@ use super::github::GitHub;
 use super::gpu::HostPaths;
 use super::image_worker::ImageWorker;
 use super::lan::Lan;
+use super::lan::webui::switched;
 use super::lifecycle::LifecycleConfig;
 use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind};
 use super::mcp_server::{McpServer, ToolLimits};
@@ -562,12 +563,12 @@ impl PluginManager {
                 if let Err(e) = self.register_source(manifest, &network).await {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
-                let listed = Listed::new(&package, record.installed_at);
+                let listed = Listed::new(&package, record.installed_at, record.lan_webui);
                 match self.reconcile_migrated(migrated, &package, record).await {
                     Ok(deployed) => Entry::running(listed, deployed),
                     Err(e) => {
                         // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。
-                        if manifest.lan.is_some() {
+                        if !listed.open_ports(record.lan_webui).is_empty() {
                             self.lan.mark_degraded(&manifest.id);
                         }
                         let reason = e.to_string();
@@ -583,36 +584,12 @@ impl PluginManager {
         }
     }
 
-    /// 安装只有 compose 文本的插件包，见 [`Self::install_package`]。
-    pub async fn install(
-        &self,
-        source: &str,
-        granted: &[Permission],
-    ) -> Result<PluginView, InstallError> {
-        self.install_package(PluginPackage::parse(source)?, granted)
-            .await
-    }
-
-    /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。系统插件只能由安装器预装
-    /// （见 [`super::system`]）。
-    pub async fn install_package(
-        &self,
-        package: PluginPackage,
-        granted: &[Permission],
-    ) -> Result<PluginView, InstallError> {
-        if package.manifest.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(
-                "system 插件只能由安装器预装".to_owned(),
-            ));
-        }
-        self.install_checked(package, granted).await
-    }
-
     /// 检查并部署，API 安装和预装（见 [`super::preinstall`]）共用。
     pub(super) async fn install_checked(
         &self,
         package: PluginPackage,
         granted: &[Permission],
+        lan_webui: bool,
     ) -> Result<PluginView, InstallError> {
         dry_run(&package)?;
         self.check_icon(&package).await?;
@@ -620,8 +597,10 @@ impl PluginManager {
         check_permissions(&manifest, granted)?;
         self.check_requirements(&manifest).await?;
         let gpu = self.gpu_grant(&manifest).await?;
-        let lan = self.lan_grant(&manifest).await?;
-        let listed = Listed::new(&package, now_secs());
+        // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
+        let lan_webui = lan_webui && switched(&package).is_some();
+        let lan = self.lan_grant(&package, lan_webui).await?;
+        let listed = Listed::new(&package, now_secs(), lan_webui);
         self.reserve(&listed)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
         match self.deploy(&package, granted, gpu, lan).await {
@@ -695,16 +674,6 @@ impl PluginManager {
             ))),
             _ => Ok(()),
         }
-    }
-
-    /// 同 [`Self::install_package`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里安装。
-    pub async fn install_detached(
-        self: &Arc<Self>,
-        package: PluginPackage,
-        granted: Vec<Permission>,
-    ) -> Result<PluginView, InstallError> {
-        let this = Arc::clone(self);
-        detached(async move { this.install_package(package, &granted).await }).await
     }
 
     /// 同 [`Self::uninstall`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里卸载。

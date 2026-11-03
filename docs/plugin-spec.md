@@ -1208,7 +1208,6 @@ v0.1 新增的部分按下面的顺序落地，每项一个 PR，完成后从本
     按 Bot 签发凭据和收存秘密。
 15. **出网走代理：出口容器**：gost 的生命周期、接入网络、拒绝名单和放行网段（包括额外直连的网段）、Bot 令牌读回和重建、探测和错误、设置接口。依赖 Docker 的测试标 `#[ignore]`，加进 CI 的 Docker 作业。
 16. **出网走代理：安装和核心**：安装脚本检测；两份 compose 给核心传入 `WONTON_EGRESS_PROXY`、`WONTON_EGRESS_PROXY_DETECTED` 并加 `host.docker.internal:host-gateway`；核心显式用这个地址，同一个 PR 清空核心的代理变量（#121 里核心的那部分）。之后 vane 删掉写死的代理地址。
-17. **代登录只信任核心的地址**（ADR-0023 的“只信任核心的地址”，不依赖出网走代理的几项）：`plugin check` 的提醒和检查、局域网端口的开关 `lan_webui`、清单放开 `webui` 的端口。之后 navidrome 等 `sso: proxy` 的插件改配置。
 
 v0.2（ADR-0017）的部分同样每项一个 PR：
 
