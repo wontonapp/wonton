@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -151,8 +152,15 @@ private fun Messages(
     val newestFirst = timeline.items.asReversed()
     // 新消息插在第 0 项时，列表保持原来看到的那条不动，新消息落在屏幕下面；原本就在底部时滚过去。
     val newest = timeline.items.lastOrNull()?.id
+    var followed by remember { mutableStateOf(newest) }
     LaunchedEffect(newest) {
-        if (newest != null && listState.firstVisibleItemIndex <= 1) listState.animateScrollToItem(0)
+        if (newest == null) return@LaunchedEffect
+        // 这里可能先于列表测量新条目运行：那时第 0 项还是旧的那条，滚过去等于没动，新消息留在屏幕下面（实测回复较长时）。
+        withFrameNanos { }
+        // 一批到了几条时，上次滚到的那条不在第 1 项。滚动被下一条打断时不更新，下一条还会跟上。
+        val arrived = newestFirst.indexOfFirst { it.id == followed }.coerceAtLeast(1)
+        if (listState.firstVisibleItemIndex <= arrived) listState.animateScrollToItem(0)
+        followed = newest
     }
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
     LaunchedEffect(listState, roomId) {
@@ -183,7 +191,8 @@ private fun Messages(
             )
         }
         if (timeline.backPagination != BackPagination.REACHED_START) {
-            item(key = "paginating") {
+            // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
+            item(key = if (newestFirst.isEmpty()) "loading" else "paginating") {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             }
         }
