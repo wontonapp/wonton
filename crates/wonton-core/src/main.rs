@@ -144,7 +144,7 @@ async fn serve() -> anyhow::Result<()> {
     );
     manager.restore().await.context("恢复已安装的插件")?;
     manager.spawn_lan_monitor();
-    manager.spawn_relay_reconcile();
+    manager.spawn_egress_reconcile();
     preinstall(&cfg, manager.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));

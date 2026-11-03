@@ -3,7 +3,8 @@
 //! - 这里：注入给插件的环境变量和插值变量；
 //! - [`healthcheck`]：改写健康检查，让它不走代理；
 //! - [`settings`]、[`address`]：用哪个代理；
-//! - [`gost`]、[`lists`]、[`relay`]：出口容器，它的配置和名单，核心怎么管它。
+//! - [`gost`]、[`lists`]、[`relay`]：出口容器，它的配置和名单，核心怎么管它；
+//! - [`switch`]：第一次配上或取消代理时重建出网插件。
 
 pub mod address;
 pub mod gost;
@@ -11,6 +12,7 @@ pub mod healthcheck;
 pub mod lists;
 mod relay;
 pub mod settings;
+mod switch;
 
 use std::collections::BTreeSet;
 

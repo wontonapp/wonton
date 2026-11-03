@@ -14,6 +14,7 @@ mod check;
 mod configs;
 mod egress;
 mod egress_relay;
+mod egress_switch;
 mod github;
 mod gpu;
 mod health;

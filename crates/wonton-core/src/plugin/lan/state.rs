@@ -74,7 +74,7 @@ impl Lan {
         self.memory().rebuilding.insert(id.clone())
     }
 
-    pub(super) fn end(&self, id: &PluginId) {
+    pub(in crate::plugin) fn end(&self, id: &PluginId) {
         self.memory().rebuilding.remove(id);
     }
 

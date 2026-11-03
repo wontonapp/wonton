@@ -36,6 +36,8 @@ pub struct Egress {
     detected: Option<ProxyAddress>,
     /// 出口容器一次只改一处：同时安装的两个插件不能同时建它、改名单。
     pub(super) pass: tokio::sync::Mutex<()>,
+    /// 改设置一次做一个：要重启插件，可能很久。
+    pub(super) applying: tokio::sync::Mutex<()>,
     /// 宿主所在网段，局域网检测时更新；还没检测过时为空。
     host_cidrs: Mutex<Option<Vec<IpNet>>>,
 }

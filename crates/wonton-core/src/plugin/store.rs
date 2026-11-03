@@ -40,6 +40,9 @@ pub struct InstalledRecord {
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
     #[serde(default)]
     pub lan_webui: bool,
+    /// 容器的环境变量里有代理变量（ADR-0023）：和现在的设置对不上时要重建。
+    #[serde(default)]
+    pub proxied: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oidc_client_secret: Option<String>,
     pub installed_at: u64,
@@ -359,6 +362,7 @@ mod tests {
     fn record(id: &str) -> InstalledRecord {
         InstalledRecord {
             lan_webui: false,
+            proxied: false,
             id: PluginId::parse(id).unwrap(),
             version: "1.0.0".into(),
             source: "services: {}".into(),

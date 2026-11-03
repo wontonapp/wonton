@@ -109,7 +109,7 @@ fn localpart(user_id: &str) -> Option<&str> {
     user_id.strip_prefix('@')?.split_once(':').map(|(l, _)| l)
 }
 
-fn is_bot(manifest: &Manifest) -> bool {
+pub(super) fn is_bot(manifest: &Manifest) -> bool {
     manifest.permissions.contains(&Permission::MatrixBot)
 }
 

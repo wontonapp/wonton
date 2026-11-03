@@ -103,14 +103,15 @@ impl PluginManager {
         }
     }
 
-    /// 在后台核对：拉 gost 的镜像可能要等很久，不能拖慢核心启动。没核对成的，安装出网插件时会再做一次，原因如实报给主人。
-    pub fn spawn_relay_reconcile(self: &std::sync::Arc<Self>) {
+    /// 在后台核对：拉 gost 的镜像、重启插件可能要等很久，不能拖慢核心启动。没核对成的，安装出网插件时会再做一次，原因如实报给
+    /// 主人。
+    pub fn spawn_egress_reconcile(self: &std::sync::Arc<Self>) {
         let this = std::sync::Arc::downgrade(self);
         tokio::spawn(async move {
             let Some(manager) = this.upgrade() else {
                 return;
             };
-            if let Err(e) = manager.reconcile_relay().await {
+            if let Err(e) = manager.apply_egress().await {
                 tracing::warn!(error = %e, "核对出口容器失败");
             }
         });

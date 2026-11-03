@@ -102,6 +102,8 @@ struct Resources {
     exec_handler: Option<ExecHandler>,
     /// 设了时本地没有镜像，拉取时 Docker 回这个错误；没设时镜像都在本地。
     pull_error: Option<String>,
+    /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
+    pull_spared: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
     /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
@@ -272,6 +274,13 @@ impl FakeDocker {
     /// 之后镜像都不在本地、拉取时 Docker 回 `message`（500）；`None` 恢复成镜像都在本地。
     pub fn fail_pulls(&self, message: Option<&str>) {
         self.lock().pull_error = message.map(str::to_owned);
+    }
+
+    /// 同 [`Self::fail_pulls`]，但名字里有 `spared` 的镜像还在本地。
+    pub fn fail_pulls_except(&self, spared: &str, message: &str) {
+        let mut docker = self.lock();
+        docker.pull_error = Some(message.to_owned());
+        docker.pull_spared = Some(spared.to_owned());
     }
 
     /// 暂停回应（请求照收），直到丢掉返回的守卫，比如让卸载停在半路。
@@ -527,7 +536,7 @@ fn inspect_container(docker: &Resources, name: &str) -> Response {
     json_reply(
         StatusCode::OK,
         json!({"Name": format!("/{name}"), "State": state, "Image": created["Image"],
-               "Config": {"Image": created["Image"], "Labels": created["Labels"]},
+               "Config": {"Image": created["Image"], "Labels": created["Labels"], "Env": created["Env"]},
                "HostConfig": created["HostConfig"],
                "NetworkSettings": {"Networks": networks}}),
     )
@@ -565,7 +574,13 @@ fn others(
             StatusCode::OK,
             json!({"Arch": "x86_64", "Version": "29.0.0"}),
         ),
-        (&Method::GET, ["images", .., "json"]) if docker.pull_error.is_some() => {
+        (&Method::GET, ["images", image @ .., "json"])
+            if docker.pull_error.is_some()
+                && !docker
+                    .pull_spared
+                    .as_ref()
+                    .is_some_and(|spared| image.join("/").contains(spared.as_str())) =>
+        {
             json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
         }
         (&Method::GET, ["info"]) => {

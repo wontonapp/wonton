@@ -216,6 +216,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
         .unwrap()
         .save(&InstalledRecord {
             lan_webui: false,
+            proxied: false,
             id: good.clone(),
             version: "1.0.0".into(),
             source: app("app.good"),

@@ -13,12 +13,12 @@ use tokio::time::Instant;
 use wonton_protocol::{LanChoice, LanFailure};
 
 use super::select::{self, Bound, Host, Problem};
-use super::{LanSpec, published};
+use super::{LanGrant, LanSpec, published};
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
 use crate::plugin::manifest::PluginId;
 use crate::plugin::package::PluginPackage;
-use crate::plugin::render::render;
+use crate::plugin::render::{Deployment, InstallContext, render};
 use crate::plugin::store::InstalledRecord;
 
 /// 多久检测一次。地址很少变，DHCP 换了地址最多这么久跟上。
@@ -196,7 +196,7 @@ impl PluginManager {
     }
 
     /// 插件还在运行或异常（没在安装、卸载）时记为正在重建，返回记上了没有。和卸载一样在插件表的锁里判断。
-    pub(super) fn begin_rebuild(&self, id: &PluginId) -> bool {
+    pub(in crate::plugin) fn begin_rebuild(&self, id: &PluginId) -> bool {
         let plugins = self.plugins.write().expect("插件表锁中毒");
         let idle = matches!(
             plugins.get(id).map(|e| &e.status),
@@ -234,33 +234,55 @@ impl PluginManager {
         addresses: &[IpAddr],
         services: &BTreeSet<&str>,
     ) -> Result<(), InstallError> {
+        let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
+        let ctx = self.rebuild_context(package, record, Some(grant)).await?;
+        let mut plan = render(package, &ctx)?;
+        plan.containers
+            .retain(|c| services.contains(c.service.as_str()));
+        self.replace_containers(&ctx, plan).await
+    }
+
+    /// 重建已装插件的容器时的上下文：和安装时一样，凭据用存下的。Bot 的 Matrix 变量另外填（见 [`crate::plugin::egress`]）。
+    pub(in crate::plugin) async fn rebuild_context(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+        lan: Option<LanGrant>,
+    ) -> Result<InstallContext, InstallError> {
         let manifest = &package.manifest;
         let generated = self.check_secrets(manifest).await?;
         let secret = record.oidc_client_secret.as_deref();
         let mut ctx = self.install_context(manifest, secret, generated).await?;
         ctx.gpu = self.gpu_grant(manifest).await?;
         ctx.models = self.stored_model_vars(package)?;
-        let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
-        if let Some(network) = &grant.network
+        if let Some(network) = lan.as_ref().and_then(|grant| grant.network.as_ref())
             && self.engine.network_reach(network).await?.is_none()
         {
             let labels = self.cfg.instance.labels(&manifest.id);
             self.engine.create_lan_network(network, &labels).await?;
         }
-        ctx.lan = Some(grant);
+        ctx.lan = lan;
         let network = self.cfg.instance.network(&ctx.slug);
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
         ctx.core_address = self.core_address_var(manifest, &network).await?;
-        let mut plan = render(package, &ctx)?;
-        plan.containers
-            .retain(|c| services.contains(c.service.as_str()));
+        Ok(ctx)
+    }
+
+    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。
+    pub(in crate::plugin) async fn replace_containers(
+        &self,
+        ctx: &InstallContext,
+        mut plan: Deployment,
+    ) -> Result<(), InstallError> {
         for container in &plan.containers {
             self.engine
                 .ensure_image(&container.image, container.pull_policy)
                 .await?;
+        }
+        for container in &plan.containers {
             self.engine.remove_container(&container.name).await?;
         }
-        self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
+        self.rewrite_image_healthchecks(ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
         self.start_containers(&plan, &mut Undo::default(), deadline)
             .await?;

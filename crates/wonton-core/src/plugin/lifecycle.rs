@@ -218,6 +218,7 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
+            proxied: ctx.egress.is_some(),
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
             origin: package.origin.clone(),
