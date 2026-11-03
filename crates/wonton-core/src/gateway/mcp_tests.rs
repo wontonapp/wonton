@@ -352,6 +352,13 @@ async fn only_paired_devices_answer_confirmations() {
         (status, kind.as_deref()),
         (StatusCode::BAD_REQUEST, Some("invalid_input"))
     );
+    // 比核心新的 App 发来不认识的回答：不算同意，卡片还等着。
+    let newer = r#"{"answer": "allow_forever"}"#;
+    let (status, kind, _) = home.send(&path, newer, Some(device), &[]).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::BAD_REQUEST, Some("invalid_input"))
+    );
     assert!(home.cards.states(&card.id).is_empty(), "还没有人回答");
 
     let (status, _, reply) = home.send(&path, approve, Some(device), &[]).await;

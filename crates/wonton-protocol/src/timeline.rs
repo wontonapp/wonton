@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::FileId;
+use crate::{ConfirmationView, FileId};
 
 /// 一批时间线变化，以及向前翻页的状态。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +151,11 @@ pub enum MessageContent {
     Image {
         image: ImageContent,
     },
+    /// 确认卡片（ADR-0016）。只有核心账号发的才是卡片，别人发的同样结构的内容是 [`MessageContent::Text`]。卡片靠编辑
+    /// 消息更新状态，[`TimelineMessage::edited`] 总是假。
+    Confirmation {
+        view: ConfirmationView,
+    },
     /// 端到端加密的消息，本设备还没有解密密钥；拿到密钥后核心会把它换成解密后的内容。
     Undecryptable,
     /// 已撤回。
@@ -209,6 +214,9 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
+    use crate::{
+        Answer, CardChoice, CardLine, ChatFailure, ChatProblem, ConfirmationCard, ConfirmationState,
+    };
 
     /// 契约：时间线增量的每种变化和每种条目都能经 JSON 往返；媒体句柄不进 Debug 输出。
     #[test]
@@ -259,6 +267,7 @@ mod tests {
                 }),
             ),
             item("4", message(MessageContent::Undecryptable)),
+            item("4a", message(confirmation())),
             item("5", TimelineContent::ReadMarker),
             item(
                 "6",
@@ -299,6 +308,34 @@ mod tests {
             !format!("{update:?}").contains("mxc://"),
             "Debug 不能输出媒体句柄"
         );
+    }
+
+    fn confirmation() -> MessageContent {
+        MessageContent::Confirmation {
+            view: ConfirmationView {
+                card: ConfirmationCard {
+                    id: "abc".into(),
+                    state: ConfirmationState::Uncertain {
+                        message: "连接断了".into(),
+                    },
+                    title: "Hermes 想安装 Grafana".into(),
+                    lines: vec![CardLine {
+                        text: "能访问 Docker".into(),
+                        emphasis: true,
+                    }],
+                    choices: vec![CardChoice {
+                        answer: Answer::Approve,
+                        label: "安装".into(),
+                    }],
+                    expires_at_ms: 1_793_000_600_000,
+                },
+                sending: Some(Answer::Approve),
+                problem: Some(ChatProblem {
+                    reason: ChatFailure::TransportUnavailable,
+                    message: "连不上".into(),
+                }),
+            },
+        }
     }
 
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {

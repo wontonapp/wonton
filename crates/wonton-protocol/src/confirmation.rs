@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ChatProblem;
+
 /// 消息内容里放卡片的字段。
 pub const CARD_FIELD: &str = "app.wonton.confirmation";
 
@@ -54,12 +56,18 @@ pub struct CardChoice {
 }
 
 /// 主人的回答。
+///
+/// 核心和 App 分开升级（ADR-0012）：核心可能给出这个 App 不认识的按钮，App 不显示它，卡片上别的按钮照常能点；核心
+/// 收到不认识的回答返回 400，绝不当成同意。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     Approve,
     Reject,
+    /// 不认识的回答，不能发给核心。
+    #[serde(other)]
+    Unknown,
 }
 
 /// 确认的状态。
@@ -97,6 +105,20 @@ pub struct ConfirmationReply {
     pub state: ConfirmationState,
 }
 
+/// 时间线里的一张确认卡片，发件人已经核对过是核心账号（ADR-0016）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ConfirmationView {
+    /// 客户端核心已经算上了自己知道的：期限过了没等到核心的更新，`state` 就是过期；核心收下回答后，`state` 不等卡片
+    /// 更新就变。`choices` 只有现在能回答的按钮，不等回答时为空。
+    pub card: ConfirmationCard,
+    /// 正在发给核心的回答。这时按钮还在，但不能点。
+    pub sending: Option<Answer>,
+    /// 最近一次回答没成的原因。连接断了、核心出错时按钮还在，可以再点；核心不收（回答过了、没有这个确认）时按钮
+    /// 消失，原因是 `InvalidInput`。
+    pub problem: Option<ChatProblem>,
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -123,5 +145,26 @@ mod tests {
             json!({"type": "uncertain", "message": "x"})
         );
         assert_eq!(answer_path("abc"), "/_wonton/confirmations/abc");
+    }
+
+    /// 契约：核心比 App 新时，卡片多了不认识的按钮和字段也能解析，那个按钮落到 [`Answer::Unknown`]。
+    #[test]
+    fn a_newer_core_does_not_break_the_card() {
+        let card: ConfirmationCard = serde_json::from_value(json!({
+            "id": "abc",
+            "state": {"type": "pending"},
+            "title": "Hermes 想用 Grafana 的 query",
+            "lines": [],
+            "choices": [
+                {"answer": "approve", "label": "允许"},
+                {"answer": "allow_window", "label": "30 分钟内都允许"},
+                {"answer": "reject", "label": "拒绝"},
+            ],
+            "expires_at_ms": 1,
+            "window": {"expires_at_ms": 2},
+        }))
+        .unwrap();
+        let answers: Vec<_> = card.choices.iter().map(|choice| choice.answer).collect();
+        assert_eq!(answers, [Answer::Approve, Answer::Unknown, Answer::Reject]);
     }
 }

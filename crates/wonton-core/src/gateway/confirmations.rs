@@ -50,6 +50,7 @@ pub async fn answer(
             let status = match e {
                 AnswerError::NotFound => StatusCode::NOT_FOUND,
                 AnswerError::AlreadyAnswered | AnswerError::Expired => StatusCode::CONFLICT,
+                AnswerError::UnknownAnswer => StatusCode::BAD_REQUEST,
             };
             error_response(status, e.kind(), &e.to_string())
         }

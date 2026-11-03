@@ -190,6 +190,9 @@ impl ChatLink {
                 Ok(())
             }
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
+            Action::AnswerConfirmation { .. } => Err(CoreError::NotReady {
+                reason: "这个版本的客户端核心不支持回答确认卡片".to_owned(),
+            }),
             Action::SetPushEndpoint { .. }
             | Action::PushUnavailable { .. }
             | Action::CreateSession { .. }

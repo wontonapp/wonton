@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{FileId, ImageUpload, InstallPreview, PushEndpoint, SecretString};
+use crate::{Answer, FileId, ImageUpload, InstallPreview, PushEndpoint, SecretString};
 
 /// 原生壳发给客户端核心的用户操作。
 ///
@@ -66,6 +66,11 @@ pub enum Action {
     RecoverEncryption { recovery_key: SecretString },
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
+    /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用
+    /// [`CardChoice::answer`](crate::CardChoice::answer)。核心经隧道发出去，进展和结果都在时间线里的卡片上
+    /// （[`ConfirmationView`](crate::ConfirmationView)），不进 `ChatViewModel::problem`。这张卡片已经在发、或者已经答完时
+    /// 什么都不做。[`Answer::Unknown`] 返回 `InvalidInput`，家里的服务器还没连上时返回 `NotReady`。
+    AnswerConfirmation { id: String, answer: Answer },
 
     // 推送（ADR-0003 的“设计：加密推送”）。进展在 `ChatViewModel::push` 里。
     /// 平台给了（或者换了）推送地址。核心经隧道把它登记给家里的服务器，再在 Matrix 上注册指向家里推送代理的

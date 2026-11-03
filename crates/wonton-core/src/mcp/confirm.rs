@@ -65,6 +65,8 @@ pub enum AnswerError {
     AlreadyAnswered,
     #[error("这个确认已经过期")]
     Expired,
+    #[error("不认识这个回答")]
+    UnknownAnswer,
 }
 
 impl AnswerError {
@@ -73,6 +75,7 @@ impl AnswerError {
             Self::NotFound => "not_found",
             Self::AlreadyAnswered => "already_answered",
             Self::Expired => "expired",
+            Self::UnknownAnswer => "invalid_input",
         }
     }
 }
@@ -167,7 +170,8 @@ impl Confirmations {
                 self.publish(&id).await;
                 Ok(Ticket { id })
             }
-            Ok(Ok(Answer::Reject)) => {
+            // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
+            Ok(Ok(Answer::Reject | Answer::Unknown)) => {
                 self.publish(&id).await;
                 Err(Refusal::Rejected)
             }
@@ -180,6 +184,11 @@ impl Confirmations {
 
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。
     pub fn answer(&self, id: &str, answer: Answer) -> Result<ConfirmationState, AnswerError> {
+        let state = match answer {
+            Answer::Approve => ConfirmationState::Running,
+            Answer::Reject => ConfirmationState::Rejected,
+            Answer::Unknown => return Err(AnswerError::UnknownAnswer),
+        };
         let mut slots = self.lock();
         let slot = slots.get_mut(id).ok_or(AnswerError::NotFound)?;
         if slot.card.state == ConfirmationState::Expired
@@ -189,10 +198,6 @@ impl Confirmations {
         }
         let Some(waiter) = slot.waiter.take() else {
             return Err(AnswerError::AlreadyAnswered);
-        };
-        let state = match answer {
-            Answer::Approve => ConfirmationState::Running,
-            Answer::Reject => ConfirmationState::Rejected,
         };
         // 等待的一方已经不在（只会在核心退出时发生）：当作过期。
         if waiter.send(answer).is_err() {

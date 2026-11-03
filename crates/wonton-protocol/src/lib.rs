@@ -29,7 +29,7 @@ pub use chat::{
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
-    ConfirmationReply, ConfirmationState, answer_path,
+    ConfirmationReply, ConfirmationState, ConfirmationView, answer_path,
 };
 pub use error::CoreError;
 pub use file::{

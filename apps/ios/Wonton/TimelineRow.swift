@@ -69,6 +69,8 @@ private struct MessageBubble: View {
             Text(body).textSelection(.enabled)
         case let .image(image):
             MediaImage(image: image, core: core)
+        case let .confirmation(view):
+            Text(view.card.title)
         case .undecryptable:
             Label("无法解密：本设备还没有这条消息的密钥", systemImage: "lock.slash").font(.footnote)
         case .redacted:

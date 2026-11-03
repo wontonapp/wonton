@@ -170,6 +170,7 @@ private fun MessageBody(body: MessageContent, core: ClientCore) {
     when (body) {
         is MessageContent.Text -> SelectionContainer { Text(body.body) }
         is MessageContent.Image -> MessageImage(body.image, core)
+        is MessageContent.Confirmation -> Text(body.view.card.title)
         MessageContent.Undecryptable -> Text("无法解密：本设备还没有这条消息的密钥", fontStyle = FontStyle.Italic)
         MessageContent.Redacted -> Text("消息已撤回", fontStyle = FontStyle.Italic)
         is MessageContent.Unsupported -> Text("暂不支持显示的消息（${body.kind}）", fontStyle = FontStyle.Italic)
