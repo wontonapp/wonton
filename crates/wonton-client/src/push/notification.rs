@@ -58,6 +58,7 @@ impl PushLink {
                 .unwrap_or_else(|| "未知的发送者".to_owned()),
             room_name: payload.room_name.clone(),
             content,
+            confirmation: None,
         };
         let unavailable =
             |reason, message| notification(PushContent::Unavailable { reason, message });

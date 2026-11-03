@@ -27,8 +27,8 @@ pub use action::Action;
 pub use appearance::{AppearanceProblem, AppearanceViewModel, Rgb, ThemeColors};
 pub use chat::{
     ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, DeviceVerification,
-    EncryptionStatus, ImageThumbnail, ImageUpload, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow,
+    EncryptionStatus, ImageThumbnail, ImageUpload, PendingConfirmation, RecoveryStatus,
+    RoomMembership, RoomPreview, RoomRow,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
@@ -63,7 +63,7 @@ pub use plugin::{
     PluginTaskState, PluginTrust, PluginsViewModel, StoreFailure, StoreItem, StoreListing,
     StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
 };
-pub use push::{PushContent, PushEndpoint, PushNotification, PushStatus};
+pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
 pub use timeline::{

@@ -88,6 +88,8 @@ impl ChatLink {
             rooms: Vec::new(),
             problem: None,
             push: PushStatus::NoEndpoint,
+            pending_confirmations: Vec::new(),
+            settled_confirmations: Vec::new(),
         });
         let chat = Arc::new(Self {
             runtime: runtime.clone(),

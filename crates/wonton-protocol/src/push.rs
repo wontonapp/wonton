@@ -54,6 +54,18 @@ pub struct PushNotification {
     /// 房间名；私聊时为空，标题用发送者。
     pub room_name: Option<String>,
     pub content: PushContent,
+    /// 这条消息是确认卡片时才有。
+    pub confirmation: Option<PushConfirmation>,
+}
+
+/// 通知对应的确认卡片：每张卡片一条通知，壳按它撤下答完和过期的。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PushConfirmation {
+    /// 卡片 ID。
+    pub id: String,
+    /// 过期的时刻，Unix 毫秒。
+    pub expires_at_ms: u64,
 }
 
 /// 通知的正文。
@@ -122,6 +134,10 @@ mod tests {
                 reason: ChatFailure::NotReady,
                 message: "还没收到这条消息的房间密钥".into(),
             },
+            confirmation: Some(PushConfirmation {
+                id: "card".into(),
+                expires_at_ms: 1_793_000_000_000,
+            }),
         };
         assert_eq!(round_trip(&notification), notification);
     }

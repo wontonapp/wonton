@@ -21,6 +21,22 @@ pub struct ChatViewModel {
     pub problem: Option<ChatProblem>,
     /// 推送：App 被杀或锁屏时，新消息能不能弹出通知。
     pub push: PushStatus,
+    /// 等主人回答的确认卡片，最早到期的在前。主人不在卡片所在的房间时，壳提示他去回答。
+    pub pending_confirmations: Vec<PendingConfirmation>,
+    /// 这台设备知道已经不用回答的卡片 ID：壳撤下它们的通知。
+    pub settled_confirmations: Vec<String>,
+}
+
+/// 一张等主人回答的确认卡片。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PendingConfirmation {
+    /// 卡片 ID。
+    pub id: String,
+    /// 卡片所在的房间。
+    pub room_id: String,
+    /// 卡片的标题，如“Hermes 想安装 文件搜索”。
+    pub title: String,
 }
 
 /// 本设备的 Matrix 账号。
@@ -282,6 +298,12 @@ mod tests {
                 message: "加入房间失败".into(),
             }),
             push: PushStatus::Registering,
+            pending_confirmations: vec![PendingConfirmation {
+                id: "card".into(),
+                room_id: "!notices:home.example".into(),
+                title: "Hermes 想安装 文件搜索".into(),
+            }],
+            settled_confirmations: vec!["older-card".into()],
         };
         assert_eq!(round_trip(&view_model), view_model);
 
