@@ -140,8 +140,8 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   它们按摘要固定，Docker 的镜像加速和代理照常起作用。
 - 官方插件包的文件按 sha256 核对。GitHub 不通时，依次从 jsDelivr（`cdn.jsdelivr.net/gh/<owner>/<repo>@<提交>/<路径>`）和主人
   配置的镜像取。
-- 社区插件必须连得上 GitHub：它们没有可信的摘要，只认和 GitHub 之间的 TLS 连接。主人可以给核心配 HTTP(S) 代理
-  （`HTTPS_PROXY`）：TLS 端到端，代理改不了内容。不用那些改写地址的“GitHub 加速”服务，它们能返回任意内容。
+- 社区插件必须连得上 GitHub：它们没有可信的摘要，只认和 GitHub 之间的 TLS 连接。主人可以配 HTTP(S) 代理（ADR-0023，
+  核心和出网插件用同一个地址）：TLS 端到端，代理改不了内容。不用那些改写地址的“GitHub 加速”服务，它们能返回任意内容。
 - 超时按国内的情况放宽：magpie 记录过国内直连 `api.github.com`，搜一页要 30 秒左右。搜索限 60 秒，单个文件 20 秒；列表先给
   缓存，再在后台更新。
 

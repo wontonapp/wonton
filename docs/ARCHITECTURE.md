@@ -58,6 +58,7 @@ flowchart LR
 | --- | --- | --- |
 | `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。唯一挂载 Docker socket 的容器。 |
 | `tusd` | 核心组件 | 设备上传文件的可续传接口（tus），只在核心的私有网络里，鉴权和编号由核心决定（ADR-0020）。 |
+| `wonton-egress` | 核心组件（配了代理才有） | 出口容器：把出网插件的请求转给主人的代理（ADR-0023）。 |
 | `tuwunel` | 系统插件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
 | `hermes` | 默认插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。核心启动后自动装一次，主人卸掉就不再装（ADR-0007）。 |
 | `magpie` | 系统插件（可替换） | 模型网关：provider 和 key 只配一次，所有插件共用。 |
@@ -213,6 +214,7 @@ scripts/             CI 与开发脚本
 | 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
 | OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |
 | 可续传上传 | tus 1.0、tusd | MIT，独立容器 | 已定（ADR-0020） |
+| 出口代理 | gost | MIT，独立容器 | 已定（ADR-0023） |
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |

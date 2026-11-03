@@ -596,7 +596,7 @@ M2 及以后：家人（专用密码按人分，`gateway` 的 `{user}` 跟着变
 - **中继用 iroh。** 见“中继”。公网一侧等于重写 frps。
 - **中继解开 TLS 再转发（Caddy、Traefik、Pangolin 这类）。** 私钥要放在我们这边，违背方向 2。
 - **PowerDNS 的 RFC 2136 + 按 zone 的 TSIG。** 见“家名服务和 DNS”。写 A 记录时校验不了内容。
-- **`lan.ports` 放开 `webui` 端口（调研报告的建议）。** 没有 TLS，密码在 Wi-Fi 上明文；局域网设备绕过网关，`sso: proxy` 的前提不成立；Bitwarden 这类强制 HTTPS 的 App 还是用不了。
+- **`lan.ports` 放开 `webui` 端口（调研报告的建议）。** 没有 TLS，密码在 Wi-Fi 上明文；局域网设备绕过网关，`sso: proxy` 的前提不成立；Bitwarden 这类强制 HTTPS 的 App 还是用不了。这条限制已被 ADR-0023 取消：要不要接受这个风险由主人决定，第三方 App 的推荐做法仍是这篇的 `clients`。
 - **局域网里用 mDNS（`.local`）。** ADR-0019 已经否掉，也拿不到公共证书。
 - **公共的通配 DNS（sslip.io、nip.io）。** 依赖第三方，也拿不到我们名下的通配符证书。
 - **IP 写进名字（Plex）。** 主人选了固定名字。
