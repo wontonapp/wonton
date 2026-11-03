@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: 构建缓存目录（runner 主机上的共享目录，见 ci.yml）
-        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/android" >> "$GITHUB_ENV"
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/android" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

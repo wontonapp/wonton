@@ -36,7 +36,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: 构建缓存目录
-        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/workspace" >> "$GITHUB_ENV"
+        # 按 runner 分开：同一台主机上的几个 runner 共用 WONTON_CI_CACHE，同时跑的作业共用一个 target 目录时，
+        # 实测出现过测试编进了另一个分支的代码（2026-11-03，#139 编出了 file-client 分支的 wonton-protocol）。
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/workspace" >> "$GITHUB_ENV"
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
       - name: 格式
@@ -57,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: 构建缓存目录（和 Rust 作业分开，两者能同时编译）
-        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/docker" >> "$GITHUB_ENV"
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/docker" >> "$GITHUB_ENV"
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
       - name: 确认 Docker 可用
