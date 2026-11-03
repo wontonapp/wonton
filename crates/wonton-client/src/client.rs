@@ -103,6 +103,9 @@ impl ClientCore {
             Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade => Err(core_upgrade_unsupported()),
+            Action::SetAccentColor { .. } | Action::ResetAccentColor => {
+                Err(appearance_unsupported())
+            }
             chat => self.chat.dispatch(chat),
         }
     }
@@ -357,6 +360,13 @@ impl ClientCore {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
+    }
+}
+
+/// 外观的接口同样先于实现合并（ADR-0026）。
+fn appearance_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持外观设置".into(),
     }
 }
 

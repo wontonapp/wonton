@@ -9,6 +9,7 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod appearance;
 mod chat;
 mod confirmation;
 mod core_upgrade;
@@ -23,6 +24,7 @@ mod session;
 mod timeline;
 
 pub use action::Action;
+pub use appearance::{AppearanceProblem, AppearanceViewModel, Rgb, ThemeColors};
 pub use chat::{
     ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, DeviceVerification,
     EncryptionStatus, ImageThumbnail, ImageUpload, RecoveryStatus, RoomMembership, RoomPreview,

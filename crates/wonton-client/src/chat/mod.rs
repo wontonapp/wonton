@@ -223,7 +223,9 @@ impl ChatLink {
             | Action::DismissFileProblem
             | Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
-            | Action::CancelCoreUpgrade => Err(invalid("不是聊天操作")),
+            | Action::CancelCoreUpgrade
+            | Action::SetAccentColor { .. }
+            | Action::ResetAccentColor => Err(invalid("不是聊天操作")),
         }
     }
 

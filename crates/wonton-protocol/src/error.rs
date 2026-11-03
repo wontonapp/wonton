@@ -11,7 +11,7 @@ pub enum CoreError {
     /// 操作的参数不满足要求，或引用了不存在的对象。
     #[error("输入非法：{reason}")]
     InvalidInput { reason: String },
-    /// 读写本机存储失败（设备密钥、连接信息、聊天会话）。
+    /// 读写本机存储失败（设备密钥、连接信息、聊天会话、外观设置）。
     #[error("本机存储读写失败：{reason}")]
     Storage { reason: String },
     /// 前置条件不满足：聊天还没登录、房间还没同步到本机等。
