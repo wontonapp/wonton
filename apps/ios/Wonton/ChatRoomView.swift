@@ -9,12 +9,10 @@ struct ChatRoomView: View {
     @State private var timeline: TimelineModel
     @State private var presenter: RoomPresenter
     @State private var draft = ""
-    @State private var isAtBottom = true
-    @State private var followingScrolls = 0
+    @State private var pin = BottomPin()
+    @State private var pageAnchor: String?
     @State private var photo: PhotosPickerItem?
     @State private var isPickingFiles = false
-
-    private static let bottom = "bottom"
 
     init(model: ChatModel, roomId: String, title: String) {
         self.model = model
@@ -51,7 +49,7 @@ struct ChatRoomView: View {
         .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
             switch $0 {
             case let .success(urls):
-                isAtBottom = true
+                pin.pin()
                 for url in urls { model.files.upload(url, room: roomId) }
             case let .failure(error):
                 model.rejection = error.localizedDescription
@@ -61,56 +59,69 @@ struct ChatRoomView: View {
 
     private var messages: some View {
         ScrollViewReader { scroller in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+            // 不用 ScrollView + LazyVStack：行高相差悬殊时（一行和六十行）它的内容高度全靠估算，同样的数据几毫秒内差出几千点，
+            // 滚动位置落在没有画任何行的地方，整屏空白（iOS 26.5 模拟器实测）。List 量过的行高不再变。
+            List {
+                // 这一行常驻，只换内容：List 的结构变了（条件行增删）会把滚动位置重置到顶上（iOS 26.5 模拟器实测）。
+                Group {
                     if timeline.backPagination != .reachedStart {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                             // 滚到顶上时（这一行出现）加载更早的消息；一页加载完，这一行还在就再加载一页。
                             .task(id: PageRequest(timeline)) {
+                                // 第一批消息到时这一行闪现一下，紧接着就滚到底了：停得住才算翻到了顶，滚走时这里被取消。
+                                guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
                                 if timeline.isLoaded, timeline.backPagination == .idle {
+                                    pageAnchor = oldestEvent
                                     model.send(.paginateBackwards(roomId: roomId))
                                 }
                             }
+                            .onDisappear { pageAnchor = nil }
+                    } else {
+                        Color.clear.frame(height: 1)
                     }
-                    ForEach(timeline.items, id: \.id) { item in
-                        TimelineRow(
-                            item: item, core: model.core, showsSender: !isDirect,
-                            retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
-                            cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
-                            answer: { model.send(.answerConfirmation(id: $0, answer: $1)) }
-                        )
-                        .id(item.id)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.bottom)
-                        .onAppear { isAtBottom = true }
-                        // 跟随滚动的途中这一行被新消息挤出屏幕，不算主人翻走了：不然紧接着到的下一条就不跟随。
-                        .onDisappear { if followingScrolls == 0 { isAtBottom = false } }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+                // 进房间时列表从头排起，这一行一定会出现。
+                .background(EnclosingScrollView { pin.attach($0) })
+                .timelineListRow()
+                ForEach(timeline.items, id: \.id) { item in
+                    TimelineRow(
+                        item: item, core: model.core, showsSender: !isDirect,
+                        retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
+                        cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
+                        answer: { model.send(.answerConfirmation(id: $0, answer: $1)) }
+                    )
+                    .id(item.id)
+                    .timelineListRow()
+                }
             }
-            .defaultScrollAnchor(.bottom)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 1)
             .scrollDismissesKeyboard(.interactively)
+            // 翻页把更早的消息插到最上面，List 给的位置不对（iOS 26.5 模拟器实测差了一千多点）：把原来最上面那条留在原位。
+            // 第一行变了不一定是翻页（日期分隔线的 id 会重新生成），所以只在翻页途中做。这条离末尾很远，条目变少也不会越界。
+            .onChange(of: timeline.items.first?.id) {
+                guard let pageAnchor, !pin.isPinned else { return }
+                DispatchQueue.main.async { scroller.scrollTo(pageAnchor, anchor: .top) }
+            }
             .onChange(of: timeline.items.last?.id) { _, last in
-                guard last != nil else { return }
-                // 这里先于列表测量新条目运行：当场滚动只滚到估算的高度，长回复的后半截留在输入框下面（iOS 26.5 模拟器实测）。
-                // 下一轮才滚，那时这一行可能已被挤出屏幕，所以先记下判断。往上翻着看历史时不打扰。
-                if isAtBottom {
-                    followingScrolls += 1
-                    DispatchQueue.main.async {
-                        withAnimation {
-                            scroller.scrollTo(Self.bottom, anchor: .bottom)
-                        } completion: {
-                            followingScrolls -= 1
-                        }
-                    }
-                }
-                model.send(.markRoomRead(roomId: roomId))
+                if last != nil { model.send(.markRoomRead(roomId: roomId)) }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
+                pin.stick()
             }
         }
+    }
+
+    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
+    private var oldestEvent: String? {
+        timeline.items.first { item in
+            switch item.content {
+            case .dateDivider, .readMarker, .timelineStart: false
+            default: true
+            }
+        }?.id
     }
 
     private var isDirect: Bool {
@@ -131,7 +142,7 @@ struct ChatRoomView: View {
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
             Button("发送") {
-                isAtBottom = true
+                pin.pin()
                 model.send(.sendText(roomId: roomId, body: draft))
                 draft = ""
             }
@@ -152,11 +163,21 @@ struct ChatRoomView: View {
             let upload = try await Task.detached(priority: .userInitiated) {
                 try PhotoUpload.make(data: data, type: type)
             }.value
-            isAtBottom = true
+            pin.pin()
             model.send(.sendImage(roomId: roomId, image: upload))
         } catch {
             model.rejection = String(describing: error)
         }
+    }
+}
+
+private extension View {
+    func timelineListRow() -> some View {
+        // 默认样式的按钮放在 List 的行里，点这一行任何地方都会触发。
+        buttonStyle(.borderless)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
     }
 }
 

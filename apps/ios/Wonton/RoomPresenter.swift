@@ -3,7 +3,7 @@ import QuickLook
 import SwiftUI
 import WontonClient
 
-/// 消息打开的页面挂在房间上。`LazyVStack` 的行被顶出屏幕就被拆掉，挂在行上的页面跟着关
+/// 消息打开的页面挂在房间上。列表的行被顶出屏幕就被拆掉，挂在行上的页面跟着关
 /// （iOS 26.5 模拟器实测：放视频时来一条长回复，列表跟到底，播放器自己关了）。
 @MainActor
 @Observable
