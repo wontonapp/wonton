@@ -45,3 +45,4 @@
 | [0034](0034-onboarding-and-help.md) | 新用户引导和帮助文档：选 Agent、接模型、按需求推荐，帮助由核心的工具提供 |
 | [0035](0035-acp-bridge.md) | ACP 桥：Matrix 与 ACP Agent 的连接形态 |
 | [0036](0036-plugin-privileges.md) | 插件的高权限：声明了就给，按风险分三级提示，由主人决定 |
+| [0037](0037-plugin-resource-limits.md) | 插件的资源限制：闲时不限速，忙时让路，内存和进程数有上限 |
