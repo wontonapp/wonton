@@ -96,6 +96,8 @@
 
 - 主干开发：只有 `main` 一个长期分支。
 - 一个 issue 对应一个分支、一个 PR；squash 合并后自动删除分支。
+- PR 描述里写 `Closes #N`，合并时 GitHub 自动关掉 issue；只做了一部分的写 `Refs #N`，并在 issue 里
+  留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
 - 分支名用 `<type>/<简述>`，如 `feat/tunnel-http-proxy`。
 - 提交信息用 Conventional Commits：`type(scope): 中文摘要`。`type` 取 `feat`、`fix`、`docs`、
   `test`、`refactor`、`chore`、`build`、`ci`；摘要说清行为变化，不写 `Update files` 这类空话。
