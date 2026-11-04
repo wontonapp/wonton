@@ -170,7 +170,7 @@ impl Confirmations {
         }
         let answer = tokio::time::timeout(self.ttl, answered).await;
         match answer {
-            Ok(Ok(Answer::Approve)) => {
+            Ok(Ok(Answer::Approve | Answer::ApproveWider)) => {
                 self.publish(&id).await;
                 Ok(Ticket { id })
             }
@@ -189,12 +189,16 @@ impl Confirmations {
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。
     pub fn answer(&self, id: &str, answer: Answer) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
-            Answer::Approve => ConfirmationState::Running,
+            Answer::Approve | Answer::ApproveWider => ConfirmationState::Running,
             Answer::Reject => ConfirmationState::Rejected,
             Answer::Unknown => return Err(AnswerError::UnknownAnswer),
         };
         let mut slots = self.lock();
         let slot = slots.get_mut(id).ok_or(AnswerError::NotFound)?;
+        // 卡片上没有这个按钮，就不是对这张卡片的回答。
+        if !slot.card.choices.iter().any(|c| c.answer == answer) {
+            return Err(AnswerError::UnknownAnswer);
+        }
         if slot.card.state == ConfirmationState::Expired
             || now_ms(SystemTime::now()) >= slot.card.expires_at_ms
         {

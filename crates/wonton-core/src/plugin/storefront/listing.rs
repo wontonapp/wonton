@@ -134,6 +134,7 @@ impl PluginManager {
             lan_webui: self
                 .installed_detail(&m.id, langs)
                 .and_then(|detail| detail.lan_webui),
+            save_grants: Vec::new(),
         }
     }
 

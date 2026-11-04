@@ -40,7 +40,9 @@ pub async fn answer(
     let answer: ConfirmationAnswer = match serde_json::from_slice(&body) {
         Ok(answer) => answer,
         Err(e) => {
-            let message = format!("请求体要是 {{\"answer\": \"approve\" | \"reject\"}}：{e}");
+            let message = format!(
+                "请求体要是 {{\"answer\": \"approve\" | \"approve_wider\" | \"reject\"}}：{e}"
+            );
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };

@@ -311,6 +311,9 @@ pub struct PluginDetail {
     pub blocked: Option<String>,
     /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
     pub lan_webui: Option<LanWebuiOffer>,
+    /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。
+    #[serde(default)]
+    pub save_grants: Vec<String>,
 }
 
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。

@@ -167,6 +167,7 @@ fn detail() -> PluginDetail {
         installed: Some(installed()),
         blocked: None,
         lan_webui: None,
+        save_grants: Vec::new(),
     }
 }
 

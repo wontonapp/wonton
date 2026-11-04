@@ -433,6 +433,11 @@ async fn writes_run_only_after_the_owner_approves() {
         "主人回答之前不执行"
     );
     assert_eq!(
+        s.answer(&card.id, Answer::ApproveWider),
+        Err(AnswerError::UnknownAnswer),
+        "卡片上没有的按钮不算回答"
+    );
+    assert_eq!(
         s.answer(&card.id, Answer::Approve),
         Ok(ConfirmationState::Running)
     );

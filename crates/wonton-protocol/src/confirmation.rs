@@ -61,6 +61,8 @@ pub struct CardChoice {
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     Approve,
+    /// 同意，范围比 [`Answer::Approve`] 大一层：存文件的卡片上是“允许存进整个共享文件夹”（ADR-0027）。
+    ApproveWider,
     Reject,
     /// 不认识的回答，不能发给核心。
     #[serde(other)]
@@ -163,5 +165,10 @@ mod tests {
         .unwrap();
         let answers: Vec<_> = card.choices.iter().map(|choice| choice.answer).collect();
         assert_eq!(answers, [Answer::Approve, Answer::Unknown, Answer::Reject]);
+    }
+
+    #[test]
+    fn the_wider_approval_has_a_wire_name() {
+        assert_eq!(json!(Answer::ApproveWider), json!("approve_wider"));
     }
 }

@@ -138,6 +138,7 @@ impl PluginManager {
                 .lan_switched
                 .as_ref()
                 .map(|switched| switched.offer(listed.lan_webui)),
+            save_grants: Vec::new(),
         })
     }
 
@@ -458,6 +459,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         installed: Some(installed),
         blocked: None,
         lan_webui: None,
+        save_grants: Vec::new(),
     }
 }
 
