@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::*;
-use crate::{Action, LanPort, LanProtocol};
+use crate::{Action, LanPort, LanProtocol, TabLayout};
 
 fn icon(hash: &str) -> PluginIcon {
     PluginIcon {
@@ -41,6 +41,18 @@ fn installed() -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: Some("http://app-immich-photos.wonton.localhost:8480".into()),
+        web_display: TabDisplay::Fullscreen,
+        tabs: vec![PluginTab {
+            id: "photos".into(),
+            title: "照片".into(),
+            icon: PluginImage {
+                path: "/_wonton/api/images/photos.png".into(),
+            },
+            icon_selected: None,
+            path: "/photos".into(),
+            layout: TabLayout::EdgeToEdge,
+            display: TabDisplay::Standard,
+        }],
         bot_user_id: None,
         upgrade: Some(UpgradeOffer {
             version: "2.1.0".into(),
@@ -356,6 +368,17 @@ fn an_uncertain_task_keeps_its_wire_format() {
 }
 
 #[test]
+fn a_core_without_tabs_lists_plugins_without_pages() {
+    let mut plugin = serde_json::to_value(installed()).unwrap();
+    let fields = plugin.as_object_mut().unwrap();
+    fields.remove("tabs");
+    fields.remove("web_display");
+    let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
+    assert!(plugin.tabs.is_empty());
+    assert_eq!(plugin.web_display, TabDisplay::Standard);
+}
+
+#[test]
 fn values_from_a_newer_core_still_parse() {
     let parse = |value| serde_json::from_value::<StoreItem>(value).unwrap();
     let mut item = serde_json::to_value(&store().official.plugins[0]).unwrap();
@@ -378,6 +401,15 @@ fn values_from_a_newer_core_still_parse() {
     );
     let failure: StoreFailure = serde_json::from_value(json!("quota_exceeded")).unwrap();
     assert_eq!(failure, StoreFailure::Other);
+
+    let mut plugin = serde_json::to_value(installed()).unwrap();
+    plugin["web_display"] = json!("picture_in_picture");
+    plugin["tabs"][0]["layout"] = json!("sidebar");
+    plugin["tabs"][0]["display"] = json!("picture_in_picture");
+    let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
+    assert_eq!(plugin.web_display, TabDisplay::Other);
+    assert_eq!(plugin.tabs[0].layout, TabLayout::Other);
+    assert_eq!(plugin.tabs[0].display, TabDisplay::Other);
 }
 
 fn round_trip<T>(value: &T) -> T

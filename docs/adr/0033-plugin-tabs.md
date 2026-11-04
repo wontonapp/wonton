@@ -276,7 +276,7 @@ x-wonton:
 
 | 层 | 内容 |
 | --- | --- |
-| `wonton-protocol` | `InstalledPlugin.tabs`、`TabsViewModel`（每项的种类、标题、图标、状态、徽标、全屏设置和当前是否全屏）、`Action`：`PinTab`、`UnpinTab`、`MoveTab`、`SetTabDisplay`、`EnterFullscreen`、`ExitFullscreen`。先单独提只改接口的 PR |
+| `wonton-protocol` | `InstalledPlugin.tabs`、`TabsViewModel`、底栏的 `Action`。选中哪一页和全屏退回到哪也在核心里算，壳只渲染。先单独提只改接口的 PR |
 | `wonton-core` | 校验清单，栅格化图标，经插件列表给出。总线工具（`mcp/` 下单独一个模块）、`written_by`、Bot 的暂存、更新的判定 |
 | `wonton-client` | `tabs.json`、上限和不变量、状态计算、注入脚本和令牌映射、桥的 JSON-RPC。行为测试：给定操作序列断言 `TabsViewModel` |
 | iOS、Android 壳 | 按 `TabsViewModel` 渲染底栏；一个标签页容器（WebView 配置、骨架、顶栏、状态页）；排序页。估计每端各 300 到 500 行，比 `PluginWebView` 多的主要是容器 |

@@ -140,6 +140,17 @@ impl ClientCore {
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
             Action::SetFont { font } => self.appearance.set_font(font),
+            Action::SelectTab { .. }
+            | Action::CloseTabOverlay
+            | Action::PinTab { .. }
+            | Action::UnpinTab { .. }
+            | Action::MoveTab { .. }
+            | Action::SetTabDisplay { .. }
+            | Action::EnterFullscreen { .. }
+            | Action::ExitFullscreen { .. }
+            | Action::ReloadTab { .. }
+            | Action::TabLoadFailed { .. }
+            | Action::DismissUninstalledTabs => Err(tabs_unsupported()),
             chat => self.chat.dispatch(chat),
         }
     }
@@ -430,6 +441,12 @@ fn lan_unsupported() -> CoreError {
 fn core_upgrade_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持升级家里的服务器".into(),
+    }
+}
+
+fn tabs_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持调整底栏".into(),
     }
 }
 

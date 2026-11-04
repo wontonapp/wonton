@@ -6,7 +6,7 @@ use std::sync::Arc;
 use wonton_protocol::{
     CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PermissionLine, PluginAuthor,
     PluginDetail, PluginHealth, PluginKind as Kind, PluginState, PluginTrust, RequirementLine,
-    RequirementStatus,
+    RequirementStatus, TabDisplay,
 };
 
 use super::egress::probe::blocks;
@@ -356,6 +356,8 @@ impl PluginManager {
             via_index: None,
             status: state(&entry.status, entry.health),
             web_url: entry.has_webui.then(|| self.web_url(id)),
+            web_display: TabDisplay::default(),
+            tabs: Vec::new(),
             bot_user_id: None,
             upgrade,
             removable: !entry.system,

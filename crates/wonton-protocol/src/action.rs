@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, PushEndpoint, Rgb,
-    SecretString, TextSize, ThemeMode, UploadSource,
+    SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -172,4 +172,34 @@ pub enum Action {
     SetTextSize { size: TextSize },
     /// 选字体，只从 [`AppearanceViewModel::fonts`](crate::AppearanceViewModel::fonts) 里选。
     SetFont { font: FontStyle },
+
+    // 底栏（ADR-0033）。配置存在本机，写不了时返回 `Storage`，底栏不变。
+    /// 打开一个页面。插件页已固定时切到它的标签，没固定时盖在主界面上（[`TabsViewModel::overlay`](crate::TabsViewModel::overlay)）。
+    SelectTab { tab: TabRef },
+    /// 关掉盖在主界面上的插件页。
+    CloseTabOverlay,
+    /// 固定到底栏。栏满了（[`TabsViewModel::full`](crate::TabsViewModel::full)）要给 `replacing`，否则返回 `InvalidInput`。
+    PinTab {
+        tab: TabRef,
+        replacing: Option<TabRef>,
+    },
+    /// 从栏上拿掉。聊天和应用不能拿，返回 `InvalidInput`。
+    UnpinTab { tab: TabRef },
+    /// 把一项移到 `index`（移动后的下标，从 0 开始）。
+    MoveTab { tab: TabRef, index: u32 },
+    /// 给插件页选打开方式，不是插件页时返回 `InvalidInput`。
+    SetTabDisplay {
+        tab: TabRef,
+        display: TabDisplayChoice,
+    },
+    /// 全屏显示插件页。主人把这个页面设成了 `Standard` 也可以手动进。
+    EnterFullscreen { tab: TabRef },
+    /// 退出全屏。手动进的回到带栏的样子；打开就全屏的页面回到进来之前的标签，没有就回第一项。
+    ExitFullscreen { tab: TabRef },
+    /// 重新加载插件页（重试、“···”里的重新加载）。
+    ReloadTab { tab: TabRef },
+    /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。
+    TabLoadFailed { tab: TabRef, status: Option<u16> },
+    /// 主人看过了“已卸载，已从底栏移除”的提示。
+    DismissUninstalledTabs,
 }

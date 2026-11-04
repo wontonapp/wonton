@@ -23,6 +23,7 @@ mod plugin;
 mod push;
 mod secret;
 mod session;
+mod tabs;
 mod timeline;
 
 pub use action::Action;
@@ -79,6 +80,10 @@ pub use plugin::{
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
+pub use tabs::{
+    PluginTab, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabPage,
+    TabRef, TabState, TabsProblem, TabsViewModel,
+};
 pub use timeline::{
     BackPagination, ImageContent, MediaHandle, MessageAction, MessageContent, RichBlock,
     RichBlockKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,

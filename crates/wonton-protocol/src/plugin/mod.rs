@@ -11,7 +11,7 @@ pub use tool_policy::{BotSwitch, ToolAccess, ToolPolicyEntry, ToolPolicyView};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CardLine, EgressViewModel, LanPort};
+use crate::{CardLine, EgressViewModel, LanPort, PluginTab, TabDisplay};
 
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +119,12 @@ pub struct InstalledPlugin {
     pub status: PluginState,
     /// 插件网页的地址，点开就是小程序；没有网页时为空。
     pub web_url: Option<String>,
+    /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
+    #[serde(default)]
+    pub web_display: TabDisplay,
+    /// 插件声明的底栏页面。
+    #[serde(default)]
+    pub tabs: Vec<PluginTab>,
     /// 插件的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
     /// 能升级到的版本；没有新版本时为空。

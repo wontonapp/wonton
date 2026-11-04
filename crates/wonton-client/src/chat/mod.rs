@@ -190,46 +190,7 @@ impl ChatLink {
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
             Action::AnswerConfirmation { id, answer } => self.answer_confirmation(id, answer),
-            Action::SetPushEndpoint { .. }
-            | Action::PushUnavailable { .. }
-            | Action::CreateSession { .. }
-            | Action::SelectSession { .. }
-            | Action::DeleteSession { .. }
-            | Action::ConnectHome { .. }
-            | Action::PairHome { .. }
-            | Action::InviteDevice
-            | Action::AppForegrounded
-            | Action::AppBackgrounded
-            | Action::NetworkChanged { .. }
-            | Action::RetryConnection
-            | Action::SetLanguages { .. }
-            | Action::RefreshPlugins
-            | Action::RefreshStore { .. }
-            | Action::InstallPlugin { .. }
-            | Action::UpgradePlugin { .. }
-            | Action::UninstallPlugin { .. }
-            | Action::DismissPluginTask { .. }
-            | Action::RefreshEgressProxy
-            | Action::SaveEgressProxy { .. }
-            | Action::ConfirmEgressProxy
-            | Action::DismissEgressConfirmation
-            | Action::UploadFile { .. }
-            | Action::DownloadFile { .. }
-            | Action::CancelTransfer { .. }
-            | Action::DismissTransfer { .. }
-            | Action::ResendFileLink { .. }
-            | Action::DeleteFile { .. }
-            | Action::SendFileToDevices { .. }
-            | Action::GrantFileToRoom { .. }
-            | Action::DismissFileProblem
-            | Action::RefreshCoreUpgrade { .. }
-            | Action::StartCoreUpgrade { .. }
-            | Action::CancelCoreUpgrade
-            | Action::SetAccentColor { .. }
-            | Action::SetThemeMode { .. }
-            | Action::SetTextSize { .. }
-            | Action::SetFont { .. }
-            | Action::DismissOwnerProfilePrompt => Err(invalid("不是聊天操作")),
+            _ => Err(invalid("不是聊天操作")),
         }
     }
 
