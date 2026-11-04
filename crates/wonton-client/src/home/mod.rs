@@ -232,6 +232,15 @@ impl HomeLink {
         Ok(())
     }
 
+    /// 主人手动刷新时，被拒绝过就再拨一次：这台设备可能刚被加回去。其他原因的断开本来就在自己重试。
+    pub(crate) async fn retry_if_rejected(&self) {
+        if let Some((_, client)) = self.current_link().await
+            && client.status() == TunnelStatus::Disconnected(TunnelError::Unauthorized)
+        {
+            client.retry_now();
+        }
+    }
+
     /// 聊天正在补上断开期间的消息。
     pub(crate) fn set_catching_up(&self, catching_up: bool) {
         self.lock_tracker().set_catching_up(catching_up);

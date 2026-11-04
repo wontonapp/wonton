@@ -366,6 +366,8 @@ async fn only_registered_devices_get_in_and_revocation_takes_effect_at_once() {
     );
 
     home.register(&device).await;
+    // 被拒绝过的连接不会自己重拨，要有人重试。
+    phone.client.retry_now();
     assert_eq!(phone.get(PLUGIN, "/").await.0, StatusCode::OK);
 
     let path = format!("/_wonton/api/devices/{}", device.public());

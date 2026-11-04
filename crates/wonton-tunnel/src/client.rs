@@ -311,10 +311,14 @@ impl TunnelClient {
     pub fn retry_now(&self) {
         lock(&self.inner.pacing).reset();
         let mut current = lock(&self.inner.attempt);
-        let waiting = current
+        let replaceable = current
             .as_ref()
-            .is_some_and(|attempt| attempt.cancellable && attempt.outcome().is_none());
-        if waiting && let Some(attempt) = current.take() {
+            .is_some_and(|attempt| match attempt.outcome() {
+                None => attempt.cancellable,
+                Some(Ok(conn)) => was_rejected(&conn),
+                Some(Err(_)) => false,
+            });
+        if replaceable && let Some(attempt) = current.take() {
             attempt.task.abort();
         }
     }
@@ -440,7 +444,7 @@ impl TunnelClient {
             let conn = result?;
             return match conn.close_reason() {
                 None => Ok(conn),
-                // 刚建好就被关闭（例如服务端拒绝）。下一次调用会重新建连。
+                // 刚建好就被关闭。被服务端拒绝时，下一次调用也是这个结果；其他原因下一次调用会重新建连。
                 Some(reason) => Err(from_connection_error(&reason)),
             };
         }
@@ -454,7 +458,8 @@ impl Inner {
         if let Some(attempt) = current.as_ref() {
             let stale = match attempt.outcome() {
                 None => false,
-                Some(Ok(conn)) => conn.close_reason().is_some(),
+                // 服务端不认这台设备时，重拨只会再被拒一次，状态还会在“连接中”和“要配对”之间跳。等 `retry_now`。
+                Some(Ok(conn)) => conn.close_reason().is_some() && !was_rejected(&conn),
                 Some(Err(_)) => true,
             };
             if !stale {
@@ -555,6 +560,11 @@ impl Inner {
             true
         });
     }
+}
+
+fn was_rejected(conn: &Connection) -> bool {
+    conn.close_reason()
+        .is_some_and(|reason| matches!(from_connection_error(&reason), TunnelError::Unauthorized))
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

@@ -19,7 +19,8 @@ use wonton_client::{
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
-const WAIT: Duration = Duration::from_secs(15);
+// 只用作等状态的上限，等到就往下走。要盖住定时检查发现死连接的最长用时（间隔 5 秒加时限 8 秒）和之后的重连。
+const WAIT: Duration = Duration::from_secs(30);
 const WEB_URL: &str = "http://app-grafana.wonton.localhost:18480/";
 
 #[tokio::test]

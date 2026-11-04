@@ -141,12 +141,16 @@ impl PluginsLink {
         if self.connecting() {
             return;
         }
-        self.spawn_installed();
-        self.spawn_storage();
-        // 商店留下的问题，已安装列表取到了也清不掉，页面上的重试不连它一起取就没有用。
-        if *lock(&self.problem_of) == Some(Listing::Store) {
-            self.spawn_store(false);
-        }
+        let link = self.clone();
+        self.runtime.spawn(async move {
+            link.home.retry_if_rejected().await;
+            link.spawn_installed();
+            link.spawn_storage();
+            // 商店留下的问题，已安装列表取到了也清不掉，页面上的重试不连它一起取就没有用。
+            if *lock(&link.problem_of) == Some(Listing::Store) {
+                link.spawn_store(false);
+            }
+        });
     }
 
     /// `RefreshStore`：在后台取商店，`force` 时家里的服务器不等缓存过期。
@@ -155,10 +159,14 @@ impl PluginsLink {
         if self.connecting() {
             return;
         }
-        self.spawn_store(force);
-        if *lock(&self.problem_of) == Some(Listing::Installed) {
-            self.spawn_installed();
-        }
+        let link = self.clone();
+        self.runtime.spawn(async move {
+            link.home.retry_if_rejected().await;
+            link.spawn_store(force);
+            if *lock(&link.problem_of) == Some(Listing::Installed) {
+                link.spawn_installed();
+            }
+        });
     }
 
     fn spawn_installed(self: &Arc<Self>) {
