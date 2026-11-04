@@ -36,6 +36,8 @@ display:
   # Bot 忙时收到的新消息排队，按顺序逐条回答；不打断当前回答，也不发“正在打断”之类的提示。
   busy_input_mode: queue
   busy_ack_enabled: false
+  # 后台的自我整理照常跑，只是不把“💾 Self-improvement review”这类提示发进聊天。
+  memory_notifications: "off"
   platforms:
     matrix:
       tool_progress: "off"
