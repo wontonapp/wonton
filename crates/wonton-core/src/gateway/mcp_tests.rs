@@ -43,6 +43,7 @@ services:
   mcp:
     image: example/notes
 x-wonton:
+  spec: '0.4'
   id: app.example.notes
   version: 0.1.0
   kind: app

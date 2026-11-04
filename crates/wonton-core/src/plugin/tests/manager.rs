@@ -380,7 +380,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
 }
 
 #[tokio::test]
-async fn sso_plugins_get_the_owner_name_and_email_from_the_core() {
+async fn sso_plugins_that_ask_for_the_identity_get_the_owner_name_and_email() {
     let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -390,11 +390,13 @@ async fn sso_plugins_get_the_owner_name_and_email_from_the_core() {
          ADMIN: ${WONTON_OWNER_NAME}\n      MAIL: ${WONTON_OWNER_EMAIL}",
         &format!(
             "  webui:\n    service: web\n    port: {}\n    sso: proxy\n    proxy:\n      \
-             headers: {{Remote-User: '{{user}}'}}\n  permissions: []",
+             headers: {{Remote-User: '{{user}}'}}\n  permissions: [owner.identity]",
             web.port()
         ),
     );
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &["owner.identity".parse().unwrap()])
+        .await
+        .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
     assert_eq!(env["ADMIN"], "owner");
     assert_eq!(env["MAIL"], "owner@example.com");

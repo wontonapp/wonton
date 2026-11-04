@@ -122,12 +122,6 @@ case "$data_dir" in
   /*) ;;
   *) die "WONTON_DATA_DIR 要是绝对路径：$data_dir" ;;
 esac
-# 字符规则和数据目录里的记录由下面的 `init` 查。这一条查的是核心还没记下用户名的老安装：旧 compose 没把这个变量传进
-# 核心，主机一直是 owner，.env 里手写的这一行从没生效过。下面的 `init` 会覆盖 compose，所以在这里看。
-if [ -f "$install_dir/compose.yaml" ] && ! grep -q 'WONTON_OWNER_NAME:' "$install_dir/compose.yaml" &&
-  [ -n "$owner_name" ] && [ "$owner_name" != owner ]; then
-  die "这台主机上主人的用户名一直是 owner，这次给的是 $owner_name：旧版本没用过这个设置，用户名装好后不能改。去掉命令里的 WONTON_OWNER_NAME 和 $env_file 里的这一行；要换用户名只能用新的数据目录重新安装"
-fi
 
 mkdir -p "$install_dir" "$data_dir"
 chmod 700 "$install_dir"

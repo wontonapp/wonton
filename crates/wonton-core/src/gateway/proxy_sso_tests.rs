@@ -25,6 +25,7 @@ services:
   web:
     image: example/vault
 x-wonton:
+  spec: '0.4'
   id: app.vault
   version: 0.1.0
   kind: app

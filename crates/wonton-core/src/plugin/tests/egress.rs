@@ -97,8 +97,15 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");
     docker.add_container("wonton-core", "app.other");
-    // 核心升级前装的插件：网络是普通桥接网络，插件没声明 network.egress 也能出网。
-    docker.add_network("wonton-app-test", "app.test", json!({"Internal": false}));
+    let ipam = json!({"Config": [{
+        "Subnet": "172.30.0.0/24", "IPRange": "172.30.0.0/25", "Gateway": "172.30.0.1",
+    }]});
+    // 网络是普通桥接网络，插件没声明 network.egress 也能出网。
+    docker.add_network(
+        "wonton-app-test",
+        "app.test",
+        json!({"Internal": false, "IPAM": ipam}),
+    );
     let m = manager_in_container(engine.clone(), &dir);
     m.restore().await.unwrap();
     let status = m.list().remove(0).status;
@@ -107,7 +114,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
         "{status:?}"
     );
 
-    let isolated = json!({"Internal": true, "Options": {
+    let isolated = json!({"Internal": true, "IPAM": ipam, "Options": {
         "com.docker.network.bridge.gateway_mode_ipv4": ISOLATED,
         "com.docker.network.bridge.gateway_mode_ipv6": ISOLATED,
     }});
@@ -372,189 +379,4 @@ async fn the_core_attaches_at_its_reserved_address_and_reconnects_when_it_is_wro
     m.restore().await.unwrap();
     let endpoint = docker.endpoint(network, "wonton-core").unwrap();
     assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
-}
-
-/// 核心升级前建的网络：没有 IPRange，容器 web 接在上面，核心也接着。
-fn legacy_network(docker: &FakeDocker) {
-    docker.add_network(
-        "wonton-app-test",
-        "app.test",
-        json!({
-            "Internal": false,
-            "Options": {"com.example.opt": "1"},
-            "IPAM": {"Config": [{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]},
-        }),
-    );
-    docker.add_container("wonton-core", "app.other");
-    docker.add_endpoint(
-        "wonton-app-test",
-        "wonton-core",
-        json!({"IPAMConfig": {"IPv4Address": "172.30.0.3"}, "GwPriority": -1}),
-    );
-    let web = container_name("app-test", "web");
-    docker.add_container(&web, "app.test");
-    docker.add_endpoint(
-        "wonton-app-test",
-        &web,
-        json!({
-            "IPAMConfig": {"IPv4Address": "172.30.0.2"},
-            "Aliases": ["web"],
-            "GwPriority": 0,
-        }),
-    );
-    // 一次性服务退出了：网络的查询接口不列它，但重建网络后它也要接着。
-    let init = container_name("app-test", "init");
-    docker.add_container(&init, "app.test");
-    docker.set_state(
-        &init,
-        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
-    );
-    docker.add_endpoint("wonton-app-test", &init, json!({"Aliases": ["init"]}));
-}
-
-fn record_for(compose: String) -> InstalledRecord {
-    InstalledRecord {
-        lan_webui: false,
-        proxied: false,
-        id: PluginId::parse("app.test").unwrap(),
-        version: "1.0.0".into(),
-        source: compose,
-        files: Default::default(),
-        granted_permissions: vec!["network.egress".parse().unwrap()],
-        oidc_client_secret: None,
-        installed_at: 1,
-        origin: None,
-    }
-}
-
-#[tokio::test]
-async fn installed_networks_are_migrated_on_start_keeping_addresses_and_aliases() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    Store::open(dir.path().join("plugins"))
-        .unwrap()
-        .save(&record_for(app("network.egress")))
-        .unwrap();
-    legacy_network(&docker);
-
-    let m = manager_in_container(engine, &dir);
-    m.restore().await.unwrap();
-    assert_eq!(m.list().remove(0).status, PluginStatus::Running);
-
-    let body = docker.network("wonton-app-test").unwrap();
-    assert_eq!(body["IPAM"]["Config"][0]["Subnet"], "172.30.0.0/24");
-    assert_eq!(body["IPAM"]["Config"][0]["IPRange"], "172.30.0.0/25");
-    assert_eq!(body["IPAM"]["Config"][0]["Gateway"], "172.30.0.1");
-    assert_eq!(body["Options"], json!({"com.example.opt": "1"}));
-    assert_eq!(body["Labels"]["wonton.plugin"], "app.test");
-    let web = docker
-        .endpoint("wonton-app-test", &container_name("app-test", "web"))
-        .unwrap();
-    assert_eq!(web["IPAMConfig"]["IPv4Address"], "172.30.0.2");
-    assert_eq!(web["Aliases"], json!(["web"]));
-    let init = docker
-        .endpoint("wonton-app-test", &container_name("app-test", "init"))
-        .unwrap();
-    assert_eq!(init["Aliases"], json!(["init"]));
-    assert!(
-        init["IPAMConfig"].is_null(),
-        "停着的容器没有地址，由 Docker 分配"
-    );
-    let core = docker.endpoint("wonton-app-test", "wonton-core").unwrap();
-    assert_eq!(core["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
-    let saved = dir.path().join("plugins/network-migrations");
-    assert_eq!(
-        std::fs::read_dir(&saved).unwrap().count(),
-        0,
-        "迁移完删记录"
-    );
-}
-
-#[tokio::test]
-async fn an_unhealthy_plugin_stays_reachable_by_the_core_after_migrating() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    Store::open(dir.path().join("plugins"))
-        .unwrap()
-        .save(&record_for(app("network.egress")))
-        .unwrap();
-    legacy_network(&docker);
-    let web = container_name("app-test", "web");
-    docker.set_state(
-        &web,
-        json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
-    );
-    let m = manager_in_container(engine, &dir);
-    m.restore().await.unwrap();
-    assert!(matches!(
-        m.list().remove(0).status,
-        PluginStatus::Degraded { .. }
-    ));
-    let core = docker.endpoint("wonton-app-test", "wonton-core").unwrap();
-    assert_eq!(core["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
-}
-
-#[tokio::test]
-async fn a_migration_interrupted_after_removing_the_network_resumes_from_its_record() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    Store::open(dir.path().join("plugins"))
-        .unwrap()
-        .save(&record_for(app("network.egress")))
-        .unwrap();
-    let web = container_name("app-test", "web");
-    docker.add_container(&web, "app.test");
-    docker.add_container("wonton-core", "app.other");
-    // 上次核心退出时：记录写好了，网络删了，还没重建。
-    let saved = dir.path().join("plugins/network-migrations");
-    std::fs::create_dir_all(&saved).unwrap();
-    std::fs::write(
-        saved.join("wonton-app-test.json"),
-        json!({
-            "subnet": "172.30.0.0/24",
-            "gateway": "172.30.0.1",
-            "driver": "bridge",
-            "internal": false,
-            "options": {},
-            "labels": {"wonton.plugin": "app.test"},
-            "endpoints": {web.clone(): {"address": "172.30.0.2", "aliases": ["web"], "gw_priority": null}},
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    let m = manager_in_container(engine, &dir);
-    m.restore().await.unwrap();
-    assert_eq!(m.list().remove(0).status, PluginStatus::Running);
-    let endpoint = docker.endpoint("wonton-app-test", &web).unwrap();
-    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], "172.30.0.2");
-    assert_eq!(
-        docker.network("wonton-app-test").unwrap()["IPAM"]["Config"][0]["IPRange"],
-        "172.30.0.0/25"
-    );
-    assert!(!saved.join("wonton-app-test.json").exists());
-}
-
-#[tokio::test]
-async fn a_failed_migration_marks_the_plugin_degraded_with_the_reason() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    Store::open(dir.path().join("plugins"))
-        .unwrap()
-        .save(&record_for(app("network.egress")))
-        .unwrap();
-    // 没有能给核心留地址的网段（/31）。
-    docker.add_network(
-        "wonton-app-test",
-        "app.test",
-        json!({"Internal": false, "IPAM": {"Config": [{"Subnet": "172.30.0.0/31"}]}}),
-    );
-    docker.add_container(&container_name("app-test", "web"), "app.test");
-    let m = manager_in_container(engine, &dir);
-    m.restore().await.unwrap();
-    let status = m.list().remove(0).status;
-    assert!(
-        matches!(&status, PluginStatus::Degraded { reason } if reason.contains("网络")),
-        "{status:?}"
-    );
 }

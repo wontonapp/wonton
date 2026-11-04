@@ -3,11 +3,15 @@ use super::super::package::PluginPackage;
 use super::super::package_files::PackageFiles;
 use super::super::storefront::index::IndexEntry;
 
-fn compose(extra: &str) -> String {
+fn without_spec(extra: &str) -> String {
     format!(
         "services:\n  web:\n    image: nginx\nx-wonton:\n  id: app.test\n  version: 1.0.0\n  kind: app\n  \
          title: {{zh: 测试, en: Test}}\n  description: {{zh: 测试, en: Test}}\n  permissions: []\n{extra}"
     )
+}
+
+fn compose(extra: &str) -> String {
+    without_spec(&format!("  spec: '0.4'\n{extra}"))
 }
 
 fn parse_err(extra: &str) -> String {
@@ -18,9 +22,9 @@ fn parse_err(extra: &str) -> String {
 }
 
 #[test]
-fn store_info_of_spec_0_2_parses() {
+fn store_info_parses() {
     let yaml = compose(
-        "  spec: \"0.2\"\n  author: {name: Example, url: https://example.com}\n  \
+        "  author: {name: Example, url: https://example.com}\n  \
          homepage: https://immich.app\n  license: AGPL-3.0-only\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  \
          about: {zh: 第一段, en: First}\n  release_notes: {zh: 修了问题, en: Fixes}\n  \
          screenshots: [shots/1.png, shots/2.jpg]",
@@ -29,31 +33,31 @@ fn store_info_of_spec_0_2_parses() {
     assert_eq!(m.author.unwrap().name, "Example");
     assert_eq!(m.tags["en"], ["Photos", "AI"]);
     assert_eq!(m.screenshots.unwrap().len(), 2);
-    let dual = compose("  spec: \"0.2\"\n  license: MIT OR Apache-2.0");
+    let dual = compose("  license: MIT OR Apache-2.0");
     PluginPackage::parse(&dual).unwrap();
 }
 
 /// 比核心新的清单可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
 #[test]
 fn newer_spec_is_reported_before_unknown_fields() {
-    let yaml = compose("  spec: \"0.5\"\n  shortcuts: []");
+    let yaml = without_spec("  spec: \"0.5\"\n  shortcuts: []");
     let err = PluginPackage::parse(&yaml).unwrap_err();
     assert!(err.to_string().contains("规范 0.5"), "{err}");
     assert!(err.to_string().contains("先升级核心"), "{err}");
     assert_eq!(InstallError::from(err).kind(), "unsupported");
-    assert!(parse_err("  spec: 0.2").contains("加引号"));
-    assert!(parse_err("  spec: \"v2\"").contains("不是规范版本"));
+    let reject = |yaml: String| PluginPackage::parse(&yaml).unwrap_err().to_string();
+    assert!(reject(without_spec("  spec: 0.2")).contains("加引号"));
+    assert!(reject(without_spec("  spec: \"v2\"")).contains("不是规范版本"));
 }
 
 #[test]
-fn spec_0_2_fields_need_the_spec_field() {
-    let err = parse_err("  license: MIT");
-    assert!(err.contains("spec: \"0.2\""), "{err}");
+fn a_manifest_without_spec_is_rejected() {
+    let err = PluginPackage::parse(&without_spec("")).unwrap_err();
+    assert!(err.to_string().contains("要写 spec"), "{err}");
 }
 
 #[test]
 fn store_fields_are_checked() {
-    let spec = "  spec: \"0.2\"\n";
     let long = "字".repeat(4001);
     let notes = "字".repeat(2001);
     let tags9 = (0..9)
@@ -89,7 +93,7 @@ fn store_fields_are_checked() {
         ("  screenshots: [a.png, ./a.png]".to_owned(), "重复"),
     ];
     for (extra, expected) in cases {
-        let err = parse_err(&format!("{spec}{extra}"));
+        let err = parse_err(&extra);
         assert!(err.contains(expected), "{extra}：{err}");
     }
 }
@@ -120,7 +124,7 @@ fn package_size_is_limited() {
 
 #[test]
 fn notices_travel_with_the_package_and_stay_text() {
-    let yaml = compose("  spec: \"0.4\"\n  notices: [NOTICE, licenses/MIT.txt]");
+    let yaml = compose("  notices: [NOTICE, licenses/MIT.txt]");
     let err = PluginPackage::with_files(&yaml, PackageFiles::new()).unwrap_err();
     assert!(err.to_string().contains("不存在"), "{err}");
 
@@ -134,7 +138,4 @@ fn notices_travel_with_the_package_and_stay_text() {
     let binary = PackageFiles::from([("NOTICE".to_owned(), vec![0x89, b'P', 0xff]), mit]);
     let err = PluginPackage::with_files(&yaml, binary).unwrap_err();
     assert!(err.to_string().contains("不是 UTF-8 文本"), "{err}");
-
-    let err = parse_err("  spec: \"0.3\"\n  notices: [NOTICE]");
-    assert!(err.contains("spec: \"0.4\""), "{err}");
 }

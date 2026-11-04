@@ -14,6 +14,7 @@ services:
       start_interval: 1s
 
 x-wonton:
+  spec: '0.4'
   id: app.wonton.gpu-check
   version: 0.1.0
   kind: app

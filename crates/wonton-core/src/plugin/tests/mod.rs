@@ -43,7 +43,7 @@ fn example(name: &str) -> PluginPackage {
 
 fn package(services: &str, extra_manifest: &str) -> String {
     format!(
-        "services:\n{services}\nx-wonton:\n  id: app.test\n  version: 1.0.0\n  kind: app\n  \
+        "services:\n{services}\nx-wonton:\n  spec: '0.4'\n  id: app.test\n  version: 1.0.0\n  kind: app\n  \
          title: {{zh: 测试, en: Test}}\n  description: {{zh: 测试, en: Test}}\n{extra_manifest}"
     )
 }
@@ -457,7 +457,7 @@ fn manifest_rules_are_enforced() {
     }
     let with_title = |title: &str| {
         format!(
-            "services:\n  web:\n    image: nginx\nx-wonton:\n  id: app.test\n  version: 1.0.0\n  \
+            "services:\n  web:\n    image: nginx\nx-wonton:\n  spec: '0.4'\n  id: app.test\n  version: 1.0.0\n  \
              kind: app\n  title: {title}\n  description: {{zh: 测, en: T}}\n  permissions: []"
         )
     };

@@ -18,7 +18,6 @@ use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
 use super::manifest::{Permission, PluginId};
 use super::models::ModelKeyStore;
-use super::network_migration::MigrationStore;
 use super::package_files::PackageFiles;
 use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
@@ -77,7 +76,6 @@ pub struct Store {
     bots: BotStore,
     model_keys: ModelKeyStore,
     preinstalled: PreinstallMarks,
-    network_migrations: MigrationStore,
     save_grants: SaveGrantStore,
 }
 
@@ -90,7 +88,6 @@ impl Store {
             bots: BotStore::new(dir.join("bots")),
             model_keys: ModelKeyStore::new(dir.join("model-keys")),
             preinstalled: PreinstallMarks::new(dir.join("preinstalled")),
-            network_migrations: MigrationStore::new(dir.join("network-migrations")),
             save_grants: SaveGrantStore::new(dir.join("save-grants")),
             dir,
         })
@@ -109,11 +106,6 @@ impl Store {
     /// 插件的模型网关凭据，在记录目录下的 `model-keys/` 里，卸载时删除。
     pub fn model_keys(&self) -> &ModelKeyStore {
         &self.model_keys
-    }
-
-    /// 进行中的插件网络迁移，在记录目录下的 `network-migrations/` 里，迁移完删除。
-    pub fn network_migrations(&self) -> &MigrationStore {
-        &self.network_migrations
     }
 
     /// Bot 能往哪些路径存文件，在记录目录下的 `save-grants/` 里，卸载时删除（保留数据也删）。

@@ -15,7 +15,7 @@ use super::tests::Harness;
 use crate::plugin::models::ModelsRoute;
 use crate::plugin::{Permission, PluginPackage, PluginStatus};
 
-const PROVIDER: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  id: system.models\n  \
+const PROVIDER: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.4'\n  id: system.models\n  \
     version: 1.0.0\n  kind: system\n  title: {zh: 模型, en: Models}\n  description: {zh: 模型, en: Models}\n  \
     provides:\n    models:\n      service: magpie\n      port: 3425\n      apis: {openai: /v1}\n      \
     default_model: group/default\n      credentials:\n        issue: [issue, '{name}']\n        \

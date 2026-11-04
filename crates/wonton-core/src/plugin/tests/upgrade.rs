@@ -327,7 +327,7 @@ fn echo(version: &str, services: &str) -> String {
     format!(
         "services:\n  bot:\n    image: echo:{version}\n    environment:\n      \
          TOKEN: ${{WONTON_MATRIX_ACCESS_TOKEN}}\n      AUTH: Bearer ${{WONTON_MATRIX_ACCESS_TOKEN}}\n{services}\
-         x-wonton:\n  id: app.echo\n  version: {version}\n  kind: app\n  title: {{zh: 回声, en: Echo}}\n  \
+         x-wonton:\n  spec: '0.4'\n  id: app.echo\n  version: {version}\n  kind: app\n  title: {{zh: 回声, en: Echo}}\n  \
          description: {{zh: 回声, en: Echo}}\n  bot: {{display_name: {{zh: 回声, en: Echo}}}}\n  \
          permissions: [matrix.bot, network.egress]\n"
     )
@@ -499,7 +499,7 @@ async fn ports_that_become_switched_close_and_the_preview_says_so() {
     let (_docker, m, _host, _dir) = on(office()).await;
     let compose = |version: &str, webui: &str| {
         format!(
-            "services:\n  web:\n    image: web:{version}\nx-wonton:\n  id: app.hello\n  version: {version}\n  \
+            "services:\n  web:\n    image: web:{version}\nx-wonton:\n  spec: '0.4'\n  id: app.hello\n  version: {version}\n  \
              kind: app\n  title: {{zh: 你好, en: Hello}}\n  description: {{zh: 打个招呼, en: Say hi}}\n  \
              webui: {{service: web, port: 1, {webui}}}\n  lan:\n    ports: [{{service: web, port: 1}}]\n  \
              permissions: [network.lan]\n"

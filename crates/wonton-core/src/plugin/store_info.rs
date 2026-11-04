@@ -12,18 +12,6 @@ use super::package_files;
 /// 核心支持的最新规范版本。
 pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 4);
 
-/// 没写 `spec` 的清单按这一版理解。
-const SPEC_DEFAULT: SpecVersion = SpecVersion(0, 1);
-
-/// 从这一版起，只有写了 `owner.identity` 的清单才拿到主人的身份变量（ADR-0022）。
-pub const SPEC_EXPLICIT_OWNER_IDENTITY: SpecVersion = SpecVersion(0, 3);
-
-/// 清单写成的规范版本。
-pub fn spec_of(manifest: &Manifest) -> SpecVersion {
-    let written = manifest.spec.as_deref().and_then(SpecVersion::parse);
-    written.unwrap_or(SPEC_DEFAULT)
-}
-
 /// 规范版本 `主.次`，如 `0.2`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpecVersion(u32, u32);
@@ -66,17 +54,21 @@ const MAX_RELEASE_NOTES_CHARS: usize = 2000;
 /// 解析清单之前先看 `spec`：比核心新的清单可能用了核心不认识的字段，这时先报规范版本，不逐项报未知字段。
 pub fn check_spec(manifest: &Value) -> Result<(), ManifestError> {
     match manifest.get("spec") {
-        None => Ok(()),
+        None => Err(ManifestError::Invalid(format!(
+            "清单要写 spec，如 spec: \"{SPEC_VERSION}\""
+        ))),
         Some(Value::String(text)) => spec_version(text).map(|_| ()),
-        Some(_) => Err(ManifestError::Invalid(
-            "spec 必须是字符串，如 \"0.2\"（YAML 里要加引号，不然读成数字）".to_owned(),
-        )),
+        Some(_) => Err(ManifestError::Invalid(format!(
+            "spec 必须是字符串，如 \"{SPEC_VERSION}\"（YAML 里要加引号，不然读成数字）"
+        ))),
     }
 }
 
 fn spec_version(text: &str) -> Result<SpecVersion, ManifestError> {
     let version = SpecVersion::parse(text).ok_or_else(|| {
-        ManifestError::Invalid(format!("spec `{text}` 不是规范版本（如 \"0.2\"）"))
+        ManifestError::Invalid(format!(
+            "spec `{text}` 不是规范版本（如 \"{SPEC_VERSION}\"）"
+        ))
     })?;
     if version > SPEC_VERSION {
         return Err(ManifestError::NewerSpec {
@@ -90,22 +82,7 @@ fn spec_version(text: &str) -> Result<SpecVersion, ManifestError> {
 /// 校验商店信息。字段的格式见插件规范的“商店信息”；图标和截图的内容在安装和 `plugin check` 时由
 /// [`super::images`] 检查。
 pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
-    let spec = match &manifest.spec {
-        Some(text) => spec_version(text)?,
-        None => SPEC_DEFAULT,
-    };
-    if spec < SpecVersion(0, 2)
-        && let Some(field) = v02_fields(manifest).first()
-    {
-        return Err(invalid(format!(
-            "用到了规范 0.2 的字段 {field}，要写 spec: \"0.2\""
-        )));
-    }
-    if spec < SpecVersion(0, 4) && !manifest.notices.is_empty() {
-        return Err(invalid(
-            "用到了规范 0.4 的字段 notices，要写 spec: \"0.4\"".to_owned(),
-        ));
-    }
+    spec_version(&manifest.spec)?;
     if let Some(screenshots) = &manifest.screenshots {
         validate_screenshots(screenshots)?;
     }
@@ -141,22 +118,6 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
         long_text("release_notes", notes, MAX_RELEASE_NOTES_CHARS)?;
     }
     Ok(())
-}
-
-/// 清单里用到的规范 0.2 才有的字段。
-fn v02_fields(manifest: &Manifest) -> Vec<&'static str> {
-    [
-        ("screenshots", manifest.screenshots.is_some()),
-        ("author", manifest.author.is_some()),
-        ("homepage", manifest.homepage.is_some()),
-        ("license", manifest.license.is_some()),
-        ("tags", !manifest.tags.is_empty()),
-        ("about", manifest.about.is_some()),
-        ("release_notes", manifest.release_notes.is_some()),
-    ]
-    .into_iter()
-    .filter_map(|(field, used)| used.then_some(field))
-    .collect()
 }
 
 fn invalid(message: String) -> ManifestError {

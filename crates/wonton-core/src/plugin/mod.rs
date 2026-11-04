@@ -32,7 +32,6 @@ mod mcp_server;
 pub mod models;
 pub mod mounts;
 pub mod names;
-pub mod network_migration;
 pub mod package;
 pub mod package_files;
 pub mod preinstall;

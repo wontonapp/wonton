@@ -192,6 +192,7 @@ services:
       KEY: ${WONTON_MODEL_API_KEY}
       MODEL: ${WONTON_MODEL_DEFAULT}
 x-wonton:
+  spec: '0.4'
   id: app.model-client
   version: 0.1.0
   kind: app

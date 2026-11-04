@@ -16,7 +16,7 @@ pub(super) const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBo
 fn photos(icon: &str) -> PluginPackage {
     let yaml = package(
         "  web:\n    image: nginx:1.27",
-        "  spec: \"0.2\"\n  icon: icon.svg\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  author: {name: Example}\n  \
+        "  icon: icon.svg\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  author: {name: Example}\n  \
          release_notes: {zh: 第一版, en: First release}\n  requirements: {memory: 2G}\n  permissions: []",
     )
     .replace("id: app.test", "id: app.photos")

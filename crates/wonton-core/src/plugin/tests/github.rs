@@ -161,7 +161,7 @@ async fn handle(State(fake): State<FakeGitHub>, request: Request) -> Response {
 /// 版本是 `version` 的插件，带一个图标文件。
 pub(super) fn compose(version: &str, image: &str) -> String {
     format!(
-        "services:\n  web:\n    image: {image}\nx-wonton:\n  id: app.hello\n  version: {version}\n  kind: app\n  \
+        "services:\n  web:\n    image: {image}\nx-wonton:\n  spec: '0.4'\n  id: app.hello\n  version: {version}\n  kind: app\n  \
          title: {{zh: 你好, en: Hello}}\n  description: {{zh: 打个招呼, en: Say hi}}\n  icon: icon.svg\n  \
          permissions: []\n"
     )

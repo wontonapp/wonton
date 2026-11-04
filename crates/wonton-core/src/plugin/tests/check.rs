@@ -32,9 +32,7 @@ fn write(dir: &Path, path: &str, data: &[u8]) {
 fn compose(services: &str, extra: &str) -> String {
     package(
         services,
-        &format!(
-            "  spec: \"0.4\"\n  icon: icon.svg\n  screenshots: [shots/1.png]\n  permissions: []\n{extra}"
-        ),
+        &format!("  icon: icon.svg\n  screenshots: [shots/1.png]\n  permissions: []\n{extra}"),
     )
 }
 
@@ -209,7 +207,7 @@ async fn apps_that_trust_more_than_the_core_are_flagged_by_how_they_can_be_reach
         let compose = package(
             &format!("  web:\n    image: nginx:1.27\n    environment: {{TRUST: '{env}'}}"),
             &format!(
-                "  spec: \"0.2\"\n  icon: icon.svg\n  screenshots: [shots/1.png]\n  \
+                "  icon: icon.svg\n  screenshots: [shots/1.png]\n  \
                  permissions: [{permissions}]\n{IDENTITY}\n{extra}"
             ),
         );

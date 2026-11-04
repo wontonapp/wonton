@@ -320,25 +320,6 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
     assert_eq!(Some(card.expires_at_ms), waiting["expires_at_ms"].as_u64());
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_card_from_an_older_core_still_shows() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    phone.connect(&home);
-    phone.signed_in().await;
-    let (core, room_id) = core_room(&phone, &home).await;
-    let room = core.open_room(&room_id).await.expect("核心打开私聊");
-    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
-
-    let mut older = content(&card("older", in_ten_minutes()));
-    older["msgtype"] = json!("m.notice");
-    send(&room, older).await;
-    let view = card_view(&mut timeline, "older", "m.notice 卡片出现").await;
-    assert_eq!(view.card.state, ConfirmationState::Pending);
-}
-
 /// 比这个 App 新的核心写的：多了一个按钮和一个字段，别的按钮照常能点。
 fn install_card() -> Value {
     let mut install = card("install", in_ten_minutes());

@@ -29,6 +29,7 @@ const PLUGIN: &str = "services:
     image: public.ecr.aws/docker/library/busybox:1.37
     command: [sh, -c, 'trap \"exit 0\" TERM; sleep 300 & wait']
 x-wonton:
+  spec: '0.4'
   id: app.leftovers
   version: 1.0.0
   kind: app

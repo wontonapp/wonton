@@ -7,6 +7,7 @@ services:
     command: --port 8000 --name ${WONTON_APP_ID}
 
 x-wonton:
+  spec: '0.4'
   id: app.whoami
   version: 0.1.0
   kind: app

@@ -35,7 +35,7 @@ fn identity_app(mail: &str, port: u16) -> String {
              MAIL: {mail}"
         ),
         &format!(
-            "  spec: \"0.3\"\n  webui: {{service: web, port: {port}, sso: none}}\n  \
+            "  webui: {{service: web, port: {port}, sso: none}}\n  \
              permissions: [owner.identity]"
         ),
     )
@@ -90,10 +90,10 @@ fn a_plugin_with_neither_sso_nor_the_permission_gets_no_identity() {
 }
 
 /// 声明了 `sso` 的插件，环境变量 `ADMIN` 引用主人的用户名。
-fn sso_app(spec: &str, webui: &str) -> String {
+fn sso_app(webui: &str) -> String {
     package(
         "  web:\n    image: nginx\n    environment: {ADMIN: '${WONTON_OWNER_NAME}'}",
-        &format!("  spec: \"{spec}\"\n{webui}\n  permissions: []"),
+        &format!("{webui}\n  permissions: []"),
     )
 }
 
@@ -103,12 +103,9 @@ const PROXY: &str = "  webui:\n    service: web\n    port: 80\n    sso: proxy\n 
                      headers: {Remote-User: '{user}'}";
 
 #[test]
-fn from_spec_0_3_sso_no_longer_brings_the_identity_variables() {
+fn sso_does_not_bring_the_identity_variables() {
     for webui in [OIDC, PROXY] {
-        assert!(dry_run(&parsed(&sso_app("0.2", webui))).is_ok(), "{webui}");
-        let error = dry_run(&parsed(&sso_app("0.3", webui)))
-            .unwrap_err()
-            .to_string();
+        let error = dry_run(&parsed(&sso_app(webui))).unwrap_err().to_string();
         assert!(error.contains("没申请 owner.identity"), "{error}");
     }
 }
@@ -135,15 +132,10 @@ async fn the_preview_lists_the_identity_whenever_the_app_gets_it() {
     let m = manager_with(engine, &dir);
     let secret_only = "  secrets:\n    key: {generate: {bytes: 32}}\n  webui:\n    service: web\n    port: 80\n    \
                        sso: proxy\n    proxy:\n      headers: {X-Key: '{secret:key}'}";
-    for (spec, webui, listed) in [
-        ("0.3", OIDC, true),
-        ("0.3", PROXY, true),
-        ("0.3", secret_only, false),
-        ("0.2", secret_only, true),
-    ] {
+    for (webui, listed) in [(OIDC, true), (PROXY, true), (secret_only, false)] {
         let compose = package(
             "  web:\n    image: nginx",
-            &format!("  spec: \"{spec}\"\n{webui}\n  permissions: []"),
+            &format!("{webui}\n  permissions: []"),
         );
         let preview = m
             .preview_install(&parsed(&compose), &Languages::default())
@@ -153,7 +145,7 @@ async fn the_preview_lists_the_identity_whenever_the_app_gets_it() {
             .notices
             .iter()
             .any(|n| n.text.contains("用户名和邮箱"));
-        assert_eq!(shown, listed, "{spec} {webui}：{:?}", preview.notices);
+        assert_eq!(shown, listed, "{webui}：{:?}", preview.notices);
     }
 }
 

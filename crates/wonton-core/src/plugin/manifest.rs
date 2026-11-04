@@ -12,7 +12,7 @@ use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::provides::Provides;
 pub use super::requirements::{Arch, GpuNeed, Requirements};
-use super::store_info::{self, Author};
+use super::store_info::Author;
 
 /// 插件 ID 的最大长度。网关用它派生子域名，必须放得进一个 DNS 标签。
 pub const MAX_ID_LEN: usize = 63;
@@ -457,8 +457,7 @@ impl From<Permission> for String {
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// 清单按哪一版规范写成，见 [`super::store_info`]。
-    #[serde(default)]
-    pub spec: Option<String>,
+    pub spec: String,
     pub id: PluginId,
     pub version: String,
     pub kind: PluginKind,
@@ -515,11 +514,9 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// 容器拿不拿得到主人的身份变量。低于 0.3 的清单声明了单点登录就有：已经装着的插件重建容器时不能因此失败（ADR-0022）。
+    /// 容器拿不拿得到主人的身份变量。
     pub fn gets_owner_identity(&self) -> bool {
         self.permissions.contains(&Permission::OwnerIdentity)
-            || (store_info::spec_of(self) < store_info::SPEC_EXPLICIT_OWNER_IDENTITY
-                && self.webui.as_ref().is_some_and(|w| w.sso != Sso::None))
     }
 
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。

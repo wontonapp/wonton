@@ -51,7 +51,7 @@ async fn fake_gateway(keys: Keys) -> u16 {
 
 fn provider(port: u16) -> PluginPackage {
     let source = format!(
-        "services:\n  magpie:\n    image: magpie\nx-wonton:\n  id: system.models\n  version: 1.0.0\n  \
+        "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.4'\n  id: system.models\n  version: 1.0.0\n  \
          kind: system\n  title: {{zh: 模型, en: Models}}\n  description: {{zh: 模型, en: Models}}\n  \
          provides:\n    models:\n      service: magpie\n      port: {port}\n      \
          apis: {{openai: /v1, anthropic: /}}\n      default_model: group/default\n      credentials:\n        \
