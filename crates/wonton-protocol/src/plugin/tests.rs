@@ -127,6 +127,7 @@ fn preview() -> InstallPreview {
         version: "1.0.0".into(),
         kind: PluginKind::App,
         icon: None,
+        category: None,
         trust: PluginTrust::Community,
         provider: Some("github.com/someone/wonton-samba".into()),
         via_index: None,
@@ -241,6 +242,7 @@ fn interface_types_round_trip_through_json() {
             id: "app.samba".into(),
             title: "Samba".into(),
             icon: None,
+            category: None,
             operation: PluginOperation::Install,
             state: PluginTaskState::Failed {
                 reason: PluginFailure::Changed,

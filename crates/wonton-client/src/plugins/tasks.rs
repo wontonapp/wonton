@@ -7,8 +7,8 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use wonton_protocol::{
-    CoreError, InstallPreview, InstallRequest, PluginFailure, PluginIcon, PluginOperation,
-    PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest,
+    CoreError, InstallPreview, InstallRequest, PluginCategory, PluginFailure, PluginIcon,
+    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT};
@@ -47,6 +47,7 @@ impl PluginsLink {
             &preview.id,
             &preview.title,
             preview.icon.clone(),
+            preview.category,
             PluginOperation::Install,
         )?;
         let request = InstallRequest {
@@ -76,6 +77,7 @@ impl PluginsLink {
             &preview.id,
             &preview.title,
             preview.icon.clone(),
+            preview.category,
             PluginOperation::Upgrade,
         )?;
         let request = UpgradeRequest {
@@ -101,24 +103,24 @@ impl PluginsLink {
         Ok(())
     }
 
-    /// `UninstallPlugin`：标题和图标从已安装列表里取。
+    /// `UninstallPlugin`：标题、图标和分类从已安装列表里取。
     pub(crate) fn uninstall(
         self: &Arc<Self>,
         id: String,
         delete_data: bool,
     ) -> Result<(), CoreError> {
-        let (title, icon) = {
+        let (title, icon, category) = {
             let view = self.view.borrow();
             let plugin = view
                 .installed
                 .as_ref()
                 .and_then(|installed| installed.plugins.iter().find(|plugin| plugin.id == id));
             plugin.map_or_else(
-                || (id.clone(), None),
-                |plugin| (plugin.title.clone(), plugin.icon.clone()),
+                || (id.clone(), None, None),
+                |plugin| (plugin.title.clone(), plugin.icon.clone(), plugin.category),
             )
         };
-        self.begin_task(&id, &title, icon, PluginOperation::Uninstall)?;
+        self.begin_task(&id, &title, icon, category, PluginOperation::Uninstall)?;
         let link = self.clone();
         self.runtime.spawn(async move {
             let Some(api) = link.task_api(&id) else {
@@ -163,6 +165,7 @@ impl PluginsLink {
         id: &str,
         title: &str,
         icon: Option<PluginIcon>,
+        category: Option<PluginCategory>,
         operation: PluginOperation,
     ) -> Result<(), CoreError> {
         let mut outcome = Ok(());
@@ -182,6 +185,7 @@ impl PluginsLink {
                 id: id.to_owned(),
                 title: title.to_owned(),
                 icon,
+                category,
                 operation,
                 state: PluginTaskState::Running,
             });

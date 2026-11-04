@@ -29,6 +29,16 @@ fn english() -> Languages {
     Languages::from_header(Some("en-US"))
 }
 
+/// 确认页和任务行画占位图标要用分类，要和商店、主屏上的一样。
+#[tokio::test]
+async fn previews_carry_the_category() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    let preview = m.preview_install(&photos(ICON), &english()).await.unwrap();
+    assert_eq!(preview.category, Some(PluginCategory::Photos));
+}
+
 #[tokio::test]
 async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     let (_docker, engine) = FakeDocker::start().await;

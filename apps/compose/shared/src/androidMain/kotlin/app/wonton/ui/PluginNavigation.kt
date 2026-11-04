@@ -96,7 +96,7 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(task.icon, null, WontonTheme.size.taskIcon, plugins)
+        PluginIconImage(task.icon, task.category, WontonTheme.size.taskIcon, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
             TaskState(task.operation, task.state, onReview)
@@ -125,8 +125,9 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
     }
 }
 
+/** 一行结果：小图标紧贴文字，和文字的第一行对齐。 */
 @Composable
-private fun StateLine(icon: ImageVector, text: String, tint: Rgb) {
+fun StateLine(icon: ImageVector, text: String, tint: Rgb) {
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Icon(
             icon,

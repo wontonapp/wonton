@@ -407,6 +407,7 @@ pub struct InstallPreview {
     pub version: String,
     pub kind: PluginKind,
     pub icon: Option<PluginIcon>,
+    pub category: Option<PluginCategory>,
     pub trust: PluginTrust,
     /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
     pub provider: Option<String>,
@@ -536,6 +537,7 @@ pub struct PluginTask {
     pub id: String,
     pub title: String,
     pub icon: Option<PluginIcon>,
+    pub category: Option<PluginCategory>,
     pub operation: PluginOperation,
     pub state: PluginTaskState,
 }

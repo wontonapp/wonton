@@ -185,6 +185,7 @@ pub fn preview(id: &str) -> InstallPreview {
         version: "1.0.0".to_owned(),
         kind: PluginKind::App,
         icon: None,
+        category: None,
         trust: PluginTrust::Official,
         provider: None,
         via_index: None,

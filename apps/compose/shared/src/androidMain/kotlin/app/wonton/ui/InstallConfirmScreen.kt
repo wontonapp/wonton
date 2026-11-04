@@ -107,7 +107,7 @@ private fun PreviewContent(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PluginIconImage(preview.icon, null, WontonTheme.size.previewIcon, plugins)
+            PluginIconImage(preview.icon, preview.category, WontonTheme.size.previewIcon, plugins)
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
                 Text(preview.title, style = WontonTheme.typography.itemTitle, color = colors.textPrimary.toColor())
                 val version = preview.upgradeFrom?.let { "$it → ${preview.version}" } ?: preview.version

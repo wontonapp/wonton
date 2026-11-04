@@ -12,8 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Answer
@@ -24,7 +22,7 @@ import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.CheckCircle
+import app.wonton.ui.icons.CheckCircleFill
 import app.wonton.ui.icons.Error
 import app.wonton.ui.icons.Help
 import app.wonton.ui.icons.Warning
@@ -47,7 +45,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAnswer: (String, Answer) -> U
             )
         }
         CardState(card.state)
-        view.problem?.let { problem -> CardNote(problem.message, WontonIcon.Warning, colors.danger.toColor()) }
+        view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
         if (card.choices.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -74,20 +72,12 @@ private fun CardState(state: ConfirmationState) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
             Text("正在执行", style = style)
         }
-        is ConfirmationState.Succeeded -> CardNote(state.message, WontonIcon.CheckCircle, colors.success.toColor())
-        is ConfirmationState.Failed -> CardNote("没有成功：${state.message}", WontonIcon.Error, colors.danger.toColor())
+        is ConfirmationState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, state.message, colors.success)
+        is ConfirmationState.Failed -> StateLine(WontonIcon.Error, "没有成功：${state.message}", colors.danger)
         is ConfirmationState.Uncertain ->
-            CardNote("结果不确定：${state.message}", WontonIcon.Help, colors.warning.toColor())
+            StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)
         ConfirmationState.Rejected -> Text("已拒绝，没有执行", style = style, color = colors.textSecondary.toColor())
         ConfirmationState.Expired -> Text("已过期，没有执行", style = style, color = colors.textSecondary.toColor())
-    }
-}
-
-@Composable
-private fun CardNote(text: String, icon: ImageVector, color: Color) {
-    Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall), tint = color)
-        Text(text, style = WontonTheme.typography.supporting, color = color)
     }
 }
 

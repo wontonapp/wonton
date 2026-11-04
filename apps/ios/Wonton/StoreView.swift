@@ -227,7 +227,7 @@ struct TaskRow: View {
 
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            PluginIconView(icon: task.icon, category: nil, size: WontonTheme.size.taskIcon, model: model)
+            PluginIconView(icon: task.icon, category: task.category, size: WontonTheme.size.taskIcon, model: model)
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 Text(task.title)
                     .wontonText(WontonTheme.typography.itemTitle)

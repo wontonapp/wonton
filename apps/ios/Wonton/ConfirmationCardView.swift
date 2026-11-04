@@ -41,7 +41,7 @@ struct ConfirmationCardView: View {
                 Text("正在执行").wontonText(WontonTheme.typography.supporting)
             }
         case let .succeeded(message):
-            note(message, icon: .checkCircle, color: colors.success)
+            note(message, icon: .checkCircleFill, color: colors.success)
         case let .failed(message):
             note("没有成功：\(message)", icon: .error, color: colors.danger)
         case let .uncertain(message):
@@ -58,8 +58,9 @@ struct ConfirmationCardView: View {
     }
 
     private func note(_ text: String, icon: WontonIcon, color: Rgb) -> some View {
-        HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
-            icon.view(size: WontonTheme.size.iconSmall)
+        HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
+            icon.view(size: WontonTheme.size.iconTiny)
+                .padding(.top, 3)
             Text(text).wontonText(WontonTheme.typography.supporting)
         }
         .foregroundStyle(Color(color))

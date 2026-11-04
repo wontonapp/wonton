@@ -222,6 +222,7 @@ impl PluginManager {
             version: m.version.clone(),
             kind: kind(m.kind),
             icon: icon.map(|i| i.paths()),
+            category: m.category.map(category),
             trust: trust(package.origin.as_ref()),
             author: author(m),
             permissions: m.permissions.iter().map(permission_line).collect(),
