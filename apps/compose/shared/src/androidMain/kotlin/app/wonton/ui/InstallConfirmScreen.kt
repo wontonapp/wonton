@@ -12,10 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -29,6 +27,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
 import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
@@ -89,14 +88,7 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
             }
         }
     }
-    rejection?.let { reason ->
-        AlertDialog(
-            onDismissRequest = { rejection = null },
-            confirmButton = { TextButton(onClick = { rejection = null }) { Text("好") } },
-            title = { Text("操作被拒绝") },
-            text = { Text(reason) },
-        )
-    }
+    rejection?.let { WontonDialog("操作被拒绝", it, { rejection = null }) }
 }
 
 @Composable

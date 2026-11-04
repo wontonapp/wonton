@@ -39,16 +39,13 @@ struct ChatListView: View {
                     StartChatView(model: model)
                 }
             }
-            .alert("操作被拒绝", isPresented: isShowingRejection, presenting: model.rejection) { _ in
-                Button("好") {}
-            } message: { reason in
-                Text(reason)
-            }
-            .alert("操作失败", isPresented: isShowingProblem, presenting: model.viewModel.problem) { _ in
-                Button("好") { model.send(.dismissChatProblem) }
-            } message: { problem in
-                Text(problem.message)
-            }
+            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
+            .wontonDialog(
+                "操作失败",
+                message: model.viewModel.problem?.message,
+                isPresented: isShowingProblem,
+                onDismiss: { model.send(.dismissChatProblem) }
+            )
         }
     }
 

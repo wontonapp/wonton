@@ -58,6 +58,13 @@ private const val DISABLED_ALPHA = 0.4f
 
 enum class WontonButtonKind { PRIMARY, SECONDARY, DANGER }
 
+/** 弹窗里的一个按钮。 */
+class WontonDialogAction(
+    val title: String,
+    val kind: WontonButtonKind = WontonButtonKind.SECONDARY,
+    val onClick: () -> Unit,
+)
+
 class WontonBarItem(val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
 /** 自己画的按钮（ADR-0026）：语义还是 `clickable` 的按钮，命中区 48。 */

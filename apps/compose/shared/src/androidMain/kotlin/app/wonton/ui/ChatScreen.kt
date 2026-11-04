@@ -17,10 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,6 +43,7 @@ import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
@@ -117,22 +116,8 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
         )
     }
 
-    viewModel.problem?.let { problem ->
-        AlertDialog(
-            onDismissRequest = { onAction(Action.DismissChatProblem) },
-            confirmButton = { TextButton(onClick = { onAction(Action.DismissChatProblem) }) { Text("好") } },
-            title = { Text("操作失败") },
-            text = { Text(problem.message) },
-        )
-    }
-    rejection?.let { reason ->
-        AlertDialog(
-            onDismissRequest = { rejection = null },
-            confirmButton = { TextButton(onClick = { rejection = null }) { Text("好") } },
-            title = { Text("操作被拒绝") },
-            text = { Text(reason) },
-        )
-    }
+    viewModel.problem?.let { WontonDialog("操作失败", it.message, { onAction(Action.DismissChatProblem) }) }
+    rejection?.let { WontonDialog("操作被拒绝", it, { rejection = null }) }
 }
 
 @Composable

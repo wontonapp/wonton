@@ -27,17 +27,17 @@ struct EgressSettingsView: View {
             // 核心给的值变了才覆盖输入框：保存失败时主人填的还在。
             .onChange(of: egress.current?.address, initial: true) { _, value in address = value ?? "" }
             .onChange(of: egress.current?.directCidrs, initial: true) { _, value in directCidrs = value ?? "" }
-            .alert(
+            .wontonDialog(
                 egress.confirmation?.cancelling == true ? "取消代理要重启这些插件" : "配上代理要重启这些插件",
+                message: egress.confirmation.map { $0.restarts.map(\.title).joined(separator: "、") + "\n数据不动。" },
                 // 关掉弹窗由按钮发给核心，这里不用再发一次。
                 isPresented: .constant(egress.confirmation != nil),
-                presenting: egress.confirmation
-            ) { _ in
-                Button("重启") { model.send(.confirmEgressProxy) }
-                Button("取消", role: .cancel) { model.send(.dismissEgressConfirmation) }
-            } message: { confirmation in
-                Text(confirmation.restarts.map(\.title).joined(separator: "、") + "\n数据不动。")
-            }
+                actions: [
+                    WontonDialogAction(title: "取消") { model.send(.dismissEgressConfirmation) },
+                    WontonDialogAction(title: "重启", kind: .primary) { model.send(.confirmEgressProxy) }
+                ],
+                onDismiss: { model.send(.dismissEgressConfirmation) }
+            )
     }
 
     @ViewBuilder private var content: some View {

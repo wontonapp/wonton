@@ -33,6 +33,9 @@ import app.wonton.protocol.Transfer
 import app.wonton.protocol.TransferAction
 import app.wonton.protocol.TransferDirection
 import app.wonton.protocol.TransferState
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -197,17 +200,13 @@ private fun DismissDownloadedDialog(transfer: Transfer, onClose: () -> Unit) {
         onClose()
         files.onAction(Action.DismissTransfer(transfer.id, deleteLocalFile))
     }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("清理 ${transfer.name}") },
-        text = {
-            Column {
-                TextButton(onClick = { dismiss(false) }) { Text("只清记录") }
-                TextButton(onClick = { dismiss(true) }) {
-                    Text("连手机上的文件一起删", color = WontonTheme.colors.danger.toColor())
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onClose) { Text("取消") } },
+    WontonDialog(
+        "清理 ${transfer.name}",
+        onDismiss = onClose,
+        actions = listOf(
+            WontonDialogAction("只清记录") { dismiss(false) },
+            WontonDialogAction("连手机上的文件一起删", WontonButtonKind.DANGER) { dismiss(true) },
+            WontonDialogAction("取消", onClick = onClose),
+        ),
     )
 }

@@ -129,13 +129,19 @@ private struct TransferButtons: View {
         }
         .quickLookPreview($opened)
         .sheet(item: $sharing) { ShareSheet(url: $0.url) }
-        .confirmationDialog("清理 \(transfer.name)", isPresented: $isConfirmingDismiss, titleVisibility: .visible) {
-            Button("只清记录") { files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false)) }
-            Button("连手机上的文件一起删", role: .destructive) {
-                files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: true))
-            }
-            Button("取消", role: .cancel) {}
-        }
+        .wontonDialog(
+            "清理 \(transfer.name)",
+            isPresented: $isConfirmingDismiss,
+            actions: [
+                WontonDialogAction(title: "只清记录") {
+                    files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
+                },
+                WontonDialogAction(title: "连手机上的文件一起删", kind: .danger) {
+                    files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: true))
+                },
+                WontonDialogAction(title: "取消")
+            ]
+        )
     }
 
     @ViewBuilder private func button(_ action: TransferAction) -> some View {

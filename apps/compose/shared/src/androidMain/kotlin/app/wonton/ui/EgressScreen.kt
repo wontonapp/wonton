@@ -11,10 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +35,8 @@ import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.Rgb
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -116,12 +116,15 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
 
 @Composable
 private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsState) {
-    AlertDialog(
-        onDismissRequest = { plugins.send(Action.DismissEgressConfirmation) },
-        title = { Text(if (confirmation.cancelling) "取消代理要重启这些插件" else "配上代理要重启这些插件") },
-        text = { Text(confirmation.restarts.joinToString("、") { it.title } + "\n数据不动。") },
-        confirmButton = { TextButton(onClick = { plugins.send(Action.ConfirmEgressProxy) }) { Text("重启") } },
-        dismissButton = { TextButton(onClick = { plugins.send(Action.DismissEgressConfirmation) }) { Text("取消") } },
+    val dismiss = { plugins.send(Action.DismissEgressConfirmation) }
+    WontonDialog(
+        if (confirmation.cancelling) "取消代理要重启这些插件" else "配上代理要重启这些插件",
+        confirmation.restarts.joinToString("、") { it.title } + "\n数据不动。",
+        dismiss,
+        listOf(
+            WontonDialogAction("取消", onClick = dismiss),
+            WontonDialogAction("重启", WontonButtonKind.PRIMARY) { plugins.send(Action.ConfirmEgressProxy) },
+        ),
     )
 }
 

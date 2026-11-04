@@ -25,11 +25,7 @@ struct InstallConfirmView: View {
             }
         }
         .wontonModalScreen(isUpgrade ? "升级" : "安装")
-        .alert("操作被拒绝", isPresented: isShowingRejection, presenting: rejection) { _ in
-            Button("好") {}
-        } message: { reason in
-            Text(reason)
-        }
+        .wontonDialog("操作被拒绝", message: rejection, isPresented: isShowingRejection)
         .task { await load() }
     }
 

@@ -11,11 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +33,7 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.ui.design.WontonBarItem
 import app.wonton.ui.design.WontonBottomBar
+import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Chat
@@ -207,12 +206,7 @@ private fun hidesBottomBar(tab: Int, chat: ChatNavigation, home: PluginNavigatio
 
 @Composable
 private fun Notice(title: String, reason: String, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("好") } },
-        title = { Text(title) },
-        text = { Text(reason) },
-    )
+    WontonDialog(title, reason, onDismiss)
 }
 
 /** 核心起不来或开发时传入的配对码被拒绝：如实显示原因，不进入主界面。 */

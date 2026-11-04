@@ -310,24 +310,25 @@ private struct DetailSections: View {
 extension View {
     /// 卸载前确认：可以保留数据，也可以连数据一起删。
     func uninstallDialog(_ target: Binding<UninstallTarget?>, model: PluginsModel) -> some View {
-        // 用 alert 不用 confirmationDialog：iOS 26 上后者弹成气泡，“取消”按钮不显示（iOS 26.5 模拟器实测）。
-        alert(
+        let id = target.wrappedValue?.id ?? ""
+        return wontonDialog(
             "卸载“\(target.wrappedValue?.title ?? "")”？",
+            message: "删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。",
             isPresented: Binding(
                 get: { target.wrappedValue != nil },
                 set: { isShowing in
                     if !isShowing { target.wrappedValue = nil }
                 }
             ),
-            presenting: target.wrappedValue
-        ) { plugin in
-            Button("卸载，保留数据") { model.send(.uninstallPlugin(id: plugin.id, deleteData: false)) }
-            Button("卸载并删除数据", role: .destructive) {
-                model.send(.uninstallPlugin(id: plugin.id, deleteData: true))
-            }
-            Button("取消", role: .cancel) {}
-        } message: { _ in
-            Text("删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。")
-        }
+            actions: [
+                WontonDialogAction(title: "卸载，保留数据") {
+                    model.send(.uninstallPlugin(id: id, deleteData: false))
+                },
+                WontonDialogAction(title: "卸载并删除数据", kind: .danger) {
+                    model.send(.uninstallPlugin(id: id, deleteData: true))
+                },
+                WontonDialogAction(title: "取消")
+            ]
+        )
     }
 }

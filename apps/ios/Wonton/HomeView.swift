@@ -58,11 +58,7 @@ struct HomeView: View {
                     PluginPage(title: url.host() ?? "", url: url, proxy: proxy) { isShowingPage = false }
                 }
             }
-            .alert("操作被拒绝", isPresented: isShowingRejection, presenting: model.rejection) { _ in
-                Button("好") {}
-            } message: { reason in
-                Text(reason)
-            }
+            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
         }
     }
 
@@ -84,11 +80,7 @@ struct HomeView: View {
         .task { plugins.refresh(.refreshPlugins) }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
         .uninstallDialog($uninstalling, model: plugins)
-        .alert("操作被拒绝", isPresented: isShowingPluginRejection, presenting: plugins.rejection) { _ in
-            Button("好") {}
-        } message: { reason in
-            Text(reason)
-        }
+        .wontonDialog("操作被拒绝", message: plugins.rejection, isPresented: isShowingPluginRejection)
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {

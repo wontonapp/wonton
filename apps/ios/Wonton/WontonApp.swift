@@ -79,11 +79,7 @@ private struct MainView: View {
                 ) { self.page = nil }
             }
         }
-        .alert("打不开", isPresented: isShowingUnavailable, presenting: unavailable) { _ in
-            Button("好") {}
-        } message: { reason in
-            Text(reason)
-        }
+        .wontonDialog("打不开", message: unavailable, isPresented: isShowingUnavailable)
         // 主屏和商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
         .task { await home.observe() }
         .task { await plugins.observe() }

@@ -7,11 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +24,9 @@ import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.Rgb
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
@@ -75,19 +76,15 @@ private fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDi
         onDismiss()
         plugins.send(Action.UninstallPlugin(target.id, deleteData))
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("卸载“${target.title}”？") },
-        text = { Text("删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。") },
-        confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = { uninstall(false) }) { Text("卸载，保留数据") }
-                TextButton(onClick = { uninstall(true) }) {
-                    Text("卸载并删除数据", color = WontonTheme.colors.danger.toColor())
-                }
-                TextButton(onClick = onDismiss) { Text("取消") }
-            }
-        },
+    WontonDialog(
+        "卸载“${target.title}”？",
+        "删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。",
+        onDismiss,
+        listOf(
+            WontonDialogAction("卸载，保留数据") { uninstall(false) },
+            WontonDialogAction("卸载并删除数据", WontonButtonKind.DANGER) { uninstall(true) },
+            WontonDialogAction("取消", onClick = onDismiss),
+        ),
     )
 }
 

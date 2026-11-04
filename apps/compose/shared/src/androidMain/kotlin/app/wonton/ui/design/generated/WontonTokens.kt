@@ -52,12 +52,14 @@ object WontonSize {
     val switchWidth = 44.dp
     val switchHeight = 26.dp
     val switchKnob = 22.dp
+    val dialogWidth = 320.dp
     val hairline = 1.dp
 }
 
 object WontonRatio {
     val pluginIconRadius = 0.2237f
     val secondaryContent = 0.7f
+    val scrim = 0.4f
 }
 
 object WontonMotion {

@@ -45,12 +45,14 @@ enum WontonSize {
     static let switchWidth: CGFloat = 44
     static let switchHeight: CGFloat = 26
     static let switchKnob: CGFloat = 22
+    static let dialogWidth: CGFloat = 320
     static let hairline: CGFloat = 1
 }
 
 enum WontonRatio {
     static let pluginIconRadius: CGFloat = 0.2237
     static let secondaryContent: CGFloat = 0.7
+    static let scrim: CGFloat = 0.4
 }
 
 enum WontonMotion {
