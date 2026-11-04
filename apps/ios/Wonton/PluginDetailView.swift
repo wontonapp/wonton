@@ -131,17 +131,16 @@ private struct InstalledLanWebui: View {
     let updated: (PluginDetail) -> Void
     @State private var target: Bool?
     @State private var problem: String?
-    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             LanWebuiToggle(
                 offer: offer,
                 isOn: Binding(get: { target ?? offer.enabled }, set: { change(to: $0) })
             )
             .disabled(target != nil)
             if target != nil { ProgressView() }
-            if let problem { Text(problem).foregroundStyle(Color(colors.danger)) }
+            if let problem { WontonNotice(icon: .warning, title: problem) }
         }
     }
 

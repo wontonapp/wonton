@@ -49,6 +49,9 @@ object WontonSize {
     val screenshot = 380.dp
     val chip = 36.dp
     val smallButton = 32.dp
+    val switchWidth = 44.dp
+    val switchHeight = 26.dp
+    val switchKnob = 22.dp
     val hairline = 1.dp
 }
 

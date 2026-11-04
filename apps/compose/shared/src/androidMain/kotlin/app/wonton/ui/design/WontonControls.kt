@@ -119,6 +119,7 @@ fun WontonTextField(
     label: String? = null,
     textStyle: TextStyle = WontonTheme.typography.body,
     maxLines: Int = 1,
+    enabled: Boolean = true,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
@@ -127,6 +128,7 @@ fun WontonTextField(
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         singleLine = maxLines == 1,
         maxLines = maxLines,
         textStyle = textStyle.copy(color = colors.textPrimary.toColor()),
@@ -134,7 +136,9 @@ fun WontonTextField(
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
-        modifier = modifier.semantics { label?.let { contentDescription = it } },
+        modifier = modifier
+            .alpha(if (enabled) 1f else DISABLED_ALPHA)
+            .semantics { label?.let { contentDescription = it } },
         decorationBox = { field ->
             Box(
                 Modifier.fillMaxWidth()

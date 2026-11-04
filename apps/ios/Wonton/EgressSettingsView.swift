@@ -12,15 +12,15 @@ struct EgressSettingsView: View {
 
     var body: some View {
         content
-            .navigationTitle("出网代理")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    if egress.saving {
-                        ProgressView()
-                    } else {
-                        Button("保存") { save(address: address) }.disabled(egress.current == nil)
-                    }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .wontonPushedScreen("出网代理") {
+                if egress.saving {
+                    ProgressView().padding(.trailing, WontonTheme.spacing.s12)
+                } else {
+                    Button("保存") { save(address: address) }
+                        .buttonStyle(WontonSmallButtonStyle())
+                        .disabled(egress.current == nil)
+                        .padding(.trailing, WontonTheme.spacing.s12)
                 }
             }
             .onAppear { model.send(.refreshEgressProxy) }
@@ -51,24 +51,30 @@ struct EgressSettingsView: View {
     }
 
     private func form(_ current: EgressCurrent) -> some View {
-        Form {
-            ForEach(problems, id: \.self) { message in
-                Text(message).foregroundStyle(Color(colors.danger))
-            }
-            addressSection(current)
-            if let plugin = current.pluginPath, let core = current.corePath {
-                Section {
-                    EgressPathRow(title: "插件", state: plugin)
-                    EgressPathRow(title: "家里的服务器", state: core)
+        ScrollView {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+                ForEach(problems, id: \.self) { WontonNotice(icon: .warning, title: $0) }
+                addressSection(current)
+                if let plugin = current.pluginPath, let core = current.corePath {
+                    WontonGroup {
+                        EgressPathRow(title: "插件", state: plugin)
+                        WontonSeparator()
+                        EgressPathRow(title: "家里的服务器", state: core)
+                    }
+                }
+                rangesSection(current)
+                if current.settings.url != nil, !current.addressLocked {
+                    Button(role: .destructive) {
+                        save(address: "")
+                    } label: {
+                        Text("取消代理").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .danger))
                 }
             }
-            rangesSection(current)
-            if current.settings.url != nil, !current.addressLocked {
-                Section {
-                    Button("取消代理", role: .destructive) { save(address: "") }
-                }
-            }
+            .padding(WontonTheme.spacing.pageInset)
         }
+        .scrollDismissesKeyboard(.immediately)
         .disabled(egress.saving)
     }
 
@@ -77,21 +83,19 @@ struct EgressSettingsView: View {
     }
 
     private func addressSection(_ current: EgressCurrent) -> some View {
-        Section {
+        DetailSection(title: "代理地址") {
             // verbatim：字符串字面量会按 Markdown 认成链接，占位符显示成蓝色，像是已经填好了。
             TextField("代理地址", text: $address, prompt: Text(verbatim: "http://192.168.1.2:7890"))
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .disabled(current.addressLocked)
-        } header: {
-            Text("代理地址")
-        } footer: {
+                .wontonField()
             switch current.settings.source {
             case .env:
-                Text("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
+                secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
             case .detected:
-                Text("安装时检测到的。")
+                secondary("安装时检测到的。")
             case .unset, .settings, .unknown:
                 EmptyView()
             }
@@ -99,22 +103,24 @@ struct EgressSettingsView: View {
     }
 
     private func rangesSection(_ current: EgressCurrent) -> some View {
-        Section {
-            TextField("100.64.0.0/10", text: $directCidrs)
+        DetailSection(title: "直连网段") {
+            TextField("直连网段", text: $directCidrs, prompt: Text(verbatim: "100.64.0.0/10"))
                 .keyboardType(.numbersAndPunctuation)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .wontonField()
             if !current.settings.hostCidrs.isEmpty {
-                LabeledContent("主机所在网段", value: current.settings.hostCidrs.joined(separator: ", "))
+                secondary("主机所在网段：" + current.settings.hostCidrs.joined(separator: ", "))
             }
-            ForEach(current.settings.notices, id: \.self) { notice in
-                Text(notice).foregroundStyle(Color(colors.warning))
-            }
-        } header: {
-            Text("直连网段")
-        } footer: {
-            Text("这些网段不经代理，出网插件都能连。")
+            secondary("这些网段不经代理，出网插件都能连。")
+            ForEach(current.settings.notices, id: \.self) { secondary($0, tint: colors.warning) }
         }
+    }
+
+    private func secondary(_ text: String, tint: Rgb? = nil) -> some View {
+        Text(text)
+            .wontonText(WontonTheme.typography.supporting)
+            .foregroundStyle(Color(tint ?? colors.textSecondary))
     }
 
     private func save(address: String) {
@@ -129,12 +135,14 @@ private struct EgressPathRow: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            LabeledContent(title) {
-                Text(label).foregroundStyle(tint)
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            WontonRow(title: title, value: label, valueTint: tint)
             if let message {
-                Text(message).font(.footnote).foregroundStyle(.secondary)
+                Text(message)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .padding(.horizontal, WontonTheme.spacing.s16)
+                    .padding(.bottom, WontonTheme.spacing.s12)
             }
         }
     }
@@ -148,12 +156,12 @@ private struct EgressPathRow: View {
         }
     }
 
-    private var tint: Color {
+    private var tint: Rgb {
         switch state {
-        case .probing: return Color(colors.textSecondary)
-        case .reachable: return Color(colors.success)
-        case .uncertain: return Color(colors.warning)
-        case .failed: return Color(colors.danger)
+        case .probing: return colors.textSecondary
+        case .reachable: return colors.success
+        case .uncertain: return colors.warning
+        case .failed: return colors.danger
         }
     }
 
@@ -172,12 +180,21 @@ struct LanWebuiToggle: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             Toggle(isOn: $isOn) {
-                Text("在局域网开放网页")
-                Text("端口 " + offer.ports.map { String($0.port) }.joined(separator: ", "))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("在局域网开放网页")
+                        .wontonText(WontonTheme.typography.body)
+                        .foregroundStyle(Color(colors.textPrimary))
+                    Text("端口 " + offer.ports.map { String($0.port) }.joined(separator: ", "))
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
             }
-            Text(offer.risk).font(.footnote).foregroundStyle(Color(colors.warning))
+            .toggleStyle(WontonToggleStyle())
+            Text(offer.risk)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.warning))
         }
     }
 }

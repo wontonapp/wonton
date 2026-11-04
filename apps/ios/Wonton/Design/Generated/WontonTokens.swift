@@ -42,6 +42,9 @@ enum WontonSize {
     static let screenshot: CGFloat = 380
     static let chip: CGFloat = 36
     static let smallButton: CGFloat = 32
+    static let switchWidth: CGFloat = 44
+    static let switchHeight: CGFloat = 26
+    static let switchKnob: CGFloat = 22
     static let hairline: CGFloat = 1
 }
 

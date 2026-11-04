@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import app.wonton.protocol.Rgb
 import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.WontonIcon
 
@@ -37,7 +38,13 @@ fun WontonGroup(content: @Composable () -> Unit) {
 
 /** 列表行，有 `onClick` 时能点。 */
 @Composable
-fun WontonRow(title: String, value: String? = null, showsForward: Boolean = false, onClick: (() -> Unit)? = null) {
+fun WontonRow(
+    title: String,
+    value: String? = null,
+    valueTint: Rgb? = null,
+    showsForward: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
     val colors = WontonTheme.colors
     Row(
         Modifier.fillMaxWidth()
@@ -53,7 +60,7 @@ fun WontonRow(title: String, value: String? = null, showsForward: Boolean = fals
                 Text(
                     it,
                     style = WontonTheme.typography.body.copy(textAlign = TextAlign.End),
-                    color = colors.textSecondary.toColor(),
+                    color = (valueTint ?: colors.textSecondary).toColor(),
                 )
             }
         }

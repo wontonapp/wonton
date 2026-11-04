@@ -85,6 +85,7 @@ struct WontonGroup<Content: View>: View {
 struct WontonRow: View {
     let title: String
     var value: String?
+    var valueTint: Rgb?
     var showsForward = false
     @Environment(\.wontonColors) private var colors
 
@@ -98,7 +99,7 @@ struct WontonRow: View {
             if let value {
                 Text(value)
                     .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textSecondary))
+                    .foregroundStyle(Color(valueTint ?? colors.textSecondary))
                     .multilineTextAlignment(.trailing)
             }
             if showsForward {

@@ -121,12 +121,12 @@ private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> U
                 }
             }
             WontonGroup {
+                WontonRow("出网代理", showsForward = true, onClick = { onNavigate(HomePage.EGRESS) })
+            }
+            WontonGroup {
                 WontonRow("添加设备", showsForward = true, onClick = { onNavigate(HomePage.INVITE) })
                 WontonSeparator()
                 WontonRow("重新配对", showsForward = true, onClick = { onNavigate(HomePage.PAIRING) })
-            }
-            WontonGroup {
-                WontonRow("出网代理", showsForward = true, onClick = { onNavigate(HomePage.EGRESS) })
             }
         }
     }

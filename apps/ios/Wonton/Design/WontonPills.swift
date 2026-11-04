@@ -82,3 +82,40 @@ struct WontonSmallButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: WontonTheme.motion.feedback), value: configuration.isPressed)
     }
 }
+
+/// 开关：语义还是系统的 `Toggle`，样子自己画。
+struct WontonToggleStyle: ToggleStyle {
+    @Environment(\.wontonColors) private var colors
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(spacing: WontonTheme.spacing.s12) {
+                configuration.label
+                Spacer(minLength: 0)
+                track(isOn: configuration.isOn)
+            }
+            .frame(minHeight: WontonTheme.size.target)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.4)
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(configuration.isOn ? "开" : "关")
+    }
+
+    private func track(isOn: Bool) -> some View {
+        Capsule()
+            .fill(Color(isOn ? colors.primary : colors.separator))
+            .frame(width: WontonTheme.size.switchWidth, height: WontonTheme.size.switchHeight)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(Color(isOn ? colors.onPrimary : colors.textSecondary))
+                    .frame(width: WontonTheme.size.switchKnob, height: WontonTheme.size.switchKnob)
+                    .padding(.horizontal, (WontonTheme.size.switchHeight - WontonTheme.size.switchKnob) / 2)
+            }
+            .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isOn)
+    }
+}

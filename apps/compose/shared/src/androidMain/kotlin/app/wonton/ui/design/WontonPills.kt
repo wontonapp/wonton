@@ -1,5 +1,7 @@
 package app.wonton.ui.design
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -9,8 +11,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -122,6 +126,37 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
             contentAlignment = Alignment.Center,
         ) {
             Text(text, style = WontonTheme.typography.supporting, color = colors.textPrimary.toColor())
+        }
+    }
+}
+
+/** 开关：语义还是 `toggleable`，样子自己画。 */
+@Composable
+fun WontonSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    val colors = WontonTheme.colors
+    val inset = (WontonTheme.size.switchHeight - WontonTheme.size.switchKnob) / 2
+    val travel = WontonTheme.size.switchWidth - WontonTheme.size.switchKnob - inset
+    val offset by animateDpAsState(
+        if (checked) travel else inset,
+        tween(WontonTheme.motion.feedback),
+        label = "switch",
+    )
+    Box(
+        Modifier.heightIn(min = WontonTheme.size.target)
+            .alpha(if (enabled) 1f else DISABLED_ALPHA)
+            .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(WontonTheme.size.switchWidth, WontonTheme.size.switchHeight)
+                .background((if (checked) colors.primary else colors.separator).toColor(), CircleShape),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                Modifier.offset(x = offset)
+                    .size(WontonTheme.size.switchKnob)
+                    .background((if (checked) colors.onPrimary else colors.textSecondary).toColor(), CircleShape),
+            )
         }
     }
 }

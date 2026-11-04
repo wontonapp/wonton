@@ -13,14 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,8 +24,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -42,12 +34,25 @@ import app.wonton.protocol.EgressPathState
 import app.wonton.protocol.EgressProxySource
 import app.wonton.protocol.LanWebuiOffer
 import app.wonton.protocol.PluginDetail
+import app.wonton.protocol.Rgb
+import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonRow
+import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonSeparator
+import app.wonton.ui.design.WontonSmallButton
+import app.wonton.ui.design.WontonSwitch
+import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.launch
 
 /** 出网代理的设置页（ADR-0023）：结论都在核心，这里渲染，并把输入框的内容发回去。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
     val egress = plugins.viewModel.egress
@@ -57,41 +62,48 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
     var address by remember(current?.address) { mutableStateOf(current?.address.orEmpty()) }
     var directCidrs by remember(current?.directCidrs) { mutableStateOf(current?.directCidrs.orEmpty()) }
     val save = { target: String -> plugins.send(Action.SaveEgressProxy(target, directCidrs)) }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("出网代理") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
-                actions = {
-                    if (egress.saving) {
-                        CircularProgressIndicator(Modifier.padding(end = 16.dp).size(24.dp), strokeWidth = 2.dp)
-                    } else {
-                        TextButton(onClick = { save(address) }, enabled = current != null) { Text("保存") }
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+    val bar = @Composable {
+        WontonPushedBar("出网代理", onBack) {
+            if (egress.saving) {
+                CircularProgressIndicator(
+                    Modifier.padding(end = WontonTheme.spacing.s12).size(WontonTheme.size.icon),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Box(Modifier.padding(end = WontonTheme.spacing.s12)) {
+                    WontonSmallButton("保存", { save(address) }, enabled = current != null)
+                }
+            }
+        }
+    }
+    WontonScreen(bar = bar) {
+        Box(Modifier.fillMaxSize()) {
             val problem = egress.loadProblem
             when {
                 current != null -> Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+                    verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
                 ) {
-                    listOfNotNull(egress.saveProblem, problem).forEach {
-                        Text(it.message, color = WontonTheme.colors.danger.toColor())
-                    }
+                    listOfNotNull(egress.saveProblem, problem).forEach { WontonNotice(WontonIcon.Warning, it.message) }
                     AddressField(current, address, !egress.saving) { address = it }
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        current.pluginPath?.let { EgressPathRow("插件", it) }
-                        current.corePath?.let { EgressPathRow("家里的服务器", it) }
+                    val plugin = current.pluginPath
+                    val core = current.corePath
+                    if (plugin != null && core != null) {
+                        WontonGroup {
+                            EgressPathRow("插件", plugin)
+                            WontonSeparator()
+                            EgressPathRow("家里的服务器", core)
+                        }
                     }
                     RangesField(current, directCidrs, !egress.saving) { directCidrs = it }
                     if (current.settings.url != null && !current.addressLocked) {
-                        TextButton(onClick = { save("") }, enabled = !egress.saving) {
-                            Text("取消代理", color = WontonTheme.colors.danger.toColor())
-                        }
+                        WontonButton(
+                            "取消代理",
+                            { save("") },
+                            Modifier.fillMaxWidth(),
+                            WontonButtonKind.DANGER,
+                            enabled = !egress.saving,
+                        )
                     }
                 }
                 problem != null -> ProblemView(problem.message, null) { plugins.send(Action.RefreshEgressProxy) }
@@ -115,15 +127,14 @@ private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsStat
 
 @Composable
 private fun AddressField(current: EgressCurrent, value: String, enabled: Boolean, onChange: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onChange,
-            modifier = Modifier.fillMaxWidth(),
+    DetailSection("代理地址") {
+        WontonTextField(
+            value,
+            onChange,
+            Modifier.fillMaxWidth(),
+            placeholder = "http://192.168.1.2:7890",
+            label = "代理地址",
             enabled = enabled && !current.addressLocked,
-            label = { Text("代理地址") },
-            placeholder = { Text("http://192.168.1.2:7890") },
-            singleLine = true,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
         )
         when (current.settings.source) {
@@ -136,22 +147,21 @@ private fun AddressField(current: EgressCurrent, value: String, enabled: Boolean
 
 @Composable
 private fun RangesField(current: EgressCurrent, value: String, enabled: Boolean, onChange: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onChange,
-            modifier = Modifier.fillMaxWidth(),
+    DetailSection("直连网段") {
+        WontonTextField(
+            value,
+            onChange,
+            Modifier.fillMaxWidth(),
+            placeholder = "100.64.0.0/10",
+            label = "直连网段",
             enabled = enabled,
-            label = { Text("直连网段") },
-            placeholder = { Text("100.64.0.0/10") },
-            singleLine = true,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
         )
         if (current.settings.hostCidrs.isNotEmpty()) {
             Secondary("主机所在网段：" + current.settings.hostCidrs.joinToString(", "))
         }
         Secondary("这些网段不经代理，出网插件都能连。")
-        current.settings.notices.forEach { Text(it, color = WontonTheme.colors.warning.toColor()) }
+        current.settings.notices.forEach { Secondary(it, WontonTheme.colors.warning) }
     }
 }
 
@@ -160,37 +170,45 @@ private fun RangesField(current: EgressCurrent, value: String, enabled: Boolean,
 private fun EgressPathRow(title: String, state: EgressPathState) {
     val colors = WontonTheme.colors
     val (label, tint, message) = when (state) {
-        is EgressPathState.Probing -> Triple("探测中", colors.textSecondary.toColor(), null)
-        is EgressPathState.Reachable -> Triple("通", colors.success.toColor(), null)
-        is EgressPathState.Uncertain -> Triple("不确定", colors.warning.toColor(), state.message)
-        is EgressPathState.Failed -> Triple("不通", colors.danger.toColor(), state.message)
+        is EgressPathState.Probing -> Triple("探测中", colors.textSecondary, null)
+        is EgressPathState.Reachable -> Triple("通", colors.success, null)
+        is EgressPathState.Uncertain -> Triple("不确定", colors.warning, state.message)
+        is EgressPathState.Failed -> Triple("不通", colors.danger, state.message)
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(title)
-            Text(label, color = tint, fontWeight = FontWeight.SemiBold)
+    Column {
+        WontonRow(title, label, tint)
+        message?.let {
+            Box(
+                Modifier.padding(
+                    start = WontonTheme.spacing.s16,
+                    end = WontonTheme.spacing.s16,
+                    bottom = WontonTheme.spacing.s12,
+                ),
+            ) {
+                Secondary(it)
+            }
         }
-        message?.let { Secondary(it) }
     }
 }
 
 @Composable
-private fun Secondary(text: String, color: Color = WontonTheme.colors.textSecondary.toColor()) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = color)
+private fun Secondary(text: String, color: Rgb = WontonTheme.colors.textSecondary) {
+    Text(text, style = WontonTheme.typography.supporting, color = color.toColor())
 }
 
 /** 网页局域网端口的开关（ADR-0023），风险写在旁边。 */
 @Composable
 fun LanWebuiToggle(offer: LanWebuiOffer, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val colors = WontonTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("在局域网开放网页")
+                Text("在局域网开放网页", style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
                 Secondary("端口 " + offer.ports.joinToString(", ") { it.port.toString() })
             }
-            Switch(checked, onChange, enabled = enabled)
+            WontonSwitch(checked, onChange, enabled)
         }
-        Secondary(offer.risk, WontonTheme.colors.warning.toColor())
+        Secondary(offer.risk, colors.warning)
     }
 }
 
@@ -200,7 +218,7 @@ fun InstalledLanWebui(plugins: PluginsState, id: String, offer: LanWebuiOffer, o
     val scope = rememberCoroutineScope()
     var target by remember { mutableStateOf<Boolean?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         LanWebuiToggle(offer, target ?: offer.enabled, enabled = target == null) { enabled ->
             target = enabled
             problem = null
@@ -214,7 +232,7 @@ fun InstalledLanWebui(plugins: PluginsState, id: String, offer: LanWebuiOffer, o
                 target = null
             }
         }
-        if (target != null) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-        problem?.let { Text(it, color = WontonTheme.colors.danger.toColor()) }
+        if (target != null) CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = 2.dp)
+        problem?.let { WontonNotice(WontonIcon.Warning, it) }
     }
 }

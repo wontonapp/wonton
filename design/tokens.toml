@@ -39,6 +39,9 @@ detailIcon = 112
 screenshot = 380
 chip = 36
 smallButton = 32
+switchWidth = 44
+switchHeight = 26
+switchKnob = 22
 hairline = 1
 
 [ratio]
