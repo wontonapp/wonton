@@ -119,7 +119,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
         .await;
 }
 
-/// Bot 发来加密私聊的邀请，等房间名同步成 Bot 的名字后主人再接受。
+/// Bot 发来加密私聊的邀请，等房间名同步成 Bot 的名字、对方也认出来后主人再接受。
 async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoomId {
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = bot
@@ -135,6 +135,7 @@ async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoom
                         && row.membership == RoomMembership::Invited
                         && row.is_direct
                         && row.name == "Hermes"
+                        && row.direct_user_id.as_deref() == Some(bot.user_id().as_str())
                 })
                 .cloned()
         })
@@ -157,6 +158,7 @@ async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoom
                     row.room_id == room_id.as_str()
                         && row.membership == RoomMembership::Joined
                         && row.is_direct
+                        && row.direct_user_id.as_deref() == Some(bot.user_id().as_str())
                 })
                 .cloned()
         })

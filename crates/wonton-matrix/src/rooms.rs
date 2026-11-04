@@ -7,7 +7,7 @@ use std::pin::pin;
 
 use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::{
-    Room, RoomMemberships, RoomState,
+    Room, RoomDisplayName, RoomMemberships, RoomState,
     ruma::{
         MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
         api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
@@ -239,11 +239,47 @@ fn snapshots<T: Clone + Send + Sync + 'static>(
 }
 
 async fn room_info(room: &Room) -> RoomInfo {
-    // 收到邀请时私聊标记在邀请事件里，加入后才进 `m.direct`；SDK 的 `is_direct` 两种都处理。
-    let is_direct = room.is_direct().await.unwrap_or_else(|error| {
-        tracing::warn!(room = %room.room_id(), "读不到私聊标记，按群聊显示：{error}");
-        false
-    });
+    // 各字段隔着 await 取，成员状态可能在中间变化（比如接受邀请的加入在这时落地），拼出来的行会
+    // 自相矛盾：`is_direct` 按受邀时邀请里的标记算，`direct_user_id` 却按加入后还没同步回来的
+    // `m.direct` 算，得到「已加入、是私聊、不知道对方是谁」。以读到的状态为准，拼完核对，变了就按
+    // 新状态重拼；成员状态变化本来就会让房间列表重发。
+    let mut state = room.state();
+    loop {
+        let info = room_info_in(room, state).await;
+        if room.state() == state {
+            return info;
+        }
+        state = room.state();
+    }
+}
+
+/// 按给定的成员状态拼一行；`room` 的实际状态变到别处时由 [`room_info`] 重拼。
+async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
+    // 私聊标记和对方从同一份数据取：收到邀请时标记在邀请事件里，加入后是 `m.direct` 里的唯一对方。
+    let (is_direct, direct_user_id) = if state == RoomState::Invited {
+        let is_direct = room.is_direct().await.unwrap_or_else(|error| {
+            tracing::warn!(room = %room.room_id(), "读不到私聊标记，按群聊显示：{error}");
+            false
+        });
+        let peer = if is_direct {
+            direct_peer(room).await
+        } else {
+            None
+        };
+        (is_direct, peer)
+    } else {
+        let targets = room.direct_targets();
+        let is_direct = !targets.is_empty();
+        let peer = if is_direct && targets.len() == 1 {
+            targets
+                .iter()
+                .next()
+                .and_then(|target| target.as_user_id().map(ToOwned::to_owned))
+        } else {
+            None
+        };
+        (is_direct, peer)
+    };
     let mut name = match room.cached_display_name() {
         Some(name) => name.to_string(),
         None => room
@@ -251,10 +287,15 @@ async fn room_info(room: &Room) -> RoomInfo {
             .await
             .map_or_else(|_| room.room_id().to_string(), |name| name.to_string()),
     };
-    // Tuwunel 的 Sliding Sync 不给房间的 heroes 带显示名，SDK 只能拿用户 ID 当私聊的名字；这时去本机的成员
-    // 事件里找对方的显示名（邀请里也有邀请人的成员事件）。
+    // Tuwunel 的 Sliding Sync 不给房间的 heroes 带显示名，SDK 只能拿用户 ID 当私聊的名字；成员事件
+    // 到得比显示名计算晚时，SDK 还会把 "Empty Room" 这类占位名缓存住，没有新的房间更新就不重算。
+    // 这些占位名都不可读，去本机的成员事件里找对方的显示名（邀请里也有邀请人的成员事件）。
     if is_direct
-        && name.starts_with('@')
+        && (name.starts_with('@')
+            || matches!(
+                room.cached_display_name(),
+                Some(RoomDisplayName::Empty | RoomDisplayName::EmptyWas(_))
+            ))
         && let Some(peer) = peer_name(room).await
     {
         name = peer;
@@ -263,13 +304,9 @@ async fn room_info(room: &Room) -> RoomInfo {
         room_id: room.room_id().to_owned(),
         name,
         is_direct,
-        direct_user_id: if is_direct {
-            direct_peer(room).await
-        } else {
-            None
-        },
+        direct_user_id,
         is_encrypted: room.encryption_state().is_encrypted(),
-        membership: room.state().into(),
+        membership: state.into(),
         latest: latest_message(room).await,
         unread_count: room.num_unread_messages(),
     }
@@ -277,20 +314,13 @@ async fn room_info(room: &Room) -> RoomInfo {
 
 /// 受邀的房间还没进 `m.direct`，对方取邀请人。
 async fn direct_peer(room: &Room) -> Option<OwnedUserId> {
-    if room.state() == RoomState::Invited {
-        return match room.invite_details().await {
-            Ok(invite) => Some(invite.inviter_id),
-            Err(error) => {
-                tracing::warn!(room = %room.room_id(), "读不到邀请人：{error}");
-                None
-            }
-        };
+    match room.invite_details().await {
+        Ok(invite) => Some(invite.inviter_id),
+        Err(error) => {
+            tracing::warn!(room = %room.room_id(), "读不到邀请人：{error}");
+            None
+        }
     }
-    let targets = room.direct_targets();
-    if targets.len() != 1 {
-        return None;
-    }
-    targets.iter().next()?.as_user_id().map(ToOwned::to_owned)
 }
 
 /// 私聊里对方的显示名；没有设置或者本机还没有对方的成员事件时为 `None`。
