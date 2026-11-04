@@ -64,8 +64,8 @@ pub(super) struct Setup {
     pub(super) bus: Arc<Bus>,
     pub(super) cards: Arc<Cards>,
     pub(super) notes: Notes,
-    manager: Arc<PluginManager>,
-    caller: Caller,
+    pub(super) manager: Arc<PluginManager>,
+    pub(super) caller: Caller,
     dir: tempfile::TempDir,
 }
 

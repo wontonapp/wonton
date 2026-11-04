@@ -6,7 +6,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool};
 use serde_json::{Value, json};
 use wonton_protocol::{Answer, ConfirmationState, FileFailure};
 
-use super::audit::{Decision, Record};
+use super::audit::{Basis, Decision, Record};
 use super::core_tools::tool;
 use super::file_tools::decision;
 use super::{Bus, Caller, Outcome, cards, error, naming};
@@ -76,6 +76,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
                 tool: &name,
                 arguments: &value,
                 decision: decision(&failure),
+                basis: None,
                 outcome: Some(failure.kind.as_str()),
                 files: &[],
             });
@@ -87,7 +88,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
     if let Some(matched) = grants.iter().find(|granted| covers(granted, &folder)) {
         let summary = summary(&target, &staged, "matched", matched);
         let (outcome, audited) = place(bus, staged, target, summary, None).await;
-        bus.record(caller, &name, &audited, Decision::Allowed, &outcome);
+        bus.record(caller, &name, &audited, Decision::Allowed, None, &outcome);
         return outcome.result;
     }
     let draft = cards::save_file(&caller.name, &staged.files, &target);
@@ -109,7 +110,14 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
         });
     let summary = summary(&target, &staged, "granted", &granted);
     let (outcome, audited) = place(bus, staged, target, summary, note).await;
-    bus.record(caller, &name, &audited, Decision::Approved, &outcome);
+    bus.record(
+        caller,
+        &name,
+        &audited,
+        Decision::Approved,
+        Some(Basis::Card),
+        &outcome,
+    );
     bus.confirmations
         .finish(ticket, outcome.state.clone())
         .await;
@@ -215,6 +223,7 @@ impl Bus {
             tool: "wonton__revoke_save_grant",
             arguments: &json!({"folder": folder}),
             decision: Decision::Approved,
+            basis: None,
             outcome: Some("ok"),
             files: &[],
         });

@@ -111,7 +111,7 @@ ADR-0016 规定：插件工具只要没标 `readOnlyHint: true`，Bot 每调用�
 | `PUT`、`DELETE /_wonton/api/plugins/{id}/tool-policy/read-only/{tool}` | 标成只读 |
 | `PUT`、`DELETE /_wonton/api/plugins/{id}/takeover` | 开始或续约、结束“我来操作”（第二批） |
 
-一律允许、始终允许和只读标记存在核心数据目录的 `core/tool-policy.json`（权限 0600，插件访问不到）。文件读不出来时当作没有任何放宽：记错误日志，设置里如实显示，不覆盖这个文件。这时设置接口的写请求返回 503 `policy_unavailable`，不写文件。
+一律允许、始终允许和只读标记存在核心数据目录的 `core/plugins/tool-policy/policy.json`（权限 0600，插件访问不到）。文件读不出来时当作没有任何放宽：记错误日志，设置里如实显示，不覆盖这个文件。这时设置接口的写请求返回 503 `policy_unavailable`，不写文件。
 
 ### 审计
 

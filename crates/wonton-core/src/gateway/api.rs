@@ -93,7 +93,7 @@ pub(super) fn error_response(status: StatusCode, kind: &'static str, message: &s
     response
 }
 
-fn install_error(error: &InstallError) -> Response {
+pub(super) fn install_error(error: &InstallError) -> Response {
     if let InstallError::EgressProxyUnavailable { reason, message } = error {
         let body = json!({"error": {
             "kind": error.kind(),

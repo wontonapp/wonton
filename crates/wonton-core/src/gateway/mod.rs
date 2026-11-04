@@ -36,6 +36,7 @@ mod push;
 mod pushers;
 mod session;
 mod sso;
+mod tool_policy;
 
 use std::net::SocketAddr;
 use std::sync::Arc;

@@ -61,6 +61,8 @@ struct Home {
     _dir: tempfile::TempDir,
 }
 
+const NOTES_ID: &str = "app.example.notes";
+
 /// 核心加上总线；`permissions` 是本机（127.0.0.0/8）冒充的插件网络得到的权限，`None` 时本机不是插件网络。
 async fn start(permissions: Option<Vec<Permission>>) -> Home {
     let dir = tempfile::tempdir().unwrap();
@@ -218,6 +220,21 @@ impl Home {
             request = request.header(*name, *value);
         }
         let request = request.body(Body::empty()).unwrap();
+        let response = router(self.gateway.clone()).oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    }
+
+    /// 请求工具策略接口，主人令牌。
+    async fn policy(&self, method: Method, path: &str, bearer: &str) -> (StatusCode, Value) {
+        let request = hyper::Request::builder()
+            .method(method)
+            .uri(format!("/_wonton/api/plugins/{NOTES_ID}/tool-policy{path}"))
+            .header(header::HOST, format!("{CORE}:{}", self.addr.port()))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .body(Body::empty())
+            .unwrap();
         let response = router(self.gateway.clone()).oneshot(request).await.unwrap();
         let status = response.status();
         let body = response.into_body().collect().await.unwrap().to_bytes();
@@ -427,4 +444,44 @@ async fn the_owner_token_lists_and_answers_cards() {
     assert_eq!(text(&call.await.unwrap()), "删掉了 y.txt");
     let (_, list) = home.pending(&owner).await;
     assert_eq!(list["confirmations"], json!([]));
+}
+
+/// 主人经接口放宽，下一次调用就不发卡片；没有身份的请求改不了（ADR-0024）。
+#[tokio::test]
+async fn the_owner_marks_a_tool_read_only_through_the_api() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let (status, _) = home.policy(Method::GET, "", "wrong").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, view) = home.policy(Method::GET, "", TOKEN).await;
+    assert_eq!(status, StatusCode::OK);
+    let access = |view: &Value, tool: &str| {
+        let tools = view["tools"].as_array().unwrap();
+        let tool = tools.iter().find(|t| t["name"] == tool).unwrap();
+        tool["access"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(access(&view, "delete"), "sensitive");
+    assert_eq!(access(&view, "search"), "plugin_read_only");
+
+    let (status, _) = home.policy(Method::PUT, "/read-only/nope", TOKEN).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = home
+        .policy(Method::PUT, "/always/com.example.nobody", TOKEN)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, view) = home.policy(Method::PUT, "/read-only/delete", TOKEN).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(access(&view, "delete"), "owner_read_only");
+
+    let agent = home.agent().await;
+    let request = CallToolRequestParams::new("app-example-notes__delete")
+        .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
+    let result = agent.peer().call_tool(request).await.unwrap();
+    assert_eq!(text(&result), "删掉了 y.txt");
+    assert_eq!(home.cards.posted.lock().unwrap().len(), 0);
+
+    let (_, view) = home
+        .policy(Method::DELETE, "/read-only/delete", TOKEN)
+        .await;
+    assert_eq!(access(&view, "delete"), "sensitive");
 }

@@ -13,6 +13,7 @@ use wonton_protocol::{FileFailure, FileSource};
 
 use crate::files::record::{FileRecord, Origin};
 use crate::plugin::PluginId;
+use crate::plugin::tool_policy::Clearance;
 
 /// 对一次调用的决定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -32,17 +33,56 @@ pub enum Decision {
     Unconfirmed,
 }
 
+/// 这次调用凭什么放行（ADR-0024 的“审计”）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Basis {
+    Card,
+    PluginReadOnly,
+    OwnerReadOnly,
+    AllowAll,
+    Always,
+}
+
+impl From<Clearance> for Basis {
+    fn from(clearance: Clearance) -> Self {
+        match clearance {
+            Clearance::OwnerReadOnly => Self::OwnerReadOnly,
+            Clearance::AllowAll => Self::AllowAll,
+            Clearance::Always => Self::Always,
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct Record<'a> {
     pub caller: &'a str,
     pub tool: &'a str,
     pub arguments: &'a Value,
     pub decision: Decision,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub basis: Option<Basis>,
     /// 执行了的话：`ok` 或者失败的原因。
     pub outcome: Option<&'a str>,
     /// 这次调用碰到的文件（ADR-0020 的“审计”）。
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub files: &'a [AuditedFile],
+}
+
+/// 主人改了放宽：一行审计。
+#[derive(Serialize)]
+pub struct PolicyRecord<'a> {
+    /// `allow_all`、`always` 或 `read_only`。
+    pub policy: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<&'a str>,
+    pub enabled: bool,
+    /// 谁改的：`device:<设备 ID>` 或 `owner_token`。
+    pub by: &'a str,
 }
 
 /// 审计里的一个文件：编号、来源插件和引用。登记不了的没有编号，写明类别。

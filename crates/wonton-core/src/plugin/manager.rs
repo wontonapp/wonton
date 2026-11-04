@@ -719,6 +719,7 @@ impl PluginManager {
             Ok(report) => {
                 self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);
+                self.tool_policy().forget_plugin(id.as_str());
                 self.changed();
                 tracing::info!(plugin = %id, "插件已卸载");
                 Ok(report)

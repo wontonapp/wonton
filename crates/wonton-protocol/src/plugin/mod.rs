@@ -5,6 +5,10 @@
 //!
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other` 或 `Unknown`，不让整份列表解析失败。
 
+mod tool_policy;
+
+pub use tool_policy::{BotSwitch, ToolAccess, ToolPolicyEntry, ToolPolicyView};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{CardLine, EgressViewModel, LanPort};

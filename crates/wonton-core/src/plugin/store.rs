@@ -22,6 +22,7 @@ use super::package_files::PackageFiles;
 use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
+use super::tool_policy::ToolPolicy;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
@@ -77,20 +78,30 @@ pub struct Store {
     model_keys: ModelKeyStore,
     preinstalled: PreinstallMarks,
     save_grants: SaveGrantStore,
+    tool_policy: ToolPolicy,
 }
 
 impl Store {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, StoreError> {
         let dir = dir.into();
         create_private_dir(&dir)?;
+        // 记录目录顶层的 `*.json` 都当插件记录，这个文件要放进子目录。
+        let tool_policy = dir.join("tool-policy");
+        create_private_dir(&tool_policy)?;
         Ok(Self {
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
             model_keys: ModelKeyStore::new(dir.join("model-keys")),
             preinstalled: PreinstallMarks::new(dir.join("preinstalled")),
             save_grants: SaveGrantStore::new(dir.join("save-grants")),
+            tool_policy: ToolPolicy::load(tool_policy.join("policy.json")),
             dir,
         })
+    }
+
+    /// 主人对确认的放宽，在记录目录下的 `tool-policy/` 里。
+    pub fn tool_policy(&self) -> &ToolPolicy {
+        &self.tool_policy
     }
 
     /// 插件密钥库，在记录目录下的 `secrets/` 里。和记录分开存：不删数据的卸载删掉记录，密钥还在。

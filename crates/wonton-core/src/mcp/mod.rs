@@ -1,6 +1,6 @@
 //! MCP 总线（ADR-0006、ADR-0016）：Agent 经 `mcp.wonton.internal` 连上来，看到核心自己的工具和所有在运行的
-//! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读的工具先请主人确认（[`confirm`]）；每次
-//! 调用写一行审计（[`audit`]）。
+//! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
+//! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
 pub mod audit;
 mod bounded_http;
@@ -13,6 +13,7 @@ mod naming;
 mod notifier;
 mod save_tools;
 mod server;
+mod tool_policy;
 pub mod upstream;
 
 use std::future::Future;
@@ -31,12 +32,13 @@ use wonton_protocol::{ConfirmationState, FileFailure};
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::plugin::{McpServer, PluginId, PluginManager};
-use audit::{Audit, AuditedFile, Decision, Record};
+use audit::{Audit, AuditedFile, Basis, Decision, Record};
 use cards::Draft;
 pub use cards::content as card_content;
 pub use confirm::{AnswerError, Confirmations, Notifier};
 pub use notifier::NoMatrix;
 pub use server::Caller;
+pub use tool_policy::PolicyChange;
 use upstream::{CallError, UncertainKind, Upstreams};
 
 /// 卡片过期之后，会话还要留多久：确认了才开始执行，执行的时间也算在这里。
@@ -338,9 +340,25 @@ impl Bus {
             .as_ref()
             .and_then(|a| a.read_only_hint)
             == Some(true);
-        if read_only {
+        let basis = if read_only {
+            Some(Basis::PluginReadOnly)
+        } else {
+            let clearance =
+                self.plugins
+                    .tool_policy()
+                    .clearance(caller.id.as_str(), server.id.as_str(), tool);
+            clearance.map(Basis::from)
+        };
+        if let Some(basis) = basis {
             let outcome = forward(self, caller, server, tool, arguments, cancelled).await;
-            self.record(caller, name, &args, Decision::Allowed, &outcome);
+            self.record(
+                caller,
+                name,
+                &args,
+                Decision::Allowed,
+                Some(basis),
+                &outcome,
+            );
             return outcome.result;
         }
         let plugin = cards::text(&server.title);
@@ -383,7 +401,14 @@ impl Bus {
             match decision {
                 Ok(ticket) => {
                     let outcome = run(bus.clone()).await;
-                    bus.record(&caller, &name, &args, Decision::Approved, &outcome);
+                    bus.record(
+                        &caller,
+                        &name,
+                        &args,
+                        Decision::Approved,
+                        Some(Basis::Card),
+                        &outcome,
+                    );
                     bus.confirmations.finish(ticket, outcome.state).await;
                     outcome.result
                 }
@@ -413,6 +438,7 @@ impl Bus {
             tool: name,
             arguments: args,
             decision,
+            basis: Some(Basis::Card),
             outcome: Some(&message),
             files: &[],
         });
@@ -425,6 +451,7 @@ impl Bus {
             tool: name,
             arguments: args,
             decision: Decision::Denied,
+            basis: None,
             outcome: Some(message),
             files: &[],
         });
@@ -437,6 +464,7 @@ impl Bus {
         name: &str,
         args: &Value,
         decision: Decision,
+        basis: Option<Basis>,
         outcome: &Outcome,
     ) {
         let files = &outcome.files;
@@ -451,6 +479,7 @@ impl Bus {
             tool: name,
             arguments: args,
             decision,
+            basis,
             outcome: Some(outcome),
             files,
         });
@@ -465,5 +494,7 @@ mod save_tests;
 pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tool_policy_tests;
 #[cfg(test)]
 mod upstream_tests;

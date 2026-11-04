@@ -58,6 +58,7 @@ pub(super) async fn call(
         tool: &name,
         arguments: &value,
         decision: done.as_ref().err().map_or(Decision::Allowed, decision),
+        basis: None,
         outcome: Some(outcome),
         files: &files,
     });

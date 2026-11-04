@@ -105,6 +105,7 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
                 tool: &name,
                 arguments: &value,
                 decision: Decision::Allowed,
+                basis: None,
                 outcome: Some("ok"),
                 files: &[],
             });

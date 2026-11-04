@@ -14,8 +14,31 @@ use serde::Deserialize;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, files, isolation, matrix,
-    pages, push, same_origin_path, sso, with_cookie,
+    pages, push, same_origin_path, sso, tool_policy, with_cookie,
 };
+
+/// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
+fn confirmation_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route("/_wonton/confirmations/{id}", post(confirmations::answer))
+        .route("/_wonton/api/confirmations", get(confirmations::pending))
+        .route(
+            "/_wonton/api/plugins/{id}/tool-policy",
+            get(tool_policy::view),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/tool-policy/always/{caller}",
+            put(tool_policy::always).delete(tool_policy::always),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/tool-policy/allow-all/{caller}",
+            put(tool_policy::allow_all).delete(tool_policy::allow_all),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/tool-policy/read-only/{tool}",
+            put(tool_policy::read_only).delete(tool_policy::read_only),
+        )
+}
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
@@ -34,8 +57,6 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/push/registration",
             put(push::register).delete(push::unregister),
         )
-        .route("/_wonton/confirmations/{id}", post(confirmations::answer))
-        .route("/_wonton/api/confirmations", get(confirmations::pending))
         .route(
             "/_wonton/api/plugins",
             get(api::list)
@@ -96,6 +117,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/api/pairing-codes/first",
             post(devices::first_pairing_code),
         )
+        .merge(confirmation_routes())
         .merge(files::routes(gateway.clone()))
         .fallback(|| async {
             pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面")
