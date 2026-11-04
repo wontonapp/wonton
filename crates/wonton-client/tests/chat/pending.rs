@@ -155,3 +155,44 @@ async fn the_same_card_twice_in_the_timeline_counts_once() {
     send(&room, content(&card("other", expires + 1))).await;
     wait_pending(&phone, "重复的只算一张", &["same", "other"]).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn the_notice_room_is_read_only_and_other_chats_are_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let (_core, notices) = core_room(&phone, &home).await;
+    let friend = home.bot("friend", "Friend").await;
+    let chat = joined_direct_chat(&phone, &friend).await;
+    let read_only = |room: &str| {
+        let room = room.to_owned();
+        move |view: &wonton_client::ChatViewModel| {
+            view.rooms
+                .iter()
+                .find(|row| row.room_id == room && row.direct_user_id.is_some())
+                .map(|row| row.is_read_only)
+        }
+    };
+    assert!(
+        phone
+            .wait_chat("通知房间只读", read_only(notices.as_str()))
+            .await
+    );
+    assert!(
+        !phone
+            .wait_chat("别的私聊能发", read_only(chat.as_str()))
+            .await
+    );
+
+    let send = |room_id: &str| {
+        phone.dispatch(Action::SendText {
+            room_id: room_id.to_owned(),
+            body: "你好".to_owned(),
+        })
+    };
+    assert!(send(notices.as_str()).is_err());
+    assert!(send(chat.as_str()).is_ok());
+}

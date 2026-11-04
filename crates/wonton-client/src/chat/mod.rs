@@ -37,7 +37,7 @@ pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
-use confirmation::{Answers, Cards};
+use confirmation::{Answers, Cards, core_account};
 use storage::{ChatStorage, StoredSession};
 use view::{core_error, recovery, room_row, verification};
 
@@ -164,7 +164,7 @@ impl ChatLink {
                     return Err(invalid("消息不能为空"));
                 }
                 let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
+                let (_, room_id) = self.send_target(&room_id)?;
                 self.spawn_op("发送消息", async move {
                     chat.room(&room_id).await?.send_text(&body).await
                 });
@@ -303,7 +303,7 @@ impl ChatLink {
             return Err(invalid(&format!("不是图片类型：{}", image.mime_type)));
         }
         let chat = self.clone();
-        let (_, room_id) = self.target(room_id)?;
+        let (_, room_id) = self.send_target(room_id)?;
         let upload = wonton_matrix::ImageUpload {
             filename: image.filename,
             mime_type: image.mime_type,
@@ -434,6 +434,20 @@ impl ChatLink {
             .parse()
             .map_err(|e| invalid(&format!("房间 ID 不合法：{e}")))?;
         Ok((self.current()?, room_id))
+    }
+
+    /// 要往房间里发东西时用它，只读的房间拒绝。
+    fn send_target(&self, room_id: &str) -> Result<(Arc<MatrixSession>, OwnedRoomId), CoreError> {
+        let read_only = self
+            .view
+            .borrow()
+            .rooms
+            .iter()
+            .any(|row| row.room_id == room_id && row.is_read_only);
+        if read_only {
+            return Err(invalid("这个房间只放通知，不能发消息"));
+        }
+        self.target(room_id)
     }
 
     fn opened(&self, room_id: &str) -> Result<Arc<ChatRoom>, CoreError> {
@@ -621,9 +635,13 @@ impl ChatLink {
                         return;
                     }
                 };
+                let core = core_account(session.user_id());
                 let mut rooms = std::pin::pin!(rooms);
                 while let Some(rooms) = rooms.next().await {
-                    let rows = rooms.into_iter().map(room_row).collect();
+                    let rows = rooms
+                        .into_iter()
+                        .map(|room| room_row(room, &core))
+                        .collect();
                     view.send_modify(|view| view.rooms = rows);
                 }
             })

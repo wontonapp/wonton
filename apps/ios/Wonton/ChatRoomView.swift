@@ -34,7 +34,9 @@ struct ChatRoomView: View {
                 messages
             }
             TransfersStrip(roomId: roomId)
-            composer
+            if !isReadOnly {
+                composer
+            }
         }
         .modifier(RoomPresentations(presenter: presenter))
         .environment(model.files)
@@ -131,6 +133,10 @@ struct ChatRoomView: View {
 
     private var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false
+    }
+
+    private var isReadOnly: Bool {
+        model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
 
     private var composer: some View {

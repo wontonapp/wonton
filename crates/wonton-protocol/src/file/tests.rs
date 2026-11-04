@@ -474,6 +474,7 @@ fn room_row(room_id: &str, name: &str) -> RoomRow {
         is_direct: true,
         direct_user_id: None,
         is_encrypted: true,
+        is_read_only: false,
         membership: crate::RoomMembership::Joined,
         preview: None,
         unread_count: 0,

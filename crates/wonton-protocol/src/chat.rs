@@ -163,6 +163,8 @@ pub struct RoomRow {
     pub direct_user_id: Option<String>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
+    /// 只读的房间（和核心账号的通知私聊）：没有人读这里的消息，壳不显示输入框，发文字和图片会被拒绝。
+    pub is_read_only: bool,
     pub membership: RoomMembership,
     /// 最新一条消息的预览；还没有消息或还没同步到时为空。
     pub preview: Option<RoomPreview>,
@@ -284,6 +286,7 @@ mod tests {
                 is_direct: true,
                 direct_user_id: Some("@hermes:home.example".into()),
                 is_encrypted: true,
+                is_read_only: false,
                 membership: RoomMembership::Invited,
                 preview: Some(RoomPreview {
                     sender_name: "Hermes".into(),

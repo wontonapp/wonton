@@ -4,7 +4,7 @@ use super::confirmation::CardsView;
 use super::rich;
 use wonton_matrix::{
     EntryKind, Error, LatestMessage, Membership, Message, MessageBody, Recovery, RoomInfo,
-    SendStatus, TimelineEntry, VectorDiff, Verification,
+    SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
     ChatFailure, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
@@ -12,13 +12,16 @@ use wonton_protocol::{
     TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
-pub(crate) fn room_row(room: RoomInfo) -> RoomRow {
+/// `core`：核心账号，和它的私聊是通知房间。
+pub(crate) fn room_row(room: RoomInfo, core: &UserId) -> RoomRow {
+    let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {
         room_id: room.room_id.to_string(),
         name: room.name,
         is_direct: room.is_direct,
         direct_user_id: room.direct_user_id.map(|user| user.to_string()),
         is_encrypted: room.is_encrypted,
+        is_read_only,
         membership: match room.membership {
             Membership::Joined => RoomMembership::Joined,
             Membership::Invited => RoomMembership::Invited,

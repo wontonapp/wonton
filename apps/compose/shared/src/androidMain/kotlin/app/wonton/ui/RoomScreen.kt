@@ -105,6 +105,7 @@ fun RoomRoute(
     roomId: String,
     title: String,
     isDirect: Boolean,
+    isReadOnly: Boolean,
     onAction: (Action) -> Unit,
     onReject: (String) -> Unit,
     onClose: () -> Unit,
@@ -128,7 +129,7 @@ fun RoomRoute(
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
     CompositionLocalProvider(LocalFiles provides FilesContext(transfers, onAction, onReject)) {
-        RoomScreen(core, roomId, title, isDirect, timeline, onAction, onReject, onClose)
+        RoomScreen(core, roomId, title, isDirect, isReadOnly, timeline, onAction, onReject, onClose)
     }
 }
 
@@ -138,6 +139,7 @@ private fun RoomScreen(
     roomId: String,
     title: String,
     isDirect: Boolean,
+    isReadOnly: Boolean,
     timeline: TimelineState,
     onAction: (Action) -> Unit,
     onReject: (String) -> Unit,
@@ -155,7 +157,7 @@ private fun RoomScreen(
                 Messages(core, roomId, timeline, showsSender = !isDirect, onAction, Modifier.weight(1f))
             }
             TransfersStrip(roomId, core)
-            Composer(roomId, onAction, onReject)
+            if (!isReadOnly) Composer(roomId, onAction, onReject)
         }
     }
 }

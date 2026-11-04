@@ -102,6 +102,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
                 roomId = room,
                 title = row?.name ?: room,
                 isDirect = row?.isDirect == true,
+                isReadOnly = row?.isReadOnly == true,
                 onAction = onAction,
                 onReject = { rejection = it },
                 onClose = { navigation.openRoom = null },
