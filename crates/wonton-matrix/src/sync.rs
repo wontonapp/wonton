@@ -16,6 +16,8 @@ use crate::{Error, MatrixSession, Result};
 pub enum SyncStatus {
     /// 未启动或已停止。
     Idle,
+    /// 已启动，房间列表第一次同步还没完成：这时没有房间不代表真的没有。
+    Starting,
     /// 正在同步。
     Running,
     /// 同步因错误停止，要再次 [`MatrixSession::start_sync`]，[`MatrixSession::keep_syncing`] 会自动做。设备被吊销时
@@ -39,6 +41,24 @@ impl From<&sync_service::State> for SyncStatus {
                 Self::Failed(Error::Transport("同步进入离线模式".to_owned()))
             }
         }
+    }
+}
+
+/// 房间列表至少同步完成过一次。SDK 启动同步服务时马上报 `Running`，不等第一个响应，所以要看房间列表自己的状态。
+/// `SettingUp` 只收到了第一批房间，和 [`MatrixSession::start_sync`] 一样等到 `Running`。
+fn has_synced(list: &room_list_service::State) -> bool {
+    match list {
+        room_list_service::State::Init | room_list_service::State::SettingUp => false,
+        room_list_service::State::Recovering | room_list_service::State::Running => true,
+        room_list_service::State::Error { from }
+        | room_list_service::State::Terminated { from } => has_synced(from),
+    }
+}
+
+fn status_of(service: &sync_service::State, list: &room_list_service::State) -> SyncStatus {
+    match SyncStatus::from(service) {
+        SyncStatus::Running if !has_synced(list) => SyncStatus::Starting,
+        status => status,
     }
 }
 
@@ -108,8 +128,18 @@ impl MatrixSession {
 
     /// 同步状态流：第一项是当前状态，之后每次变化给出新状态。
     pub fn sync_status(&self) -> impl Stream<Item = SyncStatus> + use<> {
-        let subscriber = self.sync.state();
-        let current = SyncStatus::from(&subscriber.get());
-        stream::once(future::ready(current)).chain(subscriber.map(|state| SyncStatus::from(&state)))
+        let service = self.sync.state();
+        let service_now = self.sync.state();
+        let lists = self.sync.room_list_service();
+        let current = status_of(&service.get(), &lists.state().get());
+        let list_changes = lists.state().filter_map(move |list| {
+            let service = service_now.get();
+            // 其他状态只由同步服务报，同一次失败不重复：`keep_syncing` 每报一次失败就重启一次。
+            future::ready(
+                matches!(service, sync_service::State::Running).then(|| status_of(&service, &list)),
+            )
+        });
+        let service_changes = service.map(move |service| status_of(&service, &lists.state().get()));
+        stream::once(future::ready(current)).chain(stream::select(service_changes, list_changes))
     }
 }

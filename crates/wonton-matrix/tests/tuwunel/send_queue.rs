@@ -80,6 +80,44 @@ async fn sync_restarts_by_itself_and_the_open_room_catches_up() {
     );
 }
 
+/// 房间列表第一次同步完成前不算在同步：新设备这时还没有房间，界面不能当成“没有聊天”。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn sync_is_not_running_before_the_first_room_list_arrives() {
+    let server = TestServer::start().await;
+    let relay = Relay::start(&server.url).await;
+    let alice = server
+        .login_via(
+            relay.url(),
+            &unique("alice"),
+            "Alice 的手机",
+            StoreConfig::InMemory,
+        )
+        .await;
+    relay.cut();
+    let statuses = alice.sync_status();
+    let seen = async {
+        let mut statuses = std::pin::pin!(statuses);
+        let mut seen = Vec::new();
+        while let Some(status) = statuses.next().await {
+            let failed = matches!(status, SyncStatus::Failed(_));
+            seen.push(status);
+            if failed {
+                return seen;
+            }
+        }
+        seen
+    };
+    let (seen, started) = tokio::join!(seen, alice.start_sync());
+    assert!(started.is_err(), "连不上服务器时同步启动不了");
+    assert!(seen.contains(&SyncStatus::Starting), "{seen:?}");
+    assert!(!seen.contains(&SyncStatus::Running), "{seen:?}");
+
+    relay.restore();
+    alice.start_sync().await.expect("连接恢复后开始同步");
+    assert_eq!(alice.sync_status().next().await, Some(SyncStatus::Running));
+}
+
 /// 服务器拒绝身份时重启也没用，不重试。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]

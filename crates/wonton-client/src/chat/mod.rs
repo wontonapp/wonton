@@ -670,6 +670,7 @@ impl ChatLink {
                 while let Some(status) = statuses.next().await {
                     let sync = match status {
                         SyncStatus::Idle => ChatSync::Idle,
+                        SyncStatus::Starting => ChatSync::Starting,
                         SyncStatus::Running => ChatSync::Running,
                         SyncStatus::Failed(error) => ChatSync::Failed {
                             reason: failure(&error),
