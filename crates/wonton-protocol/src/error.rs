@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CoreError {
     /// 操作的参数不满足要求，或引用了不存在的对象。
-    #[error("输入非法：{reason}")]
+    #[error("{reason}")]
     InvalidInput { reason: String },
     /// 读写本机存储失败（设备密钥、连接信息、聊天会话、外观设置）。
     #[error("本机存储读写失败：{reason}")]

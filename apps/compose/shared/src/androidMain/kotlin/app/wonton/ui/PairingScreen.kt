@@ -18,15 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,7 +32,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -47,6 +47,19 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.PairingFailure
 import app.wonton.protocol.PairingStatus
+import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonTextField
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.CameraOff
+import app.wonton.ui.icons.Error
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
+
+private const val PASTED_CODE_LINES = 5
+private val SCANNER_HEIGHT = 280.dp
 
 /**
  * 扫码配对：扫家里服务器状态页上（或服务器上 `wonton-core pair` 打出）的二维码，也可以粘贴码的文字。
@@ -72,38 +85,60 @@ fun PairingScreen(
         previous = pairing
     }
     val inProgress = pairing is PairingStatus.InProgress
+    val focus = LocalFocusManager.current
     fun pair(code: String) {
         if (inProgress) return
+        // 结果显示在按钮下面，键盘不收会挡住。
+        focus.clearFocus()
         lastCode = code
         refusal = core.send(Action.PairHome(code, deviceName))
     }
+    val secondary = WontonTheme.colors.textSecondary.toColor()
     Column(
-        modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier.verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        CameraArea(onCode = { code -> if (code != lastCode) pair(code) })
-        Text(
-            "在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedTextField(
-            value = pastedCode,
-            onValueChange = { pastedCode = it },
-            label = { Text("或者粘贴配对码") },
-            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(onClick = { pair(pastedCode) }, enabled = pastedCode.isNotBlank() && !inProgress) { Text("配对") }
-        OutlinedTextField(
-            value = deviceName,
-            onValueChange = { deviceName = it },
-            label = { Text("这台设备的名字") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        refusal?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            CameraArea(onCode = { code -> if (code != lastCode) pair(code) })
+            Text(
+                "在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。",
+                style = WontonTheme.typography.supporting,
+                color = secondary,
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            WontonTextField(
+                value = pastedCode,
+                onValueChange = { pastedCode = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "粘贴配对码",
+                textStyle = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
+                maxLines = PASTED_CODE_LINES,
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+            )
+            WontonButton(
+                "配对",
+                onClick = { pair(pastedCode) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = pastedCode.isNotBlank() && !inProgress,
+            )
+        }
+        refusal?.let { WontonNotice(WontonIcon.Error, it) }
         pairing?.let { status -> PairingProgress(status, onRetry = lastCode?.let { code -> { pair(code) } }) }
+        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            Text(
+                "这台设备的名字",
+                Modifier.semantics { hideFromAccessibility() },
+                style = WontonTheme.typography.supporting,
+                color = secondary,
+            )
+            WontonTextField(
+                value = deviceName,
+                onValueChange = { deviceName = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = "这台设备的名字",
+            )
+        }
     }
 }
 
@@ -139,21 +174,36 @@ private fun CameraArea(onCode: (String) -> Unit) {
     }
     when (access) {
         CameraAccess.Granted -> problem?.let { reason ->
-            Column {
-                Text(reason, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = { problem = null }) { Text("重新打开相机") }
+            WontonNotice(WontonIcon.CameraOff, reason) {
+                WontonButton("重新打开相机", { problem = null }, kind = WontonButtonKind.SECONDARY)
             }
-        } ?: QrScanner(onCode, onUnavailable = { problem = it }, Modifier.fillMaxWidth().height(280.dp))
-        CameraAccess.Asking -> Text("等待相机权限…")
-        CameraAccess.Denied -> Column {
-            Text("云吞没有相机权限，扫不了码。可以允许使用相机，或者粘贴配对码。")
-            TextButton(onClick = { request.launch(Manifest.permission.CAMERA) }) { Text("允许使用相机") }
+        } ?: QrScanner(
+            onCode,
+            onUnavailable = { problem = it },
+            Modifier.fillMaxWidth()
+                .height(SCANNER_HEIGHT)
+                .clip(RoundedCornerShape(WontonTheme.radii.card)),
+        )
+        CameraAccess.Asking -> Text(
+            "等待相机权限…",
+            style = WontonTheme.typography.body,
+            color = WontonTheme.colors.textPrimary.toColor(),
+        )
+        CameraAccess.Denied -> WontonNotice(WontonIcon.CameraOff, "云吞没有相机权限，扫不了码。可以允许使用相机，或者粘贴配对码。") {
+            WontonButton(
+                "允许使用相机",
+                { request.launch(Manifest.permission.CAMERA) },
+                kind = WontonButtonKind.SECONDARY,
+            )
         }
-        CameraAccess.Blocked -> Column {
-            Text("云吞没有相机权限，扫不了码。可以在系统设置里打开，或者粘贴配对码。")
-            TextButton(onClick = { context.startActivity(appSettings(context)) }) { Text("打开系统设置") }
+        CameraAccess.Blocked -> WontonNotice(WontonIcon.CameraOff, "云吞没有相机权限，扫不了码。可以在系统设置里打开，或者粘贴配对码。") {
+            WontonButton(
+                "打开系统设置",
+                { context.startActivity(appSettings(context)) },
+                kind = WontonButtonKind.SECONDARY,
+            )
         }
-        CameraAccess.Missing -> Text("这台设备没有相机，请粘贴配对码。")
+        CameraAccess.Missing -> WontonNotice(WontonIcon.CameraOff, "这台设备没有相机，请粘贴配对码。", isError = false)
     }
 }
 
@@ -173,21 +223,19 @@ private fun PairingProgress(status: PairingStatus, onRetry: (() -> Unit)?) {
     when (status) {
         is PairingStatus.InProgress -> Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            Text("正在配对…")
+            val color = WontonTheme.colors.textPrimary.toColor()
+            CircularProgressIndicator(Modifier.size(WontonTheme.size.iconSmall), color = color, strokeWidth = 2.dp)
+            Text("正在配对…", style = WontonTheme.typography.body, color = color)
         }
-        is PairingStatus.Failed -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                failureTitle(status.reason),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(status.message)
-            failureHint(status.reason)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        is PairingStatus.Failed -> WontonNotice(
+            WontonIcon.Warning,
+            failureTitle(status.reason),
+            lines = listOfNotNull(status.message, failureHint(status.reason)),
+        ) {
             if (onRetry != null && status.reason.canRetrySameCode()) {
-                TextButton(onClick = onRetry) { Text("用这个码再试一次") }
+                WontonButton("用这个码再试一次", onRetry, kind = WontonButtonKind.SECONDARY)
             }
         }
     }

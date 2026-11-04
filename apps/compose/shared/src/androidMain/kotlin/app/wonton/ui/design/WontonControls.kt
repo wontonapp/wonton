@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.ui.R
 import app.wonton.ui.icons.Back
@@ -107,7 +108,7 @@ fun WontonIconButton(icon: ImageVector, label: String, onClick: () -> Unit, tint
     }
 }
 
-/** 单行输入框。 */
+/** 输入框，`maxLines` 大于 1 时随内容长高。 */
 @Composable
 fun WontonTextField(
     value: String,
@@ -115,7 +116,8 @@ fun WontonTextField(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     label: String? = null,
-    singleLine: Boolean = true,
+    textStyle: TextStyle = WontonTheme.typography.body,
+    maxLines: Int = 1,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
@@ -123,8 +125,9 @@ fun WontonTextField(
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        singleLine = singleLine,
-        textStyle = WontonTheme.typography.body.copy(color = colors.textPrimary.toColor()),
+        singleLine = maxLines == 1,
+        maxLines = maxLines,
+        textStyle = textStyle.copy(color = colors.textPrimary.toColor()),
         cursorBrush = SolidColor(colors.textPrimary.toColor()),
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
@@ -144,6 +147,34 @@ fun WontonTextField(
             }
         },
     )
+}
+
+/** 提示块：错误、权限和不能用的原因，要做的事放在 `actions`。 */
+@Composable
+fun WontonNotice(
+    icon: ImageVector,
+    title: String,
+    isError: Boolean = true,
+    lines: List<String> = emptyList(),
+    actions: @Composable () -> Unit = {},
+) {
+    val colors = WontonTheme.colors
+    val titleColor = (if (isError) colors.danger else colors.textPrimary).toColor()
+    Column(
+        Modifier.fillMaxWidth()
+            .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.card))
+            .padding(WontonTheme.spacing.s12),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall), tint = titleColor)
+            Text(title, style = WontonTheme.typography.body, color = titleColor)
+        }
+        lines.forEach { line ->
+            Text(line, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
+        }
+        actions()
+    }
 }
 
 /** 噪点贴图平铺，1 个噪点像素对 1 个物理像素（ADR-0026）。按 dp 平铺时颗粒会随屏幕密度放大变糊。 */

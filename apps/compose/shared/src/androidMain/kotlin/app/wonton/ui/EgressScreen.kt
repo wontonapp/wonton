@@ -42,6 +42,8 @@ import app.wonton.protocol.EgressPathState
 import app.wonton.protocol.EgressProxySource
 import app.wonton.protocol.LanWebuiOffer
 import app.wonton.protocol.PluginDetail
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import kotlinx.coroutines.launch
 
 /** 出网代理的设置页（ADR-0023）：结论都在核心，这里渲染，并把输入框的内容发回去。 */

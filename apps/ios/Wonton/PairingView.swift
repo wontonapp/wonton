@@ -19,35 +19,54 @@ struct PairingView: View {
     @State private var refusal: String?
     /// 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
     @State private var lastCode: String?
+    @FocusState private var isEditingCode: Bool
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Form {
-            Section {
-                scanner
-            } footer: {
-                Text("在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。")
-            }
-            Section("或者粘贴配对码") {
-                TextField("wonton://pair?…", text: $pastedCode, axis: .vertical)
-                    .font(.caption.monospaced())
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .lineLimit(2...5)
-                Button("配对") { pair(pastedCode) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+                VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                    scanner
+                    Text("在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。")
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
+                VStack(spacing: WontonTheme.spacing.s8) {
+                    TextField("粘贴配对码", text: $pastedCode, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(pastedCode.isEmpty ? nil : .caption.monospaced())
+                        .focused($isEditingCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .lineLimit(1...5)
+                        .wontonField()
+                    Button {
+                        pair(pastedCode)
+                    } label: {
+                        Text("配对").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WontonButtonStyle())
                     .disabled(pastedCode.isEmpty || isPairing)
-            }
-            Section("这台设备的名字") {
-                TextField("这台设备的名字", text: $deviceName)
-            }
-            if let refusal {
-                Section {
-                    Label(refusal, systemImage: "xmark.octagon").foregroundStyle(.red)
+                }
+                if let refusal {
+                    WontonNotice(icon: .error, title: refusal)
+                }
+                if let pairing = model.viewModel.pairing {
+                    PairingProgress(status: pairing, retry: lastCode.map { code in { pair(code) } })
+                }
+                VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                    Text("这台设备的名字")
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                        .accessibilityHidden(true)
+                    TextField("这台设备的名字", text: $deviceName)
+                        .textFieldStyle(.plain)
+                        .wontonField()
                 }
             }
-            if let pairing = model.viewModel.pairing {
-                Section { PairingProgress(status: pairing, retry: lastCode.map { code in { pair(code) } }) }
-            }
+            .padding(WontonTheme.spacing.pageInset)
         }
+        .scrollDismissesKeyboard(.interactively)
         .task { await askForCamera() }
         .onChange(of: scenePhase) { _, phase in
             // 可能刚从系统设置里改了相机权限回来。
@@ -62,26 +81,30 @@ struct PairingView: View {
         switch camera {
         case .authorized:
             if let scannerProblem {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(scannerProblem, systemImage: "camera.badge.ellipsis")
+                WontonNotice(icon: .cameraOff, title: scannerProblem) {
                     Button("重新打开相机") { self.scannerProblem = nil }
+                        .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             } else {
                 QRScannerView(onCode: scanned) { scannerProblem = $0 }
                     .frame(height: 280)
-                    .listRowInsets(EdgeInsets())
+                    .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
             }
         case .notDetermined:
-            ProgressView("等待相机权限…")
+            HStack(spacing: WontonTheme.spacing.s12) {
+                ProgressView()
+                Text("等待相机权限…").wontonText(WontonTheme.typography.body)
+            }
+            .foregroundStyle(Color(colors.textPrimary))
         case .denied:
-            VStack(alignment: .leading, spacing: 8) {
-                Text("云吞没有相机权限，扫不了码。可以在系统设置里打开，或者粘贴配对码。")
+            WontonNotice(icon: .cameraOff, title: "云吞没有相机权限，扫不了码。可以在系统设置里打开，或者粘贴配对码。") {
                 Button("打开系统设置") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         case .unsupported:
-            Text("这台设备不能扫码，请粘贴配对码。")
+            WontonNotice(icon: .cameraOff, title: "这台设备不能扫码，请粘贴配对码。", isError: false)
         }
     }
 
@@ -95,6 +118,8 @@ struct PairingView: View {
 
     private func pair(_ code: String) {
         guard !isPairing else { return }
+        // 结果显示在按钮下面，键盘不收会挡住。
+        isEditingCode = false
         lastCode = code
         refusal = model.pair(code: code, deviceName: deviceName)
     }
@@ -133,27 +158,27 @@ private struct PairingProgress: View {
     let status: PairingStatus
     /// 用最近一次的码再试一次；只对可能是暂时的失败显示。
     let retry: (() -> Void)?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         switch status {
         case .inProgress:
-            HStack(spacing: 12) {
+            HStack(spacing: WontonTheme.spacing.s12) {
                 ProgressView()
-                Text("正在配对…")
+                Text("正在配对…").wontonText(WontonTheme.typography.body)
             }
+            .foregroundStyle(Color(colors.textPrimary))
         case let .failed(reason, message):
-            VStack(alignment: .leading, spacing: 6) {
-                Label(Self.title(reason), systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-                Text(message)
-                if let hint = Self.hint(reason) {
-                    Text(hint).foregroundStyle(.secondary)
-                }
+            WontonNotice(
+                icon: .warning,
+                title: Self.title(reason),
+                lines: [message, Self.hint(reason)].compactMap { $0 }
+            ) {
                 if let retry, Self.canRetrySameCode(reason) {
                     Button("用这个码再试一次", action: retry)
+                        .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
-            .font(.callout)
         }
     }
 
@@ -171,7 +196,7 @@ private struct PairingProgress: View {
     /// 服务器拒绝时，它的说明里已经写了下一步；本机这一侧的失败补一句。
     private static func hint(_ reason: PairingFailure) -> String? {
         switch reason {
-        case .transportUnavailable: "请确认手机和服务器在同一个局域网里，或者服务器连得上互联网，然后再扫一次。"
+        case .transportUnavailable: "请确认手机和服务器在同一个局域网里，或者服务器连得上互联网，然后再试一次。"
         case .protocol: "请把 App 和服务器都更新到最新版本。"
         case .rejected, .expired, .closed, .upstream: nil
         }

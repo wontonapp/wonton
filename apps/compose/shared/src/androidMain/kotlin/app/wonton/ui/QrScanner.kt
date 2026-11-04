@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.util.Log
 import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
@@ -50,6 +51,9 @@ fun QrScanner(onCode: (String) -> Unit, onUnavailable: (String) -> Unit, modifie
     AndroidView(factory = { previewView }, modifier = modifier.clipToBounds())
 }
 
+private const val TAG = "QrScanner"
+private const val CAMERA_FAILED = "相机打不开，请粘贴配对码"
+
 /** 一次取景，跟着界面的生命周期开关相机。回调都在主线程上。 */
 private class QrCamera(
     private val previewView: PreviewView,
@@ -73,7 +77,7 @@ private class QrCamera(
             try {
                 bind(future.get(), owner)
             } catch (failure: ExecutionException) {
-                onUnavailable("相机打不开：${failure.cause?.message ?: failure.message}")
+                onCameraFailed(failure)
             }
         }, main)
     }
@@ -90,7 +94,8 @@ private class QrCamera(
         val problem = try {
             if (provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) null else "这台设备没有后置相机"
         } catch (failure: CameraInfoUnavailableException) {
-            "读不到相机的信息：${failure.message}"
+            Log.w(TAG, "读不到相机的信息", failure)
+            CAMERA_FAILED
         }
         if (problem != null) {
             onUnavailable(problem)
@@ -104,8 +109,14 @@ private class QrCamera(
                 state.error?.let { onUnavailable(describe(it)) }
             }
         } catch (failure: IllegalStateException) {
-            onUnavailable("相机打不开：${failure.message}")
+            onCameraFailed(failure)
         }
+    }
+
+    /** 异常的原文只有开发者看得懂，留在日志里。 */
+    private fun onCameraFailed(failure: Exception) {
+        Log.w(TAG, "相机打不开", failure)
+        onUnavailable(CAMERA_FAILED)
     }
 
     private fun describe(error: CameraState.StateError): String = when (error.code) {

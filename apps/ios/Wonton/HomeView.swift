@@ -13,7 +13,6 @@ struct HomeView: View {
     var devWebURL: URL?
     @State private var path = NavigationPath()
     @State private var isShowingPage = false
-    @State private var isPairing = false
     @State private var isInviting = false
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
@@ -22,27 +21,31 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             Group {
                 if case .notConfigured = model.viewModel.status {
+                    // 外观不依赖家里的服务器，没配对时也能进。
                     PairingView(model: model)
+                        .wontonRootScreen("配对") {
+                            WontonIconLink(icon: .palette, label: "外观", value: HomeRoute.appearance)
+                        }
                 } else {
                     launcher
-                }
-            }
-            .navigationTitle("家")
-            .toolbar {
-                // 外观不依赖家里的服务器，没配对时也能进。
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink("外观", value: HomeRoute.appearance)
-                }
-                if model.viewModel.status != .notConfigured {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink(value: HomeRoute.connection) { connectionLabel }
-                    }
+                        .navigationTitle("家")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                NavigationLink("外观", value: HomeRoute.appearance)
+                            }
+                            ToolbarItem(placement: .topBarTrailing) {
+                                NavigationLink(value: HomeRoute.connection) { connectionLabel }
+                            }
+                        }
                 }
             }
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .connection:
-                    ConnectionView(model: model, isPairing: $isPairing, isInviting: $isInviting)
+                    ConnectionView(model: model, isInviting: $isInviting)
+                case .pairing:
+                    PairingView(model: model) { path.removeLast() }
+                        .wontonPushedScreen("重新配对")
                 case .appearance:
                     AppearanceView(model: appearance)
                 case .egress:
@@ -56,18 +59,6 @@ struct HomeView: View {
             .fullScreenCover(isPresented: $isShowingPage) {
                 if let url = devWebURL, let proxy = model.viewModel.proxy {
                     PluginPage(title: url.host() ?? "", url: url, proxy: proxy) { isShowingPage = false }
-                }
-            }
-            .sheet(isPresented: $isPairing) {
-                NavigationStack {
-                    PairingView(model: model) { isPairing = false }
-                        .navigationTitle("重新配对")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("关闭") { isPairing = false }
-                            }
-                        }
                 }
             }
             .sheet(isPresented: $isInviting) {
@@ -202,6 +193,7 @@ struct HomeView: View {
 
 private enum HomeRoute: Hashable {
     case connection
+    case pairing
     case appearance
     case egress
 }
@@ -244,7 +236,6 @@ private struct LauncherIcon: View {
 /// 和家里服务器的连接，以及添加设备、重新配对。
 private struct ConnectionView: View {
     let model: HomeModel
-    @Binding var isPairing: Bool
     @Binding var isInviting: Bool
 
     var body: some View {
@@ -260,7 +251,7 @@ private struct ConnectionView: View {
             }
             Section {
                 Button("添加设备") { isInviting = true }
-                Button("重新配对") { isPairing = true }
+                NavigationLink("重新配对", value: HomeRoute.pairing)
             }
         }
         .navigationTitle("连接")

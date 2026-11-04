@@ -50,6 +50,60 @@ struct WontonIconButton: View {
     }
 }
 
+/// 进下一层的图标入口，样子和 `WontonIconButton` 一样。
+struct WontonIconLink<Value: Hashable>: View {
+    let icon: WontonIcon
+    let label: String
+    let value: Value
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        NavigationLink(value: value) {
+            icon.view()
+                .foregroundStyle(Color(colors.textPrimary))
+                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// 提示块：错误、权限和不能用的原因，要做的事放在 `actions`。
+struct WontonNotice<Actions: View>: View {
+    let icon: WontonIcon
+    let title: String
+    var isError = true
+    var lines: [String] = []
+    @ViewBuilder let actions: Actions
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+                icon.view(size: WontonTheme.size.iconSmall)
+                Text(title).wontonText(WontonTheme.typography.body)
+            }
+            .foregroundStyle(Color(isError ? colors.danger : colors.textPrimary))
+            ForEach(lines, id: \.self) { line in
+                Text(line)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            actions
+        }
+        .padding(WontonTheme.spacing.s12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: WontonTheme.radii.card).fill(Color(colors.surfaceSubtle)))
+    }
+}
+
+extension WontonNotice where Actions == EmptyView {
+    init(icon: WontonIcon, title: String, isError: Bool = true, lines: [String] = []) {
+        self.init(icon: icon, title: title, isError: isError, lines: lines) { EmptyView() }
+    }
+}
+
 extension View {
     /// 输入框的底：配 `.textFieldStyle(.plain)`。
     func wontonField() -> some View {
@@ -64,14 +118,19 @@ extension View {
 
 private struct WontonFieldModifier: ViewModifier {
     @Environment(\.wontonColors) private var colors
+    @FocusState private var isFocused: Bool
 
     func body(content: Content) -> some View {
         content
+            .focused($isFocused)
             .wontonText(WontonTheme.typography.body)
             .foregroundStyle(Color(colors.textPrimary))
-            .padding(.horizontal, WontonTheme.spacing.s12)
+            .padding(WontonTheme.spacing.s12)
             .frame(minHeight: WontonTheme.size.target)
             .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
+            // 系统的输入框只有文字那一行接得住点按，整个底都要能点。
+            .contentShape(Rectangle())
+            .onTapGesture { isFocused = true }
     }
 }
 

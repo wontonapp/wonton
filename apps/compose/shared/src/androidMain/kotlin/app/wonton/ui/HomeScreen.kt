@@ -22,6 +22,12 @@ import app.wonton.protocol.HomeFailure
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PairingStatus
+import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonRootBar
+import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.icons.Palette
+import app.wonton.ui.icons.WontonIcon
 
 /**
  * “家”：还没配对时是配对页；配上以后是主屏，按图标和名字列出已装的插件，连接和设备在右上角。
@@ -47,7 +53,7 @@ fun HomeRoute(
         // 外观不依赖家里的服务器，没配对时也能进。
         page == HomePage.APPEARANCE -> AppearancePage(core, appearance, onBack = { page = HomePage.LAUNCHER })
         viewModel.status is HomeStatus.NotConfigured ->
-            PairingPage("家", core, viewModel.pairing, onBack = null, onAppearance = { page = HomePage.APPEARANCE })
+            PairingPage("配对", core, viewModel.pairing, onBack = null, onAppearance = { page = HomePage.APPEARANCE })
         page == HomePage.PAIRING ->
             PairingPage("重新配对", core, viewModel.pairing, onBack = { page = HomePage.CONNECTION })
         page == HomePage.INVITE -> InvitePage(core, viewModel, onDone = { page = HomePage.CONNECTION })
@@ -83,7 +89,6 @@ private fun InvitePage(core: ClientCore, viewModel: HomeViewModel, onDone: () ->
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PairingPage(
     title: String,
@@ -92,16 +97,18 @@ private fun PairingPage(
     onBack: (() -> Unit)?,
     onAppearance: (() -> Unit)? = null,
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = { onBack?.let { TextButton(onClick = it) { Text("返回") } } },
-                actions = { onAppearance?.let { TextButton(onClick = it) { Text("外观") } } },
-            )
+    WontonScreen(
+        bar = {
+            if (onBack != null) {
+                WontonPushedBar(title, onBack)
+            } else {
+                WontonRootBar(title) {
+                    onAppearance?.let { WontonIconButton(WontonIcon.Palette, "外观", it) }
+                }
+            }
         },
-    ) { padding ->
-        PairingScreen(core, pairing, Modifier.padding(padding), onPaired = { onBack?.invoke() })
+    ) {
+        PairingScreen(core, pairing, onPaired = { onBack?.invoke() })
     }
 }
 
