@@ -1,7 +1,7 @@
 name: ios
 
-# 自托管 runner（ADR-0012 的“CI”）：SwiftLint 在 Linux 上的容器里跑；macOS 上只做一次模拟器构建（只编译
-# Apple 芯片模拟器一个 target，不签名、不跑模拟器）。
+# 自托管 runner（ADR-0012 的“CI”），都在 macOS 上：SwiftLint，和一次模拟器构建（只编译 Apple 芯片模拟器一个
+# target，不签名、不跑模拟器）。
 on:
   pull_request:
     paths:
@@ -9,6 +9,7 @@ on:
       - "design/**"
       - "scripts/generate-design.py"
       - "crates/wonton-client/**"
+      - "crates/wonton-matrix/**"
       - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
       - "Cargo.toml"
@@ -22,6 +23,7 @@ on:
       - "design/**"
       - "scripts/generate-design.py"
       - "crates/wonton-client/**"
+      - "crates/wonton-matrix/**"
       - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
       - "Cargo.toml"
@@ -35,16 +37,29 @@ concurrency:
 
 jobs:
   swiftlint:
-    name: SwiftLint（函数体 ≤ 100 行、文件 ≤ 800 行）
-    runs-on: [self-hosted, Linux, X64, docker]
+    name: SwiftLint（函数体 ≤ 100 行）
+    # 不放 Linux：只有带 docker 标签的机器能接容器作业，它们被 Docker 集成测试占满时，这个几秒钟的作业要排半小时。
+    runs-on: [self-hosted, macOS, ARM64, xcode]
+    timeout-minutes: 10
+    env:
+      SWIFTLINT_VERSION: "0.65.1"
     steps:
       - uses: actions/checkout@v5
-      # 不用 container 作业：容器里以 root 检出和写文件，留在自托管 runner 工作区里的文件 runner 自己删不掉，
-      # 之后的作业检出就会失败。这里以 runner 的用户身份起容器；镜像里的缓存目录只有 root 能写，所以关掉缓存。
-      - name: SwiftLint
+      - name: 安装 SwiftLint（按版本放进 runner 的工具缓存，下次直接用）
         run: |
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work/apps/ios \
-            ghcr.io/realm/swiftlint:0.65.1 swiftlint lint --strict --no-cache
+          dir="$RUNNER_TOOL_CACHE/swiftlint/$SWIFTLINT_VERSION"
+          if [[ ! -x "$dir/swiftlint" ]]; then
+            curl -sSfL -o "$RUNNER_TEMP/swiftlint.zip" \
+              "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
+            mkdir -p "$dir"
+            unzip -q -o "$RUNNER_TEMP/swiftlint.zip" -d "$dir"
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: SwiftLint
+        working-directory: apps/ios
+        run: |
+          swiftlint version
+          swiftlint lint --strict --no-cache
 
   build:
     name: 模拟器构建
@@ -52,12 +67,12 @@ jobs:
     timeout-minutes: 30
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 同 ci.yml：不留增量编译的缓存，调试信息只留行号。
+      # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v5
-      - name: 构建缓存目录（runner 主机上的共享目录，见 ci.yml）
+      - name: 构建缓存目录（runner 主机上的共享目录，见 rust.yml）
         run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/ios" >> "$GITHUB_ENV"
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |

@@ -54,15 +54,10 @@
 ## 开发环境与检查
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
-- 提交前运行 `bash scripts/check.sh`：行数门禁、`cargo fmt`、`cargo clippy -D warnings`、`cargo test`，
-  和 CI 一致。
-- 依赖 Docker 的集成测试（如 `wonton-matrix` 的 `tests/tuwunel`，用 Docker 起一次性的 Tuwunel）标
-  `#[ignore = "需要 Docker，…"]`：普通的 `cargo test` 只列出它们、不运行，没有 Docker 的机器也能通过。
-  `check.sh` 连得上 Docker 就带 `--include-ignored` 一并运行；连不上就跳过，并在输出末尾打印跳过了哪些测试、
-  原因和手动运行的命令（`cargo test -p wonton-matrix --test tuwunel -- --include-ignored`）。
-  跳过不等于通过：PR 说明里写明没跑，由 CI 补上。CI 的“Docker 集成测试”作业运行它们，Docker 不可用即失败；
-  “Rust”作业故意让 Docker 不可用，保证默认的测试不依赖它。新增依赖 Docker 的测试同样标 `#[ignore]`，
-  并加进 Docker 作业。
+- 提交前运行 `bash scripts/check.sh`，和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
+- 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
+  命令。跳过不等于通过：PR 说明里写明没跑。CI 的“Docker 集成测试”作业运行它们，Docker 不可用即失败；“Rust”作业故意让
+  Docker 不可用，保证默认的测试不依赖它。
 - 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；
   直接运行 `cargo test` 要自己设置，testcontainers 不读 context。
 - 依赖：只有一个 crate 用到的依赖写在该 crate 的 `Cargo.toml`；多个 crate 共用的依赖在根

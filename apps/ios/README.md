@@ -84,7 +84,6 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 ```
 
-函数体超过 100 行、文件超过 800 行即报错。CI 见 `.github/workflows/ios.yml`：SwiftLint 在 Linux
-上跑，macOS 上只做一次模拟器构建。
+函数体超过 100 行即报错。CI 见 `.github/workflows/ios.yml`。
 
 Bundle ID `app.wonton.ios` 是临时的，上架前确定正式的。

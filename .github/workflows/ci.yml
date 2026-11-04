@@ -1,6 +1,6 @@
 name: ci
 
-# 只改文档的提交不跑：结构门禁只查源码文件，文档也不参与构建。
+# 每次都跑，它很快；Rust 和 Docker 测试在 rust.yml。只改文档的提交不跑：结构门禁只查源码文件。
 on:
   pull_request:
     paths-ignore: ["docs/**", "**/*.md"]
@@ -13,13 +13,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# 作业都跑在主人的自托管 runner 上（ADR-0012 的“CI”）。检出会清掉工作区里没被跟踪的文件，Rust 的构建缓存放在
-# runner 主机的共享目录（`WONTON_CI_CACHE`），同一台机器上的几个 runner 共用、跨次沿用。
-env:
-  # CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。
-  CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-
 jobs:
   structure:
     name: 结构门禁
@@ -28,53 +21,5 @@ jobs:
       - uses: actions/checkout@v5
       - name: 源码文件不超过 800 行
         run: bash scripts/check-file-size.sh
-
-  rust:
-    name: Rust
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - name: 构建缓存目录
-        # 按 runner 分开：同一台主机上的几个 runner 共用 WONTON_CI_CACHE，同时跑的作业共用一个 target 目录时，
-        # 实测出现过测试编进了另一个分支的代码（2026-11-03，#139 编出了 file-client 分支的 wonton-protocol）。
-        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/workspace" >> "$GITHUB_ENV"
-      - name: 安装 rust-toolchain.toml 指定的工具链
-        run: rustup toolchain install
-      - name: 格式
-        run: cargo fmt --all --check
-      - name: Clippy（含函数不超过 100 行）
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: 测试（不含依赖 Docker 的集成测试）
-        run: cargo test --workspace --locked
-        env:
-          # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由下面的作业运行。
-          DOCKER_HOST: unix:///nonexistent/docker.sock
-
-  docker-tests:
-    name: Docker 集成测试
-    runs-on: [self-hosted, Linux, X64, docker]
-    # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - name: 构建缓存目录（和 Rust 作业分开，两者能同时编译）
-        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/docker" >> "$GITHUB_ENV"
-      - name: 安装 rust-toolchain.toml 指定的工具链
-        run: rustup toolchain install
-      - name: 确认 Docker 可用
-        run: docker version
-      - name: wonton-matrix 对真实 Tuwunel 的集成测试
-        run: cargo test -p wonton-matrix --locked --test tuwunel -- --include-ignored
-      - name: 客户端核心经隧道聊天的集成测试
-        run: cargo test -p wonton-client --locked --test chat -- --include-ignored
-      - name: 核心接入、退出插件网络时发布端口的连接不断
-        run: cargo test -p wonton-core --locked --test docker_network -- --include-ignored
-      - name: 安装途中核心重启后再装能恢复，同名网络不是本插件的就不动
-        run: cargo test -p wonton-core --locked --test docker_leftovers -- --include-ignored
-      - name: 真的 gost 上的出口容器：经主人的代理、名单、直连
-        run: cargo test -p wonton-core --locked --test docker_egress -- --include-ignored
-      - name: 升级器对真的 Docker：换镜像、等健康、失败回滚
-        run: cargo test -p wonton-core --locked --test core_upgrade -- --include-ignored
-      - name: 设备经隧道、tusd 上传文件
-        run: cargo test -p wonton-core --locked --lib gateway::tusd_tests -- --include-ignored
+      - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
+        run: bash scripts/check-uniffi-comments.sh
