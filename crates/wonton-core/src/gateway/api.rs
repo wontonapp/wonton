@@ -152,7 +152,7 @@ pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
 /// 插件管理接口的鉴权：主人令牌，或者经隧道的已配对设备。设备身份随隧道上的每个请求自动带上，App 的 WebView 里打开的
 /// 插件网页发的请求也带着它，所以设备的请求还要不是别的网页发起的，读也一样（ADR-0017）：插件网页不能拿商店刷新消耗
 /// 限速，也不能探测装了哪些插件。
-fn plugin_denied(
+pub(super) fn plugin_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,

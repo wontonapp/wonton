@@ -1,5 +1,5 @@
 //! 经网关访问 MCP 总线：按来源地址授权，Agent 用真实的 MCP 客户端（rmcp，Streamable HTTP）列工具、调工具；
-//! 主人回答确认只能经隧道。总线自己的规则见 `mcp::tests`。
+//! 主人回答确认只能用已配对设备或主人令牌。总线自己的规则见 `mcp::tests`。
 
 use std::fs;
 use std::net::SocketAddr;
@@ -209,6 +209,20 @@ impl Home {
         )
     }
 
+    async fn pending(&self, headers: &[(&str, &str)]) -> (StatusCode, Value) {
+        let mut request = hyper::Request::builder()
+            .uri("/_wonton/api/confirmations")
+            .header(header::HOST, format!("{CORE}:{}", self.addr.port()));
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let request = request.body(Body::empty()).unwrap();
+        let response = router(self.gateway.clone()).oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    }
+
     fn paired_device(&self) -> TunnelPeer {
         let id = SecretKey::generate().public();
         self.gateway.tunnel.devices.add(id, None).unwrap();
@@ -376,4 +390,40 @@ async fn only_paired_devices_answer_confirmations() {
         (status, kind.as_deref()),
         (StatusCode::NOT_FOUND, Some("not_found"))
     );
+}
+
+/// 开发环境没有配对设备：主人令牌能看到等回答的卡片，也能回答（ADR-0024）。
+#[tokio::test]
+async fn the_owner_token_lists_and_answers_cards() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let owner = [("authorization", bearer.as_str())];
+    let (status, _) = home.pending(&[]).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, list) = home.pending(&owner).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["confirmations"], json!([]));
+
+    let agent = home.agent().await;
+    let peer = agent.peer().clone();
+    let call = tokio::spawn(async move {
+        let request = CallToolRequestParams::new("app-example-notes__delete")
+            .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
+        peer.call_tool(request).await.unwrap()
+    });
+    let card = home.cards.wait_for(1).await;
+    let (_, list) = home.pending(&owner).await;
+    assert_eq!(list["confirmations"][0]["id"], card.id.as_str());
+
+    let path = wonton_protocol::answer_path(&card.id);
+    let approve = r#"{"answer": "approve"}"#;
+    let wrong = [("authorization", "Bearer wrong")];
+    let (status, _, _) = home.send(&path, approve, None, &wrong).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, reply) = home.send(&path, approve, None, &owner).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["state"]["type"], "running");
+    assert_eq!(text(&call.await.unwrap()), "删掉了 y.txt");
+    let (_, list) = home.pending(&owner).await;
+    assert_eq!(list["confirmations"], json!([]));
 }

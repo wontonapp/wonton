@@ -35,6 +35,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             put(push::register).delete(push::unregister),
         )
         .route("/_wonton/confirmations/{id}", post(confirmations::answer))
+        .route("/_wonton/api/confirmations", get(confirmations::pending))
         .route(
             "/_wonton/api/plugins",
             get(api::list)

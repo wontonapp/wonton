@@ -1,6 +1,6 @@
 //! 敏感操作的确认（ADR-0016）：核心发卡片、等主人回答、验证回答，Agent 只能发起，没法替主人同意。
 //!
-//! 主人的回答只经 [`Confirmations::answer`] 进来，网关只在经隧道的已配对设备的请求上调用它。
+//! 主人的回答只经 [`Confirmations::answer`] 进来，网关只在已配对设备或主人令牌的请求上调用它（ADR-0024）。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -186,6 +186,19 @@ impl Confirmations {
                 Err(Refusal::Expired)
             }
         }
+    }
+
+    /// 等回答的卡片，最早到期的在前。
+    pub fn pending(&self) -> Vec<ConfirmationCard> {
+        let now = now_ms(SystemTime::now());
+        let mut cards: Vec<_> = self
+            .lock()
+            .values()
+            .filter(|slot| slot.waiter.is_some() && slot.card.expires_at_ms > now)
+            .map(|slot| slot.card.clone())
+            .collect();
+        cards.sort_by_key(|card| card.expires_at_ms);
+        cards
     }
 
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。

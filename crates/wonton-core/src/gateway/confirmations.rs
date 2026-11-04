@@ -1,5 +1,5 @@
-//! `POST /_wonton/confirmations/{id}`：主人回答确认卡片（ADR-0016）。只接受经隧道的已配对设备；核心域名上的
-//! 跨站修改拦截照常生效，插件网页借 WebView 发不了。插件网络里来的请求没有隧道身份，Agent 拿到 ID 也答不了。
+//! 主人回答确认卡片（ADR-0016、ADR-0024）。和管理接口同一道门：主人令牌，或者经隧道的已配对设备，设备的请求还要不是
+//! 别的网页发起的。插件网络里来的请求两样都没有，Agent 拿到 ID 也答不了。
 
 use std::sync::Arc;
 
@@ -7,35 +7,50 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use hyper::StatusCode;
-use wonton_protocol::{ConfirmationAnswer, ConfirmationReply};
+use hyper::{HeaderMap, StatusCode};
+use wonton_protocol::{ConfirmationAnswer, ConfirmationList, ConfirmationReply};
 
-use super::api::error_response;
+use super::api::{error_response, plugin_denied};
 use super::{Gateway, TunnelPeer};
 use crate::mcp::AnswerError;
 
+fn mcp_unavailable() -> Response {
+    error_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "mcp_unavailable",
+        "核心没有启用 MCP 总线",
+    )
+}
+
+/// `GET /_wonton/api/confirmations`
+pub async fn pending(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(mcp) = &gateway.mcp else {
+        return mcp_unavailable();
+    };
+    let confirmations = mcp.bus.confirmations().pending();
+    Json(ConfirmationList { confirmations }).into_response()
+}
+
+/// `POST /_wonton/confirmations/{id}`
 pub async fn answer(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if gateway
-        .device_user(peer.map(|Extension(peer)| peer))
-        .is_none()
-    {
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            "只有经隧道接入的已配对设备能回答确认",
-        );
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
     }
     let Some(mcp) = &gateway.mcp else {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "mcp_unavailable",
-            "核心没有启用 MCP 总线",
-        );
+        return mcp_unavailable();
     };
     let answer: ConfirmationAnswer = match serde_json::from_slice(&body) {
         Ok(answer) => answer,

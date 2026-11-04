@@ -4,7 +4,8 @@
 //! [`CARD_FIELD`] 字段，`body` 是给其他客户端看的纯文本。状态变化时核心编辑这条消息（`m.replace`）。客户端只认
 //! 核心账号发的卡片，别人发的同样结构的内容当普通消息显示。主人点了按钮，客户端经隧道请求
 //! `POST <核心地址>/_wonton/confirmations/{id}`（[`answer_path`]），请求体是 [`ConfirmationAnswer`]，
-//! 响应是 [`ConfirmationReply`]；回答过的、过期的得到 409。
+//! 响应是 [`ConfirmationReply`]；回答过的、过期的得到 409。没有配对设备的地方（开发环境）用主人令牌请求同一个接口，
+//! 等回答的卡片从 `GET /_wonton/api/confirmations`（[`ConfirmationList`]）取。
 
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,12 @@ pub enum ConfirmationState {
     Rejected,
     /// 主人没在期限内回答，没有执行。
     Expired,
+}
+
+/// `GET /_wonton/api/confirmations` 的响应：等回答的卡片，最早到期的在前。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfirmationList {
+    pub confirmations: Vec<ConfirmationCard>,
 }
 
 /// `POST /_wonton/confirmations/{id}` 的请求体。
