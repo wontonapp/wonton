@@ -23,6 +23,21 @@ struct IndexFile {
     format: u32,
     #[serde(default)]
     plugins: Vec<IndexEntry>,
+    /// 读不懂时只影响帮助文档，所以这里不按 [`DocsSpec`] 解析。
+    #[serde(default)]
+    docs: Option<serde_json::Value>,
+}
+
+/// 帮助文档的最新提交（ADR-0034）。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DocsSpec {
+    /// `github:<owner>/<repo>`，不带版本。
+    pub source: String,
+    pub commit: String,
+    /// 这份文档要的最低核心版本。
+    pub min_core: String,
+    /// 路径 → sha256 的十六进制。
+    pub files: BTreeMap<String, String>,
 }
 
 /// 索引里的一个插件。
@@ -128,6 +143,9 @@ impl Listed {
 pub struct Index {
     pub plugins: Vec<Listed>,
     pub skipped: Vec<String>,
+    pub docs: Option<DocsSpec>,
+    /// `docs` 读不懂的原因。
+    pub docs_problem: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -158,6 +176,11 @@ impl Index {
             serde_json::from_slice(json).map_err(|e| IndexError::Invalid(e.to_string()))?;
         debug_assert_eq!(file.format, FORMAT);
         let mut index = Self::default();
+        match file.docs.map(serde_json::from_value::<DocsSpec>) {
+            Some(Ok(docs)) => index.docs = Some(docs),
+            Some(Err(e)) => index.docs_problem = Some(format!("官方索引的 docs 读不懂：{e}")),
+            None => {}
+        }
         for entry in file.plugins {
             let source = entry.source.clone();
             match check(entry, &index.plugins) {
@@ -228,17 +251,28 @@ impl Files {
                 listed.entry.source
             ))
         })?;
+        self.verified(&listed.repo, &listed.entry.commit, path, sha256)
+            .await
+    }
+
+    /// 仓库在某个提交里的一个文件，按索引记的 sha256 核对。
+    pub async fn verified(
+        &self,
+        repo: &Repo,
+        commit: &str,
+        path: &str,
+        sha256: &str,
+    ) -> Result<Vec<u8>, InstallError> {
         let data = match self {
             Self::Dir(dir) => read_blob(dir, sha256)?,
             Self::GitHub(github) => github
-                .file(&listed.repo, &listed.entry.commit, path, MAX_FILE_BYTES)
+                .file(repo, commit, path, MAX_FILE_BYTES)
                 .await
                 .map_err(github_error)?,
         };
-        if &sha256_hex(&data) != sha256 {
+        if sha256_hex(&data) != sha256 {
             return Err(InstallError::Invalid(format!(
-                "{} 的 {path} 和官方索引里记的 sha256 对不上",
-                listed.entry.source
+                "{repo} 的 {path} 和官方索引里记的 sha256 对不上"
             )));
         }
         Ok(data)

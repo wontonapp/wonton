@@ -1,6 +1,7 @@
 //! 按来源预览和安装（插件规范的“来源”）。安装时按来源重新取一次插件包，摘要要和预览时的一样：主人确认的就是
 //! 装上的；tag 在这之间被移动了，就得重新预览、重新确认。
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use wonton_protocol::{InstallPreview, InstallRequest, StoreProblem};
@@ -10,7 +11,8 @@ use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView};
 use super::manifest::Permission;
 use super::package::PluginPackage;
-use super::storefront::index::{Index, Listed};
+use super::store::{create_private_dir, read_json, write_json};
+use super::storefront::index::{Files, Index, Listed};
 
 impl PluginManager {
     /// 按来源取插件包：先解析成提交，再按提交取文件。
@@ -29,6 +31,40 @@ impl PluginManager {
     pub async fn official_index(&self) -> (Index, Option<StoreProblem>) {
         let (index, _, problem) = self.storefront.official(false).await;
         (index, problem)
+    }
+
+    /// 官方索引的文件从哪里取。
+    pub fn official_files(&self) -> Files {
+        self.storefront.files()
+    }
+
+    /// 帮助文档的缓存目录（ADR-0034）。
+    pub fn docs_cache(&self) -> PathBuf {
+        self.store.docs_cache()
+    }
+
+    /// 记下主人的语言：帮助文档的工具经 MCP 调用，请求里没有 `Accept-Language`。只在变了时写盘，写不了时下次再试。
+    pub fn note_owner_languages(&self, header: Option<&str>) {
+        let Some(header) = header else { return };
+        if self.stored_languages().as_deref() == Some(header) {
+            return;
+        }
+        let path = self.store.owner_languages();
+        let written = path
+            .parent()
+            .map_or(Ok(()), create_private_dir)
+            .and_then(|()| write_json(&path, &header));
+        if let Err(error) = written {
+            tracing::warn!(%error, "主人的语言存不下");
+        }
+    }
+
+    pub fn owner_languages(&self) -> Languages {
+        Languages::from_header(self.stored_languages().as_deref())
+    }
+
+    fn stored_languages(&self) -> Option<String> {
+        read_json(&self.store.owner_languages()).ok().flatten()
     }
 
     /// 官方索引里一项的插件包，文件按索引核对。

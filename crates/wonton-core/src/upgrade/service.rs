@@ -187,6 +187,11 @@ impl Upgrades {
         Ok(self.running.get_or_init(|| running).clone())
     }
 
+    /// 这台核心的版本号，就是升级接口报的那个。不在容器里、镜像没有版本号时为空。
+    pub async fn running_version(&self) -> Option<String> {
+        self.running().await.ok()?.version
+    }
+
     fn read_state(&self) -> Result<Option<UpgradeState>, UpgradeError> {
         state::load(&self.layout().state_path()).map_err(UpgradeError::Storage)
     }

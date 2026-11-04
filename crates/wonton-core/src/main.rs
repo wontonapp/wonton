@@ -183,15 +183,13 @@ async fn serve() -> anyhow::Result<()> {
         Arc::new(NoticeRoom::new(matrix, &cfg.owner.username, saved))
     });
     let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(manager.clone(), bus.upstreams(), notices));
     let files = open_files(&cfg, host, http.clone(), audit, images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
     let tunnel = bind_tunnel(&cfg).await?;
-    let push_path = cfg.core_state_dir().join("push.json");
-    let push = Push::open(&push_path, tunnel.devices.clone())
-        .and_then(|push| push.with_proxy(manager.core_proxy()))
-        .with_context(|| format!("打开推送登记表 {}", push_path.display()))?;
+    let push = open_push(&cfg, &tunnel, &manager)?;
     let gateway = Arc::new(
         Gateway::new(
             cfg.public.clone(),
@@ -355,6 +353,26 @@ fn mcp_bus(
     };
     let confirmations = Arc::new(mcp::Confirmations::new(notifier, cfg.confirmation_ttl));
     mcp::Bus::new(manager, confirmations, audit)
+}
+
+fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
+    let path = cfg.core_state_dir().join("push.json");
+    Push::open(&path, tunnel.devices.clone())
+        .and_then(|push| push.with_proxy(manager.core_proxy()))
+        .with_context(|| format!("打开推送登记表 {}", path.display()))
+}
+
+/// 帮助文档（ADR-0034）。版本号和升级接口报的是同一个。
+fn help_docs(
+    cfg: &Config,
+    manager: Arc<PluginManager>,
+    upgrades: Arc<Upgrades>,
+) -> Arc<wonton_core::help::Help> {
+    let version: wonton_core::help::CoreVersion = Arc::new(move || {
+        let upgrades = upgrades.clone();
+        Box::pin(async move { upgrades.running_version().await })
+    });
+    wonton_core::help::Help::new(cfg.docs.clone(), manager, version)
 }
 
 /// 文件服务（ADR-0020）。读不出编号记录、建不了 `transfers` 就启动失败。

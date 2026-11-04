@@ -138,6 +138,16 @@ impl Store {
         self.dir.join("store").join("official-index.json")
     }
 
+    /// 取来的帮助文档放在这里，按提交分目录（ADR-0034）。
+    pub fn docs_cache(&self) -> PathBuf {
+        self.dir.join("store").join("docs")
+    }
+
+    /// 主人的语言：最近一次设备请求的 `Accept-Language` 原文。
+    pub fn owner_languages(&self) -> PathBuf {
+        self.dir.join("store").join("owner-languages.json")
+    }
+
     /// 读出全部记录，按 ID 排序。单个记录读不出、已损坏或与文件名不符只体现在它自己的结果里；
     /// 只有记录目录本身读不了才返回错误。文件名不是插件 ID 的文件不是核心写的，记日志后跳过。
     pub fn load_all(&self) -> Result<Vec<RecordFile>, StoreError> {

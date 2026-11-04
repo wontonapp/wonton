@@ -204,6 +204,8 @@ pub struct Config {
     /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
     /// （`WONTON_DEFAULT_PLUGINS`）。
     pub default_plugins: Option<PathBuf>,
+    /// 镜像里那份帮助文档的目录（`WONTON_DOCS`，ADR-0034）。
+    pub docs: PathBuf,
     /// 商店：本地的官方索引目录（`WONTON_STORE_INDEX`），列不列社区插件（`WONTON_STORE_COMMUNITY=off` 时不列）。
     pub store: StoreConfig,
     /// 确认卡片发出后多久没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`，ADR-0016）。
@@ -289,14 +291,7 @@ impl Config {
             username,
         };
         let core_container = get("WONTON_CORE_CONTAINER");
-        let host_dev = match get("WONTON_HOST_DEV") {
-            Some(path) if !path.starts_with('/') => {
-                return Err(invalid("WONTON_HOST_DEV", "必须是绝对路径"));
-            }
-            Some(path) => Some(PathBuf::from(path)),
-            None if core_container.is_none() => Some(PathBuf::from("/dev")),
-            None => None,
-        };
+        let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
         Ok(Self {
             data_dir,
             listen,
@@ -317,6 +312,7 @@ impl Config {
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
             default_plugins: get("WONTON_DEFAULT_PLUGINS").map(PathBuf::from),
+            docs: docs_dir(get("WONTON_DOCS")),
             store: store_config(&get)?,
             confirmation_ttl: Duration::from_secs(parse(
                 &get,
@@ -370,6 +366,19 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
 }
 
 /// 商店的设置：本地的官方索引目录（`WONTON_STORE_INDEX`），社区插件开不开（`WONTON_STORE_COMMUNITY`，on 或 off）。
+fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {
+    match configured {
+        Some(path) if !path.starts_with('/') => Err(invalid("WONTON_HOST_DEV", "必须是绝对路径")),
+        Some(path) => Ok(Some(PathBuf::from(path))),
+        None if on_host => Ok(Some(PathBuf::from("/dev"))),
+        None => Ok(None),
+    }
+}
+
+fn docs_dir(configured: Option<String>) -> PathBuf {
+    configured.map_or_else(|| crate::help::DEFAULT_DOCS.into(), PathBuf::from)
+}
+
 fn store_config(get: &impl Fn(&str) -> Option<String>) -> Result<StoreConfig, ConfigError> {
     let community = match get("WONTON_STORE_COMMUNITY").as_deref() {
         None | Some("on") => true,

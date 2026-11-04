@@ -30,7 +30,7 @@ impl Languages {
         Self(ranked.into_iter().map(|(_, tag)| tag).collect())
     }
 
-    fn choose<'t, T>(&self, text: &'t BTreeMap<String, T>) -> Option<&'t T> {
+    pub(crate) fn choose<'t, T>(&self, text: &'t BTreeMap<String, T>) -> Option<&'t T> {
         let find = |wanted: &str| {
             text.iter()
                 .find(|(lang, _)| lang.eq_ignore_ascii_case(wanted))

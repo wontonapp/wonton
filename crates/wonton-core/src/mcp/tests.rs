@@ -70,7 +70,7 @@ pub(super) struct Setup {
     dir: tempfile::TempDir,
 }
 
-fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
+pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -224,6 +224,7 @@ async fn agents_see_the_core_tools_and_the_tools_of_running_plugins() {
         "wonton__search_catalog",
         "wonton__install_plugin",
         "wonton__uninstall_plugin",
+        "wonton__help",
         "app-example-notes__search",
         "app-example-notes__delete",
     ] {

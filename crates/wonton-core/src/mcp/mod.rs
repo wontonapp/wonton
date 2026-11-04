@@ -32,6 +32,7 @@ use wonton_protocol::{ConfirmationState, FileFailure};
 
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
+use crate::help::Help;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
 use audit::{Audit, AuditedFile, Basis, Decision, Record};
@@ -63,6 +64,8 @@ pub struct Bus {
     audit: Arc<Audit>,
     /// 文件服务。它读插件的资源要用这里的 [`Upstreams`]，所以总线先建好，文件服务后接上（[`Bus::attach_files`]）。
     files: OnceLock<Arc<Files>>,
+    /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
+    help: OnceLock<Arc<Help>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -169,6 +172,7 @@ impl Bus {
             upstreams,
             audit,
             files: OnceLock::new(),
+            help: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
@@ -179,6 +183,13 @@ impl Bus {
     pub fn attach_files(&self, files: Arc<Files>) {
         if self.files.set(files).is_err() {
             tracing::error!("文件服务接了两次，用先接上的");
+        }
+    }
+
+    /// 接上帮助文档。没接上时 `wonton__help` 如实报错。
+    pub fn attach_help(&self, help: Arc<Help>) {
+        if self.help.set(help).is_err() {
+            tracing::error!("帮助文档接了两次，用先接上的");
         }
     }
 
@@ -492,6 +503,8 @@ impl Bus {
 mod agent_permission_tests;
 #[cfg(test)]
 mod file_tests;
+#[cfg(test)]
+mod help_tests;
 #[cfg(test)]
 mod save_tests;
 #[cfg(test)]

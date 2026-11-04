@@ -6,6 +6,7 @@ pub mod config;
 pub mod device;
 pub mod files;
 pub mod gateway;
+pub mod help;
 pub mod http;
 pub mod install;
 pub mod matrix;

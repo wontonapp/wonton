@@ -73,6 +73,16 @@ CMD ["run"]
 # 升级器和安装脚本用的 compose（ADR-0025）：只取这一个文件，Apache-2.0。
 FROM public.ecr.aws/docker/library/docker:29.9.2-cli AS compose
 
+# 帮助文档（ADR-0034）：wonton-docs 固定提交的一份，新装好的主机一定有文档。之后的更新靠官方索引的 `docs`。
+# 时间用归档里文件的修改时间，也就是这个提交的时间，重复构建结果不变。
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/debian:trixie-slim AS docs
+ARG WONTON_DOCS_COMMIT=549ad09ba8a49d13762ecac60f8ea26561ccd020
+ADD https://codeload.github.com/geraldpeng6/wonton-docs/tar.gz/${WONTON_DOCS_COMMIT} /docs.tar.gz
+RUN mkdir -p /docs/user /unpacked \
+    && tar xzf /docs.tar.gz --strip-components=1 -C /unpacked \
+    && if [ -d /unpacked/user ]; then cp -R /unpacked/user/. /docs/user/; fi \
+    && printf '{"commit":"%s","updated_at_ms":%s000}\n' "$WONTON_DOCS_COMMIT" "$(stat -c %Y /unpacked/README.md)" >/docs/source.json
+
 FROM public.ecr.aws/docker/library/debian:trixie-slim AS core
 # 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。根证书从编译阶段
 # 复制过来，这一层不执行命令：交叉编译的 arm64 镜像不用模拟器也能构建。
@@ -83,6 +93,7 @@ COPY --from=compose /usr/local/libexec/docker/cli-plugins/docker-compose /usr/lo
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
 # 随核心附带、只自动装一次的默认插件（WONTON_DEFAULT_PLUGINS）：默认 Agent Hermes。
 COPY plugins/hermes /usr/share/wonton/default-plugins/hermes
+COPY --from=docs /docs /usr/share/wonton/docs
 # 这个核心支持哪些核心管理的组件（ADR-0025）：切到不声明某个组件的镜像之前，升级器删掉它的容器。
 LABEL wonton.core.components="wonton-egress"
 ENTRYPOINT ["wonton-core"]

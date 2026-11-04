@@ -1,4 +1,4 @@
-//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载，文件工具在 [`file_tools`]。安装和卸载要
+//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载、帮助文档，文件工具在 [`file_tools`]。安装和卸载要
 //! 主人确认。Bot 只能装官方索引里的插件，申请高权限的插件只能由主人在 App 里装（ADR-0016）。
 
 use std::sync::Arc;
@@ -17,6 +17,7 @@ const LIST: &str = "list_plugins";
 const SEARCH: &str = "search_catalog";
 const INSTALL: &str = "install_plugin";
 const UNINSTALL: &str = "uninstall_plugin";
+const HELP: &str = "help";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -74,6 +75,16 @@ pub fn definitions() -> Vec<Tool> {
             false,
         ),
     ];
+    tools.push(tool(
+        HELP,
+        "查 Wonton 和 Wonton App 的帮助文档：怎么加设备、接模型、装应用、用底栏和确认卡片、升级、备份、连不上怎么办。\
+         主人问到这些时先查这里再回答，不要凭印象说。不写 topic 时返回目录，写了返回那一页。",
+        json!({"type": "object", "properties": {
+            "topic": {"type": "string", "description": "目录里的主题，如 devices"},
+            "lang": {"type": "string", "description": "语言，如 zh、en；不写时用 App 的语言"},
+        }}),
+        true,
+    ));
     tools.extend(file_tools::definitions());
     tools.extend(save_tools::definitions());
     tools
@@ -91,6 +102,7 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
         SEARCH => search(bus, &args).await,
         INSTALL => return install(bus, caller, &name, args).await,
         UNINSTALL => return uninstall(bus, caller, &name, args).await,
+        HELP => help(bus, &args).await,
         file_tools::VIEW | file_tools::SHARE => {
             return file_tools::call(bus, caller, tool, args).await;
         }
@@ -113,6 +125,15 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
         }
         Err(message) => bus.deny(caller, &name, &value, &message),
     }
+}
+
+async fn help(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
+    let help = bus
+        .help
+        .get()
+        .ok_or("service_unavailable: 帮助文档没有接上")?;
+    let text = |key: &str| args.get(key).and_then(Value::as_str);
+    help.answer(text("topic"), text("lang")).await
 }
 
 fn list(bus: &Bus) -> Value {

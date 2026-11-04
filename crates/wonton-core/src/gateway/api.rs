@@ -182,6 +182,8 @@ pub async fn list(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
+    let accept = headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok());
+    gateway.plugins.note_owner_languages(accept);
     Json(
         gateway
             .plugins
