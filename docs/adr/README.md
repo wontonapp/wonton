@@ -43,4 +43,5 @@
 | [0032](0032-connection-quality.md) | 和家里服务器的连接：自动恢复，用人话说状态 |
 | [0033](0033-plugin-tabs.md) | 底栏的插件页、全屏和 Agent 写插件：网页打底，App 管栏和主题，桥接用 MCP Apps 的词汇 |
 | [0034](0034-onboarding-and-help.md) | 新用户引导和帮助文档：选 Agent、接模型、按需求推荐，帮助由核心的工具提供 |
+| [0035](0035-acp-bridge.md) | ACP 桥：Matrix 与 ACP Agent 的连接形态 |
 | [0036](0036-plugin-privileges.md) | 插件的高权限：声明了就给，按风险分三级提示，由主人决定 |

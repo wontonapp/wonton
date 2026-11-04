@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28），ACP 桥已验证（见验证结果）。桥的时间和经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)
+- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)
 
 ## 背景
 
@@ -18,8 +18,8 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 - **接入标准**：
   - 会说 Matrix 的 Agent 直接接入，如 Hermes 的 Matrix 平台。
   - 支持 ACP（Agent Client Protocol）的 Agent 通过通用的“ACP 桥”插件接入，如 Codex、Claude Code、
-    Gemini CLI、OpenCode，以及 Hermes 自带的 ACP 适配器。一个聊天房间对应一个 ACP 会话，ACP 的
-    权限请求对应聊天里的确认按钮。
+    Gemini CLI、OpenCode，以及 Hermes 自带的 ACP 适配器。一个聊天房间对应一个 ACP 会话；消息、工具和权限的转法见
+    [ADR-0035](0035-acp-bridge.md)。
 - **默认 Agent**：Hermes，走 Bot Mode，一个 profile 对应一个 Bot；只收发消息，不做执行轨迹和工具
   过程展示。
 - **家人**：每个家人有自己的私人 Bot（独立记忆，互不可见）；主人可以建共享 Bot，拉进家庭群（M2）。
@@ -88,29 +88,12 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
   “预装失败（已试 N 次，稍后自动重试）：拉取镜像失败（镜像）：Docker 的原话”，状态页上写着同样的原因，镜像拉得下来后
   自动装上。真实的 Docker 29.8.2 拉不到镜像时在开始下载前就回错误：镜像不存在是 404，仓库拒绝、连不上是 500。
 
-## 补充：ACP 桥的形态（2026-10-28）
+## 补充：ACP 桥的形态（2026-11-05）
 
-讨论了 ACP 和 OAR（botiverse/oar，一个驱动多家 Agent 命令行工具的 TypeScript 库）两种做法，按 ADR-0015
-定为：**桥的接口是 ACP，OAR 只作可选的适配器**。
+ACP 桥的 C1 设计、容器边界、Matrix/ACP/MCP 转换和 C3 登录路径见 [ADR-0035](0035-acp-bridge.md)。桥是独立插件，核心只提供标准接口，不认识具体 Agent。
 
-- **桥只说 ACP。** 用 Rust 写，复用 `wonton-matrix`：每个 Bot 的端到端加密、交叉签名和恢复密钥都由它负责。
-  ACP 的权限请求（`session/request_permission`）对应聊天里的确认按钮。
-- **每个 Agent 插件的容器里放一个说 ACP 的程序。** 原生支持 ACP 的直接用，ACP 官网 2026-10 列出 48 个，
-  包括 Hermes、Kimi Code CLI、Qwen Code、Qoder CLI、OpenCode、Gemini CLI。Claude Code、Codex 用 ACP 组织
-  维护的适配器 `claude-agent-acp`、`codex-acp`。
-- **插话。** ACP 现行协议不支持在一轮进行中插入新消息，进行中只能取消；v2 提案也把插话和排队留作单独的
-  议题。桥的做法：
-  - 默认排队，等这一轮结束再发，和 Hermes 的 Bot 模式一致；
-  - 提供“打断重来”：取消当前一轮，带上新消息重新发提示，会话历史保留；
-  - 真插话做成可选的 ACP 扩展（`_meta` 字段或以 `_` 开头的自定义方法）。支持它的适配器真插话，不支持的
-    退回排队。
-- **OAR 不作为桥。** 它的价值是补 ACP 的空白：插话、不经终端登录、查额度和模型，以及接入没有 ACP 的运行时
-  （如 Grok Build、Antigravity）。需要时把它包成一个说 ACP 的适配器，放进对应的 Agent 插件；桥不用改。
-  是否采用、用在哪些运行时，由 #43 的验证决定（结论：不采用，见下文“验证结果（#43）”）。必须先验证的一点：
-  DeepSeek harness 的 OAR 集成是一次性、无人值守的委派，没有审批界面，OAR 对 Codex 的审批请求只记录、不回答，
-  而我们需要由主人在聊天里确认。
-- **Hermes** 先保持自带 Matrix 的 Bot 模式（M0 已验证）。桥稳定后评估是否改走 ACP，让收发消息、确认按钮、
-  执行轨迹的取舍只有一份实现。
+- 桥只说 ACP；OAR 不作为桥，也不作为默认适配器。#43 的验证结论和依据保留在下面。
+- Hermes 继续使用自带的 Matrix Bot 模式；ACP 桥不改变它的消息和执行轨迹取舍。
 
 ## 验证结果（#43，2026-10-28）
 
@@ -164,8 +147,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 
 - 恢复会话：四家都支持 `session/load` 和 `session/resume`，新容器里恢复只要几十到 200 ms，`session/list` 也能列出。
   前提是 HOME 和工作区都在持久的数据目录里：工作区不在时 `session/load` 报 -32602（`cwd` does not exist）。
-  会话、配置、登录态都在 HOME 下（`~/.claude`、`~/.codex`、`~/.kimi-code`、`~/.qwen`、`~/.qoder`），
-  所以 Bot 的 `WONTON_BOT_DATA` 要同时放 HOME 和工作区。
+  会话、配置、登录态都在 ACP Agent 自己的 `${WONTON_BOT_DATA}/agent` 下；workspace 与 HOME 一起持久化在那里。bridge 服务另用 `${WONTON_BOT_DATA}/bridge` 保存 Matrix crypto store、恢复密钥和房间状态，Agent 服务看不到它。
 - 打断重来：发 `session/cancel`，等原来的 `session/prompt` 以 `cancelled` 返回，再发新提示。四家都在 50 ms 内停下，
   历史保留。Codex、Qwen 偶尔在 `cancelled` 之后 1 秒内还到一条文字片段，桥以 `session/prompt` 的响应为界丢弃。
 - 忙时再发提示，各家行为不一致：Claude、Codex 的适配器自己排队；Kimi 直接拒绝；Qwen 会中断前一轮，前一轮报
@@ -208,8 +190,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 - Qwen 观察到瞬时峰值：同一进程里第三个会话开始一轮时，内存 0.6 秒内冲到 2.7–2.9 GiB，然后回落。复现了 4 次，
   单独跑一个会话时不出现，原因没查。Qwen 插件要设内存上限，并验证不会因此被杀掉。
 - Qwen 的 `auto` 模式会自动把“记住暗号”写进 HOME 下的全局记忆，于是同一个 Bot 的所有房间共享这份记忆。
-- 这几家 Agent 都只说 stdio（ACP 的 HTTP、WebSocket 远程传输还是 RFD 草案），桥要么和 Agent 在同一个容器里
-  把它作为子进程拉起，要么经一个把 stdio 接到 socket 的小转发。M2 设计桥时定。
+- 这几家 Agent 都只说 stdio（ACP 的 HTTP、WebSocket 远程传输还是 RFD 草案）；C1 的两服务方案和 Agent 镜像入口里的 stdio↔socket 转发见 [ADR-0035](0035-acp-bridge.md)。
 
 **登录（不经终端）**
 
