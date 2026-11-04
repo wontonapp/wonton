@@ -15,11 +15,13 @@ use super::egress::settings::Egress;
 use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
+use super::host_check;
+use super::host_facts::NvidiaMemory;
 use super::image_worker::ImageWorker;
 use super::lan::Lan;
 use super::lan::webui::switched;
 use super::lifecycle::LifecycleConfig;
-use super::manifest::{Arch, LocalizedText, Manifest, Permission, PluginId, PluginKind};
+use super::manifest::{LocalizedText, Manifest, Permission, PluginId, PluginKind};
 use super::mcp_server::{McpServer, ToolLimits};
 use super::models::{ModelsRoute, ProviderState};
 use super::package::PluginPackage;
@@ -224,6 +226,7 @@ pub struct PluginManager {
     pub(super) cfg: LifecycleConfig,
     /// 核心看到的宿主路径，探测显卡用（见 [`super::gpu`]）。
     pub(super) host: HostPaths,
+    pub(super) nvidia_memory: NvidiaMemory,
     pub(super) sources: Sources,
     /// 按来源取插件包。
     pub(super) github: GitHub,
@@ -305,6 +308,7 @@ impl PluginManager {
             oidc,
             matrix: None,
             host: HostPaths::new(host_dev),
+            nvidia_memory: NvidiaMemory::default(),
             cfg,
             sources: Sources::default(),
             github,
@@ -670,17 +674,9 @@ impl PluginManager {
                 "已经装了模型网关 {id}：同一时间只能有一个"
             )));
         }
-        let arch = self.engine.host_arch().await?;
-        let wanted = manifest.requirements.as_ref().and_then(|r| r.arch.as_ref());
-        match (wanted, Arch::from_docker(&arch)) {
-            (Some(list), Some(host)) if !list.contains(&host) => Err(InstallError::Unsupported(
-                format!("应用不支持本机架构 {arch}"),
-            )),
-            (Some(_), None) => Err(InstallError::Unsupported(format!(
-                "无法识别本机架构 {arch}"
-            ))),
-            _ => Ok(()),
-        }
+        let info = self.engine.host_info().await?;
+        let facts = self.facts_from(Ok(info)).await;
+        host_check::refusal(manifest, &facts).map_or(Ok(()), Err)
     }
 
     /// 同 [`Self::uninstall`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里卸载。

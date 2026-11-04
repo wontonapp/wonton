@@ -35,6 +35,14 @@ Docker 把显卡交给容器有两条路：`--device` 把内核的设备节点�
   共享内存，桌面主机上有 Wayland、PipeWire 的缓冲；还有 `/dev/pts`、`/dev/mqueue`），核心只要 devtmpfs 里的设备节点，
   `/dev/dri`、`/dev/kfd` 不是单独的挂载。设备 cgroup 没有放行，核心开不了这些设备；核心本来就持有 Docker socket
   （ADR-0011），这不增加它的权限，但读文件的路径要是没收住，也读不到宿主的共享内存。核心直接跑在宿主上时读 `/dev`。
+- **要什么样的显卡，插件自己写，核心判断。** `requirements.gpu` 可以限定厂商（`vendors`）和显存下限（`memory`），写法见插件规范
+  的“对宿主的要求”。商店、预览和安装都按这台主机实际的显卡判断：满足、不满足（`required` 的装不了，`optional` 的不给设备）、
+  查不出来（如实显示，不拦安装）。限定了厂商时只给那家的：NVIDIA 和别家混装的主机上不多给另一家。AMD 和 Intel 混装时分不开，
+  都在 `/dev/dri` 里。
+- **显存各家读法不同，读不到的不猜。** AMD 独显、Intel 独显读 sysfs。NVIDIA 的不在 sysfs 里，用核心的镜像起一次性容器，用插件拿
+  显卡时一样的 `DeviceRequests`，问 `nvidia-smi`（Toolkit 带进去的，`NVIDIA_DRIVER_CAPABILITIES=utility`），顺便证明容器里
+  真能用上；问到了这个核心进程里不再问，问不到隔一分钟再问。AMD 集成显卡报的是划给它的那部分内存，不是上限，比要求小时算查不
+  出来。标称和实际差一点，到要求的 90% 就算够，和主机内存一样。
 - **预览和确认写明给了什么。** 安装预览的说明（`InstallPreview.notices`）里有一行：拿显卡的服务，本机会给什么（厂商、设备、
   组）或者为什么给不了；`required` 而本机给不了时，原因同时写进 `blocked`，和其他“这台主机上装不了”的原因一样。确认卡片
   列出拿显卡的服务。
@@ -53,8 +61,7 @@ Docker 把显卡交给容器有两条路：`--device` 把内核的设备节点�
 
 ## 代价与风险
 
-- NVIDIA 这条路没有实测（没有 NVIDIA 主机），只按 Docker 和 NVIDIA Container Toolkit 的文档写；Intel 显卡会拿到 `/dev/dri`，
-  同样没有实测。
+- NVIDIA 这条路实测到 `--gpus all` 的容器里跑 `nvidia-smi`（Docker 28.2.2、RTX 5090）；Intel 显卡会拿到 `/dev/dri`，没有实测。
 - `/dev/dri` 整个目录连显示节点（`card*`）也给了，插件能改显示设置；ROCm 的文档也是整个目录。
 - 装好后核心不再盯着显卡：显卡拔了、驱动换了，容器自己报错。
 - 显卡不能按块分配：多块显卡全部交给每个声明的服务。

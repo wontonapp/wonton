@@ -12,6 +12,8 @@ use wonton_protocol::{
 use super::egress::probe::blocks;
 use super::gallery::{IconSource, Variant};
 use super::github_source::{Origin, Trust};
+use super::host_check::{self, Item};
+use super::host_facts::HostFacts;
 use super::image_worker::ImageError;
 use super::lan::LanPortSpec;
 use super::lan::webui::{self, Switched};
@@ -21,7 +23,6 @@ use super::manifest::{Access, LocalizedText, Manifest, Permission, PluginId, Plu
 use super::package::PluginPackage;
 use super::proxy_auth;
 use super::render::{dry_run, dry_run_with_email};
-use super::requirements;
 
 /// 已安装插件在列表和详情页里显示的信息，装上时从插件包里取出。
 #[derive(Debug, Clone)]
@@ -97,7 +98,20 @@ impl PluginManager {
         Some(self.with_bot(plugin))
     }
 
-    /// 已安装插件的详情页（装着的版本）；没装时为空。上传的插件包没有来源，也就没有截图。
+    /// 同 [`Self::installed_detail`]，要求逐条判断过：判断要问 Docker，只有详情接口要等。
+    pub async fn judged_detail(&self, id: &PluginId, langs: &Languages) -> Option<PluginDetail> {
+        let mut detail = self.installed_detail(id, langs)?;
+        let listed = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            plugins.get(id)?.listed.clone()
+        };
+        if let Some(listed) = listed {
+            detail.requirements = requirement_checks(&listed.manifest, &self.host_facts().await);
+        }
+        Some(detail)
+    }
+
+    /// 已安装插件的详情页（装着的版本），不带要求；没装时为空。上传的插件包没有来源，也就没有截图。
     pub fn installed_detail(&self, id: &PluginId, langs: &Languages) -> Option<PluginDetail> {
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -134,7 +148,7 @@ impl PluginManager {
                 .iter()
                 .map(|p| permission_line(p, langs))
                 .collect(),
-            requirements: requirement_checks(m),
+            requirements: Vec::new(),
             has_web: m.webui.is_some(),
             installed: Some(installed),
             blocked: None,
@@ -207,7 +221,7 @@ impl PluginManager {
         if reveals_owner_identity(m) && !m.permissions.contains(&Permission::OwnerIdentity) {
             notices.push(line(permission_text(&Permission::OwnerIdentity)));
         }
-        notices.extend(requirement_lines(m).into_iter().map(line));
+        notices.extend(requirement_notices(m, &self.host_facts().await));
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
         // 不挡安装的问题：探测只试了一个网站。
@@ -385,6 +399,7 @@ fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, Insta
     match checked {
         Ok(()) => Ok(None),
         Err(InstallError::Unsupported(reason) | InstallError::Conflict(reason)) => Ok(Some(reason)),
+        Err(e @ InstallError::GpuUnavailable(_)) => Ok(Some(e.to_string())),
         Err(e) => Err(e),
     }
 }
@@ -469,23 +484,41 @@ pub(super) fn permission_line(permission: &Permission, langs: &Languages) -> Per
     }
 }
 
-/// 对宿主的要求，一项一行。
-pub(super) fn requirement_lines(manifest: &Manifest) -> Vec<String> {
+/// 详情页的要求和这台主机满不满足。
+pub(super) fn requirement_checks(manifest: &Manifest, facts: &HostFacts) -> Vec<RequirementLine> {
     manifest
         .requirements
         .as_ref()
-        .map(requirements::lines)
+        .map(|r| host_check::judge(r, facts))
         .unwrap_or_default()
+        .into_iter()
+        .map(|check| check.line)
+        .collect()
 }
 
-/// 详情页的要求和这台主机满不满足。
-pub(super) fn requirement_checks(manifest: &Manifest) -> Vec<RequirementLine> {
-    requirement_lines(manifest)
+/// 安装预览里的要求。显卡不满足时不写：预览里关于显卡的那行（[`super::gpu::GpuPreview`]）已经写了为什么。
+fn requirement_notices(manifest: &Manifest, facts: &HostFacts) -> Vec<CardLine> {
+    let Some(requirements) = &manifest.requirements else {
+        return Vec::new();
+    };
+    host_check::judge(requirements, facts)
         .into_iter()
-        .map(|text| RequirementLine {
-            text,
-            status: RequirementStatus::Unknown,
-            problem: None,
+        .filter(|check| {
+            let bad = matches!(
+                check.line.status,
+                RequirementStatus::Unmet | RequirementStatus::Degraded
+            );
+            !(check.item == Item::Gpu && bad)
+        })
+        .map(|check| match check.line.problem {
+            Some(problem) => CardLine {
+                text: format!("{}：{problem}", check.line.text),
+                emphasis: true,
+            },
+            None => CardLine {
+                text: check.line.text,
+                emphasis: false,
+            },
         })
         .collect()
 }

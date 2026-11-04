@@ -76,7 +76,8 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     assert_eq!(m.icon_png(&"0".repeat(64), Variant::Large).await, Ok(None));
 
     let detail = m
-        .installed_detail(&PluginId::parse("app.photos").unwrap(), &english())
+        .judged_detail(&PluginId::parse("app.photos").unwrap(), &english())
+        .await
         .unwrap();
     assert_eq!(detail.release_notes.as_deref(), Some("First release"));
     assert_eq!(detail.requirements[0].text, "需要 2G 内存");

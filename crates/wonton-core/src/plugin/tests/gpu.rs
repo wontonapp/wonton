@@ -134,13 +134,13 @@ async fn required_plugins_do_not_install_without_a_usable_gpu_and_say_which_part
         preview
             .blocked
             .as_deref()
-            .is_some_and(|b| b.contains("没有找到显卡")),
+            .is_some_and(|b| b.contains("这台主机没有显卡")),
         "没写 requirements.gpu 时按 required，这台主机上装不了：{preview:?}"
     );
     assert!(gpu_notice(&preview).text.contains("需要显卡"));
     let err = m.install(&compose, &granted()).await.unwrap_err();
     assert_eq!(err.kind(), "gpu_unavailable", "{err}");
-    assert!(err.to_string().contains("没有找到显卡"), "{err}");
+    assert!(err.to_string().contains("这台主机没有显卡"), "{err}");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
     assert!(docker.networks().is_empty(), "{:?}", docker.networks());
     assert!(m.list().is_empty(), "装不上的插件不能留在插件表里");

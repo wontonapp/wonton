@@ -67,6 +67,14 @@ impl Instance {
     }
 
     /// 检测局域网地址的一次性容器。名字里没有 `--`，不会和插件的容器重名。
+    /// 问 NVIDIA 驱动的一次性容器（见 [`super::host_facts::ask_nvidia`]）。
+    pub fn gpu_probe(&self) -> String {
+        match &self.0 {
+            None => "wonton-gpu-probe".to_owned(),
+            Some(instance) => format!("wonton-{instance}-gpu-probe"),
+        }
+    }
+
     pub fn lan_probe(&self) -> String {
         match &self.0 {
             None => "wonton-lan-probe".to_owned(),

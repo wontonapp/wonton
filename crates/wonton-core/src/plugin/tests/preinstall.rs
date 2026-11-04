@@ -277,7 +277,7 @@ async fn a_default_plugin_needing_a_gpu_the_host_lacks_is_not_retried() {
     let Some(PluginStatus::Degraded { reason }) = status(&m) else {
         panic!("应当标为异常：{:?}", status(&m));
     };
-    assert!(reason.contains("没有找到显卡"), "{reason}");
+    assert!(reason.contains("这台主机没有显卡"), "{reason}");
     assert!(!reason.contains("自动重试"), "{reason}");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }

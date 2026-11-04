@@ -204,7 +204,11 @@ pub async fn detail(
         Ok(id) => id,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
-    match gateway.plugins.installed_detail(&id, &languages(&headers)) {
+    match gateway
+        .plugins
+        .judged_detail(&id, &languages(&headers))
+        .await
+    {
         Some(detail) => Json(detail).into_response(),
         None => install_error(&InstallError::NotInstalled(id.to_string())),
     }

@@ -15,6 +15,8 @@ pub mod github;
 pub mod github_source;
 pub mod gpu;
 pub mod health;
+pub mod host_check;
+pub mod host_facts;
 pub mod hostdir;
 pub mod image_worker;
 pub mod images;

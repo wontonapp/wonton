@@ -606,7 +606,10 @@ fn others(
                 .into_iter()
                 .map(|name| (name.clone(), json!({"path": name})))
                 .collect();
-            json_reply(StatusCode::OK, json!({"Runtimes": map}))
+            json_reply(
+                StatusCode::OK,
+                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux"}),
+            )
         }
         (&Method::GET, ["images", image @ .., "json"]) => {
             let check = docker.image_healthchecks.get(&image.join("/"));

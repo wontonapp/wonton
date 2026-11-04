@@ -4,10 +4,12 @@ use wonton_protocol::{PluginDetail, PluginTrust, StoreItem, StoreListing, StoreS
 
 use super::super::gallery::IconSource;
 use super::super::github_source::{Origin, SourceRef, Trust};
+use super::super::host_check;
+use super::super::host_facts::HostFacts;
 use super::super::install_error::InstallError;
 use super::super::languages::Languages;
 use super::super::manager::{PluginManager, supported};
-use super::super::manifest::{Arch, Manifest, PluginKind};
+use super::super::manifest::{Manifest, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::package_files::normalize;
 use super::super::views::{author, kind, permission_line, requirement_checks};
@@ -29,7 +31,7 @@ impl PluginManager {
         let (index, official_at, official_problem) = self.storefront.official(refresh).await;
         let (community, community_at, community_problem) =
             self.storefront.community(&index, refresh).await;
-        let arch = self.engine.host_arch().await.ok();
+        let facts = self.host_facts().await;
         let mut icons = Vec::new();
         let mut official = Vec::new();
         for listed in &index.plugins {
@@ -43,7 +45,7 @@ impl PluginManager {
                 trust: PluginTrust::Official,
                 stars: None,
             };
-            official.push(self.item(&shown, arch.as_deref(), langs));
+            official.push(self.item(&shown, &facts, langs));
         }
         let community = community
             .iter()
@@ -57,7 +59,7 @@ impl PluginManager {
                     trust: PluginTrust::Community,
                     stars: Some(c.stars),
                 };
-                self.item(&shown, arch.as_deref(), langs)
+                self.item(&shown, &facts, langs)
             })
             .collect();
         self.gallery.remember_store(icons);
@@ -105,7 +107,7 @@ impl PluginManager {
     ) -> PluginDetail {
         let m = &package.manifest;
         let origin = package.origin.as_ref();
-        let arch = self.engine.host_arch().await.ok();
+        let facts = self.host_facts().await;
         let installed = self.installed_plugin(&m.id, langs);
         PluginDetail {
             source: origin.map(|o| o.repo.clone()),
@@ -135,10 +137,10 @@ impl PluginManager {
                 .iter()
                 .map(|p| permission_line(p, langs))
                 .collect(),
-            requirements: requirement_checks(m),
+            requirements: requirement_checks(m, &facts),
             has_web: m.webui.is_some(),
             installed,
-            blocked: blocked(m, arch.as_deref()),
+            blocked: blocked(m, &facts),
             // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
             lan_webui: self
                 .installed_detail(&m.id, langs)
@@ -148,7 +150,7 @@ impl PluginManager {
         }
     }
 
-    fn item(&self, shown: &Shown, arch: Option<&str>, langs: &Languages) -> StoreItem {
+    fn item(&self, shown: &Shown, facts: &HostFacts, langs: &Languages) -> StoreItem {
         let m = shown.manifest;
         let installed_version = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -170,7 +172,7 @@ impl PluginManager {
             stars: shown.stars,
             installed_version,
             high_permissions: m.permissions.iter().any(|p| p.is_high()),
-            blocked: blocked(m, arch),
+            blocked: blocked(m, facts),
         }
     }
 
@@ -191,19 +193,13 @@ impl PluginManager {
     }
 }
 
-/// 这台主机上装不了的原因：系统插件、核心不支持的权限、宿主架构不符。查不到宿主架构（Docker 不可用）时不按架构判断。
-fn blocked(m: &Manifest, arch: Option<&str>) -> Option<String> {
+/// 这台主机上装不了的原因：系统插件、核心不支持的权限、不满足的要求。查不出来的要求不拦。
+fn blocked(m: &Manifest, facts: &HostFacts) -> Option<String> {
     if m.kind == PluginKind::System {
         return Some("系统应用只能随核心预装".to_owned());
     }
     if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
         return Some(format!("核心还不支持权限 {p}"));
     }
-    let wanted = m.requirements.as_ref().and_then(|r| r.arch.as_ref())?;
-    let arch = arch?;
-    match Arch::from_docker(arch) {
-        Some(host) if wanted.contains(&host) => None,
-        Some(_) => Some(format!("应用不支持本机架构 {arch}")),
-        None => Some(format!("无法识别本机架构 {arch}")),
-    }
+    host_check::refusal(m, facts).map(|refusal| refusal.to_string())
 }

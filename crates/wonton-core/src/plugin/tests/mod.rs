@@ -19,6 +19,8 @@ mod egress_switch;
 mod github;
 mod gpu;
 mod health;
+mod host_check;
+mod host_facts;
 mod instances;
 mod lan;
 mod lan_webui;

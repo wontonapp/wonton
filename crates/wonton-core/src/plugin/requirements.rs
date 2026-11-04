@@ -48,7 +48,7 @@ pub enum GpuVendor {
 }
 
 impl GpuVendor {
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Amd => "AMD",
             Self::Nvidia => "NVIDIA",
@@ -125,33 +125,35 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     Ok(())
 }
 
-/// 给人看的要求，一项一行。
-pub fn lines(requirements: &Requirements) -> Vec<String> {
-    let mut lines = Vec::new();
-    if let Some(arch) = &requirements.arch {
-        let names: Vec<&str> = arch.iter().map(|a| a.name()).collect();
-        lines.push(format!("只支持 {} 架构", names.join("、")));
+pub fn arch_line(arch: &[Arch]) -> String {
+    let names: Vec<&str> = arch.iter().map(|a| a.name()).collect();
+    format!("只支持 {} 架构", names.join("、"))
+}
+
+pub fn memory_line(memory: &str) -> String {
+    format!("需要 {memory} 内存")
+}
+
+pub fn gpu_line(gpu: &GpuRequirement) -> String {
+    let card = card_name(&gpu.vendors);
+    let memory = gpu
+        .memory
+        .as_ref()
+        .map(|memory| format!("，显存至少 {memory}"))
+        .unwrap_or_default();
+    match gpu.need {
+        GpuNeed::Required => format!("需要{card}{memory}"),
+        GpuNeed::Optional => format!("有{card}{memory}时会用"),
     }
-    if let Some(memory) = &requirements.memory {
-        lines.push(format!("需要 {memory} 内存"));
+}
+
+/// `显卡`，或者 ` NVIDIA 或 AMD 显卡`：直接接在中文后面，开头的英文前留空格。
+pub fn card_name(vendors: &[GpuVendor]) -> String {
+    let names: Vec<&str> = vendors.iter().map(|v| v.name()).collect();
+    match names.as_slice() {
+        [] => "显卡".to_owned(),
+        names => format!(" {} 显卡", names.join(" 或 ")),
     }
-    if let Some(gpu) = &requirements.gpu {
-        let vendors: Vec<&str> = gpu.vendors.iter().map(|v| v.name()).collect();
-        let card = match vendors.as_slice() {
-            [] => "显卡".to_owned(),
-            names => format!("{} 显卡", names.join(" 或 ")),
-        };
-        let memory = gpu
-            .memory
-            .as_ref()
-            .map(|memory| format!("，显存至少 {memory}"))
-            .unwrap_or_default();
-        lines.push(match gpu.need {
-            GpuNeed::Required => format!("需要{card}{memory}"),
-            GpuNeed::Optional => format!("有{card}{memory}时会用"),
-        });
-    }
-    lines
 }
 
 #[cfg(test)]

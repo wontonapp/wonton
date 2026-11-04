@@ -69,6 +69,14 @@ pub struct ServerInfo {
     pub arch: String,
 }
 
+/// Docker 报告的主机情况。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostInfo {
+    pub os_type: String,
+    pub arch: String,
+    pub runtimes: Vec<String>,
+}
+
 /// 插件网络能连到哪里。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkReach {
@@ -167,6 +175,10 @@ impl Engine {
 
     /// Docker 登记的 OCI 运行时的名字（`runc`，装了 NVIDIA Container Toolkit 时还有 `nvidia`）。
     pub async fn runtimes(&self) -> Result<Vec<String>> {
+        Ok(self.host_info().await?.runtimes)
+    }
+
+    pub async fn host_info(&self) -> Result<HostInfo> {
         let info = self
             .docker
             .info()
@@ -174,7 +186,11 @@ impl Engine {
             .map_err(|e| EngineError::from_bollard("查询 Docker 信息", e))?;
         let mut runtimes: Vec<String> = info.runtimes.unwrap_or_default().into_keys().collect();
         runtimes.sort();
-        Ok(runtimes)
+        Ok(HostInfo {
+            os_type: info.os_type.unwrap_or_default(),
+            arch: info.architecture.unwrap_or_default(),
+            runtimes,
+        })
     }
 
     /// 核心启动时检查 Docker：连得上，而且 Engine 版本不低于 [`MIN_ENGINE_MAJOR`]。低于时报错，不降级运行：
