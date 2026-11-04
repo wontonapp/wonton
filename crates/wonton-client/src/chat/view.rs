@@ -9,7 +9,7 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
-    MessageContent, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState,
+    MessageAction, MessageContent, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState,
     TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
@@ -90,6 +90,12 @@ pub(crate) fn timeline_item(
 
 fn timeline_message(message: Message, cards: &CardsView, read_by: Vec<String>) -> TimelineMessage {
     let card = cards.view_of(&message);
+    // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
+    let edited = message.edited && card.is_none();
+    let body = match (card, message.body) {
+        (Some(view), _) => MessageContent::Confirmation { view },
+        (None, body) => message_content(body, message.is_own),
+    };
     TimelineMessage {
         event_id: message.event_id.map(|id| id.to_string()),
         sender_id: message.sender.to_string(),
@@ -108,13 +114,21 @@ fn timeline_message(message: Message, cards: &CardsView, read_by: Vec<String>) -
                 recoverable,
             },
         },
-        // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
-        edited: message.edited && card.is_none(),
-        body: match (card, message.body) {
-            (Some(view), _) => MessageContent::Confirmation { view },
-            (None, body) => message_content(body, message.is_own),
-        },
+        edited,
+        actions: message_actions(&body),
+        body,
         read_by,
+    }
+}
+
+fn message_actions(body: &MessageContent) -> Vec<MessageAction> {
+    match body {
+        MessageContent::Text { body, blocks, .. } if !body.trim().is_empty() => {
+            vec![MessageAction::Copy {
+                text: rich::copy_text(blocks),
+            }]
+        }
+        _ => Vec::new(),
     }
 }
 

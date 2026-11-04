@@ -40,6 +40,9 @@ object WontonSize {
     val iconTiny = 14.dp
     val sendButton = 36.dp
     val fileThumbnail = 44.dp
+    val menuBlur = 12.dp
+    val menuWidth = 200.dp
+    val menuElevation = 8.dp
     val messageImage = 240.dp
     val launcherIcon = 62.dp
     val launcherCell = 76.dp

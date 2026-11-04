@@ -3,6 +3,7 @@ package app.wonton.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +27,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontStyle
@@ -67,6 +73,7 @@ fun TimelineItemView(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onAnswer: (String, Answer) -> Unit,
+    onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     when (val content = item.content) {
         is TimelineContent.Message -> MessageBubble(
@@ -78,6 +85,7 @@ fun TimelineItemView(
             onRetry,
             onCancel,
             onAnswer,
+            onOpenMenu,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.DateDivider ->
@@ -137,10 +145,28 @@ private fun MessageBubble(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onAnswer: (String, Answer) -> Unit,
+    onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
     val gutter = WontonTheme.spacing.s48
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val haptics = LocalHapticFeedback.current
+    val pressable = if (message.actions.isEmpty()) {
+        Modifier
+    } else {
+        Modifier
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .combinedClickable(
+                interactionSource = null,
+                indication = null,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onOpenMenu(message, bounds)
+                },
+                onClick = {},
+            )
+    }
     Column(
         Modifier.fillMaxWidth().padding(start = if (isOwn) gutter else 0.dp, end = if (isOwn) 0.dp else gutter),
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
@@ -149,40 +175,57 @@ private fun MessageBubble(
         if (showsSender && !isOwn) {
             Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
         }
-        val shape = bubbleShape(isOwn, joinsPrevious, joinsNext)
-        val fill = if (isOwn) {
-            Modifier.accentFill(shape)
-        } else {
-            Modifier.background(colors.surfaceSubtle.toColor(), shape)
+        BubbleSurface(message, core, joinsPrevious, joinsNext, pressable, onRetry, onCancel, onAnswer)
+    }
+}
+
+/** 气泡本身。长按菜单的预览也画这个。 */
+@Composable
+fun BubbleSurface(
+    message: TimelineMessage,
+    core: ClientCore,
+    joinsPrevious: Boolean,
+    joinsNext: Boolean,
+    modifier: Modifier,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    onAnswer: (String, Answer) -> Unit,
+) {
+    val colors = WontonTheme.colors
+    val isOwn = message.isOwn
+    val shape = bubbleShape(isOwn, joinsPrevious, joinsNext)
+    val fill = if (isOwn) {
+        Modifier.accentFill(shape)
+    } else {
+        Modifier.background(colors.surfaceSubtle.toColor(), shape)
+    }
+    val padded = modifier.then(fill).padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
+    val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
+    val styledBody: @Composable (String?) -> Unit = { reserve ->
+        CompositionLocalProvider(
+            LocalContentColor provides content.toColor(),
+            LocalTextStyle provides WontonTheme.typography.body,
+        ) {
+            MessageBody(message.body, core, message.sendState, reserve, onAnswer)
         }
-        val padded = fill.padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
-        val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
-        val styledBody: @Composable (String?) -> Unit = { reserve ->
-            CompositionLocalProvider(
-                LocalContentColor provides content.toColor(),
-                LocalTextStyle provides WontonTheme.typography.body,
-            ) {
-                MessageBody(message.body, core, message.sendState, reserve, onAnswer)
-            }
+    }
+    val reserve = footerReserve(message)
+    if (reserve != null) {
+        // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
+        Box(padded) {
+            styledBody(reserve)
+            // 占位文字已经念过一遍时间了。
+            MessageFooter(
+                message,
+                Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {},
+                onRetry,
+                onCancel,
+            )
         }
-        val reserve = footerReserve(message)
-        if (reserve != null) {
-            // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
-            Box(padded) {
-                styledBody(reserve)
-                // 占位文字已经念过一遍时间了。
-                MessageFooter(
-                    message,
-                    Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {},
-                    onRetry,
-                    onCancel,
-                )
-            }
-        } else {
-            Column(padded, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-                styledBody(null)
-                MessageFooter(message, Modifier.align(Alignment.End), onRetry, onCancel)
-            }
+    } else {
+        Column(padded, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            styledBody(null)
+            MessageFooter(message, Modifier.align(Alignment.End), onRetry, onCancel)
         }
     }
 }

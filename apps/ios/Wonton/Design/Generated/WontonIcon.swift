@@ -19,6 +19,7 @@ enum WontonIcon: String {
     case codeFill
     case compose
     case connection
+    case copy
     case cpu
     case cpuFill
     case device

@@ -114,6 +114,17 @@ pub struct TimelineMessage {
     pub edited: bool,
     /// 读过这条的其他人（显示名）。只有自己发的、别人读到的最后一条才有，壳有就显示“已读”。
     pub read_by: Vec<String>,
+    /// 长按这条消息能做的事。空的就没有菜单。
+    pub actions: Vec<MessageAction>,
+}
+
+/// 长按消息的菜单里的一项。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MessageAction {
+    /// 把 `text` 放进剪贴板。
+    Copy { text: String },
 }
 
 /// 发送状态。别人的消息和从服务器同步来的消息都是 [`SendState::Sent`]。
@@ -449,6 +460,9 @@ mod tests {
                 body,
                 edited: true,
                 read_by: vec!["主人".into()],
+                actions: vec![MessageAction::Copy {
+                    text: "好的".into(),
+                }],
             },
         }
     }

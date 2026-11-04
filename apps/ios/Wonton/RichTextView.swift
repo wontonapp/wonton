@@ -16,7 +16,6 @@ struct RichTextView: View {
             }
         }
         .tint(ink)
-        .textSelection(.enabled)
     }
 
     private func gap(after previous: RichBlock, before next: RichBlock) -> CGFloat {

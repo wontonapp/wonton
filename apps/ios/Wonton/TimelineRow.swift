@@ -98,8 +98,26 @@ private struct MessageBubble: View {
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 bubble
+                    // 系统的菜单自带预览、背景模糊和材质（ADR-0029）。
+                    .contentShape(.contextMenuPreview, shape)
+                    .contextMenu {
+                        ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
+                            menuItem(action)
+                        }
+                    }
             }
             if !message.isOwn { Spacer(minLength: WontonTheme.spacing.s48) }
+        }
+    }
+
+    @ViewBuilder private func menuItem(_ action: MessageAction) -> some View {
+        switch action {
+        case let .copy(text):
+            Button {
+                UIPasteboard.general.string = text
+            } label: {
+                Label { Text("复制") } icon: { WontonIcon.copy.image }
+            }
         }
     }
 

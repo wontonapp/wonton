@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,12 +49,10 @@ private const val CODE_SCALE = 0.9f
  */
 @Composable
 fun RichText(blocks: List<RichBlock>, trailingReserve: String? = null) {
-    SelectionContainer {
-        Column {
-            blocks.forEachIndexed { index, block ->
-                if (index > 0) Spacer(Modifier.height(gap(blocks[index - 1], block)))
-                RichBlockView(block, if (index == blocks.lastIndex) trailingReserve else null)
-            }
+    Column {
+        blocks.forEachIndexed { index, block ->
+            if (index > 0) Spacer(Modifier.height(gap(blocks[index - 1], block)))
+            RichBlockView(block, if (index == blocks.lastIndex) trailingReserve else null)
         }
     }
 }

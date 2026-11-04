@@ -386,6 +386,28 @@ fn allowed_link(url: &str) -> Option<String> {
     matches!(parsed.scheme(), "http" | "https" | "mailto").then(|| parsed.to_string())
 }
 
+/// 复制出去的文字：看到什么复制什么，不带 Markdown 的符号。
+pub(crate) fn copy_text(blocks: &[RichBlock]) -> String {
+    let lines: Vec<String> = blocks
+        .iter()
+        .filter_map(|block| {
+            let text: String = block.spans.iter().map(|span| span.text.as_str()).collect();
+            match &block.kind {
+                RichBlockKind::ListItem { marker } => Some(format!("{marker} {text}")),
+                RichBlockKind::Table { rows } => Some(
+                    rows.iter()
+                        .map(|row| row.join("\t"))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                ),
+                RichBlockKind::Rule => None,
+                _ => Some(text),
+            }
+        })
+        .collect();
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,6 +418,12 @@ mod tests {
             .flat_map(|block| &block.spans)
             .filter_map(|span| span.link.as_deref())
             .collect()
+    }
+
+    #[test]
+    fn copied_text_is_what_the_reader_sees() {
+        let blocks = markdown("**重点** 和 `code`\n\n- 第一项\n- [链接](https://example.com)");
+        assert_eq!(copy_text(&blocks), "重点 和 code\n• 第一项\n• 链接");
     }
 
     #[test]

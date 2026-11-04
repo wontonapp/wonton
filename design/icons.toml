@@ -19,6 +19,7 @@ close = { phosphor = "x" }
 code = { phosphor = "code", fill = true }
 compose = { phosphor = "note-pencil" }
 connection = { phosphor = "broadcast" }
+copy = { phosphor = "copy" }
 cpu = { phosphor = "cpu", fill = true }
 device = { phosphor = "device-mobile-camera" }
 document = { phosphor = "file-text", fill = true }

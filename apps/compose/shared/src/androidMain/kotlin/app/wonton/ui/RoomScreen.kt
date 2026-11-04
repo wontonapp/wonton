@@ -41,6 +41,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +57,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
+import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -133,6 +136,9 @@ fun RoomRoute(
     }
 }
 
+/** 长按的是哪条消息，它的气泡在屏幕上的位置。 */
+private class MessageMenuTarget(val message: TimelineMessage, val bubble: Rect)
+
 @Composable
 private fun RoomScreen(
     core: ClientCore,
@@ -145,20 +151,31 @@ private fun RoomScreen(
     onReject: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    WontonScreen(bar = { WontonPushedBar(title, onClose) }) {
-        // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
-            val failure = timeline.failure
-            if (failure != null) {
-                Box(Modifier.weight(1f).fillMaxWidth().padding(WontonTheme.spacing.pageInset)) {
-                    WontonNotice(WontonIcon.Warning, "打不开这个聊天", lines = listOf(failure))
+    var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
+    val openMenu = { message: TimelineMessage, bounds: Rect -> menu = MessageMenuTarget(message, bounds) }
+    Box(Modifier.fillMaxSize()) {
+        // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
+        Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
+            WontonScreen(bar = { WontonPushedBar(title, onClose) }) {
+                // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
+                Column(
+                    Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
+                ) {
+                    val failure = timeline.failure
+                    if (failure != null) {
+                        Box(Modifier.weight(1f).fillMaxWidth().padding(WontonTheme.spacing.pageInset)) {
+                            WontonNotice(WontonIcon.Warning, "打不开这个聊天", lines = listOf(failure))
+                        }
+                    } else {
+                        val showsSender = !isDirect
+                        Messages(core, roomId, timeline, showsSender, onAction, openMenu, Modifier.weight(1f))
+                    }
+                    TransfersStrip(roomId, core)
+                    if (!isReadOnly) Composer(roomId, onAction, onReject)
                 }
-            } else {
-                Messages(core, roomId, timeline, showsSender = !isDirect, onAction, Modifier.weight(1f))
             }
-            TransfersStrip(roomId, core)
-            if (!isReadOnly) Composer(roomId, onAction, onReject)
         }
+        menu?.let { target -> MessageMenu(target.message, target.bubble, core) { menu = null } }
     }
 }
 
@@ -169,6 +186,7 @@ private fun Messages(
     timeline: TimelineState,
     showsSender: Boolean,
     onAction: (Action) -> Unit,
+    onOpenMenu: (TimelineMessage, Rect) -> Unit,
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -221,6 +239,7 @@ private fun Messages(
                     onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
                     onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
                     onAnswer = { id, answer -> onAction(Action.AnswerConfirmation(id, answer)) },
+                    onOpenMenu = onOpenMenu,
                 )
             }
         }

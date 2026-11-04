@@ -32,6 +32,9 @@ enum WontonSize {
     static let iconTiny: CGFloat = 14
     static let sendButton: CGFloat = 36
     static let fileThumbnail: CGFloat = 44
+    static let menuBlur: CGFloat = 12
+    static let menuWidth: CGFloat = 200
+    static let menuElevation: CGFloat = 8
     static let messageImage: CGFloat = 240
     static let launcherIcon: CGFloat = 62
     static let launcherCell: CGFloat = 76
