@@ -329,7 +329,7 @@ impl PluginManager {
     }
 
     /// 核心支持它要的权限，这台主机放得下它。
-    async fn fits_host(&self, m: &Manifest) -> Result<(), InstallError> {
+    pub(crate) async fn fits_host(&self, m: &Manifest) -> Result<(), InstallError> {
         if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
             return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
         }

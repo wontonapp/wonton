@@ -1,5 +1,5 @@
 //! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载、帮助文档，文件工具在 [`file_tools`]。安装和卸载要
-//! 主人确认。Bot 只能装官方索引里的插件，申请高权限的插件只能由主人在 App 里装（ADR-0016）。
+//! 主人确认，高权限也一样，主人点了就装（ADR-0033）。Bot 经 `id` 只能装官方索引里的插件。
 
 use std::sync::Arc;
 
@@ -195,7 +195,6 @@ async fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
                 "version": m.version,
                 "permissions": m.permissions.iter().map(cards::permission).collect::<Vec<_>>(),
                 "installed": bus.plugins.is_installed(&m.id),
-                "app_only": m.permissions.iter().any(|p| p.is_high()),
             })
         })
         .collect();
@@ -224,7 +223,7 @@ fn required<'a>(args: &'a JsonObject, key: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("缺少参数 {key}"))
 }
 
-/// 不需要主人确认就能做的检查：官方索引里有没有、装没装、权限 Bot 能不能申请、插件包取不取得到、合不合法。
+/// 不需要主人确认就能做的检查：官方索引里有没有、装没装、这台主机放不放得下、插件包取不取得到、合不合法。
 async fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
     let id = required(args, "id")?;
     let (listed, _) = official(bus).await?;
@@ -236,18 +235,10 @@ async fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, Stri
     if bus.plugins.is_installed(&manifest.id) {
         return Err(format!("{id} 已经装了"));
     }
-    let high: Vec<String> = manifest
-        .permissions
-        .iter()
-        .filter(|p| p.is_high())
-        .map(ToString::to_string)
-        .collect();
-    if !high.is_empty() {
-        return Err(format!(
-            "{id} 要申请高权限（{}），只能由主人在 Wonton App 里安装",
-            high.join("、")
-        ));
-    }
+    bus.plugins
+        .fits_host(manifest)
+        .await
+        .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
     let package = bus
         .plugins
         .official_package(listed)

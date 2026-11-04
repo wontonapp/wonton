@@ -106,7 +106,7 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginMana
     Arc::new(manager.with_store(index))
 }
 
-/// 官方索引里放一个普通插件（日记）和一个申请高权限的插件。
+/// 官方索引里放一个普通插件（日记）、一个高权限的（共享盘）和一个要核心不开放的权限的。
 fn write_index(dir: &tempfile::TempDir) {
     for (repo, source) in [
         (
@@ -120,6 +120,11 @@ fn write_index(dir: &tempfile::TempDir) {
         (
             "root",
             official_package("app.example.root", "全能", "docker.socket"),
+        ),
+        (
+            "nas",
+            official_package("app.example.nas", "共享盘", "network.lan")
+                + "  lan: {ports: [{service: web, port: 445}]}\n",
         ),
     ] {
         let package = PluginPackage::parse(&source).unwrap();
@@ -619,11 +624,11 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         "{states:?}"
     );
 
-    // 已经装了、官方索引里没有、要高权限的：直接拒绝，不发卡片。
+    // 已经装了、官方索引里没有、要核心不开放的权限的：直接拒绝，不发卡片。
     for (id, reason) in [
         ("app.example.journal", "已经装了"),
         ("app.example.nope", "官方索引里没有"),
-        ("app.example.root", "只能由主人在 Wonton App 里安装"),
+        ("app.example.root", "核心还不支持权限 docker.socket"),
     ] {
         let result = s.call("wonton__install_plugin", json!({"id": id})).await;
         assert!(
@@ -632,6 +637,29 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         );
     }
     assert_eq!(s.cards.posted.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_bot_installs_a_high_permission_plugin_once_the_owner_approves_the_card() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let s = setup(engine, Duration::from_secs(60)).await;
+
+    let call = s.spawn("wonton__install_plugin", json!({"id": "app.example.nas"}));
+    let card = s.cards.wait_for(1).await;
+    assert!(
+        card.lines.iter().any(|l| l.emphasis),
+        "高权限要醒目：{:?}",
+        card.lines
+    );
+    s.answer(&card.id, Answer::Approve).unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result), "{result:?}");
+    assert!(
+        s.manager
+            .list()
+            .iter()
+            .any(|p| p.id.as_str() == "app.example.nas")
+    );
 }
 
 #[tokio::test]
