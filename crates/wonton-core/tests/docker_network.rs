@@ -174,6 +174,22 @@ fn fixed_port(test: u32) -> u16 {
     u16::try_from(20000 + (std::process::id() + test) % 12000).unwrap()
 }
 
+/// 要迁移后网段不变的网络。迁移要删网络，Docker 分配的网段这时可能被共用 Docker 的别的作业拿走（CI 上实测）；
+/// 172.16.0.0/16 不在默认地址池里，别人分不到。和别的进程撞上同一段时换一段。
+async fn create_outside_pools(mut request: NetworkCreateRequest) {
+    for offset in 0..16 {
+        let subnet = format!("172.16.{}.0/24", (std::process::id() + offset) % 256);
+        let ipam = serde_json::json!({"Config": [{"Subnet": subnet}]});
+        request.ipam = Some(serde_json::from_value(ipam).unwrap());
+        match docker().create_network(request.clone()).await {
+            Ok(_) => return,
+            Err(error) if error.to_string().contains("overlaps") => {}
+            Err(error) => panic!("建网络：{error}"),
+        }
+    }
+    panic!("172.16 上试过的网段都被占了");
+}
+
 /// 建网络的名字前缀，和别的测试、别的进程分开。
 fn prefix(test: &str) -> String {
     format!("wonton-pintest{}-{test}", std::process::id())
@@ -253,18 +269,16 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
 
 /// 核心升级前的建法：不指定网段，服务 `db`、`web` 带别名，`web` 发布一个固定的端口（插件的局域网端口都是固定的）。
 async fn legacy(engine: &Engine, network: &str, web: &str, db: &str, port: u16) {
-    docker()
-        .create_network(NetworkCreateRequest {
-            name: network.to_owned(),
-            driver: Some("bridge".to_owned()),
-            labels: Some(HashMap::from([(
-                "wonton.plugin".to_owned(),
-                "app.test".to_owned(),
-            )])),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
+    create_outside_pools(NetworkCreateRequest {
+        name: network.to_owned(),
+        driver: Some("bridge".to_owned()),
+        labels: Some(HashMap::from([(
+            "wonton.plugin".to_owned(),
+            "app.test".to_owned(),
+        )])),
+        ..Default::default()
+    })
+    .await;
     for (name, alias) in [(web, "web"), (db, "db")] {
         let binding = PortBinding {
             host_ip: Some("127.0.0.1".to_owned()),
@@ -483,15 +497,13 @@ async fn migrating_a_plugin_network_leaves_the_lan_network_and_its_port_alone() 
     let web = format!("{network}--web");
     cleanup(&engine, &network, &[&web]).await;
     engine.remove_network(&lan).await.unwrap();
-    docker()
-        .create_network(NetworkCreateRequest {
-            name: network.clone(),
-            driver: Some("bridge".to_owned()),
-            internal: Some(true),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
+    create_outside_pools(NetworkCreateRequest {
+        name: network.clone(),
+        driver: Some("bridge".to_owned()),
+        internal: Some(true),
+        ..Default::default()
+    })
+    .await;
     engine
         .create_lan_network(&lan, &HashMap::new())
         .await

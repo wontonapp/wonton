@@ -12,7 +12,7 @@ use std::{fmt::Debug, path::PathBuf, time::Duration};
 use crate::{MatrixSession, Result, SessionConfig, StoreConfig};
 use futures_util::{Stream, StreamExt};
 use testcontainers::{
-    ContainerAsync, GenericImage, ImageExt,
+    ContainerAsync, GenericImage, ImageExt, TestcontainersError,
     core::{Host, IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
@@ -38,6 +38,7 @@ const PORT: u16 = 8008;
 
 /// 等待异步结果的上限。正常情况下一两秒内就有结果；吊销设备后同步要等进行中的长轮询返回。
 const WAIT: Duration = Duration::from_secs(60);
+const PORT_TRIES: u32 = 5;
 
 /// 一台供测试使用的 Tuwunel，以及持有它签发密钥的“核心”。
 pub struct TestServer {
@@ -74,7 +75,9 @@ impl TestServer {
 
     /// 用 Docker 起一台一次性的 Tuwunel，`overrides` 以环境变量形式覆盖配置。
     pub async fn container(overrides: &[(&str, &str)]) -> Self {
-        Self::start_container(overrides, None).await
+        Self::start_container(overrides, None)
+            .await
+            .unwrap_or_else(|error| start_failed(&error))
     }
 
     /// 能把推送发到 `gateway`（测试进程里扮演推送代理的推送网关）的 Tuwunel：经只代理推送代理域名的出站代理，
@@ -85,20 +88,31 @@ impl TestServer {
     pub async fn with_push_gateway(gateway: &PushGateway) -> Self {
         let proxy = gateway.tuwunel_proxy();
         if !cfg!(target_os = "linux") {
-            return Self::start_container(&[("TUWUNEL_PROXY", proxy.as_str())], None).await;
+            return Self::container(&[("TUWUNEL_PROXY", proxy.as_str())]).await;
         }
-        let port = free_port();
-        let port_text = port.to_string();
-        let overrides = [
-            ("TUWUNEL_PROXY", proxy.as_str()),
-            ("TUWUNEL_ADDRESS", "127.0.0.1"),
-            ("TUWUNEL_PORT", port_text.as_str()),
-        ];
-        Self::start_container(&overrides, Some(port)).await
+        // 从 `free_port` 放开端口到 Tuwunel 绑上要几百毫秒，宿主上别的进程可能占走（出站连接也从这段取端口，CI 上实测）。
+        for _ in 0..PORT_TRIES {
+            let port = free_port();
+            let port_text = port.to_string();
+            let overrides = [
+                ("TUWUNEL_PROXY", proxy.as_str()),
+                ("TUWUNEL_ADDRESS", "127.0.0.1"),
+                ("TUWUNEL_PORT", port_text.as_str()),
+            ];
+            match Self::start_container(&overrides, Some(port)).await {
+                Ok(server) => return server,
+                Err(error) if error.to_string().contains("Address already in use") => {}
+                Err(error) => start_failed(&error),
+            }
+        }
+        panic!("启动 Tuwunel 容器失败：换了 {PORT_TRIES} 个端口都被占了");
     }
 
     /// `host_port` 为空时容器在自己的网络里，发布 8008；否则用宿主的网络，听这个端口。
-    async fn start_container(overrides: &[(&str, &str)], host_port: Option<u16>) -> Self {
+    async fn start_container(
+        overrides: &[(&str, &str)],
+        host_port: Option<u16>,
+    ) -> std::result::Result<Self, TestcontainersError> {
         let issuer = Issuer::generate();
         let secret = random_hex(32);
         let (name, tag) = image();
@@ -121,13 +135,7 @@ impl TestServer {
         for (key, value) in overrides {
             request = request.with_env_var(*key, *value);
         }
-        let container = request.start().await.unwrap_or_else(|error| {
-            panic!(
-                "启动 Tuwunel 容器失败：{error}。测试需要 Docker；testcontainers 不读 docker context，\
-                 套接字不在 /var/run/docker.sock 时先运行 \
-                 export DOCKER_HOST=\"$(docker context inspect --format '{{{{.Endpoints.docker.Host}}}}')\""
-            )
-        });
+        let container = request.start().await?;
         let url = match host_port {
             Some(port) => format!("http://127.0.0.1:{port}"),
             None => {
@@ -136,12 +144,12 @@ impl TestServer {
                 format!("http://{host}:{port}")
             }
         };
-        Self {
+        Ok(Self {
             url,
             issuer,
             registration_secret: Some(secret),
             _container: Some(container),
-        }
+        })
     }
 
     pub fn config(&self, device_name: &str, store: StoreConfig) -> SessionConfig {
@@ -213,6 +221,14 @@ impl TestServer {
 }
 
 /// 本机一个空闲的 TCP 端口。放开后到 Tuwunel 绑上之间可能被别人占去，测试里这个窗口可以接受。
+fn start_failed(error: &TestcontainersError) -> ! {
+    panic!(
+        "启动 Tuwunel 容器失败：{error}。测试需要 Docker；testcontainers 不读 docker context，\
+         套接字不在 /var/run/docker.sock 时先运行 \
+         export DOCKER_HOST=\"$(docker context inspect --format '{{{{.Endpoints.docker.Host}}}}')\""
+    )
+}
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .and_then(|listener| listener.local_addr())

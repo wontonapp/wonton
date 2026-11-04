@@ -26,6 +26,11 @@ async fn room_list_shows_names_previews_and_unread_counts() {
     let room_id = direct_chat(&alice, &bob, false).await;
     let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
     alice_room.send_text("第一条").await.expect("发第一条");
+    // 列表的同步每个房间只带最新一条，未读数是 SDK 按看到的事件算的：两条落在同一次同步里只算一条（CI 上实测）。
+    wait_for_room(&bob, "Bob 看到第一条", &room_id, |row| {
+        matches!(&row.latest, Some(latest) if latest.body == MessageBody::Text("第一条".into()))
+    })
+    .await;
     alice_room.send_text("第二条").await.expect("发第二条");
 
     // Bob 的列表里，私聊以对方的名字出现，带着最新一条的预览和两条未读。加入邀请时 SDK 把房间记进

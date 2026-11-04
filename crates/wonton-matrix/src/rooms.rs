@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 use std::pin::pin;
+use std::time::Duration;
 
 use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::{
@@ -29,6 +30,8 @@ use crate::{ChatRoom, Error, MatrixSession, MessageBody, Result, message::body};
 
 /// 房间列表一次最多展示的房间数。家里服务器的房间不多，一页就够。
 const PAGE_SIZE: usize = 500;
+/// 加入房间时等邀请事件落库的上限。邀请事件和房间在同一批同步里，等的只是这批写完。
+const INVITE_WAIT: Duration = Duration::from_secs(10);
 
 /// 本账号在房间里的成员状态。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,12 +132,7 @@ impl MatrixSession {
         // 私聊标记要在加入前从邀请里读。SDK 也会记 `m.direct`，但它在加入请求返回后才检查房间是否还是
         // “受邀”，同步抢先处理了加入时就漏记了（同步一直在跑，实测负载高时常发生）。
         let was_direct = match self.client.get_room(room_id) {
-            Some(room) if room.state() == RoomState::Invited => {
-                room.is_direct().await.unwrap_or_else(|error| {
-                    tracing::warn!(room = %room_id, "读不到邀请里的私聊标记：{error}");
-                    false
-                })
-            }
+            Some(room) if room.state() == RoomState::Invited => invited_as_direct(&room).await,
             _ => false,
         };
         let room = self.client.join_room_by_id(room_id).await?;
@@ -279,6 +277,33 @@ fn snapshots<T: Clone + Send + Sync + 'static>(
             }
             receiver.changed().await.ok()?;
         }
+    })
+}
+
+/// 邀请里有没有私聊标记。SDK 处理到一个新房间就把它放进列表、标成“受邀”，这批同步写完才读得到邀请事件；这之前
+/// `is_direct` 答的“否”不算数，当真的话这个私聊再也不会进 `m.direct`（负载高时实测）。
+async fn invited_as_direct(room: &Room) -> bool {
+    let mut updates = room.subscribe_info();
+    let invite_stored = async {
+        loop {
+            match room.get_member_no_sync(room.own_user_id()).await {
+                Ok(None) => {}
+                other => return other.map(|_| ()),
+            }
+            updates.next().await;
+        }
+    };
+    let direct = match tokio::time::timeout(INVITE_WAIT, invite_stored).await {
+        Ok(Ok(())) => room.is_direct().await.map_err(matrix_sdk::Error::from),
+        Ok(Err(error)) => Err(error),
+        Err(_) => {
+            tracing::warn!(room = %room.room_id(), "等不到邀请事件，按群聊加入");
+            Ok(false)
+        }
+    };
+    direct.unwrap_or_else(|error| {
+        tracing::warn!(room = %room.room_id(), "读不到邀请里的私聊标记：{error}");
+        false
     })
 }
 

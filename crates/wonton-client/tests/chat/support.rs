@@ -438,7 +438,7 @@ impl Timeline {
         };
         match tokio::time::timeout(WAIT, waiting).await {
             Ok(found) => found,
-            Err(_) => panic!("{what}：{WAIT:?} 内没有等到"),
+            Err(_) => panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", self.items),
         }
     }
 }
