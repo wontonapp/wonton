@@ -19,7 +19,9 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use url::Url;
-use wonton_protocol::{CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings};
+use wonton_protocol::{
+    ConnectionDetails, CoreError, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings,
+};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
@@ -85,6 +87,8 @@ impl HomeLink {
             server_id: None,
             status: HomeStatus::NotConfigured,
             path: None,
+            notice: None,
+            details: ConnectionDetails::default(),
             proxy: None,
             web_url: None,
             pairing: None,
@@ -382,6 +386,7 @@ fn failure(err: &TunnelError) -> HomeFailure {
 fn path_view(path: PathInfo) -> HomePath {
     HomePath {
         relay: path.kind == PathKind::Relay,
+        lan: false,
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
     }
 }

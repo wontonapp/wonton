@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, FileId, ImageUpload, InstallPreview, PushEndpoint, Rgb, SecretString, UploadSource,
+    Answer, DeviceNetwork, FileId, ImageUpload, InstallPreview, PushEndpoint, Rgb, SecretString,
+    UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -36,6 +37,13 @@ pub enum Action {
     /// App 回到前台。核心检查隧道和本地代理是否还能用，必要时重建；系统挂起 App 期间可能回收了套接字。
     /// Matrix 同步停了的话也在这时重启。
     AppForegrounded,
+    /// App 进了后台。核心停止探测和自动重连，直到 [`Action::AppForegrounded`]；连接不主动断，后台音乐和正在传的文件
+    /// 还在用它。
+    AppBackgrounded,
+    /// 系统报告网络变了。壳每次收到系统回调都发，不做判断：核心让 iroh 重新检查路径，并立刻重试（ADR-0032）。
+    NetworkChanged { network: DeviceNetwork },
+    /// 主人点了“重试”：清零退避，立刻试一次。
+    RetryConnection,
 
     // 聊天（Matrix）。网络操作都在后台执行：进展体现在 `ChatViewModel` 和时间线里，失败放进
     // `ChatViewModel::problem`。参数不合法、还没登录时直接返回错误。

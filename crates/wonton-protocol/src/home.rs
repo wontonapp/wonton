@@ -13,6 +13,10 @@ pub struct HomeViewModel {
     pub status: HomeStatus,
     /// 当前连接走的路径；没有可用连接时为空。
     pub path: Option<HomePath>,
+    /// 要告诉主人的连接状态；连接正常时为空。壳只按它显示，不看 `status` 里的原文（ADR-0032）。
+    pub notice: Option<ConnectionNotice>,
+    /// 连接页的诊断和指标。
+    pub details: ConnectionDetails,
     /// 本地代理；没在运行时为空。WebView 的 HTTP 代理要设成它，并带上凭据。
     pub proxy: Option<ProxySettings>,
     /// 插件网页的入口地址（M0 由连接信息给出）。
@@ -108,12 +112,84 @@ pub enum HomeFailure {
     Protocol,
 }
 
+/// 手机现在怎么上网，来自系统的网络回调。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceNetwork {
+    /// 系统说没有可用网络。
+    None,
+    Wifi,
+    Cellular,
+    /// 有线、VPN 等其他网络。
+    Other,
+}
+
+/// 要告诉主人的连接状态。前三种是短状态，替换页面标题；其余的在标题下面多一行，带操作（ADR-0032）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConnectionNotice {
+    /// 系统说没有网络。
+    WaitingForNetwork,
+    /// 刚断开，正在重连。
+    Connecting,
+    /// 连上了，正在补上断开期间的消息。
+    Updating,
+    /// 断开很久了，手机能上网，家里的服务器没有回应。`retrying` 表示主人点的“重试”正在进行。
+    ServerOffline { retrying: bool },
+    /// 断开很久了，手机也连不上中继，分不清是哪一边的问题。
+    Unreachable { retrying: bool },
+    /// 服务器不再接受这台设备，要重新配对。
+    DeviceRejected,
+    /// 两端协议版本不匹配，App 或服务器要更新。
+    VersionMismatch,
+}
+
+/// 连接页的一行诊断。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionCheck {
+    Ok,
+    Failing,
+    /// 还不知道，或者这种配置下无从判断。
+    #[default]
+    Unknown,
+}
+
+/// 连接页的诊断和指标。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ConnectionDetails {
+    /// 手机的网络；壳还没报告过时为空。
+    pub network: Option<DeviceNetwork>,
+    /// 手机连不连得上中继。
+    pub relay: ConnectionCheck,
+    /// 家里的服务器有没有回应。
+    pub server: ConnectionCheck,
+    /// 最后一次确认连上的时间（Unix 毫秒）；这次启动还没连上过时为空。
+    pub last_connected_at_ms: Option<u64>,
+    /// 最近一次建连的耗时，毫秒。
+    pub handshake_ms: Option<u32>,
+    /// 这次启动以来断开的次数。
+    pub disconnects: u32,
+    /// 当前连接发出的包数。
+    pub sent_packets: u64,
+    /// 当前连接判定丢失的包数。
+    pub lost_packets: u64,
+    /// 最近一次失败的原文，只在“详情”里显示；连上之后还留着，方便查刚才的问题。
+    pub last_failure: Option<String>,
+}
+
 /// 连接当前走的路径。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
     pub relay: bool,
+    /// 直连的对端是局域网地址。
+    pub lan: bool,
     /// 往返时间估计，毫秒。
     pub rtt_ms: u32,
 }

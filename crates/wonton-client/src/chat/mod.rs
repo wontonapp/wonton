@@ -209,6 +209,9 @@ impl ChatLink {
             | Action::PairHome { .. }
             | Action::InviteDevice
             | Action::AppForegrounded
+            | Action::AppBackgrounded
+            | Action::NetworkChanged { .. }
+            | Action::RetryConnection
             | Action::SetLanguages { .. }
             | Action::RefreshPlugins
             | Action::RefreshStore { .. }

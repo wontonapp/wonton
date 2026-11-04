@@ -55,8 +55,8 @@ pub use file::{
     extract_file_links,
 };
 pub use home::{
-    DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
-    ProxySettings,
+    ConnectionCheck, ConnectionDetails, ConnectionNotice, DeviceInvite, DeviceNetwork, HomeFailure,
+    HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus, ProxySettings,
 };
 pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,

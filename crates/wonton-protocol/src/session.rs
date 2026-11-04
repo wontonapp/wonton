@@ -22,8 +22,9 @@ pub struct SessionRow {
 mod tests {
     use super::*;
     use crate::{
-        Action, CoreError, DeviceInvite, HomeFailure, HomePath, HomeStatus, HomeViewModel,
-        PairingFailure, PairingStatus, ProxySettings, SecretString,
+        Action, ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceInvite,
+        DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure,
+        PairingStatus, ProxySettings, SecretString,
     };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
@@ -56,8 +57,21 @@ mod tests {
             },
             path: Some(HomePath {
                 relay: false,
+                lan: true,
                 rtt_ms: 3,
             }),
+            notice: Some(ConnectionNotice::ServerOffline { retrying: true }),
+            details: ConnectionDetails {
+                network: Some(DeviceNetwork::Wifi),
+                relay: ConnectionCheck::Ok,
+                server: ConnectionCheck::Failing,
+                last_connected_at_ms: Some(1_793_778_000_000),
+                handshake_ms: Some(120),
+                disconnects: 2,
+                sent_packets: 900,
+                lost_packets: 3,
+                last_failure: Some("timed out".into()),
+            },
             proxy: Some(ProxySettings {
                 host: "127.0.0.1".into(),
                 port: 49152,
@@ -88,6 +102,11 @@ mod tests {
             },
             Action::InviteDevice,
             Action::AppForegrounded,
+            Action::AppBackgrounded,
+            Action::NetworkChanged {
+                network: DeviceNetwork::None,
+            },
+            Action::RetryConnection,
         ] {
             assert_eq!(round_trip(&action), action);
         }

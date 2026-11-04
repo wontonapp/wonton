@@ -72,6 +72,11 @@ impl ClientCore {
                 self.files.foregrounded();
                 Ok(())
             }
+            Action::AppBackgrounded | Action::NetworkChanged { .. } | Action::RetryConnection => {
+                Err(CoreError::NotReady {
+                    reason: "这个版本的核心还不处理这个操作".to_owned(),
+                })
+            }
             Action::SetPushEndpoint { endpoint } => self.push.set_endpoint(endpoint),
             Action::PushUnavailable { message } => {
                 self.push.unavailable(message);
