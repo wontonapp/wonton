@@ -37,6 +37,7 @@ impl PluginsLink {
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
     pub(crate) fn install(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
+        let lan_webui = lan_webui_chosen(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: "App 只按来源安装，这份预览没有来源".to_owned(),
@@ -52,7 +53,7 @@ impl PluginsLink {
             source,
             digest: preview.digest,
             grant,
-            lan_webui: false,
+            lan_webui,
         };
         let link = self.clone();
         let id = preview.id;
@@ -70,6 +71,7 @@ impl PluginsLink {
     /// `UpgradePlugin`：升到预览给的版本。
     pub(crate) fn upgrade(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
+        let lan_webui = lan_webui_chosen(&preview);
         self.begin_task(
             &preview.id,
             &preview.title,
@@ -79,7 +81,7 @@ impl PluginsLink {
         let request = UpgradeRequest {
             digest: preview.digest,
             grant,
-            lan_webui: false,
+            lan_webui,
         };
         let link = self.clone();
         let id = preview.id;
@@ -332,6 +334,14 @@ pub(super) fn server_changed() -> PluginTaskState {
     PluginTaskState::Uncertain {
         message: SERVER_CHANGED.to_owned(),
     }
+}
+
+/// 主人在确认页上打开了开关（[`Action::InstallPlugin`](wonton_protocol::Action::InstallPlugin)）。
+fn lan_webui_chosen(preview: &InstallPreview) -> bool {
+    preview
+        .lan_webui
+        .as_ref()
+        .is_some_and(|offer| offer.enabled)
 }
 
 /// 确认页上看到的就是授予的：预览里列出的全部权限（ADR-0017）。预览说装不了时不发请求。

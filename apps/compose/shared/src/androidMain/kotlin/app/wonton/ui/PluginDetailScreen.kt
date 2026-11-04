@@ -56,8 +56,10 @@ private const val SCREENSHOT_RATIO = 9f / 19.5f
 fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, route: PluginRoute) {
     var attempt by remember { mutableIntStateOf(0) }
     var pluginId by remember(route) { mutableStateOf<String?>(null) }
+    var toggled by remember(route) { mutableStateOf<PluginDetail?>(null) }
     val loaded by produceState<Result<PluginDetail>?>(null, route, attempt) {
         value = null
+        toggled = null
         value = try {
             Result.success(
                 when (route) {
@@ -93,7 +95,7 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
             when {
                 result == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 result.isFailure -> ProblemView(result.exceptionOrNull().toString(), null, onRetry = { attempt++ })
-                else -> DetailContent(result.getOrThrow(), task, plugins, navigation)
+                else -> DetailContent(toggled ?: result.getOrThrow(), task, plugins, navigation) { toggled = it }
             }
         }
     }
@@ -105,6 +107,7 @@ private fun DetailContent(
     task: PluginTask?,
     plugins: PluginsState,
     navigation: PluginNavigation,
+    onToggled: (PluginDetail) -> Unit,
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -122,6 +125,8 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it) }
+        val offer = detail.lanWebui
+        if (offer != null && detail.installed != null) InstalledLanWebui(plugins, detail.id, offer, onToggled)
         DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             TextButton(onClick = { navigation.uninstalling = UninstallTarget(installed.id, installed.title) }) {

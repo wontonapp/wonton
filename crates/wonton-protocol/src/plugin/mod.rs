@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CardLine, LanPort};
+use crate::{CardLine, EgressViewModel, LanPort};
 
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -406,6 +406,8 @@ pub struct PluginsViewModel {
     pub problem: Option<PluginProblem>,
     /// 安装、升级、卸载的进展，按发起的先后。同一个插件同时只有一个。
     pub tasks: Vec<PluginTask>,
+    /// 出网代理的设置页。
+    pub egress: EgressViewModel,
 }
 
 /// 和插件有关的操作失败了。

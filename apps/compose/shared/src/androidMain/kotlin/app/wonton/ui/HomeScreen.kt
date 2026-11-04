@@ -52,6 +52,7 @@ fun HomeRoute(
             PairingPage("重新配对", core, viewModel.pairing, onBack = { page = HomePage.CONNECTION })
         page == HomePage.INVITE -> InvitePage(core, viewModel, onDone = { page = HomePage.CONNECTION })
         page == HomePage.CONNECTION -> ConnectionPage(viewModel, onNavigate = { page = it })
+        page == HomePage.EGRESS -> EgressPage(plugins, onBack = { page = HomePage.CONNECTION })
         else -> PluginPages(plugins, navigation) {
             LauncherScreen(
                 viewModel.status,
@@ -65,7 +66,7 @@ fun HomeRoute(
     }
 }
 
-enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, APPEARANCE }
+enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, APPEARANCE, EGRESS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,7 +122,8 @@ private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> U
             viewModel.path?.let { path ->
                 Text("路径：${if (path.relay) "中继" else "直连"} · ${path.rttMs} ms")
             }
-            TextButton(onClick = { onNavigate(HomePage.INVITE) }, Modifier.padding(top = 24.dp)) { Text("添加设备") }
+            TextButton(onClick = { onNavigate(HomePage.EGRESS) }, Modifier.padding(top = 24.dp)) { Text("出网代理") }
+            TextButton(onClick = { onNavigate(HomePage.INVITE) }) { Text("添加设备") }
             TextButton(onClick = { onNavigate(HomePage.PAIRING) }) { Text("重新配对") }
         }
     }

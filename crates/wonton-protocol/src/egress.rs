@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::PluginProblem;
+
 /// `GET /_wonton/api/egress-proxy` 和 `PUT /_wonton/api/egress-proxy` 的响应。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -110,6 +112,68 @@ pub struct EgressProxyUpdate {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct LanWebuiUpdate {
     pub enabled: bool,
+}
+
+/// 出网代理设置页的状态，在 `PluginsViewModel.egress` 里。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EgressViewModel {
+    /// 最近取到的设置；还没取到时为空。
+    pub current: Option<EgressCurrent>,
+    pub loading: bool,
+    /// 正在改设置：核心可能在重建插件，要等一会儿。
+    pub saving: bool,
+    /// 这次改动要重启插件，等主人确认。
+    pub confirmation: Option<EgressConfirmation>,
+    /// 最近一次取设置失败的原因，这时显示的是上次取到的；再取成功后清空。
+    pub load_problem: Option<PluginProblem>,
+    /// 最近一次改设置失败的原因。再打开这一页或者再保存时清空。
+    pub save_problem: Option<PluginProblem>,
+}
+
+/// 核心给的设置，加上壳要渲染的结论。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EgressCurrent {
+    pub settings: EgressProxySettings,
+    /// 地址输入框的内容：密码打码，没配代理时是空串。原样保存时地址不变。
+    pub address: String,
+    /// 地址由 `WONTON_EGRESS_PROXY` 指定，这里不能改；网段还能改。
+    pub address_locked: bool,
+    /// 直连网段输入框的内容。
+    pub direct_cidrs: String,
+    /// 插件的路径；没配代理时为空。
+    pub plugin_path: Option<EgressPathState>,
+    /// 核心自己的路径；没配代理时为空。
+    pub core_path: Option<EgressPathState>,
+}
+
+/// 一条路径通不通。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EgressPathState {
+    /// 还没有探测结果。
+    Probing,
+    Reachable,
+    /// 代理本身是通的，或者原因比这个 App 新：说不准，不算失败。
+    Uncertain {
+        message: String,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+/// 第一次配上或彻底取消代理前要主人点头的内容。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EgressConfirmation {
+    pub restarts: Vec<EgressRestart>,
+    /// 是彻底取消，不是第一次配上。
+    pub cancelling: bool,
+    /// 主人确认后发给核心的内容。
+    pub update: EgressProxyUpdate,
 }
 
 #[cfg(test)]

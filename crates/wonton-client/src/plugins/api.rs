@@ -128,6 +128,23 @@ impl CoreApi {
         parse(&bytes)
     }
 
+    /// 发 JSON 请求体，响应是 JSON。
+    pub(super) async fn put<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<T, PluginProblem> {
+        let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
+            reason: PluginFailure::Protocol,
+            message: format!("请求体写不出来：{e}"),
+        })?;
+        let bytes = self
+            .send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
+            .await?;
+        parse(&bytes)
+    }
+
     /// 只看成败，不解析响应：安装的结果以已安装列表为准，核心比 App 新时响应的形状可以变。
     pub(super) async fn post_unit(
         &self,

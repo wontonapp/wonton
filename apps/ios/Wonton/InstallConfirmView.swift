@@ -8,6 +8,7 @@ struct InstallConfirmView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var loaded: Result<InstallPreview, Error>?
     @State private var rejection: String?
+    @State private var lanWebui = false
 
     var body: some View {
         NavigationStack {
@@ -43,7 +44,7 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewList(model: model, preview: preview)
+            PreviewList(model: model, preview: preview, lanWebui: $lanWebui)
         }
     }
 
@@ -75,19 +76,21 @@ struct InstallConfirmView: View {
     private func load() async {
         loaded = nil
         do {
-            switch confirmation {
-            case let .install(source):
-                loaded = .success(try await model.core.previewInstall(source: source))
-            case let .upgrade(id):
-                loaded = .success(try await model.core.previewUpgrade(id: id))
+            let preview = switch confirmation {
+            case let .install(source): try await model.core.previewInstall(source: source)
+            case let .upgrade(id): try await model.core.previewUpgrade(id: id)
             }
+            lanWebui = preview.lanWebui?.enabled ?? false
+            loaded = .success(preview)
         } catch {
             loaded = .failure(error)
         }
     }
 
     /// 在这里直接发给核心：被拒绝时原因留在确认页上，不随确认页关掉。
-    private func confirm(_ preview: InstallPreview) {
+    private func confirm(_ shown: InstallPreview) {
+        var preview = shown
+        preview.lanWebui?.enabled = lanWebui
         let action: Action = isUpgrade ? .upgradePlugin(preview: preview) : .installPlugin(preview: preview)
         do {
             try model.core.dispatch(action: action)
@@ -101,6 +104,7 @@ struct InstallConfirmView: View {
 private struct PreviewList: View {
     let model: PluginsModel
     let preview: InstallPreview
+    @Binding var lanWebui: Bool
 
     var body: some View {
         List {
@@ -129,6 +133,9 @@ private struct PreviewList: View {
                 Section("权限") {
                     ForEach(preview.permissions, id: \.permission) { PermissionRow(line: $0) }
                 }
+            }
+            if let offer = preview.lanWebui {
+                Section { LanWebuiToggle(offer: offer, isOn: $lanWebui) }
             }
             if let notes = preview.releaseNotes {
                 Section("更新说明") { Text(notes) }

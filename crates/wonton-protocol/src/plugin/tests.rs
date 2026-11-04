@@ -221,6 +221,7 @@ fn interface_types_round_trip_through_json() {
                 message: "插件包在预览之后变了".into(),
             },
         }],
+        egress: EgressViewModel::default(),
     };
     assert_eq!(round_trip(&view_model), view_model);
 }

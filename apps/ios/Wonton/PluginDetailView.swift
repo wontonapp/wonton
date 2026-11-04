@@ -64,6 +64,9 @@ struct PluginDetailView: View {
                         Screenshots(model: model, images: detail.screenshots)
                     }
                     if let about = detail.about { Text(about) }
+                    if let installed = detail.installed, let offer = detail.lanWebui {
+                        InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
+                    }
                     DetailSections(detail: detail)
                     if let installed = detail.installed, installed.removable, !isWorking {
                         Button("卸载", role: .destructive) {
@@ -106,6 +109,43 @@ struct PluginDetailView: View {
         guard let source = detail.source else { return nil }
         return DetailAction(title: "获取", enabled: detail.blocked == nil && !isWorking) {
             confirmation = .install(source: source)
+        }
+    }
+}
+
+/// 已装插件的开关：核心重建容器期间不能再点，失败时写原因，并重取详情（关失败时插件标为异常）。
+private struct InstalledLanWebui: View {
+    let model: PluginsModel
+    let id: String
+    let offer: LanWebuiOffer
+    let updated: (PluginDetail) -> Void
+    @State private var target: Bool?
+    @State private var problem: String?
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LanWebuiToggle(
+                offer: offer,
+                isOn: Binding(get: { target ?? offer.enabled }, set: { change(to: $0) })
+            )
+            .disabled(target != nil)
+            if target != nil { ProgressView() }
+            if let problem { Text(problem).foregroundStyle(Color(colors.danger)) }
+        }
+    }
+
+    private func change(to enabled: Bool) {
+        target = enabled
+        problem = nil
+        Task {
+            do {
+                updated(try await model.core.setLanWebui(id: id, enabled: enabled))
+            } catch {
+                problem = String(describing: error)
+                if let detail = try? await model.core.installedPlugin(id: id) { updated(detail) }
+            }
+            target = nil
         }
     }
 }

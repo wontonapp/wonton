@@ -45,6 +45,8 @@ struct HomeView: View {
                     ConnectionView(model: model, isPairing: $isPairing, isInviting: $isInviting)
                 case .appearance:
                     AppearanceView(model: appearance)
+                case .egress:
+                    EgressSettingsView(model: plugins)
                 }
             }
             .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
@@ -201,6 +203,7 @@ struct HomeView: View {
 private enum HomeRoute: Hashable {
     case connection
     case appearance
+    case egress
 }
 
 /// 主屏上的一个插件：圆角方形的图标和名字。能升级的、出了问题的在图标角上标出来，正在装、升级、卸载的转圈。
@@ -251,6 +254,9 @@ private struct ConnectionView: View {
                 if let path = model.viewModel.path {
                     LabeledContent("路径", value: "\(path.relay ? "中继" : "直连") · \(path.rttMs) ms")
                 }
+            }
+            Section {
+                NavigationLink("出网代理", value: HomeRoute.egress)
             }
             Section {
                 Button("添加设备") { isInviting = true }

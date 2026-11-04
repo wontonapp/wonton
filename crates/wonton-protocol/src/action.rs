@@ -99,6 +99,20 @@ pub enum Action {
     /// 清掉一个做完的任务（成功或失败的提示）。
     DismissPluginTask { id: String },
 
+    // 出网代理的设置页（ADR-0023）。网络操作都在后台执行，进展和结果在 `PluginsViewModel.egress` 里。
+    /// 打开设置页：取设置。探测结果太旧时家里的服务器在后台再测，这里接着取几次，把新结果带回来。
+    RefreshEgressProxy,
+    /// 主人点了保存。`address` 空着表示取消代理；`direct_cidrs` 用逗号或空白分隔。要重启插件时先放进
+    /// `egress.confirmation`，等 [`Action::ConfirmEgressProxy`]。
+    SaveEgressProxy {
+        address: String,
+        direct_cidrs: String,
+    },
+    /// 主人确认了 `egress.confirmation` 列出的重启。
+    ConfirmEgressProxy,
+    /// 主人没有确认，什么都不改。
+    DismissEgressConfirmation,
+
     // 文件（ADR-0020）。网络操作都在后台执行，进展和结果在传输列表和文件卡片里。
     /// 上传一个文件，传完放进共享文件夹 `transfers`。`name`、`mime_type` 是系统给的文件名和类型，核心读不到内容 URI 的这些
     /// 信息。`room` 不为空时，传完把这个房间的 Bot 加进访问范围，再把链接发进这个房间。

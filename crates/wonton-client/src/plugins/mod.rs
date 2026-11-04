@@ -2,6 +2,7 @@
 //! 家里的服务器按主人的语言挑好，这里原样放进 ViewModel。
 
 mod api;
+mod egress;
 mod tasks;
 
 use std::path::{Path, PathBuf};
@@ -13,13 +14,13 @@ use reqwest::Client;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    CoreError, HomeFailure, HomeStatus, InstallPreview, InstallSource, InstalledPlugins,
-    PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginState, PluginTaskState,
-    PluginsViewModel, ProxySettings, StoreItem, StoreListing,
+    CoreError, EgressViewModel, HomeFailure, HomeStatus, InstallPreview, InstallSource,
+    InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem,
+    PluginState, PluginTaskState, PluginsViewModel, ProxySettings, StoreItem, StoreListing,
 };
 
 use crate::home::HomeLink;
-use api::{CoreApi, READ_TIMEOUT, SOURCE_TIMEOUT, proxied_client, to_core_error};
+use api::{CoreApi, INSTALL_TIMEOUT, READ_TIMEOUT, SOURCE_TIMEOUT, proxied_client, to_core_error};
 
 /// 有插件在安装、升级、卸载时，隔这么久重新取一次已安装列表。
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -48,6 +49,8 @@ pub(crate) struct PluginsLink {
     problem_of: Mutex<Option<Listing>>,
     /// 每换一台服务器加一：之前发出的请求和任务，结果不再算数。
     generation: AtomicU64,
+    /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
+    egress_epoch: AtomicU64,
 }
 
 impl PluginsLink {
@@ -64,6 +67,7 @@ impl PluginsLink {
             polling: AtomicBool::new(false),
             problem_of: Mutex::new(None),
             generation: AtomicU64::new(0),
+            egress_epoch: AtomicU64::new(0),
         });
         runtime.spawn(follow_home(Arc::downgrade(&link)));
         link
@@ -215,6 +219,7 @@ impl PluginsLink {
             view.installed = None;
             view.store = None;
             view.problem = None;
+            view.egress = EgressViewModel::default();
             view.tasks
                 .retain(|task| task.state == PluginTaskState::Running);
             for task in &mut view.tasks {
@@ -394,6 +399,21 @@ impl PluginsLink {
         )
         .await
         .map_err(to_core_error)
+    }
+
+    pub(crate) async fn set_lan_webui(
+        self: &Arc<Self>,
+        id: &str,
+        enabled: bool,
+    ) -> Result<PluginDetail, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        let update = LanWebuiUpdate { enabled };
+        let result = api
+            .put(&["plugins", id, "lan-webui"], &update, INSTALL_TIMEOUT)
+            .await
+            .map_err(to_core_error);
+        self.refresh_installed();
+        result
     }
 
     /// 图片的地址内容不变（ADR-0017），取到一次就存在本机。缓存写不进去不影响这次的结果，下次再取。

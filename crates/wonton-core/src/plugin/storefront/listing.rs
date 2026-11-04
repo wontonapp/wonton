@@ -130,7 +130,10 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed,
             blocked: blocked(m, arch.as_deref()),
-            lan_webui: None,
+            // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
+            lan_webui: self
+                .installed_detail(&m.id, langs)
+                .and_then(|detail| detail.lan_webui),
         }
     }
 

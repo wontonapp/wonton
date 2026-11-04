@@ -42,8 +42,9 @@ pub use core_upgrade::{
     CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
 };
 pub use egress::{
-    EgressFailure, EgressProbe, EgressProblem, EgressProxySettings, EgressProxySource,
-    EgressProxyUpdate, EgressRestart, LanWebuiUpdate,
+    EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
+    EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart, EgressViewModel,
+    LanWebuiUpdate,
 };
 pub use error::CoreError;
 pub use file::{

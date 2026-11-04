@@ -396,8 +396,12 @@ pub async fn set_lan(
 }
 
 /// 出网代理的设置（ADR-0023）：先返回最近一次探测的结果。
-pub async fn egress_proxy(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+pub async fn egress_proxy(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     match gateway.plugins.egress_settings(&languages(&headers)) {
@@ -409,10 +413,11 @@ pub async fn egress_proxy(State(gateway): State<Arc<Gateway>>, headers: HeaderMa
 /// 改出网代理。探测过、存下、需要时重启完插件才返回。
 pub async fn set_egress_proxy(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let update = match serde_json::from_slice::<EgressProxyUpdate>(&body) {
@@ -431,11 +436,12 @@ pub async fn set_egress_proxy(
 /// 改网页的局域网端口开关（ADR-0023），重建完返回详情。
 pub async fn set_lan_webui(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let id = match PluginId::parse(&id) {

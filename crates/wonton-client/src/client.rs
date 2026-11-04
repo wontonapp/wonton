@@ -93,6 +93,19 @@ impl ClientCore {
             Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
             Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
+            Action::RefreshEgressProxy => {
+                self.plugins.refresh_egress();
+                Ok(())
+            }
+            Action::SaveEgressProxy {
+                address,
+                direct_cidrs,
+            } => self.plugins.save_egress(&address, &direct_cidrs),
+            Action::ConfirmEgressProxy => self.plugins.confirm_egress(),
+            Action::DismissEgressConfirmation => {
+                self.plugins.dismiss_egress_confirmation();
+                Ok(())
+            }
             action @ (Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
@@ -204,6 +217,17 @@ impl ClientCore {
     pub async fn preview_upgrade(&self, id: String) -> Result<InstallPreview, CoreError> {
         let plugins = self.plugins.clone();
         self.run(async move { plugins.preview_upgrade(&id).await })
+            .await
+    }
+
+    /// 开关插件网页的局域网端口（ADR-0023）。核心要重建容器，做完才回应；返回开关之后的详情。
+    pub async fn set_lan_webui(
+        &self,
+        id: String,
+        enabled: bool,
+    ) -> Result<PluginDetail, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.set_lan_webui(&id, enabled).await })
             .await
     }
 

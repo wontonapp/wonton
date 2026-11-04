@@ -38,6 +38,7 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
     val isUpgrade = confirmation is PluginConfirmation.Upgrade
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<String?>(null) }
+    var lanWebui by remember { mutableStateOf(false) }
     val loaded by produceState<Result<InstallPreview>?>(null, confirmation, attempt) {
         value = null
         value = try {
@@ -45,7 +46,7 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                 when (confirmation) {
                     is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
                     is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
-                },
+                }.also { lanWebui = it.lanWebui?.enabled ?: false },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
@@ -62,7 +63,8 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                     TextButton(
                         onClick = {
                             // 在这里直接发给核心：被拒绝时原因留在确认页上，不随确认页关掉。
-                            preview?.let {
+                            preview?.let { shown ->
+                                val it = shown.copy(lanWebui = shown.lanWebui?.copy(enabled = lanWebui))
                                 val action = if (isUpgrade) Action.UpgradePlugin(it) else Action.InstallPlugin(it)
                                 rejection = plugins.core.send(action)
                                 if (rejection == null) onClose()
@@ -79,7 +81,7 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
             when {
                 result == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 result.isFailure -> ProblemView(result.exceptionOrNull().toString(), null, onRetry = { attempt++ })
-                else -> PreviewContent(result.getOrThrow(), plugins)
+                else -> PreviewContent(result.getOrThrow(), plugins, lanWebui) { lanWebui = it }
             }
         }
     }
@@ -94,7 +96,12 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
 }
 
 @Composable
-private fun PreviewContent(preview: InstallPreview, plugins: PluginsState) {
+private fun PreviewContent(
+    preview: InstallPreview,
+    plugins: PluginsState,
+    lanWebui: Boolean,
+    onLanWebui: (Boolean) -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -128,6 +135,7 @@ private fun PreviewContent(preview: InstallPreview, plugins: PluginsState) {
                 preview.permissions.forEach { PermissionRow(it) }
             }
         }
+        preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("更新说明", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

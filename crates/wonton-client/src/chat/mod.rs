@@ -194,12 +194,7 @@ impl ChatLink {
                 Ok(())
             }
             Action::SetUpRecovery => self.set_up_recovery(),
-            Action::ConfirmRecoveryKeySaved => {
-                self.storage.forget_recovery_key()?;
-                self.view
-                    .send_modify(|view| view.encryption.recovery_key = None);
-                Ok(())
-            }
+            Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
             Action::AnswerConfirmation { id, answer } => self.answer_confirmation(id, answer),
             Action::SetPushEndpoint { .. }
@@ -218,6 +213,10 @@ impl ChatLink {
             | Action::UpgradePlugin { .. }
             | Action::UninstallPlugin { .. }
             | Action::DismissPluginTask { .. }
+            | Action::RefreshEgressProxy
+            | Action::SaveEgressProxy { .. }
+            | Action::ConfirmEgressProxy
+            | Action::DismissEgressConfirmation
             | Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
@@ -233,6 +232,13 @@ impl ChatLink {
             | Action::SetAccentColor { .. }
             | Action::ResetAccentColor => Err(invalid("不是聊天操作")),
         }
+    }
+
+    fn confirm_recovery_key_saved(&self) -> Result<(), CoreError> {
+        self.storage.forget_recovery_key()?;
+        self.view
+            .send_modify(|view| view.encryption.recovery_key = None);
+        Ok(())
     }
 
     /// 订阅一个已加入房间的时间线。打开另一个房间会关掉前一个的订阅。

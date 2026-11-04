@@ -449,6 +449,19 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         assert_eq!(status, StatusCode::OK, "{page:?}: {text}");
     }
 
+    // 出网代理的设置页和网页局域网端口的开关都在 App 里（ADR-0023）。没带请求体，过了鉴权才回 400。
+    let (status, _, text) = phone
+        .send(Method::GET, CORE, "/_wonton/api/egress-proxy", &[])
+        .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    for route in [
+        "/_wonton/api/egress-proxy",
+        "/_wonton/api/plugins/app.whoami/lan-webui",
+    ] {
+        let (status, _, text) = phone.send(Method::PUT, CORE, route, &[]).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {text}");
+    }
+
     let plugin_page = format!("http://{PLUGIN}:{PORT}");
     for (method, route) in [
         (Method::GET, path),
@@ -462,6 +475,9 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
             Method::GET,
             "/_wonton/api/store/plugin?source=github:owner/repo",
         ),
+        (Method::GET, "/_wonton/api/egress-proxy"),
+        (Method::PUT, "/_wonton/api/egress-proxy"),
+        (Method::PUT, "/_wonton/api/plugins/app.whoami/lan-webui"),
     ] {
         for page in [
             ("origin", plugin_page.as_str()),
