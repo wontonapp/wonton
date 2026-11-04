@@ -21,7 +21,9 @@ struct CoreUpgradeView: View {
         if let status = upgrade.status {
             page(status)
         } else if let problem = upgrade.problem {
-            ProblemView(message: problem.message, nextStep: nil) {
+            ProblemView(
+                problem: Problem(title: coreUpgradeFailureSummary(reason: problem.reason), detail: problem.message)
+            ) {
                 model.send(.refreshCoreUpgrade(manual: true))
             }
         } else {

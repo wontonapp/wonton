@@ -26,7 +26,7 @@ struct StoreView: View {
                     }
                     if let store = model.viewModel.store {
                         if let problem = model.viewModel.problem {
-                            ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
+                            ProblemRow(problem: problem.problem) { model.send(.refreshStore(force: true)) }
                                 .padding(WontonTheme.spacing.pageInset)
                         }
                         if query.isEmpty {
@@ -51,13 +51,11 @@ struct StoreView: View {
     /// 还没取到商店：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         if let problem = model.viewModel.problem {
-            ProblemView(message: problem.message, nextStep: problem.reason.nextStep) {
-                model.send(.refreshStore(force: true))
-            }
+            ProblemView(problem: problem.problem) { model.send(.refreshStore(force: true)) }
         } else if let rejection = model.refreshRejection {
-            ProblemView(message: rejection, nextStep: nil) { model.send(.refreshStore(force: true)) }
+            ProblemView(problem: rejection.problem) { model.send(.refreshStore(force: true)) }
         } else {
-            ProgressView()
+            ListSkeleton(iconSize: WontonTheme.size.storeIcon)
         }
     }
 
@@ -82,9 +80,12 @@ struct StoreView: View {
                 .accessibilityAddTraits(.isHeader)
             ForEach(items, id: \.source) { row($0) }
             if let problem = content.problem {
-                WontonNotice(icon: .warning, title: problem.reason.text)
-                    .padding(.horizontal, WontonTheme.spacing.pageInset)
-                    .padding(.vertical, WontonTheme.spacing.s8)
+                ProblemRow(
+                    problem: problem.problem,
+                    retry: problem.canRetry ? { model.send(.refreshStore(force: true)) } : nil
+                )
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+                .padding(.vertical, WontonTheme.spacing.s8)
             }
         }
     }
@@ -255,8 +256,12 @@ struct TaskRow: View {
             .foregroundStyle(Color(colors.success))
         case let .failed(reason, message):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                Text("\(task.operation.failedText)：\(message)").foregroundStyle(Color(colors.danger))
-                Text(reason.nextStep).foregroundStyle(Color(colors.textSecondary))
+                let problem = reason.problem(detail: message)
+                Text("\(task.operation.failedText)：\(problem.title)").foregroundStyle(Color(colors.danger))
+                if let nextStep = problem.nextStep {
+                    Text(nextStep).foregroundStyle(Color(colors.textSecondary))
+                }
+                ProblemDetail(text: message)
                 if reason == .changed {
                     Button("重新查看", action: review).buttonStyle(WontonSmallButtonStyle())
                 }

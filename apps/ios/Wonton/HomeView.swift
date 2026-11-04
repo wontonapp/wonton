@@ -103,10 +103,10 @@ struct HomeView: View {
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
         if let problem = plugins.viewModel.problem {
-            ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
+            ProblemRow(problem: problem.problem) { plugins.send(.refreshPlugins) }
         }
         if let check = installed.upgradeCheck {
-            ProblemRow(message: check.reason.text, nextStep: nil)
+            ProblemRow(problem: check.problem) { plugins.send(.refreshPlugins) }
         }
         if installed.plugins.isEmpty {
             NoPlugins { path.append(HomeRoute.store) }
@@ -132,13 +132,11 @@ struct HomeView: View {
     /// 还没取到已安装的插件：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         if let problem = plugins.viewModel.problem {
-            ProblemView(message: problem.message, nextStep: problem.reason.nextStep) {
-                plugins.send(.refreshPlugins)
-            }
+            ProblemView(problem: problem.problem) { plugins.send(.refreshPlugins) }
         } else if let rejection = plugins.refreshRejection {
-            ProblemView(message: rejection, nextStep: nil) { plugins.send(.refreshPlugins) }
+            ProblemView(problem: rejection.problem) { plugins.send(.refreshPlugins) }
         } else {
-            ProgressView()
+            LoadingView()
         }
     }
 

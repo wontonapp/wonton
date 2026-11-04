@@ -33,7 +33,7 @@ class PluginsState(val core: ClientCore) {
     var rejection by mutableStateOf<String?>(null)
 
     /** 页面出现时自动发的刷新被核心拒绝的原因。不弹窗，没有 `viewModel.problem` 时就地显示。 */
-    var refreshRejection by mutableStateOf<String?>(null)
+    var refreshRejection by mutableStateOf<CoreException?>(null)
         private set
 
     /** 核心给的图片地址内容不变（ADR-0017），按地址缓存解码后的图片。 */
@@ -50,7 +50,12 @@ class PluginsState(val core: ClientCore) {
 
     /** 发页面出现时的刷新，被拒绝的原因记在 [refreshRejection]。 */
     fun refresh(action: Action) {
-        refreshRejection = core.send(action)
+        refreshRejection = try {
+            core.dispatch(action)
+            null
+        } catch (rejection: CoreException) {
+            rejection
+        }
     }
 
     /** 取插件的图标或截图；取不到、解不开时为 null，界面画占位（ADR-0017），不当作错误。 */

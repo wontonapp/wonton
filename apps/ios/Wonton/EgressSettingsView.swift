@@ -44,7 +44,7 @@ struct EgressSettingsView: View {
         if let current = egress.current {
             form(current)
         } else if let problem = egress.loadProblem {
-            ProblemView(message: problem.message, nextStep: nil) { model.send(.refreshEgressProxy) }
+            ProblemView(problem: problem.problem) { model.send(.refreshEgressProxy) }
         } else {
             ProgressView()
         }

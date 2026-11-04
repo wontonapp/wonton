@@ -14,8 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -106,7 +106,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                         )
                     }
                 }
-                problem != null -> ProblemView(problem.message, null) { plugins.send(Action.RefreshEgressProxy) }
+                problem != null -> ProblemView(problem.problem) { plugins.send(Action.RefreshEgressProxy) }
                 else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
         }

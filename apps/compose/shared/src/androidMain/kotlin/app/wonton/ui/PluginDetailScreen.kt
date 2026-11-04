@@ -16,12 +16,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -93,8 +92,8 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
         val result = loaded
         Box(Modifier.fillMaxSize()) {
             when {
-                result == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                result.isFailure -> ProblemView(result.exceptionOrNull().toString(), null, onRetry = { attempt++ })
+                result == null -> LoadingView()
+                result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
                 else -> DetailContent(toggled ?: result.getOrThrow(), task, plugins, navigation) { toggled = it }
             }
         }

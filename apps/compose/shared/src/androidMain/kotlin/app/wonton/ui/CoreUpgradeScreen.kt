@@ -61,7 +61,9 @@ fun CoreUpgradePage(plugins: PluginsState, onBack: () -> Unit) {
         val problem = upgrade.problem
         when {
             status != null -> CoreUpgradeContent(plugins, status)
-            problem != null -> ProblemView(problem.message, null) { plugins.send(Action.RefreshCoreUpgrade(true)) }
+            problem != null -> ProblemView(
+                Problem(coreUpgradeFailureSummary(problem.reason), detail = problem.message),
+            ) { plugins.send(Action.RefreshCoreUpgrade(true)) }
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
     }

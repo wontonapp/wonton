@@ -25,8 +25,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -118,12 +118,12 @@ fun LauncherScreen(
                 ) {
                     plugins.viewModel.problem?.let { problem ->
                         item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(problem.message, problem.reason.nextStep)
+                            ProblemRow(problem.problem) { plugins.send(Action.RefreshPlugins) }
                         }
                     }
                     installed.upgradeCheck?.let { check ->
                         item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(check.reason.text, null)
+                            ProblemRow(check.problem) { plugins.send(Action.RefreshPlugins) }
                         }
                     }
                     if (installed.plugins.isEmpty()) {
@@ -165,11 +165,9 @@ private fun LauncherPlaceholder(plugins: PluginsState) {
     val rejection = plugins.refreshRejection
     val retry = { plugins.send(Action.RefreshPlugins) }
     when {
-        problem != null -> ProblemView(problem.message, problem.reason.nextStep, retry)
-        rejection != null -> ProblemView(rejection, null, retry)
-        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = WontonTheme.colors.textPrimary.toColor())
-        }
+        problem != null -> ProblemView(problem.problem, retry)
+        rejection != null -> ProblemView(rejection.problem, retry)
+        else -> LoadingView()
     }
 }
 

@@ -1,45 +1,6 @@
 import SwiftUI
 import WontonClient
 
-extension StoreFailure {
-    var text: String {
-        switch self {
-        case .unreachable: return "连不上 GitHub，列表可能不是最新的"
-        case .timeout: return "GitHub 太慢，没有及时答完，列表可能不是最新的"
-        case .rateLimited: return "GitHub 限速了，过几分钟再试"
-        case .invalidIndex: return "商店的列表读不懂，稍后再试"
-        case .indexTooNew: return "商店的列表比家里的服务器新，先升级家里的服务器"
-        case .upstream: return "商店的来源出了问题，稍后再试"
-        case .incomplete: return "有的没读到，列表不完整"
-        case .disabled: return "社区应用已关闭"
-        case .other: return "商店出了问题，稍后再试"
-        }
-    }
-}
-
-extension PluginFailure {
-    /// 失败以后主人下一步该做什么，跟在核心写的原因后面。
-    var nextStep: String {
-        switch self {
-        case .transportUnavailable: return "连上家里的服务器后再试。"
-        case .unauthorized: return "家里的服务器不认这台设备，请重新扫码配对。"
-        case .sourceUnavailable: return "家里的服务器连不上应用的来源，稍后再试。"
-        case .notFound: return "来源里没有这个应用或版本，刷新商店后再试。"
-        case .changed: return "应用在确认之后变了，请重新查看、确认。"
-        case .unsupported: return "家里的服务器不支持这个应用，先升级家里的服务器。"
-        case .conflict: return "它已经装了，或者正在安装、升级、卸载，等那边做完。"
-        case .invalid: return "应用包不合法，请联系应用的作者。"
-        case .deviceUnavailable: return "选择的设备不可用，重新查看设备后再试。"
-        case .lanUnavailable: return "在局域网设置里选好网卡或地址后再试。"
-        case .coreUpgrading: return "家里的服务器正在升级，升级结束后再试。"
-        case .egressProxyUnavailable: return "检查家里服务器上的代理，或者在出网代理设置里改地址后再试。"
-        case .ownerProfileIncomplete: return "在设置里填好你的资料后再试。"
-        case .upstream: return "家里的服务器出了错，稍后再试。"
-        case .protocol: return "App 和家里的服务器版本对不上，请更新 App 或家里的服务器。"
-        }
-    }
-}
-
 extension PluginTrust {
     var label: String {
         switch self {
@@ -96,43 +57,6 @@ struct Tag: View {
             .padding(.horizontal, WontonTheme.spacing.s8)
             .foregroundStyle(Color(tint))
             .background(Color(tint).opacity(0.14), in: Capsule())
-    }
-}
-
-/// 取列表、详情或预览失败，整页显示原因和下一步。
-struct ProblemView: View {
-    let message: String
-    let nextStep: String?
-    let retry: () -> Void
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        VStack(spacing: WontonTheme.spacing.s8) {
-            WontonIcon.warning.view().foregroundStyle(Color(colors.danger))
-            Text(message)
-                .wontonText(WontonTheme.typography.itemTitle)
-                .foregroundStyle(Color(colors.textPrimary))
-            if let nextStep {
-                Text(nextStep)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
-            Button("重试", action: retry)
-                .buttonStyle(WontonButtonStyle(kind: .secondary))
-                .padding(.top, WontonTheme.spacing.s8)
-        }
-        .multilineTextAlignment(.center)
-        .padding(WontonTheme.spacing.s32)
-    }
-}
-
-/// 列表还在，但最近一次刷新出了问题：放在列表上方。
-struct ProblemRow: View {
-    let message: String
-    let nextStep: String?
-
-    var body: some View {
-        WontonNotice(icon: .warning, title: message, lines: nextStep.map { [$0] } ?? [])
     }
 }
 

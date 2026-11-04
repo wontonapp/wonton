@@ -45,9 +45,9 @@ struct PluginDetailView: View {
     @ViewBuilder private var content: some View {
         switch loaded {
         case nil:
-            ProgressView()
+            LoadingView()
         case let .failure(error):
-            ProblemView(message: String(describing: error), nextStep: nil) {
+            ProblemView(problem: error.problem) {
                 Task { await load() }
             }
         case let .success(detail):

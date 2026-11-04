@@ -117,8 +117,10 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
         is PluginTaskState.Running -> Text(operation.runningText, style = style, color = colors.textSecondary.toColor())
         is PluginTaskState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, operation.doneText, colors.success)
         is PluginTaskState.Failed -> {
-            Text("${operation.failedText}：${state.message}", style = style, color = colors.danger.toColor())
-            Text(state.reason.nextStep, style = style, color = colors.textSecondary.toColor())
+            val problem = state.reason.problem(state.message)
+            Text("${operation.failedText}：${problem.title}", style = style, color = colors.danger.toColor())
+            problem.nextStep?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
+            ProblemDetail(state.message)
             if (state.reason == PluginFailure.CHANGED) WontonSmallButton("重新查看", onReview)
         }
         is PluginTaskState.Uncertain -> StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)

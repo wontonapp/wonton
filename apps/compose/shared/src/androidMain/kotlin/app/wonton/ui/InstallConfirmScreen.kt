@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,8 +63,8 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    result == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    result.isFailure -> ProblemView(result.exceptionOrNull().toString(), null, onRetry = { attempt++ })
+                    result == null -> LoadingView()
+                    result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
                     preview != null -> PreviewContent(preview, plugins, lanWebui) { lanWebui = it }
                 }
             }

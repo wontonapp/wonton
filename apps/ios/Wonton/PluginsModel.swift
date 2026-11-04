@@ -12,7 +12,7 @@ final class PluginsModel {
     /// 核心拒绝主人的操作的原因，由界面弹窗展示。
     var rejection: String?
     /// 页面出现时自动发的刷新被核心拒绝的原因。不弹窗，没有 `viewModel.problem` 时就地显示。
-    private(set) var refreshRejection: String?
+    private(set) var refreshRejection: CoreError?
 
     let core: ClientCore
     /// 核心给的图片地址内容不变（ADR-0017），按地址缓存解码后的图片。
@@ -61,7 +61,7 @@ final class PluginsModel {
             try core.dispatch(action: action)
             refreshRejection = nil
         } catch {
-            refreshRejection = String(describing: error)
+            refreshRejection = error as? CoreError ?? .Upstream(reason: String(describing: error))
         }
     }
 

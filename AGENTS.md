@@ -48,6 +48,8 @@
 - Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
   分组、顺序、位置和图标已经说明了的，不再加副标题、说明文字或标签重复一遍。App 的原生界面和插件的网页都适用。
 - 错误、权限和来源（如“未审核”）的提示不算多余，照常写清楚（见“运行时原则：失败即停”）。
+- 加载和出错的界面写给普通用户看：一句人话说发生了什么、能做什么，配重试；仓库名、超时秒数、错误码收进默认收起的“详情”；
+  部分失败是一条轻提示。类别由核心给，文字按类别写在壳里，不伪装成功、不藏错误。
 - App 的界面走 [ADR-0026](docs/adr/0026-design-system.md) 的设计系统，哪些共用、哪些按平台走以
   [ADR-0029](docs/adr/0029-platform-material.md) 为准。
 

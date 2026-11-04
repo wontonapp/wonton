@@ -21,8 +21,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,7 +41,6 @@ import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreSection
 import app.wonton.ui.design.WontonChip
-import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSearchField
@@ -49,7 +48,6 @@ import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.StarFill
-import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 import java.util.Locale
 
@@ -104,12 +102,19 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                         viewModel.problem?.let { problem ->
                             item(key = "problem") {
                                 Box(Modifier.padding(WontonTheme.spacing.pageInset)) {
-                                    ProblemRow(problem.message, problem.reason.nextStep)
+                                    ProblemRow(problem.problem) {
+                                        plugins.send(Action.RefreshStore(force = true))
+                                    }
                                 }
                             }
                         }
                         if (query.isEmpty()) {
-                            listing(store, tag, onTag = { tag = it }) { row(it) }
+                            listing(
+                                store,
+                                tag,
+                                onTag = { tag = it },
+                                onRetry = { plugins.send(Action.RefreshStore(force = true)) },
+                            ) { row(it) }
                         } else {
                             results(plugins.core.searchStore(query)) { row(it) }
                         }
@@ -127,9 +132,9 @@ private fun StorePlaceholder(plugins: PluginsState) {
     val rejection = plugins.refreshRejection
     val retry = { plugins.send(Action.RefreshStore(force = true)) }
     when {
-        problem != null -> ProblemView(problem.message, problem.reason.nextStep, retry)
-        rejection != null -> ProblemView(rejection, null, retry)
-        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        problem != null -> ProblemView(problem.problem, retry)
+        rejection != null -> ProblemView(rejection.problem, retry)
+        else -> ListSkeleton(WontonTheme.size.storeIcon)
     }
 }
 
@@ -137,20 +142,22 @@ private fun LazyListScope.listing(
     store: StoreListing,
     tag: String?,
     onTag: (String?) -> Unit,
+    onRetry: () -> Unit,
     row: @Composable (StoreItem) -> Unit,
 ) {
     val present = (store.official.plugins + store.community.plugins).flatMap { it.tags }.distinct()
     if (present.size > 1) {
         item(key = "tags") { TagChips(present, tag, onTag) }
     }
-    section("已审核", store.official, tag, row)
-    section("社区", store.community, tag, row)
+    section("已审核", store.official, tag, onRetry, row)
+    section("社区", store.community, tag, onRetry, row)
 }
 
 private fun LazyListScope.section(
     title: String,
     content: StoreSection,
     tag: String?,
+    onRetry: () -> Unit,
     row: @Composable (StoreItem) -> Unit,
 ) {
     val shown = content.plugins.filter { tag == null || tag in it.tags }
@@ -171,7 +178,7 @@ private fun LazyListScope.section(
     content.problem?.let { problem ->
         item(key = "problem:$title") {
             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
-                WontonNotice(WontonIcon.Warning, problem.reason.text)
+                ProblemRow(problem.problem, onRetry.takeIf { problem.canRetry })
             }
         }
     }
