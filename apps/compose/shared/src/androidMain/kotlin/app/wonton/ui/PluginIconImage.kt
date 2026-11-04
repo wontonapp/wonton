@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -31,21 +32,27 @@ private const val GLYPH_RATIO = 0.54f
 /** 列表和主屏用小图，详情和确认页用大图。 */
 private val LARGE_FROM = 96.dp
 
-/** 插件图标，统一裁成圆角方形（ADR-0017：图标满幅，不自己画圆角）。没有图标、取不到时画同一个占位（ADR-0026）。 */
+/**
+ * 插件图标，统一裁成圆角方形（ADR-0017：图标满幅，不自己画圆角）。没有图标、取不到时画同一个占位（ADR-0026）。
+ * 还在取的时候只画底色：路径慢时要等一会儿，画占位看着就像这个插件没有图标。
+ */
 @Composable
 fun PluginIconImage(icon: PluginIcon?, size: Dp, plugins: PluginsState) {
     val shape = pluginIconShape(size)
-    val image = rememberPluginImage(plugins, if (size > LARGE_FROM) icon?.large else icon?.small)
+    val source = if (size > LARGE_FROM) icon?.large else icon?.small
+    val state by produceState<IconState>(IconState.Loading, source) {
+        value = source?.let { plugins.imageOrNull(it) }?.let { IconState.Loaded(it) } ?: IconState.Missing
+    }
     val colors = WontonTheme.colors
-    if (image != null) {
-        Image(
-            image,
+    when (val current = state) {
+        is IconState.Loaded -> Image(
+            current.image,
             contentDescription = null,
             Modifier.size(size).clip(shape).border(WontonTheme.size.hairline, colors.separator.toColor(), shape),
             contentScale = ContentScale.Crop,
         )
-    } else {
-        Box(Modifier.size(size).accentFill(shape), contentAlignment = Alignment.Center) {
+        IconState.Loading -> Box(Modifier.size(size).clip(shape).background(colors.surfaceSubtle.toColor()))
+        IconState.Missing -> Box(Modifier.size(size).accentFill(shape), contentAlignment = Alignment.Center) {
             Icon(
                 WontonIcon.AppsFill,
                 contentDescription = null,
@@ -54,6 +61,12 @@ fun PluginIconImage(icon: PluginIcon?, size: Dp, plugins: PluginsState) {
             )
         }
     }
+}
+
+private sealed interface IconState {
+    data object Loading : IconState
+    data object Missing : IconState
+    data class Loaded(val image: ImageBitmap) : IconState
 }
 
 fun pluginIconShape(size: Dp) = RoundedCornerShape(size * CORNER_RATIO)
