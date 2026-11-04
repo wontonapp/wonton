@@ -67,7 +67,7 @@ x-wonton:
 
 | 账号 | 做法 | 依据和限制 |
 | --- | --- | --- |
-| Claude | 未修改的 Claude Code，`claude-agent-acp` 启动，官方流程登录 | 条款允许用户在托管的未修改程序里登录。条款同时要求基于 Agent SDK 做产品的开发者用 API key，而这个适配器基于 Agent SDK，所以经桥算不算没有明说。内测先开，公开发行前向 Anthropic 要书面确认 |
+| Claude | 未修改的 Claude Code，`claude-agent-acp` 启动，官方流程登录 | 条款允许用户在托管的未修改程序里登录。条款同时要求基于 Agent SDK 做产品的开发者用 API key，而这个适配器基于 Agent SDK，所以经桥算不算没有明说（条款读于 2026-11-04），风险在用户自己的账号。主人决定不等书面确认，公开版本同内测一样开着 |
 | ChatGPT | Codex，设备码登录（`codex login --device-auth`） | 官方文档写的无头登录方式，自动化场景建议用 API key。使用条款原文和 Sign in with ChatGPT 的自托管说明没读到 |
 | 其他 | Kimi Code 的设备码等，按各家条款逐个看 | 接入时核实 |
 
@@ -237,8 +237,8 @@ requires_core: 0.9.0
 
 ## 代价与风险
 
-- **Claude Code 的条款。** 公开发行前要向 Anthropic 书面确认三件事：经 `claude-agent-acp` 用订阅登录算不算允许的情形；桥把用户贴回的授权码转给 `claude auth login` 算不算中转凭据（ADR-0007 的终端类登录就是这样做的）；把 Claude Code 列进官方商店要满足哪些 Commercial Terms 的条件。没确认前，公开版本只提供 API key。这里读的是条款页面，不是法律意见。
-- **ChatGPT 的条款。** 只读到官方文档，使用条款原文没读到。Codex 插件公开前要补上。
+- **Claude Code 的条款。** 条款读于 2026-11-04，没说经 `claude-agent-acp` 用订阅登录算不算允许的情形，也没说桥把用户贴回的授权码转给 `claude auth login` 算不算中转凭据（ADR-0007 的终端类登录就是这样做的），风险在用户自己的账号。主人决定不等 Anthropic 书面确认，公开版本和内测一样直接开着订阅登录，不是只提供 API key。这里读的是条款页面，不是法律意见。
+- **ChatGPT 的条款。** 只读到官方文档，使用条款原文没读到。
 - **桥是新的大块工作。** 它要做每个 Bot 的加密、确认、登录和排队（ADR-0007）。名单从索引读，所以桥没做好时只是选择页上少几个 Agent。
 - **OpenClaw 没有实测。** Matrix 插件的加密要原生绑定，文档说支持，容器里没跑过。加密跑不通就不上架，不退回明文。
 - **omp 只验证到握手。** 会话、确认和接 magpie 要在桥上实测。
@@ -254,7 +254,7 @@ requires_core: 0.9.0
 
 1. **Agent 范围：** 选择页先做，名单从商店读，第一批 Hermes、OpenClaw。ACP 桥马上开工，做好后上 Codex、Claude Code、omp。M1 验收不等桥。
 2. **Hermes：** 照旧预装，选了别的再多装一个，问一次要不要卸。
-3. **订阅：** 填 key 走 magpie，订阅只在 Agent 官方程序里登录。经桥用 Claude 订阅，内测先开，公开发行前向 Anthropic 要书面确认。
+3. **订阅：** 填 key 走 magpie，订阅只在 Agent 官方程序里登录。经桥用 Claude 订阅，公开版本和内测一样直接开着，不等 Anthropic 书面确认（主人 2026-11-05 改）。
 4. **填 key：** App 里做原生页，服务商列表和保存由网关插件提供。
 5. **选择页：** 一页列表，每行写用什么账号接，名字用文字。
 6. **推荐：** 只问需求。
