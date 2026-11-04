@@ -111,9 +111,6 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 没有 App 的主机上用真实的客户端核心回答：`cargo run -p wonton-client --example confirm-card -- <数据目录> <配对码> approve`。
 
-开发索引里的文件搜索插件在私有仓库 `geraldpeng6/wonton-plugin-files`，镜像没有发布，要先在本机按索引记的提交构建，
-见 [store/README.md](store/README.md)。
-
 ## 推送
 
 Tuwunel 默认不往私网地址推送（`ip_range_denylist`），compose 里的 `TUWUNEL_PROXY` 让它只把 `push.wonton.internal`
@@ -145,7 +142,7 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
-结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `rm/glm-5.3-flash`，
+结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `auto/glm-5.3-flashx`，
 冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、

@@ -5,7 +5,7 @@
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
 # 主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
 # Hermes 一步要真实模型：开发机上要有在运行的 magpie（容器里经 host.docker.internal:3425 访问），
-# 提供 rm/glm-5.3-flash。
+# 提供 auto/glm-5.3-flashx（WONTON_SMOKE_MODEL 可以换）。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
 #   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
@@ -19,8 +19,8 @@ repo="$(cd "$here/../../.." && pwd)"
 dev="$here/dev.sh"
 
 export WONTON_DEV_PROJECT=wonton-smoke
-# 下面按没有实例名的资源名检查插件；冒烟一次只跑一个。
-export WONTON_DEV_INSTANCE=
+# 带实例名：下面的清理只动这个实例的插件，同一台 Docker 上别的核心不受影响。冒烟一次只跑一个。
+export WONTON_DEV_INSTANCE=smoke
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN=wonton.localhost
@@ -33,16 +33,21 @@ browser="$WONTON_DEV_PROJECT-browser"
 phone="$WONTON_DEV_PROJECT-phone"
 phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
-files_image="wonton-files:dev"
 curl_image="curlimages/curl:8.23.0"
 socat_image="alpine/socat:1.8.0.3"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
-echo_bot="wonton-agent-echo--bot"
-magpie="wonton-ai-usemagpie-magpie--magpie"
-model_client="wonton-app-model-client--client"
-hermes="wonton-com-nousresearch-hermes--gateway"
+# 插件的网络名；容器名是“网络名--服务名”。
+grafana_network="wonton-$WONTON_DEV_INSTANCE--app-grafana"
+whoami_network="wonton-$WONTON_DEV_INSTANCE--app-whoami"
+magpie_network="wonton-$WONTON_DEV_INSTANCE--ai-usemagpie-magpie"
+hermes_network="wonton-$WONTON_DEV_INSTANCE--com-nousresearch-hermes"
+grafana="$grafana_network--grafana"
+echo_bot="wonton-$WONTON_DEV_INSTANCE--agent-echo--bot"
+magpie="$magpie_network--magpie"
+model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
+hermes="$hermes_network--gateway"
 plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files)
 
 # 构建镜像经 dev.sh：远端主机上经它自己的代理、限制并发（WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS）。
@@ -50,7 +55,7 @@ build() { "$dev" build -q "$@" >/dev/null; }
 # 真实模型：冒烟里的 magpie 经开发机上的 magpie 调模型（同 deploy/dev/agent），不读取、不复制它的配置和密钥。
 # 默认在 host.docker.internal:3425（OrbStack、Docker Desktop）；Linux 主机上没有这个名字，用 WONTON_SMOKE_MODEL_RELAY
 # 指向那台主机上只监听回环地址的 magpie（如 127.0.0.1:3425），冒烟起一个只让冒烟的 magpie 用的转发，结束时删掉。
-model="${WONTON_SMOKE_MODEL:-rm/glm-5.3-flash}"
+model="${WONTON_SMOKE_MODEL:-auto/glm-5.3-flashx}"
 relay="$WONTON_DEV_PROJECT-model-relay"
 
 step() { printf '\n== %s\n' "$*"; }
@@ -83,9 +88,9 @@ tc() { docker exec "$browser" curl -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x htt
 labeled() {
   local id="$1"
   {
-    docker ps -aq --filter "label=wonton.plugin=$id"
-    docker network ls -q --filter "label=wonton.plugin=$id"
-    docker volume ls -q --filter "label=wonton.plugin=$id"
+    docker ps -aq --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"
+    docker network ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"
+    docker volume ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"
   } | tr -d '[:space:]'
 }
 
@@ -100,12 +105,12 @@ cleanup() {
   # 中途失败时插件可能还在：先删插件容器，再停核心，最后删插件网络和卷。
   local id resource
   for id in "${plugins[@]}"; do
-    for resource in $(docker ps -aq --filter "label=wonton.plugin=$id"); do docker rm -f "$resource" >/dev/null; done
+    for resource in $(docker ps -aq --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker rm -f "$resource" >/dev/null; done
   done
   "$dev" reset >/dev/null 2>&1 || true
   for id in "${plugins[@]}"; do
-    for resource in $(docker network ls -q --filter "label=wonton.plugin=$id"); do docker network rm "$resource" >/dev/null; done
-    for resource in $(docker volume ls -q --filter "label=wonton.plugin=$id"); do docker volume rm "$resource" >/dev/null; done
+    for resource in $(docker network ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker network rm "$resource" >/dev/null; done
+    for resource in $(docker volume ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker volume rm "$resource" >/dev/null; done
   done
   docker run --rm --user 0 --entrypoint rm -v /tmp:/host-tmp "$curl_image" \
     -rf "/host-tmp/$(basename "$WONTON_DEV_DATA")" >/dev/null 2>&1 || true
@@ -139,13 +144,13 @@ expect "网页地址" "$(json web_url <<<"$installed")" "$grafana_url"
 
 step "隔离"
 expect "插件容器不向宿主暴露端口" \
-  "$(docker inspect -f '{{len .HostConfig.PortBindings}}' wonton-app-grafana--grafana)" 0
+  "$(docker inspect -f '{{len .HostConfig.PortBindings}}' "$grafana")" 0
 expect "插件容器只在自己的网络里" \
-  "$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' wonton-app-grafana--grafana)" "wonton-app-grafana "
-aliases="$(docker inspect -f '{{json (index .NetworkSettings.Networks "wonton-app-grafana").Aliases}}' "$core")"
+  "$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$grafana")" "$grafana_network "
+aliases="$(docker inspect -f "{{json (index .NetworkSettings.Networks \"$grafana_network\").Aliases}}" "$core")"
 [[ "$aliases" == *"\"auth.$WONTON_DEV_DOMAIN\""* ]] || fail "核心没有以 auth.$WONTON_DEV_DOMAIN 加入插件网络：$aliases"
 ok "核心加入插件网络，别名 auth.$WONTON_DEV_DOMAIN（插件经它访问身份提供方）"
-if docker exec wonton-app-grafana--grafana wget -q -T 3 -O /dev/null http://hydra.wonton.internal:4445/health/ready 2>/dev/null; then
+if docker exec "$grafana" wget -q -T 3 -O /dev/null http://hydra.wonton.internal:4445/health/ready 2>/dev/null; then
   fail "插件能访问身份提供方的管理端口"
 fi
 ok "插件访问不到身份提供方的管理端口"
@@ -392,7 +397,7 @@ ok "没有模型时，Hermes 提示主人去“模型设置”添加模型服务
 model_url="http://host.docker.internal:3425/v1"
 if [[ -n "${WONTON_SMOKE_MODEL_RELAY:-}" ]]; then
   # 转发监听在 magpie 插件网络的网关上，只接受冒烟的 magpie 容器。
-  network="wonton-ai-usemagpie-magpie"
+  network="$magpie_network"
   gateway="$(docker network inspect "$network" --format '{{(index .IPAM.Config 0).Gateway}}')"
   address="$(docker inspect "$magpie" --format "{{(index .NetworkSettings.Networks \"$network\").IPAddress}}")"
   docker run -d --name "$relay" --network host "$socat_image" \
@@ -409,6 +414,7 @@ talk_to_hermes "$said" "你好，用一句话介绍你自己。" "我刚才让�
   fail "和 Hermes 的对话失败：$(cat "$said")"
 grep '^第' "$said" | sed 's/^/   · /'
 ! grep -q '模型设置' "$said" || fail "有模型了，Hermes 不该再提示去“模型设置”：$(cat "$said")"
+! grep -Eq "AI model service|didn't answer after" "$said" || fail "模型调用失败（开发机的 magpie 能用 $model 吗？）：$(cat "$said")"
 ok "经隧道和 Hermes 加密对话两轮"
 rm -f "$said"
 docker exec "$magpie" magpie usage --last 15m --csv | grep -q ',com.nousresearch.hermes/default,' ||
@@ -417,12 +423,6 @@ ok "用量记在 Hermes 的凭据名下"
 
 step "让 Agent 动手（MCP 总线）：Hermes 请主人确认后装上文件搜索，再用它在授权的文件夹里找文件"
 expect "Hermes 拿到 MCP 总线的地址" "$(hermes_env WONTON_MCP_URL)" "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp"
-# 文件搜索插件在开发索引里，镜像没有发布：按索引记的提交检出它的私有仓库，在 Docker 主机上构建。
-files_src="$(mktemp -d)"
-"$here/store/checkout.sh" geraldpeng6/wonton-plugin-files "$files_src/repo" ||
-  fail "取不到文件搜索插件的仓库：它是私有的，要先 gh auth login"
-build -t "$files_image" "$files_src/repo/images/mcp"
-rm -rf "$files_src"
 # 经隧道在和 Hermes 的私聊里说一句话，收它的回答，直到它 90 秒不再说话（它先说一句再去调要等确认的工具）：
 # $1 输出文件，$2 话。
 ask_hermes() {
@@ -467,7 +467,7 @@ card_id="${card%% *}"
 ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
-expect "Hermes 的插件网络里来的请求答不了确认" "$(answer docker run --rm --network wonton-com-nousresearch-hermes \
+expect "Hermes 的插件网络里来的请求答不了确认" "$(answer docker run --rm --network "$hermes_network" \
   "$curl_image" -H "Host: $WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT/_wonton/confirmations/$card_id")" 401
 expect "局域网浏览器（有核心会话）答不了确认" "$(answer b "$confirm_url")" 401
 expect "主人的手机经隧道确认" "$(answer t "$confirm_url")" 200
@@ -486,6 +486,8 @@ ask_hermes "$asked" "在我的共享文件夹里找一下 2025 年的报税表�
 grep '^第' "$asked" | sed 's/^/   · /'
 grep -q '2025-报税表' "$asked" || fail "Hermes 的回答里没有找到的文件：$(cat "$asked")"
 ok "Hermes 经 MCP 总线在授权的文件夹里找到了文件"
+ask_hermes "$asked" "把这个报税表文件发给我。" || fail "Hermes 没有回答发文件的结果：$(cat "$asked")"
+grep '^第' "$asked" | sed 's/^/   · /'
 audit="$(docker exec "$core" cat "$WONTON_DEV_DATA/core/audit.jsonl")"
 # 审计里有没有一行：工具名匹配 $1（正则），决定是 $2。
 audited() {
@@ -495,7 +497,10 @@ sys.exit(not any(re.fullmatch(sys.argv[1], l["tool"]) and l["decision"] == sys.a
 }
 audited wonton__install_plugin approved || fail "审计里没有主人确认的安装：$audit"
 audited 'app-wonton-files__[a-z_]+' allowed || fail "审计里没有找文件：$audit"
-ok "审计日志记下了确认过的安装和找文件"
+audited wonton__share_file allowed || fail "审计里没有分享文件：$audit"
+ok "审计日志记下了确认过的安装、找文件和分享文件"
+grep -q 'wonton://file/' "$asked" || fail "Hermes 的回答里没有文件链接（App 显示不成文件卡片）：$(cat "$asked")"
+ok "Hermes 发出了文件链接，App 显示成文件卡片"
 rm -f "$asked"
 expect "卸载文件搜索" "$("$dev" uninstall app.wonton.files --purge | json data_removed)" true
 hermes_token="$(hermes_env MATRIX_ACCESS_TOKEN)"
@@ -568,7 +573,7 @@ grep -qi "^X-Forwarded-Host: app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" <<<
 ok "插件收到转发头，收不到网关 Cookie 和伪造的转发头"
 # 从 whoami 的插件网络里冒充 Bot 和模型网关的使用方：网关按来源地址认出插件，它两项权限都没申请。
 from_whoami() {
-  docker run --rm --network wonton-app-whoami "$curl_image" -sS -o /dev/null -D - \
+  docker run --rm --network "$whoami_network" "$curl_image" -sS -o /dev/null -D - \
     -H "Host: $1:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT$2"
 }
 for internal in "matrix.wonton.internal /_matrix/client/versions" "models.wonton.internal /v1/models" "mcp.wonton.internal /mcp"; do
@@ -605,8 +610,8 @@ step "卸载干净"
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))
-expect "删除了容器（${uninstall_seconds}s）" "$(json containers <<<"$report")" '["wonton-app-grafana--grafana"]'
-expect "删除了插件网络" "$(json networks <<<"$report")" '["wonton-app-grafana"]'
+expect "删除了容器（${uninstall_seconds}s）" "$(json containers <<<"$report")" "[\"$grafana\"]"
+expect "删除了插件网络" "$(json networks <<<"$report")" "[\"$grafana_network\"]"
 expect "删除了 OIDC 客户端" "$(json oidc_client_removed <<<"$report")" true
 expect "删除了应用数据" "$(json data_removed <<<"$report")" true
 expect "Docker 上没有带插件标签的容器、网络、卷" "$(labeled app.grafana)" ""
