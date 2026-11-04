@@ -8,6 +8,7 @@ struct ChatRoomView: View {
     @State private var timeline: TimelineModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
+    @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
 
     init(model: ChatModel, roomId: String, title: String) {
@@ -84,7 +85,14 @@ struct ChatRoomView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 1)
-            .scrollDismissesKeyboard(.interactively)
+            // 键盘收着时也开交互式收起，屏幕靠底一段里行内的按钮点不动，也没有报错（iOS 26.5 模拟器实测，屏高 912：y≈745 能点，y≈805 不能）。
+            .scrollDismissesKeyboard(isKeyboardVisible ? .interactively : .never)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                isKeyboardVisible = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                isKeyboardVisible = false
+            }
             // 翻页把更早的消息插到最上面，List 给的位置不对（iOS 26.5 模拟器实测差了一千多点）：把原来最上面那条留在原位。
             // 第一行变了不一定是翻页（日期分隔线的 id 会重新生成），所以只在翻页途中做。这条离末尾很远，条目变少也不会越界。
             .onChange(of: timeline.items.first?.id) {
