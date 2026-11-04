@@ -349,6 +349,12 @@ impl ClientCore {
 }
 
 impl ClientCore {
+    /// 关掉隧道的定时检查，只留回到前台、网络变化和重试触发的检查。只给测试用。
+    #[doc(hidden)]
+    pub fn stop_periodic_checks(&self) {
+        self.home.stop_periodic_checks();
+    }
+
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()

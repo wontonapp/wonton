@@ -76,6 +76,8 @@ pub(crate) struct HomeLink {
     recount: watch::Sender<()>,
     /// App 在后台：不探测、不自动重连。
     background: watch::Sender<bool>,
+    /// 定时检查开着。只有测试会关：要证明重连是某个动作促成的，不是碰巧赶上下一次检查。
+    periodic_checks: watch::Sender<bool>,
     /// 每来一次网络变化加一，合并连着来的回调。
     network_changes: AtomicU64,
 }
@@ -123,6 +125,7 @@ impl HomeLink {
             tracker: std::sync::Mutex::default(),
             recount: watch::Sender::new(()),
             background: watch::Sender::new(false),
+            periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
         });
         if let Some(text) = saved {
@@ -161,6 +164,10 @@ impl HomeLink {
         self.lock_tracker().foregrounded(Instant::now());
         self.recount();
         self.runtime.spawn(self.clone().resume());
+    }
+
+    pub(crate) fn stop_periodic_checks(&self) {
+        self.periodic_checks.send_replace(false);
     }
 
     /// `AppBackgrounded`：停止探测和自动重连。连接不主动断，后台音乐和正在传的文件还在用它。
@@ -203,6 +210,10 @@ impl HomeLink {
             let (checked, ()) = tokio::join!(client.probe(NETWORK_CHANGE_DEADLINE), redials);
             if let Err(err) = checked {
                 tracing::info!("网络变化后检查隧道失败：{err}");
+                // 探测只断开不重拨，马上换新连接，不等下一次定时检查。
+                if has_network && !*home.background.borrow() {
+                    home.check(&client).await;
+                }
             }
             home.recount();
         });
@@ -503,7 +514,12 @@ async fn follow_connection(home: Weak<HomeLink>, endpoint: Endpoint, client: Tun
 /// 因此如实（#154）。在后台时停下。服务端不认这台设备、或者两端协议不匹配时重试也没用，等主人处理。只持有弱引用，核心
 /// 释放后自动结束。
 async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelClient) {
-    let Some(mut background) = home.upgrade().map(|home| home.background.subscribe()) else {
+    let Some((mut background, mut periodic_checks)) = home.upgrade().map(|home| {
+        (
+            home.background.subscribe(),
+            home.periodic_checks.subscribe(),
+        )
+    }) else {
         return;
     };
     let mut status = client.watch_status();
@@ -511,6 +527,9 @@ async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelC
     loop {
         tokio::time::sleep(wait).await;
         if background.wait_for(|background| !background).await.is_err() {
+            return;
+        }
+        if periodic_checks.wait_for(|on| *on).await.is_err() {
             return;
         }
         if status

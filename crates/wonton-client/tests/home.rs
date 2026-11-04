@@ -21,6 +21,9 @@ use wonton_tunnel::{Allowlist, TunnelServer};
 
 // 只用作等状态的上限，等到就往下走。要盖住定时检查发现死连接的最长用时（间隔 5 秒加时限 8 秒）和之后的重连。
 const WAIT: Duration = Duration::from_secs(30);
+/// 比 iroh 的空闲超时（30 秒）早。定时检查关掉以后，这之前换上新连接只可能是被测的动作促成的。平时只要几秒，
+/// 留够余量，机器忙的时候也不会误报。
+const BEFORE_IDLE_TIMEOUT: Duration = Duration::from_secs(20);
 const WEB_URL: &str = "http://app-grafana.wonton.localhost:18480/";
 
 #[tokio::test]
@@ -175,6 +178,7 @@ async fn coming_back_to_the_foreground_reconnects() {
 async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
+    phone.stop_periodic_checks();
     let mut home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     let view = phone
@@ -192,7 +196,7 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     let (status, body) = get(&proxy, WEB_URL, "/after", true).await;
     assert_eq!((status, body.as_str()), (200, "/after"));
     assert!(
-        started.elapsed() < Duration::from_secs(5),
+        started.elapsed() < BEFORE_IDLE_TIMEOUT,
         "回到前台后 {:?} 才恢复",
         started.elapsed()
     );
@@ -220,6 +224,7 @@ async fn a_dropped_connection_is_replaced_without_coming_back_to_the_foreground(
 async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_next_check() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
+    phone.stop_periodic_checks();
     let mut home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     phone
@@ -235,9 +240,8 @@ async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_nex
         .unwrap();
     home.wait_for_a_connection().await;
 
-    // 只靠定时检查最多要 13 秒：等 5 秒，再限时 8 秒。
     assert!(
-        started.elapsed() < Duration::from_secs(7),
+        started.elapsed() < BEFORE_IDLE_TIMEOUT,
         "网络变化后 {:?} 才换上新连接",
         started.elapsed()
     );
