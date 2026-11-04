@@ -32,6 +32,9 @@ use crate::{
 
 /// 发图前向服务器要上传上限最多等多久。
 const UPLOAD_LIMIT_WAIT: Duration = Duration::from_secs(5);
+/// 成员没取到时，隔多久再取一次：从这个间隔开始，每次加倍。
+const FIRST_MEMBERS_RETRY: Duration = Duration::from_secs(2);
+const MAX_MEMBERS_RETRY: Duration = Duration::from_secs(30);
 
 /// 要发送的图片。
 #[derive(Clone, Debug)]
@@ -77,7 +80,7 @@ pub struct ChatRoom {
     names: Arc<RwLock<MemberNames>>,
     /// 房间有更新时在后台刷新显示名；房间关掉时停止。
     refresh: JoinHandle<()>,
-    /// 在后台向服务器取全部成员，补上时间线里发送者的资料；房间关掉时停止。
+    /// 在后台向服务器取全部成员，取到为止，补上时间线里发送者的资料；房间关掉时停止。
     profiles: JoinHandle<()>,
 }
 
@@ -94,7 +97,7 @@ impl ChatRoom {
     ///
     /// 显示名先用本机已有的成员事件（同步时随消息发送者一起来）。打开后在后台向服务器取全部成员，取到后时间线
     /// 里发送者的资料随之补上（条目以 `Set` 增量更新）：新登录的设备上，房间列表同步只带最新一条的发送者，更早
-    /// 的发送者要靠这一步才有显示名。取不到（比如隧道断开）不影响聊天，发送者显示用户 ID。
+    /// 的发送者要靠这一步才有显示名。取不到（比如隧道断开）不影响聊天，发送者先显示用户 ID，隔一会儿再取。
     ///
     /// 打开前只经房间列表同步过最新一条时，更早的消息隔着缺口，服务器不一定随房间订阅补发，要向前翻页
     /// （[`Self::paginate_backwards`]，界面滚到顶时自动翻）。
@@ -107,10 +110,7 @@ impl ChatRoom {
         );
         let names = Arc::new(RwLock::new(local_member_names(&room).await));
         let refresh = tokio::spawn(refresh_member_names(room.clone(), Arc::downgrade(&names)));
-        let profiles = tokio::spawn({
-            let timeline = timeline.clone();
-            async move { timeline.fetch_members().await }
-        });
+        let profiles = tokio::spawn(fetch_members_until_done(room.clone(), timeline.clone()));
         Ok(Self {
             room,
             timeline,
@@ -367,6 +367,21 @@ fn read(names: &RwLock<MemberNames>) -> std::sync::RwLockReadGuard<'_, MemberNam
 }
 
 /// 后台：房间每有更新（有人加入、改名）就从本机重读一次显示名。
+/// `fetch_members` 失败时只把错误记在时间线的条目上，不报告也不重试，要靠 `are_members_synced` 才知道取到没有。房间还没
+/// 加入时它什么也不取，同样直接返回，也算没取到。
+async fn fetch_members_until_done(room: Room, timeline: Arc<Timeline>) {
+    let mut delay = FIRST_MEMBERS_RETRY;
+    loop {
+        timeline.fetch_members().await;
+        if room.are_members_synced() {
+            return;
+        }
+        tracing::info!(room = %room.room_id(), ?delay, "成员没取到，稍后再取");
+        tokio::time::sleep(delay).await;
+        delay = (delay * 2).min(MAX_MEMBERS_RETRY);
+    }
+}
+
 async fn refresh_member_names(room: Room, names: Weak<RwLock<MemberNames>>) {
     let mut updates = room.subscribe_to_updates();
     loop {

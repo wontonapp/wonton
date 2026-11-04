@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -60,6 +60,9 @@ struct Core {
     uploads_paused: watch::Sender<bool>,
     /// 为真时 Tuwunel 像挂了一样：转发中的请求断开，新请求一接上就断开。
     matrix_down: watch::Sender<bool>,
+    /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
+    members_down: AtomicBool,
+    members_requests_dropped: AtomicUsize,
 }
 
 impl Home {
@@ -77,6 +80,8 @@ impl Home {
             hold_answers: watch::Sender::new(false),
             uploads_paused: watch::Sender::new(false),
             matrix_down: watch::Sender::new(false),
+            members_down: AtomicBool::new(false),
+            members_requests_dropped: AtomicUsize::new(0),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -100,6 +105,16 @@ impl Home {
     /// Tuwunel 挂了或恢复了，隧道不受影响。
     pub fn set_matrix_down(&self, down: bool) {
         self.core.matrix_down.send_replace(down);
+    }
+
+    /// 取房间成员的请求断开或恢复。
+    pub fn set_members_down(&self, down: bool) {
+        self.core.members_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 被 [`Self::set_members_down`] 断开过多少次取房间成员的请求。
+    pub fn members_requests_dropped(&self) -> usize {
+        self.core.members_requests_dropped.load(Ordering::SeqCst)
     }
 
     /// 家里的隧道断了：手机连不上，Tuwunel 和直连它的 Bot 不受影响。
@@ -226,6 +241,14 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         }
         let mut down = core.matrix_down.subscribe();
         if *down.borrow() {
+            return;
+        }
+        let asks_for_members = text
+            .lines()
+            .next()
+            .is_some_and(|line| line.contains("/members"));
+        if asks_for_members && core.members_down.load(Ordering::SeqCst) {
+            core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
             return;
         }
         let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();

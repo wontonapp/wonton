@@ -15,6 +15,8 @@ mod send;
 mod support;
 mod upload_progress;
 
+use std::time::{Duration, Instant};
+
 use wonton_client::{
     Action, ImageContent, ImageThumbnail, ImageUpload, MessageContent, RecoveryStatus,
     RoomMembership, SecretString, TimelineContent, TimelineItem,
@@ -117,6 +119,65 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
                 _ => None,
             },
         )
+        .await;
+}
+
+/// 新设备打开房间时取不到成员，隔一会儿再取，Bot 的名字最终补上。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    chat_with_the_bot(&phone, &bot, &room_id).await;
+    drop(phone);
+    std::fs::remove_dir_all(dir.path().join("matrix/store")).expect("删掉聊天存储");
+
+    home.set_members_down(true);
+    let phone = Phone::open(dir.path());
+    phone.signed_in().await;
+    phone
+        .wait_chat("新设备同步到私聊", |view| {
+            view.rooms
+                .iter()
+                .any(|row| row.room_id == room_id.as_str())
+                .then_some(())
+        })
+        .await;
+    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
+    // SDK 取一次成员发 3 个请求就放弃（matrix-sdk 0.19.1 实测），第 4 个说明又取了一次。
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while home.members_requests_dropped() < 4 {
+        assert!(
+            Instant::now() < deadline,
+            "取成员失败以后没有再取，断开过 {} 个请求",
+            home.members_requests_dropped()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    home.set_members_down(false);
+    phone
+        .dispatch(Action::PaginateBackwards {
+            room_id: room_id.to_string(),
+        })
+        .unwrap();
+    timeline
+        .until("Bot 的消息显示 Bot 的名字", |item| {
+            match &item.content {
+                TimelineContent::Message { message }
+                    if message.sender_id == bot.user_id().as_str()
+                        && message.sender_name == "Hermes" =>
+                {
+                    Some(())
+                }
+                _ => None,
+            }
+        })
         .await;
 }
 
