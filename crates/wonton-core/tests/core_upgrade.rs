@@ -1,7 +1,8 @@
 //! 升级器对真的 Docker 和 compose：换镜像、等健康、失败回滚（ADR-0025）。假主机测不出 `up --wait` 和重启计数这些 Engine
 //! 的行为。
 //!
-//! 用 busybox 做的假核心：`init` 写 compose 文件，`serve` 只是睡觉。项目名带前缀，不碰这台主机上真装的云吞。
+//! 用 busybox 做的假核心：`init` 写 compose 文件，`serve` 只是睡觉。项目名每次随机，CI 的 runner 共用一个 Docker，
+//! 几个测试同时跑也互不干扰，也不碰这台主机上真装的云吞。
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -23,8 +24,6 @@ use wonton_protocol::CoreUpgradeFailure;
 /// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const OBSERVE: Duration = Duration::from_secs(8);
-/// 升级器的一次性容器名字固定，同时只能跑一个。
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 const FAKE_CORE: &str = r#"#!/bin/sh
 case "$1" in
@@ -37,15 +36,17 @@ case "$1" in
   compose-images) ;;
   healthcheck) [ "$FAKE_HEALTHY" = 1 ] ;;
   serve)
-    [ -z "$FAKE_CRASH_AFTER" ] || { sleep "$FAKE_CRASH_AFTER"; exit 1; }
-    exec sleep 3600
+    # 1 号进程不响应 SIGTERM，不接住的话每次 stop 都要等满 30 秒才被 SIGKILL。
+    trap 'exit 0' TERM
+    [ -z "$FAKE_CRASH_AFTER" ] || { sleep "$FAKE_CRASH_AFTER" & wait; exit 1; }
+    sleep 3600 & wait
     ;;
   *) echo "认不出 $1" >&2; exit 2 ;;
 esac
 "#;
 
-/// 真的 Docker，只把会碰到这台主机上别的东西的三件事隔开：系统服务的项目名是常量（换成带前缀的），别的组件和升级器容器
-/// 都是整台主机只有一份的（这里没有）。
+/// 真的 Docker，只把会碰到这台主机上别的东西的几件事隔开：系统服务的项目名和一次性容器的名字是常量（换成带前缀的），
+/// 别的组件和升级器容器都是整台主机只有一份的（这里没有）。
 struct Isolated {
     inner: DockerHost,
     project: String,
@@ -78,7 +79,11 @@ impl Host for Isolated {
         self.inner.remove_image(image)
     }
     fn run_once<'a>(&'a self, job: &'a OneShot) -> BoxFuture<'a, Result<OneShotOutput>> {
-        self.inner.run_once(job)
+        let job = OneShot {
+            name: format!("{}-{}", self.project, job.name),
+            ..job.clone()
+        };
+        Box::pin(async move { self.inner.run_once(&job).await })
     }
     fn project_containers<'a>(
         &'a self,
@@ -156,7 +161,8 @@ impl Install {
         let dir = tempfile::tempdir().unwrap();
         // 容器里的 root 要能写，测试结束后这边要能删。
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
-        let project = format!("core-upgrade-test-{}-{name}", std::process::id());
+        let id = &wonton_core::secret::random_token()[..12];
+        let project = format!("core-upgrade-test-{id}-{name}");
         let install = Self {
             project,
             dir,
@@ -303,7 +309,6 @@ fn reason(state: &UpgradeState) -> Option<CoreUpgradeFailure> {
 #[tokio::test]
 #[ignore = "需要 Docker，起几个一次性的容器"]
 async fn upgrading_replaces_the_core_and_keeps_a_backup() {
-    let _serial = SERIAL.lock().await;
     let mut install = Install::new("ok");
     let from = install.build("old", true, "");
     let to = install.build("new", true, "");
@@ -327,7 +332,6 @@ async fn upgrading_replaces_the_core_and_keeps_a_backup() {
 #[tokio::test]
 #[ignore = "需要 Docker，起几个一次性的容器"]
 async fn a_new_version_that_never_gets_healthy_is_rolled_back() {
-    let _serial = SERIAL.lock().await;
     let mut install = Install::new("unhealthy");
     let from = install.build("old", true, "");
     let to = install.build("bad", false, "");
@@ -353,7 +357,6 @@ async fn a_new_version_that_never_gets_healthy_is_rolled_back() {
 #[tokio::test]
 #[ignore = "需要 Docker，起几个一次性的容器"]
 async fn a_new_version_that_crashes_while_observed_is_rolled_back() {
-    let _serial = SERIAL.lock().await;
     let mut install = Install::new("crash");
     let from = install.build("old", true, "");
     let to = install.build("crash", true, "4");
