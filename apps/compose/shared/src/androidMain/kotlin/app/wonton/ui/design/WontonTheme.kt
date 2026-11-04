@@ -1,4 +1,4 @@
-package app.wonton.ui
+package app.wonton.ui.design
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -11,12 +11,26 @@ import androidx.compose.ui.graphics.Color
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeColors
+import app.wonton.ui.design.generated.WontonMotion
+import app.wonton.ui.design.generated.WontonRadii
+import app.wonton.ui.design.generated.WontonRatio
+import app.wonton.ui.design.generated.WontonSize
+import app.wonton.ui.design.generated.WontonSpacing
+import app.wonton.ui.design.generated.WontonTypography
 
 fun Rgb.toColor(): Color = Color(red.toInt(), green.toInt(), blue.toInt())
 
 private val LocalWontonColors = compositionLocalOf<ThemeColors> { error("WontonTheme 之外没有颜色令牌") }
 
+/** ADR-0026 的令牌，和 SwiftUI 的 `WontonTheme` 同名。 */
 object WontonTheme {
+    val spacing = WontonSpacing
+    val radii = WontonRadii
+    val size = WontonSize
+    val ratio = WontonRatio
+    val motion = WontonMotion
+    val typography = WontonTypography
+
     /** 核心推导好的颜色令牌，按系统的明暗选好了一套（ADR-0026）。 */
     val colors: ThemeColors
         @Composable @ReadOnlyComposable

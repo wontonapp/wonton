@@ -1,0 +1,48 @@
+# ADR-0026 的固定令牌。颜色不在这里：颜色由客户端核心推导。
+
+[spacing]
+s4 = 4
+s8 = 8
+s12 = 12
+s16 = 16
+s24 = 24
+s32 = 32
+s48 = 48
+pageInset = 16
+sectionGap = 24
+
+[radii]
+control = 12
+card = 16
+bubble = 16
+bubbleJoined = 4
+pill = 999
+bar = 22
+barItem = 16
+
+[size]
+target = 48
+topBar = 56
+bottomBar = 64
+icon = 24
+iconSmall = 20
+hairline = 1
+
+[ratio]
+pluginIconRadius = 0.2237
+
+[typography]
+screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }
+sectionTitle = { size = 20, line = 26, weight = "semibold", relativeTo = "title3" }
+itemTitle = { size = 17, line = 24, weight = "medium", relativeTo = "headline" }
+body = { size = 16, line = 22, weight = "regular", relativeTo = "body" }
+supporting = { size = 14, line = 20, weight = "regular", relativeTo = "subheadline" }
+caption = { size = 12, line = 16, weight = "regular", relativeTo = "caption" }
+
+# 毫秒。系统“减少动态”打开时一律改用 reduced 的淡入淡出。
+[motion]
+feedback = 120
+state = 180
+panel = 240
+messageInsert = 180
+reduced = 100

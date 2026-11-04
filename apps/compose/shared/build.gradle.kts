@@ -60,6 +60,8 @@ kotlin {
         namespace = "app.wonton.ui"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
+        // 噪点贴图（ADR-0026）。
+        androidResources { enable = true }
     }
 
     sourceSets {
@@ -96,5 +98,6 @@ extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(rootDir.resolve("config/detekt.yml"))
-    source.setFrom("src")
+    // scripts/generate-design.py 的输出不手改，不查。
+    source.setFrom(fileTree("src") { exclude("**/ui/icons/**", "**/ui/design/generated/**") })
 }

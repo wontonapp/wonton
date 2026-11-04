@@ -3,14 +3,14 @@ package app.wonton.ui
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,11 +30,26 @@ import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
+import app.wonton.ui.design.WontonBarItem
+import app.wonton.ui.design.WontonBottomBar
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Chat
+import app.wonton.ui.icons.ChatFill
+import app.wonton.ui.icons.Home
+import app.wonton.ui.icons.HomeFill
+import app.wonton.ui.icons.Store
+import app.wonton.ui.icons.StoreFill
+import app.wonton.ui.icons.WontonIcon
 
 private const val CHAT = 0
 private const val HOME = 1
 private const val STORE = 2
-private val tabs = listOf("聊天", "家", "商店")
+private val tabs = listOf(
+    WontonBarItem("聊天", WontonIcon.Chat, WontonIcon.ChatFill),
+    WontonBarItem("家", WontonIcon.Home, WontonIcon.HomeFill),
+    WontonBarItem("商店", WontonIcon.Store, WontonIcon.StoreFill),
+)
 
 /**
  * 应用的根界面。平台入口（Android 的 Activity，以后的桌面窗口）只负责创建核心并调用它。
@@ -88,36 +103,37 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
             PluginPage(shown.title, shown.url, proxy, onClose = { page = null })
             return@WontonTheme
         }
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    tabs.forEachIndexed { index, label ->
-                        NavigationBarItem(
-                            selected = tab == index,
-                            onClick = { tab = index },
-                            icon = {},
-                            label = { Text(label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedTextColor = WontonTheme.colors.accentInk.toColor(),
-                                selectedIconColor = WontonTheme.colors.accentInkOnFill.toColor(),
-                                indicatorColor = WontonTheme.colors.accentFill.toColor(),
-                            ),
-                        )
-                    }
-                }
-            },
-        ) { padding ->
-            // 内层页面自己的标题栏和输入框不再重复让出系统栏和底部导航栏占掉的空间。
-            Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
-                when (tab) {
-                    CHAT -> ChatRoute(core, chat)
-                    HOME -> HomeRoute(core, home, plugins, homePlugins, appearance, onShowStore = { tab = STORE })
-                    else -> StoreRoute(plugins, storePlugins)
-                }
+        MainTabs(
+            tab = tab,
+            onSelect = { tab = it },
+            isRoomOpen = chat.openRoom != null,
+        ) {
+            when (tab) {
+                CHAT -> ChatRoute(core, chat)
+                HOME -> HomeRoute(core, home, plugins, homePlugins, appearance, onShowStore = { tab = STORE })
+                else -> StoreRoute(plugins, storePlugins)
             }
         }
         unavailable?.let { reason -> Notice("打不开", reason, onDismiss = { unavailable = null }) }
         plugins.rejection?.let { reason -> Notice("操作被拒绝", reason, onDismiss = { plugins.rejection = null }) }
+    }
+}
+
+/** 三个页面和底栏。聊天页和打字时让出底部的位置。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MainTabs(tab: Int, onSelect: (Int) -> Unit, isRoomOpen: Boolean, content: @Composable () -> Unit) {
+    val showsBottomBar = !WindowInsets.isImeVisible && !(tab == CHAT && isRoomOpen)
+    Scaffold(
+        containerColor = WontonTheme.colors.canvas.toColor(),
+        bottomBar = {
+            if (showsBottomBar) WontonBottomBar(tabs, tab, onSelect)
+        },
+    ) { padding ->
+        // 内层页面自己的标题栏和输入框不再重复让出系统栏和底部导航栏占掉的空间。
+        Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
+            content()
+        }
     }
 }
 

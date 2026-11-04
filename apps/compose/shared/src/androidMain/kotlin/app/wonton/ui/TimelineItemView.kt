@@ -46,6 +46,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Answer
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MediaHandle

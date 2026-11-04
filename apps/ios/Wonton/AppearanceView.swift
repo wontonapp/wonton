@@ -20,22 +20,24 @@ struct AppearanceView: View {
         let preview = previewAccent(color: draft)
         let theme = colorScheme == .dark ? preview.dark : preview.light
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let problem = model.rejection ?? model.viewModel.problem?.message {
-                    Text(problem).font(.system(size: 14)).foregroundStyle(Color(colors.danger))
+                    Text(problem).wontonText(WontonTheme.typography.supporting).foregroundStyle(Color(colors.danger))
                 }
                 AppearancePreview(theme: theme)
                 presets
                 custom(ink: Color(theme.accentInk))
-                Button("恢复默认") { model.send(.resetAccentColor) }
-                    .buttonStyle(SecondaryControlStyle(colors: colors))
+                Button {
+                    model.send(.resetAccentColor)
+                } label: {
+                    Text("恢复默认").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
-            .padding(16)
+            .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color(colors.canvas))
-        .navigationTitle("外观")
-        .navigationBarTitleDisplayMode(.inline)
+        .wontonPushedScreen("外观")
         .onChange(of: model.viewModel.accent) { _, accent in
             draft = accent
             hexText = accentHex(color: accent)
@@ -61,23 +63,21 @@ struct AppearanceView: View {
     }
 
     private func custom(ink: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             TextField("#RRGGBB", text: $hexText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 16))
-                .foregroundStyle(Color(colors.textPrimary))
                 .keyboardType(.asciiCapable)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .submitLabel(.done)
                 .onSubmit(submitHex)
                 .onChange(of: hexText) { isHexInvalid = false }
-                .padding(.horizontal, 12)
-                .frame(height: 48)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(colors.surfaceSubtle)))
+                .wontonField()
                 .accessibilityLabel("颜色值")
             if isHexInvalid {
-                Text("颜色要写成 #RRGGBB").font(.system(size: 14)).foregroundStyle(Color(colors.danger))
+                Text("颜色要写成 #RRGGBB")
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.danger))
             }
             channel("R", spoken: "红", value: $draft.red, ink: ink)
             channel("G", spoken: "绿", value: $draft.green, ink: ink)
@@ -121,13 +121,13 @@ private struct AppearancePreview: View {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     Text("云吞").foregroundStyle(Color(theme.textOnAccentFill))
                     Text("21:08")
-                        .font(.system(size: 12))
+                        .wontonText(WontonTheme.typography.caption)
                         .foregroundStyle(Color(theme.accentInkOnFill))
                 }
                 .bubble(Color(theme.accentFill), border: theme.accentFillBorder.map { Color($0) })
             }
         }
-        .font(.system(size: 16))
+        .wontonText(WontonTheme.typography.body)
         .accessibilityHidden(true)
     }
 }
@@ -204,7 +204,7 @@ private struct ChannelSlider: View {
             .frame(height: 48)
             Text(String(value)).monospacedDigit().frame(width: 32, alignment: .trailing)
         }
-        .font(.system(size: 16))
+        .wontonText(WontonTheme.typography.body)
         .foregroundStyle(Color(colors.textPrimary))
         .accessibilityElement()
         .accessibilityLabel(spokenName)
@@ -218,18 +218,5 @@ private struct ChannelSlider: View {
             onChange()
             onCommit()
         }
-    }
-}
-
-private struct SecondaryControlStyle: ButtonStyle {
-    let colors: ThemeColors
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 16))
-            .foregroundStyle(Color(colors.textPrimary))
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(colors.surfaceSubtle)))
-            .opacity(configuration.isPressed ? 0.6 : 1)
     }
 }

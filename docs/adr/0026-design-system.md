@@ -115,7 +115,7 @@ MIT，每个图标都有线框和实心。未选中用 Regular，选中用 Fill�
 不引入运行时依赖。仓库放一份白名单 `design/icons.toml`，写明语义名、Phosphor 名、上游版本和 `mirror`（返回箭头这类带方向的图标），以及上游原始 SVG 和 LICENSE。脚本从 SVG 生成，每个图标一个文件，生成结果提交进仓库，CI 重新生成并比对：
 
 - iOS：Xcode 的 SVG 资源（模板渲染，保留矢量，`mirror` 对应资源的方向属性）和 `WontonIcon` 枚举。
-- Compose：`ImageVector` 和 `WontonIcon` 对象，Android 和桌面共用，`mirror` 对应 `autoMirror`。转换用 [Valkyrie](https://github.com/ComposeGears/Valkyrie) 的命令行工具（Apache-2.0，固定版本，只在生成时用，不进 App）：它输出的就是一个图标一个文件的 `ImageVector`。没选 svg-to-compose：2024 年后没有更新。
+- Compose：`ImageVector` 和 `WontonIcon` 对象，Android 和桌面共用，`mirror` 对应 `autoMirror`。转换用 [Valkyrie](https://github.com/ComposeGears/Valkyrie) 的命令行工具（Apache-2.0，固定版本，只在生成时用，不进 App）：它输出的就是一个图标一个文件的 `ImageVector`（1.2.1 验证过，`--auto-mirror` 按次运行，带方向和不带方向的各跑一次）。没选 svg-to-compose：2024 年后没有更新。
 
 没选的方案（2026-11 核对，Phosphor core 2.1.1）：
 
@@ -142,12 +142,10 @@ Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源�
 
 - 工作量比原生骨架大得多，每个控件都要在两端写一遍，并自己做读屏和大字号。
 - 系统升级带来的新外观（如 iOS 的玻璃效果）不会自动跟上，这正是统一外观的目的，但也意味着控件的体验问题要自己修。
-- iOS 隐藏系统导航栏后，SwiftUI 默认会失去返回手势，要显式恢复；每个带导航的屏都要验证。
+- iOS 隐藏系统导航栏后，SwiftUI 默认会失去返回手势。`UINavigationController` 的扩展把手势的 delegate 指回自己，有上一页就放行（iOS 26.5 模拟器上从屏幕边缘滑动验证过）；每个带导航的屏都要验证。
 - 重点色在核心里推导，每次切换要经过一次 ViewModel，比本地常量多一层。切换是低频操作，不算问题。
 
 ## 待验证
 
-- iOS 隐藏导航栏后恢复返回手势的做法，在设计系统的第一个 PR 里验证。
-- Valkyrie 命令行工具对 Phosphor SVG 的输出和 `mirror` 的做法，同样在第一个 PR 里验证。
 - 噪点平铺在长列表里的滚动帧率，两端低端设备各测一次，结果写在这里。
 - 噪点叠在高饱和和中间亮度的填充上时文字的实际可读性，这是对比度余量最小的情况，真机截图看一次。

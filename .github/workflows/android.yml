@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "apps/compose/**"
+      - "apps/ios/Wonton/Assets.xcassets/**"
+      - "apps/ios/Wonton/Design/Generated/**"
+      - "design/**"
+      - "scripts/generate-design.py"
       - "crates/wonton-client/**"
       - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
@@ -15,6 +19,10 @@ on:
     branches: [main]
     paths:
       - "apps/compose/**"
+      - "apps/ios/Wonton/Assets.xcassets/**"
+      - "apps/ios/Wonton/Design/Generated/**"
+      - "design/**"
+      - "scripts/generate-design.py"
       - "crates/wonton-client/**"
       - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
@@ -52,6 +60,8 @@ jobs:
           rustup target add aarch64-linux-android
       - name: 安装 cargo-ndk
         run: cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+      - name: 设计生成结果和 design/ 一致
+        run: python3 scripts/generate-design.py --check
       - uses: gradle/actions/setup-gradle@v5
         with:
           # runner 主机的 ~/.gradle 跨次运行保留，不经 GitHub 的缓存服务上传下载。

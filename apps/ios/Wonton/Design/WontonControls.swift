@@ -1,0 +1,201 @@
+import SwiftUI
+import WontonClient
+
+/// 自己画的按钮（ADR-0026）：语义还是系统的 `Button`，命中区 48。
+struct WontonButtonStyle: ButtonStyle {
+    enum Kind {
+        case primary
+        case secondary
+        case danger
+    }
+
+    var kind: Kind = .primary
+    @Environment(\.wontonColors) private var colors
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let (fill, text): (Rgb, Rgb) = switch kind {
+        case .primary: (colors.primary, colors.onPrimary)
+        case .secondary: (colors.surfaceSubtle, colors.textPrimary)
+        case .danger: (colors.surfaceSubtle, colors.danger)
+        }
+        configuration.label
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(text))
+            .padding(.horizontal, WontonTheme.spacing.s16)
+            .frame(minHeight: WontonTheme.size.target)
+            .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(fill)))
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
+            .animation(.easeOut(duration: WontonTheme.motion.feedback), value: configuration.isPressed)
+    }
+}
+
+/// 图标按钮：图形 24，命中区 48。
+struct WontonIconButton: View {
+    let icon: WontonIcon
+    let label: String
+    let action: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Button(action: action) {
+            icon.view()
+                .foregroundStyle(Color(colors.textPrimary))
+                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+extension View {
+    /// 输入框的底：配 `.textFieldStyle(.plain)`。
+    func wontonField() -> some View {
+        modifier(WontonFieldModifier())
+    }
+
+    /// 重点色的填充：纸质的颗粒盖在颜色上，有描边令牌时加描边。
+    func accentFill<S: InsettableShape>(_ shape: S, border: Bool = true) -> some View {
+        modifier(AccentFillModifier(shape: shape, border: border))
+    }
+}
+
+private struct WontonFieldModifier: ViewModifier {
+    @Environment(\.wontonColors) private var colors
+
+    func body(content: Content) -> some View {
+        content
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(colors.textPrimary))
+            .padding(.horizontal, WontonTheme.spacing.s12)
+            .frame(minHeight: WontonTheme.size.target)
+            .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
+    }
+}
+
+private struct AccentFillModifier<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let border: Bool
+    @Environment(\.wontonColors) private var colors
+
+    func body(content: Content) -> some View {
+        content.background {
+            shape.fill(Color(colors.accentFill))
+                .overlay { NoiseTile().clipShape(shape) }
+                .overlay {
+                    if border, let color = colors.accentFillBorder {
+                        shape.strokeBorder(Color(color), lineWidth: WontonTheme.size.hairline)
+                    }
+                }
+        }
+    }
+}
+
+/// 噪点贴图平铺，1 个噪点像素对 1 个物理像素（ADR-0026）。
+struct NoiseTile: View {
+    // 打包进 App 的资源，不会缺；解码一次后不再变。
+    private static let image = UIImage(contentsOfFile: Bundle.main.path(forResource: "noise", ofType: "png")!)!.cgImage!
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        Image(decorative: Self.image, scale: displayScale)
+            .resizable(resizingMode: .tile)
+            .allowsHitTesting(false)
+    }
+}
+
+/// 根页面的标题栏：大标题在前，操作在后。
+struct WontonRootBar<Trailing: View>: View {
+    let title: String
+    @ViewBuilder let trailing: Trailing
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        HStack(spacing: WontonTheme.spacing.s8) {
+            Text(title)
+                .wontonText(WontonTheme.typography.screenTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            trailing
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .frame(minHeight: WontonTheme.size.topBar)
+    }
+}
+
+/// 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。
+struct WontonPushedBar<Trailing: View>: View {
+    let title: String
+    @ViewBuilder let trailing: Trailing
+    @Environment(\.wontonColors) private var colors
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Text(title)
+                .wontonText(WontonTheme.typography.itemTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+                .lineLimit(1)
+                .padding(.horizontal, WontonTheme.size.target + WontonTheme.spacing.s8)
+                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 0) {
+                WontonIconButton(icon: .back, label: "返回") { dismiss() }
+                Spacer(minLength: 0)
+                trailing
+            }
+            .padding(.horizontal, WontonTheme.spacing.s4)
+        }
+        .frame(minHeight: WontonTheme.size.topBar)
+    }
+}
+
+extension WontonPushedBar where Trailing == EmptyView {
+    init(title: String) {
+        self.init(title: title) { EmptyView() }
+    }
+}
+
+extension View {
+    /// 用自己的标题栏代替系统导航栏。
+    func wontonPushedScreen(_ title: String) -> some View {
+        wontonPushedScreen(title) { EmptyView() }
+    }
+
+    func wontonPushedScreen<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        let bar = WontonPushedBar(title: title, trailing: trailing)
+        return safeAreaInset(edge: .top, spacing: 0) { bar }
+            .toolbar(.hidden, for: .navigationBar)
+            .modifier(WontonCanvas())
+    }
+
+    /// 根页面：大标题和操作。
+    func wontonRootScreen<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        let bar = WontonRootBar(title: title, trailing: trailing)
+        return safeAreaInset(edge: .top, spacing: 0) { bar }
+            .toolbar(.hidden, for: .navigationBar)
+            .modifier(WontonCanvas())
+    }
+}
+
+private struct WontonCanvas: ViewModifier {
+    @Environment(\.wontonColors) private var colors
+
+    func body(content: Content) -> some View {
+        content.background(Color(colors.canvas).ignoresSafeArea())
+    }
+}
+
+/// 隐藏系统导航栏后，SwiftUI 默认会失去边缘返回手势（ADR-0026），这里还给它。
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        viewControllers.count > 1
+    }
+}

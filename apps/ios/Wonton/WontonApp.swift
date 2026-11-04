@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import WontonClient
 
 @main
@@ -19,7 +20,7 @@ struct WontonApp: App {
         WindowGroup {
             switch launch {
             case let .ready(chat, home, plugins, appearance):
-                WontonTheme(appearance: appearance.viewModel) {
+                WontonThemeRoot(appearance: appearance.viewModel) {
                     MainView(chat: chat, home: home, plugins: plugins, appearance: appearance, tab: $tab)
                 }
                 .task { await appearance.observe() }
@@ -29,7 +30,7 @@ struct WontonApp: App {
                     if old == .background, phase != .background { home.send(.appForegrounded) }
                 }
             case let .failed(reason):
-                WontonTheme(appearance: defaultAppearance()) {
+                WontonThemeRoot(appearance: defaultAppearance()) {
                     ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
                                            description: Text(reason))
                 }
@@ -51,30 +52,44 @@ private struct MainView: View {
     let plugins: PluginsModel
     let appearance: AppearanceModel
     @Binding var tab: AppTab
-    @Environment(\.wontonColors) private var colors
     @State private var page: OpenedPage?
     @State private var unavailable: String?
+    @State private var isKeyboardVisible = false
 
     var body: some View {
+        // 系统的底栏换不了样子，只藏起来。TabView 本身留着：各页的导航、滚动位置和导航栏都由它分开管。
         TabView(selection: $tab) {
             ChatListView(model: chat)
-                .tint(Color(colors.primary))
-                .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
+                .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.chat)
             HomeView(
                 model: home, plugins: plugins, appearance: appearance, open: open, showStore: { tab = .store },
                 devWebURL: Launch.devWebURL
             )
-            .tint(Color(colors.primary))
-            .tabItem { Label("家", systemImage: "house") }
+            .toolbar(.hidden, for: .tabBar)
             .tag(AppTab.home)
             StoreView(model: plugins, open: open)
-                .tint(Color(colors.primary))
-                .tabItem { Label("商店", systemImage: "bag") }
+                .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.store)
         }
-        // 选中的页签是重点色的用处之一；页面里面的按钮不是，上面逐页设回主色。
-        .tint(Color(colors.accentInk))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showsBottomBar {
+                WontonBottomBar(
+                    items: [
+                        .init(tab: .chat, label: "聊天", icon: .chat, selectedIcon: .chatFill),
+                        .init(tab: .home, label: "家", icon: .home, selectedIcon: .homeFill),
+                        .init(tab: .store, label: "商店", icon: .store, selectedIcon: .storeFill)
+                    ],
+                    selection: $tab
+                )
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
+        }
         .fullScreenCover(item: $page) { page in
             // 核心重建了本地代理时换上新的凭据。
             PluginPage(title: page.title, url: page.url, proxy: home.viewModel.proxy ?? page.proxy) { self.page = nil }
@@ -88,6 +103,11 @@ private struct MainView: View {
         .task { await home.observe() }
         .task { await plugins.observe() }
         .task { await chat.files.observe() }
+    }
+
+    /// 聊天页和打字时让出底部的位置。
+    private var showsBottomBar: Bool {
+        !isKeyboardVisible && !(tab == .chat && !chat.path.isEmpty)
     }
 
     private func open(_ entry: PluginEntry) {

@@ -1,0 +1,54 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+import SwiftUI
+
+enum WontonSpacing {
+    static let s4: CGFloat = 4
+    static let s8: CGFloat = 8
+    static let s12: CGFloat = 12
+    static let s16: CGFloat = 16
+    static let s24: CGFloat = 24
+    static let s32: CGFloat = 32
+    static let s48: CGFloat = 48
+    static let pageInset: CGFloat = 16
+    static let sectionGap: CGFloat = 24
+}
+
+enum WontonRadii {
+    static let control: CGFloat = 12
+    static let card: CGFloat = 16
+    static let bubble: CGFloat = 16
+    static let bubbleJoined: CGFloat = 4
+    static let pill: CGFloat = 999
+    static let bar: CGFloat = 22
+    static let barItem: CGFloat = 16
+}
+
+enum WontonSize {
+    static let target: CGFloat = 48
+    static let topBar: CGFloat = 56
+    static let bottomBar: CGFloat = 64
+    static let icon: CGFloat = 24
+    static let iconSmall: CGFloat = 20
+    static let hairline: CGFloat = 1
+}
+
+enum WontonRatio {
+    static let pluginIconRadius: CGFloat = 0.2237
+}
+
+enum WontonMotion {
+    static let feedback: Double = 0.12
+    static let state: Double = 0.18
+    static let panel: Double = 0.24
+    static let messageInsert: Double = 0.18
+    static let reduced: Double = 0.1
+}
+
+extension WontonTextStyle {
+    static let screenTitle = WontonTextStyle(size: 28, line: 34, weight: .bold, relativeTo: .title)
+    static let sectionTitle = WontonTextStyle(size: 20, line: 26, weight: .semibold, relativeTo: .title3)
+    static let itemTitle = WontonTextStyle(size: 17, line: 24, weight: .medium, relativeTo: .headline)
+    static let body = WontonTextStyle(size: 16, line: 22, weight: .regular, relativeTo: .body)
+    static let supporting = WontonTextStyle(size: 14, line: 20, weight: .regular, relativeTo: .subheadline)
+    static let caption = WontonTextStyle(size: 12, line: 16, weight: .regular, relativeTo: .caption)
+}

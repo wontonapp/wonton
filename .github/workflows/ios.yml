@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - "apps/ios/**"
+      - "design/**"
+      - "scripts/generate-design.py"
       - "crates/wonton-client/**"
       - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
@@ -17,6 +19,8 @@ on:
     branches: [main]
     paths:
       - "apps/ios/**"
+      - "design/**"
+      - "scripts/generate-design.py"
       - "crates/wonton-client/**"
       - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
