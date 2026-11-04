@@ -11,26 +11,24 @@ struct InstallConfirmView: View {
     @State private var lanWebui = false
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle(isUpgrade ? "升级" : "安装")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { dismiss() }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(isUpgrade ? "升级" : "安装") {
-                            if let preview { confirm(preview) }
-                        }
-                        .disabled(!canConfirm)
-                    }
+        VStack(spacing: 0) {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let preview {
+                Button {
+                    confirm(preview)
+                } label: {
+                    Text(isUpgrade ? "升级" : "安装").frame(maxWidth: .infinity)
                 }
-                .alert("操作被拒绝", isPresented: isShowingRejection, presenting: rejection) { _ in
-                    Button("好") {}
-                } message: { reason in
-                    Text(reason)
-                }
+                .buttonStyle(WontonButtonStyle())
+                .disabled(!canConfirm)
+                .padding(WontonTheme.spacing.pageInset)
+            }
+        }
+        .wontonModalScreen(isUpgrade ? "升级" : "安装")
+        .alert("操作被拒绝", isPresented: isShowingRejection, presenting: rejection) { _ in
+            Button("好") {}
+        } message: { reason in
+            Text(reason)
         }
         .task { await load() }
     }
@@ -44,7 +42,7 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewList(model: model, preview: preview, lanWebui: $lanWebui)
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui)
         }
     }
 
@@ -101,44 +99,61 @@ struct InstallConfirmView: View {
     }
 }
 
-private struct PreviewList: View {
+private struct PreviewContent: View {
     let model: PluginsModel
     let preview: InstallPreview
     @Binding var lanWebui: Bool
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 14) {
-                    PluginIconView(icon: preview.icon, category: nil, size: 64, model: model)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(preview.title).font(.headline)
-                        Text(version).font(.subheadline).foregroundStyle(.secondary)
-                        HStack(spacing: 6) {
-                            Tag(text: preview.trust.label, tint: preview.trust.tint)
-                            if let author = preview.author {
-                                Text(author.name).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+                header
+                if let blocked = preview.blocked {
+                    WontonNotice(icon: .blocked, title: blocked)
+                }
+                if !preview.notices.isEmpty {
+                    NoticeLines(lines: preview.notices)
+                }
+                if !preview.permissions.isEmpty {
+                    DetailSection(title: "权限") {
+                        ForEach(preview.permissions, id: \.permission) { PermissionRow(line: $0) }
                     }
                 }
-                if let blocked = preview.blocked {
-                    Label(blocked, systemImage: "nosign").foregroundStyle(.red)
+                if let offer = preview.lanWebui {
+                    LanWebuiToggle(offer: offer, isOn: $lanWebui)
+                }
+                if let notes = preview.releaseNotes {
+                    DetailSection(title: "更新说明") {
+                        Text(notes)
+                            .wontonText(WontonTheme.typography.body)
+                            .foregroundStyle(Color(colors.textPrimary))
+                    }
                 }
             }
-            if !preview.notices.isEmpty {
-                Section { NoticeLines(lines: preview.notices) }
-            }
-            if !preview.permissions.isEmpty {
-                Section("权限") {
-                    ForEach(preview.permissions, id: \.permission) { PermissionRow(line: $0) }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(WontonTheme.spacing.pageInset)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: WontonTheme.spacing.s12) {
+            PluginIconView(icon: preview.icon, category: nil, size: WontonTheme.size.previewIcon, model: model)
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(preview.title)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .foregroundStyle(Color(colors.textPrimary))
+                Text(version)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    Tag(text: preview.trust.label, tint: preview.trust.tint(colors))
+                    if let author = preview.author {
+                        Text(author.name)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.textSecondary))
+                    }
                 }
-            }
-            if let offer = preview.lanWebui {
-                Section { LanWebuiToggle(offer: offer, isOn: $lanWebui) }
-            }
-            if let notes = preview.releaseNotes {
-                Section("更新说明") { Text(notes) }
             }
         }
     }

@@ -32,6 +32,13 @@ fileThumbnail = 44
 messageImage = 240
 launcherIcon = 62
 launcherCell = 76
+storeIcon = 56
+taskIcon = 40
+previewIcon = 64
+detailIcon = 112
+screenshot = 380
+chip = 36
+smallButton = 32
 hairline = 1
 
 [ratio]

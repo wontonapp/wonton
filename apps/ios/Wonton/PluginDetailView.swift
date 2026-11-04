@@ -11,12 +11,14 @@ struct PluginDetailView: View {
     @State private var uninstalling: UninstallTarget?
     @State private var pluginId: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         content
-            .navigationBarTitleDisplayMode(.inline)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .wontonPushedScreen("")
             .task(id: route) { await load() }
-            .sheet(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
+            .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
             .uninstallDialog($uninstalling, model: model)
             .onChange(of: isWorking) { wasWorking, working in
                 if wasWorking, !working { taskEnded() }
@@ -50,7 +52,7 @@ struct PluginDetailView: View {
             }
         case let .success(detail):
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let task, task.state != .succeeded {
                         TaskRow(model: model, task: task) {
@@ -58,23 +60,31 @@ struct PluginDetailView: View {
                         }
                     }
                     if let installed = detail.installed, !installed.notices.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) { NoticeLines(lines: installed.notices) }
+                        NoticeLines(lines: installed.notices)
                     }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)
                     }
-                    if let about = detail.about { Text(about) }
+                    if let about = detail.about {
+                        Text(about)
+                            .wontonText(WontonTheme.typography.body)
+                            .foregroundStyle(Color(colors.textPrimary))
+                    }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
                     }
                     DetailSections(detail: detail)
                     if let installed = detail.installed, installed.removable, !isWorking {
-                        Button("卸载", role: .destructive) {
+                        Button(role: .destructive) {
                             uninstalling = UninstallTarget(id: installed.id, title: installed.title)
+                        } label: {
+                            Text("卸载").frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(WontonButtonStyle(kind: .danger))
                     }
                 }
-                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(WontonTheme.spacing.pageInset)
             }
         }
     }
@@ -160,28 +170,36 @@ private struct DetailHeader: View {
     let model: PluginsModel
     let detail: PluginDetail
     let action: DetailAction?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 16) {
-                PluginIconView(icon: detail.icon, category: detail.category, size: 112, model: model)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(detail.title).font(.title2.bold())
-                    Text(detail.summary).font(.subheadline).foregroundStyle(.secondary)
-                    Tag(text: detail.trust.label, tint: detail.trust.tint)
-                    if let action {
-                        Button(action.title, action: action.perform)
-                            .buttonStyle(.borderedProminent)
-                            .buttonBorderShape(.capsule)
-                            .disabled(!action.enabled)
-                    }
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
+            HStack(alignment: .top, spacing: WontonTheme.spacing.s16) {
+                PluginIconView(
+                    icon: detail.icon, category: detail.category, size: WontonTheme.size.detailIcon, model: model
+                )
+                VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                    Text(detail.title)
+                        .wontonText(WontonTheme.typography.sectionTitle)
+                        .foregroundStyle(Color(colors.textPrimary))
+                    Text(detail.summary)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                    Tag(text: detail.trust.label, tint: detail.trust.tint(colors))
                 }
             }
+            if let action {
+                Button(action: action.perform) {
+                    Text(action.title).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle())
+                .disabled(!action.enabled)
+            }
             if let blocked = detail.blocked {
-                Label(blocked, systemImage: "nosign").font(.callout).foregroundStyle(.red)
+                WontonNotice(icon: .blocked, title: blocked)
             }
             if let installed = detail.installed, case let .degraded(reason) = installed.status {
-                Label(reason, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.red)
+                WontonNotice(icon: .warning, title: reason)
             }
         }
     }
@@ -193,7 +211,7 @@ private struct Screenshots: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: WontonTheme.spacing.s12) {
                 ForEach(images, id: \.path) { Screenshot(model: model, source: $0) }
             }
         }
@@ -205,19 +223,20 @@ private struct Screenshot: View {
     let model: PluginsModel
     let source: PluginImage
     @State private var image: UIImage?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Group {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit()
             } else {
-                Color(.secondarySystemBackground)
+                Color(colors.surfaceSubtle)
                     .aspectRatio(9 / 19.5, contentMode: .fit)
-                    .overlay { Image(systemName: "photo").foregroundStyle(.tertiary) }
+                    .overlay { WontonIcon.imageBroken.view().foregroundStyle(Color(colors.textSecondary)) }
             }
         }
-        .frame(height: 380)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .frame(height: WontonTheme.size.screenshot)
+        .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
         .task(id: source.path) { image = try? await model.image(source) }
     }
 }
@@ -225,12 +244,17 @@ private struct Screenshot: View {
 /// 更新说明、权限、要求和其他信息。
 private struct DetailSections: View {
     let detail: PluginDetail
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         if let notes = detail.releaseNotes {
             DetailSection(title: "新内容") {
-                Text(detail.version).font(.subheadline).foregroundStyle(.secondary)
+                Text(detail.version)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
                 Text(notes)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textPrimary))
             }
         }
         if !detail.permissions.isEmpty {
@@ -240,38 +264,55 @@ private struct DetailSections: View {
         }
         if !detail.requirements.isEmpty {
             DetailSection(title: "要求") {
-                ForEach(detail.requirements, id: \.self) { Label($0, systemImage: "checklist") }
+                ForEach(detail.requirements, id: \.self) { requirement in
+                    HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+                        WontonIcon.check.view(size: WontonTheme.size.iconSmall)
+                            .foregroundStyle(Color(colors.textSecondary))
+                        Text(requirement)
+                            .wontonText(WontonTheme.typography.body)
+                            .foregroundStyle(Color(colors.textPrimary))
+                    }
+                }
             }
         }
         DetailSection(title: "信息") {
-            LabeledContent("版本", value: detail.version)
-            if let category = detail.category { LabeledContent("分类", value: category.name) }
-            if let author = detail.author { LabeledContent("作者", value: author.name) }
-            if let license = detail.license { LabeledContent("许可证", value: license) }
-            if let source = detail.source { LabeledContent("来源", value: source) }
-            if let stars = detail.stars { LabeledContent("星标", value: stars.formatted()) }
-            if let link = detail.homepage.flatMap(URL.init(string:)) { Link("主页", destination: link) }
-            if let link = detail.repository.flatMap(URL.init(string:)) { Link("代码仓库", destination: link) }
+            WontonGroup {
+                ForEach(Array(info.enumerated()), id: \.offset) { index, row in
+                    if index > 0 { WontonSeparator() }
+                    WontonRow(title: row.title, value: row.value)
+                }
+                ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                    WontonSeparator()
+                    Link(destination: link.url) { WontonRow(title: link.title, showsForward: true) }
+                        .buttonStyle(.plain)
+                }
+            }
         }
     }
-}
 
-private struct DetailSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
+    private var info: [(title: String, value: String)] {
+        var rows = [(title: "版本", value: detail.version)]
+        if let category = detail.category { rows.append(("分类", category.name)) }
+        if let author = detail.author { rows.append(("作者", author.name)) }
+        if let license = detail.license { rows.append(("许可证", license)) }
+        if let source = detail.source { rows.append(("来源", source)) }
+        if let stars = detail.stars { rows.append(("星标", stars.formatted())) }
+        return rows
+    }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.title3.bold())
-            content
-        }
+    private var links: [(title: String, url: URL)] {
+        var rows: [(title: String, url: URL)] = []
+        if let link = detail.homepage.flatMap(URL.init(string:)) { rows.append(("主页", link)) }
+        if let link = detail.repository.flatMap(URL.init(string:)) { rows.append(("代码仓库", link)) }
+        return rows
     }
 }
 
 extension View {
     /// 卸载前确认：可以保留数据，也可以连数据一起删。
     func uninstallDialog(_ target: Binding<UninstallTarget?>, model: PluginsModel) -> some View {
-        confirmationDialog(
+        // 用 alert 不用 confirmationDialog：iOS 26 上后者弹成气泡，“取消”按钮不显示（iOS 26.5 模拟器实测）。
+        alert(
             "卸载“\(target.wrappedValue?.title ?? "")”？",
             isPresented: Binding(
                 get: { target.wrappedValue != nil },
@@ -279,13 +320,13 @@ extension View {
                     if !isShowing { target.wrappedValue = nil }
                 }
             ),
-            titleVisibility: .visible,
             presenting: target.wrappedValue
         ) { plugin in
             Button("卸载，保留数据") { model.send(.uninstallPlugin(id: plugin.id, deleteData: false)) }
             Button("卸载并删除数据", role: .destructive) {
                 model.send(.uninstallPlugin(id: plugin.id, deleteData: true))
             }
+            Button("取消", role: .cancel) {}
         } message: { _ in
             Text("删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。")
         }

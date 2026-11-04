@@ -235,7 +235,13 @@ fun WontonRootBar(title: String, actions: @Composable RowScope.() -> Unit = {}) 
 
 /** 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。 */
 @Composable
-fun WontonPushedBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
+fun WontonPushedBar(
+    title: String,
+    onBack: () -> Unit,
+    icon: ImageVector = WontonIcon.Back,
+    iconLabel: String = "返回",
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     Box(
         Modifier.fillMaxWidth()
             .statusBarsPadding()
@@ -252,7 +258,7 @@ fun WontonPushedBar(title: String, onBack: () -> Unit, actions: @Composable RowS
             overflow = TextOverflow.Ellipsis,
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            WontonIconButton(WontonIcon.Back, "返回", onBack)
+            WontonIconButton(icon, iconLabel, onBack)
             Box(Modifier.weight(1f))
             actions()
         }

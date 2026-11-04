@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,13 +18,27 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
+import app.wonton.protocol.Rgb
+import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonSmallButton
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.CheckCircleFill
+import app.wonton.ui.icons.Close
+import app.wonton.ui.icons.Help
+import app.wonton.ui.icons.WontonIcon
+
+private val SPINNER_STROKE = 2.dp
+
+/** 说明行高 20、小图标 14，差的一半。 */
+private val STATE_ICON_OFFSET = 3.dp
 
 /** 主屏或商店里打开的详情页、确认页和卸载确认。[open] 打开已安装的插件。 */
 class PluginNavigation(val open: (PluginEntry) -> Unit) {
@@ -68,7 +82,9 @@ private fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDi
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
                 TextButton(onClick = { uninstall(false) }) { Text("卸载，保留数据") }
-                TextButton(onClick = { uninstall(true) }) { Text("卸载并删除数据", color = Red) }
+                TextButton(onClick = { uninstall(true) }) {
+                    Text("卸载并删除数据", color = WontonTheme.colors.danger.toColor())
+                }
                 TextButton(onClick = onDismiss) { Text("取消") }
             }
         },
@@ -79,39 +95,49 @@ private fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDi
 @Composable
 fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(task.icon, null, 40.dp, plugins)
-        Column(Modifier.weight(1f)) {
-            Text(task.title, fontWeight = FontWeight.SemiBold)
+        PluginIconImage(task.icon, null, WontonTheme.size.taskIcon, plugins)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
             TaskState(task.operation, task.state, onReview)
         }
         if (task.state is PluginTaskState.Running) {
-            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
         } else {
-            TextButton(onClick = { plugins.send(Action.DismissPluginTask(task.id)) }) { Text("关闭") }
+            WontonIconButton(WontonIcon.Close, "关闭", { plugins.send(Action.DismissPluginTask(task.id)) })
         }
     }
 }
 
 @Composable
 private fun TaskState(operation: PluginOperation, state: PluginTaskState, onReview: () -> Unit) {
-    val style = MaterialTheme.typography.bodySmall
+    val colors = WontonTheme.colors
+    val style = WontonTheme.typography.supporting
     when (state) {
-        is PluginTaskState.Running -> Text(operation.runningText, style = style)
-        is PluginTaskState.Succeeded ->
-            Text(operation.doneText, style = style, color = MaterialTheme.colorScheme.primary)
+        is PluginTaskState.Running -> Text(operation.runningText, style = style, color = colors.textSecondary.toColor())
+        is PluginTaskState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, operation.doneText, colors.success)
         is PluginTaskState.Failed -> {
-            Text("${operation.failedText}：${state.message}", style = style, color = Red)
-            Text(state.reason.nextStep, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (state.reason == PluginFailure.CHANGED) {
-                TextButton(onClick = onReview) { Text("重新查看") }
-            }
+            Text("${operation.failedText}：${state.message}", style = style, color = colors.danger.toColor())
+            Text(state.reason.nextStep, style = style, color = colors.textSecondary.toColor())
+            if (state.reason == PluginFailure.CHANGED) WontonSmallButton("重新查看", onReview)
         }
-        is PluginTaskState.Uncertain ->
-            Text("结果不确定：${state.message}", style = style, color = MaterialTheme.colorScheme.tertiary)
+        is PluginTaskState.Uncertain -> StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)
+    }
+}
+
+@Composable
+private fun StateLine(icon: ImageVector, text: String, tint: Rgb) {
+    Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.padding(top = STATE_ICON_OFFSET).size(WontonTheme.size.iconTiny),
+            tint = tint.toColor(),
+        )
+        Text(text, style = WontonTheme.typography.supporting, color = tint.toColor())
     }
 }
 

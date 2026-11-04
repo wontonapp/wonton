@@ -42,6 +42,13 @@ object WontonSize {
     val messageImage = 240.dp
     val launcherIcon = 62.dp
     val launcherCell = 76.dp
+    val storeIcon = 56.dp
+    val taskIcon = 40.dp
+    val previewIcon = 64.dp
+    val detailIcon = 112.dp
+    val screenshot = 380.dp
+    val chip = 36.dp
+    val smallButton = 32.dp
     val hairline = 1.dp
 }
 

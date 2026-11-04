@@ -139,7 +139,7 @@ fun WontonApp(
         MainTabs(
             tab = tab,
             onSelect = { tab = it },
-            isRoomOpen = chat.openRoom != null,
+            hidesBottomBar = hidesBottomBar(tab, chat, homePlugins, storePlugins),
         ) {
             WithPendingCards(elsewhere, openCardRoom) {
                 when (tab) {
@@ -154,11 +154,11 @@ fun WontonApp(
     }
 }
 
-/** 三个页面和底栏。聊天页和打字时让出底部的位置。 */
+/** 三个页面和底栏。聊天页、安装确认页和打字时让出底部的位置。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MainTabs(tab: Int, onSelect: (Int) -> Unit, isRoomOpen: Boolean, content: @Composable () -> Unit) {
-    val showsBottomBar = !WindowInsets.isImeVisible && !(tab == CHAT && isRoomOpen)
+private fun MainTabs(tab: Int, onSelect: (Int) -> Unit, hidesBottomBar: Boolean, content: @Composable () -> Unit) {
+    val showsBottomBar = !WindowInsets.isImeVisible && !hidesBottomBar
     Scaffold(
         containerColor = WontonTheme.colors.canvas.toColor(),
         bottomBar = {
@@ -196,6 +196,14 @@ private fun PluginsEffects(plugins: PluginsState) {
         plugins.refresh(Action.SetLanguages(locales.toLanguageTags().split(",")))
     }
 }
+
+/** 聊天页和安装确认页让出底部的位置。 */
+private fun hidesBottomBar(tab: Int, chat: ChatNavigation, home: PluginNavigation, store: PluginNavigation): Boolean =
+    when (tab) {
+        CHAT -> chat.openRoom != null
+        HOME -> home.confirmation != null
+        else -> store.confirmation != null
+    }
 
 @Composable
 private fun Notice(title: String, reason: String, onDismiss: () -> Unit) {

@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.icu.text.CompactDecimalFormat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,16 +15,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +29,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -43,6 +41,21 @@ import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreSection
+import app.wonton.ui.design.WontonChip
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonRootBar
+import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonSearchField
+import app.wonton.ui.design.WontonSmallButton
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.StarFill
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
+import java.util.Locale
+
+private val ROW_GAP = 8.dp
+private val SPINNER_STROKE = 2.dp
 
 /** “商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。 */
 @Composable
@@ -57,33 +70,40 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation) {
     var query by rememberSaveable { mutableStateOf("") }
     var category by remember { mutableStateOf<PluginCategory?>(null) }
     val viewModel = plugins.viewModel
+    val store = viewModel.store
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
-    Scaffold(topBar = { TopAppBar(title = { Text("商店") }) }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = { Text("搜索") },
-                singleLine = true,
-                shape = CircleShape,
+    WontonScreen(bar = { WontonRootBar("商店") }) {
+        Column(Modifier.fillMaxSize()) {
+            WontonSearchField(
+                query,
+                { query = it },
+                "搜索",
+                Modifier.padding(
+                    start = WontonTheme.spacing.pageInset,
+                    end = WontonTheme.spacing.pageInset,
+                    bottom = WontonTheme.spacing.s8,
+                ),
             )
             PullToRefreshBox(
-                isRefreshing = viewModel.refreshing,
+                // 第一次取的时候 StorePlaceholder 已经在转圈，这里不再转一个。
+                isRefreshing = viewModel.refreshing && store != null,
                 onRefresh = { plugins.send(Action.RefreshStore(force = true)) },
                 modifier = Modifier.fillMaxSize(),
             ) {
-                val store = viewModel.store
                 if (store == null) {
                     StorePlaceholder(plugins)
                 } else {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+                    LazyColumn(Modifier.fillMaxSize()) {
                         items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
-                            TaskRow(task, plugins) { navigation.confirmation = reconfirmation(task, plugins) }
+                            Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
+                                TaskRow(task, plugins) { navigation.confirmation = reconfirmation(task, plugins) }
+                            }
                         }
                         viewModel.problem?.let { problem ->
                             item(key = "problem") {
-                                Box(Modifier.padding(16.dp)) { ProblemRow(problem.message, problem.reason.nextStep) }
+                                Box(Modifier.padding(WontonTheme.spacing.pageInset)) {
+                                    ProblemRow(problem.message, problem.reason.nextStep)
+                                }
                             }
                         }
                         if (query.isEmpty()) {
@@ -136,19 +156,21 @@ private fun LazyListScope.section(
     item(key = "header:$title") {
         Text(
             title,
-            Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
-            style = MaterialTheme.typography.titleLarge,
+            Modifier.padding(
+                start = WontonTheme.spacing.pageInset,
+                top = WontonTheme.spacing.s16,
+                bottom = WontonTheme.spacing.s4,
+            ).semantics { heading() },
+            style = WontonTheme.typography.sectionTitle,
+            color = WontonTheme.colors.textPrimary.toColor(),
         )
     }
     items(shown, key = { "$title:${it.source}" }) { row(it) }
     content.problem?.let { problem ->
         item(key = "problem:$title") {
-            Text(
-                problem.message,
-                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
+                WontonNotice(WontonIcon.Warning, problem.message)
+            }
         }
     }
 }
@@ -156,7 +178,12 @@ private fun LazyListScope.section(
 private fun LazyListScope.results(found: List<StoreItem>, row: @Composable (StoreItem) -> Unit) {
     if (found.isEmpty()) {
         item(key = "nothing") {
-            Text("没有找到", Modifier.fillMaxWidth().padding(32.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "没有找到",
+                Modifier.fillMaxWidth().padding(WontonTheme.spacing.s32),
+                style = WontonTheme.typography.body.copy(textAlign = TextAlign.Center),
+                color = WontonTheme.colors.textSecondary.toColor(),
+            )
         }
     }
     items(found, key = { "found:${it.source}" }) { row(it) }
@@ -169,16 +196,12 @@ private fun CategoryChips(
     onSelect: (PluginCategory?) -> Unit,
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        item { FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("全部") }) }
+        item { WontonChip("全部", selected == null) { onSelect(null) } }
         items(categories) { category ->
-            FilterChip(
-                selected = selected == category,
-                onClick = { onSelect(category) },
-                label = { Text(category.label) },
-            )
+            WontonChip(category.label, selected == category) { onSelect(category) }
         }
     }
 }
@@ -186,35 +209,36 @@ private fun CategoryChips(
 /** 商店里的一个插件：点开看详情，行尾的按钮安装、更新或打开。 */
 @Composable
 private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation) {
+    val colors = WontonTheme.colors
     Row(
         Modifier.fillMaxWidth()
             .clickable { navigation.detail = PluginRoute.Store(item.source) }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP),
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(item.icon, item.category, 56.dp, plugins)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        PluginIconImage(item.icon, item.category, WontonTheme.size.storeIcon, plugins)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(
                 item.title,
-                style = MaterialTheme.typography.titleMedium,
+                style = WontonTheme.typography.itemTitle,
+                color = colors.textPrimary.toColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 item.summary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = WontonTheme.typography.supporting,
+                color = colors.textSecondary.toColor(),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             ItemTags(item)
         }
         when (val button = storeButton(item, plugins, navigation)) {
-            is StoreButton.Get -> FilledTonalButton(onClick = button.perform, enabled = button.enabled) {
-                Text(button.title)
-            }
-            StoreButton.Busy -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            is StoreButton.Get -> WontonSmallButton(button.title, button.perform, button.enabled)
+            StoreButton.Busy ->
+                CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
             StoreButton.Hidden -> Unit
         }
     }
@@ -223,13 +247,37 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
 /** 已审核的插件在自己的分组里，不再标来源。 */
 @Composable
 private fun ItemTags(item: StoreItem) {
+    val colors = WontonTheme.colors
     val showsTrust = item.trust != PluginTrust.OFFICIAL
     val stars = item.stars
     if (showsTrust || item.highPermissions || stars != null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (showsTrust) Tag(item.trust.label, item.trust.tint)
-            if (item.highPermissions) Tag("高权限", Red)
-            stars?.let { Text("★ $it", style = MaterialTheme.typography.labelSmall, color = Gray) }
+            if (item.highPermissions) Tag("高权限", colors.danger)
+            stars?.let {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        WontonIcon.StarFill,
+                        contentDescription = null,
+                        modifier = Modifier.size(WontonTheme.size.iconTiny),
+                        tint = colors.textSecondary.toColor(),
+                    )
+                    Text(
+                        CompactDecimalFormat.getInstance(
+                            Locale.getDefault(),
+                            CompactDecimalFormat.CompactStyle.SHORT,
+                        ).format(it.toLong()),
+                        style = WontonTheme.typography.caption,
+                        color = colors.textSecondary.toColor(),
+                    )
+                }
+            }
         }
     }
 }

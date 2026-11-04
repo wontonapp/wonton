@@ -55,11 +55,11 @@ extension PluginTrust {
         }
     }
 
-    var tint: Color {
+    func tint(_ colors: ThemeColors) -> Rgb {
         switch self {
-        case .official: return .blue
-        case .community, .unknown: return .orange
-        case .local, .system: return .gray
+        case .official: return colors.success
+        case .community, .unknown: return colors.warning
+        case .local, .system: return colors.textSecondary
         }
     }
 }
@@ -93,15 +93,14 @@ extension PluginOperation {
 /// 来源、高权限、新增的权限这类小标签。
 struct Tag: View {
     let text: String
-    let tint: Color
+    let tint: Rgb
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .foregroundStyle(tint)
-            .background(tint.opacity(0.14), in: Capsule())
+            .wontonText(WontonTheme.typography.caption)
+            .padding(.horizontal, WontonTheme.spacing.s8)
+            .foregroundStyle(Color(tint))
+            .background(Color(tint).opacity(0.14), in: Capsule())
     }
 }
 
@@ -145,12 +144,17 @@ struct ProblemRow: View {
 /// 核心给的说明，`emphasis` 的醒目显示。
 struct NoticeLines: View {
     let lines: [CardLine]
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-            Label(line.text, systemImage: line.emphasis ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(line.emphasis ? .callout.weight(.semibold) : .callout)
-                .foregroundStyle(line.emphasis ? Color.orange : Color.secondary)
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+                    (line.emphasis ? WontonIcon.warningFill : WontonIcon.info).view(size: WontonTheme.size.iconSmall)
+                    Text(line.text).wontonText(WontonTheme.typography.body)
+                }
+                .foregroundStyle(Color(line.emphasis ? colors.warning : colors.textSecondary))
+            }
         }
     }
 }
@@ -158,15 +162,36 @@ struct NoticeLines: View {
 /// 要授予的一项权限：高权限醒目，升级时新申请的、核心不支持的标出来。
 struct PermissionRow: View {
     let line: PermissionLine
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: line.high ? "exclamationmark.shield.fill" : "checkmark.shield")
-                .foregroundStyle(line.high ? Color.orange : Color.secondary)
-            Text(line.text).fontWeight(line.high ? .semibold : .regular)
-            Spacer(minLength: 4)
-            if line.added { Tag(text: "新增", tint: .blue) }
-            if !line.supported { Tag(text: "不支持", tint: .red) }
+        HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+            (line.high ? WontonIcon.warningFill : WontonIcon.shield)
+                .view(size: WontonTheme.size.iconSmall)
+                .foregroundStyle(Color(line.high ? colors.warning : colors.textSecondary))
+            Text(line.text)
+                .wontonText(WontonTheme.typography.body)
+                .foregroundStyle(Color(line.high ? colors.warning : colors.textPrimary))
+            Spacer(minLength: 0)
+            if line.added { Tag(text: "新增", tint: colors.primary) }
+            if !line.supported { Tag(text: "不支持", tint: colors.danger) }
+        }
+    }
+}
+
+/// 详情和确认页里的一节。
+struct DetailSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            Text(title)
+                .wontonText(WontonTheme.typography.sectionTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+                .accessibilityAddTraits(.isHeader)
+            content
         }
     }
 }

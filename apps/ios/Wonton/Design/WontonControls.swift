@@ -93,6 +93,7 @@ struct WontonRow: View {
             Text(title)
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textPrimary))
+                .layoutPriority(1)
             Spacer(minLength: 0)
             if let value {
                 Text(value)
@@ -244,6 +245,8 @@ struct WontonRootBar<Trailing: View>: View {
 /// 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。
 struct WontonPushedBar<Trailing: View>: View {
     let title: String
+    var icon: WontonIcon = .back
+    var iconLabel = "返回"
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.dismiss) private var dismiss
@@ -257,7 +260,7 @@ struct WontonPushedBar<Trailing: View>: View {
                 .padding(.horizontal, WontonTheme.size.target + WontonTheme.spacing.s8)
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 0) {
-                WontonIconButton(icon: .back, label: "返回") { dismiss() }
+                WontonIconButton(icon: icon, label: iconLabel) { dismiss() }
                 Spacer(minLength: 0)
                 trailing
             }
@@ -285,6 +288,13 @@ extension View {
         let bar = WontonPushedBar(title: title, trailing: trailing)
         return safeAreaInset(edge: .top, spacing: 0) { bar }
             .toolbar(.hidden, for: .navigationBar)
+            .modifier(WontonCanvas())
+    }
+
+    /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
+    func wontonModalScreen(_ title: String) -> some View {
+        let bar = WontonPushedBar(title: title, icon: .close, iconLabel: "关闭") { EmptyView() }
+        return safeAreaInset(edge: .top, spacing: 0) { bar }
             .modifier(WontonCanvas())
     }
 

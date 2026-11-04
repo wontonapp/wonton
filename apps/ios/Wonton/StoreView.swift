@@ -9,38 +9,45 @@ struct StoreView: View {
     @State private var query = ""
     @State private var category: PluginCategory?
     @State private var confirmation: PluginConfirmation?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
-                if !model.viewModel.tasks.isEmpty {
-                    Section {
+            VStack(spacing: 0) {
+                WontonSearchField(text: $query, prompt: "搜索")
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.bottom, WontonTheme.spacing.s8)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(model.viewModel.tasks, id: \.id) { task in
                             TaskRow(model: model, task: task) {
                                 confirmation = model.reconfirmation(for: task)
                             }
+                            .padding(.horizontal, WontonTheme.spacing.pageInset)
+                            .padding(.vertical, WontonTheme.spacing.s8)
+                        }
+                        if let store = model.viewModel.store {
+                            if let problem = model.viewModel.problem {
+                                ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
+                                    .padding(WontonTheme.spacing.pageInset)
+                            }
+                            if query.isEmpty {
+                                listing(store)
+                            } else {
+                                results
+                            }
                         }
                     }
                 }
-                if let store = model.viewModel.store {
-                    if let problem = model.viewModel.problem {
-                        ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
-                    }
-                    if query.isEmpty {
-                        listing(store)
-                    } else {
-                        results
-                    }
+                .scrollDismissesKeyboard(.immediately)
+                .overlay {
+                    if model.viewModel.store == nil { placeholder }
                 }
+                .refreshable { model.send(.refreshStore(force: true)) }
             }
-            .overlay {
-                if model.viewModel.store == nil { placeholder }
-            }
-            .navigationTitle("商店")
-            .searchable(text: $query, prompt: "搜索")
-            .refreshable { model.send(.refreshStore(force: true)) }
+            .wontonRootScreen("商店") { EmptyView() }
             .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: model, route: $0, open: open) }
-            .sheet(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
+            .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
             .alert("操作被拒绝", isPresented: isShowingRejection, presenting: model.rejection) { _ in
                 Button("好") {}
             } message: { reason in
@@ -66,11 +73,7 @@ struct StoreView: View {
     @ViewBuilder private func listing(_ store: StoreListing) -> some View {
         let present = categories(in: store)
         if present.count > 1 {
-            Section {
-                CategoryChips(categories: present, selected: $category)
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
+            CategoryChips(categories: present, selected: $category)
         }
         section("已审核", store.official)
         section("社区", store.community)
@@ -79,12 +82,18 @@ struct StoreView: View {
     @ViewBuilder private func section(_ title: String, _ content: StoreSection) -> some View {
         let items = content.plugins.filter { category == nil || $0.category == category }
         if !items.isEmpty || content.problem != nil {
-            Section {
-                ForEach(items, id: \.source) { row($0) }
-            } header: {
-                Text(title)
-            } footer: {
-                if let problem = content.problem { Text(problem.message) }
+            Text(title)
+                .wontonText(WontonTheme.typography.sectionTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+                .padding(.top, WontonTheme.spacing.s16)
+                .padding(.bottom, WontonTheme.spacing.s4)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(items, id: \.source) { row($0) }
+            if let problem = content.problem {
+                WontonNotice(icon: .warning, title: problem.message)
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.vertical, WontonTheme.spacing.s8)
             }
         }
     }
@@ -92,16 +101,18 @@ struct StoreView: View {
     @ViewBuilder private var results: some View {
         let items = model.core.searchStore(query: query)
         if items.isEmpty {
-            ContentUnavailableView.search(text: query)
+            Text("没有找到")
+                .wontonText(WontonTheme.typography.body)
+                .foregroundStyle(Color(colors.textSecondary))
+                .frame(maxWidth: .infinity)
+                .padding(WontonTheme.spacing.s32)
         } else {
             ForEach(items, id: \.source) { row($0) }
         }
     }
 
     private func row(_ item: StoreItem) -> some View {
-        NavigationLink(value: PluginRoute.store(source: item.source)) {
-            StoreItemRow(model: model, item: item, button: button(for: item))
-        }
+        StoreItemRow(model: model, item: item, button: button(for: item))
     }
 
     /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载时转圈。
@@ -145,25 +156,14 @@ private struct CategoryChips: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip("全部", isSelected: selected == nil) { selected = nil }
+            HStack(spacing: WontonTheme.spacing.s8) {
+                WontonChip(title: "全部", isSelected: selected == nil) { selected = nil }
                 ForEach(categories, id: \.self) { category in
-                    chip(category.name, isSelected: selected == category) { selected = category }
+                    WontonChip(title: category.name, isSelected: selected == category) { selected = category }
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 4)
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
         }
-    }
-
-    private func chip(_ title: String, isSelected: Bool, select: @escaping () -> Void) -> some View {
-        Button(title, action: select)
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .background(isSelected ? Color.accentColor : Color(.secondarySystemFill), in: Capsule())
-            .buttonStyle(.plain)
     }
 }
 
@@ -177,22 +177,35 @@ private struct StoreItemRow: View {
     let model: PluginsModel
     let item: StoreItem
     let button: StoreButton
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        HStack(spacing: 12) {
-            PluginIconView(icon: item.icon, category: item.category, size: 56, model: model)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.headline).lineLimit(1)
-                Text(item.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                tags
+        HStack(spacing: WontonTheme.spacing.s12) {
+            NavigationLink(value: PluginRoute.store(source: item.source)) {
+                HStack(spacing: WontonTheme.spacing.s12) {
+                    PluginIconView(
+                        icon: item.icon, category: item.category, size: WontonTheme.size.storeIcon, model: model
+                    )
+                    VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                        Text(item.title)
+                            .wontonText(WontonTheme.typography.itemTitle)
+                            .foregroundStyle(Color(colors.textPrimary))
+                            .lineLimit(1)
+                        Text(item.summary)
+                            .wontonText(WontonTheme.typography.supporting)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .lineLimit(2)
+                        tags
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 8)
+            .buttonStyle(.plain)
             switch button {
             case let .get(title, enabled, perform):
                 Button(title, action: perform)
-                    .font(.subheadline.bold())
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
+                    .buttonStyle(WontonSmallButtonStyle())
                     .disabled(!enabled)
             case .busy:
                 ProgressView()
@@ -200,20 +213,24 @@ private struct StoreItemRow: View {
                 EmptyView()
             }
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 
     /// 已审核的插件在自己的分组里，不再标来源。
     @ViewBuilder private var tags: some View {
         let showsTrust = item.trust != .official
         if showsTrust || item.highPermissions || item.stars != nil {
-            HStack(spacing: 6) {
-                if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint) }
-                if item.highPermissions { Tag(text: "高权限", tint: .red) }
+            HStack(spacing: WontonTheme.spacing.s8) {
+                if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint(colors)) }
+                if item.highPermissions { Tag(text: "高权限", tint: colors.danger) }
                 if let stars = item.stars {
-                    Label(stars.formatted(.number.notation(.compactName)), systemImage: "star.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: WontonTheme.spacing.s4) {
+                        WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)
+                        Text(stars.formatted(.number.notation(.compactName)))
+                            .wontonText(WontonTheme.typography.caption)
+                    }
+                    .foregroundStyle(Color(colors.textSecondary))
                 }
             }
         }
@@ -224,22 +241,22 @@ struct TaskRow: View {
     let model: PluginsModel
     let task: PluginTask
     let review: () -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        HStack(spacing: 12) {
-            PluginIconView(icon: task.icon, category: nil, size: 40, model: model)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.title).font(.subheadline.weight(.semibold))
-                state
+        HStack(spacing: WontonTheme.spacing.s12) {
+            PluginIconView(icon: task.icon, category: nil, size: WontonTheme.size.taskIcon, model: model)
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(task.title)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .foregroundStyle(Color(colors.textPrimary))
+                state.wontonText(WontonTheme.typography.supporting)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
             if task.state == .running {
                 ProgressView()
             } else {
-                Button("关闭", systemImage: "xmark.circle.fill") { model.send(.dismissPluginTask(id: task.id)) }
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(.secondary)
-                    .buttonStyle(.borderless)
+                WontonIconButton(icon: .close, label: "关闭") { model.send(.dismissPluginTask(id: task.id)) }
             }
         }
     }
@@ -247,22 +264,27 @@ struct TaskRow: View {
     @ViewBuilder private var state: some View {
         switch task.state {
         case .running:
-            Text(task.operation.runningText).font(.footnote).foregroundStyle(.secondary)
+            Text(task.operation.runningText).foregroundStyle(Color(colors.textSecondary))
         case .succeeded:
-            Label(task.operation.doneText, systemImage: "checkmark.circle.fill")
-                .font(.footnote)
-                .foregroundStyle(.green)
+            HStack(spacing: WontonTheme.spacing.s4) {
+                WontonIcon.checkCircleFill.view(size: WontonTheme.size.iconTiny)
+                Text(task.operation.doneText)
+            }
+            .foregroundStyle(Color(colors.success))
         case let .failed(reason, message):
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(task.operation.failedText)：\(message)").foregroundStyle(.red)
-                Text(reason.nextStep).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text("\(task.operation.failedText)：\(message)").foregroundStyle(Color(colors.danger))
+                Text(reason.nextStep).foregroundStyle(Color(colors.textSecondary))
                 if reason == .changed {
-                    Button("重新查看", action: review).buttonStyle(.borderless)
+                    Button("重新查看", action: review).buttonStyle(WontonSmallButtonStyle())
                 }
             }
         case let .uncertain(message):
-            Label("结果不确定：\(message)", systemImage: "questionmark.circle").foregroundStyle(.orange)
-                .font(.footnote)
+            HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
+                WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
+                Text("结果不确定：\(message)")
+            }
+            .foregroundStyle(Color(colors.warning))
         }
     }
 }

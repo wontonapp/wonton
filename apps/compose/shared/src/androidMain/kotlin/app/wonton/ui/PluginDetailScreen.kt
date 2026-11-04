@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,14 +16,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,9 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginImage
@@ -46,12 +39,26 @@ import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
+import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonRow
+import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonSeparator
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Blocked
+import app.wonton.ui.icons.Check
+import app.wonton.ui.icons.ImageBroken
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
 
 /** 截图按手机竖屏的比例占位。 */
 private const val SCREENSHOT_RATIO = 9f / 19.5f
 
 /** 插件的详情页：商店里的看来源最新的版本，主屏上的看装着的版本。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, route: PluginRoute) {
     var attempt by remember { mutableIntStateOf(0) }
@@ -82,16 +89,9 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
         }
         wasWorking = working
     }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = { TextButton(onClick = { navigation.detail = null }) { Text("返回") } },
-            )
-        },
-    ) { padding ->
+    WontonScreen(bar = { WontonPushedBar("", onBack = { navigation.detail = null }) }) {
         val result = loaded
-        Box(Modifier.padding(padding).fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
             when {
                 result == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 result.isFailure -> ProblemView(result.exceptionOrNull().toString(), null, onRetry = { attempt++ })
@@ -109,9 +109,10 @@ private fun DetailContent(
     navigation: PluginNavigation,
     onToggled: (PluginDetail) -> Unit,
 ) {
+    val colors = WontonTheme.colors
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         val working = task?.state is PluginTaskState.Running
         DetailHeader(detail, plugins, detailAction(detail, working, navigation))
@@ -120,18 +121,21 @@ private fun DetailContent(
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         if (detail.screenshots.isNotEmpty()) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
                 items(detail.screenshots, key = { it.path }) { Screenshot(it, plugins) }
             }
         }
-        detail.about?.let { Text(it) }
+        detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
         val offer = detail.lanWebui
         if (offer != null && detail.installed != null) InstalledLanWebui(plugins, detail.id, offer, onToggled)
         DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
-            TextButton(onClick = { navigation.uninstalling = UninstallTarget(installed.id, installed.title) }) {
-                Text("卸载", color = Red)
-            }
+            WontonButton(
+                "卸载",
+                { navigation.uninstalling = UninstallTarget(installed.id, installed.title) },
+                Modifier.fillMaxWidth(),
+                WontonButtonKind.DANGER,
+            )
         }
     }
 }
@@ -157,76 +161,87 @@ private fun detailAction(detail: PluginDetail, working: Boolean, navigation: Plu
 
 @Composable
 private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: DetailAction?) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            PluginIconImage(detail.icon, detail.category, 112.dp, plugins)
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(detail.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(detail.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val colors = WontonTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16)) {
+            PluginIconImage(detail.icon, detail.category, WontonTheme.size.detailIcon, plugins)
+            Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+                Text(detail.title, style = WontonTheme.typography.sectionTitle, color = colors.textPrimary.toColor())
+                Text(detail.summary, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
                 Tag(detail.trust.label, detail.trust.tint)
-                action?.let { Button(onClick = it.perform, enabled = it.enabled) { Text(it.title) } }
             }
         }
-        detail.blocked?.let { Text(it, color = Red) }
-        (detail.installed?.status as? PluginState.Degraded)?.let { Text(it.reason, color = Red) }
+        action?.let { WontonButton(it.title, it.perform, Modifier.fillMaxWidth(), enabled = it.enabled) }
+        detail.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
+        (detail.installed?.status as? PluginState.Degraded)?.let { WontonNotice(WontonIcon.Warning, it.reason) }
     }
 }
 
 /** 一张截图；取不到时画占位（ADR-0017）。 */
 @Composable
 private fun Screenshot(source: PluginImage, plugins: PluginsState) {
+    val colors = WontonTheme.colors
     val image = rememberPluginImage(plugins, source)
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(WontonTheme.radii.card)
+    val height = WontonTheme.size.screenshot
     if (image != null) {
-        Image(image, contentDescription = null, Modifier.height(380.dp).clip(shape), contentScale = ContentScale.Fit)
+        Image(image, contentDescription = null, Modifier.height(height).clip(shape), contentScale = ContentScale.Fit)
     } else {
         Box(
-            Modifier.height(380.dp).aspectRatio(SCREENSHOT_RATIO)
-                .background(MaterialTheme.colorScheme.surfaceVariant, shape),
-        )
+            Modifier.height(height).aspectRatio(SCREENSHOT_RATIO).background(colors.surfaceSubtle.toColor(), shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(WontonIcon.ImageBroken, contentDescription = null, tint = colors.textSecondary.toColor())
+        }
     }
 }
 
 /** 更新说明、权限、要求和其他信息。 */
 @Composable
 private fun DetailSections(detail: PluginDetail) {
+    val colors = WontonTheme.colors
     detail.releaseNotes?.let { notes ->
         DetailSection("新内容") {
-            Text(detail.version, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(notes)
+            Text(detail.version, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
+            Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         }
     }
     if (detail.permissions.isNotEmpty()) {
         DetailSection("权限") { detail.permissions.forEach { PermissionRow(it) } }
     }
     if (detail.requirements.isNotEmpty()) {
-        DetailSection("要求") { detail.requirements.forEach { Text(it) } }
+        DetailSection("要求") {
+            detail.requirements.forEach { requirement ->
+                Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+                    LineIcon(WontonIcon.Check, colors.textSecondary.toColor())
+                    Text(requirement, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+                }
+            }
+        }
     }
+    DetailSection("信息") { DetailInfo(detail) }
+}
+
+@Composable
+private fun DetailInfo(detail: PluginDetail) {
     val uris = LocalUriHandler.current
-    DetailSection("信息") {
-        InfoRow("版本", detail.version)
-        detail.category?.let { InfoRow("分类", it.label) }
-        detail.author?.let { InfoRow("作者", it.name) }
-        detail.license?.let { InfoRow("许可证", it) }
-        detail.source?.let { InfoRow("来源", it) }
-        detail.stars?.let { InfoRow("星标", it.toString()) }
-        detail.homepage?.let { link -> TextButton(onClick = { uris.openUri(link) }) { Text("主页") } }
-        detail.repository?.let { link -> TextButton(onClick = { uris.openUri(link) }) { Text("代码仓库") } }
-    }
-}
-
-@Composable
-private fun DetailSection(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        content()
-    }
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, Modifier.weight(1f), textAlign = TextAlign.End)
+    val info = listOfNotNull(
+        "版本" to detail.version,
+        detail.category?.let { "分类" to it.label },
+        detail.author?.let { "作者" to it.name },
+        detail.license?.let { "许可证" to it },
+        detail.source?.let { "来源" to it },
+        detail.stars?.let { "星标" to it.toString() },
+    )
+    val links = listOfNotNull(detail.homepage?.let { "主页" to it }, detail.repository?.let { "代码仓库" to it })
+    WontonGroup {
+        info.forEachIndexed { index, (title, value) ->
+            if (index > 0) WontonSeparator()
+            WontonRow(title, value)
+        }
+        links.forEach { (title, link) ->
+            WontonSeparator()
+            WontonRow(title, showsForward = true, onClick = { uris.openUri(link) })
+        }
     }
 }

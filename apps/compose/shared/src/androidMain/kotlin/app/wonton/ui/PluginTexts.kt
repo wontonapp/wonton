@@ -5,20 +5,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.CardLine
 import app.wonton.protocol.PermissionLine
@@ -26,18 +26,23 @@ import app.wonton.protocol.PluginCategory
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTrust
+import app.wonton.protocol.Rgb
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Info
+import app.wonton.ui.icons.Shield
 import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WarningFill
 import app.wonton.ui.icons.WontonIcon
 
-val Blue = Color(0xFF0A7CFF)
-val Orange = Color(0xFFE67E00)
-val Gray = Color(0xFF8E8E93)
-val Red = Color(0xFFE5342B)
+/** 标签的底是字色的淡化。 */
+private const val TAG_ALPHA = 0.14f
+
+/** 正文行高 22、小图标 20，差的一半。 */
+private val LINE_ICON_OFFSET = 1.dp
 
 val PluginCategory.label: String
     get() = when (this) {
@@ -85,11 +90,11 @@ val PluginTrust.label: String
         PluginTrust.SYSTEM -> "系统"
     }
 
-val PluginTrust.tint: Color
-    get() = when (this) {
-        PluginTrust.OFFICIAL -> Blue
-        PluginTrust.COMMUNITY, PluginTrust.UNKNOWN -> Orange
-        PluginTrust.LOCAL, PluginTrust.SYSTEM -> Gray
+val PluginTrust.tint: Rgb
+    @Composable get() = when (this) {
+        PluginTrust.OFFICIAL -> WontonTheme.colors.success
+        PluginTrust.COMMUNITY, PluginTrust.UNKNOWN -> WontonTheme.colors.warning
+        PluginTrust.LOCAL, PluginTrust.SYSTEM -> WontonTheme.colors.textSecondary
     }
 
 val PluginOperation.runningText: String
@@ -115,14 +120,13 @@ val PluginOperation.failedText: String
 
 /** 来源、高权限、新增的权限这类小标签。 */
 @Composable
-fun Tag(text: String, tint: Color) {
+fun Tag(text: String, tint: Rgb) {
     Text(
         text,
-        Modifier.background(tint.copy(alpha = 0.14f), CircleShape)
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-        color = tint,
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.SemiBold,
+        Modifier.background(tint.toColor().copy(alpha = TAG_ALPHA), CircleShape)
+            .padding(horizontal = WontonTheme.spacing.s8),
+        color = tint.toColor(),
+        style = WontonTheme.typography.caption,
     )
 }
 
@@ -166,13 +170,14 @@ fun ProblemRow(message: String, nextStep: String?) {
 /** 核心给的说明，`emphasis` 的醒目显示。 */
 @Composable
 fun NoticeLines(lines: List<CardLine>) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val colors = WontonTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         lines.forEach { line ->
-            Text(
-                line.text,
-                color = if (line.emphasis) Orange else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = if (line.emphasis) FontWeight.SemiBold else null,
-            )
+            val tint = (if (line.emphasis) colors.warning else colors.textSecondary).toColor()
+            Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+                LineIcon(if (line.emphasis) WontonIcon.WarningFill else WontonIcon.Info, tint)
+                Text(line.text, style = WontonTheme.typography.body, color = tint)
+            }
         }
     }
 }
@@ -180,14 +185,44 @@ fun NoticeLines(lines: List<CardLine>) {
 /** 要授予的一项权限：高权限醒目，升级时新申请的、核心不支持的标出来。 */
 @Composable
 fun PermissionRow(line: PermissionLine) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val colors = WontonTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        LineIcon(
+            if (line.high) WontonIcon.WarningFill else WontonIcon.Shield,
+            (if (line.high) colors.warning else colors.textSecondary).toColor(),
+        )
         Text(
             line.text,
             Modifier.weight(1f),
-            color = if (line.high) Orange else Color.Unspecified,
-            fontWeight = if (line.high) FontWeight.SemiBold else null,
+            style = WontonTheme.typography.body,
+            color = (if (line.high) colors.warning else colors.textPrimary).toColor(),
         )
-        if (line.added) Tag("新增", Blue)
-        if (!line.supported) Tag("不支持", Red)
+        if (line.added) Tag("新增", colors.primary)
+        if (!line.supported) Tag("不支持", colors.danger)
+    }
+}
+
+/** 正文行前面的小图标，和第一行文字对齐。 */
+@Composable
+fun LineIcon(icon: ImageVector, tint: Color) {
+    Icon(
+        icon,
+        contentDescription = null,
+        modifier = Modifier.padding(top = LINE_ICON_OFFSET).size(WontonTheme.size.iconSmall),
+        tint = tint,
+    )
+}
+
+/** 详情和确认页里的一节。 */
+@Composable
+fun DetailSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        Text(
+            title,
+            Modifier.semantics { heading() },
+            style = WontonTheme.typography.sectionTitle,
+            color = WontonTheme.colors.textPrimary.toColor(),
+        )
+        content()
     }
 }

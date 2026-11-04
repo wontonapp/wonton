@@ -82,7 +82,7 @@ struct HomeView: View {
         }
         .refreshable { plugins.send(.refreshPlugins) }
         .task { plugins.refresh(.refreshPlugins) }
-        .sheet(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
+        .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
         .uninstallDialog($uninstalling, model: plugins)
         .alert("操作被拒绝", isPresented: isShowingPluginRejection, presenting: plugins.rejection) { _ in
             Button("好") {}
