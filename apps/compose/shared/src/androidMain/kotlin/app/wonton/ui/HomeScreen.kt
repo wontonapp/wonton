@@ -1,14 +1,11 @@
 package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,10 +19,14 @@ import app.wonton.protocol.HomeFailure
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PairingStatus
+import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
+import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonSeparator
+import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.icons.Palette
 import app.wonton.ui.icons.WontonIcon
 
@@ -56,7 +57,7 @@ fun HomeRoute(
             PairingPage("配对", core, viewModel.pairing, onBack = null, onAppearance = { page = HomePage.APPEARANCE })
         page == HomePage.PAIRING ->
             PairingPage("重新配对", core, viewModel.pairing, onBack = { page = HomePage.CONNECTION })
-        page == HomePage.INVITE -> InvitePage(core, viewModel, onDone = { page = HomePage.CONNECTION })
+        page == HomePage.INVITE -> InvitePage(core, viewModel, onBack = { page = HomePage.CONNECTION })
         page == HomePage.CONNECTION -> ConnectionPage(viewModel, onNavigate = { page = it })
         page == HomePage.EGRESS -> EgressPage(plugins, onBack = { page = HomePage.CONNECTION })
         else -> PluginPages(plugins, navigation) {
@@ -74,18 +75,10 @@ fun HomeRoute(
 
 enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, APPEARANCE, EGRESS }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InvitePage(core: ClientCore, viewModel: HomeViewModel, onDone: () -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("添加设备") },
-                navigationIcon = { TextButton(onClick = onDone) { Text("完成") } },
-            )
-        },
-    ) { padding ->
-        InviteScreen(core, viewModel.invite, Modifier.padding(padding))
+private fun InvitePage(core: ClientCore, viewModel: HomeViewModel, onBack: () -> Unit) {
+    WontonScreen(bar = { WontonPushedBar("添加设备", onBack) }) {
+        InviteScreen(core, viewModel.invite)
     }
 }
 
@@ -113,25 +106,28 @@ private fun PairingPage(
 }
 
 /** 和家里服务器的连接，以及添加设备、重新配对。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("连接") },
-                navigationIcon = { TextButton(onClick = { onNavigate(HomePage.LAUNCHER) }) { Text("返回") } },
-            )
-        },
-    ) { padding ->
-        Column(Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
-            Text("状态：${viewModel.status.text}")
-            viewModel.path?.let { path ->
-                Text("路径：${if (path.relay) "中继" else "直连"} · ${path.rttMs} ms")
+    WontonScreen(bar = { WontonPushedBar("连接", { onNavigate(HomePage.LAUNCHER) }) }) {
+        Column(
+            Modifier.fillMaxSize().padding(WontonTheme.spacing.pageInset),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
+        ) {
+            WontonGroup {
+                WontonRow("状态", viewModel.status.text)
+                viewModel.path?.let { path ->
+                    WontonSeparator()
+                    WontonRow("路径", "${if (path.relay) "中继" else "直连"} · ${path.rttMs} ms")
+                }
             }
-            TextButton(onClick = { onNavigate(HomePage.EGRESS) }, Modifier.padding(top = 24.dp)) { Text("出网代理") }
-            TextButton(onClick = { onNavigate(HomePage.INVITE) }) { Text("添加设备") }
-            TextButton(onClick = { onNavigate(HomePage.PAIRING) }) { Text("重新配对") }
+            WontonGroup {
+                WontonRow("添加设备", showsForward = true, onClick = { onNavigate(HomePage.INVITE) })
+                WontonSeparator()
+                WontonRow("重新配对", showsForward = true, onClick = { onNavigate(HomePage.PAIRING) })
+            }
+            WontonGroup {
+                WontonRow("出网代理", showsForward = true, onClick = { onNavigate(HomePage.EGRESS) })
+            }
         }
     }
 }

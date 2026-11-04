@@ -110,15 +110,25 @@ struct ProblemView: View {
     let message: String
     let nextStep: String?
     let retry: () -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        ContentUnavailableView {
-            Label(message, systemImage: "exclamationmark.triangle")
-        } description: {
-            if let nextStep { Text(nextStep) }
-        } actions: {
-            Button("重试", action: retry).buttonStyle(.bordered)
+        VStack(spacing: WontonTheme.spacing.s8) {
+            WontonIcon.warning.view().foregroundStyle(Color(colors.danger))
+            Text(message)
+                .wontonText(WontonTheme.typography.itemTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+            if let nextStep {
+                Text(nextStep)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            Button("重试", action: retry)
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
+                .padding(.top, WontonTheme.spacing.s8)
         }
+        .multilineTextAlignment(.center)
+        .padding(WontonTheme.spacing.s32)
     }
 }
 
@@ -128,15 +138,7 @@ struct ProblemRow: View {
     let nextStep: String?
 
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(message)
-                if let nextStep { Text(nextStep).foregroundStyle(.secondary) }
-            }
-        } icon: {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-        }
-        .font(.footnote)
+        WontonNotice(icon: .warning, title: message, lines: nextStep.map { [$0] } ?? [])
     }
 }
 

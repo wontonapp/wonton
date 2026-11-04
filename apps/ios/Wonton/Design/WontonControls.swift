@@ -55,17 +55,71 @@ struct WontonIconLink<Value: Hashable>: View {
     let icon: WontonIcon
     let label: String
     let value: Value
+    var tint: Rgb?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         NavigationLink(value: value) {
             icon.view()
-                .foregroundStyle(Color(colors.textPrimary))
+                .foregroundStyle(Color(tint ?? colors.textPrimary))
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+}
+
+/// 一组列表行的底。
+struct WontonGroup<Content: View>: View {
+    @ViewBuilder let content: Content
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(RoundedRectangle(cornerRadius: WontonTheme.radii.card).fill(Color(colors.surfaceSubtle)))
+    }
+}
+
+/// 列表行。点按语义由外面的 `Button` 或 `NavigationLink` 给（`.buttonStyle(.plain)`）。
+struct WontonRow: View {
+    let title: String
+    var value: String?
+    var showsForward = false
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        HStack(spacing: WontonTheme.spacing.s12) {
+            Text(title)
+                .wontonText(WontonTheme.typography.body)
+                .foregroundStyle(Color(colors.textPrimary))
+            Spacer(minLength: 0)
+            if let value {
+                Text(value)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .multilineTextAlignment(.trailing)
+            }
+            if showsForward {
+                WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.s16)
+        .padding(.vertical, WontonTheme.spacing.s12)
+        .frame(minHeight: WontonTheme.size.target)
+        .contentShape(Rectangle())
+    }
+}
+
+struct WontonSeparator: View {
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(colors.separator))
+            .frame(height: WontonTheme.size.hairline)
+            .padding(.leading, WontonTheme.spacing.s16)
     }
 }
 

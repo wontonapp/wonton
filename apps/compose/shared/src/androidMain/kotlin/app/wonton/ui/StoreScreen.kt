@@ -83,7 +83,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation) {
                         }
                         viewModel.problem?.let { problem ->
                             item(key = "problem") {
-                                ProblemRow(problem.message, problem.reason.nextStep, Modifier.padding(16.dp))
+                                Box(Modifier.padding(16.dp)) { ProblemRow(problem.message, problem.reason.nextStep) }
                             }
                         }
                         if (query.isEmpty()) {
@@ -193,7 +193,7 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(item.icon, item.title, 56.dp, plugins)
+        PluginIconImage(item.icon, item.category, 56.dp, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 item.title,

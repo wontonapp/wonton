@@ -16,13 +16,18 @@ chat = { phosphor = "chats-circle", fill = true }
 check = { phosphor = "check" }
 checkCircle = { phosphor = "check-circle", fill = true }
 close = { phosphor = "x" }
+code = { phosphor = "code", fill = true }
 compose = { phosphor = "note-pencil" }
 connection = { phosphor = "broadcast" }
+cpu = { phosphor = "cpu", fill = true }
 device = { phosphor = "device-mobile-camera" }
-download = { phosphor = "download-simple" }
+document = { phosphor = "file-text", fill = true }
+download = { phosphor = "download-simple", fill = true }
 error = { phosphor = "x-circle", fill = true }
 file = { phosphor = "file" }
+folder = { phosphor = "folder", fill = true }
 forward = { phosphor = "caret-right", mirror = true }
+globe = { phosphor = "globe", fill = true }
 help = { phosphor = "question" }
 home = { phosphor = "house", fill = true }
 image = { phosphor = "image", fill = true }
@@ -31,6 +36,7 @@ info = { phosphor = "info" }
 lock = { phosphor = "lock", fill = true }
 lockKey = { phosphor = "lock-key" }
 more = { phosphor = "dots-three" }
+music = { phosphor = "music-notes", fill = true }
 notify = { phosphor = "bell-ringing" }
 palette = { phosphor = "palette" }
 pause = { phosphor = "pause", fill = true }
@@ -42,11 +48,12 @@ search = { phosphor = "magnifying-glass" }
 send = { phosphor = "arrow-up" }
 server = { phosphor = "hard-drives" }
 settings = { phosphor = "gear-six", fill = true }
-shield = { phosphor = "shield-check" }
+shield = { phosphor = "shield-check", fill = true }
 star = { phosphor = "star", fill = true }
 store = { phosphor = "storefront", fill = true }
-tasks = { phosphor = "list-checks" }
+tasks = { phosphor = "list-checks", fill = true }
 trash = { phosphor = "trash" }
 warning = { phosphor = "warning", fill = true }
 warningCircle = { phosphor = "warning-circle", fill = true }
 web = { phosphor = "compass" }
+wrench = { phosphor = "wrench", fill = true }

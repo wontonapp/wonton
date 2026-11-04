@@ -1,29 +1,30 @@
 import SwiftUI
 import WontonClient
 
-/// 插件图标，统一裁成圆角方形（ADR-0017：图标满幅，不自己画圆角）。没有图标、取不到时画占位。
+/// 插件图标，统一裁成圆角方形（ADR-0017：图标满幅，不自己画圆角）。没有图标、取不到时画按分类选的占位（ADR-0026）。
 struct PluginIconView: View {
     let icon: PluginIcon?
-    let kind: PluginKind
+    let category: PluginCategory?
     let size: CGFloat
     let model: PluginsModel
     @State private var image: UIImage?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: size * WontonTheme.ratio.pluginIconRadius, style: .continuous)
         ZStack {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(shape)
+                    .overlay(shape.strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline))
             } else {
-                LinearGradient(colors: [Color(.systemGray4), Color(.systemGray2)], startPoint: .top, endPoint: .bottom)
-                Image(systemName: kind.symbol)
-                    .font(.system(size: size * 0.42, weight: .medium))
-                    .foregroundStyle(.white)
+                category.glyph.view(size: size * 0.54)
+                    .foregroundStyle(Color(colors.accentInkOnFill))
+                    .frame(width: size, height: size)
+                    .accentFill(shape)
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
         .task(id: source?.path) {
             // 取不到的图标画占位（ADR-0017），不当作错误。
             guard let source else {
@@ -40,16 +41,25 @@ struct PluginIconView: View {
     }
 }
 
-extension PluginKind {
-    /// 占位图标上的符号。
-    var symbol: String {
+private extension PluginCategory? {
+    var glyph: WontonIcon {
         switch self {
-        case .app: return "square.grid.2x2.fill"
-        case .agent: return "sparkles"
-        case .channel: return "bubble.left.and.bubble.right.fill"
-        case .model: return "cpu"
-        case .system: return "gearshape.fill"
-        case .other: return "puzzlepiece.extension.fill"
+        case .ai: .cpuFill
+        case .agent: .agentFill
+        case .photos: .imageFill
+        case .media: .musicFill
+        case .files: .folderFill
+        case .documents: .documentFill
+        case .productivity: .tasksFill
+        case .communication: .chatFill
+        case .home: .homeFill
+        case .network: .globeFill
+        case .security: .shieldFill
+        case .developer: .codeFill
+        case .downloads: .downloadFill
+        case .tools: .wrenchFill
+        case .system: .settingsFill
+        case .other, .none: .appsFill
         }
     }
 }

@@ -83,7 +83,7 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(task.icon, task.title, 40.dp, plugins)
+        PluginIconImage(task.icon, null, 40.dp, plugins)
         Column(Modifier.weight(1f)) {
             Text(task.title, fontWeight = FontWeight.SemiBold)
             TaskState(task.operation, task.state, onReview)

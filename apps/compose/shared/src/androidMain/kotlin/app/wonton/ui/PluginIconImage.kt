@@ -1,56 +1,97 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import app.wonton.protocol.PluginCategory
 import app.wonton.protocol.PluginIcon
 import app.wonton.protocol.PluginImage
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.AgentFill
+import app.wonton.ui.icons.AppsFill
+import app.wonton.ui.icons.ChatFill
+import app.wonton.ui.icons.CodeFill
+import app.wonton.ui.icons.CpuFill
+import app.wonton.ui.icons.DocumentFill
+import app.wonton.ui.icons.DownloadFill
+import app.wonton.ui.icons.FolderFill
+import app.wonton.ui.icons.GlobeFill
+import app.wonton.ui.icons.HomeFill
+import app.wonton.ui.icons.ImageFill
+import app.wonton.ui.icons.MusicFill
+import app.wonton.ui.icons.SettingsFill
+import app.wonton.ui.icons.ShieldFill
+import app.wonton.ui.icons.TasksFill
+import app.wonton.ui.icons.WontonIcon
+import app.wonton.ui.icons.WrenchFill
 
 /** 和 iOS 的应用图标同样的圆角比例。 */
 private const val CORNER_RATIO = 0.2237f
-private const val GLYPH_RATIO = 0.42f
+private const val GLYPH_RATIO = 0.54f
 
 /** 列表和主屏用小图，详情和确认页用大图。 */
 private val LARGE_FROM = 96.dp
 
-private val placeholder = Brush.verticalGradient(listOf(Color(0xFFC7C7CC), Color(0xFF8E8E93)))
-
-/** 插件图标，统一裁成圆角方形（ADR-0017：图标满幅，不自己画圆角）。没有图标、取不到时画名字的第一个字做占位。 */
+/** 插件图标，统一裁成圆角方形（ADR-0017：图标满幅，不自己画圆角）。没有图标、取不到时画按分类选的占位（ADR-0026）。 */
 @Composable
-fun PluginIconImage(icon: PluginIcon?, title: String, size: Dp, plugins: PluginsState) {
+fun PluginIconImage(icon: PluginIcon?, category: PluginCategory?, size: Dp, plugins: PluginsState) {
     val shape = pluginIconShape(size)
     val image = rememberPluginImage(plugins, if (size > LARGE_FROM) icon?.large else icon?.small)
-    Box(
-        Modifier.size(size).clip(shape).border(0.5.dp, Color.Black.copy(alpha = 0.08f), shape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (image != null) {
-            Image(image, contentDescription = null, Modifier.size(size), contentScale = ContentScale.Crop)
-        } else {
-            val glyph = (size.value * GLYPH_RATIO).sp
-            Box(Modifier.size(size).background(placeholder))
-            Text(title.take(1).uppercase(), color = Color.White, fontSize = glyph, fontWeight = FontWeight.Medium)
+    val colors = WontonTheme.colors
+    if (image != null) {
+        Image(
+            image,
+            contentDescription = null,
+            Modifier.size(size).clip(shape).border(WontonTheme.size.hairline, colors.separator.toColor(), shape),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Box(Modifier.size(size).accentFill(shape), contentAlignment = Alignment.Center) {
+            Icon(
+                category.glyph,
+                contentDescription = null,
+                modifier = Modifier.size(size * GLYPH_RATIO),
+                tint = colors.accentInkOnFill.toColor(),
+            )
         }
     }
 }
+
+private val PluginCategory?.glyph: ImageVector
+    get() = when (this) {
+        PluginCategory.AI -> WontonIcon.CpuFill
+        PluginCategory.AGENT -> WontonIcon.AgentFill
+        PluginCategory.PHOTOS -> WontonIcon.ImageFill
+        PluginCategory.MEDIA -> WontonIcon.MusicFill
+        PluginCategory.FILES -> WontonIcon.FolderFill
+        PluginCategory.DOCUMENTS -> WontonIcon.DocumentFill
+        PluginCategory.PRODUCTIVITY -> WontonIcon.TasksFill
+        PluginCategory.COMMUNICATION -> WontonIcon.ChatFill
+        PluginCategory.HOME -> WontonIcon.HomeFill
+        PluginCategory.NETWORK -> WontonIcon.GlobeFill
+        PluginCategory.SECURITY -> WontonIcon.ShieldFill
+        PluginCategory.DEVELOPER -> WontonIcon.CodeFill
+        PluginCategory.DOWNLOADS -> WontonIcon.DownloadFill
+        PluginCategory.TOOLS -> WontonIcon.WrenchFill
+        PluginCategory.SYSTEM -> WontonIcon.SettingsFill
+        PluginCategory.OTHER, null -> WontonIcon.AppsFill
+    }
 
 fun pluginIconShape(size: Dp) = RoundedCornerShape(size * CORNER_RATIO)
 

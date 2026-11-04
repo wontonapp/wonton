@@ -36,6 +36,8 @@ object WontonSize {
     val bottomBar = 64.dp
     val icon = 24.dp
     val iconSmall = 20.dp
+    val launcherIcon = 62.dp
+    val launcherCell = 76.dp
     val hairline = 1.dp
 }
 

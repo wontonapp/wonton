@@ -26,6 +26,8 @@ topBar = 56
 bottomBar = 64
 icon = 24
 iconSmall = 20
+launcherIcon = 62
+launcherCell = 76
 hairline = 1
 
 [ratio]

@@ -159,7 +159,7 @@ private fun detailAction(detail: PluginDetail, working: Boolean, navigation: Plu
 private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: DetailAction?) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            PluginIconImage(detail.icon, detail.title, 112.dp, plugins)
+            PluginIconImage(detail.icon, detail.category, 112.dp, plugins)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(detail.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(detail.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)

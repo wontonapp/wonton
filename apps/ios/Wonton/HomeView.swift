@@ -13,9 +13,9 @@ struct HomeView: View {
     var devWebURL: URL?
     @State private var path = NavigationPath()
     @State private var isShowingPage = false
-    @State private var isInviting = false
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -28,21 +28,18 @@ struct HomeView: View {
                         }
                 } else {
                     launcher
-                        .navigationTitle("家")
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                NavigationLink("外观", value: HomeRoute.appearance)
-                            }
-                            ToolbarItem(placement: .topBarTrailing) {
-                                NavigationLink(value: HomeRoute.connection) { connectionLabel }
-                            }
+                        .wontonRootScreen("家") {
+                            WontonIconLink(icon: .palette, label: "外观", value: HomeRoute.appearance)
+                            connectionLink
                         }
                 }
             }
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .connection:
-                    ConnectionView(model: model, isInviting: $isInviting)
+                    ConnectionView(model: model)
+                case .invite:
+                    InviteView(model: model)
                 case .pairing:
                     PairingView(model: model) { path.removeLast() }
                         .wontonPushedScreen("重新配对")
@@ -61,9 +58,6 @@ struct HomeView: View {
                     PluginPage(title: url.host() ?? "", url: url, proxy: proxy) { isShowingPage = false }
                 }
             }
-            .sheet(isPresented: $isInviting) {
-                InviteView(model: model) { isInviting = false }
-            }
             .alert("操作被拒绝", isPresented: isShowingRejection, presenting: model.rejection) { _ in
                 Button("好") {}
             } message: { reason in
@@ -74,12 +68,12 @@ struct HomeView: View {
 
     private var launcher: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s24) {
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
                 }
             }
-            .padding()
+            .padding(WontonTheme.spacing.pageInset)
             // 内容为空时 ScrollView 的宽度随内容缩成零，盖在上面的占位也跟着变窄。
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -105,13 +99,10 @@ struct HomeView: View {
             ProblemRow(message: check.message, nextStep: nil)
         }
         if installed.plugins.isEmpty {
-            ContentUnavailableView {
-                Label("还没有装插件", systemImage: "square.grid.2x2")
-            } actions: {
-                Button("去商店", action: showStore).buttonStyle(.bordered)
-            }
+            NoPlugins(showStore: showStore)
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 12)], spacing: 22) {
+            let cell = GridItem(.adaptive(minimum: WontonTheme.size.launcherCell), spacing: WontonTheme.spacing.s12)
+            LazyVGrid(columns: [cell], spacing: WontonTheme.spacing.s24) {
                 ForEach(installed.plugins, id: \.id) { plugin in
                     Button { tap(plugin) } label: { LauncherIcon(model: plugins, plugin: plugin) }
                         .buttonStyle(.plain)
@@ -144,31 +135,41 @@ struct HomeView: View {
     }
 
     @ViewBuilder private func menu(for plugin: InstalledPlugin) -> some View {
-        Button("详情", systemImage: "info.circle") { path.append(PluginRoute.installed(id: plugin.id)) }
+        menuItem("详情", .info) { path.append(PluginRoute.installed(id: plugin.id)) }
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         if plugin.entries.count > 1, let web = plugin.entries.last {
-            Button("打开网页", systemImage: "safari") { open(web) }
+            menuItem("打开网页", .web) { open(web) }
         }
         if let upgrade = plugin.upgrade {
-            Button("升级到 \(upgrade.version)", systemImage: "arrow.down.circle") {
-                confirmation = .upgrade(id: plugin.id)
-            }
+            menuItem("升级到 \(upgrade.version)", .download) { confirmation = .upgrade(id: plugin.id) }
         }
         if plugin.removable {
-            Button("卸载", systemImage: "trash", role: .destructive) {
+            menuItem("卸载", .trash, role: .destructive) {
                 uninstalling = UninstallTarget(id: plugin.id, title: plugin.title)
             }
         }
     }
 
-    @ViewBuilder private var connectionLabel: some View {
+    private func menuItem(
+        _ title: String,
+        _ icon: WontonIcon,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            Label { Text(title) } icon: { icon.image }
+        }
+    }
+
+    /// 连不上时换成警告；正在连时变浅。
+    @ViewBuilder private var connectionLink: some View {
         switch model.viewModel.status {
         case .disconnected:
-            Label("连接", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            WontonIconLink(icon: .warning, label: "连接", value: HomeRoute.connection, tint: colors.danger)
         case .connecting:
-            Label("连接", systemImage: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary)
+            WontonIconLink(icon: .connection, label: "连接", value: HomeRoute.connection, tint: colors.textSecondary)
         case .connected, .notConfigured:
-            Label("连接", systemImage: "antenna.radiowaves.left.and.right")
+            WontonIconLink(icon: .connection, label: "连接", value: HomeRoute.connection)
         }
     }
 
@@ -193,28 +194,51 @@ struct HomeView: View {
 
 private enum HomeRoute: Hashable {
     case connection
+    case invite
     case pairing
     case appearance
     case egress
+}
+
+private struct NoPlugins: View {
+    let showStore: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        VStack(spacing: WontonTheme.spacing.s12) {
+            Text("还没有装插件")
+                .wontonText(WontonTheme.typography.itemTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+            Button("去商店", action: showStore)
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, WontonTheme.spacing.s48)
+    }
 }
 
 /// 主屏上的一个插件：圆角方形的图标和名字。能升级的、出了问题的在图标角上标出来，正在装、升级、卸载的转圈。
 private struct LauncherIcon: View {
     let model: PluginsModel
     let plugin: InstalledPlugin
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(spacing: 6) {
-            PluginIconView(icon: plugin.icon, kind: plugin.kind, size: 62, model: model)
+        let size = WontonTheme.size.launcherIcon
+        VStack(spacing: WontonTheme.spacing.s4) {
+            PluginIconView(icon: plugin.icon, category: plugin.category, size: size, model: model)
                 .overlay {
                     if plugin.isBusy {
-                        RoundedRectangle(cornerRadius: 62 * 0.2237, style: .continuous)
+                        RoundedRectangle(cornerRadius: size * WontonTheme.ratio.pluginIconRadius, style: .continuous)
                             .fill(.black.opacity(0.35))
                             .overlay { ProgressView().tint(.white) }
                     }
                 }
                 .overlay(alignment: .topTrailing) { badge.offset(x: 6, y: -6) }
-            Text(plugin.title).font(.caption).lineLimit(1)
+            Text(plugin.title)
+                .wontonText(WontonTheme.typography.caption)
+                .foregroundStyle(Color(colors.textPrimary))
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -222,13 +246,12 @@ private struct LauncherIcon: View {
 
     @ViewBuilder private var badge: some View {
         if case .degraded = plugin.status {
-            Image(systemName: "exclamationmark.circle.fill")
-                .symbolRenderingMode(.multicolor)
-                .font(.title3)
-                .background(Circle().fill(.background))
+            WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
+                .foregroundStyle(Color(colors.danger))
+                .background(Circle().fill(Color(colors.canvas)))
         } else if plugin.upgrade != nil {
-            Circle().fill(Color.accentColor).frame(width: 12, height: 12)
-                .overlay(Circle().strokeBorder(.background, lineWidth: 2))
+            Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
         }
     }
 }
@@ -236,25 +259,37 @@ private struct LauncherIcon: View {
 /// 和家里服务器的连接，以及添加设备、重新配对。
 private struct ConnectionView: View {
     let model: HomeModel
-    @Binding var isInviting: Bool
 
     var body: some View {
-        Form {
-            Section {
-                LabeledContent("状态", value: model.viewModel.status.text)
-                if let path = model.viewModel.path {
-                    LabeledContent("路径", value: "\(path.relay ? "中继" : "直连") · \(path.rttMs) ms")
+        ScrollView {
+            VStack(spacing: WontonTheme.spacing.sectionGap) {
+                WontonGroup {
+                    WontonRow(title: "状态", value: model.viewModel.status.text)
+                    if let path = model.viewModel.path {
+                        WontonSeparator()
+                        WontonRow(title: "路径", value: "\(path.relay ? "中继" : "直连") · \(path.rttMs) ms")
+                    }
                 }
+                WontonGroup {
+                    NavigationLink(value: HomeRoute.egress) {
+                        WontonRow(title: "出网代理", showsForward: true)
+                    }
+                }
+                .buttonStyle(.plain)
+                WontonGroup {
+                    NavigationLink(value: HomeRoute.invite) {
+                        WontonRow(title: "添加设备", showsForward: true)
+                    }
+                    WontonSeparator()
+                    NavigationLink(value: HomeRoute.pairing) {
+                        WontonRow(title: "重新配对", showsForward: true)
+                    }
+                }
+                .buttonStyle(.plain)
             }
-            Section {
-                NavigationLink("出网代理", value: HomeRoute.egress)
-            }
-            Section {
-                Button("添加设备") { isInviting = true }
-                NavigationLink("重新配对", value: HomeRoute.pairing)
-            }
+            .padding(WontonTheme.spacing.pageInset)
         }
-        .navigationTitle("连接")
+        .wontonPushedScreen("连接")
     }
 }
 

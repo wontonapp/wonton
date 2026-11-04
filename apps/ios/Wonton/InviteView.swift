@@ -6,38 +6,33 @@ import WontonClient
 /// `HomeViewModel.invite`。
 struct InviteView: View {
     @Bindable var model: HomeModel
-    let done: () -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        NavigationStack {
-            Form {
+        ScrollView {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 switch model.viewModel.invite {
                 case nil, .requesting:
-                    HStack(spacing: 12) {
+                    HStack(spacing: WontonTheme.spacing.s12) {
                         ProgressView()
                         Text("正在向家里的服务器要配对码…")
+                            .wontonText(WontonTheme.typography.body)
+                            .foregroundStyle(Color(colors.textPrimary))
                     }
                 case let .ready(code, expiresAtMs):
                     InviteCode(code: code, expiresAt: Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)) {
                         model.send(.inviteDevice)
                     }
                 case let .failed(_, message):
-                    Section {
-                        Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                    WontonNotice(icon: .warning, title: "没要到配对码", lines: [message]) {
                         Button("再试一次") { model.send(.inviteDevice) }
-                    } header: {
-                        Text("没要到配对码")
+                            .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
                 }
             }
-            .navigationTitle("添加设备")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", action: done)
-                }
-            }
+            .padding(WontonTheme.spacing.pageInset)
         }
+        .wontonPushedScreen("添加设备")
         .task { model.send(.inviteDevice) }
     }
 }
@@ -47,39 +42,50 @@ private struct InviteCode: View {
     let code: String
     let expiresAt: Date
     let renew: () -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Section {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let remaining = Int(expiresAt.timeIntervalSince(context.date))
-                if remaining > 0 {
-                    VStack(spacing: 12) {
-                        if let image = QRImage.make(code) {
-                            Image(uiImage: image)
-                                .interpolation(.none)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxWidth: 260)
-                        }
-                        Text("还有 \(remaining / 60):\(String(format: "%02d", remaining % 60)) 过期")
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remaining = Int(expiresAt.timeIntervalSince(context.date))
+            if remaining > 0 {
+                VStack(spacing: WontonTheme.spacing.s12) {
+                    if let image = QRImage.make(code) {
+                        Image(uiImage: image)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 260)
+                            .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
                     }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("这个码过期了。")
-                        Button("换一个码", action: renew)
-                    }
+                    Text("还有 \(remaining / 60):\(String(format: "%02d", remaining % 60)) 过期")
+                        .wontonText(WontonTheme.typography.supporting)
+                        .monospacedDigit()
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                WontonNotice(icon: .warning, title: "这个码过期了。") {
+                    Button("换一个码", action: renew)
+                        .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
-        } footer: {
-            Text("在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。")
         }
-        Section("不能扫码时粘贴这段文字") {
+        Text("在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。")
+            .wontonText(WontonTheme.typography.supporting)
+            .foregroundStyle(Color(colors.textSecondary))
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            Text("不能扫码时粘贴这段文字")
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
             Text(code)
                 .font(.caption.monospaced())
+                // 英文断词会给这段码加上连字符，看着像码的一部分。
+                .typesettingLanguage(.init(identifier: "zh-Hans"))
+                .foregroundStyle(Color(colors.textPrimary))
                 .textSelection(.enabled)
+                .padding(WontonTheme.spacing.s12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
         }
     }
 }
@@ -90,8 +96,12 @@ private enum QRImage {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"
-        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
-              let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        // 深色页面上二维码四周也要有白边，否则扫不出来。
+        guard let code = filter.outputImage else { return nil }
+        let quiet = code.extent.insetBy(dx: -2, dy: -2)
+        let framed = code.composited(over: CIImage(color: .white)).cropped(to: quiet)
+        let output = framed.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        guard let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: image)
     }
 }

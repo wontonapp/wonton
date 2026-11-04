@@ -110,7 +110,7 @@ private struct PreviewList: View {
         List {
             Section {
                 HStack(spacing: 14) {
-                    PluginIconView(icon: preview.icon, kind: preview.kind, size: 64, model: model)
+                    PluginIconView(icon: preview.icon, category: nil, size: 64, model: model)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(preview.title).font(.headline)
                         Text(version).font(.subheadline).foregroundStyle(.secondary)

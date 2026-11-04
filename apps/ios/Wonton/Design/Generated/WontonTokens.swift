@@ -29,6 +29,8 @@ enum WontonSize {
     static let bottomBar: CGFloat = 64
     static let icon: CGFloat = 24
     static let iconSmall: CGFloat = 20
+    static let launcherIcon: CGFloat = 62
+    static let launcherCell: CGFloat = 76
     static let hairline: CGFloat = 1
 }
 

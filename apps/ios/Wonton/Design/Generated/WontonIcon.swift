@@ -15,14 +15,25 @@ enum WontonIcon: String {
     case checkCircle
     case checkCircleFill
     case close
+    case code
+    case codeFill
     case compose
     case connection
+    case cpu
+    case cpuFill
     case device
+    case document
+    case documentFill
     case download
+    case downloadFill
     case error
     case errorFill
     case file
+    case folder
+    case folderFill
     case forward
+    case globe
+    case globeFill
     case help
     case home
     case homeFill
@@ -34,6 +45,8 @@ enum WontonIcon: String {
     case lockFill
     case lockKey
     case more
+    case music
+    case musicFill
     case notify
     case palette
     case pause
@@ -49,15 +62,19 @@ enum WontonIcon: String {
     case settings
     case settingsFill
     case shield
+    case shieldFill
     case star
     case starFill
     case store
     case storeFill
     case tasks
+    case tasksFill
     case trash
     case warning
     case warningFill
     case warningCircle
     case warningCircleFill
     case web
+    case wrench
+    case wrenchFill
 }

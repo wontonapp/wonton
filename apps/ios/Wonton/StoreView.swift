@@ -180,7 +180,7 @@ private struct StoreItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PluginIconView(icon: item.icon, kind: item.kind, size: 56, model: model)
+            PluginIconView(icon: item.icon, category: item.category, size: 56, model: model)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title).font(.headline).lineLimit(1)
                 Text(item.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
@@ -227,7 +227,7 @@ struct TaskRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PluginIconView(icon: task.icon, kind: .other, size: 40, model: model)
+            PluginIconView(icon: task.icon, category: nil, size: 40, model: model)
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title).font(.subheadline.weight(.semibold))
                 state

@@ -107,7 +107,7 @@ private fun PreviewContent(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            PluginIconImage(preview.icon, preview.title, 64.dp, plugins)
+            PluginIconImage(preview.icon, null, 64.dp, plugins)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(preview.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 val version = preview.upgradeFrom?.let { "$it → ${preview.version}" } ?: preview.version

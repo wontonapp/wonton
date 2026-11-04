@@ -7,10 +7,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,6 +26,13 @@ import app.wonton.protocol.PluginCategory
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTrust
+import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
 
 val Blue = Color(0xFF0A7CFF)
 val Orange = Color(0xFFE67E00)
@@ -121,32 +129,38 @@ fun Tag(text: String, tint: Color) {
 /** 取列表、详情或预览失败，整页显示原因和下一步。 */
 @Composable
 fun ProblemView(message: String, nextStep: String?, onRetry: () -> Unit) {
+    val colors = WontonTheme.colors
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        Modifier.fillMaxSize().padding(WontonTheme.spacing.s32),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(message, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Icon(
+            WontonIcon.Warning,
+            contentDescription = null,
+            modifier = Modifier.size(WontonTheme.size.icon),
+            tint = colors.danger.toColor(),
+        )
+        Text(
+            message,
+            style = WontonTheme.typography.itemTitle.copy(textAlign = TextAlign.Center),
+            color = colors.textPrimary.toColor(),
+        )
         nextStep?.let {
-            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Text(
+                it,
+                style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.Center),
+                color = colors.textSecondary.toColor(),
+            )
         }
-        OutlinedButton(onClick = onRetry, Modifier.padding(top = 8.dp)) { Text("重试") }
+        WontonButton("重试", onRetry, Modifier.padding(top = WontonTheme.spacing.s8), WontonButtonKind.SECONDARY)
     }
 }
 
 /** 列表还在，但最近一次刷新出了问题：放在列表上方。 */
 @Composable
-fun ProblemRow(message: String, nextStep: String?, modifier: Modifier = Modifier) {
-    Column(
-        modifier.fillMaxWidth()
-            .background(Orange.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        Text(message, style = MaterialTheme.typography.bodySmall)
-        nextStep?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+fun ProblemRow(message: String, nextStep: String?) {
+    WontonNotice(WontonIcon.Warning, message, lines = listOfNotNull(nextStep))
 }
 
 /** 核心给的说明，`emphasis` 的醒目显示。 */

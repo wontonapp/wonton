@@ -164,7 +164,7 @@ private struct DetailHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 16) {
-                PluginIconView(icon: detail.icon, kind: detail.kind, size: 112, model: model)
+                PluginIconView(icon: detail.icon, category: detail.category, size: 112, model: model)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(detail.title).font(.title2.bold())
                     Text(detail.summary).font(.subheadline).foregroundStyle(.secondary)
