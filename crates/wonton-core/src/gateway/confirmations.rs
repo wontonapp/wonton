@@ -61,7 +61,11 @@ pub async fn answer(
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
-    match mcp.bus.confirmations().answer(&id, answer.answer) {
+    match mcp
+        .bus
+        .confirmations()
+        .answer(&id, answer.answer, answer.choice_id.as_deref())
+    {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),
         Err(e) => {
             let status = match e {

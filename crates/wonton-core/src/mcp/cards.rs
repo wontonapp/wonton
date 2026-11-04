@@ -46,10 +46,12 @@ fn choices(approve: &str, reject: &str) -> Vec<CardChoice> {
         CardChoice {
             answer: Answer::Approve,
             label: approve.to_owned(),
+            choice_id: None,
         },
         CardChoice {
             answer: Answer::Reject,
             label: reject.to_owned(),
+            choice_id: None,
         },
     ]
 }
@@ -131,16 +133,19 @@ pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> 
     let mut buttons = vec![CardChoice {
         answer: Answer::Approve,
         label: format!("允许存进 {folder}"),
+        choice_id: None,
     }];
     if !target.dirs.is_empty() {
         buttons.push(CardChoice {
             answer: Answer::ApproveWider,
             label: format!("允许存进 {}", target.share),
+            choice_id: None,
         });
     }
     buttons.push(CardChoice {
         answer: Answer::Reject,
         label: "拒绝".to_owned(),
+        choice_id: None,
     });
     Draft {
         title: format!("{requester} 想把 {} 个文件存进 {folder}", files.len()),

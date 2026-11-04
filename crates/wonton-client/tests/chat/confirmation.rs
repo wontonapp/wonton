@@ -141,6 +141,7 @@ async fn answers_that_do_not_land_and_cards_that_run_out_show_what_happened() {
         phone.dispatch(Action::AnswerConfirmation {
             id: "x".to_owned(),
             answer: Answer::Unknown,
+            choice_id: None,
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -320,6 +321,56 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
     assert_eq!(Some(card.expires_at_ms), waiting["expires_at_ms"].as_u64());
 }
 
+/// Agent 的卡片上可以有多个同为同意的按钮：回答带上点的是哪一个，正在发时也分得清（ADR-0035）。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn buttons_with_the_same_answer_are_told_apart() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let (core, room_id) = core_room(&phone, &home).await;
+    let room = core.open_room(&room_id).await.expect("核心打开私聊");
+    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
+
+    let mut agent = card("agent", in_ten_minutes());
+    agent["choices"] = json!([
+        {"answer": "approve", "label": "这次允许", "choice_id": "once"},
+        {"answer": "approve", "label": "总是允许", "choice_id": "always"},
+        {"answer": "reject", "label": "拒绝", "choice_id": "no"},
+    ]);
+    send(&room, content(&agent)).await;
+    let view = card_view(&mut timeline, "agent", "卡片出现").await;
+    assert_eq!(view.card.choices.len(), 3);
+
+    home.hold_answers(true);
+    phone
+        .dispatch(Action::AnswerConfirmation {
+            id: "agent".to_owned(),
+            answer: Answer::Approve,
+            choice_id: Some("always".to_owned()),
+        })
+        .unwrap();
+    until_card(&mut timeline, "agent", "正在发", |view| {
+        view.sending == Some(Answer::Approve) && view.sending_choice_id.as_deref() == Some("always")
+    })
+    .await;
+    home.hold_answers(false);
+
+    until_card(&mut timeline, "agent", "核心收下回答", |view| {
+        view.card.state == ConfirmationState::Running && view.sending_choice_id.is_none()
+    })
+    .await;
+    assert_eq!(
+        home.confirmation_answers(),
+        [(
+            "agent".to_owned(),
+            json!({"answer": "approve", "choice_id": "always"})
+        )]
+    );
+}
+
 /// 比这个 App 新的核心写的：多了一个按钮和一个字段，别的按钮照常能点。
 fn install_card() -> Value {
     let mut install = card("install", in_ten_minutes());
@@ -443,6 +494,7 @@ fn answer(phone: &Phone, id: &str, answer: Answer) {
         .dispatch(Action::AnswerConfirmation {
             id: id.to_owned(),
             answer,
+            choice_id: None,
         })
         .unwrap();
 }

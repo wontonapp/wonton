@@ -34,7 +34,9 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 Agent 的 `session/request_permission` 不是 Matrix 消息里的普通按钮，而是核心确认系统的一个请求。桥把 ACP 的 `toolCallId`、标题、说明、已收到的 `tool_call`/`tool_call_update` 参数和选项原样整理成核心可渲染的结构化卡片；同一 `toolCallId` 的增量合并，秘密字段和 token 永不进卡片、日志或审计。卡片发在 Wonton 私聊，包含 ACP 提供的选项名称，不让模型文字决定按钮。
 
-核心复用现有确认卡片的通用 `approve`/`reject` 方向，不新增 `allow_always`、`reject_always` 或 `allow_window` 的 Answer 枚举。为让一张卡片保留多个 ACP 选项，卡片扩展一个一次性的 opaque `choice_id`；每个 ACP `optionId`、`kind`、显示名和 `toolCallId` 只作为这次请求的映射，主人选中后核心把 choice_id 和结果交给桥。`allow_once`/`allow_always` 都显示为 Agent 给的同意选项，`reject_once`/`reject_always` 都显示为拒绝选项，桥再按映射回原始 ACP `optionId`。`allow_always` 是 Agent 自己的作用域，不转成 `ApproveWider`，不写 Wonton `tool-policy`；Wonton MCP 工具的持续放行仍只按 ADR-0024，两个策略不互相扩大。若 ACP 没有拒绝选项，核心另提供“取消”动作，桥回 ACP `cancelled`；未知 choice 返回 `invalid_input`。核心保存请求映射并审计决定，不让桥或 Agent 自己批准。
+核心复用现有确认卡片的通用 `approve`/`reject` 方向，不新增 `allow_always`、`reject_always` 或 `allow_window` 的 Answer 枚举。为让一张卡片保留多个 ACP 选项，卡片的按钮和主人的回答扩展一个 opaque `choice_id`，由桥为这次请求生成，核心只原样放到卡片上再原样带回，不认识 ACP `optionId`；回答对不上卡片上的按钮时返回 400 `invalid_input`。`allow_once`/`allow_always` 都显示为 Agent 给的同意选项，`reject_once`/`reject_always` 都显示为拒绝选项，桥再按自己的映射回原始 ACP `optionId`。`allow_always` 是 Agent 自己的作用域，不转成 `ApproveWider`，不写 Wonton `tool-policy`；Wonton MCP 工具的持续放行仍只按 ADR-0024，两个策略不互相扩大。若 ACP 没有拒绝选项，核心另加一个不带 `choice_id` 的拒绝按钮“取消”，桥回 ACP `cancelled`。核心审计决定，不让桥或 Agent 自己批准。
+
+入口不写 ACP 或桥的特例，插件网络里的任何 Agent 适配层都能用：`POST /agent/permissions`，和 MCP 总线同一个地址（`WONTON_MCP_URL` 换掉路径）、同一道门（按来源地址认出调用方，要有 `tools` 权限），但不是 MCP，因为桥不说 MCP。它是长请求，用 HTTP 而不是回调，桥不用再开监听。请求带 `tool_call_id`、标题、说明、参数和选项（`choice_id`、`kind`、显示名），响应是三种结果之一：`selected`（带 `choice_id`，包括主人选了拒绝类的选项）、`cancelled`（主人点了核心加的“取消”）、`expired`。选项不认识、没有选项或 `choice_id` 重复时返回 400 `invalid_input`。桥断开长请求就是撤回，卡片随之作废。类型在 `wonton-protocol` 的 `agent_permission` 模块。
 
 桥在收到主人回答后以映射出的原始 ACP `optionId` 回答 `session/request_permission`；主人选择 ACP 的拒绝选项时保留拒绝语义，核心的取消动作、确认到期和主人取消该 prompt 都回 ACP `cancelled`。Agent 等确认期间，ACP 请求和核心卡片的 TTL 都是 10 分钟。桥在取消、超时、Agent 断开时清理 waiter。工具已经开始执行但连接断了，桥向聊天报告“不确定”，不报告失败。
 
@@ -80,7 +82,7 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 
 ## 要改核心的部分
 
-- `crates/wonton-core`：增加通用的 Agent 权限确认入口；卡片保存 ACP 选项的 opaque `choice_id`/`optionId` 映射、`kind`、显示名和 `toolCallId`，回答后把 selected/cancelled/expired 结果返回 Agent 适配层；不新增 ACP 专用的长期放行策略，审计不记录 token 和秘密。
+- `crates/wonton-core`：实现上面的权限确认入口；卡片保存 `choice_id`、`kind`、显示名和 `tool_call_id`，回答后把 selected/cancelled/expired 结果返回 Agent 适配层；不新增 ACP 专用的长期放行策略，审计不记录 token 和秘密。
 - `crates/wonton-protocol`：给 `CardChoice`/确认回答增加兼容的 opaque `choice_id` 选择字段，使一张卡片能区分多个同为 approve 或 reject 的 Agent 选项；保留现有 `Answer` 方向和 `Unknown` 兼容规则，`allow_window` 仍属于 ADR-0024 的 MCP 工具策略。
 - 插件规范 v0.6：补充 Agent 启动命令、最严格模式、`mcpServers` 能力、Agent 镜像入口的 stdio↔socket 转发命令和 `agent.login` 持久化/秘密约束；规范仓库的 PR 与核心 PR 同步。
 - 核心插件渲染：允许 bridge/agent 作为一对 Bot 服务，bridge 只挂 `${WONTON_BOT_DATA}/bridge` 并在 environment 引用 Matrix token，agent 只挂 `${WONTON_BOT_DATA}/agent`；不把 Docker socket、宿主 root、Matrix token、crypto store 或恢复密钥交给 Agent。

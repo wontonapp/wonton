@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
 use tokio::sync::oneshot;
-use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState};
+use wonton_protocol::{Answer, CardChoice, ConfirmationCard, ConfirmationState};
 
 use super::cards::Draft;
 use crate::plugin::PluginId;
@@ -202,7 +202,12 @@ impl Confirmations {
     }
 
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。
-    pub fn answer(&self, id: &str, answer: Answer) -> Result<ConfirmationState, AnswerError> {
+    pub fn answer(
+        &self,
+        id: &str,
+        answer: Answer,
+        choice_id: Option<&str>,
+    ) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
             Answer::Approve | Answer::ApproveWider => ConfirmationState::Running,
             Answer::Reject => ConfirmationState::Rejected,
@@ -211,7 +216,8 @@ impl Confirmations {
         let mut slots = self.lock();
         let slot = slots.get_mut(id).ok_or(AnswerError::NotFound)?;
         // 卡片上没有这个按钮，就不是对这张卡片的回答。
-        if !slot.card.choices.iter().any(|c| c.answer == answer) {
+        let on_card = |c: &CardChoice| c.answer == answer && c.choice_id.as_deref() == choice_id;
+        if !slot.card.choices.iter().any(on_card) {
             return Err(AnswerError::UnknownAnswer);
         }
         if slot.card.state == ConfirmationState::Expired

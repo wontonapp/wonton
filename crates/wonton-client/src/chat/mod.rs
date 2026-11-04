@@ -27,9 +27,9 @@ use wonton_matrix::{
     StoreConfig, SyncStatus,
 };
 use wonton_protocol::{
-    Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, CoreError,
-    DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel, ImageUpload, MediaHandle,
-    ProxySettings, PushStatus, RecoveryStatus, SecretString,
+    Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
+    ConfirmationAnswer, CoreError, DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel,
+    ImageUpload, MediaHandle, ProxySettings, PushStatus, RecoveryStatus, SecretString,
 };
 
 pub(crate) use confirmation::{PushedCard, pushed_card};
@@ -189,7 +189,11 @@ impl ChatLink {
             Action::SetUpRecovery => self.set_up_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
-            Action::AnswerConfirmation { id, answer } => self.answer_confirmation(id, answer),
+            Action::AnswerConfirmation {
+                id,
+                answer,
+                choice_id,
+            } => self.answer_confirmation(id, answer, choice_id),
             _ => Err(invalid("不是聊天操作")),
         }
     }
@@ -297,7 +301,12 @@ impl ChatLink {
 
     /// 主人点了确认卡片上的按钮：经隧道发给核心，进展放进 `answers`。同一张卡片在发或者答完了就不再发：核心那边
     /// 也只收一次，这里是不让连点变成“回答过了”的报错。
-    fn answer_confirmation(&self, id: String, answer: Answer) -> Result<(), CoreError> {
+    fn answer_confirmation(
+        &self,
+        id: String,
+        answer: Answer,
+        choice_id: Option<String>,
+    ) -> Result<(), CoreError> {
         if answer == Answer::Unknown {
             return Err(invalid("这个 App 不认识这个回答"));
         }
@@ -308,13 +317,14 @@ impl ChatLink {
         let core_url = self.home.core_url().ok_or_else(not_connected)?;
         if !self
             .answers
-            .send_if_modified(|answers| answers.start(&id, answer))
+            .send_if_modified(|answers| answers.start(&id, answer, choice_id.clone()))
         {
             return Ok(());
         }
         let answers = self.answers.clone();
         self.runtime.spawn(async move {
-            let outcome = confirmation::send_answer(&core_url, &proxy, &id, answer).await;
+            let body = ConfirmationAnswer { answer, choice_id };
+            let outcome = confirmation::send_answer(&core_url, &proxy, &id, body).await;
             answers.send_modify(|answers| answers.finish(id, outcome));
         });
         Ok(())

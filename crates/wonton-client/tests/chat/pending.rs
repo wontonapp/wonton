@@ -18,6 +18,7 @@ fn answer(phone: &Phone, id: &str) {
         .dispatch(Action::AnswerConfirmation {
             id: id.to_owned(),
             answer: Answer::Reject,
+            choice_id: None,
         })
         .unwrap();
 }

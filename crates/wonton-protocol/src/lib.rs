@@ -9,6 +9,7 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod agent_permission;
 mod appearance;
 mod chat;
 mod confirmation;
@@ -28,6 +29,10 @@ mod tabs;
 mod timeline;
 
 pub use action::Action;
+pub use agent_permission::{
+    AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
+    AgentPermissionOutcome, AgentPermissionRequest,
+};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontOption, FontStyle, Rgb, TextSize, TextSizeOption,
     ThemeColors, ThemeMode, ThemeModeOption,

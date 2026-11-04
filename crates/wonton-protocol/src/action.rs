@@ -79,8 +79,14 @@ pub enum Action {
     /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用
     /// [`CardChoice::answer`](crate::CardChoice::answer)。核心经隧道发出去，进展和结果都在时间线里的卡片上
     /// （[`ConfirmationView`](crate::ConfirmationView)），不进 `ChatViewModel::problem`。这张卡片已经在发、或者已经答完时
-    /// 什么都不做。[`Answer::Unknown`] 返回 `InvalidInput`，家里的服务器还没连上时返回 `NotReady`。
-    AnswerConfirmation { id: String, answer: Answer },
+    /// 什么都不做。[`Answer::Unknown`] 返回 `InvalidInput`，家里的服务器还没连上时返回 `NotReady`。`choice_id` 原样用
+    /// [`CardChoice::choice_id`](crate::CardChoice::choice_id)。
+    AnswerConfirmation {
+        id: String,
+        answer: Answer,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        choice_id: Option<String>,
+    },
 
     // 推送（ADR-0003 的“设计：加密推送”）。进展在 `ChatViewModel::push` 里。
     /// 平台给了（或者换了）推送地址。核心经隧道把它登记给家里的服务器，再在 Matrix 上注册指向家里推送代理的

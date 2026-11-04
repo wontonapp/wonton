@@ -29,7 +29,7 @@ pub(crate) struct Answers(HashMap<String, AnswerProgress>);
 
 #[derive(Clone)]
 pub(super) enum AnswerProgress {
-    Sending(Answer),
+    Sending(Answer, Option<String>),
     /// 结果来自核心的回复，卡片的编辑可能还在路上。
     Settled(ConfirmationState),
     /// 核心不收这个回答，但不知道卡片现在是什么状态。
@@ -40,10 +40,10 @@ pub(super) enum AnswerProgress {
 
 impl Answers {
     /// 开始回答 `id`。这张卡片在发或者答完了时返回假。
-    pub(super) fn start(&mut self, id: &str, answer: Answer) -> bool {
+    pub(super) fn start(&mut self, id: &str, answer: Answer, choice_id: Option<String>) -> bool {
         if matches!(self.0.get(id), None | Some(AnswerProgress::Failed(_))) {
             self.0
-                .insert(id.to_owned(), AnswerProgress::Sending(answer));
+                .insert(id.to_owned(), AnswerProgress::Sending(answer, choice_id));
             return true;
         }
         false
@@ -168,13 +168,17 @@ impl CardsView {
     pub(super) fn view_of(&self, message: &Message) -> Option<ConfirmationView> {
         let mut card = self.card(message)?;
         let mut sending = None;
+        let mut sending_choice_id = None;
         let mut problem = None;
         if card.state == ConfirmationState::Pending {
             if self.now_ms >= card.expires_at_ms {
                 card.state = ConfirmationState::Expired;
             }
             match self.answers.0.get(&card.id) {
-                Some(AnswerProgress::Sending(answer)) => sending = Some(*answer),
+                Some(AnswerProgress::Sending(answer, choice_id)) => {
+                    sending = Some(*answer);
+                    sending_choice_id.clone_from(choice_id);
+                }
                 Some(AnswerProgress::Settled(state)) => card.state = state.clone(),
                 Some(AnswerProgress::Refused(refused)) => {
                     card.choices.clear();
@@ -191,10 +195,12 @@ impl CardsView {
             card.choices.clear();
             problem = None;
             sending = None;
+            sending_choice_id = None;
         }
         Some(ConfirmationView {
             card,
             sending,
+            sending_choice_id,
             problem,
         })
     }
@@ -270,7 +276,7 @@ pub(super) async fn send_answer(
     core_url: &Url,
     proxy: &ProxySettings,
     id: &str,
-    answer: Answer,
+    answer: ConfirmationAnswer,
 ) -> AnswerProgress {
     let failed = |reason, message: String| {
         AnswerProgress::Failed(ChatProblem {
@@ -292,7 +298,7 @@ pub(super) async fn send_answer(
         Ok(client) => client,
         Err(error) => return failed(ChatFailure::Upstream, error.to_string()),
     };
-    let body = serde_json::to_vec(&ConfirmationAnswer { answer }).expect("回答总能写成 JSON");
+    let body = serde_json::to_vec(&answer).expect("回答总能写成 JSON");
     let response = client
         .post(url)
         .header(CONTENT_TYPE, "application/json")

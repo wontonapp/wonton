@@ -13,11 +13,9 @@ uniffi = ["dep:uniffi"]
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 uniffi = { workspace = true, optional = true }
-
-[dev-dependencies]
-serde_json = { workspace = true }
 
 [lints]
 workspace = true

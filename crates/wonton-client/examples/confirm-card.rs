@@ -82,6 +82,7 @@ async fn run(dir: &str, code: &str, answer: Answer) -> Result<ConfirmationState,
     core.dispatch(Action::AnswerConfirmation {
         id: id.clone(),
         answer,
+        choice_id: None,
     })
     .map_err(|e| e.to_string())?;
     let view = next_view(&timeline, &mut items, |view| {

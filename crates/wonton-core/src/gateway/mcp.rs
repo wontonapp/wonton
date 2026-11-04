@@ -1,11 +1,13 @@
 //! `mcp.wonton.internal`：插件经核心访问 MCP 总线（插件规范的“工具与 MCP 总线”）。按来源地址认出请求来自哪个插件
-//! 网络（同 `models.wonton.internal`），只放行申请了 `tools` 的插件，把调用方放进请求扩展交给总线。
+//! 网络（同 `models.wonton.internal`），只放行申请了 `tools` 的插件，把调用方放进请求扩展交给总线。Agent 权限确认的
+//! 入口（ADR-0035）在同一个地址、同一道门后面。
 
 use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
 use hyper::StatusCode;
 use tower::ServiceExt;
+use wonton_protocol::AGENT_PERMISSION_PATH;
 
 use super::api::error_response;
 use super::{Gateway, client_addr};
@@ -38,6 +40,13 @@ pub async fn request(gateway: &Gateway, mut req: Request) -> Response {
             );
         }
     };
+    if req.uri().path() == AGENT_PERMISSION_PATH {
+        return error_response(
+            StatusCode::NOT_IMPLEMENTED,
+            "not_implemented",
+            "这个版本的核心还不能处理 Agent 权限确认",
+        );
+    }
     let title = gateway.plugins.title(&source.id);
     req.extensions_mut()
         .insert(Caller::new(source.id, title.as_ref()));

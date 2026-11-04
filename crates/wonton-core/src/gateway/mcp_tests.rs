@@ -321,21 +321,45 @@ async fn an_agent_closing_its_session_cancels_what_it_was_running() {
     drop(handle);
 }
 
+async fn post_from_plugin_network(
+    home: &Home,
+    path: &str,
+) -> hyper::Response<hyper::body::Incoming> {
+    let request = hyper::Request::builder()
+        .method(Method::POST)
+        .uri(format!("http://{}{path}", home.addr))
+        .header(
+            header::HOST,
+            format!("{PLUGIN_MCP_HOST}:{}", home.addr.port()),
+        )
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    HttpClient::new().send(request).await.unwrap()
+}
+
+/// Agent 权限确认的入口和 MCP 总线同一道门；实现之前如实报没实现，不当成 MCP 请求转给总线（ADR-0035）。
+#[tokio::test]
+async fn the_agent_permission_entry_is_behind_the_same_gate() {
+    let path = wonton_protocol::AGENT_PERMISSION_PATH;
+    let response = post_from_plugin_network(&start(None).await, path).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let without = start(Some(vec![Permission::Models])).await;
+    let response = post_from_plugin_network(&without, path).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let with = start(Some(vec![Permission::Tools])).await;
+    let response = post_from_plugin_network(&with, path).await;
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(
+        response.headers()[ERROR_HEADER],
+        HeaderValue::from_static("not_implemented")
+    );
+}
+
 #[tokio::test]
 async fn only_plugin_networks_with_the_tools_permission_get_in() {
     async fn probe(home: &Home) -> hyper::Response<hyper::body::Incoming> {
-        let url = format!("http://{}/mcp", home.addr);
-        let request = hyper::Request::builder()
-            .method(Method::POST)
-            .uri(url)
-            .header(
-                header::HOST,
-                format!("{PLUGIN_MCP_HOST}:{}", home.addr.port()),
-            )
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from("{}"))
-            .unwrap();
-        HttpClient::new().send(request).await.unwrap()
+        post_from_plugin_network(home, "/mcp").await
     }
     let without = start(Some(vec![Permission::Models])).await;
     let response = probe(&without).await;

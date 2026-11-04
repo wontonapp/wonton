@@ -102,7 +102,7 @@ ADR-0016 规定：插件工具只要没标 `readOnlyHint: true`，Bot 每调用�
 
 | 接口 | 作用 |
 | --- | --- |
-| `POST /_wonton/confirmations/{id}` | 回答卡片，插件工具的卡片多一种 `allow_window`；也接受主人令牌，所有卡片都算，包括安装、卸载（见“开发环境”） |
+| `POST /_wonton/confirmations/{id}` | 回答卡片，插件工具的卡片多一种 `allow_window`；也接受主人令牌，所有卡片都算，包括安装、卸载（见“开发环境”）。Agent 自己的权限卡片（ADR-0035）带 `choice_id`，不进这里的判定顺序，也没有 `allow_window` |
 | `DELETE /_wonton/confirmations/{id}/window` | 停止放行时段 |
 | `GET /_wonton/api/confirmations` | 正在等回答的卡片 |
 | `GET /_wonton/api/plugins/{id}/tool-policy` | 工具列表和各自的状态、始终允许、这个插件里各个 Bot 的一律允许、生效中的时段；插件没运行时带 `tools_error` |

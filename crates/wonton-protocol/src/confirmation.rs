@@ -54,6 +54,10 @@ pub struct CardLine {
 pub struct CardChoice {
     pub answer: Answer,
     pub label: String,
+    /// Agent 自己的选项（ADR-0035）：一张卡片上可以有多个同为同意或拒绝的按钮，靠它区分。回答时原样带回。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub choice_id: Option<String>,
 }
 
 /// 主人的回答。不认识的值怎么处理见 ADR-0016 第 3 步。
@@ -98,10 +102,14 @@ pub struct ConfirmationList {
 }
 
 /// `POST /_wonton/confirmations/{id}` 的请求体。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ConfirmationAnswer {
     pub answer: Answer,
+    /// 点的那个按钮的 [`CardChoice::choice_id`]。和卡片上的按钮对不上时返回 400 `invalid_input`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub choice_id: Option<String>,
 }
 
 /// 回答之后卡片的状态。
@@ -120,6 +128,8 @@ pub struct ConfirmationView {
     pub card: ConfirmationCard,
     /// 正在发给核心的回答。这时按钮还在，但不能点。
     pub sending: Option<Answer>,
+    /// 正在发的是哪个按钮：[`Self::sending`] 相同的按钮靠它区分。
+    pub sending_choice_id: Option<String>,
     /// 最近一次回答没成的原因。连接断了、核心出错时按钮还在，可以再点；核心不收（回答过了、没有这个确认）时按钮
     /// 消失，原因是 `InvalidInput`。
     pub problem: Option<ChatProblem>,
@@ -172,6 +182,37 @@ mod tests {
         .unwrap();
         let answers: Vec<_> = card.choices.iter().map(|choice| choice.answer).collect();
         assert_eq!(answers, [Answer::Approve, Answer::Unknown, Answer::Reject]);
+    }
+
+    /// 契约：`choice_id` 是可选的，没有时线上不出现，`Answer` 的方向不变。
+    #[test]
+    fn a_choice_is_told_apart_by_its_id() {
+        let plain = CardChoice {
+            answer: Answer::Approve,
+            label: "允许".into(),
+            choice_id: None,
+        };
+        assert_eq!(json!(plain), json!({"answer": "approve", "label": "允许"}));
+        let always: CardChoice = serde_json::from_value(json!({
+            "answer": "approve",
+            "label": "总是允许",
+            "choice_id": "opaque-2",
+        }))
+        .unwrap();
+        assert_eq!(always.answer, Answer::Approve);
+        assert_eq!(always.choice_id.as_deref(), Some("opaque-2"));
+
+        let answer = ConfirmationAnswer {
+            answer: Answer::Approve,
+            choice_id: Some("opaque-2".into()),
+        };
+        assert_eq!(
+            json!(answer),
+            json!({"answer": "approve", "choice_id": "opaque-2"})
+        );
+        let answer: ConfirmationAnswer =
+            serde_json::from_value(json!({"answer": "reject"})).unwrap();
+        assert_eq!(answer.choice_id, None);
     }
 
     #[test]

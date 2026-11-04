@@ -9,8 +9,9 @@ use std::time::Duration;
 
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::{Value, json};
-use wonton_protocol::{Answer, ConfirmationState};
+use wonton_protocol::{Answer, CardChoice, ConfirmationState};
 
+use super::cards::Draft;
 use super::test_support::{Cards, Notes, serve_notes};
 use super::upstream::{ReadError, Upstreams};
 use super::{AnswerError, Bus, Caller, Confirmations};
@@ -190,7 +191,7 @@ impl Setup {
         id: &str,
         answer: Answer,
     ) -> Result<ConfirmationState, AnswerError> {
-        self.bus.confirmations().answer(id, answer)
+        self.bus.confirmations().answer(id, answer, None)
     }
 
     pub(super) fn audit(&self) -> Vec<Value> {
@@ -417,6 +418,48 @@ async fn read_only_tools_run_without_asking_the_owner() {
     assert!(failed(&unknown));
     let decisions: Vec<Value> = s.audit().iter().map(|l| l["decision"].clone()).collect();
     assert_eq!(decisions, [json!("allowed"), json!("denied")]);
+}
+
+/// 同为同意的按钮靠 `choice_id` 区分：回答要对得上卡片上的某一个（ADR-0035）。
+#[tokio::test]
+async fn an_answer_has_to_match_a_button_on_the_card() {
+    let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
+    let button = |answer, id: &str| CardChoice {
+        answer,
+        label: id.to_owned(),
+        choice_id: Some(id.to_owned()),
+    };
+    let draft = Draft {
+        title: "Agent 想运行 ls".to_owned(),
+        lines: Vec::new(),
+        choices: vec![
+            button(Answer::Approve, "once"),
+            button(Answer::Approve, "always"),
+            button(Answer::Reject, "no"),
+        ],
+    };
+    let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
+    let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });
+    let card = s.cards.wait_for(1).await;
+    let answer = |answer, choice| s.bus.confirmations().answer(&card.id, answer, choice);
+
+    for (wrong_answer, wrong_choice) in [
+        (Answer::Approve, None),
+        (Answer::Approve, Some("nope")),
+        (Answer::Approve, Some("no")),
+        (Answer::Reject, Some("once")),
+    ] {
+        assert_eq!(
+            answer(wrong_answer, wrong_choice),
+            Err(AnswerError::UnknownAnswer),
+            "{wrong_answer:?} {wrong_choice:?}"
+        );
+    }
+    assert_eq!(
+        answer(Answer::Approve, Some("always")),
+        Ok(ConfirmationState::Running)
+    );
+    assert!(asked.await.unwrap());
 }
 
 #[tokio::test]

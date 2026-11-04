@@ -414,10 +414,12 @@ mod tests {
                     choices: vec![CardChoice {
                         answer: Answer::Approve,
                         label: "安装".into(),
+                        choice_id: None,
                     }],
                     expires_at_ms: 1_793_000_600_000,
                 },
                 sending,
+                sending_choice_id: None,
                 problem,
             },
         }
