@@ -35,6 +35,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.FileInfo
 import app.wonton.protocol.FileProblem
+import app.wonton.ui.design.WontonFontScale
 
 /**
  * 边下边播，用系统的 `VideoView` 放核心给的回环地址：支持 Range，音频也能放，不多带一个播放器库。放不了时问核心为什么，说清原因，
@@ -56,16 +57,18 @@ fun FilePlayer(info: FileInfo, core: ClientCore, onClose: () -> Unit, onOpenElse
         if (failed) problem = core.filePlaybackProblem(info.id)
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            val address = url
-            val shown = problem
-            when {
-                shown != null -> PlayerProblem(shown, onOpenElsewhere)
-                failed || address == null -> CircularProgressIndicator()
-                else -> PlayerSurface(address, onFailed = { failed = true })
-            }
-            TextButton(onClick = onClose, Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                Text("完成", color = Color.White)
+        WontonFontScale {
+            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                val address = url
+                val shown = problem
+                when {
+                    shown != null -> PlayerProblem(shown, onOpenElsewhere)
+                    failed || address == null -> CircularProgressIndicator()
+                    else -> PlayerSurface(address, onFailed = { failed = true })
+                }
+                TextButton(onClick = onClose, Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                    Text("完成", color = Color.White)
+                }
             }
         }
     }

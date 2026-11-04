@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, DeviceNetwork, FileId, ImageUpload, InstallPreview, PushEndpoint, Rgb, SecretString,
-    UploadSource,
+    Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, PushEndpoint, Rgb,
+    SecretString, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -160,9 +160,13 @@ pub enum Action {
     /// 请求取消，只在 [`CoreUpgradePhase::Pulling`](crate::CoreUpgradePhase::Pulling) 阶段有效。
     CancelCoreUpgrade,
 
-    // 外观（ADR-0026）。设置存在本机，写不了时返回 `Storage`，外观不变。
+    // 外观（ADR-0026、ADR-0028）。设置存在本机，写不了时返回 `Storage`，外观不变。
     /// 把重点色换成这个颜色。任何颜色都可以，读字的颜色由核心推导。
     SetAccentColor { color: Rgb },
-    /// 恢复默认的重点色。
-    ResetAccentColor,
+    /// 选明暗。
+    SetThemeMode { mode: ThemeMode },
+    /// 选字号。
+    SetTextSize { size: TextSize },
+    /// 选字体，只从 [`AppearanceViewModel::fonts`](crate::AppearanceViewModel::fonts) 里选。
+    SetFont { font: FontStyle },
 }

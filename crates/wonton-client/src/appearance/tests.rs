@@ -3,6 +3,7 @@ use std::fs;
 use wonton_protocol::{Rgb, ThemeColors};
 
 use super::color::{contrast, rgb};
+use super::derive;
 use super::*;
 
 fn assert_readable(accent: Rgb, theme: &ThemeColors) {
@@ -47,31 +48,55 @@ fn any_accent_stays_readable() {
         0xFFFFFE, 0xFFFDFD, 0x010000, 0x7F7F80, 0x3A3A3F, 0xC7C4C3, 0x95766C,
     ];
     for accent in colors.chain(edges).map(rgb) {
-        let appearance = preview_accent(accent);
-        assert_eq!(appearance.light.accent_fill, accent);
-        assert_readable(accent, &appearance.light);
-        assert_readable(accent, &appearance.dark);
+        let light = derive::light_theme(accent);
+        assert_eq!(light.accent_fill, accent);
+        assert_readable(accent, &light);
+        assert_readable(accent, &derive::dark_theme(accent));
     }
 }
 
 #[test]
-fn chosen_color_survives_a_restart_and_reset_restores_the_default() {
+fn choices_survive_a_restart_and_changing_one_keeps_the_others() {
     let dir = tempfile::tempdir().unwrap();
+    let link = AppearanceLink::new(dir.path());
     let chosen = rgb(0x4A47D6);
-    AppearanceLink::new(dir.path()).set_accent(chosen).unwrap();
-    let restarted = AppearanceLink::new(dir.path());
-    assert_eq!(restarted.view(), preview_accent(chosen));
+    link.set_accent(chosen).unwrap();
+    link.set_theme_mode(ThemeMode::Dark).unwrap();
+    link.set_text_size(TextSize::Large).unwrap();
+    link.set_font(FontStyle::Serif).unwrap();
 
-    restarted.reset_accent().unwrap();
-    assert_eq!(AppearanceLink::new(dir.path()).view(), default_appearance());
+    let restarted = AppearanceLink::new(dir.path()).view();
+    assert_eq!(restarted.accent, chosen);
+    assert_eq!(restarted.theme_mode, ThemeMode::Dark);
+    assert_eq!(restarted.text_size, TextSize::Large);
+    assert_eq!(restarted.font, FontStyle::Serif);
+    assert_eq!(
+        restarted.dark.accent_fill,
+        derive::dark_theme(chosen).accent_fill
+    );
 }
 
 /// 新版本要读得了旧文件。
 #[test]
 fn settings_file_format_is_stable() {
     let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join(SETTINGS_FILE), r##"{"accent":"#4A47D6"}"##).unwrap();
-    assert_eq!(AppearanceLink::new(dir.path()).view().accent, rgb(0x4A47D6));
+    let file = dir.path().join(SETTINGS_FILE);
+    fs::write(
+        &file,
+        r##"{"accent":"#4A47D6","theme_mode":"dark","text_size":"extra_large","font":"monospaced"}"##,
+    )
+    .unwrap();
+    let view = AppearanceLink::new(dir.path()).view();
+    assert_eq!(view.accent, rgb(0x4A47D6));
+    assert_eq!(view.theme_mode, ThemeMode::Dark);
+    assert_eq!(view.text_size, TextSize::ExtraLarge);
+    assert_eq!(view.font, FontStyle::Monospaced);
+
+    fs::write(&file, r##"{"accent":"#4A47D6"}"##).unwrap();
+    let view = AppearanceLink::new(dir.path()).view();
+    assert_eq!(view.accent, rgb(0x4A47D6));
+    assert_eq!(view.theme_mode, ThemeMode::System);
+    assert_eq!(view.problem, None);
 }
 
 #[test]
@@ -82,6 +107,10 @@ fn unreadable_settings_show_the_reason_until_rewritten() {
     assert_eq!(link.view().accent, default_appearance().accent);
     assert!(link.view().problem.is_some());
 
-    link.reset_accent().unwrap();
-    assert_eq!(link.view(), default_appearance());
+    link.set_font(FontStyle::Serif).unwrap();
+    assert_eq!(link.view().problem, None);
+    assert_eq!(
+        AppearanceLink::new(dir.path()).view().font,
+        FontStyle::Serif
+    );
 }

@@ -30,7 +30,7 @@ mod push;
 mod session_store;
 mod subscription;
 
-pub use appearance::{accent_hex, default_appearance, parse_accent, preview_accent};
+pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;
 pub use client::ClientCore;
 pub use files::{FileOpenError, FileOpener};
@@ -50,17 +50,18 @@ pub use wonton_protocol::{
     EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem, EgressProxySettings,
     EgressProxySource, EgressProxyUpdate, EgressRestart, EgressViewModel, EncryptionStatus,
     FileCard, FileCardAction, FileCardActions, FileFailure, FileId, FileInfo, FileOperation,
-    FileProblem, FileSource, HomeFailure, HomePath, HomeStatus, HomeViewModel, ImageContent,
-    ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin, InstalledPlugins, LanAddress,
-    LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort, LanProblem,
-    LanProtocol, LanSettings, LanWebuiOffer, LanWebuiUpdate, MediaHandle, MessageContent,
-    PairingFailure, PairingStatus, PendingConfirmation, PermissionLine, PluginAuthor,
-    PluginCategory, PluginDetail, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
-    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, PluginTrust,
-    PluginsViewModel, ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushNotification,
-    PushStatus, RecoveryStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers,
-    SecretString, SendState, SessionListViewModel, SessionRow, StoreFailure, StoreItem,
-    StoreListing, StoreProblem, StoreSection, ThemeColors, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, TimelineUpdate, Transfer, TransferAction, TransferDirection,
+    FileProblem, FileSource, FontOption, FontStyle, HomeFailure, HomePath, HomeStatus,
+    HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin,
+    InstalledPlugins, LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin,
+    LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer, LanWebuiUpdate, MediaHandle,
+    MessageContent, PairingFailure, PairingStatus, PendingConfirmation, PermissionLine,
+    PluginAuthor, PluginCategory, PluginDetail, PluginFailure, PluginHealth, PluginIcon,
+    PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTask,
+    PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation, PushContent,
+    PushEndpoint, PushNotification, PushStatus, RecoveryStatus, Rgb, RoomMembership, RoomPreview,
+    RoomRow, RoomTransfers, SecretString, SendState, SessionListViewModel, SessionRow,
+    StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TextSize, TextSizeOption,
+    ThemeColors, ThemeMode, ThemeModeOption, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, TimelineUpdate, Transfer, TransferAction, TransferDirection,
     TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource,
 };

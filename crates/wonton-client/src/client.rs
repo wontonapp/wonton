@@ -124,12 +124,14 @@ impl ClientCore {
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade => Err(core_upgrade_unsupported()),
             Action::SetAccentColor { color } => self.appearance.set_accent(color),
-            Action::ResetAccentColor => self.appearance.reset_accent(),
+            Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
+            Action::SetTextSize { size } => self.appearance.set_text_size(size),
+            Action::SetFont { font } => self.appearance.set_font(font),
             chat => self.chat.dispatch(chat),
         }
     }
 
-    /// 当前的外观（重点色和颜色令牌），用于首帧渲染。
+    /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
     pub fn appearance(&self) -> AppearanceViewModel {
         self.appearance.view()
     }

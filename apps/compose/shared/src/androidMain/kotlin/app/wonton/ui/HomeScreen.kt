@@ -27,7 +27,7 @@ import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.icons.Palette
+import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.WontonIcon
 
 /**
@@ -46,15 +46,15 @@ fun HomeRoute(
     var page by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
     BackHandler(enabled = page != HomePage.LAUNCHER) {
         page = when (page) {
-            HomePage.CONNECTION, HomePage.APPEARANCE -> HomePage.LAUNCHER
+            HomePage.CONNECTION, HomePage.SETTINGS -> HomePage.LAUNCHER
             else -> HomePage.CONNECTION
         }
     }
     when {
-        // 外观不依赖家里的服务器，没配对时也能进。
-        page == HomePage.APPEARANCE -> AppearancePage(core, appearance, onBack = { page = HomePage.LAUNCHER })
+        // 设置不依赖家里的服务器，没配对时也能进。
+        page == HomePage.SETTINGS -> SettingsPage(core, appearance, onBack = { page = HomePage.LAUNCHER })
         viewModel.status is HomeStatus.NotConfigured ->
-            PairingPage("配对", core, viewModel.pairing, onBack = null, onAppearance = { page = HomePage.APPEARANCE })
+            PairingPage("配对", core, viewModel.pairing, onBack = null, onSettings = { page = HomePage.SETTINGS })
         page == HomePage.PAIRING ->
             PairingPage("重新配对", core, viewModel.pairing, onBack = { page = HomePage.CONNECTION })
         page == HomePage.INVITE -> InvitePage(core, viewModel, onBack = { page = HomePage.CONNECTION })
@@ -66,14 +66,14 @@ fun HomeRoute(
                 plugins,
                 navigation,
                 onShowStore,
-                onAppearance = { page = HomePage.APPEARANCE },
+                onSettings = { page = HomePage.SETTINGS },
                 onConnection = { page = HomePage.CONNECTION },
             )
         }
     }
 }
 
-enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, APPEARANCE, EGRESS }
+enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, SETTINGS, EGRESS }
 
 @Composable
 private fun InvitePage(core: ClientCore, viewModel: HomeViewModel, onBack: () -> Unit) {
@@ -88,7 +88,7 @@ private fun PairingPage(
     core: ClientCore,
     pairing: PairingStatus?,
     onBack: (() -> Unit)?,
-    onAppearance: (() -> Unit)? = null,
+    onSettings: (() -> Unit)? = null,
 ) {
     WontonScreen(
         bar = {
@@ -96,7 +96,7 @@ private fun PairingPage(
                 WontonPushedBar(title, onBack)
             } else {
                 WontonRootBar(title) {
-                    onAppearance?.let { WontonIconButton(WontonIcon.Palette, "外观", it) }
+                    onSettings?.let { WontonIconButton(WontonIcon.Settings, "设置", it) }
                 }
             }
         },

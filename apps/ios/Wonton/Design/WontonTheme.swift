@@ -39,12 +39,51 @@ struct WontonThemeRoot<Content: View>: View {
     let appearance: AppearanceViewModel
     @ViewBuilder let content: Content
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var systemTextSize
 
     var body: some View {
         let colors = colorScheme == .dark ? appearance.dark : appearance.light
         content
             .environment(\.wontonColors, colors)
             .tint(Color(colors.primary))
+            // 放在根上，系统的字号和字体环境值整个 App 都读：包括 `wontonText`、没写令牌的文字和输入框。
+            .dynamicTypeSize(appearance.textSize.dynamicTypeSize ?? systemTextSize)
+            .fontDesign(appearance.font.design)
+            .preferredColorScheme(appearance.themeMode.colorScheme)
+    }
+}
+
+extension ThemeMode {
+    fileprivate var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+extension TextSize {
+    /// `.large` 是系统默认的字号，Android 的 `fontScale` 按这几档的正文放大比例取值（ADR-0028）。
+    fileprivate var dynamicTypeSize: DynamicTypeSize? {
+        switch self {
+        case .system: nil
+        case .small: .small
+        case .standard: .large
+        case .large: .xLarge
+        case .extraLarge: .xxLarge
+        }
+    }
+}
+
+extension FontStyle {
+    var design: Font.Design? {
+        switch self {
+        case .default: nil
+        case .rounded: .rounded
+        case .serif: .serif
+        case .monospaced: .monospaced
+        }
     }
 }
 

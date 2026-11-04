@@ -25,7 +25,10 @@ mod session;
 mod timeline;
 
 pub use action::Action;
-pub use appearance::{AppearanceProblem, AppearanceViewModel, Rgb, ThemeColors};
+pub use appearance::{
+    AppearanceProblem, AppearanceViewModel, FontOption, FontStyle, Rgb, TextSize, TextSizeOption,
+    ThemeColors, ThemeMode, ThemeModeOption,
+};
 pub use chat::{
     ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, DeviceVerification,
     EncryptionStatus, ImageThumbnail, ImageUpload, PendingConfirmation, RecoveryStatus,

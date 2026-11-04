@@ -43,9 +43,10 @@ private enum AppTab {
     case chat
     case home
     case store
+    case settings
 }
 
-/// 主界面的三个页面。主屏和商店里打开插件时，在这里切到聊天，或者全屏打开插件的网页。
+/// 主界面的四个页面。主屏和商店里打开插件时，在这里切到聊天，或者全屏打开插件的网页。
 private struct MainView: View {
     let chat: ChatModel
     let home: HomeModel
@@ -94,7 +95,7 @@ private struct MainView: View {
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.chat)
             HomeView(
-                model: home, plugins: plugins, appearance: appearance, open: open, showStore: { tab = .store },
+                model: home, plugins: plugins, open: open, showStore: { tab = .store },
                 devWebURL: Launch.devWebURL
             )
             .toolbar(.hidden, for: .tabBar)
@@ -102,6 +103,11 @@ private struct MainView: View {
             StoreView(model: plugins, open: open)
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.store)
+            // 外观不依赖家里的服务器，没配对时也能进。
+            SettingsView(model: appearance)
+                .wontonRootScreen("设置") { EmptyView() }
+                .toolbar(.hidden, for: .tabBar)
+                .tag(AppTab.settings)
         }
         // 打字时让出底部的位置。
         .environment(\.wontonTabBar, isKeyboardVisible ? nil : AnyView(bottomBar))
@@ -118,7 +124,8 @@ private struct MainView: View {
             items: [
                 .init(tab: .chat, label: "聊天", icon: .chat, selectedIcon: .chatFill),
                 .init(tab: .home, label: "家", icon: .home, selectedIcon: .homeFill),
-                .init(tab: .store, label: "商店", icon: .store, selectedIcon: .storeFill)
+                .init(tab: .store, label: "商店", icon: .store, selectedIcon: .storeFill),
+                .init(tab: .settings, label: "设置", icon: .settings, selectedIcon: .settingsFill)
             ],
             selection: $tab
         )

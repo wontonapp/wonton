@@ -6,7 +6,6 @@ import WontonClient
 struct HomeView: View {
     @Bindable var model: HomeModel
     let plugins: PluginsModel
-    let appearance: AppearanceModel
     let open: (PluginEntry) -> Void
     let showStore: () -> Void
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
@@ -22,15 +21,11 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             Group {
                 if case .notConfigured = model.viewModel.status {
-                    // 外观不依赖家里的服务器，没配对时也能进。
                     PairingView(model: model)
-                        .wontonRootScreen("配对") {
-                            WontonIconLink(icon: .palette, label: "外观", value: HomeRoute.appearance)
-                        }
+                        .wontonRootScreen("配对") { EmptyView() }
                 } else {
                     launcher
                         .wontonRootScreen("家") {
-                            WontonIconLink(icon: .palette, label: "外观", value: HomeRoute.appearance)
                             connectionLink
                         }
                 }
@@ -44,8 +39,6 @@ struct HomeView: View {
                 case .pairing:
                     PairingView(model: model) { path.removeLast() }
                         .wontonPushedScreen("重新配对")
-                case .appearance:
-                    AppearanceView(model: appearance)
                 case .egress:
                     EgressSettingsView(model: plugins)
                 }
@@ -203,7 +196,6 @@ private enum HomeRoute: Hashable {
     case connection
     case invite
     case pairing
-    case appearance
     case egress
 }
 

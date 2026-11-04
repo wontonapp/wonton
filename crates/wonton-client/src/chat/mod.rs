@@ -159,18 +159,7 @@ impl ChatLink {
                 Ok(())
             }
             Action::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
-            Action::SendText { room_id, body } => {
-                let body = body.trim().to_owned();
-                if body.is_empty() {
-                    return Err(invalid("消息不能为空"));
-                }
-                let chat = self.clone();
-                let (_, room_id) = self.send_target(&room_id)?;
-                self.spawn_op("发送消息", async move {
-                    chat.room(&room_id).await?.send_text(&body).await
-                });
-                Ok(())
-            }
+            Action::SendText { room_id, body } => self.send_text(&room_id, &body),
             Action::SendImage { room_id, image } => self.send_image(&room_id, image),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
@@ -237,8 +226,23 @@ impl ChatLink {
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade
             | Action::SetAccentColor { .. }
-            | Action::ResetAccentColor => Err(invalid("不是聊天操作")),
+            | Action::SetThemeMode { .. }
+            | Action::SetTextSize { .. }
+            | Action::SetFont { .. } => Err(invalid("不是聊天操作")),
         }
+    }
+
+    fn send_text(self: &Arc<Self>, room_id: &str, body: &str) -> Result<(), CoreError> {
+        let body = body.trim().to_owned();
+        if body.is_empty() {
+            return Err(invalid("消息不能为空"));
+        }
+        let chat = self.clone();
+        let (_, room_id) = self.send_target(room_id)?;
+        self.spawn_op("发送消息", async move {
+            chat.room(&room_id).await?.send_text(&body).await
+        });
+        Ok(())
     }
 
     fn confirm_recovery_key_saved(&self) -> Result<(), CoreError> {

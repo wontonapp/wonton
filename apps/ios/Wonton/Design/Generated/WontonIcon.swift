@@ -49,7 +49,6 @@ enum WontonIcon: String {
     case music
     case musicFill
     case notify
-    case palette
     case pause
     case pauseFill
     case person

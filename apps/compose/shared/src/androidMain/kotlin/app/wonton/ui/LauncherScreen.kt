@@ -50,7 +50,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
-import app.wonton.ui.icons.Palette
+import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WarningCircleFill
@@ -65,14 +65,14 @@ fun LauncherScreen(
     plugins: PluginsState,
     navigation: PluginNavigation,
     onShowStore: () -> Unit,
-    onAppearance: () -> Unit,
+    onSettings: () -> Unit,
     onConnection: () -> Unit,
 ) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
     WontonScreen(
         bar = {
             WontonRootBar("家") {
-                WontonIconButton(WontonIcon.Palette, "外观", onAppearance)
+                WontonIconButton(WontonIcon.Settings, "设置", onSettings)
                 // 连不上时换成警告；正在连时变浅。
                 val colors = WontonTheme.colors
                 when (status) {

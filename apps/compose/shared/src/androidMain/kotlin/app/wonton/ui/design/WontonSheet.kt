@@ -66,17 +66,19 @@ fun WontonSheet(
             )
         },
     ) {
-        title?.let {
-            Text(
-                it,
-                Modifier.padding(start = spacing.pageInset, end = spacing.pageInset, bottom = spacing.s8)
-                    .semantics { heading() },
-                style = WontonTheme.typography.itemTitle,
-                color = colors.textPrimary.toColor(),
-            )
+        WontonFontScale {
+            title?.let {
+                Text(
+                    it,
+                    Modifier.padding(start = spacing.pageInset, end = spacing.pageInset, bottom = spacing.s8)
+                        .semantics { heading() },
+                    style = WontonTheme.typography.itemTitle,
+                    color = colors.textPrimary.toColor(),
+                )
+            }
+            content(close)
+            Box(Modifier.padding(bottom = spacing.s8))
         }
-        content(close)
-        Box(Modifier.padding(bottom = spacing.s8))
     }
 }
 

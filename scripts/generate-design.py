@@ -62,23 +62,25 @@ def kotlin_tokens(tokens):
         return f"object Wonton{camel_upper(name)} {{\n{lines}\n}}\n"
 
     weights = {"bold": "Bold", "semibold": "SemiBold", "medium": "Medium", "regular": "Normal"}
+    # 是类不是 object：字体是用户选的，运行时才知道（ADR-0028）。
+    styles = "\n".join(
+        f'    val {name} = TextStyle(fontFamily = fontFamily, fontSize = {s["size"]}.sp, lineHeight = {s["line"]}.sp, '
+        f'fontWeight = FontWeight.{weights[s["weight"]]})'
+        for name, s in tokens["typography"].items()
+    )
     parts = [
         section("spacing", tokens["spacing"], lambda v: f"{v}.dp"),
         section("radii", tokens["radii"], lambda v: f"{v}.dp"),
         section("size", tokens["size"], lambda v: f"{v}.dp"),
         section("ratio", tokens["ratio"], lambda v: f"{v}f"),
         section("motion", tokens["motion"], str),
-        section(
-            "typography",
-            tokens["typography"],
-            lambda s: f'TextStyle(fontSize = {s["size"]}.sp, lineHeight = {s["line"]}.sp, '
-            f'fontWeight = FontWeight.{weights[s["weight"]]})',
-        ),
+        f"class WontonTypography(fontFamily: FontFamily?) {{\n{styles}\n}}\n",
     ]
     return (
         BANNER
         + "@file:Suppress(\"MagicNumber\")\n\npackage app.wonton.ui.design.generated\n\n"
         + "import androidx.compose.ui.text.TextStyle\n"
+        + "import androidx.compose.ui.text.font.FontFamily\n"
         + "import androidx.compose.ui.text.font.FontWeight\n"
         + "import androidx.compose.ui.unit.dp\n"
         + "import androidx.compose.ui.unit.sp\n\n"

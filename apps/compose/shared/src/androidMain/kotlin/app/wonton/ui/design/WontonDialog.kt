@@ -42,35 +42,37 @@ fun WontonDialog(
     HideKeyboardOnAppear()
     Dialog(onDismiss, DialogProperties(usePlatformDefaultWidth = false)) {
         (LocalView.current.parent as? DialogWindowProvider)?.window?.setDimAmount(WontonTheme.ratio.scrim)
-        Column(
-            Modifier.padding(spacing.pageInset)
-                .widthIn(max = WontonTheme.size.dialogWidth)
-                .fillMaxWidth()
-                .background(colors.surface.toColor(), RoundedCornerShape(WontonTheme.radii.card))
-                .padding(spacing.s16),
-            verticalArrangement = Arrangement.spacedBy(spacing.s16),
-        ) {
+        WontonFontScale {
             Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(spacing.s8),
+                Modifier.padding(spacing.pageInset)
+                    .widthIn(max = WontonTheme.size.dialogWidth)
+                    .fillMaxWidth()
+                    .background(colors.surface.toColor(), RoundedCornerShape(WontonTheme.radii.card))
+                    .padding(spacing.s16),
+                verticalArrangement = Arrangement.spacedBy(spacing.s16),
             ) {
-                Text(
-                    title,
-                    Modifier.semantics { heading() },
-                    style = WontonTheme.typography.itemTitle,
-                    color = colors.textPrimary.toColor(),
-                )
-                message?.let {
-                    Text(it, style = WontonTheme.typography.body, color = colors.textSecondary.toColor())
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(spacing.s8),
+                ) {
+                    Text(
+                        title,
+                        Modifier.semantics { heading() },
+                        style = WontonTheme.typography.itemTitle,
+                        color = colors.textPrimary.toColor(),
+                    )
+                    message?.let {
+                        Text(it, style = WontonTheme.typography.body, color = colors.textSecondary.toColor())
+                    }
                 }
-            }
-            if (actions.size == 2) {
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.s8)) {
-                    actions.forEach { WontonButton(it.title, it.onClick, Modifier.weight(1f), it.kind) }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.s8)) {
-                    actions.forEach { WontonButton(it.title, it.onClick, Modifier.fillMaxWidth(), it.kind) }
+                if (actions.size == 2) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.s8)) {
+                        actions.forEach { WontonButton(it.title, it.onClick, Modifier.weight(1f), it.kind) }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.s8)) {
+                        actions.forEach { WontonButton(it.title, it.onClick, Modifier.fillMaxWidth(), it.kind) }
+                    }
                 }
             }
         }

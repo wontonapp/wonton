@@ -4,6 +4,7 @@
 package app.wonton.ui.design.generated
 
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,11 +75,11 @@ object WontonMotion {
     val reduced = 100
 }
 
-object WontonTypography {
-    val screenTitle = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
-    val sectionTitle = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
-    val itemTitle = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
-    val body = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal)
-    val supporting = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal)
-    val caption = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
+class WontonTypography(fontFamily: FontFamily?) {
+    val screenTitle = TextStyle(fontFamily = fontFamily, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
+    val sectionTitle = TextStyle(fontFamily = fontFamily, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+    val itemTitle = TextStyle(fontFamily = fontFamily, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
+    val body = TextStyle(fontFamily = fontFamily, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal)
+    val supporting = TextStyle(fontFamily = fontFamily, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal)
+    val caption = TextStyle(fontFamily = fontFamily, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
 }

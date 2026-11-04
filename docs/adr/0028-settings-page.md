@@ -1,0 +1,37 @@
+# ADR-0028 设置页：明暗、重点色、字号和字体
+
+- 状态：已接受（2026-11-04）
+
+## 背景
+
+主人要求 App 向 Telegram 对齐，其中一项是单独的设置页，用户自己调外观、字体和重点色。[ADR-0026](0026-design-system.md) 只做了重点色：一个外观页，预设加 RGB 滑块。主人定了三点：字体不打包，只用系统字体；iOS 给默认、圆体、衬线、等宽，Android 没有系统圆体，这一项不出现；重点色是一组色板，自定义色收进“更多”，不用 RGB 滑块。
+
+## 决策
+
+**入口按平台惯例。** iOS 是底栏第四项，Android 是“家”顶栏的齿轮。没配对时也进得去。
+
+**都在核心。** 四项设置和 ADR-0026 的重点色存在同一个文件 `appearance.json`，经 `AppearanceViewModel` 给两端；可选的项和文案也由核心列出，壳只把枚举换成平台的值。能选哪些字体按编译目标定，只有 Apple 平台列出圆体。
+
+**明暗。** 选了浅色或深色后，系统怎么设都不影响 App。iOS 用根上的 `preferredColorScheme`，它改的是窗口，弹层和插件网页也跟着变。Android 用核心的选择代替 `isSystemInDarkTheme()`，再按它重设状态栏和导航栏的样式。
+
+**重点色。** 12 个色板，“更多”里是核心按 OKLCH 算出的 6×6 网格，加一个十六进制输入框。点一下就保存，页面上的小对话当场变化，所以去掉了只算不存的 `preview_accent()`；第一个色板就是默认值，所以也去掉了“恢复默认”和 `ResetAccentColor`。没有选滑块或色相环：网格加输入框不需要拖动手势，两端各写一遍的代码也最少。
+
+**字号。** 除了“跟随系统”，每一档都盖过系统的字号设置，只在这个 App 里生效。要辅助功能的超大字号就选“跟随系统”。
+
+| 档 | iOS `dynamicTypeSize` | Android `fontScale` |
+| --- | --- | --- |
+| 小 | `.small` | 0.88 |
+| 标准 | `.large` | 1.0 |
+| 大 | `.xLarge` | 1.12 |
+| 特大 | `.xxLarge` | 1.24 |
+
+Android 的取值是 iOS 对应档位的正文放大比例（17pt 变成 15、17、19、21）。其他层级的文字两端曲线不同，ADR-0026 已接受这一点。
+
+**盖在根上，不逐个控件改。** iOS 在 `WontonThemeRoot` 上设 `.dynamicTypeSize` 和 `.fontDesign`，`@ScaledMetric`、系统字体和输入框都读这两个环境值。Android 在 `WontonTheme` 里覆盖 `LocalDensity` 的 `fontScale`，所有 sp 跟着放大，dp 的布局不变；`Dialog` 和 `ModalBottomSheet` 是单独的窗口，Compose 在里面重给 `LocalDensity`，所以这些窗口的内容再套一层 `WontonFontScale`（compose BOM 见 `libs.versions.toml`，模拟器上实测）。字体没有这样的环境值，所以 `WontonTheme.typography` 是按所选字体生成的实例，只能在 Composable 里读。代码块等写明等宽的文字不跟字体走。
+
+**系统字体里的中文。** iOS 26.5 上圆体、衬线和等宽只改拉丁字母和数字，中文仍是苹方：系统没有预装简体的宋体和圆体，`Font.Design` 也不带中文字形（模拟器上实测）。所以字体行带一个 `Aa` 样例，选之前看得出差别。
+
+## 代价
+
+- 档位只有四个，和系统的连续调节比是粗的。够用：要细调的人用“跟随系统”。
+- Android 上 Activity 的窗口底色跟系统走：系统浅色、App 选深色时，冷启动第一帧可能闪一下白。不用重启 Activity 换主题，因为那样改设置就不是当场生效了。

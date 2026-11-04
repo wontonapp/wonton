@@ -35,7 +35,7 @@
 
 布局一律用 leading/trailing、start/end。是否支持从右到左的语言以后再定。
 
-**字体只用系统自带的，不打包，也不单独带拉丁字体。** 这是“一模一样”有意保留的例外：英文和数字在 iOS 上是 SF、在 Android 上是 Roboto，Android 各厂商的中文字体也不同；非默认字号下，两端系统的放大曲线也不同，换行和截断的位置可能不一样。
+**字体只用系统自带的，不打包，也不单独带拉丁字体**（用户可以在系统字体里选，见 [ADR-0028](0028-settings-page.md)）。 这是“一模一样”有意保留的例外：英文和数字在 iOS 上是 SF、在 Android 上是 Roboto，Android 各厂商的中文字体也不同；非默认字号下，两端系统的放大曲线也不同，换行和截断的位置可能不一样。
 
 ### 颜色
 
@@ -84,12 +84,12 @@
 
 颜色由 Rust 算，壳只渲染：
 
-- `AppearanceViewModel` 和相关的 `Action` 定义在 `wonton-protocol`，先单独提只改接口的 PR，由 `wonton-client` 实现。它带用户选的颜色和浅、深两套完整的颜色令牌，壳按系统的明暗选一套。
-- 设置页先给一组预设，再加自定义 RGB。
+- `AppearanceViewModel` 和相关的 `Action` 定义在 `wonton-protocol`，先单独提只改接口的 PR，由 `wonton-client` 实现。它带用户选的颜色和浅、深两套完整的颜色令牌，壳按明暗选一套。
+- 设置页的样子和可选的项见 [ADR-0028](0028-settings-page.md)。
 - 设置存在 App 私有数据目录下的单独文件里，和设备密钥、连接信息同一目录、不同文件，写坏了不连累连接。每台设备各自设置，不跨设备同步。
 - 设置文件读不了时，外观用默认值，`AppearanceViewModel` 带上原因，设置页如实显示。这里不让 App 打不开：外观坏了不影响连家，而用户需要进到 App 才能重设。
 - 核心起不来时启动失败页也要有颜色：核心导出不依赖 `ClientCore` 的 `default_appearance()`。
-- 拖动滑块时只调 `preview_accent()` 算颜色，不写文件，松手才发 `SetAccentColor`：写文件要落盘，拖动时每秒几十次放在主线程上会卡。十六进制的解析和格式化也在核心（`parse_accent()`、`accent_hex()`），壳不各写一份。
+- 十六进制的解析和格式化也在核心（`parse_accent()`、`accent_hex()`），壳不各写一份。
 
 ### 纸质磨砂
 
@@ -109,7 +109,7 @@
 
 - 间距 4、8、12、16、24、32、48；页面边距 16，分组间距 24。
 - 圆角 control 12、card 16、气泡 16（连续消息相接处 4）、插件图标为边长的 22.37%、胶囊。
-- 字号 screenTitle 28/34、sectionTitle 20/26、itemTitle 17/24、body 16/22、supporting 14/20、caption 12/16，跟随系统字号。
+- 字号 screenTitle 28/34、sectionTitle 20/26、itemTitle 17/24、body 16/22、supporting 14/20、caption 12/16，默认跟随系统字号，用户也可以选固定的档（[ADR-0028](0028-settings-page.md)）。
 - 动效 feedback 120ms、state 180ms、panel 240ms、messageInsert 180ms。系统“减少动态”打开时一律改成不超过 100ms 的淡入淡出。动画结束不代表业务完成，状态只听核心的。
 
 ### 图标：Phosphor

@@ -39,7 +39,6 @@ lockKey = { phosphor = "lock-key" }
 more = { phosphor = "dots-three" }
 music = { phosphor = "music-notes", fill = true }
 notify = { phosphor = "bell-ringing" }
-palette = { phosphor = "palette" }
 pause = { phosphor = "pause", fill = true }
 person = { phosphor = "user-plus" }
 play = { phosphor = "play", fill = true }
