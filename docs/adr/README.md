@@ -23,7 +23,7 @@
 | [0014](0014-reserved-capabilities.md) | 预留能力：实时通话、音乐、渠道、Web | 已接受 |
 | [0015](0015-small-components-standard-interfaces.md) | 架构原则：小组件与标准接口（UNIX 哲学） | 已接受 |
 | [0016](0016-mcp-bus-and-confirmations.md) | MCP 总线与敏感操作的确认 | 已接受 |
-| [0017](0017-plugin-ecosystem-and-store.md) | 插件生态：独立仓库、商店和来源 | 已接受 |
+| [0017](0017-plugin-ecosystem-and-store.md) | 插件生态：独立仓库、商店和来源 | 已接受，部分被 ADR-0031 取代 |
 | [0018](0018-gpu-for-plugins.md) | 显卡交给插件：核心按宿主的显卡给设备 | 已接受 |
 | [0019](0019-lan-services-for-plugins.md) | 插件在局域网上提供服务：只发布清单声明的端口 | 已接受 |
 | [0020](0020-file-service.md) | 文件服务：Bot 和 App 按编号共用 | 已接受 |
@@ -35,3 +35,4 @@
 | [0026](0026-design-system.md) | App 的外观：两端统一自绘、黑白加可换的重点色、Phosphor 图标 | 已接受，部分被 ADR-0029 取代 |
 | [0027](0027-bot-save-file.md) | Bot 把文件存进共享文件夹：按路径授权 | 已接受 |
 | [0029](0029-platform-material.md) | App 的材质和形态：令牌共用，栏和菜单按平台走 | 已接受 |
+| [0031](0031-plugin-sources.md) | 插件的四种来源：官方、社区、添加的地址和上传的文件 | 已接受 |
