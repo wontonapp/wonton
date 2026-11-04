@@ -112,7 +112,7 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 
 - App 内 WebView 经隧道打开：见下一节。WebView 的 HTTP 代理设为客户端核心的本地代理，`Host` 原样保留，
   插件地址和签发方地址在手机上和服务器上一致。
-- M0 的网关和 Hydra 只跑 http（Hydra 用 `--dev`），局域网和隧道内的 HTTPS 方案在 M1 定。
+- 网关和 Hydra 只跑 http。App 经隧道打开插件网页不再加 HTTPS，iroh 已经加密（主人 2026-11-04 定）。第三方 App 的 HTTPS 见 ADR-0021。
 - 核心会话在内存里，核心重启后要重新登录。
 - 家人账号（M2）：`subject` 按用户区分，`groups` 给出家庭角色。
 

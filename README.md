@@ -10,12 +10,8 @@ Agent 通过工具调用它们；有网页界面的插件，在 App 里像小程
 - **数据在家**：消息、文件和密钥只存在你自己的服务器上，我们运营的云端只转发密文。
 - **随处可达**：App 内置 iroh 点对点隧道，用蜂窝网络也能直连家里，不需要公网 IP、端口转发或系统 VPN。
 - **真正的 IM**：基于自托管 Matrix，多端同步、家人群聊、离线推送都是现成的。
-- **万物皆插件**：插件就是一个带 `x-wonton` 扩展字段的 `docker-compose.yml`，可导入 CasaOS 应用商店。
+- **万物皆插件**：插件就是一个带 `x-wonton` 扩展字段的 `docker-compose.yml`。
 - **Agent 可替换**：默认 Hermes，也可以换成 Codex、Claude Code 等支持 Matrix 或 ACP 的 Agent。
-
-## 状态
-
-设计已定稿，正在进行 M0 技术验证。目标与里程碑见 [docs/GOAL.md](docs/GOAL.md)。
 
 ## 文档
 
@@ -25,12 +21,12 @@ Agent 通过工具调用它们；有网页界面的插件，在 App 里像小程
 - [docs/adr/](docs/adr/README.md)：架构决策记录
 - [AGENTS.md](AGENTS.md)：贡献规则，人和 AI 编程代理都适用
 
-## 仓库布局（规划）
+## 仓库布局
 
 ```text
 crates/      Rust 工作区：协议类型、iroh 隧道、服务端核心、客户端厚核心
 apps/        iOS（SwiftUI）与 Compose（Android、桌面）原生壳
-plugins/     核心测试用的示例插件；正式的插件各在自己的仓库，见 ADR-0017
+plugins/     预装插件（Hermes、magpie）和示例插件；其余官方插件各在自己的仓库，见 ADR-0017
 cloud/       推送中继、iroh 节点、签名静态文件的部署配置
 deploy/      一行安装脚本、compose 模板、升级器
 docs/        文档

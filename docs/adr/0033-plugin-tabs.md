@@ -1,7 +1,7 @@
 # ADR-0033 底栏的插件页、全屏和 Agent 写插件：网页打底，App 管栏和主题，桥接用 MCP Apps 的词汇
 
 - 状态：已接受（2026-11-04）。取舍由主人确认（见“已定”）
-- 改动：[ADR-0014](0014-reserved-capabilities.md) 的“小程序 JS SDK”；[ADR-0028](0028-settings-page.md) 的“入口是底栏最后一项”（设置默认在栏上，可以拿掉）；[ADR-0016](0016-mcp-bus-and-confirmations.md) 的规则 4 和 [ADR-0017](0017-plugin-ecosystem-and-store.md) 的“谁能装”：Bot 能装自己写的插件；[ADR-0024](0024-confirmation-scope.md) 的判定：Bot 更新自己写的插件，权限没变宽时不发卡片
+- 取代：[ADR-0014](0014-reserved-capabilities.md) 的“小程序 JS SDK”；[ADR-0028](0028-settings-page.md) 的“入口是底栏最后一项”（设置默认在栏上，可以拿掉）；[ADR-0016](0016-mcp-bus-and-confirmations.md) 的规则 4 和 [ADR-0017](0017-plugin-ecosystem-and-store.md) 的“谁能装”：Bot 能装官方插件和自己写的插件，高权限都经卡片；[ADR-0024](0024-confirmation-scope.md) 的判定：Bot 更新自己写的插件，权限没变宽时不发卡片
 
 ## 背景
 
@@ -67,7 +67,6 @@ MCP Apps 也能写，但没有比网页多给什么：底栏页本来就有自�
 - **MCP Apps 的规范**（`2026-01-26`，SEP-1865，SDK `@modelcontextprotocol/ext-apps` 2.0.4，MIT）是从工具调用开始的：工具的 `_meta.ui.resourceUri` 指向 `ui://` 资源，宿主渲染后把工具结果推给页面。规范没有“不经工具调用直接打开”的路径，MIME 只收 `text/html;profile=mcp-app`，`externalUrl`（嵌外部网页）和状态持久化都列在以后。宿主有 Claude、VS Code、ChatGPT、Goose 等，都是聊天里的卡片，我们没查到移动端原生宿主的实现或指南；规范只给了 `platform: "mobile"` 和 `safeAreaInsets`。
 - **声明式：** Adaptive Cards 的移动端 SDK 还在发（CocoaPods 2.12.1），据一篇旧文，iOS 是 Objective-C 加 UIKit，样式要另外接我们的设计系统。A2UI 的 Compose 渲染器是 `1.0.0-alpha02`，规范 0.9，SwiftUI 的官方状态说法不一，现在押不起。两者都解决不了相册、影音这类内容。清单里的 `settings`（JSON Schema 表单）是声明式最合适的地方，已经留着，和这里分开。
 - **WKWebView 的 Service Worker** 只有 App-Bound Domains（最多 10 个，写死在 `Info.plist`）或默认浏览器资格才能用，插件的域名是动态的，所以离线不能指望页面自己缓存。
-- **iOS 27 的 iPhone Duo** 上，只有 `TabView` 等系统容器的栏才参加纵向布局，自摆的栏不算（[Apple 技术讲座](https://developer.apple.com/videos/play/tech-talks/111462/)）。这是 ADR-0029 的事，这里不改，记在“代价与风险”。
 
 ## 决策
 
@@ -306,7 +305,7 @@ x-wonton:
 
 **镜像。** 核心不构建（`build` 不在 Compose 子集里），Agent 也构建不了。所以写法只有一种：公开镜像加 `configs`，代码在插件包里，受插件包的大小限制。静态页用 `nginx`，带后端的用 `python` 等语言镜像。依赖尽量用标准库；要安装依赖时用一次性服务装进数据目录，并申请 `network.egress`。要自己发镜像的，是开发者在电脑上的路（模板的 `scripts/publish.sh`）。
 
-#### 和 ADR-0031 对齐（已和 plugin-sources 确认）
+#### 和 ADR-0031 对齐
 
 - 复用 `preview_upload`、`install_source`、`preview_upgrade(UpgradeTo::Upload)`、`upgrade_source`，不另写。
 - `trust` 是 `Local`，App 上显示未审核。`origin` 是 `None`，检查更新不会去问 GitHub。
@@ -322,6 +321,8 @@ x-wonton:
 | 更新，权限没变宽 | 不发，写审计，Agent 在聊天里说一声 | 卡片看不出代码改了什么，改一个颜色点一次只是在教主人闭眼点允许，这和 ADR-0024 的背景一样 |
 | 更新，权限变宽 | 发，只列新增的项 | 和 ADR-0031 升级的权限确认相同 |
 | 卸载 | 每次发 | ADR-0024 不变 |
+
+**高权限的规则只写在这里：** 不管是官方插件（`id`）还是 Bot 自己写的（`dir`），都经卡片，主人点了就装（主人 2026-11-04 定）。
 
 - “权限没变宽”指安装确认列出的项没有增加：`permissions`、`lan.ports`、GPU 的服务和共享文件夹的挂载。换镜像不算：镜像提不了权，代码本来就是 Agent 写的。
 - 只有写这个插件的 Bot 能更新。`dir` 里的 `id` 已被官方、社区、上传的或别的 Bot 写的插件占用时，直接报 `invalid_input`，不发卡片。这条写成测试。
@@ -368,19 +369,7 @@ Skills over MCP 等宿主支持了再加，内容是同一个目录。
 
 这一篇没有增加新的审核面：商店（ADR-0017、ADR-0031）和插件网页已经在了。底栏只是让它更显眼。Agent 写的页面也是网页，只在主人自己的服务器上，商店里没有。
 
-### 分步
-
-1. 接口和核心：`tabs` 进规范，`TabsViewModel`，固定和排序。标签页容器，主题、状态和全屏。这一步之后 Immich 这样的现成应用就能固定和全屏。
-2. 桥：`ui/initialize`、`host-context-changed`、`ui/open-link`、`ui/message`、`ui/request-display-mode`。官方插件模板加一个 `tabs` 示例和 `prefers-color-scheme` 加变量的样式表。
-3. 官方 RSS 插件做验证样例，把底座的问题记下来（底座优先）。
-4. 以后另写：聊天里的 `ui://` 卡片（`tools/call`）；原生能力。
-
-Agent 写插件和底栏互不依赖，可以并行。它要等 plugin-sources 的 Rust 部分合并，再按这个顺序，每项一个 PR：
-
-1. 接口：`written_by`。
-2. 核心的工具、暂存和判定，连同说明、例子和 Hermes 的引导语（冒烟要一起测）。
-3. 卡片上的“打开”和“放到底栏”（等底栏）。
-4. 说明和规范进 wonton-docs。
+### 验收
 
 验收是一条端到端冒烟：真实模型的 Hermes 收到一句需求，写出插件，主人批准，页面能用；再改一次，数据还在，页面自己刷新。
 
@@ -407,7 +396,7 @@ Agent 写插件和底栏互不依赖，可以并行。它要等 plugin-sources �
 - **工具参数传 tar 的 base64：** 上面说过，模型要把它逐字写出来。
 - **给 Agent 开 Docker socket，让它自己 `docker compose up`：** 绕过核心的校验和确认，也违反 ADR-0011。
 - **核心替插件构建镜像：** 要在核心里放一条构建链，占磁盘，构建的代码也不受 Compose 子集约束。公开镜像加 `configs` 够写页面和小后端。
-- **Agent 写的插件算第五种来源：** 除了显示的文字，和上传没有差别，规则也都一样。
+- **Agent 写的插件算单独的一种来源：** 除了显示的文字，和上传没有差别，规则也都一样。
 - **Bot 直接改底栏：** 配置只在设备上。要做就得把配置搬到服务器，多设备和离线都变麻烦，换来的只是省一次点按。
 
 ## 代价与风险
@@ -419,7 +408,6 @@ Agent 写插件和底栏互不依赖，可以并行。它要等 plugin-sources �
 - **内存。** 最多 3 个常驻 WebView，用量没有实测数字（见“验证”）。Android 上 WebView 可能共享渲染进程，一个崩了影响全部。如果低端机扛不住，退路是只留最近用的一到两个，其余按地址恢复。
 - **App Store。** 4.7.1 和 4.7.4、4.7.5 针对的是“在 App 里提供软件”的开发者。自托管、主人自己装的情形没有明确说法。社区插件进底栏后，审核员更容易看到这一点。提审前单独评估，必要时提审版本只显示官方索引。这不是这一篇引入的，但这一篇让它更显眼。
 - **规范在动。** MCP Apps 还是扩展，SDK 已到 2.x，草案在继续改。注入脚本依赖 SDK 用 `event.source` 校验来源，键名校验也很严（见“验证”），SDK 升级可能打破，要有一条跟着新版 SDK 跑的测试。CSS 变量是最稳的接口，模板也优先教这个。
-- **iOS 27 的 iPhone Duo：** 自摆的栏不参加系统的纵向布局。底栏项变成动态后如果要换回系统容器，图标就要走 `Tab` 的图片接口。属于 ADR-0029 要重新看的事。
 - **Agent 能悄悄改已批准的插件。** 不发卡片的更新，让被提示注入的 Bot 能把自己写的插件改成别的样子，在已批准的权限内做事，比如把它能读的共享文件夹发出去（如果也批了 `network.egress`）。范围只限它写的插件和批过的权限，每次写审计，详情页能打开“每次都问”。主人接受了这个取舍。
 - **Agent 写的代码没人审。** 只标未审核，不做扫描。没有 `network.egress` 的插件出不了内部网络，这是最实在的限制，所以说明要教 Agent 只申请用得到的权限。
 - **Agent 看不到渲染结果。** 页面只有主人看得到。网页探测和日志能发现起不来，发现不了布局错。以后可以让 Agent 经浏览器插件看自己的页面，要先想好网关登录怎么给。
@@ -439,7 +427,7 @@ Agent 写插件和底栏互不依赖，可以并行。它要等 plugin-sources �
 
 ### 原型（不合并）
 
-iOS 26.5 模拟器，`@modelcontextprotocol/ext-apps` 2.0.4，本机服务器让页面晚 3 秒返回，模拟慢的隧道。没有走真实隧道和网关，也不是真机。Mac 当时负载很高，这里不记流畅度。截图和代码在协调会话的共享笔记目录 `plugin-tabs-prototype/`。
+iOS 26.5 模拟器，`@modelcontextprotocol/ext-apps` 2.0.4，本机服务器让页面晚 3 秒返回，模拟慢的隧道。没有走真实隧道和网关，也不是真机。Mac 当时负载很高，这里不记流畅度。
 
 | 问题 | 结果 |
 | --- | --- |
@@ -458,7 +446,7 @@ iOS 26.5 模拟器，`@modelcontextprotocol/ext-apps` 2.0.4，本机服务器让
 
 ### 全屏（原型，不合并）
 
-同样的条件。[Actual Budget](https://github.com/actualbudget/actual) 26.11.0 的手机版自带底栏，写了 `viewport-fit=cover` 和 `theme-color`；Immich v3.3.5 没有写这两项。截图在共享笔记目录的 `plugin-tabs-prototype/shots/`（`compare-fullscreen.jpg`）。
+同样的条件。[Actual Budget](https://github.com/actualbudget/actual) 26.11.0 的手机版自带底栏，写了 `viewport-fit=cover` 和 `theme-color`；Immich v3.3.5 没有写这两项。
 
 | 问题 | 结果 |
 | --- | --- |

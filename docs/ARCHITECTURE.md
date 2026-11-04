@@ -1,7 +1,6 @@
 # 架构
 
-本文描述 Wonton 的目标架构。每个选择的理由见对应的 [ADR](adr/README.md)。标注“M0 选型”或
-“待验证”的部分，由 M0 技术验证给出结论后更新本文。
+本文描述 Wonton 的目标架构。每个选择的理由见对应的 [ADR](adr/README.md)。
 
 ## 一句话
 
@@ -59,15 +58,17 @@ flowchart LR
 | `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。系统服务里唯一挂载 Docker socket 的容器（升级器见下）。 |
 | `tusd` | 核心组件 | 设备上传文件的可续传接口（tus），只在核心的私有网络里，鉴权和编号由核心决定（ADR-0020）。 |
 | `wonton-egress` | 核心组件（配了代理才有） | 出口容器：把出网插件的请求转给主人的代理（ADR-0023）。 |
-| `tuwunel` | 系统插件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
+| `tuwunel` | 核心组件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
+| `hydra` | 核心组件 | OIDC 提供方，插件的单点登录（ADR-0009）。 |
+| 第三方 App 入口 | 核心组件（主人打开才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。 |
 | `hermes` | 默认插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。核心启动后自动装一次，主人卸掉就不再装（ADR-0007）。 |
-| `magpie` | 系统插件（可替换） | 模型网关：provider 和 key 只配一次，所有插件共用。 |
-| 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba，以及任意 CasaOS 应用。 |
+| `magpie` | 系统插件 | 模型网关：provider 和 key 只配一次，所有插件共用。主人换不掉；我们换实现时 Agent 不用改（ADR-0008）。 |
+| 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba 等。 |
 | `wonton-updater` | 一次性容器 | 升级核心时拉起，用核心自己的镜像：拉新镜像、重建核心、健康检查，失败回滚（ADR-0025）。 |
 
 ### 云端
 
-我们只运营转发类服务，没有用户账号，也不存业务数据。
+没有用户账号，也不存业务数据。第三方 App 入口存的是运行它必需的数据，见 [ADR-0012](adr/0012-updates-release-cloud.md)。部署安排见 [GOAL](GOAL.md) 的 M2。
 
 | 服务 | 选型 | 说明 |
 | --- | --- | --- |
@@ -76,16 +77,14 @@ flowchart LR
 | 推送中继 | gorush 加一层鉴权 | 只接收密文，转发到 APNs、FCM、华为 HMS。 |
 | 目录 | 签名静态文件 | 中继节点列表。插件的官方索引在 GitHub 上，签名以后也能经这里分发（ADR-0017）。 |
 | 镜像 | GHCR 加国内镜像仓库 | 安装脚本按网络选择。 |
-
-开发和 MVP 内测期，中继和发现先用 n0 的公共节点，推送中继从 M2 起部署在我们的一台公网主机上；
-自建中继和发现节点在 M2 部署（香港和海外各一个起），公司主体和备案办好后再加内地节点。
+| 第三方 App 入口 | frps、家名服务、PowerDNS、acme-dns | 只按 SNI 或端口转发，不解密（ADR-0021）。 |
 
 ### 客户端
 
 | 端 | 技术 | 说明 |
 | --- | --- | --- |
 | iOS | SwiftUI | 外加通知扩展（解密推送）；录屏扩展留给 M2 的屏幕共享。 |
-| Android | Jetpack Compose | 推送服务内本地解密；国内可选“保持连接”前台服务。 |
+| Android | Jetpack Compose | 默认“保持连接”前台服务；UnifiedPush 是设置里的高级选项，推送服务内本地解密（ADR-0003）。 |
 | 桌面（M2） | Compose Multiplatform | 与 Android 共享 UI 模块。 |
 | Web（M3） | Compose 编译到 Web | 核心在服务器上运行，浏览器经 WebSocket 收发。 |
 | 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel、行为测试。 |
@@ -134,10 +133,15 @@ App 打开插件网页时，WebView 以客户端核心的本地代理为 HTTP �
 插件网页能固定到底栏，也能全屏（只留一个胶囊），主题令牌由 App 注入，页面和 App 之间用 MCP Apps 的方法名。Agent 能写插件
 并经总线装上，走和上传相同的校验和确认。设计见 [ADR-0033](adr/0033-plugin-tabs.md)。
 
+### 第三方 App、局域网端口和出网
+
+三条不经隧道的路，都要清单声明：第三方 App 经公网子域名或局域网直连到入口容器（ADR-0021）；插件把清单列出的端口发布到
+局域网（`network.lan`，ADR-0019），网页端口要主人打开 `lan_webui`（ADR-0023）；出网插件经出口容器走主人的代理（ADR-0023）。
+
 ### 插件安装
 
-1. 来源：官方索引里审核过的插件、GitHub 上的社区插件（`github:<owner>/<repo>@<tag>`）、导入的 CasaOS 应用，
-   主人上传的插件包，或 Bot 写好的插件包（ADR-0033）。每个插件一个仓库，发布就是打 tag（ADR-0017）。
+1. 来源：官方索引、GitHub 上的社区插件、主人添加的仓库、第三方索引、上传的插件包（ADR-0031），或 Bot 写好的插件包
+   （ADR-0033）。每个插件一个仓库，发布就是打 tag（ADR-0017）。
 2. 核心校验清单，生成权限清单。
 3. 主人在 App 里确认权限；如果是 Bot 发起的安装，确认按钮出现在聊天里。
 4. 核心准备插件要用的身份和凭据（Bot 账号与令牌、模型网关凭据、插件密钥、OIDC 客户端），渲染
@@ -176,12 +180,13 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放�
 
 - Agent 是不可信执行者：独立容器，只看得到自己的工作区和被授权的文件夹，没有 Docker socket，
   也没有宿主 root。
-- 插件权限写在清单里，安装时确认。高权限（host 网络、设备、GPU、Docker socket、特权模式）单独醒目确认。
+- 插件权限写在清单里，安装时确认。高权限只有局域网端口（`network.lan`）和显卡（`devices.gpu`），单独醒目确认。
+  host 网络、Docker socket、特权模式一律不开放。
   显卡由核心按宿主实际有的显卡交给清单指定的服务，插件写不了设备路径（ADR-0018）。
 - provider key 等密钥只存在核心密钥库和 magpie，插件拿到的是受限令牌。
 - 来自其他 Bot、网页、文件的内容都视为不可信输入。
 
-## 仓库布局（规划）
+## 仓库布局
 
 ```text
 crates/
@@ -194,7 +199,7 @@ apps/
   ios/               SwiftUI 壳、通知扩展
   compose/           Kotlin Multiplatform：共享 UI 模块、android、desktop（M2）
 design/              App 设计系统的输入：令牌、图标白名单和上游 SVG（ADR-0026）
-plugins/             核心测试用的示例插件；正式的插件各在自己的仓库（ADR-0017）
+plugins/             预装插件（Hermes、magpie）和示例插件；其余官方插件各在自己的仓库（ADR-0017）
 cloud/               中继、发现、推送中继、目录发布的部署配置
 deploy/              一行安装脚本、compose 模板、升级器
 docs/                文档
@@ -205,7 +210,7 @@ scripts/             CI 与开发脚本
 
 | 能力 | 选型 | 许可证 | 状态 |
 | --- | --- | --- | --- |
-| Matrix homeserver | Tuwunel | Apache-2.0 | 已定，M0 验证 |
+| Matrix homeserver | Tuwunel | Apache-2.0 | 已定 |
 | 客户端 Matrix SDK | matrix-rust-sdk | Apache-2.0 | 已定 |
 | 隧道 | iroh 1.x（参考 dumbpipe） | MIT / Apache-2.0 | 已定 |
 | 中继与发现 | iroh-relay、iroh-dns-server | MIT / Apache-2.0 | 已定 |
@@ -214,7 +219,7 @@ scripts/             CI 与开发脚本
 | 默认 Agent | Hermes Agent | MIT | 已定 |
 | Agent 接入 | Matrix 原生、ACP | Apache-2.0（ACP 规范） | 已定 |
 | 模型网关 | magpie | MIT | 已定 |
-| MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006），M1 实现 |
+| MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006） |
 | 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
 | OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |
 | 可续传上传 | tus 1.0、tusd | MIT，独立容器 | 已定（ADR-0020） |
@@ -235,7 +240,6 @@ scripts/             CI 与开发脚本
 - **实时通话与屏幕共享（M2）**：通话是一通 MatrixRTC 通话，Agent 作为参与方加入。默认用云端实时
   模型直连（家里服务器签发临时令牌，工具调用回家执行）；隐私模式在家里跑 LiveKit 插件。客户端核心
   把音频会话和后台模式抽象一次，供音乐和通话共用。见 [ADR-0014](adr/0014-reserved-capabilities.md)。
-- **小程序 JS SDK（M2）**：原生播放、文件选择、分享、发到聊天。
 - **第三方 IM 渠道（M2）**：渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
 - **Web 端（M3）**：核心接口保持可序列化（操作进、ViewModel 出），为浏览器远程使用留路。
 - **跨机 Bot 通信（M3）**：插件实现，Matrix 联邦走 iroh 或 A2A。

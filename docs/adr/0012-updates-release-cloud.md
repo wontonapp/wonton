@@ -15,25 +15,17 @@ bot 读不到包等发布事故反复出现；发布要走 test、canary、prod 
 - **插件升级**：按官方索引里的版本或插件仓库的新 tag 提示，主人确认后升级（ADR-0017）。以后可以给“官方插件、权限
   没变”的升级打开自动。
 - **镜像分发**：同时发布到 GHCR 和国内镜像仓库，安装脚本按网络自动选择；以镜像 digest 作为版本身份。
-  M1 先只发 GHCR（`ghcr.io/geraldpeng6/wonton-core`，包公开，主仓库仍是私有）；国内拉 ghcr.io 可能慢，国内镜像仓库
+  先只发 GHCR（`ghcr.io/geraldpeng6/wonton-core`）；国内拉 ghcr.io 可能慢，国内镜像仓库
   以后按这一条加上。安装脚本放在单独的公开小仓库：免费账号下，私有仓库的 Release 附件和 Pages 都不能匿名下载。
 - **我们运营的云服务**只有五类：iroh 中继与发现、推送中继、节点列表（签名静态文件）、国内镜像、第三方 App 的
   入口（中继、家名服务、acme-dns、权威 DNS，ADR-0021）。没有用户账号，也不存业务数据。第三方 App 的入口存的是
   运行它必需的数据：`<家>` 和注销后的墓碑表、endpoint ID、局域网地址、CAA 账号 URI、TCP 端口分配表、令牌的哈希、
   邀请码、用量和连接日志（保留期见 ADR-0021），流量只按 SNI 或端口转发，不解密。插件的官方索引在 GitHub 上（ADR-0017），以后签了名也经节点列表那样的静态文件分发。
-- **节点**：开发和 MVP 内测期，中继和发现先用 n0 的公共节点，推送中继从 M2 起部署在一台公网主机上；
-  M2 部署香港和海外各一个自建节点，主体和备案办好后增加内地节点。第三方 App 的入口在 M1 部署到香港（ADR-0021），
-  默认地址写在安装目录的 `.env` 里，不经节点列表。
+- **节点**：部署安排见 [GOAL](../GOAL.md) 的 M2。第三方 App 入口的默认地址写在安装目录的 `.env` 里，不经节点列表。
 - **App 分发**：MVP 走 TestFlight 和直装 APK；应用商店上架在 M3。
-- **CI**：GitHub Actions；发布由 tag 触发。作业跑在自托管 runner 上（2026-10-29 起）：GitHub 托管的 macOS 机器
-  在私有仓库按 10 倍计分钟，免费额度很快用完，自托管不计分钟。
-  - 标签 `self-hosted, macOS, ARM64, xcode` 的机器跑 iOS 模拟器构建，要装 Xcode 和 rustup；
-  - 标签 `self-hosted, Linux, X64, docker` 的机器跑其余作业（结构门禁、Rust、Docker 集成测试、SwiftLint 容器、
-    Android），要装 rustup 和 Docker，Android SDK 与 NDK 由 runner 环境的 `ANDROID_HOME` 给出；
-  - Rust 构建缓存放在 runner 环境 `WONTON_CI_CACHE` 指的目录（没设时是 runner 工作目录下的 `_cargo-target/`），
-    同一台机器上的几个 runner 共用、跨次沿用；CI 关掉增量编译、调试信息只留行号，缓存小一半以上；
-  - 同一台 Linux 机器可以注册多个 runner，作业并行跑；
-  - 仓库公开之前要先改成只跑本仓库分支的作业：自托管 runner 会执行推上来的任何代码，外人的 PR 不能跑在上面。
+- **CI**：GitHub Actions，发布由 tag 触发。作业跑在自托管 runner 上：GitHub 托管的 macOS 机器在私有仓库按 10 倍计分钟，
+  免费额度很快用完。runner 的要求见 [.github/workflows/README.md](../../.github/workflows/README.md)。自托管 runner 会执行推上来的任何
+  代码，外人的 PR 不能跑在上面：仓库公开之前要先改成只跑本仓库分支的作业。
 
 ## 理由
 

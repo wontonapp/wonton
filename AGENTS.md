@@ -20,6 +20,11 @@
 - 错误必须区分原因：传输不可用、权限缺失、插件未安装或未就绪、上游服务出错、输入非法。
 - 状态不确定时如实显示为不确定，不伪装成功。
 
+## 兼容
+
+- 直到有第一个外部用户（主人以外的人装上）为止，协议、ViewModel、配置、插件规范都直接改，不写迁移、不留旧字段。
+- 保留通用的向前兼容：核心和 App 分开升级时，不认识的按钮不显示，不认识的取值落到 `Other`。
+
 ## 不造轮子
 
 - 优先使用成熟的开源组件和开放标准（Matrix、iroh、MCP、ACP、OIDC、Subsonic、Compose）。
@@ -31,8 +36,7 @@
 
 - CI 硬门禁：源码文件 ≤ 800 行，函数 ≤ 100 行，超过即失败。文件行数由
   `scripts/check-file-size.sh` 检查；函数长度由各语言 linter 检查：Rust 用 clippy
-  `too_many_lines`（已配置），Kotlin 用 detekt `LongMethod`、Swift 用 SwiftLint
-  `function_body_length`，在对应工程创建时一起配置。
+  `too_many_lines`，Kotlin 用 detekt `LongMethod`，Swift 用 SwiftLint `function_body_length`。
 - 确需例外时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
 - 按职责拆模块。新功能放进职责清晰的小模块，不往已经很大的文件末尾追加。
 - 客户端遵循“厚 Rust 核心 + 薄原生壳”：状态、业务逻辑、网络、存储、ViewModel 都在 Rust；
@@ -82,8 +86,8 @@
   `docs/adr/`，以及各模块目录下简短的 README。
 - 改变架构、协议或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
 - 插件规范在公开仓库 [wonton-docs](https://github.com/geraldpeng6/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
-  同时在那边提 PR，核心合并后再合。那边是公开文档：不引用 ADR 和里程碑，不写机器名和局域网地址。
-- 重大决策写 ADR。推翻旧决策时新写一篇，并把旧 ADR 的状态改为“已被 ADR-xxxx 取代”。
+  同时在那边提 PR，核心合并后再合。那边是公开文档，不引用 ADR 和里程碑。
+- 重大决策写 ADR，写法见 [docs/adr/README.md](docs/adr/README.md)。
 - 不写进度报告、按日期的笔记和已完成的实施计划。进度看 GitHub issue 和里程碑。
 - 注释只写代码表达不了的：为什么这样写（包括没选的写法）、约束和不变量、外部系统的实测行为。不写复述
   名字或类型的注释；导出给 Swift、Kotlin 的类型可以留一句说明，它会成为那边的文档。
@@ -95,9 +99,13 @@
 ## Git 与协作
 
 - 主干开发：只有 `main` 一个长期分支。
-- 一个 issue 对应一个分支、一个 PR；squash 合并后自动删除分支。
-- PR 描述里写 `Closes #N`，合并时 GitHub 自动关掉 issue；只做了一部分的写 `Refs #N`，并在 issue 里
-  留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
+- 一个分支一个 PR；squash 合并后自动删除分支。
+- 一个 issue 可以分几个 PR：最后一个写 `Closes #N`，合并时 GitHub 自动关掉 issue；之前的写 `Refs #N`，并在
+  issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
+- PR 的 CI 要在含同模块最新提交的 `main` 上跑绿；落后的提交只动了其他模块，可以直接合。`apps/ios`、`apps/compose`、
+  每个 crate、每个插件、`docs` 各算一个模块；`wonton-protocol`、构建脚本和 CI 配置算所有模块。GitHub 上没有强制，
+  靠合并的人看 CI。
+- `main` 红了，谁合的谁马上修。
 - 分支名用 `<type>/<简述>`，如 `feat/tunnel-http-proxy`。
 - 提交信息用 Conventional Commits：`type(scope): 中文摘要`。`type` 取 `feat`、`fix`、`docs`、
   `test`、`refactor`、`chore`、`build`、`ci`；摘要说清行为变化，不写 `Update files` 这类空话。
@@ -105,6 +113,8 @@
 - 提交前运行 `git status --short` 和 `git diff --cached --stat`，确认只包含本次任务的改动。
   截图、录屏、`.xcresult` 等调试产物放在仓库外。
 - 不提交密钥。测试用的示例配置放 `.env.example`。
+- 公开仓库（wonton-docs、各插件仓库、wonton-store）的提交、PR 和截图里，不带真实地址、主机名和内部渠道名。
+  示例地址用 `192.0.2.10`。
 
 ## 多 Agent 并行开发
 
@@ -112,4 +122,3 @@
 - 只并行彼此解耦的模块。要改跨模块接口（`crates/wonton-protocol`、插件规范）时，
   先单独提一个只改接口的 PR 合并，各任务再基于它开发。
 - PR 描述写清改了什么、为什么、怎么验证（命令和结果）。
-- 合并前 rebase 到最新的 `main` 并通过 CI。

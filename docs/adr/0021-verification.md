@@ -128,7 +128,7 @@ Pebble 不是 Let's Encrypt，CAA 没有测。
 
 **第三方 App 和插件**
 
-- Immich 官方 App 在家和在外各备份一张照片（M1 的验收）。
+- Immich 官方 App 在家和在外各备份一张照片。
 - Immich 的 Wi-Fi 自动切换是否可靠。
 - Immich 插件的 `credentials`：不经网页建好主人的账号、设密码、改密码时带 `invalidateSessions` 结束所有登录，用的是哪个接口。Jellyfin 和 Navidrome 能不能结束登录，做不到的声明 `ends_sessions: false`。
 - `:8483` 端口和长名字在各 App 的地址输入框里能不能填：Immich、Bitwarden、Jellyfin、DAVx5。
@@ -138,4 +138,4 @@ Pebble 不是 Let's Encrypt，CAA 没有测。
 
 **迁移**
 
-- 核心回退到不支持 `clients` 的版本时，`wonton-updater` 清掉项目（ADR-0025）；旧核心遇到规范 `0.3` 的已装插件的行为（报错不该阻断旧核心启动）。
+- 核心回退到不支持 `clients` 的版本时，`wonton-updater` 清掉项目（ADR-0025）。

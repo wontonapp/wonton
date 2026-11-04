@@ -25,7 +25,7 @@ App 被杀后收不到任何消息。
 - 推送链路：Tuwunel 的 HTTP pusher 指向核心推送代理；核心用目标设备的公钥加密通知内容，再交给我们
   运营的推送中继（gorush，支持 APNs、FCM、华为 HMS）；中继只看到密文。iOS 用通知扩展解密显示，
   Android 在推送服务里本地解密。
-- 国内 Android：主体和上架完成前，提供可选的“保持连接”模式（前台服务）；之后接厂商通道（M2）。
+- Android 默认用“保持连接”（前台服务），UnifiedPush 放在设置里作为高级选项（主人 2026-11-04 定）；厂商通道在主体和上架完成后接（M2）。
 
 ## 理由
 
@@ -47,7 +47,7 @@ App 被杀后收不到任何消息。
 - Hermes Matrix 平台在 Tuwunel 上的表现。
 - 范围调整（2026-10-28）：iOS 推送需要付费的 Apple 开发者账号（免费的个人开发团队不支持推送能力）。
   M0 先在 Android 上验证加密链路（有谷歌服务走 FCM，没有就用 UnifiedPush 自建 ntfy），iOS 通知扩展的
-  解密在有账号后补做。是否把 UnifiedPush 作为正式渠道另行决定。
+  解密在有账号后补做。
 
 ## 设计：加密推送（M0-3）
 
@@ -81,9 +81,8 @@ App 被杀后收不到任何消息。
 **渠道**
 
 - M0：UnifiedPush 加自建 ntfy，不需要账号。推送地址由分发器给出，核心直接发给它，ntfy 就是中继。
-- M1：FCM、APNs 经我们运营的中继：中继为 App 的 FCM 或 APNs 令牌开一个推送地址，Web Push 进、gorush 出，用 VAPID
+- M2：FCM、APNs 经我们运营的中继：中继为 App 的 FCM 或 APNs 令牌开一个推送地址，Web Push 进、gorush 出，用 VAPID
   （RFC 8292）认出发来推送的家里服务器并按它限速。App 换渠道时核心不用改。
-- 是否把 UnifiedPush 作为正式渠道另行决定。
 
 **设备的推送密钥**
 

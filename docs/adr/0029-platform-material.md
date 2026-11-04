@@ -45,6 +45,7 @@ Android 的长按菜单用 `Modifier.blur` 模糊背后的页面，它只在 And
 
 - **只分栏和菜单：** 主人说的是这几样。气泡、卡片和颜色是 Wonton 自己的样子，换手机还认得出来。
 - **iOS 的栏自己摆、不换回系统栏：** App 最低支持 iOS 17。系统的导航栏和 `TabView` 到了 iOS 26 会自动变成 Liquid Glass，同一个版本的 App 在不同系统上是两种样子。栏天天看到，自己摆加 `Material`，从 iOS 17 到 26 外观一致。菜单只偶尔出现，跟着系统更贴合平台。
+- **最低版本保持 iOS 17：** 插件网页走隧道要用 iOS 17 的 `WKWebsiteDataStore.proxyConfigurations`；降到 15 就得改写网页地址，Cookie 和 SSO 会坏（主人 2026-11-04 定）。
 - **系统材质而不是自己算模糊：** 少写代码，系统会处理深浅色和“降低透明度”，滚动时的合成也由系统负责。
 
 ## 没选的方案
@@ -60,6 +61,7 @@ Android 的长按菜单用 `Modifier.blur` 模糊背后的页面，它只在 And
 - iOS 上内容要从栏下面滚过去，每个屏都要留好安全区，顶部和底部的第一条、最后一条不能被盖住。
 - 材质后面是什么内容不固定，ADR-0026 的对比度测试管不到材质上的文字。这些文字用 `textPrimary` 和 `textSecondary`，靠系统材质保证可读。
 - 系统升级可能改变材质的观感，这部分不归我们控制。
+- iOS 27 的 iPhone Duo 上，只有 `TabView` 等系统容器的栏才参加纵向布局，自摆的栏不算（[Apple 技术讲座](https://developer.apple.com/videos/play/tech-talks/111462/)）。底栏项变成动态（ADR-0033）后如果要换回系统容器，图标就要走 `Tab` 的图片接口。
 
 ## 待验证
 

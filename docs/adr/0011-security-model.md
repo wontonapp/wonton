@@ -14,8 +14,8 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
   socket，也没有宿主 root。
 - **改变系统状态的操作走核心**：装卸插件、删文件、改设置、对外发送都通过核心 MCP 工具执行。
   敏感操作由核心在聊天里给主人发确认按钮，主人点了才执行，并写审计日志。主人可以放宽插件工具的确认（ADR-0024）。
-- **插件权限**：写在清单里，安装时展示确认；高权限（host 网络、设备、GPU、Docker socket、特权模式）
-  单独醒目确认。插件不声明的能力一律不给。
+- **插件权限**：写在清单里，安装时展示确认；高权限只有局域网端口（`network.lan`）和显卡（`devices.gpu`），
+  单独醒目确认。host 网络、Docker socket、特权模式一律不开放。插件不声明的能力一律不给。
 - **Docker socket**：只有核心容器挂载，以及升级器和 `install.sh` 里跑 compose 的一次性容器（ADR-0025）。宿主的 `/dev` 也只读挂进核心容器，用来检测显卡和设备所属的组（ADR-0018）；
   设备 cgroup 没放行，核心开不了这些设备。
 - **密钥**：provider key 等密钥只存在核心密钥库和 magpie；插件拿到的是只属于自己的受限令牌。第三方 App 入口的密钥由核心保管，运行时
@@ -69,12 +69,12 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
   这几条的边界：
   - 浏览器只对 https 和 `localhost` 发 Fetch Metadata，其余 http 地址上只剩 `Origin`：跨站的表单 POST、
     `fetch` 和 WebSocket 都带 `Origin`，挡得住；`<img>`、`<script>` 这类 GET 不带它，仍会带着登录状态到达
-    插件，所以插件的 `GET` 不能改状态。局域网和隧道内的 HTTPS 方案（ADR-0009）定下来以后才完整。
+    插件，所以插件的 `GET` 不能改状态。隧道内不另加 HTTPS（ADR-0009），这条边界一直存在。
   - iframe 也是导航：别的插件能把这个插件嵌进 iframe，读不到内容，但可能诱导主人点击。防点击劫持靠插件
     自己的 `X-Frame-Options` 或 CSP `frame-ancestors`。
   - 应用的 OIDC 回调要用默认的 `query` 响应模式：`form_post` 是从 `auth.<base>` 发来的跨站 POST，会被当成
     未登录。
 
-## 待定
+## 已定
 
-给单个 Bot 开放 shell 或 Docker 权限的“高级模式”（二次确认、可随时收回），M2 再评估。
+永远不给 Bot 宿主的 shell 和 Docker（主人 2026-11-04 定）。Agent 干活用自己容器里的 shell，装东西走 ADR-0033。

@@ -1,6 +1,6 @@
 # ADR-0006 插件系统：薄核心 + Compose 插件
 
-- 状态：已接受（2026-10-28），M0 选型已定（见验证结果）
+- 状态：已接受（2026-10-28），M0 选型已定（见验证结果）。系统插件的定义以 [ADR-0007](0007-agents-and-bots.md) 为准；“导入 CasaOS”已撤销（主人 2026-11-04 定）；“JS SDK”已被 [ADR-0033](0033-plugin-tabs.md) 取代；“以后用 rustls 补上”已被取代，见下文
 
 ## 背景
 
@@ -16,15 +16,15 @@ Olares 基于 Kubernetes / Helm，对 Pi 和普通 Linux 太重。
 - **薄核心**（一个 Rust 容器 `wonton-core`）只负责横切事务：插件管理器（经 Docker API 安装、升级、
   启停、健康检查、日志）、网关与配对（iroh 入口、HTTP 反向代理、设备与用户）、推送代理、MCP 总线、
   密钥库与存储授权。
-- **系统插件**（预装、可升级、可替换）：Tuwunel、默认 Agent（Hermes）、模型网关（magpie）。
+- **系统插件**：`kind: system`，随核心预装，主人换不掉，如模型网关 magpie（ADR-0007）。Hermes 是默认装一次的普通插件，Tuwunel、Hydra 是核心组件。
 - **可选插件**：其余一切，如 Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba、下载工具、
-  ComfyUI、任意 CasaOS 应用。
+  ComfyUI。
 - **格式**：一个 `docker-compose.yml` 加顶层扩展字段 `x-wonton`，声明 Web UI 入口、MCP 端点、bot、
   权限、设置表单和资源需求。规范见 [plugin-spec.md](../plugin-spec.md)。
-- **生态**：可导入 CasaOS 格式的商店；Umbrel 商店不复用；Runtipi 只允许用户自行添加为商店源，
+- **生态**：不导入 CasaOS，热门应用转成官方插件；Umbrel 商店不复用；Runtipi 只允许用户自行添加为商店源，
   不并入官方目录。
 - **Agent 调用插件**：统一走 MCP。插件声明 MCP 端点，核心 MCP 总线按权限汇总后提供给 Agent。
-- **小程序**：有网页的插件在 App 里以小程序打开，由核心网关鉴权；JS SDK 在 M2 提供。
+- **小程序**：有网页的插件在 App 里以小程序打开，由核心网关鉴权；原生能力见 ADR-0033。
 
 ## 理由
 
@@ -35,7 +35,6 @@ Olares 基于 Kubernetes / Helm，对 Pi 和普通 Linux 太重。
 ## 代价与风险
 
 - Compose 没有多节点调度（家庭场景不需要）。
-- CasaOS 应用的权限信息不完整，导入时要补齐并由主人确认。
 - 第三方镜像有供应链风险，官方目录需要审核流程（规范的待定问题）。
 
 ## 待验证（M0 选型）
@@ -62,7 +61,7 @@ Docker 29.8）和 npchy（Linux x86_64，Docker 29.7，`DOCKER_HOST=ssh://npchy`
 - 卸载按标签 `wonton.plugin=<id>` 清理容器、网络和 OIDC 客户端，选择删除数据时再删卷和应用数据目录；
   删完再按标签查一遍，有残留就报错。核心重启后按记录恢复：核对容器在运行、重新接入插件网络、
   把 OIDC 客户端同步到身份提供方；不一致的插件标为异常并给出原因（冒烟脚本验证）。
-- 代价：compose 语义要自己维护一个子集，导入 CasaOS 应用时遇到新字段要逐个评估后再加。这是有意的：
+- 代价：compose 语义要自己维护一个子集，遇到新字段要逐个评估后再加。这是有意的：
   白名单让核心完全掌握插件能拿到的宿主能力，未知字段不会被悄悄执行。
 
 **HTTP 网关：核心内置**
@@ -84,7 +83,7 @@ Traefik 一组在负载下有约 0.7% 的 500（forwardAuth 子请求失败，�
   路由就有了两份事实源。
 - 少一个容器，小主机上更省内存。
 - 代价：反向代理自己维护（`gateway/proxy.rs`），行为测试覆盖鉴权、Cookie 剥离、转发头和协议升级；
-  Grafana 的 WebSocket 经网关可用。TLS 和 ACME 以后用 rustls 补上。
+  Grafana 的 WebSocket 经网关可用。“TLS 和 ACME 以后用 rustls 补上”已被取代：经隧道不另加 HTTPS（ADR-0009），面向第三方 App 的 TLS 在入口容器（ADR-0021）。
 
 **MCP 总线：rmcp 最小聚合**
 
