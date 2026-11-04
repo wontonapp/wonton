@@ -15,7 +15,10 @@ use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelError, TunnelStatus}
 
 use crate::support::{Home, Phone, Timeouts, Upstream, endpoint_on};
 
+/// 判定连接卡住的时限：包全丢了的测试用，到时限才算结果，机器再忙也不会提前。
 const DEADLINE: Duration = Duration::from_secs(1);
+/// 连接活着的测试用：机器忙时一次往返也可能超过 [`DEADLINE`]，那会被当成卡住换掉连接。
+const PATIENT: Duration = Duration::from_secs(30);
 
 /// 手机和服务端之间的一段 UDP 转发，可以丢包。
 struct Flaky {
@@ -93,18 +96,16 @@ async fn retrying_does_not_wait_for_a_dial_started_on_the_dead_network() {
     let client = phone.client.clone();
     let dialling = tokio::spawn(async move { client.ping().await });
     // QUIC 的初始包重传间隔加倍，这时离下一次重传还有一阵。
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    let on_the_dead_network = Duration::from_secs(5);
+    tokio::time::sleep(on_the_dead_network).await;
 
     flaky.drop_above(PASS);
-    let started = std::time::Instant::now();
     phone.client.retry_now();
     dialling.await.unwrap().unwrap();
 
-    assert!(
-        started.elapsed() < Duration::from_secs(2),
-        "网络恢复后 {:?} 才连上",
-        started.elapsed()
-    );
+    // 断网时开始的那次握手，到现在至少用了这么久；比它短，说明连上的是重试新开的那次。
+    let handshake = phone.client.stats().handshake.unwrap();
+    assert!(handshake < on_the_dead_network, "{handshake:?}");
 }
 
 /// 包全丢了，QUIC 要 30 秒才判定超时，这期间连接算活着，路径还是最后一次估的“直连 2 ms”。
@@ -130,7 +131,7 @@ async fn a_stalled_connection_stops_claiming_to_be_connected() {
 
     // 网络恢复：下一次检查换上新连接，状态和路径回来。
     flaky.drop_above(PASS);
-    phone.client.probe(DEADLINE).await.unwrap();
+    phone.client.probe(PATIENT).await.unwrap();
     assert_eq!(phone.client.status(), TunnelStatus::Connected);
     assert_eq!(phone.client.path().unwrap().kind, PathKind::Direct);
     assert_eq!(phone.get("/after").await.status, 200);
@@ -163,7 +164,7 @@ async fn probing_a_live_connection_keeps_it() {
     let (_upstream, home, _flaky, phone) = rig().await;
     assert_eq!(phone.get("/before").await.status, 200);
 
-    phone.client.probe(DEADLINE).await.unwrap();
+    phone.client.probe(PATIENT).await.unwrap();
 
     assert_eq!(phone.client.status(), TunnelStatus::Connected);
     assert_eq!(phone.get("/after").await.status, 200);
