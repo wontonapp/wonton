@@ -103,6 +103,14 @@ flowchart LR
 5. 以后加设备，在已配对的 App 里点“添加设备”出码给新设备扫；设备都丢了，在服务器终端执行 `sudo wonton pair`。
    信任边界是服务器终端和已配对的设备，能接触局域网不算可信（理由见 ADR-0009）。
 
+### 新用户引导
+
+配对之后，App 依次带主人填资料、选默认的 Agent、接模型、按需求装应用，然后进入聊天。每一步都能跳过，进度记在核心。Agent 名单和推荐清单放在官方索引里，核心取来交给 App，不用发版。填 key 由模型网关声明的命令保存，核心只转交，不存。设计见 [ADR-0034](adr/0034-onboarding-and-help.md)。
+
+### 帮助文档
+
+用户问 Wonton 和 App 的用法时，Agent 调核心的 `wonton__help`。文档在公开仓库 wonton-docs 的 `user/`，核心镜像带一份，有网时按官方索引记的提交取新版，核对 sha256 后存盘。Agent 插件自带一个指路的 skill，文档只有核心这一份。设计见 ADR-0034。
+
 ### 聊天
 
 App 的 Matrix 客户端请求进入客户端核心的本地代理，经 iroh 隧道到核心网关，再转给 Tuwunel。
@@ -174,6 +182,7 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放�
 - 会说 Matrix 的 Agent 直接接入（Hermes 的 Matrix 平台）。支持 ACP 的 Agent（Codex、Claude Code、
   Gemini CLI、OpenCode 等）通过通用“ACP 桥”插件接入：一个聊天房间对应一个 ACP 会话，ACP 的权限
   请求对应聊天里的确认按钮。
+- 模型默认经 magpie。订阅账号只在 Agent 官方程序里登录，不经 magpie（ADR-0034）。
 - 每个家人有自己的私人 Bot；Bot 之间可以互发消息，规则见 [ADR-0007](adr/0007-agents-and-bots.md)。
 
 ## 安全模型

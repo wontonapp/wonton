@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28），ACP 桥已验证（见验证结果）
+- 状态：已接受（2026-10-28），ACP 桥已验证（见验证结果）。桥的时间和经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)
 
 ## 背景
 
@@ -37,7 +37,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 
 ## 范围
 
-MVP 只有默认的 Hermes Bot。ACP 桥、家人 Bot、Bot 互发消息在 M2，接口现在预留；跨机通信在 M3。
+默认 Agent 是 Hermes。ACP 桥和 M1 同时开工，M1 验收不等它（ADR-0034）；家人 Bot、Bot 互发消息在 M2，接口预留；跨机通信在 M3。
 
 ## 代价与风险
 

@@ -335,4 +335,4 @@ tusd v2.10.1（`tusproject/tusd@sha256:7b1c552a…`）：OrbStack 上 Docker 29.
 - `HERMES_MEDIA_DELIVERY_STRICT=1` 下，Hermes 的生图和语音照常能发。
 - 播放和续传走中继时的表现。
 - 插件网页在 WebView 里读不到文件接口：`<img>`、`fetch`、导航都被挡住。
-- Codex、Claude Code 经 ACP 桥（M2）拿到编号后能照样调工具，把链接放进回复。
+- Codex、Claude Code 经 ACP 桥拿到编号后能照样调工具，把链接放进回复。
