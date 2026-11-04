@@ -98,14 +98,19 @@ async fn follow_room(
             return;
         }
     };
-    // 房间列表的同步只给最新的事件，订阅也不补更早的：App 关着时来的几张卡片，只有往回翻才看得到最新那张之前的。
-    if let Err(error) = room.paginate_backwards(CARD_LOOKBACK).await {
-        tracing::warn!(room = %room_id, "往回翻通知房间失败，更早的卡片提示不了：{error}");
-    }
     let (entries, diffs) = room.entries().await;
     let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
     let mut diffs = std::pin::pin!(diffs);
+    let mut newest = None;
     loop {
+        // 同步只给最新的事件，更早的卡片要往回翻才看得到。缺口是同步带来的，所以最底下来了新事件就翻一次；翻回来的在上面，不会再触发。
+        let latest = entries.back().map(|entry| entry.id.clone());
+        if latest != newest {
+            newest = latest;
+            if let Err(error) = room.paginate_backwards(CARD_LOOKBACK).await {
+                tracing::warn!(room = %room_id, "往回翻通知房间失败，更早的卡片提示不了：{error}");
+            }
+        }
         let shown = cards.view();
         if out
             .send((room_id.clone(), shown.standing(&room_id, &entries)))
