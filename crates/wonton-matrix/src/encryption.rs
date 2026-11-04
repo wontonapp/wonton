@@ -93,9 +93,19 @@ impl MatrixSession {
     /// 设置恢复：账号还没有交叉签名身份时先建，再建密钥备份和秘密存储，返回恢复密钥。
     ///
     /// 恢复密钥只在这里给出一次，调用方要存好，主人在别的设备上恢复时要用。账号已经设置过恢复时返回
-    /// [`Error::NotReady`]：再设置一次会换掉秘密存储的密钥，主人手里的旧恢复密钥就作废了。
+    /// [`Error::NotReady`]：再设置一次会换掉秘密存储的密钥，主人手里的旧恢复密钥就作废了。本设备未验证时也一样：
+    /// 它没有交叉签名的私钥，存不进秘密存储，之后别的设备输对恢复密钥也一直不完整（matrix-sdk 0.19 实测）。
     pub async fn enable_recovery(&self) -> Result<String> {
-        let recovery = self.client.encryption().recovery();
+        let encryption = self.client.encryption();
+        if matches!(
+            encryption.verification_state().get(),
+            VerificationState::Unverified
+        ) {
+            return Err(Error::NotReady(
+                "这台设备没有账号的身份密钥，要到最早配对的那台设备上开启".to_owned(),
+            ));
+        }
+        let recovery = encryption.recovery();
         if matches!(
             recovery.state(),
             RecoveryState::Enabled | RecoveryState::Incomplete
@@ -113,12 +123,18 @@ impl MatrixSession {
 
     /// 用恢复密钥恢复：取回交叉签名的秘密和密钥备份，本设备随之被验证。
     pub async fn recover(&self, recovery_key: &str) -> Result<()> {
-        self.client
-            .encryption()
-            .recovery()
+        let recovery = self.client.encryption().recovery();
+        recovery
             .recover(recovery_key.trim())
             .await
-            .map_err(|error| recovery_error(&error))
+            .map_err(|error| recovery_error(&error))?;
+        // 密钥对、秘密存储却缺东西时 SDK 也算成功，这台设备其实什么也没取回。
+        if matches!(recovery.state(), RecoveryState::Incomplete) {
+            return Err(Error::NotReady(
+                "恢复密钥是对的，但备份不完整，这台设备取不回以前的消息".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -137,7 +153,8 @@ fn secret_storage_error(error: &SecretStorageError) -> Error {
     match error {
         // 格式不对或者 MAC 校验失败，都是恢复密钥不对。
         SecretStorageError::SecretStorageKey(_) => {
-            Error::InvalidInput(format!("恢复密钥不对：{error}"))
+            tracing::info!("恢复密钥校验失败：{error}");
+            Error::InvalidInput("恢复密钥不对，检查后再输一次".to_owned())
         }
         SecretStorageError::Sdk(sdk) => sdk.into(),
         SecretStorageError::MissingKeyInfo { .. } => {

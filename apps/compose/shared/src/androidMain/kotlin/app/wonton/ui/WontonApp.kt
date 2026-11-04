@@ -86,6 +86,7 @@ fun WontonApp(
         var tab by rememberSaveable { mutableIntStateOf(if (startAtApps) APPS else CHAT) }
         var page by remember { mutableStateOf<PluginEntry.Web?>(null) }
         var appsPage by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
+        var showingBackup by rememberSaveable { mutableStateOf(false) }
         var unavailable by remember { mutableStateOf<String?>(null) }
         // 应用页和应用商店里打开插件：Agent 插件切到聊天、打开和它的 Bot 的私聊；有网页的全屏打开。
         val open = remember(core) {
@@ -138,7 +139,7 @@ fun WontonApp(
         MainTabs(
             tab = tab,
             onSelect = { tab = it },
-            hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins),
+            hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins, showingBackup),
         ) {
             WithPendingCards(elsewhere, openCardRoom) {
                 when (tab) {
@@ -153,7 +154,7 @@ fun WontonApp(
                         pendingCards = chatView.pendingConfirmations,
                         onOpenCardRoom = openCardRoom,
                     )
-                    else -> SettingsPage(core, appearance)
+                    else -> SettingsPage(core, appearance, chatView, showingBackup) { showingBackup = it }
                 }
             }
         }
@@ -206,11 +207,17 @@ private fun PluginsEffects(plugins: PluginsState) {
 }
 
 /** 底栏只留在每个标签页的第一层。 */
-private fun hidesBottomBar(tab: Int, chat: ChatNavigation, appsPage: HomePage, apps: PluginNavigation): Boolean =
+private fun hidesBottomBar(
+    tab: Int,
+    chat: ChatNavigation,
+    appsPage: HomePage,
+    apps: PluginNavigation,
+    showingBackup: Boolean,
+): Boolean =
     when (tab) {
-        CHAT -> chat.openRoom != null
+        CHAT -> chat.openRoom != null || chat.showingBackup || chat.startingChat
         APPS -> appsPage != HomePage.LAUNCHER || apps.detail != null || apps.confirmation != null
-        else -> false
+        else -> showingBackup
     }
 
 @Composable

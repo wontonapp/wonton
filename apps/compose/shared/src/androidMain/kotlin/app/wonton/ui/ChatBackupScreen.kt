@@ -36,18 +36,17 @@ import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
-import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonPushedBar
-import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
-import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
+/** 聊天记录备份。协议里叫恢复（密钥备份加秘密存储），这里按它对主人的用处说：换设备后还能看到以前的消息。 */
 @Composable
-fun EncryptionScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, onClose: () -> Unit) {
-    WontonScreen(bar = { WontonPushedBar("加密", onClose) }) {
+fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, onClose: () -> Unit) {
+    val colors = WontonTheme.colors
+    WontonScreen(bar = { WontonPushedBar("聊天记录备份", onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
@@ -55,28 +54,34 @@ fun EncryptionScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
             encryption.recoveryKey?.let { key ->
                 RecoveryKey(key, onConfirm = { onAction(Action.ConfirmRecoveryKeySaved) })
             }
-            WontonGroup {
-                WontonRow("本设备", verificationText(encryption.verification))
-                WontonSeparator()
-                WontonRow("恢复", recoveryText(encryption.recovery))
+            Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+                Text(
+                    encryption.recovery.backupTitle,
+                    style = WontonTheme.typography.itemTitle,
+                    color = colors.textPrimary.toColor(),
+                )
+                encryption.backupDetail?.let {
+                    Text(it, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
+                }
             }
-            Recovery(encryption.recovery, onAction)
+            NextStep(encryption, onAction)
         }
     }
 }
 
 @Composable
-private fun Recovery(recovery: RecoveryStatus, onAction: (Action) -> Unit) {
+private fun NextStep(encryption: EncryptionStatus, onAction: (Action) -> Unit) {
     var key by rememberSaveable { mutableStateOf("") }
-    when (recovery) {
-        RecoveryStatus.DISABLED ->
-            WontonButton("设置恢复", { onAction(Action.SetUpRecovery) }, Modifier.fillMaxWidth())
+    when (encryption.recovery) {
+        RecoveryStatus.DISABLED -> if (encryption.verification != DeviceVerification.UNVERIFIED) {
+            WontonButton("开启备份", { onAction(Action.SetUpRecovery) }, Modifier.fillMaxWidth())
+        }
         RecoveryStatus.INCOMPLETE -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
             WontonTextField(
                 value = key,
                 onValueChange = { key = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = "输入恢复密钥",
+                placeholder = "恢复密钥",
                 visualTransformation = PasswordVisualTransformation(),
                 // 按密码输入：输入法不联想、不自动改写和大写，否则恢复密钥会被“纠正”成别的字。
                 keyboardOptions = KeyboardOptions(
@@ -86,7 +91,7 @@ private fun Recovery(recovery: RecoveryStatus, onAction: (Action) -> Unit) {
                 ),
             )
             WontonButton(
-                "恢复",
+                "取回以前的消息",
                 {
                     onAction(Action.RecoverEncryption(key))
                     key = ""
@@ -100,12 +105,52 @@ private fun Recovery(recovery: RecoveryStatus, onAction: (Action) -> Unit) {
     }
 }
 
+val RecoveryStatus.backupTitle: String
+    get() = when (this) {
+        RecoveryStatus.ENABLED -> "聊天记录已备份"
+        RecoveryStatus.DISABLED -> "还没有备份聊天记录"
+        RecoveryStatus.INCOMPLETE -> "这台设备还看不到以前的消息"
+        RecoveryStatus.IN_PROGRESS -> "正在处理…"
+        RecoveryStatus.UNKNOWN -> "还不知道备份的情况"
+    }
+
+val EncryptionStatus.backupDetail: String?
+    get() = when (recovery) {
+        RecoveryStatus.ENABLED -> "换手机或新设备时，输入恢复密钥就能看到以前的消息。"
+        // 未验证的设备开启不了，核心会拒绝。
+        RecoveryStatus.DISABLED -> if (verification == DeviceVerification.UNVERIFIED) {
+            "要到最早配对的那台设备上开启。"
+        } else {
+            "开启后，换手机或新设备时也能看到以前的消息。"
+        }
+        RecoveryStatus.INCOMPLETE -> "输入开启备份时保存的恢复密钥。"
+        RecoveryStatus.IN_PROGRESS -> null
+        RecoveryStatus.UNKNOWN -> "连上家里的服务器后才能确认。"
+    }
+
+val RecoveryStatus.backupValue: String
+    get() = when (this) {
+        RecoveryStatus.ENABLED -> "已开启"
+        RecoveryStatus.DISABLED -> "未开启"
+        RecoveryStatus.INCOMPLETE -> "需要恢复密钥"
+        RecoveryStatus.IN_PROGRESS -> "处理中"
+        RecoveryStatus.UNKNOWN -> "不确定"
+    }
+
+/** 真需要主人动手时才有，显示在聊天列表顶上。 */
+val EncryptionStatus.backupReminder: String?
+    get() = when {
+        recoveryKey != null -> "恢复密钥还没保存"
+        recovery == RecoveryStatus.INCOMPLETE -> "输入恢复密钥，取回以前的消息"
+        else -> null
+    }
+
 @Composable
 private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
     val context = LocalContext.current
     val colors = WontonTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        Text("恢复密钥", style = WontonTheme.typography.itemTitle, color = colors.textPrimary.toColor())
+        Text("保存恢复密钥", style = WontonTheme.typography.itemTitle, color = colors.textPrimary.toColor())
         // 不能长按选中：系统的拷贝不会标为敏感内容，复制只走“复制”按钮。
         Text(
             key,
@@ -116,7 +161,7 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
             color = colors.textPrimary.toColor(),
         )
         Text(
-            "只显示这一次。点“已保存”后本机不再留着它。",
+            "换手机时要用它。只显示这一次，点“已保存”后本机不再留着它。",
             style = WontonTheme.typography.supporting,
             color = colors.textSecondary.toColor(),
         )
@@ -139,19 +184,3 @@ private fun copySensitive(context: Context, text: String) {
     clip.description.extras = extras
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
 }
-
-private fun verificationText(verification: DeviceVerification) =
-    when (verification) {
-        DeviceVerification.VERIFIED -> "已验证"
-        DeviceVerification.UNVERIFIED -> "未验证"
-        DeviceVerification.UNKNOWN -> "未知"
-    }
-
-private fun recoveryText(recovery: RecoveryStatus) =
-    when (recovery) {
-        RecoveryStatus.ENABLED -> "已开启"
-        RecoveryStatus.DISABLED -> "未设置"
-        RecoveryStatus.INCOMPLETE -> "缺少密钥"
-        RecoveryStatus.IN_PROGRESS -> "进行中"
-        RecoveryStatus.UNKNOWN -> "未知"
-    }

@@ -101,8 +101,7 @@ private struct MainView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(AppTab.apps)
             // 外观不依赖家里的服务器，没配对时也能进。
-            SettingsView(model: appearance)
-                .wontonRootScreen("设置") { EmptyView() }
+            SettingsTab(appearance: appearance, chat: chat)
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.settings)
         }

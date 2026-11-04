@@ -3,7 +3,7 @@ import WontonClient
 
 enum ChatRoute: Hashable {
     case room(String)
-    case encryption
+    case chatBackup
     case startChat
 }
 

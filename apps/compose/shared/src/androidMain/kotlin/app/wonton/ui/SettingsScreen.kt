@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,9 +50,13 @@ import app.wonton.client.accentHex
 import app.wonton.client.parseAccent
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.ChatViewModel
+import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.Rgb
+import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRootBar
+import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
@@ -65,15 +70,38 @@ import app.wonton.ui.icons.WontonIcon
 private const val EXPANDED_DEGREES = 90f
 
 @Composable
-fun SettingsPage(core: ClientCore, appearance: AppearanceViewModel) {
-    WontonScreen(bar = { WontonRootBar("设置") }) {
-        SettingsScreen(core, appearance)
+fun SettingsPage(
+    core: ClientCore,
+    appearance: AppearanceViewModel,
+    chat: ChatViewModel,
+    showingBackup: Boolean,
+    onShowBackup: (Boolean) -> Unit,
+) {
+    var rejection by remember { mutableStateOf<String?>(null) }
+    if (showingBackup) {
+        BackHandler { onShowBackup(false) }
+        ChatBackupScreen(
+            chat.encryption,
+            onAction = { action -> rejection = core.send(action) },
+            onClose = { onShowBackup(false) },
+        )
+    } else {
+        WontonScreen(bar = { WontonRootBar("设置") }) {
+            SettingsScreen(core, appearance, chat.encryption.recovery) { onShowBackup(true) }
+        }
     }
+    chat.problem?.let { WontonDialog("操作失败", it.message, { core.send(Action.DismissChatProblem) }) }
+    rejection?.let { WontonDialog("操作被拒绝", it, { rejection = null }) }
 }
 
 /** 设置页：明暗、重点色、字号和字体。设置都在核心，这里只渲染、把选择发回去，改了整个 App 当场跟着变。 */
 @Composable
-private fun SettingsScreen(core: ClientCore, appearance: AppearanceViewModel) {
+private fun SettingsScreen(
+    core: ClientCore,
+    appearance: AppearanceViewModel,
+    recovery: RecoveryStatus,
+    onOpenBackup: () -> Unit,
+) {
     var rejection by remember { mutableStateOf<String?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
     Column(
@@ -82,6 +110,9 @@ private fun SettingsScreen(core: ClientCore, appearance: AppearanceViewModel) {
     ) {
         (rejection ?: appearance.problem?.message)?.let { problem ->
             Text(problem, style = WontonTheme.typography.supporting, color = WontonTheme.colors.danger.toColor())
+        }
+        WontonGroup {
+            WontonRow("聊天记录备份", recovery.backupValue, showsForward = true, onClick = onOpenBackup)
         }
         SettingsPreview()
         Section("明暗") {

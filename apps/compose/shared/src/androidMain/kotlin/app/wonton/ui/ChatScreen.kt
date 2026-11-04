@@ -39,7 +39,6 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
-import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.ui.design.WontonButton
@@ -60,7 +59,6 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
-import app.wonton.ui.icons.Shield
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 
@@ -70,29 +68,27 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
     var rejection by remember { mutableStateOf<String?>(null) }
-    var showingEncryption by rememberSaveable { mutableStateOf(false) }
-    var startingChat by rememberSaveable { mutableStateOf(false) }
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
     LaunchedEffect(viewModel) { navigation.onUpdate(viewModel) }
 
     val room = navigation.openRoom
-    // 提示条和通知能在加密页面上打开房间。
-    LaunchedEffect(room) { if (room != null) showingEncryption = false }
+    // 提示条和通知能在备份页面上打开房间。
+    LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
     when {
-        showingEncryption -> {
-            BackHandler { showingEncryption = false }
-            EncryptionScreen(viewModel.encryption, onAction, onClose = { showingEncryption = false })
+        navigation.showingBackup -> {
+            BackHandler { navigation.showingBackup = false }
+            ChatBackupScreen(viewModel.encryption, onAction, onClose = { navigation.showingBackup = false })
         }
-        startingChat -> {
-            BackHandler { startingChat = false }
+        navigation.startingChat -> {
+            BackHandler { navigation.startingChat = false }
             StartChatScreen(
                 onStart = { userId ->
-                    startingChat = false
+                    navigation.startingChat = false
                     rejection = navigation.openDirectChat(core, userId)
                 },
-                onClose = { startingChat = false },
+                onClose = { navigation.startingChat = false },
             )
         }
         room != null -> {
@@ -113,8 +109,8 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
             viewModel = viewModel,
             onAction = onAction,
             onOpenRoom = { navigation.openRoom = it },
-            onOpenEncryption = { showingEncryption = true },
-            onStartChat = { startingChat = true },
+            onOpenBackup = { navigation.showingBackup = true },
+            onStartChat = { navigation.startingChat = true },
         )
     }
 
@@ -127,19 +123,18 @@ private fun ChatListScreen(
     viewModel: ChatViewModel,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
-    onOpenEncryption: () -> Unit,
+    onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
 ) {
     WontonScreen(
         bar = {
             WontonRootBar("聊天") {
-                WontonIconButton(WontonIcon.Shield, "加密", onOpenEncryption)
                 WontonIconButton(WontonIcon.Compose, "发起私聊", onStartChat)
             }
         },
     ) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WontonTheme.spacing.s8)) {
-            item(key = "notices") { Notices(viewModel, onOpenEncryption) }
+            item(key = "notices") { Notices(viewModel, onOpenBackup) }
             itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
                 if (index > 0) WontonSeparator()
                 if (row.membership == RoomMembership.INVITED) {
@@ -164,10 +159,10 @@ private fun ChatListScreen(
 }
 
 @Composable
-private fun Notices(viewModel: ChatViewModel, onOpenEncryption: () -> Unit) {
+private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
-    val reminder = encryptionReminder(viewModel)
+    val reminder = viewModel.encryption.backupReminder
     val failure = (account as? ChatAccount.Failed)?.message
         ?: (sync as? ChatSync.Failed)?.message.takeIf { account is ChatAccount.SignedIn }
     val progress = when {
@@ -187,16 +182,9 @@ private fun Notices(viewModel: ChatViewModel, onOpenEncryption: () -> Unit) {
         progress?.let {
             Text(it, style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
         }
-        reminder?.let { WontonGroup { WontonRow(it, showsForward = true, onClick = onOpenEncryption) } }
+        reminder?.let { WontonGroup { WontonRow(it, showsForward = true, onClick = onOpenBackup) } }
     }
 }
-
-private fun encryptionReminder(viewModel: ChatViewModel): String? =
-    when {
-        viewModel.encryption.recoveryKey != null -> "恢复密钥还没确认保存"
-        viewModel.encryption.recovery == RecoveryStatus.INCOMPLETE -> "输入恢复密钥，才能解密以前的加密消息"
-        else -> null
-    }
 
 @Composable
 private fun RoomItem(row: RoomRow, onClick: () -> Unit) {

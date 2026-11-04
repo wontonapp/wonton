@@ -361,11 +361,12 @@ impl ChatLink {
     fn set_up_recovery(self: &Arc<Self>) -> Result<(), CoreError> {
         let session = self.current()?;
         let chat = self.clone();
-        self.set_recovery(RecoveryStatus::InProgress);
-        self.spawn_op("设置恢复", async move {
-            let key = SecretString::new(session.enable_recovery().await?);
-            chat.show_recovery_key(key);
-            Ok(())
+        let before = self.begin_recovery();
+        self.runtime.spawn(async move {
+            match session.enable_recovery().await {
+                Ok(key) => chat.show_recovery_key(SecretString::new(key)),
+                Err(error) => chat.fail_recovery(before, &error),
+            }
         });
         Ok(())
     }
@@ -377,9 +378,12 @@ impl ChatLink {
             return Err(invalid("恢复密钥不能为空"));
         }
         let session = self.current()?;
-        self.set_recovery(RecoveryStatus::InProgress);
-        self.spawn_op("用恢复密钥恢复", async move {
-            session.recover(&key).await
+        let chat = self.clone();
+        let before = self.begin_recovery();
+        self.runtime.spawn(async move {
+            if let Err(error) = session.recover(&key).await {
+                chat.fail_recovery(before, &error);
+            }
         });
         Ok(())
     }
@@ -396,6 +400,28 @@ impl ChatLink {
                     message: format!("恢复密钥没能存到本机，请现在就抄下来：{error}"),
                 });
             }
+        });
+    }
+
+    fn begin_recovery(&self) -> RecoveryStatus {
+        let before = self.view.borrow().encryption.recovery;
+        self.set_recovery(RecoveryStatus::InProgress);
+        before
+    }
+
+    /// 失败时恢复状态流不一定有新状态，要放回原来的，否则界面一直转圈。
+    fn fail_recovery(&self, before: RecoveryStatus, error: &Error) {
+        tracing::info!("恢复失败：{error}");
+        let message = match error {
+            Error::InvalidInput(reason) | Error::NotReady(reason) => reason.clone(),
+            other => other.to_string(),
+        };
+        self.view.send_modify(|view| {
+            view.encryption.recovery = before;
+            view.problem = Some(ChatProblem {
+                reason: failure(error),
+                message,
+            });
         });
     }
 

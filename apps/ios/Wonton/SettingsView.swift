@@ -1,16 +1,36 @@
 import SwiftUI
 import WontonClient
 
+struct SettingsTab: View {
+    let appearance: AppearanceModel
+    let chat: ChatModel
+
+    var body: some View {
+        NavigationStack {
+            SettingsView(model: appearance, chat: chat)
+                .wontonRootScreen("设置") { EmptyView() }
+                .navigationDestination(for: SettingsRoute.self) { _ in ChatBackupView(model: chat) }
+                .modifier(ChatDialogs(model: chat))
+        }
+    }
+}
+
+private enum SettingsRoute: Hashable {
+    case chatBackup
+}
+
 /// 设置页：明暗、重点色、字号和字体。设置都在核心，这里只渲染、把选择发回去，改了整个 App 当场跟着变。
 struct SettingsView: View {
     let model: AppearanceModel
+    let chat: ChatModel
     @Environment(\.wontonColors) private var colors
     @State private var showsMoreColors: Bool
     @State private var hexText: String
     @State private var isHexInvalid = false
 
-    init(model: AppearanceModel) {
+    init(model: AppearanceModel, chat: ChatModel) {
         self.model = model
+        self.chat = chat
         let appearance = model.viewModel
         _showsMoreColors = State(initialValue: !appearance.presets.contains(appearance.accent))
         _hexText = State(initialValue: accentHex(color: appearance.accent))
@@ -23,6 +43,16 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let problem = model.rejection ?? appearance.problem?.message {
                     Text(problem).wontonText(WontonTheme.typography.supporting).foregroundStyle(Color(colors.danger))
+                }
+                WontonGroup {
+                    NavigationLink(value: SettingsRoute.chatBackup) {
+                        WontonRow(
+                            title: "聊天记录备份",
+                            value: chat.viewModel.encryption.recovery.backupValue,
+                            showsForward: true
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
                 SettingsPreview()
                 section("明暗") {

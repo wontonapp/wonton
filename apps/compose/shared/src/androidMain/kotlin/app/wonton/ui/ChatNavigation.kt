@@ -13,8 +13,14 @@ import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.RoomMembership
 
 /** 聊天页打开的房间。主屏上点 Agent 插件时直接打开和它的 Bot 的私聊。 */
-class ChatNavigation(openRoom: MutableState<String?>) {
+class ChatNavigation(
+    openRoom: MutableState<String?>,
+    showingBackup: MutableState<Boolean>,
+    startingChat: MutableState<Boolean>,
+) {
     var openRoom by openRoom
+    var showingBackup by showingBackup
+    var startingChat by startingChat
 
     /** 刚发起了和这个用户的私聊，房间出现后打开。 */
     private var awaitedPeer: String? = null
@@ -69,5 +75,7 @@ class ChatNavigation(openRoom: MutableState<String?>) {
 @Composable
 fun rememberChatNavigation(): ChatNavigation {
     val openRoom = rememberSaveable { mutableStateOf<String?>(null) }
-    return remember(openRoom) { ChatNavigation(openRoom) }
+    val showingBackup = rememberSaveable { mutableStateOf(false) }
+    val startingChat = rememberSaveable { mutableStateOf(false) }
+    return remember { ChatNavigation(openRoom, showingBackup, startingChat) }
 }

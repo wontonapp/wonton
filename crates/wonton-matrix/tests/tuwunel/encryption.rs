@@ -55,6 +55,22 @@ async fn the_recovery_key_verifies_another_device_for_good() {
         state.verification == Verification::Verified
     })
     .await;
+
+    // 同一账号的平板：还没被验证，没有交叉签名的私钥，不能由它开启恢复。
+    let tablet_store = TempStore::create();
+    let tablet = server
+        .login_with_store(&user, "平板", tablet_store.config())
+        .await;
+    tablet.start_sync().await.expect("平板开始同步");
+    wait_for_encryption(&tablet, "平板未验证", |state| {
+        state.verification == Verification::Unverified && state.recovery == Recovery::Disabled
+    })
+    .await;
+    assert!(
+        matches!(tablet.enable_recovery().await, Err(Error::NotReady(_))),
+        "未验证的设备应拒绝开启恢复"
+    );
+
     let key = phone.enable_recovery().await.expect("设置恢复");
     wait_for_encryption(&phone, "手机的恢复已开启", |state| {
         state.recovery == Recovery::Enabled
@@ -66,12 +82,7 @@ async fn the_recovery_key_verifies_another_device_for_good() {
         "已经开启时应拒绝再次设置"
     );
 
-    // 同一账号的平板：账号已经设置过恢复，平板还没被验证、缺秘密。
-    let tablet_store = TempStore::create();
-    let tablet = server
-        .login_with_store(&user, "平板", tablet_store.config())
-        .await;
-    tablet.start_sync().await.expect("平板开始同步");
+    // 账号设置过恢复以后，平板不用重新登录就变成待恢复。
     wait_for_encryption(&tablet, "平板待恢复", |state| {
         state.verification == Verification::Unverified && state.recovery == Recovery::Incomplete
     })

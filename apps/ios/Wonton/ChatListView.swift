@@ -24,7 +24,6 @@ struct ChatListView: View {
                 if isEmpty { NoChats() }
             }
             .wontonRootScreen("聊天") {
-                WontonIconLink(icon: .shield, label: "加密", value: ChatRoute.encryption)
                 WontonIconLink(icon: .compose, label: "发起私聊", value: ChatRoute.startChat)
             }
             .navigationDestination(for: ChatRoute.self) { route in
@@ -33,31 +32,25 @@ struct ChatListView: View {
                     // 提示条把路径直接换成另一个房间时，SwiftUI 会复用这个视图，@State 里还是旧房间的时间线。
                     ChatRoomView(model: model, roomId: roomId, title: title(of: roomId))
                         .id(roomId)
-                case .encryption:
-                    EncryptionView(model: model)
+                case .chatBackup:
+                    ChatBackupView(model: model)
                 case .startChat:
                     StartChatView(model: model)
                 }
             }
-            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
-            .wontonDialog(
-                "操作失败",
-                message: model.viewModel.problem?.message,
-                isPresented: isShowingProblem,
-                onDismiss: { model.send(.dismissChatProblem) }
-            )
+            .modifier(ChatDialogs(model: model))
         }
     }
 
     @ViewBuilder private var notices: some View {
         let status = ChatStatus(model.viewModel)
-        let reminder = encryptionReminder
+        let reminder = model.viewModel.encryption.backupReminder
         if status != nil || reminder != nil {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 status.map(ChatStatusView.init)
                 if let reminder {
                     WontonGroup {
-                        NavigationLink(value: ChatRoute.encryption) { WontonRow(title: reminder, showsForward: true) }
+                        NavigationLink(value: ChatRoute.chatBackup) { WontonRow(title: reminder, showsForward: true) }
                             .buttonStyle(.plain)
                     }
                 }
@@ -74,15 +67,24 @@ struct ChatListView: View {
         return true
     }
 
-    private var encryptionReminder: String? {
-        let encryption = model.viewModel.encryption
-        if encryption.recoveryKey != nil { return "恢复密钥还没确认保存" }
-        if encryption.recovery == .incomplete { return "输入恢复密钥，才能解密以前的加密消息" }
-        return nil
-    }
-
     private func title(of roomId: String) -> String {
         model.viewModel.rooms.first { $0.roomId == roomId }?.name ?? roomId
+    }
+}
+
+/// 聊天操作的结果。备份页也能从设置进，那边的导航栈也要挂一份。
+struct ChatDialogs: ViewModifier {
+    let model: ChatModel
+
+    func body(content: Content) -> some View {
+        content
+            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
+            .wontonDialog(
+                "操作失败",
+                message: model.viewModel.problem?.message,
+                isPresented: isShowingProblem,
+                onDismiss: { model.send(.dismissChatProblem) }
+            )
     }
 
     private var isShowingRejection: Binding<Bool> {
