@@ -1,0 +1,526 @@
+# ADR-0033 底栏的插件页、全屏和 Agent 写插件：网页打底，App 管栏和主题，桥接用 MCP Apps 的词汇
+
+- 状态：已接受（2026-11-04）。取舍由主人确认（见“已定”）
+- 改动：[ADR-0014](0014-reserved-capabilities.md) 的“小程序 JS SDK”；[ADR-0028](0028-settings-page.md) 的“入口是底栏最后一项”（设置默认在栏上，可以拿掉）；[ADR-0016](0016-mcp-bus-and-confirmations.md) 的规则 4 和 [ADR-0017](0017-plugin-ecosystem-and-store.md) 的“谁能装”：Bot 能装自己写的插件；[ADR-0024](0024-confirmation-scope.md) 的判定：Bot 更新自己写的插件，权限没变宽时不发卡片
+
+## 背景
+
+主人要把底栏变成可插拔的槽位：插件提供一个页面，用户装上后固定到底栏，点图标就在 App 里浏览，用起来和聊天、设置一样。用户能调顺序和数量，有上限。社区做一个 RSS 插件，别的用户装上就能固定。Wonton 不内置动态、想法、目标这些页面，要的是通用机制。
+
+主人给的参考是 Muse Bot（`0216zerotwo/muse-bot`，它的界面学 Meta Muse 的聊天、动态、想法、目标、资料库五栏）。读过它的代码（2026-11-04）：iPhone 版的底栏页是写死在 App 里的 SwiftUI 屏（`FeedScreen`、`GoalsScreen`），顺序存在本机；安卓版整个是 WebView 加原生能力。这解释了截图为什么顺滑，也说明它不是可参考的插件机制：页面是 App 自己的代码，第三方加不进来。我们要在“第三方页面”的前提下尽量接近这种感觉。
+
+主人还要求插件生态对开发者（包括 Agent）足够简单和开放：在聊天里跟自己机器上的 Agent 说想要什么，Agent 写出插件、自己装到机器上跑起来，用户在 App 里直接用，App 的界面也能自己定义。所以“Agent 能不能一次写对”是选技术的硬指标：只看公开规范和一个模板就写得出来，不编译原生代码，不签名不上架，报错清楚到 Agent 能自己改。
+
+现状（`96524ca` 加 `feat/apps-tab`）：
+
+- 底栏写死聊天、应用、设置三项，iOS 是自摆的胶囊（ADR-0029），Android 是 `NavigationBar`。
+- 插件网页盖在主界面上，WebView 经本地代理走隧道（`PluginWebView`），每个插件一个子域名，自带同源隔离，登录由网关和 OIDC 解决。
+- 清单只有 `webui`：一个入口，没有底栏用的图标和标题。
+
+## 别人怎么做
+
+| 产品 | 页面是什么 | 入口和数量 | 主题和壳 | 用上的 |
+| --- | --- | --- | --- | --- |
+| Telegram Mini Apps | 网页，WebView | 附件菜单、侧边菜单、个人页按钮、直接链接，没有底栏槽位。附件和侧边菜单第一次要用户同意添加 | `themeParams` 和 `--tg-theme-*`、`themeChanged`；`ready()` 之前显示占位；原生顶栏和返回键由 `BackButton` 控制；`requestFullscreen()` 全屏，安全区分系统和 Telegram 自己的按钮两种 | 占位盖到页面说好了，令牌用 CSS 变量，安全区也用变量给，也分开给 |
+| 微信小程序 | 自有语言，渲染层和逻辑层分开 | `tabBar.list` 最少 2 个、最多 5 个，由小程序自己定 | 宿主固定胶囊，页面藏不掉；`navigationStyle: custom` 去掉导航栏，胶囊还在，位置由接口查 | 数量上限；胶囊和“退出的路一直在”；自研框架的代价是整个生态，不学 |
+| Home Assistant | 网页（Ingress）、自定义面板 | 清单写 `panel_icon`、`panel_title`，用户在侧边栏调顺序和隐藏 | App 和网页之间有 `externalBus`：`config/get` 报能力、`theme-update`、`haptic` | 清单写法；最像我们的处境。它的路线图 [#244](https://github.com/OpenHomeFoundation/roadmap/issues/244) 正要做一样的事：原生栏、每个标签放 WebView、内容还是网页，同样把“每个标签一个 WebView 的内存”列为要实测的风险 |
+| Slack | Block Kit，JSON | App Home 的 Home 标签，每个 App 一个 | 宿主全画 | 声明式够用的范围就是列表、按钮、表单 |
+| Discord Activities | 网页，iframe | App Launcher | Embedded App SDK，postMessage 握手 | 和 MCP Apps 同一种握手 |
+| ChatGPT Apps SDK、Claude | MCP Apps，`ui://` 的 HTML，沙箱 iframe | 工具调用的结果里 | `hostContext`、`host-context-changed` | 见下 |
+| Muse Bot | iPhone 原生屏，安卓 WebView；聊天里的卡片是生成的 HTML，放在不带凭据的 iframe 里，只能回传高度和发送文字 | 固定五项，顺序存本机 | 令牌传进 iframe | 页面只能把文字发进聊天，且要用户刚操作过 |
+
+没有哪家把第三方页面放进底栏槽位：Telegram 和 Discord 都放在菜单里，微信是小程序内部的栏。Home Assistant 最接近，它的结论也是原生壳加网页内容。
+
+让 Agent 写和装的做法：
+
+| 产品 | 写什么、怎么交付 | 报错和迭代 | 用上的 |
+| --- | --- | --- | --- |
+| Home Assistant 的社区 MCP（[ha-mcp](https://github.com/homeassistant-ai/ha-mcp)、[Vibecode Agent](https://github.com/Coolver/home-assistant-vibecode-agent)） | 自动化、面板、主题，都是 YAML，经 MCP 写进去。ha-mcp 的 README 说官方 MCP 只能控制设备，建不了这些 | Agent 能读 Core 日志；Vibecode 改之前先提交到一个影子 git 仓库，能回滚 | Agent 要读得到日志；要能退回；配一份 Agent Skills 教它怎么写 |
+| [Coolify 的社区 MCP](https://github.com/Thedurancode/Coolify-MCP) | 部署应用，`deploy_app` | `get_deployment_status`、`get_deployment_logs`，部署前查名字冲突和配额，写审计 | 工具就这么几个：部署、状态、日志 |
+| [Claude Artifacts](https://claude.com/blog/build-artifacts) | 网页，托管发布，能调 MCP 连接器 | 对话里重写 | 模型写界面的主流交付物就是网页 |
+| v0 | 全栈项目，平台构建和预览 | [社区反馈](https://community.vercel.com/t/v0-auto-diagnosis-automatically-editing-code-and-creating-new-versions-without-consent/36431)自动诊断会没完没了地改代码、白花额度 | 只有社区说法，算旁证：Agent 别在没有用户的回路里无限重试，让它看到准确的原因 |
+
+给 Agent 看的说明有两个开放格式。[Agent Skills](https://agentskills.io/specification) 是一个 `SKILL.md` 目录，先读名字和描述，用到才读全文，Hermes 支持。[llms.txt](https://llmstxt.org/) 是站点根目录的一页索引，还是提案。经 MCP 发现 skill 的 [SEP-2640](https://modelcontextprotocol.io/extensions/skills/overview) 已定稿，文档写着 SDK 和宿主的支持还在实现。
+
+## 四种渲染方式
+
+| | 插件网页放 WebView（不处理） | MCP Apps（`ui://`） | 声明式原生（JSON 画控件） | 混合：网页打底，壳和主题归 App |
+| --- | --- | --- | --- | --- |
+| **像不像原生** | 不像：白屏、两套顶栏、颜色不跟 | 看作者；令牌标准，首屏是本地 HTML，不白屏 | 最像，就是原生控件；但只有组件库里的东西 | 适配过的页面接近原生；现成应用还是网页的样子，至少不白屏，栏是 App 的 |
+| **深色和重点色** | 只有写了 `prefers-color-scheme` 的跟明暗，重点色跟不了 | 明暗和令牌都跟（`hostContext.styles`） | 自动跟 | 明暗和令牌都跟，重点色当场生效（实测见“验证”） |
+| **滚动和手势** | 滚动原生，内容到不了栏下 | iframe 里滚动，手势归网页 | 原生 | 适配过的从栏下滚过，返回手势用 WebView 的 |
+| **作者门槛** | 最低，现成应用不用改 | 要写 MCP 服务，把页面打成单个 HTML，走工具取数据 | 只写 JSON，但得按我们的组件想问题，表达力受限 | 现成应用不用改；想要原生感只加几个 CSS 变量，可选官方 SDK |
+| **页面能拿到什么** | 插件自己的登录和数据 | 没有 Cookie，数据全走 `tools/call`，经确认卡片，审计最好 | 没有代码，最安全 | 同第一列，桥只多给主题和“把草稿放进聊天”，见“页面能拿到什么” |
+| **断网** | 502 或白屏，要壳接住 | HTML 可缓存，数据要工具，断了也要壳接住 | 缓存上次的 JSON，最好 | 壳接住（ADR-0032）；已加载的留着 |
+| **App Store** | 4.7：HTML5 小程序允许，开发者负责 | 同左 | 不下载代码，避开 2.5.2 的疑问，但插件内容仍要合规 | 同第一列，桥不暴露原生能力，4.7.2 没问题 |
+| **内存** | 每个标签一个 WebView，用量未测 | 同左，再加一层 iframe | 几乎没有 | 同第一列，上限 3 个 |
+| **两端代码** | 已有 | Rust 做 JSON-RPC，两端壳加一个 iframe 宿主页 | 每个组件两端各写一遍，组件越多越贵，还要一份编辑器和文档 | Rust 做 JSON-RPC 和注入脚本，两端壳加一个“标签页”容器 |
+| **现成应用（Immich 等）** | 能放 | 放不了：规范的 `externalUrl` 还在“以后”，只收内联 HTML | 放不了 | 能放 |
+| **Agent 能不能一次写对** | 能 | 能，但东西多：MCP 服务、工具、内联成单文件的页面，都要配套。我们没查到手机上的宿主可以试 | JSON 容易写合法，但这是 Wonton 专有的词汇；组件库里没有的控件做不出来 | 能，写普通网页，令牌是可选的几个变量。实测见“验证” |
+
+这一行定了声明式出局。模型写网页的经验最多，浏览器也最宽容，写错一点通常页面还能显示。声明式的 JSON 不难写，A2UI 就是为模型生成设计的，难的是表达力：想要的控件组件库里没有，就要等我们改 App、过审核、用户更新。这正好和“用户想要什么，Agent 当场做出来”相反。RSS 要抓订阅源，所以无论页面怎么画，后端都要写，声明式省不掉这部分。原生代码更不行：iOS 不许下载后执行（2.5.2），而且要编译和签名。
+
+MCP Apps 也能写，但没有比网页多给什么：底栏页本来就有自己的后端，不需要工具和单文件这一层。
+
+### 查实的几点
+
+- **MCP Apps 的规范**（`2026-01-26`，SEP-1865，SDK `@modelcontextprotocol/ext-apps` 2.0.4，MIT）是从工具调用开始的：工具的 `_meta.ui.resourceUri` 指向 `ui://` 资源，宿主渲染后把工具结果推给页面。规范没有“不经工具调用直接打开”的路径，MIME 只收 `text/html;profile=mcp-app`，`externalUrl`（嵌外部网页）和状态持久化都列在以后。宿主有 Claude、VS Code、ChatGPT、Goose 等，都是聊天里的卡片，我们没查到移动端原生宿主的实现或指南；规范只给了 `platform: "mobile"` 和 `safeAreaInsets`。
+- **声明式：** Adaptive Cards 的移动端 SDK 还在发（CocoaPods 2.12.1），据一篇旧文，iOS 是 Objective-C 加 UIKit，样式要另外接我们的设计系统。A2UI 的 Compose 渲染器是 `1.0.0-alpha02`，规范 0.9，SwiftUI 的官方状态说法不一，现在押不起。两者都解决不了相册、影音这类内容。清单里的 `settings`（JSON Schema 表单）是声明式最合适的地方，已经留着，和这里分开。
+- **WKWebView 的 Service Worker** 只有 App-Bound Domains（最多 10 个，写死在 `Info.plist`）或默认浏览器资格才能用，插件的域名是动态的，所以离线不能指望页面自己缓存。
+- **iOS 27 的 iPhone Duo** 上，只有 `TabView` 等系统容器的栏才参加纵向布局，自摆的栏不算（[Apple 技术讲座](https://developer.apple.com/videos/play/tech-talks/111462/)）。这是 ADR-0029 的事，这里不改，记在“代价与风险”。
+
+## 决策
+
+### 一个机制：底栏页面就是插件网页，栏和主题归 App
+
+不新增渲染技术。一个底栏页面是插件 `webui` 下的一个路径，放在 App 的 WebView 容器里；顶部和底部是 App 自己的栏；首帧、主题、状态都由 App 负责。任何有 `webui` 的插件都能固定，作者想要更好的体验再适配。
+
+`ui://` 不作为底栏入口。它的位置是以后聊天里的卡片：Bot 调工具，结果在聊天里显示一张交互卡片。这条路和这里共用桥和令牌，另写一篇。
+
+### 清单：`tabs`
+
+进公开规范，写法以 [wonton-docs](https://github.com/geraldpeng6/wonton-docs) 为准。
+
+```yaml
+x-wonton:
+  spec: "0.5"
+  webui:
+    service: web
+    port: 8080
+  tabs:
+    - id: feed
+      title: { zh: 动态, en: Feed }
+      icon: tabs/feed.svg
+      icon_selected: tabs/feed-fill.svg
+      path: /feed
+      layout: edge-to-edge
+```
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `id` | 是 | 插件内唯一，小写字母、数字和连字符。固定记录按 `<插件 id>/<id>` 存，升级时靠它对应，不要改 |
+| `title` | 是 | 多语言，至少 `zh` 和 `en`。显示在底栏和页面标题上，建议不超过 4 个字或 8 个字母，超长截断 |
+| `icon` | 是 | 单色图标，PNG 或 SVG。只取透明通道，颜色由 App 上色。SVG 规则同“图标和截图”。核心栅格化成 PNG 交给 App，壳不解析 SVG |
+| `icon_selected` | 否 | 选中时的图标（实心）。没写时选中只靠底色和字色 |
+| `path` | 是 | `webui` 下的路径，以 `/` 开头 |
+| `layout` | 否 | `inset`（默认）：页面夹在两条栏中间，现成应用不会被挡。`edge-to-edge`：页面铺满，从栏下面滚过去，作者用 `--wonton-inset-*` 留出位置 |
+| `display` | 否 | `standard`（默认）：打开时带 App 的栏。`fullscreen`：打开就全屏，见“全屏” |
+
+- 要声明 `webui`。不申请新权限：页面能做的事没有变多。
+- 一个插件最多 4 项，每项可以单独固定。多页面是真实需求（文件和影音分开），但底栏只有几个位置，所以页面内部的分段还是插件自己做。
+- 声明了 `webui` 没声明 `tabs` 的插件也能固定，入口是 `webui.path`，标题和图标用插件自己的。彩色图标按圆角方形显示，不上色。这样已经有网页的第三方应用不用改就能放。
+
+`webui` 也能写 `display`，给没声明 `tabs` 的插件用。
+
+`wonton-core plugin check` 检查单色图标的透明通道和长度。
+
+### 底栏
+
+- **上限 5 项。** iOS 和 Material 的习惯都是 3 到 5 个，微信也是最多 5 个。没有“更多”标签：“应用”页本来就列出所有插件，它就是更多。
+- **聊天、应用不能移除。** 聊天是主入口；应用是进商店、看全部插件的路，也是没有配对时的配对页。
+- **设置默认在栏上，可以拿掉**。拿掉后“应用”页右上角有入口，再加回也在这里。
+- **每项的顺序都能调**，包括聊天。第一项不决定启动页：启动还是回到上次的页面，没配对时到配对页（`initialTab` 不变）。
+
+固定和调整的入口：
+
+1. 插件详情页的“固定到底栏”，有多个页面时是一组开关。
+2. “应用”页长按图标的菜单。
+3. 装好后的完成页多一个按钮。
+4. 设置里的“底栏”页：拖动排序、开关；底栏上长按也进这里。
+
+满了再固定时，弹底部面板让用户选换掉哪一项，不静默失败。
+
+配置（包括每个页面的全屏设置）每台设备各一份，和外观一样（ADR-0026）：手机屏幕和用途不同，也不依赖服务器，断网时能显示。放在 App 私有目录下单独的 `tabs.json`，写坏了不连累连接；读不了时退回默认三项并如实提示，设置页说明原因。换服务器（重新配对到别的服务器）时清空插件项。Bot 改不了底栏：配置只在这台手机上，核心和 Bot 都碰不到。Bot 装好插件后，确认卡片上有“放到底栏”按钮（见“Agent 写插件”）。
+
+### 页面怎么显示
+
+这些是 App 的事，插件不用写代码就有：
+
+| 问题 | 做法 |
+| --- | --- |
+| 白屏 | WebView 不透明关掉，背景和 `underPageBackgroundColor` 设成 `canvas`（Android `setBackgroundColor`）。加载完之前盖一层 App 画的骨架 |
+| 骨架什么时候撤 | 收到 SDK 握手（`ui/notifications/initialized`）或页面加载完，以先到为准；没适配的页面靠后者，这和 Telegram 的 `ready()` 一样 |
+| 第一帧的颜色 | 文档开始前注入脚本（iOS `WKUserScript`，Android `addDocumentStartJavaScript`），把令牌写到根元素，同时设 `color-scheme` 和根元素背景 |
+| 切换明暗和重点色 | 不重新加载：换根元素上的变量，再发 `host-context-changed` |
+| 字号（ADR-0028） | iOS `pageZoom`，Android `textZoom`。字体跟不了，页面用 `--font-sans` 的才跟 |
+| 切标签 | WebView 常驻，切回来在原来的位置。第一次点才创建，不预加载：多数人不会每次都打开所有页面 |
+| 进程被系统收掉 | iOS `webViewWebContentProcessDidTerminate`、Android `onRenderProcessGone`（Android 必须处理，否则整个 App 被杀）：重建，恢复地址，骨架盖着 |
+| 顶栏 | App 的，标题取清单，能后退时显示返回。适配过的页面内容从下面滚过（iOS 材质），Android 不透明（ADR-0029） |
+| 返回 | iOS 边缘滑动走 WebView 历史，Android 返回键先退网页历史，到头再按平台习惯回到第一项。全屏时见“全屏” |
+| 再点一次当前标签 | 回到页面最上面（文档滚动的页面由壳做）。有内层滚动的页面监听 `window` 上的 `wonton:tab-reselected` 自己处理 |
+| 键盘 | 底栏和聊天一样让开 |
+| 外部链接 | 主框架只能留在插件自己的域名和 `auth.<基础域名>`，别的地址用系统浏览器打开，桥也只对插件自己的主框架开放 |
+
+令牌用 MCP Apps 标准名，加上它没有的几个：
+
+| 变量 | 取值 |
+| --- | --- |
+| `--color-background-primary`、`-secondary` | `canvas`、`surfaceSubtle` |
+| `--color-text-primary`、`-secondary` | `textPrimary`、`textSecondary` |
+| `--color-border-primary` | `separator` |
+| `--color-*-danger`、`-success`、`-warning` | 状态色 |
+| `--font-sans`、`--border-radius-*` | 系统字体，`control`、`card` 等圆角 |
+| `--wonton-accent-fill`、`--wonton-accent-ink`、`--wonton-accent-ink-on-fill` | 重点色三层，ADR-0026 的规则照用 |
+| `--wonton-inset-top`、`--wonton-inset-bottom` | 栏占的高度，含安全区；全屏时是胶囊下沿和 Home 条。`inset` 布局下是 0 |
+
+`env(safe-area-inset-*)` 给的是系统安全区，不知道我们的胶囊栏；iOS 26 的 `obscuredContentInsets` 能改视口，但最低版本是 17，Android 也没有，所以用变量。
+
+官方 SDK 严格校验 `hostContext.styles.variables`，出现标准以外的键，握手直接失败（实测）。所以 `--wonton-*` 只写到根元素，不进 `hostContext`；标准变量两边都有，只读 CSS 变量的页面和用 SDK 的页面拿到的一样。
+
+`design/tokens.toml` 生成这张映射（两端和文档同一份）。这是公开接口，变量只增不改名。
+
+### 全屏
+
+有些应用自带底栏，放在 App 的底栏上面就是两行，又丑又难点（实测的 Actual Budget 就是这样）。参考微信小程序的胶囊：全屏时隐藏 App 的顶栏、底栏和状态栏，只留一个胶囊。
+
+**怎么进：**
+
+- 顶栏右边的展开按钮。
+- 长按底栏图标，菜单里有“全屏打开”和“总是全屏”。
+- 清单写了 `display: fullscreen`，或用户设了“总是全屏”，打开就是全屏。
+- 适配过的页面调 `ui/request-display-mode`。
+
+**怎么退：** 胶囊一直在，页面隐藏不了，所以不会困在里面。胶囊左边是“···”，右边是关闭。
+
+| 操作 | 结果 |
+| --- | --- |
+| 关闭，手动进的全屏 | 回到带栏的样子，还是这个页面，不重新加载 |
+| 关闭，打开就全屏的页面 | 回到进来之前的标签（没有就回第一项），页面留在后台 |
+| “···” | 重新加载、“总是全屏”开关、插件详情 |
+
+**默认和用户设置：** 每个页面取值 `default`、`fullscreen`、`standard`，存在 `tabs.json`，默认跟清单。用户的选择优先于清单，两种方向都能改：作者写了全屏，用户也能关掉。
+
+**安全区：** 按页面的 `layout` 分两种，不看页面写了什么，两端规则相同。
+
+| `layout` | 网页框 | 胶囊 |
+| --- | --- | --- |
+| `inset`（现成应用） | 留在安全区内，上下不进刘海和 Home 条。顶部至少让出胶囊的高度 | 放在顶部让出的那一条里，不盖页面 |
+| `edge-to-edge`（适配过的） | 铺满屏幕，`--wonton-inset-top` 是胶囊下沿，`--wonton-inset-bottom` 是 Home 条，作者自己留位置 | 浮在页面上 |
+
+- 顶部那一条的底色取页面的 `<meta name="theme-color">`，没有就用 `canvas`。底部那一条用 `canvas`。
+- **不替页面注入 `viewport-fit=cover`。** 没给的页面不知道要自己躲 Home 条，注入只会把按钮推进去。实测注入没有好处，见“验证”。网页框在安全区内时，`env(safe-area-inset-*)` 是 0，页面自己写了 `cover` 也不会多留一遍。
+- 不靠 `env()` 传给适配过的页面：Android WebView 140 以下这几个值不可靠（见“参考”），所以用 `--wonton-inset-*`。Android 上网页框的留白由壳按 `WindowInsets` 算。
+
+**返回：**
+
+| 操作 | 网页能后退 | 网页历史到头 |
+| --- | --- | --- |
+| iOS 左边缘滑动 | WKWebView 的返回手势 | 退出全屏，和点关闭一样 |
+| Android 返回键或手势 | 网页后退 | 退出全屏；再按时按平台习惯回到第一项 |
+| 胶囊的关闭 | 不看历史，直接退出 | 同左 |
+
+**全屏时照常有的：**
+
+- 确认卡片的提示条（`PendingCardBanner`）盖在页面上。
+- ADR-0032 的短状态写在顶部那一条里，胶囊左边。`edge-to-edge` 的页面上它和胶囊一起浮着。
+- “状态”一节的状态页。
+
+### 桥
+
+不发明 `window.wonton`，用 MCP Apps 的 JSON-RPC 方法名。作者可以直接用官方 SDK 的 `App` 类，也可以完全不用桥，只读 CSS 变量。
+
+顶层页面的 `window.parent` 是它自己，SDK 的 `postMessage` 会发回给自己。注入脚本先接住页面发的 JSON-RPC 转给原生，回复再派发回来；不这样做，SDK 会把自己的请求当成对方的请求，答“方法不存在”，握手失败。
+
+| 方法 | 第一版 | 说明 |
+| --- | --- | --- |
+| `ui/initialize`、`ui/notifications/initialized` | 有 | `hostContext`：`theme`、`styles`、`locale`、`timeZone`、`platform: mobile`、`displayMode`（带栏时 `inline`，全屏时 `fullscreen`）、`availableDisplayModes`、`safeAreaInsets` |
+| `ui/notifications/size-changed` | 收下不处理 | SDK 默认会发；底栏页的大小由 App 定 |
+| `ui/notifications/host-context-changed` | 有 | 明暗、重点色、字号、全屏状态变化时 |
+| `ui/request-display-mode` | 有 | `inline` 或 `fullscreen`，只收主框架，回实际生效的模式。页面退不掉胶囊；用户把这个页面设成 `standard` 时不生效 |
+| `ui/open-link` | 有 | 系统浏览器打开，只收 `https` |
+| `ui/message` | 有 | 切到聊天，把文字放进输入框当草稿，**用户点发送才发**。发给哪个 Bot 由用户选的房间决定。这是动态页“讨论”按钮的做法 |
+| `tools/call`、`resources/read` | 没有 | 页面有自己的后端，不需要。见下一节 |
+| `ui/update-model-context` | 没有 | 没有模型上下文 |
+| 原生能力（播放、选文件、分享） | 没有 | ADR-0014 的 JS SDK 改由这张表扩展，每项单独过 4.7.2，见“审核” |
+
+没有的方法回 JSON-RPC 错误，`hostCapabilities` 如实不声明，SDK 能据此判断。标准里没有的两件事（再点一次标签、连接状态）不进 JSON-RPC，用 `window` 上的 `wonton:*` 事件：SDK 校验严格，自定义消息容易被它拒绝，没用 SDK 的页面也能收到。
+
+消息只在 Rust 里处理：壳把字符串交给核心，把回复注入回去，注入脚本也由核心给。两端不解析。
+
+### 页面能拿到什么
+
+和没固定时打开插件网页一样：插件自己的登录和数据，不多。
+
+- 桥只给主题、语言、时区、栏高。不给主人身份（那是 `owner.identity` 的事）、设备信息、别的插件的东西。
+- 页面碰不到核心的管理接口：网页发起的请求在核心被拒绝（ADR-0017、ADR-0024 的设备门）。
+- **桥不能变成绕过设备门的路。** App 经隧道发请求时核心认作主人的设备。如果页面能让 App 代发，网页发起的请求就成了“主人亲自操作”。所以第一版没有 `tools/call`；以后要做（`ui://` 卡片需要）时，请求必须标明来自页面，只能调这个插件自己声明给页面用的工具（`visibility` 含 `app`），敏感工具照样走确认卡片，不算主人亲自操作。这条写成测试。
+- 确认卡片的提示条照常盖在页面上（`PendingCardBanner`）。
+- 未审核插件的页面和已审核的权限相同，靠商店和确认页的标签提示（ADR-0031）。固定时不再问，底栏上也不标，理由同 ADR-0031：是主人的选择。
+- 草稿而不是直接发：网页内容对 Bot 是不可信输入（ADR-0011），用户看过再发。
+
+### 状态
+
+底栏项一直在，页面由 App 画状态，不露出 502，也不假装能用。状态来自核心的插件列表（`ViewModel`），壳按枚举显示文字。
+
+| 情况 | 底栏 | 页面 |
+| --- | --- | --- |
+| 运行中，健康或健康未知 | 正常 | 加载 |
+| 启动中、正在安装 | 正常 | 骨架加“正在启动…” |
+| 升级中 | 正常 | 已加载的留着，顶部提示；升级完重新加载 |
+| 已停止 | 图标变淡 | “xx 已停止”，按钮“启动” |
+| 健康检查失败、异常 | 角标 | “xx 出了问题”，按钮“查看详情”（到详情页看原因）、“重试” |
+| 新版本不再提供这个页面 | 角标 | “新版本不再提供这个页面”，按钮“从底栏移除” |
+| 插件被卸载 | 移除，提示一次“xx 已卸载，已从底栏移除” | 正在看时回到“应用” |
+| 页面返回 5xx、加载失败 | 正常 | “页面打不开”和状态码，按钮“重试”。错误页不用网页的，失败原因分清传输、插件未就绪和上游出错 |
+| 插件没装好时冷启动（列表还没读到） | 用磁盘缓存（ADR-0032） | 骨架，等列表 |
+
+在主屏点已固定的插件时切到它的标签，不开第二个 WebView。没固定的插件盖在主界面上打开，有顶栏，没有底栏，共用同一个容器（`inset` 布局），所以主题、状态和全屏只写一份。
+
+### 和连接状态的配合（ADR-0032）
+
+- 没连上时，页面不弹窗，也不加载：顶栏标题换成短状态（“连接中…”），和别的页面一样。已加载的页面留着，能看。
+- 连上后，没加载成的页面自动加载；已加载的不刷新，让作者自己决定（`navigator.onLine` 看的是手机联网，不是家里的服务器，所以用 `wonton:connection` 事件）。
+- 本地代理在隧道不通时不把 502 交给 WebView，壳认出来转成上面的状态。这和 ADR-0032 第 6 节是同一件事。
+- 不做离线缓存：Service Worker 用不了（见上），在 Rust 代理里做 HTTP 缓存能做但复杂，等真有需求。
+
+### 代码放哪
+
+| 层 | 内容 |
+| --- | --- |
+| `wonton-protocol` | `InstalledPlugin.tabs`、`TabsViewModel`（每项的种类、标题、图标、状态、徽标、全屏设置和当前是否全屏）、`Action`：`PinTab`、`UnpinTab`、`MoveTab`、`SetTabDisplay`、`EnterFullscreen`、`ExitFullscreen`。先单独提只改接口的 PR |
+| `wonton-core` | 校验清单，栅格化图标，经插件列表给出。总线工具（`mcp/` 下单独一个模块）、`written_by`、Bot 的暂存、更新的判定 |
+| `wonton-client` | `tabs.json`、上限和不变量、状态计算、注入脚本和令牌映射、桥的 JSON-RPC。行为测试：给定操作序列断言 `TabsViewModel` |
+| iOS、Android 壳 | 按 `TabsViewModel` 渲染底栏；一个标签页容器（WebView 配置、骨架、顶栏、状态页）；排序页。估计每端各 300 到 500 行，比 `PluginWebView` 多的主要是容器 |
+
+### Agent 写插件：从聊天到底栏
+
+没有新的来源，也没有第二套安装：Agent 写的插件走 ADR-0031 的“上传”这条路，只是包从 Agent 的 outbox 来。
+
+1. 主人在聊天里说想要什么。
+2. Agent 调 `wonton__plugin_guide` 读说明，在 outbox 里写一个插件目录。
+3. Agent 调 `wonton__check_plugin`，一次拿到全部问题，改到通过。这一步不打扰主人。
+4. Agent 调 `wonton__install_plugin`，主人收到确认卡片，点允许。核心拉镜像、启动、探测网页。失败时回滚，错误里带容器日志，Agent 接着改（回到第 3 步）。
+5. 卡片变成“已装好”，带“打开”和“放到底栏”两个按钮。
+6. 主人看了说“标题太大了”。Agent 改目录，再调一次 `wonton__install_plugin`，这次是更新：页面自己刷新。
+
+#### 工具
+
+| 工具 | 敏感 | 参数 | 说明 |
+| --- | --- | --- | --- |
+| `wonton__plugin_guide` | 否 | | 这台核心的规范版本对应的说明和两个最小例子 |
+| `wonton__check_plugin` | 否 | `dir` | 和 `wonton-core plugin check` 同一份代码，返回 `problems`、`warnings`、`files`、`digest`。不连 Docker，不联网 |
+| `wonton__install_plugin` | 是 | `id` 或 `dir` | `id` 还是官方索引。`dir` 是 outbox 里的目录，清单的 `id` 没装过时是安装，装过且是这个 Bot 写的时是更新 |
+| `wonton__plugin_status` | 否 | `id` | 状态、健康、网页探测的状态码。这个 Bot 写的插件还带每个服务最近的日志 |
+
+**包经 outbox 交给核心，不放进工具参数。** 工具参数是模型一个字一个字生成的，把 tar 的 base64 写进参数既贵又容易错，还要另外考虑总线的请求上限。Agent 的容器没有 Docker，也没有 `wonton-core`（ADR-0011），打包和校验都由核心做。outbox 已经挂给 Hermes（ADR-0027），路径规则照用：相对路径，逐级不跟软链接，只收普通文件。和 `wonton__save_file` 不同的是，核心读完不删目录，Agent 接着在上面改。核心只取 compose 和它引用的文件，算摘要后暂存，所以 Agent 之后再改也影响不到正在确认的那一份。
+
+**镜像。** 核心不构建（`build` 不在 Compose 子集里），Agent 也构建不了。所以写法只有一种：公开镜像加 `configs`，代码在插件包里，受插件包的大小限制。静态页用 `nginx`，带后端的用 `python` 等语言镜像。依赖尽量用标准库；要安装依赖时用一次性服务装进数据目录，并申请 `network.egress`。要自己发镜像的，是开发者在电脑上的路（模板的 `scripts/publish.sh`）。
+
+#### 和 ADR-0031 对齐（已和 plugin-sources 确认）
+
+- 复用 `preview_upload`、`install_source`、`preview_upgrade(UpgradeTo::Upload)`、`upgrade_source`，不另写。
+- `trust` 是 `Local`，App 上显示未审核。`origin` 是 `None`，检查更新不会去问 GitHub。
+- `provider` 不用：它的含义是能核实的代码位置，Bot 的名字核实不了。`InstalledRecord` 和 `InstallPreview` 新增 `written_by`，记 Bot 的身份，显示时写“你的 Agent · Hermes”。
+- 暂存分开：App 的上传暂存只有 8 个，先进先出，Agent 改得快时会挤掉主人待确认的包。Bot 按（Bot，插件 id）留一份，新提交替换旧的，旧卡片更新成“已被新版本取代”。
+
+#### 确认
+
+| 操作 | 卡片 | 理由 |
+| --- | --- | --- |
+| 第一次装 | 每次发。写明未审核、你的 Agent · Hermes、全部权限和镜像，高权限醒目 | ADR-0016 不变 |
+| 高权限（`network.lan`、`devices.gpu`） | 同上，能批 | 卡片就在主人的 App 里，点的是主人本人，和详情页的确认没有本质差别。这是主人的选择，提示风险，不在底层拦。`network.host`、`docker.socket` 规范里对谁都不开放，不变 |
+| 更新，权限没变宽 | 不发，写审计，Agent 在聊天里说一声 | 卡片看不出代码改了什么，改一个颜色点一次只是在教主人闭眼点允许，这和 ADR-0024 的背景一样 |
+| 更新，权限变宽 | 发，只列新增的项 | 和 ADR-0031 升级的权限确认相同 |
+| 卸载 | 每次发 | ADR-0024 不变 |
+
+- “权限没变宽”指安装确认列出的项没有增加：`permissions`、`lan.ports`、GPU 的服务和共享文件夹的挂载。换镜像不算：镜像提不了权，代码本来就是 Agent 写的。
+- 只有写这个插件的 Bot 能更新。`dir` 里的 `id` 已被官方、社区、上传的或别的 Bot 写的插件占用时，直接报 `invalid_input`，不发卡片。这条写成测试。
+- 第一次的卡片写明“以后 Hermes 改这个插件不再问，除非要更多权限”。插件详情页有“每次都问”，默认关，打开后每次更新都发卡片。
+- 主人在 App 里用文件升级或卸载后，`written_by` 清掉，这个插件不再归 Agent。
+
+#### 迭代
+
+- 更新走 #237 的升级：数据保留，失败回滚。ADR-0031 允许版本号不变、摘要变了反复传，所以 Agent 不用改版本号。摘要没变时报“没有变化”。
+- 更新要重建容器，页面这段时间回 503。App 留着已加载的页面，升级完才刷新，主人看到的是提示，不是错误页。说明和例子都要写 `init: true`：程序作为 1 号进程不响应 SIGTERM，每次更新都要等满 10 秒的停止时限（实测见“验证”）。
+- App 看插件列表的状态，升级完自动重新加载已打开的页面（见“状态”），主人不用做什么。
+- 改坏时：`check_plugin` 不过，旧版不受影响；起不来就回滚，旧版继续跑，日志给 Agent；能跑但不对，主人说一声 Agent 再改。
+- 核心不留历史版本。说明里教 Agent 在工作目录用 git，要退回就再提交一次旧版（Vibecode 的做法，放在 Agent 这边）。
+
+#### 预览
+
+- 不做单独的预览环境。Agent 这条路上，`check_plugin` 通过后装上就是预览：页面已经在“应用”里，放不放到底栏由主人决定。第二个环境意味着第二份网关、登录和隧道，不如真的装上。
+- 电脑上有 Docker 的开发者（或电脑上的 Agent）用模板的 `scripts/dev.sh`，这是现成的。
+- Agent 看不到页面渲染得怎么样，只有探测的状态码和日志。这一步靠主人看一眼，见“代价与风险”。
+
+#### 开发套件
+
+| 东西 | 放哪 | 内容 |
+| --- | --- | --- |
+| 说明 | wonton-docs 的 `skills/wonton-plugin/`，Agent Skills 格式；`llms.txt` 指向它和规范。核心镜像带一份，经 `wonton__plugin_guide` 给 | 从需求到装好的步骤、Compose 子集的禁区、常见报错怎么改。还要回答实测里 Agent 靠猜的几处（见“验证”）。随核心走，版本对得上，机器没外网也能用 |
+| 最小例子 | 说明的 `assets/`，模板仓库同一份 | 静态页（nginx 加 configs）；带后端的页面（python 加 configs）。都带 `tabs` 和令牌样式表 |
+| 校验 | `wonton__check_plugin`；`wonton-core plugin check`；模板的 `scripts/check.sh` | 同一份代码 |
+| 引导语 | `plugins/hermes/wonton/__init__.py` | 一句话：主人想要新页面或应用时，先调 `wonton__plugin_guide`。别的 Agent 插件同样写一句 |
+
+Skills over MCP 等宿主支持了再加，内容是同一个目录。
+
+#### 底栏
+
+卡片上的“放到底栏”是壳的按钮，点了发 `Action::PinTab`，只改这台手机，不回核心。有多个页面时列出来逐个选。Bot 没有改底栏的工具：配置只在设备上，手机也可能不在线。
+
+主人能自己定义的是：底栏放哪些页面、什么顺序，以及页面本身（说一句让 Agent 写）。聊天和“应用”留在栏上，那是回到其余一切的路。
+
+### 审核
+
+- **App Store 4.7：** 允许“不在二进制里的 HTML5 和 JavaScript 小程序”，开发者负责合规。4.7.2 不许向它们暴露原生平台接口：桥第一版只有主题、打开链接和草稿，不算。4.7.3 不许未经同意把数据或权限给它们：不给。**4.7.1（过滤、举报、拉黑）、4.7.4（要有索引和通用链接）、4.7.5（年龄）是风险**，见下。
+- **2.5.2** 不许下载改变功能的代码，4.7 是它的例外，页面只在 WebKit 里跑。
+- **Google Play：** 不许下载 dex、JAR、`.so`，“JavaScript in a webview” 明确不受限。
+- **4.2（最低功能）：** App 有原生聊天和管理，不算套壳网站。
+
+这一篇没有增加新的审核面：商店（ADR-0017、ADR-0031）和插件网页已经在了。底栏只是让它更显眼。Agent 写的页面也是网页，只在主人自己的服务器上，商店里没有。
+
+### 分步
+
+1. 接口和核心：`tabs` 进规范，`TabsViewModel`，固定和排序。标签页容器，主题、状态和全屏。这一步之后 Immich 这样的现成应用就能固定和全屏。
+2. 桥：`ui/initialize`、`host-context-changed`、`ui/open-link`、`ui/message`、`ui/request-display-mode`。官方插件模板加一个 `tabs` 示例和 `prefers-color-scheme` 加变量的样式表。
+3. 官方 RSS 插件做验证样例，把底座的问题记下来（底座优先）。
+4. 以后另写：聊天里的 `ui://` 卡片（`tools/call`）；原生能力。
+
+Agent 写插件和底栏互不依赖，可以并行。它要等 plugin-sources 的 Rust 部分合并，再按这个顺序，每项一个 PR：
+
+1. 接口：`written_by`。
+2. 核心的工具、暂存和判定，连同说明、例子和 Hermes 的引导语（冒烟要一起测）。
+3. 卡片上的“打开”和“放到底栏”（等底栏）。
+4. 说明和规范进 wonton-docs。
+
+验收是一条端到端冒烟：真实模型的 Hermes 收到一句需求，写出插件，主人批准，页面能用；再改一次，数据还在，页面自己刷新。
+
+## 理由
+
+- **网页打底：** 只有它能放进现成应用，插件作者也不用学新东西。Home Assistant 和 Telegram 走到同一个结论。
+- **栏和主题归 App：** “感觉不原生”主要来自白屏、两套顶栏和颜色不跟，这些都能在壳里解决，作者不用写代码。不能解决的是页面本身的控件，那取决于作者，令牌和样板给他们一条容易的路。
+- **用 MCP Apps 的词汇，不用它的加载方式：** 规范的加载方式解决的是聊天里的第三方卡片，要求内联 HTML、数据全走工具；底栏页要长驻、要看大图和视频，放在自己的域名上更合适。词汇（方法名、`hostContext`、CSS 变量）照搬：作者能用官方 SDK，以后 `ui://` 卡片共用一套，也不用再设计一种协议（不造轮子）。
+- **状态在 Rust：** 底栏顺序、上限和桥的回复都能写行为测试，两端不会各说各话（ADR-0005）。
+- **Agent 写插件复用现有的路：** 包的校验、暂存、确认页、升级回滚都是现成的，要加的只有入口（outbox）和判定（谁写的）。新东西越少，规范和说明越短，Agent 越容易写对。
+
+## 没选的方案
+
+- **只用 MCP Apps：** 放不了现成应用，规范也没有不经工具调用的打开方式。看图看视频要经工具和 Base64 或另开 URL，不如直接是网页。
+- **声明式原生：** 感觉最好，但只够列表和表单，RSS 能做，相册做不了。组件库和两端渲染器是长期成本，也违背“不造轮子”。A2UI 成熟后可以作为 `ui://` 之外的一种卡片再评估。
+- **自己的小程序框架（微信的路子）：** 体验可以很好，代价是一整套语言、工具和生态，和“优先用成熟开源组件”相反。
+- **系统的 `TabView` 和 `UITabBarController`：** ADR-0029 选了自摆，这里不动。
+- **“更多”标签：** “应用”页已经是全部插件的入口，再加一个“更多”是两个同样的列表。
+- **固定时要页面先就绪：** 插件暂时没起来就不能固定，用户会以为固定失败。状态放到页面里说清楚。
+- **`tabs` 必须声明才能固定：** 主人否了：这样接入已有网页的第三方应用就慢了。代价是图标不统一。
+- **替现成应用注入 `viewport-fit=cover`：** 实测没好处，还会让不知情的页面躲不开 Home 条。
+- **`env(safe-area-inset-*)` 作为给页面的接口：** iOS 只有 `cover` 时才有值，Android WebView 140 以下不可靠。
+- **胶囊盖在现成应用上：** 这正好是页面右上角放头像和菜单的地方（Immich 就是），所以让出一条。
+- **工具参数传 tar 的 base64：** 上面说过，模型要把它逐字写出来。
+- **给 Agent 开 Docker socket，让它自己 `docker compose up`：** 绕过核心的校验和确认，也违反 ADR-0011。
+- **核心替插件构建镜像：** 要在核心里放一条构建链，占磁盘，构建的代码也不受 Compose 子集约束。公开镜像加 `configs` 够写页面和小后端。
+- **Agent 写的插件算第五种来源：** 除了显示的文字，和上传没有差别，规则也都一样。
+- **Bot 直接改底栏：** 配置只在设备上。要做就得把配置搬到服务器，多设备和离线都变麻烦，换来的只是省一次点按。
+
+## 代价与风险
+
+- **现成应用不会变原生。** Immich 这样的页面有自己的顶栏和底栏，放进来是两套，截图上和 Muse Bot 差得远。只有适配过的页面才接近。这是通用机制的代价，主人看过对比图后接受了；两套底栏的问题靠全屏解决。
+- **全屏时看不到底栏。** 要切页面得先退出。打开就全屏的页面点关闭回到进来之前的标签，这条路要一眼能看懂。
+- **全屏的顶部还有一条。** `inset` 的页面不是真的占满整个屏幕，顶部让出胶囊那一条，换来胶囊不挡页面。
+- **页面里的控件还是网页。** 长按菜单、文字选择、列表惯性有差别。作者用得好可以很接近，但不会和原生一样。
+- **内存。** 最多 3 个常驻 WebView，用量没有实测数字（见“验证”）。Android 上 WebView 可能共享渲染进程，一个崩了影响全部。如果低端机扛不住，退路是只留最近用的一到两个，其余按地址恢复。
+- **App Store。** 4.7.1 和 4.7.4、4.7.5 针对的是“在 App 里提供软件”的开发者。自托管、主人自己装的情形没有明确说法。社区插件进底栏后，审核员更容易看到这一点。提审前单独评估，必要时提审版本只显示官方索引。这不是这一篇引入的，但这一篇让它更显眼。
+- **规范在动。** MCP Apps 还是扩展，SDK 已到 2.x，草案在继续改。注入脚本依赖 SDK 用 `event.source` 校验来源，键名校验也很严（见“验证”），SDK 升级可能打破，要有一条跟着新版 SDK 跑的测试。CSS 变量是最稳的接口，模板也优先教这个。
+- **iOS 27 的 iPhone Duo：** 自摆的栏不参加系统的纵向布局。底栏项变成动态后如果要换回系统容器，图标就要走 `Tab` 的图片接口。属于 ADR-0029 要重新看的事。
+- **Agent 能悄悄改已批准的插件。** 不发卡片的更新，让被提示注入的 Bot 能把自己写的插件改成别的样子，在已批准的权限内做事，比如把它能读的共享文件夹发出去（如果也批了 `network.egress`）。范围只限它写的插件和批过的权限，每次写审计，详情页能打开“每次都问”。主人接受了这个取舍。
+- **Agent 写的代码没人审。** 只标未审核，不做扫描。没有 `network.egress` 的插件出不了内部网络，这是最实在的限制，所以说明要教 Agent 只申请用得到的权限。
+- **Agent 看不到渲染结果。** 页面只有主人看得到。网页探测和日志能发现起不来，发现不了布局错。以后可以让 Agent 经浏览器插件看自己的页面，要先想好网关登录怎么给。
+- **公开接口变多：** CSS 变量、`tabs` 字段和 `wonton:*` 事件都是作者依赖的，以后不能随便改。
+
+## 已定
+
+主人 2026-11-04 定了：
+
+- **渲染路线：** 网页打底，栏和主题由 App 管。
+- **设置：** 默认在底栏，可以拿掉。
+- **没适配的现成应用也能固定：** 按原样显示。看过对比图后定的，理由是这样能很快接入已经有网页的第三方应用。
+- **全屏：** 同时要加，参考微信小程序的胶囊，解决两行底栏。
+- **Agent 更新自己写的插件：** 权限没变宽就不问，变宽才发卡片。详情页能打开“每次都问”。
+
+## 验证
+
+### 原型（不合并）
+
+iOS 26.5 模拟器，`@modelcontextprotocol/ext-apps` 2.0.4，本机服务器让页面晚 3 秒返回，模拟慢的隧道。没有走真实隧道和网关，也不是真机。Mac 当时负载很高，这里不记流畅度。截图和代码在协调会话的共享笔记目录 `plugin-tabs-prototype/`。
+
+| 问题 | 结果 |
+| --- | --- |
+| 不处理时深色模式下白不白 | 白：加载期间整块白屏，页面的颜色也不跟 App，重点色的按钮看不见 |
+| 不处理时能不能用官方 SDK | 不能：`ProtocolError: Method not found`，就是 SDK 把自己的请求当成对方的请求 |
+| 不透明关掉、盖骨架、文档开始前注入 | 加载期间是骨架，没有白屏；页面第一屏就是深色 |
+| 官方 SDK 经注入脚本连到原生 | 通：`app.connect()` 成功，拿到 `theme`、`platform`、`safeAreaInsets` |
+| `styles.variables` 带 `--wonton-*` | SDK 拒绝，握手失败：`Unrecognized keys`。去掉后正常，只给部分标准键可以 |
+| 改重点色 | 页面当场变，没有重新加载（全程只有一次 `didFinish`），SDK 收到 `host-context-changed` |
+| `ui/message` | SDK 的 `sendMessage` 到达原生，切到聊天，文字成为草稿 |
+| 切标签再回来 | 同一个 WebView，没有重新加载 |
+| 内容从栏下面滚过 | `edge-to-edge` 的页面按 `--wonton-inset-*` 留白，内容穿过胶囊的材质 |
+| 没适配的 Immich（`inset`，官方镜像 v3.3.5） | 能放，登录态由原型的转发代替网关的单点登录。深色和浅色都跟（它自己写了 `prefers-color-scheme`），重点色不跟。App 的顶栏下面是 Immich 自己的顶栏，两层标题；底栏不挡内容，也没有内容从栏下滚过 |
+
+没有验证到：深色切浅色的当场变化（启动时选浅色或深色的路径相同，但没有实际切过）、3 个 WebView 的内存、`ui/open-link`。原型只有 iOS，Android 全部没有实测。
+
+### 全屏（原型，不合并）
+
+同样的条件。[Actual Budget](https://github.com/actualbudget/actual) 26.11.0 的手机版自带底栏，写了 `viewport-fit=cover` 和 `theme-color`；Immich v3.3.5 没有写这两项。截图在共享笔记目录的 `plugin-tabs-prototype/shots/`（`compare-fullscreen.jpg`）。
+
+| 问题 | 结果 |
+| --- | --- |
+| 带栏时 | Actual 两行底栏，主人说的问题 |
+| 网页框留在安全区内（选的做法） | Actual 只剩自己的底栏，在 Home 条上方，没有多留一遍。胶囊在顶部那一条里，没盖住 Immich 右上角的头像，也没盖住 Immich 查看器的工具栏 |
+| 网页框铺满，不注入 | 底栏同样在 Home 条上方。Actual 按自己的 `cover` 把顶部多推了一截 |
+| 网页框铺满，注入 `cover` | 底栏位置没有变化，没有好处 |
+| 顶部那一条取 `theme-color` | Actual 深色和浅色都和页面的顶栏连成一片；Immich 没写，用 `canvas`，也不突兀 |
+| 展开按钮进、胶囊的关闭退 | 都生效，页面不重新加载，还停在同一张照片 |
+
+没有验证到：
+
+- **返回手势：** 工具合成的边缘滑动没有触发 WKWebView 的返回手势，也没有触发退出全屏的手势。这说明不了真实手势行不行。实现时要在真实的手势下验证，包括和页面自己的横滑（Immich 查看器）会不会打架。
+- **Android 的全屏：** 全部没有实测，包括状态栏、`WindowInsets` 的留白和返回键。
+- **横屏、键盘、页面里的视频全屏。**
+- `display: fullscreen`、“总是全屏”和 `ui/request-display-mode`：原型只用启动参数模拟了打开就全屏。
+
+### Agent 能不能一次写对
+
+GLM-5.3-Flash，只给公开规范（v0.4）和模板仓库，不能联网，也没有 Docker，和机器上的 Agent 处境相同。需求是主人的一句话：“我想在 App 里有个动态页，看我订阅的 RSS。能加订阅、删订阅，点开文章能看。”校验和安装用 npchy 上本地构建的核心（2026-11-04，`wonton-core:dev`），它没有校验 `tabs`，也没有走 MCP 工具（工具还不存在），由人代为调用同样的校验和升级接口。这只是一个模型、一个需求的一次结果。
+
+| 问题 | 结果 |
+| --- | --- |
+| 写出来了吗 | 约 5 分钟：`python:3.13-alpine` 加 `configs`，`server.py` 318 行只用标准库，`index.html` 297 行 |
+| `plugin check` | 第一次通过，只提醒镜像没按摘要固定 |
+| 装得上吗 | 第一次装上，3 秒后 `running healthy`（镜像已在本地） |
+| 功能 | 加订阅、文章列表、正文都能用。读 GitHub 的订阅源偶尔超时（15 秒），这台主机直连 GitHub 不稳，开发环境也没配出网代理，不算插件的问题。手机尺寸的深色下页面可用，没有明显的布局问题 |
+| 写错时的报错 | `ports`、`build`、错字段、缺文件、错权限，都有一句话说清原因，错字段还列出可选的。能照着改 |
+| 改一次（升级接口，版本号不变） | 成功，页面变了，订阅还在。12 秒，全程 503 |
+| 加 `init: true` 后 | 同样的更新 2 到 4 秒。之前的 10 秒是在等 1 号进程响应 SIGTERM。第一次写的 Agent 不知道这一点 |
+| 改坏（程序启动就退出） | 12.6 秒后回滚，旧版继续跑。错误是 `unhealthy`，带 Python 的完整报错，够 Agent 自己改 |
+
+它靠猜的地方，说明要回答：
+
+- `user` 写 `${PUID}:${PGID}` 时，`configs` 的属主是插值前还是插值后算的。
+- 健康检查用 `python3 -c` 时代理怎么处理（规范只写了 wget 和 shell）。
+- `sso: none` 又没有自带登录的页面，是否就靠网关。
+- `network.egress` 能访问局域网，用户填的地址要不要拦。
+
+### 实现时要验证
+
+- 两端模拟器，浅色和深色，默认和别的重点色，Immich（现成应用）和 RSS（适配过的）各走一遍；切明暗时页面不重载。
+- 全屏：Actual（自带底栏）和适配过的 `edge-to-edge` 页面，两端走一遍上面“没有验证到”的几项。
+- 断网、插件停止、卸载、升级，页面状态符合上表，全程不露 502。
+- 打开 3 个页面后的内存，两端低端设备各测一次，结果写在这里。
+- Android 上 `prefers-color-scheme` 由主题的 `isLightTheme` 决定，App 在 Compose 里切明暗时 Activity 主题不变（ADR-0028），要用 `ContextThemeWrapper` 给 WebView，没有 `color-scheme` 元标签的页面还要 `DARK_STRATEGY_WEB_THEME_DARKENING_ONLY`。没有实测。
+
+## 参考
+
+- MCP Apps：[规范 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)、[概述](https://modelcontextprotocol.io/docs/extensions/apps)、[客户端支持](https://modelcontextprotocol.io/extensions/client-matrix)、[SDK 的 PostMessageTransport](https://github.com/modelcontextprotocol/ext-apps/blob/main/src/message-transport.ts)
+- [OpenAI Apps SDK 的 ChatGPT UI](https://developers.openai.com/apps-sdk/build/chatgpt-ui)
+- [Telegram Mini Apps](https://core.telegram.org/bots/webapps)、[附件和侧边菜单](https://core.telegram.org/api/bots/attach)
+- Home Assistant：[App 配置](https://contributors.home-assistant.io/apps/reference/configuration/)、[外部总线](https://contributors.home-assistant.io/frontend/reference/external-bus/)、[原生导航路线图 #244](https://github.com/OpenHomeFoundation/roadmap/issues/244)
+- [微信小程序全局配置](https://developers.weixin.qq.com/miniprogram/dev/reference/configuration/app.html#tabBar)
+- [Slack App Home](https://docs.slack.dev/surfaces/app-home/)、[Block Kit](https://docs.slack.dev/block-kit/)、[Discord Activities](https://discord.com/developers/docs/activities/how-activities-work)
+- [Muse Bot](https://github.com/0216zerotwo/muse-bot)、[Meta Muse 界面介绍](https://smartscope.blog/en/blog/meta-muse-screen-guide-features-main-chat-feed-2026/)
+- [App Store 审核指南](https://developer.apple.com/app-store/review/guidelines/)（2.5.2、4.2、4.7）、[Google Play 设备和网络滥用政策](https://support.google.com/googleplay/android-developer/answer/9888379)
+- WebKit：[App-Bound Domains](https://webkit.org/blog/10882/app-bound-domains/)、[Service Worker 的限制](https://github.com/mdn/browser-compat-data/pull/30146)、[Safari 26 的 obscuredContentInsets](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/)
+- Android：[WebView 的深色](https://developer.android.com/develop/ui/views/layout/webapps/dark-theme)、[WebViewCompat](https://developer.android.com/reference/androidx/webkit/WebViewCompat)、[处理渲染进程结束](https://developer.android.com/develop/ui/views/layout/webapps/handle-termination)
+- 全屏：[Telegram 的 `requestFullscreen` 和两种安全区](https://core.telegram.org/bots/webapps)、[微信小程序的 `navigationStyle`](https://developers.weixin.qq.com/miniprogram/dev/reference/configuration/app.html)、[胶囊的位置](https://developers.weixin.qq.com/miniprogram/dev/api/ui/menu/wx.getMenuButtonBoundingClientRect.html)、[Capacitor 关于 WebView 140 的说明](https://capawesome.io/blog/capacitor-edge-to-edge-and-safe-areas-guide/)、[WKWebView 里 `env()` 和 `viewport-fit` 的关系（社区对 WebKit 的解读）](https://github.com/ilkyeong-gn/learn-safe-area/issues/3)
+- [A2UI](https://a2ui.org/introduction/what-is-a2ui/)、[A2UI Compose](https://developer.android.com/jetpack/androidx/releases/a2ui-compose)、[Adaptive Cards 渲染](https://learn.microsoft.com/en-us/adaptive-cards/rendering-cards/getting-started)
+
+## 关联
+
+ADR-0005（厚核心）、ADR-0006（插件系统）、ADR-0011（安全模型）、ADR-0014（JS SDK）、ADR-0016、ADR-0017、ADR-0024（设备门）、ADR-0026、ADR-0028、ADR-0029（外观）、ADR-0027（outbox）、ADR-0031（来源）、ADR-0032（连接状态）。
