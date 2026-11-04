@@ -28,12 +28,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Answer
 import app.wonton.protocol.MessageContent
+import app.wonton.protocol.RichBlockKind
 import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
@@ -148,27 +150,64 @@ private fun MessageBubble(
             Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
         }
         val shape = bubbleShape(isOwn, joinsPrevious, joinsNext)
-        Column(
-            Modifier.then(
-                if (isOwn) {
-                    Modifier.accentFill(shape)
-                } else {
-                    Modifier.background(colors.surfaceSubtle.toColor(), shape)
-                },
-            )
-                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
-            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
-        ) {
-            val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
+        val fill = if (isOwn) {
+            Modifier.accentFill(shape)
+        } else {
+            Modifier.background(colors.surfaceSubtle.toColor(), shape)
+        }
+        val padded = fill.padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
+        val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
+        val styledBody: @Composable (String?) -> Unit = { reserve ->
             CompositionLocalProvider(
                 LocalContentColor provides content.toColor(),
                 LocalTextStyle provides WontonTheme.typography.body,
             ) {
-                MessageBody(message.body, core, message.sendState, onAnswer)
+                MessageBody(message.body, core, message.sendState, reserve, onAnswer)
             }
-            MessageFooter(message, Modifier.align(Alignment.End), onRetry, onCancel)
+        }
+        val reserve = footerReserve(message)
+        if (reserve != null) {
+            // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
+            Box(padded) {
+                styledBody(reserve)
+                // 占位文字已经念过一遍时间了。
+                MessageFooter(
+                    message,
+                    Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {},
+                    onRetry,
+                    onCancel,
+                )
+            }
+        } else {
+            Column(padded, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+                styledBody(null)
+                MessageFooter(message, Modifier.align(Alignment.End), onRetry, onCancel)
+            }
         }
     }
+}
+
+private fun messageTime(message: TimelineMessage): String =
+    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong()))
+
+/**
+ * 时间能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
+ * 开头是普通空格：不能和前一个词连着折行。
+ */
+private fun footerReserve(message: TimelineMessage): String? {
+    val body = message.body as? MessageContent.Text
+    val inlineLast = when (body?.blocks?.lastOrNull()?.kind) {
+        RichBlockKind.Paragraph, RichBlockKind.Heading, is RichBlockKind.ListItem -> true
+        else -> false
+    }
+    if (!inlineLast || !body?.files.isNullOrEmpty() || message.sendState is SendState.Failed) return null
+    val parts = buildList {
+        if (message.edited) add("已编辑")
+        add(messageTime(message))
+        if (message.sendState is SendState.Sending) add("发送中")
+        if (message.sendState is SendState.Sent && message.isOwn && message.readBy.isNotEmpty()) add("已读")
+    }
+    return " \u00A0\u00A0" + parts.joinToString("  ").replace(' ', '\u00A0')
 }
 
 @Composable
@@ -178,11 +217,7 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier, onRetry:
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         if (message.edited) Text("已编辑", style = style, color = color)
-        Text(
-            DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong())),
-            style = style,
-            color = color,
-        )
+        Text(messageTime(message), style = style, color = color)
         when (val state = message.sendState) {
             is SendState.Sending -> Text("发送中", style = style, color = color)
             is SendState.Failed -> FailedSend(state, onRetry, onCancel)
@@ -233,10 +268,11 @@ private fun MessageBody(
     body: MessageContent,
     core: ClientCore,
     sendState: SendState,
+    trailingReserve: String?,
     onAnswer: (String, Answer) -> Unit,
 ) {
     when (body) {
-        is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core)
+        is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)
         is MessageContent.Image -> MessageImage(body.image, core, sendState)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {

@@ -52,6 +52,10 @@ struct TimelineRow: View {
             .frame(maxWidth: .infinity)
     }
 
+    static func time(_ timestampMs: UInt64) -> String {
+        date(timestampMs).formatted(.dateTime.hour().minute())
+    }
+
     static func date(_ timestampMs: UInt64) -> Date {
         Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
     }
@@ -100,15 +104,9 @@ private struct MessageBubble: View {
     }
 
     @ViewBuilder private var bubble: some View {
-        // Grid：气泡和最宽的一行一样宽，正文靠左、时间靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
-        let body = Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4) {
-            content
-                .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(textColor)
-            footer.gridCellAnchor(.trailing)
-        }
-        .padding(.horizontal, WontonTheme.spacing.s12)
-        .padding(.vertical, WontonTheme.spacing.s8)
+        let body = laidOut
+            .padding(.horizontal, WontonTheme.spacing.s12)
+            .padding(.vertical, WontonTheme.spacing.s8)
         if message.isOwn {
             body.accentFill(shape)
         } else {
@@ -116,14 +114,54 @@ private struct MessageBubble: View {
         }
     }
 
+    @ViewBuilder private var laidOut: some View {
+        if let reserve = footerReserve {
+            // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
+            ZStack(alignment: Alignment(horizontal: .trailing, vertical: .lastTextBaseline)) {
+                styled(reserve: reserve)
+                // 占位文字已经念过一遍时间了。
+                footer.accessibilityHidden(true)
+            }
+        } else {
+            // Grid：气泡和最宽的一行一样宽，正文靠左、时间靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
+            Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4) {
+                styled(reserve: nil)
+                footer.gridCellAnchor(.trailing)
+            }
+        }
+    }
+
+    private func styled(reserve: String?) -> some View {
+        content(reserve: reserve)
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(textColor)
+    }
+
+    /// 时间能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
+    /// 开头是普通空格：不能和前一个词连着折行。
+    private var footerReserve: String? {
+        guard case let .text(_, blocks, files) = message.body, files.isEmpty, let last = blocks.last else { return nil }
+        switch last.kind {
+        case .paragraph, .heading, .listItem: break
+        case .code, .table, .rule: return nil
+        }
+        if case .failed = message.sendState { return nil }
+        var parts = [TimelineRow.time(message.timestampMs)]
+        if message.edited { parts.insert("已编辑", at: 0) }
+        if case .sending = message.sendState { parts.append("发送中") }
+        if case .sent = message.sendState, message.isOwn, !message.readBy.isEmpty { parts.append("已读") }
+        let glued = parts.joined(separator: "  ").replacingOccurrences(of: " ", with: "\u{00A0}")
+        return " \u{00A0}\u{00A0}" + glued
+    }
+
     private var textColor: Color {
         Color(message.isOwn ? colors.textOnAccentFill : colors.textPrimary)
     }
 
-    @ViewBuilder private var content: some View {
+    @ViewBuilder private func content(reserve: String?) -> some View {
         switch message.body {
         case let .text(_, blocks, files):
-            TextMessageBody(blocks: blocks, ink: textColor, files: files)
+            TextMessageBody(blocks: blocks, ink: textColor, files: files, trailingReserve: reserve)
         case let .image(image):
             MediaImage(image: image, core: core, sendState: message.sendState)
         case let .confirmation(view):
@@ -147,7 +185,7 @@ private struct MessageBubble: View {
     private var footer: some View {
         HStack(spacing: WontonTheme.spacing.s4) {
             if message.edited { Text("已编辑") }
-            Text(TimelineRow.date(message.timestampMs), format: .dateTime.hour().minute())
+            Text(TimelineRow.time(message.timestampMs))
             switch message.sendState {
             case .sending:
                 Text("发送中")

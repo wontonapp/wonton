@@ -5,11 +5,13 @@ import WontonClient
 struct RichTextView: View {
     let blocks: [RichBlock]
     let ink: Color
+    /// 末尾接一段透明文字，给压在最后一行上的时间留位置。
+    var trailingReserve: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                RichBlockView(block: block, ink: ink)
+                RichBlockView(block: block, ink: ink, reserve: index == blocks.count - 1 ? trailingReserve : nil)
                     .padding(.top, index == 0 ? 0 : gap(after: blocks[index - 1], before: block))
             }
         }
@@ -28,6 +30,7 @@ struct RichTextView: View {
 private struct RichBlockView: View {
     let block: RichBlock
     let ink: Color
+    let reserve: String?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -63,6 +66,17 @@ private struct RichBlockView: View {
     }
 
     private var inline: AttributedString {
+        var text = spans
+        if let reserve {
+            var hidden = AttributedString(reserve)
+            hidden.foregroundColor = .clear
+            hidden.font = .caption
+            text.append(hidden)
+        }
+        return text
+    }
+
+    private var spans: AttributedString {
         block.spans.reduce(into: AttributedString()) { result, span in
             var part = AttributedString(span.text)
             var intent: InlinePresentationIntent = []

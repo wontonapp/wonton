@@ -44,14 +44,17 @@ import app.wonton.ui.design.toColor
 
 private const val CODE_SCALE = 0.9f
 
-/** 排好版的消息文字。块和片段由核心给出，这里只管画。链接和代码底色都跟着气泡里文字的颜色。 */
+/**
+ * 排好版的消息文字。块和片段由核心给出，这里只管画。链接和代码底色都跟着气泡里文字的颜色。
+ * `trailingReserve` 是末尾接的一段透明文字，给压在最后一行上的时间留位置。
+ */
 @Composable
-fun RichText(blocks: List<RichBlock>) {
+fun RichText(blocks: List<RichBlock>, trailingReserve: String? = null) {
     SelectionContainer {
         Column {
             blocks.forEachIndexed { index, block ->
                 if (index > 0) Spacer(Modifier.height(gap(blocks[index - 1], block)))
-                RichBlockView(block)
+                RichBlockView(block, if (index == blocks.lastIndex) trailingReserve else null)
             }
         }
     }
@@ -66,7 +69,7 @@ private fun gap(previous: RichBlock, next: RichBlock): Dp =
     }
 
 @Composable
-private fun RichBlockView(block: RichBlock) {
+private fun RichBlockView(block: RichBlock, reserve: String?) {
     val ink = LocalContentColor.current
     val spacing = WontonTheme.spacing
     val bar = WontonTheme.size.quoteBar
@@ -83,7 +86,8 @@ private fun RichBlockView(block: RichBlock) {
         Modifier
     }
     Box(quote.padding(start = spacing.s16 * block.depth.toInt())) {
-        val inline = inlineText(block.spans, ink.copy(alpha = WontonTheme.ratio.codeFill))
+        val reserveStyle = SpanStyle(color = Color.Transparent, fontSize = WontonTheme.typography.caption.fontSize)
+        val inline = inlineText(block.spans, ink.copy(alpha = WontonTheme.ratio.codeFill), reserve, reserveStyle)
         when (val kind = block.kind) {
             RichBlockKind.Paragraph -> Text(inline)
             RichBlockKind.Heading -> Text(inline, style = WontonTheme.typography.itemTitle)
@@ -159,7 +163,12 @@ private fun CodeBlock(text: String, ink: Color) {
     }
 }
 
-private fun inlineText(spans: List<RichSpan>, codeFill: Color): AnnotatedString = buildAnnotatedString {
+private fun inlineText(
+    spans: List<RichSpan>,
+    codeFill: Color,
+    reserve: String?,
+    reserveStyle: SpanStyle,
+): AnnotatedString = buildAnnotatedString {
     spans.forEach { span ->
         val style = SpanStyle(
             fontWeight = if (span.bold) FontWeight.Bold else null,
@@ -178,4 +187,5 @@ private fun inlineText(spans: List<RichSpan>, codeFill: Color): AnnotatedString 
             withLink(LinkAnnotation.Url(link, underline)) { withStyle(style) { append(span.text) } }
         }
     }
+    if (reserve != null) withStyle(reserveStyle) { append(reserve) }
 }

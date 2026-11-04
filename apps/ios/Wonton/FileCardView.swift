@@ -6,10 +6,11 @@ struct TextMessageBody: View {
     let blocks: [RichBlock]
     let ink: Color
     let files: [FileId]
+    var trailingReserve: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            if !blocks.isEmpty { RichTextView(blocks: blocks, ink: ink) }
+            if !blocks.isEmpty { RichTextView(blocks: blocks, ink: ink, trailingReserve: trailingReserve) }
             ForEach(files, id: \.self) { FileCardView(id: $0) }
         }
     }
