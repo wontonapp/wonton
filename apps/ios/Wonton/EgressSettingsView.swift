@@ -46,14 +46,15 @@ struct EgressSettingsView: View {
         } else if let problem = egress.loadProblem {
             ProblemView(problem: problem.problem) { model.send(.refreshEgressProxy) }
         } else {
-            ProgressView()
+            LoadingView()
         }
     }
 
     private func form(_ current: EgressCurrent) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                ForEach(problems, id: \.self) { WontonNotice(icon: .warning, title: $0) }
+                if let problem = egress.saveProblem { ProblemNotice(problem: problem.saveProblem) }
+                if let problem = egress.loadProblem { ProblemNotice(problem: problem.problem) }
                 addressSection(current)
                 if let plugin = current.pluginPath, let core = current.corePath {
                     WontonGroup {
@@ -76,10 +77,6 @@ struct EgressSettingsView: View {
         }
         .scrollDismissesKeyboard(.immediately)
         .disabled(egress.saving)
-    }
-
-    private var problems: [String] {
-        [egress.saveProblem, egress.loadProblem].compactMap { $0?.message }
     }
 
     private func addressSection(_ current: EgressCurrent) -> some View {

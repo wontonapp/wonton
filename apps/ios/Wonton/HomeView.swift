@@ -74,9 +74,9 @@ struct HomeView: View {
                     PluginPage(title: url.host() ?? "", url: url, home: model.viewModel) { isShowingPage = false }
                 }
             }
-            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
+            .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
         }
-        .wontonDialog("操作被拒绝", message: plugins.rejection, isPresented: isShowingPluginRejection)
+        .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
     }
 
     private var launcher: some View {

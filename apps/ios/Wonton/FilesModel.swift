@@ -29,7 +29,7 @@ final class FilesModel {
     }
 
     func reject(_ reason: String) {
-        chat.rejection = reason
+        chat.rejection = Problem(title: reason)
     }
 
     /// 传完由核心授权给这个房间，再把链接发进去。

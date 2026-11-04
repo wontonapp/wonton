@@ -57,7 +57,7 @@ class ChatNavigation(
      * 从 [from] 这一页打开和 [userId] 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
      * 对方的邀请还没接受时到聊天列表，邀请就在那里。返回核心拒绝的原因。
      */
-    fun openDirectChat(core: ClientCore, userId: String, from: Int = CHAT): String? {
+    fun openDirectChat(core: ClientCore, userId: String, from: Int = CHAT): Problem? {
         awaitedPeer = null
         awaitedRoom = null
         openRoom = null
@@ -65,7 +65,7 @@ class ChatNavigation(
         // 聊天页不在前台时没有收集，取核心当前的状态。
         val rooms = core.chat().rooms.filter { it.directUserId == userId }
         val joined = rooms.firstOrNull { it.membership == RoomMembership.JOINED }
-        var rejection: String? = null
+        var rejection: Problem? = null
         if (joined != null) {
             show(joined.roomId, from)
         } else if (rooms.isEmpty()) {

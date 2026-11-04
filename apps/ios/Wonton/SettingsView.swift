@@ -40,8 +40,8 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                if let problem = model.rejection ?? appearance.problem?.message {
-                    Text(problem).wontonText(WontonTheme.typography.supporting).foregroundStyle(Color(colors.danger))
+                if let problem = model.rejection ?? appearance.problem?.problem {
+                    ProblemNotice(problem: problem)
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.chatBackup) {

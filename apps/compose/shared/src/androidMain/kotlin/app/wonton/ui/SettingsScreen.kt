@@ -53,7 +53,6 @@ import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.Rgb
-import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonRow
@@ -77,7 +76,7 @@ fun SettingsPage(
     showingBackup: Boolean,
     onShowBackup: (Boolean) -> Unit,
 ) {
-    var rejection by remember { mutableStateOf<String?>(null) }
+    var rejection by remember { mutableStateOf<Problem?>(null) }
     if (showingBackup) {
         BackHandler { onShowBackup(false) }
         ChatBackupScreen(
@@ -90,8 +89,8 @@ fun SettingsPage(
             SettingsScreen(core, appearance, chat.encryption.recovery) { onShowBackup(true) }
         }
     }
-    chat.problem?.let { WontonDialog("操作失败", it.message, { core.send(Action.DismissChatProblem) }) }
-    rejection?.let { WontonDialog("操作被拒绝", it, { rejection = null }) }
+    chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.DismissChatProblem) } }
+    rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
 /** 设置页：明暗、重点色、字号和字体。设置都在核心，这里只渲染、把选择发回去，改了整个 App 当场跟着变。 */
@@ -102,15 +101,13 @@ private fun SettingsScreen(
     recovery: RecoveryStatus,
     onOpenBackup: () -> Unit,
 ) {
-    var rejection by remember { mutableStateOf<String?>(null) }
+    var rejection by remember { mutableStateOf<Problem?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        (rejection ?: appearance.problem?.message)?.let { problem ->
-            Text(problem, style = WontonTheme.typography.supporting, color = WontonTheme.colors.danger.toColor())
-        }
+        (rejection ?: appearance.problem?.problem)?.let { ProblemNotice(it) }
         WontonGroup {
             WontonRow("聊天记录备份", recovery.backupValue, showsForward = true, onClick = onOpenBackup)
         }

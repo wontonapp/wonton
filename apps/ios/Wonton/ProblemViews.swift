@@ -13,6 +13,20 @@ extension PluginProblem {
     var problem: Problem { reason.problem(detail: message) }
 }
 
+extension PluginProblem {
+    /// 保存出网代理没成功：连不上时不知道到底改了没有，填错了要照着核心说的改。
+    var saveProblem: Problem {
+        switch reason {
+        case .transportUnavailable:
+            return Problem(title: "不确定改好了没有", nextStep: "连上家里的服务器后再看一下。", detail: message)
+        case .invalid:
+            return Problem(title: "这样填不对", nextStep: message)
+        default:
+            return problem
+        }
+    }
+}
+
 extension PluginFailure {
     func problem(detail: String?) -> Problem {
         switch self {
@@ -48,6 +62,33 @@ extension PluginFailure {
             return Problem(title: "App 和家里的服务器版本对不上", nextStep: "请更新 App 或家里的服务器。", detail: detail)
         }
     }
+}
+
+extension AppearanceProblem {
+    var problem: Problem {
+        Problem(title: "外观设置没有存上", nextStep: "检查存储空间后再试。", detail: message)
+    }
+}
+
+extension ChatFailure {
+    func problem(detail: String) -> Problem {
+        switch self {
+        case .transportUnavailable:
+            return Problem(title: "连不上家里的服务器", nextStep: "检查网络，连上后再试。", detail: detail)
+        case .unauthorized:
+            return Problem(title: "家里的服务器不认这台设备", nextStep: "请重新扫码配对。", detail: detail)
+        case .upstream:
+            return Problem(title: "家里的服务器出错了", nextStep: "稍后再试。", detail: detail)
+        case .notReady:
+            return Problem(title: "现在还做不了", nextStep: detail)
+        case .invalidInput:
+            return Problem(title: "这个操作做不了", nextStep: detail)
+        }
+    }
+}
+
+extension ChatProblem {
+    var problem: Problem { reason.problem(detail: message) }
 }
 
 extension StoreProblem {
@@ -91,12 +132,12 @@ extension Error {
             return Problem(title: "家里的服务器不认这台设备", nextStep: "请重新扫码配对。", detail: detail)
         case .Upstream:
             return Problem(title: "家里的服务器出错了", nextStep: "稍后再试。", detail: detail)
-        case .NotReady:
-            return Problem(title: "还没准备好", nextStep: "稍等一会儿再试。", detail: detail)
+        case let .NotReady(reason):
+            return Problem(title: "现在还做不了", nextStep: reason)
         case .Storage:
             return Problem(title: "这台设备读写数据出错了", nextStep: "检查存储空间后再试。", detail: detail)
-        case .InvalidInput:
-            return Problem(title: "这个操作做不了", detail: detail)
+        case let .InvalidInput(reason):
+            return Problem(title: "这个操作做不了", nextStep: reason)
         }
     }
 }
@@ -155,6 +196,35 @@ struct ProblemView: View {
         }
         .multilineTextAlignment(.center)
         .padding(WontonTheme.spacing.s32)
+    }
+}
+
+/// 页面还能用，只是这件事没做成。
+struct ProblemNotice: View {
+    let problem: Problem
+    var icon: WontonIcon = .warning
+
+    var body: some View {
+        WontonNotice(icon: icon, title: problem.title, lines: problem.nextStep.map { [$0] } ?? []) {
+            if let detail = problem.detail { ProblemDetail(text: detail) }
+        }
+    }
+}
+
+extension View {
+    /// 主人点了什么没做成：说清原因就好，点“好”关掉。
+    func wontonDialog(
+        problem: Problem?,
+        isPresented: Binding<Bool>,
+        onDismiss: (() -> Void)? = nil
+    ) -> some View {
+        wontonDialog(
+            problem?.title ?? "",
+            message: problem?.nextStep,
+            detail: problem?.detail,
+            isPresented: isPresented,
+            onDismiss: onDismiss
+        )
     }
 }
 

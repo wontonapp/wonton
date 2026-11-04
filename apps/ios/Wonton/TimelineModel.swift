@@ -8,7 +8,9 @@ final class TimelineModel {
     private(set) var backPagination: BackPagination = .idle
     /// 收到第一批（全部条目）之后才能翻页：核心要先打开这个房间的时间线。
     private(set) var isLoaded = false
-    private(set) var failure: String?
+    private(set) var failure: Problem?
+    /// 打不开时点“重试”加一，视图按它重新订阅。
+    var attempt = 0
 
     private let core: ClientCore
     let roomId: String
@@ -20,11 +22,12 @@ final class TimelineModel {
 
     /// 在视图的 `.task` 里调用：订阅时间线，视图消失时订阅随之结束。
     func observe() async {
+        failure = nil
         let subscription: TimelineSubscription
         do {
             subscription = try await core.subscribeTimeline(roomId: roomId)
         } catch {
-            failure = String(describing: error)
+            failure = error.problem
             return
         }
         for await update in subscription.updates() {

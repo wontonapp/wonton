@@ -76,7 +76,10 @@ impl From<&ApiError> for Error {
                     .map_or_else(String::new, |kind| kind.errcode().to_string()),
                 message: api.to_string(),
             },
-            400 => Self::InvalidInput(api.to_string()),
+            400 => {
+                tracing::warn!(%api, "服务器拒绝了请求");
+                Self::InvalidInput("服务器不接受这个请求，检查填的内容后再试".to_owned())
+            }
             _ => Self::Upstream(api.to_string()),
         }
     }
@@ -92,7 +95,10 @@ impl From<&matrix_sdk::Error> for Error {
     fn from(error: &matrix_sdk::Error) -> Self {
         match error {
             matrix_sdk::Error::Http(http) => http.as_ref().into(),
-            matrix_sdk::Error::Identifier(source) => Self::InvalidInput(source.to_string()),
+            matrix_sdk::Error::Identifier(source) => {
+                tracing::warn!(%source, "ID 格式不对");
+                Self::InvalidInput("ID 的格式不对，检查后再输一次".to_owned())
+            }
             other => Self::Upstream(other.to_string()),
         }
     }

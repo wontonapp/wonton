@@ -55,7 +55,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun InviteScreen(core: ClientCore, invite: DeviceInvite?, modifier: Modifier = Modifier) {
     // 核心当场拒绝的原因，比如还没配对。
-    var refusal by remember { mutableStateOf<String?>(null) }
+    var refusal by remember { mutableStateOf<Problem?>(null) }
     val request = { refusal = core.send(Action.InviteDevice) }
     LaunchedEffect(Unit) { request() }
     val colors = WontonTheme.colors
@@ -63,7 +63,7 @@ fun InviteScreen(core: ClientCore, invite: DeviceInvite?, modifier: Modifier = M
         modifier.verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        refusal?.let { WontonNotice(WontonIcon.Error, it) }
+        refusal?.let { ProblemNotice(it, WontonIcon.Error) }
         when (invite) {
             null, is DeviceInvite.Requesting -> Row(
                 verticalAlignment = Alignment.CenterVertically,

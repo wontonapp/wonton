@@ -48,7 +48,7 @@ struct ComposerView: View {
                 pin.pin()
                 for url in urls { model.files.upload(url, room: roomId) }
             case let .failure(error):
-                model.rejection = error.localizedDescription
+                model.rejection = Problem(title: "选不了这个文件", detail: error.localizedDescription)
             }
         }
     }
@@ -56,7 +56,7 @@ struct ComposerView: View {
     /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
     private func send(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else {
-            model.rejection = PhotoUpload.Failure.unreadable.description
+            model.rejection = Problem(title: PhotoUpload.Failure.unreadable.description, nextStep: "换一张试试。")
             return
         }
         let type = item.supportedContentTypes.first
@@ -67,7 +67,7 @@ struct ComposerView: View {
             pin.pin()
             model.send(.sendImage(roomId: roomId, image: upload))
         } catch {
-            model.rejection = String(describing: error)
+            model.rejection = Problem(title: String(describing: error), nextStep: "换一张试试。")
         }
     }
 }

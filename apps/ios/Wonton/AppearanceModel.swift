@@ -7,7 +7,7 @@ import WontonClient
 final class AppearanceModel {
     private(set) var viewModel: AppearanceViewModel
     /// 核心拒绝保存的原因，设置页就地显示。
-    private(set) var rejection: String?
+    private(set) var rejection: Problem?
 
     private let core: ClientCore
 
@@ -28,7 +28,7 @@ final class AppearanceModel {
             try core.dispatch(action: action)
             rejection = nil
         } catch {
-            rejection = String(describing: error)
+            rejection = error.problem
         }
     }
 }

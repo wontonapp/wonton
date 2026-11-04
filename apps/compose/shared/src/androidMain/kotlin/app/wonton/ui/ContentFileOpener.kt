@@ -54,7 +54,7 @@ fun uploadAction(context: Context, uri: Uri, roomId: String): Action {
  *
  * 没有 App 能打开时返回原因，供界面提示；成功时返回 null。
  */
-fun openWithSystem(context: Context, path: String, mimeType: String?): String? {
+fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
     // `Intent` 按字面匹配类型：带参数的匹配不上，`application/octet-stream` 没有 App 认，都退回按扩展名。
     val type = mimeType?.let(Intent::normalizeMimeType)?.takeUnless { it == "application/octet-stream" }
@@ -65,7 +65,7 @@ fun openWithSystem(context: Context, path: String, mimeType: String?): String? {
         context.startActivity(intent)
         null
     } catch (_: ActivityNotFoundException) {
-        "这台手机上没有能打开这个文件的 App"
+        Problem("这台手机上没有能打开这个文件的 App")
     }
 }
 

@@ -53,7 +53,7 @@ private const val MAX_LINES = 6
 
 /** 聊天页底部的输入栏。 */
 @Composable
-fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (String) -> Unit) {
+fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> Unit) {
     var draft by rememberSaveable(roomId) { mutableStateOf("") }
     var isChoosingAttachment by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -63,7 +63,7 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (String) -> U
             scope.launch {
                 PhotoUpload.make(context, uri).fold(
                     onSuccess = { upload -> onAction(Action.SendImage(roomId, upload)) },
-                    onFailure = { failure -> onReject(failure.message ?: failure.toString()) },
+                    onFailure = { failure -> onReject(Problem("读不出这张照片", "换一张试试。", failure.message)) },
                 )
             }
         }

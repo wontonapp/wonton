@@ -264,7 +264,7 @@ impl ChatLink {
     fn start_direct_chat(self: &Arc<Self>, user_id: &str) -> Result<(), CoreError> {
         let user: OwnedUserId = user_id
             .parse()
-            .map_err(|e| invalid(&format!("用户 ID 不合法：{e}")))?;
+            .map_err(|_| invalid("ID 的格式不对，应该像 @名字:服务器"))?;
         let session = self.current()?;
         if session.direct_chat_with(&user).is_some() {
             return Ok(());

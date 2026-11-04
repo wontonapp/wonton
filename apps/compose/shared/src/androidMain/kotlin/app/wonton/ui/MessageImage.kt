@@ -111,7 +111,7 @@ private fun loadedImage(core: ClientCore, media: MediaHandle) =
                     Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
                 }
             } catch (failure: CoreException) {
-                Result.failure(IllegalStateException(failure.toString(), failure))
+                Result.failure(IllegalStateException(failure.problem.title, failure))
             } catch (failure: IOException) {
                 Result.failure(IllegalStateException("图片格式不支持", failure))
             }

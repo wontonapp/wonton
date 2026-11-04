@@ -13,6 +13,7 @@ extension View {
     func wontonDialog(
         _ title: String,
         message: String? = nil,
+        detail: String? = nil,
         isPresented: Binding<Bool>,
         actions: [WontonDialogAction]? = nil,
         onDismiss: (() -> Void)? = nil
@@ -24,6 +25,7 @@ extension View {
                     WontonDialogView(
                         title: title,
                         message: message,
+                        detail: detail,
                         actions: actions ?? [WontonDialogAction(title: "好", perform: onDismiss ?? {})],
                         close: { isPresented.wrappedValue = false },
                         dismiss: onDismiss ?? {}
@@ -38,6 +40,7 @@ extension View {
 private struct WontonDialogView: View {
     let title: String
     let message: String?
+    let detail: String?
     let actions: [WontonDialogAction]
     let close: () -> Void
     let dismiss: () -> Void
@@ -89,6 +92,7 @@ private struct WontonDialogView: View {
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textSecondary))
             }
+            if let detail { ProblemDetail(text: detail) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -250,15 +250,15 @@ impl MatrixSession {
     fn joined(&self, room_id: &RoomId) -> Result<Room> {
         let room = self.room(room_id)?;
         if room.state() != RoomState::Joined {
-            return Err(Error::NotReady(format!("还没有加入房间 {room_id}")));
+            return Err(Error::NotReady("还没有加入这个聊天".to_owned()));
         }
         Ok(room)
     }
 
     fn room(&self, room_id: &RoomId) -> Result<Room> {
-        self.client
-            .get_room(room_id)
-            .ok_or_else(|| Error::NotReady(format!("房间 {room_id} 还没有同步到本地")))
+        self.client.get_room(room_id).ok_or_else(|| {
+            Error::NotReady("这个聊天还没有同步到这台设备，稍等一会儿再试".to_owned())
+        })
     }
 }
 

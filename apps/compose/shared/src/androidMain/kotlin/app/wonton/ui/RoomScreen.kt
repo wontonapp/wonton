@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -40,12 +41,9 @@ import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
-import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.icons.Warning
-import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -55,7 +53,10 @@ private class TimelineState {
 
     /** 收到第一批（全部条目）之后才能翻页：核心要先打开这个房间的时间线。 */
     var loaded by mutableStateOf(false)
-    var failure by mutableStateOf<String?>(null)
+    var failure by mutableStateOf<Problem?>(null)
+
+    /** 打不开时点“重试”加一，按它重新订阅。 */
+    var attempt by mutableIntStateOf(0)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
@@ -85,11 +86,12 @@ fun RoomRoute(
     isDirect: Boolean,
     isReadOnly: Boolean,
     onAction: (Action) -> Unit,
-    onReject: (String) -> Unit,
+    onReject: (Problem) -> Unit,
     onClose: () -> Unit,
 ) {
     val timeline = remember(roomId) { TimelineState() }
-    LaunchedEffect(core, roomId) {
+    LaunchedEffect(core, roomId, timeline.attempt) {
+        timeline.failure = null
         try {
             core.timelineUpdates(roomId).collect { update ->
                 update.diffs.forEach(timeline::apply)
@@ -97,7 +99,7 @@ fun RoomRoute(
                 timeline.loaded = true
             }
         } catch (failure: CoreException) {
-            timeline.failure = failure.toString()
+            timeline.failure = failure.problem
         }
     }
     val newest = timeline.items.lastOrNull()?.id
@@ -123,7 +125,7 @@ private fun RoomScreen(
     isReadOnly: Boolean,
     timeline: TimelineState,
     onAction: (Action) -> Unit,
-    onReject: (String) -> Unit,
+    onReject: (Problem) -> Unit,
     onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
@@ -138,8 +140,8 @@ private fun RoomScreen(
                 ) {
                     val failure = timeline.failure
                     if (failure != null) {
-                        Box(Modifier.weight(1f).fillMaxWidth().padding(WontonTheme.spacing.pageInset)) {
-                            WontonNotice(WontonIcon.Warning, "打不开这个聊天", lines = listOf(failure))
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            ProblemView(failure) { timeline.attempt++ }
                         }
                     } else {
                         val showsSender = !isDirect

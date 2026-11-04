@@ -133,7 +133,7 @@ private struct InstalledLanWebui: View {
     let offer: LanWebuiOffer
     let updated: (PluginDetail) -> Void
     @State private var target: Bool?
-    @State private var problem: String?
+    @State private var problem: Problem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
@@ -143,7 +143,7 @@ private struct InstalledLanWebui: View {
             )
             .disabled(target != nil)
             if target != nil { ProgressView() }
-            if let problem { WontonNotice(icon: .warning, title: problem) }
+            if let problem { ProblemNotice(problem: problem) }
         }
     }
 
@@ -154,7 +154,7 @@ private struct InstalledLanWebui: View {
             do {
                 updated(try await model.core.setLanWebui(id: id, enabled: enabled))
             } catch {
-                problem = String(describing: error)
+                problem = error.problem
                 if let detail = try? await model.core.installedPlugin(id: id) { updated(detail) }
             }
             target = nil

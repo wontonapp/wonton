@@ -33,12 +33,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.AppearanceProblem
+import app.wonton.protocol.ChatFailure
+import app.wonton.protocol.ChatProblem
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
@@ -46,6 +50,8 @@ import app.wonton.protocol.StoreFailure
 import app.wonton.protocol.StoreProblem
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -66,6 +72,28 @@ private val SKELETON_TITLE = 120.dp
  * 文字按类别写在这里。
  */
 data class Problem(val title: String, val nextStep: String? = null, val detail: String? = null)
+
+val AppearanceProblem.problem: Problem
+    get() = Problem("外观设置没有存上", "检查存储空间后再试。", message)
+
+fun ChatFailure.problem(detail: String): Problem = when (this) {
+    ChatFailure.TRANSPORT_UNAVAILABLE -> Problem("连不上家里的服务器", "检查网络，连上后再试。", detail)
+    ChatFailure.UNAUTHORIZED -> Problem("家里的服务器不认这台设备", "请重新扫码配对。", detail)
+    ChatFailure.UPSTREAM -> Problem("家里的服务器出错了", "稍后再试。", detail)
+    ChatFailure.NOT_READY -> Problem("现在还做不了", detail)
+    ChatFailure.INVALID_INPUT -> Problem("这个操作做不了", detail)
+}
+
+val ChatProblem.problem: Problem
+    get() = reason.problem(message)
+
+/** 保存出网代理没成功：连不上时不知道到底改了没有，填错了要照着核心说的改。 */
+val PluginProblem.saveProblem: Problem
+    get() = when (reason) {
+        PluginFailure.TRANSPORT_UNAVAILABLE -> Problem("不确定改好了没有", "连上家里的服务器后再看一下。", message)
+        PluginFailure.INVALID -> Problem("这样填不对", message)
+        else -> problem
+    }
 
 val PluginProblem.problem: Problem
     get() = reason.problem(message)
@@ -117,9 +145,9 @@ val CoreException.problem: Problem
             is CoreException.TransportUnavailable -> Problem("连不上家里的服务器", "检查网络，连上后再试。", detail)
             is CoreException.Unauthorized -> Problem("家里的服务器不认这台设备", "请重新扫码配对。", detail)
             is CoreException.Upstream -> Problem("家里的服务器出错了", "稍后再试。", detail)
-            is CoreException.NotReady -> Problem("还没准备好", "稍等一会儿再试。", detail)
+            is CoreException.NotReady -> Problem("现在还做不了", reason)
             is CoreException.Storage -> Problem("这台设备读写数据出错了", "检查存储空间后再试。", detail)
-            is CoreException.InvalidInput -> Problem("这个操作做不了", detail = detail)
+            is CoreException.InvalidInput -> Problem("这个操作做不了", reason)
         }
     }
 
@@ -185,6 +213,20 @@ fun ProblemView(problem: Problem, onRetry: () -> Unit) {
         )
         problem.detail?.let { ProblemDetail(it) }
     }
+}
+
+/** 页面还能用，只是这件事没做成。 */
+@Composable
+fun ProblemNotice(problem: Problem, icon: ImageVector = WontonIcon.Warning) {
+    WontonNotice(icon, problem.title, lines = listOfNotNull(problem.nextStep)) {
+        problem.detail?.let { ProblemDetail(it) }
+    }
+}
+
+/** 主人点了什么没做成：说清原因就好，点“好”关掉。 */
+@Composable
+fun ProblemDialog(problem: Problem, onDismiss: () -> Unit) {
+    WontonDialog(problem.title, problem.nextStep, onDismiss, detail = problem.detail?.let { { ProblemDetail(it) } })
 }
 
 /** 列表还在，只是少了点什么或者不是最新的：一条轻提示，不抢列表的位置。 */

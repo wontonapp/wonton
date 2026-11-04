@@ -79,10 +79,9 @@ struct ChatDialogs: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
+            .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
             .wontonDialog(
-                "操作失败",
-                message: model.viewModel.problem?.message,
+                problem: model.viewModel.problem?.problem,
                 isPresented: isShowingProblem,
                 onDismiss: { model.send(.dismissChatProblem) }
             )
@@ -103,7 +102,7 @@ struct ChatDialogs: ViewModifier {
 private enum ChatStatus {
     case signedOut
     case progress(String)
-    case failed(String)
+    case failed(Problem)
 
     init?(_ viewModel: ChatViewModel) {
         switch viewModel.account {
@@ -114,12 +113,12 @@ private enum ChatStatus {
         case let .failed(reason, message):
             // 连不上由标题栏说，连上后自动重来。
             if reason == .transportUnavailable { return nil }
-            self = .failed(message)
+            self = .failed(reason.problem(detail: message))
         case .signedIn:
             guard case let .failed(reason, message) = viewModel.sync, reason != .transportUnavailable else {
                 return nil
             }
-            self = .failed(message)
+            self = .failed(reason.problem(detail: message))
         }
     }
 }
@@ -140,8 +139,8 @@ private struct ChatStatusView: View {
             Text(text)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
-        case let .failed(message):
-            WontonNotice(icon: .warning, title: message)
+        case let .failed(problem):
+            ProblemRow(problem: problem)
         }
     }
 }

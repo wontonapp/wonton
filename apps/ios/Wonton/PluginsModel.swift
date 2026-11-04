@@ -10,7 +10,7 @@ import WontonClient
 final class PluginsModel {
     private(set) var viewModel: PluginsViewModel
     /// 核心拒绝主人的操作的原因，由界面弹窗展示。
-    var rejection: String?
+    var rejection: Problem?
     /// 页面出现时自动发的刷新被核心拒绝的原因。不弹窗，没有 `viewModel.problem` 时就地显示。
     private(set) var refreshRejection: CoreError?
 
@@ -51,7 +51,7 @@ final class PluginsModel {
         do {
             try core.dispatch(action: action)
         } catch {
-            rejection = String(describing: error)
+            rejection = error.problem
         }
     }
 

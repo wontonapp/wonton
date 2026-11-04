@@ -36,6 +36,7 @@ fun WontonDialog(
     message: String? = null,
     onDismiss: () -> Unit,
     actions: List<WontonDialogAction> = listOf(WontonDialogAction("好", onClick = onDismiss)),
+    detail: (@Composable () -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
     val spacing = WontonTheme.spacing
@@ -64,6 +65,7 @@ fun WontonDialog(
                     message?.let {
                         Text(it, style = WontonTheme.typography.body, color = colors.textSecondary.toColor())
                     }
+                    detail?.invoke()
                 }
                 if (actions.size == 2) {
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.s8)) {

@@ -325,7 +325,7 @@ private struct MediaFailure: Error {
             guard let image = UIImage(data: data) else { return .failure(MediaFailure(message: "图片格式不支持")) }
             return .success(image)
         } catch {
-            return .failure(MediaFailure(message: String(describing: error)))
+            return .failure(MediaFailure(message: error.problem.title))
         }
     }
 }

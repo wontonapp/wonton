@@ -24,7 +24,7 @@ enum ChatRoute: Hashable {
 @Observable
 final class ChatModel {
     private(set) var viewModel: ChatViewModel
-    var rejection: String?
+    var rejection: Problem?
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -68,7 +68,7 @@ final class ChatModel {
         do {
             try core.dispatch(action: action)
         } catch {
-            rejection = String(describing: error)
+            rejection = error.problem
         }
     }
 
@@ -91,7 +91,7 @@ final class ChatModel {
             awaitedFrom = origin
             return origin == .chat
         } catch {
-            rejection = String(describing: error)
+            rejection = error.problem
             return true
         }
     }

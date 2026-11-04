@@ -21,11 +21,8 @@ struct ChatRoomView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let failure = timeline.failure {
-                VStack {
-                    WontonNotice(icon: .warning, title: "打不开这个聊天", lines: [failure])
-                }
-                .padding(WontonTheme.spacing.pageInset)
-                .frame(maxHeight: .infinity)
+                ProblemView(problem: failure) { timeline.attempt += 1 }
+                    .frame(maxHeight: .infinity)
             } else {
                 messages
             }
@@ -40,7 +37,7 @@ struct ChatRoomView: View {
         .wontonPushedScreen(title, showsStatus: true) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
-        .task { await timeline.observe() }
+        .task(id: timeline.attempt) { await timeline.observe() }
     }
 
     private var messages: some View {

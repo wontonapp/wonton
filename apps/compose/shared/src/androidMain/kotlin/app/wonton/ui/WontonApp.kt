@@ -37,7 +37,6 @@ import app.wonton.protocol.PendingConfirmation
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonBarItem
 import app.wonton.ui.design.WontonBottomBar
-import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Apps
@@ -92,12 +91,11 @@ fun WontonApp(
         var page by remember { mutableStateOf<PluginEntry.Web?>(null) }
         var appsPage by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
         var showingBackup by rememberSaveable { mutableStateOf(false) }
-        var unavailable by remember { mutableStateOf<String?>(null) }
         // 应用页和应用商店里打开插件：Agent 插件打开和它的 Bot 的私聊，返回时回到这里；有网页的全屏打开。
         val open = remember(core) {
             { entry: PluginEntry ->
                 when (entry) {
-                    is PluginEntry.Chat -> unavailable = chat.openDirectChat(core, entry.botUserId, from = tab)
+                    is PluginEntry.Chat -> plugins.reject(chat.openDirectChat(core, entry.botUserId, from = tab))
                     is PluginEntry.Web -> page = entry
                 }
             }
@@ -169,8 +167,7 @@ fun WontonApp(
                 OpeningChat(chat)
             }
         }
-        unavailable?.let { reason -> Notice("打不开", reason, onDismiss = { unavailable = null }) }
-        plugins.rejection?.let { reason -> Notice("操作被拒绝", reason, onDismiss = { plugins.rejection = null }) }
+        plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
     }
 }
 
@@ -238,11 +235,6 @@ private fun hidesBottomBar(
         APPS -> appsPage != HomePage.LAUNCHER || apps.detail != null || apps.confirmation != null
         else -> showingBackup
     }
-
-@Composable
-private fun Notice(title: String, reason: String, onDismiss: () -> Unit) {
-    WontonDialog(title, reason, onDismiss)
-}
 
 /** 核心起不来或开发时传入的配对码被拒绝：如实显示原因，不进入主界面。 */
 @Composable

@@ -16,7 +16,7 @@ struct PairingView: View {
     @State private var deviceName = UIDevice.current.name
     @State private var pastedCode = ""
     /// 核心当场拒绝的原因，比如扫到的不是配对码。
-    @State private var refusal: String?
+    @State private var refusal: Problem?
     /// 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
     @State private var lastCode: String?
     @FocusState private var isEditingCode: Bool
@@ -49,7 +49,7 @@ struct PairingView: View {
                     .disabled(pastedCode.isEmpty || isPairing)
                 }
                 if let refusal {
-                    WontonNotice(icon: .error, title: refusal)
+                    ProblemNotice(problem: refusal, icon: .error)
                 }
                 if let pairing = model.viewModel.pairing {
                     PairingProgress(status: pairing, retry: lastCode.map { code in { pair(code) } })

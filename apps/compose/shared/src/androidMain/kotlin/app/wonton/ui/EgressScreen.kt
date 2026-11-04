@@ -38,7 +38,6 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonGroup
-import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
@@ -48,8 +47,6 @@ import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Warning
-import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.launch
 
 /** 出网代理的设置页（ADR-0023）：结论都在核心，这里渲染，并把输入框的内容发回去。 */
@@ -84,7 +81,8 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
                     verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
                 ) {
-                    listOfNotNull(egress.saveProblem, problem).forEach { WontonNotice(WontonIcon.Warning, it.message) }
+                    egress.saveProblem?.let { ProblemNotice(it.saveProblem) }
+                    problem?.let { ProblemNotice(it.problem) }
                     AddressField(current, address, !egress.saving) { address = it }
                     val plugin = current.pluginPath
                     val core = current.corePath
@@ -107,7 +105,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                     }
                 }
                 problem != null -> ProblemView(problem.problem) { plugins.send(Action.RefreshEgressProxy) }
-                else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                else -> LoadingView()
             }
         }
     }
@@ -220,7 +218,7 @@ fun LanWebuiToggle(offer: LanWebuiOffer, checked: Boolean, enabled: Boolean, onC
 fun InstalledLanWebui(plugins: PluginsState, id: String, offer: LanWebuiOffer, onUpdated: (PluginDetail) -> Unit) {
     val scope = rememberCoroutineScope()
     var target by remember { mutableStateOf<Boolean?>(null) }
-    var problem by remember { mutableStateOf<String?>(null) }
+    var problem by remember { mutableStateOf<Problem?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         LanWebuiToggle(offer, target ?: offer.enabled, enabled = target == null) { enabled ->
             target = enabled
@@ -229,13 +227,13 @@ fun InstalledLanWebui(plugins: PluginsState, id: String, offer: LanWebuiOffer, o
                 try {
                     onUpdated(plugins.core.setLanWebui(id, enabled))
                 } catch (failure: CoreException) {
-                    problem = failure.toString()
+                    problem = failure.problem
                     runCatching { plugins.core.installedPlugin(id) }.onSuccess(onUpdated)
                 }
                 target = null
             }
         }
         if (target != null) CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = 2.dp)
-        problem?.let { WontonNotice(WontonIcon.Warning, it) }
+        problem?.let { ProblemNotice(it) }
     }
 }

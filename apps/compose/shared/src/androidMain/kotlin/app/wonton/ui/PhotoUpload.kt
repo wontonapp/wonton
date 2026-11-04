@@ -30,7 +30,7 @@ object PhotoUpload {
             val type = resolver.getType(uri)
             Result.success(if (type == "image/gif") gif(data) else reencode(data, png = type == "image/png"))
         } catch (failure: IOException) {
-            Result.failure(IOException("读不出这张照片：${failure.message}", failure))
+            Result.failure(failure)
         }
     }
 

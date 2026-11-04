@@ -76,7 +76,7 @@ fun PairingScreen(
     var deviceName by rememberSaveable { mutableStateOf(defaultDeviceName(context)) }
     var pastedCode by rememberSaveable { mutableStateOf("") }
     // 核心当场拒绝的原因，比如扫到的不是配对码。
-    var refusal by remember { mutableStateOf<String?>(null) }
+    var refusal by remember { mutableStateOf<Problem?>(null) }
     // 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
     var lastCode by remember { mutableStateOf<String?>(null) }
     var previous by remember { mutableStateOf(pairing) }
@@ -123,7 +123,7 @@ fun PairingScreen(
                 enabled = pastedCode.isNotBlank() && !inProgress,
             )
         }
-        refusal?.let { WontonNotice(WontonIcon.Error, it) }
+        refusal?.let { ProblemNotice(it, WontonIcon.Error) }
         pairing?.let { status -> PairingProgress(status, onRetry = lastCode?.let { code -> { pair(code) } }) }
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             Text(

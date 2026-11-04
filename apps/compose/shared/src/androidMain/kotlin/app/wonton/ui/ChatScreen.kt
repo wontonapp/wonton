@@ -45,7 +45,6 @@ import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
-import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
@@ -61,7 +60,6 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
-import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 import java.time.Instant
 import java.time.LocalDate
@@ -76,7 +74,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
-    var rejection by remember { mutableStateOf<String?>(null) }
+    var rejection by remember { mutableStateOf<Problem?>(null) }
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
@@ -122,8 +120,8 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
         )
     }
 
-    viewModel.problem?.let { WontonDialog("操作失败", it.message, { onAction(Action.DismissChatProblem) }) }
-    rejection?.let { WontonDialog("操作被拒绝", it, { rejection = null }) }
+    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.DismissChatProblem) } }
+    rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
 @Composable
@@ -177,8 +175,10 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val sync = viewModel.sync
     val reminder = viewModel.encryption.backupReminder
     // 连不上由标题栏说，连上后自动重来。
-    val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }?.message
-        ?: (sync as? ChatSync.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }?.message
+    val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
+        ?.let { it.reason.problem(it.message) }
+        ?: (sync as? ChatSync.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
+            ?.let { it.reason.problem(it.message) }
             .takeIf { account is ChatAccount.SignedIn }
     val progress = "正在登录…".takeIf { account == ChatAccount.SigningIn }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
@@ -189,7 +189,7 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         if (account == ChatAccount.SignedOut) {
             WontonNotice(WontonIcon.Connection, "还没有连上家里的服务器", isError = false)
         }
-        failure?.let { WontonNotice(WontonIcon.Warning, it) }
+        failure?.let { ProblemRow(it) }
         progress?.let {
             Text(it, style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
         }

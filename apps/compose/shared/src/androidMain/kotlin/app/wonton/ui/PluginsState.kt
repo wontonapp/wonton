@@ -30,7 +30,7 @@ class PluginsState(val core: ClientCore) {
         private set
 
     /** 核心拒绝主人的操作的原因，由界面弹窗展示。 */
-    var rejection by mutableStateOf<String?>(null)
+    var rejection by mutableStateOf<Problem?>(null)
 
     /** 页面出现时自动发的刷新被核心拒绝的原因。不弹窗，没有 `viewModel.problem` 时就地显示。 */
     var refreshRejection by mutableStateOf<CoreException?>(null)
@@ -45,7 +45,12 @@ class PluginsState(val core: ClientCore) {
     }
 
     fun send(action: Action) {
-        core.send(action)?.let { rejection = it }
+        reject(core.send(action))
+    }
+
+    /** 只在有问题时更新提示：成功的操作不清掉还没看的问题。 */
+    fun reject(problem: Problem?) {
+        problem?.let { rejection = it }
     }
 
     /** 发页面出现时的刷新，被拒绝的原因记在 [refreshRejection]。 */

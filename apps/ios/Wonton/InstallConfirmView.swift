@@ -7,7 +7,7 @@ struct InstallConfirmView: View {
     let confirmation: PluginConfirmation
     @Environment(\.dismiss) private var dismiss
     @State private var loaded: Result<InstallPreview, Error>?
-    @State private var rejection: String?
+    @State private var rejection: Problem?
     @State private var lanWebui = false
 
     var body: some View {
@@ -25,7 +25,7 @@ struct InstallConfirmView: View {
             }
         }
         .wontonModalScreen(isUpgrade ? "升级" : "安装")
-        .wontonDialog("操作被拒绝", message: rejection, isPresented: isShowingRejection)
+        .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .task { await load() }
     }
 
@@ -90,7 +90,7 @@ struct InstallConfirmView: View {
             try model.core.dispatch(action: action)
             dismiss()
         } catch {
-            rejection = String(describing: error)
+            rejection = error.problem
         }
     }
 }

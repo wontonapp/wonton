@@ -36,13 +36,13 @@ fun ClientCore.timelineUpdates(roomId: String): Flow<TimelineUpdate> = flow {
     }
 }
 
-/** 把操作发给核心。被拒绝时返回核心给出的原因，供界面提示；成功时返回 null。 */
-fun ClientCore.send(action: Action): String? =
+/** 把操作发给核心。被拒绝时返回要给人看的问题，供界面提示；成功时返回 null。 */
+fun ClientCore.send(action: Action): Problem? =
     try {
         dispatch(action)
         null
     } catch (rejection: CoreException) {
-        rejection.toString()
+        rejection.problem
     }
 
 /** 把和家里服务器连接的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */

@@ -26,7 +26,6 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
 import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
@@ -41,7 +40,7 @@ import app.wonton.ui.icons.WontonIcon
 fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation, onClose: () -> Unit) {
     val isUpgrade = confirmation is PluginConfirmation.Upgrade
     var attempt by remember { mutableIntStateOf(0) }
-    var rejection by remember { mutableStateOf<String?>(null) }
+    var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
     val loaded by produceState<Result<InstallPreview>?>(null, confirmation, attempt) {
         value = null
@@ -87,7 +86,7 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
             }
         }
     }
-    rejection?.let { WontonDialog("操作被拒绝", it, { rejection = null }) }
+    rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
 @Composable
