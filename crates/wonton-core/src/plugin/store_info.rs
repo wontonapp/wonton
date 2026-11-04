@@ -6,7 +6,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::manifest::{LocalizedText, Manifest, ManifestError, PluginKind, require_locales};
+use super::manifest::{LocalizedText, Manifest, ManifestError, require_locales};
 use super::package_files;
 
 /// 核心支持的最新规范版本。
@@ -45,27 +45,6 @@ impl fmt::Display for SpecVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}", self.0, self.1)
     }
-}
-
-/// 商店分类，取值见插件规范的“商店信息”。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Category {
-    Ai,
-    Agent,
-    Photos,
-    Media,
-    Files,
-    Documents,
-    Productivity,
-    Communication,
-    Home,
-    Network,
-    Security,
-    Developer,
-    Downloads,
-    Tools,
-    System,
 }
 
 /// 插件包的作者。
@@ -127,11 +106,6 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
             "用到了规范 0.4 的字段 notices，要写 spec: \"0.4\"".to_owned(),
         ));
     }
-    if manifest.category == Some(Category::System) && manifest.kind != PluginKind::System {
-        return Err(invalid(
-            "分类 system 只给系统插件（kind: system）".to_owned(),
-        ));
-    }
     if let Some(screenshots) = &manifest.screenshots {
         validate_screenshots(screenshots)?;
     }
@@ -157,7 +131,9 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
             ))
         })?;
     }
-    validate_tags(&manifest.tags)?;
+    for tags in manifest.tags.values() {
+        validate_tags(tags)?;
+    }
     if let Some(about) = &manifest.about {
         long_text("about", about, MAX_ABOUT_CHARS)?;
     }

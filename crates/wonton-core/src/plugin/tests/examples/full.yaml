@@ -20,12 +20,11 @@ x-wonton:
   title: { zh: 相册, en: Photos }
   description: { zh: 照片备份、人脸与语义搜索, en: Photo backup with face and semantic search }
   icon: icon.png
-  category: photos
   screenshots: [screenshots/timeline.png, screenshots/search.png]
   author: { name: Example, url: https://example.com }
   homepage: https://immich.app
   license: AGPL-3.0-only
-  tags: [immich, 照片, 备份]
+  tags: { zh: [相册, AI], en: [Photos, AI] }
   about:
     zh: |
       手机里的照片自动备份到家里的服务器。

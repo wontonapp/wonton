@@ -7,8 +7,8 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use wonton_protocol::{
-    CoreError, InstallPreview, InstallRequest, PluginCategory, PluginFailure, PluginIcon,
-    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest,
+    CoreError, InstallPreview, InstallRequest, PluginFailure, PluginIcon, PluginOperation,
+    PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT};
@@ -47,7 +47,6 @@ impl PluginsLink {
             &preview.id,
             &preview.title,
             preview.icon.clone(),
-            preview.category,
             PluginOperation::Install,
         )?;
         let request = InstallRequest {
@@ -77,7 +76,6 @@ impl PluginsLink {
             &preview.id,
             &preview.title,
             preview.icon.clone(),
-            preview.category,
             PluginOperation::Upgrade,
         )?;
         let request = UpgradeRequest {
@@ -109,18 +107,18 @@ impl PluginsLink {
         id: String,
         delete_data: bool,
     ) -> Result<(), CoreError> {
-        let (title, icon, category) = {
+        let (title, icon) = {
             let view = self.view.borrow();
             let plugin = view
                 .installed
                 .as_ref()
                 .and_then(|installed| installed.plugins.iter().find(|plugin| plugin.id == id));
             plugin.map_or_else(
-                || (id.clone(), None, None),
-                |plugin| (plugin.title.clone(), plugin.icon.clone(), plugin.category),
+                || (id.clone(), None),
+                |plugin| (plugin.title.clone(), plugin.icon.clone()),
             )
         };
-        self.begin_task(&id, &title, icon, category, PluginOperation::Uninstall)?;
+        self.begin_task(&id, &title, icon, PluginOperation::Uninstall)?;
         let link = self.clone();
         self.runtime.spawn(async move {
             let Some(api) = link.task_api(&id) else {
@@ -165,7 +163,6 @@ impl PluginsLink {
         id: &str,
         title: &str,
         icon: Option<PluginIcon>,
-        category: Option<PluginCategory>,
         operation: PluginOperation,
     ) -> Result<(), CoreError> {
         let mut outcome = Ok(());
@@ -185,7 +182,6 @@ impl PluginsLink {
                 id: id.to_owned(),
                 title: title.to_owned(),
                 icon,
-                category,
                 operation,
                 state: PluginTaskState::Running,
             });

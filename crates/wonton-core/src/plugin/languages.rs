@@ -1,7 +1,9 @@
 //! 按请求的 `Accept-Language` 挑插件文字的语言（ADR-0017 的“接口：App 和核心”）：对每个想要的语言，先找完全一样的
-//! 语言标签，再找主语言相同的；都没有时用中文。
+//! 语言标签，再找主语言相同的；都没有时用英文，再没有就用任意一种。
 
-use super::manifest::LocalizedText;
+use std::collections::BTreeMap;
+
+use super::manifest::{LocalizedTags, LocalizedText};
 
 /// 请求想要的语言，按偏好从高到低。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -28,31 +30,38 @@ impl Languages {
         Self(ranked.into_iter().map(|(_, tag)| tag).collect())
     }
 
-    /// 挑出一种语言的文字。清单保证有 `zh` 和 `en`，所以总能挑到；空表给空串。
-    pub fn pick<'t>(&self, text: &'t LocalizedText) -> &'t str {
+    fn choose<'t, T>(&self, text: &'t BTreeMap<String, T>) -> Option<&'t T> {
         let find = |wanted: &str| {
             text.iter()
                 .find(|(lang, _)| lang.eq_ignore_ascii_case(wanted))
-                .map(|(_, value)| value.as_str())
+                .map(|(_, value)| value)
         };
         let same_primary = |wanted: &str| {
             let base = primary(wanted);
             find(base).or_else(|| {
                 text.iter()
                     .find(|(lang, _)| primary(lang).eq_ignore_ascii_case(base))
-                    .map(|(_, value)| value.as_str())
+                    .map(|(_, value)| value)
             })
         };
         self.0
             .iter()
             .find_map(|wanted| find(wanted).or_else(|| same_primary(wanted)))
-            .or_else(|| find("zh"))
-            .or_else(|| text.values().next().map(String::as_str))
-            .unwrap_or_default()
+            .or_else(|| same_primary("en"))
+            .or_else(|| text.values().next())
+    }
+
+    /// 挑出一种语言的文字。清单保证至少有一种语言；空表给空串。
+    pub fn pick<'t>(&self, text: &'t LocalizedText) -> &'t str {
+        self.choose(text).map_or("", String::as_str)
     }
 
     pub fn pick_owned(&self, text: &LocalizedText) -> String {
         self.pick(text).to_owned()
+    }
+
+    pub fn pick_tags(&self, tags: &LocalizedTags) -> Vec<String> {
+        self.choose(tags).cloned().unwrap_or_default()
     }
 }
 
@@ -72,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn picks_by_preference_then_primary_language_then_chinese() {
+    fn picks_by_preference_then_primary_language_then_english_then_any() {
         let title = text(&[("zh", "相册"), ("en", "Photos"), ("zh-TW", "相簿")]);
         let pick = |header: &str| Languages::from_header(Some(header)).pick(&title);
         assert_eq!(
@@ -86,8 +95,17 @@ mod tests {
             "Photos",
             "按 q 值排序，日文没有就看下一种"
         );
-        assert_eq!(pick("fr"), "相册", "都没有时用中文");
-        assert_eq!(pick("en;q=0, fr"), "相册", "q=0 表示不要");
-        assert_eq!(Languages::default().pick(&title), "相册");
+        assert_eq!(pick("fr"), "Photos", "都没有时用英文");
+        assert_eq!(
+            pick("en;q=0, fr"),
+            "Photos",
+            "q=0 表示不要这个偏好，回退还是英文"
+        );
+        assert_eq!(Languages::default().pick(&title), "Photos");
+        let only_chinese = text(&[("zh", "相册")]);
+        assert_eq!(
+            Languages::from_header(Some("en")).pick(&only_chinese),
+            "相册"
+        );
     }
 }

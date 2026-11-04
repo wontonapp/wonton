@@ -63,7 +63,7 @@ async fn owner_identity_gives_an_sso_none_plugin_the_name_and_email() {
         .find(|p| p.permission == "owner.identity")
         .expect("权限列在安装页上");
     assert!(line.supported && !line.high);
-    assert!(line.text.contains("用户名和邮箱"), "{}", line.text);
+    assert!(line.text.contains("username and email"), "{}", line.text);
     assert!(
         !preview.notices.iter().any(|n| n.text.contains("自动登录")),
         "应用自带登录，不会自动登录：{:?}",

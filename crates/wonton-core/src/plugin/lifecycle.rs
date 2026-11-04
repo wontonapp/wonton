@@ -734,6 +734,7 @@ pub(super) fn client_spec(manifest: &Manifest, ctx: &InstallContext, secret: &st
         name: manifest
             .title
             .get("en")
+            .or_else(|| manifest.title.values().next())
             .cloned()
             .unwrap_or_else(|| manifest.id.to_string()),
         redirect_uris: oidc

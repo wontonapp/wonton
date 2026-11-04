@@ -6,7 +6,7 @@ struct StoreView: View {
     let model: PluginsModel
     let open: (PluginEntry) -> Void
     @State private var query = ""
-    @State private var category: PluginCategory?
+    @State private var filter: String?
     @State private var confirmation: PluginConfirmation?
     @Environment(\.wontonColors) private var colors
 
@@ -62,16 +62,16 @@ struct StoreView: View {
     }
 
     @ViewBuilder private func listing(_ store: StoreListing) -> some View {
-        let present = categories(in: store)
+        let present = tags(in: store)
         if present.count > 1 {
-            CategoryChips(categories: present, selected: $category)
+            TagChips(tags: present, selected: $filter)
         }
         section("已审核", store.official)
         section("社区", store.community)
     }
 
     @ViewBuilder private func section(_ title: String, _ content: StoreSection) -> some View {
-        let items = content.plugins.filter { category == nil || $0.category == category }
+        let items = content.plugins.filter { filter.map($0.tags.contains) ?? true }
         if !items.isEmpty || content.problem != nil {
             Text(title)
                 .wontonText(WontonTheme.typography.sectionTitle)
@@ -122,26 +122,26 @@ struct StoreView: View {
         return .get(title: "打开") { open(entry) }
     }
 
-    /// 列表里出现过的分类，按第一次出现的顺序。
-    private func categories(in store: StoreListing) -> [PluginCategory] {
-        var seen: [PluginCategory] = []
+    /// 列表里出现过的标签，按第一次出现的顺序。
+    private func tags(in store: StoreListing) -> [String] {
+        var seen: [String] = []
         for item in store.official.plugins + store.community.plugins {
-            if let category = item.category, !seen.contains(category) { seen.append(category) }
+            for tag in item.tags where !seen.contains(tag) { seen.append(tag) }
         }
         return seen
     }
 }
 
-private struct CategoryChips: View {
-    let categories: [PluginCategory]
-    @Binding var selected: PluginCategory?
+private struct TagChips: View {
+    let tags: [String]
+    @Binding var selected: String?
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: WontonTheme.spacing.s8) {
                 WontonChip(title: "全部", isSelected: selected == nil) { selected = nil }
-                ForEach(categories, id: \.self) { category in
-                    WontonChip(title: category.name, isSelected: selected == category) { selected = category }
+                ForEach(tags, id: \.self) { tag in
+                    WontonChip(title: tag, isSelected: selected == tag) { selected = tag }
                 }
             }
             .padding(.horizontal, WontonTheme.spacing.pageInset)
@@ -166,7 +166,7 @@ private struct StoreItemRow: View {
             NavigationLink(value: PluginRoute.store(source: item.source)) {
                 HStack(spacing: WontonTheme.spacing.s12) {
                     PluginIconView(
-                        icon: item.icon, category: item.category, size: WontonTheme.size.storeIcon, model: model
+                        icon: item.icon, size: WontonTheme.size.storeIcon, model: model
                     )
                     VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                         Text(item.title)
@@ -227,7 +227,7 @@ struct TaskRow: View {
 
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            PluginIconView(icon: task.icon, category: task.category, size: WontonTheme.size.taskIcon, model: model)
+            PluginIconView(icon: task.icon, size: WontonTheme.size.taskIcon, model: model)
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 Text(task.title)
                     .wontonText(WontonTheme.typography.itemTitle)

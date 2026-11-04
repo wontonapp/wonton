@@ -1,29 +1,6 @@
 import SwiftUI
 import WontonClient
 
-extension PluginCategory {
-    var name: String {
-        switch self {
-        case .ai: return "AI"
-        case .agent: return "Agent"
-        case .photos: return "照片"
-        case .media: return "影音"
-        case .files: return "文件"
-        case .documents: return "文档"
-        case .productivity: return "效率"
-        case .communication: return "通讯"
-        case .home: return "智能家居"
-        case .network: return "网络"
-        case .security: return "安全"
-        case .developer: return "开发"
-        case .downloads: return "下载"
-        case .tools: return "工具"
-        case .system: return "系统"
-        case .other: return "其他"
-        }
-    }
-}
-
 extension StoreFailure {
     var text: String {
         switch self {

@@ -2,7 +2,6 @@ use super::super::InstallError;
 use super::super::package::PluginPackage;
 use super::super::package_files::PackageFiles;
 use super::super::storefront::index::IndexEntry;
-use super::*;
 
 fn compose(extra: &str) -> String {
     format!(
@@ -21,15 +20,14 @@ fn parse_err(extra: &str) -> String {
 #[test]
 fn store_info_of_spec_0_2_parses() {
     let yaml = compose(
-        "  spec: \"0.2\"\n  category: photos\n  author: {name: Example, url: https://example.com}\n  \
-         homepage: https://immich.app\n  license: AGPL-3.0-only\n  tags: [照片, immich]\n  \
+        "  spec: \"0.2\"\n  author: {name: Example, url: https://example.com}\n  \
+         homepage: https://immich.app\n  license: AGPL-3.0-only\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  \
          about: {zh: 第一段, en: First}\n  release_notes: {zh: 修了问题, en: Fixes}\n  \
          screenshots: [shots/1.png, shots/2.jpg]",
     );
     let m = PluginPackage::parse(&yaml).unwrap().manifest;
-    assert_eq!(m.category, Some(Category::Photos));
     assert_eq!(m.author.unwrap().name, "Example");
-    assert_eq!(m.tags, ["照片", "immich"]);
+    assert_eq!(m.tags["en"], ["Photos", "AI"]);
     assert_eq!(m.screenshots.unwrap().len(), 2);
     let dual = compose("  spec: \"0.2\"\n  license: MIT OR Apache-2.0");
     PluginPackage::parse(&dual).unwrap();
@@ -51,8 +49,6 @@ fn newer_spec_is_reported_before_unknown_fields() {
 fn spec_0_2_fields_need_the_spec_field() {
     let err = parse_err("  license: MIT");
     assert!(err.contains("spec: \"0.2\""), "{err}");
-    // 0.1 就有的字段不需要。
-    PluginPackage::parse(&compose("  category: tools")).unwrap();
 }
 
 #[test]
@@ -69,8 +65,7 @@ fn store_fields_are_checked() {
         .collect::<Vec<_>>()
         .join(", ");
     let cases = [
-        ("  category: gaming".to_owned(), "gaming"),
-        ("  category: system".to_owned(), "系统插件"),
+        ("  categories: [ai]".to_owned(), "categories"),
         ("  license: Apache 2".to_owned(), "SPDX"),
         ("  homepage: http://example.com".to_owned(), "https://"),
         (
@@ -78,10 +73,10 @@ fn store_fields_are_checked() {
             "https://",
         ),
         ("  author: {name: \"  \"}".to_owned(), "author.name"),
-        (format!("  tags: [{tags9}]"), "最多 8"),
-        (format!("  tags: [{}]", "a".repeat(25)), "1 到 24"),
-        ("  tags: [Photo, photo]".to_owned(), "重复"),
-        ("  about: {zh: 只有中文}".to_owned(), "zh 和 en"),
+        (format!("  tags: {{zh: [{tags9}]}}"), "最多 8"),
+        (format!("  tags: {{en: [{}]}}", "a".repeat(25)), "1 到 24"),
+        ("  tags: {en: [Photo, photo]}".to_owned(), "重复"),
+        ("  about: {zh: \"\", en: x}".to_owned(), "至少要写一种语言"),
         (format!("  about: {{zh: {long}, en: x}}"), "超过 4000"),
         (
             format!("  release_notes: {{zh: {notes}, en: x}}"),

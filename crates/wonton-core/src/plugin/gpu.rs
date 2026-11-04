@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use wonton_protocol::CardLine;
 
 use super::manager::{InstallError, PluginManager};
-use super::manifest::{GpuRequirement, Manifest, ManifestError, Permission};
+use super::manifest::{GpuNeed, Manifest, ManifestError, Permission};
 
 /// 清单的 `gpu`：拿到显卡的服务。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub struct GpuSpec {
 pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let invalid = |message: &str| Err(ManifestError::Invalid(message.to_owned()));
     let permitted = manifest.permissions.contains(&Permission::DevicesGpu);
-    let wants = manifest.requirements.as_ref().and_then(|r| r.gpu);
+    let wants = manifest.requirements.as_ref().and_then(|r| r.gpu.as_ref());
     match (&manifest.gpu, permitted) {
         (Some(_), false) => return invalid("声明了 gpu 就必须申请 devices.gpu 权限"),
         (None, true) => {
@@ -50,7 +50,7 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
 }
 
 /// 插件要不要显卡：没申请 `devices.gpu` 的不要；申请了而没写 `requirements.gpu` 的按 `required`。
-pub fn requirement(manifest: &Manifest) -> Option<GpuRequirement> {
+pub fn requirement(manifest: &Manifest) -> Option<GpuNeed> {
     manifest
         .permissions
         .contains(&Permission::DevicesGpu)
@@ -58,8 +58,8 @@ pub fn requirement(manifest: &Manifest) -> Option<GpuRequirement> {
             manifest
                 .requirements
                 .as_ref()
-                .and_then(|r| r.gpu)
-                .unwrap_or(GpuRequirement::Required)
+                .and_then(|r| r.gpu.as_ref())
+                .map_or(GpuNeed::Required, |gpu| gpu.need)
         })
 }
 
@@ -343,7 +343,7 @@ impl PluginManager {
         };
         match self.probe_gpu().await? {
             Ok(grant) => Ok(Some(grant)),
-            Err(problem) if requirement == GpuRequirement::Optional => {
+            Err(problem) if requirement == GpuNeed::Optional => {
                 tracing::info!(plugin = %manifest.id, %problem, "本机没有可用的显卡，插件不带显卡安装");
                 Ok(None)
             }
@@ -372,7 +372,7 @@ impl PluginManager {
                 format!("显卡交给服务 {services}：{}", grant.describe()),
                 None,
             ),
-            Err(problem) if requirement == GpuRequirement::Optional => (
+            Err(problem) if requirement == GpuNeed::Optional => (
                 format!("本机没有可用的显卡（{problem}），服务 {services} 装上后不带显卡运行"),
                 None,
             ),

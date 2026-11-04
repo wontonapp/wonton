@@ -71,13 +71,33 @@ pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<R
     check_screenshots(dir, m, images, &mut report).await;
     if official {
         let required = [
-            ("category", m.category.is_some()),
+            ("tags", !m.tags.is_empty()),
             ("license", m.license.is_some()),
             ("author", m.author.is_some()),
             ("notices", !m.notices.is_empty()),
         ];
         for (field, _) in required.iter().filter(|(_, present)| !present) {
             report.problems.push(format!("官方索引要求写 {field}"));
+        }
+        let keys = |keys: Vec<&String>| ["zh", "en"].iter().all(|l| keys.iter().any(|k| k == l));
+        let translated = [
+            ("description", keys(m.description.keys().collect())),
+            ("tags", m.tags.is_empty() || keys(m.tags.keys().collect())),
+            (
+                "about",
+                m.about.as_ref().is_none_or(|t| keys(t.keys().collect())),
+            ),
+            (
+                "release_notes",
+                m.release_notes
+                    .as_ref()
+                    .is_none_or(|t| keys(t.keys().collect())),
+            ),
+        ];
+        for (field, _) in translated.iter().filter(|(_, both)| !both) {
+            report
+                .problems
+                .push(format!("官方索引要求 {field} 写 zh 和 en"));
         }
     }
     Ok(report)

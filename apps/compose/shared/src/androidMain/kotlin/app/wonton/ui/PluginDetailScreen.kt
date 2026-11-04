@@ -164,7 +164,7 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
     val colors = WontonTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16)) {
-            PluginIconImage(detail.icon, detail.category, WontonTheme.size.detailIcon, plugins)
+            PluginIconImage(detail.icon, WontonTheme.size.detailIcon, plugins)
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(detail.title, style = WontonTheme.typography.sectionTitle, color = colors.textPrimary.toColor())
                 Text(detail.summary, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
@@ -214,7 +214,7 @@ private fun DetailSections(detail: PluginDetail) {
             detail.requirements.forEach { requirement ->
                 Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                     LineIcon(WontonIcon.Check, colors.textSecondary.toColor())
-                    Text(requirement, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+                    Text(requirement.text, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
                 }
             }
         }
@@ -227,7 +227,7 @@ private fun DetailInfo(detail: PluginDetail) {
     val uris = LocalUriHandler.current
     val info = listOfNotNull(
         "版本" to detail.version,
-        detail.category?.let { "分类" to it.label },
+        detail.tags.takeIf { it.isNotEmpty() }?.let { "标签" to it.joinToString("、") },
         detail.author?.let { "作者" to it.name },
         detail.license?.let { "许可证" to it },
         detail.source?.let { "来源" to it },

@@ -32,7 +32,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 ### 商店信息
 
-商店展示的信息写在清单（`x-wonton`）里，随插件包一起按提交固定：图标、截图、作者、主页、许可证、分类（固定的一组）、
+商店展示的信息写在清单（`x-wonton`）里，随插件包一起按提交固定：图标、截图、作者、主页、许可证、标签（插件自己声明，不固定）、
 标签、详细介绍、更新说明，文字至少有中文和英文。字段、格式和上限见插件规范的“商店信息”。清单加一个 `spec` 字段写它按
 哪一版规范写成；核心遇到比自己新的版本，明确提示先升级核心，不再只报“未知字段”。
 
@@ -76,7 +76,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 - 一个公开仓库 `geraldpeng6/wonton-store` 里的 `index.json`。每个插件一项：来源、版本、提交、插件包每个文件的 sha256，加上
   compose 原文。商店列表和 Bot 的搜索直接用索引里的清单，不用逐个去取。格式见插件规范的“官方索引”。
 - 收录就是向这个仓库提 PR，审核后合并。条目由 `wonton-core plugin index-entry github:<owner>/<repo>@<tag>` 生成，不手写。
-  审核看这些：`wonton-core plugin check --official` 通过（图标、分类、许可证、作者、随包的许可声明齐全，镜像全按摘要固定，长期运行的服务
+  审核看这些：`wonton-core plugin check --official` 通过（图标、标签、许可证、作者、随包的许可声明齐全，镜像全按摘要固定，长期运行的服务
   都有健康检查）；申请的权限和插件做的事相符；镜像来自上游官方或作者可复现的构建。
 - 一个插件只收录一个版本，即最新审核过的；升级就是改这一项。
 - 在线更新：6 小时一次，App 刷新时立即更新，一分钟内不重复。索引只从 GitHub 取：先 `raw.githubusercontent.com`，不通时
@@ -204,7 +204,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 - 插件包同原有的接口：compose 文本，或者插件包目录的 tar（`Content-Type: application/x-tar`）。JSON 请求的
   `Content-Type` 是 `application/json`。上传插件包是开发工具用的，App 只按来源安装。
-- 文字按请求的 `Accept-Language` 挑语言：先找完全一样的语言标签，再找主语言相同的，都没有时用中文。
+- 文字按请求的 `Accept-Language` 挑语言：先找完全一样的语言标签，再找主语言相同的，都没有时用英文，再没有就用任意一种。
 - 新的错误类别：`source_unavailable`（503，家里的服务器连不上插件的来源，如 GitHub）、`not_found`（404，来源里没有这个
   仓库或版本）、`changed`（409，插件包在预览之后变了，摘要对不上，要重新预览）、`images_unavailable`（503，核心起不了
   处理图片的进程；图片本身处理不了是 `invalid_input`）。原有的类别照旧（`invalid_input`、`permission_denied`、

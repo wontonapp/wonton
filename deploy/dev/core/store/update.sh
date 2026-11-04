@@ -7,7 +7,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../../.." && pwd)"
 plugins=(
-  geraldpeng6/wonton-plugin-files@v0.2.0
+  geraldpeng6/wonton-plugin-files@v0.2.2
 )
 
 work="$(mktemp -d)"

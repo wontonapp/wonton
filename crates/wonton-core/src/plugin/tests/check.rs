@@ -84,7 +84,7 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
     for expected in [
         "没有按摘要固定",
         "没有健康检查",
-        "官方索引要求写 category",
+        "官方索引要求写 tags",
         "官方索引要求写 license",
         "官方索引要求写 author",
         "官方索引要求写 notices",
@@ -98,8 +98,7 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         "  web:\n    image: nginx:1.27@sha256:{}\n    healthcheck:\n      test: [CMD, nginx, -t]",
         "a".repeat(64)
     );
-    let complete =
-        "  category: tools\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
+    let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
     let report = run(repo(&compose(&pinned, complete)).path(), true)
         .await
         .unwrap();
@@ -118,8 +117,7 @@ async fn the_official_index_refuses_hardcoded_proxy_addresses() {
             "a".repeat(64)
         )
     };
-    let complete =
-        "  category: tools\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
+    let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
     let hardcoded = services("      http_proxy: http://172.17.0.1:7899");
     let report = run(repo(&compose(&hardcoded, complete)).path(), true)
         .await

@@ -455,7 +455,12 @@ fn manifest_rules_are_enforced() {
         let err = PluginPackage::parse(&package("  web:\n    image: nginx", manifest)).unwrap_err();
         assert!(err.to_string().contains(needle), "{manifest}: {err}");
     }
-    let no_zh = "services:\n  web:\n    image: nginx\nx-wonton:\n  id: app.test\n  version: 1.0.0\n  \
-                 kind: app\n  title: {en: Test}\n  description: {zh: 测, en: T}\n  permissions: []";
-    assert!(PluginPackage::parse(no_zh).is_err());
+    let with_title = |title: &str| {
+        format!(
+            "services:\n  web:\n    image: nginx\nx-wonton:\n  id: app.test\n  version: 1.0.0\n  \
+             kind: app\n  title: {title}\n  description: {{zh: 测, en: T}}\n  permissions: []"
+        )
+    };
+    assert!(PluginPackage::parse(&with_title("{en: Test}")).is_ok());
+    assert!(PluginPackage::parse(&with_title("{}")).is_err());
 }

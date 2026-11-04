@@ -22,4 +22,4 @@ x-wonton:
   permissions:
     - devices.gpu
   requirements:
-    gpu: required
+    gpu: {need: required}

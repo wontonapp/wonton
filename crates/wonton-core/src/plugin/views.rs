@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use wonton_protocol::{
     CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PermissionLine, PluginAuthor,
-    PluginCategory, PluginDetail, PluginHealth, PluginKind as Kind, PluginState, PluginTrust,
+    PluginDetail, PluginHealth, PluginKind as Kind, PluginState, PluginTrust, RequirementLine,
+    RequirementStatus,
 };
 
 use super::egress::probe::blocks;
@@ -16,13 +17,11 @@ use super::lan::LanPortSpec;
 use super::lan::webui::{self, Switched};
 use super::languages::Languages;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
-use super::manifest::{
-    Access, Arch, GpuRequirement, Manifest, Permission, PluginId, PluginKind, Sso,
-};
+use super::manifest::{Access, LocalizedText, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::package::PluginPackage;
 use super::proxy_auth;
 use super::render::{dry_run, dry_run_with_email};
-use super::store_info::Category;
+use super::requirements;
 
 /// 已安装插件在列表和详情页里显示的信息，装上时从插件包里取出。
 #[derive(Debug, Clone)]
@@ -120,8 +119,7 @@ impl PluginManager {
             about: m.about.as_ref().map(|t| langs.pick_owned(t)),
             icon: installed.icon.clone(),
             screenshots: Vec::new(),
-            category: installed.category,
-            tags: m.tags.clone(),
+            tags: langs.pick_tags(&m.tags),
             kind: installed.kind,
             version: m.version.clone(),
             trust: installed.trust,
@@ -131,8 +129,12 @@ impl PluginManager {
             license: m.license.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: m.permissions.iter().map(permission_line).collect(),
-            requirements: requirement_lines(m),
+            permissions: m
+                .permissions
+                .iter()
+                .map(|p| permission_line(p, langs))
+                .collect(),
+            requirements: requirement_checks(m),
             has_web: m.webui.is_some(),
             installed: Some(installed),
             blocked: None,
@@ -222,10 +224,13 @@ impl PluginManager {
             version: m.version.clone(),
             kind: kind(m.kind),
             icon: icon.map(|i| i.paths()),
-            category: m.category.map(category),
             trust: trust(package.origin.as_ref()),
             author: author(m),
-            permissions: m.permissions.iter().map(permission_line).collect(),
+            permissions: m
+                .permissions
+                .iter()
+                .map(|p| permission_line(p, langs))
+                .collect(),
             notices,
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
@@ -335,7 +340,6 @@ impl PluginManager {
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),
             version: entry.version.clone(),
             kind: manifest.map_or(Kind::Other, |m| kind(m.kind)),
-            category: manifest.and_then(|m| m.category).map(category),
             icon: entry
                 .listed
                 .as_ref()
@@ -403,6 +407,30 @@ pub fn permission_text(permission: &Permission) -> String {
     }
 }
 
+fn permission_text_en(permission: &Permission) -> String {
+    let access = |access: &Access| match access {
+        Access::Read => "Read",
+        Access::Write => "Read and write",
+    };
+    match permission {
+        Permission::StorageShare { name, access: a } => {
+            format!("{} the shared folder {name}", access(a))
+        }
+        Permission::StorageHome { access: a } => format!("{} your private space", access(a)),
+        Permission::Models => "Use the model gateway".to_owned(),
+        Permission::Tools => "Call tools of the core and other plugins".to_owned(),
+        Permission::MatrixBot => "Send and receive messages as a bot".to_owned(),
+        Permission::Notify => "Send you notifications".to_owned(),
+        Permission::OwnerIdentity => "Know your username and email".to_owned(),
+        Permission::NetworkEgress => "Reach the internet and your local network".to_owned(),
+        Permission::NetworkLan => "Open ports on your local network (high permission)".to_owned(),
+        Permission::NetworkHost => "Use the host's network (high permission)".to_owned(),
+        Permission::DevicesGpu => "Use the GPU (high permission)".to_owned(),
+        Permission::Device { path } => format!("Access the host device {path} (high permission)"),
+        Permission::DockerSocket => "Control Docker (highest permission)".to_owned(),
+    }
+}
+
 /// 应用拿不拿得到主人的身份：容器里的变量之外，还有登录时给的 OIDC 声明和代登录模板（ADR-0022）。
 fn reveals_owner_identity(m: &Manifest) -> bool {
     m.gets_owner_identity()
@@ -410,10 +438,14 @@ fn reveals_owner_identity(m: &Manifest) -> bool {
         || proxy_auth::uses_identity(m)
 }
 
-pub(super) fn permission_line(permission: &Permission) -> PermissionLine {
+pub(super) fn permission_line(permission: &Permission, langs: &Languages) -> PermissionLine {
+    let text = LocalizedText::from([
+        ("zh".to_owned(), permission_text(permission)),
+        ("en".to_owned(), permission_text_en(permission)),
+    ]);
     PermissionLine {
         permission: permission.to_string(),
-        text: permission_text(permission),
+        text: langs.pick_owned(&text),
         high: permission.is_high(),
         supported: supported(permission),
         added: false,
@@ -422,29 +454,23 @@ pub(super) fn permission_line(permission: &Permission) -> PermissionLine {
 
 /// 对宿主的要求，一项一行。
 pub(super) fn requirement_lines(manifest: &Manifest) -> Vec<String> {
-    let Some(r) = &manifest.requirements else {
-        return Vec::new();
-    };
-    let mut lines = Vec::new();
-    if let Some(arch) = &r.arch {
-        let names: Vec<&str> = arch
-            .iter()
-            .map(|a| match a {
-                Arch::Amd64 => "amd64",
-                Arch::Arm64 => "arm64",
-            })
-            .collect();
-        lines.push(format!("只支持 {} 架构", names.join("、")));
-    }
-    if let Some(memory) = &r.memory {
-        lines.push(format!("需要 {memory} 内存"));
-    }
-    match r.gpu {
-        Some(GpuRequirement::Required) => lines.push("需要 GPU".to_owned()),
-        Some(GpuRequirement::Optional) => lines.push("有 GPU 时会用".to_owned()),
-        None => {}
-    }
-    lines
+    manifest
+        .requirements
+        .as_ref()
+        .map(requirements::lines)
+        .unwrap_or_default()
+}
+
+/// 详情页的要求和这台主机满不满足。
+pub(super) fn requirement_checks(manifest: &Manifest) -> Vec<RequirementLine> {
+    requirement_lines(manifest)
+        .into_iter()
+        .map(|text| RequirementLine {
+            text,
+            status: RequirementStatus::Unknown,
+            problem: None,
+        })
+        .collect()
 }
 
 /// 不是系统插件时：按来源装的看来源，上传的是本地插件。
@@ -482,7 +508,6 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         about: None,
         icon: None,
         screenshots: Vec::new(),
-        category: None,
         tags: Vec::new(),
         kind: installed.kind,
         version: installed.version.clone(),
@@ -527,25 +552,5 @@ pub(super) fn kind(kind: PluginKind) -> Kind {
         PluginKind::Channel => Kind::Channel,
         PluginKind::Model => Kind::Model,
         PluginKind::System => Kind::System,
-    }
-}
-
-pub(super) fn category(category: Category) -> PluginCategory {
-    match category {
-        Category::Ai => PluginCategory::Ai,
-        Category::Agent => PluginCategory::Agent,
-        Category::Photos => PluginCategory::Photos,
-        Category::Media => PluginCategory::Media,
-        Category::Files => PluginCategory::Files,
-        Category::Documents => PluginCategory::Documents,
-        Category::Productivity => PluginCategory::Productivity,
-        Category::Communication => PluginCategory::Communication,
-        Category::Home => PluginCategory::Home,
-        Category::Network => PluginCategory::Network,
-        Category::Security => PluginCategory::Security,
-        Category::Developer => PluginCategory::Developer,
-        Category::Downloads => PluginCategory::Downloads,
-        Category::Tools => PluginCategory::Tools,
-        Category::System => PluginCategory::System,
     }
 }

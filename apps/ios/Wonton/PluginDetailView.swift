@@ -175,7 +175,9 @@ private struct DetailHeader: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             HStack(alignment: .top, spacing: WontonTheme.spacing.s16) {
                 PluginIconView(
-                    icon: detail.icon, category: detail.category, size: WontonTheme.size.detailIcon, model: model
+                    icon: detail.icon,
+                    size: WontonTheme.size.detailIcon,
+                    model: model
                 )
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                     Text(detail.title)
@@ -263,11 +265,11 @@ private struct DetailSections: View {
         }
         if !detail.requirements.isEmpty {
             DetailSection(title: "要求") {
-                ForEach(detail.requirements, id: \.self) { requirement in
+                ForEach(detail.requirements, id: \.text) { requirement in
                     HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
                         WontonIcon.check.view(size: WontonTheme.size.iconSmall)
                             .foregroundStyle(Color(colors.textSecondary))
-                        Text(requirement)
+                        Text(requirement.text)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
@@ -291,7 +293,7 @@ private struct DetailSections: View {
 
     private var info: [(title: String, value: String)] {
         var rows = [(title: "版本", value: detail.version)]
-        if let category = detail.category { rows.append(("分类", category.name)) }
+        if !detail.tags.isEmpty { rows.append(("标签", detail.tags.joined(separator: "、"))) }
         if let author = detail.author { rows.append(("作者", author.name)) }
         if let license = detail.license { rows.append(("许可证", license)) }
         if let source = detail.source { rows.append(("来源", source)) }

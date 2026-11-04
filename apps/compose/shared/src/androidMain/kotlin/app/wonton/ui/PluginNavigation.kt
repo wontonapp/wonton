@@ -96,7 +96,7 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(task.icon, task.category, WontonTheme.size.taskIcon, plugins)
+        PluginIconImage(task.icon, WontonTheme.size.taskIcon, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
             TaskState(task.operation, task.state, onReview)

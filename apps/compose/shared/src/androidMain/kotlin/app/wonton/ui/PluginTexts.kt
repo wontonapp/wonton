@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.CardLine
 import app.wonton.protocol.PermissionLine
-import app.wonton.protocol.PluginCategory
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTrust
@@ -44,26 +43,6 @@ private const val TAG_ALPHA = 0.14f
 
 /** 正文行高 22、小图标 20，差的一半。 */
 private val LINE_ICON_OFFSET = 1.dp
-
-val PluginCategory.label: String
-    get() = when (this) {
-        PluginCategory.AI -> "AI"
-        PluginCategory.AGENT -> "Agent"
-        PluginCategory.PHOTOS -> "照片"
-        PluginCategory.MEDIA -> "影音"
-        PluginCategory.FILES -> "文件"
-        PluginCategory.DOCUMENTS -> "文档"
-        PluginCategory.PRODUCTIVITY -> "效率"
-        PluginCategory.COMMUNICATION -> "通讯"
-        PluginCategory.HOME -> "智能家居"
-        PluginCategory.NETWORK -> "网络"
-        PluginCategory.SECURITY -> "安全"
-        PluginCategory.DEVELOPER -> "开发"
-        PluginCategory.DOWNLOADS -> "下载"
-        PluginCategory.TOOLS -> "工具"
-        PluginCategory.SYSTEM -> "系统"
-        PluginCategory.OTHER -> "其他"
-    }
 
 /** 失败以后主人下一步该做什么，跟在核心写的原因后面。 */
 val StoreFailure.text: String

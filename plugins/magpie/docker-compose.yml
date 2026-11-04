@@ -80,7 +80,7 @@ x-wonton:
     en: "magpie model gateway: set up providers and keys once, shared by every bot and plugin"
   icon: icon.png
   notices: [LICENSE.icon]
-  category: system
+  tags: { zh: [系统, AI], en: [System, AI] }
   webui:
     service: magpie
     port: 3430

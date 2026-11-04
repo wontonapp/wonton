@@ -26,4 +26,4 @@ x-wonton:
     services: [check]
   permissions: [devices.gpu]
   requirements:
-    gpu: required
+    gpu: {need: required}

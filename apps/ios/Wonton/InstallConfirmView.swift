@@ -134,12 +134,7 @@ private struct PreviewContent: View {
 
     private var header: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            PluginIconView(
-                icon: preview.icon,
-                category: preview.category,
-                size: WontonTheme.size.previewIcon,
-                model: model
-            )
+            PluginIconView(icon: preview.icon, size: WontonTheme.size.previewIcon, model: model)
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 Text(preview.title)
                     .wontonText(WontonTheme.typography.itemTitle)

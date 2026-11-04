@@ -10,7 +10,7 @@ use super::super::manager::{PluginManager, supported};
 use super::super::manifest::{Arch, Manifest, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::package_files::normalize;
-use super::super::views::{author, category, kind, permission_line, requirement_lines};
+use super::super::views::{author, kind, permission_line, requirement_checks};
 use super::index::Listed;
 
 /// 列表和详情里一个插件共有的部分。
@@ -117,8 +117,7 @@ impl PluginManager {
             about: m.about.as_ref().map(|t| langs.pick_owned(t)),
             icon: icon.map(|i| i.paths()),
             screenshots: Vec::new(),
-            category: m.category.map(category),
-            tags: m.tags.clone(),
+            tags: langs.pick_tags(&m.tags),
             kind: kind(m.kind),
             version: m.version.clone(),
             trust: match origin.map(|o| o.trust) {
@@ -131,8 +130,12 @@ impl PluginManager {
             license: m.license.clone(),
             stars,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: m.permissions.iter().map(permission_line).collect(),
-            requirements: requirement_lines(m),
+            permissions: m
+                .permissions
+                .iter()
+                .map(|p| permission_line(p, langs))
+                .collect(),
+            requirements: requirement_checks(m),
             has_web: m.webui.is_some(),
             installed,
             blocked: blocked(m, arch.as_deref()),
@@ -158,8 +161,7 @@ impl PluginManager {
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
             icon: shown.icon.as_ref().map(IconSource::paths),
-            category: m.category.map(category),
-            tags: m.tags.clone(),
+            tags: langs.pick_tags(&m.tags),
             kind: kind(m.kind),
             version: m.version.clone(),
             trust: shown.trust,

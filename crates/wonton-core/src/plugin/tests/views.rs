@@ -1,6 +1,6 @@
 //! 管理接口给 App 的视图：已安装列表、详情、安装预览和图标。
 
-use wonton_protocol::{PluginCategory, PluginKind, PluginState, PluginTrust};
+use wonton_protocol::{PluginKind, PluginState, PluginTrust};
 
 use super::super::fake_docker::FakeDocker;
 use super::super::gallery::Variant;
@@ -16,7 +16,7 @@ pub(super) const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBo
 fn photos(icon: &str) -> PluginPackage {
     let yaml = package(
         "  web:\n    image: nginx:1.27",
-        "  spec: \"0.2\"\n  icon: icon.svg\n  category: photos\n  author: {name: Example}\n  \
+        "  spec: \"0.2\"\n  icon: icon.svg\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  author: {name: Example}\n  \
          release_notes: {zh: 第一版, en: First release}\n  requirements: {memory: 2G}\n  permissions: []",
     )
     .replace("id: app.test", "id: app.photos")
@@ -27,16 +27,6 @@ fn photos(icon: &str) -> PluginPackage {
 
 fn english() -> Languages {
     Languages::from_header(Some("en-US"))
-}
-
-/// 确认页和任务行画占位图标要用分类，要和商店、主屏上的一样。
-#[tokio::test]
-async fn previews_carry_the_category() {
-    let (_docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = manager_with(engine, &dir);
-    let preview = m.preview_install(&photos(ICON), &english()).await.unwrap();
-    assert_eq!(preview.category, Some(PluginCategory::Photos));
 }
 
 #[tokio::test]
@@ -52,7 +42,6 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     };
     assert_eq!(plugin.title, "Photos");
     assert_eq!(plugin.kind, PluginKind::App);
-    assert_eq!(plugin.category, Some(PluginCategory::Photos));
     assert_eq!(plugin.trust, PluginTrust::Local);
     assert!(plugin.removable);
     assert!(
@@ -60,7 +49,21 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
         "{:?}",
         plugin.status
     );
-    assert_eq!(m.installed(&Languages::default()).plugins[0].title, "相册");
+    let chinese = Languages::from_header(Some("zh"));
+    assert_eq!(m.installed(&chinese).plugins[0].title, "相册");
+    assert_eq!(
+        m.installed(&Languages::default()).plugins[0].title,
+        "Photos"
+    );
+    let id = PluginId::parse(&plugin.id).unwrap();
+    assert_eq!(
+        m.installed_detail(&id, &chinese).unwrap().tags,
+        ["相册", "AI"]
+    );
+    assert_eq!(
+        m.installed_detail(&id, &english()).unwrap().tags,
+        ["Photos", "AI"]
+    );
 
     let icon = plugin.icon.clone().expect("有图标");
     let sha = sha256_hex(ICON.as_bytes());
@@ -76,7 +79,7 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
         .installed_detail(&PluginId::parse("app.photos").unwrap(), &english())
         .unwrap();
     assert_eq!(detail.release_notes.as_deref(), Some("First release"));
-    assert_eq!(detail.requirements, ["需要 2G 内存"]);
+    assert_eq!(detail.requirements[0].text, "需要 2G 内存");
     assert_eq!(detail.author.unwrap().name, "Example");
 }
 

@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
-import app.wonton.protocol.PluginCategory
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
@@ -68,7 +67,7 @@ fun StoreRoute(plugins: PluginsState, navigation: PluginNavigation, onBack: () -
 @Composable
 private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onBack: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
-    var category by remember { mutableStateOf<PluginCategory?>(null) }
+    var tag by remember { mutableStateOf<String?>(null) }
     val viewModel = plugins.viewModel
     val store = viewModel.store
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
@@ -110,7 +109,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                             }
                         }
                         if (query.isEmpty()) {
-                            listing(store, category, onCategory = { category = it }) { row(it) }
+                            listing(store, tag, onTag = { tag = it }) { row(it) }
                         } else {
                             results(plugins.core.searchStore(query)) { row(it) }
                         }
@@ -136,25 +135,25 @@ private fun StorePlaceholder(plugins: PluginsState) {
 
 private fun LazyListScope.listing(
     store: StoreListing,
-    category: PluginCategory?,
-    onCategory: (PluginCategory?) -> Unit,
+    tag: String?,
+    onTag: (String?) -> Unit,
     row: @Composable (StoreItem) -> Unit,
 ) {
-    val present = (store.official.plugins + store.community.plugins).mapNotNull { it.category }.distinct()
+    val present = (store.official.plugins + store.community.plugins).flatMap { it.tags }.distinct()
     if (present.size > 1) {
-        item(key = "categories") { CategoryChips(present, category, onCategory) }
+        item(key = "tags") { TagChips(present, tag, onTag) }
     }
-    section("已审核", store.official, category, row)
-    section("社区", store.community, category, row)
+    section("已审核", store.official, tag, row)
+    section("社区", store.community, tag, row)
 }
 
 private fun LazyListScope.section(
     title: String,
     content: StoreSection,
-    category: PluginCategory?,
+    tag: String?,
     row: @Composable (StoreItem) -> Unit,
 ) {
-    val shown = content.plugins.filter { category == null || it.category == category }
+    val shown = content.plugins.filter { tag == null || tag in it.tags }
     if (shown.isEmpty() && content.problem == null) return
     item(key = "header:$title") {
         Text(
@@ -193,18 +192,18 @@ private fun LazyListScope.results(found: List<StoreItem>, row: @Composable (Stor
 }
 
 @Composable
-private fun CategoryChips(
-    categories: List<PluginCategory>,
-    selected: PluginCategory?,
-    onSelect: (PluginCategory?) -> Unit,
+private fun TagChips(
+    tags: List<String>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
 ) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         item { WontonChip("全部", selected == null) { onSelect(null) } }
-        items(categories) { category ->
-            WontonChip(category.label, selected == category) { onSelect(category) }
+        items(tags) { tag ->
+            WontonChip(tag, selected == tag) { onSelect(tag) }
         }
     }
 }
@@ -220,7 +219,7 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PluginIconImage(item.icon, item.category, WontonTheme.size.storeIcon, plugins)
+        PluginIconImage(item.icon, WontonTheme.size.storeIcon, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(
                 item.title,

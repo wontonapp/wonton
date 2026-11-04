@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::provides::Provides;
-use super::store_info::{self, Author, Category};
+pub use super::requirements::{Arch, GpuNeed, Requirements};
+use super::store_info::{self, Author};
 
 /// 插件 ID 的最大长度。网关用它派生子域名，必须放得进一个 DNS 标签。
 pub const MAX_ID_LEN: usize = 63;
@@ -24,7 +25,7 @@ pub enum ManifestError {
     InvalidId(String),
     #[error("版本号 `{0}` 不是语义化版本（如 1.2.3）")]
     InvalidVersion(String),
-    #[error("`{field}` 必须同时提供 zh 和 en 文本")]
+    #[error("`{field}` 至少要写一种语言，写了的语言不能是空的")]
     MissingLocale { field: &'static str },
     #[error("权限 `{0}` 不在规范的权限表里")]
     UnknownPermission(String),
@@ -93,8 +94,10 @@ impl fmt::Display for PluginId {
     }
 }
 
-/// 多语言文本，至少包含 `zh` 和 `en`。
+/// 多语言文本：语言到文字。App 要的语言没有时的回退见 `Languages`。
 pub type LocalizedText = BTreeMap<String, String>;
+/// 按语言分开的标签。
+pub type LocalizedTags = BTreeMap<String, Vec<String>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -314,42 +317,6 @@ pub fn is_secret_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Arch {
-    Amd64,
-    Arm64,
-}
-
-impl Arch {
-    /// 把 Docker 报告的架构名（`x86_64`、`aarch64` 等）归一。
-    pub fn from_docker(arch: &str) -> Option<Self> {
-        match arch {
-            "amd64" | "x86_64" => Some(Self::Amd64),
-            "arm64" | "aarch64" => Some(Self::Arm64),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GpuRequirement {
-    Required,
-    Optional,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Requirements {
-    #[serde(default)]
-    pub arch: Option<Vec<Arch>>,
-    #[serde(default)]
-    pub memory: Option<String>,
-    #[serde(default)]
-    pub gpu: Option<GpuRequirement>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Access {
@@ -500,8 +467,6 @@ pub struct Manifest {
     /// 插件包里的 PNG 或 SVG。
     #[serde(default)]
     pub icon: Option<String>,
-    #[serde(default)]
-    pub category: Option<Category>,
     /// 仓库里的截图，不算插件包的一部分。
     #[serde(default)]
     pub screenshots: Option<Vec<String>>,
@@ -514,8 +479,8 @@ pub struct Manifest {
     /// 插件包里的许可和声明文件。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tags: LocalizedTags,
     #[serde(default)]
     pub about: Option<LocalizedText>,
     #[serde(default)]
@@ -572,6 +537,7 @@ impl Manifest {
         }
         validate_bots(self)?;
         super::gpu::validate(self)?;
+        super::requirements::validate(self)?;
         super::lan::validate(self)?;
         super::provides::validate(self)?;
         super::proxy_auth::validate(self)?;
@@ -701,12 +667,10 @@ pub(super) fn require_locales(
     field: &'static str,
     text: &LocalizedText,
 ) -> Result<(), ManifestError> {
-    let present = |lang: &str| text.get(lang).is_some_and(|value| !value.trim().is_empty());
-    if present("zh") && present("en") {
-        Ok(())
-    } else {
-        Err(ManifestError::MissingLocale { field })
+    if text.is_empty() || text.values().any(|value| value.trim().is_empty()) {
+        return Err(ManifestError::MissingLocale { field });
     }
+    Ok(())
 }
 
 /// 语义化版本：`MAJOR.MINOR.PATCH`，可带 `-预发布` 和 `+构建` 后缀。

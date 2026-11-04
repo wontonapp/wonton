@@ -41,31 +41,6 @@ pub enum PluginKind {
     Other,
 }
 
-/// 商店分类（清单的 `category`，取值见插件规范的“商店信息”）。壳自己翻译分类名。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PluginCategory {
-    Ai,
-    Agent,
-    Photos,
-    Media,
-    Files,
-    Documents,
-    Productivity,
-    Communication,
-    Home,
-    Network,
-    Security,
-    Developer,
-    Downloads,
-    Tools,
-    System,
-    /// 比这个 App 新的分类。
-    #[serde(other)]
-    Other,
-}
-
 /// 核心处理过的一张图片：图标是 PNG，截图是 JPEG。用 `ClientCore::load_plugin_image` 取。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -128,7 +103,6 @@ pub struct InstalledPlugin {
     pub summary: String,
     pub version: String,
     pub kind: PluginKind,
-    pub category: Option<PluginCategory>,
     /// 没有图标时为空，壳画占位图标。
     pub icon: Option<PluginIcon>,
     pub trust: PluginTrust,
@@ -301,7 +275,6 @@ pub struct StoreItem {
     pub title: String,
     pub summary: String,
     pub icon: Option<PluginIcon>,
-    pub category: Option<PluginCategory>,
     pub tags: Vec<String>,
     pub kind: PluginKind,
     /// 来源最新的版本；官方插件是索引里的版本。
@@ -322,6 +295,32 @@ pub struct StoreItem {
     pub blocked: Option<String>,
 }
 
+/// 这台主机满不满足一项要求。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum RequirementStatus {
+    Met,
+    /// 不满足，装不了，`blocked` 写着原因。
+    Unmet,
+    /// 可选的要求不满足：照常装，少点能力（如没有显卡，退回 CPU）。
+    Degraded,
+    /// 查不出来，或者比这个 App 新的状态。
+    #[serde(other)]
+    Unknown,
+}
+
+/// 插件对宿主的一项要求。文字由核心写好，壳照着显示。
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RequirementLine {
+    /// 如“需要 2G 内存”。
+    pub text: String,
+    pub status: RequirementStatus,
+    /// 不满足或查不出来时缺什么，如“这台主机只有 1.5 GB 内存”。
+    pub problem: Option<String>,
+}
+
 /// 插件的详情页：`GET /_wonton/api/store/plugin?source=…`（来源最新的版本）或
 /// `GET /_wonton/api/plugins/{id}`（装着的版本）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,7 +336,6 @@ pub struct PluginDetail {
     pub icon: Option<PluginIcon>,
     /// 截图，按作者给的顺序；取不到的图片显示占位。
     pub screenshots: Vec<PluginImage>,
-    pub category: Option<PluginCategory>,
     pub tags: Vec<String>,
     pub kind: PluginKind,
     /// 详情说的版本。
@@ -360,8 +358,8 @@ pub struct PluginDetail {
     pub release_notes: Option<String>,
     /// 安装时要授予的权限。
     pub permissions: Vec<PermissionLine>,
-    /// 对宿主的要求，一项一行，如“需要 2 GB 内存”。
-    pub requirements: Vec<String>,
+    /// 对宿主的要求和这台主机满不满足。
+    pub requirements: Vec<RequirementLine>,
     /// 装好后有网页（小程序）。
     pub has_web: bool,
     /// 装着时是它的状态；没装时为空。
@@ -413,7 +411,6 @@ pub struct InstallPreview {
     pub version: String,
     pub kind: PluginKind,
     pub icon: Option<PluginIcon>,
-    pub category: Option<PluginCategory>,
     pub trust: PluginTrust,
     /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
     pub provider: Option<String>,
@@ -543,7 +540,6 @@ pub struct PluginTask {
     pub id: String,
     pub title: String,
     pub icon: Option<PluginIcon>,
-    pub category: Option<PluginCategory>,
     pub operation: PluginOperation,
     pub state: PluginTaskState,
 }

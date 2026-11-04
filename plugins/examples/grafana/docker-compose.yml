@@ -48,7 +48,7 @@ x-wonton:
     en: Grafana example plugin that signs you in with your Wonton identity
   icon: icon.png
   notices: [LICENSE.icon]
-  category: tools
+  tags: { zh: [监控], en: [Monitoring] }
   webui:
     service: grafana
     port: 3000

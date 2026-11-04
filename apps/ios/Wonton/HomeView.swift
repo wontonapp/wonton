@@ -257,7 +257,7 @@ private struct LauncherIcon: View {
     var body: some View {
         let size = WontonTheme.size.launcherIcon
         VStack(spacing: WontonTheme.spacing.s4) {
-            PluginIconView(icon: plugin.icon, category: plugin.category, size: size, model: model)
+            PluginIconView(icon: plugin.icon, size: size, model: model)
                 .overlay {
                     if plugin.isBusy {
                         RoundedRectangle(cornerRadius: size * WontonTheme.ratio.pluginIconRadius, style: .continuous)

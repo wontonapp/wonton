@@ -80,12 +80,13 @@ pub fn login(next: &str, failed: bool) -> Response {
     response
 }
 
-/// 插件的中文名，没有就用英文名。
+/// 插件的中文名，没有就用英文名，再没有就用任意一种。
 pub(super) fn title_of(plugin: &PluginView) -> String {
     let title = &plugin.title;
     title
         .get("zh")
         .or_else(|| title.get("en"))
+        .or_else(|| title.values().next())
         .cloned()
         .unwrap_or_default()
 }

@@ -203,7 +203,7 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            PluginIconImage(plugin.icon, plugin.category, size, plugins)
+            PluginIconImage(plugin.icon, size, plugins)
             if (plugin.isBusy) {
                 Box(
                     Modifier.size(size).background(Color.Black.copy(alpha = 0.35f), pluginIconShape(size)),

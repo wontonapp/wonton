@@ -107,7 +107,7 @@ x-wonton:
     en: Default agent that chats as a Matrix bot and reaches models through magpie
   icon: icon.png
   notices: [LICENSE.icon]
-  category: agent
+  tags: { zh: [AI], en: [AI] }
   agent:
     protocol: matrix
   bot:

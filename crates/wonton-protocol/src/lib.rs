@@ -68,10 +68,10 @@ pub use lan::{
 pub use plugin::{
     AddSourceRequest, AddedSource, InstallPreview, InstallRequest, InstallSource, InstalledPlugin,
     InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, PermissionLine, PluginAuthor,
-    PluginCategory, PluginDetail, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
+    PluginDetail, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
     PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, PluginTrust,
-    PluginsViewModel, SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing,
-    StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
+    PluginsViewModel, RequirementLine, RequirementStatus, SourceKind, StorageUsage, StoreFailure,
+    StoreItem, StoreListing, StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

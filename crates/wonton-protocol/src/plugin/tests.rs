@@ -32,7 +32,6 @@ fn installed() -> InstalledPlugin {
         summary: "照片备份、人脸与语义搜索".into(),
         version: "2.0.0".into(),
         kind: PluginKind::App,
-        category: Some(PluginCategory::Photos),
         icon: Some(icon("ab")),
         trust: PluginTrust::Official,
         source: Some("github:example/wonton-immich@v2.0.0".into()),
@@ -60,7 +59,6 @@ fn store() -> StoreListing {
         title: "相册".into(),
         summary: "照片备份、人脸与语义搜索".into(),
         icon: Some(icon("ab")),
-        category: Some(PluginCategory::Photos),
         tags: vec!["immich".into(), "照片".into()],
         kind: PluginKind::App,
         version: "2.1.0".into(),
@@ -127,7 +125,6 @@ fn preview() -> InstallPreview {
         version: "1.0.0".into(),
         kind: PluginKind::App,
         icon: None,
-        category: None,
         trust: PluginTrust::Community,
         provider: Some("github.com/someone/wonton-samba".into()),
         via_index: None,
@@ -171,7 +168,6 @@ fn detail() -> PluginDetail {
         screenshots: vec![PluginImage {
             path: "/_wonton/api/images/ef/screenshot.jpg".into(),
         }],
-        category: Some(PluginCategory::Photos),
         tags: vec![],
         kind: PluginKind::App,
         version: "2.1.0".into(),
@@ -187,7 +183,11 @@ fn detail() -> PluginDetail {
             "读共享文件夹 photos",
             false,
         )],
-        requirements: vec!["需要 2 GB 内存".into()],
+        requirements: vec![RequirementLine {
+            text: "需要 2 GB 内存".into(),
+            status: RequirementStatus::Unmet,
+            problem: Some("这台主机只有 1.5 GB 内存".into()),
+        }],
         has_web: true,
         installed: Some(installed()),
         blocked: None,
@@ -242,7 +242,6 @@ fn interface_types_round_trip_through_json() {
             id: "app.samba".into(),
             title: "Samba".into(),
             icon: None,
-            category: None,
             operation: PluginOperation::Install,
             state: PluginTaskState::Failed {
                 reason: PluginFailure::Changed,
@@ -301,8 +300,12 @@ fn wire_format_is_stable() {
         json!({"state": "degraded", "reason": "x"})
     );
     assert_eq!(
-        serde_json::to_value(PluginCategory::Ai).unwrap(),
-        json!("ai")
+        serde_json::to_value(RequirementStatus::Degraded).unwrap(),
+        json!("degraded")
+    );
+    assert_eq!(
+        serde_json::from_value::<RequirementStatus>(json!("later")).unwrap(),
+        RequirementStatus::Unknown
     );
     assert_eq!(
         serde_json::to_value(PluginFailure::CoreUpgrading).unwrap(),
@@ -354,12 +357,10 @@ fn an_uncertain_task_keeps_its_wire_format() {
 fn values_from_a_newer_core_still_parse() {
     let parse = |value| serde_json::from_value::<StoreItem>(value).unwrap();
     let mut item = serde_json::to_value(&store().official.plugins[0]).unwrap();
-    item["category"] = json!("gardening");
     item["kind"] = json!("widget");
     item["trust"] = json!("verified");
     item["added_in_a_later_version"] = json!(true);
     let item = parse(item);
-    assert_eq!(item.category, Some(PluginCategory::Other));
     assert_eq!(item.kind, PluginKind::Other);
     assert_eq!(item.trust, PluginTrust::Unknown);
 

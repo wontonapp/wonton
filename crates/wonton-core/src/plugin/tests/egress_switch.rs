@@ -67,7 +67,7 @@ async fn turning_the_proxy_on_and_off_rebuilds_only_the_plugins_that_go_out() {
     let restarts = m.egress_restarts(true, &Languages::default()).unwrap();
     let ids: Vec<&str> = restarts.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, ["app.out"]);
-    assert_eq!(restarts[0].title, "测试");
+    assert_eq!(restarts[0].title, "Test");
 
     set_proxy(&m, Some("http://proxy:1"));
     m.apply_egress().await.unwrap();

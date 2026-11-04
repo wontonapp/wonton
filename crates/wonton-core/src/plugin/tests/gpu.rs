@@ -10,7 +10,7 @@ use super::super::fake_docker::FakeDocker;
 use super::super::gpu::fake_host::FakeHost;
 use super::super::gpu::requirement;
 use super::super::languages::Languages;
-use super::super::manifest::GpuRequirement;
+use super::super::manifest::GpuNeed;
 use super::super::names::container_name;
 use super::super::package::PackageError;
 use super::super::render::dry_run;
@@ -61,7 +61,7 @@ fn gpu_notice(preview: &InstallPreview) -> &CardLine {
     preview
         .notices
         .iter()
-        .find(|n| n.text.contains("显卡"))
+        .rfind(|n| n.text.contains("显卡"))
         .unwrap_or_else(|| panic!("预览里没有显卡的说明：{:?}", preview.notices))
 }
 
@@ -166,7 +166,7 @@ async fn required_plugins_do_not_install_without_a_usable_gpu_and_say_which_part
 async fn optional_plugins_install_without_devices_when_there_is_no_gpu() {
     let host = FakeHost::empty();
     let (docker, m, _dir) = on_host(&host).await;
-    let compose = gpu_plugin("  requirements: {gpu: optional}");
+    let compose = gpu_plugin("  requirements: {gpu: {need: optional}}");
     let preview = preview(&m, &compose).await;
     assert_eq!(preview.blocked, None, "optional 的照常装");
     assert!(gpu_notice(&preview).text.contains("不带显卡运行"));
@@ -189,7 +189,7 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
         ("  gpu: {services: [web]}\n  permissions: []", "devices.gpu"),
         ("  permissions: [devices.gpu]", "gpu.services"),
         (
-            "  permissions: []\n  requirements: {gpu: optional}",
+            "  permissions: []\n  requirements: {gpu: {need: optional}}",
             "requirements.gpu",
         ),
         (
@@ -216,16 +216,13 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
         "{err}"
     );
     let ok = parse("", "  gpu: {services: [web]}\n  permissions: [devices.gpu]").unwrap();
-    assert_eq!(requirement(&ok.manifest), Some(GpuRequirement::Required));
+    assert_eq!(requirement(&ok.manifest), Some(GpuNeed::Required));
     let optional = parse(
         "",
-        "  gpu: {services: [web]}\n  permissions: [devices.gpu]\n  requirements: {gpu: optional}",
+        "  gpu: {services: [web]}\n  permissions: [devices.gpu]\n  requirements: {gpu: {need: optional}}",
     )
     .unwrap();
-    assert_eq!(
-        requirement(&optional.manifest),
-        Some(GpuRequirement::Optional)
-    );
+    assert_eq!(requirement(&optional.manifest), Some(GpuNeed::Optional));
     let none = parse("", "  permissions: []").unwrap();
     assert_eq!(requirement(&none.manifest), None);
 }
@@ -238,6 +235,6 @@ fn example_gpu_plugins_are_valid() {
 
     let check = example("gpu-check");
     assert_eq!(check.manifest.id.as_str(), "app.wonton.gpu-check");
-    assert_eq!(requirement(&check.manifest), Some(GpuRequirement::Required));
+    assert_eq!(requirement(&check.manifest), Some(GpuNeed::Required));
     dry_run(&check).unwrap();
 }
