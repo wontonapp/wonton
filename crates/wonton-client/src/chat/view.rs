@@ -1,6 +1,7 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
 use super::confirmation::CardsView;
+use super::read_mark::ReadMark;
 use super::rich;
 use wonton_matrix::{
     EntryKind, Error, LatestMessage, Membership, Message, MessageBody, Recovery, RoomInfo,
@@ -66,10 +67,15 @@ pub(crate) fn summary(body: MessageBody, is_own: bool) -> String {
     }
 }
 
-pub(crate) fn timeline_item(entry: TimelineEntry, cards: &CardsView) -> TimelineItem {
+pub(crate) fn timeline_item(
+    entry: TimelineEntry,
+    cards: &CardsView,
+    read: &ReadMark,
+) -> TimelineItem {
+    let read_by = read.readers_of(&entry.id);
     let content = match entry.kind {
         EntryKind::Message(message) => TimelineContent::Message {
-            message: timeline_message(*message, cards),
+            message: timeline_message(*message, cards, read_by),
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
         EntryKind::DateDivider(timestamp_ms) => TimelineContent::DateDivider { timestamp_ms },
@@ -82,7 +88,7 @@ pub(crate) fn timeline_item(entry: TimelineEntry, cards: &CardsView) -> Timeline
     }
 }
 
-fn timeline_message(message: Message, cards: &CardsView) -> TimelineMessage {
+fn timeline_message(message: Message, cards: &CardsView, read_by: Vec<String>) -> TimelineMessage {
     let card = cards.view_of(&message);
     TimelineMessage {
         event_id: message.event_id.map(|id| id.to_string()),
@@ -108,7 +114,7 @@ fn timeline_message(message: Message, cards: &CardsView) -> TimelineMessage {
             (Some(view), _) => MessageContent::Confirmation { view },
             (None, body) => message_content(body, message.is_own),
         },
-        read_by: message.read_by,
+        read_by,
     }
 }
 
@@ -151,8 +157,12 @@ fn index(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX)
 }
 
-pub(crate) fn timeline_diff(diff: VectorDiff<TimelineEntry>, cards: &CardsView) -> TimelineDiff {
-    let item = |entry| timeline_item(entry, cards);
+pub(crate) fn timeline_diff(
+    diff: VectorDiff<TimelineEntry>,
+    cards: &CardsView,
+    read: &ReadMark,
+) -> TimelineDiff {
+    let item = |entry| timeline_item(entry, cards, read);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
             items: values.into_iter().map(item).collect(),
@@ -248,6 +258,7 @@ mod tests {
                     progress: counters.map(|(current, total)| UploadProgress { current, total }),
                 }),
                 &cards,
+                &ReadMark::default(),
             );
             let TimelineContent::Message { message } = item.content else {
                 panic!("消息必须保留在时间线里");

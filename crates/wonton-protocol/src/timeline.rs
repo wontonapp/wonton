@@ -112,7 +112,7 @@ pub struct TimelineMessage {
     pub body: MessageContent,
     /// 是否被编辑过（显示的是最新内容）。Bot 的流式回复靠编辑消息实现。
     pub edited: bool,
-    /// 读到这条为止的其他人（显示名），用来显示“已读”。
+    /// 读过这条的其他人（显示名）。只有自己发的、别人读到的最后一条才有，壳有就显示“已读”。
     pub read_by: Vec<String>,
 }
 

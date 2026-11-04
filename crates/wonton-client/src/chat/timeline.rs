@@ -9,6 +9,7 @@ use wonton_matrix::{BackPaginationStatus, ChatRoom, TimelineEntry, Vector};
 use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
 
 use super::confirmation::{Cards, CardsView};
+use super::read_mark::ReadMark;
 use super::view::{timeline_diff, timeline_item};
 
 /// 一个房间的时间线订阅。壳循环调用 [`next`](Self::next)，把每一批增量按顺序应用到自己的列表上；不再需要时
@@ -68,6 +69,7 @@ async fn forward(
     let (entries, diffs) = room.entries().await;
     let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
     let mut shown = cards.view();
+    let mut read = ReadMark::of(&entries);
     let mut statuses = std::pin::pin!(room.back_pagination_status().await);
     let mut status = match statuses.next().await {
         Some(status) => back_pagination(status),
@@ -76,7 +78,7 @@ async fn forward(
     let reset = TimelineDiff::Reset {
         items: entries
             .iter()
-            .map(|entry| timeline_item(entry.clone(), &shown))
+            .map(|entry| timeline_item(entry.clone(), &shown, &read))
             .collect(),
     };
     if send(sender, vec![reset], status).is_err() {
@@ -88,11 +90,12 @@ async fn forward(
         let sent = tokio::select! {
             batch = diffs.next() => {
                 let Some(batch) = batch else { return };
-                let mut out = refresh(&entries, &mut shown, &cards);
+                let mut out = refresh(&entries, &mut shown, &cards, &read);
                 for diff in batch {
-                    out.push(timeline_diff(diff.clone(), &shown));
+                    out.push(timeline_diff(diff.clone(), &shown, &read));
                     diff.apply(&mut entries);
                 }
+                out.extend(move_read_mark(&entries, &shown, &mut read));
                 send(sender, out, status)
             }
             next = statuses.next() => {
@@ -108,14 +111,14 @@ async fn forward(
                 if changed.is_err() {
                     return;
                 }
-                let refreshed = refresh(&entries, &mut shown, &cards);
+                let refreshed = refresh(&entries, &mut shown, &cards, &read);
                 if refreshed.is_empty() {
                     continue;
                 }
                 send(sender, refreshed, status)
             }
             () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
-                let refreshed = refresh(&entries, &mut shown, &cards);
+                let refreshed = refresh(&entries, &mut shown, &cards, &read);
                 if refreshed.is_empty() {
                     continue;
                 }
@@ -133,6 +136,7 @@ fn refresh(
     entries: &Vector<TimelineEntry>,
     shown: &mut CardsView,
     cards: &Cards,
+    read: &ReadMark,
 ) -> Vec<TimelineDiff> {
     let now = cards.view();
     let mut diffs = Vec::new();
@@ -140,8 +144,8 @@ fn refresh(
         if !now.is_card(entry) {
             continue;
         }
-        let before = timeline_item(entry.clone(), shown);
-        let after = timeline_item(entry.clone(), &now);
+        let before = timeline_item(entry.clone(), shown, read);
+        let after = timeline_item(entry.clone(), &now, read);
         if before != after {
             diffs.push(TimelineDiff::Set {
                 index: u32::try_from(index).unwrap_or(u32::MAX),
@@ -150,6 +154,29 @@ fn refresh(
         }
     }
     *shown = now;
+    diffs
+}
+
+/// “已读”换了地方时，换下来和换上去的两条各发一个 `Set`。
+fn move_read_mark(
+    entries: &Vector<TimelineEntry>,
+    cards: &CardsView,
+    read: &mut ReadMark,
+) -> Vec<TimelineDiff> {
+    let now = ReadMark::of(entries);
+    if now == *read {
+        return Vec::new();
+    }
+    let diffs = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| read.marks(&entry.id) || now.marks(&entry.id))
+        .map(|(index, entry)| TimelineDiff::Set {
+            index: u32::try_from(index).unwrap_or(u32::MAX),
+            item: timeline_item(entry.clone(), cards, &now),
+        })
+        .collect();
+    *read = now;
     diffs
 }
 
