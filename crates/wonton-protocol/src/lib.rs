@@ -70,8 +70,8 @@ pub use plugin::{
     InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, PermissionLine, PluginAuthor,
     PluginCategory, PluginDetail, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
     PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, PluginTrust,
-    PluginsViewModel, SourceKind, StoreFailure, StoreItem, StoreListing, StoreProblem,
-    StoreSection, UpgradeOffer, UpgradeRequest,
+    PluginsViewModel, SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing,
+    StoreProblem, StoreSection, UpgradeOffer, UpgradeRequest,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

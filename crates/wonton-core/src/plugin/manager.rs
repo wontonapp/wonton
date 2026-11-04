@@ -272,6 +272,17 @@ pub(crate) fn now_secs() -> u64 {
 }
 
 impl PluginManager {
+    /// 存数据的那块盘。查数据目录，不查 `apps_dir`：它要等装第一个插件时才建。
+    pub fn storage_usage(&self) -> std::io::Result<wonton_protocol::StorageUsage> {
+        let data_dir = self.cfg.apps_dir.parent().unwrap_or(&self.cfg.apps_dir);
+        let stats = rustix::fs::statvfs(data_dir)?;
+        let block = stats.f_frsize.max(1);
+        Ok(wonton_protocol::StorageUsage {
+            total_bytes: stats.f_blocks.saturating_mul(block),
+            free_bytes: stats.f_bavail.saturating_mul(block),
+        })
+    }
+
     pub fn new(
         engine: Engine,
         store: Store,

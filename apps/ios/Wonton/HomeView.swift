@@ -8,6 +8,8 @@ struct HomeView: View {
     let plugins: PluginsModel
     let open: (PluginEntry) -> Void
     let showStore: () -> Void
+    let pendingCards: [PendingConfirmation]
+    let openCardRoom: (String) -> Void
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
     @State private var path = NavigationPath()
@@ -61,6 +63,10 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s24) {
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
+                    HomeStatusPanel(
+                        home: model.viewModel, plugins: plugins.viewModel, cards: pendingCards,
+                        showConnection: { path.append(HomeRoute.connection) }, openCardRoom: openCardRoom
+                    )
                 }
             }
             .padding(WontonTheme.spacing.pageInset)

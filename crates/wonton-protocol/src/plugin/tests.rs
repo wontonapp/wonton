@@ -248,6 +248,11 @@ fn interface_types_round_trip_through_json() {
             },
         }],
         egress: EgressViewModel::default(),
+        storage: Some(StorageUsage {
+            total_bytes: 500,
+            free_bytes: 200,
+        }),
+        storage_problem: None,
     };
     assert_eq!(round_trip(&view_model), view_model);
 }

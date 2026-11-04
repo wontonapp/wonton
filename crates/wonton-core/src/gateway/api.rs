@@ -18,6 +18,7 @@
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
+//! | GET | `/_wonton/api/storage` | 存数据的那块盘的总量和可用量（`StorageUsage`） |
 //! | GET | `/_wonton/api/lan` | 局域网设置（`LanSettings`），当场检测一次（ADR-0019） |
 //! | PUT | `/_wonton/api/lan` | 请求体是 `LanChoice`，改选端口开在哪些地址上，重建完返回新的 `LanSettings` |
 //!
@@ -436,6 +437,24 @@ pub async fn uninstall(
     match gateway.plugins.uninstall_detached(id, query.purge).await {
         Ok(report) => Json(report).into_response(),
         Err(e) => install_error(&e),
+    }
+}
+
+pub async fn storage(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    match gateway.plugins.storage_usage() {
+        Ok(usage) => Json(usage).into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "storage_unavailable",
+            &format!("查磁盘空间失败：{e}"),
+        ),
     }
 }
 

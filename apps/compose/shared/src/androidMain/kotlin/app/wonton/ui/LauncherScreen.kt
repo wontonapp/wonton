@@ -36,6 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
+import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginState
 import app.wonton.ui.design.WontonActionSheet
@@ -61,9 +63,11 @@ import app.wonton.ui.icons.WontonIcon
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherScreen(
-    status: HomeStatus,
+    home: HomeViewModel,
     plugins: PluginsState,
     navigation: PluginNavigation,
+    pendingCards: List<PendingConfirmation>,
+    onOpenCardRoom: (String) -> Unit,
     onShowStore: () -> Unit,
     onSettings: () -> Unit,
     onConnection: () -> Unit,
@@ -75,7 +79,7 @@ fun LauncherScreen(
                 WontonIconButton(WontonIcon.Settings, "设置", onSettings)
                 // 连不上时换成警告；正在连时变浅。
                 val colors = WontonTheme.colors
-                when (status) {
+                when (home.status) {
                     is HomeStatus.Disconnected ->
                         WontonIconButton(WontonIcon.Warning, "连接", onConnection, colors.danger.toColor())
                     is HomeStatus.Connecting ->
@@ -113,6 +117,9 @@ fun LauncherScreen(
                         item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }
                     }
                     items(installed.plugins, key = { it.id }) { LauncherIcon(it, plugins, navigation) }
+                    item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
+                        HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
+                    }
                 }
             }
         }

@@ -96,6 +96,7 @@ private struct MainView: View {
                 .tag(AppTab.chat)
             HomeView(
                 model: home, plugins: plugins, open: open, showStore: { tab = .store },
+                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 devWebURL: Launch.devWebURL
             )
             .toolbar(.hidden, for: .tabBar)

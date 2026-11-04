@@ -143,7 +143,16 @@ fun WontonApp(
             WithPendingCards(elsewhere, openCardRoom) {
                 when (tab) {
                     CHAT -> ChatRoute(core, chat)
-                    HOME -> HomeRoute(core, home, plugins, homePlugins, appearance, onShowStore = { tab = STORE })
+                    HOME -> HomeRoute(
+                        core,
+                        home,
+                        plugins,
+                        homePlugins,
+                        appearance,
+                        pendingCards = chatView.pendingConfirmations,
+                        onOpenCardRoom = openCardRoom,
+                        onShowStore = { tab = STORE },
+                    )
                     else -> StoreRoute(plugins, storePlugins)
                 }
             }

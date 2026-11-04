@@ -16,7 +16,8 @@ use tokio::sync::watch;
 use wonton_protocol::{
     CoreError, EgressViewModel, HomeFailure, HomeStatus, InstallPreview, InstallSource,
     InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem,
-    PluginState, PluginTaskState, PluginsViewModel, ProxySettings, StoreItem, StoreListing,
+    PluginState, PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage, StoreItem,
+    StoreListing,
 };
 
 use crate::home::HomeLink;
@@ -117,6 +118,7 @@ impl PluginsLink {
             return;
         }
         self.spawn_installed();
+        self.spawn_storage();
         // 商店留下的问题，已安装列表取到了也清不掉，页面上的重试不连它一起取就没有用。
         if *lock(&self.problem_of) == Some(Listing::Store) {
             self.spawn_store(false);
@@ -201,6 +203,9 @@ impl PluginsLink {
     /// 隧道建不起来：原因直接写进去。不能靠发请求来报，请求本身又会触发重连。
     fn report_home_failure(&self, problem: PluginProblem) {
         self.view.send_if_modified(|view| {
+            // 连不上时不知道现在还剩多少，不留着上次的数字。
+            view.storage = None;
+            view.storage_problem = None;
             if view.problem.as_ref() == Some(&problem) {
                 return false;
             }
@@ -220,6 +225,8 @@ impl PluginsLink {
             view.store = None;
             view.problem = None;
             view.egress = EgressViewModel::default();
+            view.storage = None;
+            view.storage_problem = None;
             view.tasks
                 .retain(|task| task.state == PluginTaskState::Running);
             for task in &mut view.tasks {
@@ -230,6 +237,32 @@ impl PluginsLink {
 
     fn is_current(&self, generation: u64) -> bool {
         self.generation.load(Ordering::SeqCst) == generation
+    }
+
+    /// 取磁盘空间放进 ViewModel。连不上不算它的问题：主屏的连接那一行已经说了。
+    fn spawn_storage(self: &Arc<Self>) {
+        let generation = self.generation.load(Ordering::SeqCst);
+        let link = Arc::clone(self);
+        self.runtime.spawn(async move {
+            let fetched: Result<StorageUsage, PluginProblem> = match link.api() {
+                Ok(api) => api.get(&["storage"], &[], READ_TIMEOUT).await,
+                Err(problem) => Err(problem),
+            };
+            if !link.is_current(generation) {
+                return;
+            }
+            link.view.send_modify(|view| match fetched {
+                Ok(usage) => {
+                    view.storage = Some(usage);
+                    view.storage_problem = None;
+                }
+                Err(problem) => {
+                    view.storage = None;
+                    view.storage_problem =
+                        (problem.reason != PluginFailure::TransportUnavailable).then_some(problem);
+                }
+            });
+        });
     }
 
     /// 取已安装列表放进 ViewModel，有插件正在变化时开始盯着。其间换了服务器时，成败都不算数。

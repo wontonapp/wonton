@@ -33,6 +33,28 @@ pub(super) fn lan() -> Lan {
 }
 
 #[tokio::test]
+async fn storage_needs_the_owner_and_reports_the_disk() {
+    let h = Harness::start(None).await;
+    assert_eq!(
+        h.get(CORE, "/_wonton/api/storage", &[]).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let bearer = format!("Bearer {TOKEN}");
+    let storage = h
+        .get(
+            CORE,
+            "/_wonton/api/storage",
+            &[("authorization", bearer.as_str())],
+        )
+        .await;
+    assert_eq!(storage.status, StatusCode::OK, "{}", storage.text());
+    let storage = storage.json();
+    let total = storage["total_bytes"].as_u64().unwrap();
+    let free = storage["free_bytes"].as_u64().unwrap();
+    assert!(total > 0 && free <= total, "{storage}");
+}
+
+#[tokio::test]
 async fn lan_settings_need_the_owner_and_report_bad_choices_by_kind() {
     let h = Harness::start(None).await;
     assert_eq!(

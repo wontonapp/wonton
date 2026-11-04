@@ -472,6 +472,18 @@ pub struct PluginsViewModel {
     pub tasks: Vec<PluginTask>,
     /// 出网代理的设置页。
     pub egress: EgressViewModel,
+    /// 家里服务器存数据的那块盘；还没取到、或者连不上时为空，这时不知道还剩多少。
+    pub storage: Option<StorageUsage>,
+    /// 连着家里的服务器却查不到磁盘空间的原因。
+    pub storage_problem: Option<PluginProblem>,
+}
+
+/// 家里服务器存数据的那块盘。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct StorageUsage {
+    pub total_bytes: u64,
+    pub free_bytes: u64,
 }
 
 /// 和插件有关的操作失败了。

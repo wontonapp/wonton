@@ -18,6 +18,7 @@ import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.HomeFailure
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PairingStatus
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonIconButton
@@ -41,6 +42,8 @@ fun HomeRoute(
     plugins: PluginsState,
     navigation: PluginNavigation,
     appearance: AppearanceViewModel,
+    pendingCards: List<PendingConfirmation>,
+    onOpenCardRoom: (String) -> Unit,
     onShowStore: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
@@ -62,9 +65,11 @@ fun HomeRoute(
         page == HomePage.EGRESS -> EgressPage(plugins, onBack = { page = HomePage.CONNECTION })
         else -> PluginPages(plugins, navigation) {
             LauncherScreen(
-                viewModel.status,
+                viewModel,
                 plugins,
                 navigation,
+                pendingCards,
+                onOpenCardRoom,
                 onShowStore,
                 onSettings = { page = HomePage.SETTINGS },
                 onConnection = { page = HomePage.CONNECTION },
