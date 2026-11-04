@@ -53,6 +53,7 @@ impl PluginsLink {
             source,
             digest: preview.digest,
             grant,
+            devices: Vec::new(),
             lan_webui,
         };
         let link = self.clone();
@@ -79,6 +80,7 @@ impl PluginsLink {
             PluginOperation::Upgrade,
         )?;
         let request = UpgradeRequest {
+            devices: Vec::new(),
             source: None,
             digest: preview.digest,
             grant,

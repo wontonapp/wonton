@@ -4,9 +4,9 @@
 use std::sync::Arc;
 
 use wonton_protocol::{
-    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PermissionLine, PluginAuthor,
-    PluginDetail, PluginHealth, PluginKind as Kind, PluginState, PluginTrust, RequirementLine,
-    RequirementStatus, TabDisplay,
+    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PermissionLine, PermissionRisk,
+    PluginAuthor, PluginDetail, PluginHealth, PluginKind as Kind, PluginState, PluginTrust,
+    RequirementLine, RequirementStatus, TabDisplay,
 };
 
 use super::egress::probe::blocks;
@@ -237,6 +237,7 @@ impl PluginManager {
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
             missing_profile: None,
+            devices: None,
             lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
         })
     }
@@ -442,6 +443,17 @@ fn reveals_owner_identity(m: &Manifest) -> bool {
         || proxy_auth::uses_identity(m)
 }
 
+fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
+    match permission {
+        Permission::NetworkLan | Permission::DevicesGpu | Permission::Device { .. } => {
+            Some(PermissionRisk::High)
+        }
+        Permission::NetworkHost => Some(PermissionRisk::VeryHigh),
+        Permission::DockerSocket => Some(PermissionRisk::Highest),
+        _ => None,
+    }
+}
+
 pub(super) fn permission_line(permission: &Permission, langs: &Languages) -> PermissionLine {
     let text = LocalizedText::from([
         ("zh".to_owned(), permission_text(permission)),
@@ -450,7 +462,8 @@ pub(super) fn permission_line(permission: &Permission, langs: &Languages) -> Per
     PermissionLine {
         permission: permission.to_string(),
         text: langs.pick_owned(&text),
-        high: permission.is_high(),
+        risk: permission_risk(permission),
+        notice: None,
         supported: supported(permission),
         added: false,
     }

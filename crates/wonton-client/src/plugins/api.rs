@@ -269,6 +269,7 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         Some("source_unavailable") => PluginFailure::SourceUnavailable,
         Some("not_found" | "not_installed") => PluginFailure::NotFound,
         Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
+        Some("device_unavailable") => PluginFailure::DeviceUnavailable,
         Some("conflict") => PluginFailure::Conflict,
         Some("invalid_input") => PluginFailure::Invalid,
         Some("lan_unavailable") => PluginFailure::LanUnavailable,
@@ -331,6 +332,7 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         }
         PluginFailure::Unsupported
         | PluginFailure::Conflict
+        | PluginFailure::DeviceUnavailable
         | PluginFailure::LanUnavailable
         | PluginFailure::EgressProxyUnavailable
         | PluginFailure::OwnerProfileIncomplete

@@ -84,11 +84,11 @@ pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
 pub use plugin::{
     AddSourceRequest, AddedSource, BotSwitch, InstallPreview, InstallRequest, InstallSource,
     InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, PermissionLine,
-    PluginAuthor, PluginDetail, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
-    PluginLimits, PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState,
-    PluginTrust, PluginsViewModel, RequirementLine, RequirementStatus, SourceKind, StorageUsage,
-    StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, ToolAccess, ToolPolicyEntry,
-    ToolPolicyView, UpgradeOffer, UpgradeRequest,
+    PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure, PluginHealth,
+    PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation, PluginProblem, PluginState,
+    PluginTask, PluginTaskState, PluginTrust, PluginsViewModel, RequirementLine, RequirementStatus,
+    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, UpgradeOffer, UpgradeRequest,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

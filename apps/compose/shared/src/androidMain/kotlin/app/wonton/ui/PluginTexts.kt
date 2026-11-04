@@ -68,6 +68,7 @@ val PluginFailure.nextStep: String
         PluginFailure.UNSUPPORTED -> "家里的服务器不支持这个应用，先升级家里的服务器。"
         PluginFailure.CONFLICT -> "它已经装了，或者正在安装、升级、卸载，等那边做完。"
         PluginFailure.INVALID -> "应用包不合法，请联系应用的作者。"
+        PluginFailure.DEVICE_UNAVAILABLE -> "选择的设备不可用，重新查看设备后再试。"
         PluginFailure.LAN_UNAVAILABLE -> "在局域网设置里选好网卡或地址后再试。"
         PluginFailure.CORE_UPGRADING -> "家里的服务器正在升级，升级结束后再试。"
         PluginFailure.EGRESS_PROXY_UNAVAILABLE -> "检查家里服务器上的代理，或者在出网代理设置里改地址后再试。"
@@ -176,20 +177,21 @@ fun NoticeLines(lines: List<CardLine>) {
     }
 }
 
-/** 要授予的一项权限：高权限醒目，升级时新申请的、核心不支持的标出来。 */
+/** 要授予的一项权限：有风险级别时醒目，升级时新申请的、核心不支持的标出来。 */
 @Composable
 fun PermissionRow(line: PermissionLine) {
     val colors = WontonTheme.colors
+    val risky = line.risk != null
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         LineIcon(
-            if (line.high) WontonIcon.WarningFill else WontonIcon.Shield,
-            (if (line.high) colors.warning else colors.textSecondary).toColor(),
+            if (risky) WontonIcon.WarningFill else WontonIcon.Shield,
+            (if (risky) colors.warning else colors.textSecondary).toColor(),
         )
         Text(
             line.text,
             Modifier.weight(1f),
             style = WontonTheme.typography.body,
-            color = (if (line.high) colors.warning else colors.textPrimary).toColor(),
+            color = (if (risky) colors.warning else colors.textPrimary).toColor(),
         )
         if (line.added) Tag("新增", colors.primary)
         if (!line.supported) Tag("不支持", colors.danger)

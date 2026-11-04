@@ -83,6 +83,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
             .iter()
             .map(|p| p.permission.clone())
             .collect(),
+        devices: Vec::new(),
         lan_webui: false,
     };
     m.install_source(&request).await.unwrap();
@@ -92,6 +93,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
 async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
     let preview = m.preview_upgrade(&id(), None, &zh()).await?;
     let request = UpgradeRequest {
+        devices: Vec::new(),
         source: None,
         digest: preview.digest,
         grant: preview
@@ -233,6 +235,7 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
     let preview = m.preview_upgrade(&id(), None, &zh()).await.unwrap();
     assert!(preview.permissions.iter().all(|p| p.added));
     let not_confirmed = UpgradeRequest {
+        devices: Vec::new(),
         source: None,
         digest: preview.digest.clone(),
         grant: Vec::new(),

@@ -112,7 +112,11 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
         preview.blocked.as_deref(),
         Some("核心还不支持权限 network.host")
     );
-    assert!(preview.permissions[0].high && !preview.permissions[0].supported);
+    assert_eq!(
+        preview.permissions[0].risk,
+        Some(wonton_protocol::PermissionRisk::VeryHigh)
+    );
+    assert!(!preview.permissions[0].supported);
 }
 
 #[tokio::test]

@@ -209,15 +209,17 @@ pub fn preview(id: &str) -> InstallPreview {
         permissions: vec![PermissionLine {
             permission: "storage.share.photos:read".to_owned(),
             text: "读共享文件夹 photos".to_owned(),
-            high: false,
+            risk: None,
+            notice: None,
             supported: true,
             added: false,
         }],
         notices: Vec::new(),
         upgrade_from: None,
         release_notes: None,
-        blocked: None,
         missing_profile: None,
+        blocked: None,
+        devices: None,
         lan_webui: None,
     }
 }

@@ -197,6 +197,10 @@ async fn failures_keep_their_reason() {
             PluginFailure::Conflict,
         ),
         (
+            core_error(422, "device_unavailable", "设备不可用"),
+            PluginFailure::DeviceUnavailable,
+        ),
+        (
             core_error(503, "source_unavailable", "连不上 GitHub"),
             PluginFailure::SourceUnavailable,
         ),

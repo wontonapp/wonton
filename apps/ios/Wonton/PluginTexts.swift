@@ -29,6 +29,7 @@ extension PluginFailure {
         case .unsupported: return "家里的服务器不支持这个应用，先升级家里的服务器。"
         case .conflict: return "它已经装了，或者正在安装、升级、卸载，等那边做完。"
         case .invalid: return "应用包不合法，请联系应用的作者。"
+        case .deviceUnavailable: return "选择的设备不可用，重新查看设备后再试。"
         case .lanUnavailable: return "在局域网设置里选好网卡或地址后再试。"
         case .coreUpgrading: return "家里的服务器正在升级，升级结束后再试。"
         case .egressProxyUnavailable: return "检查家里服务器上的代理，或者在出网代理设置里改地址后再试。"
@@ -153,19 +154,20 @@ struct NoticeLines: View {
     }
 }
 
-/// 要授予的一项权限：高权限醒目，升级时新申请的、核心不支持的标出来。
+/// 要授予的一项权限：有风险级别时醒目，升级时新申请的、核心不支持的标出来。
 struct PermissionRow: View {
     let line: PermissionLine
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
+        let risky = line.risk != nil
         HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
-            (line.high ? WontonIcon.warningFill : WontonIcon.shield)
+            (risky ? WontonIcon.warningFill : WontonIcon.shield)
                 .view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(line.high ? colors.warning : colors.textSecondary))
+                .foregroundStyle(Color(risky ? colors.warning : colors.textSecondary))
             Text(line.text)
                 .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(line.high ? colors.warning : colors.textPrimary))
+                .foregroundStyle(Color(risky ? colors.warning : colors.textPrimary))
             Spacer(minLength: 0)
             if line.added { Tag(text: "新增", tint: colors.primary) }
             if !line.supported { Tag(text: "不支持", tint: colors.danger) }

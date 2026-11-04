@@ -71,6 +71,20 @@ pub struct PluginAuthor {
     pub url: Option<String>,
 }
 
+/// 权限的风险级别。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionRisk {
+    High,
+    VeryHigh,
+    Highest,
+    /// 比这个 App 新的核心给的级别，按最高风险处理。
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
 /// 要授予插件的一项权限。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -79,12 +93,32 @@ pub struct PermissionLine {
     pub permission: String,
     /// 给主人看的说明，如“读共享文件夹 photos”。
     pub text: String,
-    /// 高权限（宿主网络、设备、GPU、Docker socket），醒目显示。
-    pub high: bool,
+    /// 风险级别；普通权限为空，不认识的级别落到 [`PermissionRisk::Other`]。
+    #[serde(default)]
+    pub risk: Option<PermissionRisk>,
+    /// 这项权限的风险提示；没有额外提示时为空。
+    #[serde(default)]
+    pub notice: Option<String>,
     /// 核心支持这项权限；不支持时插件装不了。
     pub supported: bool,
     /// 升级时新申请的，标出来。
     pub added: bool,
+}
+
+/// 预览中可供主人选择、交给插件服务的一个宿主设备。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginDevice {
+    /// 核心用来识别设备的稳定 ID。
+    pub id: String,
+    /// 给主人的设备名称。
+    pub name: String,
+    /// 设备在容器里的目标路径。
+    pub target: String,
+    /// 这个设备要交给的服务。
+    pub service: String,
+    /// 是否可以不选择。
+    pub optional: bool,
 }
 
 /// `GET /_wonton/api/plugins` 的响应。
@@ -455,7 +489,10 @@ pub struct InstallPreview {
     pub blocked: Option<String>,
     /// 要先填资料才能装时的说明，确认按钮这时不可点。壳显示这句话和去填资料的按钮，填完重新预览。
     pub missing_profile: Option<String>,
-    /// 有要主人打开开关才开的局域网端口时是开关的情况，确认页上显示；主人的选择放在 `lan_webui` 请求字段带回。
+    /// 可供主人选择、交给插件服务的宿主设备；不需要选择时为空。
+    #[serde(default)]
+    pub devices: Option<Vec<PluginDevice>>,
+    /// 有要主人打开开关才开的局域网端口时是开关的情况；主人的选择放在请求的 `lan_webui` 字段带回。
     pub lan_webui: Option<LanWebuiOffer>,
 }
 
@@ -469,6 +506,9 @@ pub struct InstallRequest {
     pub digest: String,
     /// 主人确认的权限：预览里列出的全部权限，少一项多一项都装不上。
     pub grant: Vec<String>,
+    /// 主人选择的设备 ID；没有设备选择时为空。
+    #[serde(default)]
+    pub devices: Vec<String>,
     /// 打开开关 `lan_webui`。预览没有 [`LanWebuiOffer`] 时不起作用。
     #[serde(default)]
     pub lan_webui: bool,
@@ -478,6 +518,9 @@ pub struct InstallRequest {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct UpgradeRequest {
+    /// 主人选择的设备 ID；没有设备选择时为空。
+    #[serde(default)]
+    pub devices: Vec<String>,
     /// 预览给的 `source`。主人没有主动选来源、只是升到提示的版本时为空。
     #[serde(default)]
     pub source: Option<String>,
@@ -552,6 +595,8 @@ pub enum PluginFailure {
     Conflict,
     /// 插件包不合法。
     Invalid,
+    /// 选择的设备在这台主机上不可用。
+    DeviceUnavailable,
     /// 家里的服务器选不出局域网地址，申请了 `network.lan` 的插件装不上：要主人在局域网设置里选网卡或地址。
     LanUnavailable,
     /// 家里的服务器正在升级，升级结束前不能动插件（ADR-0025）。

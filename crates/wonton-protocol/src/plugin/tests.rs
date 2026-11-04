@@ -15,11 +15,12 @@ fn icon(hash: &str) -> PluginIcon {
     }
 }
 
-fn permission(permission: &str, text: &str, high: bool) -> PermissionLine {
+fn permission(permission: &str, text: &str, risk: Option<PermissionRisk>) -> PermissionLine {
     PermissionLine {
         permission: permission.into(),
         text: text.into(),
-        high,
+        risk,
+        notice: None,
         supported: true,
         added: false,
     }
@@ -145,9 +146,13 @@ fn preview() -> InstallPreview {
             permission(
                 "storage.share.documents:write",
                 "读写共享文件夹 documents",
-                false,
+                None,
             ),
-            permission("network.host", "使用宿主的网络（高权限）", true),
+            permission(
+                "network.host",
+                "使用宿主的网络（很高权限）",
+                Some(PermissionRisk::VeryHigh),
+            ),
         ],
         notices: vec![CardLine {
             text: "云吞没有审核过这个插件，代码和镜像由 someone 提供".into(),
@@ -155,8 +160,15 @@ fn preview() -> InstallPreview {
         }],
         upgrade_from: None,
         release_notes: None,
-        blocked: None,
         missing_profile: None,
+        blocked: None,
+        devices: Some(vec![PluginDevice {
+            id: "usb-1".into(),
+            name: "Zigbee 棒".into(),
+            target: "/dev/zigbee".into(),
+            service: "homeassistant".into(),
+            optional: true,
+        }]),
         lan_webui: Some(LanWebuiOffer {
             ports: vec![LanPort {
                 port: 8080,
@@ -194,7 +206,7 @@ fn detail() -> PluginDetail {
         permissions: vec![permission(
             "storage.share.photos:read",
             "读共享文件夹 photos",
-            false,
+            None,
         )],
         requirements: vec![RequirementLine {
             text: "需要 2 GB 内存".into(),
@@ -236,10 +248,12 @@ fn interface_types_round_trip_through_json() {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
         grant: vec!["network.host".into()],
+        devices: vec!["usb-1".into()],
         lan_webui: true,
     };
     assert_eq!(round_trip(&request), request);
     let upgrade = UpgradeRequest {
+        devices: vec!["serial-1".into()],
         source: Some("upload:sha256:abc".into()),
         digest: preview().digest,
         grant: vec![],
@@ -357,6 +371,7 @@ fn wire_format_is_stable() {
     }))
     .unwrap();
     assert_eq!(request.grant, ["models"]);
+    assert!(request.devices.is_empty(), "旧 App 不带设备选择，按空算");
     assert!(!request.lan_webui, "旧 App 不带这个字段，按关算");
     assert_eq!(
         serde_json::to_value(PluginTaskState::Failed {
@@ -370,9 +385,50 @@ fn wire_format_is_stable() {
         serde_json::to_value(PluginFailure::EgressProxyUnavailable).unwrap(),
         json!("egress_proxy_unavailable")
     );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::DeviceUnavailable).unwrap(),
+        json!("device_unavailable")
+    );
 }
 
-/// 核心可能比 App 新：不认识的取值落到兜底的变体，多出来的字段被忽略，整份列表照样能读。
+/// 权限风险字段兼容旧 App，并把未知级别落到 `Other`。
+#[test]
+fn permission_risk_keeps_unknown_values_safe() {
+    let old_line: PermissionLine = serde_json::from_value(json!({
+        "permission": "models",
+        "text": "使用模型网关",
+        "supported": true,
+        "added": false,
+    }))
+    .unwrap();
+    assert_eq!(old_line.risk, None);
+    let future_line: PermissionLine = serde_json::from_value(json!({
+        "permission": "network.host",
+        "text": "使用宿主的网络",
+        "risk": "critical",
+        "supported": true,
+        "added": false,
+    }))
+    .unwrap();
+    assert_eq!(future_line.risk, Some(PermissionRisk::Other));
+}
+
+#[test]
+fn permission_risk_and_notice_keep_wire_values() {
+    let line = PermissionLine {
+        permission: "docker.socket".into(),
+        text: "访问 Docker socket".into(),
+        risk: Some(PermissionRisk::Highest),
+        notice: Some("这个插件能控制整台主机".into()),
+        supported: true,
+        added: true,
+    };
+    assert_eq!(round_trip(&line), line);
+    assert_eq!(
+        serde_json::to_value(PermissionRisk::VeryHigh).unwrap(),
+        json!("very_high")
+    );
+}
 #[test]
 fn an_uncertain_task_keeps_its_wire_format() {
     assert_eq!(
