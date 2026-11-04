@@ -16,6 +16,7 @@ pub mod upstream;
 
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, JsonObject, MetaObject, Tool,
@@ -36,6 +37,9 @@ pub use confirm::{AnswerError, Confirmations, Notifier};
 pub use notifier::NoMatrix;
 pub use server::Caller;
 use upstream::{CallError, UncertainKind, Upstreams};
+
+/// 卡片过期之后，会话还要留多久：确认了才开始执行，执行的时间也算在这里。
+const SESSION_IDLE_AFTER_CARD: Duration = Duration::from_secs(3600);
 
 /// 挂到网关上的 Streamable HTTP 服务。
 pub type McpService = StreamableHttpService<server::Handler, LocalSessionManager>;
@@ -218,9 +222,13 @@ impl Bus {
         let config = StreamableHttpServerConfig::default()
             .with_allowed_hosts([PLUGIN_MCP_HOST])
             .enforce_origin_validation();
+        // rmcp 按会话上的消息算空闲（默认 300 秒），等确认时没有消息，调用会被切断，Agent 拿不到结果。
+        let mut sessions = LocalSessionManager::default();
+        sessions.session_config.keep_alive =
+            Some(self.confirmations.ttl() + SESSION_IDLE_AFTER_CARD);
         StreamableHttpService::new(
             move || Ok(server::Handler::new(bus.clone())),
-            LocalSessionManager::default().into(),
+            sessions.into(),
             config,
         )
     }

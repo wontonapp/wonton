@@ -115,6 +115,10 @@ impl Confirmations {
         }
     }
 
+    pub fn ttl(&self) -> Duration {
+        self.ttl
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Slot>> {
         self.slots.lock().expect("确认表锁中毒")
     }
