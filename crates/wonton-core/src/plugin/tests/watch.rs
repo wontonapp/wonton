@@ -8,7 +8,7 @@ use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
 use super::super::{Health, PluginManager, PluginStatus};
 use super::egress::serve;
-use super::manager::manager_with;
+use super::manager::{manager_in_container, manager_with};
 use super::package;
 
 async fn app() -> String {
@@ -62,6 +62,33 @@ async fn a_container_restarting_at_startup_recovers_when_it_becomes_healthy() {
         m.route("app-test").unwrap().upstream.is_some(),
         "容器好了，网页也要能打开"
     );
+}
+
+#[tokio::test]
+async fn the_core_rejoins_the_network_of_a_plugin_that_crashes_without_it() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let network = "wonton-app-test";
+    manager_in_container(engine.clone(), &dir)
+        .install(
+            &package("  app:\n    image: nginx\n", "  permissions: []"),
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // 核心容器重建后不在插件网络里，靠核心的内部别名才起得来的插件一直崩。
+    engine
+        .disconnect_network(network, "wonton-core")
+        .await
+        .unwrap();
+    docker.add_container("wonton-core", "app.other");
+    docker.set_state(&container_name("app-test", "app"), restarting());
+    let m = manager_in_container(engine, &dir);
+    m.restore().await.unwrap();
+
+    assert!(degraded(&m), "{:?}", seen(&m));
+    assert!(docker.endpoint(network, "wonton-core").is_some());
 }
 
 #[tokio::test]

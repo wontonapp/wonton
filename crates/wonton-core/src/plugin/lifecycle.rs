@@ -572,12 +572,8 @@ impl PluginManager {
         package: &PluginPackage,
         record: &InstalledRecord,
     ) -> Result<Deployed, InstallError> {
-        let health = self.check_containers(package).await?;
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
-        self.check_bot(manifest).await?;
-        let generated = self.check_secrets(manifest).await?;
-        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
         let network = self.cfg.instance.network(&slug);
         let expected = self.network_reach(manifest);
         let actual = self.engine.network_reach(&network).await?;
@@ -588,9 +584,14 @@ impl PluginManager {
                 describe_reach(Some(expected))
             )));
         }
+        // 先接核心再看容器：靠核心的内部别名才起得来的插件，核心不接回去就一直崩，先看容器的话两边互相等。
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
+        let health = self.check_containers(package).await?;
+        self.check_bot(manifest).await?;
+        let generated = self.check_secrets(manifest).await?;
+        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
             let ctx = self
                 .install_context(manifest, Some(secret), generated)
