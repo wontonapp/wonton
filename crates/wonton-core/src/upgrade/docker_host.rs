@@ -432,9 +432,9 @@ impl Host for DockerHost {
                 Err(BollardError::DockerResponseServerError {
                     status_code: 404, ..
                 }) => Ok(None),
-                // containerd 存储里，索引对同一架构列了几个变体（Tuwunel 的 amd64、amd64/v2、amd64/v3）时，这个接口回 200，
-                // 但 Config 和 RootFS 是空的，bollard 解析失败（实测 Docker 29.7.2、bollard 0.21.1）。镜像确实在本机，
-                // 这样的只有系统服务的镜像，它们只查在不在。
+                // containerd 存储里，索引对同一架构列了几个变体（Tuwunel 的 amd64、amd64/v2、amd64/v3），本机只有别的变体时，
+                // 这个接口回 200，但 Config 和 RootFS 是空的，bollard 解析失败（实测 Docker 29.7.2、bollard 0.21.1）。
+                // 容器照样起得来，不用为此多拉一次。这样的只有系统服务的镜像，它们只查在不在。
                 Err(BollardError::JsonDataError { .. }) => Ok(Some(ImageInfo::default())),
                 Err(e) => Err(failed(bollard_message(e))),
             }

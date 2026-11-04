@@ -188,6 +188,10 @@ impl Engine {
     pub async fn ensure_image(&self, image: &str, policy: PullPolicy) -> Result<()> {
         let present = match self.docker.inspect_image(image).await {
             Ok(_) => true,
+            // containerd 存储里，镜像索引对同一架构列了几个变体，本机只有别的变体（比如别的工具按 `--platform linux/amd64`
+            // 拉过）时，这个接口回 200，但 Config 和 RootFS 是空的，bollard 解析失败（实测 Docker 29.7.2、bollard 0.21.1）。
+            // 拉一次就有这台主机要的变体，之后才读得到镜像自带的健康检查。
+            Err(BollardError::JsonDataError { .. }) => false,
             Err(e) => match EngineError::from_bollard("检查镜像", e) {
                 EngineError::NotFound(_) => false,
                 other => return Err(other),
