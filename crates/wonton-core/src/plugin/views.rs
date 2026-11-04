@@ -143,6 +143,7 @@ impl PluginManager {
                 .as_ref()
                 .map(|switched| switched.offer(listed.lan_webui)),
             save_grants: self.save_grants(id),
+            limits: None,
         })
     }
 
@@ -528,6 +529,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         blocked: None,
         lan_webui: None,
         save_grants: Vec::new(),
+        limits: None,
     }
 }
 

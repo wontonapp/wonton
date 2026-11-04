@@ -305,6 +305,19 @@ pub struct StoreItem {
     pub blocked: Option<String>,
 }
 
+/// 主人给插件定的资源上限，对它的每个服务生效（ADR-0037）。也是 `PUT /_wonton/api/plugins/{id}/limits` 的请求体。
+/// 为空的项没调过，用 compose 写的或者默认值；请求里写空就恢复默认。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginLimits {
+    /// 内存上限，字节。
+    #[serde(default)]
+    pub memory: Option<u64>,
+    /// CPU 上限，百分比：`150` 是 1.5 个核。默认不限。
+    #[serde(default)]
+    pub cpu_percent: Option<u32>,
+}
+
 /// 这台主机满不满足一项要求。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -381,6 +394,9 @@ pub struct PluginDetail {
     /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。
     #[serde(default)]
     pub save_grants: Vec<String>,
+    /// 主人给它定的资源上限；没装时为空。
+    #[serde(default)]
+    pub limits: Option<PluginLimits>,
 }
 
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。

@@ -206,6 +206,10 @@ fn detail() -> PluginDetail {
         blocked: None,
         lan_webui: None,
         save_grants: Vec::new(),
+        limits: Some(PluginLimits {
+            memory: Some(4 * 1024 * 1024 * 1024),
+            cpu_percent: None,
+        }),
     }
 }
 
@@ -303,6 +307,18 @@ fn plugin_actions_round_trip_through_json() {
 /// 契约：核心和客户端核心之间的 JSON 写法。改了就要两边一起改，旧的 App 也会读不懂。
 #[test]
 fn wire_format_is_stable() {
+    assert_eq!(
+        serde_json::to_value(PluginLimits {
+            memory: Some(1024),
+            cpu_percent: Some(150),
+        })
+        .unwrap(),
+        json!({"memory": 1024, "cpu_percent": 150})
+    );
+    assert_eq!(
+        serde_json::from_value::<PluginLimits>(json!({})).unwrap(),
+        PluginLimits::default()
+    );
     assert_eq!(
         serde_json::to_value(PluginState::Running {
             health: PluginHealth::Healthy
