@@ -1,31 +1,21 @@
 package app.wonton.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -34,8 +24,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -43,12 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -58,21 +40,14 @@ import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
-import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
-import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Attach
-import app.wonton.ui.icons.Image
-import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.launch
 
 private class TimelineState {
     val items = mutableStateListOf<TimelineItem>()
@@ -262,74 +237,3 @@ private fun TimelineItem.joins(other: TimelineItem?): Boolean {
 
 private val TimelineItem.senderId
     get() = (content as? TimelineContent.Message)?.message?.senderId
-
-@Composable
-private fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (String) -> Unit) {
-    var draft by rememberSaveable(roomId) { mutableStateOf("") }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                PhotoUpload.make(context, uri).fold(
-                    onSuccess = { upload -> onAction(Action.SendImage(roomId, upload)) },
-                    onFailure = { failure -> onReject(failure.message ?: failure.toString()) },
-                )
-            }
-        }
-    }
-    val pickFiles = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris ->
-        uris.forEach { uri -> onAction(uploadAction(context, uri, roomId)) }
-    }
-    val colors = WontonTheme.colors
-    Row(
-        Modifier.fillMaxWidth()
-            .drawBehind {
-                drawLine(colors.separator.toColor(), Offset.Zero, Offset(size.width, 0f), HAIRLINE)
-            }
-            .padding(WontonTheme.spacing.s8),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        WontonIconButton(WontonIcon.Image, "发照片", {
-            pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
-        })
-        WontonIconButton(WontonIcon.Attach, "发文件", { pickFiles.launch(arrayOf("*/*")) })
-        WontonTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.weight(1f).padding(horizontal = WontonTheme.spacing.s4),
-            placeholder = "消息",
-            maxLines = 5,
-        )
-        SendButton(enabled = draft.isNotBlank()) {
-            onAction(Action.SendText(roomId, draft))
-            draft = ""
-        }
-    }
-}
-
-private const val HAIRLINE = 1f
-
-@Composable
-private fun SendButton(enabled: Boolean, onClick: () -> Unit) {
-    val colors = WontonTheme.colors
-    Box(
-        Modifier.size(WontonTheme.size.target)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "发送" },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier.size(WontonTheme.size.sendButton)
-                .background((if (enabled) colors.primary else colors.surfaceSubtle).toColor(), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                WontonIcon.Send,
-                contentDescription = null,
-                modifier = Modifier.size(WontonTheme.size.iconSmall),
-                tint = (if (enabled) colors.onPrimary else colors.textSecondary).toColor(),
-            )
-        }
-    }
-}

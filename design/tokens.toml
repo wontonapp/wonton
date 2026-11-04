@@ -20,6 +20,7 @@ bubbleJoined = { ios = 6, android = 4 }
 pill = 999
 bar = { ios = 999, android = 22 }
 barItem = { ios = 999, android = 16 }
+composerField = 20
 
 [size]
 target = 48
@@ -29,6 +30,7 @@ icon = 24
 iconSmall = 20
 iconTiny = 14
 sendButton = 36
+composerField = 40
 fileThumbnail = 44
 menuBlur = 12
 menuWidth = 200

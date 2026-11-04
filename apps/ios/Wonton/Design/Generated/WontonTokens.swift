@@ -21,6 +21,7 @@ enum WontonRadii {
     static let pill: CGFloat = 999
     static let bar: CGFloat = 999
     static let barItem: CGFloat = 999
+    static let composerField: CGFloat = 20
 }
 
 enum WontonSize {
@@ -31,6 +32,7 @@ enum WontonSize {
     static let iconSmall: CGFloat = 20
     static let iconTiny: CGFloat = 14
     static let sendButton: CGFloat = 36
+    static let composerField: CGFloat = 40
     static let fileThumbnail: CGFloat = 44
     static let menuBlur: CGFloat = 12
     static let menuWidth: CGFloat = 200

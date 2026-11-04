@@ -29,6 +29,7 @@ object WontonRadii {
     val pill = 999.dp
     val bar = 22.dp
     val barItem = 16.dp
+    val composerField = 20.dp
 }
 
 object WontonSize {
@@ -39,6 +40,7 @@ object WontonSize {
     val iconSmall = 20.dp
     val iconTiny = 14.dp
     val sendButton = 36.dp
+    val composerField = 40.dp
     val fileThumbnail = 44.dp
     val menuBlur = 12.dp
     val menuWidth = 200.dp

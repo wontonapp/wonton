@@ -1,4 +1,3 @@
-import PhotosUI
 import SwiftUI
 import WontonClient
 
@@ -8,11 +7,8 @@ struct ChatRoomView: View {
     let title: String
     @State private var timeline: TimelineModel
     @State private var presenter: RoomPresenter
-    @State private var draft = ""
     @State private var pin = BottomPin()
     @State private var pageAnchor: String?
-    @State private var photo: PhotosPickerItem?
-    @State private var isPickingFiles = false
 
     init(model: ChatModel, roomId: String, title: String) {
         self.model = model
@@ -35,7 +31,7 @@ struct ChatRoomView: View {
             }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
-                composer
+                ComposerView(model: model, roomId: roomId, pin: pin)
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
@@ -45,20 +41,6 @@ struct ChatRoomView: View {
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task { await timeline.observe() }
-        .onChange(of: photo) { _, item in
-            guard let item else { return }
-            photo = nil
-            Task { await send(item) }
-        }
-        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
-            switch $0 {
-            case let .success(urls):
-                pin.pin()
-                for url in urls { model.files.upload(url, room: roomId) }
-            case let .failure(error):
-                model.rejection = error.localizedDescription
-            }
-        }
     }
 
     private var messages: some View {
@@ -137,78 +119,6 @@ struct ChatRoomView: View {
 
     private var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
-    }
-
-    private var composer: some View {
-        let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(alignment: .bottom, spacing: 0) {
-            PhotosPicker(selection: $photo, matching: .images) {
-                WontonIcon.image.view()
-                    .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("发照片")
-            WontonIconButton(icon: .attach, label: "发文件") { isPickingFiles = true }
-            TextField("消息", text: $draft, axis: .vertical)
-                .lineLimit(1...5)
-                .textFieldStyle(.plain)
-                .wontonField()
-                .padding(.horizontal, WontonTheme.spacing.s4)
-            SendButton(isEnabled: !isEmpty) {
-                pin.pin()
-                model.send(.sendText(roomId: roomId, body: draft))
-                draft = ""
-            }
-        }
-        .padding(WontonTheme.spacing.s8)
-        .overlay(alignment: .top) { ComposerEdge() }
-    }
-
-    /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
-    private func send(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self) else {
-            model.rejection = PhotoUpload.Failure.unreadable.description
-            return
-        }
-        let type = item.supportedContentTypes.first
-        do {
-            let upload = try await Task.detached(priority: .userInitiated) {
-                try PhotoUpload.make(data: data, type: type)
-            }.value
-            pin.pin()
-            model.send(.sendImage(roomId: roomId, image: upload))
-        } catch {
-            model.rejection = String(describing: error)
-        }
-    }
-}
-
-private struct ComposerEdge: View {
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
-    }
-}
-
-private struct SendButton: View {
-    let isEnabled: Bool
-    let action: () -> Void
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        Button(action: action) {
-            WontonIcon.send.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(isEnabled ? colors.onPrimary : colors.textSecondary))
-                .frame(width: WontonTheme.size.sendButton, height: WontonTheme.size.sendButton)
-                .background(Circle().fill(Color(isEnabled ? colors.primary : colors.surfaceSubtle)))
-                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .accessibilityLabel("发送")
     }
 }
 
