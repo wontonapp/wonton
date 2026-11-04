@@ -422,6 +422,7 @@ mod tests {
                 sending,
                 sending_choice_id: None,
                 problem,
+                window: None,
             },
         }
     }

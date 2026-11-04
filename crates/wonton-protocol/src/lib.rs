@@ -45,7 +45,7 @@ pub use chat::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
     ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    WindowEnd, answer_path, window_path,
+    WindowEnd, WindowView, answer_path, window_path,
 };
 pub use core_upgrade::{
     CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,

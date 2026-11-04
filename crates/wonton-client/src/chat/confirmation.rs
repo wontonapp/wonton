@@ -202,6 +202,7 @@ impl CardsView {
             sending,
             sending_choice_id,
             problem,
+            window: None,
         })
     }
 

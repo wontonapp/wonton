@@ -91,6 +91,10 @@ pub enum Action {
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         choice_id: Option<String>,
     },
+    /// 主人点了卡片上放行时段的“停止”：只拦后面的调用，已经发给插件的不撤回（ADR-0024）。进展和结果在
+    /// [`ConfirmationView::window`](crate::ConfirmationView::window)。已经在发时什么都不做，家里的服务器还没连上时返回
+    /// `NotReady`。
+    StopConfirmationWindow { id: String },
 
     // 推送（ADR-0003 的“设计：加密推送”）。进展在 `ChatViewModel::push` 里。
     /// 平台给了（或者换了）推送地址。核心经隧道把它登记给家里的服务器，再在 Matrix 上注册指向家里推送代理的

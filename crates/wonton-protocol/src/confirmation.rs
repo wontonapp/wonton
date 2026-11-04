@@ -59,6 +59,21 @@ pub struct ConfirmationWindow {
     pub ended: Option<WindowEnd>,
 }
 
+impl ConfirmationWindow {
+    /// 结束后的说明。还没结束时是 `None`。
+    pub fn ended_note(&self) -> Option<String> {
+        let allowed = self
+            .allowed
+            .map_or(String::new(), |n| format!("，放行了 {n} 次"));
+        Some(match self.ended? {
+            WindowEnd::Expired => format!("放行时段已到期{allowed}。"),
+            WindowEnd::Stopped => format!("放行时段已停止{allowed}。"),
+            WindowEnd::CoreRestarted => "核心重启，放行时段已结束。".to_owned(),
+            WindowEnd::Unknown => format!("放行时段已结束{allowed}。"),
+        })
+    }
+}
+
 /// 放行时段为什么结束。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -168,6 +183,25 @@ pub struct ConfirmationView {
     /// 最近一次回答没成的原因。连接断了、核心出错时按钮还在，可以再点；核心不收（回答过了、没有这个确认）时按钮
     /// 消失，原因是 `InvalidInput`。
     pub problem: Option<ChatProblem>,
+    /// 这张卡片打开的放行时段现在的样子，已经算上这台设备知道的：到期了、自己点了“停止”。
+    pub window: Option<WindowView>,
+}
+
+/// 卡片上的放行时段（ADR-0024）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum WindowView {
+    /// 生效中：显示到期时间和“停止”。
+    Active {
+        expires_at_ms: u64,
+        /// 正在发“停止”。这时按钮还在，但不能点。
+        stopping: bool,
+        /// 最近一次“停止”没成的原因。时段还在生效，可以再点。
+        problem: Option<ChatProblem>,
+    },
+    Ended {
+        note: String,
+    },
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow, WindowEnd,
+    ConfirmationState, ConfirmationWindow,
 };
 
 use super::file_results::human_size;
@@ -244,16 +244,9 @@ pub fn body(card: &ConfirmationCard) -> String {
 }
 
 fn window_text(window: &ConfirmationWindow) -> String {
-    let allowed = window
-        .allowed
-        .map_or(String::new(), |n| format!("，放行了 {n} 次"));
-    match window.ended {
-        None => "放行时段生效中，到期前不再询问。".to_owned(),
-        Some(WindowEnd::Expired) => format!("放行时段已到期{allowed}。"),
-        Some(WindowEnd::Stopped) => format!("放行时段已停止{allowed}。"),
-        Some(WindowEnd::CoreRestarted) => "核心重启，放行时段已结束。".to_owned(),
-        Some(WindowEnd::Unknown) => format!("放行时段已结束{allowed}。"),
-    }
+    window
+        .ended_note()
+        .unwrap_or_else(|| "放行时段生效中，到期前不再询问。".to_owned())
 }
 
 /// 卡片的 Matrix 消息内容。用 `m.text` 的原因见 ADR-0016。
