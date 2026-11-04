@@ -12,13 +12,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+
+/** 键盘开着时弹窗口，窗口的高度算不对；关掉之后焦点回到输入框，键盘又会自己弹出来。所以先收起键盘。 */
+@Composable
+internal fun HideKeyboardOnAppear() {
+    val focus = LocalFocusManager.current
+    LaunchedEffect(Unit) { focus.clearFocus() }
+}
 
 /** 自己画的弹窗（ADR-0026）。点空白处和返回键走 [onDismiss]，不给 [actions] 时只有一个“好”，也走它。 */
 @Composable
@@ -30,6 +39,7 @@ fun WontonDialog(
 ) {
     val colors = WontonTheme.colors
     val spacing = WontonTheme.spacing
+    HideKeyboardOnAppear()
     Dialog(onDismiss, DialogProperties(usePlatformDefaultWidth = false)) {
         (LocalView.current.parent as? DialogWindowProvider)?.window?.setDimAmount(WontonTheme.ratio.scrim)
         Column(

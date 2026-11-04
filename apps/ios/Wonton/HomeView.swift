@@ -15,6 +15,7 @@ struct HomeView: View {
     @State private var isShowingPage = false
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
+    @State private var menuPlugin: InstalledPlugin?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -80,6 +81,12 @@ struct HomeView: View {
         .task { plugins.refresh(.refreshPlugins) }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
         .uninstallDialog($uninstalling, model: plugins)
+        .wontonActionSheet(
+            isPresented: isShowingMenu,
+            title: menuPlugin?.title,
+            actions: menuPlugin.map(menu(for:)) ?? []
+        )
+        .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
         .wontonDialog("操作被拒绝", message: plugins.rejection, isPresented: isShowingPluginRejection)
     }
 
@@ -96,9 +103,14 @@ struct HomeView: View {
             let cell = GridItem(.adaptive(minimum: WontonTheme.size.launcherCell), spacing: WontonTheme.spacing.s12)
             LazyVGrid(columns: [cell], spacing: WontonTheme.spacing.s24) {
                 ForEach(installed.plugins, id: \.id) { plugin in
-                    Button { tap(plugin) } label: { LauncherIcon(model: plugins, plugin: plugin) }
-                        .buttonStyle(.plain)
-                        .contextMenu { menu(for: plugin) }
+                    LauncherIcon(model: plugins, plugin: plugin)
+                        .contentShape(Rectangle())
+                        .onTapGesture { tap(plugin) }
+                        .onLongPressGesture { menuPlugin = plugin }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { tap(plugin) }
+                        .accessibilityAction(named: "菜单") { menuPlugin = plugin }
                 }
             }
         }
@@ -126,31 +138,34 @@ struct HomeView: View {
         }
     }
 
-    @ViewBuilder private func menu(for plugin: InstalledPlugin) -> some View {
-        menuItem("详情", .info) { path.append(PluginRoute.installed(id: plugin.id)) }
+    private func menu(for plugin: InstalledPlugin) -> [WontonSheetAction] {
+        var actions = [
+            WontonSheetAction(title: "详情", icon: .info) { path.append(PluginRoute.installed(id: plugin.id)) }
+        ]
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         if plugin.entries.count > 1, let web = plugin.entries.last {
-            menuItem("打开网页", .web) { open(web) }
+            actions.append(WontonSheetAction(title: "打开网页", icon: .web) { open(web) })
         }
         if let upgrade = plugin.upgrade {
-            menuItem("升级到 \(upgrade.version)", .download) { confirmation = .upgrade(id: plugin.id) }
+            actions.append(WontonSheetAction(title: "升级到 \(upgrade.version)", icon: .download) {
+                confirmation = .upgrade(id: plugin.id)
+            })
         }
         if plugin.removable {
-            menuItem("卸载", .trash, role: .destructive) {
+            actions.append(WontonSheetAction(title: "卸载", icon: .trash, isDanger: true) {
                 uninstalling = UninstallTarget(id: plugin.id, title: plugin.title)
-            }
+            })
         }
+        return actions
     }
 
-    private func menuItem(
-        _ title: String,
-        _ icon: WontonIcon,
-        role: ButtonRole? = nil,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(role: role, action: action) {
-            Label { Text(title) } icon: { icon.image }
-        }
+    private var isShowingMenu: Binding<Bool> {
+        Binding(
+            get: { menuPlugin != nil },
+            set: { isShowing in
+                if !isShowing { menuPlugin = nil }
+            }
+        )
     }
 
     /// 连不上时换成警告；正在连时变浅。

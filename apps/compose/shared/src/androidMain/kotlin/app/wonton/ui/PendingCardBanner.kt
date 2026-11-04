@@ -21,8 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -47,23 +45,25 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth()
+                .heightIn(min = WontonTheme.size.target)
+                .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
-            Icon(WontonIcon.Notify, null, Modifier.size(20.dp), tint = text)
+            Icon(WontonIcon.Notify, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
             Text(
                 pendingCardsText(cards),
                 Modifier.weight(1f),
+                style = WontonTheme.typography.supporting,
                 color = text,
-                fontSize = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Icon(WontonIcon.Forward, null, Modifier.size(16.dp), tint = text)
+            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
         }
         colors.accentFillBorder?.let { border ->
-            Box(Modifier.fillMaxWidth().height(1.dp).background(border.toColor()))
+            Box(Modifier.fillMaxWidth().height(WontonTheme.size.hairline).background(border.toColor()))
         }
     }
 }

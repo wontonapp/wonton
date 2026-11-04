@@ -65,6 +65,14 @@ class WontonDialogAction(
     val onClick: () -> Unit,
 )
 
+/** 底部面板里的一行操作。 */
+class WontonSheetAction(
+    val title: String,
+    val icon: ImageVector,
+    val isDanger: Boolean = false,
+    val onClick: () -> Unit,
+)
+
 class WontonBarItem(val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
 /** 自己画的按钮（ADR-0026）：语义还是 `clickable` 的按钮，命中区 48。 */

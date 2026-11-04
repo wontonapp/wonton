@@ -66,6 +66,7 @@ private struct MessageBubble: View {
     let retry: () -> Void
     let cancel: () -> Void
     let answer: (String, Answer) -> Void
+    @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
     /// 自己的气泡靠右，相接的是右边的角；别人的相反。
@@ -151,9 +152,8 @@ private struct MessageBubble: View {
             case .sending:
                 Text("发送中")
             case let .failed(reason, recoverable):
-                Menu {
-                    Button("重发", action: retry)
-                    Button("删除", role: .destructive, action: cancel)
+                Button {
+                    isChoosingFailed = true
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
@@ -161,6 +161,11 @@ private struct MessageBubble: View {
                     }
                     .foregroundStyle(Color(colors.danger))
                 }
+                .buttonStyle(.plain)
+                .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
+                    WontonSheetAction(title: "重发", icon: .refresh, perform: retry),
+                    WontonSheetAction(title: "删除", icon: .trash, isDanger: true, perform: cancel)
+                ])
             case .sent:
                 if message.isOwn, !message.readBy.isEmpty { Text("已读") }
             }

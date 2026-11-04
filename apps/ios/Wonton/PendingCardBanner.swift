@@ -12,23 +12,24 @@ struct PendingCardBanner: View {
         Button {
             open(cards[0].roomId)
         } label: {
-            HStack(spacing: 8) {
-                WontonIcon.notify.view(size: 20)
+            HStack(spacing: WontonTheme.spacing.s8) {
+                WontonIcon.notify.view(size: WontonTheme.size.iconSmall)
                 Text(title)
-                    .font(.system(size: 15))
+                    .wontonText(WontonTheme.typography.supporting)
                     .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                WontonIcon.forward.view(size: 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
             }
             .foregroundStyle(Color(colors.textOnAccentFill))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, WontonTheme.spacing.s16)
+            .padding(.vertical, WontonTheme.spacing.s12)
+            .frame(minHeight: WontonTheme.size.target)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(alignment: .bottom) {
             if let border = colors.accentFillBorder {
-                Color(border).frame(height: 1)
+                Color(border).frame(height: WontonTheme.size.hairline)
             }
         }
         .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -11,10 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +36,7 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Close
@@ -74,12 +74,14 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
         }
     }
     if (showingDownloaded && view.downloaded.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { showingDownloaded = false },
-            title = { Text("已下载") },
-            text = { LazyColumn { items(view.downloaded, key = { it.id }) { TransferRow(it) } } },
-            confirmButton = { TextButton(onClick = { showingDownloaded = false }) { Text("完成") } },
-        )
+        WontonSheet({ showingDownloaded = false }, "已下载") {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
+                verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            ) {
+                items(view.downloaded, key = { it.id }) { TransferRow(it) }
+            }
+        }
     }
 }
 

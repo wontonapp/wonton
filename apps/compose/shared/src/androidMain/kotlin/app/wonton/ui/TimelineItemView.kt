@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
@@ -29,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -39,10 +38,14 @@ import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
+import app.wonton.ui.design.WontonActionSheet
+import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.LockKey
+import app.wonton.ui.icons.Refresh
+import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WarningCircle
 import app.wonton.ui.icons.WontonIcon
 import java.text.DateFormat
@@ -197,7 +200,7 @@ private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: (
     val danger = WontonTheme.colors.danger.toColor()
     Box {
         Row(
-            Modifier.clickable { choosing = true },
+            Modifier.clickable(role = Role.Button) { choosing = true },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
         ) {
@@ -213,22 +216,15 @@ private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: (
                 color = danger,
             )
         }
-        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
-            DropdownMenuItem(
-                text = { Text("重发") },
-                onClick = {
-                    choosing = false
-                    onRetry()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("删除", color = danger) },
-                onClick = {
-                    choosing = false
-                    onCancel()
-                },
-            )
-        }
+    }
+    if (choosing) {
+        WontonActionSheet(
+            listOf(
+                WontonSheetAction("重发", WontonIcon.Refresh, onClick = onRetry),
+                WontonSheetAction("删除", WontonIcon.Trash, isDanger = true, onClick = onCancel),
+            ),
+            { choosing = false },
+        )
     }
 }
 

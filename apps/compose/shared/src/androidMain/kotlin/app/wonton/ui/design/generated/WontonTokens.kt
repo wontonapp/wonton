@@ -53,6 +53,8 @@ object WontonSize {
     val switchHeight = 26.dp
     val switchKnob = 22.dp
     val dialogWidth = 320.dp
+    val grabberWidth = 36.dp
+    val grabberHeight = 4.dp
     val hairline = 1.dp
     val quoteBar = 2.dp
 }

@@ -43,6 +43,8 @@ switchWidth = 44
 switchHeight = 26
 switchKnob = 22
 dialogWidth = 320
+grabberWidth = 36
+grabberHeight = 4
 hairline = 1
 quoteBar = 2
 

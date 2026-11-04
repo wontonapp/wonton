@@ -19,8 +19,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -34,18 +32,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginState
+import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Connection
@@ -186,7 +185,6 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
                 }
             }
             Badge(plugin, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp))
-            LauncherMenu(plugin, navigation, expanded = showingMenu, onDismiss = { showingMenu = false })
         }
         Text(
             plugin.title,
@@ -196,6 +194,7 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
             overflow = TextOverflow.Ellipsis,
         )
     }
+    if (showingMenu) LauncherMenu(plugin, navigation) { showingMenu = false }
 }
 
 @Composable
@@ -217,42 +216,27 @@ private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
 }
 
 @Composable
-private fun LauncherMenu(
-    plugin: InstalledPlugin,
-    navigation: PluginNavigation,
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-) {
-    val choose = { action: () -> Unit ->
-        onDismiss()
-        action()
-    }
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        MenuItem("详情", WontonIcon.Info) { choose { navigation.detail = PluginRoute.Installed(plugin.id) } }
+private fun LauncherMenu(plugin: InstalledPlugin, navigation: PluginNavigation, onDismiss: () -> Unit) {
+    val actions = buildList {
+        add(WontonSheetAction("详情", WontonIcon.Info) { navigation.detail = PluginRoute.Installed(plugin.id) })
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         plugin.entries.takeIf { it.size > 1 }?.last()?.let { web ->
-            MenuItem("打开网页", WontonIcon.Web) { choose { navigation.open(web) } }
+            add(WontonSheetAction("打开网页", WontonIcon.Web) { navigation.open(web) })
         }
         plugin.upgrade?.let { upgrade ->
-            MenuItem("升级到 ${upgrade.version}", WontonIcon.Download) {
-                choose { navigation.confirmation = PluginConfirmation.Upgrade(plugin.id) }
-            }
+            add(
+                WontonSheetAction("升级到 ${upgrade.version}", WontonIcon.Download) {
+                    navigation.confirmation = PluginConfirmation.Upgrade(plugin.id)
+                },
+            )
         }
         if (plugin.removable) {
-            MenuItem("卸载", WontonIcon.Trash, WontonTheme.colors.danger.toColor()) {
-                choose { navigation.uninstalling = UninstallTarget(plugin.id, plugin.title) }
-            }
+            add(
+                WontonSheetAction("卸载", WontonIcon.Trash, isDanger = true) {
+                    navigation.uninstalling = UninstallTarget(plugin.id, plugin.title)
+                },
+            )
         }
     }
-}
-
-@Composable
-private fun MenuItem(title: String, icon: ImageVector, color: Color = Color.Unspecified, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = { Text(title, color = color) },
-        leadingIcon = {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall), tint = color)
-        },
-        onClick = onClick,
-    )
+    WontonActionSheet(actions, onDismiss, plugin.title)
 }

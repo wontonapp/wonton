@@ -34,7 +34,9 @@ struct TransfersStrip: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
                 }
-                .sheet(isPresented: $isShowingDownloaded) { DownloadedList().environment(files) }
+                .wontonSheet(isPresented: $isShowingDownloaded, title: "已下载") { _ in
+                    DownloadedList().environment(files)
+                }
             }
         }
         .onChange(of: view.downloaded.isEmpty) { _, empty in
@@ -45,15 +47,12 @@ struct TransfersStrip: View {
 
 private struct DownloadedList: View {
     @Environment(FilesModel.self) private var files
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            List(files.viewModel.downloaded, id: \.id) { TransferRow(transfer: $0) }
-                .navigationTitle("已下载")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { Button("完成") { dismiss() } }
+        VStack(spacing: WontonTheme.spacing.s8) {
+            ForEach(files.viewModel.downloaded, id: \.id) { TransferRow(transfer: $0) }
         }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
     }
 }
 

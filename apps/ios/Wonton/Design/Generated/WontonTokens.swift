@@ -46,6 +46,8 @@ enum WontonSize {
     static let switchHeight: CGFloat = 26
     static let switchKnob: CGFloat = 22
     static let dialogWidth: CGFloat = 320
+    static let grabberWidth: CGFloat = 36
+    static let grabberHeight: CGFloat = 4
     static let hairline: CGFloat = 1
     static let quoteBar: CGFloat = 2
 }
