@@ -7686,6 +7686,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "iroh",
+ "jni 0.21.1",
  "libc",
  "linkify",
  "palette",

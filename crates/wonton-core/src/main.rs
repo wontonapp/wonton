@@ -188,7 +188,7 @@ async fn serve() -> anyhow::Result<()> {
     let files = open_files(&cfg, host, http.clone(), audit, images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
-    let tunnel = bind_tunnel(&cfg).await?;
+    let tunnel = bind_tunnel(&cfg, &manager).await?;
     let push = open_push(&cfg, &tunnel, &manager)?;
     let gateway = Arc::new(
         Gateway::new(
@@ -401,7 +401,7 @@ fn open_files(
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。
-async fn bind_tunnel(cfg: &Config) -> anyhow::Result<Tunnel> {
+async fn bind_tunnel(cfg: &Config, manager: &PluginManager) -> anyhow::Result<Tunnel> {
     let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
     let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
     let endpoint = tunnel::bind(key, cfg.tunnel_port).await?;
@@ -411,7 +411,13 @@ async fn bind_tunnel(cfg: &Config) -> anyhow::Result<Tunnel> {
         devices = devices.list().len(),
         "隧道入口已启动"
     );
-    Ok(Tunnel::new(Arc::new(devices), endpoint, cfg.tunnel_port))
+    let tunnel = Tunnel::new(Arc::new(devices), endpoint, cfg.tunnel_port);
+    tunnel::spawn_announcing(
+        tunnel.endpoint.clone(),
+        tunnel.port,
+        manager.lan_addresses(),
+    );
+    Ok(tunnel)
 }
 
 async fn shutdown() {

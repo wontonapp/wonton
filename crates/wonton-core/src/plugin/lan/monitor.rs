@@ -110,6 +110,13 @@ impl PluginManager {
             .as_ref()
             .map(|bound| bound.iter().map(|b| b.ip).collect::<BTreeSet<IpAddr>>())
             .map_err(|p| p.message.clone());
+        if let Ok(addresses) = &addresses {
+            self.lan.addresses.send_if_modified(|current| {
+                let changed = current != addresses;
+                current.clone_from(addresses);
+                changed
+            });
+        }
         for (id, spec) in self.lan_plugins() {
             self.follow_lan(&id, &spec, &addresses).await;
         }
@@ -351,7 +358,12 @@ impl PluginManager {
         self.changed();
     }
 
-    /// 核心启动后检测一次，之后每 [`INTERVAL`] 一次。没装开局域网端口的插件、也没配出网代理时不检测：检测要起一个容器。
+    /// 选出的局域网地址：隧道把它们宣告给手机，跟着检测结果变（ADR-0032）。
+    pub fn lan_addresses(&self) -> tokio::sync::watch::Receiver<BTreeSet<IpAddr>> {
+        self.lan.addresses.subscribe()
+    }
+
+    /// 核心启动后检测一次，之后每 [`INTERVAL`] 一次。
     pub fn spawn_lan_monitor(self: &Arc<Self>) {
         let this = Arc::downgrade(self);
         tokio::spawn(async move {
@@ -361,9 +373,6 @@ impl PluginManager {
                 let Some(manager) = this.upgrade() else {
                     return;
                 };
-                if manager.lan_plugins().is_empty() && !manager.egress_configured() {
-                    continue;
-                }
                 if let Err(e) = manager.lan_pass().await {
                     tracing::warn!(error = %e, "检测局域网地址失败");
                 }

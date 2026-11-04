@@ -5,6 +5,8 @@ use std::collections::BTreeSet;
 use std::net::IpAddr;
 use std::sync::Mutex;
 
+use tokio::sync::watch;
+
 use super::detect::Detector;
 use crate::plugin::manifest::PluginId;
 
@@ -14,6 +16,8 @@ pub struct Lan {
     pub(super) fixed: Option<Vec<IpAddr>>,
     /// 定期检测、设置页和改选择各自触发检测，一次一次来，不同时重建同一个插件。
     pub(super) pass: tokio::sync::Mutex<()>,
+    /// 最近一次选出的局域网地址。检测失败时留着上次的：查不出来不等于地址没了。
+    pub(super) addresses: watch::Sender<BTreeSet<IpAddr>>,
     memory: Mutex<Memory>,
 }
 
@@ -33,6 +37,7 @@ impl Lan {
             detector,
             fixed,
             pass: tokio::sync::Mutex::new(()),
+            addresses: watch::Sender::new(BTreeSet::new()),
             memory: Mutex::new(Memory::default()),
         }
     }

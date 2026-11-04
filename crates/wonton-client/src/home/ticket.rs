@@ -25,20 +25,23 @@
 use std::net::SocketAddr;
 
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
-#[derive(Debug, Clone, Deserialize)]
+/// 连接信息里最多留这么多直连地址，新的在前。留旧的：核心只知道自己的地址，手机连它用的可能是别的（端口转发、隧道）。
+const MAX_DIRECT_ADDRS: usize = 8;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Ticket {
     server: Server,
     base_domain: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     core_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     web_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct Server {
     endpoint_id: EndpointId,
     #[serde(default)]
@@ -128,6 +131,28 @@ impl Ticket {
         addr
     }
 
+    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继地址报告为空时留着旧的：中继可能只是暂时没连上。
+    pub(crate) fn with_reported(
+        &self,
+        relay_urls: Vec<RelayUrl>,
+        direct_addrs: &[SocketAddr],
+    ) -> Option<Self> {
+        let mut updated = self.clone();
+        if !relay_urls.is_empty() {
+            updated.server.relay_urls = relay_urls;
+        }
+        let old = &self.server.direct_addrs;
+        let older = old.iter().filter(|addr| !direct_addrs.contains(addr));
+        let merged = direct_addrs.iter().chain(older).copied();
+        updated.server.direct_addrs = merged.take(MAX_DIRECT_ADDRS).collect();
+        let same_addrs = updated.server.direct_addrs.len() == old.len()
+            && old
+                .iter()
+                .all(|addr| updated.server.direct_addrs.contains(addr));
+        let changed = updated.server.relay_urls != self.server.relay_urls || !same_addrs;
+        changed.then_some(updated)
+    }
+
     /// 码里给的服务端直连地址。
     pub(crate) fn direct_addrs(&self) -> &[SocketAddr] {
         &self.server.direct_addrs
@@ -148,6 +173,37 @@ mod tests {
     use iroh::SecretKey;
 
     use super::*;
+
+    #[test]
+    fn reported_addresses_go_first_and_the_old_ones_stay_until_the_list_is_full() {
+        let id = SecretKey::generate().public();
+        let text = format!(
+            r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["192.168.1.2:18482"]}},
+                "base_domain": "wonton.localhost", "web_url": "http://wonton.localhost:1/"}}"#
+        );
+        let ticket = Ticket::parse(&text).unwrap();
+        let addr = |n: u8| SocketAddr::from(([10, 0, 0, n], 18482));
+
+        assert!(
+            ticket
+                .with_reported(Vec::new(), &ticket.server.direct_addrs)
+                .is_none()
+        );
+
+        let moved = ticket.with_reported(Vec::new(), &[addr(1)]).unwrap();
+        assert_eq!(
+            moved.direct_addrs(),
+            [addr(1), "192.168.1.2:18482".parse().unwrap()]
+        );
+        let saved = serde_json::to_string(&moved).unwrap();
+        let again = Ticket::parse(&saved).unwrap();
+        assert_eq!(again.direct_addrs(), moved.direct_addrs());
+        assert_eq!(again.web_url(), moved.web_url());
+
+        let many: Vec<SocketAddr> = (1..=9).map(addr).collect();
+        let full = moved.with_reported(Vec::new(), &many).unwrap();
+        assert_eq!(full.direct_addrs(), &many[..8]);
+    }
 
     #[test]
     fn tickets_need_an_address_a_domain_and_a_web_url_under_it() {

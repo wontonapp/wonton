@@ -4,7 +4,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -147,6 +147,36 @@ async fn the_server_is_remembered_across_restarts() {
         .await;
     let (status, _) = get(&view.proxy.unwrap(), WEB_URL, "/again", true).await;
     assert_eq!(status, 200);
+}
+
+#[tokio::test]
+async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    let moved = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    home.report_address(moved);
+    phone.connect(&home);
+    wait_until_ticket_has(dir.path(), moved).await;
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+
+    home.stop().await;
+    home.start_again(moved.port()).await;
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    home.wait_for_a_connection().await;
+    drop(phone);
+
+    let restarted = Phone::open(dir.path());
+    restarted
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
 }
 
 #[tokio::test]
@@ -366,12 +396,15 @@ struct Home {
     key: SecretKey,
     allowlist: Allowlist,
     upstream: SocketAddr,
+    /// 上游对 `/_wonton/api/tunnel` 的回答；空着时和别的路径一样回显。
+    tunnel_info: Arc<Mutex<Option<String>>>,
     _upstream_task: JoinHandle<()>,
 }
 
 impl Home {
     async fn start(devices: &[EndpointId]) -> Self {
-        let (upstream, task) = path_echo().await;
+        let tunnel_info = Arc::new(Mutex::new(None));
+        let (upstream, task) = path_echo(tunnel_info.clone()).await;
         let key = SecretKey::generate();
         let allowlist = Allowlist::new(devices.iter().copied());
         let endpoint = loopback_endpoint(key.clone(), 0).await;
@@ -380,8 +413,17 @@ impl Home {
             key,
             allowlist,
             upstream,
+            tunnel_info,
             _upstream_task: task,
         }
+    }
+
+    /// 核心的 `/_wonton/api/tunnel` 从现在起报告这个地址。
+    fn report_address(&self, addr: SocketAddr) {
+        let id = self.key.public();
+        *self.tunnel_info.lock().unwrap() = Some(format!(
+            r#"{{"endpoint_id": "{id}", "relay_urls": [], "direct_addrs": ["{addr}"]}}"#
+        ));
     }
 
     fn server(&self) -> &TunnelServer {
@@ -465,13 +507,30 @@ async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
         .unwrap()
 }
 
-/// 上游：每个请求回 200，正文是请求路径。
-async fn path_echo() -> (SocketAddr, JoinHandle<()>) {
+async fn wait_until_ticket_has(dir: &std::path::Path, addr: SocketAddr) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    let wanted = addr.to_string();
+    let has_it = || {
+        std::fs::read_to_string(dir.join("home-ticket.json"))
+            .is_ok_and(|text| text.contains(&wanted))
+    };
+    while !has_it() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "连接信息里一直没有 {wanted}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// 上游：每个请求回 200，正文是请求路径；`/_wonton/api/tunnel` 有 `tunnel_info` 时回它。
+async fn path_echo(tunnel_info: Arc<Mutex<Option<String>>>) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let task = tokio::spawn(async move {
         loop {
             let (mut tcp, _) = listener.accept().await.unwrap();
+            let tunnel_info = tunnel_info.clone();
             tokio::spawn(async move {
                 let mut head = Vec::new();
                 while !head.ends_with(b"\r\n\r\n") {
@@ -483,9 +542,13 @@ async fn path_echo() -> (SocketAddr, JoinHandle<()>) {
                 }
                 let head = String::from_utf8_lossy(&head).into_owned();
                 let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                let reported = tunnel_info.lock().unwrap().clone();
+                let body = reported
+                    .filter(|_| path == "/_wonton/api/tunnel")
+                    .unwrap_or(path);
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{path}",
-                    path.len()
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
                 );
                 tcp.write_all(response.as_bytes()).await.ok();
                 tcp.shutdown().await.ok();

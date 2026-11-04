@@ -7,6 +7,13 @@ import app.wonton.ui.ContentFileOpener
 
 /** 进程内唯一的核心实例：状态都在核心里，Activity 重建时不丢。核心起不来时如实给出原因。 */
 class WontonApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        installSystemDns()
+    }
+
+    private external fun installSystemDns()
+
     val core: Result<ClientCore> by lazy {
         try {
             val core = ClientCore(filesDir.absolutePath)
@@ -15,6 +22,12 @@ class WontonApplication : Application() {
             Result.success(core)
         } catch (failure: CoreException) {
             Result.failure(failure)
+        }
+    }
+
+    private companion object {
+        init {
+            System.loadLibrary("wonton_client")
         }
     }
 }

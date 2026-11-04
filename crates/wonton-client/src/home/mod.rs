@@ -7,6 +7,7 @@
 mod connection;
 mod invite;
 mod pairing;
+mod refresh;
 mod storage;
 mod ticket;
 
@@ -487,12 +488,18 @@ async fn follow_connection(home: Weak<HomeLink>, endpoint: Endpoint, client: Tun
         return;
     };
     let mut status = client.watch_status();
+    let mut was_connected = false;
     loop {
         let current = status.borrow_and_update().clone();
         let Some(link) = home.upgrade() else {
             return;
         };
         let tick = link.publish(&current, &endpoint, &client);
+        let connected = current == TunnelStatus::Connected;
+        if connected && !was_connected {
+            link.runtime.spawn(link.clone().refresh_addresses());
+        }
+        was_connected = connected;
         drop(link);
         tokio::select! {
             changed = status.changed() => {

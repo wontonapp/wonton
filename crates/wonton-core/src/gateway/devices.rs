@@ -3,7 +3,7 @@
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
-//! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继地址、直连地址和基础域名，客户端据此连接 |
+//! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继地址、直连地址和基础域名，客户端据此连接；经隧道的已配对设备也能调（App 连上后跟着服务器的地址走，ADR-0032） |
 //! | GET | `/_wonton/api/devices` | 已登记的设备 |
 //! | POST | `/_wonton/api/devices` | 请求体 `{"endpoint_id": "…"}`，登记一台设备 |
 //! | DELETE | `/_wonton/api/devices/{endpoint_id}` | 吊销，立即断开它的隧道连接 |
@@ -22,13 +22,17 @@ use iroh::EndpointId;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::api::{denied, error_response};
+use super::api::{denied, error_response, plugin_denied};
 use super::{Gateway, TunnelPeer, lan};
 use crate::device::DeviceError;
 use crate::pairing::{CodeKind, IssuedCode};
 
-pub async fn tunnel(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    if let Some(denied) = denied(&gateway, &headers) {
+pub async fn tunnel(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let addr = gateway.tunnel.endpoint.addr();

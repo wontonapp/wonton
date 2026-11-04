@@ -4,7 +4,8 @@
 //! [`TunnelPeer`] 放进请求扩展，网关据此认出主人的设备。只有这里会放入 `TunnelPeer`：局域网的 TCP
 //! 请求里没有它，客户端也没法用请求头伪造。
 
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::collections::BTreeSet;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
+use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
 use tower::ServiceExt;
 use wonton_tunnel::pair::PairProtocol;
@@ -75,6 +77,35 @@ pub async fn bind(key: SecretKey, port: u16) -> anyhow::Result<Endpoint> {
             .bind_addr((Ipv6Addr::UNSPECIFIED, port))?;
     }
     builder.bind().await.context("绑定隧道 endpoint")
+}
+
+/// 把手机能到达的地址宣告给 iroh，跟着 `addresses` 变：核心在 Docker 里，iroh 自己只看得到容器内的地址，打洞信令里没有
+/// 局域网地址，掉到中继后回不到直连（ADR-0032）。
+pub fn spawn_announcing(
+    endpoint: Endpoint,
+    port: u16,
+    mut addresses: watch::Receiver<BTreeSet<IpAddr>>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut announced = BTreeSet::new();
+        loop {
+            let wanted: BTreeSet<SocketAddr> = addresses
+                .borrow_and_update()
+                .iter()
+                .map(|ip| SocketAddr::new(*ip, port))
+                .collect();
+            for gone in announced.difference(&wanted) {
+                endpoint.remove_external_addr(gone).await;
+            }
+            for new in wanted.difference(&announced) {
+                endpoint.add_external_addr(*new).await;
+            }
+            announced = wanted;
+            if addresses.changed().await.is_err() {
+                return;
+            }
+        }
+    })
 }
 
 /// 运行中的隧道入口。
@@ -139,5 +170,49 @@ async fn serve_stream(stream: PeerStream, app: Router) {
         .await;
     if let Err(err) = served {
         tracing::debug!(device = %peer.0.fmt_short(), "隧道上的 HTTP 连接异常结束：{err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn the_announced_addresses_follow_the_lan_detection() {
+        let endpoint = Endpoint::builder(presets::Minimal)
+            .clear_ip_transports()
+            .bind_addr((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+        let (addresses, watching) = watch::channel(BTreeSet::from([ip("192.168.1.2")]));
+        let task = spawn_announcing(endpoint.clone(), 18482, watching);
+
+        let announced = |text: &str| {
+            let endpoint = endpoint.clone();
+            let wanted: SocketAddr = text.parse().unwrap();
+            async move {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while !endpoint.addr().ip_addrs().any(|addr| *addr == wanted) {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("{wanted} 一直没有宣告：{:?}", endpoint.addr()));
+            }
+        };
+        announced("192.168.1.2:18482").await;
+
+        addresses.send_replace(BTreeSet::from([ip("192.168.7.9")]));
+        announced("192.168.7.9:18482").await;
+        let old: SocketAddr = "192.168.1.2:18482".parse().unwrap();
+        assert!(!endpoint.addr().ip_addrs().any(|addr| *addr == old));
+
+        task.abort();
+        endpoint.close().await;
     }
 }

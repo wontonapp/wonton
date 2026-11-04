@@ -417,17 +417,15 @@ async fn device_identity_signs_in_to_oidc_without_a_core_session() {
 }
 
 #[tokio::test]
-async fn device_and_tunnel_management_still_require_the_owner_token() {
+async fn device_management_still_requires_the_owner_token() {
     let home = Home::start(None).await;
     let device = SecretKey::generate();
     home.register(&device).await;
     let phone = Phone::start(device, &home).await;
 
-    for path in ["/_wonton/api/devices", "/_wonton/api/tunnel"] {
-        let (status, headers, _) = phone.get(CORE, path).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
-        assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
-    }
+    let (status, headers, _) = phone.get(CORE, "/_wonton/api/devices").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
 }
 
 /// ADR-0017：App 经隧道管理插件；插件网页的请求同样带着设备身份，读也要拒绝。
@@ -518,14 +516,17 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         }
     }
 
-    for route in [
-        "/_wonton/api/devices",
-        "/_wonton/api/tunnel",
-        "/_wonton/api/lan",
-    ] {
+    for route in ["/_wonton/api/devices", "/_wonton/api/lan"] {
         let (status, _, _) = phone.send(Method::GET, CORE, route, &[]).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{route} 只给主人");
     }
+    // App 连上后跟着服务器的地址走，插件网页不能借设备身份探测。
+    let route = "/_wonton/api/tunnel";
+    let (status, _, text) = phone.send(Method::GET, CORE, route, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let page = ("origin", plugin_page.as_str());
+    let (status, _, _) = phone.send(Method::GET, CORE, route, &[page]).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 
     let (status, _, _) = lan(&home, Method::GET, CORE, path).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "局域网请求没有设备身份");

@@ -65,6 +65,10 @@ wonton-tunnel = { path = "../wonton-tunnel" }
 [target.'cfg(target_os = "ios")'.dependencies]
 libc = "=0.2.189"
 
+# MIT OR Apache-2.0。把 Application 交给 iroh 读系统 DNS，见 `src/android.rs`。
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 [dev-dependencies]
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
