@@ -141,6 +141,18 @@ impl Home {
         ));
     }
 
+    /// 同样的身份换一个端口，手机看来就是这台服务器换了地址。
+    pub async fn move_tunnel(&mut self) {
+        self.stop_tunnel().await;
+        let endpoint = loopback_endpoint(self.tunnel_key.clone(), 0).await;
+        self.tunnel_port = endpoint.bound_sockets()[0].port();
+        self.tunnel = Some(TunnelServer::spawn(
+            endpoint,
+            self.allowlist.clone(),
+            self.core_addr,
+        ));
+    }
+
     /// 登记推送时核心回给设备的 pushkey。
     pub fn pushkey(&self) -> &str {
         &self.core.pushkey

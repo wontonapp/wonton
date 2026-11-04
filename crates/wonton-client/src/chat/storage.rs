@@ -1,6 +1,7 @@
 //! 聊天在本机存的东西，都在壳给的数据目录的 `matrix/` 下：
 //!
-//! - `session.json`：登录状态（用户、设备、访问令牌和刷新令牌）和 homeserver 地址，重启后据此恢复会话；
+//! - `session.json`：登录状态（用户、设备、访问令牌和刷新令牌）、homeserver 地址和它属于哪台服务器，重启后据此恢复
+//!   会话；
 //! - `store/`：matrix-sdk 的 SQLite 存储，设备密钥、交叉签名、房间密钥、消息和媒体缓存；
 //! - `recovery-key`：刚设置恢复时生成的恢复密钥，只留到主人确认已经另外保存为止（App 在那之前被关掉，
 //!   下次启动还能看到）。
@@ -23,9 +24,13 @@ const SESSION: &str = "session.json";
 const STORE: &str = "store";
 const RECOVERY_KEY: &str = "recovery-key";
 
-/// 存下来的会话：登录状态加上登录时的 homeserver 地址。
+/// 存下来的会话：登录状态加上登录时的服务器。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct StoredSession {
+    /// 登录到哪台服务器：隧道的 endpoint ID，换 IP、换中继都不变。homeserver 地址和用户认不出服务器：每台默认都是
+    /// `matrix.wonton.localhost` 上的 `@owner`。没有这个字段的文件读出来是空串，对不上任何服务器，重新登录一次。
+    #[serde(default)]
+    pub(crate) server_id: String,
     pub(crate) homeserver_url: String,
     pub(crate) session: SavedSession,
 }
@@ -70,7 +75,7 @@ impl ChatStorage {
         write_private(&path, text.as_bytes()).map_err(|e| storage_error(&path, &e))
     }
 
-    /// 删掉登录状态和本地存储：设备被吊销，或者存储和登录状态对不上时，旧的设备密钥和房间密钥都用不上了。
+    /// 删掉登录状态和本地存储：设备被吊销、换了服务器，或者存储和登录状态对不上时，旧的设备密钥和房间密钥都用不上了。
     /// 还没确认保存的恢复密钥留着，主人在新设备上还要用它。
     pub(crate) fn forget_session(&self) -> Result<(), CoreError> {
         let session = self.dir.join(SESSION);

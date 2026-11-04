@@ -12,6 +12,7 @@ mod pending;
 mod push;
 mod resume;
 mod send;
+mod server_switch;
 mod support;
 mod upload_progress;
 

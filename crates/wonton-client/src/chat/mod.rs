@@ -1,8 +1,8 @@
 //! 聊天：经隧道登录主人的 Matrix 账号，房间列表、时间线、收发消息和端到端加密（ADR-0003、ADR-0005，以及
 //! ADR-0009 的“接口：App 登录和使用 Matrix”）。
 //!
-//! 跟着家里的连接走：本地代理就绪（或者换了）就登录。上次登录过就用存下来的登录状态恢复，不经服务器；否则经
-//! 隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
+//! 跟着家里的连接走：本地代理就绪（或者换了）就登录。上次登录的是同一台服务器就用存下来的登录状态恢复，不经服务器；
+//! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
 
 mod confirmation;
@@ -11,6 +11,7 @@ mod pending;
 mod read_mark;
 mod recovery;
 mod rich;
+mod sign_in;
 mod storage;
 mod timeline;
 mod view;
@@ -25,8 +26,7 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_matrix::{
-    ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SessionConfig, SessionEvent,
-    StoreConfig, SyncStatus,
+    ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SessionEvent, SyncStatus,
 };
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
@@ -41,11 +41,9 @@ pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
 use confirmation::{Answers, Cards, core_account};
-use storage::{ChatStorage, StoredSession};
+use storage::ChatStorage;
 use view::{core_error, recovery, room_row, sort_rooms, verification};
 
-/// 本设备在 Matrix 服务器上的显示名。
-const DEVICE_NAME: &str = "Wonton App";
 /// 向前翻页一次最多加载的事件数。
 const PAGE: u16 = 30;
 
@@ -450,13 +448,21 @@ impl ChatLink {
     /// 用 `proxy` 登录或恢复会话，然后开始同步。
     async fn connect(self: Arc<Self>, proxy: ProxySettings) {
         let mut active = self.active.lock().await;
+        // 等锁时可能又换了连接：这个代理已经没了，不能凭它动下一台服务器的登录状态。
+        let home = self.home.view();
+        let Some(server_id) = home
+            .server_id
+            .filter(|_| home.proxy.as_ref() == Some(&proxy))
+        else {
+            return;
+        };
         if let Some(old) = active.take() {
             self.forget_current().await;
             drop(old);
         }
         self.view
             .send_modify(|view| view.account = ChatAccount::SigningIn);
-        let session = match self.sign_in(&proxy).await {
+        let session = match self.sign_in(&proxy, server_id).await {
             Ok(session) => Arc::new(session),
             Err((reason, message)) => {
                 tracing::info!("登录 Matrix 失败：{message}");
@@ -511,56 +517,6 @@ impl ChatLink {
         if let Some(session) = session {
             session.stop_sync().await;
         }
-    }
-
-    async fn sign_in(&self, proxy: &ProxySettings) -> Result<MatrixSession, (ChatFailure, String)> {
-        let config = |homeserver_url: String| SessionConfig {
-            homeserver_url,
-            device_name: DEVICE_NAME.to_owned(),
-            store: StoreConfig::Sqlite {
-                path: self.storage.store_dir(),
-                passphrase: None,
-            },
-            proxy: Some(login::proxy_url(proxy)),
-        };
-        let storage_failure = |e: CoreError| (ChatFailure::Upstream, e.to_string());
-        let stored = self.storage.session().map_err(storage_failure)?;
-        // 登录状态要和 SQLite 存储一起用：存储没了还恢复，SDK 会给已有的设备 ID 生成新的设备密钥。存储不在就
-        // 重新登录一台新设备。
-        if let Some(stored) = stored.filter(|_| self.storage.has_store()) {
-            return MatrixSession::restore(&config(stored.homeserver_url), stored.session)
-                .await
-                .map_err(|e| (failure(&e), format!("恢复 Matrix 会话失败：{e}")));
-        }
-        let core_url = self.home.core_url().ok_or((
-            ChatFailure::NotReady,
-            "还没有家里服务器的连接信息".to_owned(),
-        ))?;
-        let token = login::login_token(&core_url, proxy, login::LOGIN_TOKEN_TIMEOUT).await?;
-        // 没有登录状态时，本地存储里的旧设备密钥属于别的设备，新登录用不上。
-        self.storage.forget_session().map_err(storage_failure)?;
-        let session =
-            MatrixSession::login_with_jwt(&config(token.homeserver_url.clone()), &token.token)
-                .await
-                .map_err(|e| (failure(&e), format!("登录 Matrix 失败：{e}")))?;
-        if session.user_id().as_str() != token.user_id {
-            tracing::warn!(expected = %token.user_id, actual = %session.user_id(), "登录得到的用户和核心说的不一样");
-        }
-        self.save(&session, token.homeserver_url)
-            .map_err(storage_failure)?;
-        Ok(session)
-    }
-
-    fn save(&self, session: &MatrixSession, homeserver_url: String) -> Result<(), CoreError> {
-        let Some(saved) = session.saved() else {
-            return Err(CoreError::Storage {
-                reason: "登录后取不到登录状态".to_owned(),
-            });
-        };
-        self.storage.save_session(&StoredSession {
-            homeserver_url,
-            session: saved,
-        })
     }
 
     /// 把会话的房间列表、加密状态、同步状态和会话事件接到 ViewModel 上。
@@ -666,7 +622,7 @@ async fn watch_session(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
         match event {
             SessionEvent::TokensRefreshed => {
                 let saved = chat.storage.session().and_then(|stored| match stored {
-                    Some(stored) => chat.save(&session, stored.homeserver_url),
+                    Some(stored) => chat.save(&session, stored.homeserver_url, stored.server_id),
                     None => Ok(()),
                 });
                 if let Err(error) = saved {
