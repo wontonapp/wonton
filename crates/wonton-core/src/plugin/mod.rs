@@ -46,6 +46,7 @@ pub mod store;
 pub mod store_info;
 pub mod storefront;
 pub mod system;
+mod upgrade;
 pub(crate) mod upstreams;
 pub mod views;
 mod watch;

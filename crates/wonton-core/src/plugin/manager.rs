@@ -28,6 +28,7 @@ use super::render::dry_run;
 use super::sources::{Source, Sources};
 use super::store::{InstalledRecord, Store};
 use super::storefront::{StoreConfig, Storefront};
+use super::upgrade::Upgrades;
 use super::views::Listed;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
@@ -45,6 +46,8 @@ pub enum PluginStatus {
         reason: String,
     },
     Uninstalling,
+    /// 正在换成新版本（见 [`super::upgrade`]）。
+    Upgrading,
 }
 
 /// 运行中的插件健不健康，是最近一次检查的结果（见 [`super::watch`]）。
@@ -242,6 +245,8 @@ pub struct PluginManager {
     pub(super) egress: Egress,
     /// 核心升级没结束时是真，这时不动插件（ADR-0025）。
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
+    /// 查到的新版本，见 [`super::upgrade`]。
+    pub(super) upgrades: Upgrades,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -300,6 +305,7 @@ impl PluginManager {
             lan,
             egress: Egress::default(),
             upgrade_frozen: None,
+            upgrades: Upgrades::default(),
         }
     }
 
@@ -647,7 +653,7 @@ impl PluginManager {
             ProviderState::NotReady(id) => Some(id),
             ProviderState::Ready(route) => Some(route.id),
         };
-        if provides_models && let Some(id) = existing {
+        if provides_models && let Some(id) = existing.filter(|id| *id != manifest.id) {
             return Err(InstallError::Conflict(format!(
                 "已经装了模型网关 {id}：同一时间只能有一个"
             )));
@@ -714,11 +720,12 @@ impl PluginManager {
     }
 }
 
-/// 插件正在安装或卸载时，对它的新操作如实回答“正在进行”。
-fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError> {
+/// 插件正在安装、卸载或升级时，对它的新操作如实回答“正在进行”。
+pub(super) fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError> {
     let doing = match status {
         PluginStatus::Installing => "安装",
         PluginStatus::Uninstalling => "卸载",
+        PluginStatus::Upgrading => "升级",
         PluginStatus::Running | PluginStatus::Degraded { .. } => return None,
     };
     Some(InstallError::Conflict(format!("插件 {id} 正在{doing}")))
@@ -734,7 +741,10 @@ pub(super) async fn detached<T: Send + 'static>(op: impl Future<Output = T> + Se
     }
 }
 
-fn check_permissions(manifest: &Manifest, granted: &[Permission]) -> Result<(), InstallError> {
+pub(super) fn check_permissions(
+    manifest: &Manifest,
+    granted: &[Permission],
+) -> Result<(), InstallError> {
     if let Some(extra) = granted.iter().find(|p| !manifest.permissions.contains(p)) {
         return Err(InstallError::Invalid(format!(
             "授予了清单没有声明的权限 {extra}"

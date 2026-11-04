@@ -9,6 +9,8 @@
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`） |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
+//! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 JSON 时取能升到的版本，也可以上传插件包，返回要主人确认的内容（`InstallPreview`） |
+//! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`InstalledPlugin`） |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
 //! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
 //! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
@@ -34,7 +36,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{
-    EgressProxyUpdate, InstallRequest, InstallSource, LanChoice, LanWebuiUpdate,
+    EgressProxyUpdate, InstallRequest, InstallSource, LanChoice, LanWebuiUpdate, UpgradeRequest,
 };
 
 use super::{Gateway, TunnelPeer, isolation, pages};
@@ -179,7 +181,13 @@ pub async fn list(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    Json(gateway.plugins.installed(&languages(&headers))).into_response()
+    Json(
+        gateway
+            .plugins
+            .installed_checked(&languages(&headers))
+            .await,
+    )
+    .into_response()
 }
 
 pub async fn detail(
@@ -272,21 +280,90 @@ async fn install_upload(
     query: &InstallQuery,
     body: &[u8],
 ) -> Result<PluginView, InstallError> {
-    let granted: Result<Vec<Permission>, _> = query
-        .grant
-        .split(',')
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .map(str::parse)
-        .collect();
-    let granted = granted.map_err(|e: <Permission as std::str::FromStr>::Err| {
-        InstallError::Invalid(e.to_string())
-    })?;
+    let granted = granted(query)?;
     let package = package(headers, body)?;
     gateway
         .plugins
         .install_detached(package, granted, query.lan_webui)
         .await
+}
+
+fn granted(query: &InstallQuery) -> Result<Vec<Permission>, InstallError> {
+    query
+        .grant
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::parse)
+        .collect::<Result<Vec<Permission>, _>>()
+        .map_err(|e: <Permission as std::str::FromStr>::Err| InstallError::Invalid(e.to_string()))
+}
+
+pub async fn preview_upgrade(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let from_source = body.is_empty() || json_body::<serde_json::Value>(&headers, &body).is_some();
+    let upload = if from_source {
+        None
+    } else {
+        match package(&headers, &body) {
+            Ok(package) => Some(package),
+            Err(e) => return install_error(&e),
+        }
+    };
+    let langs = languages(&headers);
+    match gateway.plugins.preview_upgrade(&id, upload, &langs).await {
+        Ok(preview) => Json(preview).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+pub async fn upgrade(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<InstallQuery>,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
+        Some(Err(e)) => return install_error(&e),
+        Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request).await,
+        None => match granted(&query).and_then(|grant| Ok((grant, package(&headers, &body)?))) {
+            Ok((grant, package)) => {
+                let plugins = &gateway.plugins;
+                plugins
+                    .upgrade_upload(&id, package, grant, query.lan_webui)
+                    .await
+            }
+            Err(e) => return install_error(&e),
+        },
+    };
+    if let Err(e) = upgraded {
+        return install_error(&e);
+    }
+    match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
+        Some(installed) => Json(installed).into_response(),
+        None => install_error(&InstallError::NotInstalled(id.to_string())),
+    }
 }
 
 #[derive(Deserialize)]
@@ -304,6 +381,7 @@ pub async fn store(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
+    drop(gateway.plugins.spawn_upgrade_check());
     let listing = gateway
         .plugins
         .store_listing(&languages(&headers), query.refresh)

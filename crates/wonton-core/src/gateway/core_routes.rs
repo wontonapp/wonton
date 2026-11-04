@@ -50,6 +50,14 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             get(api::detail).delete(api::uninstall),
         )
         .route(
+            "/_wonton/api/plugins/{id}/upgrade",
+            post(api::upgrade).layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/upgrade/preview",
+            post(api::preview_upgrade).layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/lan-webui",
             put(api::set_lan_webui),
         )

@@ -461,6 +461,14 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         let (status, _, text) = phone.send(Method::PUT, CORE, route, &[]).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {text}");
     }
+    // 升级也在 App 里。过了鉴权才看请求：空的请求体不是合法的上传包，预览时这个插件没装。
+    let upgrade = "/_wonton/api/plugins/app.whoami/upgrade";
+    let (status, _, text) = phone.send(Method::POST, CORE, upgrade, &[]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{text}");
+    let preview = "/_wonton/api/plugins/app.whoami/upgrade/preview";
+    let (status, headers, text) = phone.send(Method::POST, CORE, preview, &[]).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{text}");
+    assert_eq!(header(&headers, "x-wonton-error"), Some("not_installed"));
 
     let plugin_page = format!("http://{PLUGIN}:{PORT}");
     for (method, route) in [
@@ -478,6 +486,11 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         (Method::GET, "/_wonton/api/egress-proxy"),
         (Method::PUT, "/_wonton/api/egress-proxy"),
         (Method::PUT, "/_wonton/api/plugins/app.whoami/lan-webui"),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/upgrade"),
+        (
+            Method::POST,
+            "/_wonton/api/plugins/app.whoami/upgrade/preview",
+        ),
     ] {
         for page in [
             ("origin", plugin_page.as_str()),

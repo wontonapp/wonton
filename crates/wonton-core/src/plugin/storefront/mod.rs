@@ -22,10 +22,10 @@ use index::{Files, Index, IndexError};
 
 /// 官方索引所在的仓库。
 const STORE_REPO: (&str, &str) = ("geraldpeng6", "wonton-store");
-const OFFICIAL_TTL: Duration = Duration::from_secs(6 * 3600);
-const COMMUNITY_TTL: Duration = Duration::from_secs(10 * 60);
+pub(in crate::plugin) const OFFICIAL_TTL: Duration = Duration::from_secs(6 * 3600);
+pub(in crate::plugin) const COMMUNITY_TTL: Duration = Duration::from_secs(10 * 60);
 /// 两次去来源取之间至少隔这么久，App 要求刷新也一样。
-const MIN_RETRY: Duration = Duration::from_secs(60);
+pub(in crate::plugin) const MIN_RETRY: Duration = Duration::from_secs(60);
 /// `index.json` 最多这么大。
 const MAX_INDEX_BYTES: u64 = 8 << 20;
 
@@ -240,7 +240,7 @@ fn incomplete(index: &Index) -> Option<StoreProblem> {
     })
 }
 
-fn failure(e: &super::github::GitHubError) -> StoreFailure {
+pub(in crate::plugin) fn failure(e: &super::github::GitHubError) -> StoreFailure {
     match e {
         super::github::GitHubError::RateLimited(_) => StoreFailure::RateLimited,
         super::github::GitHubError::Unavailable(_) => StoreFailure::Unreachable,

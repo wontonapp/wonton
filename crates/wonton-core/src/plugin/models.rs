@@ -202,6 +202,58 @@ impl PluginManager {
         Ok(Some(self.model_vars(&route, package, &keys)))
     }
 
+    /// 升级时：旧凭据原样留着（新版本装不好还要退回去），只签发新版本多要的，记进 `added`。
+    pub(super) async fn upgrade_model_vars(
+        &self,
+        package: &PluginPackage,
+        added: &mut Vec<String>,
+    ) -> Result<Option<ModelVars>, InstallError> {
+        let manifest = &package.manifest;
+        if !uses_models(manifest) {
+            return Ok(None);
+        }
+        let route = self.provider()?;
+        let store = self.store.model_keys();
+        let mut keys = store.load(&manifest.id)?;
+        let (plugin, bot) = credential_names(package);
+        for name in plugin.iter().chain(bot.iter()) {
+            if keys.contains_key(name) {
+                continue;
+            }
+            let key = random_token();
+            keys.insert(name.clone(), key.clone());
+            store.save(&manifest.id, &keys)?;
+            added.push(name.clone());
+            self.issue_verified(&route, name, &key).await?;
+        }
+        Ok(Some(self.model_vars(&route, package, &keys)))
+    }
+
+    /// 退回旧版本时吊销 [`Self::upgrade_model_vars`] 多签发的。
+    pub(super) async fn revoke_model_names(
+        &self,
+        id: &PluginId,
+        names: &[String],
+    ) -> Result<(), InstallError> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        let route = self.provider()?;
+        let store = self.store.model_keys();
+        let mut keys = store.load(id)?;
+        for name in names {
+            self.run_command(&route, &route.spec.credentials.revoke, name, None)
+                .await?;
+            keys.remove(name);
+        }
+        if keys.is_empty() {
+            store.remove(id)?;
+        } else {
+            store.save(id, &keys)?;
+        }
+        Ok(())
+    }
+
     /// 重建容器时（见 [`super::lan`]）：用记下的凭据，不重新签发。网关没在运行时如实报错。
     pub(super) fn stored_model_vars(
         &self,

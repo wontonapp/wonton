@@ -55,19 +55,19 @@ pub struct LifecycleConfig {
 #[derive(Default)]
 pub(super) struct Undo {
     containers: Vec<String>,
-    volumes: Vec<String>,
+    pub(super) volumes: Vec<String>,
     network: Option<String>,
     /// 发布局域网端口的网络（见 [`super::lan`]）。
-    lan_network: Option<String>,
+    pub(super) lan_network: Option<String>,
     core_attached: bool,
     oidc_client: Option<String>,
     app_dir_created: Option<PathBuf>,
     /// 本次安装之前插件的密钥（`None` 表示原来没有），回滚时恢复成这样。
     secrets_before: Option<(PluginId, Option<Secrets>)>,
     /// 本次安装代 Bot 登录的设备，回滚时吊销（账号和主房间保留给下次安装）。
-    bot: Option<(PluginId, ProvisionedBot)>,
+    pub(super) bot: Option<(PluginId, ProvisionedBot)>,
     /// 本次安装把主房间交给了主人（主人原来不在里面），回滚时收回。
-    handed_over: bool,
+    pub(super) handed_over: bool,
     /// 已登记插件网络的地址段，回滚时注销。
     source: Option<PluginId>,
     /// 本次安装在模型网关里签发了凭据的插件，回滚时吊销。
@@ -76,14 +76,14 @@ pub(super) struct Undo {
 
 /// 插件声明的命名卷怎么处理。
 #[derive(Debug, PartialEq, Eq)]
-enum VolumeAction {
+pub(super) enum VolumeAction {
     Create,
     Reuse,
 }
 
 /// Docker 创建同名卷时直接返回已有的卷，所以先看它属于谁：不存在就新建（安装失败时回滚删除）；
 /// 属于本插件（上次不删数据卸载后保留的）就复用，回滚时不删；属于其他插件或不是核心创建的，拒绝安装。
-fn volume_action(
+pub(super) fn volume_action(
     volume: &str,
     labels: Option<&HashMap<String, String>>,
     plugin: &PluginId,
@@ -99,7 +99,7 @@ fn volume_action(
 }
 
 impl PluginManager {
-    fn hydra(&self) -> Result<&Hydra, InstallError> {
+    pub(super) fn hydra(&self) -> Result<&Hydra, InstallError> {
         self.oidc.as_ref().ok_or_else(|| {
             InstallError::OidcUnavailable(
                 "核心没有配置身份提供方（WONTON_OIDC_ADMIN_URL / WONTON_OIDC_PUBLIC_URL）".into(),
@@ -257,7 +257,7 @@ impl PluginManager {
     }
 
     /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
-    fn prepare_secrets(
+    pub(super) fn prepare_secrets(
         &self,
         manifest: &Manifest,
         undo: &mut Undo,
@@ -356,7 +356,7 @@ impl PluginManager {
 
     /// 插件网络能连到哪里：声明了 `network.egress` 才能出网。不能出网时，核心在容器里就连宿主也隔开（核心
     /// 加入插件网络访问插件）；核心直接跑在宿主上时要经网桥访问插件，只能用普通的内部网络。
-    fn network_reach(&self, manifest: &Manifest) -> NetworkReach {
+    pub(super) fn network_reach(&self, manifest: &Manifest) -> NetworkReach {
         if manifest.permissions.contains(&Permission::NetworkEgress) {
             NetworkReach::Egress
         } else if self.cfg.core_container.is_some() {
@@ -406,7 +406,7 @@ impl PluginManager {
 
     /// 绑定挂载的源目录由核心预先创建并交给挂载它的服务的属主，否则 Docker 会以 root 身份创建。
     /// 逐级检查、不跟随软链接：应用数据目录里可能有上次安装的插件留下的软链接。
-    fn prepare_dirs(
+    pub(super) fn prepare_dirs(
         &self,
         ctx: &InstallContext,
         dirs: &BTreeMap<PathBuf, Owner>,
@@ -466,7 +466,7 @@ impl PluginManager {
         Ok(Health::of(healthy))
     }
 
-    async fn rollback(&self, undo: Undo) -> Vec<String> {
+    pub(super) async fn rollback(&self, undo: Undo) -> Vec<String> {
         let mut failures = Vec::new();
         let mut note = |what: String, result: Result<(), String>| {
             if let Err(e) = result {
@@ -724,7 +724,7 @@ fn describe_reach(reach: Option<NetworkReach>) -> &'static str {
     }
 }
 
-fn client_spec(manifest: &Manifest, ctx: &InstallContext, secret: &str) -> ClientSpec {
+pub(super) fn client_spec(manifest: &Manifest, ctx: &InstallContext, secret: &str) -> ClientSpec {
     let webui = manifest.webui.as_ref();
     let base = ctx.app_url.clone().unwrap_or_default();
     let oidc = webui.and_then(|w| w.oidc.as_ref());

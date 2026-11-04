@@ -97,6 +97,7 @@ pub(super) fn state_of(status: &PluginStatus) -> String {
         PluginStatus::Running => "运行中".to_owned(),
         PluginStatus::Degraded { reason } => format!("异常：{reason}"),
         PluginStatus::Uninstalling => "卸载中".to_owned(),
+        PluginStatus::Upgrading => "升级中".to_owned(),
     }
 }
 

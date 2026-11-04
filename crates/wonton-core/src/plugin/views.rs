@@ -86,7 +86,7 @@ impl PluginManager {
         listed.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
         InstalledPlugins {
             plugins: listed.into_iter().map(|(_, p)| self.with_bot(p)).collect(),
-            upgrade_check: None,
+            upgrade_check: self.upgrades.problem(),
         }
     }
 
@@ -148,17 +148,23 @@ impl PluginManager {
         package: &PluginPackage,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
+        let blocked = blocked_by(self.precheck(&package.manifest).await)?;
+        self.preview_with(package, langs, blocked).await
+    }
+
+    /// 要主人确认的内容，`blocked` 是已经知道的装不了的原因。安装和升级共用。
+    pub(super) async fn preview_with(
+        &self,
+        package: &PluginPackage,
+        langs: &Languages,
+        blocked: Option<String>,
+    ) -> Result<InstallPreview, InstallError> {
         let plan = dry_run(package)?;
         let icon = self.check_icon(package).await?;
         if let Some(icon) = &icon {
             self.gallery.remember_preview(icon);
         }
         let m = &package.manifest;
-        let blocked = match self.precheck(m).await {
-            Ok(()) => None,
-            Err(InstallError::Unsupported(reason) | InstallError::Conflict(reason)) => Some(reason),
-            Err(e) => return Err(e),
-        };
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m).await?;
         let lan = self.lan_preview(package).await?;
@@ -292,16 +298,32 @@ impl PluginManager {
                 )));
             }
         }
+        self.fits_host(m).await
+    }
+
+    /// 核心支持它要的权限，这台主机放得下它。
+    async fn fits_host(&self, m: &Manifest) -> Result<(), InstallError> {
         if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
             return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
         }
         self.check_requirements(m).await
     }
 
+    /// 升级预览里这台主机上升不了的原因。
+    pub(super) async fn host_block(&self, m: &Manifest) -> Result<Option<String>, InstallError> {
+        if m.kind == PluginKind::System {
+            return Ok(Some("系统插件只能随核心预装".to_owned()));
+        }
+        blocked_by(self.fits_host(m).await)
+    }
+
     /// 列表里的一项，还没填 Bot。
     fn listing(&self, id: &PluginId, entry: &Entry, langs: &Languages) -> InstalledPlugin {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
         let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
+        let (upgrade, notices) = self
+            .upgrades
+            .listing(id, &entry.version, &entry.status, langs);
         InstalledPlugin {
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
@@ -323,9 +345,9 @@ impl PluginManager {
             status: state(&entry.status, entry.health),
             web_url: entry.has_webui.then(|| self.web_url(id)),
             bot_user_id: None,
-            upgrade: None,
+            upgrade,
             removable: !entry.system,
-            notices: Vec::new(),
+            notices,
         }
     }
 
@@ -339,6 +361,15 @@ impl PluginManager {
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
         }
         plugin
+    }
+}
+
+/// 检查的结果：这台主机上装不了时是原因，别的错误原样报。
+fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, InstallError> {
+    match checked {
+        Ok(()) => Ok(None),
+        Err(InstallError::Unsupported(reason) | InstallError::Conflict(reason)) => Ok(Some(reason)),
+        Err(e) => Err(e),
     }
 }
 
@@ -476,6 +507,7 @@ fn state(status: &PluginStatus, health: Option<Health>) -> PluginState {
             reason: reason.clone(),
         },
         PluginStatus::Uninstalling => PluginState::Uninstalling,
+        PluginStatus::Upgrading => PluginState::Upgrading,
     }
 }
 

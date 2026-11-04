@@ -18,6 +18,7 @@ pub mod probe;
 mod relay;
 pub mod settings;
 mod switch;
+pub(in crate::plugin) use switch::cannot_read;
 
 use std::collections::BTreeSet;
 

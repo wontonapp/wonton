@@ -174,7 +174,7 @@ impl PluginManager {
     }
 
     /// Bot 插件的 Matrix 变量，令牌从旧容器读回。读不到时报错，容器还没动。
-    async fn bot_vars_read_back(
+    pub(in crate::plugin) async fn bot_vars_read_back(
         &self,
         package: &PluginPackage,
         ctx: &InstallContext,
@@ -234,7 +234,7 @@ fn goes_out(entry: &Entry) -> bool {
     })
 }
 
-fn cannot_read(reason: String) -> InstallError {
+pub(in crate::plugin) fn cannot_read(reason: String) -> InstallError {
     InstallError::Unhealthy(format!("Bot 的令牌读不回来：{reason}。{REINSTALL}"))
 }
 

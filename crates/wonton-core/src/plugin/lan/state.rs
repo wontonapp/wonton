@@ -70,7 +70,7 @@ impl Lan {
     }
 
     /// 记为正在重建，已经在重建时返回 `false`。
-    pub(super) fn begin(&self, id: &PluginId) -> bool {
+    pub(in crate::plugin) fn begin(&self, id: &PluginId) -> bool {
         self.memory().rebuilding.insert(id.clone())
     }
 

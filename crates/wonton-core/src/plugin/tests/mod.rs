@@ -30,6 +30,7 @@ mod preinstall;
 mod resources;
 mod secrets;
 mod store;
+mod upgrade;
 mod views;
 mod watch;
 
