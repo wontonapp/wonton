@@ -481,6 +481,22 @@ impl PluginsLink {
         result
     }
 
+    pub(crate) async fn revoke_save_grant(
+        &self,
+        id: &str,
+        folder: &str,
+    ) -> Result<PluginDetail, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        api.delete(
+            &["plugins", id, "save-grants"],
+            &[("folder", folder)],
+            READ_TIMEOUT,
+        )
+        .await
+        .map_err(to_core_error)?;
+        self.installed_plugin(id).await
+    }
+
     /// 图片的地址内容不变（ADR-0017），取到一次就存在本机。缓存写不进去不影响这次的结果，下次再取。
     pub(crate) async fn load_image(&self, image: &PluginImage) -> Result<Vec<u8>, CoreError> {
         let cached = self.images_dir.join(cache_name(&image.path));

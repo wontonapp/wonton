@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +54,7 @@ import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.ImageBroken
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
+import kotlinx.coroutines.launch
 
 /** 截图按手机竖屏的比例占位。 */
 private const val SCREENSHOT_RATIO = 9f / 19.5f
@@ -127,6 +129,9 @@ private fun DetailContent(
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
         val offer = detail.lanWebui
         if (offer != null && detail.installed != null) InstalledLanWebui(plugins, detail.id, offer, onToggled)
+        if (detail.installed != null && detail.saveGrants.isNotEmpty()) {
+            SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
+        }
         DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(
@@ -136,6 +141,48 @@ private fun DetailContent(
                 WontonButtonKind.DANGER,
             )
         }
+    }
+}
+
+/** Bot 能存文件的路径（ADR-0027）。撤销只拦后面的调用，已经放进去的文件不动。 */
+@Composable
+private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>, onUpdated: (PluginDetail) -> Unit) {
+    val colors = WontonTheme.colors
+    val scope = rememberCoroutineScope()
+    var revoking by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    DetailSection("能存文件的文件夹") {
+        folders.forEach { folder ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    folder,
+                    Modifier.weight(1f),
+                    style = WontonTheme.typography.body,
+                    color = colors.textPrimary.toColor(),
+                )
+                WontonButton(
+                    "撤销",
+                    {
+                        revoking = true
+                        problem = null
+                        scope.launch {
+                            try {
+                                onUpdated(plugins.core.revokeSaveGrant(id, folder))
+                            } catch (failure: CoreException) {
+                                problem = failure.toString()
+                            }
+                            revoking = false
+                        }
+                    },
+                    kind = WontonButtonKind.SECONDARY,
+                    enabled = !revoking,
+                )
+            }
+        }
+        problem?.let { WontonNotice(WontonIcon.Warning, it) }
     }
 }
 

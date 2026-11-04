@@ -73,6 +73,9 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
                     }
+                    if let installed = detail.installed, !detail.saveGrants.isEmpty {
+                        SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
+                    }
                     DetailSections(detail: detail)
                     if let installed = detail.installed, installed.removable, !isWorking {
                         Button(role: .destructive) {
@@ -155,6 +158,48 @@ private struct InstalledLanWebui: View {
                 if let detail = try? await model.core.installedPlugin(id: id) { updated(detail) }
             }
             target = nil
+        }
+    }
+}
+
+/// Bot 能存文件的路径（ADR-0027）。撤销只拦后面的调用，已经放进去的文件不动。
+private struct SaveGrants: View {
+    let model: PluginsModel
+    let id: String
+    let folders: [String]
+    let updated: (PluginDetail) -> Void
+    @State private var revoking = false
+    @State private var problem: String?
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        DetailSection(title: "能存文件的文件夹") {
+            ForEach(folders, id: \.self) { folder in
+                HStack(spacing: WontonTheme.spacing.s12) {
+                    Text(folder)
+                        .wontonText(WontonTheme.typography.body)
+                        .foregroundStyle(Color(colors.textPrimary))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("撤销") { revoke(folder) }
+                        .buttonStyle(WontonButtonStyle(kind: .secondary))
+                        .fixedSize()
+                        .disabled(revoking)
+                }
+            }
+            if let problem { WontonNotice(icon: .warning, title: problem) }
+        }
+    }
+
+    private func revoke(_ folder: String) {
+        revoking = true
+        problem = nil
+        Task {
+            do {
+                updated(try await model.core.revokeSaveGrant(id: id, folder: folder))
+            } catch {
+                problem = String(describing: error)
+            }
+            revoking = false
         }
     }
 }

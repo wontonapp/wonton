@@ -243,6 +243,17 @@ impl ClientCore {
             .await
     }
 
+    /// 撤销 Bot 往这个路径存文件的授权（ADR-0027），只拦后面的调用；返回撤销之后的详情。
+    pub async fn revoke_save_grant(
+        &self,
+        id: String,
+        folder: String,
+    ) -> Result<PluginDetail, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.revoke_save_grant(&id, &folder).await })
+            .await
+    }
+
     /// 取插件的图标或截图：PNG 或 JPEG 的字节，经隧道取回并缓存，同 [`load_media`](Self::load_media)。
     pub async fn load_plugin_image(&self, image: PluginImage) -> Result<Vec<u8>, CoreError> {
         let plugins = self.plugins.clone();
