@@ -290,15 +290,23 @@ impl PluginPackage {
         &self.volumes
     }
 
-    /// 一次性服务：被其他服务以 `condition: service_completed_successfully` 依赖的服务。
+    /// 一次性服务：写了 `restart: "no"` 的服务，和被其他服务以 `condition: service_completed_successfully`
+    /// 依赖的服务（后者没写 `restart: "no"` 时渲染报错）。
     pub fn one_shot_services(&self) -> BTreeSet<&str> {
         let completed = Value::String("service_completed_successfully".to_owned());
-        self.services
+        let no_restart = Value::String("no".to_owned());
+        let depended_on = self
+            .services
             .values()
             .filter_map(|service| service.get("depends_on")?.as_object())
             .flat_map(|deps| deps.iter())
             .filter(|(_, spec)| spec.get("condition") == Some(&completed))
-            .filter_map(|(dep, _)| self.services.get_key_value(dep).map(|(k, _)| k.as_str()))
+            .filter_map(|(dep, _)| self.services.get_key_value(dep).map(|(k, _)| k.as_str()));
+        self.services
+            .iter()
+            .filter(|(_, service)| service.get("restart") == Some(&no_restart))
+            .map(|(name, _)| name.as_str())
+            .chain(depended_on)
             .collect()
     }
 

@@ -121,6 +121,35 @@ fn one_shot_services_must_not_be_restarted() {
     assert_eq!(one_shot, [("init", true), ("app", false)]);
 }
 
+#[tokio::test]
+async fn a_one_shot_service_nobody_depends_on_still_has_to_finish() {
+    let compose = package(
+        "  app:\n    image: nginx\n  provision:\n    image: busybox\n    restart: 'no'\n    \
+         depends_on:\n      app: {condition: service_started}",
+        "  permissions: []",
+    );
+    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let one_shot: Vec<(&str, bool)> = plan
+        .containers
+        .iter()
+        .map(|c| (c.service.as_str(), c.one_shot))
+        .collect();
+    assert_eq!(one_shot, [("app", false), ("provision", true)]);
+
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let provision = container_name("app-test", "provision");
+    docker.set_state(&provision, exited(1));
+    let m = manager_with(engine, &dir);
+    assert!(
+        m.install(&compose, &[]).await.is_err(),
+        "收尾失败就是没装好"
+    );
+    docker.set_state(&provision, exited(0));
+    let view = m.install(&compose, &[]).await.unwrap();
+    assert_eq!(view.status, PluginStatus::Running);
+}
+
 /// 规范：长期运行的服务都要有健康检查，官方目录的插件缺了不收录。`plugins/examples/` 不进官方目录，
 /// 其中 whoami 的镜像里没有任何可以用来检查的命令。插件草稿用到核心还没实现的字段，这里直接读 YAML。
 #[test]
@@ -135,14 +164,7 @@ fn official_plugins_check_the_health_of_every_long_running_service() {
         }
         let doc: Value = serde_saphyr::from_str(&fs::read_to_string(&compose).unwrap()).unwrap();
         let services = doc["services"].as_object().expect("compose 里有服务");
-        let one_shot: Vec<&String> = services
-            .values()
-            .filter_map(|s| s["depends_on"].as_object())
-            .flat_map(|deps| deps.iter())
-            .filter(|(_, spec)| spec["condition"] == "service_completed_successfully")
-            .map(|(name, _)| name)
-            .collect();
-        for (name, service) in services.iter().filter(|(n, _)| !one_shot.contains(n)) {
+        for (name, service) in services.iter().filter(|(_, s)| s["restart"] != "no") {
             let check = &service["healthcheck"];
             assert!(
                 !check["test"].is_null() && check["disable"] != true,

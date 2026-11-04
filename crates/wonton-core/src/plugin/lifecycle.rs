@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
+use super::compose::DependCondition;
 use super::configs;
 use super::core_address;
 use super::docker::{LabeledResources, NetworkReach};
@@ -456,7 +457,12 @@ impl PluginManager {
             }
             self.engine.start_container(&container.name).await?;
         }
-        // 一次性服务已经在被依赖时等到以 0 退出；其余容器都必须健康或稳定运行。
+        // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
+        for container in plan.containers.iter().filter(|c| c.one_shot) {
+            let finished = Target::Depend(DependCondition::ServiceCompletedSuccessfully);
+            health::wait_for(&self.engine, &container.name, finished, deadline).await?;
+        }
+        // 其余容器都必须健康或稳定运行。
         let mut healthy = Vec::new();
         for container in plan.containers.iter().filter(|c| !c.one_shot) {
             let readiness =
