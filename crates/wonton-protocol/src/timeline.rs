@@ -2,7 +2,7 @@
 //!
 //! 时间线可能有成百上千条，每次变化都推整份太浪费，所以推的是增量批次，不能合并：壳要按顺序把每一批应用到
 //! 自己持有的列表上。第一批总是 [`TimelineDiff::Reset`]，给出当前的全部条目。条目和 matrix-rust-sdk 的时间线
-//! 一一对应（含日期分隔线、已读标记、成员变化等），下标就是 SDK 的下标，核心不做筛选。
+//! 一一对应（含日期分隔线、已读标记等），下标就是 SDK 的下标；哪些事件进时间线由 `wonton-matrix` 的事件过滤决定。
 
 use serde::{Deserialize, Serialize};
 
@@ -328,7 +328,7 @@ mod tests {
             item(
                 "6",
                 TimelineContent::Notice {
-                    text: "Hermes 加入了房间".into(),
+                    text: "Hermes 离开了房间".into(),
                 },
             ),
         ];

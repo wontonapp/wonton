@@ -176,15 +176,22 @@ async fn timeline_increments_rebuild_the_timeline_and_paginate_to_the_start() {
             _ => None,
         })
         .collect();
-    assert!(
-        notices.contains(&"Bob 加入了房间"),
-        "成员加入应以显示名显示成一行说明：{notices:?}"
-    );
-    // 建房时的权限、加入规则、历史可见性这类设置不显示。
-    assert!(
-        !notices.iter().any(|text| text.contains("修改了房间设置")),
-        "不应显示建房时的房间设置：{notices:?}"
-    );
+    // 建房、加密、权限、谁加入这些都不显示，新房间不是先来一串系统事件。
+    assert!(notices.is_empty(), "不应显示系统事件：{notices:?}");
+
+    // 对方走了要让人知道。
+    bob.leave_room(&room_id).await.expect("Bob 离开");
+    eventually(
+        "Alice 看到 Bob 离开",
+        entry_snapshots(&alice_room).await,
+        |entries| {
+            entries
+                .iter()
+                .any(|entry| entry.kind == EntryKind::Notice("Bob 离开了房间".into()))
+                .then_some(())
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
