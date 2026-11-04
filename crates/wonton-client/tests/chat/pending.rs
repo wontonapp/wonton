@@ -105,7 +105,7 @@ async fn a_card_that_runs_out_is_settled_without_an_edit() {
     let (core, notices) = core_room(&phone, &home).await;
     let room = core.open_room(&notices).await.expect("核心打开私聊");
 
-    send(&room, content(&card("short", now_ms() + 5_000))).await;
+    send(&room, content(&card("short", now_ms() + 20_000))).await;
     wait_pending(&phone, "卡片在等", &["short"]).await;
     wait_settled(&phone, "到期了", "short").await;
     assert!(phone.chat().pending_confirmations.is_empty());
