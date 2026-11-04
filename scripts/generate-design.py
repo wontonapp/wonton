@@ -40,6 +40,12 @@ def camel_upper(name):
     return name[0].upper() + name[1:]
 
 
+def for_platform(tokens, platform):
+    """圆角可以分平台（ADR-0029）。"""
+    radii = {name: value[platform] if isinstance(value, dict) else value for name, value in tokens["radii"].items()}
+    return {**tokens, "radii": radii}
+
+
 def swift_tokens(tokens):
     enums = []
     for section, unit in [("spacing", "CGFloat"), ("radii", "CGFloat"), ("size", "CGFloat"), ("ratio", "CGFloat")]:
@@ -184,11 +190,11 @@ def expected_files():
     icons = tomllib.loads((DESIGN / "icons.toml").read_text())
     noise = (DESIGN / "noise.png").read_bytes()
     files = {
-        IOS / "Design/Generated/WontonTokens.swift": swift_tokens(tokens).encode(),
+        IOS / "Design/Generated/WontonTokens.swift": swift_tokens(for_platform(tokens, "ios")).encode(),
         IOS / "Design/Generated/WontonIcon.swift": swift_icons(icons).encode(),
         IOS / "noise.png": noise,
         COMPOSE / "res/drawable-nodpi/wonton_noise.png": noise,
-        KOTLIN / "design/generated/WontonTokens.kt": kotlin_tokens(tokens).encode(),
+        KOTLIN / "design/generated/WontonTokens.kt": kotlin_tokens(for_platform(tokens, "android")).encode(),
     }
     files.update(ios_assets(icons))
     files.update(compose_icons(icons))

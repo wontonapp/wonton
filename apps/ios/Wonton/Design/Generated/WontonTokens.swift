@@ -14,13 +14,13 @@ enum WontonSpacing {
 }
 
 enum WontonRadii {
-    static let control: CGFloat = 12
-    static let card: CGFloat = 16
-    static let bubble: CGFloat = 16
-    static let bubbleJoined: CGFloat = 4
+    static let control: CGFloat = 14
+    static let card: CGFloat = 20
+    static let bubble: CGFloat = 18
+    static let bubbleJoined: CGFloat = 6
     static let pill: CGFloat = 999
-    static let bar: CGFloat = 22
-    static let barItem: CGFloat = 16
+    static let bar: CGFloat = 999
+    static let barItem: CGFloat = 999
 }
 
 enum WontonSize {

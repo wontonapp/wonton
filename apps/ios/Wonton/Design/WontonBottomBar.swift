@@ -13,7 +13,7 @@ extension EnvironmentValues {
     }
 }
 
-/// 主界面的底栏（ADR-0026）：浮起的表面加噪点，选中的一项是重点色的填充和实心图标。
+/// 主界面的底栏（ADR-0029）：浮起的系统材质，选中的一项是重点色的填充和实心图标。
 struct WontonBottomBar<Tab: Hashable>: View {
     struct Item {
         let tab: Tab
@@ -35,8 +35,7 @@ struct WontonBottomBar<Tab: Hashable>: View {
         .padding(WontonTheme.spacing.s8)
         .background {
             let shape = RoundedRectangle(cornerRadius: WontonTheme.radii.bar)
-            shape.fill(Color(colors.surface))
-                .overlay { NoiseTile().clipShape(shape) }
+            shape.fill(.regularMaterial)
                 .overlay { shape.strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
                 .shadow(color: .black.opacity(0.08), radius: 14, y: 4)
         }

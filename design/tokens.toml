@@ -11,14 +11,15 @@ s48 = 48
 pageInset = 16
 sectionGap = 24
 
+# 圆角可以分平台（ADR-0029）。
 [radii]
-control = 12
-card = 16
-bubble = 16
-bubbleJoined = 4
+control = { ios = 14, android = 12 }
+card = { ios = 20, android = 16 }
+bubble = { ios = 18, android = 16 }
+bubbleJoined = { ios = 6, android = 4 }
 pill = 999
-bar = 22
-barItem = 16
+bar = { ios = 999, android = 22 }
+barItem = { ios = 999, android = 16 }
 
 [size]
 target = 48
