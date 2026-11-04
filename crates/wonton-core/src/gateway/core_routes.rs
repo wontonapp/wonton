@@ -21,6 +21,10 @@ use super::{
 fn confirmation_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route("/_wonton/confirmations/{id}", post(confirmations::answer))
+        .route(
+            "/_wonton/confirmations/{id}/window",
+            delete(confirmations::stop_window),
+        )
         .route("/_wonton/api/confirmations", get(confirmations::pending))
         .route(
             "/_wonton/api/plugins/{id}/tool-policy",

@@ -134,6 +134,18 @@ pub(super) fn install_error(error: &InstallError) -> Response {
 
 /// 只接受 `Authorization: Bearer <主人令牌>`：浏览器 Cookie 随请求自动带上，插件网页可以借此发起跨站请求。未授权时
 /// 返回要直接回给客户端的响应。
+/// 过了 [`plugin_denied`] 的请求是谁发的，写审计用。
+pub(super) fn acted_by(
+    gateway: &Gateway,
+    peer: Option<&Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+) -> String {
+    match (denied(gateway, headers), peer) {
+        (Some(_), Some(Extension(TunnelPeer(device)))) => format!("device:{device}"),
+        _ => "owner_token".to_owned(),
+    }
+}
+
 pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response> {
     let token = headers
         .get(AUTHORIZATION)

@@ -156,7 +156,7 @@ pub struct Cards {
     pub update_handles: Mutex<Vec<String>>,
     /// 下一次更新时卡片换了地方，给出这个新标识。
     pub moves_to: Mutex<Option<String>>,
-    /// 为真时发卡片失败，模拟 Matrix 不可用。
+    /// 为真时发卡片和更新卡片都失败，模拟 Matrix 不可用。
     pub broken: std::sync::atomic::AtomicBool,
 }
 
@@ -202,6 +202,9 @@ impl Notifier for Cards {
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<Option<String>, String>> {
         async move {
+            if self.broken.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Matrix 连不上".to_owned());
+            }
             self.updates.lock().unwrap().push(card.clone());
             self.update_handles.lock().unwrap().push(handle.to_owned());
             Ok(self.moves_to.lock().unwrap().take())

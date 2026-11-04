@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use wonton_protocol::{Answer, CardChoice, ConfirmationState};
 
 use super::cards::Draft;
+use super::confirm::DEFAULT_WINDOW;
 use super::test_support::{Cards, Notes, serve_notes};
 use super::upstream::{ReadError, Upstreams};
 use super::{AnswerError, Bus, Caller, Confirmations};
@@ -136,14 +137,24 @@ fn write_index(dir: &tempfile::TempDir) {
 
 async fn setup_with_upstreams(upstreams: Upstreams) -> Setup {
     let (_docker, engine) = FakeDocker::start().await;
-    setup_with(engine, Duration::from_secs(5), upstreams).await
+    setup_with(engine, Duration::from_secs(5), DEFAULT_WINDOW, upstreams).await
 }
 
 pub(super) async fn setup(engine: Engine, ttl: Duration) -> Setup {
-    setup_with(engine, ttl, Upstreams::new()).await
+    setup_with(engine, ttl, DEFAULT_WINDOW, Upstreams::new()).await
 }
 
-async fn setup_with(engine: Engine, ttl: Duration, upstreams: Upstreams) -> Setup {
+pub(super) async fn setup_window(window: Duration) -> Setup {
+    let (_docker, engine) = FakeDocker::start().await;
+    setup_with(engine, Duration::from_secs(5), window, Upstreams::new()).await
+}
+
+async fn setup_with(
+    engine: Engine,
+    ttl: Duration,
+    window: Duration,
+    upstreams: Upstreams,
+) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let manager = manager(engine, &dir);
     let notes = Notes::default();
@@ -153,7 +164,7 @@ async fn setup_with(engine: Engine, ttl: Duration, upstreams: Upstreams) -> Setu
     manager.register_for_test(manifest, PluginStatus::Running, None);
     manager.mcp_for_test(&id, url);
     let cards = Arc::new(Cards::default());
-    let confirmations = Arc::new(Confirmations::new(cards.clone(), ttl));
+    let confirmations = Arc::new(Confirmations::new(cards.clone(), ttl).with_window_length(window));
     let audit = dir.path().join("audit.jsonl");
     write_index(&dir);
     let bus = Bus::with_upstreams(
@@ -443,6 +454,7 @@ async fn an_answer_has_to_match_a_button_on_the_card() {
             button(Answer::Approve, "always"),
             button(Answer::Reject, "no"),
         ],
+        scope: None,
     };
     let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
     let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });

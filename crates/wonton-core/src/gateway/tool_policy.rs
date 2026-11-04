@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, Method, StatusCode};
 
-use super::api::{denied, error_response, install_error, plugin_denied};
+use super::api::{acted_by, error_response, install_error, plugin_denied};
 use super::{Gateway, TunnelPeer};
 use crate::mcp::{Endpoint, PolicyChange};
 use crate::plugin::{InstallError, PluginId};
@@ -25,10 +25,7 @@ fn granted<'a>(
     headers: &HeaderMap,
     id: &str,
 ) -> Result<Granted<'a>, Box<Response>> {
-    let by = match (denied(gateway, headers), &peer) {
-        (Some(_), Some(Extension(TunnelPeer(device)))) => format!("device:{device}"),
-        _ => "owner_token".to_owned(),
-    };
+    let by = acted_by(gateway, peer.as_ref(), headers);
     if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return Err(Box::new(denied));
     }

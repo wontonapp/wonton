@@ -210,6 +210,8 @@ pub struct Config {
     pub store: StoreConfig,
     /// 确认卡片发出后多久没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`，ADR-0016）。
     pub confirmation_ttl: Duration,
+    /// 卡片上放行时段的长度（`WONTON_CONFIRMATION_WINDOW_SECS`，ADR-0024）。
+    pub confirmation_window: Duration,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -314,11 +316,8 @@ impl Config {
             default_plugins: get("WONTON_DEFAULT_PLUGINS").map(PathBuf::from),
             docs: docs_dir(get("WONTON_DOCS")),
             store: store_config(&get)?,
-            confirmation_ttl: Duration::from_secs(parse(
-                &get,
-                "WONTON_CONFIRMATION_TTL_SECS",
-                600,
-            )?),
+            confirmation_ttl: secs(&get, "WONTON_CONFIRMATION_TTL_SECS", 600)?,
+            confirmation_window: secs(&get, "WONTON_CONFIRMATION_WINDOW_SECS", 1800)?,
             oidc,
             matrix,
             tusd: get("WONTON_TUSD_URL")
@@ -365,7 +364,14 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
     }
 }
 
-/// 商店的设置：本地的官方索引目录（`WONTON_STORE_INDEX`），社区插件开不开（`WONTON_STORE_COMMUNITY`，on 或 off）。
+fn secs(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+    default: u64,
+) -> Result<Duration, ConfigError> {
+    Ok(Duration::from_secs(parse(get, name, default)?))
+}
+
 fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {
     match configured {
         Some(path) if !path.starts_with('/') => Err(invalid("WONTON_HOST_DEV", "必须是绝对路径")),
@@ -379,6 +385,7 @@ fn docs_dir(configured: Option<String>) -> PathBuf {
     configured.map_or_else(|| crate::help::DEFAULT_DOCS.into(), PathBuf::from)
 }
 
+/// 商店的设置：本地的官方索引目录（`WONTON_STORE_INDEX`），社区插件开不开（`WONTON_STORE_COMMUNITY`，on 或 off）。
 fn store_config(get: &impl Fn(&str) -> Option<String>) -> Result<StoreConfig, ConfigError> {
     let community = match get("WONTON_STORE_COMMUNITY").as_deref() {
         None | Some("on") => true,

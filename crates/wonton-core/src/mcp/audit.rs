@@ -36,14 +36,16 @@ pub enum Decision {
 }
 
 /// 这次调用凭什么放行（ADR-0024 的“审计”）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "basis", content = "card", rename_all = "snake_case")]
 pub enum Basis {
     Card,
     PluginReadOnly,
     OwnerReadOnly,
     AllowAll,
     Always,
+    /// 放行时段内，带打开时段的卡片。
+    Window(String),
 }
 
 impl From<Clearance> for Basis {
@@ -62,13 +64,30 @@ pub struct Record<'a> {
     pub tool: &'a str,
     pub arguments: &'a Value,
     pub decision: Decision,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(flatten)]
     pub basis: Option<Basis>,
     /// 执行了的话：`ok` 或者失败的原因。
     pub outcome: Option<&'a str>,
     /// 这次调用碰到的文件（ADR-0020 的“审计”）。
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub files: &'a [AuditedFile],
+}
+
+/// 放行时段打开或结束：一行审计。
+#[derive(Serialize)]
+pub struct WindowRecord<'a> {
+    /// `opened` 或 `ended`。
+    pub window: &'static str,
+    pub card: &'a str,
+    pub caller: &'a str,
+    pub plugin: &'a str,
+    /// 谁打开或者停止的。到期和核心重启没有人。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<wonton_protocol::WindowEnd>,
 }
 
 /// Agent 自己的工具请主人确认：一行审计（ADR-0035）。

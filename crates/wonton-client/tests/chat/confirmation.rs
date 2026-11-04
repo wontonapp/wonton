@@ -380,10 +380,10 @@ fn install_card() -> Value {
     ]);
     install["choices"] = json!([
         {"answer": "approve", "label": "安装"},
-        {"answer": "allow_window", "label": "30 分钟内都允许"},
+        {"answer": "ask_later", "label": "晚点再问"},
         {"answer": "reject", "label": "不装"},
     ]);
-    install["window"] = json!({"expires_at_ms": 1});
+    install["later"] = json!({"at_ms": 1});
     install
 }
 

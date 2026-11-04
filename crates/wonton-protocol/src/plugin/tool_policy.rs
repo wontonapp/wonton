@@ -13,6 +13,8 @@ pub struct ToolPolicyView {
     pub always: Vec<BotSwitch>,
     /// 这个插件自己的 Bot 调所有插件是否一律允许；插件没有 Bot 时为空。
     pub allow_all: Vec<BotSwitch>,
+    /// 生效中的放行时段：到期前这些 Bot 调这个插件不发卡片。
+    pub windows: Vec<OpenWindow>,
     /// 放宽的设置读不出来的原因：这时没有任何放宽，也改不了。
     pub problem: Option<String>,
 }
@@ -47,4 +49,14 @@ pub struct BotSwitch {
     pub caller: String,
     pub name: String,
     pub enabled: bool,
+}
+
+/// 生效中的放行时段（ADR-0024）。停止用打开它的卡片：[`crate::window_path`]。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OpenWindow {
+    pub card: String,
+    pub caller: String,
+    pub name: String,
+    pub expires_at_ms: u64,
 }

@@ -1,10 +1,12 @@
 //! 确认卡片的内容（ADR-0016）：标题、说明行、按钮，以及给其他 Matrix 客户端看的纯文本。文字都由核心写好，
 //! App 原样渲染。
 
+use std::time::Duration;
+
 use serde_json::{Value, json};
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState,
+    ConfirmationState, ConfirmationWindow, WindowEnd,
 };
 
 use super::file_results::human_size;
@@ -16,6 +18,32 @@ pub struct Draft {
     pub title: String,
     pub lines: Vec<CardLine>,
     pub choices: Vec<CardChoice>,
+    /// 这张卡片能打开放行时段时，时段管哪个插件。
+    pub scope: Option<String>,
+}
+
+impl Draft {
+    /// 加上“N 分钟内都允许”，放在拒绝前面。核心自己的工具不走这里（ADR-0024）。
+    #[must_use]
+    pub fn with_window(mut self, plugin: &str, length: Duration) -> Self {
+        let secs = length.as_secs();
+        let label = if secs.is_multiple_of(60) {
+            format!("{} 分钟内都允许", secs / 60)
+        } else {
+            format!("{secs} 秒内都允许")
+        };
+        let at = self.choices.len().saturating_sub(1);
+        self.choices.insert(
+            at,
+            CardChoice {
+                answer: Answer::AllowWindow,
+                label,
+                choice_id: None,
+            },
+        );
+        self.scope = Some(plugin.to_owned());
+        self
+    }
 }
 
 /// 显示用的文字：优先中文。
@@ -78,6 +106,7 @@ pub fn install(requester: &str, manifest: &Manifest) -> Draft {
         title: format!("{requester} 想安装 {}", text(&manifest.title)),
         lines,
         choices: choices("安装", "不装"),
+        scope: None,
     }
 }
 
@@ -92,6 +121,7 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool) -> Draft {
         title: format!("{requester} 想卸载 {title}"),
         lines: vec![data],
         choices: choices("卸载", "取消"),
+        scope: None,
     }
 }
 
@@ -101,6 +131,7 @@ pub fn tool_call(requester: &str, plugin: &str, tool: &str, arguments: &Value) -
         title: format!("{requester} 想用 {plugin} 的 {tool}"),
         lines: vec![line("这个工具会改动数据"), arguments_line(arguments)],
         choices: choices("允许", "拒绝"),
+        scope: None,
     }
 }
 
@@ -142,6 +173,7 @@ pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Dr
         title: format!("{requester}：{}", request.title),
         lines,
         choices: buttons,
+        scope: None,
     }
 }
 
@@ -183,6 +215,7 @@ pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> 
         title: format!("{requester} 想把 {} 个文件存进 {folder}", files.len()),
         lines,
         choices: buttons,
+        scope: None,
     }
 }
 
@@ -203,7 +236,24 @@ pub fn body(card: &ConfirmationCard) -> String {
         ConfirmationState::Rejected => "已拒绝，没有执行。".to_owned(),
         ConfirmationState::Expired => "没有在期限内确认，已过期，没有执行。".to_owned(),
     });
+    if let Some(window) = &card.window {
+        out.push('\n');
+        out.push_str(&window_text(window));
+    }
     out
+}
+
+fn window_text(window: &ConfirmationWindow) -> String {
+    let allowed = window
+        .allowed
+        .map_or(String::new(), |n| format!("，放行了 {n} 次"));
+    match window.ended {
+        None => "放行时段生效中，到期前不再询问。".to_owned(),
+        Some(WindowEnd::Expired) => format!("放行时段已到期{allowed}。"),
+        Some(WindowEnd::Stopped) => format!("放行时段已停止{allowed}。"),
+        Some(WindowEnd::CoreRestarted) => "核心重启，放行时段已结束。".to_owned(),
+        Some(WindowEnd::Unknown) => format!("放行时段已结束{allowed}。"),
+    }
 }
 
 /// 卡片的 Matrix 消息内容。用 `m.text` 的原因见 ADR-0016。
@@ -231,6 +281,7 @@ mod tests {
             lines: Vec::new(),
             choices: choices("安装", "不装"),
             expires_at_ms: 1,
+            window: None,
         };
         assert_eq!(content(&card)["msgtype"], "m.text");
     }

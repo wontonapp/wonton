@@ -7,7 +7,7 @@
 
 mod tool_policy;
 
-pub use tool_policy::{BotSwitch, ToolAccess, ToolPolicyEntry, ToolPolicyView};
+pub use tool_policy::{BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView};
 
 use serde::{Deserialize, Serialize};
 

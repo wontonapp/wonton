@@ -2,7 +2,12 @@
 //!
 //! 主人的回答只经 [`Confirmations::answer`] 进来，网关只在已配对设备或主人令牌的请求上调用它（ADR-0024）。
 
+mod windows;
+
+pub use windows::EndedWindow;
+
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,6 +24,9 @@ const MAX_PENDING_PER_CALLER: usize = 3;
 
 /// 回答过、过期的确认留这么久，之后再回答得到“不存在”。
 const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
+
+/// 放行时段默认多长（`WONTON_CONFIRMATION_WINDOW_SECS`，ADR-0024）。
+pub const DEFAULT_WINDOW: Duration = Duration::from_secs(30 * 60);
 
 /// 把卡片交给主人：发出去，状态变了再更新。
 pub trait Notifier: Send + Sync {
@@ -85,6 +93,8 @@ pub struct Ticket {
     id: String,
     /// 主人按的是哪个“同意”。
     pub answer: Answer,
+    /// 主人没回答这张卡片，是另一张卡片打开放行时段时一起放行的：那张卡片的 ID。
+    pub window: Option<String>,
 }
 
 /// 主人按的那个按钮。
@@ -95,16 +105,32 @@ pub struct Chosen {
 
 struct Slot {
     caller: PluginId,
+    /// 这张卡片能打开放行时段时，时段管哪个插件。
+    scope: Option<String>,
+    /// 见 [`Ticket::window`]。
+    released_by: Option<String>,
     card: ConfirmationCard,
     handle: Option<String>,
     waiter: Option<oneshot::Sender<Chosen>>,
     created: SystemTime,
 }
 
+#[derive(Default)]
+struct Table {
+    slots: HashMap<String, Slot>,
+    /// 生效中的放行时段：（Bot，插件）→ 打开它的卡片。其余状态在卡片的 `window` 里。
+    windows: HashMap<(PluginId, String), String>,
+    /// 上次运行留下、卡片还没改成“已结束”的时段。
+    leftovers: HashMap<String, windows::Persisted>,
+}
+
 pub struct Confirmations {
     notifier: Arc<dyn Notifier>,
     ttl: Duration,
-    slots: Mutex<HashMap<String, Slot>>,
+    window: Duration,
+    /// 记着哪些卡片显示着时段，核心重启后才改得了它们。判定不读它。
+    windows_file: Option<PathBuf>,
+    table: Mutex<Table>,
 }
 
 fn now_ms(at: SystemTime) -> u64 {
@@ -119,7 +145,9 @@ impl Confirmations {
         Self {
             notifier,
             ttl,
-            slots: Mutex::new(HashMap::new()),
+            window: DEFAULT_WINDOW,
+            windows_file: None,
+            table: Mutex::new(Table::default()),
         }
     }
 
@@ -127,8 +155,8 @@ impl Confirmations {
         self.ttl
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Slot>> {
-        self.slots.lock().expect("确认表锁中毒")
+    fn lock(&self) -> std::sync::MutexGuard<'_, Table> {
+        self.table.lock().expect("确认表锁中毒")
     }
 
     /// 请主人确认，等到主人回答或者过期。确认了返回 [`Ticket`]，执行完要调 [`Self::finish`]。
@@ -137,10 +165,21 @@ impl Confirmations {
         let chosen = self.deliver(&card, answered).await?;
         self.publish(&card.id).await;
         match chosen.answer {
-            answer @ (Answer::Approve | Answer::ApproveWider) => Ok(Ticket {
-                id: card.id,
-                answer,
-            }),
+            answer @ (Answer::Approve | Answer::ApproveWider | Answer::AllowWindow) => {
+                if answer == Answer::AllowWindow {
+                    self.save_windows();
+                }
+                let window = self
+                    .lock()
+                    .slots
+                    .get(&card.id)
+                    .and_then(|slot| slot.released_by.clone());
+                Ok(Ticket {
+                    id: card.id,
+                    answer,
+                    window,
+                })
+            }
             // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
             Answer::Reject | Answer::Unknown => Err(Refusal::Rejected),
         }
@@ -160,14 +199,18 @@ impl Confirmations {
             lines: draft.lines,
             choices: draft.choices,
             expires_at_ms: now_ms(created + self.ttl),
+            window: None,
         };
         let (waiter, answered) = oneshot::channel();
-        let mut slots = self.lock();
-        slots.retain(|_, slot| {
+        let mut table = self.lock();
+        let open: Vec<String> = table.windows.values().cloned().collect();
+        table.slots.retain(|id, slot| {
             slot.waiter.is_some()
+                || open.contains(id)
                 || created.duration_since(slot.created).unwrap_or_default() < KEEP_FINISHED
         });
-        let pending = slots
+        let pending = table
+            .slots
             .values()
             .filter(|s| s.waiter.is_some() && &s.caller == caller)
             .count();
@@ -176,12 +219,14 @@ impl Confirmations {
         }
         let slot = Slot {
             caller: caller.clone(),
+            scope: draft.scope,
+            released_by: None,
             card: card.clone(),
             handle: None,
             waiter: Some(waiter),
             created,
         };
-        slots.insert(card.id.clone(), slot);
+        table.slots.insert(card.id.clone(), slot);
         Ok((card, answered))
     }
 
@@ -194,11 +239,11 @@ impl Confirmations {
         let handle = match self.notifier.post(card).await {
             Ok(handle) => handle,
             Err(e) => {
-                self.lock().remove(&card.id);
+                self.lock().slots.remove(&card.id);
                 return Err(Refusal::Unavailable(e));
             }
         };
-        if let Some(slot) = self.lock().get_mut(&card.id) {
+        if let Some(slot) = self.lock().slots.get_mut(&card.id) {
             slot.handle = Some(handle);
         }
         match tokio::time::timeout(self.ttl, answered).await {
@@ -215,6 +260,7 @@ impl Confirmations {
         let now = now_ms(SystemTime::now());
         let mut cards: Vec<_> = self
             .lock()
+            .slots
             .values()
             .filter(|slot| slot.waiter.is_some() && slot.card.expires_at_ms > now)
             .map(|slot| slot.card.clone())
@@ -231,20 +277,21 @@ impl Confirmations {
         choice_id: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
-            Answer::Approve | Answer::ApproveWider => ConfirmationState::Running,
+            Answer::Approve | Answer::ApproveWider | Answer::AllowWindow => {
+                ConfirmationState::Running
+            }
             Answer::Reject => ConfirmationState::Rejected,
             Answer::Unknown => return Err(AnswerError::UnknownAnswer),
         };
-        let mut slots = self.lock();
-        let slot = slots.get_mut(id).ok_or(AnswerError::NotFound)?;
+        let now = now_ms(SystemTime::now());
+        let mut table = self.lock();
+        let slot = table.slots.get_mut(id).ok_or(AnswerError::NotFound)?;
         // 卡片上没有这个按钮，就不是对这张卡片的回答。
         let on_card = |c: &CardChoice| c.answer == answer && c.choice_id.as_deref() == choice_id;
         if !slot.card.choices.iter().any(on_card) {
             return Err(AnswerError::UnknownAnswer);
         }
-        if slot.card.state == ConfirmationState::Expired
-            || now_ms(SystemTime::now()) >= slot.card.expires_at_ms
-        {
+        if slot.card.state == ConfirmationState::Expired || now >= slot.card.expires_at_ms {
             return Err(AnswerError::Expired);
         }
         let Some(waiter) = slot.waiter.take() else {
@@ -260,16 +307,20 @@ impl Confirmations {
             return Err(AnswerError::Expired);
         }
         slot.card.state = state.clone();
+        if answer == Answer::AllowWindow {
+            self.open_window(&mut table, id, now);
+        }
         Ok(state)
     }
 
     /// 执行完：卡片更新成结果。
     pub async fn finish(&self, ticket: Ticket, state: ConfirmationState) {
         self.settle(&ticket.id, state).await;
+        self.save_windows();
     }
 
     pub(super) async fn settle(&self, id: &str, state: ConfirmationState) {
-        if let Some(slot) = self.lock().get_mut(id) {
+        if let Some(slot) = self.lock().slots.get_mut(id) {
             slot.waiter = None;
             slot.card.state = state;
         }
@@ -280,6 +331,7 @@ impl Confirmations {
     pub(super) async fn publish(&self, id: &str) {
         let current = self
             .lock()
+            .slots
             .get(id)
             .and_then(|slot| Some((slot.handle.clone()?, slot.card.clone())));
         let Some((handle, card)) = current else {
@@ -289,7 +341,7 @@ impl Confirmations {
             Ok(None) => {}
             Ok(Some(moved)) => {
                 tracing::warn!(confirmation = %id, "原房间不能用了，确认卡片重发到了当前的房间");
-                if let Some(slot) = self.lock().get_mut(id) {
+                if let Some(slot) = self.lock().slots.get_mut(id) {
                     slot.handle = Some(moved);
                 }
             }

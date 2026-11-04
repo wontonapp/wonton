@@ -1,6 +1,6 @@
 //! 放宽确认的设置：工具列表和各个开关（ADR-0024）。一次调用怎么判定见 [`Bus::call_plugin`]。
 
-use wonton_protocol::{BotSwitch, ToolAccess, ToolPolicyEntry, ToolPolicyView};
+use wonton_protocol::{BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView};
 
 use super::Bus;
 use super::audit::PolicyRecord;
@@ -61,6 +61,20 @@ impl Bus {
                     name: cards::text(title),
                     enabled: policy.is_allow_all(caller.as_str()),
                 });
+        let windows = self.confirmations.active_windows(name).into_iter();
+        let windows = windows.map(|window| OpenWindow {
+            name: callers
+                .iter()
+                .find(|(caller, _)| caller == &window.caller)
+                .map_or_else(
+                    || window.caller.to_string(),
+                    |(_, title)| cards::text(title),
+                ),
+            caller: window.caller.to_string(),
+            card: window.card,
+            expires_at_ms: window.expires_at_ms,
+        });
+        let windows = windows.collect();
         let (tools, tools_error) = match self.listed_tools(plugin).await {
             Ok(tools) => (tools, None),
             Err(e) => (Vec::new(), Some(e)),
@@ -70,6 +84,7 @@ impl Bus {
             tools_error,
             always: always.collect(),
             allow_all: allow_all.collect(),
+            windows,
             problem: policy.problem(),
         }
     }

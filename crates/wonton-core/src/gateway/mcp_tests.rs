@@ -614,3 +614,59 @@ async fn the_owner_marks_a_tool_read_only_through_the_api() {
         .await;
     assert_eq!(access(&view, "delete"), "sensitive");
 }
+
+/// 卡片上点“都允许”，之后不发卡片，设置里看得到；停止后回到发卡片（ADR-0024）。
+#[tokio::test]
+async fn the_owner_opens_and_stops_a_window_through_the_api() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let owner = [("authorization", bearer.as_str())];
+    let agent = home.agent().await;
+    let call = |name: &str| {
+        let peer = agent.peer().clone();
+        let request = CallToolRequestParams::new("app-example-notes__delete")
+            .with_arguments(json!({"name": name}).as_object().cloned().unwrap());
+        tokio::spawn(async move { peer.call_tool(request).await.unwrap() })
+    };
+
+    let first = call("first");
+    let card = home.cards.wait_for(1).await;
+    let path = wonton_protocol::answer_path(&card.id);
+    let allow = r#"{"answer": "allow_window"}"#;
+    let (status, _, reply) = home.send(&path, allow, None, &owner).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["state"]["type"], "running");
+    assert_eq!(text(&first.await.unwrap()), "删掉了 first.txt");
+    assert_eq!(text(&call("second").await.unwrap()), "删掉了 second.txt");
+    assert_eq!(home.cards.posted.lock().unwrap().len(), 1);
+
+    let (_, view) = home.policy(Method::GET, "", TOKEN).await;
+    assert_eq!(view["windows"][0]["card"], card.id.as_str());
+    assert_eq!(view["windows"][0]["caller"], "com.example.agent");
+
+    let stop = |bearer: String| {
+        let request = hyper::Request::builder()
+            .method(Method::DELETE)
+            .uri(wonton_protocol::window_path(&card.id))
+            .header(header::HOST, format!("{CORE}:{}", home.addr.port()))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .body(Body::empty())
+            .unwrap();
+        router(home.gateway.clone()).oneshot(request)
+    };
+    let status = stop("wrong".to_owned()).await.unwrap().status();
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let status = stop(TOKEN.to_owned()).await.unwrap().status();
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let status = stop(TOKEN.to_owned()).await.unwrap().status();
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, view) = home.policy(Method::GET, "", TOKEN).await;
+    assert_eq!(view["windows"], json!([]));
+
+    let third = call("third");
+    let card = home.cards.wait_for(2).await;
+    let path = wonton_protocol::answer_path(&card.id);
+    home.send(&path, r#"{"answer": "reject"}"#, None, &owner)
+        .await;
+    third.await.unwrap();
+}

@@ -351,7 +351,12 @@ fn mcp_bus(
         Some(notices) => notices,
         None => Arc::new(mcp::NoMatrix),
     };
-    let confirmations = Arc::new(mcp::Confirmations::new(notifier, cfg.confirmation_ttl));
+    let confirmations = Arc::new(
+        mcp::Confirmations::new(notifier, cfg.confirmation_ttl).with_windows(
+            cfg.confirmation_window,
+            cfg.core_state_dir().join("confirmation-windows.json"),
+        ),
+    );
     mcp::Bus::new(manager, confirmations, audit)
 }
 

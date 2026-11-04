@@ -8,9 +8,9 @@ use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
-use wonton_protocol::{ConfirmationAnswer, ConfirmationList, ConfirmationReply};
+use wonton_protocol::{ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd};
 
-use super::api::{error_response, plugin_denied};
+use super::api::{acted_by, error_response, plugin_denied};
 use super::{Gateway, TunnelPeer};
 use crate::mcp::AnswerError;
 
@@ -46,6 +46,7 @@ pub async fn answer(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
+    let by = acted_by(&gateway, peer.as_ref(), &headers);
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
@@ -56,15 +57,14 @@ pub async fn answer(
         Ok(answer) => answer,
         Err(e) => {
             let message = format!(
-                "请求体要是 {{\"answer\": \"approve\" | \"approve_wider\" | \"reject\"}}：{e}"
+                "请求体要是 {{\"answer\": \"approve\" | \"approve_wider\" | \"allow_window\" | \"reject\"}}：{e}"
             );
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
     match mcp
         .bus
-        .confirmations()
-        .answer(&id, answer.answer, answer.choice_id.as_deref())
+        .answer_card(&id, answer.answer, answer.choice_id.as_deref(), &by)
     {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),
         Err(e) => {
@@ -75,5 +75,26 @@ pub async fn answer(
             };
             error_response(status, e.kind(), &e.to_string())
         }
+    }
+}
+
+/// `DELETE /_wonton/confirmations/{id}/window`：只拦后面的调用，已经发给插件的不撤回（ADR-0024）。
+pub async fn stop_window(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let by = acted_by(&gateway, peer.as_ref(), &headers);
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(mcp) = &gateway.mcp else {
+        return mcp_unavailable();
+    };
+    if mcp.bus.end_window(&id, WindowEnd::Stopped, Some(&by)).await {
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        error_response(StatusCode::NOT_FOUND, "not_found", "没有生效中的放行时段")
     }
 }

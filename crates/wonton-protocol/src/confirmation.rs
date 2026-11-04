@@ -22,6 +22,11 @@ pub fn answer_path(id: &str) -> String {
     format!("/_wonton/confirmations/{id}")
 }
 
+/// 停止放行时段的接口路径（`DELETE`，ADR-0024）。
+pub fn window_path(id: &str) -> String {
+    format!("/_wonton/confirmations/{id}/window")
+}
+
 /// 一张确认卡片。文字由核心写好，客户端原样渲染。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -37,6 +42,34 @@ pub struct ConfirmationCard {
     pub choices: Vec<CardChoice>,
     /// 到期时间，Unix 毫秒。
     pub expires_at_ms: u64,
+    /// 这张卡片打开的放行时段（ADR-0024）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<ConfirmationWindow>,
+}
+
+/// 放行时段：这个 Bot 调这个插件，到期前不再发卡片。卡片只在时段开始和结束时更新。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ConfirmationWindow {
+    /// 到期时间，Unix 毫秒。
+    pub expires_at_ms: u64,
+    /// 放行了多少次，不算打开时段的这次。核心重启后说不清，是 `None`。
+    pub allowed: Option<u32>,
+    /// 结束的原因。还没结束时是 `None`，这时显示“停止”按钮。
+    pub ended: Option<WindowEnd>,
+}
+
+/// 放行时段为什么结束。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum WindowEnd {
+    Expired,
+    Stopped,
+    CoreRestarted,
+    /// 不认识的原因：核心比 App 新。
+    #[serde(other)]
+    Unknown,
 }
 
 /// 卡片上的一行说明。
@@ -68,6 +101,8 @@ pub enum Answer {
     Approve,
     /// 同意，范围比 [`Answer::Approve`] 大一层：存文件的卡片上是“允许存进整个共享文件夹”（ADR-0027）。
     ApproveWider,
+    /// 同意，并在一段时间内放行这个 Bot 对这个插件的调用（ADR-0024）。时长由核心决定。
+    AllowWindow,
     Reject,
     /// 不认识的回答，不能发给核心。
     #[serde(other)]
@@ -173,15 +208,17 @@ mod tests {
             "lines": [],
             "choices": [
                 {"answer": "approve", "label": "允许"},
-                {"answer": "allow_window", "label": "30 分钟内都允许"},
+                {"answer": "ask_later", "label": "稍后再问"},
                 {"answer": "reject", "label": "拒绝"},
             ],
             "expires_at_ms": 1,
-            "window": {"expires_at_ms": 2},
+            "window": {"expires_at_ms": 2, "allowed": 1, "ended": "new_reason"},
+            "extra": {"expires_at_ms": 2},
         }))
         .unwrap();
         let answers: Vec<_> = card.choices.iter().map(|choice| choice.answer).collect();
         assert_eq!(answers, [Answer::Approve, Answer::Unknown, Answer::Reject]);
+        assert_eq!(card.window.unwrap().ended, Some(WindowEnd::Unknown));
     }
 
     /// 契约：`choice_id` 是可选的，没有时线上不出现，`Answer` 的方向不变。
@@ -218,5 +255,20 @@ mod tests {
     #[test]
     fn the_wider_approval_has_a_wire_name() {
         assert_eq!(json!(Answer::ApproveWider), json!("approve_wider"));
+    }
+
+    #[test]
+    fn a_window_has_a_stable_wire_format() {
+        assert_eq!(json!(Answer::AllowWindow), json!("allow_window"));
+        let window = ConfirmationWindow {
+            expires_at_ms: 2,
+            allowed: None,
+            ended: Some(WindowEnd::CoreRestarted),
+        };
+        assert_eq!(
+            json!(window),
+            json!({"expires_at_ms": 2, "allowed": null, "ended": "core_restarted"})
+        );
+        assert_eq!(window_path("abc"), "/_wonton/confirmations/abc/window");
     }
 }

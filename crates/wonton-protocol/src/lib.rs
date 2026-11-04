@@ -44,7 +44,8 @@ pub use chat::{
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
-    ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, answer_path,
+    ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
+    WindowEnd, answer_path, window_path,
 };
 pub use core_upgrade::{
     CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
@@ -83,12 +84,13 @@ pub use onboarding::{
 pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
 pub use plugin::{
     AddSourceRequest, AddedSource, BotSwitch, InstallPreview, InstallRequest, InstallSource,
-    InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, PermissionLine,
-    PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure, PluginHealth,
-    PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation, PluginProblem, PluginState,
-    PluginTask, PluginTaskState, PluginTrust, PluginsViewModel, RequirementLine, RequirementStatus,
-    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, UpgradeOffer, UpgradeRequest,
+    InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, OpenWindow,
+    PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
+    PluginProblem, PluginState, PluginTask, PluginTaskState, PluginTrust, PluginsViewModel,
+    RequirementLine, RequirementStatus, SourceKind, StorageUsage, StoreFailure, StoreItem,
+    StoreListing, StoreProblem, StoreSection, ToolAccess, ToolPolicyEntry, ToolPolicyView,
+    UpgradeOffer, UpgradeRequest,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

@@ -16,6 +16,7 @@ mod save_tools;
 mod server;
 mod tool_policy;
 pub mod upstream;
+mod windows;
 
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -166,6 +167,7 @@ impl Bus {
         audit: Arc<Audit>,
         upstreams: Arc<Upstreams>,
     ) -> Arc<Self> {
+        let recover = confirmations.has_leftover_windows();
         let bus = Arc::new(Self {
             plugins,
             confirmations,
@@ -176,6 +178,9 @@ impl Bus {
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
+        if recover {
+            bus.recover_windows();
+        }
         bus
     }
 
@@ -360,7 +365,11 @@ impl Bus {
                 self.plugins
                     .tool_policy()
                     .clearance(caller.id.as_str(), server.id.as_str(), tool);
-            clearance.map(Basis::from)
+            clearance.map(Basis::from).or_else(|| {
+                self.confirmations
+                    .allow_in_window(&caller.id, server.id.as_str())
+                    .map(Basis::Window)
+            })
         };
         if let Some(basis) = basis {
             let outcome = forward(self, caller, server, tool, arguments, cancelled).await;
@@ -375,7 +384,8 @@ impl Bus {
             return outcome.result;
         }
         let plugin = cards::text(&server.title);
-        let draft = cards::tool_call(&caller.name, &plugin, tool, &args);
+        let draft = cards::tool_call(&caller.name, &plugin, tool, &args)
+            .with_window(server.id.as_str(), self.confirmations.window_length());
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>| async move {
@@ -419,7 +429,7 @@ impl Bus {
                         &name,
                         &args,
                         Decision::Approved,
-                        Some(Basis::Card),
+                        Some(ticket.window.clone().map_or(Basis::Card, Basis::Window)),
                         &outcome,
                     );
                     bus.confirmations.finish(ticket, outcome.state).await;
@@ -515,3 +525,5 @@ mod tests;
 mod tool_policy_tests;
 #[cfg(test)]
 mod upstream_tests;
+#[cfg(test)]
+mod window_tests;
