@@ -93,6 +93,10 @@ impl Phone {
         access: ProxyAccess,
     ) -> Self {
         let endpoint = loopback_endpoint(key, 0, timeouts).await;
+        Self::on(endpoint, server, access).await
+    }
+
+    pub async fn on(endpoint: Endpoint, server: EndpointAddr, access: ProxyAccess) -> Self {
         let client = TunnelClient::new(endpoint, server);
         let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
@@ -137,11 +141,15 @@ pub enum Timeouts {
 
 /// 只走回环地址的 endpoint：不连中继，不做地址发现。
 pub async fn loopback_endpoint(key: SecretKey, port: u16, timeouts: Timeouts) -> Endpoint {
+    endpoint_on((Ipv4Addr::LOCALHOST, port).into(), key, timeouts).await
+}
+
+pub async fn endpoint_on(addr: SocketAddr, key: SecretKey, timeouts: Timeouts) -> Endpoint {
     init_tracing();
     let mut builder = Endpoint::builder(presets::Minimal)
         .secret_key(key)
         .clear_ip_transports()
-        .bind_addr((Ipv4Addr::LOCALHOST, port))
+        .bind_addr(addr)
         .unwrap();
     if let Timeouts::Short = timeouts {
         let config = QuicTransportConfig::builder()

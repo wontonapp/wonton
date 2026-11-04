@@ -440,12 +440,13 @@ impl ChatLink {
         self.runtime.spawn(async move {
             if let Err(error) = op.await {
                 tracing::info!("{what}失败：{error}");
-                view.send_modify(|view| {
-                    view.problem = Some(ChatProblem {
-                        reason: failure(&error),
-                        message: format!("{what}失败：{error}"),
-                    });
-                });
+                let reason = failure(&error);
+                let message = if reason == ChatFailure::TransportUnavailable {
+                    view::NOT_CONNECTED.to_owned()
+                } else {
+                    format!("{what}失败：{error}")
+                };
+                view.send_modify(|view| view.problem = Some(ChatProblem { reason, message }));
             }
         });
     }
@@ -595,6 +596,7 @@ impl ChatLink {
 
     async fn forget_current(&self) {
         *lock(&self.open_room) = None;
+        self.home.set_catching_up(false);
         self.view.send_modify(|view| {
             view.pending_confirmations.clear();
             view.settled_confirmations.clear();
@@ -732,7 +734,17 @@ impl ChatLink {
             session.clone(),
             self.answers.clone(),
         ));
-        vec![rooms, encryption, sync, events, syncing, cards]
+        let catching_up = {
+            let updates = session.catching_up();
+            let home = self.home.clone();
+            self.runtime.spawn(async move {
+                let mut updates = std::pin::pin!(updates);
+                while let Some(catching_up) = updates.next().await {
+                    home.set_catching_up(catching_up);
+                }
+            })
+        };
+        vec![rooms, encryption, sync, events, syncing, cards, catching_up]
     }
 }
 

@@ -24,13 +24,8 @@ async fn the_list_arrives_once_the_tunnel_is_up_and_says_why_before_that() {
         })
         .unwrap();
 
+    // 比隧道早发的刷新不留下问题，连上后自动取。
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
-    let view = rig.wait_for(|view| view.problem.is_some()).await;
-    assert_eq!(
-        view.problem.unwrap().reason,
-        PluginFailure::TransportUnavailable,
-        "没有配对时如实说连不上"
-    );
 
     rig.connect();
     let view = rig

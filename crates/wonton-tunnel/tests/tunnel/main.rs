@@ -4,6 +4,7 @@
 mod embedded;
 mod forwarding;
 mod local_proxy;
+mod pacing;
 mod pairing;
 mod resume;
 mod stall;

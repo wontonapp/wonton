@@ -19,13 +19,14 @@ mod embed;
 mod error;
 mod forward;
 mod http_front;
+mod pacing;
 pub mod pair;
 mod proxy;
 mod server;
 mod wire;
 
 pub use allowlist::Allowlist;
-pub use client::{PathInfo, PathKind, TunnelClient, TunnelStatus};
+pub use client::{PathInfo, PathKind, TunnelClient, TunnelStats, TunnelStatus};
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;

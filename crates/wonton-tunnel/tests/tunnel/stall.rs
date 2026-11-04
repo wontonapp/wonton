@@ -1,7 +1,7 @@
 //! 卡住的路径：连接没断，QUIC 也没判定超时，但请求到不了对端（#154）。
 
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -11,9 +11,9 @@ use std::{
 
 use iroh::{EndpointAddr, SecretKey};
 use tokio::{net::UdpSocket, task::JoinHandle};
-use wonton_tunnel::{Allowlist, PathKind, TunnelError, TunnelStatus};
+use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelError, TunnelStatus};
 
-use crate::support::{Home, Phone, Timeouts, Upstream};
+use crate::support::{Home, Phone, Timeouts, Upstream, endpoint_on};
 
 const DEADLINE: Duration = Duration::from_secs(1);
 
@@ -30,7 +30,7 @@ const DROP_ALL: usize = 0;
 
 impl Flaky {
     async fn start(target: SocketAddr) -> Self {
-        let front = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let front = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
         let back = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let addr = front.local_addr().unwrap();
         let limit = Arc::new(AtomicUsize::new(PASS));
@@ -70,6 +70,8 @@ impl Drop for Flaky {
     }
 }
 
+/// 手机只绑 IPv6，服务端只绑 IPv4，两边只能经 [`Flaky`] 互通：服务端会经 QUIC 把自己绑定的地址告诉手机，同一族的话手机
+/// 打洞直接连过去，绕开丢包，请求照样通（CI 上偶发，机器忙时路径选择才偏向它）。
 async fn rig() -> (Upstream, Home, Flaky, Phone) {
     let upstream = Upstream::spawn().await;
     let device = SecretKey::generate();
@@ -78,8 +80,31 @@ async fn rig() -> (Upstream, Home, Flaky, Phone) {
     let port = home.server().endpoint().bound_sockets()[0].port();
     let flaky = Flaky::start((Ipv4Addr::LOCALHOST, port).into()).await;
     let server = EndpointAddr::new(home.addr().id).with_ip_addr(flaky.addr);
-    let phone = Phone::start(device, server, Timeouts::Default).await;
+    let endpoint = endpoint_on((Ipv6Addr::LOCALHOST, 0).into(), device, Timeouts::Default).await;
+    let phone = Phone::on(endpoint, server, ProxyAccess::Open).await;
     (upstream, home, flaky, phone)
+}
+
+/// 网络回来时手上还有一次注定失败的握手：改之前要等它重传或超时，实测恢复后 32 秒才通（ADR-0032）。
+#[tokio::test]
+async fn retrying_does_not_wait_for_a_dial_started_on_the_dead_network() {
+    let (_upstream, _home, flaky, phone) = rig().await;
+    flaky.drop_above(DROP_ALL);
+    let client = phone.client.clone();
+    let dialling = tokio::spawn(async move { client.ping().await });
+    // QUIC 的初始包重传间隔加倍，这时离下一次重传还有一阵。
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    flaky.drop_above(PASS);
+    let started = std::time::Instant::now();
+    phone.client.retry_now();
+    dialling.await.unwrap().unwrap();
+
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "网络恢复后 {:?} 才连上",
+        started.elapsed()
+    );
 }
 
 /// 包全丢了，QUIC 要 30 秒才判定超时，这期间连接算活着，路径还是最后一次估的“直连 2 ms”。

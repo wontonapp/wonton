@@ -202,15 +202,20 @@ fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, PluginProblem> {
     })
 }
 
+/// 原文只进日志：主人看到的是下一步怎么办，连接的情况由 `HomeViewModel` 说（ADR-0032）。
 fn transport(error: &reqwest::Error, timeout: Duration) -> PluginProblem {
-    let reason = if error.is_timeout() {
-        format!("{} 秒内没有回应", timeout.as_secs())
+    if error.is_timeout() {
+        tracing::info!("请求 {} 秒内没有回应", timeout.as_secs());
     } else {
-        error.to_string()
-    };
+        tracing::info!("请求失败：{error}");
+    }
+    not_connected()
+}
+
+pub(super) fn not_connected() -> PluginProblem {
     PluginProblem {
         reason: PluginFailure::TransportUnavailable,
-        message: format!("连不上家里的服务器：{reason}"),
+        message: "连上家里的服务器后再试".to_owned(),
     }
 }
 
@@ -240,6 +245,9 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
             _ => PluginFailure::Protocol,
         },
     };
+    if reason == PluginFailure::TransportUnavailable {
+        return not_connected();
+    }
     let message = detail.map_or_else(
         || format!("家里的服务器回了 {status}"),
         |detail| detail.message,

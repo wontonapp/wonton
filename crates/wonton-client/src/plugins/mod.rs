@@ -2,6 +2,7 @@
 //! 家里的服务器按主人的语言挑好，这里原样放进 ViewModel。
 
 mod api;
+mod cache;
 mod egress;
 mod tasks;
 
@@ -14,10 +15,9 @@ use reqwest::Client;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    CoreError, EgressViewModel, HomeFailure, HomeStatus, InstallPreview, InstallSource,
-    InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem,
-    PluginState, PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage, StoreItem,
-    StoreListing,
+    CoreError, EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins,
+    LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginState,
+    PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage, StoreItem, StoreListing,
 };
 
 use crate::home::HomeLink;
@@ -46,8 +46,10 @@ pub(crate) struct PluginsLink {
     /// 主人打开过商店：隧道重新连上时也重新取它。
     store_wanted: AtomicBool,
     polling: AtomicBool,
-    /// `view.problem` 来自哪个列表；为空时来自隧道，哪个列表取到了都说明它过去了。
+    /// `view.problem` 来自哪个列表。
     problem_of: Mutex<Option<Listing>>,
+    /// 已安装列表存在本机的位置。
+    installed_cache: PathBuf,
     /// 每换一台服务器加一：之前发出的请求和任务，结果不再算数。
     generation: AtomicU64,
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
@@ -56,10 +58,18 @@ pub(crate) struct PluginsLink {
 
 impl PluginsLink {
     pub(crate) fn new(runtime: Handle, home: Arc<HomeLink>, data_dir: &Path) -> Arc<Self> {
+        let installed_cache = data_dir.join("installed-plugins.json");
+        let installed = home
+            .view()
+            .server_id
+            .and_then(|server| cache::load(&installed_cache, &server));
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
-            view: watch::Sender::new(PluginsViewModel::default()),
+            view: watch::Sender::new(PluginsViewModel {
+                installed,
+                ..PluginsViewModel::default()
+            }),
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
             images_dir: data_dir.join("plugin-images"),
@@ -67,6 +77,7 @@ impl PluginsLink {
             store_wanted: AtomicBool::new(false),
             polling: AtomicBool::new(false),
             problem_of: Mutex::new(None),
+            installed_cache,
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
         });
@@ -107,7 +118,7 @@ impl PluginsLink {
         self.refresh_installed();
     }
 
-    /// 隧道正在建：这时的刷新不算失败，连上后 [`follow_home`] 接着取，连不上时它也会报原因。
+    /// 隧道正在建：这时不用发请求，连上后 [`follow_home`] 接着取。
     fn connecting(&self) -> bool {
         self.home.view().status == HomeStatus::Connecting
     }
@@ -176,15 +187,16 @@ impl PluginsLink {
         }
     }
 
-    /// 失败时记下原因，显示的还是上次取到的列表。`problem` 只有一个字段，两个列表共用，成功只清自己留下的：否则有插件在装、
+    /// 失败时记下原因，显示的还是上次取到的列表。连不上不算列表的问题：`HomeViewModel::notice` 负责说，连上后
+    /// [`follow_home`] 自动再取（ADR-0032）。`problem` 只有一个字段，两个列表共用，成功只清自己留下的：否则有插件在装、
     /// 每 3 秒取一次已安装列表时，商店取不到的原因马上就没了，商店页一直转圈。
     fn record(&self, listing: Listing, result: Result<(), PluginProblem>) {
         self.view.send_if_modified(|view| {
             let mut source = lock(&self.problem_of);
             match result {
+                Err(problem) if problem.reason == PluginFailure::TransportUnavailable => false,
                 Ok(()) => {
-                    let clears =
-                        view.problem.is_some() && source.is_none_or(|source| source == listing);
+                    let clears = view.problem.is_some() && *source == Some(listing);
                     if clears {
                         view.problem = None;
                         *source = None;
@@ -200,18 +212,13 @@ impl PluginsLink {
         });
     }
 
-    /// 隧道建不起来：原因直接写进去。不能靠发请求来报，请求本身又会触发重连。
-    fn report_home_failure(&self, problem: PluginProblem) {
+    /// 连不上时不知道现在还剩多少，不留着上次的数字。
+    fn forget_storage(&self) {
         self.view.send_if_modified(|view| {
-            // 连不上时不知道现在还剩多少，不留着上次的数字。
+            let changed = view.storage.is_some() || view.storage_problem.is_some();
             view.storage = None;
             view.storage_problem = None;
-            if view.problem.as_ref() == Some(&problem) {
-                return false;
-            }
-            view.problem = Some(problem);
-            *lock(&self.problem_of) = None;
-            true
+            changed
         });
     }
 
@@ -219,6 +226,7 @@ impl PluginsLink {
     /// 正开着。
     fn forget_server(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        cache::forget(&self.installed_cache);
         self.view.send_modify(|view| {
             *lock(&self.problem_of) = None;
             view.installed = None;
@@ -273,6 +281,11 @@ impl PluginsLink {
             return Ok(());
         }
         let installed = result?;
+        if self.view.borrow().installed.as_ref() != Some(&installed)
+            && let Some(server) = self.home.view().server_id
+        {
+            cache::save(&self.installed_cache, server, installed.clone()).await;
+        }
         self.view
             .send_modify(|view| view.installed = Some(installed));
         if self.needs_polling() {
@@ -365,12 +378,8 @@ impl PluginsLink {
     }
 
     fn api(&self) -> Result<CoreApi, PluginProblem> {
-        let not_connected = || PluginProblem {
-            reason: PluginFailure::TransportUnavailable,
-            message: "还没连上家里的服务器".to_owned(),
-        };
-        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
-        let base = self.home.core_url().ok_or_else(not_connected)?;
+        let proxy = self.home.view().proxy.ok_or_else(api::not_connected)?;
+        let base = self.home.core_url().ok_or_else(api::not_connected)?;
         let client = {
             let mut cached = lock(&self.client);
             match cached.as_ref() {
@@ -489,8 +498,8 @@ impl PluginsLink {
     }
 }
 
-/// 跟着家里的连接：连上（App 启动、重新配对、断线恢复）时取列表，壳在页面出现时发的刷新可能比隧道早；连不上时报原因；换了
-/// 服务器时忘掉上一台的东西。
+/// 跟着家里的连接：连上（App 启动、重新配对、断线恢复）时取列表，壳在页面出现时发的刷新可能比隧道早；换了服务器时忘掉上一台
+/// 的东西。
 async fn follow_home(link: Weak<PluginsLink>) {
     let Some(mut home) = link.upgrade().map(|link| link.home.subscribe()) else {
         return;
@@ -498,19 +507,12 @@ async fn follow_home(link: Weak<PluginsLink>) {
     let mut connected = false;
     let mut server = home.borrow().server_id.clone();
     loop {
-        let (now_connected, next_server, failure) = {
+        let (now_connected, disconnected, next_server) = {
             let view = home.borrow_and_update();
-            let failure = match &view.status {
-                HomeStatus::Disconnected { reason, message } => Some(PluginProblem {
-                    reason: home_failure(*reason),
-                    message: message.clone(),
-                }),
-                _ => None,
-            };
             (
                 view.status == HomeStatus::Connected,
+                matches!(view.status, HomeStatus::Disconnected { .. }),
                 view.server_id.clone(),
-                failure,
             )
         };
         let Some(link) = link.upgrade() else { return };
@@ -518,8 +520,8 @@ async fn follow_home(link: Weak<PluginsLink>) {
             link.forget_server();
         }
         server = next_server;
-        if let Some(failure) = failure {
-            link.report_home_failure(failure);
+        if disconnected {
+            link.forget_storage();
         }
         if now_connected && !connected {
             link.refresh_installed();
@@ -532,15 +534,6 @@ async fn follow_home(link: Weak<PluginsLink>) {
         if home.changed().await.is_err() {
             return;
         }
-    }
-}
-
-fn home_failure(reason: HomeFailure) -> PluginFailure {
-    match reason {
-        HomeFailure::Unauthorized => PluginFailure::Unauthorized,
-        HomeFailure::TransportUnavailable => PluginFailure::TransportUnavailable,
-        HomeFailure::UpstreamUnavailable => PluginFailure::Upstream,
-        HomeFailure::Protocol => PluginFailure::Protocol,
     }
 }
 

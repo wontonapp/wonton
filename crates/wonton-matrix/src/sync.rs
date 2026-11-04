@@ -7,7 +7,10 @@
 use std::time::{Duration, Instant};
 
 use futures_util::{Stream, StreamExt, future, stream};
-use matrix_sdk_ui::{room_list_service, sync_service};
+use matrix_sdk_ui::{
+    room_list_service::{self, SyncIndicator},
+    sync_service,
+};
 
 use crate::{Error, MatrixSession, Result};
 
@@ -29,6 +32,8 @@ pub enum SyncStatus {
 const FIRST_RESTART: Duration = Duration::from_secs(2);
 /// 间隔最长这么久，连接恢复后最晚这么久接着同步。
 const MAX_RESTART: Duration = Duration::from_secs(30);
+/// 追赶比这短就不提示。
+const CATCH_UP_NOTICE_DELAY: Duration = Duration::from_millis(500);
 
 impl From<&sync_service::State> for SyncStatus {
     fn from(state: &sync_service::State) -> Self {
@@ -124,6 +129,14 @@ impl MatrixSession {
     pub fn resume(&self) {
         self.resume_sending.notify_one();
         self.resume_sync.notify_one();
+    }
+
+    /// 同步是否在追赶：启动或出错之后还没收到第一个响应。
+    pub fn catching_up(&self) -> impl Stream<Item = bool> + use<> {
+        self.sync
+            .room_list_service()
+            .sync_indicator(CATCH_UP_NOTICE_DELAY, Duration::ZERO)
+            .map(|indicator| matches!(indicator, SyncIndicator::Show))
     }
 
     /// 同步状态流：第一项是当前状态，之后每次变化给出新状态。

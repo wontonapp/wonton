@@ -313,6 +313,13 @@ impl Rig {
         }
     }
 
+    /// 关掉 App 再打开。
+    pub fn reopen(&mut self) {
+        self.app =
+            ClientCore::with_network(self._dir.path().to_str().unwrap(), Network::DirectOnly)
+                .unwrap();
+    }
+
     pub fn device(&self) -> EndpointId {
         self.app.home().device_id.parse().unwrap()
     }

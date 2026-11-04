@@ -5,10 +5,11 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, AppearanceViewModel, ChatViewModel, CoreError, FileCard, FileCardActions, FileFailure,
-    FileId, FileInfo, FileOperation, FileProblem, HomeViewModel, InstallPreview, LanChoice,
-    LanSettings, MediaHandle, PluginDetail, PluginImage, PluginsViewModel, PushNotification,
-    RoomTransfers, SessionListViewModel, StoreItem, TransfersViewModel,
+    Action, AppearanceViewModel, ChatViewModel, CoreError, DeviceNetwork, FileCard,
+    FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, MediaHandle, PluginDetail, PluginImage,
+    PluginsViewModel, PushNotification, RoomTransfers, SessionListViewModel, StoreItem,
+    TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -72,11 +73,19 @@ impl ClientCore {
                 self.files.foregrounded();
                 Ok(())
             }
-            Action::AppBackgrounded | Action::NetworkChanged { .. } | Action::RetryConnection => {
-                Err(CoreError::NotReady {
-                    reason: "这个版本的核心还不处理这个操作".to_owned(),
-                })
+            Action::AppBackgrounded => {
+                self.home.backgrounded();
+                Ok(())
             }
+            Action::NetworkChanged { network } => {
+                self.home.network_changed(network);
+                if network != DeviceNetwork::None {
+                    // 连接可能没断、只是迁移了路径：同步和发送队列的退避不用等完。
+                    self.chat.foregrounded();
+                }
+                Ok(())
+            }
+            Action::RetryConnection => self.home.retry(),
             Action::SetPushEndpoint { endpoint } => self.push.set_endpoint(endpoint),
             Action::PushUnavailable { message } => {
                 self.push.unavailable(message);

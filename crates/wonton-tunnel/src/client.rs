@@ -1,21 +1,24 @@
 //! 隧道客户端：所有请求复用一条到服务端的连接；连接断开后，下一次使用时自动重连。
 //!
-//! 不设在线超时门禁：建连失败与否由 iroh 自己判断（打洞、中继兜底、QUIC 握手超时），客户端只如实报告。
+//! 同一时刻最多一次建连，失败后按 [`Pacing`] 退避，等待期间的请求共享下一次的结果（ADR-0032）。建连放在独立的
+//! 任务里：等它的请求超时走了，建连也不会被丢下重来。
 
 use std::{
     fmt,
+    future::Future,
+    net::IpAddr,
     sync::{
-        Arc, Mutex, MutexGuard, Weak,
+        Arc, Mutex, MutexGuard, PoisonError, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, TransportAddr,
     endpoint::{Connection, ConnectionError, RecvStream, SendStream},
 };
-use tokio::sync::{OnceCell, watch};
+use tokio::{sync::watch, task::AbortHandle};
 use tracing::{debug, info};
 
 use crate::{
@@ -24,6 +27,7 @@ use crate::{
         from_write_error,
     },
     forward,
+    pacing::Pacing,
     wire::{ALPN, CLOSE_NORMAL, Request, Status},
 };
 
@@ -62,6 +66,38 @@ pub struct PathInfo {
     pub rtt: Duration,
 }
 
+impl PathInfo {
+    /// 直连的对端是局域网地址。
+    pub fn is_lan(&self) -> bool {
+        let TransportAddr::Ip(addr) = &self.remote else {
+            return false;
+        };
+        match addr.ip() {
+            IpAddr::V4(ip) => ip.is_private() || ip.is_link_local() || ip.is_loopback(),
+            IpAddr::V6(ip) => {
+                ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_loopback()
+            }
+        }
+    }
+}
+
+/// 连接质量的指标，给连接页和日志用。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TunnelStats {
+    /// 最近一次建连的耗时。
+    pub handshake: Option<Duration>,
+    /// 最后一次确认服务端有回应的时间。
+    pub last_confirmed: Option<SystemTime>,
+    /// 连接从可用变成不可用的次数。
+    pub disconnects: u32,
+    /// 当前连接发出的 QUIC 包数。
+    pub sent_packets: u64,
+    /// 当前连接判定丢失的 QUIC 包数。
+    pub lost_packets: u64,
+    /// 最近一次失败的原因。连上之后还留着，方便查刚才的问题。
+    pub last_failure: Option<TunnelError>,
+}
+
 impl fmt::Display for TunnelStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -87,6 +123,11 @@ impl fmt::Display for PathKind {
 /// n0 中继的往返 P90 约 1 秒（ADR-0004 实测）。偶尔把慢的连接误判成失效，代价只是重连一次。挂起后
 /// QUIC 的往返时间估计会被挂起期间积压的确认拉高，不能拿来定时限。
 const REVALIDATE_DEADLINE: Duration = Duration::from_millis(1500);
+/// 一次建连最长这么久。n0 中继冷启动的 P90 约 5.5 秒（ADR-0004）；不设时要等 QUIC 的 30 秒超时，网络恢复时
+/// 还卡在这次注定失败的握手上（ADR-0032 的改前实测：恢复后 32 秒才连上）。
+const DIAL_DEADLINE: Duration = Duration::from_secs(12);
+/// 请求等连接最长这么久，然后失败。比 [`DIAL_DEADLINE`] 长：刚发起的建连能等到真实结果。
+const HOLD_DEADLINE: Duration = Duration::from_secs(15);
 
 /// 到一台服务端的隧道客户端。克隆得到的是同一个客户端，共享同一条连接。
 #[derive(Debug, Clone)]
@@ -97,16 +138,52 @@ pub struct TunnelClient {
 #[derive(Debug)]
 struct Inner {
     endpoint: Endpoint,
-    server: EndpointAddr,
+    server: Mutex<EndpointAddr>,
     /// 当前的建连尝试。同一时刻最多一次建连，并发请求共享它的结果。
-    attempt: Mutex<Arc<Attempt>>,
+    attempt: Mutex<Option<Arc<Attempt>>>,
     status: watch::Sender<TunnelStatus>,
     closed: AtomicBool,
+    pacing: Mutex<Pacing>,
+    stats: Mutex<TunnelStats>,
+    /// 服务端确认过的连接：没确认就断开的（比如被拒绝）要退避，确认过的断开了可以马上重连。
+    confirmed: Mutex<Option<usize>>,
 }
 
-#[derive(Debug, Default)]
+/// 一次建连，或者回到前台时的一次确认。结果留在 watch 里，任务被取消时发送端丢弃，等的人重新取一次。
+#[derive(Debug)]
 struct Attempt {
-    result: OnceCell<Result<Connection, TunnelError>>,
+    result: watch::Receiver<Option<Result<Connection, TunnelError>>>,
+    task: AbortHandle,
+    /// 还在退避或握手：换网时可以直接取消。确认现有连接的那种不取消，取消了连接就没了。
+    cancellable: bool,
+}
+
+impl Attempt {
+    fn spawn(
+        cancellable: bool,
+        work: impl Future<Output = Result<Connection, TunnelError>> + Send + 'static,
+    ) -> Arc<Self> {
+        let (sender, result) = watch::channel(None);
+        let task = tokio::spawn(async move {
+            sender.send_replace(Some(work.await));
+        })
+        .abort_handle();
+        Arc::new(Self {
+            result,
+            task,
+            cancellable,
+        })
+    }
+
+    fn outcome(&self) -> Option<Result<Connection, TunnelError>> {
+        self.result.borrow().clone()
+    }
+
+    /// 等结果；被取消时返回 `None`。
+    async fn finished(&self) -> Option<Result<Connection, TunnelError>> {
+        let mut result = self.result.clone();
+        result.wait_for(Option::is_some).await.ok()?.clone()
+    }
 }
 
 /// 隧道上的一条流，已写入请求类型。
@@ -135,17 +212,25 @@ impl TunnelClient {
         Self {
             inner: Arc::new(Inner {
                 endpoint,
-                server: server.into(),
-                attempt: Mutex::new(Arc::default()),
+                server: Mutex::new(server.into()),
+                attempt: Mutex::new(None),
                 status,
                 closed: AtomicBool::new(false),
+                pacing: Mutex::default(),
+                stats: Mutex::default(),
+                confirmed: Mutex::new(None),
             }),
         }
     }
 
     /// 服务端的 endpoint ID。
     pub fn server_id(&self) -> EndpointId {
-        self.inner.server.id
+        lock(&self.inner.server).id
+    }
+
+    /// 换服务端的地址，下一次建连时生效。服务器换了 IP 时，新地址由核心告诉 App（ADR-0032）。
+    pub fn set_server_addr(&self, server: EndpointAddr) {
+        *lock(&self.inner.server) = server;
     }
 
     /// 当前状态。
@@ -181,15 +266,11 @@ impl TunnelClient {
             return self.ping().await;
         };
         let started = Instant::now();
-        let attempt = Arc::new(Attempt::default());
-        *self.inner.lock_attempt() = attempt.clone();
-        let client = self.clone();
-        let result = attempt
-            .result
-            .get_or_init(|| client.confirm_or_replace(conn))
-            .await;
-        if let Err(err) = result {
-            return Err(err.clone());
+        lock(&self.inner.pacing).reset();
+        let attempt = Attempt::spawn(false, self.clone().confirm_or_replace(conn));
+        *lock(&self.inner.attempt) = Some(attempt.clone());
+        if let Some(Err(err)) = attempt.finished().await {
+            return Err(err);
         }
         // 换了新连接时，这一次往返确认服务端仍接受本设备，并更新状态。
         self.ping().await?;
@@ -223,6 +304,32 @@ impl TunnelClient {
         }
     }
 
+    /// 别等了，马上重试：清零退避，取消正在进行的建连。回到前台、网络变化、主人点“重试”时调用。
+    ///
+    /// 换网之后，旧网络上的握手已经没有意义，它的重传间隔也退避到了几秒。现有连接不动，要不要换由
+    /// [`probe`](Self::probe) 确认：iroh 可能正在把它迁移到新路径上。
+    pub fn retry_now(&self) {
+        lock(&self.inner.pacing).reset();
+        let mut current = lock(&self.inner.attempt);
+        let waiting = current
+            .as_ref()
+            .is_some_and(|attempt| attempt.cancellable && attempt.outcome().is_none());
+        if waiting && let Some(attempt) = current.take() {
+            attempt.task.abort();
+        }
+    }
+
+    /// 连接质量的指标。
+    pub fn stats(&self) -> TunnelStats {
+        let mut stats = lock(&self.inner.stats).clone();
+        if let Some(conn) = self.inner.live_connection() {
+            let current = conn.stats();
+            stats.sent_packets = current.sent_packets;
+            stats.lost_packets = current.lost_packets;
+        }
+        stats
+    }
+
     /// 当前连接正在使用的传输路径。没有可用连接时返回 `None`。
     pub fn path(&self) -> Option<PathInfo> {
         let conn = self.inner.live_connection()?;
@@ -247,6 +354,9 @@ impl TunnelClient {
         self.inner.closed.store(true, Ordering::SeqCst);
         if let Some(conn) = self.inner.live_connection() {
             conn.close(CLOSE_NORMAL, b"client closed");
+        }
+        if let Some(attempt) = lock(&self.inner.attempt).take() {
+            attempt.task.abort();
         }
         self.inner.status.send_replace(TunnelStatus::Closed);
     }
@@ -280,7 +390,7 @@ impl TunnelClient {
             .map_err(|err| from_read_exact_error(&err))?;
         let status = Status::from_byte(byte[0])
             .ok_or_else(|| TunnelError::protocol(format!("未知的状态字节 {}", byte[0])))?;
-        self.inner.mark(conn_id, TunnelStatus::Connected);
+        self.inner.confirm(conn_id);
         match status {
             Status::Ok => Ok(()),
             Status::UpstreamUnavailable => Err(TunnelError::UpstreamUnavailable),
@@ -296,7 +406,7 @@ impl TunnelClient {
             Err(_) => info!(deadline = ?REVALIDATE_DEADLINE, "现有连接限时内没有回应，换新连接"),
         }
         conn.close(CLOSE_NORMAL, b"no response");
-        self.inner.clone().connect().await
+        self.inner.clone().dial().await
     }
 
     /// 在指定的连接上做一次往返，不经过 [`Self::connection`]。
@@ -306,80 +416,124 @@ impl TunnelClient {
         self.read_status(&mut stream.recv, stream.conn_id).await
     }
 
-    /// 取一条可用连接：复用现有连接；没有或已断开时建新连接，并发调用方共享同一次建连。
+    /// 取一条可用连接：复用现有连接；没有或已断开时等下一次建连，最多等 [`HOLD_DEADLINE`]。
     async fn connection(&self) -> Result<Connection, TunnelError> {
-        if self.inner.closed.load(Ordering::SeqCst) {
-            return Err(TunnelError::Closed);
+        match tokio::time::timeout(HOLD_DEADLINE, self.wait_for_connection()).await {
+            Ok(result) => result,
+            Err(_) => Err(self
+                .stats()
+                .last_failure
+                .unwrap_or_else(|| TunnelError::transport("连接限时内没有建好"))),
         }
-        let attempt = self.inner.usable_attempt();
-        let result = attempt
-            .result
-            .get_or_init(|| self.inner.clone().connect())
-            .await;
-        match result {
-            Ok(conn) => match conn.close_reason() {
-                None => Ok(conn.clone()),
+    }
+
+    async fn wait_for_connection(&self) -> Result<Connection, TunnelError> {
+        loop {
+            if self.inner.closed.load(Ordering::SeqCst) {
+                return Err(TunnelError::Closed);
+            }
+            let attempt = self.inner.usable_attempt();
+            // 被 `retry_now` 取消了：取新的那次。
+            let Some(result) = attempt.finished().await else {
+                continue;
+            };
+            let conn = result?;
+            return match conn.close_reason() {
+                None => Ok(conn),
                 // 刚建好就被关闭（例如服务端拒绝）。下一次调用会重新建连。
                 Some(reason) => Err(from_connection_error(&reason)),
-            },
-            Err(err) => Err(err.clone()),
+            };
         }
     }
 }
 
 impl Inner {
-    fn lock_attempt(&self) -> MutexGuard<'_, Arc<Attempt>> {
-        self.attempt
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// 返回进行中或可用的建连尝试；上一次已经失败或连接已断开时换一个新的。
-    fn usable_attempt(&self) -> Arc<Attempt> {
-        let mut current = self.lock_attempt();
-        let stale = match current.result.get() {
-            None => false,
-            Some(Ok(conn)) => conn.close_reason().is_some(),
-            Some(Err(_)) => true,
-        };
-        if stale {
-            *current = Arc::default();
+    /// 返回进行中或可用的建连尝试；没有、上一次已经失败或连接已断开时开始新的一次。
+    fn usable_attempt(self: &Arc<Self>) -> Arc<Attempt> {
+        let mut current = lock(&self.attempt);
+        if let Some(attempt) = current.as_ref() {
+            let stale = match attempt.outcome() {
+                None => false,
+                Some(Ok(conn)) => conn.close_reason().is_some(),
+                Some(Err(_)) => true,
+            };
+            if !stale {
+                return attempt.clone();
+            }
         }
-        current.clone()
+        let attempt = Attempt::spawn(true, self.clone().dial());
+        *current = Some(attempt.clone());
+        attempt
     }
 
     fn live_connection(&self) -> Option<Connection> {
-        match self.lock_attempt().result.get() {
-            Some(Ok(conn)) if conn.close_reason().is_none() => Some(conn.clone()),
+        let attempt = lock(&self.attempt).clone()?;
+        match attempt.outcome() {
+            Some(Ok(conn)) if conn.close_reason().is_none() => Some(conn),
             _ => None,
         }
     }
 
-    async fn connect(self: Arc<Self>) -> Result<Connection, TunnelError> {
+    /// 等到退避结束，建一次连接。
+    async fn dial(self: Arc<Self>) -> Result<Connection, TunnelError> {
+        let not_before = lock(&self.pacing).not_before();
+        if let Some(not_before) = not_before {
+            tokio::time::sleep_until(not_before).await;
+        }
         self.set_status(TunnelStatus::Connecting);
-        let server = self.server.id.fmt_short();
-        let conn = match self.endpoint.connect(self.server.clone(), ALPN).await {
-            Ok(conn) => conn,
-            Err(err) => {
-                let err = from_connect_error(&err);
-                info!(%server, "隧道建连失败：{err}");
-                self.set_status(TunnelStatus::Disconnected(err.clone()));
-                return Err(err);
+        let server_addr = lock(&self.server).clone();
+        let server = server_addr.id.fmt_short();
+        let started = Instant::now();
+        let dialed =
+            tokio::time::timeout(DIAL_DEADLINE, self.endpoint.connect(server_addr, ALPN)).await;
+        let conn = match dialed {
+            Ok(Ok(conn)) => conn,
+            Ok(Err(err)) => return Err(self.dial_failed(from_connect_error(&err), &server)),
+            Err(_) => {
+                let err = TunnelError::transport("建连限时内没有回应");
+                return Err(self.dial_failed(err, &server));
             }
         };
         if self.closed.load(Ordering::SeqCst) {
             conn.close(CLOSE_NORMAL, b"client closed");
             return Err(TunnelError::Closed);
         }
-        info!(%server, "隧道连接已建立");
+        let handshake = started.elapsed();
+        lock(&self.stats).handshake = Some(handshake);
+        let handshake_ms = handshake.as_millis();
+        info!(%server, handshake_ms, "隧道连接已建立");
         watch_close(Arc::downgrade(&self), &conn);
         Ok(conn)
     }
 
+    fn dial_failed(&self, err: TunnelError, server: &impl fmt::Display) -> TunnelError {
+        info!(%server, "隧道建连失败：{err}");
+        lock(&self.pacing).failed();
+        self.set_status(TunnelStatus::Disconnected(err.clone()));
+        err
+    }
+
+    /// 服务端回应了这条连接：确认本设备被接受。
+    fn confirm(&self, conn_id: usize) {
+        if !self.is_current(conn_id) {
+            return;
+        }
+        *lock(&self.confirmed) = Some(conn_id);
+        lock(&self.pacing).reset();
+        lock(&self.stats).last_confirmed = Some(SystemTime::now());
+        self.set_status(TunnelStatus::Connected);
+    }
+
+    fn is_current(&self, conn_id: usize) -> bool {
+        let attempt = lock(&self.attempt).clone();
+        attempt.is_some_and(
+            |attempt| matches!(attempt.outcome(), Some(Ok(conn)) if conn.stable_id() == conn_id),
+        )
+    }
+
     /// 只有 `conn_id` 仍是当前连接时才更新状态，避免旧连接的事件覆盖新连接的状态。
     fn mark(&self, conn_id: usize, status: TunnelStatus) {
-        let current = self.lock_attempt();
-        if matches!(current.result.get(), Some(Ok(conn)) if conn.stable_id() == conn_id) {
+        if self.is_current(conn_id) {
             self.set_status(status);
         }
     }
@@ -390,10 +544,21 @@ impl Inner {
             if *current == TunnelStatus::Closed || *current == status {
                 return false;
             }
+            let mut stats = lock(&self.stats);
+            if *current == TunnelStatus::Connected {
+                stats.disconnects = stats.disconnects.saturating_add(1);
+            }
+            if let TunnelStatus::Disconnected(err) = &status {
+                stats.last_failure = Some(err.clone());
+            }
             *current = status;
             true
         });
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// 监听连接关闭，把断开原因写进状态。只持有弱引用，不会让连接或客户端多活。
@@ -412,7 +577,12 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
             return;
         }
         let err = from_connection_error(&closed.reason);
-        info!(server = %inner.server.id.fmt_short(), "隧道连接已断开：{err}");
+        let server = lock(&inner.server).id.fmt_short();
+        info!(%server, "隧道连接已断开：{err}");
+        let confirmed = *lock(&inner.confirmed) == Some(conn_id);
+        if !confirmed {
+            lock(&inner.pacing).failed();
+        }
         inner.mark(conn_id, TunnelStatus::Disconnected(err));
     });
 }

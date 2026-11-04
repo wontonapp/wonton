@@ -221,6 +221,9 @@ pub(crate) fn recovery(recovery: Recovery) -> RecoveryStatus {
     }
 }
 
+/// 连不上时主人看到的话。连接的情况由 `HomeViewModel` 说，原文只进日志（ADR-0032）。
+pub(crate) const NOT_CONNECTED: &str = "连上家里的服务器后再试";
+
 /// Matrix 错误的原因。
 pub(crate) fn failure(error: &Error) -> ChatFailure {
     match error {
@@ -236,7 +239,9 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
 pub(crate) fn core_error(error: &Error) -> CoreError {
     let reason = error.to_string();
     match failure(error) {
-        ChatFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
+        ChatFailure::TransportUnavailable => CoreError::TransportUnavailable {
+            reason: NOT_CONNECTED.to_owned(),
+        },
         ChatFailure::Unauthorized => CoreError::Unauthorized { reason },
         ChatFailure::NotReady => CoreError::NotReady { reason },
         ChatFailure::Upstream => CoreError::Upstream { reason },

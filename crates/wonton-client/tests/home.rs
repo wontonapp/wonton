@@ -14,7 +14,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use wonton_client::{
-    Action, ClientCore, CoreError, HomeFailure, HomeStatus, HomeViewModel, Network, ProxySettings,
+    Action, ClientCore, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure, HomeStatus,
+    HomeViewModel, Network, ProxySettings,
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
@@ -97,6 +98,7 @@ async fn an_unregistered_device_is_told_it_needs_pairing() {
         ),
         "{view:?}"
     );
+    assert_eq!(view.notice, Some(ConnectionNotice::DeviceRejected));
 }
 
 #[tokio::test]
@@ -213,6 +215,100 @@ async fn a_dropped_connection_is_replaced_without_coming_back_to_the_foreground(
         .await;
 }
 
+#[tokio::test]
+async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_next_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+
+    home.drop_connections_silently().await;
+    let started = Instant::now();
+    phone
+        .dispatch(Action::NetworkChanged {
+            network: DeviceNetwork::Wifi,
+        })
+        .unwrap();
+    home.wait_for_a_connection().await;
+
+    // 只靠定时检查最多要 13 秒：等 5 秒，再限时 8 秒。
+    assert!(
+        started.elapsed() < Duration::from_secs(7),
+        "网络变化后 {:?} 才换上新连接",
+        started.elapsed()
+    );
+}
+
+#[tokio::test]
+async fn in_the_background_the_core_leaves_the_connection_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+
+    phone.dispatch(Action::AppBackgrounded).unwrap();
+    home.drop_connections_silently().await;
+    // 比定时检查的间隔加限时都长。
+    tokio::time::sleep(Duration::from_secs(14)).await;
+    let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
+    assert_eq!(opened.get(), 0, "在后台还在重连");
+
+    phone.dispatch(Action::AppForegrounded).unwrap();
+    home.wait_for_a_connection().await;
+}
+
+/// 抖一下没有提示；断得久一点说“连接中”；回来了自动消失。说得久的情况在 `home::connection` 的测试里。
+#[tokio::test]
+async fn an_outage_comes_and_goes_in_plain_words() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    let connected = phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    assert_eq!(connected.notice, None);
+
+    let port = home.stop().await;
+    let view = phone
+        .wait_for(|view| view.notice == Some(ConnectionNotice::Connecting))
+        .await;
+    assert!(view.details.disconnects >= 1, "{view:?}");
+    assert!(view.details.last_connected_at_ms.is_some(), "{view:?}");
+
+    home.start_again(port).await;
+    phone.dispatch(Action::RetryConnection).unwrap();
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    assert_eq!(view.notice, None);
+}
+
+#[tokio::test]
+async fn retrying_reaches_a_device_paired_after_it_was_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.notice == Some(ConnectionNotice::DeviceRejected))
+        .await;
+
+    home.allowlist.allow(phone.device_id());
+    phone.dispatch(Action::RetryConnection).unwrap();
+
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    assert_eq!(view.notice, None);
+}
+
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
 struct Phone {
     core: Arc<ClientCore>,
@@ -301,6 +397,13 @@ impl Home {
         let port = self.server().endpoint().bound_sockets()[0].port();
         self.server.take().expect("服务端没在运行").shutdown().await;
         self.start_again(port).await;
+    }
+
+    /// 正常关闭，返回它的端口，之后用 [`Self::start_again`] 启动。
+    async fn stop(&mut self) -> u16 {
+        let port = self.server().endpoint().bound_sockets()[0].port();
+        self.server.take().expect("服务端没在运行").shutdown().await;
+        port
     }
 
     /// 不发关闭帧就丢掉所有连接，再用同样的身份和端口启动：手机那边收不到任何通知，相当于服务端放弃了

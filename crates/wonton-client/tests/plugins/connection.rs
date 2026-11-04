@@ -1,11 +1,13 @@
-//! 连不上、换服务器时的行为：如实报原因，不把上一台的结果算到这一台头上。
+//! 连不上、换服务器时的行为：连不上由 `HomeViewModel` 说，不进插件页；不把上一台的结果算到这一台头上。
 
 use std::net::{Ipv4Addr, UdpSocket};
 use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use iroh::SecretKey;
-use wonton_client::{Action, HomeFailure, HomeStatus, PluginFailure, PluginState, PluginTaskState};
+use wonton_client::{
+    Action, ConnectionNotice, HomeFailure, HomeStatus, PluginFailure, PluginState, PluginTaskState,
+};
 
 use crate::rig::{Canned, FakeHome, Rig, core_error, installed, preview, running, ticket};
 
@@ -24,20 +26,13 @@ async fn first_failure(rig: &Rig) -> HomeFailure {
     }
 }
 
-/// 等页面上的问题变成 `reason`：连接之前取列表也会留下问题，只看有没有分不清是哪一个。
-async fn shows(rig: &Rig, reason: PluginFailure) {
-    rig.wait_for(|view| {
-        view.problem
-            .as_ref()
-            .is_some_and(|problem| problem.reason == reason)
-    })
-    .await;
-}
-
 /// 服务器拒绝了这台设备，重连也没用，状态不该再回到“连接中”。
 async fn stays_rejected(rig: &Rig) {
     assert_eq!(first_failure(rig).await, HomeFailure::Unauthorized);
-    shows(rig, PluginFailure::Unauthorized).await;
+    assert_eq!(
+        rig.app.home().notice,
+        Some(ConnectionNotice::DeviceRejected)
+    );
     let quiet = Instant::now() + Duration::from_secs(8);
     while Instant::now() < quiet {
         let status = rig.app.home().status;
@@ -49,9 +44,9 @@ async fn stays_rejected(rig: &Rig) {
     }
 }
 
-/// 连不上可能只是网络断了，要自己再试；再试的时候原因还留在页面上。
+/// 连不上可能只是网络断了，要自己再试；插件页上不放隧道的错误。
 #[tokio::test]
-async fn an_unreachable_server_is_reported_and_tried_again() {
+async fn an_unreachable_server_is_tried_again_and_stays_out_of_the_plugin_page() {
     let rig = Rig::new().await;
     // 地址上有人占着，但从不应答。
     let silent = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -60,17 +55,30 @@ async fn an_unreachable_server_is_reported_and_tried_again() {
         silent.local_addr().unwrap(),
     ));
     assert_eq!(first_failure(&rig).await, HomeFailure::TransportUnavailable);
-    shows(&rig, PluginFailure::TransportUnavailable).await;
 
     let deadline = Instant::now() + Duration::from_secs(20);
     while rig.app.home().status != HomeStatus::Connecting {
         assert!(Instant::now() < deadline, "没有再试：{:?}", rig.app.home());
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    assert_eq!(
-        rig.app.plugins().problem.map(|problem| problem.reason),
-        Some(PluginFailure::TransportUnavailable)
-    );
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    assert_eq!(rig.app.plugins().problem, None);
+    assert_eq!(rig.app.home().notice, Some(ConnectionNotice::Connecting));
+}
+
+/// 冷启动没网也能显示主屏：一打开就有上次取到的列表，不等隧道。
+#[tokio::test]
+async fn the_installed_list_is_there_as_soon_as_the_app_opens() {
+    let mut rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![running("app.notes")]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    // 列表是取到之后才放进 ViewModel 的，这时已经存下了。
+
+    rig.reopen();
+
+    let installed = rig.app.plugins().installed.expect("没有上次的列表");
+    assert_eq!(installed.plugins[0].id, "app.notes");
 }
 
 #[tokio::test]

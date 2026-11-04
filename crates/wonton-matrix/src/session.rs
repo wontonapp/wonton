@@ -135,7 +135,7 @@ impl MatrixSession {
     /// 账号在首次登录时由 Tuwunel 自动创建。登录时申请刷新令牌：访问令牌按服务器的
     /// `access_token_ttl` 过期，SDK 遇到过期会自动换新，并发出 [`SessionEvent::TokensRefreshed`]。
     pub async fn login_with_jwt(config: &SessionConfig, jwt: &str) -> Result<Self> {
-        let client = build_client(config).await?;
+        let client = build_client(config, VersionBuilder::DiscoverNative).await?;
         let data = JsonObject::from_iter([("token".to_owned(), jwt.into())]);
         let response = client
             .matrix_auth()
@@ -152,7 +152,8 @@ impl MatrixSession {
     /// 用 SQLite 存储时要传登录时的同一个目录：设备密钥、交叉签名和密钥备份都在里面。令牌已经失效的话，
     /// 恢复本身照样成功，第一次请求时才报错，并发出 [`SessionEvent::TokenRejected`]。
     pub async fn restore(config: &SessionConfig, saved: SavedSession) -> Result<Self> {
-        let client = build_client(config).await?;
+        // 不查服务器版本：冷启动没网也要能打开本地的房间和消息。登录时已经查过这台服务器。
+        let client = build_client(config, VersionBuilder::Native).await?;
         let user_id = saved.0.meta.user_id.clone();
         let device_id = saved.0.meta.device_id.clone();
         client.restore_session(saved.0).await?;
@@ -242,11 +243,10 @@ impl MatrixSession {
     }
 }
 
-async fn build_client(config: &SessionConfig) -> Result<Client> {
+async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Result<Client> {
     let mut builder = Client::builder()
         .homeserver_url(&config.homeserver_url)
-        // 先查服务器是否支持 MSC4186，不支持就在这里失败，而不是等到同步时才发现。
-        .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
+        .sliding_sync_version_builder(versions)
         .handle_refresh_tokens()
         .with_encryption_settings(EncryptionSettings {
             // 登录后自动建交叉签名身份（账号还没有时）；服务器要支持 MSC3967，首次上传不要求再次认证。
