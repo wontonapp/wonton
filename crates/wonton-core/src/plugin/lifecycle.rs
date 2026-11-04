@@ -572,19 +572,9 @@ impl PluginManager {
         package: &PluginPackage,
         record: &InstalledRecord,
     ) -> Result<Deployed, InstallError> {
+        let health = self.check_containers(package).await?;
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
-        let one_shot = package.one_shot_services();
-        let mut healthy = Vec::new();
-        for service in package.service_names() {
-            let name = self.cfg.instance.container(&slug, service);
-            match health::check_now(&self.engine, &name, one_shot.contains(service)).await? {
-                Checked::Completed => {}
-                Checked::Healthy => healthy.push(true),
-                Checked::Running => healthy.push(false),
-                Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
-            }
-        }
         self.check_bot(manifest).await?;
         let generated = self.check_secrets(manifest).await?;
         let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
@@ -611,11 +601,31 @@ impl PluginManager {
         }
         Ok(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
-            health: Health::of(healthy),
+            health,
             models: self.models_upstream(manifest, &network).await?,
             mcp: self.mcp_upstream(manifest, &network).await?,
             proxy: proxy.map(Arc::new),
         })
+    }
+
+    /// 看一眼插件的每个容器，不等待。不在应有的状态是 [`InstallError::Unhealthy`]。
+    pub(super) async fn check_containers(
+        &self,
+        package: &PluginPackage,
+    ) -> Result<Health, InstallError> {
+        let slug = package.manifest.id.slug();
+        let one_shot = package.one_shot_services();
+        let mut healthy = Vec::new();
+        for service in package.service_names() {
+            let name = self.cfg.instance.container(&slug, service);
+            match health::check_now(&self.engine, &name, one_shot.contains(service)).await? {
+                Checked::Completed => {}
+                Checked::Healthy => healthy.push(true),
+                Checked::Running => healthy.push(false),
+                Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
+            }
+        }
+        Ok(Health::of(healthy))
     }
 
     /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。

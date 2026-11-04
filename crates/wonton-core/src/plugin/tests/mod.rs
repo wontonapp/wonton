@@ -31,6 +31,7 @@ mod resources;
 mod secrets;
 mod store;
 mod views;
+mod watch;
 
 const SPEC: &str = include_str!("../../../../../docs/plugin-spec.md");
 

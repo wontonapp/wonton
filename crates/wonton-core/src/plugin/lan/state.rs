@@ -86,7 +86,7 @@ impl Lan {
         self.memory().degraded.remove(id);
     }
 
-    pub(super) fn is_degraded(&self, id: &PluginId) -> bool {
+    pub(in crate::plugin) fn is_degraded(&self, id: &PluginId) -> bool {
         self.memory().degraded.contains(id)
     }
 }

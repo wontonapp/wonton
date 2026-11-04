@@ -47,6 +47,7 @@ pub mod storefront;
 pub mod system;
 pub(crate) mod upstreams;
 pub mod views;
+mod watch;
 
 #[cfg(test)]
 pub(crate) mod fake_docker;

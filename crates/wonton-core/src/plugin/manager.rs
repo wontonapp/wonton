@@ -47,7 +47,7 @@ pub enum PluginStatus {
     Uninstalling,
 }
 
-/// 运行中的插件健不健康。核心在安装时和每次启动时检查，这里是最近一次检查的结果。
+/// 运行中的插件健不健康，是最近一次检查的结果（见 [`super::watch`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Health {
@@ -125,13 +125,15 @@ pub(super) struct Entry {
     pub(super) listed: Option<Arc<Listed>>,
     upstream: Option<String>,
     /// 声明了 `provides.models`（不论状态）。
-    provides_models: bool,
+    pub(super) provides_models: bool,
     /// 运行中的模型网关的转发目标。
     models: Option<ModelsRoute>,
     /// `sso: proxy` 时网关代加的凭据。
     proxy: Option<Arc<ProxyAuth>>,
     /// 运行中时 MCP 服务的地址。
     mcp: Option<String>,
+    /// 这个异常是容器决定的，容器好了就恢复（见 [`super::watch`]）。
+    pub(super) follows_containers: bool,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
@@ -162,6 +164,7 @@ impl Entry {
             proxy: None,
             mcp: None,
             listed: Some(listed),
+            follows_containers: false,
         }
     }
 
@@ -172,6 +175,14 @@ impl Entry {
             proxy: deployed.proxy,
             mcp: deployed.mcp,
             ..Self::new(listed, PluginStatus::Running, deployed.upstream)
+        }
+    }
+
+    /// 核对没过的插件：之后跟着容器走（见 [`super::watch`]），容器好了再核对一次就恢复。
+    pub(super) fn containers_failed(listed: Arc<Listed>, reason: String) -> Self {
+        Self {
+            follows_containers: true,
+            ..Self::new(listed, PluginStatus::Degraded { reason }, None)
         }
     }
 
@@ -192,10 +203,11 @@ impl Entry {
             proxy: None,
             mcp: None,
             listed: None,
+            follows_containers: false,
         }
     }
 
-    fn failed_with(&self, reason: &str) -> bool {
+    pub(super) fn failed_with(&self, reason: &str) -> bool {
         matches!(&self.status, PluginStatus::Degraded { reason: r } if r == reason)
     }
 }
@@ -498,6 +510,7 @@ impl PluginManager {
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = status;
             entry.health = None;
+            entry.follows_containers = false;
             if let Some(upstream) = upstream {
                 entry.upstream = upstream;
             }
@@ -546,8 +559,7 @@ impl PluginManager {
                         if !listed.open_ports(record.lan_webui).is_empty() {
                             self.lan.mark_degraded(&manifest.id);
                         }
-                        let reason = e.to_string();
-                        Entry::new(listed, PluginStatus::Degraded { reason }, None)
+                        Entry::containers_failed(listed, e.to_string())
                     }
                 }
             }

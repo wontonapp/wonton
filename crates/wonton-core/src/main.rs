@@ -172,6 +172,7 @@ async fn serve() -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
     manager.spawn_lan_monitor();
     manager.spawn_egress_monitor();
+    manager.spawn_container_watch();
     upgrades.spawn();
     preinstall(&cfg, manager.clone(), upgrades.clone())?;
 
