@@ -1,7 +1,7 @@
 //! 商店（ADR-0017）：官方索引和 GitHub 上的社区插件，各自缓存，取不到时给上次的结果并如实说明。
 //!
 //! - 官方索引：设了 `WONTON_STORE_INDEX` 就每次读那个本地目录；否则从 GitHub 取 `geraldpeng6/wonton-store` 的
-//!   `index.json`，6 小时一次。
+//!   `index.json`，6 小时一次，raw 不通时走 API。取到的存一份到磁盘，核心重启后取不到时也有列表。
 //! - 社区插件：搜 topic `wonton-plugin` 的公开仓库，10 分钟一次；主人可以关掉（`WONTON_STORE_COMMUNITY=off`）。
 //! - App 要求刷新（`?refresh=true`）时不等缓存过期，但离上次去取不到一分钟就不再取：GitHub 的搜索 API 不带令牌时
 //!   每分钟只给 10 次。
@@ -10,13 +10,15 @@ mod community;
 pub mod index;
 mod listing;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use wonton_protocol::{StoreFailure, StoreProblem};
 
-use super::github::{GitHub, Repo};
+use super::github::{GitHub, GitHubError, Repo};
 use super::manager::now_secs;
+use super::store::{create_private_dir, read_json, write_json};
 pub use community::Community;
 use index::{Files, Index, IndexError};
 
@@ -26,6 +28,7 @@ pub(in crate::plugin) const OFFICIAL_TTL: Duration = Duration::from_secs(6 * 360
 pub(in crate::plugin) const COMMUNITY_TTL: Duration = Duration::from_secs(10 * 60);
 /// 两次去来源取之间至少隔这么久，App 要求刷新也一样。
 pub(in crate::plugin) const MIN_RETRY: Duration = Duration::from_secs(60);
+const INDEX_FILE: &str = "index.json";
 /// `index.json` 最多这么大。
 const MAX_INDEX_BYTES: u64 = 8 << 20;
 
@@ -85,23 +88,25 @@ impl<T> Section<T> {
         self.problem = problem;
     }
 
-    /// 没取到：留着上次的结果，说明它是什么时候的。
-    fn failed(&mut self, reason: StoreFailure, message: &str) {
+    /// 没取到：留着上次的结果和它的时间。
+    fn failed(&mut self, reason: StoreFailure, details: String) {
         self.attempted = Some(Instant::now());
-        let age = match self.fetched {
-            Some(t) => format!("，这是 {} 分钟前的列表", t.elapsed().as_secs() / 60),
-            None => String::new(),
-        };
-        self.problem = Some(StoreProblem {
-            reason,
-            message: format!("{message}{age}"),
-        });
+        self.problem = Some(StoreProblem { reason, details });
     }
+}
+
+/// 磁盘上的官方索引。索引留原文：下次还按当时的核心的规则解析。
+#[derive(Serialize, Deserialize)]
+struct CachedIndex {
+    fetched_at_ms: u64,
+    index: serde_json::Value,
 }
 
 pub struct Storefront {
     github: GitHub,
     config: StoreConfig,
+    /// 磁盘上的官方索引的路径。
+    cache: PathBuf,
     official: tokio::sync::Mutex<Section<Index>>,
     community: tokio::sync::Mutex<Section<Vec<Community>>>,
     /// 读过的社区仓库：仓库 → （推送时间，读到的结果）。仓库没有新推送就不重读。
@@ -109,10 +114,11 @@ pub struct Storefront {
 }
 
 impl Storefront {
-    pub fn new(github: GitHub, config: StoreConfig) -> Self {
+    pub fn new(github: GitHub, config: StoreConfig, cache: PathBuf) -> Self {
         Self {
             github,
             config,
+            cache,
             official: tokio::sync::Mutex::default(),
             community: tokio::sync::Mutex::default(),
             read: tokio::sync::Mutex::default(),
@@ -137,30 +143,34 @@ impl Storefront {
         if let Some(dir) = &self.config.index_dir {
             let path = dir.join("index.json");
             let read = std::fs::read(&path)
-                .map_err(|e| format!("读不了官方索引 {}：{e}", path.display()))
-                .and_then(|json| Index::parse(&json).map_err(|e| e.to_string()));
+                .map_err(|e| {
+                    let details = format!("读不了官方索引 {}：{e}", path.display());
+                    (StoreFailure::Upstream, details)
+                })
+                .and_then(|json| Index::parse(&json).map_err(|e| index_failure(&e)));
             return match read {
                 Ok(index) => {
                     let problem = incomplete(&index);
                     (index, None, problem)
                 }
-                Err(message) => (
+                Err((reason, details)) => (
                     Index::default(),
                     None,
-                    Some(StoreProblem {
-                        reason: StoreFailure::Upstream,
-                        message,
-                    }),
+                    Some(StoreProblem { reason, details }),
                 ),
             };
         }
+        if section.attempted.is_none() {
+            restore(&self.cache, &mut section);
+        }
         if section.due(OFFICIAL_TTL, refresh) {
             match self.fetch_index().await {
-                Ok(index) => {
+                Ok((index, raw)) => {
                     let problem = incomplete(&index);
                     section.succeeded(index, problem);
+                    save(&self.cache, section.fetched_at_ms, raw);
                 }
-                Err((reason, message)) => section.failed(reason, &message),
+                Err((reason, details)) => section.failed(reason, details),
             }
         }
         (
@@ -170,21 +180,32 @@ impl Storefront {
         )
     }
 
-    async fn fetch_index(&self) -> Result<Index, (StoreFailure, String)> {
+    async fn fetch_index(&self) -> Result<(Index, serde_json::Value), (StoreFailure, String)> {
         let repo = Repo {
             owner: STORE_REPO.0.to_owned(),
             name: STORE_REPO.1.to_owned(),
         };
-        let json = self
+        let json = match self
             .github
-            .file(&repo, "main", "index.json", MAX_INDEX_BYTES)
+            .file(&repo, "main", INDEX_FILE, MAX_INDEX_BYTES)
             .await
-            .map_err(|e| (failure(&e), format!("取不到官方索引：{e}")))?;
-        Index::parse(&json).map_err(|e| match e {
-            IndexError::NewerFormat(_) | IndexError::Invalid(_) => {
-                (StoreFailure::Upstream, e.to_string())
+        {
+            Ok(json) => json,
+            Err(raw @ (GitHubError::Unavailable(_) | GitHubError::Timeout(_))) => {
+                tracing::info!(error = %raw, "raw 取不到官方索引，改走 API");
+                self.github
+                    .file_via_api(&repo, "main", INDEX_FILE, MAX_INDEX_BYTES)
+                    .await
+                    .map_err(|api| (failure(&api), format!("取不到官方索引：{raw}；{api}")))?
             }
-        })
+            Err(e) => return Err((failure(&e), format!("取不到官方索引：{e}"))),
+        };
+        let index = Index::parse(&json).map_err(|e| index_failure(&e))?;
+        let raw = serde_json::from_slice(&json).map_err(|e| {
+            let error = IndexError::Invalid(e.to_string());
+            index_failure(&error)
+        })?;
+        Ok((index, raw))
     }
 
     /// 社区插件，和它的时间、问题。`official` 里的仓库和插件 ID 不列出。
@@ -196,16 +217,16 @@ impl Storefront {
         if !self.config.community {
             let problem = StoreProblem {
                 reason: StoreFailure::Disabled,
-                message: "主人关掉了社区应用（WONTON_STORE_COMMUNITY=off）".to_owned(),
+                details: "WONTON_STORE_COMMUNITY=off".to_owned(),
             };
             return (Vec::new(), None, Some(problem));
         }
         let mut section = self.community.lock().await;
         if section.due(COMMUNITY_TTL, refresh) {
             let mut read = self.read.lock().await;
-            match community::discover(&self.github, &mut read).await {
+            match community::discover(&self.github, official, &mut read).await {
                 Ok((found, problem)) => section.succeeded(found, problem),
-                Err(e) => section.failed(failure(&e), &format!("取不到社区应用：{e}")),
+                Err(e) => section.failed(failure(&e), format!("取不到社区应用：{e}")),
             }
         }
         let listed = section
@@ -236,16 +257,60 @@ impl Storefront {
 fn incomplete(index: &Index) -> Option<StoreProblem> {
     (!index.skipped.is_empty()).then(|| StoreProblem {
         reason: StoreFailure::Incomplete,
-        message: format!("官方索引里有几项用不了：{}", index.skipped.join("；")),
+        details: format!("官方索引里有几项用不了：{}", index.skipped.join("；")),
     })
 }
 
-pub(in crate::plugin) fn failure(e: &super::github::GitHubError) -> StoreFailure {
-    match e {
-        super::github::GitHubError::RateLimited(_) => StoreFailure::RateLimited,
-        super::github::GitHubError::Unavailable(_) => StoreFailure::Unreachable,
-        super::github::GitHubError::NotFound(_) | super::github::GitHubError::TooBig(_) => {
-            StoreFailure::Upstream
+/// 读磁盘上的官方索引。时间照旧，所以 `due` 仍然会去取一次；读不了的当作没有。
+fn restore(path: &Path, section: &mut Section<Index>) {
+    let cached: CachedIndex = match read_json(path) {
+        Ok(Some(cached)) => cached,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(%error, "磁盘上的官方索引读不了，当作没有");
+            return;
         }
+    };
+    let index = serde_json::to_vec(&cached.index)
+        .map_err(|e| e.to_string())
+        .and_then(|json| Index::parse(&json).map_err(|e| e.to_string()));
+    match index {
+        Ok(index) => {
+            section.value = Some(index);
+            section.fetched_at_ms = Some(cached.fetched_at_ms);
+        }
+        Err(error) => tracing::warn!(%error, "磁盘上的官方索引解析不了，当作没有"),
+    }
+}
+
+/// 存官方索引。存不下只影响重启后取不到来源的时候，这次的列表照常给。
+fn save(path: &Path, fetched_at_ms: Option<u64>, index: serde_json::Value) {
+    let cached = CachedIndex {
+        fetched_at_ms: fetched_at_ms.unwrap_or_default(),
+        index,
+    };
+    let written = path
+        .parent()
+        .map_or(Ok(()), create_private_dir)
+        .and_then(|()| write_json(path, &cached));
+    if let Err(error) = written {
+        tracing::error!(%error, "官方索引存不到磁盘");
+    }
+}
+
+fn index_failure(e: &IndexError) -> (StoreFailure, String) {
+    let reason = match e {
+        IndexError::NewerFormat(_) => StoreFailure::IndexTooNew,
+        IndexError::Invalid(_) => StoreFailure::InvalidIndex,
+    };
+    (reason, e.to_string())
+}
+
+pub(in crate::plugin) fn failure(e: &GitHubError) -> StoreFailure {
+    match e {
+        GitHubError::RateLimited(_) => StoreFailure::RateLimited,
+        GitHubError::Unavailable(_) => StoreFailure::Unreachable,
+        GitHubError::Timeout(_) => StoreFailure::Timeout,
+        GitHubError::NotFound(_) | GitHubError::TooBig(_) => StoreFailure::Upstream,
     }
 }

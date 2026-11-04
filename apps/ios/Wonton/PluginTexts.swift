@@ -24,6 +24,22 @@ extension PluginCategory {
     }
 }
 
+extension StoreFailure {
+    var text: String {
+        switch self {
+        case .unreachable: return "连不上 GitHub，列表可能不是最新的"
+        case .timeout: return "GitHub 太慢，没有及时答完，列表可能不是最新的"
+        case .rateLimited: return "GitHub 限速了，过几分钟再试"
+        case .invalidIndex: return "商店的列表读不懂，稍后再试"
+        case .indexTooNew: return "商店的列表比家里的服务器新，先升级家里的服务器"
+        case .upstream: return "商店的来源出了问题，稍后再试"
+        case .incomplete: return "有的没读到，列表不完整"
+        case .disabled: return "社区应用已关闭"
+        case .other: return "商店出了问题，稍后再试"
+        }
+    }
+}
+
 extension PluginFailure {
     /// 失败以后主人下一步该做什么，跟在核心写的原因后面。
     var nextStep: String {

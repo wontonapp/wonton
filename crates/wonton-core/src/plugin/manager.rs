@@ -296,6 +296,8 @@ impl PluginManager {
         let lan = Lan::for_core(cfg.core_container.clone());
         let core_proxy = CoreProxy::default();
         let github = GitHub::new(&core_proxy);
+        let storefront =
+            Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         Self {
             engine,
             store,
@@ -305,8 +307,8 @@ impl PluginManager {
             host: HostPaths::new(host_dev),
             cfg,
             sources: Sources::default(),
-            github: github.clone(),
-            storefront: Storefront::new(github, StoreConfig::default()),
+            github,
+            storefront,
             core_proxy,
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),

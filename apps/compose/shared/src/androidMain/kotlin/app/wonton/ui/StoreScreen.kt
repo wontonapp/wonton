@@ -172,7 +172,7 @@ private fun LazyListScope.section(
     content.problem?.let { problem ->
         item(key = "problem:$title") {
             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
-                WontonNotice(WontonIcon.Warning, problem.message)
+                WontonNotice(WontonIcon.Warning, problem.reason.text)
             }
         }
     }

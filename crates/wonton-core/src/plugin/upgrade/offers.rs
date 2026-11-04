@@ -210,7 +210,7 @@ impl PluginManager {
                         results.extend(previous.get(&id).cloned().map(|c| (id.clone(), c)));
                         problem.get_or_insert(StoreProblem {
                             reason: failure(&e),
-                            message: format!("{id} 的新版本没查到：{e}"),
+                            details: format!("{id} 的新版本没查到：{e}"),
                         });
                     }
                 }

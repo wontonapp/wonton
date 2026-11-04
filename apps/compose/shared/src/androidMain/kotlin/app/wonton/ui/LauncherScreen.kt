@@ -111,7 +111,9 @@ fun LauncherScreen(
                         }
                     }
                     installed.upgradeCheck?.let { check ->
-                        item(key = "check", span = { GridItemSpan(maxLineSpan) }) { ProblemRow(check.message, null) }
+                        item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
+                            ProblemRow(check.reason.text, null)
+                        }
                     }
                     if (installed.plugins.isEmpty()) {
                         item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }

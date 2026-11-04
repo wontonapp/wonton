@@ -19,7 +19,11 @@ impl PluginManager {
     #[cfg(test)]
     #[must_use]
     pub fn with_github(mut self, github: GitHub) -> Self {
-        self.storefront = Storefront::new(github.clone(), self.storefront.config().clone());
+        self.storefront = Storefront::new(
+            github.clone(),
+            self.storefront.config().clone(),
+            self.store.index_cache(),
+        );
         self.github = github;
         self
     }
@@ -27,7 +31,7 @@ impl PluginManager {
     /// 商店的配置：官方索引从哪里取，列不列社区插件。
     #[must_use]
     pub fn with_store(mut self, config: StoreConfig) -> Self {
-        self.storefront = Storefront::new(self.github.clone(), config);
+        self.storefront = Storefront::new(self.github.clone(), config, self.store.index_cache());
         self
     }
 

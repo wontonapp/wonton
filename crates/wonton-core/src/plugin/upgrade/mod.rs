@@ -112,7 +112,7 @@ impl PluginManager {
         }
         let Some(origin) = &record.origin else {
             let no_index = problem
-                .map(|p| format!("：{}", p.message))
+                .map(|p| format!("：{}", p.details))
                 .unwrap_or_default();
             return Err(InstallError::NotFound(format!(
                 "插件 {id} 没有来源，查不到新版本{no_index}"

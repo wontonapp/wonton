@@ -250,7 +250,7 @@ pub struct AddSourceRequest {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct StoreSection {
     pub plugins: Vec<StoreItem>,
-    /// 列表是什么时候从来源取到的（Unix 毫秒）；用的是核心内置的那份、或者从没取到过时为空。
+    /// 列表是什么时候从来源取到的（Unix 毫秒）；本地目录里的索引，或者从没取到过时为空。
     pub fetched_at_ms: Option<u64>,
     /// 列表可能不是最新的、或者不完整时的原因；刚取到的完整列表为空。
     pub problem: Option<StoreProblem>,
@@ -261,8 +261,8 @@ pub struct StoreSection {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct StoreProblem {
     pub reason: StoreFailure,
-    /// 核心写的说明，如“连不上 GitHub，这是 3 小时前的列表”。
-    pub message: String,
+    /// 技术细节，给日志和排查用。给用户看的文字由 App 按 `reason` 写，列表的时间看 `StoreSection.fetched_at_ms`。
+    pub details: String,
 }
 
 /// 商店列表的问题的原因。
@@ -270,15 +270,21 @@ pub struct StoreProblem {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum StoreFailure {
-    /// 家里的服务器连不上来源（GitHub），给的是上次取到的或者核心内置的列表。
+    /// 家里的服务器连不上来源（GitHub），给的是上次取到的列表。
     Unreachable,
+    /// 连上了，但来源在时限内没有答完，给的是上次取到的列表。
+    Timeout,
     /// GitHub 限速了，过几分钟再试。
     RateLimited,
+    /// 官方索引的内容读不懂。
+    InvalidIndex,
+    /// 官方索引的格式比核心新，要升级核心。
+    IndexTooNew,
     /// 有的仓库没读到，列表不完整。
     Incomplete,
     /// 主人关掉了这部分（社区插件）。
     Disabled,
-    /// 来源给了核心读不懂的内容，如格式比核心新的索引。
+    /// 来源的其他问题，如索引文件不见了或者太大。
     Upstream,
     /// 比这个 App 新的核心给的原因。
     #[serde(other)]

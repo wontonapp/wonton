@@ -137,7 +137,7 @@ fn list(bus: &Bus) -> Value {
 /// 有问题时报错，免得 Bot 以为索引是空的。
 async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), String> {
     let (index, problem) = bus.plugins.official_index().await;
-    let problem = problem.map(|p| p.message);
+    let problem = problem.map(|p| p.details);
     let listed: Vec<Listed> = index
         .plugins
         .into_iter()

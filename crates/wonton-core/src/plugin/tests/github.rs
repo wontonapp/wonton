@@ -2,6 +2,7 @@
 //! 和报错。
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -28,6 +29,16 @@ pub(super) struct FakeGitHub {
     files: Arc<Mutex<Files>>,
     commits: Arc<Mutex<u32>>,
     pub(super) topic: Arc<Mutex<Vec<(String, u32)>>>,
+    /// 读过 tag 的仓库，按先后。
+    pub(super) tag_reads: Arc<Mutex<Vec<String>>>,
+    /// 不答：什么请求都挂着，直到客户端超时。
+    pub(super) hanging: Arc<AtomicBool>,
+    /// 出错：什么请求都回 503。
+    pub(super) broken: Arc<AtomicBool>,
+    /// 只有 raw 出错，API 正常。
+    pub(super) raw_broken: Arc<AtomicBool>,
+    /// API 限速：`/repos/…` 回 403。
+    pub(super) api_limited: Arc<AtomicBool>,
 }
 
 impl FakeGitHub {
@@ -36,6 +47,16 @@ impl FakeGitHub {
         let app = Router::new().fallback(handle).with_state(fake.clone());
         let addr = serve(app).await;
         (fake, GitHub::for_test(&format!("http://{addr}")))
+    }
+
+    /// 官方索引所在的位置放上这份内容。
+    pub(super) fn publish_index(&self, index: Vec<u8>) {
+        let key = (
+            "geraldpeng6/wonton-store".to_owned(),
+            "main".to_owned(),
+            "index.json".to_owned(),
+        );
+        self.files.lock().unwrap().insert(key, index);
     }
 
     /// 提交这些文件，打上 tag（已有的 tag 就是移动它），返回提交号。
@@ -62,11 +83,18 @@ fn pkt_line(payload: &str) -> String {
 }
 
 async fn handle(State(fake): State<FakeGitHub>, request: Request) -> Response {
+    if fake.hanging.load(Ordering::Relaxed) {
+        std::future::pending::<()>().await;
+    }
+    if fake.broken.load(Ordering::Relaxed) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     let path = request.uri().path().trim_start_matches('/').to_owned();
     let parts: Vec<&str> = path.splitn(4, '/').collect();
     match (request.method(), parts.as_slice()) {
         (&Method::POST, [owner, git, "git-upload-pack"]) => {
             let repo = format!("{owner}/{}", git.trim_end_matches(".git"));
+            fake.tag_reads.lock().unwrap().push(repo.clone());
             let tags = fake.tags.lock().unwrap().get(&repo).cloned();
             let Some(tags) = tags else {
                 return StatusCode::UNAUTHORIZED.into_response();
@@ -96,6 +124,24 @@ async fn handle(State(fake): State<FakeGitHub>, request: Request) -> Response {
                 .collect();
             axum::Json(serde_json::json!({"total_count": items.len(), "items": items}))
                 .into_response()
+        }
+        (&Method::GET, ["repos", owner, repo, rest]) => {
+            if fake.api_limited.load(Ordering::Relaxed) {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+            let reference = request.uri().query().and_then(|q| q.strip_prefix("ref="));
+            let key = (
+                format!("{owner}/{repo}"),
+                reference.unwrap_or_default().to_owned(),
+                rest.trim_start_matches("contents/").to_owned(),
+            );
+            match fake.files.lock().unwrap().get(&key) {
+                Some(data) => Bytes::from(data.clone()).into_response(),
+                None => StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+        (&Method::GET, _) if fake.raw_broken.load(Ordering::Relaxed) => {
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
         (&Method::GET, [owner, repo, commit, file]) => {
             let key = (

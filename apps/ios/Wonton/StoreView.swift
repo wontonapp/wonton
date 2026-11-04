@@ -82,7 +82,7 @@ struct StoreView: View {
                 .accessibilityAddTraits(.isHeader)
             ForEach(items, id: \.source) { row($0) }
             if let problem = content.problem {
-                WontonNotice(icon: .warning, title: problem.message)
+                WontonNotice(icon: .warning, title: problem.reason.text)
                     .padding(.horizontal, WontonTheme.spacing.pageInset)
                     .padding(.vertical, WontonTheme.spacing.s8)
             }

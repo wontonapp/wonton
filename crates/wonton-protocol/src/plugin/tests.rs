@@ -110,7 +110,7 @@ fn store() -> StoreListing {
             fetched_at_ms: None,
             problem: Some(StoreProblem {
                 reason: StoreFailure::Unreachable,
-                message: "连不上 GitHub".into(),
+                details: "连不上 GitHub".into(),
             }),
         },
     }
@@ -203,7 +203,7 @@ fn interface_types_round_trip_through_json() {
         plugins: vec![installed()],
         upgrade_check: Some(StoreProblem {
             reason: StoreFailure::RateLimited,
-            message: "GitHub 限速了".into(),
+            details: "GitHub 限速了".into(),
         }),
     };
     assert_eq!(round_trip(&installed), installed);

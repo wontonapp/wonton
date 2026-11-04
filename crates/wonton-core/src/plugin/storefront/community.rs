@@ -1,5 +1,5 @@
 //! 社区插件的发现（ADR-0017 的“社区插件”）：搜 topic `wonton-plugin`、没归档、不是 fork 的公开仓库，按星数排，最多
-//! 1000 个；每个仓库取最新正式版本的 compose 和图标。没有正式版本、清单读不懂的不列出，日志里记下原因。
+//! 1000 个；官方索引里的仓库不读，其余的取最新正式版本的 compose 和图标。没有正式版本、清单读不懂的不列出，日志里记下原因。
 
 use std::collections::HashMap;
 
@@ -12,6 +12,7 @@ use super::super::github_source::latest;
 use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
 use super::super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, normalize};
+use super::index::Index;
 
 const QUERY: &str = "topic:wonton-plugin archived:false fork:false";
 /// 每页 100 个，GitHub 最多给前 1000 个。
@@ -35,6 +36,7 @@ pub type Read = HashMap<Repo, (String, Option<Community>)>;
 /// 搜一轮，读有新推送的仓库。搜索的第一页就失败时报错；后面的页、个别仓库没读到时列表不完整，如实说明。
 pub async fn discover(
     github: &GitHub,
+    official: &Index,
     read: &mut Read,
 ) -> Result<(Vec<Community>, Option<StoreProblem>), GitHubError> {
     let mut found: Vec<Found> = Vec::new();
@@ -57,6 +59,7 @@ pub async fn discover(
     }
     let jobs: Vec<(Found, Option<Option<Community>>)> = found
         .into_iter()
+        .filter(|f| !official.plugins.iter().any(|o| o.repo == f.repo))
         .map(|f| {
             let cached = read
                 .get(&f.repo)
@@ -92,7 +95,7 @@ pub async fn discover(
     }
     let problem = (!missing.is_empty()).then(|| StoreProblem {
         reason: StoreFailure::Incomplete,
-        message: format!("有的没读到，列表不完整：{}", missing.join("、")),
+        details: format!("有的没读到：{}", missing.join("、")),
     });
     Ok((listed, problem))
 }

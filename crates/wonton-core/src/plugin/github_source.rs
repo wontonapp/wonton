@@ -210,7 +210,7 @@ fn source_repo(origin: &Origin) -> Result<Repo, InstallError> {
 
 pub(super) fn github_error(e: GitHubError) -> InstallError {
     match e {
-        GitHubError::Unavailable(m) | GitHubError::RateLimited(m) => {
+        GitHubError::Unavailable(m) | GitHubError::Timeout(m) | GitHubError::RateLimited(m) => {
             InstallError::SourceUnavailable(m)
         }
         GitHubError::NotFound(m) => InstallError::NotFound(m),

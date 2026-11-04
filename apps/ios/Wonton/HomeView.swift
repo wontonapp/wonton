@@ -95,7 +95,7 @@ struct HomeView: View {
             ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
         }
         if let check = installed.upgradeCheck {
-            ProblemRow(message: check.message, nextStep: nil)
+            ProblemRow(message: check.reason.text, nextStep: nil)
         }
         if installed.plugins.isEmpty {
             NoPlugins { path.append(HomeRoute.store) }

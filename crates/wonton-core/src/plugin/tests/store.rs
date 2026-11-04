@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use serde_json::json;
 use wonton_protocol::{InstallRequest, PluginTrust, StoreFailure};
@@ -147,7 +148,14 @@ async fn files_that_do_not_match_the_index_are_refused() {
     let listing = m.store_listing(&zh(), false).await;
     assert_eq!(
         listing.official.problem.unwrap().reason,
-        StoreFailure::Upstream
+        StoreFailure::IndexTooNew
+    );
+
+    fs::write(index.path().join("index.json"), "不是 JSON").unwrap();
+    let listing = m.store_listing(&zh(), false).await;
+    assert_eq!(
+        listing.official.problem.unwrap().reason,
+        StoreFailure::InvalidIndex
     );
 }
 
@@ -188,6 +196,14 @@ async fn community_plugins_are_listed_by_stars_without_official_ones() {
     );
     assert!(listing.community.fetched_at_ms.is_some());
     assert_eq!(listing.community.problem, None);
+    assert!(
+        !github
+            .tag_reads
+            .lock()
+            .unwrap()
+            .contains(&"acme/hello".to_owned()),
+        "官方插件不为了列表去读仓库"
+    );
 
     let detail = m.store_plugin("github:bob/tool", &zh()).await.unwrap();
     assert_eq!(
@@ -231,4 +247,98 @@ async fn the_store_says_why_community_plugins_are_missing() {
     );
     // 官方插件在本地目录里，照常列出。
     assert_eq!(listing.official.plugins.len(), 1);
+}
+
+/// 用 GitHub 上的官方索引的核心：`data` 就是它的数据目录，换个管理器算重启。
+async fn online(data: &tempfile::TempDir) -> (FakeGitHub, PluginManager) {
+    let (github, client) = FakeGitHub::start().await;
+    let (_docker, engine) = FakeDocker::start().await;
+    let config = StoreConfig {
+        index_dir: None,
+        community: false,
+    };
+    let m = manager_with(engine, data)
+        .with_github(client)
+        .with_store(config);
+    (github, m)
+}
+
+fn index_json(compose: &str) -> Vec<u8> {
+    let dir = tempfile::tempdir().unwrap();
+    write_index(dir.path(), compose, ICON);
+    fs::read(dir.path().join("index.json")).unwrap()
+}
+
+#[tokio::test]
+async fn the_last_index_survives_a_restart_and_says_why_it_is_old() {
+    let data = tempfile::tempdir().unwrap();
+    let (github, m) = online(&data).await;
+    github.publish_index(index_json(&compose("1.0.0", "nginx")));
+    let listing = m.store_listing(&zh(), true).await;
+    assert_eq!(listing.official.plugins.len(), 1);
+    assert_eq!(listing.official.problem, None);
+    let fetched_at = listing.official.fetched_at_ms;
+    assert!(fetched_at.is_some());
+    drop(m);
+
+    let (github, m) = online(&data).await;
+    github.broken.store(true, Ordering::Relaxed);
+    let listing = m.store_listing(&zh(), false).await;
+    assert_eq!(listing.official.plugins.len(), 1, "用磁盘上的那份");
+    assert_eq!(
+        listing.official.fetched_at_ms, fetched_at,
+        "时间是取到它的时候"
+    );
+    assert_eq!(
+        listing.official.problem.unwrap().reason,
+        StoreFailure::Unreachable
+    );
+}
+
+#[tokio::test]
+async fn a_broken_index_is_not_saved_and_a_hang_is_called_a_timeout() {
+    let data = tempfile::tempdir().unwrap();
+    let (github, m) = online(&data).await;
+    github.publish_index(b"{}".to_vec());
+    let listing = m.store_listing(&zh(), true).await;
+    assert!(listing.official.plugins.is_empty());
+    assert_eq!(listing.official.fetched_at_ms, None);
+    assert_eq!(
+        listing.official.problem.unwrap().reason,
+        StoreFailure::InvalidIndex
+    );
+    assert!(
+        !data
+            .path()
+            .join("plugins/store/official-index.json")
+            .exists()
+    );
+
+    let (github, m) = online(&data).await;
+    github.hanging.store(true, Ordering::Relaxed);
+    let listing = m.store_listing(&zh(), true).await;
+    assert_eq!(
+        listing.official.problem.unwrap().reason,
+        StoreFailure::Timeout
+    );
+}
+
+#[tokio::test]
+async fn the_index_comes_through_the_api_when_raw_is_down() {
+    let data = tempfile::tempdir().unwrap();
+    let (github, m) = online(&data).await;
+    github.publish_index(index_json(&compose("1.0.0", "nginx")));
+    github.raw_broken.store(true, Ordering::Relaxed);
+    let listing = m.store_listing(&zh(), true).await;
+    assert_eq!(listing.official.plugins.len(), 1);
+    assert_eq!(listing.official.problem, None);
+
+    let (github, m) = online(&tempfile::tempdir().unwrap()).await;
+    github.raw_broken.store(true, Ordering::Relaxed);
+    github.api_limited.store(true, Ordering::Relaxed);
+    let listing = m.store_listing(&zh(), true).await;
+    assert_eq!(
+        listing.official.problem.unwrap().reason,
+        StoreFailure::RateLimited
+    );
 }

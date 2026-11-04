@@ -15,9 +15,12 @@ const MAX_REFS_BYTES: u64 = 4 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GitHubError {
-    /// 连不上 GitHub、超时、GitHub 出错或限速了。
+    /// 连不上 GitHub，或者 GitHub 出错了。
     #[error("{0}")]
     Unavailable(String),
+    /// 没有在时限内答完。
+    #[error("{0}")]
+    Timeout(String),
     /// 没有这个公开仓库，或者这个提交里没有这个文件。
     #[error("{0}")]
     NotFound(String),
@@ -56,7 +59,7 @@ pub struct GitHub {
     git: String,
     /// `https://raw.githubusercontent.com`。
     raw: String,
-    /// `https://api.github.com`：只有搜索社区插件用它。
+    /// `https://api.github.com`：搜索社区插件，raw 不通时取官方索引。
     api: String,
 }
 
@@ -148,6 +151,42 @@ impl GitHub {
             StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {what}"))),
             status => Err(GitHubError::Unavailable(format!(
                 "取 {what} 时 GitHub 回了 {status}"
+            ))),
+        }
+    }
+}
+
+impl GitHub {
+    /// 经 API 取文件，给 raw 不通时用。不带令牌时每个出口 IP 每小时 60 次，所以不用它取别的。
+    pub async fn file_via_api(
+        &self,
+        repo: &Repo,
+        reference: &str,
+        path: &str,
+        max: u64,
+    ) -> Result<Vec<u8>, GitHubError> {
+        let what = format!("经 API 取 {repo} 在 {reference} 里的 {path}");
+        let response = self
+            .client
+            .get(format!(
+                "{}/repos/{repo}/contents/{path}?ref={reference}",
+                self.api
+            ))
+            .header("Accept", "application/vnd.github.raw+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await
+            .map_err(|e| unavailable(&what, &e))?;
+        match response.status() {
+            StatusCode::OK => read_limited(response, max)
+                .await
+                .map_err(|e| e.context(&what)),
+            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {what}"))),
+            StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => Err(GitHubError::RateLimited(
+                format!("{what}：GitHub 限速了，几分钟后再试"),
+            )),
+            status => Err(GitHubError::Unavailable(format!(
+                "{what}：GitHub 回了 {status}"
             ))),
         }
     }
@@ -252,6 +291,7 @@ impl GitHubError {
     fn context(self, what: &str) -> Self {
         match self {
             Self::Unavailable(m) => Self::Unavailable(format!("{what}：{m}")),
+            Self::Timeout(m) => Self::Timeout(format!("{what}：{m}")),
             Self::NotFound(m) => Self::NotFound(format!("{what}：{m}")),
             Self::TooBig(m) => Self::TooBig(format!("{what}：{m}")),
             Self::RateLimited(m) => Self::RateLimited(format!("{what}：{m}")),
@@ -260,12 +300,11 @@ impl GitHubError {
 }
 
 fn unavailable(what: &str, e: &reqwest::Error) -> GitHubError {
-    let reason = if e.is_timeout() {
-        format!("{} 秒内没有回应", TIMEOUT.as_secs())
+    if e.is_timeout() {
+        GitHubError::Timeout(format!("{what}：{} 秒内没有答完", TIMEOUT.as_secs()))
     } else {
-        format!("连不上 GitHub（{e}）")
-    };
-    GitHubError::Unavailable(format!("{what}：{reason}"))
+        GitHubError::Unavailable(format!("{what}：连不上 GitHub（{e}）"))
+    }
 }
 
 async fn read_limited(mut response: reqwest::Response, max: u64) -> Result<Vec<u8>, GitHubError> {
@@ -277,7 +316,7 @@ async fn read_limited(mut response: reqwest::Response, max: u64) -> Result<Vec<u
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|e| GitHubError::Unavailable(format!("读响应时断开（{e}）")))?
+        .map_err(|e| unavailable("读响应", &e))?
     {
         body.extend_from_slice(&chunk);
         if body.len() as u64 > max {

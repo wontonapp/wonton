@@ -27,6 +27,7 @@ import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.Rgb
+import app.wonton.protocol.StoreFailure
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
@@ -65,6 +66,19 @@ val PluginCategory.label: String
     }
 
 /** 失败以后主人下一步该做什么，跟在核心写的原因后面。 */
+val StoreFailure.text: String
+    get() = when (this) {
+        StoreFailure.UNREACHABLE -> "连不上 GitHub，列表可能不是最新的"
+        StoreFailure.TIMEOUT -> "GitHub 太慢，没有及时答完，列表可能不是最新的"
+        StoreFailure.RATE_LIMITED -> "GitHub 限速了，过几分钟再试"
+        StoreFailure.INVALID_INDEX -> "商店的列表读不懂，稍后再试"
+        StoreFailure.INDEX_TOO_NEW -> "商店的列表比家里的服务器新，先升级家里的服务器"
+        StoreFailure.UPSTREAM -> "商店的来源出了问题，稍后再试"
+        StoreFailure.INCOMPLETE -> "有的没读到，列表不完整"
+        StoreFailure.DISABLED -> "社区应用已关闭"
+        StoreFailure.OTHER -> "商店出了问题，稍后再试"
+    }
+
 val PluginFailure.nextStep: String
     get() = when (this) {
         PluginFailure.TRANSPORT_UNAVAILABLE -> "连上家里的服务器后再试。"
