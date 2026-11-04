@@ -5,6 +5,7 @@ import WontonClient
 struct ConfirmationCardView: View {
     let view: ConfirmationView
     let answer: (Answer) -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -60,7 +61,8 @@ struct ConfirmationCardView: View {
     private var buttons: some View {
         ForEach(view.card.choices, id: \.answer) { choice in
             if choice.answer == .approve {
-                button(choice).buttonStyle(.borderedProminent)
+                // 气泡给内容统一设了正文颜色，会盖掉主按钮自己的文字色，和按钮底色一样时字就看不见了。
+                button(choice).buttonStyle(.borderedProminent).foregroundStyle(Color(colors.onPrimary))
             } else {
                 button(choice).buttonStyle(.bordered)
             }
