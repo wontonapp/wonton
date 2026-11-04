@@ -82,6 +82,8 @@ struct Resources {
     networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
     network_bodies: BTreeMap<String, Value>,
+    /// 接下来这么多次指定网段的建网络，Docker 回这个错误。
+    pinned_network_rejection: Option<(u32, String)>,
     /// 卷名 → 标签。
     volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
@@ -269,6 +271,11 @@ impl FakeDocker {
         handler: impl Fn(&str, &[String], &[u8]) -> (i64, String) + Send + Sync + 'static,
     ) {
         self.lock().exec_handler = Some(Arc::new(handler));
+    }
+
+    /// 接下来 `times` 次指定网段的建网络，Docker 回 `message`（403）。
+    pub fn reject_pinned_networks(&self, times: u32, message: &str) {
+        self.lock().pinned_network_rejection = Some((times, message.to_owned()));
     }
 
     /// 之后镜像都不在本地、拉取时 Docker 回 `message`（500）；`None` 恢复成镜像都在本地。

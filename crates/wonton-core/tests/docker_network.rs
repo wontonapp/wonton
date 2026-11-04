@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, HostConfig, NetworkInspect, PortBinding};
+use futures_util::future::join_all;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -168,6 +169,38 @@ async fn sleeper(engine: &Engine, name: &str, network: &str) {
 /// 建网络的名字前缀，和别的测试、别的进程分开。
 fn prefix(test: &str) -> String {
     format!("wonton-pintest{}-{test}", std::process::id())
+}
+
+/// 建网络要先让 Docker 选网段、删掉、再带着留出的地址重建，并发时几个调用会选中同一个网段（#327）。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free() {
+    let _serial = SERIAL.lock().await;
+    let engine = Engine::connect().unwrap();
+    engine.check_server().await.unwrap();
+    let labels = HashMap::new();
+    let names: Vec<String> = (0..8)
+        .map(|i| format!("{}-{i}", prefix("concurrent")))
+        .collect();
+
+    let created = join_all(
+        names
+            .iter()
+            .map(|name| engine.create_network(name, &labels, NetworkReach::Isolated)),
+    )
+    .await;
+    let addresses = join_all(names.iter().map(|name| engine.core_address(name))).await;
+    for name in &names {
+        engine.remove_network(name).await.unwrap();
+    }
+
+    for result in created {
+        result.unwrap();
+    }
+    let mut addresses: Vec<_> = addresses.into_iter().map(Result::unwrap).collect();
+    addresses.sort_unstable();
+    addresses.dedup();
+    assert_eq!(addresses.len(), names.len());
 }
 
 #[tokio::test]

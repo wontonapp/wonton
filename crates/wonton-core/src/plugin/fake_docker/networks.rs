@@ -9,6 +9,19 @@ use serde_json::{Value, json};
 
 use super::{Resources, gone, json_reply, labeled, labels_of};
 
+/// 还有要拒绝的次数时，拒绝指定网段的建网络。
+fn reject_pinned(docker: &mut Resources, body: &Value) -> Option<Response> {
+    let (times, message) = docker.pinned_network_rejection.as_mut()?;
+    if *times == 0 || !body["IPAM"]["Config"][0]["Subnet"].is_string() {
+        return None;
+    }
+    *times -= 1;
+    Some(json_reply(
+        StatusCode::FORBIDDEN,
+        json!({"message": message.clone()}),
+    ))
+}
+
 /// `/networks...` 的端点。
 pub(super) fn networks(
     docker: &mut Resources,
@@ -18,6 +31,11 @@ pub(super) fn networks(
     raw: &Bytes,
 ) -> Option<Response> {
     let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+    if let (&Method::POST, ["create"]) = (method, parts)
+        && let Some(reply) = reject_pinned(docker, &body)
+    {
+        return Some(reply);
+    }
     let reply = match (method, parts) {
         (&Method::POST, ["create"])
             if body["Name"]

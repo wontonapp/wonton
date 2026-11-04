@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use bollard::models::{
     EndpointIpamConfig, EndpointSettings, Ipam, IpamConfig, NetworkConnectRequest,
@@ -19,8 +20,17 @@ use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, Sso};
 use super::upstreams::core_aliases;
 
-/// 建网络时别的网络抢先用了这一段，就从头再来，最多这么多次。
-const CREATE_ATTEMPTS: u32 = 3;
+/// 建网络时别的网络抢先用了这一段，就从头再来，最多这么多次。删和重建之间，别的调用（别的 Compose 项目也算）可能
+/// 拿到同一段。实测 8 个进程各并发建 8 个网络、不重试时，24 个进程里 4 个撞上（Docker 29.7.2，负载 40）；Docker 越慢
+/// 窗口越大，CI 负载高时 3 次都会撞（#327）。
+const CREATE_ATTEMPTS: u32 = 10;
+
+/// 重试前等 50 到 500 毫秒。一起撞上的调用如果马上重来，又会一起选中同一段。
+fn retry_delay() -> Duration {
+    let mut bytes = [0; 2];
+    getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
+    Duration::from_millis(50 + u64::from(u16::from_le_bytes(bytes)) % 451)
+}
 
 /// 第一次渲染时网络还没建，用这个占位（文档用的地址，RFC 5737），建好网络后再渲染一次。`plugin check` 也用它判断
 /// 插件有没有引用 `WONTON_CORE_ADDRESS`。
@@ -116,8 +126,8 @@ impl Engine {
     ) -> Result<(), EngineError> {
         let name = request.name.clone();
         let context = format!("创建网络 {name}");
-        let mut last = None;
-        for _ in 0..CREATE_ATTEMPTS {
+        let mut attempt = 1;
+        loop {
             self.create_raw(request.clone()).await?;
             let found = self.inspect_network(&name).await;
             self.remove_network(&name).await?;
@@ -132,14 +142,13 @@ impl Engine {
                 ..request.clone()
             };
             match self.create_raw(pinned).await {
-                Err(e) if subnet_taken(&e) => last = Some(e.to_string()),
+                Err(e) if subnet_taken(&e) && attempt < CREATE_ATTEMPTS => {
+                    attempt += 1;
+                    tokio::time::sleep(retry_delay()).await;
+                }
                 other => return other,
             }
         }
-        Err(EngineError::Rejected {
-            context,
-            message: last.unwrap_or_default(),
-        })
     }
 
     pub(super) async fn create_raw(
@@ -294,7 +303,34 @@ impl PluginManager {
 
 #[cfg(test)]
 mod tests {
+    use super::super::fake_docker::FakeDocker;
     use super::*;
+
+    const OVERLAP: &str = "cannot create network a (br-a): conflicts with network b (br-b): \
+                           networks have overlapping IPv4";
+
+    #[tokio::test]
+    async fn a_subnet_taken_again_and_again_is_retried_until_the_network_keeps_the_core_address() {
+        let (docker, engine) = FakeDocker::start().await;
+        docker.reject_pinned_networks(3, OVERLAP);
+        engine
+            .create_network("n", &HashMap::new(), NetworkReach::Isolated)
+            .await
+            .unwrap();
+        engine.core_address("n").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn only_a_taken_subnet_is_retried() {
+        let (docker, engine) = FakeDocker::start().await;
+        docker.reject_pinned_networks(1, "permission denied");
+        let error = engine
+            .create_network("n", &HashMap::new(), NetworkReach::Isolated)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("permission denied"), "{error}");
+        assert!(docker.networks().is_empty());
+    }
 
     fn net(text: &str) -> Ipv4Net {
         text.parse().unwrap()
