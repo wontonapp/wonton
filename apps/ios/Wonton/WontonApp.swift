@@ -39,13 +39,7 @@ struct WontonApp: App {
     }
 }
 
-private enum AppTab {
-    case chat
-    case apps
-    case settings
-}
-
-/// 主界面的三个页面。应用页和应用商店里打开插件时，在这里切到聊天，或者全屏打开插件的网页。
+/// 主界面的三个页面。应用页和应用商店里打开插件时，在这里打开和 Bot 的私聊，或者全屏打开插件的网页。
 private struct MainView: View {
     let chat: ChatModel
     let home: HomeModel
@@ -58,7 +52,7 @@ private struct MainView: View {
 
     /// 卡片所在的房间就在眼前时不用提示。
     private var pendingElsewhere: [PendingConfirmation] {
-        chat.viewModel.pendingConfirmations.filter { tab != .chat || chat.path.last != .room($0.roomId) }
+        chat.viewModel.pendingConfirmations.filter { chat.shownRoom(in: tab) != $0.roomId }
     }
 
     var body: some View {
@@ -67,6 +61,14 @@ private struct MainView: View {
                 PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
             }
             tabs
+        }
+        .overlay {
+            if chat.isOpeningChat { ProgressView() }
+        }
+        .onChange(of: chat.openingFailed) { _, failed in
+            guard failed else { return }
+            chat.openingFailed = false
+            tab = .chat
         }
         .fullScreenCover(item: $page) { page in
             VStack(spacing: 0) {
@@ -94,7 +96,7 @@ private struct MainView: View {
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.chat)
             HomeView(
-                model: home, plugins: plugins, open: open,
+                model: home, plugins: plugins, chat: chat, open: open,
                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 devWebURL: Launch.devWebURL
             )
@@ -129,14 +131,14 @@ private struct MainView: View {
     private func openCardRoom(_ roomId: String) {
         page = nil
         tab = .chat
+        chat.visiting = nil
         chat.path = [.room(roomId)]
     }
 
     private func open(_ entry: PluginEntry) {
         switch entry {
         case let .chat(botUserId):
-            tab = .chat
-            chat.openDirectChat(with: botUserId)
+            if chat.openDirectChat(with: botUserId, from: tab) { tab = .chat }
         case let .web(url, title):
             guard let proxy = home.viewModel.proxy else {
                 unavailable = "还没有连上家里的服务器：\(home.viewModel.status.text)"

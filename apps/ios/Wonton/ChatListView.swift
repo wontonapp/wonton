@@ -30,7 +30,7 @@ struct ChatListView: View {
                 switch route {
                 case let .room(roomId):
                     // 提示条把路径直接换成另一个房间时，SwiftUI 会复用这个视图，@State 里还是旧房间的时间线。
-                    ChatRoomView(model: model, roomId: roomId, title: title(of: roomId))
+                    ChatRoomView(model: model, roomId: roomId, title: model.title(of: roomId))
                         .id(roomId)
                 case .chatBackup:
                     ChatBackupView(model: model)
@@ -67,9 +67,6 @@ struct ChatListView: View {
         return true
     }
 
-    private func title(of roomId: String) -> String {
-        model.viewModel.rooms.first { $0.roomId == roomId }?.name ?? roomId
-    }
 }
 
 /// 聊天操作的结果。备份页也能从设置进，那边的导航栈也要挂一份。
@@ -144,6 +141,38 @@ private struct ChatStatusView: View {
         case let .failed(message):
             WontonNotice(icon: .warning, title: message)
         }
+    }
+}
+
+private struct VisitedRoom: Hashable {
+    let roomId: String
+}
+
+/// 从 `tab` 这一页打开的私聊压进这一页的导航路径，返回回到点的地方（比如插件详情）。
+/// `navigationDestination(item:)` 放在根上会先弹掉已经压进去的页面，所以走路径。
+struct VisitingRoomModifier: ViewModifier {
+    let model: ChatModel
+    let tab: AppTab
+    @Binding var path: NavigationPath
+    @State private var depth = 0
+
+    func body(content: Content) -> some View {
+        content
+            .navigationDestination(for: VisitedRoom.self) { room in
+                ChatRoomView(model: model, roomId: room.roomId, title: model.title(of: room.roomId))
+                    .id(room.roomId)
+            }
+            .onChange(of: model.shownRoom(in: tab)) { _, roomId in
+                if let roomId {
+                    depth = path.count
+                    path.append(VisitedRoom(roomId: roomId))
+                } else if path.count > depth {
+                    path.removeLast(path.count - depth)
+                }
+            }
+            .onChange(of: path.count) { _, count in
+                if count <= depth, model.shownRoom(in: tab) != nil { model.visiting = nil }
+            }
     }
 }
 

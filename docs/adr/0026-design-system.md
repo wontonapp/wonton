@@ -25,6 +25,8 @@
 - **自己画：** 导航栏、底栏、按钮、输入框、列表行、开关、弹窗和底部面板、提示条、气泡、卡片。两端的尺寸、圆角、颜色和动效取同一组值。
 - **用系统的：** 返回手势、分享面板、相册和文件选择、相机、键盘和输入法、文字选择、状态栏、通知、触感、读屏、系统字号。
 
+返回到进来的地方：从应用页或应用商店打开和 Bot 的聊天，返回回到那一页，不到聊天列表。
+
 **自己画的是样式，语义用系统原语。** SwiftUI 用 `ButtonStyle`、`ToggleStyle`、`.textFieldStyle(.plain)` 这类自定义样式；Compose 用 foundation 层的 `clickable`、`selectable`、`toggleable` 和 `BasicTextField`，不直接用 `pointerInput` 写控件。每个组件都要有：
 
 - 读屏的角色、名字和状态值：选中和开关要读得出来（`.isSelected`、`accessibilityValue`；`selected`、`toggleableState`、`stateDescription`）。

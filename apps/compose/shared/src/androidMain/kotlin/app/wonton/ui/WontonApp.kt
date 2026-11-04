@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -44,7 +46,7 @@ import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.SettingsFill
 import app.wonton.ui.icons.WontonIcon
 
-private const val CHAT = 0
+internal const val CHAT = 0
 private const val APPS = 1
 private const val SETTINGS = 2
 private val tabs = listOf(
@@ -75,7 +77,6 @@ fun WontonApp(
         val initial = remember(core) { core.home() }
         val home by updates.collectAsState(initial = initial)
         val plugins = remember(core) { PluginsState(core) }
-        val chat = rememberChatNavigation()
         // 提示条和撤通知不管在哪个页面都要，所以这里也收集一份。
         val chatUpdates = remember(core) { core.chatUpdates() }
         val initialChat = remember(core) { core.chat() }
@@ -84,18 +85,17 @@ fun WontonApp(
         // 还没配对时先到“应用”的配对页；开发时要自动打开网页的也停在“应用”。
         val startAtApps = initial.status is HomeStatus.NotConfigured || devWebUrl != null
         var tab by rememberSaveable { mutableIntStateOf(if (startAtApps) APPS else CHAT) }
+        val chat = rememberChatNavigation(selectTab = { tab = it })
+        LaunchedEffect(chatView) { chat.onUpdate(chatView) }
         var page by remember { mutableStateOf<PluginEntry.Web?>(null) }
         var appsPage by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
         var showingBackup by rememberSaveable { mutableStateOf(false) }
         var unavailable by remember { mutableStateOf<String?>(null) }
-        // 应用页和应用商店里打开插件：Agent 插件切到聊天、打开和它的 Bot 的私聊；有网页的全屏打开。
+        // 应用页和应用商店里打开插件：Agent 插件打开和它的 Bot 的私聊，返回时回到这里；有网页的全屏打开。
         val open = remember(core) {
             { entry: PluginEntry ->
                 when (entry) {
-                    is PluginEntry.Chat -> {
-                        tab = CHAT
-                        unavailable = chat.openDirectChat(core, entry.botUserId)
-                    }
+                    is PluginEntry.Chat -> unavailable = chat.openDirectChat(core, entry.botUserId, from = tab)
                     is PluginEntry.Web ->
                         if (home.proxy == null) {
                             unavailable = "还没有连上家里的服务器：${home.status.text}"
@@ -156,10 +156,19 @@ fun WontonApp(
                     )
                     else -> SettingsPage(core, appearance, chatView, showingBackup) { showingBackup = it }
                 }
+                OpeningChat(chat)
             }
         }
         unavailable?.let { reason -> Notice("打不开", reason, onDismiss = { unavailable = null }) }
         plugins.rejection?.let { reason -> Notice("操作被拒绝", reason, onDismiss = { plugins.rejection = null }) }
+    }
+}
+
+/** 发起了私聊、房间还没出现时留在原页，转圈。 */
+@Composable
+private fun OpeningChat(chat: ChatNavigation) {
+    if (chat.isOpeningChat) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
 }
 

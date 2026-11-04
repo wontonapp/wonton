@@ -6,6 +6,7 @@ import WontonClient
 struct HomeView: View {
     @Bindable var model: HomeModel
     let plugins: PluginsModel
+    let chat: ChatModel
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
     let openCardRoom: (String) -> Void
@@ -31,6 +32,7 @@ struct HomeView: View {
                         }
                 }
             }
+            .modifier(VisitingRoomModifier(model: chat, tab: .apps, path: $path))
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .connection:

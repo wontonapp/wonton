@@ -71,8 +71,6 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
-    LaunchedEffect(viewModel) { navigation.onUpdate(viewModel) }
-
     val room = navigation.openRoom
     // 提示条和通知能在备份页面上打开房间。
     LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
@@ -92,7 +90,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
             )
         }
         room != null -> {
-            BackHandler { navigation.openRoom = null }
+            BackHandler { navigation.closeRoom() }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             RoomRoute(
                 core = core,
@@ -102,7 +100,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
                 isReadOnly = row?.isReadOnly == true,
                 onAction = onAction,
                 onReject = { rejection = it },
-                onClose = { navigation.openRoom = null },
+                onClose = { navigation.closeRoom() },
             )
         }
         else -> ChatListScreen(
