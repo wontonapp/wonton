@@ -74,5 +74,7 @@ jobs:
         run: cargo test -p wonton-core --locked --test docker_leftovers -- --include-ignored
       - name: 真的 gost 上的出口容器：经主人的代理、名单、直连
         run: cargo test -p wonton-core --locked --test docker_egress -- --include-ignored
+      - name: 升级器对真的 Docker：换镜像、等健康、失败回滚
+        run: cargo test -p wonton-core --locked --test core_upgrade -- --include-ignored
       - name: 设备经隧道、tusd 上传文件
         run: cargo test -p wonton-core --locked --lib gateway::tusd_tests -- --include-ignored

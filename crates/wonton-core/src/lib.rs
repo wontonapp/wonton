@@ -17,3 +17,4 @@ pub mod plugin;
 pub mod push;
 pub mod secret;
 pub mod tunnel;
+pub mod upgrade;

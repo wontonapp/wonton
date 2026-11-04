@@ -129,7 +129,8 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::ImagesUnavailable(_)
         | InstallError::Unhealthy(_)
         | InstallError::Storage(_)
-        | InstallError::SourceUnavailable(_) => true,
+        | InstallError::SourceUnavailable(_)
+        | InstallError::CoreUpgrading => true,
     }
 }
 

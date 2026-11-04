@@ -11,6 +11,9 @@
 //!   （`wonton_core::plugin::lan::probe`）。
 //! - `wonton-core egress-proxy-check`：查代理连不连得上，安装脚本和核心都在出口网络上的一次性容器里跑它
 //!   （`wonton_core::plugin::egress::check`）。
+//! - `wonton-core updater <安装目录> <数据目录>`：核心内部用，升级器容器（`wonton_core::upgrade::updater`）。
+//! - `wonton-core compose-images`：升级器在新镜像里执行，列出这个版本要用的其他镜像。
+//! - `wonton-core manual-rollback …`：`install.sh` 手动退回时在目标镜像里执行（`wonton_core::upgrade::manual`）。
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
@@ -39,11 +42,16 @@ use wonton_core::plugin::hostdir::Owner;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
 use wonton_core::plugin::lan::{self, Lan};
 use wonton_core::plugin::lifecycle::LifecycleConfig;
+use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::preinstall::Backoff;
 use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
+use wonton_core::upgrade::docker_host::DockerHost;
+use wonton_core::upgrade::service::{UpgradeConfig, Upgrades};
+use wonton_core::upgrade::state::Layout;
+use wonton_core::upgrade::{compose_images, manual, updater};
 
 mod pair_command;
 mod plugin_command;
@@ -62,6 +70,7 @@ fn main() -> ExitCode {
         // 检测容器的结果打印在标准输出上，同样不初始化日志。
         Some(lan::probe::COMMAND) => return lan::probe::command(),
         Some(check::COMMAND) => return check::command(),
+        Some(compose_images::COMMAND) => return compose_images::command(),
         _ => {}
     }
     run()
@@ -83,6 +92,10 @@ async fn run() -> ExitCode {
         Some("healthcheck") => healthcheck().await,
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
         Some("init") => init(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("updater") => run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await,
+        Some("manual-rollback") => {
+            manual_rollback(&std::env::args().skip(2).collect::<Vec<_>>()).await
+        }
         Some("--version") => {
             println!("wonton-core {} ({BUILD_COMMIT})", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -100,10 +113,7 @@ async fn run() -> ExitCode {
     }
 }
 
-async fn serve() -> anyhow::Result<()> {
-    tracing::info!(commit = %BUILD_COMMIT, "核心启动");
-    let cfg = Config::from_env()?.lock_owner()?;
-    tracing::info!(owner = %cfg.owner.username, "主人的用户名已核对");
+fn check_host_dev(cfg: &Config) -> anyhow::Result<()> {
     if let Some(dev) = &cfg.host_dev
         && !dev.is_dir()
     {
@@ -112,6 +122,14 @@ async fn serve() -> anyhow::Result<()> {
             dev.display()
         );
     }
+    Ok(())
+}
+
+async fn serve() -> anyhow::Result<()> {
+    tracing::info!(commit = %BUILD_COMMIT, "核心启动");
+    let cfg = Config::from_env()?.lock_owner()?;
+    tracing::info!(owner = %cfg.owner.username, "主人的用户名已核对");
+    check_host_dev(&cfg)?;
     let engine = Engine::connect()?;
     let docker = engine.check_server().await.context("连接 Docker")?;
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
@@ -121,6 +139,10 @@ async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("读取主人令牌 {}", token_path.display()))?;
     tracing::info!(path = %token_path.display(), "主人令牌已就绪");
 
+    let upgrades = Arc::new(Upgrades::new(
+        upgrade_config(&cfg),
+        Arc::new(DockerHost::new(engine.clone())),
+    ));
     let http = HttpClient::new();
     let hydra = connect_hydra(&cfg, &http).await?;
     let matrix = connect_matrix(&cfg, &http).await?;
@@ -144,12 +166,14 @@ async fn serve() -> anyhow::Result<()> {
             cfg.egress_proxy.clone(),
             cfg.egress_proxy_detected.clone(),
         ))
-        .with_store(cfg.store.clone()),
+        .with_store(cfg.store.clone())
+        .with_upgrade_freeze(upgrades.frozen()),
     );
     manager.restore().await.context("恢复已安装的插件")?;
     manager.spawn_lan_monitor();
     manager.spawn_egress_monitor();
-    preinstall(&cfg, manager.clone())?;
+    upgrades.spawn();
+    preinstall(&cfg, manager.clone(), upgrades.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     let notices = matrix.clone().map(|matrix| {
@@ -180,7 +204,8 @@ async fn serve() -> anyhow::Result<()> {
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
         .with_files(Some(files))
-        .with_tusd(cfg.tusd.clone()),
+        .with_tusd(cfg.tusd.clone())
+        .with_upgrades(Some(upgrades)),
     );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)
@@ -217,6 +242,16 @@ fn lifecycle_config(cfg: &Config) -> LifecycleConfig {
         owner_email: cfg.owner.email.clone(),
         gateway_port: cfg.listen.port(),
         instance: cfg.instance.clone(),
+    }
+}
+
+fn upgrade_config(cfg: &Config) -> UpgradeConfig {
+    UpgradeConfig {
+        source: cfg.core_source.clone(),
+        install_dir: cfg.install_dir.clone(),
+        data_dir: cfg.data_dir.clone(),
+        core_container: cfg.core_container.clone(),
+        has_instance: cfg.instance != Instance::default(),
     }
 }
 
@@ -268,7 +303,12 @@ async fn connect_matrix(cfg: &Config, http: &HttpClient) -> anyhow::Result<Optio
 
 /// 在后台预装（要拉镜像、等健康，不挡着网关启动）：先装上还没装的系统插件，再为模型网关的使用方对一次账（凭据的
 /// 值在核心，网关的数据丢了也能补回来），最后装默认插件：默认 Agent 要用模型网关。目录配了却不是目录时启动失败。
-fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
+/// 核心升级没结束时都先等着（ADR-0025）：回滚后插件的记录和容器要对得上。
+fn preinstall(
+    cfg: &Config,
+    manager: Arc<PluginManager>,
+    upgrades: Arc<Upgrades>,
+) -> anyhow::Result<()> {
     let (system, defaults) = (cfg.system_plugins.clone(), cfg.default_plugins.clone());
     for (name, dir) in [
         ("WONTON_SYSTEM_PLUGINS", &system),
@@ -282,6 +322,7 @@ fn preinstall(cfg: &Config, manager: Arc<PluginManager>) -> anyhow::Result<()> {
     }
     let backoff = Backoff::default();
     tokio::spawn(async move {
+        upgrades.wait_released().await;
         if let Some(dir) = system
             && let Err(e) = manager.ensure_system(&dir, backoff).await
         {
@@ -387,6 +428,23 @@ fn check_owner_before_install() -> anyhow::Result<()> {
         wonton_core::owner::check_before_install(&state, configured.as_deref())?;
     }
     Ok(())
+}
+
+async fn run_updater(args: &[String]) -> anyhow::Result<()> {
+    let [install_dir, data_dir] = args else {
+        bail!("用法：wonton-core updater <安装目录> <数据目录>");
+    };
+    let host = DockerHost::new(Engine::connect()?);
+    let layout = Layout {
+        install_dir: install_dir.into(),
+        data_dir: data_dir.into(),
+    };
+    updater::run(&host, layout, updater::observe_period()).await
+}
+
+async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
+    let rollback = manual::parse(args)?;
+    rollback.run(&DockerHost::new(Engine::connect()?)).await
 }
 
 fn init(args: &[String]) -> anyhow::Result<()> {

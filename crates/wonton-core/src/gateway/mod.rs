@@ -21,6 +21,7 @@
 mod api;
 mod confirmations;
 mod core_routes;
+mod core_upgrade;
 mod devices;
 mod files;
 mod isolation;
@@ -84,6 +85,8 @@ pub struct Gateway {
     pub files: Option<Arc<crate::files::Files>>,
     /// tusd 的 `host:port`；没配置时上传如实报不可用。
     pub tusd: Option<String>,
+    /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
+    pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     sessions: session::SessionStore,
 }
 
@@ -121,6 +124,7 @@ impl Gateway {
             mcp: None,
             files: None,
             tusd: None,
+            upgrades: None,
             sessions: session::SessionStore::default(),
         }
     }
@@ -156,6 +160,16 @@ impl Gateway {
     /// 接上 tusd：`authority` 是 `host:port`，见 [`crate::config::http_authority`]。
     pub fn with_tusd(mut self, authority: Option<String>) -> Self {
         self.tusd = authority;
+        self
+    }
+
+    /// 接上核心的一键升级：`/_wonton/api/core/upgrade` 这才可用。
+    #[must_use]
+    pub fn with_upgrades(
+        mut self,
+        upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
+    ) -> Self {
+        self.upgrades = upgrades;
         self
     }
 
@@ -383,6 +397,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
     response
 }
 
+#[cfg(test)]
+mod core_upgrade_tests;
 #[cfg(test)]
 mod egress_api_tests;
 #[cfg(test)]

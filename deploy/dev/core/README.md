@@ -121,6 +121,8 @@ Tuwunel 默认不往私网地址推送（`ip_range_denylist`），compose 里的
 
 ## 端到端冒烟
 
+核心一键升级有单独的一条（ADR-0025）：`deploy/dev/core/smoke-upgrade.sh`，在要测的主机上直接执行，用 install.sh 安装，走升级、自动回滚和手动退回，这台主机上不能有真装的云吞。
+
 ```bash
 deploy/dev/core/smoke.sh                           # 本机 Docker
 DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机

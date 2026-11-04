@@ -228,6 +228,8 @@ pub struct PluginManager {
     pub(super) lan: Lan,
     /// 出网插件走哪个代理，见 [`super::egress`]。
     pub(super) egress: Egress,
+    /// 核心升级没结束时是真，这时不动插件（ADR-0025）。
+    pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -285,6 +287,7 @@ impl PluginManager {
             bundled: RwLock::new(BTreeSet::new()),
             lan,
             egress: Egress::default(),
+            upgrade_frozen: None,
         }
     }
 
@@ -316,56 +319,6 @@ impl PluginManager {
                 })
             })
             .collect()
-    }
-
-    /// 从测试替身取按来源安装的插件包，商店也用它。
-    #[cfg(test)]
-    #[must_use]
-    pub fn with_github(mut self, github: GitHub) -> Self {
-        self.storefront = Storefront::new(github.clone(), self.storefront.config().clone());
-        self.github = github;
-        self
-    }
-
-    /// 商店的配置：官方索引从哪里取，列不列社区插件。
-    #[must_use]
-    pub fn with_store(mut self, config: StoreConfig) -> Self {
-        self.storefront = Storefront::new(self.github.clone(), config);
-        self
-    }
-
-    /// 接上 Matrix 服务器：声明了 `matrix.bot` 的插件这才装得上。
-    #[must_use]
-    pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
-        self.matrix = matrix;
-        self
-    }
-
-    /// 核心看到的宿主路径（`WONTON_HOST_DEV`），申请了 `devices.gpu` 的插件按它探测显卡。
-    #[must_use]
-    pub fn with_host(mut self, host: HostPaths) -> Self {
-        self.host = host;
-        self
-    }
-
-    /// 怎么检测局域网地址、`WONTON_LAN_ADDRESSES`（见 [`super::lan`]）。
-    #[must_use]
-    pub fn with_lan(mut self, lan: Lan) -> Self {
-        self.lan = lan;
-        self
-    }
-
-    /// `WONTON_EGRESS_PROXY` 和安装脚本检测到的代理（见 [`super::egress`]）。
-    #[must_use]
-    pub fn with_egress(mut self, egress: Egress) -> Self {
-        self.egress = egress;
-        self.follow_core_proxy();
-        self
-    }
-
-    /// 核心自己访问外网用的代理，跟着设置走。
-    pub fn core_proxy(&self) -> &CoreProxy {
-        &self.core_proxy
     }
 
     /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。
@@ -613,6 +566,7 @@ impl PluginManager {
         granted: &[Permission],
         lan_webui: bool,
     ) -> Result<PluginView, InstallError> {
+        self.check_not_upgrading()?;
         dry_run(&package)?;
         self.check_icon(&package).await?;
         let manifest = package.manifest.clone();
@@ -715,6 +669,7 @@ impl PluginManager {
         id: &PluginId,
         purge: bool,
     ) -> Result<UninstallReport, InstallError> {
+        self.check_not_upgrading()?;
         {
             let mut plugins = self.plugins.write().expect("插件表锁中毒");
             let entry = plugins

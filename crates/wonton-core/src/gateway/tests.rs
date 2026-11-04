@@ -200,10 +200,25 @@ pub(super) fn owner() -> Owner {
 
 impl Harness {
     pub async fn start(hydra_admin: Option<SocketAddr>) -> Self {
-        Self::start_with(hydra_admin, Egress::default()).await
+        Self::start_full(hydra_admin, Egress::default(), None).await
     }
 
     pub async fn start_with(hydra_admin: Option<SocketAddr>, egress: Egress) -> Self {
+        Self::start_full(hydra_admin, egress, None).await
+    }
+
+    pub async fn start_with_upgrades(
+        hydra_admin: Option<SocketAddr>,
+        upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
+    ) -> Self {
+        Self::start_full(hydra_admin, Egress::default(), upgrades).await
+    }
+
+    async fn start_full(
+        hydra_admin: Option<SocketAddr>,
+        egress: Egress,
+        upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
+    ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
         let (listener, addr) = bind().await;
@@ -259,7 +274,8 @@ impl Harness {
             hydra,
             http.clone(),
             loopback_tunnel(dir.path()).await,
-        );
+        )
+        .with_upgrades(upgrades);
         serve(listener, router(Arc::new(gateway))).await;
         Self {
             addr,

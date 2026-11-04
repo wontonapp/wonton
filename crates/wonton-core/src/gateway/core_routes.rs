@@ -13,8 +13,8 @@ use serde::Deserialize;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, confirmations, devices, files, isolation, matrix, pages, push,
-    same_origin_path, sso, with_cookie,
+    Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, files, isolation, matrix,
+    pages, push, same_origin_path, sso, with_cookie,
 };
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {
@@ -61,6 +61,16 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route("/_wonton/api/store", get(api::store))
         .route("/_wonton/api/store/plugin", get(api::store_plugin))
+        .route(
+            wonton_protocol::CORE_UPGRADE_PATH,
+            get(core_upgrade::status)
+                .post(core_upgrade::start)
+                .delete(core_upgrade::cancel),
+        )
+        .route(
+            wonton_protocol::CORE_UPGRADE_CHECK_PATH,
+            post(core_upgrade::check),
+        )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .route(
             "/_wonton/api/devices",

@@ -31,6 +31,9 @@ services:
     environment:
       <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DATA_DIR:?}
+      # 一键升级看的渠道和安装目录（ADR-0025）。
+      WONTON_CORE_SOURCE: ${WONTON_CORE_SOURCE:-}
+      WONTON_INSTALL_DIR: ${WONTON_INSTALL_DIR:?}
       WONTON_BASE_DOMAIN: ${WONTON_BASE_DOMAIN:?}
       # 没写用户名时核心用记下的，第一次启动时是 owner（ADR-0022），所以这里不写默认值。
       WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:-}

@@ -109,7 +109,7 @@ impl LabeledResources {
 
 #[derive(Clone)]
 pub struct Engine {
-    pub(super) docker: Docker,
+    pub(crate) docker: Docker,
     /// 一次性容器一个跑完再跑下一个：局域网检测和出口容器的探测都可能同时要跑，容器名是固定的。
     pub(super) one_shot: Arc<tokio::sync::Mutex<()>>,
 }

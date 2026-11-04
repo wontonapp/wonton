@@ -70,11 +70,15 @@ COPY --from=echo-bot-build /usr/local/bin/echo-bot /usr/local/bin/echo-bot
 ENTRYPOINT ["echo-bot"]
 CMD ["run"]
 
+# 升级器和安装脚本用的 compose（ADR-0025）：只取这一个文件，Apache-2.0。
+FROM public.ecr.aws/docker/library/docker:29.9.2-cli AS compose
+
 FROM public.ecr.aws/docker/library/debian:trixie-slim AS core
 # 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。根证书从编译阶段
 # 复制过来，这一层不执行命令：交叉编译的 arm64 镜像不用模拟器也能构建。
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
+COPY --from=compose /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
 # 随核心预装的系统插件（WONTON_SYSTEM_PLUGINS）：模型网关 magpie。
 COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
 # 随核心附带、只自动装一次的默认插件（WONTON_DEFAULT_PLUGINS）：默认 Agent Hermes。

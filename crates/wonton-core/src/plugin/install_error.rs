@@ -69,6 +69,9 @@ pub enum InstallError {
     /// 插件包在预览之后变了（摘要对不上），要重新预览、重新确认。
     #[error("{0}")]
     Changed(String),
+    /// 核心正在升级：回滚只退备份里的东西，这时动插件，回滚后记录和容器就对不上了（ADR-0025）。
+    #[error("家里的服务器正在升级，升级结束后再试")]
+    CoreUpgrading,
 }
 
 impl InstallError {
@@ -95,6 +98,7 @@ impl InstallError {
             Self::SourceUnavailable(_) => "source_unavailable",
             Self::NotFound(_) => "not_found",
             Self::Changed(_) => "changed",
+            Self::CoreUpgrading => "core_upgrading",
         }
     }
 }
@@ -128,6 +132,7 @@ impl InstallError {
             Self::SourceUnavailable(m) => Self::SourceUnavailable(add(m)),
             Self::NotFound(m) => Self::NotFound(add(m)),
             Self::Changed(m) => Self::Changed(add(m)),
+            Self::CoreUpgrading => Self::CoreUpgrading,
         }
     }
 }

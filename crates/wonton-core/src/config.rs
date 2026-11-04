@@ -217,6 +217,10 @@ pub struct Config {
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
+    /// 升级时看的渠道（`WONTON_CORE_SOURCE`）：`仓库:tag`。正式安装才有（ADR-0025）。
+    pub core_source: Option<String>,
+    /// compose 文件和 `.env` 所在的目录（`WONTON_INSTALL_DIR`）。正式安装才有。
+    pub install_dir: Option<PathBuf>,
 }
 
 fn proxy_address(
@@ -332,6 +336,8 @@ impl Config {
             owner_name,
             install_timeout: Duration::from_secs(parse(&get, "WONTON_INSTALL_TIMEOUT_SECS", 300)?),
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
+            core_source: get("WONTON_CORE_SOURCE"),
+            install_dir: get("WONTON_INSTALL_DIR").map(PathBuf::from),
         })
     }
 

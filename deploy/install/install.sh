@@ -19,6 +19,9 @@
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
+#   WONTON_CORE_PIN     手动退回到这个 digest（sha256:…），之后照样跟渠道（ADR-0025）。有当时升级留下的备份就恢复核心
+#                       数据和安装目录
+#   WONTON_RESTORE_VOLUMES=1  退回不可逆的版本时，同时恢复备份里的卷
 #
 # 第一次装好后，安装目录里的 .env 记下这些设置，以后再执行时不用再给。
 set -eu
@@ -56,16 +59,37 @@ case "${docker_version%%.*}" in
   '' | *[!0-9]*) die "认不出 Docker 的版本号 $docker_version" ;;
 esac
 [ "${docker_version%%.*}" -ge 28 ] || die "Docker Engine 要 28 或更新的版本，当前是 $docker_version"
-docker compose version >/dev/null 2>&1 || die "没有 docker compose 插件（Docker 官方仓库的 docker-compose-plugin）"
 
 install_dir=${WONTON_INSTALL_DIR:-/opt/wonton}
 env_file="$install_dir/.env"
+
+# 一键升级还在做时不和它抢 .env。正在被 Docker 反复重启的也算：它可能正好起不来，没人会把它停下。
+updater_state=$(docker inspect --format '{{.State.Running}} {{.State.Restarting}}' wonton-updater 2>/dev/null) ||
+  updater_state=
+case "$updater_state" in
+  *true*)
+    die "一键升级还没结束，日志在 docker logs wonton-updater，状态在数据目录的 core/upgrade/state.json。确认它卡住了才这样停掉它，再执行一次安装：docker update --restart=no wonton-updater && docker stop wonton-updater"
+    ;;
+esac
 
 # 上次安装记下的设置。环境变量里给了的以环境变量为准。
 saved() {
   [ -f "$env_file" ] || return 0
   sed -n "s/^$1=//p" "$env_file" | tail -n 1
 }
+
+pin=${WONTON_CORE_PIN:-}
+if [ -n "$pin" ]; then
+  # WONTON_CORE_IMAGE 会把 WONTON_CORE_SOURCE 写成 digest，核心从此不跟渠道，不能用来退回。
+  [ -z "${WONTON_CORE_IMAGE:-}" ] || die "WONTON_CORE_PIN 和 WONTON_CORE_IMAGE 不能一起用"
+  case "$pin" in
+    sha256:*) ;;
+    *) die "WONTON_CORE_PIN 要写成 sha256:…，现在是 $pin" ;;
+  esac
+  [ -n "$(saved WONTON_CORE_SOURCE)" ] || die "$env_file 里没有 WONTON_CORE_SOURCE，不知道从哪个仓库退回"
+elif [ -n "${WONTON_RESTORE_VOLUMES:-}" ]; then
+  die "WONTON_RESTORE_VOLUMES 要和 WONTON_CORE_PIN 一起用"
+fi
 
 image=${WONTON_CORE_IMAGE:-$(saved WONTON_CORE_SOURCE)}
 # 1.0 之前默认装 beta 渠道：内测期只发预发布版本，stable 渠道在 1.0 才有第一个版本。
@@ -108,21 +132,39 @@ fi
 mkdir -p "$install_dir" "$data_dir"
 chmod 700 "$install_dir"
 
-if [ "${WONTON_PULL:-}" = never ]; then
-  docker image inspect "$image" >/dev/null 2>&1 || die "本机没有镜像 $image"
+if [ -n "$pin" ]; then
+  # 退回时拉渠道所在仓库的旧 digest。
+  repository=${image%@*}
+  case "${repository##*/}" in
+    *:*) repository=${repository%:*} ;;
+  esac
+  pull_image="$repository@$pin"
 else
-  info "拉取核心镜像 $image"
-  docker pull "$image" >/dev/null || die "拉不到镜像 $image"
+  pull_image=$image
+fi
+if [ "${WONTON_PULL:-}" = never ]; then
+  docker image inspect "$pull_image" >/dev/null 2>&1 || die "本机没有镜像 $pull_image"
+elif [ -n "$pin" ] && docker image inspect "$pull_image" >/dev/null 2>&1; then
+  : # 要退回的版本一般还在本机，这时可能正好上不了网。
+else
+  info "拉取核心镜像 $pull_image"
+  docker pull "$pull_image" >/dev/null || die "拉不到镜像 $pull_image"
 fi
 # 能写成 digest 就写 digest：升级、回滚都按它（ADR-0012）。本机构建的镜像没有 digest，照原样写。
-pinned=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$image")
-pinned=${pinned:-$image}
+pinned=$pull_image
+if [ -z "$pin" ]; then
+  pinned=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$pull_image")
+  pinned=${pinned:-$pull_image}
+fi
 
-info "生成密钥和配置（已有的沿用）"
-# 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
-docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
-  -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e WONTON_OWNER_EMAIL="$owner_email" -e TZ="$tz" \
-  "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
+# 系统服务都由核心镜像里的 compose 操作，和一键升级同一个（ADR-0025）：宿主不用装 compose 插件，读不到宿主的
+# ~/.docker/config.json，两条路建出的容器一样。容器里没有调用者的 WONTON_*，.env 不会被盖住。
+compose() {
+  docker run --rm --network none -v /var/run/docker.sock:/var/run/docker.sock -v "$install_dir:$install_dir" \
+    --entrypoint docker-compose "$pinned" -f "$install_dir/compose.yaml" "$@"
+}
+docker run --rm --network none --entrypoint docker-compose "$pinned" version >/dev/null 2>&1 ||
+  die "核心镜像 $pinned 里没有 compose：这个版本太旧，这个安装脚本用不了它"
 
 # 下面几个函数处理出网代理（ADR-0023 的“代理地址从哪里来”）。
 
@@ -212,31 +254,74 @@ detect_proxy() {
   done
 }
 
-record_detected=
-[ ! -f "$env_file" ] || ! grep -q '^WONTON_EGRESS_PROXY_DETECTED=' "$env_file" || record_detected=yes
-if [ -n "$egress_proxy" ]; then
-  egress_proxy=$(proxy_for_containers "$egress_proxy")
-  shown=$(masked_proxy "$egress_proxy")
-  proxy_fits_env "$egress_proxy" || die "WONTON_EGRESS_PROXY 里的特殊字符要写成百分号编码：$shown"
-  ensure_egress_network
-  info "测试代理 $shown"
-  result=$(check_proxy "$egress_proxy") ||
-    die "WONTON_EGRESS_PROXY 用不了：$(check_message "$result")。改好了再执行一次，设成空就不用代理"
-  message=$(check_message "$result")
-  [ -z "$message" ] || echo "提示：$message"
-elif [ -z "$record_detected" ]; then
-  # 只检测一次：之后主人可能在 App 里改过，也可能就是不要代理。
-  info "检测这台主机的代理"
-  ensure_egress_network
-  egress_detected=$(detect_proxy)
-  record_detected=yes
-  if [ -n "$egress_detected" ]; then
-    info "出网插件和核心经代理 $(masked_proxy "$egress_detected") 访问外网（不要代理的话在 App 的设置里清空）"
+# 主人指定的地址测一下；没指定又没检测过的，检测一次。结果在 egress_proxy、egress_detected 和 record_detected 里。
+settle_proxy() {
+  record_detected=
+  [ ! -f "$env_file" ] || ! grep -q '^WONTON_EGRESS_PROXY_DETECTED=' "$env_file" || record_detected=yes
+  if [ -n "$egress_proxy" ]; then
+    egress_proxy=$(proxy_for_containers "$egress_proxy")
+    shown=$(masked_proxy "$egress_proxy")
+    proxy_fits_env "$egress_proxy" || die "WONTON_EGRESS_PROXY 里的特殊字符要写成百分号编码：$shown"
+    ensure_egress_network
+    info "测试代理 $shown"
+    result=$(check_proxy "$egress_proxy") ||
+      die "WONTON_EGRESS_PROXY 用不了：$(check_message "$result")。改好了再执行一次，设成空就不用代理"
+    message=$(check_message "$result")
+    [ -z "$message" ] || echo "提示：$message"
+  elif [ -z "$record_detected" ]; then
+    # 只检测一次：之后主人可能在 App 里改过，也可能就是不要代理。
+    info "检测这台主机的代理"
+    ensure_egress_network
+    egress_detected=$(detect_proxy)
+    record_detected=yes
+    if [ -n "$egress_detected" ]; then
+      info "出网插件和核心经代理 $(masked_proxy "$egress_detected") 访问外网（不要代理的话在 App 的设置里清空）"
+    fi
   fi
-fi
+}
 
-umask 077
-cat >"$env_file" <<EOF
+# 从 /dev/tty 读：脚本经管道运行时，标准输入是脚本本身。
+confirm() {
+  (: </dev/tty) 2>/dev/null || die "退回要主人确认，这里没有终端，什么都没动"
+  printf '%s\n继续吗？[y/N] ' "$1" >/dev/tty
+  read -r answer </dev/tty || answer=
+  case "$answer" in
+    y | Y | yes) ;;
+    *) die "没有确认，什么都没动" ;;
+  esac
+}
+
+# 这个 digest 最新的、写完了的备份。结果不确定的那份要留着，所以同一个 digest 可能有几份。
+backup_of() {
+  # shellcheck disable=SC2012 # 目录名是 digest 加编号，按时间排序用 ls 最简单
+  ls -dt "$data_dir/core/upgrade/backup/$1" "$data_dir/core/upgrade/backup/$1".* 2>/dev/null |
+    while IFS= read -r dir; do
+      if [ -f "$dir/.complete" ]; then
+        printf '%s\n' "$dir"
+        break
+      fi
+    done
+}
+
+# 停服务、恢复备份、处理目标镜像不支持的组件：这份备份就是目标镜像的升级器做的，逻辑放在它里面。
+manual_rollback() {
+  docker run --rm --network none -v /var/run/docker.sock:/var/run/docker.sock -v "$install_dir:$install_dir" \
+    -v "$data_dir:$data_dir" "$pinned" manual-rollback "$install_dir" "$data_dir" "$pinned" "$@" ||
+    die "退回失败，看上面的错误。备份还在数据目录的 core/upgrade/backup 里"
+}
+
+write_config() {
+  info "生成密钥和配置（已有的沿用）"
+  # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
+  docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
+    -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e WONTON_OWNER_EMAIL="$owner_email" -e TZ="$tz" \
+    "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
+
+  settle_proxy
+
+  umask 077
+  # 写临时文件、落盘、改名：一键升级也读这个文件，不能让它读到写了一半的。
+  cat >"$env_file.tmp" <<EOF
 # 由 install.sh 写出。改端口、换镜像后再执行一次 install.sh；基础域名装好后不能改。
 # 升级时拉 WONTON_CORE_SOURCE 的最新版本，compose 用按 digest 写下的 WONTON_CORE_IMAGE。
 WONTON_CORE_SOURCE=$image
@@ -254,17 +339,46 @@ WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_EGRESS_PROXY=$egress_proxy
 EOF
 # 主人指定了地址时没有检测过，以后取消了还要检测，所以不留这一行。
-if [ -n "$record_detected" ]; then
-  echo "WONTON_EGRESS_PROXY_DETECTED=$egress_detected" >>"$env_file"
+  if [ -n "$record_detected" ]; then
+    echo "WONTON_EGRESS_PROXY_DETECTED=$egress_detected" >>"$env_file.tmp"
+  fi
+  sync
+  mv "$env_file.tmp" "$env_file"
+  sync
+}
+
+if [ -z "$pin" ]; then
+  write_config
+else
+  backup=$(backup_of "$pin")
+  warning="退回到 $pin。"
+  migrations=$(docker image inspect --format '{{index .Config.Labels "wonton.core.migrations"}}' \
+    "$(saved WONTON_CORE_IMAGE)" 2>/dev/null) || migrations=
+  if [ -n "${WONTON_RESTORE_VOLUMES:-}" ]; then
+    [ -n "$backup" ] || die "没有 $pin 的备份，恢复不了卷"
+    confirm "$warning 恢复备份 $backup，连同里面的卷：备份之后写的数据（包括聊天）会丢。"
+    manual_rollback "$backup" --volumes
+  else
+    [ -z "$migrations" ] ||
+      warning="$warning 当前版本迁移过这些卷（$migrations），旧版本可能读不了它们，要恢复就加上 WONTON_RESTORE_VOLUMES=1。"
+    if [ -n "$backup" ]; then
+      confirm "$warning 恢复备份 $backup：备份之后写的核心数据会丢。"
+      manual_rollback "$backup"
+    else
+      confirm "$warning 没有这个版本的备份：核心数据不会退回，旧版本可能起不来。"
+      manual_rollback -
+      write_config
+    fi
+  fi
 fi
 
-# docker compose 先看环境变量再看 .env：调用时带着的 WONTON_* 会盖过上面按 digest 写下的镜像。
-unset WONTON_CORE_IMAGE WONTON_INSTALL_DIR WONTON_DATA_DIR WONTON_PORT WONTON_TUNNEL_PORT WONTON_BASE_DOMAIN \
-  WONTON_OWNER_NAME WONTON_OWNER_DISPLAY_NAME WONTON_OWNER_EMAIL TZ WONTON_LAN_ADDRESSES \
-  WONTON_EGRESS_PROXY WONTON_EGRESS_PROXY_DETECTED
 info "启动核心、身份提供方和 Matrix 服务器（第一次要拉镜像，几分钟）"
-docker compose -f "$install_dir/compose.yaml" up -d --wait --wait-timeout 600 ||
-  die "服务没有在 10 分钟内就绪，看看日志：docker compose -f $install_dir/compose.yaml logs"
+compose up -d --wait --wait-timeout 600 --remove-orphans ||
+  die "服务没有在 10 分钟内就绪，看看日志：docker logs wonton-core"
+
+# 主人手动修好了，App 不再显示旧的结果。备份留多久不受影响。
+state_file="$data_dir/core/upgrade/state.json"
+[ ! -f "$state_file" ] || mv "$state_file" "$state_file.$(date +%Y%m%d%H%M%S)"
 
 # 浏览器和手机在局域网里用来找到这台主机的地址：默认路由出去的那张网卡。
 lan_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)
@@ -278,8 +392,8 @@ info "装好了。浏览器打开 http://${lan_ip:-<这台主机的 IP>}:$port/ 
 # shellcheck disable=SC1111 # 中文的引号是要显示的文字
 cat <<EOF
 防火墙要放行 TCP $port（局域网网页）和 UDP $tunnel_port（手机连回家）。
-查看日志：docker compose -f $install_dir/compose.yaml logs -f core
-升级：再执行一次安装命令。
+查看日志：docker logs -f wonton-core
+升级：在 App 里升级，或者再执行一次安装命令。
 以后加设备：在已配对的 App 里点“添加设备”；设备都丢了：sudo wonton pair
 
 EOF

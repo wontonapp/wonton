@@ -26,6 +26,7 @@ pub mod languages;
 mod leftovers;
 pub mod lifecycle;
 pub mod manager;
+mod manager_options;
 pub mod manifest;
 mod mcp_server;
 pub mod models;
