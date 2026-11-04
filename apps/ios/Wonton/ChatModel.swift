@@ -33,10 +33,6 @@ final class ChatModel {
         }
     }
 
-    var isRoomOpen: Bool {
-        path.contains { if case .room = $0 { true } else { false } }
-    }
-
     func send(_ action: Action) {
         do {
             try core.dispatch(action: action)

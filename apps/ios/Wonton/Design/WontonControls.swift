@@ -303,8 +303,17 @@ extension View {
     func wontonRootScreen<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
         let bar = WontonRootBar(title: title, trailing: trailing)
         return safeAreaInset(edge: .top, spacing: 0) { bar }
+            .modifier(WontonTabBarSlot())
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
+    }
+}
+
+private struct WontonTabBarSlot: ViewModifier {
+    @Environment(\.wontonTabBar) private var tabBar
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) { tabBar }
     }
 }
 

@@ -93,7 +93,10 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation) {
                 if (store == null) {
                     StorePlaceholder(plugins)
                 } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = WontonTheme.spacing.s8),
+                    ) {
                         items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
                             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
                                 TaskRow(task, plugins) { navigation.confirmation = reconfirmation(task, plugins) }

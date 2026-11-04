@@ -103,18 +103,8 @@ private struct MainView: View {
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.store)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showsBottomBar {
-                WontonBottomBar(
-                    items: [
-                        .init(tab: .chat, label: "聊天", icon: .chat, selectedIcon: .chatFill),
-                        .init(tab: .home, label: "家", icon: .home, selectedIcon: .homeFill),
-                        .init(tab: .store, label: "商店", icon: .store, selectedIcon: .storeFill)
-                    ],
-                    selection: $tab
-                )
-            }
-        }
+        // 打字时让出底部的位置。
+        .environment(\.wontonTabBar, isKeyboardVisible ? nil : AnyView(bottomBar))
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
@@ -123,15 +113,21 @@ private struct MainView: View {
         }
     }
 
+    private var bottomBar: some View {
+        WontonBottomBar(
+            items: [
+                .init(tab: .chat, label: "聊天", icon: .chat, selectedIcon: .chatFill),
+                .init(tab: .home, label: "家", icon: .home, selectedIcon: .homeFill),
+                .init(tab: .store, label: "商店", icon: .store, selectedIcon: .storeFill)
+            ],
+            selection: $tab
+        )
+    }
+
     private func openCardRoom(_ roomId: String) {
         page = nil
         tab = .chat
         chat.path = [.room(roomId)]
-    }
-
-    /// 聊天页和打字时让出底部的位置。
-    private var showsBottomBar: Bool {
-        !isKeyboardVisible && !(tab == .chat && chat.isRoomOpen)
     }
 
     private func open(_ entry: PluginEntry) {

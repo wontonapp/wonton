@@ -1,5 +1,18 @@
 import SwiftUI
 
+private struct WontonTabBarKey: EnvironmentKey {
+    static var defaultValue: AnyView? { nil }
+}
+
+extension EnvironmentValues {
+    /// 根页面要放的底栏。放在 `TabView` 外面的话，它的安全区传不到各页的滚动区，最后一行会被挡住（iOS 26.5 模拟器实测）；
+    /// 放在根页面里，进入下一层时它也跟着走。
+    var wontonTabBar: AnyView? {
+        get { self[WontonTabBarKey.self] }
+        set { self[WontonTabBarKey.self] = newValue }
+    }
+}
+
 /// 主界面的底栏（ADR-0026）：浮起的表面加噪点，选中的一项是重点色的填充和实心图标。
 struct WontonBottomBar<Tab: Hashable>: View {
     struct Item {
