@@ -1,4 +1,4 @@
-# 与仓库的体量门禁一致：函数体 ≤ 100 行、文件 ≤ 800 行，超出即 error。
+# 函数体 ≤ 100 行，超出即 error。文件行数只由 scripts/check-file-size.sh 管：SwiftLint 不读 .size-allowlist，写进例外的文件它照样报错。
 # CI 用 --strict 运行，其余规则的 warning 也会失败。
 included:
   - Wonton
@@ -12,11 +12,6 @@ excluded:
 function_body_length:
   warning: 100
   error: 100
-
-file_length:
-  warning: 800
-  error: 800
-  ignore_comment_only_lines: false
 
 # 每个枚举值一个分支的平铺 switch（时间线的增量、分类名、失败后的下一步）拆开反而难读，case 不计入圈复杂度。
 cyclomatic_complexity:
