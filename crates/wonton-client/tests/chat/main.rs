@@ -8,6 +8,7 @@
 #![recursion_limit = "256"]
 
 mod confirmation;
+mod pending;
 mod push;
 mod resume;
 mod send;

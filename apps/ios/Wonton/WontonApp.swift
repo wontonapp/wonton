@@ -56,7 +56,42 @@ private struct MainView: View {
     @State private var unavailable: String?
     @State private var isKeyboardVisible = false
 
+    /// 卡片所在的房间就在眼前时不用提示。
+    private var pendingElsewhere: [PendingConfirmation] {
+        chat.viewModel.pendingConfirmations.filter { tab != .chat || chat.path.last != $0.roomId }
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            if !pendingElsewhere.isEmpty {
+                PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
+            }
+            tabs
+        }
+        .fullScreenCover(item: $page) { page in
+            VStack(spacing: 0) {
+                if !chat.viewModel.pendingConfirmations.isEmpty {
+                    PendingCardBanner(cards: chat.viewModel.pendingConfirmations, open: openCardRoom)
+                }
+                // 核心重建了本地代理时换上新的凭据。
+                PluginPage(
+                    title: page.title, url: page.url, proxy: home.viewModel.proxy ?? page.proxy
+                ) { self.page = nil }
+            }
+        }
+        .alert("打不开", isPresented: isShowingUnavailable, presenting: unavailable) { _ in
+            Button("好") {}
+        } message: { reason in
+            Text(reason)
+        }
+        // 主屏和商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
+        .task { await home.observe() }
+        .task { await plugins.observe() }
+        .task { await chat.observe() }
+        .task { await chat.files.observe() }
+    }
+
+    private var tabs: some View {
         // 系统的底栏换不了样子，只藏起来。TabView 本身留着：各页的导航、滚动位置和导航栏都由它分开管。
         TabView(selection: $tab) {
             ChatListView(model: chat)
@@ -90,19 +125,12 @@ private struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
         }
-        .fullScreenCover(item: $page) { page in
-            // 核心重建了本地代理时换上新的凭据。
-            PluginPage(title: page.title, url: page.url, proxy: home.viewModel.proxy ?? page.proxy) { self.page = nil }
-        }
-        .alert("打不开", isPresented: isShowingUnavailable, presenting: unavailable) { _ in
-            Button("好") {}
-        } message: { reason in
-            Text(reason)
-        }
-        // 主屏和商店都用这两份状态，切到别的页面时也要接着更新。
-        .task { await home.observe() }
-        .task { await plugins.observe() }
-        .task { await chat.files.observe() }
+    }
+
+    private func openCardRoom(_ roomId: String) {
+        page = nil
+        tab = .chat
+        chat.path = [roomId]
     }
 
     /// 聊天页和打字时让出底部的位置。

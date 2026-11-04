@@ -3,11 +3,13 @@ package app.wonton.ui
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +32,7 @@ import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
+import app.wonton.protocol.PendingConfirmation
 import app.wonton.ui.design.WontonBarItem
 import app.wonton.ui.design.WontonBottomBar
 import app.wonton.ui.design.WontonTheme
@@ -54,9 +57,17 @@ private val tabs = listOf(
 /**
  * 应用的根界面。平台入口（Android 的 Activity，以后的桌面窗口）只负责创建核心并调用它。
  * `devWebUrl` 只在开发时给出：本地代理就绪后自动打开这个插件网页，不用点按也能测。
+ * `requestedRoom` 是点通知要打开的房间，打开后调 `onRoomRequestHandled`；`onCardsSettled` 收到不用再回答的卡片 ID，
+ * 撤下它们的通知。
  */
 @Composable
-fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
+fun WontonApp(
+    core: ClientCore,
+    devWebUrl: String? = null,
+    requestedRoom: String? = null,
+    onRoomRequestHandled: () -> Unit = {},
+    onCardsSettled: (List<String>) -> Unit = {},
+) {
     val appearanceUpdates = remember(core) { core.appearanceUpdates() }
     val initialAppearance = remember(core) { core.appearance() }
     val appearance by appearanceUpdates.collectAsState(initial = initialAppearance)
@@ -66,6 +77,11 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
         val home by updates.collectAsState(initial = initial)
         val plugins = remember(core) { PluginsState(core) }
         val chat = rememberChatNavigation()
+        // 提示条和撤通知不管在哪个页面都要，所以这里也收集一份。
+        val chatUpdates = remember(core) { core.chatUpdates() }
+        val initialChat = remember(core) { core.chat() }
+        val chatView by chatUpdates.collectAsState(initial = initialChat)
+        LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
         // 还没配对时先到“家”的配对页；开发时要自动打开网页的也停在“家”。
         val startAtHome = initial.status is HomeStatus.NotConfigured || devWebUrl != null
         var tab by rememberSaveable { mutableIntStateOf(if (startAtHome) HOME else CHAT) }
@@ -88,6 +104,19 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
                 }
             }
         }
+        val openCardRoom = remember(core) {
+            { roomId: String ->
+                page = null
+                tab = CHAT
+                chat.openWhenJoined(core, roomId)
+            }
+        }
+        LaunchedEffect(requestedRoom) {
+            if (requestedRoom != null) {
+                openCardRoom(requestedRoom)
+                onRoomRequestHandled()
+            }
+        }
         val homePlugins = remember(open) { PluginNavigation(open) }
         val storePlugins = remember(open) { PluginNavigation(open) }
         PluginsEffects(plugins)
@@ -100,18 +129,24 @@ fun WontonApp(core: ClientCore, devWebUrl: String? = null) {
         val shown = page
         if (shown != null && proxy != null) {
             BackHandler { page = null }
-            PluginPage(shown.title, shown.url, proxy, onClose = { page = null })
+            WithPendingCards(chatView.pendingConfirmations, openCardRoom) {
+                PluginPage(shown.title, shown.url, proxy, onClose = { page = null })
+            }
             return@WontonTheme
         }
+        // 卡片所在的房间就在眼前时不用提示。
+        val elsewhere = chatView.pendingConfirmations.filter { tab != CHAT || it.roomId != chat.openRoom }
         MainTabs(
             tab = tab,
             onSelect = { tab = it },
             isRoomOpen = chat.openRoom != null,
         ) {
-            when (tab) {
-                CHAT -> ChatRoute(core, chat)
-                HOME -> HomeRoute(core, home, plugins, homePlugins, appearance, onShowStore = { tab = STORE })
-                else -> StoreRoute(plugins, storePlugins)
+            WithPendingCards(elsewhere, openCardRoom) {
+                when (tab) {
+                    CHAT -> ChatRoute(core, chat)
+                    HOME -> HomeRoute(core, home, plugins, homePlugins, appearance, onShowStore = { tab = STORE })
+                    else -> StoreRoute(plugins, storePlugins)
+                }
             }
         }
         unavailable?.let { reason -> Notice("打不开", reason, onDismiss = { unavailable = null }) }
@@ -134,6 +169,20 @@ private fun MainTabs(tab: Int, onSelect: (Int) -> Unit, isRoomOpen: Boolean, con
         Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
             content()
         }
+    }
+}
+
+/** 有卡片在等时，在 [content] 上面放提示条，状态栏的位置由提示条让出，内层的标题栏不再重复让。 */
+@Composable
+private fun WithPendingCards(
+    cards: List<PendingConfirmation>,
+    onOpen: (String) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        if (cards.isNotEmpty()) PendingCardBanner(cards, onOpen)
+        val below = if (cards.isNotEmpty()) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier
+        Box(below.weight(1f).fillMaxSize()) { content() }
     }
 }
 

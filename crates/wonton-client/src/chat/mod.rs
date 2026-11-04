@@ -7,6 +7,7 @@
 
 mod confirmation;
 mod login;
+mod pending;
 mod storage;
 mod timeline;
 mod view;
@@ -29,6 +30,7 @@ use wonton_protocol::{
     ProxySettings, PushStatus, RecoveryStatus, SecretString,
 };
 
+pub(crate) use confirmation::{PushedCard, pushed_card};
 pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
@@ -544,6 +546,10 @@ impl ChatLink {
 
     async fn forget_current(&self) {
         *lock(&self.open_room) = None;
+        self.view.send_modify(|view| {
+            view.pending_confirmations.clear();
+            view.settled_confirmations.clear();
+        });
         let session = lock(&self.session).take();
         if let Some(session) = session {
             session.stop_sync().await;
@@ -667,7 +673,12 @@ impl ChatLink {
             self.runtime
                 .spawn(async move { session.keep_syncing().await })
         };
-        vec![rooms, encryption, sync, events, syncing]
+        let cards = self.runtime.spawn(pending::follow_cards(
+            view,
+            session.clone(),
+            self.answers.clone(),
+        ));
+        vec![rooms, encryption, sync, events, syncing, cards]
     }
 }
 

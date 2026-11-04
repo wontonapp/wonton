@@ -12,8 +12,9 @@ use matrix_sdk::ruma::{
 };
 use matrix_sdk_ui::notification_client::{
     NotificationClient, NotificationEvent, NotificationItem, NotificationProcessSetup,
-    NotificationStatus,
+    NotificationStatus, RawNotificationEvent,
 };
+use serde_json::{Map, Value};
 
 use crate::{Error, MatrixSession, MessageBody, Result};
 
@@ -53,6 +54,8 @@ pub struct Notification {
     /// 内容；还是解不开时是 [`MessageBody::Undecryptable`]，邀请是 `m.room.member` 的
     /// [`MessageBody::Other`]。
     pub body: MessageBody,
+    /// 事件内容的原文，取 SDK 解析时丢掉的自定义字段用。邀请和读不了的内容是空的。
+    pub custom: Map<String, Value>,
 }
 
 impl MatrixSession {
@@ -130,7 +133,16 @@ impl MatrixSession {
 
 fn notification(item: NotificationItem, one_to_one: bool) -> Notification {
     let sender = item.event.sender().to_owned();
+    let custom = match &item.raw_event {
+        RawNotificationEvent::Timeline(raw) => raw
+            .get_field::<Map<String, Value>>("content")
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        RawNotificationEvent::Invite(_) => Map::new(),
+    };
     Notification {
+        custom,
         sender_name: item
             .sender_display_name
             .unwrap_or_else(|| sender.to_string()),

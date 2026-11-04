@@ -13,7 +13,7 @@ import app.wonton.android.MainActivity
 import app.wonton.protocol.PushContent
 import app.wonton.protocol.PushNotification
 
-/** 新消息的系统通知：同一个房间的通知合并成一条，显示最新的一条消息。 */
+/** 新消息的系统通知：同一个房间的通知合并成一条，显示最新的一条消息。确认卡片每张一条，答完或过期就撤下。 */
 object PushNotifications {
     private const val TAG = "WontonPush"
     private const val CHANNEL = "messages"
@@ -39,11 +39,19 @@ object PushNotifications {
                 if (notification.roomName != null) "${notification.sender}：${content.body}" else content.body
             is PushContent.Unavailable -> "新消息（内容暂时取不到：${content.message}）"
         }
+        val card = notification.confirmation
+        val tag = card?.id ?: notification.roomId
         val open = PendingIntent.getActivity(
             context,
-            0,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE,
+            // 每条通知一个请求码：否则系统把它们当成同一个 PendingIntent，点哪条都进同一个房间。
+            tag.hashCode(),
+            Intent(context, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_ROOM, notification.roomId)
+                .addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                ),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // 锁屏上隐藏敏感内容时显示这一版：不带发送者和正文。
         val hidden = Notification.Builder(context, CHANNEL)
@@ -62,8 +70,17 @@ object PushNotifications {
             .setContentIntent(open)
             .setAutoCancel(true)
             .setShowWhen(true)
-            .build()
+        // App 被杀时收不到卡片的变化：到期这件事交给系统。
+        if (card != null) {
+            val left = card.expiresAtMs.toLong() - System.currentTimeMillis()
+            shown.setTimeoutAfter(left.coerceAtLeast(1))
+        }
         context.getSystemService(NotificationManager::class.java)
-            .notify(notification.roomId, NOTIFICATION_ID, shown)
+            .notify(tag, NOTIFICATION_ID, shown.build())
+    }
+
+    fun cancelCards(context: Context, cards: List<String>) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        cards.forEach { manager.cancel(it, NOTIFICATION_ID) }
     }
 }

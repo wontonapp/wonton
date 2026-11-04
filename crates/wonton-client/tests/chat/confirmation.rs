@@ -315,6 +315,9 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
         panic!("通知要有卡片的文字：{:?}", notification.content);
     };
     assert_eq!(body, content(&waiting)["body"].as_str().unwrap());
+    let card = notification.confirmation.expect("通知要带上卡片");
+    assert_eq!(card.id, waiting["id"].as_str().unwrap());
+    assert_eq!(Some(card.expires_at_ms), waiting["expires_at_ms"].as_u64());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -352,14 +355,14 @@ fn install_card() -> Value {
     install
 }
 
-async fn core_room(phone: &Phone, home: &Home) -> (MatrixSession, OwnedRoomId) {
+pub(crate) async fn core_room(phone: &Phone, home: &Home) -> (MatrixSession, OwnedRoomId) {
     let core = home.bot("wonton-core", "Wonton").await;
     let room_id = joined_direct_chat(phone, &core).await;
     (core, room_id)
 }
 
 /// 不加密的私聊，主人接受邀请。
-async fn joined_direct_chat(phone: &Phone, peer: &MatrixSession) -> OwnedRoomId {
+pub(crate) async fn joined_direct_chat(phone: &Phone, peer: &MatrixSession) -> OwnedRoomId {
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = peer
         .create_direct_chat(&owner, false)
@@ -393,7 +396,7 @@ async fn joined_direct_chat(phone: &Phone, peer: &MatrixSession) -> OwnedRoomId 
     room_id
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     u64::try_from(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -403,11 +406,11 @@ fn now_ms() -> u64 {
     .unwrap()
 }
 
-fn in_ten_minutes() -> u64 {
+pub(crate) fn in_ten_minutes() -> u64 {
     now_ms() + 600_000
 }
 
-fn card(id: &str, expires_at_ms: u64) -> Value {
+pub(crate) fn card(id: &str, expires_at_ms: u64) -> Value {
     json!({
         "id": id,
         "state": {"type": "pending"},
@@ -421,14 +424,14 @@ fn card(id: &str, expires_at_ms: u64) -> Value {
     })
 }
 
-fn with_state(card: &Value, state: Value) -> Value {
+pub(crate) fn with_state(card: &Value, state: Value) -> Value {
     let mut card = card.clone();
     card["state"] = state;
     card
 }
 
 /// 同 `wonton-core` 的 `cards::content`。
-fn content(card: &Value) -> Value {
+pub(crate) fn content(card: &Value) -> Value {
     json!({
         "msgtype": "m.text",
         "body": format!("{}\n请在 Wonton App 里确认。", card["title"].as_str().unwrap()),
@@ -436,16 +439,16 @@ fn content(card: &Value) -> Value {
     })
 }
 
-fn core_error(kind: &str, message: &str) -> Value {
+pub(crate) fn core_error(kind: &str, message: &str) -> Value {
     json!({"error": {"kind": kind, "message": message}})
 }
 
-async fn send(room: &ChatRoom, content: Value) -> OwnedEventId {
+pub(crate) async fn send(room: &ChatRoom, content: Value) -> OwnedEventId {
     room.send_raw_message(content).await.expect("发消息")
 }
 
 /// 同 `wonton-core` 的 `NoticeRoom::edit`。
-async fn edit(room: &ChatRoom, event: &OwnedEventId, card: &Value) {
+pub(crate) async fn edit(room: &ChatRoom, event: &OwnedEventId, card: &Value) {
     let new_content = content(card);
     let mut edit = new_content.clone();
     edit["body"] = json!(format!("* {}", new_content["body"].as_str().unwrap()));

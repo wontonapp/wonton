@@ -1,10 +1,15 @@
 package app.wonton.android
 
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import app.wonton.android.push.PushNotifications
 import app.wonton.android.push.PushRegistration
 import app.wonton.client.initLogging
 import app.wonton.protocol.Action
@@ -15,6 +20,9 @@ import app.wonton.ui.send
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    /** 点通知要打开的房间。 */
+    private var requestedRoom by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -40,12 +48,36 @@ class MainActivity : ComponentActivity() {
         }
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
         PushRegistration(this, core).start()
-        setContent { WontonApp(core, devWebUrl = devWebUrl) }
+        requestRoom(intent)
+        setContent {
+            WontonApp(
+                core,
+                devWebUrl = devWebUrl,
+                requestedRoom = requestedRoom,
+                onRoomRequestHandled = { requestedRoom = null },
+                onCardsSettled = { cards -> PushNotifications.cancelCards(this, cards) },
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        requestRoom(intent)
+    }
+
+    /** 取走就删：屏幕旋转重建 Activity 时拿到的还是这个 Intent，不能再跳一次。 */
+    private fun requestRoom(intent: Intent) {
+        intent.getStringExtra(EXTRA_ROOM)?.let { requestedRoom = it }
+        intent.removeExtra(EXTRA_ROOM)
     }
 
     override fun onResume() {
         super.onResume()
         // 回到前台：网络可能变了，让核心检查隧道并重连。
         (application as WontonApplication).core.getOrNull()?.send(Action.AppForegrounded)
+    }
+
+    companion object {
+        const val EXTRA_ROOM = "wonton_open_room"
     }
 }

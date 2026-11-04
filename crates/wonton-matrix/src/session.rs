@@ -18,6 +18,7 @@ use tokio::{
     task::JoinHandle,
 };
 
+use crate::rooms::RoomSubscriptions;
 use crate::{Error, Result, send_queue};
 
 /// Tuwunel 的 JWT 登录类型。
@@ -115,6 +116,7 @@ pub struct MatrixSession {
     device_id: OwnedDeviceId,
     /// 发送出错以后接着发（[`send_queue`](crate::send_queue)），会话释放时停止。
     sending: JoinHandle<()>,
+    pub(crate) subscriptions: tokio::sync::Mutex<RoomSubscriptions>,
     /// 叫醒等着重开发送队列的任务，见 [`MatrixSession::resume`]。
     pub(crate) resume_sending: Arc<Notify>,
     /// 叫醒等着重启同步的任务，见 [`MatrixSession::resume`]。
@@ -182,6 +184,7 @@ impl MatrixSession {
             sending,
             resume_sending,
             resume_sync: Notify::new(),
+            subscriptions: tokio::sync::Mutex::default(),
         })
     }
 

@@ -3,6 +3,7 @@
 //! 列表由 matrix-sdk-ui 的 `RoomListService` 维护（和 Element X 一样），排序也用它的：正在发送的在前，
 //! 其余按最近活动，再按名字。
 
+use std::collections::BTreeSet;
 use std::pin::pin;
 
 use futures_util::{Stream, StreamExt, stream};
@@ -54,6 +55,15 @@ impl From<RoomState> for Membership {
             RoomState::Banned => Self::Banned,
         }
     }
+}
+
+/// Sliding Sync 订阅完整时间线的房间。
+#[derive(Default)]
+pub(crate) struct RoomSubscriptions {
+    /// 打开着的房间。
+    opened: Option<OwnedRoomId>,
+    /// 一直跟着的房间。
+    watched: BTreeSet<OwnedRoomId>,
 }
 
 /// 房间列表里的一项。
@@ -189,28 +199,62 @@ impl MatrixSession {
     /// 打开一个已加入的房间，返回可以收发消息的 [`ChatRoom`]。
     ///
     /// 房间列表只同步每个房间的最新一条消息；打开房间时才订阅它的完整时间线，和在手机上点进
-    /// 一个聊天一致。同一时间只订阅一个房间，打开另一个房间会取消前一个的订阅。
+    /// 一个聊天一致。同一时间只打开一个房间，打开另一个房间会取消前一个的订阅，[`watch_room`](Self::watch_room)
+    /// 的房间不受影响。
     pub async fn open_room(&self, room_id: &RoomId) -> Result<ChatRoom> {
-        let room = self.room(room_id)?;
-        if room.state() != RoomState::Joined {
-            return Err(Error::NotReady(format!("还没有加入房间 {room_id}")));
-        }
+        let room = self.joined(room_id)?;
+        let mut subscriptions = self.subscriptions.lock().await;
+        subscriptions.opened = Some(room_id.to_owned());
+        self.subscribe(&subscriptions).await;
+        drop(subscriptions);
+        ChatRoom::open(room).await
+    }
+
+    /// 一直跟着一个已加入的房间：不管打开着哪个房间，都同步它的完整时间线。不用了调
+    /// [`unwatch_room`](Self::unwatch_room)。
+    pub async fn watch_room(&self, room_id: &RoomId) -> Result<ChatRoom> {
+        let room = self.joined(room_id)?;
+        let mut subscriptions = self.subscriptions.lock().await;
+        subscriptions.watched.insert(room_id.to_owned());
+        self.subscribe(&subscriptions).await;
+        drop(subscriptions);
+        ChatRoom::open(room).await
+    }
+
+    pub async fn unwatch_room(&self, room_id: &RoomId) {
+        let mut subscriptions = self.subscriptions.lock().await;
+        subscriptions.watched.remove(room_id);
+        self.subscribe(&subscriptions).await;
+    }
+
+    /// 调用方拿着锁等它结束：SDK 按最后一次的名单订阅，两次调用不能交错，否则后算的名单可能先生效。
+    async fn subscribe(&self, subscriptions: &RoomSubscriptions) {
+        let rooms: Vec<&RoomId> = subscriptions
+            .opened
+            .iter()
+            .chain(&subscriptions.watched)
+            .map(|room| &**room)
+            .collect();
         self.sync
             .room_list_service()
-            .set_room_subscriptions(&[room_id])
+            .set_room_subscriptions(&rooms)
             .await;
-        ChatRoom::open(room).await
     }
 
     /// 往已加入的房间发一条文字，不打开它：不动 Sliding Sync 的房间订阅，正在看的房间的时间线不受影响。不经发送队列，也没有本地
     /// 回显，发出去之后经同步出现；失败当场返回。
     pub async fn send_text_to(&self, room_id: &RoomId, body: &str) -> Result<()> {
+        let room = self.joined(room_id)?;
+        room.send(RoomMessageEventContent::text_plain(body)).await?;
+        Ok(())
+    }
+
+    fn joined(&self, room_id: &RoomId) -> Result<Room> {
         let room = self.room(room_id)?;
         if room.state() != RoomState::Joined {
             return Err(Error::NotReady(format!("还没有加入房间 {room_id}")));
         }
-        room.send(RoomMessageEventContent::text_plain(body)).await?;
-        Ok(())
+        Ok(room)
     }
 
     fn room(&self, room_id: &RoomId) -> Result<Room> {

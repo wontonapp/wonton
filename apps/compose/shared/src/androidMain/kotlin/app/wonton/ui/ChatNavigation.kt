@@ -19,12 +19,24 @@ class ChatNavigation(openRoom: MutableState<String?>) {
     /** 刚发起了和这个用户的私聊，房间出现后打开。 */
     private var awaitedPeer: String? = null
 
+    /** 要打开的房间，同步到了再打开：点通知冷启动时，会话还没恢复。 */
+    private var awaitedRoom: String? = null
+
+    /** 打开 [roomId]。这时还没有同步到它的话，等它出现。 */
+    fun openWhenJoined(core: ClientCore, roomId: String) {
+        awaitedPeer = null
+        openRoom = null
+        awaitedRoom = roomId
+        onUpdate(core.chat())
+    }
+
     /**
      * 打开和 [userId] 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开；对方的邀请还没接受时停在列表上，
      * 邀请就在那里。返回核心拒绝的原因。
      */
     fun openDirectChat(core: ClientCore, userId: String): String? {
         awaitedPeer = null
+        awaitedRoom = null
         openRoom = null
         // 聊天页不在前台时没有收集，取核心当前的状态。
         val rooms = core.chat().rooms.filter { it.directUserId == userId }
@@ -40,6 +52,11 @@ class ChatNavigation(openRoom: MutableState<String?>) {
     }
 
     fun onUpdate(viewModel: ChatViewModel) {
+        val awaited = awaitedRoom
+        if (awaited != null && viewModel.rooms.any { it.roomId == awaited && it.membership == RoomMembership.JOINED }) {
+            awaitedRoom = null
+            openRoom = awaited
+        }
         val peer = awaitedPeer ?: return
         val room = viewModel.rooms.firstOrNull { it.directUserId == peer && it.membership == RoomMembership.JOINED }
         if (room != null) {

@@ -46,7 +46,7 @@ pub enum PushStatus {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PushNotification {
-    /// 消息所在的房间，点开通知时进入它。同一个房间的通知用它合并。
+    /// 消息所在的房间，点开通知时进入它。同一个房间的通知用它合并，卡片除外：答完要单独撤掉。
     pub room_id: String,
     pub event_id: String,
     /// 发送者的显示名，没有时是用户 ID。

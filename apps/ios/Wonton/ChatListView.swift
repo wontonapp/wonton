@@ -31,7 +31,9 @@ struct ChatListView: View {
             }
             .navigationTitle("聊天")
             .navigationDestination(for: String.self) { roomId in
+                // 提示条把路径直接换成另一个房间时，SwiftUI 会复用这个视图，@State 里还是旧房间的时间线。
                 ChatRoomView(model: model, roomId: roomId, title: title(of: roomId))
+                    .id(roomId)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -65,7 +67,6 @@ struct ChatListView: View {
                 Text(problem.message)
             }
         }
-        .task { await model.observe() }
     }
 
     private var statusText: String? {

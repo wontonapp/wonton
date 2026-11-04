@@ -1,0 +1,153 @@
+//! 一直跟着和核心账号的私聊，把等回答的卡片放进 ViewModel（ADR-0016）：主人在别的房间、别的页面时，壳靠它提示有卡片要回答。
+//!
+//! 打开的房间才有完整的时间线，所以这个私聊单独订阅（`MatrixSession::watch_room`），和主人打开着哪个房间无关。
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
+
+use futures_util::StreamExt;
+use tokio::sync::{mpsc, watch};
+use wonton_matrix::{MatrixSession, OwnedRoomId, TimelineEntry, Vector};
+use wonton_protocol::{ChatViewModel, RoomMembership};
+
+use super::Active;
+use super::confirmation::{Answers, Cards, RoomCards, core_account};
+
+/// 开始跟一个房间时往回看多少条事件。卡片 10 分钟就过期，同一个插件同时等确认的又有上限，这些够了。
+const CARD_LOOKBACK: u16 = 50;
+
+/// 跟着房间列表找出和核心账号的私聊，逐个跟着，把结果汇总进 ViewModel。主人退出过私聊时核心会换一个新的，旧的会从 `m.direct`
+/// 去掉，所以列表里通常只有一个。
+pub(super) async fn follow_cards(
+    view: watch::Sender<ChatViewModel>,
+    session: Arc<MatrixSession>,
+    answers: watch::Sender<Answers>,
+) {
+    let core = core_account(session.user_id()).to_string();
+    let mut rooms = view.subscribe();
+    let (sender, mut updates) = mpsc::unbounded_channel();
+    let mut followed: HashMap<String, Active> = HashMap::new();
+    let mut standing: BTreeMap<String, RoomCards> = BTreeMap::new();
+    loop {
+        let wanted: BTreeSet<String> = rooms
+            .borrow_and_update()
+            .rooms
+            .iter()
+            .filter(|row| {
+                row.membership == RoomMembership::Joined
+                    && row.direct_user_id.as_deref() == Some(core.as_str())
+            })
+            .map(|row| row.room_id.clone())
+            .collect();
+        let gone: Vec<String> = followed
+            .keys()
+            .filter(|room| !wanted.contains(*room))
+            .cloned()
+            .collect();
+        for room in gone {
+            followed.remove(&room);
+            standing.remove(&room);
+            if let Ok(room) = room.parse::<OwnedRoomId>() {
+                session.unwatch_room(&room).await;
+            }
+        }
+        for room in wanted {
+            if followed.contains_key(&room) {
+                continue;
+            }
+            let task = tokio::spawn(follow_room(
+                session.clone(),
+                room.clone(),
+                Cards::new(session.user_id(), answers.subscribe()),
+                sender.clone(),
+            ));
+            followed.insert(room, Active { tasks: vec![task] });
+        }
+        publish(&view, &standing);
+        tokio::select! {
+            changed = rooms.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+            Some((room, cards)) = updates.recv() => {
+                standing.insert(room, cards);
+            }
+        }
+    }
+}
+
+/// 跟着一个房间，卡片的情况每次可能变化时报一次：来了新事件、这台设备的回答有了进展、有卡片到期。
+async fn follow_room(
+    session: Arc<MatrixSession>,
+    room_id: String,
+    mut cards: Cards,
+    out: mpsc::UnboundedSender<(String, RoomCards)>,
+) {
+    let room = match room_id.parse::<OwnedRoomId>() {
+        Ok(room) => session.watch_room(&room).await,
+        Err(error) => {
+            tracing::warn!(room = %room_id, "通知房间的 ID 不合法：{error}");
+            return;
+        }
+    };
+    let room = match room {
+        Ok(room) => room,
+        Err(error) => {
+            tracing::warn!(room = %room_id, "跟不了通知房间，有卡片也提示不了：{error}");
+            return;
+        }
+    };
+    // 房间列表的同步只给最新的事件，订阅也不补更早的：App 关着时来的几张卡片，只有往回翻才看得到最新那张之前的。
+    if let Err(error) = room.paginate_backwards(CARD_LOOKBACK).await {
+        tracing::warn!(room = %room_id, "往回翻通知房间失败，更早的卡片提示不了：{error}");
+    }
+    let (entries, diffs) = room.entries().await;
+    let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
+    let mut diffs = std::pin::pin!(diffs);
+    loop {
+        let shown = cards.view();
+        if out
+            .send((room_id.clone(), shown.standing(&room_id, &entries)))
+            .is_err()
+        {
+            return;
+        }
+        let next_expiry = shown.next_expiry(&entries);
+        tokio::select! {
+            batch = diffs.next() => {
+                let Some(batch) = batch else { return };
+                for diff in batch {
+                    diff.apply(&mut entries);
+                }
+            }
+            changed = cards.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+            () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {}
+        }
+    }
+}
+
+fn publish(view: &watch::Sender<ChatViewModel>, standing: &BTreeMap<String, RoomCards>) {
+    let mut pending: Vec<_> = standing
+        .values()
+        .flat_map(|cards| cards.pending.iter().cloned())
+        .collect();
+    pending.sort_by_key(|(expires_at_ms, _)| *expires_at_ms);
+    let pending: Vec<_> = pending.into_iter().map(|(_, card)| card).collect();
+    let settled: Vec<_> = standing
+        .values()
+        .flat_map(|cards| cards.settled.iter().cloned())
+        .collect();
+    view.send_if_modified(|view| {
+        if view.pending_confirmations == pending && view.settled_confirmations == settled {
+            return false;
+        }
+        view.pending_confirmations.clone_from(&pending);
+        view.settled_confirmations.clone_from(&settled);
+        true
+    });
+}

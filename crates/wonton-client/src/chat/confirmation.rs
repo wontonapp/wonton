@@ -4,17 +4,18 @@
 //! 结果。核心重启后等着的确认没了，卡片不会再被编辑，所以期限由这里来算。手机的时钟快过 10 分钟时，还能回答的卡片会
 //! 显示成过期；这时宁可让这次操作不执行，Bot 会收到“主人没有确认”，可以再发起一次。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::header::CONTENT_TYPE;
+use serde_json::{Map, Value};
 use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{EntryKind, Message, OwnedUserId, TimelineEntry, UserId, Vector};
 use wonton_protocol::{
     Answer, CARD_FIELD, CORE_LOCALPART, ChatFailure, ChatProblem, ConfirmationAnswer,
-    ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, ProxySettings,
-    answer_path,
+    ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, PendingConfirmation,
+    ProxySettings, PushConfirmation, answer_path,
 };
 
 use super::login::{ErrorBody, proxy_url};
@@ -53,6 +54,71 @@ impl Answers {
     }
 }
 
+/// 核心账号：和登录的账号 `own_user` 在同一台服务器上。
+pub(super) fn core_account(own_user: &UserId) -> OwnedUserId {
+    format!("@{CORE_LOCALPART}:{}", own_user.server_name())
+        .parse()
+        .expect("合法用户 ID 的服务器名拼上固定的用户名还是合法用户 ID")
+}
+
+/// 消息是不是一张卡片：核心账号发的，内容读得懂。别人发的同样结构的内容是普通消息。比这个 App 新的核心写的、读不懂的卡片也当
+/// 普通消息：`body` 是写给其他客户端看的纯文本，主人看得到，只是这里答不了。
+fn parse_card(
+    core_account: &UserId,
+    sender: &UserId,
+    custom: &Map<String, Value>,
+) -> Option<ConfirmationCard> {
+    if sender != core_account {
+        return None;
+    }
+    let field = custom.get(CARD_FIELD)?;
+    match serde_json::from_value(field.clone()) {
+        Ok(card) => Some(card),
+        Err(error) => {
+            tracing::warn!("核心发的确认卡片读不懂：{error}");
+            None
+        }
+    }
+}
+
+/// 收到推送的这条消息对应的卡片。卡片的编辑不推送，所以这里只看得到它刚发出时的样子。
+pub(crate) enum PushedCard {
+    /// 不是卡片，或者卡片已经有了结果（核心换了房间重发的那种）。
+    None,
+    Waiting(PushConfirmation),
+    /// 推送来晚了，卡片已经过了期限：不用再提醒。
+    Expired,
+}
+
+pub(crate) fn pushed_card(
+    own_user: &UserId,
+    sender: &UserId,
+    custom: &Map<String, Value>,
+) -> PushedCard {
+    match parse_card(&core_account(own_user), sender, custom) {
+        Some(card) if card.state == ConfirmationState::Pending => {
+            if now_ms() >= card.expires_at_ms {
+                PushedCard::Expired
+            } else {
+                PushedCard::Waiting(PushConfirmation {
+                    id: card.id,
+                    expires_at_ms: card.expires_at_ms,
+                })
+            }
+        }
+        _ => PushedCard::None,
+    }
+}
+
+/// 一个房间里的卡片现在的情况。正在回答的两边都不算：回答成了还是没成，要等结果。
+#[derive(Default)]
+pub(super) struct RoomCards {
+    /// 等主人回答的，和它们的期限。
+    pub(super) pending: Vec<(u64, PendingConfirmation)>,
+    /// 不用再回答的。
+    pub(super) settled: Vec<String>,
+}
+
 /// 一条时间线订阅看卡片要用的东西。
 pub(crate) struct Cards {
     core_account: OwnedUserId,
@@ -62,11 +128,8 @@ pub(crate) struct Cards {
 impl Cards {
     /// `own_user`：登录的账号。核心账号和它在同一台服务器上。
     pub(super) fn new(own_user: &UserId, answers: watch::Receiver<Answers>) -> Self {
-        let core_account = format!("@{CORE_LOCALPART}:{}", own_user.server_name())
-            .parse()
-            .expect("合法用户 ID 的服务器名拼上固定的用户名还是合法用户 ID");
         Self {
-            core_account,
+            core_account: core_account(own_user),
             answers,
         }
     }
@@ -93,20 +156,8 @@ pub(crate) struct CardsView {
 }
 
 impl CardsView {
-    /// `entry` 是不是一张卡片：核心账号发的，内容读得懂。别人发的同样结构的内容是普通消息。比这个 App 新的核心写的、
-    /// 读不懂的卡片也当普通消息显示：`body` 是写给其他客户端看的纯文本，主人看得到，只是这里答不了。
     fn card(&self, message: &Message) -> Option<ConfirmationCard> {
-        if message.sender != self.core_account {
-            return None;
-        }
-        let field = message.custom.get(CARD_FIELD)?;
-        match serde_json::from_value(field.clone()) {
-            Ok(card) => Some(card),
-            Err(error) => {
-                tracing::warn!("核心发的确认卡片读不懂：{error}");
-                None
-            }
-        }
+        parse_card(&self.core_account, &message.sender, &message.custom)
     }
 
     pub(super) fn is_card(&self, entry: &TimelineEntry) -> bool {
@@ -146,6 +197,47 @@ impl CardsView {
             sending,
             problem,
         })
+    }
+
+    /// `room_id` 的时间线里，卡片现在的情况。
+    pub(super) fn standing(&self, room_id: &str, entries: &Vector<TimelineEntry>) -> RoomCards {
+        let mut cards = RoomCards::default();
+        for entry in entries {
+            let EntryKind::Message(message) = &entry.kind else {
+                continue;
+            };
+            let Some(view) = self.view_of(message) else {
+                continue;
+            };
+            let card = view.card;
+            if view.sending.is_some() {
+                continue;
+            }
+            if card.state != ConfirmationState::Pending {
+                cards.settled.push(card.id);
+            } else if !card.choices.is_empty() {
+                cards.pending.push((
+                    card.expires_at_ms,
+                    PendingConfirmation {
+                        id: card.id,
+                        room_id: room_id.to_owned(),
+                        title: card.title,
+                    },
+                ));
+            } else if view.problem.is_some() {
+                // 核心不收回答了，比如主人在另一台设备上答过。没有问题却也没有按钮的，是这个 App 认不得它的回答，
+                // 卡片还等着，只是这里答不了，不催主人。
+                cards.settled.push(card.id);
+            }
+        }
+        // SDK 打开时间线时先订阅更新再读缓存，这之间到的事件会进来两次。一张卡片只算一次。
+        cards.settled.sort();
+        cards.settled.dedup();
+        let mut seen = HashSet::new();
+        cards.pending.retain(|(_, card)| {
+            cards.settled.binary_search(&card.id).is_err() && seen.insert(card.id.clone())
+        });
+        cards
     }
 
     /// 还有多久有一张显示着等回答的卡片到期，到时候显示要变。已经到期的是零，尽快刷新。

@@ -12,7 +12,7 @@ use wonton_protocol::{
 };
 
 use super::PushLink;
-use crate::chat::{failure, summary};
+use crate::chat::{PushedCard, failure, pushed_card, summary};
 
 /// 等 Matrix 会话就绪最多这么久：推送唤醒的进程要先建好本地代理、从本机恢复会话。
 const SESSION_WAIT: Duration = Duration::from_secs(12);
@@ -88,6 +88,11 @@ impl PushLink {
             Ok(Ok(None)) => return Ok(None),
             Ok(Ok(Some(message))) => message,
         };
+        let confirmation = match pushed_card(session.user_id(), &message.sender, &message.custom) {
+            PushedCard::None => None,
+            PushedCard::Waiting(card) => Some(card),
+            PushedCard::Expired => return Ok(None),
+        };
         let content = match message.body {
             MessageBody::Undecryptable => PushContent::Unavailable {
                 reason: ChatFailure::NotReady,
@@ -103,6 +108,7 @@ impl PushLink {
         Ok(Some(PushNotification {
             sender: message.sender_name,
             room_name: message.room_name,
+            confirmation,
             ..notification(content)
         }))
     }

@@ -56,6 +56,8 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
     LaunchedEffect(viewModel) { navigation.onUpdate(viewModel) }
 
     val room = navigation.openRoom
+    // 提示条和通知能在加密页面上打开房间。
+    LaunchedEffect(room) { if (room != null) showingEncryption = false }
     when {
         showingEncryption -> {
             BackHandler { showingEncryption = false }

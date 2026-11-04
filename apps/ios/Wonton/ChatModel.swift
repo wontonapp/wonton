@@ -19,7 +19,7 @@ final class ChatModel {
         viewModel = core.chat()
     }
 
-    /// 在视图的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
+    /// 在主界面的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
         for await viewModel in core.subscribeChat().updates() {
             self.viewModel = viewModel
@@ -38,8 +38,6 @@ final class ChatModel {
     /// 打开和 `userId` 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开；对方的邀请还没接受时停在列表上，
     /// 邀请就在那里。
     func openDirectChat(with userId: String) {
-        // 聊天页不在前台时订阅停着，先取核心当前的状态。
-        viewModel = core.chat()
         awaitedPeer = nil
         path = []
         let rooms = viewModel.rooms.filter { $0.directUserId == userId }
