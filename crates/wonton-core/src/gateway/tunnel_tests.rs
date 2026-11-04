@@ -470,6 +470,12 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
     assert_eq!(status, StatusCode::NOT_FOUND, "{text}");
     assert_eq!(header(&headers, "x-wonton-error"), Some("not_installed"));
 
+    // 升级也在 App 里（ADR-0025）。这个核心没接上升级，过了鉴权才回 503。
+    let (status, _, text) = phone
+        .send(Method::GET, CORE, "/_wonton/api/core/upgrade", &[])
+        .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{text}");
+
     let plugin_page = format!("http://{PLUGIN}:{PORT}");
     for (method, route) in [
         (Method::GET, path),
@@ -485,6 +491,10 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         ),
         (Method::GET, "/_wonton/api/egress-proxy"),
         (Method::PUT, "/_wonton/api/egress-proxy"),
+        (Method::GET, "/_wonton/api/core/upgrade"),
+        (Method::POST, "/_wonton/api/core/upgrade"),
+        (Method::DELETE, "/_wonton/api/core/upgrade"),
+        (Method::POST, "/_wonton/api/core/upgrade/check"),
         (Method::PUT, "/_wonton/api/plugins/app.whoami/lan-webui"),
         (Method::POST, "/_wonton/api/plugins/app.whoami/upgrade"),
         (

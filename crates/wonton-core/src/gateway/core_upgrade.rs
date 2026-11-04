@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum::response::{IntoResponse, Response};
 use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CoreUpgradeCheckRequest, CoreUpgradeRequest};
 
-use super::Gateway;
-use super::api::{denied, error_response};
+use super::api::{error_response, plugin_denied};
+use super::{Gateway, TunnelPeer};
 use crate::upgrade::service::{UpgradeError, Upgrades};
 
 fn failure(error: &UpgradeError) -> Response {
@@ -27,8 +27,12 @@ fn failure(error: &UpgradeError) -> Response {
 }
 
 /// 主人的请求才放行，而且接上了升级。
-fn upgrades(gateway: &Gateway, headers: &HeaderMap) -> Result<Arc<Upgrades>, Box<Response>> {
-    if let Some(denied) = denied(gateway, headers) {
+fn upgrades(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+) -> Result<Arc<Upgrades>, Box<Response>> {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return Err(Box::new(denied));
     }
     gateway.upgrades.clone().ok_or_else(|| {
@@ -58,8 +62,12 @@ async fn respond(upgrades: &Upgrades, status: StatusCode) -> Response {
     }
 }
 
-pub async fn status(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    match upgrades(&gateway, &headers) {
+pub async fn status(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    match upgrades(&gateway, peer, &headers) {
         Ok(upgrades) => respond(&upgrades, StatusCode::OK).await,
         Err(response) => *response,
     }
@@ -68,10 +76,11 @@ pub async fn status(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
 /// 马上查一次：结果在后台出来，有没结束的升级时不查，直接回当前状态。
 pub async fn check(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let upgrades = match upgrades(&gateway, &headers) {
+    let upgrades = match upgrades(&gateway, peer, &headers) {
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
@@ -85,10 +94,11 @@ pub async fn check(
 
 pub async fn start(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let upgrades = match upgrades(&gateway, &headers) {
+    let upgrades = match upgrades(&gateway, peer, &headers) {
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
@@ -102,8 +112,12 @@ pub async fn start(
     }
 }
 
-pub async fn cancel(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    let upgrades = match upgrades(&gateway, &headers) {
+pub async fn cancel(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    let upgrades = match upgrades(&gateway, peer, &headers) {
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };

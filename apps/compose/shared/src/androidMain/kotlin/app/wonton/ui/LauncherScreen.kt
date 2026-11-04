@@ -79,12 +79,23 @@ fun LauncherScreen(
             WontonRootBar("应用") {
                 // 连不上时换成警告；正在连时变浅。
                 val colors = WontonTheme.colors
-                when (home.status) {
-                    is HomeStatus.Disconnected ->
-                        WontonIconButton(WontonIcon.Warning, "连接", onConnection, colors.danger.toColor())
-                    is HomeStatus.Connecting ->
-                        WontonIconButton(WontonIcon.Connection, "连接", onConnection, colors.textSecondary.toColor())
-                    else -> WontonIconButton(WontonIcon.Connection, "连接", onConnection)
+                Box {
+                    when (home.status) {
+                        is HomeStatus.Disconnected ->
+                            WontonIconButton(WontonIcon.Warning, "连接", onConnection, colors.danger.toColor())
+                        is HomeStatus.Connecting ->
+                            WontonIconButton(WontonIcon.Connection, "连接", onConnection, colors.textSecondary.toColor())
+                        else -> WontonIconButton(WontonIcon.Connection, "连接", onConnection)
+                    }
+                    if (plugins.viewModel.coreUpgrade.isPrompting()) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd)
+                                .padding(WontonTheme.spacing.s8)
+                                .size(12.dp)
+                                .background(colors.primary.toColor(), CircleShape)
+                                .border(2.dp, colors.canvas.toColor(), CircleShape),
+                        )
+                    }
                 }
             }
         },

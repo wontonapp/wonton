@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.protocol.CoreUpgradeViewModel
 import app.wonton.protocol.HomeFailure
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
@@ -52,8 +53,9 @@ fun HomeRoute(
         page == HomePage.PAIRING ->
             PairingPage("重新配对", core, viewModel.pairing, onBack = { onPage(HomePage.CONNECTION) })
         page == HomePage.INVITE -> InvitePage(core, viewModel, onBack = { onPage(HomePage.CONNECTION) })
-        page == HomePage.CONNECTION -> ConnectionPage(viewModel, onNavigate = onPage)
+        page == HomePage.CONNECTION -> ConnectionPage(viewModel, plugins, onNavigate = onPage)
         page == HomePage.EGRESS -> EgressPage(plugins, onBack = { onPage(HomePage.CONNECTION) })
+        page == HomePage.CORE_UPGRADE -> CoreUpgradePage(plugins, onBack = { onPage(HomePage.CONNECTION) })
         else -> PluginPages(plugins, navigation) {
             if (page == HomePage.STORE) {
                 StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
@@ -72,7 +74,7 @@ fun HomeRoute(
     }
 }
 
-enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, EGRESS, STORE }
+enum class HomePage { LAUNCHER, CONNECTION, INVITE, PAIRING, EGRESS, CORE_UPGRADE, STORE }
 
 @Composable
 private fun InvitePage(core: ClientCore, viewModel: HomeViewModel, onBack: () -> Unit) {
@@ -99,7 +101,7 @@ private fun PairingPage(
 
 /** 和家里服务器的连接，以及添加设备、重新配对。 */
 @Composable
-private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> Unit) {
+private fun ConnectionPage(viewModel: HomeViewModel, plugins: PluginsState, onNavigate: (HomePage) -> Unit) {
     WontonScreen(bar = { WontonPushedBar("连接", { onNavigate(HomePage.LAUNCHER) }) }) {
         Column(
             Modifier.fillMaxSize().padding(WontonTheme.spacing.pageInset),
@@ -114,6 +116,13 @@ private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> U
             }
             WontonGroup {
                 WontonRow("出网代理", showsForward = true, onClick = { onNavigate(HomePage.EGRESS) })
+                WontonSeparator()
+                WontonRow(
+                    "升级服务器",
+                    value = "有新版本".takeIf { plugins.viewModel.coreUpgrade.isPrompting() },
+                    showsForward = true,
+                    onClick = { onNavigate(HomePage.CORE_UPGRADE) },
+                )
             }
             WontonGroup {
                 WontonRow("添加设备", showsForward = true, onClick = { onNavigate(HomePage.INVITE) })
@@ -123,6 +132,9 @@ private fun ConnectionPage(viewModel: HomeViewModel, onNavigate: (HomePage) -> U
         }
     }
 }
+
+/** 有新版本，主人没跳过，也没在升级。 */
+fun CoreUpgradeViewModel.isPrompting() = offer != null && !offerSkipped
 
 val HomeStatus.text: String
     get() = when (this) {

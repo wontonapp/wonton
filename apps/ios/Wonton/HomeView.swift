@@ -12,12 +12,12 @@ struct HomeView: View {
     let openCardRoom: (String) -> Void
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
+    @Environment(\.wontonColors) private var colors
     @State private var path = NavigationPath()
     @State private var isShowingPage = false
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
     @State private var menuPlugin: InstalledPlugin?
-    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -28,7 +28,14 @@ struct HomeView: View {
                 } else {
                     launcher
                         .wontonRootScreen("应用") {
-                            connectionLink
+                            connectionLink.overlay(alignment: .topTrailing) {
+                                if plugins.viewModel.coreUpgrade.isPrompting {
+                                    Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                                        .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
+                                        .padding(WontonTheme.spacing.s8)
+                                        .allowsHitTesting(false)
+                                }
+                            }
                         }
                 }
             }
@@ -36,7 +43,7 @@ struct HomeView: View {
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .connection:
-                    ConnectionView(model: model)
+                    ConnectionView(model: model, plugins: plugins)
                 case .invite:
                     InviteView(model: model)
                 case .pairing:
@@ -44,6 +51,8 @@ struct HomeView: View {
                         .wontonPushedScreen("重新配对")
                 case .egress:
                     EgressSettingsView(model: plugins)
+                case .coreUpgrade:
+                    CoreUpgradeView(model: plugins)
                 case .store:
                     StoreView(model: plugins, open: open)
                 }
@@ -208,6 +217,7 @@ private enum HomeRoute: Hashable {
     case invite
     case pairing
     case egress
+    case coreUpgrade
     case store
 }
 
@@ -292,6 +302,7 @@ private struct LauncherIcon: View {
 /// 和家里服务器的连接，以及添加设备、重新配对。
 private struct ConnectionView: View {
     let model: HomeModel
+    let plugins: PluginsModel
 
     var body: some View {
         ScrollView {
@@ -306,6 +317,14 @@ private struct ConnectionView: View {
                 WontonGroup {
                     NavigationLink(value: HomeRoute.egress) {
                         WontonRow(title: "出网代理", showsForward: true)
+                    }
+                    WontonSeparator()
+                    NavigationLink(value: HomeRoute.coreUpgrade) {
+                        WontonRow(
+                            title: "升级服务器",
+                            value: plugins.viewModel.coreUpgrade.isPrompting ? "有新版本" : nil,
+                            showsForward: true
+                        )
                     }
                 }
                 .buttonStyle(.plain)
@@ -324,6 +343,11 @@ private struct ConnectionView: View {
         }
         .wontonPushedScreen("连接")
     }
+}
+
+extension CoreUpgradeViewModel {
+    /// 有新版本，主人没跳过，也没在升级。
+    fileprivate var isPrompting: Bool { offer != nil && !offerSkipped }
 }
 
 extension HomeStatus {

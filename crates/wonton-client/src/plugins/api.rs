@@ -8,7 +8,10 @@ use reqwest::{Client, Method};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use url::Url;
-use wonton_protocol::{CoreError, PluginFailure, PluginImage, PluginProblem};
+use wonton_protocol::{
+    CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
+    PluginImage, PluginProblem,
+};
 
 use crate::chat::proxy_url;
 
@@ -76,13 +79,13 @@ impl CoreApi {
         url
     }
 
-    async fn send(
+    async fn exchange(
         &self,
         method: Method,
         url: Url,
         body: Option<Vec<u8>>,
         timeout: Duration,
-    ) -> Result<Vec<u8>, PluginProblem> {
+    ) -> Result<(u16, Vec<u8>), PluginProblem> {
         let mut request = self.client.request(method, url).timeout(timeout);
         if !self.languages.is_empty() {
             request = request.header(ACCEPT_LANGUAGE, &self.languages);
@@ -93,10 +96,45 @@ impl CoreApi {
         let response = request.send().await.map_err(|e| transport(&e, timeout))?;
         let status = response.status().as_u16();
         let bytes = response.bytes().await.map_err(|e| transport(&e, timeout))?;
+        Ok((status, bytes.to_vec()))
+    }
+
+    async fn send(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<Vec<u8>>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PluginProblem> {
+        let (status, bytes) = self.exchange(method, url, body, timeout).await?;
         if status >= 400 {
             return Err(core_error(status, &bytes));
         }
-        Ok(bytes.to_vec())
+        Ok(bytes)
+    }
+
+    /// 升级的接口都回 [`CoreUpgradeStatus`]；被拒绝的原因（`changed`、`busy`……）比插件的失败分类细，要原样保留。
+    pub(super) async fn core_upgrade(
+        &self,
+        method: Method,
+        segments: &[&str],
+        body: Option<Vec<u8>>,
+        timeout: Duration,
+    ) -> Result<CoreUpgradeStatus, CoreUpgradeProblem> {
+        let (status, bytes) = self
+            .exchange(method, self.url(segments, &[]), body, timeout)
+            .await
+            .map_err(|problem| CoreUpgradeProblem {
+                reason: CoreUpgradeFailure::TransportUnavailable,
+                message: problem.message,
+            })?;
+        if status >= 400 {
+            return Err(upgrade_error(status, &bytes));
+        }
+        serde_json::from_slice(&bytes).map_err(|e| CoreUpgradeProblem {
+            reason: CoreUpgradeFailure::Protocol,
+            message: format!("家里的服务器给的内容格式不对：{e}"),
+        })
     }
 
     pub(super) async fn get<T: DeserializeOwned>(
@@ -254,6 +292,32 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         |detail| detail.message,
     );
     PluginProblem { reason, message }
+}
+
+fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
+    let detail = serde_json::from_slice::<ErrorBody>(body)
+        .ok()
+        .map(|body| body.error);
+    let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
+        Some("unauthenticated" | "cross_site") => CoreUpgradeFailure::Unauthorized,
+        Some("changed") => CoreUpgradeFailure::Changed,
+        Some("not_ready") => CoreUpgradeFailure::NotReady,
+        Some("busy") => CoreUpgradeFailure::Busy,
+        Some("too_late") => CoreUpgradeFailure::TooLate,
+        Some(_) if status >= 500 => CoreUpgradeFailure::Upstream,
+        Some(_) => CoreUpgradeFailure::Protocol,
+        None => match status {
+            401 | 403 => CoreUpgradeFailure::Unauthorized,
+            502 => CoreUpgradeFailure::TransportUnavailable,
+            500..=599 => CoreUpgradeFailure::Upstream,
+            _ => CoreUpgradeFailure::Protocol,
+        },
+    };
+    let message = detail.map_or_else(
+        || format!("家里的服务器回了 {status}"),
+        |detail| detail.message,
+    );
+    CoreUpgradeProblem { reason, message }
 }
 
 /// 直接返回结果的调用（详情、预览、图片）按 [`CoreError`] 的分类失败，核心写的说明原样带上。

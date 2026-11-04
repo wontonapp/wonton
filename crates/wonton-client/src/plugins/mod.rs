@@ -3,6 +3,7 @@
 
 mod api;
 mod cache;
+mod core_upgrade;
 mod egress;
 mod tasks;
 
@@ -15,9 +16,10 @@ use reqwest::Client;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    CoreError, EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins,
-    LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginState,
-    PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage, StoreItem, StoreListing,
+    CoreError, CoreUpgradeViewModel, EgressViewModel, HomeStatus, InstallPreview, InstallSource,
+    InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem,
+    PluginState, PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage, StoreItem,
+    StoreListing,
 };
 
 use crate::home::HomeLink;
@@ -54,6 +56,8 @@ pub(crate) struct PluginsLink {
     generation: AtomicU64,
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
     egress_epoch: AtomicU64,
+    upgrade: Mutex<core_upgrade::UpgradeLocal>,
+    data_dir: PathBuf,
 }
 
 impl PluginsLink {
@@ -80,7 +84,10 @@ impl PluginsLink {
             installed_cache,
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
+            upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
+            data_dir: data_dir.to_owned(),
         });
+        link.restore_core_upgrade();
         runtime.spawn(follow_home(Arc::downgrade(&link)));
         link
     }
@@ -121,6 +128,7 @@ impl PluginsLink {
 
     pub(crate) fn foregrounded(self: &Arc<Self>) {
         self.refresh_installed();
+        self.fetch_core_upgrade();
     }
 
     /// 隧道正在建：这时不用发请求，连上后 [`follow_home`] 接着取。
@@ -238,6 +246,7 @@ impl PluginsLink {
             view.store = None;
             view.problem = None;
             view.egress = EgressViewModel::default();
+            view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;
             view.tasks
@@ -246,6 +255,7 @@ impl PluginsLink {
                 task.state = tasks::server_changed();
             }
         });
+        self.forget_core_upgrade();
     }
 
     fn is_current(&self, generation: u64) -> bool {
@@ -530,6 +540,7 @@ async fn follow_home(link: Weak<PluginsLink>) {
         }
         if now_connected && !connected {
             link.refresh_installed();
+            link.fetch_core_upgrade();
             if link.store_wanted.load(Ordering::Relaxed) {
                 link.refresh_store(false);
             }

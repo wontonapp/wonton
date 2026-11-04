@@ -133,9 +133,10 @@ impl ClientCore {
             | Action::SendFileToDevices { .. }
             | Action::GrantFileToRoom { .. }
             | Action::DismissFileProblem) => self.files.dispatch(action),
-            Action::RefreshCoreUpgrade { .. }
+            action @ (Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
-            | Action::CancelCoreUpgrade => Err(core_upgrade_unsupported()),
+            | Action::CancelCoreUpgrade
+            | Action::SkipCoreUpgrade { .. }) => self.plugins.dispatch_core_upgrade(action),
             Action::SetAccentColor { color } => self.appearance.set_accent(color),
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
@@ -435,12 +436,6 @@ impl ClientCore {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
-    }
-}
-
-fn core_upgrade_unsupported() -> CoreError {
-    CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持升级家里的服务器".into(),
     }
 }
 

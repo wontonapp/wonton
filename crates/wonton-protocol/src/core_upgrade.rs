@@ -220,25 +220,30 @@ pub struct CoreUpgradeCheckRequest {
 }
 
 /// 客户端核心给壳的升级页。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct CoreUpgradeViewModel {
     /// 最后一次从家里的服务器取到的状态；还没取到过时为空。
     pub status: Option<CoreUpgradeStatus>,
     /// 壳显示什么。只有这里说 [`CoreUpgradeStage::Completed`] 才算升级成功。
     pub stage: CoreUpgradeStage,
-    /// 正在取状态或者查新版本。
+    /// 现在能升级到的版本。在升级时为空，这时 `status.check` 还是发起前的结果。
+    pub offer: Option<CoreUpgradeOffer>,
+    /// 主人在这台设备上跳过了 `offer` 这个版本：不再提示，想升还能升。渠道上出了别的版本时重新提示。
+    pub offer_skipped: bool,
+    /// 主人点了“检查”，结果还没出来。
     pub refreshing: bool,
     /// 最近一次操作失败的原因，这时 `status` 是上次取到的；下一次操作成功后清空。
     pub problem: Option<CoreUpgradeProblem>,
 }
 
 /// 升级走到哪了，ADR-0025 的“App 显示”。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "stage", rename_all = "snake_case")]
 pub enum CoreUpgradeStage {
     /// 没有在升级，也没有上次升级的结果。
+    #[default]
     Idle,
     /// 主人点了升级，请求还没得到回应。
     Requesting,

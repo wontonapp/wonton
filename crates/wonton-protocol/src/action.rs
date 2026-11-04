@@ -162,6 +162,8 @@ pub enum Action {
     StartCoreUpgrade { digest: String },
     /// 请求取消，只在 [`CoreUpgradePhase::Pulling`](crate::CoreUpgradePhase::Pulling) 阶段有效。
     CancelCoreUpgrade,
+    /// 这台设备不再提示这个版本。`digest` 是 [`CoreUpgradeOffer::digest`](crate::CoreUpgradeOffer::digest)。
+    SkipCoreUpgrade { digest: String },
 
     // 外观（ADR-0026、ADR-0028）。设置存在本机，写不了时返回 `Storage`，外观不变。
     /// 把重点色换成这个颜色。任何颜色都可以，读字的颜色由核心推导。

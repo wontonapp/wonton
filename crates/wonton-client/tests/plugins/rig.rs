@@ -38,6 +38,8 @@ pub struct CoreState {
     lists: Mutex<VecDeque<Vec<InstalledPlugin>>>,
     /// 某个方法和路径下一次的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
     canned: Mutex<HashMap<(Method, String), Canned>>,
+    /// 用完预设的回应后，某个方法和路径一直用的回应。
+    standing: Mutex<HashMap<(Method, String), Canned>>,
     seen: Mutex<Vec<Seen>>,
 }
 
@@ -53,6 +55,13 @@ pub struct Seen {
 impl CoreState {
     pub fn answer(&self, method: Method, path: &str, canned: Canned) {
         self.canned
+            .lock()
+            .unwrap()
+            .insert((method, path.to_owned()), canned);
+    }
+
+    pub fn answer_always(&self, method: Method, path: &str, canned: Canned) {
+        self.standing
             .lock()
             .unwrap()
             .insert((method, path.to_owned()), canned);
@@ -98,7 +107,14 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
         .canned
         .lock()
         .unwrap()
-        .remove(&(parts.method.clone(), parts.uri.path().to_owned()));
+        .remove(&(parts.method.clone(), parts.uri.path().to_owned()))
+        .or_else(|| {
+            core.standing
+                .lock()
+                .unwrap()
+                .get(&(parts.method.clone(), parts.uri.path().to_owned()))
+                .cloned()
+        });
     if let Some(Canned(status, body)) = canned {
         return Response::builder()
             .status(status)

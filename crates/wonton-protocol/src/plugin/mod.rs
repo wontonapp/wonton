@@ -11,7 +11,7 @@ pub use tool_policy::{BotSwitch, ToolAccess, ToolPolicyEntry, ToolPolicyView};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CardLine, EgressViewModel, LanPort, PluginTab, TabDisplay};
+use crate::{CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginTab, TabDisplay};
 
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -488,6 +488,8 @@ pub struct PluginsViewModel {
     pub tasks: Vec<PluginTask>,
     /// 出网代理的设置页。
     pub egress: EgressViewModel,
+    /// 核心的升级页。
+    pub core_upgrade: CoreUpgradeViewModel,
     /// 家里服务器存数据的那块盘；还没取到、或者连不上时为空，这时不知道还剩多少。
     pub storage: Option<StorageUsage>,
     /// 连着家里的服务器却查不到磁盘空间的原因。

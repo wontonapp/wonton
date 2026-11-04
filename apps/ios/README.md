@@ -10,7 +10,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
   把核心要来的配对码画成二维码。`HomeView` 是底栏的“应用”页，配上以后按图标列出插件，最后一格进商店，连接和“添加设备”在右上角的“连接”里；`StoreView`、
-  `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsView` 是底栏的设置页（ADR-0028）。`EgressSettingsView` 是“连接”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。
+  `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsView` 是底栏的设置页（ADR-0028）。`EgressSettingsView` 是“连接”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“连接”里的升级服务器（ADR-0025）。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。
