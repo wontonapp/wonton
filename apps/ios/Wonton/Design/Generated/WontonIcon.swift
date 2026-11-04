@@ -28,6 +28,7 @@ enum WontonIcon: String {
     case downloadFill
     case error
     case errorFill
+    case eye
     case file
     case folder
     case folderFill
@@ -61,6 +62,7 @@ enum WontonIcon: String {
     case server
     case settings
     case settingsFill
+    case share
     case shield
     case shieldFill
     case star
@@ -70,6 +72,7 @@ enum WontonIcon: String {
     case tasks
     case tasksFill
     case trash
+    case upload
     case warning
     case warningFill
     case warningCircle

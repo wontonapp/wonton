@@ -25,8 +25,11 @@ struct ChatRoomView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let failure = timeline.failure {
-                ContentUnavailableView("打不开这个聊天", systemImage: "exclamationmark.bubble",
-                                       description: Text(failure))
+                VStack {
+                    WontonNotice(icon: .warning, title: "打不开这个聊天", lines: [failure])
+                }
+                .padding(WontonTheme.spacing.pageInset)
+                .frame(maxHeight: .infinity)
             } else {
                 messages
             }
@@ -36,8 +39,7 @@ struct ChatRoomView: View {
         .modifier(RoomPresentations(presenter: presenter))
         .environment(model.files)
         .environment(presenter)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
+        .wontonPushedScreen(title)
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task { await timeline.observe() }
@@ -84,15 +86,18 @@ struct ChatRoomView: View {
                 // 进房间时列表从头排起，这一行一定会出现。
                 .background(EnclosingScrollView { pin.attach($0) })
                 .timelineListRow()
-                ForEach(timeline.items, id: \.id) { item in
+                ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
+                    let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
+                    let joinsNext = index + 1 < timeline.items.count && item.joins(timeline.items[index + 1])
                     TimelineRow(
                         item: item, core: model.core, showsSender: !isDirect,
+                        joinsPrevious: joinsPrevious, joinsNext: joinsNext,
                         retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
                         cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
                         answer: { model.send(.answerConfirmation(id: $0, answer: $1)) }
                     )
                     .id(item.id)
-                    .timelineListRow()
+                    .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
                 }
             }
             .listStyle(.plain)
@@ -129,27 +134,29 @@ struct ChatRoomView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(alignment: .bottom, spacing: 0) {
             PhotosPicker(selection: $photo, matching: .images) {
-                Image(systemName: "photo").font(.title3)
+                WontonIcon.image.view()
+                    .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("发照片")
-            Button { isPickingFiles = true } label: {
-                Image(systemName: "paperclip").font(.title3)
-            }
-            .accessibilityLabel("发文件")
+            WontonIconButton(icon: .attach, label: "发文件") { isPickingFiles = true }
             TextField("消息", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
-                .textFieldStyle(.roundedBorder)
-            Button("发送") {
+                .textFieldStyle(.plain)
+                .wontonField()
+                .padding(.horizontal, WontonTheme.spacing.s4)
+            SendButton(isEnabled: !isEmpty) {
                 pin.pin()
                 model.send(.sendText(roomId: roomId, body: draft))
                 draft = ""
             }
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding(8)
-        .background(.bar)
+        .padding(WontonTheme.spacing.s8)
+        .overlay(alignment: .top) { ComposerEdge() }
     }
 
     /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
@@ -171,13 +178,54 @@ struct ChatRoomView: View {
     }
 }
 
+private struct ComposerEdge: View {
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
+    }
+}
+
+private struct SendButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Button(action: action) {
+            WontonIcon.send.view(size: WontonTheme.size.iconSmall)
+                .foregroundStyle(Color(isEnabled ? colors.onPrimary : colors.textSecondary))
+                .frame(width: WontonTheme.size.sendButton, height: WontonTheme.size.sendButton)
+                .background(Circle().fill(Color(isEnabled ? colors.primary : colors.surfaceSubtle)))
+                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel("发送")
+    }
+}
+
+private extension TimelineItem {
+    /// 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。
+    func joins(_ other: TimelineItem) -> Bool {
+        guard case let .message(mine) = content, case let .message(theirs) = other.content else { return false }
+        return mine.senderId == theirs.senderId
+    }
+}
+
 private extension View {
-    func timelineListRow() -> some View {
+    func timelineListRow(joinsPrevious: Bool = false, joinsNext: Bool = false) -> some View {
         // 默认样式的按钮放在 List 的行里，点这一行任何地方都会触发。
         buttonStyle(.borderless)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(
+                top: joinsPrevious ? 1 : WontonTheme.spacing.s4,
+                leading: WontonTheme.spacing.pageInset,
+                bottom: joinsNext ? 1 : WontonTheme.spacing.s4,
+                trailing: WontonTheme.spacing.pageInset
+            ))
     }
 }
 

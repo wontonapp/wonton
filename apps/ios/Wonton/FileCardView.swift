@@ -7,7 +7,7 @@ struct TextMessageBody: View {
     let files: [FileId]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             if !text.isEmpty { Text(text).textSelection(.enabled) }
             ForEach(files, id: \.self) { FileCardView(id: $0) }
         }
@@ -20,15 +20,22 @@ private struct FileCardView: View {
     @State private var card = FileCard.loading
     @State private var thumbnail: UIImage?
     @State private var loads = 0
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Group {
             switch card {
             case .loading:
-                ProgressView().frame(width: 44, height: 44)
+                ProgressView().frame(width: WontonTheme.size.fileThumbnail, height: WontonTheme.size.fileThumbnail)
             case let .failed(_, message):
                 Button { loads += 1 } label: {
-                    Label(message, systemImage: "exclamationmark.triangle").font(.footnote)
+                    Label {
+                        Text(message)
+                    } icon: {
+                        WontonIcon.warning.view(size: WontonTheme.size.iconSmall)
+                    }
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.danger))
                 }
                 .buttonStyle(.plain)
             case let .ready(info):
@@ -53,27 +60,30 @@ private struct ReadyFileCard: View {
     let thumbnail: UIImage?
     @Environment(FilesModel.self) private var files
     @Environment(RoomPresenter.self) private var presenter
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         let actions = files.actions(for: info)
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             Button { presenter.perform(actions.tap, on: info, after: .preview) } label: { summary(actions) }
                 .buttonStyle(.plain)
             if let elsewhere = actions.openElsewhere {
                 Button("用其他 App 打开") { presenter.perform(elsewhere, on: info, after: .openElsewhere) }
-                    .font(.caption)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .underline()
+                    .buttonStyle(.plain)
                     .disabled(elsewhere == .wait)
             }
         }
     }
 
     private func summary(_ actions: FileCardActions) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WontonTheme.spacing.s12) {
             icon(playable: actions.tap == .play)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(info.name).font(.subheadline).lineLimit(2)
-                if let size = info.size { Text(FileSizes.text(size)).font(.caption2).foregroundStyle(.secondary) }
-                if let source = sourceText { Text(source).font(.caption2).foregroundStyle(.secondary) }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(info.name).wontonText(WontonTheme.typography.supporting).lineLimit(2)
+                if let size = info.size { small(FileSizes.text(size)) }
+                if let source = sourceText { small(source) }
                 progress(actions.download)
             }
             .frame(maxWidth: 200, alignment: .leading)
@@ -86,12 +96,11 @@ private struct ReadyFileCard: View {
             Image(uiImage: thumbnail)
                 .resizable()
                 .scaledToFill()
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: WontonTheme.size.fileThumbnail, height: WontonTheme.size.fileThumbnail)
+                .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
         } else {
-            Image(systemName: playable ? "play.circle" : "doc")
-                .font(.title2)
-                .frame(width: 44, height: 44)
+            (playable ? WontonIcon.play : WontonIcon.file).view()
+                .frame(width: WontonTheme.size.fileThumbnail, height: WontonTheme.size.fileThumbnail)
         }
     }
 
@@ -101,15 +110,23 @@ private struct ReadyFileCard: View {
             if let download { ProgressView(value: FileSizes.fraction(download)) }
         case .paused:
             if let because = download?.pausedBecause {
-                Text("暂停：\(because)").font(.caption2).foregroundStyle(.red)
+                problem("暂停：\(because)")
             } else {
-                Text("等连接恢复后接着下载").font(.caption2).foregroundStyle(.secondary)
+                small("等连接恢复后接着下载")
             }
         case let .failed(_, message):
-            Text(message).font(.caption2).foregroundStyle(.red)
+            problem(message)
         case .done, .linkNotSent, nil:
             EmptyView()
         }
+    }
+
+    private func small(_ text: String) -> some View {
+        Text(text).wontonText(WontonTheme.typography.caption).opacity(WontonTheme.ratio.secondaryContent)
+    }
+
+    private func problem(_ text: String) -> some View {
+        Text(text).wontonText(WontonTheme.typography.caption).foregroundStyle(Color(colors.danger))
     }
 
     private var sourceText: String? {

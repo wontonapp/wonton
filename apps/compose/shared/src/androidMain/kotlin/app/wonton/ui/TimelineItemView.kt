@@ -1,7 +1,5 @@
 package app.wonton.ui
 
-import android.graphics.ImageDecoder
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,90 +7,95 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Answer
-import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
-import app.wonton.protocol.CoreException
-import app.wonton.protocol.ImageContent
-import app.wonton.protocol.MediaHandle
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
-import java.io.IOException
-import java.nio.ByteBuffer
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.LockKey
+import app.wonton.ui.icons.WarningCircle
+import app.wonton.ui.icons.WontonIcon
 import java.text.DateFormat
 import java.util.Date
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
- * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`onRetry`、`onCancel` 处理发送失败的这一条，
- * `onAnswer` 回答确认卡片。
+ * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：和上一条、下一条是
+ * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onAnswer` 回答确认卡片。
  */
 @Composable
 fun TimelineItemView(
     item: TimelineItem,
     core: ClientCore,
     showsSender: Boolean,
+    joinsPrevious: Boolean,
+    joinsNext: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onAnswer: (String, Answer) -> Unit,
 ) {
     when (val content = item.content) {
-        is TimelineContent.Message -> MessageBubble(content.message, core, showsSender, onRetry, onCancel, onAnswer)
+        is TimelineContent.Message -> MessageBubble(
+            content.message,
+            core,
+            showsSender && !joinsPrevious,
+            joinsPrevious,
+            joinsNext,
+            onRetry,
+            onCancel,
+            onAnswer,
+        )
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.DateDivider ->
             CenteredNote(DateFormat.getDateInstance(DateFormat.FULL).format(Date(content.timestampMs.toLong())))
-        TimelineContent.ReadMarker -> Row(verticalAlignment = Alignment.CenterVertically) {
-            HorizontalDivider(Modifier.weight(1f))
+        TimelineContent.ReadMarker -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        ) {
+            NoteEdge()
             Text(
                 "以下是新消息",
-                Modifier.padding(horizontal = 8.dp),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.labelSmall,
+                style = WontonTheme.typography.caption,
+                color = WontonTheme.colors.accentInk.toColor(),
             )
-            HorizontalDivider(Modifier.weight(1f))
+            NoteEdge()
         }
         TimelineContent.TimelineStart -> CenteredNote("以上是聊天的开头")
     }
+}
+
+@Composable
+private fun RowScope.NoteEdge() {
+    Box(Modifier.weight(1f).height(WontonTheme.size.hairline).background(WontonTheme.colors.separator.toColor()))
 }
 
 @Composable
@@ -100,9 +103,22 @@ private fun CenteredNote(text: String) {
     Text(
         text,
         Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = WontonTheme.typography.caption.copy(textAlign = TextAlign.Center),
+        color = WontonTheme.colors.textSecondary.toColor(),
+    )
+}
+
+/** 自己的气泡靠右，相接的是右边的角；别人的相反。 */
+private fun bubbleShape(isOwn: Boolean, joinsPrevious: Boolean, joinsNext: Boolean): Shape {
+    val full = WontonTheme.radii.bubble
+    val joined = WontonTheme.radii.bubbleJoined
+    val top = if (joinsPrevious) joined else full
+    val bottom = if (joinsNext) joined else full
+    return RoundedCornerShape(
+        topStart = if (isOwn) full else top,
+        topEnd = if (isOwn) top else full,
+        bottomEnd = if (isOwn) bottom else full,
+        bottomStart = if (isOwn) full else bottom,
     )
 }
 
@@ -111,39 +127,64 @@ private fun MessageBubble(
     message: TimelineMessage,
     core: ClientCore,
     showsSender: Boolean,
+    joinsPrevious: Boolean,
+    joinsNext: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onAnswer: (String, Answer) -> Unit,
 ) {
-    val alignment = if (message.isOwn) Alignment.End else Alignment.Start
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
-        if (showsSender && !message.isOwn) {
-            Text(message.senderName, style = MaterialTheme.typography.labelSmall)
+    val colors = WontonTheme.colors
+    val isOwn = message.isOwn
+    val gutter = WontonTheme.spacing.s48
+    Column(
+        Modifier.fillMaxWidth().padding(start = if (isOwn) gutter else 0.dp, end = if (isOwn) 0.dp else gutter),
+        horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+    ) {
+        if (showsSender && !isOwn) {
+            Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
         }
-        val colors = WontonTheme.colors
-        val background = if (message.isOwn) colors.accentFill else colors.surfaceSubtle
-        val border = colors.accentFillBorder?.takeIf { message.isOwn }
-        val bubble = RoundedCornerShape(14.dp)
-        Box(
-            Modifier.widthIn(max = 280.dp)
-                .clip(bubble)
-                .background(background.toColor())
-                .then(if (border != null) Modifier.border(1.dp, border.toColor(), bubble) else Modifier)
-                .padding(10.dp),
+        val shape = bubbleShape(isOwn, joinsPrevious, joinsNext)
+        Column(
+            Modifier.then(
+                if (isOwn) {
+                    Modifier.accentFill(shape)
+                } else {
+                    Modifier.background(colors.surfaceSubtle.toColor(), shape)
+                },
+            )
+                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
         ) {
-            val content = if (message.isOwn) colors.textOnAccentFill else colors.textPrimary
-            CompositionLocalProvider(LocalContentColor provides content.toColor()) {
+            val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
+            CompositionLocalProvider(
+                LocalContentColor provides content.toColor(),
+                LocalTextStyle provides WontonTheme.typography.body,
+            ) {
                 MessageBody(message.body, core, message.sendState, onAnswer)
             }
+            MessageFooter(message, Modifier.align(Alignment.End), onRetry, onCancel)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            val small = MaterialTheme.typography.labelSmall
-            if (message.edited) Text("已编辑", style = small)
-            Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong())), style = small)
-            when (val state = message.sendState) {
-                is SendState.Sending -> Text("发送中", style = small)
-                is SendState.Failed -> FailedSend(state, small, onRetry, onCancel)
-                SendState.Sent -> if (message.isOwn && message.readBy.isNotEmpty()) Text("已读", style = small)
+    }
+}
+
+@Composable
+private fun MessageFooter(message: TimelineMessage, modifier: Modifier, onRetry: () -> Unit, onCancel: () -> Unit) {
+    val colors = WontonTheme.colors
+    val style = WontonTheme.typography.caption
+    val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+        if (message.edited) Text("已编辑", style = style, color = color)
+        Text(
+            DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong())),
+            style = style,
+            color = color,
+        )
+        when (val state = message.sendState) {
+            is SendState.Sending -> Text("发送中", style = style, color = color)
+            is SendState.Failed -> FailedSend(state, onRetry, onCancel)
+            SendState.Sent -> if (message.isOwn && message.readBy.isNotEmpty()) {
+                Text("已读", style = style, color = color)
             }
         }
     }
@@ -151,15 +192,27 @@ private fun MessageBubble(
 
 /** 点开选重发或删除。 */
 @Composable
-private fun FailedSend(state: SendState.Failed, style: TextStyle, onRetry: () -> Unit, onCancel: () -> Unit) {
+private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: () -> Unit) {
     var choosing by remember { mutableStateOf(false) }
+    val danger = WontonTheme.colors.danger.toColor()
     Box {
-        Text(
-            if (state.recoverable) "发送失败，会自动重试" else "发送失败：${state.message}",
+        Row(
             Modifier.clickable { choosing = true },
-            style = style,
-            color = MaterialTheme.colorScheme.error,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+        ) {
+            Icon(
+                WontonIcon.WarningCircle,
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.iconTiny),
+                tint = danger,
+            )
+            Text(
+                if (state.recoverable) "发送失败，会自动重试" else "发送失败：${state.message}",
+                style = WontonTheme.typography.caption,
+                color = danger,
+            )
+        }
         DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
             DropdownMenuItem(
                 text = { Text("重发") },
@@ -169,7 +222,7 @@ private fun FailedSend(state: SendState.Failed, style: TextStyle, onRetry: () ->
                 },
             )
             DropdownMenuItem(
-                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                text = { Text("删除", color = danger) },
                 onClick = {
                     choosing = false
                     onCancel()
@@ -190,79 +243,19 @@ private fun MessageBody(
         is MessageContent.Text -> TextMessageBody(body.body, body.files, core)
         is MessageContent.Image -> MessageImage(body.image, core, sendState)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
-        MessageContent.Undecryptable -> Text("无法解密：本设备还没有这条消息的密钥", fontStyle = FontStyle.Italic)
-        MessageContent.Redacted -> Text("消息已撤回", fontStyle = FontStyle.Italic)
-        is MessageContent.Unsupported -> Text("暂不支持显示的消息（${body.kind}）", fontStyle = FontStyle.Italic)
-    }
-}
-
-@Composable
-private fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
-    val shown = image.thumbnail ?: image.media
-    val preview by loadedImage(core, shown)
-    var showingOriginal by remember { mutableStateOf(false) }
-    Box(
-        Modifier.widthIn(max = 240.dp)
-            .aspectRatio(image.ratio())
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { showingOriginal = true },
-        contentAlignment = Alignment.Center,
-    ) {
-        LoadedImage(preview, ContentScale.Crop)
-        if (sendState is SendState.Sending) {
-            val bar = Modifier.align(Alignment.BottomStart).fillMaxWidth()
-            val progress = sendState.progress
-            if (progress == null) LinearProgressIndicator(bar)
-            else LinearProgressIndicator({ progress }, bar)
+        MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            Icon(WontonIcon.LockKey, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall))
+            Text("无法解密：本设备还没有这条消息的密钥", style = WontonTheme.typography.supporting)
         }
-    }
-    if (showingOriginal) {
-        Dialog(
-            onDismissRequest = { showingOriginal = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            val original by loadedImage(core, image.media)
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                LoadedImage(original, ContentScale.Fit)
-                TextButton(onClick = { showingOriginal = false }, Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                    Text("关闭", color = Color.White)
-                }
-            }
-        }
+        MessageContent.Redacted -> Text(
+            "消息已撤回",
+            Modifier.alpha(WontonTheme.ratio.secondaryContent),
+            fontStyle = FontStyle.Italic,
+        )
+        is MessageContent.Unsupported -> Text(
+            "暂不支持显示的消息（${body.kind}）",
+            Modifier.alpha(WontonTheme.ratio.secondaryContent),
+            style = WontonTheme.typography.supporting,
+        )
     }
 }
-
-private fun ImageContent.ratio(): Float {
-    val width = width?.toFloat() ?: 0f
-    val height = height?.toFloat() ?: 0f
-    return if (width > 0f && height > 0f) width / height else 1f
-}
-
-@Composable
-private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
-    when {
-        state == null -> CircularProgressIndicator()
-        state.isSuccess ->
-            Image(state.getOrThrow(), contentDescription = null, Modifier.fillMaxSize(), contentScale = scale)
-        else -> Text(state.exceptionOrNull()?.message ?: "取不到图片", Modifier.padding(8.dp))
-    }
-}
-
-/** `ImageDecoder` 解码时按 EXIF 方向转正（`BitmapFactory` 不会），别的客户端发来、只靠 EXIF 标方向的照片也是正的。 */
-@Composable
-private fun loadedImage(core: ClientCore, media: MediaHandle) =
-    remember(media) { mutableStateOf<Result<ImageBitmap>?>(null) }.also { state ->
-        LaunchedEffect(media) {
-            state.value = try {
-                val bytes = core.loadMedia(media)
-                withContext(Dispatchers.Default) {
-                    val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
-                    Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
-                }
-            } catch (failure: CoreException) {
-                Result.failure(IllegalStateException(failure.toString(), failure))
-            } catch (failure: IOException) {
-                Result.failure(IllegalStateException("图片格式不支持", failure))
-            }
-        }
-    }

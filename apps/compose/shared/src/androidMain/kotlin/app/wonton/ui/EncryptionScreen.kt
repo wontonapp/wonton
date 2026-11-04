@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,19 +14,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,32 +30,36 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.RecoveryStatus
+import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonRow
+import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonSeparator
+import app.wonton.ui.design.WontonTextField
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EncryptionScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, onClose: () -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("加密") },
-                navigationIcon = { TextButton(onClick = onClose) { Text("完成") } },
-            )
-        },
-    ) { padding ->
+    WontonScreen(bar = { WontonPushedBar("加密", onClose) }) {
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             encryption.recoveryKey?.let { key ->
                 RecoveryKey(key, onConfirm = { onAction(Action.ConfirmRecoveryKeySaved) })
             }
-            Text("本设备：${verificationText(encryption.verification)}")
-            Text("恢复：${recoveryText(encryption.recovery)}")
+            WontonGroup {
+                WontonRow("本设备", verificationText(encryption.verification))
+                WontonSeparator()
+                WontonRow("恢复", recoveryText(encryption.recovery))
+            }
             Recovery(encryption.recovery, onAction)
         }
     }
@@ -72,13 +69,14 @@ fun EncryptionScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
 private fun Recovery(recovery: RecoveryStatus, onAction: (Action) -> Unit) {
     var key by rememberSaveable { mutableStateOf("") }
     when (recovery) {
-        RecoveryStatus.DISABLED -> Button(onClick = { onAction(Action.SetUpRecovery) }) { Text("设置恢复") }
-        RecoveryStatus.INCOMPLETE -> {
-            OutlinedTextField(
+        RecoveryStatus.DISABLED ->
+            WontonButton("设置恢复", { onAction(Action.SetUpRecovery) }, Modifier.fillMaxWidth())
+        RecoveryStatus.INCOMPLETE -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+            WontonTextField(
                 value = key,
                 onValueChange = { key = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("输入恢复密钥") },
+                placeholder = "输入恢复密钥",
                 visualTransformation = PasswordVisualTransformation(),
                 // 按密码输入：输入法不联想、不自动改写和大写，否则恢复密钥会被“纠正”成别的字。
                 keyboardOptions = KeyboardOptions(
@@ -86,16 +84,16 @@ private fun Recovery(recovery: RecoveryStatus, onAction: (Action) -> Unit) {
                     autoCorrectEnabled = false,
                     keyboardType = KeyboardType.Password,
                 ),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
             )
-            Button(
-                onClick = {
+            WontonButton(
+                "恢复",
+                {
                     onAction(Action.RecoverEncryption(key))
                     key = ""
                 },
+                Modifier.fillMaxWidth(),
                 enabled = key.isNotBlank(),
-            ) { Text("恢复") }
+            )
         }
         RecoveryStatus.IN_PROGRESS -> CircularProgressIndicator()
         RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
@@ -105,16 +103,27 @@ private fun Recovery(recovery: RecoveryStatus, onAction: (Action) -> Unit) {
 @Composable
 private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
     val context = LocalContext.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("恢复密钥", style = MaterialTheme.typography.titleMedium)
+    val colors = WontonTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        Text("恢复密钥", style = WontonTheme.typography.itemTitle, color = colors.textPrimary.toColor())
         // 不能长按选中：系统的拷贝不会标为敏感内容，复制只走“复制”按钮。
-        Text(key, fontFamily = FontFamily.Monospace)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { copySensitive(context, key) }) { Text("复制") }
-            Button(onClick = onConfirm) { Text("已保存") }
+        Text(
+            key,
+            Modifier.fillMaxWidth()
+                .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.control))
+                .padding(WontonTheme.spacing.s12),
+            style = WontonTheme.typography.body.copy(fontFamily = FontFamily.Monospace),
+            color = colors.textPrimary.toColor(),
+        )
+        Text(
+            "只显示这一次。点“已保存”后本机不再留着它。",
+            style = WontonTheme.typography.supporting,
+            color = colors.textSecondary.toColor(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            WontonButton("复制", { copySensitive(context, key) }, Modifier.weight(1f), WontonButtonKind.SECONDARY)
+            WontonButton("已保存", onConfirm, Modifier.weight(1f))
         }
-        Text("只显示这一次。点“已保存”后本机不再留着它。", style = MaterialTheme.typography.bodySmall)
-        HorizontalDivider()
     }
 }
 

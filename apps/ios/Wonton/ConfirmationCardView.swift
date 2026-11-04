@@ -8,24 +8,22 @@ struct ConfirmationCardView: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(view.card.title).font(.headline)
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            Text(view.card.title).wontonText(WontonTheme.typography.itemTitle)
             ForEach(Array(view.card.lines.enumerated()), id: \.offset) { _, line in
                 Text(line.text)
-                    .font(.subheadline)
+                    .wontonText(WontonTheme.typography.supporting)
                     .fontWeight(line.emphasis ? .semibold : .regular)
-                    .foregroundStyle(line.emphasis ? Color.red : Color.primary)
+                    .foregroundStyle(line.emphasis ? Color(colors.danger) : Color(colors.textPrimary))
             }
             state
             if let problem = view.problem {
-                Label(problem.message, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                note(problem.message, icon: .warning, color: colors.danger)
             }
             if !view.card.choices.isEmpty {
                 ViewThatFits(in: .horizontal) {
-                    HStack { buttons }
-                    VStack(alignment: .leading) { buttons }
+                    HStack(spacing: WontonTheme.spacing.s8) { buttons }
+                    VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) { buttons }
                 }
             }
         }
@@ -38,46 +36,47 @@ struct ConfirmationCardView: View {
         case .pending:
             EmptyView()
         case .running:
-            HStack(spacing: 6) {
+            HStack(spacing: WontonTheme.spacing.s8) {
                 ProgressView()
-                Text("正在执行")
+                Text("正在执行").wontonText(WontonTheme.typography.supporting)
             }
-            .font(.footnote)
         case let .succeeded(message):
-            Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.green)
+            note(message, icon: .checkCircle, color: colors.success)
         case let .failed(message):
-            Label("没有成功：\(message)", systemImage: "xmark.octagon").font(.footnote).foregroundStyle(.red)
+            note("没有成功：\(message)", icon: .error, color: colors.danger)
         case let .uncertain(message):
-            Label("结果不确定：\(message)", systemImage: "questionmark.circle")
-                .font(.footnote)
-                .foregroundStyle(.orange)
+            note("结果不确定：\(message)", icon: .help, color: colors.warning)
         case .rejected:
-            Text("已拒绝，没有执行").font(.footnote).foregroundStyle(.secondary)
+            Text("已拒绝，没有执行")
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
         case .expired:
-            Text("已过期，没有执行").font(.footnote).foregroundStyle(.secondary)
+            Text("已过期，没有执行")
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
         }
+    }
+
+    private func note(_ text: String, icon: WontonIcon, color: Rgb) -> some View {
+        HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+            icon.view(size: WontonTheme.size.iconSmall)
+            Text(text).wontonText(WontonTheme.typography.supporting)
+        }
+        .foregroundStyle(Color(color))
     }
 
     private var buttons: some View {
         ForEach(view.card.choices, id: \.answer) { choice in
-            if choice.answer == .approve {
-                // 气泡给内容统一设了正文颜色，会盖掉主按钮自己的文字色，和按钮底色一样时字就看不见了。
-                button(choice).buttonStyle(.borderedProminent).foregroundStyle(Color(colors.onPrimary))
-            } else {
-                button(choice).buttonStyle(.bordered)
+            Button {
+                answer(choice.answer)
+            } label: {
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    if view.sending == choice.answer { ProgressView() }
+                    Text(choice.label)
+                }
             }
+            .buttonStyle(WontonButtonStyle(kind: choice.answer == .approve ? .primary : .secondary))
+            .disabled(view.sending != nil)
         }
-    }
-
-    private func button(_ choice: CardChoice) -> some View {
-        Button {
-            answer(choice.answer)
-        } label: {
-            HStack(spacing: 6) {
-                if view.sending == choice.answer { ProgressView() }
-                Text(choice.label)
-            }
-        }
-        .disabled(view.sending != nil)
     }
 }

@@ -58,7 +58,7 @@ private struct MainView: View {
 
     /// 卡片所在的房间就在眼前时不用提示。
     private var pendingElsewhere: [PendingConfirmation] {
-        chat.viewModel.pendingConfirmations.filter { tab != .chat || chat.path.last != $0.roomId }
+        chat.viewModel.pendingConfirmations.filter { tab != .chat || chat.path.last != .room($0.roomId) }
     }
 
     var body: some View {
@@ -130,12 +130,12 @@ private struct MainView: View {
     private func openCardRoom(_ roomId: String) {
         page = nil
         tab = .chat
-        chat.path = [roomId]
+        chat.path = [.room(roomId)]
     }
 
     /// 聊天页和打字时让出底部的位置。
     private var showsBottomBar: Bool {
-        !isKeyboardVisible && !(tab == .chat && !chat.path.isEmpty)
+        !isKeyboardVisible && !(tab == .chat && chat.isRoomOpen)
     }
 
     private func open(_ entry: PluginEntry) {

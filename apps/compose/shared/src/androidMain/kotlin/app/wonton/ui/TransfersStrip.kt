@@ -1,14 +1,18 @@
 package app.wonton.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,14 +22,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextDecoration
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.Transfer
 import app.wonton.protocol.TransferAction
 import app.wonton.protocol.TransferDirection
 import app.wonton.protocol.TransferState
+import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Close
+import app.wonton.ui.icons.Download
+import app.wonton.ui.icons.Eye
+import app.wonton.ui.icons.Share
+import app.wonton.ui.icons.Trash
+import app.wonton.ui.icons.Upload
+import app.wonton.ui.icons.WontonIcon
 
 /** 输入框上方进行中和要处理的传输，还有下载完的入口。上传完的已经是房间里的一条消息。 */
 @Composable
@@ -35,13 +52,22 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
     var showingDownloaded by remember { mutableStateOf(false) }
     if (view.downloaded.isEmpty()) showingDownloaded = false
     if (listed.here.isEmpty() && listed.elsewhere.isEmpty() && view.downloaded.isEmpty()) return
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val colors = WontonTheme.colors
+    Column(
+        Modifier.fillMaxWidth()
+            .drawBehind { drawLine(colors.separator.toColor(), Offset.Zero, Offset(size.width, 0f), 1f) }
+            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+    ) {
         listed.here.forEach { TransferRow(it) }
         listed.elsewhere.forEach { TransferRow(it.transfer, Destination(it.roomName)) }
         if (view.downloaded.isNotEmpty()) {
-            TextButton(onClick = { showingDownloaded = true }, Modifier.align(Alignment.End)) {
-                Text("已下载 ${view.downloaded.size} 个", style = MaterialTheme.typography.labelMedium)
-            }
+            Text(
+                "已下载 ${view.downloaded.size} 个",
+                Modifier.align(Alignment.End).clickable(role = Role.Button) { showingDownloaded = true },
+                style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
+                color = colors.textPrimary.toColor(),
+            )
         }
     }
     if (showingDownloaded && view.downloaded.isNotEmpty()) {
@@ -59,16 +85,28 @@ private class Destination(val roomName: String?)
 
 @Composable
 private fun TransferRow(transfer: Transfer, destination: Destination? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (transfer.direction == TransferDirection.UPLOAD) "↑" else "↓")
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(transfer.name, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                destination?.let { DestinationText(it) }
-                TransferDetail(transfer)
-            }
+    val colors = WontonTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+    ) {
+        Icon(
+            if (transfer.direction == TransferDirection.UPLOAD) WontonIcon.Upload else WontonIcon.Download,
+            contentDescription = null,
+            modifier = Modifier.size(WontonTheme.size.iconSmall),
+            tint = colors.textSecondary.toColor(),
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            Text(
+                transfer.name,
+                style = WontonTheme.typography.supporting,
+                color = colors.textPrimary.toColor(),
+                maxLines = 1,
+            )
+            destination?.let { DestinationText(it) }
+            TransferDetail(transfer)
         }
-        Row(Modifier.align(Alignment.End)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             transfer.actions.forEach { TransferButton(transfer, it) }
         }
     }
@@ -76,32 +114,39 @@ private fun TransferRow(transfer: Transfer, destination: Destination? = null) {
 
 @Composable
 private fun DestinationText(destination: Destination) {
-    val small = MaterialTheme.typography.labelSmall
     val room = destination.roomName
     if (room != null) {
-        Text("发到 $room", style = small)
+        SmallText("发到 $room")
     } else {
-        Text("目标房间不在这台服务器的列表里", style = small, color = MaterialTheme.colorScheme.error)
+        ProblemText("目标房间不在这台服务器的列表里")
     }
 }
 
 @Composable
+private fun SmallText(text: String) {
+    Text(text, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
+}
+
+@Composable
+private fun ProblemText(text: String) {
+    Text(text, style = WontonTheme.typography.caption, color = WontonTheme.colors.danger.toColor())
+}
+
+@Composable
 private fun TransferDetail(transfer: Transfer) {
-    val small = MaterialTheme.typography.labelSmall
-    val error = MaterialTheme.colorScheme.error
     when (val state = transfer.state) {
         TransferState.Running -> TransferBar(transfer)
         TransferState.Paused -> {
             val done = sizeText(transfer.transferredBytes)
             val because = transfer.pausedBecause
             if (because != null) {
-                Text("暂停，已传 $done：$because", style = small, color = error)
+                ProblemText("暂停，已传 $done：$because")
             } else {
-                Text("等连接恢复后接着传，已传 $done", style = small)
+                SmallText("等连接恢复后接着传，已传 $done")
             }
         }
-        is TransferState.LinkNotSent -> Text("已传完，链接没发出：${state.message}", style = small, color = error)
-        is TransferState.Failed -> Text(state.message, style = small, color = error)
+        is TransferState.LinkNotSent -> ProblemText("已传完，链接没发出：${state.message}")
+        is TransferState.Failed -> ProblemText(state.message)
         TransferState.Done -> Unit
     }
 }
@@ -113,19 +158,36 @@ private fun TransferButton(transfer: Transfer, action: TransferAction) {
     val context = LocalContext.current
     var confirming by remember { mutableStateOf(false) }
     val path = transfer.destination
-    val (label, onClick) = when (action) {
-        TransferAction.CANCEL -> "取消" to { files.onAction(Action.CancelTransfer(transfer.id)) }
-        TransferAction.DISMISS -> "清除" to { files.onAction(Action.DismissTransfer(transfer.id, false)) }
-        TransferAction.DISMISS_DOWNLOADED -> "清理" to { confirming = true }
-        TransferAction.RESEND_LINK -> "重发链接" to { files.onAction(Action.ResendFileLink(transfer.id)) }
-        TransferAction.STOP_SENDING -> "不发了" to { files.onAction(Action.CancelTransfer(transfer.id)) }
-        TransferAction.OPEN -> "打开" to {
-            path?.let { openWithSystem(context, it, null)?.let(files.onReject) } ?: Unit
-        }
-        TransferAction.SHARE -> "分享" to { path?.let { shareWithSystem(context, it) } ?: Unit }
+    when (action) {
+        TransferAction.CANCEL ->
+            WontonIconButton(WontonIcon.Close, "取消", { files.onAction(Action.CancelTransfer(transfer.id)) })
+        TransferAction.DISMISS ->
+            WontonIconButton(WontonIcon.Close, "清除", { files.onAction(Action.DismissTransfer(transfer.id, false)) })
+        TransferAction.DISMISS_DOWNLOADED -> WontonIconButton(WontonIcon.Trash, "清理", { confirming = true })
+        TransferAction.RESEND_LINK -> TextAction("重发链接") { files.onAction(Action.ResendFileLink(transfer.id)) }
+        TransferAction.STOP_SENDING -> TextAction("不发了") { files.onAction(Action.CancelTransfer(transfer.id)) }
+        TransferAction.OPEN -> WontonIconButton(WontonIcon.Eye, "打开", {
+            path?.let { openWithSystem(context, it, null)?.let(files.onReject) }
+        })
+        TransferAction.SHARE -> WontonIconButton(WontonIcon.Share, "分享", { path?.let { shareWithSystem(context, it) } })
     }
-    TextButton(onClick = onClick) { Text(label, style = MaterialTheme.typography.labelMedium) }
     if (confirming) DismissDownloadedDialog(transfer, onClose = { confirming = false })
+}
+
+@Composable
+private fun TextAction(title: String, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = WontonTheme.size.target)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = WontonTheme.spacing.s4),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            title,
+            style = WontonTheme.typography.supporting.copy(textDecoration = TextDecoration.Underline),
+            color = WontonTheme.colors.textPrimary.toColor(),
+        )
+    }
 }
 
 @Composable
@@ -142,7 +204,7 @@ private fun DismissDownloadedDialog(transfer: Transfer, onClose: () -> Unit) {
             Column {
                 TextButton(onClick = { dismiss(false) }) { Text("只清记录") }
                 TextButton(onClick = { dismiss(true) }) {
-                    Text("连手机上的文件一起删", color = MaterialTheme.colorScheme.error)
+                    Text("连手机上的文件一起删", color = WontonTheme.colors.danger.toColor())
                 }
             }
         },

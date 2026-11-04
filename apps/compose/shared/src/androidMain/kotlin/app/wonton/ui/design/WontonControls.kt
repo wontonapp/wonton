@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.ui.R
 import app.wonton.ui.icons.Back
@@ -118,6 +119,7 @@ fun WontonTextField(
     label: String? = null,
     textStyle: TextStyle = WontonTheme.typography.body,
     maxLines: Int = 1,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
@@ -129,6 +131,7 @@ fun WontonTextField(
         maxLines = maxLines,
         textStyle = textStyle.copy(color = colors.textPrimary.toColor()),
         cursorBrush = SolidColor(colors.textPrimary.toColor()),
+        visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         modifier = modifier.semantics { label?.let { contentDescription = it } },

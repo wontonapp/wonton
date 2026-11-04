@@ -236,6 +236,8 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(minHeight: WontonTheme.size.topBar)
+        // 滚动内容会从栏下面穿过去，栏和状态栏那一截都要不透明。
+        .background(Color(colors.canvas).ignoresSafeArea(edges: .top))
     }
 }
 
@@ -262,6 +264,8 @@ struct WontonPushedBar<Trailing: View>: View {
             .padding(.horizontal, WontonTheme.spacing.s4)
         }
         .frame(minHeight: WontonTheme.size.topBar)
+        // 滚动内容会从栏下面穿过去，栏和状态栏那一截都要不透明。
+        .background(Color(colors.canvas).ignoresSafeArea(edges: .top))
     }
 }
 

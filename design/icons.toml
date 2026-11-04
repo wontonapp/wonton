@@ -24,6 +24,7 @@ device = { phosphor = "device-mobile-camera" }
 document = { phosphor = "file-text", fill = true }
 download = { phosphor = "download-simple", fill = true }
 error = { phosphor = "x-circle", fill = true }
+eye = { phosphor = "eye" }
 file = { phosphor = "file" }
 folder = { phosphor = "folder", fill = true }
 forward = { phosphor = "caret-right", mirror = true }
@@ -48,11 +49,13 @@ search = { phosphor = "magnifying-glass" }
 send = { phosphor = "arrow-up" }
 server = { phosphor = "hard-drives" }
 settings = { phosphor = "gear-six", fill = true }
+share = { phosphor = "export" }
 shield = { phosphor = "shield-check", fill = true }
 star = { phosphor = "star", fill = true }
 store = { phosphor = "storefront", fill = true }
 tasks = { phosphor = "list-checks", fill = true }
 trash = { phosphor = "trash" }
+upload = { phosphor = "upload-simple" }
 warning = { phosphor = "warning", fill = true }
 warningCircle = { phosphor = "warning-circle", fill = true }
 web = { phosphor = "compass" }

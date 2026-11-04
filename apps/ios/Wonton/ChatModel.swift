@@ -1,13 +1,19 @@
 import Observation
 import WontonClient
 
+enum ChatRoute: Hashable {
+    case room(String)
+    case encryption
+    case startChat
+}
+
 @MainActor
 @Observable
 final class ChatModel {
     private(set) var viewModel: ChatViewModel
     var rejection: String?
-    /// 聊天页打开的房间。主屏上点 Agent 插件时直接打开和它的 Bot 的私聊。
-    var path: [String] = []
+    /// 聊天页打开的页面。主屏上点 Agent 插件时直接打开和它的 Bot 的私聊。
+    var path: [ChatRoute] = []
     /// 刚发起了和这个用户的私聊，房间出现后打开。
     @ObservationIgnored private var awaitedPeer: String?
 
@@ -27,6 +33,10 @@ final class ChatModel {
         }
     }
 
+    var isRoomOpen: Bool {
+        path.contains { if case .room = $0 { true } else { false } }
+    }
+
     func send(_ action: Action) {
         do {
             try core.dispatch(action: action)
@@ -42,7 +52,7 @@ final class ChatModel {
         path = []
         let rooms = viewModel.rooms.filter { $0.directUserId == userId }
         if let joined = rooms.first(where: { $0.membership == .joined }) {
-            path = [joined.roomId]
+            path = [.room(joined.roomId)]
         } else if rooms.isEmpty {
             do {
                 try core.dispatch(action: .startDirectChat(userId: userId))
@@ -58,6 +68,6 @@ final class ChatModel {
               let room = viewModel.rooms.first(where: { $0.directUserId == peer && $0.membership == .joined })
         else { return }
         awaitedPeer = nil
-        path = [room.roomId]
+        path = [.room(room.roomId)]
     }
 }

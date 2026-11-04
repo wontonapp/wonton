@@ -2,7 +2,6 @@ package app.wonton.ui
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,10 +13,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -30,12 +28,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -47,6 +48,12 @@ import app.wonton.protocol.FileInfo
 import app.wonton.protocol.FileSource
 import app.wonton.protocol.Transfer
 import app.wonton.protocol.TransferState
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.File
+import app.wonton.ui.icons.Play
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,7 +61,7 @@ import kotlinx.coroutines.withContext
 /** 文字消息：去掉链接后的文字，下面是文件卡片。消息只有链接时没有文字。 */
 @Composable
 fun TextMessageBody(text: String, files: List<FileId>, core: ClientCore) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         if (text.isNotEmpty()) SelectionContainer { Text(text) }
         files.forEach { id -> key(id) { FileCardView(id, core) } }
     }
@@ -65,13 +72,20 @@ private fun FileCardView(id: FileId, core: ClientCore) {
     var loads by remember { mutableIntStateOf(0) }
     val card by produceState<FileCard>(FileCard.Loading, id, loads) { value = core.fileCard(id) }
     when (val current = card) {
-        FileCard.Loading -> CircularProgressIndicator(Modifier.size(32.dp))
-        is FileCard.Failed -> Text(
-            current.message,
+        FileCard.Loading -> CircularProgressIndicator(Modifier.size(WontonTheme.size.icon))
+        is FileCard.Failed -> Row(
             Modifier.clickable { loads++ },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        ) {
+            val danger = WontonTheme.colors.danger.toColor()
+            Icon(
+                WontonIcon.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.iconSmall),
+                tint = danger,
+            )
+            Text(current.message, style = WontonTheme.typography.supporting, color = danger)
+        }
         is FileCard.Ready -> ReadyCard(current.info, core)
     }
 }
@@ -109,25 +123,28 @@ private fun ReadyCard(info: FileInfo, core: ClientCore) {
             if (fetch is FileCardAction.Open) perform(fetch)
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(
-            Modifier.fillMaxWidth().clickable { perform(actions.tap) },
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.clickable { perform(actions.tap) },
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FileIcon(info, actions.tap == FileCardAction.Play, core)
-            Column(Modifier.widthIn(max = 200.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(info.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                val small = MaterialTheme.typography.labelSmall
-                info.size?.let { Text(sizeText(it), style = small) }
-                sourceText(info.source)?.let { Text(it, style = small) }
+            Column(Modifier.widthIn(max = 200.dp), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+                Text(info.name, style = WontonTheme.typography.supporting, maxLines = 2)
+                info.size?.let { SmallText(sizeText(it)) }
+                sourceText(info.source)?.let { SmallText(it) }
                 DownloadProgress(actions.download)
             }
         }
         actions.openElsewhere?.let { elsewhere ->
-            TextButton(onClick = { perform(elsewhere) }, enabled = elsewhere != FileCardAction.Wait) {
-                Text("用其他 App 打开")
-            }
+            Text(
+                "用其他 App 打开",
+                Modifier.clickable(enabled = elsewhere != FileCardAction.Wait, role = Role.Button) {
+                    perform(elsewhere)
+                },
+                style = WontonTheme.typography.supporting.copy(textDecoration = TextDecoration.Underline),
+            )
         }
     }
     if (playing) {
@@ -148,13 +165,17 @@ private fun FileIcon(info: FileInfo, playable: Boolean, core: ClientCore) {
     val thumbnail by produceState<ImageBitmap?>(null, info.id, info.hasThumbnail) {
         if (info.hasThumbnail) value = loadThumbnail(core, info.id)
     }
-    val shape = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+    val shape = Modifier.size(WontonTheme.size.fileThumbnail).clip(RoundedCornerShape(WontonTheme.radii.control))
     val loaded = thumbnail
     if (loaded != null) {
         Image(loaded, contentDescription = null, shape, contentScale = ContentScale.Crop)
     } else {
-        Box(shape.background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-            Text(if (playable) "▶" else "📄")
+        Box(shape, contentAlignment = Alignment.Center) {
+            Icon(
+                if (playable) WontonIcon.Play else WontonIcon.File,
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.icon),
+            )
         }
     }
 }
@@ -172,20 +193,26 @@ private suspend fun loadThumbnail(core: ClientCore, id: FileId): ImageBitmap? =
 
 @Composable
 private fun DownloadProgress(download: Transfer?) {
-    val small = MaterialTheme.typography.labelSmall
+    val small = WontonTheme.typography.caption
+    val danger = WontonTheme.colors.danger.toColor()
     when (val state = download?.state) {
         TransferState.Running -> TransferBar(download)
         TransferState.Paused -> {
             val because = download.pausedBecause
             if (because != null) {
-                Text("暂停：$because", style = small, color = MaterialTheme.colorScheme.error)
+                Text("暂停：$because", style = small, color = danger)
             } else {
-                Text("等连接恢复后接着下载", style = small)
+                SmallText("等连接恢复后接着下载")
             }
         }
-        is TransferState.Failed -> Text(state.message, style = small, color = MaterialTheme.colorScheme.error)
+        is TransferState.Failed -> Text(state.message, style = small, color = danger)
         TransferState.Done, is TransferState.LinkNotSent, null -> Unit
     }
+}
+
+@Composable
+private fun SmallText(text: String) {
+    Text(text, Modifier.alpha(WontonTheme.ratio.secondaryContent), style = WontonTheme.typography.caption)
 }
 
 /** 还不知道总大小时不确定。 */

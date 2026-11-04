@@ -26,12 +26,17 @@ topBar = 56
 bottomBar = 64
 icon = 24
 iconSmall = 20
+iconTiny = 14
+sendButton = 36
+fileThumbnail = 44
+messageImage = 240
 launcherIcon = 62
 launcherCell = 76
 hairline = 1
 
 [ratio]
 pluginIconRadius = 0.2237
+secondaryContent = 0.7
 
 [typography]
 screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }

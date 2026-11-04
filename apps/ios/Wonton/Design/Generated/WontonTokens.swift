@@ -29,6 +29,10 @@ enum WontonSize {
     static let bottomBar: CGFloat = 64
     static let icon: CGFloat = 24
     static let iconSmall: CGFloat = 20
+    static let iconTiny: CGFloat = 14
+    static let sendButton: CGFloat = 36
+    static let fileThumbnail: CGFloat = 44
+    static let messageImage: CGFloat = 240
     static let launcherIcon: CGFloat = 62
     static let launcherCell: CGFloat = 76
     static let hairline: CGFloat = 1
@@ -36,6 +40,7 @@ enum WontonSize {
 
 enum WontonRatio {
     static let pluginIconRadius: CGFloat = 0.2237
+    static let secondaryContent: CGFloat = 0.7
 }
 
 enum WontonMotion {

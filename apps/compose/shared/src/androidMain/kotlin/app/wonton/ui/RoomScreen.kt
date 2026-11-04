@@ -4,25 +4,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -38,14 +41,32 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
+import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonScreen
+import app.wonton.ui.design.WontonTextField
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Attach
+import app.wonton.ui.icons.Image
+import app.wonton.ui.icons.Send
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -111,7 +132,6 @@ fun RoomRoute(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RoomScreen(
     core: ClientCore,
@@ -123,19 +143,13 @@ private fun RoomScreen(
     onReject: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title, maxLines = 1) },
-                navigationIcon = { TextButton(onClick = onClose) { Text("返回") } },
-            )
-        },
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
+    WontonScreen(bar = { WontonPushedBar(title, onClose) }) {
+        // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
             val failure = timeline.failure
             if (failure != null) {
-                Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("打不开这个聊天：$failure")
+                Box(Modifier.weight(1f).fillMaxWidth().padding(WontonTheme.spacing.pageInset)) {
+                    WontonNotice(WontonIcon.Warning, "打不开这个聊天", lines = listOf(failure))
                 }
             } else {
                 Messages(core, roomId, timeline, showsSender = !isDirect, onAction, Modifier.weight(1f))
@@ -185,18 +199,28 @@ private fun Messages(
         modifier.fillMaxWidth(),
         state = listState,
         reverseLayout = true,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(
+            horizontal = WontonTheme.spacing.pageInset,
+            vertical = WontonTheme.spacing.s8,
+        ),
+        verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
     ) {
-        items(newestFirst, key = { it.id }) { item ->
-            TimelineItemView(
-                item,
-                core,
-                showsSender,
-                onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
-                onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
-                onAnswer = { id, answer -> onAction(Action.AnswerConfirmation(id, answer)) },
-            )
+        itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
+            // 倒着排：下标大的是更早的一条。
+            val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
+            val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
+            Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
+                TimelineItemView(
+                    item,
+                    core,
+                    showsSender,
+                    joinsPrevious,
+                    joinsNext,
+                    onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
+                    onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+                    onAnswer = { id, answer -> onAction(Action.AnswerConfirmation(id, answer)) },
+                )
+            }
         }
         if (timeline.backPagination != BackPagination.REACHED_START) {
             // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
@@ -206,6 +230,17 @@ private fun Messages(
         }
     }
 }
+
+private val JOINED_GAP = 2.dp
+
+/** 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。 */
+private fun TimelineItem.joins(other: TimelineItem?): Boolean {
+    val sender = senderId
+    return sender != null && sender == other?.senderId
+}
+
+private val TimelineItem.senderId
+    get() = (content as? TimelineContent.Message)?.message?.senderId
 
 @Composable
 private fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (String) -> Unit) {
@@ -225,30 +260,55 @@ private fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Stri
     val pickFiles = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris ->
         uris.forEach { uri -> onAction(uploadAction(context, uri, roomId)) }
     }
+    val colors = WontonTheme.colors
     Row(
-        Modifier.fillMaxWidth().padding(8.dp),
+        Modifier.fillMaxWidth()
+            .drawBehind {
+                drawLine(colors.separator.toColor(), Offset.Zero, Offset(size.width, 0f), HAIRLINE)
+            }
+            .padding(WontonTheme.spacing.s8),
         verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TextButton(onClick = { pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) }) {
-            Text("图片")
-        }
-        TextButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
-            Text("文件")
-        }
-        OutlinedTextField(
+        WontonIconButton(WontonIcon.Image, "发照片", {
+            pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
+        })
+        WontonIconButton(WontonIcon.Attach, "发文件", { pickFiles.launch(arrayOf("*/*")) })
+        WontonTextField(
             value = draft,
             onValueChange = { draft = it },
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("消息") },
+            modifier = Modifier.weight(1f).padding(horizontal = WontonTheme.spacing.s4),
+            placeholder = "消息",
             maxLines = 5,
         )
-        TextButton(
-            onClick = {
-                onAction(Action.SendText(roomId, draft))
-                draft = ""
-            },
-            enabled = draft.isNotBlank(),
-        ) { Text("发送") }
+        SendButton(enabled = draft.isNotBlank()) {
+            onAction(Action.SendText(roomId, draft))
+            draft = ""
+        }
+    }
+}
+
+private const val HAIRLINE = 1f
+
+@Composable
+private fun SendButton(enabled: Boolean, onClick: () -> Unit) {
+    val colors = WontonTheme.colors
+    Box(
+        Modifier.size(WontonTheme.size.target)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "发送" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(WontonTheme.size.sendButton)
+                .background((if (enabled) colors.primary else colors.surfaceSubtle).toColor(), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                WontonIcon.Send,
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.iconSmall),
+                tint = (if (enabled) colors.onPrimary else colors.textSecondary).toColor(),
+            )
+        }
     }
 }

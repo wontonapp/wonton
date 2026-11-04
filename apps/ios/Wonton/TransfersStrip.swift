@@ -7,6 +7,7 @@ struct TransfersStrip: View {
     let roomId: String
     @Environment(FilesModel.self) private var files
     @State private var isShowingDownloaded = false
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         let view = files.viewModel
@@ -14,20 +15,25 @@ struct TransfersStrip: View {
         // 不用 `Group`：它没有自己的视图，内容变空时 `onChange` 可能不触发。
         VStack(spacing: 0) {
             if !listed.here.isEmpty || !listed.elsewhere.isEmpty || !view.downloaded.isEmpty {
-                VStack(spacing: 6) {
+                VStack(spacing: WontonTheme.spacing.s8) {
                     ForEach(listed.here, id: \.id) { TransferRow(transfer: $0) }
                     ForEach(listed.elsewhere, id: \.transfer.id) {
                         TransferRow(transfer: $0.transfer, elsewhere: $0)
                     }
                     if !view.downloaded.isEmpty {
                         Button("已下载 \(view.downloaded.count) 个") { isShowingDownloaded = true }
-                            .font(.caption)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.textPrimary))
+                            .underline()
+                            .buttonStyle(.plain)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .background(.bar)
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+                .padding(.vertical, WontonTheme.spacing.s8)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
+                }
                 .sheet(isPresented: $isShowingDownloaded) { DownloadedList().environment(files) }
             }
         }
@@ -54,18 +60,23 @@ private struct DownloadedList: View {
 private struct TransferRow: View {
     let transfer: Transfer
     var elsewhere: TransferElsewhere?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: transfer.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(transfer.name).font(.caption).lineLimit(1)
+        HStack(spacing: WontonTheme.spacing.s8) {
+            (transfer.direction == .upload ? WontonIcon.upload : WontonIcon.download)
+                .view(size: WontonTheme.size.iconSmall)
+                .foregroundStyle(Color(colors.textSecondary))
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(transfer.name)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .lineLimit(1)
                 if let elsewhere {
                     if let room = elsewhere.roomName {
-                        Text("发到 \(room)").font(.caption2).foregroundStyle(.secondary)
+                        small("发到 \(room)")
                     } else {
-                        Text("目标房间不在这台服务器的列表里").font(.caption2).foregroundStyle(.red)
+                        problem("目标房间不在这台服务器的列表里")
                     }
                 }
                 detail
@@ -81,21 +92,25 @@ private struct TransferRow: View {
             ProgressView(value: FileSizes.fraction(transfer))
         case .paused:
             if let because = transfer.pausedBecause {
-                Text("暂停，已传 \(FileSizes.text(transfer.transferredBytes))：\(because)")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
+                problem("暂停，已传 \(FileSizes.text(transfer.transferredBytes))：\(because)")
             } else {
-                Text("等连接恢复后接着传，已传 \(FileSizes.text(transfer.transferredBytes))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                small("等连接恢复后接着传，已传 \(FileSizes.text(transfer.transferredBytes))")
             }
         case let .linkNotSent(_, message):
-            Text("已传完，链接没发出：\(message)").font(.caption2).foregroundStyle(.red)
+            problem("已传完，链接没发出：\(message)")
         case let .failed(_, message):
-            Text(message).font(.caption2).foregroundStyle(.red)
+            problem(message)
         case .done:
             EmptyView()
         }
+    }
+
+    private func small(_ text: String) -> some View {
+        Text(text).wontonText(WontonTheme.typography.caption).foregroundStyle(Color(colors.textSecondary))
+    }
+
+    private func problem(_ text: String) -> some View {
+        Text(text).wontonText(WontonTheme.typography.caption).foregroundStyle(Color(colors.danger))
     }
 }
 
@@ -106,12 +121,12 @@ private struct TransferButtons: View {
     @State private var isConfirmingDismiss = false
     @State private var opened: URL?
     @State private var sharing: SharedFile?
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 0) {
             ForEach(transfer.actions, id: \.self, content: button)
         }
-        .buttonStyle(.borderless)
         .quickLookPreview($opened)
         .sheet(item: $sharing) { ShareSheet(url: $0.url) }
         .confirmationDialog("清理 \(transfer.name)", isPresented: $isConfirmingDismiss, titleVisibility: .visible) {
@@ -126,27 +141,32 @@ private struct TransferButtons: View {
     @ViewBuilder private func button(_ action: TransferAction) -> some View {
         switch action {
         case .cancel:
-            icon("xmark.circle.fill", label: "取消") { files.send(.cancelTransfer(id: transfer.id)) }
+            WontonIconButton(icon: .close, label: "取消") { files.send(.cancelTransfer(id: transfer.id)) }
         case .dismiss:
-            icon("xmark.circle.fill", label: "清除") {
+            WontonIconButton(icon: .close, label: "清除") {
                 files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
             }
         case .dismissDownloaded:
-            icon("trash", label: "清理") { isConfirmingDismiss = true }
+            WontonIconButton(icon: .trash, label: "清理") { isConfirmingDismiss = true }
         case .resendLink:
-            Button("重发链接") { files.send(.resendFileLink(id: transfer.id)) }.font(.caption)
+            textButton("重发链接") { files.send(.resendFileLink(id: transfer.id)) }
         case .stopSending:
-            Button("不发了") { files.send(.cancelTransfer(id: transfer.id)) }.font(.caption)
+            textButton("不发了") { files.send(.cancelTransfer(id: transfer.id)) }
         case .open:
-            icon("eye", label: "打开") { opened = localFile }
+            WontonIconButton(icon: .eye, label: "打开") { opened = localFile }
         case .share:
-            icon("square.and.arrow.up", label: "分享") { sharing = localFile.map(SharedFile.init) }
+            WontonIconButton(icon: .share, label: "分享") { sharing = localFile.map(SharedFile.init) }
         }
     }
 
-    private func icon(_ name: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: name).foregroundStyle(.secondary) }
-            .accessibilityLabel(label)
+    private func textButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .wontonText(WontonTheme.typography.supporting)
+            .foregroundStyle(Color(colors.textPrimary))
+            .underline()
+            .buttonStyle(.plain)
+            .frame(minHeight: WontonTheme.size.target)
+            .padding(.horizontal, WontonTheme.spacing.s4)
     }
 
     private var localFile: URL? {

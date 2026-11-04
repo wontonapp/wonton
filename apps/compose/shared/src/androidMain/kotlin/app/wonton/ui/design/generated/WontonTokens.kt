@@ -36,6 +36,10 @@ object WontonSize {
     val bottomBar = 64.dp
     val icon = 24.dp
     val iconSmall = 20.dp
+    val iconTiny = 14.dp
+    val sendButton = 36.dp
+    val fileThumbnail = 44.dp
+    val messageImage = 240.dp
     val launcherIcon = 62.dp
     val launcherCell = 76.dp
     val hairline = 1.dp
@@ -43,6 +47,7 @@ object WontonSize {
 
 object WontonRatio {
     val pluginIconRadius = 0.2237f
+    val secondaryContent = 0.7f
 }
 
 object WontonMotion {
