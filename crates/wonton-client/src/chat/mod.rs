@@ -9,6 +9,7 @@ mod confirmation;
 mod login;
 mod pending;
 mod read_mark;
+mod recovery;
 mod rich;
 mod storage;
 mod timeline;
@@ -16,6 +17,7 @@ mod view;
 
 use std::future::Future;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures_util::StreamExt;
@@ -29,7 +31,7 @@ use wonton_matrix::{
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
     ConfirmationAnswer, CoreError, DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel,
-    ImageUpload, MediaHandle, ProxySettings, PushStatus, RecoveryStatus, SecretString,
+    ImageUpload, MediaHandle, ProxySettings, PushStatus, RecoveryStatus,
 };
 
 pub(crate) use confirmation::{PushedCard, pushed_card};
@@ -60,6 +62,8 @@ pub(crate) struct ChatLink {
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
+    /// 正在重置恢复。途中 SDK 会报“未设置”，这时不能让它盖掉“处理中”，否则界面上会冒出“开启备份”。
+    resetting_recovery: Arc<AtomicBool>,
 }
 
 struct Active {
@@ -104,6 +108,7 @@ impl ChatLink {
             session: Mutex::new(None),
             open_room: Mutex::new(None),
             answers: watch::Sender::default(),
+            resetting_recovery: Arc::default(),
         });
         runtime.spawn(follow_home(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -187,6 +192,7 @@ impl ChatLink {
                 Ok(())
             }
             Action::SetUpRecovery => self.set_up_recovery(),
+            Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
             Action::AnswerConfirmation {
@@ -328,78 +334,6 @@ impl ChatLink {
             answers.send_modify(|answers| answers.finish(id, outcome));
         });
         Ok(())
-    }
-
-    fn set_up_recovery(self: &Arc<Self>) -> Result<(), CoreError> {
-        let session = self.current()?;
-        let chat = self.clone();
-        let before = self.begin_recovery();
-        self.runtime.spawn(async move {
-            match session.enable_recovery().await {
-                Ok(key) => chat.show_recovery_key(SecretString::new(key)),
-                Err(error) => chat.fail_recovery(before, &error),
-            }
-        });
-        Ok(())
-    }
-
-    /// 用主人输入的恢复密钥恢复。密钥用完即弃，不存。
-    fn recover(self: &Arc<Self>, recovery_key: &SecretString) -> Result<(), CoreError> {
-        let key = recovery_key.expose().trim().to_owned();
-        if key.is_empty() {
-            return Err(invalid("恢复密钥不能为空"));
-        }
-        let session = self.current()?;
-        let chat = self.clone();
-        let before = self.begin_recovery();
-        self.runtime.spawn(async move {
-            if let Err(error) = session.recover(&key).await {
-                chat.fail_recovery(before, &error);
-            }
-        });
-        Ok(())
-    }
-
-    /// 把刚生成的恢复密钥给主人看，直到主人确认已经另外保存。先存到本机，App 在那之前被关掉，下次启动还能看到；
-    /// 存不下就如实报出来，主人要趁现在抄下。
-    fn show_recovery_key(&self, key: SecretString) {
-        let saved = self.storage.save_recovery_key(&key);
-        self.view.send_modify(|view| {
-            view.encryption.recovery_key = Some(key);
-            if let Err(error) = saved {
-                view.problem = Some(ChatProblem {
-                    reason: ChatFailure::Upstream,
-                    message: format!("恢复密钥没能存到本机，请现在就抄下来：{error}"),
-                });
-            }
-        });
-    }
-
-    fn begin_recovery(&self) -> RecoveryStatus {
-        let before = self.view.borrow().encryption.recovery;
-        self.set_recovery(RecoveryStatus::InProgress);
-        before
-    }
-
-    /// 失败时恢复状态流不一定有新状态，要放回原来的，否则界面一直转圈。
-    fn fail_recovery(&self, before: RecoveryStatus, error: &Error) {
-        tracing::info!("恢复失败：{error}");
-        let message = match error {
-            Error::InvalidInput(reason) | Error::NotReady(reason) => reason.clone(),
-            other => other.to_string(),
-        };
-        self.view.send_modify(|view| {
-            view.encryption.recovery = before;
-            view.problem = Some(ChatProblem {
-                reason: failure(error),
-                message,
-            });
-        });
-    }
-
-    fn set_recovery(&self, status: RecoveryStatus) {
-        self.view
-            .send_modify(|view| view.encryption.recovery = status);
     }
 
     /// 在后台执行一个操作，失败时把原因放进 `problem`。
@@ -657,12 +591,15 @@ impl ChatLink {
         let encryption = {
             let states = session.encryption_states();
             let view = view.clone();
+            let resetting = self.resetting_recovery.clone();
             self.runtime.spawn(async move {
                 let mut states = std::pin::pin!(states);
                 while let Some(state) = states.next().await {
                     view.send_modify(|view| {
                         view.encryption.verification = verification(state.verification);
-                        view.encryption.recovery = recovery(state.recovery);
+                        if !resetting.load(Ordering::Relaxed) {
+                            view.encryption.recovery = recovery(state.recovery);
+                        }
                     });
                 }
             })

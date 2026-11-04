@@ -144,7 +144,8 @@ pub enum RecoveryStatus {
     /// 已设置，本设备也拿到了全部秘密。
     Enabled,
     /// 账号设置过恢复，但本设备还没拿到秘密：用
-    /// [`Action::RecoverEncryption`](crate::Action::RecoverEncryption) 输入恢复密钥。
+    /// [`Action::RecoverEncryption`](crate::Action::RecoverEncryption) 输入恢复密钥；密钥丢了或者备份残缺，
+    /// 用 [`Action::ResetRecovery`](crate::Action::ResetRecovery) 重置。
     Incomplete,
 }
 

@@ -6,6 +6,7 @@ import WontonClient
 struct ChatBackupView: View {
     let model: ChatModel
     @State private var key = ""
+    @State private var isConfirmingReset = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -25,12 +26,29 @@ struct ChatBackupView: View {
                     }
                 }
                 nextStep
+                if encryption.canReset {
+                    Button {
+                        isConfirmingReset = true
+                    } label: {
+                        Text("重置备份").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
         .wontonPushedScreen("聊天记录备份")
+        .wontonDialog(
+            "重置聊天记录备份？",
+            message: "会换一把新的恢复密钥，旧的作废。重置后旧消息可能读不了，其他设备要输入新密钥。",
+            isPresented: $isConfirmingReset,
+            actions: [
+                WontonDialogAction(title: "取消", kind: .secondary) {},
+                WontonDialogAction(title: "重置", kind: .danger) { model.send(.resetRecovery) }
+            ]
+        )
     }
 
     @ViewBuilder private var nextStep: some View {
@@ -93,15 +111,25 @@ extension RecoveryStatus {
 }
 
 extension EncryptionStatus {
+    /// 恢复密钥丢了、备份残缺或者开启不了时的出路。正在显示新密钥时不出现，免得主人还没抄下来就把它作废。
+    var canReset: Bool {
+        guard recoveryKey == nil else { return false }
+        switch recovery {
+        case .enabled, .incomplete: return true
+        case .disabled: return verification == .unverified
+        case .inProgress, .unknown: return false
+        }
+    }
+
     var backupDetail: String? {
         switch recovery {
         case .enabled: return "换手机或新设备时，输入恢复密钥就能看到以前的消息。"
         case .disabled:
             // 未验证的设备开启不了，核心会拒绝。
             return verification == .unverified
-                ? "要到最早配对的那台设备上开启。"
+                ? "要到最早配对的那台设备上开启。那台设备不在手边，就重置备份。"
                 : "开启后，换手机或新设备时也能看到以前的消息。"
-        case .incomplete: return "输入开启备份时保存的恢复密钥。"
+        case .incomplete: return "输入开启备份时保存的恢复密钥。密钥丢了，就重置备份。"
         case .inProgress: return nil
         case .unknown: return "连上家里的服务器后才能确认。"
         }

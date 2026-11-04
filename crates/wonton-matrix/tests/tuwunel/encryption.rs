@@ -114,6 +114,75 @@ async fn the_recovery_key_verifies_another_device_for_good() {
     .await;
 }
 
+/// 后配对的设备开启过残缺的备份：新设备输对恢复密钥也取不回。重置后这台设备已验证、备份完整，别的设备输新密钥就能恢复。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn resetting_a_broken_backup_makes_it_whole_again() {
+    let server = TestServer::start().await;
+    let user = unique("owner");
+    let phone_store = TempStore::create();
+    let phone = server
+        .login_with_store(&user, "手机", phone_store.config())
+        .await;
+    phone.start_sync().await.expect("手机开始同步");
+    wait_for_encryption(&phone, "手机已验证", |state| {
+        state.verification == Verification::Verified
+    })
+    .await;
+    let tablet_store = TempStore::create();
+    let tablet = server
+        .login_with_store(&user, "平板", tablet_store.config())
+        .await;
+    tablet.start_sync().await.expect("平板开始同步");
+    wait_for_encryption(&tablet, "平板未验证", |state| {
+        state.verification == Verification::Unverified
+    })
+    .await;
+
+    let broken_key = tablet.enable_recovery_unchecked().await.expect("残缺开启");
+    // 手机自己有全部私钥，输残缺备份的密钥也显示完整，看不出问题。只有新设备能看出来。
+    let laptop_store = TempStore::create();
+    let laptop = server
+        .login_with_store(&user, "笔记本", laptop_store.config())
+        .await;
+    laptop.start_sync().await.expect("笔记本开始同步");
+    wait_for_encryption(&laptop, "笔记本要输恢复密钥", |state| {
+        state.recovery == Recovery::Incomplete
+    })
+    .await;
+    let refused = laptop.recover(&broken_key).await.unwrap_err();
+    assert!(matches!(refused, Error::NotReady(_)), "{refused:?}");
+
+    let new_key = tablet
+        .reset_recovery("org.matrix.login.jwt", &server.issuer.login_token(&user))
+        .await
+        .expect("重置");
+    assert_ne!(new_key, broken_key);
+    wait_for_encryption(
+        &tablet,
+        "平板成为新身份下已验证的设备",
+        |state| state.verification == Verification::Verified && state.recovery == Recovery::Enabled,
+    )
+    .await;
+
+    for (device, name) in [(&phone, "手机"), (&laptop, "笔记本")] {
+        wait_for_encryption(device, &format!("{name}要输新密钥"), |state| {
+            state.recovery == Recovery::Incomplete
+        })
+        .await;
+        let refused = device.recover(&broken_key).await.unwrap_err();
+        assert!(
+            matches!(refused, Error::InvalidInput(_)),
+            "{name}：{refused:?}"
+        );
+        device.recover(&new_key).await.expect("输新密钥");
+        wait_for_encryption(device, &format!("{name}恢复完整"), |state| {
+            state.verification == Verification::Verified && state.recovery == Recovery::Enabled
+        })
+        .await;
+    }
+}
+
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn encrypted_direct_chat_still_decrypts_after_restart() {

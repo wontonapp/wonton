@@ -5,10 +5,11 @@
 
 use futures_util::{Stream, StreamExt, future, stream};
 use matrix_sdk::encryption::{
-    VerificationState,
+    CrossSigningResetAuthType, VerificationState,
     recovery::{RecoveryError, RecoveryState},
     secret_storage::SecretStorageError,
 };
+use matrix_sdk::ruma::api::client::uiaa::AuthData;
 
 use crate::{Error, MatrixSession, Result};
 
@@ -63,15 +64,21 @@ impl From<RecoveryState> for Recovery {
 }
 
 impl MatrixSession {
+    /// 现在的加密状态。
+    pub fn encryption_state(&self) -> EncryptionState {
+        let encryption = self.client.encryption();
+        EncryptionState {
+            verification: encryption.verification_state().get().into(),
+            recovery: encryption.recovery().state().into(),
+        }
+    }
+
     /// 加密状态流：第一项是当前状态，之后验证状态或恢复状态变化时给出新状态。
     pub fn encryption_states(&self) -> impl Stream<Item = EncryptionState> + use<> {
         let encryption = self.client.encryption();
         let verification = encryption.verification_state();
         let recovery = encryption.recovery();
-        let current = EncryptionState {
-            verification: verification.get().into(),
-            recovery: recovery.state().into(),
-        };
+        let current = self.encryption_state();
         enum Change {
             Verification(VerificationState),
             Recovery(RecoveryState),
@@ -131,11 +138,73 @@ impl MatrixSession {
         // 密钥对、秘密存储却缺东西时 SDK 也算成功，这台设备其实什么也没取回。
         if matches!(recovery.state(), RecoveryState::Incomplete) {
             return Err(Error::NotReady(
-                "恢复密钥是对的，但备份不完整，这台设备取不回以前的消息".to_owned(),
+                "恢复密钥是对的，但备份不完整，取不回以前的消息。可以重置备份，重置后旧消息可能读不了"
+                    .to_owned(),
             ));
         }
         Ok(())
     }
+
+    /// 重置恢复：删掉账号的密钥备份和秘密存储，换新的交叉签名身份，本设备成为新身份下已验证的设备，再开启备份，
+    /// 返回新的恢复密钥。这是残缺备份和丢了恢复密钥时唯一的出路，所以不像 [`Self::enable_recovery`] 那样挑设备。
+    ///
+    /// 换身份要向服务器确认本人。Tuwunel 只给登录用的 JWT 这一个阶段（v1.9 实测），`login_type` 和 `jwt` 是一次
+    /// 性的登录令牌。SDK 一上来就删备份，令牌要在调用前要好。
+    pub async fn reset_recovery(&self, login_type: &str, jwt: &str) -> Result<String> {
+        let recovery = self.client.encryption().recovery();
+        let handle = recovery
+            .reset_identity()
+            .await
+            .map_err(|error| recovery_error(&error))?;
+        if let Some(handle) = handle {
+            let auth = reset_auth(handle.auth_type(), login_type, jwt)?;
+            handle
+                .reset(Some(auth))
+                .await
+                .map_err(|error| recovery_error(&error))?;
+        }
+        recovery
+            .enable()
+            .wait_for_backups_to_upload()
+            .await
+            .map_err(|error| recovery_error(&error))
+    }
+
+    /// 绕过 [`Self::enable_recovery`] 的检查，造出旧版本留下的残缺备份：未验证的设备开启后，秘密存储里没有交叉签名
+    /// 私钥。
+    #[cfg(feature = "testkit")]
+    pub async fn enable_recovery_unchecked(&self) -> Result<String> {
+        self.client
+            .encryption()
+            .recovery()
+            .enable()
+            .wait_for_backups_to_upload()
+            .await
+            .map_err(|error| recovery_error(&error))
+    }
+}
+
+fn reset_auth(
+    auth_type: &CrossSigningResetAuthType,
+    login_type: &str,
+    jwt: &str,
+) -> Result<AuthData> {
+    let unsupported = || Error::Upstream("服务器要求用别的方式确认身份，重置不了".to_owned());
+    let CrossSigningResetAuthType::Uiaa(info) = auth_type else {
+        return Err(unsupported());
+    };
+    let offered = info
+        .flows
+        .iter()
+        .any(|flow| flow.stages.iter().any(|stage| stage.as_str() == login_type));
+    if !offered {
+        tracing::warn!(flows = ?info.flows, "服务器确认身份不接受登录令牌");
+        return Err(unsupported());
+    }
+    let mut data = serde_json::Map::new();
+    data.insert("token".to_owned(), jwt.into());
+    AuthData::new(login_type, info.session.clone(), data)
+        .map_err(|error| Error::Upstream(error.to_string()))
 }
 
 fn recovery_error(error: &RecoveryError) -> Error {

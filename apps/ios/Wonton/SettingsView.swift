@@ -10,7 +10,6 @@ struct SettingsTab: View {
             SettingsView(model: appearance, chat: chat)
                 .wontonRootScreen("设置") { EmptyView() }
                 .navigationDestination(for: SettingsRoute.self) { _ in ChatBackupView(model: chat) }
-                .modifier(ChatDialogs(model: chat))
         }
     }
 }

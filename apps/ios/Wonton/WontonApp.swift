@@ -82,6 +82,7 @@ private struct MainView: View {
             }
         }
         .wontonDialog("打不开", message: unavailable, isPresented: isShowingUnavailable)
+        .modifier(ChatDialogs(model: chat))
         // 应用页和应用商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
         .task { await home.observe() }
         .task { await plugins.observe() }

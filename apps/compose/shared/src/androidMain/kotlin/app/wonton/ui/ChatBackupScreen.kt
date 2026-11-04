@@ -36,6 +36,8 @@ import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
@@ -65,7 +67,29 @@ fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
                 }
             }
             NextStep(encryption, onAction)
+            if (encryption.canReset) ResetBackup(onAction)
         }
+    }
+}
+
+@Composable
+private fun ResetBackup(onAction: (Action) -> Unit) {
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    WontonButton("重置备份", { confirming = true }, Modifier.fillMaxWidth(), WontonButtonKind.SECONDARY)
+    if (confirming) {
+        val dismiss = { confirming = false }
+        WontonDialog(
+            "重置聊天记录备份？",
+            "会换一把新的恢复密钥，旧的作废。重置后旧消息可能读不了，其他设备要输入新密钥。",
+            dismiss,
+            listOf(
+                WontonDialogAction("取消", onClick = dismiss),
+                WontonDialogAction("重置", WontonButtonKind.DANGER) {
+                    dismiss()
+                    onAction(Action.ResetRecovery)
+                },
+            ),
+        )
     }
 }
 
@@ -114,16 +138,24 @@ val RecoveryStatus.backupTitle: String
         RecoveryStatus.UNKNOWN -> "还不知道备份的情况"
     }
 
+/** 恢复密钥丢了、备份残缺或者开启不了时的出路。正在显示新密钥时不出现，免得主人还没抄下来就把它作废。 */
+val EncryptionStatus.canReset: Boolean
+    get() = recoveryKey == null && when (recovery) {
+        RecoveryStatus.ENABLED, RecoveryStatus.INCOMPLETE -> true
+        RecoveryStatus.DISABLED -> verification == DeviceVerification.UNVERIFIED
+        RecoveryStatus.IN_PROGRESS, RecoveryStatus.UNKNOWN -> false
+    }
+
 val EncryptionStatus.backupDetail: String?
     get() = when (recovery) {
         RecoveryStatus.ENABLED -> "换手机或新设备时，输入恢复密钥就能看到以前的消息。"
         // 未验证的设备开启不了，核心会拒绝。
         RecoveryStatus.DISABLED -> if (verification == DeviceVerification.UNVERIFIED) {
-            "要到最早配对的那台设备上开启。"
+            "要到最早配对的那台设备上开启。那台设备不在手边，就重置备份。"
         } else {
             "开启后，换手机或新设备时也能看到以前的消息。"
         }
-        RecoveryStatus.INCOMPLETE -> "输入开启备份时保存的恢复密钥。"
+        RecoveryStatus.INCOMPLETE -> "输入开启备份时保存的恢复密钥。密钥丢了，就重置备份。"
         RecoveryStatus.IN_PROGRESS -> null
         RecoveryStatus.UNKNOWN -> "连上家里的服务器后才能确认。"
     }

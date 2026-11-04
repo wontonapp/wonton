@@ -38,7 +38,6 @@ struct ChatListView: View {
                     StartChatView(model: model)
                 }
             }
-            .modifier(ChatDialogs(model: model))
         }
     }
 
@@ -69,7 +68,7 @@ struct ChatListView: View {
 
 }
 
-/// 聊天操作的结果。备份页也能从设置进，那边的导航栈也要挂一份。
+/// 聊天操作的结果。只在底栏之上挂一份：挂在各页的话，后台页的那份先弹，弹不出来，用户在别的页就看不到。
 struct ChatDialogs: ViewModifier {
     let model: ChatModel
 
