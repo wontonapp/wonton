@@ -4,7 +4,7 @@ import WontonClient
 /// 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。
 struct ConfirmationCardView: View {
     let view: ConfirmationView
-    let answer: (Answer) -> Void
+    let answer: (CardChoice) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -67,12 +67,12 @@ struct ConfirmationCardView: View {
     }
 
     private var buttons: some View {
-        ForEach(view.card.choices, id: \.answer) { choice in
+        ForEach(view.card.choices, id: \.self) { choice in
             Button {
-                answer(choice.answer)
+                answer(choice)
             } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
-                    if view.sending == choice.answer { ProgressView() }
+                    if view.sending == choice.answer, view.sendingChoiceId == choice.choiceId { ProgressView() }
                     Text(choice.label)
                 }
             }

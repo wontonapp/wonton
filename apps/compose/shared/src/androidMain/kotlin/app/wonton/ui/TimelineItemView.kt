@@ -39,7 +39,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
-import app.wonton.protocol.Answer
+import app.wonton.protocol.CardChoice
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.RichBlockKind
 import app.wonton.protocol.SendState
@@ -72,7 +72,7 @@ fun TimelineItemView(
     joinsNext: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onAnswer: (String, Answer) -> Unit,
+    onAnswer: (String, CardChoice) -> Unit,
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     when (val content = item.content) {
@@ -144,7 +144,7 @@ private fun MessageBubble(
     joinsNext: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onAnswer: (String, Answer) -> Unit,
+    onAnswer: (String, CardChoice) -> Unit,
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     val colors = WontonTheme.colors
@@ -189,7 +189,7 @@ fun BubbleSurface(
     modifier: Modifier,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onAnswer: (String, Answer) -> Unit,
+    onAnswer: (String, CardChoice) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -312,7 +312,7 @@ private fun MessageBody(
     core: ClientCore,
     sendState: SendState,
     trailingReserve: String?,
-    onAnswer: (String, Answer) -> Unit,
+    onAnswer: (String, CardChoice) -> Unit,
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)

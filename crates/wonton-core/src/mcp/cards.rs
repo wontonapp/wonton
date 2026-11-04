@@ -3,7 +3,8 @@
 
 use serde_json::{Value, json};
 use wonton_protocol::{
-    Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard, ConfirmationState,
+    AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
+    ConfirmationState,
 };
 
 use super::file_results::human_size;
@@ -96,6 +97,14 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool) -> Draft {
 
 /// 调用插件里会改数据的工具。参数原样列出，太长时截断。
 pub fn tool_call(requester: &str, plugin: &str, tool: &str, arguments: &Value) -> Draft {
+    Draft {
+        title: format!("{requester} 想用 {plugin} 的 {tool}"),
+        lines: vec![line("这个工具会改动数据"), arguments_line(arguments)],
+        choices: choices("允许", "拒绝"),
+    }
+}
+
+fn arguments_line(arguments: &Value) -> CardLine {
     const MAX: usize = 600;
     let mut args = arguments.to_string();
     if args.len() > MAX {
@@ -106,10 +115,33 @@ pub fn tool_call(requester: &str, plugin: &str, tool: &str, arguments: &Value) -
         args.truncate(cut);
         args.push('…');
     }
+    line(format!("参数：{args}"))
+}
+
+/// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项。没有拒绝类的选项时加一个不带 `choice_id` 的“取消”。
+pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Draft {
+    let mut lines: Vec<_> = request.description.iter().map(line).collect();
+    lines.extend(request.arguments.as_ref().map(arguments_line));
+    let mut buttons: Vec<_> = request
+        .options
+        .iter()
+        .map(|option| CardChoice {
+            answer: option.kind.answer(),
+            label: option.name.clone(),
+            choice_id: Some(option.choice_id.clone()),
+        })
+        .collect();
+    if !buttons.iter().any(|button| button.answer == Answer::Reject) {
+        buttons.push(CardChoice {
+            answer: Answer::Reject,
+            label: "取消".to_owned(),
+            choice_id: None,
+        });
+    }
     Draft {
-        title: format!("{requester} 想用 {plugin} 的 {tool}"),
-        lines: vec![line("这个工具会改动数据"), line(format!("参数：{args}"))],
-        choices: choices("允许", "拒绝"),
+        title: format!("{requester}：{}", request.title),
+        lines,
+        choices: buttons,
     }
 }
 

@@ -78,7 +78,7 @@ struct ChatRoomView: View {
                         joinsPrevious: joinsPrevious, joinsNext: joinsNext,
                         retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
                         cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
-                        answer: { model.send(.answerConfirmation(id: $0, answer: $1)) }
+                        answer: { model.send(.answerConfirmation(id: $0, answer: $1.answer, choiceId: $1.choiceId)) }
                     )
                     .id(item.id)
                     .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)

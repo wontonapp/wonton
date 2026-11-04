@@ -213,7 +213,9 @@ private fun Messages(
                     joinsNext,
                     onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
                     onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
-                    onAnswer = { id, answer -> onAction(Action.AnswerConfirmation(id, answer)) },
+                    onAnswer = { id, choice ->
+                        onAction(Action.AnswerConfirmation(id, choice.answer, choice.choiceId))
+                    },
                     onOpenMenu = onOpenMenu,
                 )
             }

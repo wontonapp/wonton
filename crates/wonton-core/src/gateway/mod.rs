@@ -18,6 +18,7 @@
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
 //! 自己的子域名。
 
+mod agent_permission;
 mod api;
 mod confirmations;
 mod core_routes;

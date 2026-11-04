@@ -325,6 +325,14 @@ async fn post_from_plugin_network(
     home: &Home,
     path: &str,
 ) -> hyper::Response<hyper::body::Incoming> {
+    post_body_from_plugin_network(home, path, "{}").await
+}
+
+async fn post_body_from_plugin_network(
+    home: &Home,
+    path: &str,
+    body: &str,
+) -> hyper::Response<hyper::body::Incoming> {
     let request = hyper::Request::builder()
         .method(Method::POST)
         .uri(format!("http://{}{path}", home.addr))
@@ -333,12 +341,109 @@ async fn post_from_plugin_network(
             format!("{PLUGIN_MCP_HOST}:{}", home.addr.port()),
         )
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from("{}"))
+        .body(Body::from(body.to_owned()))
         .unwrap();
     HttpClient::new().send(request).await.unwrap()
 }
 
-/// Agent 权限确认的入口和 MCP 总线同一道门；实现之前如实报没实现，不当成 MCP 请求转给总线（ADR-0035）。
+const PERMISSION_REQUEST: &str = r#"{
+    "tool_call_id": "call-1",
+    "title": "运行 ls",
+    "options": [
+        {"choice_id": "once", "kind": "allow_once", "name": "这次允许"},
+        {"choice_id": "always", "kind": "allow_always", "name": "总是允许"},
+        {"choice_id": "no", "kind": "reject_once", "name": "拒绝"}
+    ]
+}"#;
+
+/// 真的走 HTTP：Agent 从插件网络发长请求，主人经隧道回答，Agent 收到选的那一项（ADR-0035）。
+#[tokio::test]
+async fn the_agent_gets_the_owners_choice_over_http() {
+    let home = Arc::new(start(Some(vec![Permission::Tools])).await);
+    let path = wonton_protocol::AGENT_PERMISSION_PATH;
+    let asked = {
+        let home = home.clone();
+        tokio::spawn(
+            async move { post_body_from_plugin_network(&home, path, PERMISSION_REQUEST).await },
+        )
+    };
+    let card = home.cards.wait_for(1).await;
+    let answer_path = wonton_protocol::answer_path(&card.id);
+    let device = home.paired_device();
+
+    // 卡片上没有的选项，主人的回答也不算数，卡片还等着。
+    let wrong = r#"{"answer": "approve", "choice_id": "nope"}"#;
+    let (status, kind, _) = home.send(&answer_path, wrong, Some(device), &[]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(kind.as_deref(), Some("invalid_input"));
+
+    let right = r#"{"answer": "approve", "choice_id": "always"}"#;
+    let (status, _, _) = home.send(&answer_path, right, Some(device), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let response = asked.await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let outcome: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        outcome,
+        json!({"outcome": "selected", "choice_id": "always"})
+    );
+}
+
+#[tokio::test]
+async fn a_bad_permission_request_gets_invalid_input() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let path = wonton_protocol::AGENT_PERMISSION_PATH;
+    let unknown = PERMISSION_REQUEST.replace("allow_always", "allow_forever");
+    for body in [unknown.as_str(), "不是 JSON", "{}"] {
+        let response = post_body_from_plugin_network(&home, path, body).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(
+            response.headers()[ERROR_HEADER],
+            HeaderValue::from_static("invalid_input")
+        );
+    }
+    assert!(home.cards.posted.lock().unwrap().is_empty());
+}
+
+/// 真的断开连接：卡片作废（ADR-0035）。靠 hyper 在对方断开时丢下请求的 future。
+#[tokio::test]
+async fn hanging_up_withdraws_the_card() {
+    use tokio::io::AsyncWriteExt;
+
+    let home = start(Some(vec![Permission::Tools])).await;
+    let mut stream = tokio::net::TcpStream::connect(home.addr).await.unwrap();
+    let head = format!(
+        "POST {} HTTP/1.1\r\nHost: {PLUGIN_MCP_HOST}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        wonton_protocol::AGENT_PERMISSION_PATH,
+        home.addr.port(),
+        PERMISSION_REQUEST.len(),
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream
+        .write_all(PERMISSION_REQUEST.as_bytes())
+        .await
+        .unwrap();
+    let card = home.cards.wait_for(1).await;
+
+    drop(stream);
+    let withdrawn = |states: &[wonton_protocol::ConfirmationState]| {
+        matches!(
+            states.last(),
+            Some(wonton_protocol::ConfirmationState::Failed { .. })
+        )
+    };
+    for _ in 0..500 {
+        if withdrawn(&home.cards.states(&card.id)) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(withdrawn(&home.cards.states(&card.id)));
+}
+
+/// Agent 权限确认的入口和 MCP 总线同一道门（ADR-0035）。
 #[tokio::test]
 async fn the_agent_permission_entry_is_behind_the_same_gate() {
     let path = wonton_protocol::AGENT_PERMISSION_PATH;
@@ -349,10 +454,10 @@ async fn the_agent_permission_entry_is_behind_the_same_gate() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let with = start(Some(vec![Permission::Tools])).await;
     let response = post_from_plugin_network(&with, path).await;
-    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         response.headers()[ERROR_HEADER],
-        HeaderValue::from_static("not_implemented")
+        HeaderValue::from_static("invalid_input")
     );
 }
 

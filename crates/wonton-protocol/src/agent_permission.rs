@@ -2,7 +2,8 @@
 //!
 //! 插件网络里 `POST` MCP 总线同一个地址的 [`AGENT_PERMISSION_PATH`]，请求体是 [`AgentPermissionRequest`]。这是一个长请求：
 //! 等主人回答，最长 [`AGENT_PERMISSION_TTL_SECS`] 秒，响应是 [`AgentPermissionOutcome`]。调用方按来源地址认出，和 MCP 总线
-//! 一样。请求不合法（选项不认识、没有选项、`choice_id` 重复）时返回 400 `invalid_input`；调用方提前断开时卡片随之作废。
+//! 一样。请求不合法（选项不认识、没有选项、`choice_id` 重复）时返回 400 `invalid_input`；已经有太多请求在等主人时返回
+//! 429 `too_many_pending`；卡片发不出去时返回 503 `confirmation_unavailable`；调用方提前断开时卡片随之作废。
 
 use serde::{Deserialize, Serialize};
 

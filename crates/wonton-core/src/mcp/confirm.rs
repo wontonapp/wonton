@@ -87,11 +87,17 @@ pub struct Ticket {
     pub answer: Answer,
 }
 
+/// 主人按的那个按钮。
+pub struct Chosen {
+    pub answer: Answer,
+    pub choice_id: Option<String>,
+}
+
 struct Slot {
     caller: PluginId,
     card: ConfirmationCard,
     handle: Option<String>,
-    waiter: Option<oneshot::Sender<Answer>>,
+    waiter: Option<oneshot::Sender<Chosen>>,
     created: SystemTime,
 }
 
@@ -127,6 +133,25 @@ impl Confirmations {
 
     /// 请主人确认，等到主人回答或者过期。确认了返回 [`Ticket`]，执行完要调 [`Self::finish`]。
     pub async fn ask(&self, caller: &PluginId, draft: Draft) -> Result<Ticket, Refusal> {
+        let (card, answered) = self.open(caller, draft)?;
+        let chosen = self.deliver(&card, answered).await?;
+        self.publish(&card.id).await;
+        match chosen.answer {
+            answer @ (Answer::Approve | Answer::ApproveWider) => Ok(Ticket {
+                id: card.id,
+                answer,
+            }),
+            // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
+            Answer::Reject | Answer::Unknown => Err(Refusal::Rejected),
+        }
+    }
+
+    /// 登记一张等回答的卡片，还没发出去。
+    pub(super) fn open(
+        &self,
+        caller: &PluginId,
+        draft: Draft,
+    ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
         let created = SystemTime::now();
         let card = ConfirmationCard {
             id: random_token(),
@@ -136,53 +161,50 @@ impl Confirmations {
             choices: draft.choices,
             expires_at_ms: now_ms(created + self.ttl),
         };
-        let id = card.id.clone();
         let (waiter, answered) = oneshot::channel();
-        {
-            let mut slots = self.lock();
-            slots.retain(|_, slot| {
-                slot.waiter.is_some()
-                    || created.duration_since(slot.created).unwrap_or_default() < KEEP_FINISHED
-            });
-            let pending = slots
-                .values()
-                .filter(|s| s.waiter.is_some() && &s.caller == caller)
-                .count();
-            if pending >= MAX_PENDING_PER_CALLER {
-                return Err(Refusal::TooMany);
-            }
-            let slot = Slot {
-                caller: caller.clone(),
-                card: card.clone(),
-                handle: None,
-                waiter: Some(waiter),
-                created,
-            };
-            slots.insert(id.clone(), slot);
+        let mut slots = self.lock();
+        slots.retain(|_, slot| {
+            slot.waiter.is_some()
+                || created.duration_since(slot.created).unwrap_or_default() < KEEP_FINISHED
+        });
+        let pending = slots
+            .values()
+            .filter(|s| s.waiter.is_some() && &s.caller == caller)
+            .count();
+        if pending >= MAX_PENDING_PER_CALLER {
+            return Err(Refusal::TooMany);
         }
-        let handle = match self.notifier.post(&card).await {
+        let slot = Slot {
+            caller: caller.clone(),
+            card: card.clone(),
+            handle: None,
+            waiter: Some(waiter),
+            created,
+        };
+        slots.insert(card.id.clone(), slot);
+        Ok((card, answered))
+    }
+
+    /// 把 [`Self::open`] 登记的卡片发给主人，等回答。回答之后卡片的变化由调用方发布。
+    pub(super) async fn deliver(
+        &self,
+        card: &ConfirmationCard,
+        answered: oneshot::Receiver<Chosen>,
+    ) -> Result<Chosen, Refusal> {
+        let handle = match self.notifier.post(card).await {
             Ok(handle) => handle,
             Err(e) => {
-                self.lock().remove(&id);
+                self.lock().remove(&card.id);
                 return Err(Refusal::Unavailable(e));
             }
         };
-        if let Some(slot) = self.lock().get_mut(&id) {
+        if let Some(slot) = self.lock().get_mut(&card.id) {
             slot.handle = Some(handle);
         }
-        let answer = tokio::time::timeout(self.ttl, answered).await;
-        match answer {
-            Ok(Ok(answer @ (Answer::Approve | Answer::ApproveWider))) => {
-                self.publish(&id).await;
-                Ok(Ticket { id, answer })
-            }
-            // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
-            Ok(Ok(Answer::Reject | Answer::Unknown)) => {
-                self.publish(&id).await;
-                Err(Refusal::Rejected)
-            }
+        match tokio::time::timeout(self.ttl, answered).await {
+            Ok(Ok(chosen)) => Ok(chosen),
             Err(_) | Ok(Err(_)) => {
-                self.settle(&id, ConfirmationState::Expired).await;
+                self.settle(&card.id, ConfirmationState::Expired).await;
                 Err(Refusal::Expired)
             }
         }
@@ -229,7 +251,11 @@ impl Confirmations {
             return Err(AnswerError::AlreadyAnswered);
         };
         // 等待的一方已经不在（只会在核心退出时发生）：当作过期。
-        if waiter.send(answer).is_err() {
+        let chosen = Chosen {
+            answer,
+            choice_id: choice_id.map(str::to_owned),
+        };
+        if waiter.send(chosen).is_err() {
             slot.card.state = ConfirmationState::Expired;
             return Err(AnswerError::Expired);
         }
@@ -242,7 +268,7 @@ impl Confirmations {
         self.settle(&ticket.id, state).await;
     }
 
-    async fn settle(&self, id: &str, state: ConfirmationState) {
+    pub(super) async fn settle(&self, id: &str, state: ConfirmationState) {
         if let Some(slot) = self.lock().get_mut(id) {
             slot.waiter = None;
             slot.card.state = state;
@@ -251,7 +277,7 @@ impl Confirmations {
     }
 
     /// 把卡片现在的状态发给主人。更新失败只记日志：执行已经发生了，工具的结果照样返回给 Agent。
-    async fn publish(&self, id: &str) {
+    pub(super) async fn publish(&self, id: &str) {
         let current = self
             .lock()
             .get(id)

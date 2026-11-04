@@ -31,7 +31,7 @@ import app.wonton.ui.icons.WontonIcon
 /** 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ConfirmationCardView(view: ConfirmationView, onAnswer: (String, Answer) -> Unit) {
+fun ConfirmationCardView(view: ConfirmationView, onAnswer: (String, CardChoice) -> Unit) {
     val card = view.card
     val colors = WontonTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -52,7 +52,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAnswer: (String, Answer) -> U
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
                 card.choices.forEach { choice ->
-                    ChoiceButton(choice, view.sending) { onAnswer(card.id, choice.answer) }
+                    ChoiceButton(choice, view) { onAnswer(card.id, choice) }
                 }
             }
         }
@@ -82,19 +82,19 @@ private fun CardState(state: ConfirmationState) {
 }
 
 @Composable
-private fun ChoiceButton(choice: CardChoice, sending: Answer?, onClick: () -> Unit) {
+private fun ChoiceButton(choice: CardChoice, view: ConfirmationView, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        if (sending == choice.answer) {
+        if (view.sending == choice.answer && view.sendingChoiceId == choice.choiceId) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
         }
         WontonButton(
             choice.label,
             onClick,
             kind = if (choice.answer == Answer.APPROVE) WontonButtonKind.PRIMARY else WontonButtonKind.SECONDARY,
-            enabled = sending == null,
+            enabled = view.sending == null,
         )
     }
 }

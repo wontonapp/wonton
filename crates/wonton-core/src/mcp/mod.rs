@@ -2,6 +2,7 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_permission;
 pub mod audit;
 mod bounded_http;
 mod cards;
@@ -32,6 +33,7 @@ use wonton_protocol::{ConfirmationState, FileFailure};
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::plugin::{McpServer, PluginId, PluginManager};
+pub use agent_permission::AgentPermissionError;
 use audit::{Audit, AuditedFile, Basis, Decision, Record};
 use cards::Draft;
 pub use cards::content as card_content;
@@ -486,6 +488,8 @@ impl Bus {
     }
 }
 
+#[cfg(test)]
+mod agent_permission_tests;
 #[cfg(test)]
 mod file_tests;
 #[cfg(test)]

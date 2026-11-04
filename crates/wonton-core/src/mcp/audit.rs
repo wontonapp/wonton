@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use serde_json::Value;
-use wonton_protocol::{FileFailure, FileSource};
+use wonton_protocol::{AgentPermissionKind, FileFailure, FileSource};
 
 use crate::files::record::{FileRecord, Origin};
 use crate::plugin::PluginId;
@@ -31,6 +31,8 @@ pub enum Decision {
     Expired,
     /// 没能请主人确认（发不出卡片、等待的请求太多）。
     Unconfirmed,
+    /// Agent 没等主人回答就断开了（ADR-0035）。
+    Withdrawn,
 }
 
 /// 这次调用凭什么放行（ADR-0024 的“审计”）。
@@ -67,6 +69,21 @@ pub struct Record<'a> {
     /// 这次调用碰到的文件（ADR-0020 的“审计”）。
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub files: &'a [AuditedFile],
+}
+
+/// Agent 自己的工具请主人确认：一行审计（ADR-0035）。
+#[derive(Serialize)]
+pub struct AgentPermissionRecord<'a> {
+    pub caller: &'a str,
+    pub tool_call_id: &'a str,
+    pub title: &'a str,
+    pub arguments: Option<&'a Value>,
+    pub decision: Decision,
+    /// 主人选的那一项；点“取消”、过期、没问成时没有。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choice_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AgentPermissionKind>,
 }
 
 /// 主人改了放宽：一行审计。

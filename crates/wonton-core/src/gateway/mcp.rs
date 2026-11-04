@@ -9,6 +9,7 @@ use hyper::StatusCode;
 use tower::ServiceExt;
 use wonton_protocol::AGENT_PERMISSION_PATH;
 
+use super::agent_permission;
 use super::api::error_response;
 use super::{Gateway, client_addr};
 use crate::mcp::Caller;
@@ -40,16 +41,12 @@ pub async fn request(gateway: &Gateway, mut req: Request) -> Response {
             );
         }
     };
-    if req.uri().path() == AGENT_PERMISSION_PATH {
-        return error_response(
-            StatusCode::NOT_IMPLEMENTED,
-            "not_implemented",
-            "这个版本的核心还不能处理 Agent 权限确认",
-        );
-    }
     let title = gateway.plugins.title(&source.id);
-    req.extensions_mut()
-        .insert(Caller::new(source.id, title.as_ref()));
+    let caller = Caller::new(source.id, title.as_ref());
+    if req.uri().path() == AGENT_PERMISSION_PATH {
+        return agent_permission::request(mcp, &caller, req).await;
+    }
+    req.extensions_mut().insert(caller);
     match mcp.service.clone().oneshot(req).await {
         Ok(response) => response.map(Body::new),
         Err(never) => match never {},

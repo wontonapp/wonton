@@ -13,7 +13,7 @@ struct TimelineRow: View {
     let retry: () -> Void
     let cancel: () -> Void
     /// 回答这张确认卡片。
-    let answer: (String, Answer) -> Void
+    let answer: (String, CardChoice) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -69,7 +69,7 @@ private struct MessageBubble: View {
     let joinsNext: Bool
     let retry: () -> Void
     let cancel: () -> Void
-    let answer: (String, Answer) -> Void
+    let answer: (String, CardChoice) -> Void
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
