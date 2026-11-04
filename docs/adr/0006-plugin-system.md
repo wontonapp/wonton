@@ -53,8 +53,8 @@ Docker 29.8）和 npchy（Linux x86_64，Docker 29.7，`DOCKER_HOST=ssh://npchy`
 **插件管理器**（`crates/wonton-core/src/plugin/`）
 
 - 经 Docker API 直接创建网络、卷和容器，不依赖 docker compose 命令行。核心只接受 Compose 子集
-  （白名单，见插件规范）：未知字段报错，端口、宿主网络、特权、设备、Docker socket 等高权限字段在 M0
-  一律拒绝并说明原因。YAML 用 serde-saphyr 解析（纯 Rust，带资源预算，支持锚点和合并键）。
+  （白名单，见插件规范）：未知字段报错，端口照旧拒绝；宿主网络、特权、设备、Docker socket 等高权限字段
+  要声明对应权限（ADR-0036）。YAML 用 serde-saphyr 解析（纯 Rust，带资源预算，支持锚点和合并键）。
 - 安装：校验清单 → 核对主人确认的权限 → 用占位环境预渲染 → 拉镜像 → 建应用数据目录并交给
   PUID:PGID → 建插件网络并把核心接进去 → 建命名卷 → 登记 OIDC 客户端 → 按 `depends_on` 启动 →
   等健康检查或稳定运行 → 探测网页入口。任一步失败按相反顺序回滚，错误里附容器最近的日志。
