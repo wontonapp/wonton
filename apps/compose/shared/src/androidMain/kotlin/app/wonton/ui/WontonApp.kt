@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,6 +34,7 @@ import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonBarItem
 import app.wonton.ui.design.WontonBottomBar
 import app.wonton.ui.design.WontonDialog
@@ -96,12 +98,7 @@ fun WontonApp(
             { entry: PluginEntry ->
                 when (entry) {
                     is PluginEntry.Chat -> unavailable = chat.openDirectChat(core, entry.botUserId, from = tab)
-                    is PluginEntry.Web ->
-                        if (home.proxy == null) {
-                            unavailable = "还没有连上家里的服务器：${home.status.text}"
-                        } else {
-                            page = entry
-                        }
+                    is PluginEntry.Web -> page = entry
                 }
             }
         }
@@ -127,34 +124,47 @@ fun WontonApp(
             }
         }
         val shown = page
-        if (shown != null && proxy != null) {
+        if (shown != null) {
             BackHandler { page = null }
             WithPendingCards(chatView.pendingConfirmations, openCardRoom) {
-                PluginPage(shown.title, shown.url, proxy, onClose = { page = null })
+                PluginPage(shown.title, shown.url, home, onClose = { page = null })
             }
             return@WontonTheme
         }
         // 卡片所在的房间就在眼前时不用提示。
         val elsewhere = chatView.pendingConfirmations.filter { tab != CHAT || it.roomId != chat.openRoom }
+        val barStatus = connectionBarStatus(
+            home.notice,
+            onRetry = { core.send(Action.RetryConnection) },
+            onOpen = {
+                tab = APPS
+                appsPage = it
+                // 详情页和确认页叠在页面上面，不收掉就看不到连接页。
+                appsPlugins.detail = null
+                appsPlugins.confirmation = null
+            },
+        )
         MainTabs(
             tab = tab,
             onSelect = { tab = it },
             hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins, showingBackup),
         ) {
             WithPendingCards(elsewhere, openCardRoom) {
-                when (tab) {
-                    CHAT -> ChatRoute(core, chat, plugins)
-                    APPS -> HomeRoute(
-                        core,
-                        home,
-                        plugins,
-                        appsPlugins,
-                        appsPage,
-                        onPage = { appsPage = it },
-                        pendingCards = chatView.pendingConfirmations,
-                        onOpenCardRoom = openCardRoom,
-                    )
-                    else -> SettingsPage(core, appearance, chatView, showingBackup) { showingBackup = it }
+                CompositionLocalProvider(LocalWontonBarStatus provides barStatus) {
+                    when (tab) {
+                        CHAT -> ChatRoute(core, chat, plugins)
+                        APPS -> HomeRoute(
+                            core,
+                            home,
+                            plugins,
+                            appsPlugins,
+                            appsPage,
+                            onPage = { appsPage = it },
+                            pendingCards = chatView.pendingConfirmations,
+                            onOpenCardRoom = openCardRoom,
+                        )
+                        else -> SettingsPage(core, appearance, chatView, showingBackup) { showingBackup = it }
+                    }
                 }
                 OpeningChat(chat)
             }

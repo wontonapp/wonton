@@ -69,7 +69,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
     val viewModel = plugins.viewModel
     val store = viewModel.store
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
-    WontonScreen(bar = { WontonPushedBar("应用商店", onBack) }) {
+    WontonScreen(bar = { WontonPushedBar("应用商店", onBack, showsStatusLine = true) }) {
         Column(Modifier.fillMaxSize()) {
             WontonSearchField(
                 query,

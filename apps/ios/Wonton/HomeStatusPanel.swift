@@ -14,7 +14,7 @@ struct HomeStatusPanel: View {
         WontonGroup {
             Button(action: showConnection) {
                 WontonRow(
-                    title: "连接", value: connection, valueTint: isDisconnected ? colors.danger : nil, showsForward: true
+                    title: "连接", value: connection, valueTint: needsTheOwner ? colors.danger : nil, showsForward: true
                 )
             }
             .buttonStyle(.plain)
@@ -40,8 +40,8 @@ struct HomeStatusPanel: View {
         }
     }
 
-    private var isDisconnected: Bool {
-        if case .disconnected = home.status { true } else { false }
+    private var needsTheOwner: Bool {
+        home.notice == .deviceRejected || home.notice == .versionMismatch
     }
 
     private var connection: String {
@@ -49,10 +49,8 @@ struct HomeStatusPanel: View {
         case .connected:
             guard let path = home.path else { return "已连接" }
             return "已连接 · \(path.relay ? "中继" : "直连")"
-        case .disconnected:
-            return "连不上"
         default:
-            return home.status.text
+            return home.notice?.sentence ?? "连接中…"
         }
     }
 

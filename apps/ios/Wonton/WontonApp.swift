@@ -28,6 +28,7 @@ struct WontonApp: App {
                     // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
                     // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
                     if old == .background, phase != .background { home.send(.appForegrounded) }
+                    if phase == .background { home.send(.appBackgrounded) }
                 }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {
@@ -47,7 +48,6 @@ private struct MainView: View {
     let appearance: AppearanceModel
     @Binding var tab: AppTab
     @State private var page: OpenedPage?
-    @State private var unavailable: String?
     @State private var isKeyboardVisible = false
 
     /// 卡片所在的房间就在眼前时不用提示。
@@ -76,18 +76,20 @@ private struct MainView: View {
                     PendingCardBanner(cards: chat.viewModel.pendingConfirmations, open: openCardRoom)
                 }
                 // 核心重建了本地代理时换上新的凭据。
-                PluginPage(
-                    title: page.title, url: page.url, proxy: home.viewModel.proxy ?? page.proxy
-                ) { self.page = nil }
+                PluginPage(title: page.title, url: page.url, home: home.viewModel) { self.page = nil }
             }
         }
-        .wontonDialog("打不开", message: unavailable, isPresented: isShowingUnavailable)
         .modifier(ChatDialogs(model: chat))
         // 应用页和应用商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
         .task { await home.observe() }
         .task { await plugins.observe() }
         .task { await chat.observe() }
         .task { await chat.files.observe() }
+        .task {
+            for await network in DeviceNetwork.changes() {
+                home.send(.networkChanged(network: network))
+            }
+        }
     }
 
     private var tabs: some View {
@@ -110,6 +112,9 @@ private struct MainView: View {
         }
         // 打字时让出底部的位置。
         .environment(\.wontonTabBar, isKeyboardVisible ? nil : AnyView(bottomBar))
+        .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
+            ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showHomeRoute)
+        })
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
@@ -129,6 +134,11 @@ private struct MainView: View {
         )
     }
 
+    private func showHomeRoute(_ route: HomeRoute) {
+        tab = .apps
+        home.requestedRoute = route
+    }
+
     private func openCardRoom(_ roomId: String) {
         page = nil
         tab = .chat
@@ -141,28 +151,14 @@ private struct MainView: View {
         case let .chat(botUserId):
             if chat.openDirectChat(with: botUserId, from: tab) { tab = .chat }
         case let .web(url, title):
-            guard let proxy = home.viewModel.proxy else {
-                unavailable = "还没有连上家里的服务器：\(home.viewModel.status.text)"
-                return
-            }
-            page = OpenedPage(title: title, url: url, proxy: proxy)
+            page = OpenedPage(title: title, url: url)
         }
-    }
-
-    private var isShowingUnavailable: Binding<Bool> {
-        Binding(
-            get: { unavailable != nil },
-            set: { isShowing in
-                if !isShowing { unavailable = nil }
-            }
-        )
     }
 }
 
 private struct OpenedPage: Identifiable {
     let title: String
     let url: URL
-    let proxy: ProxySettings
 
     var id: URL { url }
 }

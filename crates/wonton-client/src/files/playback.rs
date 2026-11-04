@@ -150,9 +150,8 @@ impl FilesLink {
 fn explain(reason: FileFailure, detail: &str) -> String {
     const ELSEWHERE: &str = "可以下载后用其他 App 打开。";
     match reason {
-        FileFailure::TransportUnavailable => {
-            format!("连不上家里的服务器：{detail}。{ELSEWHERE}")
-        }
+        // 断在哪一步对主人没用，连接状态由标题栏说。
+        FileFailure::TransportUnavailable => format!("连不上家里的服务器。{ELSEWHERE}"),
         FileFailure::UnsupportedFormat => format!("这台手机放不了这个格式。{ELSEWHERE}"),
         // 文件拿不到，下载也一样，不提示。
         FileFailure::Unauthenticated

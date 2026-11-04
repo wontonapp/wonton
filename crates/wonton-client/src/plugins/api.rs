@@ -257,7 +257,8 @@ pub(super) fn not_connected() -> PluginProblem {
     }
 }
 
-/// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外，比如本地代理连不上隧道时回的 502。
+/// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外：本地代理连不上隧道时回 502，隧道拒绝这台设备时
+/// 回 403。这两种都是连接的事，由 `HomeViewModel` 说。
 fn core_error(status: u16, body: &[u8]) -> PluginProblem {
     let detail = serde_json::from_slice::<ErrorBody>(body)
         .ok()
@@ -279,8 +280,8 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         Some(_) if status >= 500 => PluginFailure::Upstream,
         Some(_) => PluginFailure::Protocol,
         None => match status {
-            401 | 403 => PluginFailure::Unauthorized,
-            502 => PluginFailure::TransportUnavailable,
+            403 | 502 => PluginFailure::TransportUnavailable,
+            401 => PluginFailure::Unauthorized,
             500..=599 => PluginFailure::Upstream,
             _ => PluginFailure::Protocol,
         },

@@ -1,6 +1,9 @@
 //! 按原因区分的错误（AGENTS.md：失败即停，错误必须区分原因）。
 
-use matrix_sdk::{HttpError, RefreshTokenError};
+use matrix_sdk::{
+    HttpError, RefreshTokenError,
+    ruma::api::error::{Error as ApiError, ErrorBody},
+};
 use matrix_sdk_ui::{
     encryption_sync_service, notification_client, room_list_service, sync_service, timeline,
 };
@@ -52,18 +55,29 @@ impl From<&HttpError> for Error {
                 message: other.to_string(),
             },
             _ => match error.as_client_api_error() {
-                Some(api) => match api.status_code.as_u16() {
-                    401 | 403 => Self::Unauthorized {
-                        errcode: api
-                            .error_kind()
-                            .map_or_else(String::new, |kind| kind.errcode().to_string()),
-                        message: api.to_string(),
-                    },
-                    400 => Self::InvalidInput(api.to_string()),
-                    _ => Self::Upstream(api.to_string()),
-                },
+                Some(api) => api.into(),
                 None => Self::Upstream(error.to_string()),
             },
+        }
+    }
+}
+
+impl From<&ApiError> for Error {
+    fn from(api: &ApiError) -> Self {
+        // Matrix 服务器的错误都是 JSON。不是 JSON 的回应来自路上：隧道拒绝这台设备时本地代理回 403，隧道断了回 502，
+        // 这时请求没到 Matrix，不能说“Matrix 服务器拒绝了”。
+        if matches!(api.body, ErrorBody::NotJson { .. }) {
+            return Self::Transport(api.to_string());
+        }
+        match api.status_code.as_u16() {
+            401 | 403 => Self::Unauthorized {
+                errcode: api
+                    .error_kind()
+                    .map_or_else(String::new, |kind| kind.errcode().to_string()),
+                message: api.to_string(),
+            },
+            400 => Self::InvalidInput(api.to_string()),
+            _ => Self::Upstream(api.to_string()),
         }
     }
 }
@@ -123,5 +137,44 @@ impl From<notification_client::Error> for Error {
             }
             other => Self::Upstream(other.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use matrix_sdk::ruma::api::EndpointError;
+
+    use super::*;
+
+    fn response(status: u16, body: &str) -> ApiError {
+        let response = matrix_sdk::ruma::exports::http::Response::builder()
+            .status(status)
+            .body(body.as_bytes())
+            .unwrap();
+        ApiError::from_http_response(response)
+    }
+
+    #[test]
+    fn answers_from_the_tunnel_are_not_blamed_on_the_matrix_server() {
+        for status in [403, 502, 503] {
+            let error = Error::from(&response(status, "服务端拒绝了本设备\n"));
+            assert!(matches!(error, Error::Transport(_)), "{status}: {error:?}");
+        }
+    }
+
+    #[test]
+    fn answers_from_the_matrix_server_keep_their_meaning() {
+        let body = r#"{"errcode":"M_FORBIDDEN","error":"no"}"#;
+        assert_eq!(
+            Error::from(&response(403, body)),
+            Error::Unauthorized {
+                errcode: "M_FORBIDDEN".to_owned(),
+                message: "[403 / M_FORBIDDEN] no".to_owned(),
+            }
+        );
+        assert!(matches!(
+            Error::from(&response(500, r#"{"errcode":"M_UNKNOWN","error":"x"}"#)),
+            Error::Upstream(_)
+        ));
     }
 }

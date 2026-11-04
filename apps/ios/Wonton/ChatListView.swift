@@ -111,17 +111,15 @@ private enum ChatStatus {
             self = .signedOut
         case .signingIn:
             self = .progress("正在登录…")
-        case let .failed(_, message):
+        case let .failed(reason, message):
+            // 连不上由标题栏说，连上后自动重来。
+            if reason == .transportUnavailable { return nil }
             self = .failed(message)
         case .signedIn:
-            switch viewModel.sync {
-            case .idle, .starting:
-                self = .progress("正在同步…")
-            case .running:
+            guard case let .failed(reason, message) = viewModel.sync, reason != .transportUnavailable else {
                 return nil
-            case let .failed(_, message):
-                self = .failed(message)
             }
+            self = .failed(message)
         }
     }
 }

@@ -2,14 +2,23 @@ package app.wonton.ui
 
 import android.annotation.SuppressLint
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.HttpAuthHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -17,15 +26,36 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
+import app.wonton.protocol.HomeStatus
+import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.ProxySettings
+import app.wonton.ui.design.WontonSmallButton
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import java.util.concurrent.Executor
+import kotlinx.coroutines.delay
 
 private const val TAG = "WontonWeb"
+
+/** 和 `wonton-tunnel` 的 `ERROR_HEADER` 一致。 */
+private const val TUNNEL_ERROR_HEADER = "x-wonton-tunnel-error"
+
+/** 连上了还加载不了，试这么多次就照实说。 */
+private const val MAX_ATTEMPTS = 3
+private const val RETRY_DELAY_MS = 2_000L
 
 /**
  * 插件网页。WebView 的 HTTP 代理设为核心的本地代理，`Host` 原样保留，插件地址和 OIDC 签发方地址都和
@@ -35,31 +65,84 @@ private const val TAG = "WontonWeb"
  * CDN、字体等外部资源直连。不能再加 `removeImplicitRules()`：它对应的 `<-loopback>` 规则在反向模式下会把
  * `*.localhost` 排除出走代理的名单（实测这样 WebView 会直连 `*.wonton.localhost`）。
  */
-/** 全屏的插件网页，带一个关闭按钮。 */
+/**
+ * 全屏的插件网页，带一个关闭按钮。没连上时先打开，显示“连接中…”，连上后自动加载；加载中途断开也一样，本地代理的错误页不露出来。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PluginPage(title: String, url: String, proxy: ProxySettings, onClose: () -> Unit) {
+fun PluginPage(title: String, url: String, home: HomeViewModel, onClose: () -> Unit) {
+    val isConnected = home.status is HomeStatus.Connected
+    var started by remember { mutableStateOf(false) }
+    var failures by remember { mutableIntStateOf(0) }
+    var reload by remember { mutableIntStateOf(0) }
+    val gaveUp = isConnected && failures >= MAX_ATTEMPTS
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            started = true
+            if (failures > 0) reload++
+        }
+    }
+    LaunchedEffect(failures) {
+        if (failures > 0 && !gaveUp) {
+            delay(RETRY_DELAY_MS)
+            if (home.status is HomeStatus.Connected) reload++
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { Text(home.notice?.sentence ?: title) },
                 actions = { TextButton(onClick = onClose) { Text("关闭") } },
             )
         },
     ) { padding ->
-        PluginWebView(url, proxy, Modifier.padding(padding).fillMaxSize())
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            val proxy = home.proxy
+            if (started && proxy != null) {
+                PluginWebView(url, proxy, reload, onLoaded = { failures = 0 }, onFailed = { failures++ })
+            }
+            if (!started || failures > 0) {
+                Column(
+                    Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12, Alignment.CenterVertically),
+                ) {
+                    if (gaveUp) {
+                        Text(
+                            "网页打不开",
+                            style = WontonTheme.typography.itemTitle,
+                            color = WontonTheme.colors.textPrimary.toColor(),
+                        )
+                        WontonSmallButton("重试", {
+                            failures = 0
+                            reload++
+                        })
+                    } else {
+                        CircularProgressIndicator(color = WontonTheme.colors.textPrimary.toColor())
+                    }
+                }
+            }
+        }
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun PluginWebView(url: String, proxy: ProxySettings, modifier: Modifier = Modifier) {
+private fun PluginWebView(
+    url: String,
+    proxy: ProxySettings,
+    reload: Int,
+    onLoaded: () -> Unit,
+    onFailed: () -> Unit,
+) {
+    val loaded by rememberUpdatedState(onLoaded)
+    val failed by rememberUpdatedState(onFailed)
     DisposableEffect(proxy) {
         overrideProxy(proxy)
         onDispose { }
     }
     AndroidView(
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
         factory = { context ->
             // 调试版才开：插件网页只在真机的旧 WebView 上出问题时，要靠 chrome://inspect 看。
             val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -73,15 +156,15 @@ private fun PluginWebView(url: String, proxy: ProxySettings, modifier: Modifier 
                 )
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
-                webViewClient = ProxyAuthClient(proxy)
+                webViewClient = ProxyAuthClient(proxy, reload, { loaded() }, { failed() })
                 loadUrl(url)
             }
         },
         update = { webView ->
             val client = webView.webViewClient as ProxyAuthClient
-            if (client.proxy != proxy) {
-                // 核心重建了本地代理：换上新凭据，重新加载。
-                webView.webViewClient = ProxyAuthClient(proxy)
+            if (client.proxy != proxy || client.reload != reload) {
+                // 核心重建了本地代理时换上新凭据；重新加载时要回到 `url`，失败的那一页不算数。
+                webView.webViewClient = ProxyAuthClient(proxy, reload, { loaded() }, { failed() })
                 webView.loadUrl(url)
             }
         },
@@ -108,7 +191,34 @@ private fun overrideProxy(proxy: ProxySettings) {
 }
 
 /** 只把本地代理的凭据交给本地代理自己：别的主机（例如插件网页）要认证时不给。 */
-private class ProxyAuthClient(val proxy: ProxySettings) : WebViewClient() {
+private class ProxyAuthClient(
+    val proxy: ProxySettings,
+    val reload: Int,
+    private val onLoaded: () -> Unit,
+    private val onFailed: () -> Unit,
+) : WebViewClient() {
+    private var failedThisLoad = false
+
+    override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+        failedThisLoad = false
+    }
+
+    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (request.isForMainFrame) failed()
+    }
+
+    /** 本地代理连不上隧道时回的错误页不给主人看（ADR-0032）。插件自己的 502 不带这个响应头，照常显示。 */
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+        val headers = response.responseHeaders.orEmpty().keys
+        val fromProxy = headers.any { it.equals(TUNNEL_ERROR_HEADER, ignoreCase = true) }
+        if (request.isForMainFrame && fromProxy) failed()
+    }
+
+    private fun failed() {
+        failedThisLoad = true
+        onFailed()
+    }
+
     override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) {
         if (host == proxy.host || host == "${proxy.host}:${proxy.port}") {
             handler.proceed(proxy.username, proxy.password)
@@ -121,5 +231,7 @@ private class ProxyAuthClient(val proxy: ProxySettings) : WebViewClient() {
         // 只记到路径：查询串和片段里可能有 OAuth 授权码等秘密（例如 /login/generic_oauth?code=…）。
         val page = Uri.parse(url).buildUpon().clearQuery().fragment(null).build()
         Log.i(TAG, "网页加载完成 page=$page title=${view.title}")
+        // 出错的加载也会走到这里。
+        if (!failedThisLoad) onLoaded()
     }
 }

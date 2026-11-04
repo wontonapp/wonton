@@ -44,6 +44,8 @@ struct HomeView: View {
                 switch route {
                 case .connection:
                     ConnectionView(model: model, plugins: plugins)
+                case .connectionDetails:
+                    ConnectionDetailsView(model: model)
                 case .invite:
                     InviteView(model: model)
                 case .pairing:
@@ -61,9 +63,15 @@ struct HomeView: View {
             .onChange(of: model.viewModel.proxy, initial: true) { _, proxy in
                 if devWebURL != nil, proxy != nil { isShowingPage = true }
             }
+            .onChange(of: model.requestedRoute) { _, route in
+                guard let route else { return }
+                model.requestedRoute = nil
+                path = NavigationPath()
+                path.append(route)
+            }
             .fullScreenCover(isPresented: $isShowingPage) {
-                if let url = devWebURL, let proxy = model.viewModel.proxy {
-                    PluginPage(title: url.host() ?? "", url: url, proxy: proxy) { isShowingPage = false }
+                if let url = devWebURL {
+                    PluginPage(title: url.host() ?? "", url: url, home: model.viewModel) { isShowingPage = false }
                 }
             }
             .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
@@ -179,12 +187,12 @@ struct HomeView: View {
         )
     }
 
-    /// 连不上时换成警告；正在连时变浅。
+    /// 要主人动手时换成警告；没连上时变浅。
     @ViewBuilder private var connectionLink: some View {
         switch model.viewModel.status {
-        case .disconnected:
-            WontonIconLink(icon: .warning, label: "连接", value: HomeRoute.connection, tint: colors.danger)
-        case .connecting:
+        case .disconnected(.unauthorized, _), .disconnected(.protocol, _):
+            WontonIconLink(icon: .warning, label: "连接", value: HomeRoute.connection, tint: colors.warning)
+        case .connecting, .disconnected:
             WontonIconLink(icon: .connection, label: "连接", value: HomeRoute.connection, tint: colors.textSecondary)
         case .connected, .notConfigured:
             WontonIconLink(icon: .connection, label: "连接", value: HomeRoute.connection)
@@ -210,8 +218,9 @@ struct HomeView: View {
     }
 }
 
-private enum HomeRoute: Hashable {
+enum HomeRoute: Hashable {
     case connection
+    case connectionDetails
     case invite
     case pairing
     case egress
@@ -297,93 +306,7 @@ private struct LauncherIcon: View {
     }
 }
 
-/// 和家里服务器的连接，以及添加设备、重新配对。
-private struct ConnectionView: View {
-    let model: HomeModel
-    let plugins: PluginsModel
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: WontonTheme.spacing.sectionGap) {
-                WontonGroup {
-                    WontonRow(title: "状态", value: model.viewModel.status.text)
-                    if let path = model.viewModel.path {
-                        WontonSeparator()
-                        WontonRow(title: "路径", value: "\(path.relay ? "中继" : "直连") · \(path.rttMs) ms")
-                    }
-                }
-                WontonGroup {
-                    NavigationLink(value: HomeRoute.egress) {
-                        WontonRow(title: "出网代理", showsForward: true)
-                    }
-                    WontonSeparator()
-                    NavigationLink(value: HomeRoute.coreUpgrade) {
-                        WontonRow(
-                            title: "升级服务器",
-                            value: plugins.viewModel.coreUpgrade.isPrompting ? "有新版本" : nil,
-                            showsForward: true
-                        )
-                    }
-                }
-                .buttonStyle(.plain)
-                WontonGroup {
-                    NavigationLink(value: HomeRoute.invite) {
-                        WontonRow(title: "添加设备", showsForward: true)
-                    }
-                    WontonSeparator()
-                    NavigationLink(value: HomeRoute.pairing) {
-                        WontonRow(title: "重新配对", showsForward: true)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(WontonTheme.spacing.pageInset)
-        }
-        .wontonPushedScreen("连接")
-    }
-}
-
 extension CoreUpgradeViewModel {
     /// 有新版本，主人没跳过，也没在升级。
-    fileprivate var isPrompting: Bool { offer != nil && !offerSkipped }
-}
-
-extension HomeStatus {
-    var text: String {
-        switch self {
-        case .notConfigured:
-            return "还没有配对"
-        case .connecting:
-            return "连接中"
-        case .connected:
-            return "已连接"
-        case let .disconnected(reason, message):
-            switch reason {
-            case .unauthorized:
-                return "家里的服务器不认这台设备，请重新扫码配对"
-            case .transportUnavailable, .upstreamUnavailable, .protocol:
-                return message
-            }
-        }
-    }
-}
-
-/// 全屏的插件网页（小程序），带一个关闭按钮。
-struct PluginPage: View {
-    let title: String
-    let url: URL
-    let proxy: ProxySettings
-    let close: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            PluginWebView(url: url, proxy: proxy)
-                .ignoresSafeArea(edges: .bottom)
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    Button("关闭", action: close)
-                }
-        }
-    }
+    var isPrompting: Bool { offer != nil && !offerSkipped }
 }

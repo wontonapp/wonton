@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import app.wonton.protocol.ConnectionNotice
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
@@ -29,7 +30,7 @@ fun HomeStatusPanel(
         WontonRow(
             "连接",
             connectionText(home),
-            valueTint = if (home.status is HomeStatus.Disconnected) colors.danger else null,
+            valueTint = if (needsTheOwner(home)) colors.danger else null,
             showsForward = true,
             onClick = onConnection,
         )
@@ -60,9 +61,11 @@ fun HomeStatusPanel(
 private fun connectionText(home: HomeViewModel): String =
     when (home.status) {
         is HomeStatus.Connected -> home.path?.let { "已连接 · ${if (it.relay) "中继" else "直连"}" } ?: "已连接"
-        is HomeStatus.Disconnected -> "连不上"
-        else -> home.status.text
+        else -> home.notice?.sentence ?: "连接中…"
     }
+
+private fun needsTheOwner(home: HomeViewModel): Boolean =
+    home.notice is ConnectionNotice.DeviceRejected || home.notice is ConnectionNotice.VersionMismatch
 
 private fun storageText(plugins: PluginsViewModel): String =
     plugins.storage?.let { "${sizeText(it.freeBytes)} 可用，共 ${sizeText(it.totalBytes)}" } ?: "不确定"

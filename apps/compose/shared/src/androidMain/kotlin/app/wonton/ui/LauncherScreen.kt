@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.HomeFailure
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
@@ -77,13 +78,15 @@ fun LauncherScreen(
     WontonScreen(
         bar = {
             WontonRootBar("应用") {
-                // 连不上时换成警告；正在连时变浅。
+                // 要主人动手时换成警告；没连上时变浅。
                 val colors = WontonTheme.colors
+                val status = home.status
                 Box {
-                    when (home.status) {
-                        is HomeStatus.Disconnected ->
-                            WontonIconButton(WontonIcon.Warning, "连接", onConnection, colors.danger.toColor())
-                        is HomeStatus.Connecting ->
+                    when {
+                        status is HomeStatus.Disconnected &&
+                            (status.reason == HomeFailure.UNAUTHORIZED || status.reason == HomeFailure.PROTOCOL) ->
+                            WontonIconButton(WontonIcon.Warning, "连接", onConnection, colors.warning.toColor())
+                        status is HomeStatus.Disconnected || status is HomeStatus.Connecting ->
                             WontonIconButton(WontonIcon.Connection, "连接", onConnection, colors.textSecondary.toColor())
                         else -> WontonIconButton(WontonIcon.Connection, "连接", onConnection)
                     }

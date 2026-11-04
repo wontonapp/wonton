@@ -37,7 +37,7 @@ struct ChatRoomView: View {
         .modifier(RoomPresentations(presenter: presenter))
         .environment(model.files)
         .environment(presenter)
-        .wontonPushedScreen(title)
+        .wontonPushedScreen(title, showsStatus: true) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task { await timeline.observe() }

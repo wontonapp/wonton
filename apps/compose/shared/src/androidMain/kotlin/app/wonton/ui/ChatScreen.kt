@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatAccount
+import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.RoomMembership
@@ -175,13 +176,11 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
     val reminder = viewModel.encryption.backupReminder
-    val failure = (account as? ChatAccount.Failed)?.message
-        ?: (sync as? ChatSync.Failed)?.message.takeIf { account is ChatAccount.SignedIn }
-    val progress = when {
-        account == ChatAccount.SigningIn -> "正在登录…"
-        account is ChatAccount.SignedIn && (sync == ChatSync.Idle || sync == ChatSync.Starting) -> "正在同步…"
-        else -> null
-    }
+    // 连不上由标题栏说，连上后自动重来。
+    val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }?.message
+        ?: (sync as? ChatSync.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }?.message
+            .takeIf { account is ChatAccount.SignedIn }
+    val progress = "正在登录…".takeIf { account == ChatAccount.SigningIn }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
     Column(
         Modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),

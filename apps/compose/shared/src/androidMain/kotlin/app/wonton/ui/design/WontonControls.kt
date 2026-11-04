@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -234,52 +235,99 @@ fun Modifier.accentFill(shape: Shape, border: Boolean = true): Modifier {
 /** 根页面的标题栏：大标题在前，操作在后。 */
 @Composable
 fun WontonRootBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
-    Row(
+    val status = LocalWontonBarStatus.current
+    Column(
         Modifier.fillMaxWidth()
             .statusBarsPadding()
-            .heightIn(min = WontonTheme.size.topBar)
             .padding(horizontal = WontonTheme.spacing.pageInset),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        Text(
-            title,
-            Modifier.weight(1f).semantics { heading() },
-            style = WontonTheme.typography.screenTitle,
-            color = WontonTheme.colors.textPrimary.toColor(),
-        )
-        actions()
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.topBar),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        ) {
+            Text(
+                status.title ?: title,
+                Modifier.weight(1f).semantics { heading() },
+                style = WontonTheme.typography.screenTitle,
+                color = WontonTheme.colors.textPrimary.toColor(),
+            )
+            actions()
+        }
+        status.line?.let { line ->
+            Box(Modifier.padding(bottom = WontonTheme.spacing.s8)) { line() }
+        }
     }
 }
 
-/** 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。 */
+/** 标题栏要带上的状态：短的替换根页面的标题，也是聊天房间的副标题；长的是标题下面多的一行。 */
+class WontonBarStatus(
+    val title: String? = null,
+    val subtitle: String? = null,
+    val line: (@Composable () -> Unit)? = null,
+)
+
+val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
+
+/**
+ * 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。
+ *
+ * `showsStatus` 把连接状态放进副标题；`showsStatusLine` 给内容全靠连接的页面：长时间连不上时换成标题下面那一行，带下一步，
+ * 不然页面只会一直转圈。
+ */
 @Composable
 fun WontonPushedBar(
     title: String,
     onBack: () -> Unit,
     icon: ImageVector = WontonIcon.Back,
     iconLabel: String = "返回",
+    showsStatus: Boolean = false,
+    showsStatusLine: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Box(
-        Modifier.fillMaxWidth()
-            .statusBarsPadding()
-            .heightIn(min = WontonTheme.size.topBar)
-            .padding(horizontal = WontonTheme.spacing.s4),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            title,
-            Modifier.padding(horizontal = WontonTheme.size.target + WontonTheme.spacing.s8).semantics { heading() },
-            style = WontonTheme.typography.itemTitle,
-            color = WontonTheme.colors.textPrimary.toColor(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            WontonIconButton(icon, iconLabel, onBack)
-            Box(Modifier.weight(1f))
-            actions()
+    val status = LocalWontonBarStatus.current
+    val line = status.line.takeIf { showsStatusLine }
+    val subtitle = status.subtitle.takeIf { (showsStatus || showsStatusLine) && line == null }
+    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+        Box(
+            Modifier.fillMaxWidth()
+                .heightIn(min = WontonTheme.size.topBar)
+                .padding(horizontal = WontonTheme.spacing.s4),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                Modifier.padding(horizontal = WontonTheme.size.target + WontonTheme.spacing.s8),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    title,
+                    Modifier.semantics { heading() },
+                    style = WontonTheme.typography.itemTitle,
+                    color = WontonTheme.colors.textPrimary.toColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                subtitle?.let {
+                    Text(
+                        it,
+                        style = WontonTheme.typography.caption,
+                        color = WontonTheme.colors.textSecondary.toColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                WontonIconButton(icon, iconLabel, onBack)
+                Box(Modifier.weight(1f))
+                actions()
+            }
+        }
+        line?.let {
+            Box(
+                Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
+                    .padding(bottom = WontonTheme.spacing.s8),
+            ) { it() }
         }
     }
 }

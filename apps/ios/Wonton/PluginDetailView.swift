@@ -16,7 +16,7 @@ struct PluginDetailView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen("")
+            .wontonPushedScreen("", showsStatusLine: true)
             .task(id: route) { await load() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
             .uninstallDialog($uninstalling, model: model)

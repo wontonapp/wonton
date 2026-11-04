@@ -131,7 +131,7 @@ private fun RoomScreen(
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
-            WontonScreen(bar = { WontonPushedBar(title, onClose) }) {
+            WontonScreen(bar = { WontonPushedBar(title, onClose, showsStatus = true) }) {
                 // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
                 Column(
                     Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),

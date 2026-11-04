@@ -3,6 +3,8 @@
 
     <!-- 核心里的 iroh 隧道连家里的服务器。 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 网络变了马上告诉核心重连（ADR-0032）。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 新消息的系统通知；Android 13 起要在运行时申请。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 推送唤醒后，取消息期间不让手机睡回去。 -->

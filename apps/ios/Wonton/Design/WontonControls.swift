@@ -221,53 +221,93 @@ struct NoiseTile: View {
     }
 }
 
+/// 标题栏要带上的状态：短的替换根页面的标题，也是聊天房间的副标题；长的是标题下面多的一行。
+struct WontonBarStatus {
+    var title: String?
+    var subtitle: String?
+    var line: AnyView?
+}
+
+extension EnvironmentValues {
+    @Entry var wontonBarStatus = WontonBarStatus()
+}
+
 /// 根页面的标题栏：大标题在前，操作在后。
 struct WontonRootBar<Trailing: View>: View {
     let title: String
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
+    @Environment(\.wontonBarStatus) private var status
 
     var body: some View {
-        HStack(spacing: WontonTheme.spacing.s8) {
-            Text(title)
-                .wontonText(WontonTheme.typography.screenTitle)
-                .foregroundStyle(Color(colors.textPrimary))
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
-            trailing
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: WontonTheme.spacing.s8) {
+                Text(status.title ?? title)
+                    .wontonText(WontonTheme.typography.screenTitle)
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                trailing
+            }
+            .frame(minHeight: WontonTheme.size.topBar)
+            if let line = status.line {
+                line.padding(.bottom, WontonTheme.spacing.s8)
+            }
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .frame(minHeight: WontonTheme.size.topBar)
         // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
         .background(.ultraThinMaterial)
     }
 }
 
 /// 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。
+///
+/// `showsStatus` 把连接状态放进副标题；`showsStatusLine` 给内容全靠连接的页面：长时间连不上时换成标题下面那一行，带下一步，
+/// 不然页面只会一直转圈。
 struct WontonPushedBar<Trailing: View>: View {
     let title: String
     var icon: WontonIcon = .back
     var iconLabel = "返回"
+    var showsStatus = false
+    var showsStatusLine = false
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
+    @Environment(\.wontonBarStatus) private var status
     @Environment(\.dismiss) private var dismiss
 
+    private var line: AnyView? { showsStatusLine ? status.line : nil }
+
     var body: some View {
-        ZStack {
-            Text(title)
-                .wontonText(WontonTheme.typography.itemTitle)
-                .foregroundStyle(Color(colors.textPrimary))
-                .lineLimit(1)
+        VStack(spacing: 0) {
+            ZStack {
+                VStack(spacing: 0) {
+                    Text(title)
+                        .wontonText(WontonTheme.typography.itemTitle)
+                        .foregroundStyle(Color(colors.textPrimary))
+                        .lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
+                    if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {
+                        Text(subtitle)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .lineLimit(1)
+                    }
+                }
                 .padding(.horizontal, WontonTheme.size.target + WontonTheme.spacing.s8)
-                .accessibilityAddTraits(.isHeader)
-            HStack(spacing: 0) {
-                WontonIconButton(icon: icon, label: iconLabel) { dismiss() }
-                Spacer(minLength: 0)
-                trailing
+                HStack(spacing: 0) {
+                    WontonIconButton(icon: icon, label: iconLabel) { dismiss() }
+                    Spacer(minLength: 0)
+                    trailing
+                }
+                .padding(.horizontal, WontonTheme.spacing.s4)
             }
-            .padding(.horizontal, WontonTheme.spacing.s4)
+            .frame(minHeight: WontonTheme.size.topBar)
+            if let line {
+                line
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.bottom, WontonTheme.spacing.s8)
+            }
         }
-        .frame(minHeight: WontonTheme.size.topBar)
         // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
         .background(.ultraThinMaterial)
     }
@@ -281,12 +321,19 @@ extension WontonPushedBar where Trailing == EmptyView {
 
 extension View {
     /// 用自己的标题栏代替系统导航栏。
-    func wontonPushedScreen(_ title: String) -> some View {
-        wontonPushedScreen(title) { EmptyView() }
+    func wontonPushedScreen(_ title: String, showsStatusLine: Bool = false) -> some View {
+        wontonPushedScreen(title, showsStatusLine: showsStatusLine) { EmptyView() }
     }
 
-    func wontonPushedScreen<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
-        let bar = WontonPushedBar(title: title, trailing: trailing)
+    func wontonPushedScreen<Trailing: View>(
+        _ title: String,
+        showsStatus: Bool = false,
+        showsStatusLine: Bool = false,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        let bar = WontonPushedBar(
+            title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine, trailing: trailing
+        )
         return safeAreaInset(edge: .top, spacing: 0) { bar }
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())

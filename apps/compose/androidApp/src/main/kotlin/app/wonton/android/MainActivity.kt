@@ -22,6 +22,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     /** 点通知要打开的房间。 */
     private var requestedRoom by mutableStateOf<String?>(null)
+    private var networkWatcher: NetworkWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +76,19 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // 回到前台：网络可能变了，让核心检查隧道并重连。
         (application as WontonApplication).core.getOrNull()?.send(Action.AppForegrounded)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val core = (application as WontonApplication).core.getOrNull() ?: return
+        networkWatcher = NetworkWatcher(this) { core.send(Action.NetworkChanged(it)) }.also { it.start() }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        networkWatcher?.stop()
+        networkWatcher = null
+        (application as WontonApplication).core.getOrNull()?.send(Action.AppBackgrounded)
     }
 
     companion object {

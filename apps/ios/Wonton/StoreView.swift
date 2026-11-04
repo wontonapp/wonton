@@ -43,7 +43,7 @@ struct StoreView: View {
             }
             .refreshable { model.send(.refreshStore(force: true)) }
         }
-        .wontonPushedScreen("应用商店")
+        .wontonPushedScreen("应用商店", showsStatusLine: true)
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
         .task { model.refresh(.refreshStore(force: false)) }
     }

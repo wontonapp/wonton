@@ -90,7 +90,7 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
         }
         wasWorking = working
     }
-    WontonScreen(bar = { WontonPushedBar("", onBack = { navigation.detail = null }) }) {
+    WontonScreen(bar = { WontonPushedBar("", onBack = { navigation.detail = null }, showsStatusLine = true) }) {
         val result = loaded
         Box(Modifier.fillMaxSize()) {
             when {

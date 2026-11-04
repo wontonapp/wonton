@@ -8,6 +8,9 @@ use wonton_protocol::{ConnectionCheck, ConnectionNotice, DeviceNetwork, HomeFail
 const GRACE: Duration = Duration::from_secs(2);
 /// 断开这么久才说“好像离线了”。和 iroh 连接级的空闲时限对齐：30 秒还连不上，多半不是路径在切换。
 const LONG_OUTAGE: Duration = Duration::from_secs(30);
+/// 中继掉线这么久才算连不上。iroh 1.4.1 实测：家里的服务器不通时，模拟器上每隔几十秒掉线几秒就回来，不等一等，
+/// “好像离线了”和“连不上”会来回跳。
+const RELAY_GRACE: Duration = Duration::from_secs(10);
 /// 主人点了“重试”，按钮至少转这么久，让他知道点到了。
 const RETRY_SPIN: Duration = Duration::from_secs(1);
 /// 没连上时多久重新算一次：断开的时长和中继的情况在变，它们不发事件。
@@ -18,6 +21,7 @@ pub(super) struct Tracker {
     outage_since: Option<Instant>,
     network: Option<DeviceNetwork>,
     relay: ConnectionCheck,
+    relay_lost_since: Option<Instant>,
     catching_up: bool,
     retry_started: Option<Instant>,
     retry_running: bool,
@@ -39,7 +43,7 @@ impl Tracker {
         relay: ConnectionCheck,
         now: Instant,
     ) -> Option<Recovery> {
-        self.relay = relay;
+        self.observe_relay(relay, now);
         match status {
             HomeStatus::NotConfigured => {
                 self.outage_since = None;
@@ -57,6 +61,19 @@ impl Tracker {
                 None
             }
         }
+    }
+
+    fn observe_relay(&mut self, relay: ConnectionCheck, now: Instant) {
+        let just_lost = self.relay == ConnectionCheck::Ok && relay != ConnectionCheck::Ok;
+        if just_lost && now - *self.relay_lost_since.get_or_insert(now) < RELAY_GRACE {
+            return;
+        }
+        self.relay = relay;
+        self.relay_lost_since = None;
+    }
+
+    pub(super) fn relay(&self) -> ConnectionCheck {
+        self.relay
     }
 
     /// 换了服务器：之前的断开不算到它头上。
@@ -162,7 +179,8 @@ impl Tracker {
 
     /// 多久之后要重新算一次；连接正常时不用定时。
     pub(super) fn next_tick(&self) -> Option<Duration> {
-        (self.outage_since.is_some() || self.retry_running).then_some(TICK)
+        (self.outage_since.is_some() || self.retry_running || self.relay_lost_since.is_some())
+            .then_some(TICK)
     }
 }
 
@@ -213,6 +231,28 @@ mod tests {
         tracker.observe(&DOWN, ConnectionCheck::Failing, start);
         assert_eq!(
             after(&mut tracker, start, 31),
+            Some(ConnectionNotice::Unreachable { retrying: false })
+        );
+    }
+
+    #[test]
+    fn a_relay_blip_does_not_change_the_sentence() {
+        let start = Instant::now();
+        let at = |seconds| start + Duration::from_secs(seconds);
+        let mut tracker = Tracker::default();
+        let mut relay_says = |relay, seconds| {
+            tracker.observe(&DOWN, relay, at(seconds));
+            tracker.notice(&DOWN, at(seconds))
+        };
+        let offline = Some(ConnectionNotice::ServerOffline { retrying: false });
+        relay_says(ConnectionCheck::Ok, 0);
+        assert_eq!(relay_says(ConnectionCheck::Failing, 31), offline);
+        assert_eq!(relay_says(ConnectionCheck::Failing, 35), offline);
+        assert_eq!(relay_says(ConnectionCheck::Ok, 36), offline);
+        assert_eq!(relay_says(ConnectionCheck::Failing, 40), offline);
+        assert_eq!(relay_says(ConnectionCheck::Failing, 49), offline);
+        assert_eq!(
+            relay_says(ConnectionCheck::Failing, 50),
             Some(ConnectionNotice::Unreachable { retrying: false })
         );
     }

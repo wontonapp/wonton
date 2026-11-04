@@ -442,7 +442,7 @@ impl HomeLink {
         let notice = tracker.notice(&status, now);
         let details = ConnectionDetails {
             network: tracker.network(),
-            relay,
+            relay: tracker.relay(),
             server: tracker.server_check(&status, now),
             last_connected_at_ms: stats.last_confirmed.and_then(unix_ms),
             handshake_ms: stats
