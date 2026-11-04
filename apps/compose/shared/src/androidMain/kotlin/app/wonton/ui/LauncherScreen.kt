@@ -3,6 +3,7 @@ package app.wonton.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -52,14 +54,14 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
-import app.wonton.ui.icons.Settings
+import app.wonton.ui.icons.Store
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WarningCircleFill
 import app.wonton.ui.icons.Web
 import app.wonton.ui.icons.WontonIcon
 
-/** 配上以后的“家”：按图标和名字列出已装的插件。 */
+/** 配上以后的“应用”：按图标和名字列出已装的插件，最后一格进应用商店。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherScreen(
@@ -69,14 +71,12 @@ fun LauncherScreen(
     pendingCards: List<PendingConfirmation>,
     onOpenCardRoom: (String) -> Unit,
     onShowStore: () -> Unit,
-    onSettings: () -> Unit,
     onConnection: () -> Unit,
 ) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
     WontonScreen(
         bar = {
-            WontonRootBar("家") {
-                WontonIconButton(WontonIcon.Settings, "设置", onSettings)
+            WontonRootBar("应用") {
                 // 连不上时换成警告；正在连时变浅。
                 val colors = WontonTheme.colors
                 when (home.status) {
@@ -117,6 +117,9 @@ fun LauncherScreen(
                         item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }
                     }
                     items(installed.plugins, key = { it.id }) { LauncherIcon(it, plugins, navigation) }
+                    if (installed.plugins.isNotEmpty()) {
+                        item(key = "store") { StoreTile(onShowStore) }
+                    }
                     item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
                         HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
                     }
@@ -134,11 +137,11 @@ private fun NoPlugins(onShowStore: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "还没有装插件",
+            "还没有装应用",
             style = WontonTheme.typography.itemTitle,
             color = WontonTheme.colors.textPrimary.toColor(),
         )
-        WontonButton("去商店", onShowStore, kind = WontonButtonKind.SECONDARY)
+        WontonButton("去应用商店", onShowStore, kind = WontonButtonKind.SECONDARY)
     }
 }
 
@@ -154,6 +157,26 @@ private fun LauncherPlaceholder(plugins: PluginsState) {
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = WontonTheme.colors.textPrimary.toColor())
         }
+    }
+}
+
+/** 图标网格的最后一格。 */
+@Composable
+private fun StoreTile(onClick: () -> Unit) {
+    val size = WontonTheme.size.launcherIcon
+    val ink = WontonTheme.colors.textPrimary.toColor()
+    Column(
+        Modifier.clickable(role = Role.Button, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(size).background(WontonTheme.colors.surfaceSubtle.toColor(), pluginIconShape(size)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(WontonIcon.Store, contentDescription = null, Modifier.size(WontonTheme.size.icon), tint = ink)
+        }
+        Text("应用商店", style = WontonTheme.typography.caption, color = ink, maxLines = 1)
     }
 }
 

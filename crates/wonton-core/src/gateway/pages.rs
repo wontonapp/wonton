@@ -118,7 +118,7 @@ pub fn status(user: &str, plugins: &[PluginView]) -> Response {
         })
         .collect();
     let list = if items.is_empty() {
-        "<p class=\"muted\">还没有安装插件。</p>".to_owned()
+        "<p class=\"muted\">还没有安装应用。</p>".to_owned()
     } else {
         format!("<ul>{items}</ul>")
     };

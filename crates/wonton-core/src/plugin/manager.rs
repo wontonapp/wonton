@@ -637,13 +637,13 @@ impl PluginManager {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(existing) = plugins.get(&manifest.id) {
             return Err(busy(&manifest.id, &existing.status).unwrap_or_else(|| {
-                InstallError::Conflict(format!("插件 {} 已经装了", manifest.id))
+                InstallError::Conflict(format!("应用 {} 已经装了", manifest.id))
             }));
         }
         let slug = manifest.id.slug();
         if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
             return Err(InstallError::Conflict(format!(
-                "插件 {} 与已安装的 {other} 使用同一个网页地址",
+                "应用 {} 与已安装的 {other} 使用同一个网页地址",
                 manifest.id
             )));
         }
@@ -673,7 +673,7 @@ impl PluginManager {
         let wanted = manifest.requirements.as_ref().and_then(|r| r.arch.as_ref());
         match (wanted, Arch::from_docker(&arch)) {
             (Some(list), Some(host)) if !list.contains(&host) => Err(InstallError::Unsupported(
-                format!("插件不支持本机架构 {arch}"),
+                format!("应用不支持本机架构 {arch}"),
             )),
             (Some(_), None) => Err(InstallError::Unsupported(format!(
                 "无法识别本机架构 {arch}"
@@ -739,7 +739,7 @@ pub(super) fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError>
         PluginStatus::Upgrading => "升级",
         PluginStatus::Running | PluginStatus::Degraded { .. } => return None,
     };
-    Some(InstallError::Conflict(format!("插件 {id} 正在{doing}")))
+    Some(InstallError::Conflict(format!("应用 {id} 正在{doing}")))
 }
 
 /// 在独立的任务里执行，调用方只等结果：调用方被丢弃（请求断开：手机切网、隧道断开）时操作照样做完，不会停在

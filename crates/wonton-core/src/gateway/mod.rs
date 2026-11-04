@@ -302,7 +302,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         return pages::error(
             StatusCode::NOT_FOUND,
             "not_installed",
-            &format!("没有安装对应 {host} 的插件"),
+            &format!("没有安装对应 {host} 的应用"),
         );
     };
     if req.uri().path() == "/_wonton/session" {
@@ -316,13 +316,13 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     let upstream = match (&route.status, &route.upstream) {
         (PluginStatus::Running, Some(upstream)) => upstream.clone(),
         (PluginStatus::Running, None) => {
-            return pages::error(StatusCode::NOT_FOUND, "no_webui", "这个插件没有网页入口");
+            return pages::error(StatusCode::NOT_FOUND, "no_webui", "这个应用没有网页入口");
         }
         (status, _) => {
             return pages::error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "not_ready",
-                &format!("插件 {} 尚未就绪：{status:?}", route.id),
+                &format!("应用 {} 尚未就绪：{status:?}", route.id),
             );
         }
     };
@@ -358,7 +358,7 @@ fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bo
         return pages::error(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
-            "网关不认其他网页发来的跨站请求的登录状态，请从插件自己的页面操作",
+            "网关不认其他网页发来的跨站请求的登录状态，请从应用自己的页面操作",
         );
     }
     let wants_html = req

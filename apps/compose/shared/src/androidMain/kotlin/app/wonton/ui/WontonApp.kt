@@ -36,21 +36,21 @@ import app.wonton.ui.design.WontonBottomBar
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Apps
+import app.wonton.ui.icons.AppsFill
 import app.wonton.ui.icons.Chat
 import app.wonton.ui.icons.ChatFill
-import app.wonton.ui.icons.Home
-import app.wonton.ui.icons.HomeFill
-import app.wonton.ui.icons.Store
-import app.wonton.ui.icons.StoreFill
+import app.wonton.ui.icons.Settings
+import app.wonton.ui.icons.SettingsFill
 import app.wonton.ui.icons.WontonIcon
 
 private const val CHAT = 0
-private const val HOME = 1
-private const val STORE = 2
+private const val APPS = 1
+private const val SETTINGS = 2
 private val tabs = listOf(
     WontonBarItem("聊天", WontonIcon.Chat, WontonIcon.ChatFill),
-    WontonBarItem("家", WontonIcon.Home, WontonIcon.HomeFill),
-    WontonBarItem("商店", WontonIcon.Store, WontonIcon.StoreFill),
+    WontonBarItem("应用", WontonIcon.Apps, WontonIcon.AppsFill),
+    WontonBarItem("设置", WontonIcon.Settings, WontonIcon.SettingsFill),
 )
 
 /**
@@ -81,12 +81,13 @@ fun WontonApp(
         val initialChat = remember(core) { core.chat() }
         val chatView by chatUpdates.collectAsState(initial = initialChat)
         LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
-        // 还没配对时先到“家”的配对页；开发时要自动打开网页的也停在“家”。
-        val startAtHome = initial.status is HomeStatus.NotConfigured || devWebUrl != null
-        var tab by rememberSaveable { mutableIntStateOf(if (startAtHome) HOME else CHAT) }
+        // 还没配对时先到“应用”的配对页；开发时要自动打开网页的也停在“应用”。
+        val startAtApps = initial.status is HomeStatus.NotConfigured || devWebUrl != null
+        var tab by rememberSaveable { mutableIntStateOf(if (startAtApps) APPS else CHAT) }
         var page by remember { mutableStateOf<PluginEntry.Web?>(null) }
+        var appsPage by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
         var unavailable by remember { mutableStateOf<String?>(null) }
-        // 主屏和商店里打开插件：Agent 插件切到聊天、打开和它的 Bot 的私聊；有网页的全屏打开。
+        // 应用页和应用商店里打开插件：Agent 插件切到聊天、打开和它的 Bot 的私聊；有网页的全屏打开。
         val open = remember(core) {
             { entry: PluginEntry ->
                 when (entry) {
@@ -116,8 +117,7 @@ fun WontonApp(
                 onRoomRequestHandled()
             }
         }
-        val homePlugins = remember(open) { PluginNavigation(open) }
-        val storePlugins = remember(open) { PluginNavigation(open) }
+        val appsPlugins = remember(open) { PluginNavigation(open) }
         PluginsEffects(plugins)
         val proxy = home.proxy
         LaunchedEffect(devWebUrl, proxy) {
@@ -138,22 +138,22 @@ fun WontonApp(
         MainTabs(
             tab = tab,
             onSelect = { tab = it },
-            hidesBottomBar = hidesBottomBar(tab, chat, homePlugins, storePlugins),
+            hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins),
         ) {
             WithPendingCards(elsewhere, openCardRoom) {
                 when (tab) {
                     CHAT -> ChatRoute(core, chat)
-                    HOME -> HomeRoute(
+                    APPS -> HomeRoute(
                         core,
                         home,
                         plugins,
-                        homePlugins,
-                        appearance,
+                        appsPlugins,
+                        appsPage,
+                        onPage = { appsPage = it },
                         pendingCards = chatView.pendingConfirmations,
                         onOpenCardRoom = openCardRoom,
-                        onShowStore = { tab = STORE },
                     )
-                    else -> StoreRoute(plugins, storePlugins)
+                    else -> SettingsPage(core, appearance)
                 }
             }
         }
@@ -162,7 +162,7 @@ fun WontonApp(
     }
 }
 
-/** 三个页面和底栏。聊天页、安装确认页和打字时让出底部的位置。 */
+/** 三个页面和底栏。进到下一层的页面和打字时让出底部的位置。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MainTabs(tab: Int, onSelect: (Int) -> Unit, hidesBottomBar: Boolean, content: @Composable () -> Unit) {
@@ -194,7 +194,7 @@ private fun WithPendingCards(
     }
 }
 
-/** 插件状态在主屏和商店之间共用，App 在前台时一直收集。 */
+/** 插件状态在应用页和应用商店之间共用，App 在前台时一直收集。 */
 @Composable
 private fun PluginsEffects(plugins: PluginsState) {
     LaunchedEffect(plugins) { plugins.observe() }
@@ -205,12 +205,12 @@ private fun PluginsEffects(plugins: PluginsState) {
     }
 }
 
-/** 聊天页和安装确认页让出底部的位置。 */
-private fun hidesBottomBar(tab: Int, chat: ChatNavigation, home: PluginNavigation, store: PluginNavigation): Boolean =
+/** 底栏只留在每个标签页的第一层。 */
+private fun hidesBottomBar(tab: Int, chat: ChatNavigation, appsPage: HomePage, apps: PluginNavigation): Boolean =
     when (tab) {
         CHAT -> chat.openRoom != null
-        HOME -> home.confirmation != null
-        else -> store.confirmation != null
+        APPS -> appsPage != HomePage.LAUNCHER || apps.detail != null || apps.confirmation != null
+        else -> false
     }
 
 @Composable

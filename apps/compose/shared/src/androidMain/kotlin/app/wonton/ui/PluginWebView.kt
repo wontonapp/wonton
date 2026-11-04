@@ -93,7 +93,7 @@ private fun overrideProxy(proxy: ProxySettings) {
         WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE) &&
             WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS),
     ) {
-        "这台设备的 WebView 太旧，不支持按域名设置代理，插件网页打不开"
+        "这台设备的 WebView 太旧，不支持按域名设置代理，应用网页打不开"
     }
     val config = ProxyConfig.Builder()
         .addProxyRule("${proxy.host}:${proxy.port}")

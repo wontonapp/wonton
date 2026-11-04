@@ -191,7 +191,7 @@ impl PluginManager {
 /// 这台主机上装不了的原因：系统插件、核心不支持的权限、宿主架构不符。查不到宿主架构（Docker 不可用）时不按架构判断。
 fn blocked(m: &Manifest, arch: Option<&str>) -> Option<String> {
     if m.kind == PluginKind::System {
-        return Some("系统插件只能随核心预装".to_owned());
+        return Some("系统应用只能随核心预装".to_owned());
     }
     if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
         return Some(format!("核心还不支持权限 {p}"));
@@ -200,7 +200,7 @@ fn blocked(m: &Manifest, arch: Option<&str>) -> Option<String> {
     let arch = arch?;
     match Arch::from_docker(arch) {
         Some(host) if wanted.contains(&host) => None,
-        Some(_) => Some(format!("插件不支持本机架构 {arch}")),
+        Some(_) => Some(format!("应用不支持本机架构 {arch}")),
         None => Some(format!("无法识别本机架构 {arch}")),
     }
 }

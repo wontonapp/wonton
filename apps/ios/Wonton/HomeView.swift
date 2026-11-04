@@ -1,13 +1,12 @@
 import SwiftUI
 import WontonClient
 
-/// “家”：还没配对时是配对页；配上以后是主屏，按图标和名字列出已装的插件，连接和设备在右上角。只渲染核心给出的
-/// ViewModel。
+/// “应用”：还没配对时是配对页；配上以后按图标和名字列出已装的插件，最后一格进应用商店，连接和设备在右上角。只渲染
+/// 核心给出的 ViewModel。
 struct HomeView: View {
     @Bindable var model: HomeModel
     let plugins: PluginsModel
     let open: (PluginEntry) -> Void
-    let showStore: () -> Void
     let pendingCards: [PendingConfirmation]
     let openCardRoom: (String) -> Void
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
@@ -27,7 +26,7 @@ struct HomeView: View {
                         .wontonRootScreen("配对") { EmptyView() }
                 } else {
                     launcher
-                        .wontonRootScreen("家") {
+                        .wontonRootScreen("应用") {
                             connectionLink
                         }
                 }
@@ -43,6 +42,8 @@ struct HomeView: View {
                         .wontonPushedScreen("重新配对")
                 case .egress:
                     EgressSettingsView(model: plugins)
+                case .store:
+                    StoreView(model: plugins, open: open)
                 }
             }
             .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
@@ -56,6 +57,7 @@ struct HomeView: View {
             }
             .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
         }
+        .wontonDialog("操作被拒绝", message: plugins.rejection, isPresented: isShowingPluginRejection)
     }
 
     private var launcher: some View {
@@ -86,7 +88,6 @@ struct HomeView: View {
             actions: menuPlugin.map(menu(for:)) ?? []
         )
         .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
-        .wontonDialog("操作被拒绝", message: plugins.rejection, isPresented: isShowingPluginRejection)
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
@@ -97,7 +98,7 @@ struct HomeView: View {
             ProblemRow(message: check.message, nextStep: nil)
         }
         if installed.plugins.isEmpty {
-            NoPlugins(showStore: showStore)
+            NoPlugins { path.append(HomeRoute.store) }
         } else {
             let cell = GridItem(.adaptive(minimum: WontonTheme.size.launcherCell), spacing: WontonTheme.spacing.s12)
             LazyVGrid(columns: [cell], spacing: WontonTheme.spacing.s24) {
@@ -111,6 +112,8 @@ struct HomeView: View {
                         .accessibilityAction { tap(plugin) }
                         .accessibilityAction(named: "菜单") { menuPlugin = plugin }
                 }
+                NavigationLink(value: HomeRoute.store) { StoreTile() }
+                    .buttonStyle(.plain)
             }
         }
     }
@@ -203,6 +206,7 @@ private enum HomeRoute: Hashable {
     case invite
     case pairing
     case egress
+    case store
 }
 
 private struct NoPlugins: View {
@@ -211,14 +215,36 @@ private struct NoPlugins: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            Text("还没有装插件")
+            Text("还没有装应用")
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
-            Button("去商店", action: showStore)
+            Button("去应用商店", action: showStore)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, WontonTheme.spacing.s48)
+    }
+}
+
+/// 图标网格的最后一格。
+private struct StoreTile: View {
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        let size = WontonTheme.size.launcherIcon
+        VStack(spacing: WontonTheme.spacing.s4) {
+            RoundedRectangle(cornerRadius: size * WontonTheme.ratio.pluginIconRadius, style: .continuous)
+                .fill(Color(colors.surfaceSubtle))
+                .frame(width: size, height: size)
+                .overlay { WontonIcon.store.view(size: WontonTheme.size.icon) }
+                .foregroundStyle(Color(colors.textPrimary))
+            Text("应用商店")
+                .wontonText(WontonTheme.typography.caption)
+                .foregroundStyle(Color(colors.textPrimary))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 }
 

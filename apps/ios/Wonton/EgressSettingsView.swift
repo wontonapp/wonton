@@ -28,7 +28,7 @@ struct EgressSettingsView: View {
             .onChange(of: egress.current?.address, initial: true) { _, value in address = value ?? "" }
             .onChange(of: egress.current?.directCidrs, initial: true) { _, value in directCidrs = value ?? "" }
             .wontonDialog(
-                egress.confirmation?.cancelling == true ? "取消代理要重启这些插件" : "配上代理要重启这些插件",
+                egress.confirmation?.cancelling == true ? "取消代理要重启这些应用" : "配上代理要重启这些应用",
                 message: egress.confirmation.map { $0.restarts.map(\.title).joined(separator: "、") + "\n数据不动。" },
                 // 关掉弹窗由按钮发给核心，这里不用再发一次。
                 isPresented: .constant(egress.confirmation != nil),
@@ -57,7 +57,7 @@ struct EgressSettingsView: View {
                 addressSection(current)
                 if let plugin = current.pluginPath, let core = current.corePath {
                     WontonGroup {
-                        EgressPathRow(title: "插件", state: plugin)
+                        EgressPathRow(title: "应用", state: plugin)
                         WontonSeparator()
                         EgressPathRow(title: "家里的服务器", state: core)
                     }
@@ -112,7 +112,7 @@ struct EgressSettingsView: View {
             if !current.settings.hostCidrs.isEmpty {
                 secondary("主机所在网段：" + current.settings.hostCidrs.joined(separator: ", "))
             }
-            secondary("这些网段不经代理，出网插件都能连。")
+            secondary("这些网段不经代理，出网应用都能连。")
             ForEach(current.settings.notices, id: \.self) { secondary($0, tint: colors.warning) }
         }
     }

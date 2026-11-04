@@ -90,7 +90,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                     val core = current.corePath
                     if (plugin != null && core != null) {
                         WontonGroup {
-                            EgressPathRow("插件", plugin)
+                            EgressPathRow("应用", plugin)
                             WontonSeparator()
                             EgressPathRow("家里的服务器", core)
                         }
@@ -118,7 +118,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
 private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsState) {
     val dismiss = { plugins.send(Action.DismissEgressConfirmation) }
     WontonDialog(
-        if (confirmation.cancelling) "取消代理要重启这些插件" else "配上代理要重启这些插件",
+        if (confirmation.cancelling) "取消代理要重启这些应用" else "配上代理要重启这些应用",
         confirmation.restarts.joinToString("、") { it.title } + "\n数据不动。",
         dismiss,
         listOf(
@@ -163,7 +163,7 @@ private fun RangesField(current: EgressCurrent, value: String, enabled: Boolean,
         if (current.settings.hostCidrs.isNotEmpty()) {
             Secondary("主机所在网段：" + current.settings.hostCidrs.joinToString(", "))
         }
-        Secondary("这些网段不经代理，出网插件都能连。")
+        Secondary("这些网段不经代理，出网应用都能连。")
         current.settings.notices.forEach { Secondary(it, WontonTheme.colors.warning) }
     }
 }

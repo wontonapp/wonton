@@ -1,55 +1,50 @@
 import SwiftUI
 import WontonClient
 
-/// “商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。
+/// “应用商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。
 struct StoreView: View {
     let model: PluginsModel
     let open: (PluginEntry) -> Void
-    @State private var path: [PluginRoute] = []
     @State private var query = ""
     @State private var category: PluginCategory?
     @State private var confirmation: PluginConfirmation?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        NavigationStack(path: $path) {
-            VStack(spacing: 0) {
-                WontonSearchField(text: $query, prompt: "搜索")
-                    .padding(.horizontal, WontonTheme.spacing.pageInset)
-                    .padding(.bottom, WontonTheme.spacing.s8)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.viewModel.tasks, id: \.id) { task in
-                            TaskRow(model: model, task: task) {
-                                confirmation = model.reconfirmation(for: task)
-                            }
-                            .padding(.horizontal, WontonTheme.spacing.pageInset)
-                            .padding(.vertical, WontonTheme.spacing.s8)
+        VStack(spacing: 0) {
+            WontonSearchField(text: $query, prompt: "搜索")
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+                .padding(.bottom, WontonTheme.spacing.s8)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.viewModel.tasks, id: \.id) { task in
+                        TaskRow(model: model, task: task) {
+                            confirmation = model.reconfirmation(for: task)
                         }
-                        if let store = model.viewModel.store {
-                            if let problem = model.viewModel.problem {
-                                ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
-                                    .padding(WontonTheme.spacing.pageInset)
-                            }
-                            if query.isEmpty {
-                                listing(store)
-                            } else {
-                                results
-                            }
+                        .padding(.horizontal, WontonTheme.spacing.pageInset)
+                        .padding(.vertical, WontonTheme.spacing.s8)
+                    }
+                    if let store = model.viewModel.store {
+                        if let problem = model.viewModel.problem {
+                            ProblemRow(message: problem.message, nextStep: problem.reason.nextStep)
+                                .padding(WontonTheme.spacing.pageInset)
+                        }
+                        if query.isEmpty {
+                            listing(store)
+                        } else {
+                            results
                         }
                     }
                 }
-                .scrollDismissesKeyboard(.immediately)
-                .overlay {
-                    if model.viewModel.store == nil { placeholder }
-                }
-                .refreshable { model.send(.refreshStore(force: true)) }
             }
-            .wontonRootScreen("商店") { EmptyView() }
-            .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: model, route: $0, open: open) }
-            .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
-            .wontonDialog("操作被拒绝", message: model.rejection, isPresented: isShowingRejection)
+            .scrollDismissesKeyboard(.immediately)
+            .overlay {
+                if model.viewModel.store == nil { placeholder }
+            }
+            .refreshable { model.send(.refreshStore(force: true)) }
         }
+        .wontonPushedScreen("应用商店")
+        .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
         .task { model.refresh(.refreshStore(force: false)) }
     }
 
@@ -134,15 +129,6 @@ struct StoreView: View {
             if let category = item.category, !seen.contains(category) { seen.append(category) }
         }
         return seen
-    }
-
-    private var isShowingRejection: Binding<Bool> {
-        Binding(
-            get: { model.rejection != nil },
-            set: { isShowing in
-                if !isShowing { model.rejection = nil }
-            }
-        )
     }
 }
 

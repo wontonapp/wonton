@@ -190,7 +190,7 @@ impl PluginManager {
             .is_some_and(|o| o.trust == Trust::Community)
         {
             notices.push(CardLine {
-                text: "云吞没有审核过这个插件，代码和镜像由它的作者提供".to_owned(),
+                text: "云吞没有审核过这个应用，代码和镜像由它的作者提供".to_owned(),
                 emphasis: true,
             });
         }
@@ -284,7 +284,7 @@ impl PluginManager {
     async fn precheck(&self, m: &Manifest) -> Result<(), InstallError> {
         if m.kind == PluginKind::System {
             return Err(InstallError::Unsupported(
-                "系统插件只能随核心预装".to_owned(),
+                "系统应用只能随核心预装".to_owned(),
             ));
         }
         {
@@ -389,7 +389,7 @@ pub fn permission_text(permission: &Permission) -> String {
         Permission::StorageShare { name, access: a } => format!("{}共享文件夹 {name}", access(a)),
         Permission::StorageHome { access: a } => format!("{}你的私人空间", access(a)),
         Permission::Models => "使用模型网关".to_owned(),
-        Permission::Tools => "调用核心和其他插件的工具".to_owned(),
+        Permission::Tools => "调用核心和其他应用的工具".to_owned(),
         Permission::MatrixBot => "以 Bot 身份收发消息".to_owned(),
         Permission::Notify => "给你发通知".to_owned(),
         Permission::OwnerIdentity => "知道你的用户名和邮箱".to_owned(),

@@ -196,7 +196,7 @@ impl Storefront {
         if !self.config.community {
             let problem = StoreProblem {
                 reason: StoreFailure::Disabled,
-                message: "主人关掉了社区插件（WONTON_STORE_COMMUNITY=off）".to_owned(),
+                message: "主人关掉了社区应用（WONTON_STORE_COMMUNITY=off）".to_owned(),
             };
             return (Vec::new(), None, Some(problem));
         }
@@ -205,7 +205,7 @@ impl Storefront {
             let mut read = self.read.lock().await;
             match community::discover(&self.github, &mut read).await {
                 Ok((found, problem)) => section.succeeded(found, problem),
-                Err(e) => section.failed(failure(&e), &format!("取不到社区插件：{e}")),
+                Err(e) => section.failed(failure(&e), &format!("取不到社区应用：{e}")),
             }
         }
         let listed = section

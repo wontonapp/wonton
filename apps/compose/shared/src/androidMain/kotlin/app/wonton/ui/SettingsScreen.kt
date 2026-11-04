@@ -51,7 +51,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.Rgb
 import app.wonton.ui.design.WontonGroup
-import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
@@ -65,8 +65,8 @@ import app.wonton.ui.icons.WontonIcon
 private const val EXPANDED_DEGREES = 90f
 
 @Composable
-fun SettingsPage(core: ClientCore, appearance: AppearanceViewModel, onBack: () -> Unit) {
-    WontonScreen(bar = { WontonPushedBar("设置", onBack) }) {
+fun SettingsPage(core: ClientCore, appearance: AppearanceViewModel) {
+    WontonScreen(bar = { WontonRootBar("设置") }) {
         SettingsScreen(core, appearance)
     }
 }

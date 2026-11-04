@@ -132,10 +132,10 @@ fn status_items(gateway: &Gateway) -> String {
         ),
         format!("Matrix：{}", ready(gateway.matrix.is_some())),
         format!("单点登录：{}", ready(gateway.hydra.is_some())),
-        format!("插件：{running} 个运行中"),
+        format!("应用：{running} 个运行中"),
     ];
     if degraded > 0 {
-        items.push(format!("<strong>{degraded} 个插件异常</strong>"));
+        items.push(format!("<strong>{degraded} 个应用异常</strong>"));
     }
     if let Some(problem) = gateway.plugins.egress_problem() {
         let message = pages::escape(&problem.message);

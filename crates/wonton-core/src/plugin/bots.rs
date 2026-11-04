@@ -213,7 +213,7 @@ impl PluginManager {
             if e.errcode() == "M_USER_DEACTIVATED" {
                 let user = previous.as_ref().map_or("", |r| r.account.user_id.as_str());
                 InstallError::Conflict(format!(
-                    "Bot 账号 {user} 已停用：选择删除数据卸载这个插件后重装，会分配新账号"
+                    "Bot 账号 {user} 已停用：选择删除数据卸载这个应用后重装，会分配新账号"
                 ))
             } else {
                 e.into()
@@ -331,14 +331,14 @@ impl PluginManager {
             .and_then(|r| Some((&r.account.user_id, r.device_id.as_ref()?)))
         else {
             return Err(InstallError::Unhealthy(
-                "没有这个插件的 Bot 设备记录：重装插件（可以不删数据）".into(),
+                "没有这个应用的 Bot 设备记录：重装应用（可以不删数据）".into(),
             ));
         };
         if matrix.devices(user).await?.contains(device) {
             Ok(())
         } else {
             Err(InstallError::Unhealthy(format!(
-                "Bot {user} 的设备已被吊销，插件拿着的 Matrix 令牌失效了：重装插件（可以不删数据）重新签发"
+                "Bot {user} 的设备已被吊销，应用拿着的 Matrix 令牌失效了：重装应用（可以不删数据）重新签发"
             )))
         }
     }

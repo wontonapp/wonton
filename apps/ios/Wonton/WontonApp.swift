@@ -41,12 +41,11 @@ struct WontonApp: App {
 
 private enum AppTab {
     case chat
-    case home
-    case store
+    case apps
     case settings
 }
 
-/// 主界面的四个页面。主屏和商店里打开插件时，在这里切到聊天，或者全屏打开插件的网页。
+/// 主界面的三个页面。应用页和应用商店里打开插件时，在这里切到聊天，或者全屏打开插件的网页。
 private struct MainView: View {
     let chat: ChatModel
     let home: HomeModel
@@ -81,7 +80,7 @@ private struct MainView: View {
             }
         }
         .wontonDialog("打不开", message: unavailable, isPresented: isShowingUnavailable)
-        // 主屏和商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
+        // 应用页和应用商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
         .task { await home.observe() }
         .task { await plugins.observe() }
         .task { await chat.observe() }
@@ -95,15 +94,12 @@ private struct MainView: View {
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.chat)
             HomeView(
-                model: home, plugins: plugins, open: open, showStore: { tab = .store },
+                model: home, plugins: plugins, open: open,
                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 devWebURL: Launch.devWebURL
             )
             .toolbar(.hidden, for: .tabBar)
-            .tag(AppTab.home)
-            StoreView(model: plugins, open: open)
-                .toolbar(.hidden, for: .tabBar)
-                .tag(AppTab.store)
+            .tag(AppTab.apps)
             // 外观不依赖家里的服务器，没配对时也能进。
             SettingsView(model: appearance)
                 .wontonRootScreen("设置") { EmptyView() }
@@ -124,8 +120,7 @@ private struct MainView: View {
         WontonBottomBar(
             items: [
                 .init(tab: .chat, label: "聊天", icon: .chat, selectedIcon: .chatFill),
-                .init(tab: .home, label: "家", icon: .home, selectedIcon: .homeFill),
-                .init(tab: .store, label: "商店", icon: .store, selectedIcon: .storeFill),
+                .init(tab: .apps, label: "应用", icon: .apps, selectedIcon: .appsFill),
                 .init(tab: .settings, label: "设置", icon: .settings, selectedIcon: .settingsFill)
             ],
             selection: $tab
@@ -176,11 +171,11 @@ private enum Launch {
     case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel)
     case failed(String)
 
-    /// 还没配对时先到“家”的配对页；开发时要自动打开网页的也停在“家”。
+    /// 还没配对时先到“应用”的配对页；开发时要自动打开网页的也停在“应用”。
     var initialTab: AppTab {
         guard case let .ready(_, home, _, _) = self else { return .chat }
-        if case .notConfigured = home.viewModel.status { return .home }
-        return Self.devWebURL == nil ? .chat : .home
+        if case .notConfigured = home.viewModel.status { return .apps }
+        return Self.devWebURL == nil ? .chat : .apps
     }
 
     /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。

@@ -43,7 +43,7 @@ import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreSection
 import app.wonton.ui.design.WontonChip
 import app.wonton.ui.design.WontonNotice
-import app.wonton.ui.design.WontonRootBar
+import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSearchField
 import app.wonton.ui.design.WontonSmallButton
@@ -57,22 +57,22 @@ import java.util.Locale
 private val ROW_GAP = 8.dp
 private val SPINNER_STROKE = 2.dp
 
-/** “商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。 */
+/** “应用商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。 */
 @Composable
-fun StoreRoute(plugins: PluginsState, navigation: PluginNavigation) {
+fun StoreRoute(plugins: PluginsState, navigation: PluginNavigation, onBack: () -> Unit) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshStore(force = false)) }
-    PluginPages(plugins, navigation) { StoreScreen(plugins, navigation) }
+    StoreScreen(plugins, navigation, onBack)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation) {
+private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onBack: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var category by remember { mutableStateOf<PluginCategory?>(null) }
     val viewModel = plugins.viewModel
     val store = viewModel.store
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
-    WontonScreen(bar = { WontonRootBar("商店") }) {
+    WontonScreen(bar = { WontonPushedBar("应用商店", onBack) }) {
         Column(Modifier.fillMaxSize()) {
             WontonSearchField(
                 query,

@@ -9,7 +9,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`PluginWebView`
   把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
-  把核心要来的配对码画成二维码。`HomeView` 配上以后是插件的主屏，连接和“添加设备”在右上角的“连接”里；`StoreView`、
+  把核心要来的配对码画成二维码。`HomeView` 是底栏的“应用”页，配上以后按图标列出插件，最后一格进商店，连接和“添加设备”在右上角的“连接”里；`StoreView`、
   `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsView` 是底栏的设置页（ADR-0028）。`EgressSettingsView` 是“连接”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
@@ -50,7 +50,7 @@ xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<�
 
 ## 连家里的服务器（开发）
 
-先起本地核心（`deploy/dev/core/dev.sh up`）。还没配对时“家”页面就是配对页：真机扫局域网状态页上或
+先起本地核心（`deploy/dev/core/dev.sh up`）。还没配对时“应用”页就是配对页：真机扫局域网状态页上或
 `dev.sh pair` 打出的二维码；模拟器没有相机，粘贴 `dev.sh pair` 输出的最后一行，或者启动时经环境变量传入
 （Debug 构建才读）：
 
@@ -60,7 +60,7 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 
 - 配上以后连接信息存在 App 的数据目录里，之后直接启动也会自动重连，不用再传码；配对码只能用一次。
 - `WONTON_DEV_OPEN_WEB=<插件网页地址>`（比如装好 Grafana 示例插件后的 `http://app-grafana.wonton.localhost:18480/`）
-  让 App 停在“家”，本地代理就绪后自动打开这个网页，并把加载结果打到控制台，真机上不用点按也能测。真机用
+  让 App 停在“应用”，本地代理就绪后自动打开这个网页，并把加载结果打到控制台，真机上不用点按也能测。真机用
   `xcrun devicectl device process launch --console --environment-variables` 传同样的变量；码里的直连地址写 Mac 的
   局域网 IP（`dev.sh pair <IP>:18482`，核心要 `WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。
 - `WONTON_LOG` 换核心的日志过滤规则，例如 `wonton_client=info,wonton_tunnel=debug,warn` 打开本地代理的

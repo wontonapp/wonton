@@ -67,7 +67,6 @@ enum WontonIcon: String {
     case star
     case starFill
     case store
-    case storeFill
     case tasks
     case tasksFill
     case trash

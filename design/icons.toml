@@ -51,7 +51,7 @@ settings = { phosphor = "gear-six", fill = true }
 share = { phosphor = "export" }
 shield = { phosphor = "shield-check", fill = true }
 star = { phosphor = "star", fill = true }
-store = { phosphor = "storefront", fill = true }
+store = { phosphor = "storefront" }
 tasks = { phosphor = "list-checks", fill = true }
 trash = { phosphor = "trash" }
 upload = { phosphor = "upload-simple" }
