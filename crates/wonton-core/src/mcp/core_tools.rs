@@ -7,7 +7,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
-use super::{Bus, Caller, Outcome, cards, file_tools, naming};
+use super::{Bus, Caller, Outcome, cards, file_tools, naming, save_tools};
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
@@ -75,6 +75,7 @@ pub fn definitions() -> Vec<Tool> {
         ),
     ];
     tools.extend(file_tools::definitions());
+    tools.extend(save_tools::definitions());
     tools
 }
 
@@ -93,6 +94,8 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
         file_tools::VIEW | file_tools::SHARE => {
             return file_tools::call(bus, caller, tool, args).await;
         }
+        save_tools::LIST => save_tools::list(bus).await,
+        save_tools::SAVE => return save_tools::save(bus, caller, args).await,
         _ => Err(format!("没有工具 {name}")),
     };
     match read {

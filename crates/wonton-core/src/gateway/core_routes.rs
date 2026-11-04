@@ -53,6 +53,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/api/plugins/{id}/lan-webui",
             put(api::set_lan_webui),
         )
+        .route(
+            "/_wonton/api/plugins/{id}/save-grants",
+            delete(api::revoke_save_grant),
+        )
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
         .route("/_wonton/api/lan", get(api::lan).put(api::set_lan))
         .route(

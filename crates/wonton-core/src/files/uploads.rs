@@ -259,7 +259,7 @@ impl Uploads {
 }
 
 /// 这个目录所在的磁盘放下 `size` 字节后，还空着 [`KEEP_FREE_PERCENT`]。
-fn has_room(dir: &Path, size: u64) -> Result<bool, Failure> {
+pub(super) fn has_room(dir: &Path, size: u64) -> Result<bool, Failure> {
     let stats = rustix::fs::statvfs(dir)
         .map_err(|e| Failure::internal(format!("查 {} 的磁盘空间失败：{e}", dir.display())))?;
     let frsize = stats.f_frsize.max(1);

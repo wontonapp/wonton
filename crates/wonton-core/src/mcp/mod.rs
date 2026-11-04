@@ -11,6 +11,7 @@ mod file_results;
 mod file_tools;
 mod naming;
 mod notifier;
+mod save_tools;
 mod server;
 pub mod upstream;
 
@@ -386,27 +387,36 @@ impl Bus {
                     bus.confirmations.finish(ticket, outcome.state).await;
                     outcome.result
                 }
-                Err(refusal) => {
-                    let decision = match refusal {
-                        confirm::Refusal::Rejected => Decision::Rejected,
-                        confirm::Refusal::Expired => Decision::Expired,
-                        _ => Decision::Unconfirmed,
-                    };
-                    let message = refusal.message();
-                    bus.audit.record(&Record {
-                        caller: caller.id.as_str(),
-                        tool: &name,
-                        arguments: &args,
-                        decision,
-                        outcome: Some(&message),
-                        files: &[],
-                    });
-                    error(&message)
-                }
+                Err(refusal) => bus.refused(&caller, &name, &args, &refusal),
             }
         });
         task.await
             .unwrap_or_else(|e| error(&format!("确认流程意外中止：{e}")))
+    }
+
+    /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
+    fn refused(
+        &self,
+        caller: &Caller,
+        name: &str,
+        args: &Value,
+        refusal: &confirm::Refusal,
+    ) -> CallToolResult {
+        let decision = match refusal {
+            confirm::Refusal::Rejected => Decision::Rejected,
+            confirm::Refusal::Expired => Decision::Expired,
+            _ => Decision::Unconfirmed,
+        };
+        let message = refusal.message();
+        self.audit.record(&Record {
+            caller: caller.id.as_str(),
+            tool: name,
+            arguments: args,
+            decision,
+            outcome: Some(&message),
+            files: &[],
+        });
+        error(&message)
     }
 
     fn deny(&self, caller: &Caller, name: &str, args: &Value, message: &str) -> CallToolResult {
@@ -449,6 +459,8 @@ impl Bus {
 
 #[cfg(test)]
 mod file_tests;
+#[cfg(test)]
+mod save_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

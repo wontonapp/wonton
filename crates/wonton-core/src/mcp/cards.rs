@@ -6,6 +6,8 @@ use wonton_protocol::{
     Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard, ConfirmationState,
 };
 
+use super::file_results::human_size;
+use crate::files::share_fs::saving::{SaveTarget, StagedFile};
 use crate::plugin::manifest::{LocalizedText, Manifest};
 
 /// 还没编号、没定到期时间的卡片内容。
@@ -106,6 +108,44 @@ pub fn tool_call(requester: &str, plugin: &str, tool: &str, arguments: &Value) -
         title: format!("{requester} 想用 {plugin} 的 {tool}"),
         lines: vec![line("这个工具会改动数据"), line(format!("参数：{args}"))],
         choices: choices("允许", "拒绝"),
+    }
+}
+
+/// Bot 把文件存进共享文件夹（ADR-0027）。目标就是共享文件夹本身时没有更大的范围可选。
+pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> Draft {
+    const LISTED: usize = 10;
+    let folder = target.folder();
+    let mut lines: Vec<CardLine> = files
+        .iter()
+        .take(LISTED)
+        .map(|file| line(format!("· {}（{}）", file.name, human_size(file.size))))
+        .collect();
+    if files.len() > LISTED {
+        lines.push(line(format!("还有 {} 个文件", files.len() - LISTED)));
+    }
+    if files.len() > 1 {
+        let total = files.iter().map(|file| file.size).sum();
+        lines.push(line(format!("共 {}", human_size(total))));
+    }
+    lines.push(emphasized("Bot 提供，内容未审核"));
+    let mut buttons = vec![CardChoice {
+        answer: Answer::Approve,
+        label: format!("允许存进 {folder}"),
+    }];
+    if !target.dirs.is_empty() {
+        buttons.push(CardChoice {
+            answer: Answer::ApproveWider,
+            label: format!("允许存进 {}", target.share),
+        });
+    }
+    buttons.push(CardChoice {
+        answer: Answer::Reject,
+        label: "拒绝".to_owned(),
+    });
+    Draft {
+        title: format!("{requester} 想把 {} 个文件存进 {folder}", files.len()),
+        lines,
+        choices: buttons,
     }
 }
 

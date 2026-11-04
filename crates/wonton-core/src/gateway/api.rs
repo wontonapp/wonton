@@ -10,6 +10,7 @@
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
+//! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
 //! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
 //! | PUT | `/_wonton/api/egress-proxy` | 请求体是 `EgressProxyUpdate`，改地址和额外直连的网段，做完再返回 |
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
@@ -462,6 +463,43 @@ pub async fn set_lan_webui(
     {
         Ok(detail) => Json(detail).into_response(),
         Err(e) => install_error(&e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SaveGrantQuery {
+    folder: String,
+}
+
+/// 撤销 Bot 存文件的一条授权（ADR-0027），返回详情。
+pub async fn revoke_save_grant(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<SaveGrantQuery>,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let Some(mcp) = &gateway.mcp else {
+        let message = "核心没有启用 MCP 总线";
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, "mcp_unavailable", message);
+    };
+    let langs = languages(&headers);
+    if gateway.plugins.installed_detail(&id, &langs).is_none() {
+        return install_error(&InstallError::NotInstalled(id.to_string()));
+    }
+    if let Err(e) = mcp.bus.revoke_save_grant(&id, &query.folder) {
+        return install_error(&e.into());
+    }
+    match gateway.plugins.installed_detail(&id, &langs) {
+        Some(detail) => Json(detail).into_response(),
+        None => install_error(&InstallError::NotInstalled(id.to_string())),
     }
 }
 

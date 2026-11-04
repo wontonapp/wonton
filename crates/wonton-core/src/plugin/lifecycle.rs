@@ -702,6 +702,7 @@ impl PluginManager {
             self.store.secrets().remove(id)?;
             report.data_removed = true;
         }
+        self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;
         if !left.containers.is_empty()

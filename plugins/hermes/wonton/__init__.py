@@ -8,7 +8,7 @@
 网关连不上、回答不对时不拦，交给 Hermes 照常处理和报错，这里不猜原因。
 
 每轮带上发文件的办法（ADR-0020 的“Hermes 的 MEDIA:”）：Hermes 把工具结果里的预览存成缓存文件，写上 MEDIA:<路径>，它的 Matrix 提示
-又教模型用 MEDIA: 发文件，没有这句话时模型很可能把预览发给主人。
+又教模型用 MEDIA: 发文件，没有这句话时模型很可能把预览发给主人。存文件的办法（ADR-0027）也在这里：outbox 的路径是 Hermes 的挂载决定的。
 """
 
 import logging
@@ -30,6 +30,8 @@ NO_DEFAULT = (
 SEND_FILES = (
     "发给主人的文件来自工具结果里的编号时（「文件 …，编号 …」）：调 wonton__share_file，把返回的 wonton://file/ 链接原样放进回复，"
     "不要改动它，也不要用 MEDIA: 发这个文件或它的预览：预览只是缩小的图。你自己生成的图片和语音照旧用 MEDIA:。"
+    "主人要把文件放进音乐库这类共享文件夹时：把文件放进 /opt/data/outbox，用 wonton__list_shares 看有哪些文件夹，再调 wonton__save_file，"
+    "这是唯一的办法。"
 )
 
 

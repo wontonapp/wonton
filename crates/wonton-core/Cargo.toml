@@ -44,6 +44,8 @@ rmcp = { version = "3.8.0", default-features = false, features = ["server", "cli
 # Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理图片的子进程给自己设资源上限（setrlimit）；逐级 openat 打开共享文件夹
 # 里的文件。都不用写 unsafe。
 rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
+# 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
+sha2 = "0.10"
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
 sse-stream = "0.2.6"
 # 校验 TZ 是 IANA 时区名（Unlicense OR MIT）：核心镜像里不一定有 /usr/share/zoneinfo。

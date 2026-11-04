@@ -381,7 +381,7 @@ fn copy_to_temp(
 }
 
 /// 属主已经对了就不改：核心不以 root 运行时也能工作。
-fn give_to(file: &File, owner: Owner) -> io::Result<()> {
+pub(super) fn give_to(file: &File, owner: Owner) -> io::Result<()> {
     let meta = file.metadata()?;
     if meta.uid() == owner.uid && meta.gid() == owner.gid {
         return Ok(());

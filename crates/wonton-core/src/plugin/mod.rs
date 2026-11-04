@@ -39,6 +39,7 @@ pub mod preinstall;
 pub mod provides;
 pub mod proxy_auth;
 pub mod render;
+pub mod save_grants;
 pub mod secrets;
 pub mod sources;
 pub mod store;

@@ -65,7 +65,7 @@ pub(super) async fn call(
 }
 
 /// 文件不在范围里、没有授权、参数不对才算拒绝。文件没了、解码忙是执行时出的问题，类别写在 `outcome` 里。
-fn decision(failure: &Failure) -> Decision {
+pub(super) fn decision(failure: &Failure) -> Decision {
     match failure.kind {
         FileFailure::Unauthenticated
         | FileFailure::NotShared

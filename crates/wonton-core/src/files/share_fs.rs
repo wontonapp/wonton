@@ -22,6 +22,7 @@ use removal::{prepare_trash, recover_trash, remove_if_same};
 
 mod placing;
 mod removal;
+pub mod saving;
 
 /// 工具结果里共享文件夹引用的前缀（插件规范的“工具结果里的文件”）。
 const SHARE_SCHEME: &str = "wonton-share:";

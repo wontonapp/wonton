@@ -138,7 +138,7 @@ impl PluginManager {
                 .lan_switched
                 .as_ref()
                 .map(|switched| switched.offer(listed.lan_webui)),
-            save_grants: Vec::new(),
+            save_grants: self.save_grants(id),
         })
     }
 

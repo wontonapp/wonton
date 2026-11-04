@@ -83,6 +83,8 @@ impl AnswerError {
 /// 主人确认之后、执行完之前：执行完用它更新卡片。
 pub struct Ticket {
     id: String,
+    /// 主人按的是哪个“同意”。
+    pub answer: Answer,
 }
 
 struct Slot {
@@ -170,9 +172,9 @@ impl Confirmations {
         }
         let answer = tokio::time::timeout(self.ttl, answered).await;
         match answer {
-            Ok(Ok(Answer::Approve | Answer::ApproveWider)) => {
+            Ok(Ok(answer @ (Answer::Approve | Answer::ApproveWider))) => {
                 self.publish(&id).await;
-                Ok(Ticket { id })
+                Ok(Ticket { id, answer })
             }
             // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
             Ok(Ok(Answer::Reject | Answer::Unknown)) => {

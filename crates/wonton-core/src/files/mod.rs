@@ -13,6 +13,7 @@ pub mod content;
 mod host;
 pub mod record;
 pub mod resource;
+mod saving;
 pub mod share_fs;
 mod slots;
 pub mod uploads;
@@ -192,6 +193,9 @@ pub struct FileEvent<'a> {
 pub struct Files {
     registry: Registry,
     shares: Shares,
+    /// Bot 存文件的暂存目录（ADR-0027）。
+    saving_dir: PathBuf,
+    owner: Owner,
     uploads: uploads::Uploads,
     host: Arc<dyn FileHost>,
     http: crate::http::HttpClient,
@@ -227,6 +231,11 @@ impl Files {
         }
         hostdir::ensure_owned_dir(&config.shares_dir.join(TRANSFERS), config.owner)?;
         let registry = Registry::open(config.dir.join("records"))?;
+        let saving_dir = config.dir.join("saving");
+        share_fs::saving::reset_staging(&saving_dir).map_err(|source| OpenError::Create {
+            path: saving_dir.clone(),
+            source,
+        })?;
         let shares = Shares::new(config.shares_dir.clone());
         shares.prepare_removal().map_err(OpenError::Removal)?;
         // 找不回来不妨碍别的文件，下次启动再试。
@@ -236,6 +245,8 @@ impl Files {
         Ok(Self {
             registry,
             shares,
+            saving_dir,
+            owner: config.owner,
             uploads: uploads::Uploads::open(&config.dir, config.owner)?,
             host,
             http,

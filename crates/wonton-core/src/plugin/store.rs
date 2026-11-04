@@ -21,6 +21,7 @@ use super::models::ModelKeyStore;
 use super::network_migration::MigrationStore;
 use super::package_files::PackageFiles;
 use super::preinstall::PreinstallMarks;
+use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +78,7 @@ pub struct Store {
     model_keys: ModelKeyStore,
     preinstalled: PreinstallMarks,
     network_migrations: MigrationStore,
+    save_grants: SaveGrantStore,
 }
 
 impl Store {
@@ -89,6 +91,7 @@ impl Store {
             model_keys: ModelKeyStore::new(dir.join("model-keys")),
             preinstalled: PreinstallMarks::new(dir.join("preinstalled")),
             network_migrations: MigrationStore::new(dir.join("network-migrations")),
+            save_grants: SaveGrantStore::new(dir.join("save-grants")),
             dir,
         })
     }
@@ -111,6 +114,11 @@ impl Store {
     /// 进行中的插件网络迁移，在记录目录下的 `network-migrations/` 里，迁移完删除。
     pub fn network_migrations(&self) -> &MigrationStore {
         &self.network_migrations
+    }
+
+    /// Bot 能往哪些路径存文件，在记录目录下的 `save-grants/` 里，卸载时删除（保留数据也删）。
+    pub fn save_grants(&self) -> &SaveGrantStore {
+        &self.save_grants
     }
 
     /// 默认插件装过一次的标记，在记录目录下的 `preinstalled/` 里，卸载时保留。

@@ -48,7 +48,7 @@ echo_bot="wonton-$WONTON_DEV_INSTANCE--agent-echo--bot"
 magpie="$magpie_network--magpie"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
 hermes="$hermes_network--gateway"
-plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files)
+plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # 构建镜像经 dev.sh：远端主机上经它自己的代理、限制并发（WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS）。
 build() { "$dev" build -q "$@" >/dev/null; }
@@ -501,6 +501,76 @@ audited wonton__share_file allowed || fail "审计里没有分享文件：$audit
 ok "审计日志记下了确认过的安装、找文件和分享文件"
 grep -q 'wonton://file/' "$asked" || fail "Hermes 的回答里没有文件链接（App 显示不成文件卡片）：$(cat "$asked")"
 ok "Hermes 发出了文件链接，App 显示成文件卡片"
+
+step "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"
+navidrome_src="$(mktemp -d)"
+git clone -q --depth 1 --branch v0.1.0 https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
+installed="$("$dev" install "$navidrome_src" --yes 2>/dev/null)" || fail "Navidrome 安装失败：$installed"
+rm -rf "$navidrome_src"
+expect "Navidrome 装好了" "$(plugin_state org.navidrome.navidrome)" running
+shares="$WONTON_DEV_DATA/shares"
+outbox="$WONTON_DEV_DATA/apps/$(tr . - <<<com.nousresearch.hermes)/outbox"
+# WONTON_SMOKE_SONG_URL：换成真的下载一首歌，经 Hermes 出网。默认由它自己生成，不依赖外面的服务。
+song_task() {
+  if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then
+    printf '下载 %s 保存成 %s' "$WONTON_SMOKE_SONG_URL" "$1"
+  else
+    printf '用 Python 标准库的 wave 模块生成一个 1 秒的静音 WAV 文件 %s' "$1"
+  fi
+}
+song_ext="${WONTON_SMOKE_SONG_URL##*.}"
+[[ -n "${WONTON_SMOKE_SONG_URL:-}" ]] || song_ext=wav
+# 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
+pending_card() {
+  local card=""
+  for _ in $(seq 240); do
+    card="$(latest_card)"
+    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
+    sleep 1
+  done
+  return 1
+}
+answer_with() { t -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d "{\"answer\": \"$1\"}" "$core_url/_wonton/confirmations/$2"; }
+save_grants() {
+  t "$core_url/_wonton/api/plugins/com.nousresearch.hermes" | python3 -c 'import json, sys; print(" ".join(json.load(sys.stdin)["save_grants"]))'
+}
+ask_hermes "$asked" "$(song_task "smoke-a.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟。" &
+asking=$!
+card_id="$(pending_card)" || fail "存文件没有发确认卡片：$(cat "$asked")"
+expect "回答之前文件没有放进去" "$(docker exec "$core" ls "$shares/music")" ""
+expect "主人批准这个路径" "$(answer_with approve "$card_id")" 200
+wait "$asking" || fail "Hermes 没有回答存文件的结果：$(cat "$asked")"
+grep '^第' "$asked" | sed 's/^/   · /'
+expect "文件放进了 music/冒烟" "$(docker exec "$core" ls "$shares/music/冒烟")" "smoke-a.$song_ext"
+expect "outbox 里的原文件删掉了" "$(docker exec "$core" ls "$outbox")" ""
+expect "Hermes 的详情页列出这个路径" "$(save_grants)" "music/冒烟"
+ask_hermes "$asked" "$(song_task "smoke-b.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟/第二张。" ||
+  fail "Hermes 没有回答第二次存文件的结果：$(cat "$asked")"
+expect "子文件夹不再问，直接放进去" "$(docker exec "$core" ls "$shares/music/冒烟/第二张")" "smoke-b.$song_ext"
+[[ "$(latest_card)" == "$card_id succeeded" ]] || fail "第二次存文件又发了卡片：$(latest_card)"
+expect "撤销授权" "$(t -o /dev/null -w '%{http_code}' -X DELETE "$core_url/_wonton/api/plugins/com.nousresearch.hermes/save-grants?folder=music%2F%E5%86%92%E7%83%9F")" 200
+expect "详情页不再列它" "$(save_grants)" ""
+ask_hermes "$asked" "$(song_task "smoke-c.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟。" &
+asking=$!
+card_id="$(pending_card)" || fail "撤销之后存文件没有重新发卡片：$(cat "$asked")"
+expect "这次批准整个共享文件夹" "$(answer_with approve_wider "$card_id")" 200
+wait "$asking" || fail "Hermes 没有回答第三次存文件的结果：$(cat "$asked")"
+expect "授权变成 music" "$(save_grants)" "music"
+# 代登录的账号在第一次打开网页时才建，没打开过的 Subsonic 接口回“用户名或密码不对”。
+t -L -o /dev/null "http://org-navidrome-navidrome.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT/"
+for _ in $(seq 150); do
+  found="$(t "http://org-navidrome-navidrome.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT/rest/search3.view?v=1.16.1&c=smoke&f=json&query=&songCount=50" |
+    python3 -c 'import json, sys; print(len(json.load(sys.stdin)["subsonic-response"]["searchResult3"].get("song", [])))' 2>/dev/null || true)"
+  [[ "${found:-0}" -ge 3 ]] && break
+  sleep 2
+done
+expect "Navidrome 扫到了 3 首" "${found:-0}" 3
+audit="$(docker exec "$core" cat "$WONTON_DEV_DATA/core/audit.jsonl")"
+audited wonton__save_file approved || fail "审计里没有批准过的存文件：$audit"
+audited wonton__save_file allowed || fail "审计里没有命中授权的存文件：$audit"
+audited wonton__revoke_save_grant approved || fail "审计里没有撤销：$audit"
+ok "审计日志记下了批准、命中授权和撤销"
+expect "卸载 Navidrome" "$("$dev" uninstall org.navidrome.navidrome --purge | json data_removed)" true
 rm -f "$asked"
 expect "卸载文件搜索" "$("$dev" uninstall app.wonton.files --purge | json data_removed)" true
 hermes_token="$(hermes_env MATRIX_ACCESS_TOKEN)"
@@ -510,6 +580,7 @@ expect "卸载 Hermes：吊销 Bot 的设备、停用账号" \
 expect "Hermes 的 Matrix 令牌失效" \
   "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $hermes_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
 expect "网关里 Hermes 的凭据吊销了" "$(gateway_keys)" ""
+expect "卸载 Hermes：存文件的授权清掉了" "$(docker exec "$core" find "$WONTON_DEV_DATA" -path '*save-grants*' -name 'com.nousresearch.hermes.json')" ""
 
 step "“模型设置”网页（sso: proxy）：主人不用输网页密钥就能打开，密钥不出网关"
 magpie_url="http://ai-usemagpie-magpie.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"

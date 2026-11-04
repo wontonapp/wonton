@@ -71,6 +71,8 @@ services:
       HERMES_MEDIA_DELIVERY_STRICT: "1"
     volumes:
       - ${WONTON_BOT_DATA}:/opt/data
+      # wonton__save_file 只从这里取文件：Agent 的数据目录里有密钥（ADR-0027）。
+      - ${WONTON_APP_DATA}/outbox:/opt/data/outbox
     healthcheck:
       # Matrix 连上才算健康：用 Hermes 自己生成的本机 API 密钥查详细状态。
       test:
@@ -97,7 +99,7 @@ configs:
 x-wonton:
   spec: "0.4"
   id: com.nousresearch.hermes
-  version: 0.5.1
+  version: 0.5.2
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:
