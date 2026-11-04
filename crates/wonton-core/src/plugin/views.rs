@@ -235,6 +235,7 @@ impl PluginManager {
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
+            missing_profile: None,
             lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
         })
     }

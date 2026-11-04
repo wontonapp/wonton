@@ -18,6 +18,7 @@ mod error;
 mod file;
 mod home;
 mod lan;
+mod owner;
 mod plugin;
 mod push;
 mod secret;
@@ -65,6 +66,7 @@ pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
     LanProblem, LanProtocol, LanSettings,
 };
+pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
 pub use plugin::{
     AddSourceRequest, AddedSource, InstallPreview, InstallRequest, InstallSource, InstalledPlugin,
     InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, PermissionLine, PluginAuthor,

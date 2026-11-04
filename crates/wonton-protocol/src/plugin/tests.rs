@@ -144,6 +144,7 @@ fn preview() -> InstallPreview {
         upgrade_from: None,
         release_notes: None,
         blocked: None,
+        missing_profile: None,
         lan_webui: Some(LanWebuiOffer {
             ports: vec![LanPort {
                 port: 8080,
@@ -254,6 +255,7 @@ fn interface_types_round_trip_through_json() {
             free_bytes: 200,
         }),
         storage_problem: None,
+        owner_profile_prompt: true,
     };
     assert_eq!(round_trip(&view_model), view_model);
 }

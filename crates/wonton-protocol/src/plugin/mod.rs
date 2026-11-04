@@ -427,6 +427,8 @@ pub struct InstallPreview {
     pub release_notes: Option<String>,
     /// 装不了的原因；能装时为空，确认按钮这时不可点。
     pub blocked: Option<String>,
+    /// 要先填资料才能装时的说明，确认按钮这时不可点。壳显示这句话和去填资料的按钮，填完重新预览。
+    pub missing_profile: Option<String>,
     /// 有要主人打开开关才开的局域网端口时是开关的情况，确认页上显示；主人的选择放在 `lan_webui` 请求字段带回。
     pub lan_webui: Option<LanWebuiOffer>,
 }
@@ -480,6 +482,8 @@ pub struct PluginsViewModel {
     pub storage: Option<StorageUsage>,
     /// 连着家里的服务器却查不到磁盘空间的原因。
     pub storage_problem: Option<PluginProblem>,
+    /// 刚配对、资料还没填：壳弹出填资料的页面，关掉时发 [`Action::DismissOwnerProfilePrompt`](crate::Action::DismissOwnerProfilePrompt)。
+    pub owner_profile_prompt: bool,
 }
 
 /// 家里服务器存数据的那块盘。
@@ -526,6 +530,8 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 插件要用的资料（如邮箱）还没填：要主人在设置里填好再试（ADR-0030）。
+    OwnerProfileIncomplete,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// App 和家里服务器的版本对不上，有一边要更新。

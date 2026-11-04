@@ -120,6 +120,10 @@ impl ClientCore {
                 self.plugins.dismiss_egress_confirmation();
                 Ok(())
             }
+            Action::DismissOwnerProfilePrompt => {
+                self.plugins.dismiss_owner_profile_prompt();
+                Ok(())
+            }
             action @ (Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }

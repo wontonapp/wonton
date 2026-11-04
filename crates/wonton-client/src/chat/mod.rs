@@ -228,7 +228,8 @@ impl ChatLink {
             | Action::SetAccentColor { .. }
             | Action::SetThemeMode { .. }
             | Action::SetTextSize { .. }
-            | Action::SetFont { .. } => Err(invalid("不是聊天操作")),
+            | Action::SetFont { .. }
+            | Action::DismissOwnerProfilePrompt => Err(invalid("不是聊天操作")),
         }
     }
 

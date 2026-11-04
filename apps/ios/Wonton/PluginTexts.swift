@@ -32,6 +32,7 @@ extension PluginFailure {
         case .lanUnavailable: return "在局域网设置里选好网卡或地址后再试。"
         case .coreUpgrading: return "家里的服务器正在升级，升级结束后再试。"
         case .egressProxyUnavailable: return "检查家里服务器上的代理，或者在出网代理设置里改地址后再试。"
+        case .ownerProfileIncomplete: return "在设置里填好你的资料后再试。"
         case .upstream: return "家里的服务器出了错，稍后再试。"
         case .protocol: return "App 和家里的服务器版本对不上，请更新 App 或家里的服务器。"
         }

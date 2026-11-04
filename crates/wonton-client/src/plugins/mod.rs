@@ -114,6 +114,11 @@ impl PluginsLink {
         }
     }
 
+    pub(crate) fn dismiss_owner_profile_prompt(&self) {
+        self.view
+            .send_modify(|view| view.owner_profile_prompt = false);
+    }
+
     pub(crate) fn foregrounded(self: &Arc<Self>) {
         self.refresh_installed();
     }

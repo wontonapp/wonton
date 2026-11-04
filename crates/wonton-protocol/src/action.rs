@@ -121,6 +121,9 @@ pub enum Action {
     /// 主人没有确认，什么都不改。
     DismissEgressConfirmation,
 
+    /// 主人关掉了配对后弹出的填资料页面（[`PluginsViewModel::owner_profile_prompt`](crate::PluginsViewModel::owner_profile_prompt)）。
+    DismissOwnerProfilePrompt,
+
     // 文件（ADR-0020）。网络操作都在后台执行，进展和结果在传输列表和文件卡片里。
     /// 上传一个文件，传完放进共享文件夹 `transfers`。`name`、`mime_type` 是系统给的文件名和类型，核心读不到内容 URI 的这些
     /// 信息。`room` 不为空时，传完把这个房间的 Bot 加进访问范围，再把链接发进这个房间。
