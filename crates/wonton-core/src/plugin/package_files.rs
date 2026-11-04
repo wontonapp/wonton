@@ -51,6 +51,8 @@ pub enum FileError {
     NotDir(String),
     #[error("不是普通文件")]
     NotFile,
+    #[error("不是 UTF-8 文本")]
+    NotText,
     #[error("超过 {} KiB", MAX_FILE_BYTES >> 10)]
     TooBig,
     #[error("读取时被替换")]

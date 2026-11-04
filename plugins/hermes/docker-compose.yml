@@ -95,6 +95,7 @@ configs:
     file: ./gateway_trust_env.py
 
 x-wonton:
+  spec: "0.4"
   id: com.nousresearch.hermes
   version: 0.5.1
   kind: agent
@@ -103,6 +104,7 @@ x-wonton:
     zh: 默认 Agent：以 Matrix bot 身份和你对话，模型经 magpie
     en: Default agent that chats as a Matrix bot and reaches models through magpie
   icon: icon.png
+  notices: [LICENSE.icon]
   category: agent
   agent:
     protocol: matrix

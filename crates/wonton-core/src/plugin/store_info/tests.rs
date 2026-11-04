@@ -1,6 +1,7 @@
 use super::super::InstallError;
 use super::super::package::PluginPackage;
 use super::super::package_files::PackageFiles;
+use super::super::storefront::index::IndexEntry;
 use super::*;
 
 fn compose(extra: &str) -> String {
@@ -37,9 +38,9 @@ fn store_info_of_spec_0_2_parses() {
 /// 比核心新的清单可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
 #[test]
 fn newer_spec_is_reported_before_unknown_fields() {
-    let yaml = compose("  spec: \"0.4\"\n  shortcuts: []");
+    let yaml = compose("  spec: \"0.5\"\n  shortcuts: []");
     let err = PluginPackage::parse(&yaml).unwrap_err();
-    assert!(err.to_string().contains("规范 0.4"), "{err}");
+    assert!(err.to_string().contains("规范 0.5"), "{err}");
     assert!(err.to_string().contains("先升级核心"), "{err}");
     assert_eq!(InstallError::from(err).kind(), "unsupported");
     assert!(parse_err("  spec: 0.2").contains("加引号"));
@@ -120,4 +121,25 @@ fn package_size_is_limited() {
         err.to_string().contains("一共 2049 KiB，超过 2048 KiB"),
         "{err}"
     );
+}
+
+#[test]
+fn notices_travel_with_the_package_and_stay_text() {
+    let yaml = compose("  spec: \"0.4\"\n  notices: [NOTICE, licenses/MIT.txt]");
+    let err = PluginPackage::with_files(&yaml, PackageFiles::new()).unwrap_err();
+    assert!(err.to_string().contains("不存在"), "{err}");
+
+    let mit = ("licenses/MIT.txt".to_owned(), b"MIT".to_vec());
+    let files = PackageFiles::from([("NOTICE".to_owned(), b"source".to_vec()), mit.clone()]);
+    let package = PluginPackage::with_files(&yaml, files.clone()).unwrap();
+    assert_eq!(package.files(), &files);
+    let entry = IndexEntry::of(&package, "github:acme/hello", &"c".repeat(40)).unwrap();
+    assert!(entry.files.contains_key("NOTICE"), "{entry:?}");
+
+    let binary = PackageFiles::from([("NOTICE".to_owned(), vec![0x89, b'P', 0xff]), mit]);
+    let err = PluginPackage::with_files(&yaml, binary).unwrap_err();
+    assert!(err.to_string().contains("不是 UTF-8 文本"), "{err}");
+
+    let err = parse_err("  spec: \"0.3\"\n  notices: [NOTICE]");
+    assert!(err.contains("spec: \"0.4\""), "{err}");
 }

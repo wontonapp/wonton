@@ -70,6 +70,7 @@ configs:
     file: ./default-model.sh
 
 x-wonton:
+  spec: "0.4"
   id: ai.usemagpie.magpie
   version: 0.4.0
   kind: system
@@ -78,6 +79,7 @@ x-wonton:
     zh: magpie 模型网关：provider 和 key 只配一次，所有 Bot 和插件共用
     en: "magpie model gateway: set up providers and keys once, shared by every bot and plugin"
   icon: icon.png
+  notices: [LICENSE.icon]
   category: system
   webui:
     service: magpie

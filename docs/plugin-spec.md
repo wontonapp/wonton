@@ -1,4 +1,4 @@
-# 插件规范 `x-wonton`（草案 v0.3）
+# 插件规范 `x-wonton`（草案 v0.4）
 
 > 草案，M1 前定稿。字段可能调整，调整时同步更新本文和清单类型。清单类型在
 > `crates/wonton-core/src/plugin/manifest.rs`，迁到 `crates/wonton-protocol` 见“实现计划”第 1 项。
@@ -6,6 +6,7 @@
 > 主人确认（2026-10-28）：插件默认不能出网，每个 Bot 一组容器，模型凭据默认可以用网关里的所有模型。
 > v0.2 加上规范版本（`spec`）、商店信息和插件的发布与来源（ADR-0017）。
 > v0.3 加上权限 `owner.identity`（ADR-0022）。
+> v0.4 加上随包的许可声明 `notices`。
 
 一个插件就是一个 `docker-compose.yml`，在顶层加一个 `x-wonton` 扩展字段描述它在 Wonton 里的身份、
 入口、能力和权限。compose 引用的配置文件、图标和设置表单与它放在同一个目录里，合称插件包。
@@ -86,6 +87,7 @@ x-wonton:
 | `icon` | 否 | 插件包里的 PNG 或 SVG，见“商店信息”。官方索引要求必填。 |
 | `category` | 否 | 商店分类，取“商店信息”里的一项。官方索引要求必填。 |
 | `screenshots`、`author`、`homepage`、`license`、`tags`、`about`、`release_notes` | 否 | 商店信息，见“商店信息”。官方索引要求有 `author` 和 `license`。 |
+| `notices` | 否 | 插件包里的许可和声明文件（UTF-8 文本）的路径列表，见“插件包”。官方索引要求必填。 |
 | `webui` | 否 | 作为小程序打开的入口：`service`、`port`、`path`（默认 `/`）、`sso`（`oidc`、`proxy`、`none`，默认 `none`）、`oidc`、`proxy`（见“网页入口与单点登录”）。 |
 | `mcp` | 否 | 给 Agent 的工具入口：`service`、`port`、`path`（默认 `/mcp`）、`transport`（`streamable-http`），可选 `tool_idle_seconds`、`tool_total_seconds`，见“工具与 MCP 总线”。 |
 | `bot` | 否 | Bot 的显示名（`display_name`，多语言）和头像（`avatar`，插件包里的文件）。只能和 `matrix.bot` 权限一起声明。 |
@@ -103,7 +105,7 @@ x-wonton:
 
 ## 插件包
 
-插件包是一个目录：`docker-compose.yml`，加上它引用的文件——`icon`、`settings`、`bot.avatar` 和
+插件包是一个目录：`docker-compose.yml`，加上它引用的文件——`icon`、`settings`、`bot.avatar`、`notices` 和
 顶层 `configs` 的 `file`。`screenshots` 不算在内（见“商店信息”）。
 
 - 引用的路径相对 compose 文件所在的目录，不能是绝对路径、不能含 `..`、不能用变量，也不能经过软链接；
@@ -114,6 +116,8 @@ x-wonton:
 - 核心只保存被引用的文件。安装后整个包（compose 原文和这些文件）存在核心自己的数据目录里，供审计、
   恢复和升级比对；插件的容器访问不到这个目录。
 - 卷不能用相对路径挂载包里的文件（见“Compose 子集”）；容器要用的包内文件一律经 `configs` 交给它。
+- 包里的第三方素材（如上游的标志）要求随分发附上版权和许可时，写进 `notices` 引用的文件。README 不进包，核心重新编码图片时
+  也不留元数据，这两处的声明到不了主人那里。`notices` 只随包保存和分发，容器拿不到；容器要读的文件用 `configs`。
 
 ### 配置文件（`configs`）
 
@@ -187,7 +191,7 @@ services:
 
 | 字段 | 说明 |
 | --- | --- |
-| `spec` | 清单按哪一版规范写成，字符串，如 `"0.2"`（YAML 里要加引号，不然读成数字）。没写时按 `"0.1"`。核心先读它：比核心支持的版本新时安装失败（`unsupported`），提示先升级核心，不再逐项报未知字段。用到 v0.2 的字段时写 `"0.2"`，用到 v0.3 的写 `"0.3"`。 |
+| `spec` | 清单按哪一版规范写成，字符串，如 `"0.2"`（YAML 里要加引号，不然读成数字）。没写时按 `"0.1"`。核心先读它：比核心支持的版本新时安装失败（`unsupported`），提示先升级核心，不再逐项报未知字段。用到 v0.2 的字段时写 `"0.2"`，用到 v0.3 的写 `"0.3"`，用到 v0.4 的写 `"0.4"`。 |
 | `icon` | 图标，见下节。 |
 | `screenshots` | 截图：仓库里的 PNG 或 JPEG（路径规则同插件包里的文件），1 到 6 张，按顺序显示。截图不算插件包的一部分：不参与插件包摘要，安装时不取，上传插件包时忽略；商店的详情页要显示时，核心按同一个提交去取。 |
 | `author` | 插件包的作者：`name`（必填）、`url`（HTTPS，可选）。不一定是应用的作者。 |
@@ -249,10 +253,11 @@ services:
 - 上游的 SVG 含文字、内嵌位图或滤镜时改用 PNG 版，上面的 SVG 规则不收这些内容。
 - 不暗示 Wonton 是对方官方出品，也不暗示得到了对方背书。
 - README 写明标志的来源，并注明它是对方的商标。
+- 标志的来源、版权、许可全文和商标说明放进一个文件（如 `NOTICE`），用 `notices` 引用。
 
 图标放好后缩到 62×62（主屏的显示尺寸）看一眼。
 
-上游没有标志时（如示例插件）按下面的线条风格画：
+上游没有标志时（如示例插件）按下面的线条风格画，官方插件的 `notices` 写插件包自己的许可：
 
 | 项目 | 规矩 |
 | --- | --- |
@@ -1057,8 +1062,8 @@ x-wonton:
 
 ### 插件仓库
 
-- 一个插件一个 Git 仓库，仓库根目录就是插件包：`docker-compose.yml` 和它引用的文件。仓库里的其他文件（README、LICENSE、
-  Dockerfile、源码、截图、测试）核心不取，截图只在商店的详情页里显示。
+- 一个插件一个 Git 仓库，仓库根目录就是插件包：`docker-compose.yml` 和它引用的文件。仓库里的其他文件（README、没有被
+  `notices` 引用的 LICENSE、Dockerfile、源码、截图、测试）核心不取，截图只在商店的详情页里显示。
 - 发布：把清单的 `version` 改成新版本，提交，打 tag `v<version>` 推上去。tag 和清单的版本不一致时装不上。带预发布后缀的
   版本（如 `v1.2.0-beta.1`）只能按 tag 明确安装，不进商店，也不作为升级提示。发布过的 tag 不要移动：已经装上的不受
   影响，但核心会提示主人这个 tag 被改过。
@@ -1123,7 +1128,7 @@ x-wonton:
 - 条目用 `wonton-core plugin index-entry <插件包目录> github:<owner>/<repo> <提交号>` 生成，不手写：目录是那个提交的
   检出（核心不连 Git，不核对），条目的 JSON 写到标准输出；加 `--index <索引目录>` 时直接写进本地的索引目录，同一个
   来源的旧条目换掉。
-- 收录要求：`wonton-core plugin check --official` 通过，即有 `icon`、`category`、`license`、`author`，所有服务的 `image`
+- 收录要求：`wonton-core plugin check --official` 通过，即有 `icon`、`category`、`license`、`author`、`notices`，所有服务的 `image`
   按摘要固定，长期运行的服务都有健康检查；申请的权限和插件做的事相符；镜像来自上游官方或作者可复现的构建。
 - 核心镜像内置一份索引和其中插件包的文件。开发镜像和测试用本地的索引目录代替（`WONTON_STORE_INDEX`）：`index.json`
   加上按 sha256 存放的文件（`blobs/<sha256 的十六进制>`）。
@@ -1151,7 +1156,7 @@ x-wonton:
   - 不合格（退出码 1）：装不上的（核心还不支持的权限、渲染不了的 compose），图标或截图处理不了。
   - 提醒（退出码 0）：镜像没有按摘要固定，长期运行的服务没有健康检查，没有图标，图标的角是透明的，截图的长边不到
     1280，横屏和竖屏的截图混在一起，`kind: system`。`--official` 时前三项也算不合格，另外要有 `category`、`license`、
-    `author`。只看得到 compose 里写的健康检查，镜像自带的看不到。
+    `author`、`notices`。只看得到 compose 里写的健康检查，镜像自带的看不到。
   - 用法不对时退出码 2。
 - 打包：`wonton-core plugin pack <目录>` 把插件包打成 tar 写到标准输出，只有 compose 文件和它引用的文件，README、截图
   这些不在里面；解析不了时和 `check` 一样报错，退出码 1。

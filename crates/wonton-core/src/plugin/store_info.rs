@@ -10,7 +10,7 @@ use super::manifest::{LocalizedText, Manifest, ManifestError, PluginKind, requir
 use super::package_files;
 
 /// 核心支持的最新规范版本。
-pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 3);
+pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 4);
 
 /// 没写 `spec` 的清单按这一版理解。
 const SPEC_DEFAULT: SpecVersion = SpecVersion(0, 1);
@@ -121,6 +121,11 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
         return Err(invalid(format!(
             "用到了规范 0.2 的字段 {field}，要写 spec: \"0.2\""
         )));
+    }
+    if spec < SpecVersion(0, 4) && !manifest.notices.is_empty() {
+        return Err(invalid(
+            "用到了规范 0.4 的字段 notices，要写 spec: \"0.4\"".to_owned(),
+        ));
     }
     if manifest.category == Some(Category::System) && manifest.kind != PluginKind::System {
         return Err(invalid(

@@ -74,6 +74,7 @@ pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<R
             ("category", m.category.is_some()),
             ("license", m.license.is_some()),
             ("author", m.author.is_some()),
+            ("notices", !m.notices.is_empty()),
         ];
         for (field, _) in required.iter().filter(|(_, present)| !present) {
             report.problems.push(format!("官方索引要求写 {field}"));

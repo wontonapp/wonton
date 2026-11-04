@@ -33,7 +33,7 @@ fn compose(services: &str, extra: &str) -> String {
     package(
         services,
         &format!(
-            "  spec: \"0.2\"\n  icon: icon.svg\n  screenshots: [shots/1.png]\n  permissions: []\n{extra}"
+            "  spec: \"0.4\"\n  icon: icon.svg\n  screenshots: [shots/1.png]\n  permissions: []\n{extra}"
         ),
     )
 }
@@ -50,6 +50,7 @@ fn repo(compose: &str) -> tempfile::TempDir {
     write(dir.path(), "icon.svg", ICON.as_bytes());
     write(dir.path(), "shots/1.png", &png(1600, 1000));
     write(dir.path(), "README.md", b"# Test\n");
+    write(dir.path(), "NOTICE", b"source and license\n");
     dir
 }
 
@@ -86,6 +87,7 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         "官方索引要求写 category",
         "官方索引要求写 license",
         "官方索引要求写 author",
+        "官方索引要求写 notices",
     ] {
         assert!(
             report.problems.iter().any(|p| p.contains(expected)),
@@ -96,7 +98,8 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         "  web:\n    image: nginx:1.27@sha256:{}\n    healthcheck:\n      test: [CMD, nginx, -t]",
         "a".repeat(64)
     );
-    let complete = "  category: tools\n  license: MIT\n  author: {name: Example}";
+    let complete =
+        "  category: tools\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
     let report = run(repo(&compose(&pinned, complete)).path(), true)
         .await
         .unwrap();
@@ -115,7 +118,8 @@ async fn the_official_index_refuses_hardcoded_proxy_addresses() {
             "a".repeat(64)
         )
     };
-    let complete = "  category: tools\n  license: MIT\n  author: {name: Example}";
+    let complete =
+        "  category: tools\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
     let hardcoded = services("      http_proxy: http://172.17.0.1:7899");
     let report = run(repo(&compose(&hardcoded, complete)).path(), true)
         .await

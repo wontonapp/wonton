@@ -25,7 +25,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 ### 插件仓库和版本
 
 - 一个插件一个 Git 仓库，仓库根目录就是插件包：`docker-compose.yml` 加它引用的文件（插件规范的“插件包”）。仓库里的其他
-  文件（README、LICENSE、Dockerfile、源码、测试脚本）核心不取。
+  文件（README、没有被 `notices` 引用的 LICENSE、Dockerfile、源码、测试脚本）核心不取。
 - 发布就是打 tag `v<版本>`，`<版本>` 是这个提交里清单的 `version`（语义化版本）。核心取包时核对两者一致，不一致拒绝。带
   预发布后缀的版本（`v1.2.0-beta.1`）可以按 tag 明确安装，不进商店，也不作为升级提示。
 - 插件自己的镜像由作者构建并推到镜像仓库，compose 按摘要引用；核心不构建镜像（`build` 不在 Compose 子集里）。
@@ -76,7 +76,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 - 一个公开仓库 `geraldpeng6/wonton-store` 里的 `index.json`。每个插件一项：来源、版本、提交、插件包每个文件的 sha256，加上
   compose 原文。商店列表和 Bot 的搜索直接用索引里的清单，不用逐个去取。格式见插件规范的“官方索引”。
 - 收录就是向这个仓库提 PR，审核后合并。条目由 `wonton-core plugin index-entry github:<owner>/<repo>@<tag>` 生成，不手写。
-  审核看这些：`wonton-core plugin check --official` 通过（图标、分类、许可证、作者齐全，镜像全按摘要固定，长期运行的服务
+  审核看这些：`wonton-core plugin check --official` 通过（图标、分类、许可证、作者、随包的许可声明齐全，镜像全按摘要固定，长期运行的服务
   都有健康检查）；申请的权限和插件做的事相符；镜像来自上游官方或作者可复现的构建。
 - 一个插件只收录一个版本，即最新审核过的；升级就是改这一项。
 - 核心镜像构建时带上索引的一个固定版本，以及其中所有插件包的文件（按 sha256 存放）。这个版本由主仓库的锁文件固定（索引

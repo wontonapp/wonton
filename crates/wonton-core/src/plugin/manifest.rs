@@ -511,6 +511,9 @@ pub struct Manifest {
     pub homepage: Option<String>,
     #[serde(default)]
     pub license: Option<String>,
+    /// 插件包里的许可和声明文件。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     #[serde(default)]

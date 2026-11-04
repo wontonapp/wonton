@@ -38,6 +38,7 @@ services:
       start_period: 60s
 
 x-wonton:
+  spec: "0.4"
   id: app.grafana
   version: 0.1.0
   kind: app
@@ -46,6 +47,7 @@ x-wonton:
     zh: Grafana 示例插件，打开即以 Wonton 身份自动登录
     en: Grafana example plugin that signs you in with your Wonton identity
   icon: icon.png
+  notices: [LICENSE.icon]
   category: tools
   webui:
     service: grafana

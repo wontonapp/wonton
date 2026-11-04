@@ -226,6 +226,9 @@ impl PluginPackage {
         if let Some(avatar) = manifest.bot.as_ref().and_then(|b| b.avatar.as_ref()) {
             add("bot.avatar", avatar)?;
         }
+        for notice in &manifest.notices {
+            add("notices", notice)?;
+        }
         for (name, config) in &self.configs {
             if let ConfigSource::File(path) = config {
                 refs.push((format!("configs.{name}.file"), path.clone()));
@@ -250,6 +253,9 @@ impl PluginPackage {
                 .ok_or_else(|| file_err(FileError::Missing))?;
             if data.len() as u64 > MAX_FILE_BYTES {
                 return Err(file_err(FileError::TooBig));
+            }
+            if field == "notices" && std::str::from_utf8(&data).is_err() {
+                return Err(file_err(FileError::NotText));
             }
             self.files.insert(path, data);
         }
