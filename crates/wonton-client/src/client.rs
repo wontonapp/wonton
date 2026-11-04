@@ -91,39 +91,19 @@ impl ClientCore {
                 self.push.unavailable(message);
                 Ok(())
             }
-            Action::SetLanguages { languages } => {
-                self.plugins.set_languages(languages);
-                Ok(())
-            }
-            Action::RefreshPlugins => {
-                self.plugins.refresh_installed();
-                Ok(())
-            }
-            Action::RefreshStore { force } => {
-                self.plugins.refresh_store(force);
-                Ok(())
-            }
-            Action::InstallPlugin { preview } => self.plugins.install(preview),
-            Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
-            Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
-            Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
-            Action::RefreshEgressProxy => {
-                self.plugins.refresh_egress();
-                Ok(())
-            }
-            Action::SaveEgressProxy {
-                address,
-                direct_cidrs,
-            } => self.plugins.save_egress(&address, &direct_cidrs),
-            Action::ConfirmEgressProxy => self.plugins.confirm_egress(),
-            Action::DismissEgressConfirmation => {
-                self.plugins.dismiss_egress_confirmation();
-                Ok(())
-            }
-            Action::DismissOwnerProfilePrompt => {
-                self.plugins.dismiss_owner_profile_prompt();
-                Ok(())
-            }
+            Action::RefreshOnboarding
+            | Action::RestartOnboarding
+            | Action::ChooseOnboardingAgent { .. }
+            | Action::ContinueOnboarding
+            | Action::SkipOnboardingStep
+            | Action::ToggleOnboardingNeed { .. }
+            | Action::SaveModelProviderKey { .. }
+            | Action::DismissModelProviderProblem
+            | Action::SetPrimaryAgent { .. }
+            | Action::DismissReplacedAgentOffer
+            | Action::DismissOnboardingTip { .. } => Err(CoreError::NotReady {
+                reason: "这个版本的客户端核心不支持新用户引导".to_owned(),
+            }),
             action @ (Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
@@ -152,7 +132,7 @@ impl ClientCore {
             | Action::ReloadTab { .. }
             | Action::TabLoadFailed { .. }
             | Action::DismissUninstalledTabs => Err(tabs_unsupported()),
-            chat => self.chat.dispatch(chat),
+            other => self.dispatch_plugins_or_chat(other),
         }
     }
 
@@ -414,6 +394,46 @@ impl ClientCore {
             .map_err(|error| CoreError::Upstream {
                 reason: format!("核心的后台任务异常结束：{error}"),
             })?
+    }
+
+    /// `dispatch` 的后半：插件的操作，其余都是聊天的。分开放是因为函数长度有上限。
+    fn dispatch_plugins_or_chat(&self, action: Action) -> Result<(), CoreError> {
+        match action {
+            Action::SetLanguages { languages } => {
+                self.plugins.set_languages(languages);
+                Ok(())
+            }
+            Action::RefreshPlugins => {
+                self.plugins.refresh_installed();
+                Ok(())
+            }
+            Action::RefreshStore { force } => {
+                self.plugins.refresh_store(force);
+                Ok(())
+            }
+            Action::InstallPlugin { preview } => self.plugins.install(preview),
+            Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
+            Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
+            Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
+            Action::RefreshEgressProxy => {
+                self.plugins.refresh_egress();
+                Ok(())
+            }
+            Action::SaveEgressProxy {
+                address,
+                direct_cidrs,
+            } => self.plugins.save_egress(&address, &direct_cidrs),
+            Action::ConfirmEgressProxy => self.plugins.confirm_egress(),
+            Action::DismissEgressConfirmation => {
+                self.plugins.dismiss_egress_confirmation();
+                Ok(())
+            }
+            Action::DismissOwnerProfilePrompt => {
+                self.plugins.dismiss_owner_profile_prompt();
+                Ok(())
+            }
+            chat => self.chat.dispatch(chat),
+        }
     }
 
     fn update_sessions(

@@ -18,6 +18,7 @@ mod error;
 mod file;
 mod home;
 mod lan;
+mod onboarding;
 mod owner;
 mod plugin;
 mod push;
@@ -66,6 +67,13 @@ pub use home::{
 pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
     LanProblem, LanProtocol, LanSettings,
+};
+pub use onboarding::{
+    AgentLogin, MODEL_PROVIDERS_PATH, ModelProvider, ModelProviderFailure, ModelProviderKey,
+    ModelProviderProblem, ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent,
+    OnboardingAgentRow, OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingStep,
+    OnboardingTip, OnboardingTips, OnboardingUpdate, OnboardingViewModel, ReplacedAgent,
+    model_provider_path,
 };
 pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
 pub use plugin::{

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, PushEndpoint, Rgb,
-    SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
+    Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, OnboardingTip,
+    PushEndpoint, Rgb, SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -123,6 +123,30 @@ pub enum Action {
 
     /// 主人关掉了配对后弹出的填资料页面（[`PluginsViewModel::owner_profile_prompt`](crate::PluginsViewModel::owner_profile_prompt)）。
     DismissOwnerProfilePrompt,
+
+    // 新用户引导（ADR-0034）。网络操作都在后台执行，进展和结果在 `OnboardingViewModel` 里。
+    /// 取引导的状态、推荐清单和服务商列表。
+    RefreshOnboarding,
+    /// 主人在设置里选了重看：从头走一遍，已经做过的不会撤销。
+    RestartOnboarding,
+    /// 选中一个 Agent（[`OnboardingAgentRow::id`](crate::OnboardingAgentRow::id)）。要安装时壳接着走现有的确认页。
+    ChooseOnboardingAgent { id: String },
+    /// 做完这一步，到下一步。选 Agent 这一步同时把选中的记成默认 Agent。
+    ContinueOnboarding,
+    /// 跳过这一步，不算做完：没接模型时 Agent 的私聊照常说明要接模型。
+    SkipOnboardingStep,
+    /// 选中或者取消一项需求。
+    ToggleOnboardingNeed { id: String },
+    /// 保存一个服务商的 key 并测试。
+    SaveModelProviderKey { id: String, key: SecretString },
+    /// 清掉 [`OnboardingModelStep::problem`](crate::OnboardingModelStep::problem)。
+    DismissModelProviderProblem,
+    /// 在设置里改默认 Agent。
+    SetPrimaryAgent { id: String },
+    /// 主人回答了要不要卸掉被换下来的 Agent，不再问。
+    DismissReplacedAgentOffer,
+    /// 这条提示看过了，这台设备不再显示。
+    DismissOnboardingTip { tip: OnboardingTip },
 
     // 文件（ADR-0020）。网络操作都在后台执行，进展和结果在传输列表和文件卡片里。
     /// 上传一个文件，传完放进共享文件夹 `transfers`。`name`、`mime_type` 是系统给的文件名和类型，核心读不到内容 URI 的这些
