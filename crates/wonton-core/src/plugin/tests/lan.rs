@@ -15,7 +15,7 @@ use super::super::package::PackageError;
 use super::super::render::dry_run;
 use super::super::{Permission, PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::{manager_in_container, manager_with};
-use super::{SPEC, env_of_container, package};
+use super::{env_of_container, package};
 
 pub(super) type Host = Arc<Mutex<Result<HostNetwork, String>>>;
 
@@ -542,11 +542,8 @@ fn manifests_must_declare_ports_and_permission_together() {
 }
 
 #[test]
-fn the_spec_example_is_valid() {
-    let section = SPEC.find("\n## 局域网").expect("规范里有“局域网”一节");
-    let start = section + SPEC[section..].find("```yaml\n").expect("有示例") + "```yaml\n".len();
-    let end = start + SPEC[start..].find("```").expect("示例代码块闭合");
-    let pkg = PluginPackage::parse(&SPEC[start..end]).unwrap();
+fn the_example_is_valid() {
+    let pkg = PluginPackage::parse(include_str!("examples/lan.yaml")).unwrap();
     let ports = &pkg.manifest.lan.as_ref().expect("有 lan").ports;
     assert_eq!(ports[0].key(), "445/tcp");
     dry_run(&pkg).unwrap();

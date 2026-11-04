@@ -16,7 +16,7 @@ use super::super::package::PackageError;
 use super::super::render::dry_run;
 use super::super::{PluginManager, PluginPackage};
 use super::manager::{manager_in_container, manager_with};
-use super::{SPEC, example, package};
+use super::{example, package};
 
 /// 两个服务，只有 `comfy` 要显卡；它以非 root 用户运行，所以设备所属的组也得给它。
 fn gpu_plugin(extra_manifest: &str) -> String {
@@ -231,12 +231,8 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
 }
 
 #[test]
-fn spec_and_example_gpu_plugins_are_valid() {
-    // 规范“显卡”一节的示例。
-    let section = SPEC.find("\n## 显卡").expect("规范里有“显卡”一节");
-    let start = section + SPEC[section..].find("```yaml\n").expect("有示例") + "```yaml\n".len();
-    let end = start + SPEC[start..].find("```").expect("示例代码块闭合");
-    let pkg = PluginPackage::parse(&SPEC[start..end]).unwrap();
+fn example_gpu_plugins_are_valid() {
+    let pkg = PluginPackage::parse(include_str!("examples/gpu.yaml")).unwrap();
     assert_eq!(pkg.manifest.gpu.as_ref().unwrap().services, ["comfyui"]);
     dry_run(&pkg).unwrap();
 

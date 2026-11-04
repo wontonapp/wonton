@@ -2,7 +2,7 @@
 
 官方插件清单与自研插件源码。每个插件一个目录，即插件包：至少包含带 `x-wonton` 扩展字段的
 `docker-compose.yml`，可选图标、设置表单（JSON Schema）和 compose 的 `configs` 引用的文件。
-规范见 `docs/plugin-spec.md`。别的官方插件各在自己的仓库里，由官方索引收录，如文件搜索
+规范见[公开的插件规范](https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md)。别的官方插件各在自己的仓库里，由官方索引收录，如文件搜索
 `geraldpeng6/wonton-plugin-files`。
 
 | 目录 | 说明 |

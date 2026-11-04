@@ -77,9 +77,11 @@
 
 文档和注释只记录读代码得不到的信息。会变的状态写进文档就会过时，过时的文字会把人和 AI 都带偏。
 
-- 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、`docs/plugin-spec.md`、
+- 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、公开仓库里的插件规范、
   `docs/adr/`，以及各模块目录下简短的 README。
-- 改变架构、协议、插件规范或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
+- 改变架构、协议或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
+- 插件规范在公开仓库 [wonton-docs](https://github.com/geraldpeng6/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
+  同时在那边提 PR，核心合并后再合。那边是公开文档：不引用 ADR 和里程碑，不写机器名和局域网地址。
 - 重大决策写 ADR。推翻旧决策时新写一篇，并把旧 ADR 的状态改为“已被 ADR-xxxx 取代”。
 - 不写进度报告、按日期的笔记和已完成的实施计划。进度看 GitHub issue 和里程碑。
 - 注释只写代码表达不了的：为什么这样写（包括没选的写法）、约束和不变量、外部系统的实测行为。不写复述

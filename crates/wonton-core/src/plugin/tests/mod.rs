@@ -33,8 +33,6 @@ mod store;
 mod views;
 mod watch;
 
-const SPEC: &str = include_str!("../../../../../docs/plugin-spec.md");
-
 fn example(name: &str) -> PluginPackage {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../plugins/examples")
@@ -121,12 +119,10 @@ fn grafana_example_injects_oidc_and_app_url() {
 }
 
 #[test]
-fn spec_example_is_a_valid_plugin() {
-    let start = SPEC.find("```yaml\n").expect("规范里有示例") + "```yaml\n".len();
-    let end = start + SPEC[start..].find("```").expect("示例代码块闭合");
+fn full_example_is_a_valid_plugin() {
     // 示例引用了包里的图标和设置表单。
     let files = ["icon.png", "settings.schema.json"].map(|f| (f.to_owned(), Vec::new()));
-    let pkg = PluginPackage::with_files(&SPEC[start..end], files.into()).unwrap();
+    let pkg = PluginPackage::with_files(include_str!("examples/full.yaml"), files.into()).unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.immich.photos");
     dry_run(&pkg).unwrap();
 }
