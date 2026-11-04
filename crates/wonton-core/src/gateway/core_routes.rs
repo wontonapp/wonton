@@ -101,6 +101,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/api/store", get(api::store))
         .route("/_wonton/api/store/plugin", get(api::store_plugin))
         .route(
+            "/_wonton/api/store/sources",
+            post(api::add_store_source).delete(api::remove_store_source),
+        )
+        .route(
             wonton_protocol::CORE_UPGRADE_PATH,
             get(core_upgrade::status)
                 .post(core_upgrade::start)

@@ -9,14 +9,78 @@ use std::sync::Arc;
 pub use offers::Upgrades;
 use wonton_protocol::{CardLine, InstallPreview, UpgradeRequest};
 
-use super::github_source::{self, SourceRef, Trust, Wanted};
+use super::github_source::{self, Origin, SourceRef, Trust, Wanted};
 use super::lan::webui::{open_ports, switched};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, detached};
 use super::manifest::{Permission, PluginId};
 use super::package::PluginPackage;
+use super::source_address::chosen_source;
 use super::store::InstalledRecord;
 use super::storefront::index::{Index, Listed as IndexListed};
+
+/// 升到哪里。
+pub enum UpgradeTo {
+    /// 能升到的版本（官方索引、仓库最新的 tag 或第三方索引里的）。
+    Offered,
+    /// 主人选的来源。
+    Source(String),
+    /// 上传的插件包。
+    Upload(Box<PluginPackage>),
+}
+
+/// 这个包在哪里来的，给主人看。
+fn origin_label(origin: Option<&Origin>) -> String {
+    // 同一个仓库可以直接装，也可以经索引装，只写提供方的话换来源的提示前后一样。
+    origin.map_or_else(
+        || "你上传的文件".to_owned(),
+        |o| {
+            o.via_index()
+                .map_or_else(|| o.provider(), |via| format!("{via} 的索引"))
+        },
+    )
+}
+
+/// 装着的和这个包来自同一个地方：以后按同一个来源提示升级。
+fn same_source(record: &InstalledRecord, package: &PluginPackage) -> bool {
+    let place = |o: &Origin| (o.repo.clone(), o.index.clone());
+    record.origin.as_ref().map(place) == package.origin.as_ref().map(place)
+}
+
+/// 主人主动换版本时要醒目提示的：比装着的旧、来源变了。
+fn chosen_warnings(record: &InstalledRecord, package: &PluginPackage) -> Vec<CardLine> {
+    let warning = |text: String| CardLine {
+        text,
+        emphasis: true,
+    };
+    let mut warnings = Vec::new();
+    let version = &package.manifest.version;
+    if older(version, &record.version) {
+        warnings.push(warning(format!(
+            "比装着的 {} 旧。应用的数据可能已经按新版本迁移过，旧版本可能读不了，先备份",
+            record.version
+        )));
+    }
+    if !same_source(record, package) {
+        warnings.push(warning(format!(
+            "来源从 {} 换成 {}，换了之后云吞不再按原来的来源提示升级",
+            origin_label(record.origin.as_ref()),
+            origin_label(package.origin.as_ref())
+        )));
+    }
+    warnings
+}
+
+/// `new` 比 `installed` 旧。读不懂版本号的不算：只有说得清才提示。
+fn older(new: &str, installed: &str) -> bool {
+    match (
+        semver::Version::parse(new),
+        semver::Version::parse(installed),
+    ) {
+        (Ok(new), Ok(installed)) => new < installed,
+        _ => false,
+    }
+}
 
 /// `new` 比 `installed` 新，而且是正式版本。读不懂版本号的不算：只升不降，说不清就不升。
 fn newer(new: &str, installed: &str) -> bool {
@@ -71,6 +135,8 @@ impl PluginManager {
         record: &InstalledRecord,
     ) -> Option<&'a IndexListed> {
         match &record.origin {
+            // 经第三方索引装的只看那个索引，官方也收录了同一个仓库也一样（ADR-0031）。
+            Some(origin) if origin.index.is_some() => None,
             Some(origin) => index.find(&SourceRef::parse(&origin.repo).ok()?),
             None => {
                 let bundled = self.bundled.read().expect("插件表锁中毒");
@@ -118,6 +184,13 @@ impl PluginManager {
                 "插件 {id} 没有来源，查不到新版本{no_index}"
             )));
         };
+        if let Some(source) = &origin.index {
+            let package = self.fetch_source(source).await?;
+            if !newer(&package.manifest.version, &record.version) {
+                return Err(none());
+            }
+            return Ok(package);
+        }
         // 官方索引不再收录时不改从 GitHub 升级：那样信任级别就悄悄降了。
         if origin.trust == Trust::Official {
             return Err(none());
@@ -134,8 +207,11 @@ impl PluginManager {
         Ok(package)
     }
 
-    /// 上传的新版本：`id` 不能变，没有降级。开发时同一个版本号可以反复上传。
-    fn check_upload(package: &PluginPackage, record: &InstalledRecord) -> Result<(), InstallError> {
+    /// 主人主动选的版本（ADR-0031）：`id` 不能变。可以比装着的旧，也可以换来源，预览里醒目提示。
+    fn check_same_plugin(
+        package: &PluginPackage,
+        record: &InstalledRecord,
+    ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
         if manifest.id != record.id {
             return Err(InstallError::Invalid(format!(
@@ -143,33 +219,43 @@ impl PluginManager {
                 manifest.id, record.id
             )));
         }
-        if newer(&record.version, &manifest.version) {
-            return Err(InstallError::Invalid(format!(
-                "插件包的版本 {} 比装着的 {} 旧：没有降级",
-                manifest.version, record.version
-            )));
-        }
         Ok(())
     }
 
-    /// 升级预览：`upload` 是上传的插件包，没有时取能升到的版本。什么也不改。
+    /// 升级预览：默认取能升到的版本，也可以是主人选的来源或者上传的插件包。什么也不改。
     pub async fn preview_upgrade(
         &self,
         id: &PluginId,
-        upload: Option<PluginPackage>,
+        to: UpgradeTo,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
         let record = self.upgradable_record(id)?;
-        let package = match upload {
-            Some(package) => {
-                Self::check_upload(&package, &record)?;
-                package
-            }
-            None => self.latest_package(&record).await?,
+        let chosen = !matches!(to, UpgradeTo::Offered);
+        let upload = matches!(to, UpgradeTo::Upload(_));
+        let package = match to {
+            UpgradeTo::Offered => self.latest_package(&record).await?,
+            UpgradeTo::Source(source) => self.fetch_source(&chosen_source(&source)?).await?,
+            UpgradeTo::Upload(package) => *package,
         };
+        if chosen {
+            Self::check_same_plugin(&package, &record)?;
+            let installed = installed_package(&record)?;
+            // 内容一样但来源不同的要放行：装它的索引删了之后，主人靠这个改跟仓库走，不用等上游出新版本。
+            if installed.digest() == package.digest() && same_source(&record, &package) {
+                return Err(InstallError::Invalid(format!(
+                    "和装着的 {} 一样，不用换",
+                    record.version
+                )));
+            }
+        }
         let blocked = self.host_block(&package.manifest).await?;
         let mut preview = self.preview_with(&package, langs, blocked).await?;
         preview.upgrade_from = Some(record.version.clone());
+        if upload {
+            preview.source = Some(self.staged.stage(package.clone()));
+        }
+        let warnings = chosen_warnings(&record, &package);
+        preview.notices.splice(0..0, warnings);
         for line in &mut preview.permissions {
             let granted = &record.granted_permissions;
             line.added = !granted.iter().any(|p| p.to_string() == line.permission);
@@ -197,13 +283,15 @@ impl PluginManager {
             .map(|p| p.parse::<Permission>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        if request.source.is_some() {
-            return Err(InstallError::Unsupported(
-                "这个版本的核心只能升到提示的版本".to_owned(),
-            ));
-        }
         let record = self.upgradable_record(id)?;
-        let package = self.latest_package(&record).await?;
+        let package = match &request.source {
+            Some(source) => {
+                let package = self.fetch_source(source).await?;
+                Self::check_same_plugin(&package, &record)?;
+                package
+            }
+            None => self.latest_package(&record).await?,
+        };
         let digest = package.digest();
         if digest != request.digest {
             return Err(InstallError::Changed(format!(
@@ -211,7 +299,9 @@ impl PluginManager {
             )));
         }
         self.upgrade_detached(package, granted, request.lan_webui)
-            .await
+            .await?;
+        self.staged.remove(&digest);
+        Ok(())
     }
 
     /// 升到上传的插件包（开发时用）。开关开着的继续开着，`lan_webui` 时打开。
@@ -223,7 +313,7 @@ impl PluginManager {
         lan_webui: bool,
     ) -> Result<(), InstallError> {
         let record = self.upgradable_record(id)?;
-        Self::check_upload(&package, &record)?;
+        Self::check_same_plugin(&package, &record)?;
         self.upgrade_detached(package, granted, lan_webui || record.lan_webui)
             .await
     }

@@ -15,7 +15,7 @@ use super::super::names::container_name;
 use super::super::preinstall::Backoff;
 use super::super::storefront::StoreConfig;
 use super::super::storefront::index::IndexEntry;
-use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus};
+use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus, UpgradeTo};
 use super::env_of_container;
 use super::github::{FakeGitHub, zh};
 use super::lan::{office, on};
@@ -91,7 +91,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
 
 /// 主人在确认页上点了确认。
 async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
-    let preview = m.preview_upgrade(&id(), None, &zh()).await?;
+    let preview = m.preview_upgrade(&id(), UpgradeTo::Offered, &zh()).await?;
     let request = UpgradeRequest {
         devices: Vec::new(),
         source: None,
@@ -140,7 +140,10 @@ async fn a_new_tag_is_offered_and_the_upgrade_keeps_the_data() {
     assert_eq!(offer.release_notes.as_deref(), Some("版本 1.1.0 的说明"));
     assert!(!offer.permissions_changed);
 
-    let preview = m.preview_upgrade(&id(), None, &zh()).await.unwrap();
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap();
     assert_eq!(preview.upgrade_from.as_deref(), Some("1.0.0"));
     assert_eq!(preview.version, "1.1.0");
 
@@ -168,7 +171,7 @@ async fn a_new_tag_is_offered_and_the_upgrade_keeps_the_data() {
     assert_eq!(record.version, "1.1.0");
     assert_eq!(record.origin.unwrap().tag.as_deref(), Some("v1.1.0"));
     assert_eq!(
-        m.preview_upgrade(&id(), None, &zh())
+        m.preview_upgrade(&id(), UpgradeTo::Offered, &zh())
             .await
             .unwrap_err()
             .kind(),
@@ -232,7 +235,10 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
     let offer = m.installed_plugin(&id(), &zh()).unwrap().upgrade.unwrap();
     assert!(offer.permissions_changed);
 
-    let preview = m.preview_upgrade(&id(), None, &zh()).await.unwrap();
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap();
     assert!(preview.permissions.iter().all(|p| p.added));
     let not_confirmed = UpgradeRequest {
         devices: Vec::new(),
@@ -286,12 +292,15 @@ async fn a_rewritten_tag_is_reported_and_not_an_upgrade() {
         "{:?}",
         plugin.notices
     );
-    let err = m.preview_upgrade(&id(), None, &zh()).await.unwrap_err();
+    let err = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "not_found", "{err}");
 }
 
 #[tokio::test]
-async fn plugins_without_a_tag_are_not_checked_and_uploads_only_go_up() {
+async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgrades() {
     let (github, docker, m, _dir) = with_github(false).await;
     let commit = release(&github, &hello("1.0.0", "", "  permissions: []\n"));
     install(&m, &format!("{SOURCE}@{commit}")).await;
@@ -311,12 +320,6 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_only_go_up() {
         "上传的是本地来源，以后不查新版本"
     );
 
-    let older = parse(&hello("1.0.0", "", "  permissions: []\n"));
-    let err = m
-        .upgrade_upload(&id(), older, Vec::new(), false)
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "invalid_input", "{err}");
     let other = hello("1.3.0", "", "  permissions: []\n").replace("id: app.hello", "id: app.other");
     let err = m
         .upgrade_upload(&id(), parse(&other), Vec::new(), false)
@@ -451,7 +454,10 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
     write("1.0.0", "");
     m.ensure_system(&system, Backoff::default()).await.unwrap();
     assert_eq!(version(&m), "1.0.0");
-    let err = m.preview_upgrade(&id(), None, &zh()).await.unwrap_err();
+    let err = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "unsupported", "接口升不了系统插件：{err}");
 
     let worker = container_name("app-hello", "worker");
@@ -516,7 +522,11 @@ async fn ports_that_become_switched_close_and_the_preview_says_so() {
 
     let v2 = compose("1.1.0", "sso: none").replace("port: 1", &format!("port: {port}"));
     let preview = m
-        .preview_upgrade(&id(), Some(PluginPackage::parse(&v2).unwrap()), &zh())
+        .preview_upgrade(
+            &id(),
+            UpgradeTo::Upload(Box::new(PluginPackage::parse(&v2).unwrap())),
+            &zh(),
+        )
         .await
         .unwrap();
     assert!(!preview.lan_webui.unwrap().enabled);

@@ -4,13 +4,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use wonton_protocol::{InstallPreview, InstallRequest, StoreProblem};
+use wonton_protocol::{AddedSource, InstallPreview, InstallRequest, StoreProblem};
 
-use super::github_source::{self, SourceRef};
+use super::github_source::{self, INDEX_SCHEME, SourceRef};
+use super::index_location::IndexLocation;
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView};
 use super::manifest::Permission;
 use super::package::PluginPackage;
+use super::staged;
 use super::store::{create_private_dir, read_json, write_json};
 use super::storefront::index::{Files, Index, Listed};
 
@@ -18,6 +20,15 @@ impl PluginManager {
     /// 按来源取插件包：先解析成提交，再按提交取文件。
     /// 是官方索引里的那个版本时，插件包按索引核对（信任级别是官方）。
     pub async fn fetch_source(&self, source: &str) -> Result<PluginPackage, InstallError> {
+        if let Some(digest) = source.strip_prefix(staged::SCHEME) {
+            return self.staged.get(digest).ok_or_else(|| {
+                InstallError::NotFound("上传的文件已经过期，要重新选一次文件".to_owned())
+            });
+        }
+        if source.starts_with(INDEX_SCHEME) {
+            let (location, id) = IndexLocation::of_item_source(source)?;
+            return self.storefront.added.package_in(&location, id).await;
+        }
         let source = SourceRef::parse(source)?;
         let (index, _, _) = self.storefront.official(false).await;
         if let Some(listed) = index.find(&source).filter(|l| l.matches(&source)) {
@@ -25,6 +36,22 @@ impl PluginManager {
         }
         let origin = github_source::resolve(&self.github, &source).await?;
         github_source::fetch(&self.github, &origin).await
+    }
+
+    /// 添加来源（ADR-0031），能读到才写下来。
+    pub async fn add_store_source(
+        &self,
+        address: &str,
+        langs: &Languages,
+    ) -> Result<AddedSource, InstallError> {
+        let (index, _, _) = self.storefront.official(false).await;
+        let added = self.storefront.added.add(address, &index).await?;
+        Ok(self.added_section(&added, langs).await)
+    }
+
+    /// 删除添加的来源，已安装的插件不动。`address` 是 [`AddedSource::address`]。
+    pub fn remove_store_source(&self, address: &str) -> Result<(), InstallError> {
+        self.storefront.added.remove(address)
     }
 
     /// 官方索引，和读它时遇到的问题：Bot 经 MCP 总线只能找、只能装这里的插件（ADR-0016）。
@@ -81,6 +108,17 @@ impl PluginManager {
         self.preview_install(&package, langs).await
     }
 
+    /// 预览上传的插件包，并暂存到主人确认：预览的 `source` 就是它的来源。
+    pub async fn preview_upload(
+        &self,
+        package: PluginPackage,
+        langs: &Languages,
+    ) -> Result<InstallPreview, InstallError> {
+        let mut preview = self.preview_install(&package, langs).await?;
+        preview.source = Some(self.staged.stage(package));
+        Ok(preview)
+    }
+
     /// 按预览给的来源和摘要安装，`grant` 是主人确认的权限。安装本身在独立的任务里执行，见 [`Self::install_detached`]。
     pub async fn install_source(
         self: &Arc<Self>,
@@ -100,7 +138,10 @@ impl PluginManager {
                 request.source
             )));
         }
-        self.install_detached(package, granted, request.lan_webui)
-            .await
+        let installed = self
+            .install_detached(package, granted, request.lan_webui)
+            .await?;
+        self.staged.remove(&digest);
+        Ok(installed)
     }
 }

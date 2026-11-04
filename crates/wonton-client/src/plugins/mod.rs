@@ -16,10 +16,10 @@ use reqwest::Client;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    CoreError, CoreUpgradeViewModel, EgressViewModel, HomeStatus, InstallPreview, InstallSource,
-    InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem,
-    PluginState, PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage, StoreItem,
-    StoreListing,
+    AddSourceRequest, AddedSource, CoreError, CoreUpgradeViewModel, EgressViewModel, HomeStatus,
+    InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure,
+    PluginImage, PluginProblem, PluginState, PluginTaskState, PluginsViewModel, ProxySettings,
+    StorageUsage, StoreItem, StoreListing,
 };
 
 use crate::home::HomeLink;
@@ -466,6 +466,80 @@ impl PluginsLink {
         .map_err(to_core_error)
     }
 
+    /// 主人选的压缩包的预览：家里的服务器校验并暂存，预览的 `source` 就是它的来源。
+    pub(crate) async fn preview_upload(
+        &self,
+        archive: Vec<u8>,
+    ) -> Result<InstallPreview, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        api.post_archive(&["plugins", "preview"], archive, SOURCE_TIMEOUT)
+            .await
+            .map_err(to_core_error)
+    }
+
+    /// 换版本的预览：换到主人选的来源（ADR-0031）。
+    pub(crate) async fn preview_upgrade_from(
+        &self,
+        id: &str,
+        source: String,
+    ) -> Result<InstallPreview, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        api.post(
+            &["plugins", id, "upgrade", "preview"],
+            &InstallSource { source },
+            SOURCE_TIMEOUT,
+        )
+        .await
+        .map_err(to_core_error)
+    }
+
+    /// 换版本的预览：换到主人选的压缩包（ADR-0031）。
+    pub(crate) async fn preview_upgrade_upload(
+        &self,
+        id: &str,
+        archive: Vec<u8>,
+    ) -> Result<InstallPreview, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        api.post_archive(
+            &["plugins", id, "upgrade", "preview"],
+            archive,
+            SOURCE_TIMEOUT,
+        )
+        .await
+        .map_err(to_core_error)
+    }
+
+    /// 添加来源：地址原样交给家里的服务器，它判断是插件还是索引。添加之后商店里多一段。
+    pub(crate) async fn add_store_source(
+        self: &Arc<Self>,
+        address: String,
+    ) -> Result<AddedSource, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        let added = api
+            .post(
+                &["store", "sources"],
+                &AddSourceRequest { address },
+                SOURCE_TIMEOUT,
+            )
+            .await
+            .map_err(to_core_error)?;
+        self.refresh_store(false);
+        Ok(added)
+    }
+
+    /// 删除来源，只影响发现，已安装的插件不动。`address` 是 [`AddedSource::address`]。
+    pub(crate) async fn remove_store_source(
+        self: &Arc<Self>,
+        address: &str,
+    ) -> Result<(), CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        api.delete(&["store", "sources"], &[("address", address)], READ_TIMEOUT)
+            .await
+            .map_err(to_core_error)?;
+        self.refresh_store(false);
+        Ok(())
+    }
+
     pub(crate) async fn set_lan_webui(
         self: &Arc<Self>,
         id: &str,
@@ -522,6 +596,12 @@ impl PluginsLink {
             .official
             .plugins
             .iter()
+            .chain(
+                store
+                    .added
+                    .iter()
+                    .flat_map(|source| &source.section.plugins),
+            )
             .chain(&store.community.plugins)
             .filter(|item| {
                 item.title.to_lowercase().contains(&query)

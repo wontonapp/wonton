@@ -31,6 +31,7 @@ mod owner;
 mod preinstall;
 mod resources;
 mod secrets;
+mod sources;
 mod store;
 mod upgrade;
 mod views;

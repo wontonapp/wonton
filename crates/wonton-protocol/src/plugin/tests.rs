@@ -155,7 +155,7 @@ fn preview() -> InstallPreview {
             ),
         ],
         notices: vec![CardLine {
-            text: "云吞没有审核过这个插件，代码和镜像由 someone 提供".into(),
+            text: "云吞没有审核过这个应用，代码和镜像由 someone 提供".into(),
             emphasis: true,
         }],
         upgrade_from: None,

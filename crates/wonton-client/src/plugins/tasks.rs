@@ -40,7 +40,7 @@ impl PluginsLink {
         let lan_webui = lan_webui_chosen(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
-                reason: "App 只按来源安装，这份预览没有来源".to_owned(),
+                reason: "这份预览没有来源，装不了".to_owned(),
             });
         };
         self.begin_task(
@@ -81,7 +81,7 @@ impl PluginsLink {
         )?;
         let request = UpgradeRequest {
             devices: Vec::new(),
-            source: None,
+            source: preview.source,
             digest: preview.digest,
             grant,
             lan_webui,

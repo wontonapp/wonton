@@ -157,6 +157,24 @@ impl GitHub {
 }
 
 impl GitHub {
+    /// 任意地址的文件，超过 `max` 字节时报错：第三方索引可以放在任何静态托管上。走同一个客户端，代理和超时都一样。
+    pub async fn url(&self, url: &reqwest::Url, max: u64) -> Result<Vec<u8>, GitHubError> {
+        let what = format!("取 {url}");
+        let response = self
+            .client
+            .get(url.clone())
+            .send()
+            .await
+            .map_err(|e| unavailable(&what, &e))?;
+        match response.status() {
+            StatusCode::OK => read_limited(response, max)
+                .await
+                .map_err(|e| e.context(&what)),
+            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {url}"))),
+            status => Err(GitHubError::Unavailable(format!("{what} 时回了 {status}"))),
+        }
+    }
+
     /// 经 API 取文件，给 raw 不通时用。不带令牌时每个出口 IP 每小时 60 次，所以不用它取别的。
     pub async fn file_via_api(
         &self,

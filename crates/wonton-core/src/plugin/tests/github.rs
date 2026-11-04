@@ -59,6 +59,15 @@ impl FakeGitHub {
         self.files.lock().unwrap().insert(key, index);
     }
 
+    /// 默认分支上放这些文件（raw 的 `HEAD`）。
+    pub(super) fn publish_at_head(&self, repo: &str, files: &[(&str, &str)]) {
+        let mut stored = self.files.lock().unwrap();
+        for (path, data) in files {
+            let key = (repo.to_owned(), "HEAD".to_owned(), (*path).to_owned());
+            stored.insert(key, data.as_bytes().to_vec());
+        }
+    }
+
     /// 提交这些文件，打上 tag（已有的 tag 就是移动它），返回提交号。
     pub(super) fn publish(&self, repo: &str, tag: &str, files: &[(&str, &str)]) -> String {
         let commit = {

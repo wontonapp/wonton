@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::github::{GitHub, Repo, is_commit_id};
 use super::super::github_source::{Origin, SourceRef, Trust, Wanted, github_error};
+use super::super::index_location::IndexLocation;
 use super::super::install_error::InstallError;
 use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
@@ -21,6 +22,9 @@ pub const FORMAT: u32 = 1;
 #[derive(Debug, Clone, Deserialize)]
 struct IndexFile {
     format: u32,
+    /// 第三方索引自己写的名字。
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     plugins: Vec<IndexEntry>,
     /// 读不懂时只影响帮助文档，所以这里不按 [`DocsSpec`] 解析。
@@ -124,6 +128,7 @@ impl Listed {
             tag: Some(format!("v{}", self.entry.version)),
             commit: self.entry.commit.clone(),
             trust: Trust::Official,
+            index: None,
         }
     }
 
@@ -141,6 +146,7 @@ impl Listed {
 /// 读懂的索引：能用的项，和读不懂、对不上的项的原因（每项一句）。
 #[derive(Debug, Clone, Default)]
 pub struct Index {
+    pub name: Option<String>,
     pub plugins: Vec<Listed>,
     pub skipped: Vec<String>,
     pub docs: Option<DocsSpec>,
@@ -151,9 +157,9 @@ pub struct Index {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IndexError {
     /// 索引的格式比核心新：要升级核心。
-    #[error("官方索引的格式是 {0}，这个版本的核心只读得懂 {FORMAT}：升级核心后才能用新的索引")]
+    #[error("索引的格式是 {0}，这个版本的核心只读得懂 {FORMAT}：升级核心后才能用新的索引")]
     NewerFormat(u32),
-    #[error("官方索引读不懂：{0}")]
+    #[error("索引读不懂：{0}")]
     Invalid(String),
 }
 
@@ -175,7 +181,10 @@ impl Index {
         let file: IndexFile =
             serde_json::from_slice(json).map_err(|e| IndexError::Invalid(e.to_string()))?;
         debug_assert_eq!(file.format, FORMAT);
-        let mut index = Self::default();
+        let mut index = Self {
+            name: file.name,
+            ..Self::default()
+        };
         match file.docs.map(serde_json::from_value::<DocsSpec>) {
             Some(Ok(docs)) => index.docs = Some(docs),
             Some(Err(e)) => index.docs_problem = Some(format!("官方索引的 docs 读不懂：{e}")),
@@ -186,7 +195,7 @@ impl Index {
             match check(entry, &index.plugins) {
                 Ok(listed) => index.plugins.push(listed),
                 Err(reason) => {
-                    tracing::warn!(%source, %reason, "官方索引里的一项用不了，跳过");
+                    tracing::warn!(%source, %reason, "索引里的一项用不了，跳过");
                     index.skipped.push(format!("{source}：{reason}"));
                 }
             }
@@ -240,16 +249,18 @@ pub enum Files {
     Dir(PathBuf),
     /// 按提交从 GitHub 取。
     GitHub(GitHub),
+    /// 第三方索引：先取它旁边的 `blobs/<sha256>`，取不到再按提交从 GitHub 取（ADR-0031）。
+    Third {
+        location: IndexLocation,
+        github: GitHub,
+    },
 }
 
 impl Files {
     /// 插件包里的一个文件，按索引记的 sha256 核对。
     pub async fn file(&self, listed: &Listed, path: &str) -> Result<Vec<u8>, InstallError> {
         let sha256 = listed.entry.files.get(path).ok_or_else(|| {
-            InstallError::Invalid(format!(
-                "官方索引里 {} 的文件没有 {path}",
-                listed.entry.source
-            ))
+            InstallError::Invalid(format!("索引里 {} 的文件没有 {path}", listed.entry.source))
         })?;
         self.verified(&listed.repo, &listed.entry.commit, path, sha256)
             .await
@@ -269,10 +280,20 @@ impl Files {
                 .file(repo, commit, path, MAX_FILE_BYTES)
                 .await
                 .map_err(github_error)?,
+            Self::Third { location, github } => {
+                let blob = format!("blobs/{sha256}");
+                match location.read(github, &blob, MAX_FILE_BYTES).await {
+                    Ok(data) => data,
+                    Err(_) => github
+                        .file(repo, commit, path, MAX_FILE_BYTES)
+                        .await
+                        .map_err(github_error)?,
+                }
+            }
         };
         if sha256_hex(&data) != sha256 {
             return Err(InstallError::Invalid(format!(
-                "{repo} 的 {path} 和官方索引里记的 sha256 对不上"
+                "{repo} 的 {path} 和索引里记的 sha256 对不上"
             )));
         }
         Ok(data)

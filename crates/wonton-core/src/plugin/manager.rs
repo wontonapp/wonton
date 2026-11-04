@@ -28,6 +28,7 @@ use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::render::dry_run;
 use super::sources::{Source, Sources};
+use super::staged::StagedUploads;
 use super::store::{InstalledRecord, Store};
 use super::storefront::{StoreConfig, Storefront};
 use super::upgrade::Upgrades;
@@ -250,6 +251,7 @@ pub struct PluginManager {
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
     /// 查到的新版本，见 [`super::upgrade`]。
     pub(super) upgrades: Upgrades,
+    pub(super) staged: StagedUploads,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -323,6 +325,7 @@ impl PluginManager {
             egress: Egress::default(),
             upgrade_frozen: None,
             upgrades: Upgrades::default(),
+            staged: StagedUploads::default(),
         }
     }
 

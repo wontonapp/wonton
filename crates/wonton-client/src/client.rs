@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, AppearanceViewModel, ChatViewModel, CoreError, DeviceNetwork, FileCard,
+    Action, AddedSource, AppearanceViewModel, ChatViewModel, CoreError, DeviceNetwork, FileCard,
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
     InstallPreview, LanChoice, LanSettings, MediaHandle, PluginDetail, PluginImage,
     PluginsViewModel, PushNotification, RoomTransfers, SessionListViewModel, StoreItem,
@@ -229,6 +229,54 @@ impl ClientCore {
     pub async fn preview_upgrade(&self, id: String) -> Result<InstallPreview, CoreError> {
         let plugins = self.plugins.clone();
         self.run(async move { plugins.preview_upgrade(&id).await })
+            .await
+    }
+
+    /// 插件的压缩包最大多少字节。壳读文件之前先看大小，太大的不读进内存。
+    pub fn max_plugin_archive_bytes(&self) -> u64 {
+        wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES
+    }
+
+    /// 主人选的压缩包的预览（ADR-0031）：`archive` 是文件的内容，壳只负责选文件和读字节。确认后按预览安装，不用再传。
+    pub async fn preview_upload(&self, archive: Vec<u8>) -> Result<InstallPreview, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.preview_upload(archive).await })
+            .await
+    }
+
+    /// 换版本的预览：换到主人选的来源，可以比装着的旧，确认页上会醒目提示。
+    pub async fn preview_upgrade_from(
+        &self,
+        id: String,
+        source: String,
+    ) -> Result<InstallPreview, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.preview_upgrade_from(&id, source).await })
+            .await
+    }
+
+    /// 换版本的预览：换到主人选的压缩包。
+    pub async fn preview_upgrade_upload(
+        &self,
+        id: String,
+        archive: Vec<u8>,
+    ) -> Result<InstallPreview, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.preview_upgrade_upload(&id, archive).await })
+            .await
+    }
+
+    /// 添加来源：地址可以是仓库地址、`owner/repo`，或者索引的 https 地址。
+    pub async fn add_store_source(&self, address: String) -> Result<AddedSource, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.add_store_source(address).await })
+            .await
+    }
+
+    /// 删除添加的来源，已安装的插件不动。
+    pub async fn remove_store_source(&self, address: String) -> Result<(), CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.remove_store_source(&address).await })
             .await
     }
 

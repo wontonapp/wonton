@@ -112,7 +112,7 @@ pub struct AddedSource {
 条目的 `source` 还是 `github:`：`blobs/` 只是换个地方取同样的字节。不在 GitHub 上的插件要有 `github:` 来源才能进索引，这一条等
 真的有需求再放开。
 
-安装记录的 `origin` 多一个 `index`（索引地址）。
+安装记录的 `origin` 多一个 `index`（它在索引里的来源 `index+<索引地址>#<插件 ID>`）。
 
 ### 上传文件
 

@@ -1,9 +1,12 @@
 //! 商店给 App 的视图：列表（`GET /_wonton/api/store`）和来源最新版本的详情（`GET /_wonton/api/store/plugin`）。
 
-use wonton_protocol::{PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection};
+use wonton_protocol::{
+    AddedSource, PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection,
+};
 
 use super::super::gallery::IconSource;
-use super::super::github_source::{Origin, SourceRef, Trust};
+use super::super::github::Repo;
+use super::super::github_source::{INDEX_SCHEME, Origin, SourceRef, Trust};
 use super::super::host_check;
 use super::super::host_facts::HostFacts;
 use super::super::install_error::InstallError;
@@ -13,12 +16,14 @@ use super::super::manifest::{Manifest, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::package_files::normalize;
 use super::super::views::{author, kind, permission_line, requirement_checks};
+use super::added::AddedView;
 use super::index::Listed;
 
 /// 列表和详情里一个插件共有的部分。
 struct Shown<'a> {
     source: String,
     provider: String,
+    via_index: Option<String>,
     manifest: &'a Manifest,
     icon: Option<IconSource>,
     trust: PluginTrust,
@@ -31,6 +36,8 @@ impl PluginManager {
         let (index, official_at, official_problem) = self.storefront.official(refresh).await;
         let (community, community_at, community_problem) =
             self.storefront.community(&index, refresh).await;
+        self.storefront.added.refresh(refresh).await;
+        let added = self.storefront.added.views();
         let facts = self.host_facts().await;
         let mut icons = Vec::new();
         let mut official = Vec::new();
@@ -40,6 +47,7 @@ impl PluginManager {
             let shown = Shown {
                 source: listed.entry.source.clone(),
                 provider: listed.entry.source.replacen("github:", "github.com/", 1),
+                via_index: None,
                 manifest: &listed.manifest,
                 icon,
                 trust: PluginTrust::Official,
@@ -47,13 +55,17 @@ impl PluginManager {
             };
             official.push(self.item(&shown, &facts, langs));
         }
+        // 主人添加过的只在“我添加的”里列一次。
+        let added_repos: Vec<&Repo> = added.iter().filter_map(|a| a.repo.as_ref()).collect();
         let community = community
             .iter()
+            .filter(|c| !added_repos.contains(&&c.repo))
             .map(|c| {
                 icons.extend(c.icon.clone());
                 let shown = Shown {
                     source: format!("github:{}", c.repo),
                     provider: format!("github.com/{}", c.repo),
+                    via_index: None,
                     manifest: &c.manifest,
                     icon: c.icon.clone(),
                     trust: PluginTrust::Community,
@@ -62,6 +74,11 @@ impl PluginManager {
                 self.item(&shown, &facts, langs)
             })
             .collect();
+        let mut sections = Vec::with_capacity(added.len());
+        for source in &added {
+            icons.extend(source.plugins.iter().filter_map(|p| p.icon.clone()));
+            sections.push(self.added_section(source, langs).await);
+        }
         self.gallery.remember_store(icons);
         StoreListing {
             official: StoreSection {
@@ -69,11 +86,47 @@ impl PluginManager {
                 fetched_at_ms: official_at,
                 problem: official_problem,
             },
-            added: Vec::new(),
+            added: sections,
             community: StoreSection {
                 plugins: community,
                 fetched_at_ms: community_at,
                 problem: community_problem,
+            },
+        }
+    }
+
+    /// 添加的一个来源，App 上的一段。
+    pub(in crate::plugin) async fn added_section(
+        &self,
+        source: &AddedView,
+        langs: &Languages,
+    ) -> AddedSource {
+        let facts = self.host_facts().await;
+        let plugins = source
+            .plugins
+            .iter()
+            .map(|p| {
+                let shown = Shown {
+                    source: p.source.clone(),
+                    provider: p.provider.clone(),
+                    via_index: p.via_index.clone(),
+                    manifest: &p.manifest,
+                    icon: p.icon.clone(),
+                    trust: PluginTrust::Community,
+                    stars: None,
+                };
+                self.item(&shown, &facts, langs)
+            })
+            .collect();
+        AddedSource {
+            address: source.address.clone(),
+            kind: source.kind,
+            provider: source.provider.clone(),
+            name: source.name.clone(),
+            section: StoreSection {
+                plugins,
+                fetched_at_ms: source.fetched_at_ms,
+                problem: source.problem.clone(),
             },
         }
     }
@@ -84,18 +137,25 @@ impl PluginManager {
         source: &str,
         langs: &Languages,
     ) -> Result<PluginDetail, InstallError> {
-        let wanted = SourceRef::parse(source)?;
-        let (index, _, _) = self.storefront.official(false).await;
-        let package = match index.find(&wanted).filter(|l| l.matches(&wanted)) {
-            Some(listed) => self.storefront.files().package(listed).await?,
-            None => self.fetch_source(source).await?,
+        let (package, stars) = if source.starts_with(INDEX_SCHEME) {
+            (self.fetch_source(source).await?, None)
+        } else {
+            let wanted = SourceRef::parse(source)?;
+            let (index, _, _) = self.storefront.official(false).await;
+            let package = match index.find(&wanted).filter(|l| l.matches(&wanted)) {
+                Some(listed) => self.storefront.files().package(listed).await?,
+                None => self.fetch_source(source).await?,
+            };
+            (package, self.storefront.stars(&wanted.repo).await)
         };
-        let stars = self.storefront.stars(&wanted.repo).await;
         let icon = self.check_icon(&package).await?;
         if let Some(icon) = &icon {
             self.gallery.remember_preview(icon);
         }
-        Ok(self.detail(&package, icon, stars, langs).await)
+        let mut detail = self.detail(&package, icon, stars, langs).await;
+        // 详情页上的“获取”装的就是列表上的这一个：添加来源时可以固定版本。
+        detail.source = Some(source.to_owned());
+        Ok(detail)
     }
 
     async fn detail(
@@ -110,9 +170,9 @@ impl PluginManager {
         let facts = self.host_facts().await;
         let installed = self.installed_plugin(&m.id, langs);
         PluginDetail {
-            source: origin.map(|o| o.repo.clone()),
+            source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
             provider: origin.map(Origin::provider),
-            via_index: None,
+            via_index: origin.and_then(Origin::via_index),
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
@@ -159,7 +219,7 @@ impl PluginManager {
         StoreItem {
             source: shown.source.clone(),
             provider: Some(shown.provider.clone()),
-            via_index: None,
+            via_index: shown.via_index.clone(),
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),

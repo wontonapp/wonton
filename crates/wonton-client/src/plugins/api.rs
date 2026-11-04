@@ -84,6 +84,7 @@ impl CoreApi {
         method: Method,
         url: Url,
         body: Option<Vec<u8>>,
+        content_type: &str,
         timeout: Duration,
     ) -> Result<(u16, Vec<u8>), PluginProblem> {
         let mut request = self.client.request(method, url).timeout(timeout);
@@ -91,7 +92,7 @@ impl CoreApi {
             request = request.header(ACCEPT_LANGUAGE, &self.languages);
         }
         if let Some(body) = body {
-            request = request.header(CONTENT_TYPE, "application/json").body(body);
+            request = request.header(CONTENT_TYPE, content_type).body(body);
         }
         let response = request.send().await.map_err(|e| transport(&e, timeout))?;
         let status = response.status().as_u16();
@@ -106,7 +107,21 @@ impl CoreApi {
         body: Option<Vec<u8>>,
         timeout: Duration,
     ) -> Result<Vec<u8>, PluginProblem> {
-        let (status, bytes) = self.exchange(method, url, body, timeout).await?;
+        self.send_typed(method, url, body, "application/json", timeout)
+            .await
+    }
+
+    async fn send_typed(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<Vec<u8>>,
+        content_type: &str,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PluginProblem> {
+        let (status, bytes) = self
+            .exchange(method, url, body, content_type, timeout)
+            .await?;
         if status >= 400 {
             return Err(core_error(status, &bytes));
         }
@@ -122,7 +137,13 @@ impl CoreApi {
         timeout: Duration,
     ) -> Result<CoreUpgradeStatus, CoreUpgradeProblem> {
         let (status, bytes) = self
-            .exchange(method, self.url(segments, &[]), body, timeout)
+            .exchange(
+                method,
+                self.url(segments, &[]),
+                body,
+                "application/json",
+                timeout,
+            )
             .await
             .map_err(|problem| CoreUpgradeProblem {
                 reason: CoreUpgradeFailure::TransportUnavailable,
@@ -162,6 +183,25 @@ impl CoreApi {
         })?;
         let bytes = self
             .send(Method::POST, self.url(segments, &[]), Some(body), timeout)
+            .await?;
+        parse(&bytes)
+    }
+
+    /// 发主人选的压缩包，响应是 JSON。核心按内容认格式，这里不用说是哪一种。
+    pub(super) async fn post_archive<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        archive: Vec<u8>,
+        timeout: Duration,
+    ) -> Result<T, PluginProblem> {
+        let bytes = self
+            .send_typed(
+                Method::POST,
+                self.url(segments, &[]),
+                Some(archive),
+                "application/octet-stream",
+                timeout,
+            )
             .await?;
         parse(&bytes)
     }

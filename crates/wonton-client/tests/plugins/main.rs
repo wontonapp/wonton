@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
-    Action, CoreError, PluginFailure, PluginImage, PluginOperation, PluginState, PluginTaskState,
+    Action, AddedSource, CoreError, PluginFailure, PluginImage, PluginOperation, PluginState,
+    PluginTaskState, SourceKind, StoreSection,
 };
 
-use rig::{Canned, IMAGE, Rig, WAIT, core_error, installed, preview, running};
+use rig::{Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview, running};
 
 #[tokio::test]
 async fn the_list_arrives_once_the_tunnel_is_up_and_says_why_before_that() {
@@ -162,6 +163,98 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
         }),
         Err(CoreError::InvalidInput { .. })
     ));
+}
+
+#[tokio::test]
+async fn a_chosen_file_goes_up_as_is_and_installs_by_the_source_in_its_preview() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut staged = preview("app.photos");
+    staged.source = Some("upload:sha256:abc".to_owned());
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins/preview",
+        Canned(200, serde_json::to_string(&staged).unwrap()),
+    );
+
+    let shown = rig
+        .app
+        .preview_upload(b"\x1f\x8bgz".to_vec())
+        .await
+        .unwrap();
+    let asked = &rig.core.seen(&Method::POST, "/_wonton/api/plugins/preview")[0];
+    assert!(asked.body.ends_with("gz"), "{asked:?}");
+
+    rig.app
+        .dispatch(Action::InstallPlugin { preview: shown })
+        .unwrap();
+    rig.task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0].body)
+            .unwrap();
+    assert_eq!(sent["source"], "upload:sha256:abc");
+}
+
+#[tokio::test]
+async fn an_added_source_shows_up_in_the_store_and_a_refused_one_says_why() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let path = "/_wonton/api/store/sources";
+
+    rig.core.answer(
+        Method::POST,
+        path,
+        core_error(409, "conflict", "已经添加过"),
+    );
+    let refused = rig
+        .app
+        .add_store_source("o/r".to_owned())
+        .await
+        .unwrap_err();
+    assert!(refused.to_string().contains("已经添加过"), "{refused}");
+
+    let added = AddedSource {
+        address: "github:o/r".to_owned(),
+        kind: SourceKind::Repo,
+        provider: "github.com/o/r".to_owned(),
+        name: None,
+        section: StoreSection {
+            plugins: vec![item("app.added", "Added", &[])],
+            fetched_at_ms: None,
+            problem: None,
+        },
+    };
+    rig.core.answer(
+        Method::POST,
+        path,
+        Canned(201, serde_json::to_string(&added).unwrap()),
+    );
+    let mut store = listing();
+    store.added = vec![added];
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        Canned(200, serde_json::to_string(&store).unwrap()),
+    );
+    rig.app.add_store_source("o/r".to_owned()).await.unwrap();
+    rig.wait_for(|view| view.store.as_ref().is_some_and(|s| !s.added.is_empty()))
+        .await;
+    assert_eq!(rig.app.search_store("added".to_owned())[0].id, "app.added");
+
+    rig.app
+        .remove_store_source("github:o/r".to_owned())
+        .await
+        .unwrap();
+    assert_eq!(
+        rig.core
+            .seen(
+                &Method::DELETE,
+                "/_wonton/api/store/sources?address=github%3Ao%2Fr"
+            )
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]

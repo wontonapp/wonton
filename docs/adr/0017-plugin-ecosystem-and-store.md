@@ -200,7 +200,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 | GET | `storage` | — | `StorageUsage`（存数据的那块盘） |
 
 - 插件包同原有的接口：compose 文本，或者插件包目录的 tar（`Content-Type: application/x-tar`）。JSON 请求的
-  `Content-Type` 是 `application/json`。上传插件包是开发工具用的，App 只按来源安装。
+  `Content-Type` 是 `application/json`。App 上传压缩包见 ADR-0031。
 - 文字按请求的 `Accept-Language` 挑语言：先找完全一样的语言标签，再找主语言相同的，都没有时用英文，再没有就用任意一种。
 - 新的错误类别：`source_unavailable`（503，家里的服务器连不上插件的来源，如 GitHub）、`not_found`（404，来源里没有这个
   仓库或版本）、`changed`（409，插件包在预览之后变了，摘要对不上，要重新预览）、`images_unavailable`（503，核心起不了

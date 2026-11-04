@@ -11,6 +11,8 @@ use wonton_protocol::{CardLine, InstalledPlugins, StoreProblem, UpgradeOffer};
 
 use super::super::github::{GitHubError, Tag};
 use super::super::github_source::{SourceRef, Trust, latest};
+use super::super::index_location::IndexLocation;
+use super::super::install_error::InstallError;
 use super::super::languages::Languages;
 use super::super::manager::{PluginManager, PluginStatus};
 use super::super::manifest::{LocalizedText, Manifest, PluginId};
@@ -260,6 +262,9 @@ impl PluginManager {
         let Some(origin) = origin.filter(|o| o.trust == Trust::Community) else {
             return Ok(Checked::default());
         };
+        if let Some(source) = &origin.index {
+            return self.check_in_index(source, record).await;
+        }
         let Ok(source) = SourceRef::parse(&origin.repo) else {
             return Ok(Checked::default());
         };
@@ -280,6 +285,40 @@ impl PluginManager {
             _ => None,
         };
         Ok(Checked { offer, rewritten })
+    }
+
+    /// 经第三方索引装的只看那个索引：索引删了就不提示，也不改去看 GitHub 的 tag（ADR-0031）。
+    async fn check_in_index(
+        &self,
+        source: &str,
+        record: &InstalledRecord,
+    ) -> Result<Checked, GitHubError> {
+        let Ok((location, id)) = IndexLocation::of_item_source(source) else {
+            return Ok(Checked::default());
+        };
+        let added = &self.storefront.added;
+        if !added.has_index(&location) {
+            return Ok(Checked {
+                offer: None,
+                rewritten: Some(format!(
+                    "索引 {} 已经从商店删掉，不再提示新版本",
+                    location.provider()
+                )),
+            });
+        }
+        let listed = match added.listed_in(&location, id).await {
+            Ok(listed) => listed,
+            Err(InstallError::SourceUnavailable(why)) => return Err(GitHubError::Unavailable(why)),
+            Err(e) => {
+                tracing::info!(plugin = %record.id, error = %e, "索引里查不到新版本");
+                return Ok(Checked::default());
+            }
+        };
+        let version = &listed.entry.version;
+        Ok(Checked {
+            offer: newer(version, &record.version).then(|| offer_of(&listed.manifest, record)),
+            rewritten: None,
+        })
     }
 
     /// 新 tag 上的清单。读不懂、版本和 tag 对不上的不提示，日志里记下原因，和商店不列出一样。

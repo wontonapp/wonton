@@ -4,11 +4,14 @@
 use serde::{Deserialize, Serialize};
 
 use super::github::{GitHub, GitHubError, Repo, Tag, is_commit_id};
+use super::index_location::IndexLocation;
 use super::install_error::InstallError;
 use super::package::PluginPackage;
 use super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles};
 
 const SCHEME: &str = "github:";
+/// 第三方索引里的插件的来源的开头（ADR-0031）。
+pub const INDEX_SCHEME: &str = "index+";
 
 /// 来源里写的版本。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +61,18 @@ impl SourceRef {
     }
 }
 
+impl SourceRef {
+    /// 来源字符串，[`Self::parse`] 能读回来。
+    pub fn text(&self) -> String {
+        match &self.wanted {
+            Wanted::Latest => format!("{SCHEME}{}", self.repo),
+            Wanted::Tag(version) | Wanted::Commit(version) => {
+                format!("{SCHEME}{}@{version}", self.repo)
+            }
+        }
+    }
+}
+
 /// 仓库名和 owner：GitHub 只允许这些字符；不能是 `.`、`..`，免得拼进地址后变成别的路径。
 fn is_name(text: &str) -> bool {
     !text.is_empty()
@@ -102,16 +117,28 @@ pub struct Origin {
     pub commit: String,
     #[serde(default)]
     pub trust: Trust,
+    /// 经第三方索引装的：它在索引里的来源，`index+<索引地址>#<插件 ID>`。升级看这个索引，不看仓库的 tag（ADR-0031）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<String>,
 }
 
 impl Origin {
     /// 带着 tag 或提交的来源，如 `github:owner/repo@v1.2.0`：按它能再取到同一个插件包。
     pub fn source(&self) -> String {
+        if let Some(index) = &self.index {
+            return index.clone();
+        }
         format!(
             "{}@{}",
             self.repo,
             self.tag.as_ref().unwrap_or(&self.commit)
         )
+    }
+
+    /// 经第三方索引装的：索引的主机。
+    pub fn via_index(&self) -> Option<String> {
+        let (location, _) = IndexLocation::of_item_source(self.index.as_deref()?).ok()?;
+        Some(location.provider())
     }
 
     /// 仓库的网页。
@@ -154,6 +181,7 @@ pub async fn resolve(github: &GitHub, source: &SourceRef) -> Result<Origin, Inst
         tag,
         commit,
         trust: Trust::Community,
+        index: None,
     })
 }
 
@@ -208,7 +236,7 @@ fn source_repo(origin: &Origin) -> Result<Repo, InstallError> {
     Ok(SourceRef::parse(&origin.repo)?.repo)
 }
 
-pub(super) fn github_error(e: GitHubError) -> InstallError {
+pub(in crate::plugin) fn github_error(e: GitHubError) -> InstallError {
     match e {
         GitHubError::Unavailable(m) | GitHubError::Timeout(m) | GitHubError::RateLimited(m) => {
             InstallError::SourceUnavailable(m)

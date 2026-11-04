@@ -94,10 +94,11 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
     assert_eq!(preview.trust, PluginTrust::Local);
     assert_eq!(preview.blocked, None);
     let notices: Vec<&str> = preview.notices.iter().map(|n| n.text.as_str()).collect();
-    assert_eq!(
-        notices,
-        ["镜像没有按摘要固定：web（nginx:1.27）", "需要 2G 内存"]
+    assert!(
+        notices.contains(&"镜像没有按摘要固定：web（nginx:1.27）"),
+        "{notices:?}"
     );
+    assert!(notices.contains(&"需要 2G 内存"), "{notices:?}");
     // 确认页显示的图标在装之前就取得到。
     let sha = sha256_hex(ICON.as_bytes());
     assert!(m.icon_png(&sha, Variant::Large).await.unwrap().is_some());

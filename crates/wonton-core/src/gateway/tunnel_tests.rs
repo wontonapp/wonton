@@ -491,6 +491,8 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
             Method::GET,
             "/_wonton/api/store/plugin?source=github:owner/repo",
         ),
+        (Method::POST, "/_wonton/api/store/sources"),
+        (Method::DELETE, "/_wonton/api/store/sources?address=x"),
         (Method::GET, "/_wonton/api/egress-proxy"),
         (Method::PUT, "/_wonton/api/egress-proxy"),
         (Method::GET, "/_wonton/api/core/upgrade"),

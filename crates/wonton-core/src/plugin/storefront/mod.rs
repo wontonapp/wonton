@@ -6,11 +6,13 @@
 //! - App 要求刷新（`?refresh=true`）时不等缓存过期，但离上次去取不到一分钟就不再取：GitHub 的搜索 API 不带令牌时
 //!   每分钟只给 10 次。
 
+pub mod added;
 mod community;
 pub mod index;
 mod listing;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +21,7 @@ use wonton_protocol::{StoreFailure, StoreProblem};
 use super::github::{GitHub, GitHubError, Repo};
 use super::manager::now_secs;
 use super::store::{create_private_dir, read_json, write_json};
+use added::AddedSources;
 pub use community::Community;
 use index::{Files, Index, IndexError};
 
@@ -111,11 +114,15 @@ pub struct Storefront {
     community: tokio::sync::Mutex<Section<Vec<Community>>>,
     /// 读过的社区仓库：仓库 → （推送时间，读到的结果）。仓库没有新推送就不重读。
     read: tokio::sync::Mutex<community::Read>,
+    /// 主人添加的来源。在后台读，所以放在 `Arc` 里。
+    pub added: Arc<AddedSources>,
 }
 
 impl Storefront {
     pub fn new(github: GitHub, config: StoreConfig, cache: PathBuf) -> Self {
+        let added = AddedSources::load(github.clone(), cache.with_file_name("sources.json"));
         Self {
+            added: Arc::new(added),
             github,
             config,
             cache,

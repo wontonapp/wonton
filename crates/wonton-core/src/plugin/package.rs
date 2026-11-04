@@ -18,6 +18,7 @@ use super::github_source::Origin;
 use super::images::IconFormat;
 use super::interpolate::{InterpolateError, Vars, interpolate, interpolate_value};
 use super::manifest::{Manifest, ManifestError, SecretSpec};
+use super::package_archive;
 use super::package_files::{
     self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles,
 };
@@ -113,15 +114,20 @@ impl PluginPackage {
         Self::structure(source)?.attach(files)
     }
 
-    /// 插件包目录打成的 tar 归档：`docker-compose.yml` 和它引用的文件，规则见 [`package_files::read_archive`]。
-    /// 没被引用的文件不保留。
-    pub fn from_archive(archive: &[u8]) -> Result<Self, PackageError> {
-        let mut files = package_files::read_archive(archive).map_err(PackageError::Archive)?;
-        let source = files
+    /// 插件包打成的压缩包，规则见 [`package_archive`]：只解压 `docker-compose.yml` 和它引用的文件。
+    pub fn from_archive(body: &[u8]) -> Result<Self, PackageError> {
+        let archive = package_archive::Archive::open(body).map_err(PackageError::Archive)?;
+        let root = archive.root().map_err(PackageError::Archive)?;
+        let compose = archive
+            .read(&root, &[COMPOSE_FILE.to_owned()])
+            .map_err(PackageError::Archive)?
             .remove(COMPOSE_FILE)
             .ok_or(PackageError::ComposeFile(FileError::Missing))?;
-        let source = String::from_utf8(source)
+        let source = String::from_utf8(compose)
             .map_err(|_| PackageError::Yaml("不是 UTF-8 文本".to_owned()))?;
+        let files = archive
+            .read(&root, &Self::referenced_files(&source)?)
+            .map_err(PackageError::Archive)?;
         Self::with_files(&source, files)
     }
 

@@ -6,10 +6,10 @@
 //! | --- | --- | --- |
 //! | GET | `/_wonton/api/plugins` | 已安装的插件（`InstalledPlugins`） |
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
-//! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`） |
+//! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`）；上传的包暂存到确认，`source` 是 `upload:sha256:…` |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
-//! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 JSON 时取能升到的版本，也可以上传插件包，返回要主人确认的内容（`InstallPreview`） |
+//! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 `{}` 时取能升到的版本，带 `source` 或者插件包时换到主人选的，可以比装着的旧；返回要主人确认的内容（`InstallPreview`） |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`InstalledPlugin`） |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
 //! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
@@ -17,13 +17,15 @@
 //! | PUT | `/_wonton/api/egress-proxy` | 请求体是 `EgressProxyUpdate`，改地址和额外直连的网段，做完再返回 |
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
+//! | POST | `/_wonton/api/store/sources` | 添加来源（`AddSourceRequest`），能读到才写下来（201 `AddedSource`） |
+//! | DELETE | `/_wonton/api/store/sources?address=…` | 删除添加的来源，已安装的插件不动 |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
 //! | GET | `/_wonton/api/storage` | 存数据的那块盘的总量和可用量（`StorageUsage`） |
 //! | GET | `/_wonton/api/lan` | 局域网设置（`LanSettings`），当场检测一次（ADR-0019） |
 //! | PUT | `/_wonton/api/lan` | 请求体是 `LanChoice`，改选端口开在哪些地址上，重建完返回新的 `LanSettings` |
 //!
-//! 插件包是 compose 文本，或者 `Content-Type: application/x-tar` 的整个插件包目录（compose 引用了包里的文件时，
-//! 如 Hermes 的 `config.yaml`）。JSON 请求体（`Content-Type: application/json`）是按来源预览和安装。
+//! 插件包是 compose 文本，或者 tar、tar.gz、zip 压缩包（按内容认）。JSON 请求体（`Content-Type: application/json`）是按来源
+//! 预览和安装。
 
 use std::sync::Arc;
 
@@ -37,19 +39,19 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{
-    EgressProxyUpdate, InstallRequest, InstallSource, LanChoice, LanWebuiUpdate, UpgradeRequest,
+    AddSourceRequest, EgressProxyUpdate, InstallRequest, InstallSource, LanChoice, LanWebuiUpdate,
+    UpgradeRequest,
 };
 
 use super::{Gateway, TunnelPeer, isolation, pages};
 use crate::plugin::gallery::Variant;
 use crate::plugin::image_worker::ImageError;
 use crate::plugin::languages::Languages;
-use crate::plugin::package_files::MAX_PACKAGE_BYTES;
-use crate::plugin::{InstallError, Permission, PluginId, PluginPackage, PluginView};
+use crate::plugin::package_archive;
+use crate::plugin::{InstallError, Permission, PluginId, PluginPackage, PluginView, UpgradeTo};
 
-/// 上传插件包的请求体上限：插件包本身最多 [`MAX_PACKAGE_BYTES`]，打成 tar 还要加上每个文件的头和对齐。axum 默认的
-/// 2 MiB 会把接近上限的插件包拒掉，包的大小由解析插件包时检查。
-pub const MAX_UPLOAD_BYTES: usize = 2 * MAX_PACKAGE_BYTES as usize;
+/// 上传插件包的请求体上限：压缩包里可以带着插件包以外的文件。插件包本身的大小由解析时检查。
+pub const MAX_UPLOAD_BYTES: usize = package_archive::MAX_ARCHIVE_BYTES;
 
 fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()))
@@ -70,17 +72,18 @@ fn json_body<T: DeserializeOwned>(
     })
 }
 
-/// 请求体里的插件包：tar 归档，或者 compose 文本。
+/// 请求体里的插件包：压缩包（按内容认格式，见 [`package_archive`]），或者 compose 文本。
 fn package(headers: &HeaderMap, body: &[u8]) -> Result<PluginPackage, InstallError> {
-    let archive = headers
+    let tar = headers
         .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|t| t.starts_with("application/x-tar"));
-    if archive {
+    if tar || package_archive::is_archive(body) {
         return Ok(PluginPackage::from_archive(body)?);
     }
-    let source = std::str::from_utf8(body)
-        .map_err(|_| InstallError::Invalid("请求体不是 UTF-8 的 compose 文本".to_owned()))?;
+    let source = std::str::from_utf8(body).map_err(|_| {
+        InstallError::Invalid("不是插件包：要 tar、tar.gz、zip 或 compose 文件".to_owned())
+    })?;
     Ok(PluginPackage::parse(source)?)
 }
 
@@ -247,7 +250,7 @@ pub async fn preview(
                 .await
         }
         None => match package(&headers, &body) {
-            Ok(package) => gateway.plugins.preview_install(&package, &langs).await,
+            Ok(package) => gateway.plugins.preview_upload(package, &langs).await,
             Err(e) => return install_error(&e),
         },
     };
@@ -318,6 +321,13 @@ fn granted(query: &InstallQuery) -> Result<Vec<Permission>, InstallError> {
         .map_err(|e: <Permission as std::str::FromStr>::Err| InstallError::Invalid(e.to_string()))
 }
 
+/// 升级预览的 JSON 请求体：`{}` 是升到提示的版本，带 `source` 是换到这个来源。
+#[derive(Deserialize)]
+struct UpgradeFrom {
+    #[serde(default)]
+    source: Option<String>,
+}
+
 pub async fn preview_upgrade(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -332,17 +342,20 @@ pub async fn preview_upgrade(
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
     };
-    let from_source = body.is_empty() || json_body::<serde_json::Value>(&headers, &body).is_some();
-    let upload = if from_source {
-        None
-    } else {
-        match package(&headers, &body) {
-            Ok(package) => Some(package),
+    let to = match json_body::<UpgradeFrom>(&headers, &body) {
+        Some(Err(e)) => return install_error(&e),
+        Some(Ok(UpgradeFrom {
+            source: Some(source),
+        })) => UpgradeTo::Source(source),
+        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
+        None if body.is_empty() => UpgradeTo::Offered,
+        None => match package(&headers, &body) {
+            Ok(package) => UpgradeTo::Upload(Box::new(package)),
             Err(e) => return install_error(&e),
-        }
+        },
     };
     let langs = languages(&headers);
-    match gateway.plugins.preview_upgrade(&id, upload, &langs).await {
+    match gateway.plugins.preview_upgrade(&id, to, &langs).await {
         Ok(preview) => Json(preview).into_response(),
         Err(e) => install_error(&e),
     }
@@ -428,6 +441,49 @@ pub async fn store_plugin(
         .await
     {
         Ok(detail) => Json(detail).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+pub async fn add_store_source(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let request = match serde_json::from_slice::<AddSourceRequest>(&body) {
+        Ok(request) => request,
+        Err(e) => return install_error(&InstallError::Invalid(format!("请求体不对：{e}"))),
+    };
+    match gateway
+        .plugins
+        .add_store_source(&request.address, &languages(&headers))
+        .await
+    {
+        Ok(added) => (StatusCode::CREATED, Json(added)).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RemoveSourceQuery {
+    address: String,
+}
+
+pub async fn remove_store_source(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Query(query): Query<RemoveSourceQuery>,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    match gateway.plugins.remove_store_source(&query.address) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => install_error(&e),
     }
 }

@@ -126,7 +126,7 @@ impl PluginManager {
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
             provider: origin.map(Origin::provider),
-            via_index: None,
+            via_index: origin.and_then(Origin::via_index),
             id: installed.id.clone(),
             title: installed.title.clone(),
             summary: installed.summary.clone(),
@@ -168,7 +168,25 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
         let blocked = blocked_by(self.precheck(&package.manifest).await)?;
-        self.preview_with(package, langs, blocked).await
+        let mut preview = self.preview_with(package, langs, blocked).await?;
+        if let Some(notice) = self.retained_data(&package.manifest.id).await? {
+            let after_review_notice = usize::from(preview.trust != PluginTrust::Official);
+            preview.notices.insert(after_review_notice, notice);
+        }
+        Ok(preview)
+    }
+
+    /// 没装着、却留着这个 ID 的数据（不删数据的卸载留下的）时的提示：新装的会接着用它们，不管它来自哪里（ADR-0031）。
+    async fn retained_data(&self, id: &PluginId) -> Result<Option<CardLine>, InstallError> {
+        let volumes = !self.own_resources(id).await?.volumes.is_empty();
+        let secrets = self.store.secrets().load(id)?.is_some();
+        let dir = self.cfg.apps_dir.join(id.slug()).exists();
+        Ok((volumes || secrets || dir).then(|| CardLine {
+            text: format!(
+                "这台服务器上留着 {id} 以前的数据和密钥，这个应用装上后能读到它们；不想这样就先彻底删除"
+            ),
+            emphasis: true,
+        }))
     }
 
     /// 要主人确认的内容，`blocked` 是已经知道的装不了的原因。安装和升级共用。
@@ -201,15 +219,17 @@ impl PluginManager {
             .map(|c| format!("{}（{}）", c.service, c.image))
             .collect();
         let mut notices = Vec::new();
-        if package
+        let reviewed = package
             .origin
             .as_ref()
-            .is_some_and(|o| o.trust == Trust::Community)
-        {
+            .is_some_and(|o| o.trust == Trust::Official);
+        if !reviewed {
             notices.push(CardLine {
-                text: "云吞没有审核过这个应用，代码和镜像由它的作者提供".to_owned(),
+                text: unreviewed_notice(package),
                 emphasis: true,
             });
+            let images = image_repositories(plan.containers.iter().map(|c| c.image.as_str()));
+            notices.push(line(format!("镜像来自 {}", images.join("、"))));
         }
         if !unpinned.is_empty() {
             notices.push(line(format!("镜像没有按摘要固定：{}", unpinned.join("、"))));
@@ -230,7 +250,7 @@ impl PluginManager {
         Ok(InstallPreview {
             source: package.origin.as_ref().map(Origin::source),
             provider: package.origin.as_ref().map(Origin::provider),
-            via_index: None,
+            via_index: package.origin.as_ref().and_then(Origin::via_index),
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
             id: m.id.to_string(),
@@ -369,7 +389,7 @@ impl PluginManager {
             },
             source: origin.map(Origin::source),
             provider: origin.map(Origin::provider),
-            via_index: None,
+            via_index: origin.and_then(Origin::via_index),
             status: state(&entry.status, entry.health),
             web_url: entry.has_webui.then(|| self.web_url(id)),
             web_display: TabDisplay::default(),
@@ -456,6 +476,59 @@ fn reveals_owner_identity(m: &Manifest) -> bool {
     m.gets_owner_identity()
         || m.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc)
         || proxy_auth::uses_identity(m)
+}
+
+/// 未审核的插件的提示：写明谁提供。上传的插件只有清单里作者自己写的名字，核实不了。
+fn unreviewed_notice(package: &PluginPackage) -> String {
+    match &package.origin {
+        Some(origin) => {
+            let provider = origin.provider();
+            let via = origin
+                .via_index()
+                .map(|host| format!("，经 {host} 的索引"))
+                .unwrap_or_default();
+            format!("云吞没有审核过这个应用，代码和镜像由 {provider} 提供{via}")
+        }
+        None => match &package.manifest.author {
+            Some(author) => format!(
+                "云吞没有审核过这个应用，它来自你上传的文件，清单里写的作者是 {}，核实不了",
+                author.name
+            ),
+            None => "云吞没有审核过这个应用，它来自你上传的文件，清单里没写作者".to_owned(),
+        },
+    }
+}
+
+/// 镜像来自哪些仓库，去掉标签和摘要，去重，保持先后。没写主机的按 Docker 的规则算 `docker.io`。
+fn image_repositories<'a>(images: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut repositories = Vec::new();
+    for image in images {
+        let repository = image_repository(image);
+        if !repositories.contains(&repository) {
+            repositories.push(repository);
+        }
+    }
+    repositories
+}
+
+fn image_repository(image: &str) -> String {
+    let name = image.split('@').next().unwrap_or(image);
+    // 标签的冒号在最后一个 `/` 之后；主机的端口号在它之前。
+    let last_part = name.rfind('/').map_or(0, |slash| slash + 1);
+    let name = match name[last_part..].find(':') {
+        Some(colon) => &name[..last_part + colon],
+        None => name,
+    };
+    let first = name.split('/').next().unwrap_or(name);
+    let has_host =
+        name.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost");
+    if has_host {
+        name.to_owned()
+    } else if name.contains('/') {
+        format!("docker.io/{name}")
+    } else {
+        format!("docker.io/library/{name}")
+    }
 }
 
 fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
