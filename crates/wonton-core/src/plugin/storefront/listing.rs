@@ -3,7 +3,7 @@
 use wonton_protocol::{PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection};
 
 use super::super::gallery::IconSource;
-use super::super::github_source::{SourceRef, Trust};
+use super::super::github_source::{Origin, SourceRef, Trust};
 use super::super::install_error::InstallError;
 use super::super::languages::Languages;
 use super::super::manager::{PluginManager, supported};
@@ -16,6 +16,7 @@ use super::index::Listed;
 /// 列表和详情里一个插件共有的部分。
 struct Shown<'a> {
     source: String,
+    provider: String,
     manifest: &'a Manifest,
     icon: Option<IconSource>,
     trust: PluginTrust,
@@ -36,6 +37,7 @@ impl PluginManager {
             icons.extend(icon.clone());
             let shown = Shown {
                 source: listed.entry.source.clone(),
+                provider: listed.entry.source.replacen("github:", "github.com/", 1),
                 manifest: &listed.manifest,
                 icon,
                 trust: PluginTrust::Official,
@@ -49,6 +51,7 @@ impl PluginManager {
                 icons.extend(c.icon.clone());
                 let shown = Shown {
                     source: format!("github:{}", c.repo),
+                    provider: format!("github.com/{}", c.repo),
                     manifest: &c.manifest,
                     icon: c.icon.clone(),
                     trust: PluginTrust::Community,
@@ -64,6 +67,7 @@ impl PluginManager {
                 fetched_at_ms: official_at,
                 problem: official_problem,
             },
+            added: Vec::new(),
             community: StoreSection {
                 plugins: community,
                 fetched_at_ms: community_at,
@@ -105,6 +109,8 @@ impl PluginManager {
         let installed = self.installed_plugin(&m.id, langs);
         PluginDetail {
             source: origin.map(|o| o.repo.clone()),
+            provider: origin.map(Origin::provider),
+            via_index: None,
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
@@ -146,6 +152,8 @@ impl PluginManager {
         };
         StoreItem {
             source: shown.source.clone(),
+            provider: Some(shown.provider.clone()),
+            via_index: None,
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),

@@ -16,9 +16,9 @@ use crate::{CardLine, EgressViewModel, LanPort};
 pub enum PluginTrust {
     /// 官方索引里审核过的版本。
     Official,
-    /// GitHub 上的社区插件，云吞没有审核过。
+    /// 没审核过、来自 GitHub 或第三方索引：社区列表里的，或者主人添加的来源里的。
     Community,
-    /// 主人上传的插件包。
+    /// 主人上传的插件包，也没审核过。
     Local,
     /// 随核心预装的系统插件，不能卸载。
     System,
@@ -134,6 +134,10 @@ pub struct InstalledPlugin {
     pub trust: PluginTrust,
     /// 安装来源，如 `github:owner/repo@v1.2.0`；上传的和预装的为空。
     pub source: Option<String>,
+    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
+    pub provider: Option<String>,
+    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
+    pub via_index: Option<String>,
     pub status: PluginState,
     /// 插件网页的地址，点开就是小程序；没有网页时为空。
     pub web_url: Option<String>,
@@ -190,14 +194,55 @@ pub struct UpgradeOffer {
     pub permissions_changed: bool,
 }
 
-/// `GET /_wonton/api/store` 的响应：官方插件和社区插件分开列。
+/// `GET /_wonton/api/store` 的响应，按这个顺序显示：官方、主人添加的来源、社区。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct StoreListing {
     /// 官方索引里审核过的插件，按索引里的顺序。
     pub official: StoreSection,
+    /// 主人添加的来源，一个来源一段，按添加的先后。
+    pub added: Vec<AddedSource>,
     /// GitHub 上的社区插件（未审核），按星数从多到少。
     pub community: StoreSection,
+}
+
+/// 插件压缩包的大小上限：核心不收更大的，壳也不把更大的读进内存。
+pub const MAX_PLUGIN_ARCHIVE_BYTES: u64 = 16 << 20;
+
+/// 主人添加的一个来源（ADR-0031）：`POST /_wonton/api/store/sources` 的响应，也是商店里的一段。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AddedSource {
+    /// 规范后的地址，如 `github:owner/repo` 或 `https://example.com/index.json`：删除时原样带回。
+    pub address: String,
+    pub kind: SourceKind,
+    /// 这个来源是谁，如 `github.com/owner/repo` 或 `example.com`。
+    pub provider: String,
+    /// 索引自己写的名字；仓库和没写名字的索引为空。
+    pub name: Option<String>,
+    pub section: StoreSection,
+}
+
+/// 添加的来源是什么。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    /// 一个插件仓库。
+    Repo,
+    /// 一个第三方索引。
+    Index,
+    /// 比这个 App 新的核心给的种类。
+    #[serde(other)]
+    Other,
+}
+
+/// `POST /_wonton/api/store/sources` 的请求体。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AddSourceRequest {
+    /// 主人填的地址，原样交给核心：仓库地址、`owner/repo`、`github:` 来源，或者索引的 https 地址。
+    pub address: String,
 }
 
 /// 商店的一部分列表，带着它是什么时候的、有没有问题。
@@ -244,7 +289,7 @@ pub enum StoreFailure {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct StoreItem {
-    /// 安装来源（不带版本），如 `github:owner/repo`；详情和预览都用它。
+    /// 安装来源，如 `github:owner/repo` 或 `index+https://example.com/index.json#app.example`；详情和预览都用它，壳不解析。
     pub source: String,
     pub id: String,
     pub title: String,
@@ -256,6 +301,10 @@ pub struct StoreItem {
     /// 来源最新的版本；官方插件是索引里的版本。
     pub version: String,
     pub trust: PluginTrust,
+    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
+    pub provider: Option<String>,
+    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
+    pub via_index: Option<String>,
     pub author: Option<PluginAuthor>,
     /// GitHub 星数；官方插件为空。
     pub stars: Option<u32>,
@@ -288,6 +337,10 @@ pub struct PluginDetail {
     /// 详情说的版本。
     pub version: String,
     pub trust: PluginTrust,
+    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
+    pub provider: Option<String>,
+    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
+    pub via_index: Option<String>,
     pub author: Option<PluginAuthor>,
     /// 应用的主页。
     pub homepage: Option<String>,
@@ -329,11 +382,11 @@ pub struct LanWebuiOffer {
     pub enabled: bool,
 }
 
-/// `POST /_wonton/api/plugins/preview` 的请求体（JSON）：按来源预览。
+/// `POST /_wonton/api/plugins/preview` 和 `POST /_wonton/api/plugins/{id}/upgrade/preview` 的请求体（JSON）：按来源预览。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InstallSource {
-    /// `github:<owner>/<repo>`，可以带 `@<tag>` 或 `@<40 位提交号>`；不带时是最新的正式版本。
+    /// 商店给的来源，或者 `github:<owner>/<repo>`，可以带 `@<tag>` 或 `@<40 位提交号>`；不带时是最新的正式版本。
     pub source: String,
 }
 
@@ -341,7 +394,8 @@ pub struct InstallSource {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InstallPreview {
-    /// 解析后的来源，带着 tag 或提交，如 `github:owner/repo@v1.2.0`；上传的插件包为空。
+    /// 解析后的来源，带着 tag 或提交，如 `github:owner/repo@v1.2.0`；上传的插件包是 `upload:sha256:…`，核心暂存 1 小时。
+    /// 安装和升级请求原样带回。
     pub source: Option<String>,
     /// 来源解析到的提交（40 位十六进制）；上传的插件包为空。
     pub commit: Option<String>,
@@ -354,12 +408,16 @@ pub struct InstallPreview {
     pub kind: PluginKind,
     pub icon: Option<PluginIcon>,
     pub trust: PluginTrust,
+    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
+    pub provider: Option<String>,
+    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
+    pub via_index: Option<String>,
     pub author: Option<PluginAuthor>,
     /// 要授予的全部权限；主人确认的就是这些。
     pub permissions: Vec<PermissionLine>,
-    /// 确认前要看到的其他说明：未审核、镜像没有按摘要固定、对宿主的要求等，按顺序显示，`emphasis` 的醒目显示。
+    /// 确认前要看到的其他说明：未审核、镜像来自哪里、留着旧数据、降级、换来源、对宿主的要求等，按顺序显示，`emphasis` 的醒目显示。
     pub notices: Vec<CardLine>,
-    /// 升级时是装着的版本；新装时为空。
+    /// 升级或换版本时是装着的版本；新装时为空。
     pub upgrade_from: Option<String>,
     /// 这个版本的更新说明。
     pub release_notes: Option<String>,
@@ -384,10 +442,13 @@ pub struct InstallRequest {
     pub lan_webui: bool,
 }
 
-/// `POST /_wonton/api/plugins/{id}/upgrade` 的请求体（JSON）：升到升级预览给的版本。
+/// `POST /_wonton/api/plugins/{id}/upgrade` 的请求体（JSON）：换到升级预览给的版本。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct UpgradeRequest {
+    /// 预览给的 `source`。主人没有主动选来源、只是升到提示的版本时为空。
+    #[serde(default)]
+    pub source: Option<String>,
     pub digest: String,
     pub grant: Vec<String>,
     /// 同 [`InstallRequest::lan_webui`]。

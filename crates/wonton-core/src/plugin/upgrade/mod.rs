@@ -197,6 +197,11 @@ impl PluginManager {
             .map(|p| p.parse::<Permission>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
+        if request.source.is_some() {
+            return Err(InstallError::Unsupported(
+                "这个版本的核心只能升到提示的版本".to_owned(),
+            ));
+        }
         let record = self.upgradable_record(id)?;
         let package = self.latest_package(&record).await?;
         let digest = package.digest();

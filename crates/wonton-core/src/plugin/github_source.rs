@@ -116,8 +116,13 @@ impl Origin {
 
     /// 仓库的网页。
     pub fn repository_url(&self) -> String {
+        format!("https://{}", self.provider())
+    }
+
+    /// 核心能核实的提供方，如 `github.com/owner/repo`（ADR-0031）。
+    pub fn provider(&self) -> String {
         let path = self.repo.strip_prefix(SCHEME).unwrap_or(&self.repo);
-        format!("https://github.com/{path}")
+        format!("github.com/{path}")
     }
 }
 

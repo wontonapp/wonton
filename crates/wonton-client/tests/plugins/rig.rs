@@ -154,6 +154,8 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         icon: None,
         trust: PluginTrust::Official,
         source: None,
+        provider: None,
+        via_index: None,
         status,
         web_url: None,
         bot_user_id: None,
@@ -184,6 +186,8 @@ pub fn preview(id: &str) -> InstallPreview {
         kind: PluginKind::App,
         icon: None,
         trust: PluginTrust::Official,
+        provider: None,
+        via_index: None,
         author: None,
         permissions: vec![PermissionLine {
             permission: "storage.share.photos:read".to_owned(),
@@ -212,6 +216,8 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         kind: PluginKind::App,
         version: "1.0.0".to_owned(),
         trust: PluginTrust::Official,
+        provider: None,
+        via_index: None,
         author: None,
         stars: None,
         installed_version: None,
@@ -228,6 +234,7 @@ pub fn listing() -> StoreListing {
     };
     StoreListing {
         official: section(vec![item("app.photos", "Photos", &["相册"])]),
+        added: Vec::new(),
         community: section(vec![
             item("app.music", "Music", &["音乐"]),
             item("app.more-photos", "Gallery", &["PHOTOS"]),

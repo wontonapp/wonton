@@ -112,6 +112,8 @@ impl PluginManager {
         let origin = listed.origin.as_ref();
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
+            provider: origin.map(Origin::provider),
+            via_index: None,
             id: installed.id.clone(),
             title: installed.title.clone(),
             summary: installed.summary.clone(),
@@ -210,6 +212,8 @@ impl PluginManager {
         notices.extend(uncertain.map(|p| line(p.message)));
         Ok(InstallPreview {
             source: package.origin.as_ref().map(Origin::source),
+            provider: package.origin.as_ref().map(Origin::provider),
+            via_index: None,
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
             id: m.id.to_string(),
@@ -342,6 +346,8 @@ impl PluginManager {
                 trust(origin)
             },
             source: origin.map(Origin::source),
+            provider: origin.map(Origin::provider),
+            via_index: None,
             status: state(&entry.status, entry.health),
             web_url: entry.has_webui.then(|| self.web_url(id)),
             bot_user_id: None,
@@ -467,6 +473,8 @@ pub(super) fn author(manifest: &Manifest) -> Option<PluginAuthor> {
 fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
     PluginDetail {
         source: None,
+        provider: None,
+        via_index: None,
         id: installed.id.clone(),
         title: installed.title.clone(),
         summary: installed.summary.clone(),

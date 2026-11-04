@@ -79,6 +79,7 @@ impl PluginsLink {
             PluginOperation::Upgrade,
         )?;
         let request = UpgradeRequest {
+            source: None,
             digest: preview.digest,
             grant,
             lan_webui,

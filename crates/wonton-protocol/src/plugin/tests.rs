@@ -36,6 +36,8 @@ fn installed() -> InstalledPlugin {
         icon: Some(icon("ab")),
         trust: PluginTrust::Official,
         source: Some("github:example/wonton-immich@v2.0.0".into()),
+        provider: Some("github.com/example/wonton-immich".into()),
+        via_index: None,
         status: PluginState::Running {
             health: PluginHealth::Healthy,
         },
@@ -63,6 +65,8 @@ fn store() -> StoreListing {
         kind: PluginKind::App,
         version: "2.1.0".into(),
         trust: PluginTrust::Official,
+        provider: Some("github.com/example/wonton-immich".into()),
+        via_index: None,
         author: Some(PluginAuthor {
             name: "Example".into(),
             url: Some("https://example.com".into()),
@@ -78,6 +82,22 @@ fn store() -> StoreListing {
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
         },
+        added: vec![AddedSource {
+            address: "https://example.com/index.json".into(),
+            kind: SourceKind::Index,
+            provider: "example.com".into(),
+            name: Some("Example 的插件".into()),
+            section: StoreSection {
+                plugins: vec![StoreItem {
+                    source: "index+https://example.com/index.json#app.immich.photos".into(),
+                    trust: PluginTrust::Community,
+                    via_index: Some("example.com".into()),
+                    ..item.clone()
+                }],
+                fetched_at_ms: Some(1_793_000_000_000),
+                problem: None,
+            },
+        }],
         community: StoreSection {
             plugins: vec![StoreItem {
                 source: "github:someone/wonton-samba".into(),
@@ -108,6 +128,8 @@ fn preview() -> InstallPreview {
         kind: PluginKind::App,
         icon: None,
         trust: PluginTrust::Community,
+        provider: Some("github.com/someone/wonton-samba".into()),
+        via_index: None,
         author: None,
         permissions: vec![
             permission(
@@ -138,6 +160,8 @@ fn preview() -> InstallPreview {
 fn detail() -> PluginDetail {
     PluginDetail {
         source: Some("github:example/wonton-immich".into()),
+        provider: Some("github.com/example/wonton-immich".into()),
+        via_index: None,
         id: "app.immich.photos".into(),
         title: "相册".into(),
         summary: "照片备份、人脸与语义搜索".into(),
@@ -198,6 +222,7 @@ fn interface_types_round_trip_through_json() {
     };
     assert_eq!(round_trip(&request), request);
     let upgrade = UpgradeRequest {
+        source: Some("upload:sha256:abc".into()),
         digest: preview().digest,
         grant: vec![],
         lan_webui: false,
