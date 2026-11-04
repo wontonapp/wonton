@@ -14,6 +14,19 @@ use wonton_protocol::{
 };
 
 /// `core`：核心账号，和它的私聊是通知房间。
+/// 邀请在最前面，其余按最新消息排。还没有消息的放最后，按名字排：SDK 给的顺序在设备之间不一样，同一个账号两台设备要排得一样。
+pub(crate) fn sort_rooms(rows: &mut [RoomRow]) {
+    rows.sort_by(|a, b| {
+        let invited = |row: &RoomRow| row.membership == RoomMembership::Invited;
+        let latest = |row: &RoomRow| row.preview.as_ref().map(|preview| preview.timestamp_ms);
+        invited(b)
+            .cmp(&invited(a))
+            .then_with(|| latest(b).cmp(&latest(a)))
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.room_id.cmp(&b.room_id))
+    });
+}
+
 pub(crate) fn room_row(room: RoomInfo, core: &UserId) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {

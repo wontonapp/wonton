@@ -24,6 +24,7 @@ composerField = 20
 
 [size]
 target = 48
+avatar = 48
 topBar = 56
 bottomBar = 64
 icon = 24

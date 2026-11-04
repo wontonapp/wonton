@@ -93,7 +93,7 @@ private struct MainView: View {
     private var tabs: some View {
         // 系统的底栏换不了样子，只藏起来。TabView 本身留着：各页的导航、滚动位置和导航栏都由它分开管。
         TabView(selection: $tab) {
-            ChatListView(model: chat)
+            ChatListView(model: chat, plugins: plugins)
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.chat)
             HomeView(

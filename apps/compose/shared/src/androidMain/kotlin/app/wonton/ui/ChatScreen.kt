@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,9 +62,16 @@ import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+
+private const val DAYS_SHOWN_AS_WEEKDAY = 7L
 
 @Composable
-fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
+fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsState) {
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
@@ -105,6 +113,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
         }
         else -> ChatListScreen(
             viewModel = viewModel,
+            plugins = plugins,
             onAction = onAction,
             onOpenRoom = { navigation.openRoom = it },
             onOpenBackup = { navigation.showingBackup = true },
@@ -119,6 +128,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation) {
 @Composable
 private fun ChatListScreen(
     viewModel: ChatViewModel,
+    plugins: PluginsState,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
@@ -134,11 +144,15 @@ private fun ChatListScreen(
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WontonTheme.spacing.s8)) {
             item(key = "notices") { Notices(viewModel, onOpenBackup) }
             itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
-                if (index > 0) WontonSeparator()
+                if (index > 0) {
+                    Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
+                        WontonSeparator()
+                    }
+                }
                 if (row.membership == RoomMembership.INVITED) {
                     InviteItem(row, onAction)
                 } else {
-                    RoomItem(row, onClick = { onOpenRoom(row.roomId) })
+                    RoomItem(row, plugins, onClick = { onOpenRoom(row.roomId) })
                 }
             }
         }
@@ -185,7 +199,7 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
 }
 
 @Composable
-private fun RoomItem(row: RoomRow, onClick: () -> Unit) {
+private fun RoomItem(row: RoomRow, plugins: PluginsState, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     Row(
         Modifier.fillMaxWidth()
@@ -195,38 +209,62 @@ private fun RoomItem(row: RoomRow, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
+        RoomAvatar(row, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
-                Text(
-                    row.name,
-                    Modifier.weight(1f, fill = false),
-                    style = WontonTheme.typography.itemTitle,
-                    color = colors.textPrimary.toColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (row.isEncrypted) {
-                    Icon(
-                        WontonIcon.LockFill,
-                        contentDescription = "已加密",
-                        modifier = Modifier.size(WontonTheme.size.iconTiny),
-                        tint = colors.textSecondary.toColor(),
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                ) {
+                    Text(
+                        row.name,
+                        Modifier.weight(1f, fill = false),
+                        style = WontonTheme.typography.itemTitle,
+                        color = colors.textPrimary.toColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (row.isEncrypted) {
+                        Icon(
+                            WontonIcon.LockFill,
+                            contentDescription = "已加密",
+                            modifier = Modifier.size(WontonTheme.size.iconTiny),
+                            tint = colors.textSecondary.toColor(),
+                        )
+                    }
+                }
+                row.preview?.let {
+                    Text(
+                        roomTime(it.timestampMs.toLong()),
+                        style = WontonTheme.typography.caption.copy(fontFeatureSettings = "tnum"),
+                        color = colors.textSecondary.toColor(),
                     )
                 }
             }
-            row.preview?.let { preview ->
-                Text(
-                    if (preview.isOwn) "我：${preview.text}" else preview.text,
-                    style = WontonTheme.typography.supporting,
-                    color = colors.textSecondary.toColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            if (row.preview != null || row.unreadCount > 0uL) RoomPreviewLine(row)
         }
+    }
+}
+
+@Composable
+private fun RoomPreviewLine(row: RoomRow) {
+    val colors = WontonTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+    ) {
+        Text(
+            row.preview?.let { if (it.isOwn) "我：${it.text}" else it.text }.orEmpty(),
+            Modifier.weight(1f),
+            style = WontonTheme.typography.supporting,
+            color = colors.textSecondary.toColor(),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (row.unreadCount > 0uL) {
             val spoken = "${row.unreadCount} 条未读"
             Text(
@@ -239,6 +277,43 @@ private fun RoomItem(row: RoomRow, onClick: () -> Unit) {
             )
         }
     }
+}
+
+/** Bot 用它的应用的图标，其他人用名字的第一个字。 */
+@Composable
+private fun RoomAvatar(row: RoomRow, plugins: PluginsState) {
+    val size = WontonTheme.size.avatar
+    val bot = row.directUserId
+    val plugin = plugins.viewModel.installed?.plugins?.firstOrNull { bot != null && it.botUserId == bot }
+    if (plugin != null) {
+        PluginIconImage(plugin.icon, size, plugins)
+    } else {
+        Box(
+            Modifier.size(size).background(WontonTheme.colors.surfaceSubtle.toColor(), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                row.name.take(1).uppercase(),
+                style = WontonTheme.typography.itemTitle,
+                color = WontonTheme.colors.textPrimary.toColor(),
+            )
+        }
+    }
+}
+
+/** 列表里的时间：今天的写几点，昨天写“昨天”，一周内写星期，再早写日期。 */
+private fun roomTime(timestampMs: Long): String {
+    val time = Instant.ofEpochMilli(timestampMs).atZone(ZoneId.systemDefault())
+    val today = LocalDate.now()
+    val days = ChronoUnit.DAYS.between(time.toLocalDate(), today)
+    val pattern = when {
+        days == 0L -> "HH:mm"
+        days == 1L -> return "昨天"
+        days < DAYS_SHOWN_AS_WEEKDAY -> "EEE"
+        time.year == today.year -> "M/d"
+        else -> "yyyy/M/d"
+    }
+    return time.format(DateTimeFormatter.ofPattern(pattern))
 }
 
 @Composable

@@ -26,6 +26,7 @@ enum WontonRadii {
 
 enum WontonSize {
     static let target: CGFloat = 48
+    static let avatar: CGFloat = 48
     static let topBar: CGFloat = 56
     static let bottomBar: CGFloat = 64
     static let icon: CGFloat = 24

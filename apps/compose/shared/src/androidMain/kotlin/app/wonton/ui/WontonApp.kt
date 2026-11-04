@@ -143,7 +143,7 @@ fun WontonApp(
         ) {
             WithPendingCards(elsewhere, openCardRoom) {
                 when (tab) {
-                    CHAT -> ChatRoute(core, chat)
+                    CHAT -> ChatRoute(core, chat, plugins)
                     APPS -> HomeRoute(
                         core,
                         home,

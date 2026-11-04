@@ -42,7 +42,7 @@ pub(crate) use view::{failure, summary};
 use crate::home::HomeLink;
 use confirmation::{Answers, Cards, core_account};
 use storage::{ChatStorage, StoredSession};
-use view::{core_error, recovery, room_row, verification};
+use view::{core_error, recovery, room_row, sort_rooms, verification};
 
 /// 本设备在 Matrix 服务器上的显示名。
 const DEVICE_NAME: &str = "Wonton App";
@@ -580,10 +580,11 @@ impl ChatLink {
                 let core = core_account(session.user_id());
                 let mut rooms = std::pin::pin!(rooms);
                 while let Some(rooms) = rooms.next().await {
-                    let rows = rooms
+                    let mut rows: Vec<_> = rooms
                         .into_iter()
                         .map(|room| room_row(room, &core))
                         .collect();
+                    sort_rooms(&mut rows);
                     view.send_modify(|view| view.rooms = rows);
                 }
             })

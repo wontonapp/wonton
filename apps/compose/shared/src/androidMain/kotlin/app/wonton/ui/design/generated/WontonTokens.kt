@@ -34,6 +34,7 @@ object WontonRadii {
 
 object WontonSize {
     val target = 48.dp
+    val avatar = 48.dp
     val topBar = 56.dp
     val bottomBar = 64.dp
     val icon = 24.dp

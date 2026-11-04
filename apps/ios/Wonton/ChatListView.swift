@@ -3,6 +3,7 @@ import WontonClient
 
 struct ChatListView: View {
     @Bindable var model: ChatModel
+    let plugins: PluginsModel
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -10,12 +11,16 @@ struct ChatListView: View {
                 LazyVStack(spacing: 0) {
                     notices
                     ForEach(Array(model.viewModel.rooms.enumerated()), id: \.element.roomId) { index, row in
-                        if index > 0 { WontonSeparator() }
+                        if index > 0 {
+                            WontonSeparator().padding(.leading, WontonTheme.size.avatar + WontonTheme.spacing.s12)
+                        }
                         if row.membership == .invited {
                             InviteRow(row: row, model: model)
                         } else {
-                            NavigationLink(value: ChatRoute.room(row.roomId)) { RoomRowView(row: row) }
-                                .buttonStyle(.plain)
+                            NavigationLink(value: ChatRoute.room(row.roomId)) {
+                                RoomRowView(row: row, plugins: plugins)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -187,45 +192,104 @@ private struct NoChats: View {
 
 private struct RoomRowView: View {
     let row: RoomRow
+    let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
+            RoomAvatar(row: row, plugins: plugins)
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                HStack(spacing: WontonTheme.spacing.s4) {
-                    Text(row.name)
-                        .wontonText(WontonTheme.typography.itemTitle)
-                        .foregroundStyle(Color(colors.textPrimary))
-                        .lineLimit(1)
-                    if row.isEncrypted {
-                        WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    HStack(spacing: WontonTheme.spacing.s4) {
+                        Text(row.name)
+                            .wontonText(WontonTheme.typography.itemTitle)
+                            .foregroundStyle(Color(colors.textPrimary))
+                            .lineLimit(1)
+                        if row.isEncrypted {
+                            WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
+                                .foregroundStyle(Color(colors.textSecondary))
+                                .accessibilityLabel("已加密")
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if let preview = row.preview {
+                        Text(RoomTime.text(preview.timestampMs))
+                            .wontonText(WontonTheme.typography.caption)
+                            .monospacedDigit()
                             .foregroundStyle(Color(colors.textSecondary))
-                            .accessibilityLabel("已加密")
                     }
                 }
-                if let preview = row.preview {
-                    Text(preview.isOwn ? "我：\(preview.text)" : preview.text)
-                        .wontonText(WontonTheme.typography.supporting)
-                        .foregroundStyle(Color(colors.textSecondary))
-                        .lineLimit(1)
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    if let preview = row.preview {
+                        Text(preview.isOwn ? "我：\(preview.text)" : preview.text)
+                            .wontonText(WontonTheme.typography.supporting)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if row.unreadCount > 0 {
+                        Text("\(row.unreadCount)")
+                            .wontonText(WontonTheme.typography.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(Color(colors.accentInkOnFill))
+                            .padding(.horizontal, WontonTheme.spacing.s8)
+                            .padding(.vertical, WontonTheme.spacing.s4)
+                            .accentFill(Capsule())
+                            .accessibilityLabel("\(row.unreadCount) 条未读")
+                    }
                 }
-            }
-            Spacer(minLength: 0)
-            if row.unreadCount > 0 {
-                Text("\(row.unreadCount)")
-                    .wontonText(WontonTheme.typography.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(Color(colors.accentInkOnFill))
-                    .padding(.horizontal, WontonTheme.spacing.s8)
-                    .padding(.vertical, WontonTheme.spacing.s4)
-                    .accentFill(Capsule())
-                    .accessibilityLabel("\(row.unreadCount) 条未读")
             }
         }
         .padding(.horizontal, WontonTheme.spacing.s16)
         .padding(.vertical, WontonTheme.spacing.s12)
         .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+/// Bot 用它的应用的图标，其他人用名字的第一个字。
+private struct RoomAvatar: View {
+    let row: RoomRow
+    let plugins: PluginsModel
+    @Environment(\.wontonColors) private var colors
+
+    private var plugin: InstalledPlugin? {
+        guard let bot = row.directUserId else { return nil }
+        return plugins.viewModel.installed?.plugins.first { $0.botUserId == bot }
+    }
+
+    var body: some View {
+        let size = WontonTheme.size.avatar
+        if let plugin {
+            PluginIconView(icon: plugin.icon, size: size, model: plugins)
+        } else {
+            Text(row.name.prefix(1).uppercased())
+                .wontonText(WontonTheme.typography.itemTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+                .frame(width: size, height: size)
+                .background(Circle().fill(Color(colors.surfaceSubtle)))
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// 列表里的时间：今天的写几点，昨天写“昨天”，一周内写星期，再早写日期。
+private enum RoomTime {
+    static func text(_ timestampMs: UInt64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return date.formatted(.dateTime.hour().minute()) }
+        if calendar.isDateInYesterday(date) { return "昨天" }
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: date),
+            to: calendar.startOfDay(for: Date())
+        ).day ?? .max
+        if days < 7 { return date.formatted(.dateTime.weekday(.abbreviated)) }
+        if calendar.isDate(date, equalTo: Date(), toGranularity: .year) {
+            return date.formatted(.dateTime.month(.defaultDigits).day())
+        }
+        return date.formatted(.dateTime.year().month(.defaultDigits).day())
     }
 }
 
