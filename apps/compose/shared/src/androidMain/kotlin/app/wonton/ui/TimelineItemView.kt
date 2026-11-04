@@ -240,7 +240,7 @@ private fun MessageBody(
     onAnswer: (String, Answer) -> Unit,
 ) {
     when (body) {
-        is MessageContent.Text -> TextMessageBody(body.body, body.files, core)
+        is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core)
         is MessageContent.Image -> MessageImage(body.image, core, sendState)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {

@@ -44,11 +44,13 @@ switchHeight = 26
 switchKnob = 22
 dialogWidth = 320
 hairline = 1
+quoteBar = 2
 
 [ratio]
 pluginIconRadius = 0.2237
 secondaryContent = 0.7
 scrim = 0.4
+codeFill = 0.1
 
 [typography]
 screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }

@@ -39,8 +39,12 @@ http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 iroh = { workspace = true }
+# MIT OR Apache-2.0。认出消息文字里没有写成 Markdown 链接的网址。
+linkify = "0.11.0"
 # MIT OR Apache-2.0。重点色推导用的 OKLCH 和 WCAG 对比度（ADR-0026）。
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
+# MIT。把 Bot 发的 Markdown 排成气泡里的块和片段。
+pulldown-cmark = { version = "0.13.6", default-features = false }
 # MIT OR Apache-2.0。经本地代理调核心的接口；matrix-sdk 已经用它。文件上传下载要流式读写。
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }

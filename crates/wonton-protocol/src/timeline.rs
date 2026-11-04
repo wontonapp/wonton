@@ -146,10 +146,11 @@ pub enum SendState {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessageContent {
-    /// 文字，包括 Bot 常用的 `m.notice`。`body` 是去掉文件链接后要显示的文字，消息只有链接时为空；`files` 是认出的
-    /// 文件，壳在消息下面按编号画卡片（ADR-0020）。
+    /// 文字，包括 Bot 常用的 `m.notice`。`body` 是去掉文件链接后的原文，消息只有链接时为空；`blocks` 是它排好版的样子，
+    /// 壳画这个，不解析 Markdown；`files` 是认出的文件，壳在消息下面按编号画卡片（ADR-0020）。
     Text {
         body: String,
+        blocks: Vec<RichBlock>,
         files: Vec<FileId>,
     },
     Image {
@@ -168,6 +169,50 @@ pub enum MessageContent {
     Unsupported {
         kind: String,
     },
+}
+
+/// 排好版的一块文字。没有嵌套：列表和引用的层次摊平成每一块的 `depth` 和 `quoted`。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RichBlock {
+    pub kind: RichBlockKind,
+    /// 缩进几层。
+    pub depth: u32,
+    /// 在引用里。
+    pub quoted: bool,
+    pub spans: Vec<RichSpan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RichBlockKind {
+    Paragraph,
+    Heading,
+    /// `marker` 是项目符号、序号或任务框，壳原样画在文字前面。
+    ListItem {
+        marker: String,
+    },
+    /// 代码块：等宽字体，不折行，横向滚动。
+    Code,
+    /// 表格，第一行是表头，每行格数相同。不折行，横向滚动。
+    Table {
+        rows: Vec<Vec<String>>,
+    },
+    /// 分隔线，`spans` 为空。
+    Rule,
+}
+
+/// 一段样式相同的文字。`link` 只会是 http、https 或 mailto 的地址。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RichSpan {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub code: bool,
+    pub strike: bool,
+    pub link: Option<String>,
 }
 
 /// 图片消息。原图和缩略图都经 `ClientCore::load_media` 取，核心负责下载、解密和缓存。
@@ -298,10 +343,7 @@ mod tests {
                     item: item(
                         "3",
                         message(
-                            MessageContent::Text {
-                                body: "你好".into(),
-                                files: vec![FileId::from_bytes([7; 16])],
-                            },
+                            text_with_file(),
                             SendState::Failed {
                                 message: "网络断开".into(),
                                 recoverable: true,
@@ -325,6 +367,26 @@ mod tests {
             !format!("{update:?}").contains("mxc://"),
             "Debug 不能输出媒体句柄"
         );
+    }
+
+    fn text_with_file() -> MessageContent {
+        MessageContent::Text {
+            body: "**你好**".into(),
+            blocks: vec![RichBlock {
+                kind: RichBlockKind::ListItem {
+                    marker: "•".into()
+                },
+                depth: 1,
+                quoted: true,
+                spans: vec![RichSpan {
+                    text: "你好".into(),
+                    bold: true,
+                    link: Some("https://example.com/".into()),
+                    ..RichSpan::default()
+                }],
+            }],
+            files: vec![FileId::from_bytes([7; 16])],
+        }
     }
 
     fn confirmation(sending: Option<Answer>, problem: Option<ChatProblem>) -> MessageContent {

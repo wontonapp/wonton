@@ -103,7 +103,7 @@ private struct MessageBubble: View {
         let body = Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4) {
             content
                 .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(message.isOwn ? colors.textOnAccentFill : colors.textPrimary))
+                .foregroundStyle(textColor)
             footer.gridCellAnchor(.trailing)
         }
         .padding(.horizontal, WontonTheme.spacing.s12)
@@ -115,10 +115,14 @@ private struct MessageBubble: View {
         }
     }
 
+    private var textColor: Color {
+        Color(message.isOwn ? colors.textOnAccentFill : colors.textPrimary)
+    }
+
     @ViewBuilder private var content: some View {
         switch message.body {
-        case let .text(body, files):
-            TextMessageBody(text: body, files: files)
+        case let .text(_, blocks, files):
+            TextMessageBody(blocks: blocks, ink: textColor, files: files)
         case let .image(image):
             MediaImage(image: image, core: core, sendState: message.sendState)
         case let .confirmation(view):

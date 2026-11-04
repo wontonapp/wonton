@@ -1,6 +1,7 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
 use super::confirmation::CardsView;
+use super::rich;
 use wonton_matrix::{
     EntryKind, Error, LatestMessage, Membership, Message, MessageBody, Recovery, RoomInfo,
     SendStatus, TimelineEntry, VectorDiff, Verification,
@@ -33,7 +34,7 @@ fn preview(latest: LatestMessage) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
         return None;
     }
-    let text = summary(latest.body);
+    let text = summary(latest.body, latest.is_own);
     Some(RoomPreview {
         sender_name: latest.sender_name,
         is_own: latest.is_own,
@@ -43,14 +44,16 @@ fn preview(latest: LatestMessage) -> Option<RoomPreview> {
 }
 
 /// 消息的一行文字：房间列表的预览和通知的正文都用它。
-pub(crate) fn summary(body: MessageBody) -> String {
+pub(crate) fn summary(body: MessageBody, is_own: bool) -> String {
     match body {
         MessageBody::Text(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
             if body.is_empty() && !files.is_empty() {
                 "[文件]".to_owned()
-            } else {
+            } else if is_own {
                 body
+            } else {
+                rich::flatten(&rich::markdown(&body))
             }
         }
         MessageBody::Image(_) => "[图片]".to_owned(),
@@ -100,17 +103,26 @@ fn timeline_message(message: Message, cards: &CardsView) -> TimelineMessage {
         edited: message.edited && card.is_none(),
         body: match (card, message.body) {
             (Some(view), _) => MessageContent::Confirmation { view },
-            (None, body) => message_content(body),
+            (None, body) => message_content(body, message.is_own),
         },
         read_by: message.read_by,
     }
 }
 
-fn message_content(body: MessageBody) -> MessageContent {
+fn message_content(body: MessageBody, is_own: bool) -> MessageContent {
     match body {
         MessageBody::Text(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
-            MessageContent::Text { body, files }
+            let blocks = if is_own {
+                rich::plain(&body)
+            } else {
+                rich::markdown(&body)
+            };
+            MessageContent::Text {
+                body,
+                blocks,
+                files,
+            }
         }
         MessageBody::Image(image) => MessageContent::Image {
             image: ImageContent {
@@ -272,9 +284,9 @@ mod tests {
     #[test]
     fn previews_do_not_show_file_links() {
         let link = FileId::from_bytes([1; 16]).link();
-        let with_text = summary(MessageBody::Text(format!("给你 {link}")));
+        let with_text = summary(MessageBody::Text(format!("给你 {link}")), false);
         assert_eq!(with_text, "给你");
-        let only_link = summary(MessageBody::Text(link));
+        let only_link = summary(MessageBody::Text(link), false);
         assert!(!only_link.contains("wonton://"), "{only_link}");
         assert!(!only_link.is_empty());
     }

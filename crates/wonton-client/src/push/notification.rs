@@ -102,7 +102,7 @@ impl PushLink {
                 body: "邀请你加入".to_owned(),
             },
             body => PushContent::Message {
-                body: summary(body),
+                body: summary(body, false),
             },
         };
         Ok(Some(PushNotification {

@@ -1,14 +1,15 @@
 import SwiftUI
 import WontonClient
 
-/// 文字消息：去掉链接后的文字，下面是文件卡片。消息只有链接时没有文字。
+/// 文字消息：排好版的文字，下面是文件卡片。消息只有链接时没有文字。
 struct TextMessageBody: View {
-    let text: String
+    let blocks: [RichBlock]
+    let ink: Color
     let files: [FileId]
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            if !text.isEmpty { Text(text).textSelection(.enabled) }
+            if !blocks.isEmpty { RichTextView(blocks: blocks, ink: ink) }
             ForEach(files, id: \.self) { FileCardView(id: $0) }
         }
     }

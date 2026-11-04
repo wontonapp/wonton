@@ -8,6 +8,7 @@
 mod confirmation;
 mod login;
 mod pending;
+mod rich;
 mod storage;
 mod timeline;
 mod view;

@@ -73,6 +73,6 @@ pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, Pu
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
 pub use timeline::{
-    BackPagination, ImageContent, MediaHandle, MessageContent, SendState, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+    BackPagination, ImageContent, MediaHandle, MessageContent, RichBlock, RichBlockKind, RichSpan,
+    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
 };

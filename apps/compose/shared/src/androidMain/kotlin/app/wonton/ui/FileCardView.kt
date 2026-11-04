@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -44,6 +43,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.FileCard
 import app.wonton.protocol.FileCardAction
 import app.wonton.protocol.FileId
+import app.wonton.protocol.RichBlock
 import app.wonton.protocol.FileInfo
 import app.wonton.protocol.FileSource
 import app.wonton.protocol.Transfer
@@ -58,11 +58,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 文字消息：去掉链接后的文字，下面是文件卡片。消息只有链接时没有文字。 */
+/** 文字消息：排好版的文字，下面是文件卡片。消息只有链接时没有文字。 */
 @Composable
-fun TextMessageBody(text: String, files: List<FileId>, core: ClientCore) {
+fun TextMessageBody(blocks: List<RichBlock>, files: List<FileId>, core: ClientCore) {
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        if (text.isNotEmpty()) SelectionContainer { Text(text) }
+        if (blocks.isNotEmpty()) RichText(blocks)
         files.forEach { id -> key(id) { FileCardView(id, core) } }
     }
 }
