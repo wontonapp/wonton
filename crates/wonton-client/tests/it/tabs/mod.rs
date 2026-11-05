@@ -1,8 +1,5 @@
 //! 底栏行为测试：只经由 ClientCore 和 Action 驱动，插件管理接口由本机假核心提供。
 
-#[allow(dead_code)]
-#[path = "../plugins/rig.rs"]
-mod rig;
 mod state;
 
 use std::time::{Duration, Instant};
@@ -13,7 +10,7 @@ use wonton_client::{
     TabsViewModel,
 };
 
-use rig::{FakeHome, Rig, installed};
+use crate::plugins::rig::{FakeHome, Rig, installed};
 
 fn page(id: &str, display: TabDisplay) -> PluginTab {
     PluginTab {

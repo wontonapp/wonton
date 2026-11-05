@@ -5,8 +5,8 @@ use wonton_client::{
     TimelineMessage,
 };
 
-use crate::accept_the_bots_invite;
-use crate::support::{Home, Phone, Timeline};
+use super::accept_the_bots_invite;
+use super::support::{Home, Phone, Timeline};
 
 /// Tuwunel 的上限最低 10 MB，8 MB 能进队列又够上传走几步。内容对 Matrix 不透明。
 const BIG: usize = 8 * 1024 * 1024;

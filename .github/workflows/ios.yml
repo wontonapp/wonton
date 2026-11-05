@@ -38,7 +38,7 @@ concurrency:
 jobs:
   swiftlint:
     name: SwiftLint（函数体 ≤ 100 行）
-    # 不放 Linux：只有带 docker 标签的机器能接容器作业，它们被 Docker 集成测试占满时，这个几秒钟的作业要排半小时。
+    # 不放 Linux：只有带 docker 标签的机器能接容器作业，它们被 Rust 作业占满时，这个几秒钟的作业要排半小时。
     runs-on: [self-hosted, macOS, ARM64, xcode]
     timeout-minutes: 10
     env:

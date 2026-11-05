@@ -9,7 +9,7 @@ use wonton_client::{
     Action, ConnectionNotice, HomeFailure, HomeStatus, PluginFailure, PluginState, PluginTaskState,
 };
 
-use crate::rig::{Canned, FakeHome, Rig, core_error, installed, preview, running, ticket};
+use super::rig::{Canned, FakeHome, Rig, core_error, installed, preview, running, ticket};
 
 /// 建连尝试可能要等到握手超时。
 const DIAL: Duration = Duration::from_secs(90);

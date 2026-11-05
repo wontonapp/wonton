@@ -2,10 +2,7 @@
 //! 的 Matrix 账号、和 Bot 聊天，重启后会话和加密都还在。
 //!
 //! 每个测试用 Docker 起一台一次性的 Tuwunel，所以标了 `#[ignore]`：
-//! `cargo test -p wonton-client --test chat -- --include-ignored`（`scripts/check.sh` 有 Docker 时自动运行）。
-
-// 同 wonton-matrix：matrix-sdk 的 future 嵌套很深。
-#![recursion_limit = "256"]
+//! `cargo test -p wonton-client --test it chat:: -- --include-ignored`（`scripts/check.sh` 有 Docker 时自动运行）。
 
 mod confirmation;
 mod onboarding;
@@ -29,7 +26,7 @@ use wonton_matrix::{ChatRoom, MatrixSession, Message, MessageBody, OwnedRoomId, 
 use support::{Home, OWNER, Phone, Timeline};
 
 /// 2×2 的 PNG。
-const PNG: &[u8] = include_bytes!("../../../wonton-matrix/tests/tuwunel/fixtures/2x2.png");
+const PNG: &[u8] = include_bytes!("../../../../wonton-matrix/tests/tuwunel/fixtures/2x2.png");
 /// 当缩略图用的字节。媒体的内容对 Matrix 不透明，测试只比对取回的字节。
 const THUMBNAIL: &[u8] = b"a smaller preview of the PNG";
 

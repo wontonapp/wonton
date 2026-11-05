@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use wonton_client::{Action, ChatSync, HomeStatus};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
 
-use crate::support::{Home, Phone, Timeline};
-use crate::{accept_the_bots_invite, bot_receives, text};
+use super::support::{Home, Phone, Timeline};
+use super::{accept_the_bots_invite, bot_receives, text};
 
 struct Chat {
     phone: Phone,

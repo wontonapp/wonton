@@ -247,7 +247,7 @@ App 扫一个一次性的配对码，成为主人的设备。线协议的类型�
 接口按上一节实现：核心发码、验码和登记设备在 `crates/wonton-core/src/pairing.rs`，局域网状态页在
 `crates/wonton-core/src/gateway/lan.rs`，`wonton/pair/0` 的两端在 `crates/wonton-tunnel/src/pair/`，App 一侧在
 `crates/wonton-client/src/home/pairing.rs`。可复跑：`cargo test -p wonton-core pairing`（经真实的隧道入口）、
-`cargo test -p wonton-client --test pairing`、`cargo test -p wonton-tunnel --test tunnel pairing`，以及
+`cargo test -p wonton-client --test it pairing::`、`cargo test -p wonton-tunnel --test tunnel pairing`，以及
 `deploy/dev/core/smoke.sh` 的“已配对设备经隧道打开插件”一步。
 
 - **首次配对码**：服务器上还没有设备时，状态页给一个码，还剩不到 2 分钟时换新码，旧码到期前仍然有效。第一台设备配上
@@ -259,7 +259,7 @@ App 扫一个一次性的配对码，成为主人的设备。线协议的类型�
   配对码，换码时跟着换，第一台设备配上后退出；已经有设备时 API 回 409 `paired`，命令只说明怎么加设备。
 - **添加设备**：已配对的设备经隧道要码不需要主人令牌，局域网里不带令牌仍是 401
   （`cargo test -p wonton-core a_paired_phone_gets_a_code`）。App 一侧 `InviteDevice` 拿到的码让另一台设备配上；要码被拒时
-  403、5xx、认不出的回应分别报 `Unauthorized`、`UpstreamUnavailable`、`Protocol`（`cargo test -p wonton-client --test pairing`）。
+  403、5xx、认不出的回应分别报 `Unauthorized`、`UpstreamUnavailable`、`Protocol`（`cargo test -p wonton-client --test it pairing::`）。
 - **状态页**：码里的直连地址是浏览器打开状态页用的 IP 加隧道端口，同一个局域网里的手机也连得上；`Host` 是域名的请求
   （DNS 重绑定）得到 404。页面只列出各组件是否就绪和插件数量，不列主人装的插件名；随核心附带的插件没在运行时逐个
   写明状态（插件规范的“预装插件”）。

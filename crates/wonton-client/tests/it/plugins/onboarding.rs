@@ -5,7 +5,7 @@ use wonton_client::{
     Action, CoreError, ModelProviderFailure, OnboardingStep, PluginFailure, SecretString,
 };
 
-use crate::rig::{Canned, FakeHome, Rig, core_error};
+use super::rig::{Canned, FakeHome, Rig, core_error};
 
 fn onboarding(step: &str) -> serde_json::Value {
     serde_json::json!({

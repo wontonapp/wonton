@@ -1,14 +1,12 @@
 //! 文件的行为测试（ADR-0020）：只经由导出给原生壳的接口驱动，断言传输列表和核心收到的请求。隧道服务端和假的核心文件接口（含 tus）都跑在
 //! 本机。真实的 tusd 和核心的行为见 `wonton-core` 的 `gateway::files_upload_tests`。
 
-mod files_support;
-
 use std::fs::File;
 use std::os::fd::IntoRawFd;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use files_support::{Served, World, id, read_opened, source_bytes};
+use crate::files_support::{Served, World, id, read_opened, source_bytes};
 use wonton_client::{
     Action, CoreError, FileCard, FileFailure, FileOpenError, FileOpener, FileOperation, FileSource,
     TransferDirection, TransferState, UploadSource,

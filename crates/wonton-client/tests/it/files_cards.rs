@@ -1,11 +1,9 @@
 //! 主人看到什么、能点什么（ADR-0020）：卡片上的按钮、链接没发出和重发、清理下载、播放失败的原因。只经由导出给原生壳的接口驱动。
 
-mod files_support;
-
 use std::path::Path;
 use std::time::Duration;
 
-use files_support::{World, id, source_bytes};
+use crate::files_support::{World, id, source_bytes};
 use wonton_client::{
     Action, CoreError, FileCard, FileCardAction, FileCardActions, FileFailure, FileInfo,
     FileProblem, TransferAction, TransferState, UploadSource,

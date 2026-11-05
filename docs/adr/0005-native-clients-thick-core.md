@@ -121,7 +121,7 @@ ViewModel；核心拒绝操作时，两端显示的是核心给出的同一句�
 - **回到前台时的重试**只在登录失败（不是被吊销）或同步停了时做；正在登录时不插手。Android 启动时也会发一次
   “回到前台”，正赶上第一次登录，之前会再登录一遍，在同一个存储上开出两个会话：模拟器上实测请求挂住 30 秒，加密
   的恢复状态一直是“未知”。
-- **验证**：`cargo test -p wonton-client --test chat -- --include-ignored`（Docker 集成测试）。一次性的
+- **验证**：`cargo test -p wonton-client --test it chat:: -- --include-ignored`（Docker 集成测试）。一次性的
   Tuwunel 前面接一个模拟的核心（签发登录令牌，把 `matrix.<基础域名>` 转给 Tuwunel）和真实的隧道服务端，手机是
   真实的客户端核心，只经导出给壳的接口驱动：
   - 连上后自动登录主人的账号；

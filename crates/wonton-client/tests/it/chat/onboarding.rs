@@ -4,8 +4,8 @@
 use serde_json::json;
 use wonton_client::{Action, MessageContent, TimelineContent};
 
-use crate::accept_the_bots_invite;
-use crate::support::{Home, Phone, Timeline};
+use super::accept_the_bots_invite;
+use super::support::{Home, Phone, Timeline};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]

@@ -4,7 +4,7 @@ mod connection;
 mod core_upgrade;
 mod egress;
 mod onboarding;
-mod rig;
+pub mod rig;
 mod takeover;
 mod tool_policy;
 

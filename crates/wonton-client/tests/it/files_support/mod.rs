@@ -1,8 +1,5 @@
 //! 文件行为测试的替身：本机的隧道服务端、假的核心文件接口和 tus。
 
-// 两个测试程序各用一部分。
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path as FsPath, PathBuf};

@@ -2,8 +2,8 @@
 
 use wonton_client::{ChatAccount, ChatFailure, ChatSync};
 
-use crate::support::{Home, Phone};
-use crate::{accept_the_bots_invite, chat_with_the_bot};
+use super::support::{Home, Phone};
+use super::{accept_the_bots_invite, chat_with_the_bot};
 
 /// 从 A 改配到 B：不拿 A 的令牌去 B（那样会显示“已被吊销”），登录成新设备，聊天能用，重启后还在 B 上。
 #[tokio::test(flavor = "multi_thread")]

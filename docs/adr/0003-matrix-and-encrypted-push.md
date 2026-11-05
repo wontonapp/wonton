@@ -246,11 +246,11 @@ App 被杀后收不到任何消息。
 
 ## 验证结果（M0-3，自动化测试）
 
-验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑（后两条要 Docker，CI 的 Docker 集成测试作业会跑）：
+验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑（后两条要 Docker，CI 的 Rust 作业会跑）：
 
 - `cargo test -p wonton-core push`
 - `cargo test -p wonton-matrix --test tuwunel -- push egress --include-ignored`
-- `cargo test -p wonton-client --test chat push -- --include-ignored`
+- `cargo test -p wonton-client --test it chat::push -- --include-ignored`
 
 
 - **推送代理**：推送服务的替身是真实的 HTTP 服务，用 RFC 8291 附录 A 的设备密钥解开它收到的推送，里面只有房间、

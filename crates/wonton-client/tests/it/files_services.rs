@@ -1,9 +1,7 @@
 //! 家里的系统服务不可用（ADR-0020）：传输暂停而不是失败，说得清是服务的问题，服务恢复后接着传。整套服务重启时隧道通了而 tusd 还没起来，核心回
 //! `service_unavailable`；tusd 真坏了时一直如此。
 
-mod files_support;
-
-use files_support::{World, source_bytes};
+use crate::files_support::{World, source_bytes};
 use wonton_client::{Action, Transfer, TransferAction, TransferState, UploadSource};
 
 const MIB: usize = 1024 * 1024;

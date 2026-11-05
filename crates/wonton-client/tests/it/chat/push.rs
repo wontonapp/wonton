@@ -8,8 +8,8 @@ use wonton_client::{
 };
 use wonton_matrix::testkit::Received;
 
-use crate::accept_the_bots_invite;
-use crate::support::{Home, Phone};
+use super::accept_the_bots_invite;
+use super::support::{Home, Phone};
 
 /// RFC 8291 附录 A 里设备的公钥和认证密钥。家里的推送代理在这个测试里是替身，不加密，只看登记的内容。
 const P256DH: &str =

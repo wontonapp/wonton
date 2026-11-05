@@ -33,6 +33,10 @@ tracing-subscriber = "0.3.23"
 uniffi = "0.32.2"
 url = "2.5.8"
 
+# 依赖不带调试信息，崩溃栈里还有函数名：25 个测试二进制从 5.3 GB 降到 3.3 GB，target 目录少三分之一（2026-11-05 实测）。
+[profile.dev.package."*"]
+debug = false
+
 [workspace.lints.clippy]
 # 函数体超过 100 行即失败，阈值见 clippy.toml。
 too_many_lines = "deny"

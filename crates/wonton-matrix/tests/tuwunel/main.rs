@@ -5,7 +5,7 @@
 //!
 //! 这里的测试都标了 `#[ignore]`：普通的 `cargo test` 只列出它们、不运行，没有 Docker 的机器也能通过。
 //! 运行：`cargo test -p wonton-matrix --test tuwunel -- --include-ignored`。`scripts/check.sh` 在有
-//! Docker 时自动运行，CI 有单独的“Docker 集成测试”作业。新增的测试同样要标 `#[ignore]`。
+//! Docker 时自动运行，CI 的 Rust 作业也会运行。新增的测试同样要标 `#[ignore]`。
 
 // 同库本身：matrix-sdk 的 future 嵌套很深。
 #![recursion_limit = "256"]

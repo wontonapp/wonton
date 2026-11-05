@@ -6,8 +6,8 @@ use wonton_client::{
 };
 use wonton_matrix::MessageBody;
 
-use crate::support::{Home, Phone, Timeline};
-use crate::{accept_the_bots_invite, bot_receives};
+use super::support::{Home, Phone, Timeline};
+use super::{accept_the_bots_invite, bot_receives};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
