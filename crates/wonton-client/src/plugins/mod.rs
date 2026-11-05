@@ -5,6 +5,7 @@ mod api;
 mod cache;
 mod core_upgrade;
 mod egress;
+mod takeover;
 mod tasks;
 mod tool_policy;
 
@@ -58,6 +59,7 @@ pub(crate) struct PluginsLink {
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
     egress_epoch: AtomicU64,
     upgrade: Mutex<core_upgrade::UpgradeLocal>,
+    takeover: Mutex<takeover::Slot>,
     data_dir: PathBuf,
 }
 
@@ -86,6 +88,7 @@ impl PluginsLink {
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
+            takeover: Mutex::new(takeover::Slot::default()),
             data_dir: data_dir.to_owned(),
         });
         link.restore_core_upgrade();
@@ -265,6 +268,7 @@ impl PluginsLink {
             }
         });
         self.forget_core_upgrade();
+        self.forget_takeover();
     }
 
     fn is_current(&self, generation: u64) -> bool {

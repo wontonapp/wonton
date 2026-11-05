@@ -125,7 +125,8 @@ fun WontonApp(
         if (shown != null) {
             BackHandler { page = null }
             WithPendingCards(chatView.pendingConfirmations, openCardRoom) {
-                PluginPage(shown.title, shown.url, home, onClose = { page = null })
+                val takeover = shown.toolsOf?.let { PageTakeover(it, plugins.viewModel.takeover, plugins::send) }
+                PluginPage(shown.title, shown.url, home, takeover, onClose = { page = null })
             }
             return@WontonTheme
         }

@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
@@ -70,7 +71,7 @@ private const val RETRY_DELAY_MS = 2_000L
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PluginPage(title: String, url: String, home: HomeViewModel, onClose: () -> Unit) {
+fun PluginPage(title: String, url: String, home: HomeViewModel, takeover: PageTakeover? = null, onClose: () -> Unit) {
     val isConnected = home.status is HomeStatus.Connected
     var started by remember { mutableStateOf(false) }
     var failures by remember { mutableIntStateOf(0) }
@@ -88,11 +89,16 @@ fun PluginPage(title: String, url: String, home: HomeViewModel, onClose: () -> U
             if (home.status is HomeStatus.Connected) reload++
         }
     }
+    val latestTakeover by rememberUpdatedState(takeover)
+    DisposableEffect(url) { onDispose { latestTakeover?.end() } }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(home.notice?.sentence ?: title) },
-                actions = { TextButton(onClick = onClose) { Text("关闭") } },
+                title = { Text(home.notice?.sentence ?: title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                actions = {
+                    takeover?.let { TakeoverButton(it) }
+                    TextButton(onClick = onClose) { Text("关闭") }
+                },
             )
         },
     ) { padding ->
@@ -102,26 +108,32 @@ fun PluginPage(title: String, url: String, home: HomeViewModel, onClose: () -> U
                 PluginWebView(url, proxy, reload, onLoaded = { failures = 0 }, onFailed = { failures++ })
             }
             if (!started || failures > 0) {
-                Column(
-                    Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12, Alignment.CenterVertically),
-                ) {
-                    if (gaveUp) {
-                        Text(
-                            "网页打不开",
-                            style = WontonTheme.typography.itemTitle,
-                            color = WontonTheme.colors.textPrimary.toColor(),
-                        )
-                        WontonSmallButton("重试", {
-                            failures = 0
-                            reload++
-                        })
-                    } else {
-                        CircularProgressIndicator(color = WontonTheme.colors.textPrimary.toColor())
-                    }
-                }
+                PageCover(gaveUp, onRetry = {
+                    failures = 0
+                    reload++
+                })
             }
+            takeover?.let { TakeoverNotice(it) }
+        }
+    }
+}
+
+@Composable
+private fun PageCover(gaveUp: Boolean, onRetry: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12, Alignment.CenterVertically),
+    ) {
+        if (gaveUp) {
+            Text(
+                "网页打不开",
+                style = WontonTheme.typography.itemTitle,
+                color = WontonTheme.colors.textPrimary.toColor(),
+            )
+            WontonSmallButton("重试", onRetry)
+        } else {
+            CircularProgressIndicator(color = WontonTheme.colors.textPrimary.toColor())
         }
     }
 }

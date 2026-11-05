@@ -76,7 +76,14 @@ private struct MainView: View {
                     PendingCardBanner(cards: chat.viewModel.pendingConfirmations, open: openCardRoom)
                 }
                 // 核心重建了本地代理时换上新的凭据。
-                PluginPage(title: page.title, url: page.url, home: home.viewModel) { self.page = nil }
+                PluginPage(
+                    title: page.title,
+                    url: page.url,
+                    home: home.viewModel,
+                    takeover: page.toolsOf.map {
+                        PageTakeover(pluginId: $0, current: plugins.viewModel.takeover, send: plugins.send)
+                    }
+                ) { self.page = nil }
             }
         }
         .modifier(ChatDialogs(model: chat))
@@ -150,8 +157,8 @@ private struct MainView: View {
         switch entry {
         case let .chat(botUserId):
             if chat.openDirectChat(with: botUserId, from: tab) { tab = .chat }
-        case let .web(url, title):
-            page = OpenedPage(title: title, url: url)
+        case let .web(url, title, toolsOf):
+            page = OpenedPage(title: title, url: url, toolsOf: toolsOf)
         }
     }
 }
@@ -159,6 +166,7 @@ private struct MainView: View {
 private struct OpenedPage: Identifiable {
     let title: String
     let url: URL
+    let toolsOf: String?
 
     var id: URL { url }
 }

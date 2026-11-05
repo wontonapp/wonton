@@ -77,6 +77,7 @@ impl ClientCore {
             }
             Action::AppBackgrounded => {
                 self.home.backgrounded();
+                self.plugins.backgrounded();
                 Ok(())
             }
             Action::NetworkChanged { network } => {
@@ -565,6 +566,14 @@ impl ClientCore {
             Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
             Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
+            Action::StartTakeover { id } => {
+                self.plugins.start_takeover(id);
+                Ok(())
+            }
+            Action::EndTakeover { id } => {
+                self.plugins.end_takeover(&id);
+                Ok(())
+            }
             Action::RefreshEgressProxy => {
                 self.plugins.refresh_egress();
                 Ok(())

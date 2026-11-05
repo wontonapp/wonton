@@ -84,8 +84,8 @@ sealed interface PluginEntry {
     /** 和插件的 Bot 的私聊。 */
     data class Chat(val botUserId: String) : PluginEntry
 
-    /** 插件网页，全屏打开就是小程序。 */
-    data class Web(val url: String, val title: String) : PluginEntry
+    /** 插件网页，全屏打开就是小程序。[toolsOf] 是声明了工具的插件，标题栏上才有“我来操作”。 */
+    data class Web(val url: String, val title: String, val toolsOf: String? = null) : PluginEntry
 }
 
 /** 打开它的方式，第一种是点图标时用的。都没有时点开看详情。 */
@@ -93,7 +93,7 @@ val InstalledPlugin.entries: List<PluginEntry>
     get() = buildList {
         val bot = botUserId
         if (kind == PluginKind.AGENT && bot != null) add(PluginEntry.Chat(bot))
-        webUrl?.let { add(PluginEntry.Web(it, title)) }
+        webUrl?.let { add(PluginEntry.Web(it, title, id.takeIf { declaresTools })) }
     }
 
 val InstalledPlugin.isBusy: Boolean

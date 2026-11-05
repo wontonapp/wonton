@@ -243,6 +243,7 @@ struct PluginPage: View {
     let title: String
     let url: URL
     let home: HomeViewModel
+    var takeover: PageTakeover?
     let close: () -> Void
     @State private var started = false
     @State private var failures = 0
@@ -272,13 +273,20 @@ struct PluginPage: View {
                     .ignoresSafeArea(edges: .bottom)
                 }
                 if !started || failures > 0 { cover }
+                if let takeover {
+                    TakeoverNotice(takeover: takeover).frame(maxHeight: .infinity, alignment: .top)
+                }
             }
             .navigationTitle(home.notice?.sentence ?? title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button("关闭", action: close)
+                if let takeover {
+                    ToolbarItem(placement: .topBarLeading) { TakeoverButton(takeover: takeover) }
+                }
+                ToolbarItem(placement: .topBarTrailing) { Button("关闭", action: close) }
             }
         }
+        .onDisappear { takeover?.end() }
         .onChange(of: isConnected, initial: true) { _, connected in
             guard connected else { return }
             started = true

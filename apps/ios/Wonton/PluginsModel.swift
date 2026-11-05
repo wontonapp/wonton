@@ -84,8 +84,8 @@ struct UndecodableImage: Error {
 enum PluginEntry {
     /// 和插件的 Bot 的私聊。
     case chat(botUserId: String)
-    /// 插件网页，全屏打开就是小程序。
-    case web(url: URL, title: String)
+    /// 插件网页，全屏打开就是小程序。`toolsOf` 是声明了工具的插件，标题栏上才有“我来操作”。
+    case web(url: URL, title: String, toolsOf: String?)
 }
 
 extension InstalledPlugin {
@@ -93,7 +93,9 @@ extension InstalledPlugin {
     var entries: [PluginEntry] {
         var entries: [PluginEntry] = []
         if kind == .agent, let bot = botUserId { entries.append(.chat(botUserId: bot)) }
-        if let text = webUrl, let url = URL(string: text) { entries.append(.web(url: url, title: title)) }
+        if let text = webUrl, let url = URL(string: text) {
+            entries.append(.web(url: url, title: title, toolsOf: declaresTools ? id : nil))
+        }
         return entries
     }
 

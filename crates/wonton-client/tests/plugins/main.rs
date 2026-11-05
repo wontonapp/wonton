@@ -4,6 +4,7 @@ mod connection;
 mod core_upgrade;
 mod egress;
 mod rig;
+mod takeover;
 mod tool_policy;
 
 use std::time::{Duration, Instant};

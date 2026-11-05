@@ -277,6 +277,17 @@ impl CoreApi {
             .await
     }
 
+    /// 响应是空的。
+    pub(super) async fn put_unit(
+        &self,
+        segments: &[&str],
+        timeout: Duration,
+    ) -> Result<(), PluginProblem> {
+        self.send(Method::PUT, self.url(segments, &[]), None, timeout)
+            .await
+            .map(drop)
+    }
+
     pub(super) async fn delete(
         &self,
         segments: &[&str],
@@ -350,6 +361,7 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
         Some("device_unavailable") => PluginFailure::DeviceUnavailable,
         Some("conflict") => PluginFailure::Conflict,
+        Some("not_ready") => PluginFailure::Upstream,
         Some("invalid_input") => PluginFailure::Invalid,
         Some("lan_unavailable") => PluginFailure::LanUnavailable,
         Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
