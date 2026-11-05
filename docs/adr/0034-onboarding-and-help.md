@@ -91,12 +91,14 @@ x-wonton:
 
 | 核心接口 | 说明 |
 | --- | --- |
-| `GET /_wonton/api/models/providers` | `list` 的结果，和 `onboarding.providers` 合并出推荐的几家及拿 key 的地址 |
+| `GET /_wonton/api/models/providers` | 按“推荐清单”的白名单规则返回服务商及拿 key 的地址，另带网关里是否已接模型的 `any_configured` |
 | `PUT /_wonton/api/models/providers/{id}` | 请求体 `{"key":…}`，转给 `save`。核心不存 key，也不写进日志和审计 |
 
-错误分开：key 被拒是 `invalid_input`，连不上服务商是 `upstream_unavailable`（页面说明 key 已保存），网关没就绪是 `models_unavailable`。鉴权同上。网关没声明 `providers` 时，这一页直接打开网关的网页。“更多服务商”也打开它。
+错误分开：key 被拒是 `invalid_input`，连不上服务商是 `upstream_unavailable`（页面说明 key 已保存，仍能下一步），网关没就绪是 `models_unavailable`。鉴权同上。
 
-已经接了模型时，这一步自动跳过。
+默认只显示推荐项；其余主流服务商收进“更多服务商”，点开就在原生页面展开，不打开网关网页。只有没有可显示的服务商（`providers` 为 `None` 或空列表）时才用 `web_url` 打开网关网页。过滤和推荐标记在 Rust 核心，两端壳只渲染。
+
+是否已接模型看 `any_configured`，不看可见列表项；清单外的服务商已配置也自动跳过这一步，从应用页返回时同样跳过。
 
 ### 按需求推荐应用
 
@@ -129,12 +131,17 @@ x-wonton:
       "zh": [{ "id": "deepseek", "key_url": "https://platform.deepseek.com/api_keys" }],
       "en": [{ "id": "openrouter", "key_url": "https://openrouter.ai/keys" }]
     },
+    "more_providers": [
+      { "id": "anthropic", "key_url": "https://console.anthropic.com/settings/keys" }
+    ],
     "prompts": [{ "zh": "你能帮我做什么", "en": "What can you help me with" }]
   }
 }
 ```
 
 - `agents`、`needs[].plugins` 只能写同一份索引里的插件，`update.sh` 检查，写错了生成失败。所以 Hermes 也要进官方索引：主人卸掉之后，能从引导和商店装回来。
+- 服务商只列 Wonton 维护的主流白名单：按主人语言选中的 `providers` 推荐项，加上必填的 `more_providers`，两者都只保留网关 `presets` 里存在的 ID。推荐项在前，标为 `recommended: true`，随后是 `more_providers`；各自保持索引顺序，同一 ID 只取首次出现的项，`key_url` 全部来自索引。另一语言独有的推荐不自动加入。取不到索引或没有可读的 `onboarding` 时返回 `Some(空列表)`，不回退到网关全量预设。
+- 用白名单而不识别赞助商：magpie 的 `presets` 是文字表格，没有结构化的赞助商字段；赞助商与 Wonton 无关，在 Wonton 的列表里一律不显示，展开后也没有。不维护赞助商名单，不解析表格小标题。
 - 需求不带图标：图标是 App 打包的白名单（ADR-0026），不发 App 就加不了新的。
 
 ### 教用法：在用的时候教

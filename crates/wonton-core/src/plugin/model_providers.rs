@@ -11,7 +11,7 @@ use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::models::{COMMAND_TIMEOUT, ModelsRoute, ProviderState};
 use super::provides::{ID_PLACEHOLDER, ProviderCommands};
-use super::storefront::onboarding::OnboardingProvider;
+use super::storefront::onboarding::OnboardingCatalog;
 
 const SAVE_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_KEY_BYTES: usize = 4 << 10;
@@ -37,7 +37,7 @@ impl PluginManager {
             .and_then(|entry| entry.has_webui.then(|| self.web_url(id)))
     }
 
-    /// 列出模型网关支持的服务商，并按官方索引合并推荐项。
+    /// 列出官方索引允许且模型网关支持的服务商。
     pub(crate) async fn model_providers(
         &self,
         langs: &Languages,
@@ -51,9 +51,9 @@ impl PluginManager {
             });
         };
         let listed = self.list_providers(&route, commands).await?;
-        let recommendations = self.provider_recommendations(langs).await;
+        let (index, _) = self.official_index().await;
         let any_configured = !listed.configured.is_empty();
-        let providers = merge_providers(listed, &recommendations);
+        let providers = merge_providers(listed, index.onboarding.as_ref(), langs);
         Ok(ModelProviders {
             providers: Some(providers),
             any_configured,
@@ -150,16 +150,6 @@ impl PluginManager {
             ))
         })
     }
-
-    async fn provider_recommendations(&self, langs: &Languages) -> Vec<OnboardingProvider> {
-        let (index, _) = self.official_index().await;
-        index
-            .onboarding
-            .as_ref()
-            .and_then(|catalog| langs.pick_map(&catalog.providers))
-            .cloned()
-            .unwrap_or_default()
-    }
 }
 
 fn unavailable(message: impl Into<String>) -> InstallError {
@@ -183,43 +173,37 @@ fn replace(args: &[String], placeholder: &str, value: &str) -> Vec<String> {
 
 fn merge_providers(
     listed: ProviderList,
-    recommendations: &[OnboardingProvider],
+    catalog: Option<&OnboardingCatalog>,
+    langs: &Languages,
 ) -> Vec<ModelProvider> {
+    let Some(catalog) = catalog else {
+        return Vec::new();
+    };
+    let recommendations = langs
+        .pick_map(&catalog.providers)
+        .into_iter()
+        .flatten()
+        .map(|provider| (provider, true));
+    let more = catalog
+        .more_providers
+        .iter()
+        .map(|provider| (provider, false));
     let configured: BTreeSet<String> = listed.configured.into_iter().collect();
-    let mut recommended = BTreeSet::new();
+    let mut seen = BTreeSet::new();
     let mut providers = Vec::new();
-    for recommendation in recommendations {
-        let Some(preset) = listed.presets.iter().find(|p| p.id == recommendation.id) else {
+    for (provider, recommended) in recommendations.chain(more) {
+        let Some(preset) = listed.presets.iter().find(|p| p.id == provider.id) else {
             continue;
         };
-        if recommended.insert(preset.id.clone()) {
-            providers.push(model_provider(
-                preset,
-                &configured,
-                Some(recommendation.key_url.clone()),
-                true,
-            ));
-        }
-    }
-    for preset in &listed.presets {
-        if !recommended.contains(&preset.id) {
-            providers.push(model_provider(preset, &configured, None, false));
+        if seen.insert(&preset.id) {
+            providers.push(ModelProvider {
+                id: preset.id.clone(),
+                title: preset.title.clone(),
+                key_url: Some(provider.key_url.clone()),
+                recommended,
+                configured: configured.contains(&preset.id),
+            });
         }
     }
     providers
-}
-
-fn model_provider(
-    preset: &ProviderPreset,
-    configured: &BTreeSet<String>,
-    key_url: Option<String>,
-    recommended: bool,
-) -> ModelProvider {
-    ModelProvider {
-        id: preset.id.clone(),
-        title: preset.title.clone(),
-        key_url,
-        recommended,
-        configured: configured.contains(&preset.id),
-    }
 }

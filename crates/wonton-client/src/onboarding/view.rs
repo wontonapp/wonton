@@ -109,12 +109,10 @@ fn navigation(
         OnboardingStep::Agent => (2, selected.is_some_and(installable)),
         OnboardingStep::Model => (
             3,
-            state.providers.as_ref().is_some_and(|providers| {
-                providers
-                    .providers
-                    .as_ref()
-                    .is_some_and(|items| items.iter().any(|item| item.configured))
-            }),
+            state
+                .providers
+                .as_ref()
+                .is_some_and(|providers| providers.any_configured),
         ),
         OnboardingStep::Apps => (4, true),
         OnboardingStep::Finished | OnboardingStep::Other => return None,

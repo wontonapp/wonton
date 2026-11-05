@@ -362,6 +362,7 @@ mod tests {
                 "providers": {
                     "en": [{"id": "openrouter", "key_url": "https://openrouter.ai/keys"}]
                 },
+                "more_providers": [{"id": "deepseek", "key_url": "https://platform.deepseek.com/api_keys"}],
                 "prompts": [{"zh": "你能帮我做什么", "en": "What can you help me with"}]
             }
         }"#;
@@ -374,7 +375,11 @@ mod tests {
             onboarding.providers["en"][0].key_url,
             "https://openrouter.ai/keys"
         );
-        assert_eq!(onboarding.prompts[0]["en"], "What can you help me with");
+        assert_eq!(onboarding.more_providers[0].id, "deepseek");
+        assert_eq!(
+            onboarding.more_providers[0].key_url,
+            "https://platform.deepseek.com/api_keys"
+        );
         assert_eq!(index.onboarding_problem, None);
     }
 
@@ -398,6 +403,7 @@ mod tests {
                         "future_provider": true
                     }]
                 },
+                "more_providers": [],
                 "prompts": [{"en": "What can you help me with"}],
                 "future_catalog": true
             }
@@ -419,6 +425,19 @@ mod tests {
         }"#;
 
         let index = Index::parse(json.as_bytes()).unwrap();
+        assert_eq!(index.onboarding, None);
+        assert!(index.onboarding_problem.is_some());
+    }
+
+    #[test]
+    fn missing_more_providers_rejects_only_the_onboarding_catalog() {
+        let json = br#"{
+            "format": 1,
+            "plugins": [],
+            "onboarding": {"agents": [], "needs": [], "providers": {}, "prompts": []}
+        }"#;
+
+        let index = Index::parse(json).unwrap();
         assert_eq!(index.onboarding, None);
         assert!(index.onboarding_problem.is_some());
     }

@@ -262,13 +262,15 @@ async fn onboarding_routes(
         });
     }
     if path.starts_with("/_wonton/api/models/providers/") && method == Method::PUT {
-        if let Some(providers) = core.providers.lock().unwrap().as_mut()
-            && let Some(items) = providers
+        if let Some(providers) = core.providers.lock().unwrap().as_mut() {
+            providers["any_configured"] = serde_json::Value::Bool(true);
+            if let Some(items) = providers
                 .get_mut("providers")
                 .and_then(|items| items.as_array_mut())
-        {
-            for provider in items {
-                provider["configured"] = serde_json::Value::Bool(true);
+            {
+                for provider in items {
+                    provider["configured"] = serde_json::Value::Bool(true);
+                }
             }
         }
         return Some(StatusCode::OK.into_response());

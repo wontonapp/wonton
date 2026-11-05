@@ -220,10 +220,7 @@ impl OnboardingLink {
         }
         match result {
             Ok(providers) => {
-                let configured = providers
-                    .providers
-                    .as_ref()
-                    .is_some_and(|items| items.iter().any(|item| item.configured));
+                let configured = providers.any_configured;
                 lock(&self.state).providers = Some(providers);
                 self.publish();
                 if configured {
@@ -564,6 +561,9 @@ impl OnboardingLink {
                     let LocalState {
                         providers, saving, ..
                     } = &mut *state;
+                    if let Some(providers) = providers.as_mut() {
+                        providers.any_configured = true;
+                    }
                     if let Some(items) = providers
                         .as_mut()
                         .and_then(|providers| providers.providers.as_mut())

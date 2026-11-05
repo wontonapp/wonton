@@ -31,6 +31,7 @@ fn onboarding(step: &str) -> serde_json::Value {
 
 fn providers(configured: bool) -> serde_json::Value {
     serde_json::json!({
+        "any_configured": configured,
         "providers": [{
             "id": "openai",
             "title": "OpenAI",
@@ -139,6 +140,7 @@ async fn providers_none_is_kept_and_catalog_problem_can_be_skipped() {
     rig.core.set_onboarding(model);
     rig.core.set_providers(serde_json::json!({
         "providers": null,
+        "any_configured": false,
         "web_url": "https://example.invalid/models"
     }));
     rig.connected().await;
@@ -208,34 +210,57 @@ async fn provider_errors_remain_distinct_and_fetch_failure_keeps_model() {
             ModelProviderFailure::TransportUnavailable,
         ),
     ] {
-        let rig = model_rig().await;
-        rig.core
-            .answer(Method::PUT, "/_wonton/api/models/providers/openai", error);
-        rig.app
-            .dispatch(Action::SaveModelProviderKey {
-                id: "openai".to_owned(),
-                key: SecretString::new("secret"),
-            })
-            .unwrap();
-        let view = rig
-            .wait_onboarding(|view| view.model.problem.is_some() && view.model.saving.is_none())
-            .await;
-        let nav = view.nav.unwrap();
-        assert!(nav.can_back && nav.can_skip);
-        assert_eq!(
-            nav.can_next,
-            expected == ModelProviderFailure::ProviderUnreachable
-        );
-        assert_eq!(view.step, Some(OnboardingStep::Model));
-        assert_eq!(view.model.problem.unwrap().reason, expected);
-        if expected == ModelProviderFailure::ProviderUnreachable {
+        let saved = expected == ModelProviderFailure::ProviderUnreachable;
+        for refresh in 0..if saved { 4 } else { 1 } {
+            let rig = model_rig().await;
+            rig.core.answer(
+                Method::PUT,
+                "/_wonton/api/models/providers/openai",
+                error.clone(),
+            );
+            if refresh == 1 {
+                rig.core.answer(
+                    Method::GET,
+                    "/_wonton/api/models/providers",
+                    core_error(503, "models_unavailable", "网关没好"),
+                );
+            } else if refresh >= 2 {
+                let mut filtered = providers(false);
+                filtered["providers"] = if refresh == 2 {
+                    serde_json::json!([])
+                } else {
+                    serde_json::Value::Null
+                };
+                rig.core.set_providers(filtered);
+            }
             rig.app
-                .dispatch(Action::DismissModelProviderProblem)
+                .dispatch(Action::SaveModelProviderKey {
+                    id: "openai".to_owned(),
+                    key: SecretString::new("secret"),
+                })
                 .unwrap();
-            assert!(rig.app.onboarding().nav.unwrap().can_next);
-            rig.app.dispatch(Action::ContinueOnboarding).unwrap();
-            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+            let view = rig
+                .wait_onboarding(|view| view.model.problem.is_some() && view.model.saving.is_none())
                 .await;
+            let nav = view.nav.unwrap();
+            assert!(nav.can_back && nav.can_skip);
+            assert_eq!(nav.can_next, saved);
+            assert_eq!(view.step, Some(OnboardingStep::Model));
+            assert_eq!(view.model.problem.unwrap().reason, expected);
+            if saved {
+                assert!(view.model.providers.unwrap().any_configured);
+                if refresh == 0 {
+                    rig.app
+                        .dispatch(Action::DismissModelProviderProblem)
+                        .unwrap();
+                    assert!(rig.app.onboarding().nav.unwrap().can_next);
+                }
+                rig.app.dispatch(Action::ContinueOnboarding).unwrap();
+                rig.wait_onboarding(|view| {
+                    view.step == Some(OnboardingStep::Apps) && !view.loading
+                })
+                .await;
+            }
         }
     }
 
@@ -677,25 +702,33 @@ async fn back_walks_every_step_without_discarding_choices_or_applied_agent() {
 
 #[tokio::test]
 async fn back_skips_configured_models_in_reverse_even_after_reopening() {
-    let mut rig = Rig::new().await;
-    rig.core.set_onboarding(onboarding("model"));
-    rig.core.set_providers(providers(true));
-    rig.connected().await;
-    rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
-        .await;
-    for reopen in [false, true] {
-        if reopen {
-            rig.app.dispatch(Action::ContinueOnboarding).unwrap();
-            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+    for visible in [providers(false)["providers"].clone(), serde_json::json!([])] {
+        let mut rig = Rig::new().await;
+        rig.core.set_onboarding(onboarding("model"));
+        let mut configured = providers(true);
+        configured["providers"] = visible;
+        rig.core.set_providers(configured);
+        rig.connected().await;
+        rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+            .await;
+        for reopen in [false, true] {
+            if reopen {
+                rig.app.dispatch(Action::ContinueOnboarding).unwrap();
+                rig.wait_onboarding(|view| {
+                    view.step == Some(OnboardingStep::Apps) && !view.loading
+                })
                 .await;
-            rig.reopen();
-            rig.connected().await;
-            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+                rig.reopen();
+                rig.connected().await;
+                rig.wait_onboarding(|view| {
+                    view.step == Some(OnboardingStep::Apps) && !view.loading
+                })
+                .await;
+            }
+            rig.app.dispatch(Action::BackOnboardingStep).unwrap();
+            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Agent) && !view.loading)
                 .await;
         }
-        rig.app.dispatch(Action::BackOnboardingStep).unwrap();
-        rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Agent) && !view.loading)
-            .await;
     }
 }
 

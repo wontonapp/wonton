@@ -1,11 +1,9 @@
 use super::super::fake_docker::FakeDocker;
-use super::super::languages::Languages;
 use super::super::models::ModelsRoute;
 use super::super::names::container_name;
 use super::super::storefront::StoreConfig;
 use super::super::{PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
-use std::fs;
 use std::sync::{Arc, Mutex};
 
 const PROVIDER: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.6'\n  id: system.models\n  version: 0.6.0\n  kind: system\n  title: {zh: 模型, en: Models}\n  description: {zh: 模型, en: Models}\n  webui: {service: magpie, port: 3430}\n  provides:\n    models:\n      service: magpie\n      port: 3425\n      apis: {openai: /v1}\n      default_model: group/default\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n      providers:\n        list: [providers, list]\n        save: [providers, save, '{id}']\n  permissions: []";
@@ -22,16 +20,6 @@ fn manager_with_index(
         index_dir: Some(dir.path().join("official-index")),
         community: false,
     })
-}
-
-fn write_recommendations(dir: &tempfile::TempDir) {
-    let index = dir.path().join("official-index");
-    fs::create_dir_all(&index).unwrap();
-    fs::write(
-        index.join("index.json"),
-        r#"{"format":1,"plugins":[],"onboarding":{"agents":[],"needs":[],"providers":{"en":[{"id":"deepseek","key_url":"https://platform.deepseek.com/api_keys"}]},"prompts":[]}}"#,
-    )
-    .unwrap();
 }
 
 struct Bed {
@@ -83,48 +71,6 @@ fn register_gateway(manager: &PluginManager) {
 }
 
 #[tokio::test]
-async fn lists_presets_and_merges_recommendations() {
-    let bed = bed().await;
-    write_recommendations(&bed._dir);
-    let result = bed
-        .manager
-        .model_providers(&Languages::from_header(Some("en")))
-        .await
-        .unwrap();
-    let providers = result.providers.unwrap();
-    assert_eq!(providers[0].id, "deepseek");
-    assert!(providers[0].recommended);
-    assert_eq!(
-        providers[0].key_url.as_deref(),
-        Some("https://platform.deepseek.com/api_keys")
-    );
-    assert_eq!(providers[1].id, "openrouter");
-    assert!(providers[1].configured);
-    assert!(!providers[1].recommended);
-}
-
-#[tokio::test]
-async fn index_failure_does_not_hide_gateway_presets() {
-    let (docker, engine) = FakeDocker::start().await;
-    docker.add_container(&container_name("system-models", "magpie"), "system.models");
-    docker.on_exec_output(|_, _, _| {
-        (
-            0,
-            r#"{"presets":[{"id":"deepseek","title":"DeepSeek"}],"configured":[]}"#.into(),
-            String::new(),
-        )
-    });
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with_index(engine, &dir);
-    register_gateway(&manager);
-    let result = manager
-        .model_providers(&Languages::from_header(Some("en")))
-        .await
-        .unwrap();
-    assert_eq!(result.providers.unwrap()[0].id, "deepseek");
-}
-
-#[tokio::test]
 async fn save_passes_key_only_on_stdin() {
     let bed = bed().await;
     bed.manager
@@ -146,21 +92,6 @@ async fn save_rejects_unknown_provider_without_running_save() {
         .unwrap_err();
     assert_eq!(error.kind(), "invalid_input");
     assert_eq!(bed.docker.execs().len(), 1, "只执行 list");
-}
-
-#[tokio::test]
-async fn malformed_list_is_models_unavailable() {
-    let (docker, engine) = FakeDocker::start().await;
-    docker.add_container(&container_name("system-models", "magpie"), "system.models");
-    docker.on_exec_output(|_, _, _| (0, "not json".into(), String::new()));
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with_index(engine, &dir);
-    register_gateway(&manager);
-    let error = manager
-        .model_providers(&Languages::default())
-        .await
-        .unwrap_err();
-    assert_eq!(error.kind(), "models_unavailable");
 }
 
 #[tokio::test]

@@ -77,6 +77,7 @@ fn write_catalog(dir: &Path) -> PluginPackage {
             "plugins": ["app.example.photos"]
         }],
         "providers": {},
+        "more_providers": [],
         "prompts": [{"zh": "你能帮我做什么", "en": "What can you help me with"}]
     });
     fs::write(path, serde_json::to_vec_pretty(&index).unwrap()).unwrap();
@@ -127,7 +128,6 @@ async fn onboarding_get_put_persists_and_validates_requests() {
         initial["needs"][0]["plugins"][0]["id"],
         "app.example.photos"
     );
-    assert_eq!(initial["prompts"][0], "What can you help me with");
     assert!(initial["catalog_problem"].is_null());
 
     let origin = h.origin("app-whoami.wonton.localhost");

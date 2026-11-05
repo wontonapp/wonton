@@ -10,6 +10,7 @@ pub struct OnboardingCatalog {
     pub agents: Vec<String>,
     pub needs: Vec<OnboardingNeed>,
     pub providers: BTreeMap<String, Vec<OnboardingProvider>>,
+    pub more_providers: Vec<OnboardingProvider>,
     pub prompts: Vec<LocalizedText>,
 }
 
