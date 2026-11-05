@@ -7,7 +7,7 @@ use tokio::net::UnixListener;
 use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
 use super::super::manifest::{Permission, PluginId};
-use super::super::package::PluginPackage;
+use super::super::package::{PackageError, PluginPackage};
 use super::manager::{manager_in_container, manager_with};
 use super::package;
 
@@ -21,6 +21,48 @@ fn host_webui(port: u16) -> String {
             "  webui: {{service: web, port: {port}, sso: none}}\n  permissions: [network.host]"
         ),
     )
+}
+
+#[test]
+fn reserved_relay_service_names_are_rejected() {
+    for host in [true, false] {
+        for name in ["relay-webui", "relay-mcp"] {
+            let services = format!("{HOST_WEBUI}  {name}:\n    image: nginx\n");
+            let yaml = package(
+                &services,
+                "  webui: {service: web, port: 8123, sso: none}\n  \
+                 mcp: {service: web, port: 9000, transport: streamable-http}\n  \
+                 permissions: [network.host]",
+            );
+            let yaml = if host {
+                yaml
+            } else {
+                yaml.replace("    network_mode: host\n", "")
+                    .replace("[network.host]", "[]")
+            };
+            let error = PluginPackage::parse(&yaml).unwrap_err();
+            assert!(
+                matches!(&error, PackageError::Service { service, .. } if service == name),
+                "{name}, host={host}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn relay_service_name_prefixes_are_not_reserved() {
+    let yaml = package(
+        &format!(
+            "{HOST_WEBUI}  relay-webui-custom:\n    image: nginx\n  \
+             relay-mcp-custom:\n    image: nginx\n"
+        ),
+        "  webui: {service: web, port: 8123, sso: none}\n  \
+         mcp: {service: web, port: 9000, transport: streamable-http}\n  \
+         permissions: [network.host]",
+    );
+    let plan = super::super::render::dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
+    let names: std::collections::BTreeSet<_> = plan.containers.iter().map(|c| &c.name).collect();
+    assert_eq!(names.len(), plan.containers.len());
 }
 
 /// 当前空着的回环端口：直连探测打的是宿主上的这个端口，测试结果不受本机其他服务影响。

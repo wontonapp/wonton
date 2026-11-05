@@ -493,6 +493,12 @@ fn check_top_level_keys(top: &Map<String, Value>) -> Result<(), PackageError> {
 
 /// 服务名同时用作网络别名和容器名的一部分，限制为小写 DNS 安全字符。
 fn check_service_name(name: &str) -> Result<(), PackageError> {
+    if matches!(name, "relay-webui" | "relay-mcp") {
+        return Err(PackageError::Service {
+            service: name.to_owned(),
+            message: "核心中继的保留服务名，插件不能使用".to_owned(),
+        });
+    }
     let valid = !name.is_empty()
         && name.len() <= 63
         && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
