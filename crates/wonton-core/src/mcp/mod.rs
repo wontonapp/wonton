@@ -14,6 +14,7 @@ mod naming;
 mod notifier;
 mod save_tools;
 mod server;
+mod takeover;
 mod tool_policy;
 pub mod upstream;
 mod windows;
@@ -34,14 +35,16 @@ use wonton_protocol::{ConfirmationState, FileFailure};
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::help::Help;
+use crate::plugin::tool_policy::Clearance;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
-use audit::{Audit, AuditedFile, Basis, Decision, Record};
+use audit::{Audit, AuditedFile, Basis, Decision, Grounds, Record};
 use cards::Draft;
 pub use cards::content as card_content;
 pub use confirm::{AnswerError, Confirmations, Notifier};
 pub use notifier::NoMatrix;
 pub use server::Caller;
+use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
 use upstream::{CallError, UncertainKind, Upstreams};
 
@@ -63,6 +66,7 @@ pub struct Bus {
     confirmations: Arc<Confirmations>,
     upstreams: Arc<Upstreams>,
     audit: Arc<Audit>,
+    takeovers: Takeovers,
     /// 文件服务。它读插件的资源要用这里的 [`Upstreams`]，所以总线先建好，文件服务后接上（[`Bus::attach_files`]）。
     files: OnceLock<Arc<Files>>,
     /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
@@ -137,12 +141,16 @@ async fn forward(
     }
 }
 
-/// 工具结果里给 Agent 看的类别，结果不确定时才有：和工具自己报的错分开，Agent 不该直接重试。
+/// 工具结果里给 Agent 看的类别，结果不确定或者主人在操作时才有：和工具自己报的错分开，Agent 不该直接重试。
 const FAILURE_META: &str = "app.wonton/failure";
 
 fn uncertain(message: &str, kind: UncertainKind) -> CallToolResult {
+    with_failure(message, kind.as_str())
+}
+
+fn with_failure(message: &str, kind: &str) -> CallToolResult {
     let mut result = error(message);
-    let meta = [(FAILURE_META.to_owned(), Value::from(kind.as_str()))];
+    let meta = [(FAILURE_META.to_owned(), Value::from(kind))];
     result.meta = Some(MetaObject(meta.into_iter().collect()));
     result
 }
@@ -173,6 +181,7 @@ impl Bus {
             confirmations,
             upstreams,
             audit,
+            takeovers: Takeovers::new(),
             files: OnceLock::new(),
             help: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
@@ -263,6 +272,7 @@ impl Bus {
             while changes.changed().await.is_ok() {
                 let Some(bus) = bus.upgrade() else { break };
                 bus.upstreams.retain(&bus.plugins.mcp_servers());
+                bus.end_stopped_takeovers();
                 let peers: Vec<_> = bus.peers.lock().expect("会话表锁中毒").clone();
                 let mut alive = Vec::new();
                 for peer in peers {
@@ -358,18 +368,33 @@ impl Bus {
             .as_ref()
             .and_then(|a| a.read_only_hint)
             == Some(true);
-        let basis = if read_only {
+        let policy = self.plugins.tool_policy();
+        let clearance = || policy.clearance(caller.id.as_str(), server.id.as_str(), tool);
+        let not_sensitive = if read_only {
             Some(Basis::PluginReadOnly)
         } else {
-            let clearance =
-                self.plugins
-                    .tool_policy()
-                    .clearance(caller.id.as_str(), server.id.as_str(), tool);
-            clearance.map(Basis::from).or_else(|| {
+            clearance()
+                .filter(|c| *c == Clearance::OwnerReadOnly)
+                .map(Basis::from)
+        };
+        let mut cancelled = std::pin::pin!(cancelled);
+        let (basis, held_ms) = if not_sensitive.is_some() {
+            (not_sensitive, None)
+        } else {
+            let held_ms = match self
+                .hold(caller, name, &args, &server.id, cancelled.as_mut())
+                .await
+            {
+                Ok(held_ms) => held_ms,
+                Err(result) => return result,
+            };
+            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。
+            let cleared = clearance().map(Basis::from).or_else(|| {
                 self.confirmations
                     .allow_in_window(&caller.id, server.id.as_str())
                     .map(Basis::Window)
-            })
+            });
+            (cleared, held_ms)
         };
         if let Some(basis) = basis {
             let outcome = forward(self, caller, server, tool, arguments, cancelled).await;
@@ -378,7 +403,7 @@ impl Bus {
                 name,
                 &args,
                 Decision::Allowed,
-                Some(basis),
+                Some(Grounds { basis, held_ms }),
                 &outcome,
             );
             return outcome.result;
@@ -399,7 +424,8 @@ impl Bus {
             )
             .await
         };
-        self.confirmed(caller, name, args, draft, run).await
+        self.confirmed_after_hold(caller, name, args, draft, run, held_ms)
+            .await
     }
 
     /// 请主人确认，确认了再执行 `run`。整个过程在后台任务里跑：Agent 等不及断开了，确认照样有效到过期，主人确认后
@@ -411,6 +437,24 @@ impl Bus {
         args: Value,
         draft: Draft,
         run: F,
+    ) -> CallToolResult
+    where
+        F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
+        Fut: Future<Output = Outcome> + Send,
+    {
+        self.confirmed_after_hold(caller, name, args, draft, run, None)
+            .await
+    }
+
+    /// `held_ms`：发卡片之前先停住了多久（“我来操作”），写进审计。
+    async fn confirmed_after_hold<F, Fut>(
+        self: &Arc<Self>,
+        caller: &Caller,
+        name: &str,
+        args: Value,
+        draft: Draft,
+        run: F,
+        held_ms: Option<u64>,
     ) -> CallToolResult
     where
         F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
@@ -429,13 +473,16 @@ impl Bus {
                         &name,
                         &args,
                         Decision::Approved,
-                        Some(ticket.window.clone().map_or(Basis::Card, Basis::Window)),
+                        Some(Grounds {
+                            basis: ticket.window.clone().map_or(Basis::Card, Basis::Window),
+                            held_ms,
+                        }),
                         &outcome,
                     );
                     bus.confirmations.finish(ticket, outcome.state).await;
                     outcome.result
                 }
-                Err(refusal) => bus.refused(&caller, &name, &args, &refusal),
+                Err(refusal) => bus.refused(&caller, &name, &args, &refusal, held_ms),
             }
         });
         task.await
@@ -449,6 +496,7 @@ impl Bus {
         name: &str,
         args: &Value,
         refusal: &confirm::Refusal,
+        held_ms: Option<u64>,
     ) -> CallToolResult {
         let decision = match refusal {
             confirm::Refusal::Rejected => Decision::Rejected,
@@ -461,7 +509,10 @@ impl Bus {
             tool: name,
             arguments: args,
             decision,
-            basis: Some(Basis::Card),
+            basis: Some(Grounds {
+                basis: Basis::Card,
+                held_ms,
+            }),
             outcome: Some(&message),
             files: &[],
         });
@@ -487,7 +538,7 @@ impl Bus {
         name: &str,
         args: &Value,
         decision: Decision,
-        basis: Option<Basis>,
+        basis: Option<Grounds>,
         outcome: &Outcome,
     ) {
         let files = &outcome.files;
@@ -517,6 +568,8 @@ mod file_tests;
 mod help_tests;
 #[cfg(test)]
 mod save_tests;
+#[cfg(test)]
+mod takeover_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

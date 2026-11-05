@@ -242,6 +242,39 @@ impl Home {
         (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
     }
 
+    /// 请求“我来操作”的接口。
+    async fn takeover(
+        &self,
+        method: Method,
+        peer: Option<TunnelPeer>,
+        headers: &[(&str, &str)],
+    ) -> (StatusCode, Option<String>) {
+        let mut request = hyper::Request::builder()
+            .method(method)
+            .uri(format!("/_wonton/api/plugins/{NOTES_ID}/takeover"))
+            .header(header::HOST, format!("{CORE}:{}", self.addr.port()));
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let mut request = request.body(Body::empty()).unwrap();
+        if let Some(peer) = peer {
+            request.extensions_mut().insert(peer);
+        }
+        let response = router(self.gateway.clone()).oneshot(request).await.unwrap();
+        let kind = response
+            .headers()
+            .get(ERROR_HEADER)
+            .map(|v| v.to_str().unwrap().to_owned());
+        (response.status(), kind)
+    }
+
+    fn audit(&self) -> Vec<Value> {
+        let text = fs::read_to_string(self._dir.path().join("audit.jsonl")).unwrap_or_default();
+        text.lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
     fn paired_device(&self) -> TunnelPeer {
         let id = SecretKey::generate().public();
         self.gateway.tunnel.devices.add(id, None).unwrap();
@@ -670,4 +703,56 @@ async fn the_owner_opens_and_stops_a_window_through_the_api() {
     home.send(&path, r#"{"answer": "reject"}"#, None, &owner)
         .await;
     third.await.unwrap();
+}
+
+#[tokio::test]
+async fn only_the_owner_can_take_over_and_a_revoked_device_stops_operating() {
+    let home = start(None).await;
+    let (status, _) = home.takeover(Method::PUT, None, &[]).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "没有身份");
+    let peer = home.paired_device();
+    let from_page = [("sec-fetch-site", "same-site")];
+    let (status, _) = home.takeover(Method::PUT, Some(peer), &from_page).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "插件网页经 WebView 发不了");
+    assert!(home.audit().is_empty());
+
+    let (status, _) = home.takeover(Method::PUT, Some(peer), &[]).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let started = home.audit();
+    assert_eq!(started[0]["takeover"], "started");
+    assert_eq!(started[0]["by"], format!("device:{}", peer.0));
+
+    let bearer = format!("Bearer {TOKEN}");
+    let request = hyper::Request::builder()
+        .method(Method::DELETE)
+        .uri(format!("/_wonton/api/devices/{}", peer.0))
+        .header(header::HOST, format!("{CORE}:{}", home.addr.port()))
+        .header(header::AUTHORIZATION, &bearer)
+        .body(Body::empty())
+        .unwrap();
+    let response = router(home.gateway.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let ended = home.audit();
+    assert_eq!(ended[1]["takeover"], "ended");
+    assert_eq!(ended[1]["reason"], "device_revoked");
+}
+
+#[tokio::test]
+async fn a_plugin_that_is_not_running_cannot_be_taken_over() {
+    let home = start(None).await;
+    let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
+    home.gateway.plugins.register_for_test(
+        manifest,
+        PluginStatus::Degraded {
+            reason: "停了".to_owned(),
+        },
+        None,
+    );
+    let bearer = format!("Bearer {TOKEN}");
+    let auth = [("authorization", bearer.as_str())];
+    let (status, kind) = home.takeover(Method::PUT, None, &auth).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(kind.as_deref(), Some("not_ready"));
+    let (status, _) = home.takeover(Method::DELETE, None, &auth).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "交还可以重复发");
 }

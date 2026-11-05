@@ -28,7 +28,7 @@ use crate::plugin::storefront::index::IndexEntry;
 use crate::plugin::{McpServer, PluginId, PluginManager, PluginPackage, PluginStatus};
 
 /// 提供工具的假插件，登记成在运行。
-const NOTES: &str = "name: notes
+pub(super) const NOTES: &str = "name: notes
 services:
   mcp:
     image: example/notes

@@ -94,7 +94,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
     let draft = cards::save_file(&caller.name, &staged.files, &target);
     let ticket = match bus.confirmations.ask(&caller.id, draft).await {
         Ok(ticket) => ticket,
-        Err(refusal) => return bus.refused(caller, &name, &value, &refusal),
+        Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
     };
     let granted = match ticket.answer {
         Answer::ApproveWider => target.share.clone(),
@@ -115,7 +115,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
         &name,
         &audited,
         Decision::Approved,
-        Some(Basis::Card),
+        Some(Basis::Card.into()),
         &outcome,
     );
     bus.confirmations

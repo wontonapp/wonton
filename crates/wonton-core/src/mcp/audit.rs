@@ -58,6 +58,24 @@ impl From<Clearance> for Basis {
     }
 }
 
+/// 放行的依据，先停住过的（“我来操作”）带上停了多久。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Grounds {
+    #[serde(flatten)]
+    pub basis: Basis,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub held_ms: Option<u64>,
+}
+
+impl From<Basis> for Grounds {
+    fn from(basis: Basis) -> Self {
+        Self {
+            basis,
+            held_ms: None,
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct Record<'a> {
     pub caller: &'a str,
@@ -65,7 +83,7 @@ pub struct Record<'a> {
     pub arguments: &'a Value,
     pub decision: Decision,
     #[serde(flatten)]
-    pub basis: Option<Basis>,
+    pub basis: Option<Grounds>,
     /// 执行了的话：`ok` 或者失败的原因。
     pub outcome: Option<&'a str>,
     /// 这次调用碰到的文件（ADR-0020 的“审计”）。
@@ -88,6 +106,18 @@ pub struct WindowRecord<'a> {
     pub allowed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<wonton_protocol::WindowEnd>,
+}
+
+/// “我来操作”开始或结束：一行审计。
+#[derive(Serialize)]
+pub struct TakeoverRecord<'a> {
+    /// `started` 或 `ended`。
+    pub takeover: &'static str,
+    pub plugin: &'a str,
+    /// 开始操作的，或者最后走的那个：`device:<设备 ID>` 或 `owner_token`。
+    pub by: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<super::takeover::TakeoverEnd>,
 }
 
 /// Agent 自己的工具请主人确认：一行审计（ADR-0035）。

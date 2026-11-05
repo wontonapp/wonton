@@ -42,6 +42,10 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
             "/_wonton/api/plugins/{id}/tool-policy/read-only/{tool}",
             put(tool_policy::read_only).delete(tool_policy::read_only),
         )
+        .route(
+            "/_wonton/api/plugins/{id}/takeover",
+            put(tool_policy::takeover).delete(tool_policy::takeover),
+        )
 }
 
 pub fn routes(gateway: Arc<Gateway>) -> Router {

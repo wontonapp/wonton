@@ -154,3 +154,30 @@ pub async fn read_only(
     };
     apply(granted, change, &method).await
 }
+
+/// `PUT`、`DELETE /_wonton/api/plugins/{id}/takeover`：开始或续约、结束“我来操作”。
+pub async fn takeover(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    method: Method,
+    Path(id): Path<String>,
+) -> Response {
+    let granted = match granted(&gateway, peer, &headers, &id) {
+        Ok(granted) => granted,
+        Err(response) => return *response,
+    };
+    let bus = &granted.mcp.bus;
+    if method == Method::DELETE {
+        bus.end_takeover(&granted.plugin, &granted.by);
+    } else if bus.serves_tools(&granted.plugin) {
+        bus.renew_takeover(&granted.plugin, &granted.by);
+    } else {
+        return error_response(
+            StatusCode::CONFLICT,
+            "not_ready",
+            "这个插件没有在运行，或者没有声明工具",
+        );
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
