@@ -107,18 +107,82 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
     let again = m.preview_install(&photos(ICON), &english()).await.unwrap();
     assert!(again.blocked.unwrap().contains("已经装了"));
 
-    let host = package("  web:\n    image: nginx", "  permissions: [network.host]");
+    let host = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
+        "  permissions: [network.host]",
+    );
     let host = PluginPackage::parse(&host).unwrap();
     let preview = m.preview_install(&host, &english()).await.unwrap();
-    assert_eq!(
-        preview.blocked.as_deref(),
-        Some("核心还不支持权限 network.host")
-    );
+    assert_eq!(preview.blocked, None);
     assert_eq!(
         preview.permissions[0].risk,
         Some(wonton_protocol::PermissionRisk::VeryHigh)
     );
-    assert!(!preview.permissions[0].supported);
+    assert!(preview.permissions[0].supported);
+}
+
+#[tokio::test]
+async fn privilege_previews_use_adr_notices_in_both_languages() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    let host = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
+        "  permissions: [network.host]",
+    );
+    let host = PluginPackage::parse(&host).unwrap();
+    let zh = m
+        .preview_install(&host, &Languages::from_header(Some("zh")))
+        .await
+        .unwrap();
+    let zh_notice = zh
+        .permissions
+        .iter()
+        .find(|line| line.permission == "network.host")
+        .and_then(|line| line.notice.as_deref());
+    assert_eq!(
+        zh_notice,
+        Some(
+            "这个插件能直接访问你家里的网络和本机所有端口，包括只给本机用的服务，也能绕过 Wonton 的登录连到部分其他插件。它开的端口会出现在本机所有网卡上，包括 Wi-Fi、Tailscale 和 IPv6 地址，本机有公网地址时互联网也能连上。本机开着防火墙时，局域网设备连不进来，要你自己放行。"
+        )
+    );
+
+    let en = m
+        .preview_install(&host, &Languages::from_header(Some("en-US")))
+        .await
+        .unwrap();
+    let en_notice = en
+        .permissions
+        .iter()
+        .find(|line| line.permission == "network.host")
+        .and_then(|line| line.notice.as_deref());
+    assert_eq!(
+        en_notice,
+        Some(
+            "This plugin can directly access your home network and all ports on this machine, including services bound only to localhost, and bypass Wonton login to connect to some other plugins. Its ports will appear on all network interfaces, including Wi-Fi, Tailscale, and IPv6 addresses; if this machine has a public address, the internet can reach them too. If the machine firewall is on, LAN devices cannot connect until you allow them yourself."
+        )
+    );
+
+    let socket = package(
+        "  web:\n    image: nginx\n    volumes: ['/var/run/docker.sock:/var/run/docker.sock']",
+        "  permissions: [docker.socket]",
+    );
+    let socket = PluginPackage::parse(&socket).unwrap();
+    let highest = m
+        .preview_install(&socket, &Languages::from_header(Some("en-US")))
+        .await
+        .unwrap();
+    let highest_notice = highest
+        .permissions
+        .iter()
+        .find(|line| line.permission == "docker.socket")
+        .and_then(|line| line.notice.as_deref());
+    assert_eq!(
+        highest_notice,
+        Some(
+            "This plugin can control the entire host: read and write all files and other plugins' data, change or stop Wonton itself. This is equivalent to giving it root on the host. Only install plugins you trust. After uninstalling, containers it created and things it changed will not be cleaned up."
+        )
+    );
 }
 
 #[tokio::test]

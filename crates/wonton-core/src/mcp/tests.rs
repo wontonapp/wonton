@@ -640,7 +640,7 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
     for (id, reason) in [
         ("app.example.journal", "已经装了"),
         ("app.example.nope", "官方索引里没有"),
-        ("app.example.root", "核心还不支持权限 docker.socket"),
+        ("app.example.root", "docker.sock 挂载"),
     ] {
         let result = s.call("wonton__install_plugin", json!({"id": id})).await;
         assert!(

@@ -422,6 +422,9 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         bot_key,
     );
     let services = package.services(|name| vars.get(name))?;
+    if let Err(error) = super::privileges::validate_services(manifest, &services) {
+        return Err(service_err(&error.service, error.message));
+    }
     if let Some((service, bot_service)) = vars.plugin_service_on_bot(&services) {
         return Err(service_err(
             &service,
@@ -457,6 +460,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             read_only_shares: &read_only_shares,
             named: package.named_volumes(),
             service: &name,
+            allow_docker_socket: manifest.permissions.contains(&Permission::DockerSocket),
         }
         .build(&service.volumes, &mut binds)?;
         let targets = mount_targets(service, &mounts);
@@ -471,7 +475,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             lan::publish(&name, service, grant, &mut plan.body)?;
         }
         if let Some(vars) = ctx.egress.as_ref()
-            && service.network_mode != Some(NetworkMode::None)
+            && service.network_mode.is_none()
         {
             vars.inject(&mut plan.body, services.keys().map(String::as_str));
             egress::healthcheck::apply(&mut plan.body);
@@ -599,17 +603,15 @@ fn container_plan(
         .into_iter()
         .map(|(dep, cond)| (ctx.instance.container(&ctx.slug, &dep), cond))
         .collect();
-    // 没有网络的服务不接插件网络。
-    let networking_config =
-        (service.network_mode != Some(NetworkMode::None)).then(|| NetworkingConfig {
-            endpoints_config: Some(HashMap::from([(
-                network.to_owned(),
-                EndpointSettings {
-                    aliases: Some(aliases),
-                    ..Default::default()
-                },
-            )])),
-        });
+    let networking_config = service.network_mode.is_none().then(|| NetworkingConfig {
+        endpoints_config: Some(HashMap::from([(
+            network.to_owned(),
+            EndpointSettings {
+                aliases: Some(aliases),
+                ..Default::default()
+            },
+        )])),
+    });
     let body = ContainerCreateBody {
         image: Some(service.image.clone()),
         cmd: words(name, service.command.as_ref())?,
@@ -664,9 +666,13 @@ fn host_config(
             })
             .collect()
     });
-    let isolated = service.network_mode == Some(NetworkMode::None);
+    let network_mode = match service.network_mode {
+        Some(NetworkMode::None) => "none",
+        Some(NetworkMode::Host) => "host",
+        None => network,
+    };
     let mut host = HostConfig {
-        network_mode: Some(if isolated { "none" } else { network }.to_owned()),
+        network_mode: Some(network_mode.to_owned()),
         mounts: Some(mounts),
         restart_policy: Some(restart_policy(name, service.restart.as_deref())?),
         init: service.init,
@@ -678,12 +684,14 @@ fn host_config(
             .transpose()
             .map_err(|m| service_err(name, m))?,
         tmpfs,
-        extra_hosts: (!isolated && !ctx.extra_hosts.is_empty()).then(|| ctx.extra_hosts.clone()),
+        extra_hosts: (service.network_mode.is_none() && !ctx.extra_hosts.is_empty())
+            .then(|| ctx.extra_hosts.clone()),
         ..Default::default()
     };
     if let Some(grant) = gpu {
         grant.apply(&mut host);
     }
+    super::privileges::apply(service, &mut host).map_err(|message| service_err(name, message))?;
     Ok(host)
 }
 

@@ -14,15 +14,6 @@ use serde_json::Value;
 pub const FORBIDDEN_SERVICE_KEYS: &[(&str, &str)] = &[
     ("ports", "插件不向宿主暴露端口，网页一律经核心网关访问"),
     ("networks", "插件网络由核心创建和管理"),
-    ("privileged", "特权模式属于高权限，M0 尚未开放"),
-    (
-        "devices",
-        "设备由核心交给服务：显卡申请 devices.gpu 权限、用 x-wonton 的 gpu.services 指定服务；其他设备尚未开放",
-    ),
-    ("cap_add", "增加内核能力属于高权限，M0 尚未开放"),
-    ("security_opt", "修改安全选项属于高权限，M0 尚未开放"),
-    ("pid", "共享宿主进程空间属于高权限"),
-    ("ipc", "共享宿主 IPC 属于高权限"),
     ("container_name", "容器名由核心分配"),
     ("build", "插件只能使用已发布的镜像，不在宿主上构建"),
     (
@@ -41,11 +32,11 @@ pub const FORBIDDEN_TOP_KEYS: &[(&str, &str)] = &[
     ("secrets", "M0 尚不支持 secrets，密钥由核心注入"),
 ];
 
-/// `network_mode` 只接受 `none`（不需要网络的服务，如一次性服务），其余取值的原因。
+/// `network_mode` 接受 `none` 或声明权限后的 `host`，其余取值按原因拒绝。
 pub fn network_mode_refusal(value: &str) -> &'static str {
     match value {
-        "host" => "宿主网络属于高权限（network.host），M0 尚未开放",
-        _ => "network_mode 只接受 none；插件网络由核心创建和管理",
+        "host" => "宿主网络属于高权限（network.host）",
+        _ => "network_mode 只接受 none 或 host；插件网络由核心创建和管理",
     }
 }
 
@@ -281,6 +272,67 @@ pub struct LongConfigRef {
 #[serde(rename_all = "lowercase")]
 pub enum NetworkMode {
     None,
+    Host,
+}
+/// Compose 的固定设备映射。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum DeviceEntry {
+    Short(String),
+    Long(LongDevice),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LongDevice {
+    #[serde(rename = "type", default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub path_on_host: Option<String>,
+    #[serde(default)]
+    pub path_in_container: Option<String>,
+    #[serde(default)]
+    pub permissions: Option<String>,
+    #[serde(default)]
+    pub cgroup_permissions: Option<String>,
+}
+
+impl DeviceEntry {
+    pub fn paths(&self) -> Result<(String, String, String), String> {
+        match self {
+            Self::Short(text) => {
+                let parts: Vec<&str> = text.split(':').collect();
+                let (source, target, permissions) = match parts.as_slice() {
+                    [source, target] => (*source, *target, "rwm"),
+                    [source, target, permissions] => (*source, *target, *permissions),
+                    _ => return Err(format!("设备映射 `{text}` 格式不合法")),
+                };
+                Ok((source.to_owned(), target.to_owned(), permissions.to_owned()))
+            }
+            Self::Long(device) => {
+                let source = device
+                    .source
+                    .clone()
+                    .or_else(|| device.path_on_host.clone())
+                    .ok_or_else(|| "设备映射缺少 source/path_on_host".to_owned())?;
+                let target = device
+                    .target
+                    .clone()
+                    .or_else(|| device.path_in_container.clone())
+                    .ok_or_else(|| "设备映射缺少 target/path_in_container".to_owned())?;
+                let permissions = device
+                    .permissions
+                    .clone()
+                    .or_else(|| device.cgroup_permissions.clone())
+                    .unwrap_or_else(|| "rwm".to_owned());
+                Ok((source, target, permissions))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -339,6 +391,18 @@ pub struct Service {
     pub pull_policy: PullPolicy,
     #[serde(default)]
     pub network_mode: Option<NetworkMode>,
+    #[serde(default)]
+    pub cap_add: Vec<String>,
+    #[serde(default)]
+    pub devices: Vec<DeviceEntry>,
+    #[serde(default)]
+    pub pid: Option<String>,
+    #[serde(default)]
+    pub ipc: Option<String>,
+    #[serde(default)]
+    pub security_opt: Vec<String>,
+    #[serde(default)]
+    pub privileged: Option<bool>,
 }
 
 /// 去掉对象里 `x-` 开头的扩展字段（compose 规范允许在任意层级出现）。

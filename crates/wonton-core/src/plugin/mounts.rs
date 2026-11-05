@@ -16,6 +16,7 @@ pub(super) struct Mounts<'a> {
     pub read_only_shares: &'a [PathBuf],
     pub named: &'a BTreeSet<String>,
     pub service: &'a str,
+    pub allow_docker_socket: bool,
 }
 
 impl Mounts<'_> {
@@ -88,6 +89,13 @@ impl Mounts<'_> {
                 Some(self.ctx.instance.volume(&self.ctx.slug, &name))
             }
             (VolumeType::Bind, None) => return Err(self.err("绑定挂载缺少 source")),
+            (VolumeType::Bind, Some(path))
+                if self.allow_docker_socket
+                    && path == super::privileges::DOCKER_SOCKET
+                    && volume.target == super::privileges::DOCKER_SOCKET =>
+            {
+                Some(super::privileges::DOCKER_SOCKET.to_owned())
+            }
             (VolumeType::Bind, Some(path)) => {
                 let path = self.check_bind(&path, volume.read_only)?;
                 binds.push((self.service.to_owned(), path.clone()));

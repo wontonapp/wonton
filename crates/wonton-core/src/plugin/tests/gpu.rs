@@ -12,7 +12,6 @@ use super::super::gpu::requirement;
 use super::super::languages::Languages;
 use super::super::manifest::GpuNeed;
 use super::super::names::container_name;
-use super::super::package::PackageError;
 use super::super::render::dry_run;
 use super::super::{PluginManager, PluginPackage};
 use super::manager::{manager_in_container, manager_with};
@@ -209,12 +208,9 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
         let err = parse("", manifest).unwrap_err().to_string();
         assert!(err.contains(needle), "{manifest}: {err}");
     }
-    // 设备由核心决定，compose 里自己写的 devices 仍然拒绝，并指出该怎么写。
-    let err = parse("    devices: ['/dev/kfd:/dev/kfd']", "  permissions: []").unwrap_err();
-    assert!(
-        matches!(&err, PackageError::Service { message, .. } if message.contains("gpu.services")),
-        "{err}"
-    );
+    let package = parse("    devices: ['/dev/kfd:/dev/kfd']", "  permissions: []").unwrap();
+    let err = dry_run(&package).unwrap_err().to_string();
+    assert!(err.contains("设备") || err.contains("固定"), "{err}");
     let ok = parse("", "  gpu: {services: [web]}\n  permissions: [devices.gpu]").unwrap();
     assert_eq!(requirement(&ok.manifest), Some(GpuNeed::Required));
     let optional = parse(

@@ -266,6 +266,14 @@ pub(super) fn supported(permission: &Permission) -> bool {
             | Permission::OwnerIdentity
             | Permission::DevicesGpu
             | Permission::NetworkLan
+            | Permission::NetworkHost
+            | Permission::Capability { .. }
+            | Permission::HostPid
+            | Permission::HostIpc
+            | Permission::SecurityOpt
+            | Permission::Privileged
+            | Permission::Device { .. }
+            | Permission::DockerSocket
     )
 }
 

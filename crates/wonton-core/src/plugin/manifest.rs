@@ -338,6 +338,11 @@ pub enum Permission {
     NetworkEgress,
     NetworkLan,
     NetworkHost,
+    Capability { name: String },
+    HostPid,
+    HostIpc,
+    SecurityOpt,
+    Privileged,
     DevicesGpu,
     Device { path: String },
     DockerSocket,
@@ -350,6 +355,11 @@ impl Permission {
             self,
             Self::NetworkLan
                 | Self::NetworkHost
+                | Self::Capability { .. }
+                | Self::HostPid
+                | Self::HostIpc
+                | Self::SecurityOpt
+                | Self::Privileged
                 | Self::DevicesGpu
                 | Self::Device { .. }
                 | Self::DockerSocket
@@ -379,12 +389,27 @@ impl FromStr for Permission {
             "network.egress" => Some(Self::NetworkEgress),
             "network.lan" => Some(Self::NetworkLan),
             "network.host" => Some(Self::NetworkHost),
+            "host.pid" => Some(Self::HostPid),
+            "host.ipc" => Some(Self::HostIpc),
+            "security.opt" => Some(Self::SecurityOpt),
+            "privileged" => Some(Self::Privileged),
             "devices.gpu" => Some(Self::DevicesGpu),
             "docker.socket" => Some(Self::DockerSocket),
             _ => None,
         };
         if let Some(permission) = simple {
             return Ok(permission);
+        }
+        if let Some(name) = value.strip_prefix("cap.") {
+            let name = name.to_ascii_uppercase();
+            if !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+            {
+                return Ok(Self::Capability { name });
+            }
+            return Err(unknown());
         }
         if let Some(rest) = value.strip_prefix("storage.share.") {
             let (name, access) = rest.split_once(':').ok_or_else(unknown)?;
@@ -431,6 +456,11 @@ impl fmt::Display for Permission {
             Self::NetworkEgress => f.write_str("network.egress"),
             Self::NetworkLan => f.write_str("network.lan"),
             Self::NetworkHost => f.write_str("network.host"),
+            Self::Capability { name } => write!(f, "cap.{name}"),
+            Self::HostPid => f.write_str("host.pid"),
+            Self::HostIpc => f.write_str("host.ipc"),
+            Self::SecurityOpt => f.write_str("security.opt"),
+            Self::Privileged => f.write_str("privileged"),
             Self::DevicesGpu => f.write_str("devices.gpu"),
             Self::Device { path } => write!(f, "devices.{path}"),
             Self::DockerSocket => f.write_str("docker.socket"),
@@ -533,6 +563,7 @@ impl Manifest {
             ));
         }
         validate_bots(self)?;
+        super::privileges::validate_manifest(self)?;
         super::gpu::validate(self)?;
         super::requirements::validate(self)?;
         super::lan::validate(self)?;
@@ -721,8 +752,13 @@ mod tests {
             "network.egress",
             "network.lan",
             "network.host",
+            "cap.NET_ADMIN",
+            "host.pid",
+            "host.ipc",
+            "security.opt",
+            "privileged",
             "devices.gpu",
-            "devices./dev/ttyUSB0",
+            "devices./dev/net/tun",
             "docker.socket",
         ] {
             let permission: Permission = text.parse().unwrap();

@@ -39,6 +39,7 @@ pub mod package;
 pub mod package_archive;
 pub mod package_files;
 pub mod preinstall;
+pub mod privileges;
 pub mod provides;
 pub mod proxy_auth;
 pub mod render;

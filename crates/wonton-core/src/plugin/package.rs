@@ -353,7 +353,8 @@ impl PluginPackage {
         &self,
         vars: impl Fn(&str) -> &'v Vars,
     ) -> Result<BTreeMap<String, Service>, PackageError> {
-        self.services
+        let services: BTreeMap<String, Service> = self
+            .services
             .iter()
             .map(|(name, raw)| {
                 let mut value = raw.clone();
@@ -371,7 +372,8 @@ impl PluginPackage {
                     })?;
                 Ok((name.clone(), service))
             })
-            .collect()
+            .collect::<Result<_, PackageError>>()?;
+        Ok(services)
     }
 
     fn check_manifest_references(&self) -> Result<(), PackageError> {
@@ -508,7 +510,7 @@ fn check_service_keys(name: &str, service: &Value) -> Result<(), PackageError> {
     }
     match map.get("network_mode") {
         None => Ok(()),
-        Some(Value::String(mode)) if mode == "none" => Ok(()),
+        Some(Value::String(mode)) if matches!(mode.as_str(), "none" | "host") => Ok(()),
         Some(other) => {
             let mode = other
                 .as_str()
