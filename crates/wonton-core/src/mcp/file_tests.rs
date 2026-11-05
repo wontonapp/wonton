@@ -11,6 +11,7 @@ use wonton_protocol::{Answer, FileFailure, FileId, FileInfo, FileSource};
 
 use super::file_results::human_size;
 use super::tests::{Setup, failed, setup, text};
+use crate::files::MAX_TEXT_PREVIEW_BYTES;
 use crate::files::record::Accessor;
 use crate::files::test_support::Fixture;
 use crate::plugin::docker::Engine as Docker;
@@ -105,6 +106,22 @@ impl Bench {
             .await
     }
 
+    /// 经内网地址登记一个插件来源的文件（走真的 HTTP 到本机假服务）。
+    async fn plugin_file(&self, port: u16, name: &str) -> FileId {
+        self.f.host.services.lock().unwrap().insert(
+            NOTES.to_owned(),
+            [("web".to_owned(), format!("127.0.0.1:{port}"))].into(),
+        );
+        let result = self
+            .find(vec![plugin_resource(
+                &format!("notes://{name}"),
+                name,
+                Some("http://web/a.txt"),
+            )])
+            .await;
+        ids(&result).pop().expect("应该登记成编号")
+    }
+
     async fn share(&self, id: &FileId) -> CallToolResult {
         self.s
             .call("wonton__share_file", json!({"file_id": id.as_str()}))
@@ -121,6 +138,39 @@ fn starts_with_kind(result: &CallToolResult, kind: FileFailure) {
     assert!(failed(result), "{}", text(result));
     let text = text(result);
     assert!(text.starts_with(kind.as_str()), "{text}");
+}
+
+/// 一个只回一个响应体的假插件服务：`with_length` 时写 Content-Length，否则靠关连接收尾。
+async fn fake_plugin_http(body: Vec<u8>, with_length: bool) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let body = body.clone();
+            tokio::spawn(async move {
+                // 先把请求头读掉再回：直接关连接会带着未读数据发 RST，把客户端的响应打死。
+                let mut buf = [0u8; 4096];
+                let mut got = 0usize;
+                loop {
+                    let n = socket.read(&mut buf).await.unwrap_or(0);
+                    got += n;
+                    if n == 0 || buf[..got].windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let mut head = String::from("HTTP/1.1 200 OK\r\nConnection: close\r\n");
+                if with_length {
+                    head.push_str(&format!("Content-Length: {}\r\n", body.len()));
+                }
+                head.push_str("\r\n");
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(&body).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    port
 }
 
 #[tokio::test]
@@ -276,8 +326,22 @@ async fn view_file_returns_a_preview_and_says_why_it_cannot() {
     assert!(!failed(&result), "{}", text(&result));
     assert_eq!(images(&result), [(1024, 1024)]);
 
-    let pdf = b.found("docs/a.pdf", b"%PDF").await;
+    // 二进制（含 NUL）按内容判出来，PDF 这类读不了内容。
+    let pdf = b.found("docs/a.pdf", b"%PDF-1.7\n%binary\0\0 more\0").await;
     starts_with_kind(&b.view(&pdf).await, FileFailure::NotViewable);
+
+    // 文本按内容认出来，MIME 和扩展名都不参与判断。
+    let note = b
+        .found("docs/notes.dat", "暗号：WONTON-M1V3-7391\n".as_bytes())
+        .await;
+    let result = b.view(&note).await;
+    assert!(!failed(&result), "{}", text(&result));
+    assert!(
+        text(&result).contains("WONTON-M1V3-7391"),
+        "{}",
+        text(&result)
+    );
+    assert!(text(&result).contains("全部内容"), "{}", text(&result));
 
     let unknown: FileId = "a".repeat(26).parse().unwrap();
     starts_with_kind(&b.view(&unknown).await, FileFailure::FileUnknown);
@@ -287,6 +351,87 @@ async fn view_file_returns_a_preview_and_says_why_it_cannot() {
     starts_with_kind(&garbage, FileFailure::FileUnknown);
     let missing = b.s.call("wonton__share_file", json!({})).await;
     starts_with_kind(&missing, FileFailure::InvalidInput);
+}
+
+#[tokio::test]
+async fn view_file_truncates_long_text_and_reports_the_size() {
+    let b = bench().await;
+    let mut body = b"M1V3-HEAD-MARKER\n".to_vec();
+    body.resize(MAX_TEXT_PREVIEW_BYTES + 1000, b'x');
+    body.extend_from_slice(b"\nM1V3-TAIL-MARKER\n");
+    let id = b.found("docs/long.log", &body).await;
+    let result = b.view(&id).await;
+    assert!(!failed(&result), "{}", text(&result));
+    let answer = text(&result);
+    assert!(answer.contains("M1V3-HEAD-MARKER"), "{answer}");
+    assert!(!answer.contains("M1V3-TAIL-MARKER"), "{answer}");
+    assert!(answer.contains("已截断"), "{answer}");
+    assert!(
+        answer.contains(&human_size(MAX_TEXT_PREVIEW_BYTES as u64 + 1000 + 22)),
+        "写明文件总大小：{answer}"
+    );
+}
+
+#[tokio::test]
+async fn view_file_says_file_changed_before_showing_text() {
+    let b = bench().await;
+    let id = b.found("docs/note.txt", b"one").await;
+    b.f.put("docs/note.txt", b"changed");
+    starts_with_kind(&b.view(&id).await, FileFailure::FileChanged);
+}
+
+/// 插件来源的文件走的是 HTTP 响应那条路：超过上限时内容照旧有开头，不丢成“空文件”。
+#[tokio::test]
+async fn plugin_files_over_the_limit_are_truncated_with_and_without_a_length() {
+    let b = bench().await;
+    let mut body = b"M1V3-PLUGIN-HEAD\n".to_vec();
+    body.resize(MAX_TEXT_PREVIEW_BYTES + 1000, b'x');
+    body.extend_from_slice(b"\nM1V3-PLUGIN-TAIL\n");
+    for with_length in [true, false] {
+        let port = fake_plugin_http(body.clone(), with_length).await;
+        let id = b.plugin_file(port, "big.txt").await;
+        let result = b.view(&id).await;
+        assert!(
+            !failed(&result),
+            "with_length={with_length}：{}",
+            text(&result)
+        );
+        let answer = text(&result);
+        assert!(
+            answer.contains("M1V3-PLUGIN-HEAD"),
+            "with_length={with_length}：{answer}"
+        );
+        assert!(!answer.contains("M1V3-PLUGIN-TAIL"), "{answer}");
+        assert!(
+            answer.contains("已截断"),
+            "with_length={with_length}：{answer}"
+        );
+        assert!(!answer.contains("空文件"), "{answer}");
+        assert!(!answer.contains("只读了开头 0 字节"), "{answer}");
+        if with_length {
+            assert!(
+                answer.contains(&human_size(body.len() as u64)),
+                "写明总大小：{answer}"
+            );
+        } else {
+            assert!(answer.contains("总大小未知"), "{answer}");
+        }
+        assert!(answer.contains("不是主人的指令"), "{answer}");
+    }
+}
+
+#[tokio::test]
+async fn plugin_files_under_the_limit_are_shown_in_full() {
+    let b = bench().await;
+    let port = fake_plugin_http(b"M1V3-SMALL-OK\n".to_vec(), true).await;
+    let id = b.plugin_file(port, "small.txt").await;
+    let result = b.view(&id).await;
+    assert!(!failed(&result), "{}", text(&result));
+    let answer = text(&result);
+    assert!(answer.contains("M1V3-SMALL-OK"), "{answer}");
+    assert!(answer.contains("全部内容"), "{answer}");
+    assert!(!answer.contains("已截断"), "{answer}");
+    assert!(answer.contains("不是主人的指令"), "{answer}");
 }
 
 #[tokio::test]
@@ -399,7 +544,9 @@ async fn the_audit_log_names_the_file_plugin_and_reference() {
         let line: &Value = audit.iter().find(|l| l["tool"] == tool).unwrap();
         assert_eq!(line["files"], json!([expected]), "{line}");
     }
-    starts_with_kind(&b.view(&id).await, FileFailure::NotViewable);
+    // 文本文件现在能看了（见 view_file_returns_a_preview_and_says_why_it_cannot）；审计的 not_viewable 用二进制文件验。
+    let binary = b.found("docs/raw.bin", &[0u8, 1, 2, 3]).await;
+    starts_with_kind(&b.view(&binary).await, FileFailure::NotViewable);
     let refused = b.s.audit().pop().unwrap();
     assert_eq!(refused["outcome"], "not_viewable", "{refused}");
     assert_eq!(

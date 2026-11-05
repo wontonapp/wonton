@@ -210,7 +210,7 @@ fn hint(previewed: bool) -> String {
         ""
     };
     format!(
-        "{preview}看图片调 wonton__view_file，发给主人调 wonton__share_file（参数都是 file_id），把返回的链接原样放进回复。"
+        "{preview}看图片、读文本文件内容调 wonton__view_file，发给主人调 wonton__share_file（参数都是 file_id），把返回的链接原样放进回复。"
     )
 }
 

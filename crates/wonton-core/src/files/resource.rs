@@ -188,6 +188,32 @@ pub async fn read_limited(
     }
 }
 
+/// 读响应的开头，攒够 `limit` 字节就停下（连接就此丢弃，不把整个文件读进内存）。
+/// 逐帧攒：超限的内容一帧都不再多收，`read_limited` 那种“超限返回空”的语义对预览是假话。
+/// 中途断了和 `/content` 一样算插件不可用。
+pub async fn read_upto(response: Response<Body>, limit: usize) -> Result<Vec<u8>, Failure> {
+    use http_body_util::BodyExt;
+    let mut body = response.into_body();
+    let mut out = Vec::new();
+    while out.len() < limit {
+        let Some(frame) = body.frame().await else {
+            break;
+        };
+        let frame = frame.map_err(|e| {
+            Failure::new(
+                FileFailure::PluginUnavailable,
+                format!("读插件的响应失败：{e}"),
+            )
+        })?;
+        let Some(data) = frame.data_ref() else {
+            continue;
+        };
+        let take = (limit - out.len()).min(data.len());
+        out.extend_from_slice(&data[..take]);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

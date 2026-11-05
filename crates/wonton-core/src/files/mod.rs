@@ -48,6 +48,8 @@ use slots::{PluginSlot, PluginSlots};
 
 /// `resources/read` 最多读这么多（插件规范）。
 pub const MAX_RESOURCE_BYTES: usize = 32 << 20;
+/// `wonton__view_file` 的文本分支最多读这么多字节：只看开头，不把整个文件读进内存。
+pub const MAX_TEXT_PREVIEW_BYTES: usize = 64 << 10;
 /// 拿到名额以后，读做缩略图的原文件最多这么久。
 const THUMBNAIL_READ_TIMEOUT: Duration = Duration::from_secs(90);
 // 里面的 `resources/read` 要先超时，那次超时才算到插件头上（`Upstreams::timed_out`）；它前面等名额的时间有自己的期限和错误。
@@ -173,6 +175,24 @@ pub enum Content {
 
 /// 审计的结果：文件删了，目录没能确认落盘，断电后可能回来。
 pub const DELETED_UNSYNCED: &str = "ok_unsynced";
+
+/// 文本预览的结果（[`Files::text_preview`]）：开头的内容和截断信息。
+pub struct TextHead {
+    pub content: String,
+    /// 文件总大小；拿不到时为空，结果里如实说未知。
+    pub total: Option<u64>,
+    /// 实际读到的字节数。
+    pub read: usize,
+    pub truncated: bool,
+}
+
+/// [`Files::read_head`] 的中间结果；名额跟着读走，读完才还。
+struct HeadRead {
+    bytes: Vec<u8>,
+    total: Option<u64>,
+    truncated: bool,
+    slot: ThumbnailSlot,
+}
 
 /// 审计日志的一行（`core/audit.jsonl`）。
 #[derive(Debug, Serialize)]
@@ -383,6 +403,112 @@ impl Files {
     /// 缩略图：长边 800 像素的 JPEG，不带原文件的元数据，在单独的进程里解码。
     pub async fn thumbnail(&self, record: &FileRecord) -> Result<Vec<u8>, Failure> {
         self.scaled(record, Scale::Thumbnail).await
+    }
+
+    /// 文本文件的开头（`wonton__view_file` 的文本分支）：最多读 [`MAX_TEXT_PREVIEW_BYTES`] 字节，按内容判断是不是文本——
+    /// 能按 UTF-8 解、没有 NUL 字节才算，不只看 MIME；截断边界上剩下的半个多字节字符不算数。PDF 等其他二进制返回
+    /// `not_viewable`，这类读不了内容。访问范围和 file_changed 由调用方的 `for_bot` 把过；读取名额和期限沿用缩略图那套。
+    pub async fn text_preview(&self, record: &FileRecord) -> Result<TextHead, Failure> {
+        let not_text = |why: String| Failure::new(FileFailure::NotViewable, why);
+        let reading = self.thumbnail_slot(&record.origin).await?;
+        let read =
+            tokio::time::timeout(self.thumbnail_read_timeout, self.read_head(record, reading))
+                .await
+                .map_err(|_| {
+                    thumbnail_read_timed_out(&record.origin, self.thumbnail_read_timeout)
+                })??;
+        // 名额跟着读走，读完了就还；文本不用解码进程。
+        drop(read.slot);
+        if read.bytes.contains(&0) {
+            return Err(not_text(format!(
+                "{} 不是文本文件（内容里有 NUL 字节），读不了内容：PDF 等二进制文件这类只能下载或分享。",
+                record.name
+            )));
+        }
+        // 先按整段判断是不是文本：只有截断边界上的半个字符不算数，中间解不开就是二进制。
+        if let Err(error) = std::str::from_utf8(&read.bytes) {
+            let tail = read.bytes.len() - error.valid_up_to();
+            if !(read.truncated && tail < 4) {
+                return Err(not_text(format!(
+                    "{} 不是文本文件：内容解不成 UTF-8，读不了内容。PDF 等二进制文件这类只能下载或分享。",
+                    record.name
+                )));
+            }
+        }
+        // 内容最多上限字节；跨在边界上的那个多字节字符不完整，按替换字符算。
+        let shown = &read.bytes[..read.bytes.len().min(MAX_TEXT_PREVIEW_BYTES)];
+        let content = String::from_utf8_lossy(shown).into_owned();
+        Ok(TextHead {
+            content,
+            total: read.total,
+            read: shown.len(),
+            truncated: read.truncated,
+        })
+    }
+
+    /// 开头 [`MAX_TEXT_PREVIEW_BYTES`] 字节和截断信息。读 `上限+1` 个字节：读满就是截断，内容截到上限。
+    /// 本地文件只读这么多；插件的流攒够就停，不往下拉。
+    async fn read_head(
+        &self,
+        record: &FileRecord,
+        reading: ThumbnailSlot,
+    ) -> Result<HeadRead, Failure> {
+        if let Origin::Share { reference } | Origin::Upload { reference, .. } = &record.origin {
+            let shares = self.shares.clone();
+            let reference = reference.clone();
+            let bytes = tokio::task::spawn_blocking(move || {
+                let opened = shares.open(&reference)?;
+                let total = opened.snapshot.size;
+                let mut file = opened.file.take(MAX_TEXT_PREVIEW_BYTES as u64 + 1);
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes)
+                    .map_err(|e| Failure::internal(format!("读文件失败：{e}")))?;
+                Ok::<_, Failure>((bytes, total))
+            })
+            .await
+            .map_err(|e| Failure::internal(format!("读文件的任务中止：{e}")))??;
+            let (bytes, total) = bytes;
+            return Ok(HeadRead {
+                truncated: bytes.len() > MAX_TEXT_PREVIEW_BYTES,
+                bytes,
+                total: Some(total),
+                slot: reading,
+            });
+        }
+        let content = self.content(record, RemoteRequest::whole()).await?;
+        match content {
+            Content::Remote(response) => {
+                // 有 Content-Length 或声明大小时如实报总大小；都没有就如实说未知。
+                let total = response
+                    .headers()
+                    .get(hyper::header::CONTENT_LENGTH)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse().ok())
+                    .or(record.declared_size);
+                let bytes = resource::read_upto(response, MAX_TEXT_PREVIEW_BYTES + 1).await?;
+                Ok(HeadRead {
+                    truncated: bytes.len() > MAX_TEXT_PREVIEW_BYTES,
+                    bytes,
+                    total,
+                    slot: reading,
+                })
+            }
+            Content::Bytes(bytes) => {
+                // 这条路（MCP resources/read）本来就整读进来了：截断标记按全长算，这里只留下头一段。
+                let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
+                let mut bytes = bytes;
+                bytes.truncate(MAX_TEXT_PREVIEW_BYTES + 1);
+                Ok(HeadRead {
+                    truncated,
+                    bytes,
+                    total: record.declared_size,
+                    slot: reading,
+                })
+            }
+            Content::File(_) | Content::Unread { .. } => {
+                Err(Failure::internal("插件的资源读出来不该是文件句柄或未读"))
+            }
+        }
     }
 
     /// 缩小的图片，名额和期限在 [`Self::thumbnail`] 和 [`Self::preview`] 之间共用。
