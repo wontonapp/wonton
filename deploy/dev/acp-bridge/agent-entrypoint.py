@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import json
 import os
 import signal
 import socket
@@ -50,6 +51,26 @@ async def relay(client: socket.socket, process: asyncio.subprocess.Process) -> N
         task.result()
 
 
+def configure_model() -> None:
+    # OMP 不读取 OPENAI_BASE_URL/OPENAI_MODEL；密钥只引用环境变量名。
+    model = os.environ["OPENAI_MODEL"]
+    base_url = os.environ["OPENAI_BASE_URL"]
+    if not model.strip() or not base_url.strip() or not os.environ["OPENAI_API_KEY"].strip():
+        raise ValueError("OPENAI_MODEL、OPENAI_BASE_URL 和 OPENAI_API_KEY 不能为空")
+    directory = AGENT_HOME / ".omp" / "agent"
+    directory.mkdir(parents=True, exist_ok=True)
+    provider = {
+        "baseUrl": base_url,
+        "api": "openai-completions",
+        "apiKey": "OPENAI_API_KEY",
+        "models": [{"id": model}],
+    }
+    (directory / "models.yml").write_text(json.dumps({"providers": {"wonton": provider}}))
+    selector = f"wonton/{model}"
+    settings = {"modelRoles": {role: selector for role in ("default", "smol", "slow", "plan")}}
+    (directory / "config.yml").write_text(json.dumps(settings))
+
+
 async def main() -> None:
     own_tree(AGENT_HOME.parent)
     own_tree(WORKSPACE)
@@ -58,6 +79,7 @@ async def main() -> None:
         os.setgroups([])
         os.setgid(AGENT_GID)
         os.setuid(AGENT_UID)
+    configure_model()
     try:
         SOCKET.unlink()
     except FileNotFoundError:

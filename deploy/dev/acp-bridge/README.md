@@ -46,6 +46,8 @@ docker compose -f deploy/dev/acp-bridge/docker-compose.yml up -d
 
 `WONTON_MCP_URL` 默认使用核心插件网络里的 `mcp.wonton.internal`。模型请求由 Agent 直接访问 `WONTON_MODEL_BASE_URL`；本样例不提供宿主端口转发、不绕过防火墙，也不把 Matrix 令牌或 bridge 数据目录挂给 Agent。
 
+OMP 18.16 不读取 `OPENAI_BASE_URL` 和 `OPENAI_MODEL`。入口脚本将这三个模型变量转成它的 `models.yml` 和 `config.yml`，并把 default、smol、slow、plan 角色固定到选定的 Wonton 模型；这两个文件由样例管理。模型凭据只以 `OPENAI_API_KEY` 环境变量名引用，不把值写进配置。
+
 `WONTON_ACP_MODE` 默认 `plan`，是 OMP 在 `session/new` 之后切过去的只读模式。换 Agent 时填该 Agent 实测过的最严格模式。`WONTON_ACP_TURN_SECONDS`、`WONTON_ACP_IDLE_SECONDS`、`WONTON_ACP_MAX_INPUT_BYTES`、`WONTON_ACP_MAX_OUTPUT_BYTES`、`WONTON_ACP_MAX_QUEUE` 可改单轮时限、空闲关闭时限和输入输出/队列上限。
 
 聊天里普通文字排队执行；`/wonton interrupt <文字>` 取消当前轮后重来，`/wonton queue <文字>` 显式排队，`/wonton steer <文字>` 在 Agent 声明 steering 时插话。Agent 请求自身工具权限时，桥经核心的确认卡片接口等主人回答。
@@ -66,4 +68,6 @@ rm -rf "$WONTON_BOT_DATA"
 
 ## 验证边界
 
-模型通路和完整 Wonton 加密私聊冒烟需要真实核心部署环境。npchy 的容器不能访问宿主 magpie 时，按 C2 任务要求记录为未测，不使用 socat、Node 或其他转发绕过。
+真实验收需要可访问的模型网关。改成直连宿主 magpie 时，样例另需声明 `network.egress`，并将 host-gateway 对应的地址或主机名加入 `NO_PROXY` 和 `no_proxy`；否则插件隔离网络没有出站路由，或请求误入 Docker 注入的代理。核心的 Compose 子集不接收 `extra_hosts`，安装包不能依赖这个字段。无法直连时如实报告，不使用端口转发绕过。
+
+加密消息的房间密钥可能晚于事件到达；桥在正文解密后才记入消息去重，避免把同一条普通文字误报为不支持并永久跳过。
