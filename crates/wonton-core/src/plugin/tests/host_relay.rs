@@ -65,6 +65,165 @@ fn relay_service_name_prefixes_are_not_reserved() {
     assert_eq!(names.len(), plan.containers.len());
 }
 
+/// `/proc/net/tcp` 的一行：只关心本地地址、端口和状态。
+fn proc_line(ip_hex: &str, port: u16, state: &str) -> String {
+    format!(
+        "   0: {ip_hex}:{port:04X} 00000000:0000 {state} 00000000:00000000 00:00000000 00000000     0        0 0 1 0000000000000000 100 0 0 10 0\n"
+    )
+}
+
+fn proc_header() -> String {
+    "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n".to_owned()
+}
+
+#[test]
+fn proc_addresses_parse_ipv4_ipv6_and_wildcards() {
+    let parse = super::super::host_relay::parse_proc_ip;
+    assert_eq!(parse("0100007F").unwrap().to_string(), "127.0.0.1");
+    assert_eq!(parse("00000000").unwrap().to_string(), "0.0.0.0");
+    assert_eq!(
+        parse("00000000000000000000000001000000")
+            .unwrap()
+            .to_string(),
+        "::1"
+    );
+    assert_eq!(
+        parse("00000000000000000000000000000000")
+            .unwrap()
+            .to_string(),
+        "::"
+    );
+    assert_eq!(
+        parse("0000000000000000FFFF00000100007F")
+            .unwrap()
+            .to_string(),
+        "127.0.0.1"
+    );
+    assert!(parse("123").is_none());
+}
+
+#[tokio::test]
+async fn a_loopback_only_host_webui_gets_no_firewall_notice() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_in_container(engine, &dir);
+    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    serve(&socket);
+    let port = free_port();
+    docker.on_exec_output(move |container, argv, _| {
+        assert_eq!(container, "wonton-app-test--relay-webui");
+        assert_eq!(argv, ["cat", "/proc/net/tcp", "/proc/net/tcp6"]);
+        (
+            0,
+            format!(
+                "{}{}{}",
+                proc_header(),
+                proc_line("0100007F", port, "0A"),
+                proc_line("00000000000000000000000001000000", port, "0A")
+            ),
+            String::new(),
+        )
+    });
+    m.install(&host_webui(port), &[Permission::NetworkHost])
+        .await
+        .unwrap();
+    let id = PluginId::parse("app.test").unwrap();
+    let detail = m.installed_detail(&id, &Languages::default()).unwrap();
+    assert!(detail.notices.is_empty(), "{:?}", detail.notices);
+}
+
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
+    use crate::plugin::compose::PullPolicy;
+    use crate::plugin::docker::Engine;
+    use bollard::models::{ContainerCreateBody, HostConfig};
+
+    let engine = Engine::connect().unwrap();
+    engine.check_server().await.unwrap();
+    const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing)
+        .await
+        .unwrap();
+    let port = free_port();
+    let name = format!("wonton-priv-377-{}", std::process::id());
+    engine.remove_container(&name).await.unwrap();
+    engine
+        .create_container(
+            &name,
+            ContainerCreateBody {
+                image: Some(IMAGE.to_owned()),
+                cmd: Some(vec![
+                    "sh".to_owned(),
+                    "-c".to_owned(),
+                    format!("nc -l -p {port} -s 127.0.0.1"),
+                ]),
+                host_config: Some(HostConfig {
+                    network_mode: Some("host".to_owned()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    engine.start_container(&name).await.unwrap();
+    let mut probed = None;
+    for _ in 0..100 {
+        probed = super::super::host_relay::listens_beyond_loopback(&engine, &name, port).await;
+        if probed.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    engine.remove_container(&name).await.unwrap();
+    assert_eq!(probed, Some(false));
+}
+
+#[tokio::test]
+async fn a_wildcard_host_webui_still_gets_the_firewall_notice() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_in_container(engine, &dir);
+    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    serve(&socket);
+    let port = free_port();
+    docker.on_exec_output(move |_, _, _| {
+        (
+            0,
+            format!("{}{}", proc_header(), proc_line("00000000", port, "0A")),
+            String::new(),
+        )
+    });
+    m.install(&host_webui(port), &[Permission::NetworkHost])
+        .await
+        .unwrap();
+    let id = PluginId::parse("app.test").unwrap();
+    let detail = m.installed_detail(&id, &Languages::default()).unwrap();
+    let notices: Vec<&str> = detail.notices.iter().map(|n| n.text.as_str()).collect();
+    assert!(
+        notices.contains(&"本机防火墙可能挡住了外来连接，局域网设备可能连不进来"),
+        "{notices:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_listener_does_not_claim_a_firewall() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_in_container(engine, &dir);
+    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    serve(&socket);
+    docker.on_exec_output(move |_, _, _| (0, proc_header(), String::new()));
+    m.install(&host_webui(free_port()), &[Permission::NetworkHost])
+        .await
+        .unwrap();
+    let id = PluginId::parse("app.test").unwrap();
+    let detail = m.installed_detail(&id, &Languages::default()).unwrap();
+    assert!(detail.notices.is_empty(), "{:?}", detail.notices);
+}
+
 /// 当前空着的回环端口：直连探测打的是宿主上的这个端口，测试结果不受本机其他服务影响。
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -142,13 +301,20 @@ fn services_in_the_plugin_network_get_no_relay() {
 
 #[tokio::test]
 async fn installing_a_host_webui_goes_through_the_relay_and_reports_the_firewall() {
-    let (_docker, engine) = FakeDocker::start().await;
+    let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     let socket = dir.path().join("apps/app-test/relay/webui.sock");
     serve(&socket);
 
     let port = free_port();
+    docker.on_exec_output(move |_, _, _| {
+        (
+            0,
+            format!("{}{}", proc_header(), proc_line("00000000", port, "0A")),
+            String::new(),
+        )
+    });
     m.install(&host_webui(port), &[Permission::NetworkHost])
         .await
         .unwrap();

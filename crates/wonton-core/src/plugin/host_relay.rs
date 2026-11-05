@@ -4,12 +4,15 @@
 //! unix 套接字，转发到 `127.0.0.1:<端口>`；unix 套接字不走防火墙，核心直接连文件。
 
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, HostConfig, RestartPolicy, RestartPolicyNameEnum};
 use serde::{Deserialize, Serialize};
 
 use super::compose::{NetworkMode, PullPolicy, Service};
+use super::docker::Engine;
 use super::hostdir::Owner;
 use super::manager::InstallError;
 use super::manifest::Manifest;
@@ -154,10 +157,19 @@ impl super::manager::PluginManager {
         relays: &[HostRelay],
         network: &str,
     ) -> bool {
-        if !relays.iter().any(|r| r.purpose == Purpose::Webui) {
+        let Some(relay) = relays.iter().find(|r| r.purpose == Purpose::Webui) else {
+            return false;
+        };
+        if self.direct_webui_probe(manifest, network).await != Some(true) {
             return false;
         }
-        self.direct_webui_probe(manifest, network).await == Some(true)
+        let Some(webui) = &manifest.webui else {
+            return false;
+        };
+        let name = container(&self.cfg.instance, &manifest.id.slug(), relay);
+        listens_beyond_loopback(&self.engine, &name, webui.port)
+            .await
+            .unwrap_or(false)
     }
 
     /// 不经中继直连宿主网络里的网页：连不上时局域网设备可能也连不进来（本机防火墙）。
@@ -232,5 +244,85 @@ impl super::manager::PluginManager {
             self.engine.start_container(&name).await?;
         }
         Ok(())
+    }
+}
+
+/// 网页端口有没有监听在回环之外。中继和应用在同一个网络命名空间里，读中继看到的监听表；
+/// 读不到（执行失败、没有这个端口的监听）时返回 `None`，不把不确定说成防火墙。
+pub(super) async fn listens_beyond_loopback(
+    engine: &Engine,
+    container: &str,
+    port: u16,
+) -> Option<bool> {
+    let argv = ["cat", "/proc/net/tcp", "/proc/net/tcp6"].map(str::to_owned);
+    let output = match engine
+        .exec_output(container, &argv, None, Duration::from_secs(3))
+        .await
+    {
+        Ok(output) => output,
+        Err(error) => {
+            tracing::warn!(%container, %error, "读不到监听表，不判断防火墙");
+            return None;
+        }
+    };
+    if output.exit_code != 0 {
+        tracing::warn!(
+            %container,
+            stderr = output.stderr.trim(),
+            "读不到监听表，不判断防火墙"
+        );
+        return None;
+    }
+    let mut listening = false;
+    for line in output.stdout.lines().skip(1) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let (Some(local), Some(state)) = (fields.get(1), fields.get(3)) else {
+            continue;
+        };
+        if *state != "0A" {
+            continue;
+        }
+        let Some((ip, port_hex)) = local.rsplit_once(':') else {
+            continue;
+        };
+        if u16::from_str_radix(port_hex, 16).ok() != Some(port) {
+            continue;
+        }
+        let Some(ip) = parse_proc_ip(ip) else {
+            continue;
+        };
+        listening = true;
+        if !ip.is_loopback() {
+            return Some(true);
+        }
+    }
+    if !listening {
+        tracing::warn!(%container, port, "监听表里没有这个端口，不判断防火墙");
+    }
+    listening.then_some(false)
+}
+
+/// `/proc/net/tcp{,6}` 的地址：每个 32 位字按主机字节序写，IPv4 是一个字，IPv6 是四个。
+pub(super) fn parse_proc_ip(hex: &str) -> Option<IpAddr> {
+    fn word(chunk: &str) -> Option<[u8; 4]> {
+        let value = u32::from_str_radix(chunk, 16).ok()?;
+        Some(value.swap_bytes().to_be_bytes())
+    }
+    match hex.len() {
+        8 => Some(IpAddr::V4(Ipv4Addr::from(word(hex)?))),
+        32 => {
+            let mut bytes = [0; 16];
+            for (out, chunk) in bytes
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(hex.as_bytes().chunks(8))
+            {
+                out.copy_from_slice(&word(std::str::from_utf8(chunk).ok()?)?);
+            }
+            let ip = Ipv6Addr::from(bytes);
+            Some(ip.to_ipv4_mapped().map_or(IpAddr::V6(ip), IpAddr::V4))
+        }
+        _ => None,
     }
 }
