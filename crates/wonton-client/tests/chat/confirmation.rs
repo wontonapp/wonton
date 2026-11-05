@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use wonton_client::{
     Action, Answer, ChatFailure, ConfirmationState, ConfirmationView, CoreError, MessageContent,
-    PushContent, PushStatus, RoomMembership, TimelineContent, TimelineItem,
+    PushContent, PushStatus, RoomMembership, TimelineContent, TimelineItem, WindowView,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedEventId, OwnedRoomId, OwnedUserId};
 
@@ -372,6 +372,127 @@ async fn buttons_with_the_same_answer_are_told_apart() {
 }
 
 /// 比这个 App 新的核心写的：多了一个按钮和一个字段，别的按钮照常能点。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_window_shows_until_it_ends_and_the_owner_can_stop_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let (core, room_id) = core_room(&phone, &home).await;
+    let room = core.open_room(&room_id).await.expect("核心打开私聊");
+    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
+    let stop = |id: &str| {
+        phone
+            .dispatch(Action::StopConfirmationWindow { id: id.to_owned() })
+            .unwrap();
+    };
+
+    let until = in_ten_minutes();
+    let posted = send(&room, content(&window_card("open", until, json!(null)))).await;
+    let view = card_view(&mut timeline, "open", "时段生效中").await;
+    assert_eq!(
+        view.window,
+        Some(WindowView::Active {
+            expires_at_ms: until,
+            stopping: false,
+            problem: None,
+        })
+    );
+
+    // 隧道断了：说明原因，时段还在，再点一次就好。
+    home.reply_to_next_answer(502, json!({}));
+    stop("open");
+    let view = until_card(&mut timeline, "open", "没停下来", |view| {
+        matches!(
+            &view.window,
+            Some(WindowView::Active {
+                problem: Some(_),
+                ..
+            })
+        )
+    })
+    .await;
+    let Some(WindowView::Active {
+        problem: Some(problem),
+        ..
+    }) = view.window
+    else {
+        unreachable!()
+    };
+    assert_eq!(problem.reason, ChatFailure::TransportUnavailable);
+
+    // 发出去到回应之间不能再点，连点不会再发一次。
+    home.hold_answers(true);
+    stop("open");
+    until_card(&mut timeline, "open", "正在停", |view| {
+        matches!(
+            view.window,
+            Some(WindowView::Active {
+                stopping: true,
+                problem: None,
+                ..
+            })
+        )
+    })
+    .await;
+    stop("open");
+    home.hold_answers(false);
+
+    // 核心收下了，卡片的编辑还没到，这里已经显示结束；编辑到了换成核心写的放行次数。
+    until_card(&mut timeline, "open", "停了", |view| {
+        matches!(view.window, Some(WindowView::Ended { .. }))
+    })
+    .await;
+    assert_eq!(home.window_stops(), ["open", "open"]);
+    stop("open");
+    assert_eq!(home.window_stops().len(), 2);
+    let mut ended = window_card("open", until, json!("stopped"));
+    ended["window"]["allowed"] = json!(3);
+    edit(&room, &posted, &ended).await;
+    let view = until_card(&mut timeline, "open", "放行次数", |view| {
+        view.card
+            .window
+            .as_ref()
+            .is_some_and(|window| window.allowed == Some(3))
+    })
+    .await;
+    let Some(WindowView::Ended { note }) = view.window else {
+        panic!("时段应该结束了：{:?}", view.window);
+    };
+    assert!(note.contains('3'));
+
+    // 核心说没有这个时段：已经结束了，不是错误。
+    send(&room, content(&window_card("gone", until, json!(null)))).await;
+    card_view(&mut timeline, "gone", "时段生效中").await;
+    home.reply_to_next_answer(
+        404,
+        json!({"error": {"kind": "not_found", "message": "没有"}}),
+    );
+    stop("gone");
+    until_card(&mut timeline, "gone", "已结束", |view| {
+        matches!(view.window, Some(WindowView::Ended { .. }))
+    })
+    .await;
+
+    // 核心停着编辑不了卡片：到期时间到了，这里也显示结束。
+    let soon = now_ms() + 2_000;
+    send(&room, content(&window_card("runs-out", soon, json!(null)))).await;
+    until_card(&mut timeline, "runs-out", "到期", |view| {
+        matches!(view.window, Some(WindowView::Ended { .. }))
+    })
+    .await;
+}
+
+fn window_card(id: &str, expires_at_ms: u64, ended: Value) -> Value {
+    let mut card = card(id, in_ten_minutes());
+    card["state"] = json!({"type": "succeeded", "message": "已执行"});
+    card["choices"] = json!([]);
+    card["window"] = json!({"expires_at_ms": expires_at_ms, "allowed": 0, "ended": ended});
+    card
+}
+
 fn install_card() -> Value {
     let mut install = card("install", in_ten_minutes());
     install["lines"] = json!([

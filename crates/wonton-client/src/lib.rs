@@ -74,5 +74,5 @@ pub use wonton_protocol::{
     TextSizeOption, ThemeColors, ThemeMode, ThemeModeOption, TimelineContent, TimelineDiff,
     TimelineItem, TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry, ToolPolicyView,
     Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpgradeOffer, UploadSource,
+    TransfersViewModel, UpgradeOffer, UploadSource, WindowView,
 };

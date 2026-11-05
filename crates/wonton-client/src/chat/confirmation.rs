@@ -14,8 +14,9 @@ use url::Url;
 use wonton_matrix::{EntryKind, Message, OwnedUserId, TimelineEntry, UserId, Vector};
 use wonton_protocol::{
     Answer, CARD_FIELD, CORE_LOCALPART, ChatFailure, ChatProblem, ConfirmationAnswer,
-    ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, PendingConfirmation,
-    ProxySettings, PushConfirmation, answer_path,
+    ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
+    PendingConfirmation, ProxySettings, PushConfirmation, WindowEnd, WindowView, answer_path,
+    window_path,
 };
 
 use super::login::{ErrorBody, proxy_url};
@@ -25,7 +26,10 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 这台设备回答过的卡片，按卡片 ID。随 App 的进程结束：重启后核心已经把卡片编辑好了，或者期限过了。
 #[derive(Clone, Default)]
-pub(crate) struct Answers(HashMap<String, AnswerProgress>);
+pub(crate) struct Answers {
+    answers: HashMap<String, AnswerProgress>,
+    stops: HashMap<String, StopProgress>,
+}
 
 #[derive(Clone)]
 pub(super) enum AnswerProgress {
@@ -38,11 +42,22 @@ pub(super) enum AnswerProgress {
     Failed(ChatProblem),
 }
 
+/// 主人点了卡片上放行时段的“停止”之后。
+#[derive(Clone)]
+pub(super) enum StopProgress {
+    Sending,
+    Stopped,
+    /// 核心说没有生效中的时段：已经结束了，比如到期或者核心重启过。
+    AlreadyEnded,
+    /// 没送到或者核心出错：可以再点。
+    Failed(ChatProblem),
+}
+
 impl Answers {
     /// 开始回答 `id`。这张卡片在发或者答完了时返回假。
     pub(super) fn start(&mut self, id: &str, answer: Answer, choice_id: Option<String>) -> bool {
-        if matches!(self.0.get(id), None | Some(AnswerProgress::Failed(_))) {
-            self.0
+        if matches!(self.answers.get(id), None | Some(AnswerProgress::Failed(_))) {
+            self.answers
                 .insert(id.to_owned(), AnswerProgress::Sending(answer, choice_id));
             return true;
         }
@@ -50,7 +65,20 @@ impl Answers {
     }
 
     pub(super) fn finish(&mut self, id: String, outcome: AnswerProgress) {
-        self.0.insert(id, outcome);
+        self.answers.insert(id, outcome);
+    }
+
+    /// 开始停止 `id` 打开的时段。在发或者已经停了时返回假。
+    pub(super) fn start_stop(&mut self, id: &str) -> bool {
+        if matches!(self.stops.get(id), None | Some(StopProgress::Failed(_))) {
+            self.stops.insert(id.to_owned(), StopProgress::Sending);
+            return true;
+        }
+        false
+    }
+
+    pub(super) fn finish_stop(&mut self, id: String, outcome: StopProgress) {
+        self.stops.insert(id, outcome);
     }
 }
 
@@ -174,7 +202,7 @@ impl CardsView {
             if self.now_ms >= card.expires_at_ms {
                 card.state = ConfirmationState::Expired;
             }
-            match self.answers.0.get(&card.id) {
+            match self.answers.answers.get(&card.id) {
                 Some(AnswerProgress::Sending(answer, choice_id)) => {
                     sending = Some(*answer);
                     sending_choice_id.clone_from(choice_id);
@@ -197,13 +225,41 @@ impl CardsView {
             sending = None;
             sending_choice_id = None;
         }
+        let window = card
+            .window
+            .as_ref()
+            .map(|window| self.window_view(&card.id, window));
         Some(ConfirmationView {
             card,
             sending,
             sending_choice_id,
             problem,
-            window: None,
+            window,
         })
+    }
+
+    /// 时段以核心编辑后的卡片为准。核心没来得及编辑（比如停着）时，这里知道到期了，也知道自己停过。
+    fn window_view(&self, id: &str, window: &ConfirmationWindow) -> WindowView {
+        let stop = self.answers.stops.get(id);
+        let mut window = window.clone();
+        if window.ended.is_none() {
+            window.ended = match stop {
+                Some(StopProgress::Stopped) => Some(WindowEnd::Stopped),
+                Some(StopProgress::AlreadyEnded) => Some(WindowEnd::Unknown),
+                _ => (self.now_ms >= window.expires_at_ms).then_some(WindowEnd::Expired),
+            };
+        }
+        match window.ended_note() {
+            Some(note) => WindowView::Ended { note },
+            None => WindowView::Active {
+                expires_at_ms: window.expires_at_ms,
+                stopping: matches!(stop, Some(StopProgress::Sending)),
+                problem: match stop {
+                    Some(StopProgress::Failed(problem)) => Some(problem.clone()),
+                    _ => None,
+                },
+            },
+        }
     }
 
     /// `room_id` 的时间线里，卡片现在的情况。
@@ -247,7 +303,7 @@ impl CardsView {
         cards
     }
 
-    /// 还有多久有一张显示着等回答的卡片到期，到时候显示要变。已经到期的是零，尽快刷新。
+    /// 还有多久有一张显示着等回答的卡片或者生效中的时段到期，到时候显示要变。已经到期的是零，尽快刷新。
     pub(super) fn next_expiry(&self, entries: &Vector<TimelineEntry>) -> Option<Duration> {
         let now = now_ms();
         entries
@@ -256,10 +312,17 @@ impl CardsView {
                 EntryKind::Message(message) => self.card(message),
                 _ => None,
             })
-            .filter(|card| {
-                card.state == ConfirmationState::Pending && card.expires_at_ms > self.now_ms
+            .flat_map(|card| {
+                let pending =
+                    (card.state == ConfirmationState::Pending).then_some(card.expires_at_ms);
+                let window = card
+                    .window
+                    .filter(|window| window.ended.is_none())
+                    .map(|window| window.expires_at_ms);
+                pending.into_iter().chain(window)
             })
-            .map(|card| card.expires_at_ms.saturating_sub(now))
+            .filter(|expires_at_ms| *expires_at_ms > self.now_ms)
+            .map(|expires_at_ms| expires_at_ms.saturating_sub(now))
             .min()
             .map(Duration::from_millis)
     }
@@ -270,6 +333,14 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or_default()
+}
+
+/// 走本地代理的客户端，核心凭隧道身份认出这台已配对设备。
+fn tunnel_client(proxy: &ProxySettings) -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .proxy(reqwest::Proxy::all(proxy_url(proxy))?)
+        .timeout(ANSWER_TIMEOUT)
+        .build()
 }
 
 /// `POST <核心地址>/_wonton/confirmations/{id}`：请求走本地代理，核心凭隧道身份认出这台已配对设备。
@@ -289,13 +360,7 @@ pub(super) async fn send_answer(
         Ok(url) => url,
         Err(error) => return failed(ChatFailure::InvalidInput, error.to_string()),
     };
-    let client = reqwest::Proxy::all(proxy_url(proxy)).and_then(|proxy| {
-        reqwest::Client::builder()
-            .proxy(proxy)
-            .timeout(ANSWER_TIMEOUT)
-            .build()
-    });
-    let client = match client {
+    let client = match tunnel_client(proxy) {
         Ok(client) => client,
         Err(error) => return failed(ChatFailure::Upstream, error.to_string()),
     };
@@ -324,6 +389,60 @@ pub(super) async fn send_answer(
     }
 }
 
+/// `DELETE <核心地址>/_wonton/confirmations/{id}/window`。
+pub(super) async fn send_stop(core_url: &Url, proxy: &ProxySettings, id: &str) -> StopProgress {
+    let failed = |reason, message: String| {
+        StopProgress::Failed(ChatProblem {
+            reason,
+            message: format!("没有停下来：{message}"),
+        })
+    };
+    let url = match core_url.join(&window_path(id)) {
+        Ok(url) => url,
+        Err(error) => return failed(ChatFailure::InvalidInput, error.to_string()),
+    };
+    let client = match tunnel_client(proxy) {
+        Ok(client) => client,
+        Err(error) => return failed(ChatFailure::Upstream, error.to_string()),
+    };
+    // 请求可能已经到了核心，只是回应没回来。再点一次是安全的：已经停了的会回 404。
+    let response = match client.delete(url).send().await {
+        Ok(response) => response,
+        Err(error) => {
+            return failed(
+                ChatFailure::TransportUnavailable,
+                format!("没等到家里服务器的回应，可以再点一次（{error}）"),
+            );
+        }
+    };
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        return StopProgress::Stopped;
+    }
+    if status == 404 {
+        return StopProgress::AlreadyEnded;
+    }
+    let body = response.bytes().await.unwrap_or_default();
+    failed(failure_reason(status), error_message(status, &body))
+}
+
+/// 核心的错误响应里的原话。
+fn error_message(status: u16, body: &[u8]) -> String {
+    serde_json::from_slice::<ErrorBody>(body)
+        .map_or_else(|_| format!("核心回了 {status}"), |body| body.error.message)
+}
+
+fn failure_reason(status: u16) -> ChatFailure {
+    match status {
+        401 | 403 => ChatFailure::Unauthorized,
+        400 => ChatFailure::InvalidInput,
+        // 本地代理连不上隧道时回 502，并在 x-wonton-tunnel-error 里写明原因。
+        502 => ChatFailure::TransportUnavailable,
+        503 => ChatFailure::NotReady,
+        _ => ChatFailure::Upstream,
+    }
+}
+
 /// 按核心的回应区分结果。
 fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
     if (200..300).contains(&status) {
@@ -339,10 +458,7 @@ fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
         .ok()
         .map(|body| body.error);
     let kind = detail.as_ref().map(|detail| detail.kind.as_str());
-    let message = detail.as_ref().map_or_else(
-        || format!("核心回了 {status}"),
-        |detail| detail.message.clone(),
-    );
+    let message = error_message(status, body);
     match (status, kind) {
         // 核心说过期了：和卡片被编辑成过期是一回事。
         (409, Some("expired")) => AnswerProgress::Settled(ConfirmationState::Expired),
@@ -351,19 +467,9 @@ fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
             reason: ChatFailure::InvalidInput,
             message,
         }),
-        _ => {
-            let reason = match status {
-                401 | 403 => ChatFailure::Unauthorized,
-                400 => ChatFailure::InvalidInput,
-                // 本地代理连不上隧道时回 502，并在 x-wonton-tunnel-error 里写明原因。
-                502 => ChatFailure::TransportUnavailable,
-                503 => ChatFailure::NotReady,
-                _ => ChatFailure::Upstream,
-            };
-            AnswerProgress::Failed(ChatProblem {
-                reason,
-                message: format!("回答没有成功：{message}"),
-            })
-        }
+        _ => AnswerProgress::Failed(ChatProblem {
+            reason: failure_reason(status),
+            message: format!("回答没有成功：{message}"),
+        }),
     }
 }

@@ -86,7 +86,7 @@ fun MessageMenu(message: TimelineMessage, bubble: Rect, core: ClientCore, onDism
                 content = {
                     // 预览不接受操作，读屏也不再念一遍。
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
-                        BubbleSurface(message, core, false, false, Modifier, {}, {}, { _, _ -> })
+                        BubbleSurface(message, core, false, false, Modifier, {}, {}, {})
                     }
                     MenuSurface(message.actions, onDismiss)
                 },

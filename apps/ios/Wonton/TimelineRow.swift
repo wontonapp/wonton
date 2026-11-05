@@ -13,7 +13,7 @@ struct TimelineRow: View {
     let retry: () -> Void
     let cancel: () -> Void
     /// 回答这张确认卡片。
-    let answer: (String, CardChoice) -> Void
+    let cardAction: (Action) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -21,7 +21,7 @@ struct TimelineRow: View {
         case let .message(message):
             MessageBubble(
                 message: message, core: core, showsSender: showsSender && !joinsPrevious,
-                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel, answer: answer
+                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel, cardAction: cardAction
             )
         case let .notice(text):
             note(Text(text))
@@ -69,7 +69,7 @@ private struct MessageBubble: View {
     let joinsNext: Bool
     let retry: () -> Void
     let cancel: () -> Void
-    let answer: (String, CardChoice) -> Void
+    let cardAction: (Action) -> Void
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
@@ -183,7 +183,13 @@ private struct MessageBubble: View {
         case let .image(image):
             MediaImage(image: image, core: core, sendState: message.sendState)
         case let .confirmation(view):
-            ConfirmationCardView(view: view) { answer(view.card.id, $0) }
+            ConfirmationCardView(
+                view: view,
+                answer: {
+                    cardAction(.answerConfirmation(id: view.card.id, answer: $0.answer, choiceId: $0.choiceId))
+                },
+                stopWindow: { cardAction(.stopConfirmationWindow(id: view.card.id)) }
+            )
         case .undecryptable:
             Label {
                 Text("无法解密：本设备还没有这条消息的密钥")

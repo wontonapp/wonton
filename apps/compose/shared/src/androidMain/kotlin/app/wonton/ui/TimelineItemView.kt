@@ -39,7 +39,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
-import app.wonton.protocol.CardChoice
+import app.wonton.protocol.Action
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.RichBlockKind
 import app.wonton.protocol.SendState
@@ -61,7 +61,7 @@ import java.util.Date
 
 /**
  * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：和上一条、下一条是
- * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onAnswer` 回答确认卡片。
+ * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
  */
 @Composable
 fun TimelineItemView(
@@ -72,7 +72,7 @@ fun TimelineItemView(
     joinsNext: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onAnswer: (String, CardChoice) -> Unit,
+    onCardAction: (Action) -> Unit,
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     when (val content = item.content) {
@@ -84,7 +84,7 @@ fun TimelineItemView(
             joinsNext,
             onRetry,
             onCancel,
-            onAnswer,
+            onCardAction,
             onOpenMenu,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
@@ -144,7 +144,7 @@ private fun MessageBubble(
     joinsNext: Boolean,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onAnswer: (String, CardChoice) -> Unit,
+    onCardAction: (Action) -> Unit,
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     val colors = WontonTheme.colors
@@ -175,7 +175,7 @@ private fun MessageBubble(
         if (showsSender && !isOwn) {
             Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
         }
-        BubbleSurface(message, core, joinsPrevious, joinsNext, pressable, onRetry, onCancel, onAnswer)
+        BubbleSurface(message, core, joinsPrevious, joinsNext, pressable, onRetry, onCancel, onCardAction)
     }
 }
 
@@ -189,7 +189,7 @@ fun BubbleSurface(
     modifier: Modifier,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onAnswer: (String, CardChoice) -> Unit,
+    onCardAction: (Action) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -206,7 +206,7 @@ fun BubbleSurface(
             LocalContentColor provides content.toColor(),
             LocalTextStyle provides WontonTheme.typography.body,
         ) {
-            MessageBody(message.body, core, message.sendState, reserve, onAnswer)
+            MessageBody(message.body, core, message.sendState, reserve, onCardAction)
         }
     }
     val reserve = footerReserve(message)
@@ -312,12 +312,12 @@ private fun MessageBody(
     core: ClientCore,
     sendState: SendState,
     trailingReserve: String?,
-    onAnswer: (String, CardChoice) -> Unit,
+    onCardAction: (Action) -> Unit,
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)
         is MessageContent.Image -> MessageImage(body.image, core, sendState)
-        is MessageContent.Confirmation -> ConfirmationCardView(body.view, onAnswer)
+        is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             Icon(WontonIcon.LockKey, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall))
             Text("无法解密：本设备还没有这条消息的密钥", style = WontonTheme.typography.supporting)

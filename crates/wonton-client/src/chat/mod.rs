@@ -198,6 +198,7 @@ impl ChatLink {
                 answer,
                 choice_id,
             } => self.answer_confirmation(id, answer, choice_id),
+            Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             _ => Err(invalid("不是聊天操作")),
         }
     }
@@ -330,6 +331,27 @@ impl ChatLink {
             let body = ConfirmationAnswer { answer, choice_id };
             let outcome = confirmation::send_answer(&core_url, &proxy, &id, body).await;
             answers.send_modify(|answers| answers.finish(id, outcome));
+        });
+        Ok(())
+    }
+
+    /// 主人点了卡片上放行时段的“停止”：经隧道发给核心，进展放进 `answers`。
+    fn stop_confirmation_window(&self, id: String) -> Result<(), CoreError> {
+        let not_connected = || CoreError::NotReady {
+            reason: "还没连上家里的服务器".to_owned(),
+        };
+        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
+        let core_url = self.home.core_url().ok_or_else(not_connected)?;
+        if !self
+            .answers
+            .send_if_modified(|answers| answers.start_stop(&id))
+        {
+            return Ok(());
+        }
+        let answers = self.answers.clone();
+        self.runtime.spawn(async move {
+            let outcome = confirmation::send_stop(&core_url, &proxy, &id).await;
+            answers.send_modify(|answers| answers.finish_stop(id, outcome));
         });
         Ok(())
     }

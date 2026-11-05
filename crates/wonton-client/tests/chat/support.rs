@@ -53,6 +53,7 @@ struct Core {
     push_requests: Mutex<Vec<(String, Value)>>,
     /// 确认卡片收到的回答：卡片 ID 和请求体。
     answers: Mutex<Vec<(String, Value)>>,
+    window_stops: Mutex<Vec<String>>,
     /// 接下来的回答怎么回；排空了就照常收下。
     answer_replies: Mutex<VecDeque<(u16, Value)>>,
     /// 为真时回答先不回，手机上这时是“正在发”。
@@ -76,6 +77,7 @@ impl Home {
             pushkey: random_hex(32),
             push_requests: Mutex::default(),
             answers: Mutex::default(),
+            window_stops: Mutex::default(),
             answer_replies: Mutex::default(),
             hold_answers: watch::Sender::new(false),
             uploads_paused: watch::Sender::new(false),
@@ -178,7 +180,12 @@ impl Home {
         self.core.answers.lock().unwrap().clone()
     }
 
-    /// 下一个回答这样回。
+    /// 放行时段收到的“停止”：卡片 ID。
+    pub fn window_stops(&self) -> Vec<String> {
+        self.core.window_stops.lock().unwrap().clone()
+    }
+
+    /// 下一个回答或者“停止”这样回。
     pub fn reply_to_next_answer(&self, status: u16, body: Value) {
         self.core
             .answer_replies
@@ -280,7 +287,9 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     if tcp.read_exact(&mut body).await.is_err() {
         return;
     }
-    if text.starts_with("post /_wonton/confirmations/") {
+    if text.starts_with("post /_wonton/confirmations/")
+        || text.starts_with("delete /_wonton/confirmations/")
+    {
         let mut released = core.hold_answers.subscribe();
         released.wait_for(|hold| !hold).await.ok();
     }
@@ -325,6 +334,14 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
             .pop_front()
             .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
         return Some((status, reply.to_string()));
+    }
+    if let Some(rest) = head.strip_prefix("delete /_wonton/confirmations/") {
+        let id = rest.split('/').next().unwrap_or_default().to_owned();
+        core.window_stops.lock().unwrap().push(id);
+        let reply = core.answer_replies.lock().unwrap().pop_front();
+        return Some(reply.map_or((204, String::new()), |(status, reply)| {
+            (status, reply.to_string())
+        }));
     }
     let response = if head.starts_with("post /_wonton/matrix/login-token ") {
         core.login_tokens.fetch_add(1, Ordering::SeqCst);

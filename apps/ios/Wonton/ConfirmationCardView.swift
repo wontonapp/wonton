@@ -5,6 +5,7 @@ import WontonClient
 struct ConfirmationCardView: View {
     let view: ConfirmationView
     let answer: (CardChoice) -> Void
+    let stopWindow: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -17,6 +18,9 @@ struct ConfirmationCardView: View {
                     .foregroundStyle(line.emphasis ? Color(colors.danger) : Color(colors.textPrimary))
             }
             state
+            if let window = view.window {
+                self.window(window)
+            }
             if let problem = view.problem {
                 note(problem.message, icon: .warning, color: colors.danger)
             }
@@ -54,6 +58,34 @@ struct ConfirmationCardView: View {
             Text("已过期，没有执行")
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
+        }
+    }
+
+    @ViewBuilder private func window(_ window: WindowView) -> some View {
+        switch window {
+        case let .ended(note):
+            Text(note)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+        case let .active(expiresAtMs, stopping, problem):
+            let until = Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)
+                .formatted(date: .omitted, time: .shortened)
+            HStack(spacing: WontonTheme.spacing.s8) {
+                Text("放行到 \(until)").wontonText(WontonTheme.typography.supporting)
+                Button {
+                    stopWindow()
+                } label: {
+                    HStack(spacing: WontonTheme.spacing.s8) {
+                        if stopping { ProgressView() }
+                        Text("停止")
+                    }
+                }
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
+                .disabled(stopping)
+            }
+            if let problem {
+                note(problem.message, icon: .warning, color: colors.danger)
+            }
         }
     }
 
