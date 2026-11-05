@@ -131,7 +131,7 @@ impl From<&ImageMessageEventContent> for ImageContent {
 }
 
 /// 房间成员的显示名，用来显示“谁已读”。没有记录的成员显示用户 ID。
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MemberNames(HashMap<OwnedUserId, String>);
 
 impl MemberNames {
@@ -140,10 +140,19 @@ impl MemberNames {
     }
 
     pub(crate) fn name(&self, user: &UserId) -> String {
-        self.0
-            .get(user)
-            .cloned()
-            .unwrap_or_else(|| user.to_string())
+        self.get(user).to_owned()
+    }
+
+    fn get<'a>(&'a self, user: &'a UserId) -> &'a str {
+        self.0.get(user).map_or(user.as_str(), String::as_str)
+    }
+
+    pub(crate) fn affects(&self, event: &EventTimelineItem, next: &Self) -> bool {
+        self.get(event.sender()) != next.get(event.sender())
+            || event
+                .read_receipts()
+                .keys()
+                .any(|user| self.get(user) != next.get(user))
     }
 }
 

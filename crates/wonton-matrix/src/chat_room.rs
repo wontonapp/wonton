@@ -1,10 +1,6 @@
 //! 一个已打开房间的时间线：收发文字和图片（发送失败的可以重发、取消）、按增量观察条目、向前翻页、发已读回执。
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, PoisonError, RwLock, Weak},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use futures_util::{Stream, StreamExt, future, stream};
 use matrix_sdk::{
@@ -18,11 +14,16 @@ use matrix_sdk::{
     send_queue::SendHandle,
 };
 use matrix_sdk_ui::{
-    eyeball_im::VectorDiff,
-    timeline::{AttachmentConfig, AttachmentSource, EventTimelineItem, RoomExt, Timeline},
+    eyeball_im::{Vector, VectorDiff},
+    timeline::{
+        AttachmentConfig, AttachmentSource, EventTimelineItem, RoomExt, Timeline, TimelineItem,
+    },
 };
 use mime::Mime;
-use tokio::{sync::broadcast::error::RecvError, task::JoinHandle};
+use tokio::{
+    sync::{Notify, broadcast::error::RecvError, watch},
+    task::JoinHandle,
+};
 
 use crate::{
     Error, Message, Result,
@@ -77,7 +78,7 @@ pub enum BackPaginationStatus {
 pub struct ChatRoom {
     room: Room,
     timeline: Arc<Timeline>,
-    names: Arc<RwLock<MemberNames>>,
+    names: watch::Receiver<Arc<MemberNames>>,
     /// 房间有更新时在后台刷新显示名；房间关掉时停止。
     refresh: JoinHandle<()>,
     /// 在后台向服务器取全部成员，取到为止，补上时间线里发送者的资料；房间关掉时停止。
@@ -108,9 +109,18 @@ impl ChatRoom {
                 .build()
                 .await?,
         );
-        let names = Arc::new(RwLock::new(local_member_names(&room).await));
-        let refresh = tokio::spawn(refresh_member_names(room.clone(), Arc::downgrade(&names)));
-        let profiles = tokio::spawn(fetch_members_until_done(room.clone(), timeline.clone()));
+        let (names_tx, names) = watch::channel(Arc::new(local_member_names(&room).await));
+        let fetched = Arc::new(Notify::new());
+        let refresh = tokio::spawn(refresh_member_names(
+            room.clone(),
+            names_tx,
+            fetched.clone(),
+        ));
+        let profiles = tokio::spawn(fetch_members_until_done(
+            room.clone(),
+            timeline.clone(),
+            fetched,
+        ));
         Ok(Self {
             room,
             timeline,
@@ -256,22 +266,10 @@ impl ChatRoom {
         &self,
     ) -> (
         Vec<TimelineEntry>,
-        impl Stream<Item = Vec<VectorDiff<TimelineEntry>>> + use<>,
+        impl Stream<Item = Vec<VectorDiff<TimelineEntry>>> + Unpin + use<>,
     ) {
         let (items, diffs) = self.timeline.subscribe().await;
-        let names = self.names.clone();
-        let current = {
-            let names = read(&names);
-            items.iter().map(|item| entry(item, &names)).collect()
-        };
-        let updates = diffs.map(move |batch| {
-            let names = read(&names);
-            batch
-                .into_iter()
-                .map(|diff| diff.map(|item| entry(&item, &names)))
-                .collect()
-        });
-        (current, updates)
+        named_entries(items, diffs, self.names.clone())
     }
 
     /// 当前的消息，从旧到新；成员变化、日期分隔线等不在其中。
@@ -282,7 +280,7 @@ impl ChatRoom {
 
     /// 消息列表流：第一项是当前的消息，之后时间线每次变化给出一份新列表。适合测试和不在乎增量的调用方；
     /// 界面用 [`Self::entries`]。
-    pub async fn message_updates(&self) -> impl Stream<Item = Vec<Message>> + use<> {
+    pub async fn message_updates(&self) -> impl Stream<Item = Vec<Message>> + Unpin + use<> {
         let (entries, diffs) = self.entries().await;
         let current = messages(&entries);
         let updates = diffs.scan(
@@ -368,17 +366,73 @@ fn messages<'a>(entries: impl IntoIterator<Item = &'a TimelineEntry>) -> Vec<Mes
         .collect()
 }
 
-fn read(names: &RwLock<MemberNames>) -> std::sync::RwLockReadGuard<'_, MemberNames> {
-    names.read().unwrap_or_else(PoisonError::into_inner)
+// 原始条目保留发送者 ID；成员资料晚到时，即使 SDK 的 Ready(None) 不再更新，也能按原下标补发 Set。
+fn named_entries(
+    items: Vector<Arc<TimelineItem>>,
+    diffs: impl Stream<Item = Vec<VectorDiff<Arc<TimelineItem>>>>,
+    mut names: watch::Receiver<Arc<MemberNames>>,
+) -> (
+    Vec<TimelineEntry>,
+    impl Stream<Item = Vec<VectorDiff<TimelineEntry>>> + Unpin,
+) {
+    let shown_names = names.borrow_and_update().clone();
+    let current = items.iter().map(|item| entry(item, &shown_names)).collect();
+    let updates = stream::unfold(
+        (items, Box::pin(diffs), names, shown_names),
+        |(mut items, mut diffs, mut names, mut shown_names)| async move {
+            loop {
+                let batch = tokio::select! {
+                    batch = diffs.next() => {
+                        let batch = batch?;
+                        batch.into_iter().map(|diff| {
+                            diff.clone().apply(&mut items);
+                            diff.map(|item| entry(&item, &shown_names))
+                        }).collect::<Vec<_>>()
+                    }
+                    changed = names.changed() => {
+                        changed.ok()?;
+                        let fresh = names.borrow_and_update().clone();
+                        let batch = renamed_entries(&items, &shown_names, &fresh);
+                        shown_names = fresh;
+                        batch
+                    }
+                };
+                if !batch.is_empty() {
+                    return Some((batch, (items, diffs, names, shown_names)));
+                }
+            }
+        },
+    );
+    (current, Box::pin(updates))
 }
 
-/// 后台：房间每有更新（有人加入、改名）就从本机重读一次显示名。
+fn renamed_entries(
+    items: &Vector<Arc<TimelineItem>>,
+    before: &MemberNames,
+    after: &MemberNames,
+) -> Vec<VectorDiff<TimelineEntry>> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let event = item.as_event()?;
+            if !before.affects(event, after) {
+                return None;
+            }
+            let old = entry(item, before);
+            let value = entry(item, after);
+            (old != value).then_some(VectorDiff::Set { index, value })
+        })
+        .collect()
+}
+
 /// `fetch_members` 失败时只把错误记在时间线的条目上，不报告也不重试，要靠 `are_members_synced` 才知道取到没有。房间还没
 /// 加入时它什么也不取，同样直接返回，也算没取到。
-async fn fetch_members_until_done(room: Room, timeline: Arc<Timeline>) {
+async fn fetch_members_until_done(room: Room, timeline: Arc<Timeline>, fetched: Arc<Notify>) {
     let mut delay = FIRST_MEMBERS_RETRY;
     loop {
         timeline.fetch_members().await;
+        fetched.notify_one();
         if room.are_members_synced() {
             return;
         }
@@ -388,16 +442,28 @@ async fn fetch_members_until_done(room: Room, timeline: Arc<Timeline>) {
     }
 }
 
-async fn refresh_member_names(room: Room, names: Weak<RwLock<MemberNames>>) {
+async fn refresh_member_names(
+    room: Room,
+    names: watch::Sender<Arc<MemberNames>>,
+    fetched: Arc<Notify>,
+) {
     let mut updates = room.subscribe_to_updates();
     loop {
-        let Some(names) = names.upgrade() else { return };
         let fresh = local_member_names(&room).await;
-        *names.write().unwrap_or_else(PoisonError::into_inner) = fresh;
-        drop(names);
-        match updates.recv().await {
-            Ok(_) | Err(RecvError::Lagged(_)) => {}
-            Err(RecvError::Closed) => return,
+        names.send_if_modified(|names| {
+            if **names == fresh {
+                return false;
+            }
+            *names = Arc::new(fresh);
+            true
+        });
+        tokio::select! {
+            update = updates.recv() => match update {
+                Ok(_) | Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => return,
+            },
+            () = fetched.notified() => {}
+            () = names.closed() => return,
         }
     }
 }
@@ -421,3 +487,6 @@ async fn local_member_names(room: &Room) -> MemberNames {
             .collect::<HashMap<_, _>>(),
     )
 }
+
+#[cfg(test)]
+mod tests;
