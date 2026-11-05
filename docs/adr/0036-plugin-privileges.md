@@ -1,6 +1,6 @@
 # ADR-0036 插件的高权限：声明了就给，按风险分三级提示，由主人决定
 
-- 状态：已接受（2026-11-04）。方向由主人确认（见“已定”）
+- 状态：已接受（2026-11-04）。方向由主人确认（见“已定”）。最高级“多点一步”在确认卡片上的做法见 [ADR-0038](0038-multi-step-cards.md)：一张卡片两步，不再连发两张
 - 取代：[ADR-0011](0011-security-model.md) “插件权限”里的“host 网络、Docker socket、特权模式一律不开放”和“网络暴露”里“例外有两个”；[ADR-0019](0019-lan-services-for-plugins.md) 的“`network.host` 仍不开放”；[ADR-0006](0006-plugin-system.md) 的“高权限字段在 M0 一律拒绝”；[ADR-0033](0033-plugin-tabs.md) “确认”里“`network.host`、`docker.socket` 规范里对谁都不开放”
 
 ## 背景

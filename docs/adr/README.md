@@ -47,3 +47,4 @@
 | [0035](0035-acp-bridge.md) | ACP 桥：Matrix 与 ACP Agent 的连接形态 |
 | [0036](0036-plugin-privileges.md) | 插件的高权限：声明了就给，按风险分三级提示，由主人决定 |
 | [0037](0037-plugin-resource-limits.md) | 插件的资源限制：闲时不限速，忙时让路，内存和进程数有上限 |
+| [0038](0038-multi-step-cards.md) | 多步卡片：一组问题一步一张，最后一起提交 |
