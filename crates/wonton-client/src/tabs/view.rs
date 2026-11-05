@@ -107,6 +107,7 @@ fn page_from_metadata(
         url,
         layout: normalize_layout(metadata.layout),
         state: state_value,
+        dimmed: false,
         badge,
         display: choice,
         opens_fullscreen: opens_fullscreen(&stored.tab, choice, plugins),
@@ -135,6 +136,7 @@ pub(super) fn page_state(
     }
     match &plugin.status {
         PluginState::Installing => TabState::Starting,
+        PluginState::Stopped => TabState::Unknown,
         PluginState::Running { .. } => TabState::Ready,
         PluginState::Upgrading => TabState::Upgrading,
         PluginState::Uninstalling => TabState::Uninstalling,

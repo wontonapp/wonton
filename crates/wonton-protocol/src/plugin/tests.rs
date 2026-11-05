@@ -334,6 +334,9 @@ fn plugin_actions_round_trip_through_json() {
             languages: vec!["zh-Hans-CN".into(), "en".into()],
         },
         Action::RefreshPlugins,
+        Action::StartPlugin {
+            plugin_id: "app.samba".into(),
+        },
         Action::RefreshStore { force: true },
         Action::InstallPlugin { preview: preview() },
         Action::UpgradePlugin {
@@ -382,6 +385,11 @@ fn wire_format_is_stable() {
         .unwrap(),
         json!({"state": "running", "health": "healthy"})
     );
+    assert_eq!(
+        serde_json::to_value(PluginState::Stopped).unwrap(),
+        json!({"state": "stopped"})
+    );
+    assert_eq!(round_trip(&PluginState::Stopped), PluginState::Stopped);
     assert_eq!(
         serde_json::to_value(PluginState::Degraded { reason: "x".into() }).unwrap(),
         json!({"state": "degraded", "reason": "x"})

@@ -103,7 +103,7 @@ extension InstalledPlugin {
         switch status {
         case .installing, .upgrading, .uninstalling:
             return true
-        case .running, .degraded, .unknown:
+        case .running, .stopped, .degraded, .unknown:
             return false
         }
     }

@@ -115,6 +115,9 @@ pub struct TabPage {
     pub url: Option<String>,
     pub layout: TabLayout,
     pub state: TabState,
+    /// 停止时底栏图标变淡。
+    #[serde(default)]
+    pub dimmed: bool,
     /// 底栏图标上要不要画角标。
     pub badge: bool,
     pub display: TabDisplayChoice,
@@ -151,6 +154,8 @@ pub enum TabState {
     Ready,
     /// 骨架加“正在启动…”。
     Starting,
+    /// 插件已停止；壳显示“已停止”，底栏图标变淡。
+    Stopped,
     /// 已加载的留着，顶部提示。
     Upgrading,
     Uninstalling,
@@ -219,6 +224,7 @@ mod tests {
             url: Some("http://app-example-feed.wonton.localhost:8480/feed".into()),
             layout: TabLayout::EdgeToEdge,
             state,
+            dimmed: true,
             badge: false,
             display: TabDisplayChoice::Fullscreen,
             opens_fullscreen: true,
@@ -229,6 +235,14 @@ mod tests {
             icon: image("/_wonton/api/images/a.png"),
             selected: Some(image("/_wonton/api/images/b.png")),
         };
+        let mut without_dimmed =
+            serde_json::to_value(plugin_page(TabState::Ready, monochrome.clone())).unwrap();
+        without_dimmed.as_object_mut().unwrap().remove("dimmed");
+        assert!(
+            !serde_json::from_value::<TabPage>(without_dimmed)
+                .unwrap()
+                .dimmed
+        );
         let colored = TabIcon::Plugin {
             icon: Some(PluginIcon {
                 small: image("/_wonton/api/images/s.png"),
@@ -244,6 +258,7 @@ mod tests {
             TabState::Loading,
             TabState::Ready,
             TabState::Starting,
+            TabState::Stopped,
             TabState::Upgrading,
             TabState::Uninstalling,
             TabState::Failed {

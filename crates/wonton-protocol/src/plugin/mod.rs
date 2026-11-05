@@ -196,8 +196,10 @@ pub enum PluginState {
     Running {
         health: PluginHealth,
     },
+    /// 所有常驻服务的容器都已退出或尚未启动，不包括一次性服务。
+    Stopped,
     Upgrading,
-    /// 异常：容器停了、健康检查没过、和清单不符等；`reason` 是核心写的原因。
+    /// 异常：部分容器未运行、健康检查没过、和清单不符等；`reason` 是核心写的原因。
     Degraded {
         reason: String,
     },

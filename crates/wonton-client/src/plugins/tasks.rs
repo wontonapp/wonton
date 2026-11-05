@@ -328,8 +328,8 @@ impl PluginsLink {
                                 _ => uncertain(),
                             };
                         }
-                        // 比这个 App 新的核心给的状态，说不准是成了还是败了。
-                        PluginState::Unknown => return uncertain(),
+                        // 容器停止不能证明操作已完成；未知状态也不能算成功。
+                        PluginState::Stopped | PluginState::Unknown => return uncertain(),
                         PluginState::Running { .. } => match outcome {
                             Outcome::Running { version } => {
                                 let done = version

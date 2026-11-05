@@ -110,6 +110,8 @@ pub enum Action {
     SetLanguages { languages: Vec<String> },
     /// 重新取已安装的插件和它们能不能升级。
     RefreshPlugins,
+    /// 启动已停止的插件；已经运行时由核心幂等处理。
+    StartPlugin { plugin_id: String },
     /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
     RefreshStore { force: bool },
     /// 主人在确认页上点了“安装”：按预览安装，授予预览里列出的全部权限。插件包在预览之后变了时失败
