@@ -216,15 +216,28 @@ impl PluginPackage {
             refs.push((field.to_owned(), path));
             Ok::<_, PackageError>(())
         };
+        let mut image_refs = Vec::new();
         if let Some(icon) = &manifest.icon {
+            image_refs.push(("icon".to_owned(), icon.as_str()));
+        }
+        for (index, tab) in manifest
+            .tabs
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            image_refs.extend(tab.icon_refs(index));
+        }
+        for (field, icon) in image_refs {
             // 图标随提交固定，App 也不向第三方取图（ADR-0017），所以不收网址。
             if IconFormat::from_path(icon).is_none() || icon.contains("://") {
                 return Err(PackageError::Reference {
-                    field: "icon".to_owned(),
+                    field,
                     message: format!("`{icon}` 要是插件包里的 PNG 或 SVG 文件"),
                 });
             }
-            add("icon", icon)?;
+            add(&field, icon)?;
         }
         if let Some(settings) = &manifest.settings {
             add("settings", settings)?;

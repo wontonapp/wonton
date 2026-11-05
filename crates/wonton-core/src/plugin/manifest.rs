@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
+use super::manifest_tabs;
+pub use super::manifest_tabs::ManifestTab;
 use super::provides::Provides;
 pub use super::requirements::{Arch, GpuNeed, Requirements};
 use super::store_info::Author;
@@ -153,6 +155,8 @@ pub struct WebUi {
     pub port: u16,
     #[serde(default = "default_web_path")]
     pub path: String,
+    #[serde(default = "default_web_display")]
+    pub display: String,
     #[serde(default)]
     pub sso: Sso,
     #[serde(default)]
@@ -173,6 +177,10 @@ pub struct ProxyCredentials {
 
 fn default_web_path() -> String {
     "/".to_owned()
+}
+
+fn default_web_display() -> String {
+    "standard".to_owned()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -517,6 +525,8 @@ pub struct Manifest {
     #[serde(default)]
     pub webui: Option<WebUi>,
     #[serde(default)]
+    pub tabs: Option<Vec<ManifestTab>>,
+    #[serde(default)]
     pub mcp: Option<McpEndpoint>,
     #[serde(default)]
     pub bot: Option<BotProfile>,
@@ -575,6 +585,7 @@ impl Manifest {
         if let Some(mcp) = &self.mcp {
             validate_mcp(mcp)?;
         }
+        manifest_tabs::validate(self.tabs.as_deref(), self.webui.as_ref())?;
         self.secrets
             .iter()
             .try_for_each(|(n, s)| validate_secret(n, s))
@@ -658,10 +669,8 @@ fn validate_secret(name: &str, spec: &SecretSpec) -> Result<(), ManifestError> {
 }
 
 fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
-    if !webui.path.starts_with('/') {
-        return Err(ManifestError::Invalid(
-            "webui.path 必须以 / 开头".to_owned(),
-        ));
+    if let Some(problem) = manifest_tabs::validate_path("webui.path", &webui.path) {
+        return Err(ManifestError::Invalid(problem));
     }
     if webui.port == 0 {
         return Err(ManifestError::Invalid("webui.port 不能为 0".to_owned()));

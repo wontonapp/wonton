@@ -1,6 +1,7 @@
 //! 管理接口给 App 的视图：已安装列表、详情、安装预览和图标。
-
-use wonton_protocol::{PluginKind, PluginState, PluginTrust};
+use axum::{Router, routing::get};
+use tokio::net::TcpListener;
+use wonton_protocol::{PluginKind, PluginState, PluginTrust, TabDisplay, TabLayout};
 
 use super::super::fake_docker::FakeDocker;
 use super::super::gallery::Variant;
@@ -12,6 +13,8 @@ use super::manager::manager_with;
 use super::package;
 
 pub(super) const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#22aa66"/></svg>"##;
+pub(super) const TAB_ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="#000000"/></svg>"##;
+pub(super) const TAB_ICON_SELECTED: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#000000"/></svg>"##;
 
 fn photos(icon: &str) -> PluginPackage {
     let yaml = package(
@@ -82,6 +85,103 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     assert_eq!(detail.release_notes.as_deref(), Some("First release"));
     assert_eq!(detail.requirements[0].text, "需要 2G 内存");
     assert_eq!(detail.author.unwrap().name, "Example");
+}
+
+#[tokio::test]
+async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/", get(|| async { "ok" }))
+                .route("/home", get(|| async { "ok" })),
+        )
+        .await
+        .unwrap();
+    });
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let yaml = package(
+        "  web:\n    image: nginx:1.27",
+        &format!(
+            "  webui: {{service: web, port: {port}, path: /home, display: fullscreen}}\n  tabs:\n    - id: feed\n      title: {{zh: 动态, en: Feed}}\n      icon: tabs/feed.svg\n      icon_selected: tabs/feed-selected.svg\n      path: /feed\n      layout: edge-to-edge\n      display: fullscreen\n  permissions: []"
+        ),
+    )
+    .replace("id: app.test", "id: app.tabs")
+    .replace("{zh: 测试, en: Test}", "{zh: 标签, en: Tabs}");
+    let tabs_package = PluginPackage::with_files(
+        &yaml,
+        PackageFiles::from([
+            ("tabs/feed.svg".to_owned(), TAB_ICON.as_bytes().to_vec()),
+            (
+                "tabs/feed-selected.svg".to_owned(),
+                TAB_ICON_SELECTED.as_bytes().to_vec(),
+            ),
+        ]),
+    )
+    .unwrap();
+    manager.install_package(tabs_package, &[]).await.unwrap();
+
+    let root_yaml = package(
+        "  web:\n    image: nginx:1.27",
+        &format!("  icon: icon.svg\n  webui: {{service: web, port: {port}}}\n  permissions: []"),
+    )
+    .replace("id: app.test", "id: app.root");
+    let root = PluginPackage::with_files(
+        &root_yaml,
+        PackageFiles::from([("icon.svg".to_owned(), ICON.as_bytes().to_vec())]),
+    )
+    .unwrap();
+    manager.install_package(root, &[]).await.unwrap();
+
+    let english = manager.installed(&Languages::from_header(Some("en-US")));
+    let plugin = english
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == "app.tabs")
+        .unwrap_or_else(|| panic!("{english:?}"));
+    let [tab] = &plugin.tabs[..] else {
+        panic!("{plugin:?}")
+    };
+    assert_eq!(tab.title, "Feed");
+    assert_eq!(tab.path, "/feed");
+    assert_eq!(tab.layout, TabLayout::EdgeToEdge);
+    assert_eq!(tab.display, TabDisplay::Fullscreen);
+    assert_eq!(plugin.web_display, TabDisplay::Fullscreen);
+    assert!(
+        plugin
+            .web_url
+            .as_ref()
+            .is_some_and(|url| url.ends_with("/home"))
+    );
+    let root = english
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == "app.root")
+        .unwrap();
+    assert_eq!(
+        root.web_url.as_deref(),
+        Some("http://app-root.wonton.localhost:8080/")
+    );
+
+    let chinese = manager.installed(&Languages::from_header(Some("zh")));
+    let tabs_plugin = chinese
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == "app.tabs")
+        .unwrap();
+    assert_eq!(tabs_plugin.tabs[0].title, "动态");
+    let sha = sha256_hex(TAB_ICON.as_bytes());
+    assert!(
+        manager
+            .icon_png(&sha, Variant::TabSmall)
+            .await
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[tokio::test]

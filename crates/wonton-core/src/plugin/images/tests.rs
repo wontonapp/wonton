@@ -293,6 +293,56 @@ fn transparent_corners_are_noticed() {
 }
 
 #[test]
+fn tab_icons_use_alpha_for_shape_and_whiten_rgb() {
+    let mut pixels = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 0]));
+    for x in 16..48 {
+        for y in 16..48 {
+            pixels.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+        }
+    }
+    let icon = tab_icon(IconFormat::Png, &encode_png(pixels).unwrap()).unwrap();
+    let rendered = decoded(&icon.large).to_rgba8();
+    assert!(rendered.pixels().any(|pixel| pixel[3] == 0));
+    assert!(rendered.pixels().any(|pixel| pixel[3] > 0));
+    assert!(
+        rendered
+            .pixels()
+            .filter(|pixel| pixel[3] > 0)
+            .all(|pixel| pixel.0[..3] == [255, 255, 255])
+    );
+
+    let mut colors = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 0]));
+    for x in 8..28 {
+        for y in 16..48 {
+            colors.put_pixel(x, y, Rgba([255, 0, 0, 255]));
+        }
+    }
+    for x in 36..56 {
+        for y in 16..48 {
+            colors.put_pixel(x, y, Rgba([0, 0, 255, 255]));
+        }
+    }
+    let icon = tab_icon(IconFormat::Png, &encode_png(colors).unwrap()).unwrap();
+    let rendered = decoded(&icon.large).to_rgba8();
+    assert!(
+        rendered
+            .pixels()
+            .filter(|pixel| pixel[3] > 0)
+            .all(|pixel| pixel.0[..3] == [255, 255, 255])
+    );
+
+    let opaque = png(256, 256, [0, 0, 0, 255]);
+    assert!(
+        tab_icon(IconFormat::Png, &opaque)
+            .unwrap_err()
+            .contains("不能全不透明")
+    );
+    let transparent = png(256, 256, [0, 0, 0, 0]);
+    let error = tab_icon(IconFormat::Png, &transparent).unwrap_err();
+    assert!(error.contains("全透明"), "{error}");
+}
+
+#[test]
 fn screenshots_are_reencoded_as_jpeg_within_1280() {
     let shot = screenshot(&png(2000, 1000, [0, 255, 0, 128])).unwrap();
     assert!(shot.jpeg.starts_with(&[0xff, 0xd8]));

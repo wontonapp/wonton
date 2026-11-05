@@ -51,6 +51,7 @@ pub enum ImageError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Job {
     Icon(IconFormat),
+    TabIcon(IconFormat),
     Screenshot,
     Thumbnail,
     Preview,
@@ -61,6 +62,8 @@ impl Job {
         match self {
             Self::Icon(IconFormat::Png) => "icon.png",
             Self::Icon(IconFormat::Svg) => "icon.svg",
+            Self::TabIcon(IconFormat::Png) => "tab-icon.png",
+            Self::TabIcon(IconFormat::Svg) => "tab-icon.svg",
             Self::Screenshot => "screenshot",
             Self::Thumbnail => "thumbnail",
             Self::Preview => "preview",
@@ -71,7 +74,7 @@ impl Job {
     fn input_limit(self) -> u64 {
         let limit = match self {
             Self::Thumbnail | Self::Preview => images::MAX_THUMBNAIL_INPUT,
-            Self::Icon(_) | Self::Screenshot => images::MAX_FILE_BYTES,
+            Self::Icon(_) | Self::TabIcon(_) | Self::Screenshot => images::MAX_FILE_BYTES,
         };
         limit as u64 + 1
     }
@@ -80,6 +83,8 @@ impl Job {
         [
             Self::Icon(IconFormat::Png),
             Self::Icon(IconFormat::Svg),
+            Self::TabIcon(IconFormat::Png),
+            Self::TabIcon(IconFormat::Svg),
             Self::Screenshot,
             Self::Thumbnail,
             Self::Preview,
@@ -91,12 +96,8 @@ impl Job {
     fn run(self, input: &[u8]) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
         match self {
-            Self::Icon(format) => {
-                let icon = images::icon(format, input)?;
-                put(&mut out, &icon.small);
-                put(&mut out, &icon.large);
-                put(&mut out, &[u8::from(icon.transparent_corner)]);
-            }
+            Self::Icon(format) => put_icon(&mut out, images::icon(format, input)?),
+            Self::TabIcon(format) => put_icon(&mut out, images::tab_icon(format, input)?),
             Self::Screenshot => {
                 let shot = images::screenshot(input)?;
                 put(&mut out, &shot.jpeg);
@@ -110,6 +111,12 @@ impl Job {
     }
 }
 
+fn put_icon(out: &mut Vec<u8>, icon: Icon) {
+    put(out, &icon.small);
+    put(out, &icon.large);
+    put(out, &[u8::from(icon.transparent_corner)]);
+}
+
 /// 子进程的入口。退出码 0：处理好了，结果在标准输出；[`REFUSED`]：图片不合规格；[`BROKEN`]：别的问题。
 pub fn child(args: &[String]) -> ExitCode {
     let job = match args {
@@ -118,7 +125,7 @@ pub fn child(args: &[String]) -> ExitCode {
     };
     let Some(job) = job else {
         eprintln!(
-            "用法：wonton-core {COMMAND} <icon.png|icon.svg|screenshot|thumbnail|preview>（核心内部用）"
+            "用法：wonton-core {COMMAND} <icon.png|icon.svg|tab-icon.png|tab-icon.svg|screenshot|thumbnail|preview>（核心内部用）"
         );
         return ExitCode::from(BROKEN);
     };
@@ -222,13 +229,12 @@ impl ImageWorker {
 
     pub async fn icon(&self, format: IconFormat, data: &[u8]) -> Result<Icon, ImageError> {
         let output = self.run(Job::Icon(format), data).await?;
-        let mut fields = Fields(&output);
-        let icon = Icon {
-            small: fields.bytes()?.to_vec(),
-            large: fields.bytes()?.to_vec(),
-            transparent_corner: fields.bytes()? == [1],
-        };
-        Ok(icon)
+        parse_icon(&output)
+    }
+
+    pub async fn tab_icon(&self, format: IconFormat, data: &[u8]) -> Result<Icon, ImageError> {
+        let output = self.run(Job::TabIcon(format), data).await?;
+        parse_icon(&output)
     }
 
     pub async fn screenshot(&self, data: &[u8]) -> Result<Screenshot, ImageError> {
@@ -322,6 +328,15 @@ impl ImageWorker {
         };
         outcome(status, output, &String::from_utf8_lossy(&message))
     }
+}
+
+fn parse_icon(output: &[u8]) -> Result<Icon, ImageError> {
+    let mut fields = Fields(output);
+    Ok(Icon {
+        small: fields.bytes()?.to_vec(),
+        large: fields.bytes()?.to_vec(),
+        transparent_corner: fields.bytes()? == [1],
+    })
 }
 
 /// 读到上限为止，多出来的读掉丢弃：不读的话子进程写满管道就卡住了。

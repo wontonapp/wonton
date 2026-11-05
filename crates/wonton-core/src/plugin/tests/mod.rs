@@ -34,6 +34,7 @@ mod resources;
 mod secrets;
 mod sources;
 mod store;
+mod tabs;
 mod upgrade;
 mod views;
 mod watch;
@@ -47,7 +48,7 @@ fn example(name: &str) -> PluginPackage {
 
 fn package(services: &str, extra_manifest: &str) -> String {
     format!(
-        "services:\n{services}\nx-wonton:\n  spec: '0.4'\n  id: app.test\n  version: 1.0.0\n  kind: app\n  \
+        "services:\n{services}\nx-wonton:\n  spec: '0.5'\n  id: app.test\n  version: 1.0.0\n  kind: app\n  \
          title: {{zh: 测试, en: Test}}\n  description: {{zh: 测试, en: Test}}\n{extra_manifest}"
     )
 }

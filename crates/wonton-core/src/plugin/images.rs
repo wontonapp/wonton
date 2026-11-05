@@ -78,9 +78,22 @@ pub struct Screenshot {
     pub height: u32,
 }
 
-/// 不合规格时给出原因。
+/// 普通插件图标的处理。
 pub fn icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
-    let large = icon_pixels(format, data)?;
+    encode_icon(icon_pixels(format, data)?)
+}
+
+/// 底栏图标只取透明通道表达形状，并且必须同时有透明和非透明像素。
+pub fn tab_icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
+    let mut pixels = tab_icon_pixels(format, data)?;
+    validate_tab_icon(&pixels)?;
+    for pixel in pixels.pixels_mut() {
+        pixel.0[..3].fill(u8::MAX);
+    }
+    encode_icon(pixels)
+}
+
+fn encode_icon(large: RgbaImage) -> Result<Icon, String> {
     let small = imageops::resize(&large, ICON_SMALL, ICON_SMALL, FilterType::Lanczos3);
     Ok(Icon {
         transparent_corner: has_transparent_corner(&large),
@@ -89,10 +102,26 @@ pub fn icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
     })
 }
 
+fn validate_tab_icon(pixels: &RgbaImage) -> Result<(), String> {
+    let all_opaque = pixels.pixels().all(|pixel| pixel[3] == u8::MAX);
+    let all_transparent = pixels.pixels().all(|pixel| pixel[3] == 0);
+    if all_opaque || all_transparent {
+        return Err("底栏图标的透明通道不能全不透明或全透明".to_owned());
+    }
+    Ok(())
+}
+
 /// 图标画成 512×512 的 RGBA：PNG 解码后缩放，SVG 用 resvg 渲染。
 fn icon_pixels(format: IconFormat, data: &[u8]) -> Result<RgbaImage, String> {
     match format {
-        IconFormat::Png => png_icon(data),
+        IconFormat::Png => png_icon(data, MIN_ICON_EDGE),
+        IconFormat::Svg => svg_icon(data),
+    }
+}
+
+fn tab_icon_pixels(format: IconFormat, data: &[u8]) -> Result<RgbaImage, String> {
+    match format {
+        IconFormat::Png => png_icon(data, 1),
         IconFormat::Svg => svg_icon(data),
     }
 }
@@ -178,7 +207,7 @@ fn scaled_jpeg(data: &[u8], edge: u32) -> Result<Vec<u8>, String> {
     Ok(jpeg)
 }
 
-fn png_icon(data: &[u8]) -> Result<RgbaImage, String> {
+fn png_icon(data: &[u8], min_edge: u32) -> Result<RgbaImage, String> {
     if data.len() > MAX_PNG_ICON_BYTES {
         return Err(format!("PNG 图标超过 {} KiB", MAX_PNG_ICON_BYTES >> 10));
     }
@@ -190,9 +219,9 @@ fn png_icon(data: &[u8]) -> Result<RgbaImage, String> {
     if w != h {
         return Err(format!("图标要是正方形，这张是 {w}×{h}"));
     }
-    if w < MIN_ICON_EDGE {
+    if w < min_edge {
         return Err(format!(
-            "PNG 图标至少 {MIN_ICON_EDGE}×{MIN_ICON_EDGE}，这张是 {w}×{h}"
+            "PNG 图标至少 {min_edge}×{min_edge}，这张是 {w}×{h}"
         ));
     }
     Ok(imageops::resize(

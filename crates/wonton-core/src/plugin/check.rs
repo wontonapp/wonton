@@ -68,6 +68,8 @@ pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<R
     }
     check_trusts_core(&package, official, &mut report);
     check_icon(&package, official, images, &mut report).await;
+    check_tab_icons(&package, images, &mut report).await;
+    check_tab_title_lengths(&package, &mut report);
     check_screenshots(dir, m, images, &mut report).await;
     if official {
         let required = [
@@ -199,6 +201,53 @@ async fn check_icon(
         )),
         Ok(_) => {}
         Err(e) => report.problems.push(format!("图标 {path}：{e}")),
+    }
+}
+
+async fn check_tab_icons(package: &PluginPackage, images: &ImageWorker, report: &mut Report) {
+    for (index, tab) in package
+        .manifest
+        .tabs
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+    {
+        for (field, raw) in tab.icon_refs(index) {
+            let path = package_files::normalize(raw).unwrap_or_else(|_| raw.to_owned());
+            let (Some(format), Some(data)) =
+                (IconFormat::from_path(&path), package.files().get(&path))
+            else {
+                report.problems.push(format!("{field} {path} 读不到"));
+                continue;
+            };
+            if let Err(e) = images.tab_icon(format, data).await {
+                report.problems.push(format!("{field} {path}：{e}"));
+            }
+        }
+    }
+}
+
+fn check_tab_title_lengths(package: &PluginPackage, report: &mut Report) {
+    for (index, tab) in package
+        .manifest
+        .tabs
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+    {
+        for (locale, max) in [("zh", 4), ("en", 8)] {
+            if tab
+                .title
+                .get(locale)
+                .is_some_and(|title| title.chars().count() > max)
+            {
+                report
+                    .warnings
+                    .push(format!("tabs[{index}].title.{locale} 超过建议长度"));
+            }
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use super::super::check::{Report, check};
 use super::super::image_worker::ImageWorker;
 use super::super::package::PluginPackage;
 use super::package;
-use super::views::ICON;
+use super::views::{ICON, TAB_ICON};
 
 const UNPINNED: &str = "  web:\n    image: nginx:1.27";
 
@@ -19,6 +19,18 @@ fn png(width: u32, height: u32) -> Vec<u8> {
     RgbaImage::from_pixel(width, height, Rgba([20, 120, 220, 255]))
         .write_to(&mut out, ImageFormat::Png)
         .unwrap();
+    out.into_inner()
+}
+
+fn tab_png() -> Vec<u8> {
+    let mut image = RgbaImage::from_pixel(256, 256, Rgba([0, 0, 0, 0]));
+    for x in 64..192 {
+        for y in 64..192 {
+            image.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+        }
+    }
+    let mut out = Cursor::new(Vec::new());
+    image.write_to(&mut out, ImageFormat::Png).unwrap();
     out.into_inner()
 }
 
@@ -167,6 +179,47 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
     let report = run(dir.path(), false).await.unwrap();
     assert!(
         report.warnings.iter().any(|w| w.contains("角是透明的")),
+        "{report:?}"
+    );
+}
+
+#[tokio::test]
+async fn plugin_check_processes_tab_png_and_svg_and_rejects_opaque_png() {
+    let tabs = "  webui: {service: web, port: 8080}\n  tabs:\n    - id: feed\n      title: {zh: 动态, en: Feed}\n      icon: tabs/feed.png\n      icon_selected: tabs/feed.svg\n      path: /feed\n    - id: opaque\n      title: {zh: 实心, en: Opaque}\n      icon: tabs/opaque.png\n      path: /opaque";
+    let dir = repo(&compose(UNPINNED, tabs));
+    write(dir.path(), "tabs/feed.png", &tab_png());
+    write(dir.path(), "tabs/feed.svg", TAB_ICON.as_bytes());
+    write(dir.path(), "tabs/opaque.png", &png(256, 256));
+
+    let report = run(dir.path(), false).await.unwrap();
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|problem| problem.contains("tabs[1].icon") && problem.contains("全不透明")),
+        "{report:?}"
+    );
+    assert!(
+        !report
+            .problems
+            .iter()
+            .any(|problem| problem.contains("tabs[0]")),
+        "{report:?}"
+    );
+}
+
+#[tokio::test]
+async fn plugin_check_warns_about_long_tab_titles() {
+    let tabs = "  webui: {service: web, port: 8080}\n  tabs:\n    - id: feed\n      title: {zh: 动态页面标签, en: FeedAndNews}\n      icon: tabs/feed.svg\n      path: /feed";
+    let dir = repo(&compose(UNPINNED, tabs));
+    write(dir.path(), "tabs/feed.svg", TAB_ICON.as_bytes());
+
+    let report = run(dir.path(), false).await.unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("tabs[0].title")),
         "{report:?}"
     );
 }

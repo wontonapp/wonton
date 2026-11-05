@@ -655,7 +655,7 @@ async fn plugin_api_answers_in_the_requested_language() {
         whoami["status"],
         json!({"state": "running", "health": "unknown"})
     );
-    assert_eq!(whoami["web_url"], h.origin(PLUGIN));
+    assert_eq!(whoami["web_url"], format!("{}/", h.origin(PLUGIN)));
     assert_eq!(whoami["trust"], "local");
 
     let detail = h

@@ -31,6 +31,7 @@ pub mod lifecycle;
 pub mod manager;
 mod manager_options;
 pub mod manifest;
+mod manifest_tabs;
 mod mcp_server;
 pub mod models;
 pub mod mounts;
@@ -57,6 +58,7 @@ pub mod tool_policy;
 mod upgrade;
 pub(crate) mod upstreams;
 pub mod views;
+mod views_permissions;
 mod watch;
 
 #[cfg(test)]

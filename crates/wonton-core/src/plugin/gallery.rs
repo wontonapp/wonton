@@ -33,8 +33,16 @@ pub struct IconSource {
 impl IconSource {
     /// 插件包声明的图标；没有图标时为空。
     pub fn of(package: &PluginPackage) -> Option<Self> {
-        let path = package.manifest.icon.as_deref()?;
-        let path = super::package_files::normalize(path).ok()?;
+        package
+            .manifest
+            .icon
+            .as_deref()
+            .and_then(|path| Self::of_path(package, path))
+    }
+
+    /// 插件包里指定的图标文件。
+    pub fn of_path(package: &PluginPackage, raw: &str) -> Option<Self> {
+        let path = super::package_files::normalize(raw).ok()?;
         let data = package.files().get(&path)?;
         Some(Self {
             sha256: sha256_hex(data),
@@ -54,6 +62,13 @@ impl IconSource {
         })
     }
 
+    /// 供底栏使用的 192×192 PNG 地址，和普通插件图标分开命名。
+    pub fn tab_image(&self) -> PluginImage {
+        PluginImage {
+            path: format!("{IMAGES_PATH}/{}/tab-icon-{ICON_SMALL}.png", self.sha256),
+        }
+    }
+
     pub fn paths(&self) -> PluginIcon {
         let image = |edge: u32| PluginImage {
             path: format!("{IMAGES_PATH}/{}/icon-{edge}.png", self.sha256),
@@ -70,11 +85,20 @@ impl IconSource {
 pub enum Variant {
     Small,
     Large,
+    TabSmall,
+    TabLarge,
 }
 
 impl Variant {
     pub fn parse(file: &str) -> Option<Self> {
-        match file.strip_prefix("icon-")?.strip_suffix(".png")?.parse() {
+        let (prefix, tab) = if let Some(file) = file.strip_prefix("tab-icon-") {
+            (file, true)
+        } else {
+            (file.strip_prefix("icon-")?, false)
+        };
+        match prefix.strip_suffix(".png")?.parse() {
+            Ok(ICON_SMALL) if tab => Some(Self::TabSmall),
+            Ok(ICON_LARGE) if tab => Some(Self::TabLarge),
             Ok(ICON_SMALL) => Some(Self::Small),
             Ok(ICON_LARGE) => Some(Self::Large),
             _ => None,
@@ -145,6 +169,22 @@ impl Gallery {
         let result = rendering
             .get_or_try_init(|| async {
                 match self.images.icon(source.format, &source.data).await {
+                    Ok(icon) => Ok(Ok(Arc::new(icon))),
+                    Err(ImageError::Refused(reason)) => Ok(Err(reason)),
+                    Err(e @ ImageError::Unavailable(_)) => Err(e),
+                }
+            })
+            .await?;
+        result.clone().map_err(ImageError::Refused)
+    }
+
+    /// 校验并渲染底栏图标。和普通图标分开缓存，避免同一文件的两套规则互相复用。
+    pub async fn render_tab(&self, source: &IconSource) -> Result<Arc<Icon>, ImageError> {
+        let key = format!("tab:{}", source.sha256);
+        let rendering = self.rendering(&key);
+        let result = rendering
+            .get_or_try_init(|| async {
+                match self.images.tab_icon(source.format, &source.data).await {
                     Ok(icon) => Ok(Ok(Arc::new(icon))),
                     Err(ImageError::Refused(reason)) => Ok(Err(reason)),
                     Err(e @ ImageError::Unavailable(_)) => Err(e),
