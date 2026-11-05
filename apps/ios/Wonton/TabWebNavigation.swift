@@ -34,7 +34,10 @@ extension TabWebSession: WKNavigationDelegate {
         hasContent = true
         recoveryURL = nil
         canGoBack = webView.canGoBack
-        do { try updateContext(webView, force: true) } catch { problem = error.problem }
+        do {
+            try core.dispatch(action: .tabLoadSucceeded(tab: tab))
+            try updateContext(webView, force: true)
+        } catch { problem = error.problem }
         #if DEBUG
         let path = webView.url?.path ?? ""
         NSLog("Wonton tab loaded: %@ %@", String(describing: tab), path)

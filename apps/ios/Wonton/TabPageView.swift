@@ -11,8 +11,11 @@ struct TabPageView: View {
     let isOverlay: Bool
     let draft: (String) -> Void
     let open: (PluginEntry) -> Void
+    let pendingCards: [PendingConfirmation]
+    let openCardRoom: (String) -> Void
     @State private var session: TabWebSession
     @State private var showsDetails = false
+    @State private var isVisible = false
     @State private var topHeight: CGFloat = WontonTheme.size.topBar
     @State private var bottomHeight: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
@@ -25,7 +28,8 @@ struct TabPageView: View {
     init(
         tabs: TabsModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
         tab: TabRef, page: TabPage, isOverlay: Bool,
-        draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void
+        draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void,
+        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String) -> Void
     ) {
         self.tabs = tabs
         self.home = home
@@ -36,6 +40,8 @@ struct TabPageView: View {
         self.isOverlay = isOverlay
         self.draft = draft
         self.open = open
+        self.pendingCards = pendingCards
+        self.openCardRoom = openCardRoom
         _session = State(initialValue: tabs.webViews.session(for: tab, core: tabs.core))
     }
 
@@ -46,10 +52,10 @@ struct TabPageView: View {
             ZStack {
                 if let webView = session.webView {
                     TabWebView(webView: webView)
-                        .id(ObjectIdentifier(webView))
-                        .padding(.top, edgeToEdge ? 0 : topHeight)
-                        .padding(.bottom, edgeToEdge ? 0 : bottomHeight)
-                        .ignoresSafeArea(.container, edges: edgeToEdge ? .vertical : [])
+                    .id(ObjectIdentifier(webView))
+                    .padding(.top, edgeToEdge ? 0 : topHeight)
+                    .padding(.bottom, edgeToEdge ? 0 : contentBottom)
+                    .ignoresSafeArea(.container, edges: edgeToEdge ? .all : [])
                 }
                 TabPageStateView(
                     page: page, session: session, connected: connected,
@@ -57,23 +63,33 @@ struct TabPageView: View {
                     remove: { tabs.send(isOverlay ? .closeTabOverlay : .unpinTab(tab: tab)) }
                 )
                 .padding(.top, topHeight)
-                .padding(.bottom, bottomHeight)
+                .padding(.bottom, contentBottom)
                 VStack(spacing: 0) {
-                    topBar
+                    header
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
+                    if page.fullscreen, !pendingCards.isEmpty {
+                        PendingCardBanner(cards: pendingCards, open: openCardRoom)
+                    }
                     if let takeover { TakeoverNotice(takeover: takeover) }
                     Spacer(minLength: 0)
-                    if !isOverlay, let bottomBar {
+                    if !page.fullscreen, !isOverlay, let bottomBar {
                         bottomBar
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
                     }
                 }
             }
             .background(Color(colors.canvas).ignoresSafeArea())
+            .background {
+                FullscreenExitGesture(
+                    enabled: page.fullscreen && isVisible && !showsDetails, webView: session.webView,
+                    exit: { tabs.send(.exitFullscreen(tab: tab)) }
+                )
+            }
             .task(id: inputs) { updateSession(inputs) }
         }
         .onChange(of: bottomBar == nil) { _, absent in if absent { bottomHeight = 0 } }
-        .onDisappear { takeover?.end() }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false; takeover?.end() }
         .sheet(isPresented: $showsDetails) {
             if let pluginId {
                 NavigationStack {
@@ -86,7 +102,8 @@ struct TabPageView: View {
         }
     }
 
-    private var edgeToEdge: Bool { !isOverlay && page.layout == .edgeToEdge }
+    private var edgeToEdge: Bool { page.layout == .edgeToEdge && (!isOverlay || page.fullscreen) }
+    private var contentBottom: CGFloat { page.fullscreen || isOverlay || bottomBar == nil ? 0 : bottomHeight }
     private var connected: Bool { home.viewModel.status == .connected }
     private var pluginId: String? {
         if case let .plugin(id, _) = tab { return id }
@@ -100,7 +117,7 @@ struct TabPageView: View {
     }
 
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
-        let bottom = !isOverlay && bottomBar != nil ? bottomHeight : 0
+        let bottom = contentBottom
         return TabWebInputs(
             page: page, proxy: home.viewModel.proxy, connected: connected,
             appearance: appearance.viewModel,
@@ -110,11 +127,23 @@ struct TabPageView: View {
                 insetTop: edgeToEdge ? Double(topHeight + safe.top) : 0,
                 insetBottom: edgeToEdge ? Double(bottom + safe.bottom) : 0,
                 safeArea: TabSafeArea(
-                    top: edgeToEdge ? Double(safe.top) : 0, right: 0,
-                    bottom: edgeToEdge ? Double(safe.bottom) : 0, left: 0
+                    top: edgeToEdge ? Double(safe.top) : 0, right: edgeToEdge ? Double(safe.trailing) : 0,
+                    bottom: edgeToEdge ? Double(safe.bottom) : 0, left: edgeToEdge ? Double(safe.leading) : 0
                 )
             ), textScale: textScale
         )
+    }
+
+    @ViewBuilder private var header: some View {
+        if page.fullscreen {
+            TabFullscreenBar(page: page, tab: tab, tabs: tabs, details: { showsDetails = true })
+                .background {
+                    if !edgeToEdge {
+                        Color(uiColor: session.themeColor ?? UIColor(Color(colors.canvas)))
+                            .ignoresSafeArea(.container, edges: .top)
+                    }
+                }
+        } else { topBar }
     }
 
     private var topBar: some View {
@@ -132,6 +161,9 @@ struct TabPageView: View {
                     }
                     Spacer(minLength: 0)
                     if let takeover { TakeoverButton(takeover: takeover) }
+                    WontonIconButton(icon: .expand, label: TabText.fullscreen) {
+                        tabs.send(.enterFullscreen(tab: tab))
+                    }
                     if isOverlay {
                         WontonIconButton(icon: .close, label: TabText.close) { tabs.send(.closeTabOverlay) }
                     }

@@ -29,6 +29,7 @@ enum WontonIcon: String {
     case downloadFill
     case error
     case errorFill
+    case expand
     case eye
     case file
     case folder

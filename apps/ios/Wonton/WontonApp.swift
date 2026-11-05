@@ -6,6 +6,7 @@ import WontonClient
 @main
 struct WontonApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    @UIApplicationDelegateAdaptor(FullscreenOrientation.self) private var orientation
     /// 整个 App 只有一个核心实例，状态都在它里面。
     @State private var launch: Launch
 
@@ -23,6 +24,7 @@ struct WontonApp: App {
                         chat: chat, home: home, plugins: plugins, appearance: appearance, devWebURL: Launch.devWebURL
                     )
                 }
+                .environmentObject(orientation)
                 .task { await appearance.observe() }
                 .onChange(of: scenePhase) { old, phase in
                     // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等

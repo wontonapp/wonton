@@ -12,6 +12,7 @@ struct MainView: View {
     @State private var isKeyboardVisible = false
     @State private var showsTabSettings = false
     @State private var showsSettings = false
+    @EnvironmentObject private var orientation: FullscreenOrientation
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel, devWebURL: URL?) {
         self.chat = chat
@@ -24,11 +25,14 @@ struct MainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !pendingElsewhere.isEmpty { PendingCardBanner(cards: pendingElsewhere, open: openCardRoom) }
+            if !selectedFullscreen, !pendingElsewhere.isEmpty {
+                PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
+            }
             notices
             pages
         }
         .overlay { if chat.isOpeningChat { ProgressView() } }
+        .statusBarHidden(selectedFullscreen && tabs.viewModel.overlay == nil)
         .modifier(ChatDialogs(model: chat))
         .fullScreenCover(isPresented: overlayPresented) { overlay }
         .fullScreenCover(isPresented: isPromptingProfile) { OwnerProfileView(model: plugins) }
@@ -42,6 +46,9 @@ struct MainView: View {
             get: { tabs.rejection != nil }, set: { if !$0 { tabs.rejection = nil } }
         ))
         .onChange(of: tabs.viewModel.selected, initial: true) { _, selected in visited.insert(selected) }
+        .onChange(of: visibleFullscreen, initial: true) { _, fullscreen in
+            orientation.update(fullscreen: fullscreen) { tabs.rejection = $0.problem }
+        }
         .onChange(of: chat.openingFailed) { _, failed in
             if failed { chat.openingFailed = false; tabs.select(.chat) }
         }
@@ -93,18 +100,20 @@ struct MainView: View {
     @ViewBuilder private var overlay: some View {
         if let item = tabs.viewModel.overlay, let page = item.page {
             VStack(spacing: 0) {
-                if !chat.viewModel.pendingConfirmations.isEmpty {
+                if !page.fullscreen, !chat.viewModel.pendingConfirmations.isEmpty {
                     PendingCardBanner(cards: chat.viewModel.pendingConfirmations, open: openCardRoom)
                 }
                 pluginPage(item.tab, page: page, overlay: true)
             }
+            .statusBarHidden(page.fullscreen)
         }
     }
 
     private func pluginPage(_ tab: TabRef, page: TabPage, overlay: Bool) -> some View {
         TabPageView(
             tabs: tabs, home: home, plugins: plugins, appearance: appearance,
-            tab: tab, page: page, isOverlay: overlay, draft: receiveDraft, open: open
+            tab: tab, page: page, isOverlay: overlay, draft: receiveDraft, open: open,
+            pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom
         )
         .id(tab)
     }
@@ -116,12 +125,23 @@ struct MainView: View {
                     tab: item.tab, label: item.title,
                     icon: AnyView(TabIconView(item: item, selected: false, plugins: plugins)),
                     selectedIcon: AnyView(TabIconView(item: item, selected: true, plugins: plugins)),
-                    badge: item.page?.badge == true, isDimmed: item.page?.dimmed == true
+                    badge: item.page?.badge == true, isDimmed: item.page?.dimmed == true,
+                    opensFullscreen: item.page?.opensFullscreen
                 )
             },
             selection: Binding(get: { tabs.viewModel.selected }, set: { tabs.select($0) }),
-            reselect: { tabs.select($0) }, longPress: { _ in showsTabSettings = true }
+            reselect: { tabs.select($0) }, longPress: { _ in showsTabSettings = true },
+            enterFullscreen: { tabs.send(.enterFullscreen(tab: $0)) },
+            setAlwaysFullscreen: { tabs.send(.setTabDisplay(tab: $0, display: $1 ? .fullscreen : .standard)) }
         )
+    }
+
+    private var selectedFullscreen: Bool {
+        tabs.viewModel.items.first { $0.tab == tabs.viewModel.selected }?.page?.fullscreen == true
+    }
+
+    private var visibleFullscreen: Bool {
+        tabs.viewModel.overlay?.page?.fullscreen ?? selectedFullscreen
     }
 
     @ViewBuilder private var notices: some View {

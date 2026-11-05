@@ -42,6 +42,7 @@ final class TabWebSession: NSObject {
     private(set) var webView: WKWebView?
     var ready = false
     var canGoBack = false
+    private(set) var themeColor: UIColor?
     var problem: Problem?
     @ObservationIgnored var input: TabWebInputs?
     @ObservationIgnored var action: ((TabBridgeAction) -> Void)?
@@ -57,6 +58,7 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var documentScript: String?
     @ObservationIgnored private var lastTextScale: CGFloat?
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
+    @ObservationIgnored private var themeObservation: NSKeyValueObservation?
 
     init(tab: TabRef, core: ClientCore) {
         self.tab = tab
@@ -107,6 +109,9 @@ final class TabWebSession: NSObject {
         webView = view
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
+        }
+        themeObservation = view.observe(\.themeColor, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor in self?.themeColor = self?.webView?.themeColor }
         }
     }
 
@@ -220,6 +225,8 @@ final class TabWebSession: NSObject {
 
     func dispose() {
         backObservation = nil
+        themeObservation = nil
+        themeColor = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "wontonBridge")

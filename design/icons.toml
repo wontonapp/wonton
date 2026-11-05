@@ -25,6 +25,7 @@ device = { phosphor = "device-mobile-camera" }
 document = { phosphor = "file-text", fill = true }
 download = { phosphor = "download-simple", fill = true }
 error = { phosphor = "x-circle", fill = true }
+expand = { phosphor = "corners-out" }
 eye = { phosphor = "eye" }
 file = { phosphor = "file" }
 folder = { phosphor = "folder", fill = true }

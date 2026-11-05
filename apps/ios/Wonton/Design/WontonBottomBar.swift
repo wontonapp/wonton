@@ -23,12 +23,15 @@ struct WontonBottomBar<Tab: Hashable>: View {
         let selectedIcon: AnyView
         var badge = false
         var isDimmed = false
+        var opensFullscreen: Bool?
     }
 
     let items: [Item]
     @Binding var selection: Tab
     let reselect: (Tab) -> Void
     let longPress: (Tab) -> Void
+    let enterFullscreen: (Tab) -> Void
+    let setAlwaysFullscreen: (Tab, Bool) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -78,7 +81,15 @@ struct WontonBottomBar<Tab: Hashable>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu { Button(TabText.bottomBar) { longPress(item.tab) } }
+        .contextMenu {
+            if let opensFullscreen = item.opensFullscreen {
+                Button(TabText.fullscreen) { enterFullscreen(item.tab) }
+                Toggle(TabText.alwaysFullscreen, isOn: Binding(
+                    get: { opensFullscreen }, set: { setAlwaysFullscreen(item.tab, $0) }
+                ))
+            }
+            Button(TabText.bottomBar) { longPress(item.tab) }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.label)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
