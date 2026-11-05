@@ -10,6 +10,7 @@ struct PluginDetailView: View {
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
     @State private var pluginId: String?
+    @State private var changingVersionOf: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
 
@@ -19,6 +20,7 @@ struct PluginDetailView: View {
             .wontonPushedScreen("", showsStatusLine: true)
             .task(id: route) { await load() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
+            .changeVersionCover(of: $changingVersionOf, model: model, confirmation: $confirmation)
             .uninstallDialog($uninstalling, model: model)
             .onChange(of: isWorking) { wasWorking, working in
                 if wasWorking, !working { taskEnded() }
@@ -78,6 +80,12 @@ struct PluginDetailView: View {
                     }
                     DetailSections(detail: detail)
                     if let installed = detail.installed, installed.removable, !isWorking {
+                        Button {
+                            changingVersionOf = installed.id
+                        } label: {
+                            Text("换版本").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(WontonButtonStyle(kind: .secondary))
                         Button(role: .destructive) {
                             uninstalling = UninstallTarget(id: installed.id, title: installed.title)
                         } label: {
@@ -231,7 +239,14 @@ private struct DetailHeader: View {
                     Text(detail.summary)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
-                    Tag(text: detail.trust.label, tint: detail.trust.tint(colors))
+                    HStack(spacing: WontonTheme.spacing.s8) {
+                        Tag(text: detail.trust.label, tint: detail.trust.tint(colors))
+                        if let provider = detail.provider {
+                            Text(provider)
+                                .wontonText(WontonTheme.typography.caption)
+                                .foregroundStyle(Color(colors.textSecondary))
+                        }
+                    }
                 }
             }
             if let action {

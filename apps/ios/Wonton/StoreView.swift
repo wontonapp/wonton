@@ -8,6 +8,9 @@ struct StoreView: View {
     @State private var query = ""
     @State private var filter: String?
     @State private var confirmation: PluginConfirmation?
+    @State private var isAddingSource = false
+    /// “添加来源”那一页选好的文件：那一页关上以后才能再盖确认页。
+    @State private var chosen: PluginConfirmation?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -43,8 +46,16 @@ struct StoreView: View {
             }
             .refreshable { model.send(.refreshStore(force: true)) }
         }
-        .wontonPushedScreen("应用商店", showsStatusLine: true)
+        .wontonPushedScreen("应用商店", showsStatusLine: true) {
+            WontonIconButton(icon: .add, label: "添加来源") { isAddingSource = true }
+        }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
+        .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
+            confirmation = chosen
+            chosen = nil
+        }, content: {
+            AddSourceView(model: model) { chosen = $0 }
+        })
         .task { model.refresh(.refreshStore(force: false)) }
     }
 
@@ -65,19 +76,53 @@ struct StoreView: View {
             TagChips(tags: present, selected: $filter)
         }
         section("已审核", store.official)
+        added(store.added)
         section("社区", store.community)
     }
 
+    /// 主人添加的来源合成一段，取不到的来源写明是哪一个。
+    @ViewBuilder private func added(_ sources: [AddedSource]) -> some View {
+        if !sources.isEmpty {
+            sectionTitle("我添加的")
+            ForEach(sources, id: \.address) { source in
+                ForEach(source.section.plugins.filter(matchesTag), id: \.source) { row($0) }
+                if let problem = source.section.problem {
+                    ProblemRow(
+                        problem: problem.problem.titled(from: source.provider),
+                        retry: problem.canRetry ? { model.send(.refreshStore(force: true)) } : nil
+                    )
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.vertical, WontonTheme.spacing.s8)
+                } else if source.section.fetchedAtMs == nil {
+                    // 核心重启后还没读过：不显示成空。
+                    Text("\(source.provider)：正在读")
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                        .padding(.horizontal, WontonTheme.spacing.pageInset)
+                        .padding(.vertical, WontonTheme.spacing.s8)
+                }
+            }
+        }
+    }
+
+    private func matchesTag(_ item: StoreItem) -> Bool {
+        filter.map(item.tags.contains) ?? true
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .wontonText(WontonTheme.typography.sectionTitle)
+            .foregroundStyle(Color(colors.textPrimary))
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .padding(.top, WontonTheme.spacing.s16)
+            .padding(.bottom, WontonTheme.spacing.s4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     @ViewBuilder private func section(_ title: String, _ content: StoreSection) -> some View {
-        let items = content.plugins.filter { filter.map($0.tags.contains) ?? true }
+        let items = content.plugins.filter(matchesTag)
         if !items.isEmpty || content.problem != nil {
-            Text(title)
-                .wontonText(WontonTheme.typography.sectionTitle)
-                .foregroundStyle(Color(colors.textPrimary))
-                .padding(.horizontal, WontonTheme.spacing.pageInset)
-                .padding(.top, WontonTheme.spacing.s16)
-                .padding(.bottom, WontonTheme.spacing.s4)
-                .accessibilityAddTraits(.isHeader)
+            sectionTitle(title)
             ForEach(items, id: \.source) { row($0) }
             if let problem = content.problem {
                 ProblemRow(
@@ -126,10 +171,17 @@ struct StoreView: View {
     /// 列表里出现过的标签，按第一次出现的顺序。
     private func tags(in store: StoreListing) -> [String] {
         var seen: [String] = []
-        for item in store.official.plugins + store.community.plugins {
+        for item in store.allPlugins {
             for tag in item.tags where !seen.contains(tag) { seen.append(tag) }
         }
         return seen
+    }
+}
+
+private extension Problem {
+    /// 添加了好几个来源时，要写明是哪一个出了问题。
+    func titled(from provider: String) -> Problem {
+        Problem(title: "\(provider)：\(title)", nextStep: nextStep, detail: detail)
     }
 }
 
@@ -203,9 +255,15 @@ private struct StoreItemRow: View {
     /// 已审核的插件在自己的分组里，不再标来源。
     @ViewBuilder private var tags: some View {
         let showsTrust = item.trust != .official
-        if showsTrust || item.highPermissions || item.stars != nil {
+        if showsTrust || item.provider != nil || item.highPermissions || item.stars != nil {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint(colors)) }
+                if let provider = item.viaIndex.map({ "经 \($0)" }) ?? item.provider {
+                    Text(provider)
+                        .wontonText(WontonTheme.typography.caption)
+                        .foregroundStyle(Color(colors.textSecondary))
+                        .lineLimit(1)
+                }
                 if item.highPermissions { Tag(text: "高权限", tint: colors.danger) }
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {

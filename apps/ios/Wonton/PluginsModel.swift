@@ -28,7 +28,7 @@ final class PluginsModel {
         switch task.operation {
         case .install:
             let item = viewModel.store.flatMap { store in
-                (store.official.plugins + store.community.plugins).first { $0.id == task.id }
+                store.allPlugins.first { $0.id == task.id }
             }
             return item.map { .install(source: $0.source) }
         case .upgrade:
@@ -117,6 +117,12 @@ enum PluginRoute: Hashable {
 enum PluginConfirmation: Identifiable {
     case install(source: String)
     case upgrade(id: String)
+    /// 主人选的压缩包。
+    case upload(archive: Data)
+    /// 换到主人填的来源。
+    case upgradeFrom(id: String, source: String)
+    /// 换到主人选的压缩包。
+    case upgradeUpload(id: String, archive: Data)
 
     var id: String {
         switch self {
@@ -124,7 +130,36 @@ enum PluginConfirmation: Identifiable {
             return "install:\(source)"
         case let .upgrade(id):
             return "upgrade:\(id)"
+        case let .upload(archive):
+            return "upload:\(archive.hashValue)"
+        case let .upgradeFrom(id, source):
+            return "upgrade:\(id):\(source)"
+        case let .upgradeUpload(id, archive):
+            return "upgrade:\(id):\(archive.hashValue)"
         }
+    }
+
+    var isUpgrade: Bool {
+        switch self {
+        case .upgrade, .upgradeFrom, .upgradeUpload: return true
+        case .install, .upload: return false
+        }
+    }
+
+    /// 主人选的版本可能比装着的旧，不叫升级。
+    var actionTitle: String {
+        switch self {
+        case .install, .upload: return "安装"
+        case .upgrade: return "升级"
+        case .upgradeFrom, .upgradeUpload: return "换版本"
+        }
+    }
+}
+
+extension StoreListing {
+    /// 商店里全部的插件，按显示的顺序。
+    var allPlugins: [StoreItem] {
+        official.plugins + added.flatMap(\.section.plugins) + community.plugins
     }
 }
 

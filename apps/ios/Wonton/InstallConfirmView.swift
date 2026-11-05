@@ -17,14 +17,14 @@ struct InstallConfirmView: View {
                 Button {
                     confirm(preview)
                 } label: {
-                    Text(isUpgrade ? "升级" : "安装").frame(maxWidth: .infinity)
+                    Text(confirmation.actionTitle).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(!canConfirm)
                 .padding(WontonTheme.spacing.pageInset)
             }
         }
-        .wontonModalScreen(isUpgrade ? "升级" : "安装")
+        .wontonModalScreen(confirmation.actionTitle)
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .task { await load() }
     }
@@ -42,10 +42,7 @@ struct InstallConfirmView: View {
         }
     }
 
-    private var isUpgrade: Bool {
-        if case .upgrade = confirmation { return true }
-        return false
-    }
+    private var isUpgrade: Bool { confirmation.isUpgrade }
 
     private var preview: InstallPreview? {
         if case let .success(preview) = loaded { return preview }
@@ -73,6 +70,9 @@ struct InstallConfirmView: View {
             let preview = switch confirmation {
             case let .install(source): try await model.core.previewInstall(source: source)
             case let .upgrade(id): try await model.core.previewUpgrade(id: id)
+            case let .upload(archive): try await model.core.previewUpload(archive: archive)
+            case let .upgradeFrom(id, source): try await model.core.previewUpgradeFrom(id: id, source: source)
+            case let .upgradeUpload(id, archive): try await model.core.previewUpgradeUpload(id: id, archive: archive)
             }
             lanWebui = preview.lanWebui?.enabled ?? false
             loaded = .success(preview)
@@ -144,8 +144,9 @@ private struct PreviewContent: View {
                     .foregroundStyle(Color(colors.textSecondary))
                 HStack(spacing: WontonTheme.spacing.s8) {
                     Tag(text: preview.trust.label, tint: preview.trust.tint(colors))
-                    if let author = preview.author {
-                        Text(author.name)
+                    // 提供方是核实过的，有它就不写清单里自称的作者；两个都放一行放不下。
+                    if let origin = preview.provider ?? preview.author?.name {
+                        Text(origin)
                             .wontonText(WontonTheme.typography.caption)
                             .foregroundStyle(Color(colors.textSecondary))
                     }

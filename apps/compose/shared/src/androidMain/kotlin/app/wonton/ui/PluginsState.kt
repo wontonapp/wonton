@@ -14,6 +14,8 @@ import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginState
+import app.wonton.protocol.StoreItem
+import app.wonton.protocol.StoreListing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -112,7 +114,31 @@ sealed interface PluginConfirmation {
     data class Install(val source: String) : PluginConfirmation
 
     data class Upgrade(val id: String) : PluginConfirmation
+
+    /** 主人选的压缩包。 */
+    class Upload(val archive: ByteArray) : PluginConfirmation
+
+    /** 换到主人填的来源。 */
+    data class UpgradeFrom(val id: String, val source: String) : PluginConfirmation
+
+    /** 换到主人选的压缩包。 */
+    class UpgradeUpload(val id: String, val archive: ByteArray) : PluginConfirmation
+
+    val isUpgrade: Boolean
+        get() = this is Upgrade || this is UpgradeFrom || this is UpgradeUpload
+
+    /** 主人选的版本可能比装着的旧，不叫升级。 */
+    val actionTitle: String
+        get() = when (this) {
+            is Install, is Upload -> "安装"
+            is Upgrade -> "升级"
+            is UpgradeFrom, is UpgradeUpload -> "换版本"
+        }
 }
+
+/** 商店里全部的插件，按显示的顺序。 */
+val StoreListing.allPlugins: List<StoreItem>
+    get() = official.plugins + added.flatMap { it.section.plugins } + community.plugins
 
 /** 要卸载的插件，确认对话框用。 */
 data class UninstallTarget(val id: String, val title: String)

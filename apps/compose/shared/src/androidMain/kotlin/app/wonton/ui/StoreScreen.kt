@@ -29,24 +29,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.AddedSource
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreSection
 import app.wonton.ui.design.WontonChip
+import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSearchField
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.StarFill
 import app.wonton.ui.icons.WontonIcon
 import java.util.Locale
@@ -69,7 +70,13 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
     val viewModel = plugins.viewModel
     val store = viewModel.store
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
-    WontonScreen(bar = { WontonPushedBar("应用商店", onBack, showsStatusLine = true) }) {
+    WontonScreen(
+        bar = {
+            WontonPushedBar("应用商店", onBack, showsStatusLine = true) {
+                WontonIconButton(WontonIcon.Add, "添加来源", { navigation.addingSource = true })
+            }
+        },
+    ) {
         Column(Modifier.fillMaxSize()) {
             WontonSearchField(
                 query,
@@ -145,12 +152,49 @@ private fun LazyListScope.listing(
     onRetry: () -> Unit,
     row: @Composable (StoreItem) -> Unit,
 ) {
-    val present = (store.official.plugins + store.community.plugins).flatMap { it.tags }.distinct()
+    val present = store.allPlugins.flatMap { it.tags }.distinct()
     if (present.size > 1) {
         item(key = "tags") { TagChips(present, tag, onTag) }
     }
     section("已审核", store.official, tag, onRetry, row)
+    added(store.added, tag, onRetry, row)
     section("社区", store.community, tag, onRetry, row)
+}
+
+/** 主人添加的来源合成一段，取不到的来源写明是哪一个。 */
+private fun LazyListScope.added(
+    sources: List<AddedSource>,
+    tag: String?,
+    onRetry: () -> Unit,
+    row: @Composable (StoreItem) -> Unit,
+) {
+    if (sources.isEmpty()) return
+    item(key = "header:added") { StoreSectionTitle("我添加的") }
+    sources.forEach { source ->
+        val shown = source.section.plugins.filter { tag == null || tag in it.tags }
+        items(shown, key = { "added:${source.address}:${it.source}" }) { row(it) }
+        val problem = source.section.problem
+        if (problem != null || source.section.fetchedAtMs == null) {
+            item(key = "problem:${source.address}") {
+                Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
+                    if (problem != null) {
+                        val shownProblem = problem.problem
+                        ProblemRow(
+                            shownProblem.copy(title = "${source.provider}：${shownProblem.title}"),
+                            onRetry.takeIf { problem.canRetry },
+                        )
+                    } else {
+                        // 核心重启后还没读过：不显示成空。
+                        Text(
+                            "${source.provider}：正在读",
+                            style = WontonTheme.typography.supporting,
+                            color = WontonTheme.colors.textSecondary.toColor(),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 private fun LazyListScope.section(
@@ -162,18 +206,7 @@ private fun LazyListScope.section(
 ) {
     val shown = content.plugins.filter { tag == null || tag in it.tags }
     if (shown.isEmpty() && content.problem == null) return
-    item(key = "header:$title") {
-        Text(
-            title,
-            Modifier.padding(
-                start = WontonTheme.spacing.pageInset,
-                top = WontonTheme.spacing.s16,
-                bottom = WontonTheme.spacing.s4,
-            ).semantics { heading() },
-            style = WontonTheme.typography.sectionTitle,
-            color = WontonTheme.colors.textPrimary.toColor(),
-        )
-    }
+    item(key = "header:$title") { StoreSectionTitle(title) }
     items(shown, key = { "$title:${it.source}" }) { row(it) }
     content.problem?.let { problem ->
         item(key = "problem:$title") {
@@ -259,12 +292,23 @@ private fun ItemTags(item: StoreItem) {
     val colors = WontonTheme.colors
     val showsTrust = item.trust != PluginTrust.OFFICIAL
     val stars = item.stars
-    if (showsTrust || item.highPermissions || stars != null) {
+    val provider = item.viaIndex?.let { "经 $it" } ?: item.provider
+    val hasSource = showsTrust || provider != null
+    if (hasSource || item.highPermissions || stars != null) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showsTrust) Tag(item.trust.label, item.trust.tint)
+            provider?.let {
+                Text(
+                    it,
+                    style = WontonTheme.typography.caption,
+                    color = colors.textSecondary.toColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (item.highPermissions) Tag("高权限", colors.danger)
             stars?.let {
                 Row(

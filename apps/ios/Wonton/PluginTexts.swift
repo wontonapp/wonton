@@ -5,8 +5,7 @@ extension PluginTrust {
     var label: String {
         switch self {
         case .official: return "已审核"
-        case .community, .unknown: return "未审核"
-        case .local: return "本地"
+        case .community, .local, .unknown: return "未审核"
         case .system: return "系统"
         }
     }
@@ -14,8 +13,8 @@ extension PluginTrust {
     func tint(_ colors: ThemeColors) -> Rgb {
         switch self {
         case .official: return colors.success
-        case .community, .unknown: return colors.warning
-        case .local, .system: return colors.textSecondary
+        case .community, .local, .unknown: return colors.warning
+        case .system: return colors.textSecondary
         }
     }
 }

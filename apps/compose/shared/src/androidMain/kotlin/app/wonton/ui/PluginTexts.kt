@@ -39,16 +39,15 @@ private val LINE_ICON_OFFSET = 1.dp
 val PluginTrust.label: String
     get() = when (this) {
         PluginTrust.OFFICIAL -> "已审核"
-        PluginTrust.COMMUNITY, PluginTrust.UNKNOWN -> "未审核"
-        PluginTrust.LOCAL -> "本地"
+        PluginTrust.COMMUNITY, PluginTrust.LOCAL, PluginTrust.UNKNOWN -> "未审核"
         PluginTrust.SYSTEM -> "系统"
     }
 
 val PluginTrust.tint: Rgb
     @Composable get() = when (this) {
         PluginTrust.OFFICIAL -> WontonTheme.colors.success
-        PluginTrust.COMMUNITY, PluginTrust.UNKNOWN -> WontonTheme.colors.warning
-        PluginTrust.LOCAL, PluginTrust.SYSTEM -> WontonTheme.colors.textSecondary
+        PluginTrust.COMMUNITY, PluginTrust.LOCAL, PluginTrust.UNKNOWN -> WontonTheme.colors.warning
+        PluginTrust.SYSTEM -> WontonTheme.colors.textSecondary
     }
 
 val PluginOperation.runningText: String
@@ -143,4 +142,19 @@ fun DetailSection(title: String, content: @Composable () -> Unit) {
         )
         content()
     }
+}
+
+/** 商店里一段的标题。 */
+@Composable
+fun StoreSectionTitle(title: String) {
+    Text(
+        title,
+        Modifier.padding(
+            start = WontonTheme.spacing.pageInset,
+            top = WontonTheme.spacing.s16,
+            bottom = WontonTheme.spacing.s4,
+        ).semantics { heading() },
+        style = WontonTheme.typography.sectionTitle,
+        color = WontonTheme.colors.textPrimary.toColor(),
+    )
 }

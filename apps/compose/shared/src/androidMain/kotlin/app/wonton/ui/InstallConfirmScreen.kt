@@ -38,7 +38,7 @@ import app.wonton.ui.icons.WontonIcon
 /** 安装、升级的确认页：原样显示家里的服务器给的预览，确认后把这份预览交回核心，授予的就是这里列出的权限。 */
 @Composable
 fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation, onClose: () -> Unit) {
-    val isUpgrade = confirmation is PluginConfirmation.Upgrade
+    val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
@@ -49,13 +49,18 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                 when (confirmation) {
                     is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
                     is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
+                    is PluginConfirmation.Upload -> plugins.core.previewUpload(confirmation.archive)
+                    is PluginConfirmation.UpgradeFrom ->
+                        plugins.core.previewUpgradeFrom(confirmation.id, confirmation.source)
+                    is PluginConfirmation.UpgradeUpload ->
+                        plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
                 }.also { lanWebui = it.lanWebui?.enabled ?: false },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
         }
     }
-    val title = if (isUpgrade) "升级" else "安装"
+    val title = confirmation.actionTitle
     WontonScreen(bar = { WontonPushedBar(title, onClose, WontonIcon.Close, "关闭") }) {
         val result = loaded
         val preview = result?.getOrNull()
@@ -115,8 +120,9 @@ private fun PreviewContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Tag(preview.trust.label, preview.trust.tint)
-                    preview.author?.let {
-                        Text(it.name, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
+                    // 提供方是核实过的，有它就不写清单里自称的作者；两个都放一行放不下。
+                    (preview.provider ?: preview.author?.name)?.let {
+                        Text(it, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
                     }
                 }
             }
@@ -126,7 +132,6 @@ private fun PreviewContent(
         if (preview.permissions.isNotEmpty()) {
             DetailSection("权限") { preview.permissions.forEach { PermissionRow(it) } }
         }
-        preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->
             DetailSection("更新说明") {

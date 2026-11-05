@@ -135,6 +135,12 @@ private fun DetailContent(
         DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(
+                "换版本",
+                { navigation.changingVersion = installed.id },
+                Modifier.fillMaxWidth(),
+                WontonButtonKind.SECONDARY,
+            )
+            WontonButton(
                 "卸载",
                 { navigation.uninstalling = UninstallTarget(installed.id, installed.title) },
                 Modifier.fillMaxWidth(),
@@ -214,7 +220,15 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(detail.title, style = WontonTheme.typography.sectionTitle, color = colors.textPrimary.toColor())
                 Text(detail.summary, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
-                Tag(detail.trust.label, detail.trust.tint)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Tag(detail.trust.label, detail.trust.tint)
+                    detail.provider?.let {
+                        Text(it, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
+                    }
+                }
             }
         }
         action?.let { WontonButton(it.title, it.perform, Modifier.fillMaxWidth(), enabled = it.enabled) }

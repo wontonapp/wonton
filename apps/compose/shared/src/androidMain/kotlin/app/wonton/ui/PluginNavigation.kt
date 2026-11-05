@@ -46,6 +46,10 @@ class PluginNavigation(val open: (PluginEntry) -> Unit) {
     var detail by mutableStateOf<PluginRoute?>(null)
     var confirmation by mutableStateOf<PluginConfirmation?>(null)
     var uninstalling by mutableStateOf<UninstallTarget?>(null)
+    var addingSource by mutableStateOf(false)
+
+    /** 正在给哪个插件换版本。 */
+    var changingVersion by mutableStateOf<String?>(null)
 }
 
 /** [list] 上叠着打开的详情页和确认页，返回键逐层关掉。 */
@@ -53,10 +57,19 @@ class PluginNavigation(val open: (PluginEntry) -> Unit) {
 fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Composable () -> Unit) {
     val confirmation = navigation.confirmation
     val detail = navigation.detail
+    val changingVersion = navigation.changingVersion
     when {
         confirmation != null -> {
             BackHandler { navigation.confirmation = null }
             InstallConfirmScreen(plugins, confirmation, onClose = { navigation.confirmation = null })
+        }
+        navigation.addingSource -> {
+            BackHandler { navigation.addingSource = false }
+            AddSourceScreen(plugins, navigation)
+        }
+        changingVersion != null -> {
+            BackHandler { navigation.changingVersion = null }
+            ChangeVersionScreen(plugins, navigation, changingVersion)
         }
         detail != null -> {
             BackHandler { navigation.detail = null }
@@ -145,7 +158,7 @@ fun StateLine(icon: ImageVector, text: String, tint: Rgb) {
 fun reconfirmation(task: PluginTask, plugins: PluginsState): PluginConfirmation? =
     when (task.operation) {
         PluginOperation.INSTALL -> plugins.viewModel.store
-            ?.let { store -> (store.official.plugins + store.community.plugins).firstOrNull { it.id == task.id } }
+            ?.let { store -> store.allPlugins.firstOrNull { it.id == task.id } }
             ?.let { PluginConfirmation.Install(it.source) }
         PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(task.id)
         PluginOperation.UNINSTALL -> null
