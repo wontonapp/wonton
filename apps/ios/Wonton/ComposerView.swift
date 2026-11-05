@@ -7,7 +7,9 @@ struct ComposerView: View {
     let model: ChatModel
     let roomId: String
     let pin: BottomPin
-    @State private var draft = ""
+    private var draft: Binding<String> {
+        Binding(get: { model.drafts[roomId, default: ""] }, set: { model.drafts[roomId] = $0 })
+    }
     @State private var photo: PhotosPickerItem?
     @State private var isChoosingAttachment = false
     @State private var isPickingPhoto = false
@@ -15,23 +17,24 @@ struct ComposerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(alignment: .bottom, spacing: 0) {
             WontonIconButton(icon: .attach, label: "附件") { isChoosingAttachment = true }
-            ComposerField(text: $draft)
+            ComposerField(text: draft)
                 .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
                 .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
             if !isEmpty {
                 SendButton {
                     pin.pin()
-                    model.send(.sendText(roomId: roomId, body: draft))
-                    draft = ""
+                    model.send(.sendText(roomId: roomId, body: draft.wrappedValue))
+                    draft.wrappedValue = ""
                 }
                 .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
         .padding(WontonTheme.spacing.s4)
         .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
+        .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
             WontonSheetAction(title: "照片", icon: .image) { isPickingPhoto = true },
             WontonSheetAction(title: "文件", icon: .attach) { isPickingFiles = true }

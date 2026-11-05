@@ -64,6 +64,7 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
+                    if let installed = detail.installed { PluginTabPins(plugin: installed) }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)
                     }

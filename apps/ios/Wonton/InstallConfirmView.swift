@@ -10,11 +10,20 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var isFillingProfile = false
+    @State private var submittedId: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
-            if let preview {
+            Group {
+                if let submittedId {
+                    InstallCompletionView(model: model, pluginId: submittedId, close: { dismiss() }, review: {
+                        self.submittedId = nil
+                        Task { await load() }
+                    })
+                } else { content }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if submittedId == nil, let preview {
                 Button {
                     confirm(preview)
                 } label: {
@@ -95,7 +104,7 @@ struct InstallConfirmView: View {
         let action: Action = isUpgrade ? .upgradePlugin(preview: preview) : .installPlugin(preview: preview)
         do {
             try model.core.dispatch(action: action)
-            dismiss()
+            if isUpgrade { dismiss() } else { submittedId = preview.id }
         } catch {
             rejection = error.problem
         }

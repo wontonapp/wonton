@@ -10,11 +10,14 @@ struct HomeView: View {
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
     let openCardRoom: (String) -> Void
+    let showSettings: () -> Void
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
+    @Environment(TabsModel.self) private var tabs
+    @State private var pin: TabRef?
+    @State private var openedDevPage = false
     @State private var path = NavigationPath()
-    @State private var isShowingPage = false
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
     @State private var menuPlugin: InstalledPlugin?
@@ -24,10 +27,17 @@ struct HomeView: View {
             Group {
                 if case .notConfigured = model.viewModel.status {
                     PairingView(model: model)
-                        .wontonRootScreen("配对") { EmptyView() }
+                        .wontonRootScreen("配对") {
+                            if !tabs.isPinned(.settings) {
+                                WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
+                            }
+                        }
                 } else {
                     launcher
                         .wontonRootScreen("应用") {
+                            if !tabs.isPinned(.settings) {
+                                WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
+                            }
                             connectionLink.overlay(alignment: .topTrailing) {
                                 if plugins.viewModel.coreUpgrade.isPrompting {
                                     Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
@@ -60,8 +70,12 @@ struct HomeView: View {
                 }
             }
             .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
-            .onChange(of: model.viewModel.proxy, initial: true) { _, proxy in
-                if devWebURL != nil, proxy != nil { isShowingPage = true }
+            .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
+                guard !openedDevPage, let devWebURL,
+                      let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
+                      let choice = plugin.tabChoices.first else { return }
+                openedDevPage = true
+                tabs.select(choice.tab)
             }
             .onChange(of: model.requestedRoute) { _, route in
                 guard let route else { return }
@@ -69,14 +83,10 @@ struct HomeView: View {
                 path = NavigationPath()
                 path.append(route)
             }
-            .fullScreenCover(isPresented: $isShowingPage) {
-                if let url = devWebURL {
-                    PluginPage(title: url.host() ?? "", url: url, home: model.viewModel) { isShowingPage = false }
-                }
-            }
             .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
         }
         .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
+        .tabPinRequests($pin)
     }
 
     private var launcher: some View {
@@ -164,6 +174,14 @@ struct HomeView: View {
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         if plugin.entries.count > 1, let web = plugin.entries.last {
             actions.append(WontonSheetAction(title: "打开网页", icon: .web) { open(web) })
+        }
+        for choice in plugin.tabChoices {
+            let pinned = tabs.isPinned(choice.tab)
+            let title = (pinned ? TabText.unpin : TabText.pin)
+                + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
+            actions.append(WontonSheetAction(title: title, icon: .apps) {
+                if pinned { tabs.send(.unpinTab(tab: choice.tab)) } else { pin = choice.tab }
+            })
         }
         if let upgrade = plugin.upgrade {
             actions.append(WontonSheetAction(title: "升级到 \(upgrade.version)", icon: .download) {

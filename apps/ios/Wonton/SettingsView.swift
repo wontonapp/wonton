@@ -6,14 +6,23 @@ struct SettingsTab: View {
     let chat: ChatModel
     let plugins: PluginsModel
     let isPaired: Bool
+    var isModal = false
+    @Environment(\.dismiss) private var dismiss
     @State private var isEditingProfile = false
 
     var body: some View {
         NavigationStack {
             // 资料存在家里的服务器上，没配对时没有地方存。
             SettingsView(model: appearance, chat: chat, editProfile: isPaired ? { isEditingProfile = true } : nil)
-                .wontonRootScreen("设置") { EmptyView() }
-                .navigationDestination(for: SettingsRoute.self) { _ in ChatBackupView(model: chat) }
+                .wontonRootScreen(TabText.settings) {
+                    if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
+                }
+                .navigationDestination(for: SettingsRoute.self) { route in
+                    switch route {
+                    case .chatBackup: ChatBackupView(model: chat)
+                    case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
+                    }
+                }
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
     }
@@ -21,6 +30,7 @@ struct SettingsTab: View {
 
 private enum SettingsRoute: Hashable {
     case chatBackup
+    case bottomBar
 }
 
 /// 设置页：明暗、重点色、字号和字体。设置都在核心，这里只渲染、把选择发回去，改了整个 App 当场跟着变。
@@ -65,6 +75,12 @@ struct SettingsView: View {
                             value: chat.viewModel.encryption.recovery.backupValue,
                             showsForward: true
                         )
+                    }
+                    .buttonStyle(.plain)
+                }
+                WontonGroup {
+                    NavigationLink(value: SettingsRoute.bottomBar) {
+                        WontonRow(title: TabText.bottomBar, showsForward: true)
                     }
                     .buttonStyle(.plain)
                 }

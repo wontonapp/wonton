@@ -25,6 +25,9 @@ enum ChatRoute: Hashable {
 final class ChatModel {
     private(set) var viewModel: ChatViewModel
     var rejection: Problem?
+    /// 插件网页交给主人的草稿；只在聊天输入框出现，不自动发送。
+    var pendingDraft: String?
+    var drafts: [String: String] = [:]
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -52,6 +55,27 @@ final class ChatModel {
 
     /// 发起了私聊，房间还没出现。
     var isOpeningChat: Bool { awaitedPeer != nil }
+
+    func receiveDraft(_ text: String) {
+        if case let .room(roomId) = path.last,
+           viewModel.rooms.first(where: { $0.roomId == roomId })?.isReadOnly == false {
+            appendDraft(text, to: roomId)
+        } else {
+            pendingDraft = [pendingDraft, text].compactMap { $0 }.joined(separator: "\n")
+            path = []
+        }
+    }
+
+    func acceptPendingDraft(in roomId: String) {
+        guard let text = pendingDraft else { return }
+        pendingDraft = nil
+        appendDraft(text, to: roomId)
+    }
+
+    private func appendDraft(_ text: String, to roomId: String) {
+        let existing = drafts[roomId, default: ""]
+        drafts[roomId] = existing.isEmpty ? text : existing + "\n" + text
+    }
 
     /// `tab` 这一页正在显示的房间。
     func shownRoom(in tab: AppTab) -> String? {

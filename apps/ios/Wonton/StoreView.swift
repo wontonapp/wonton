@@ -292,6 +292,7 @@ struct TaskRow: View {
     let model: PluginsModel
     let task: PluginTask
     let review: () -> Void
+    var showsDismiss = true
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -306,7 +307,7 @@ struct TaskRow: View {
             Spacer(minLength: 0)
             if task.state == .running {
                 ProgressView()
-            } else {
+            } else if showsDismiss {
                 WontonIconButton(icon: .close, label: "关闭") { model.send(.dismissPluginTask(id: task.id)) }
             }
         }

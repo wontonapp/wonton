@@ -1,4 +1,5 @@
 import SwiftUI
+import WontonClient
 
 private struct WontonTabBarKey: EnvironmentKey {
     static var defaultValue: AnyView? { nil }
@@ -18,12 +19,16 @@ struct WontonBottomBar<Tab: Hashable>: View {
     struct Item {
         let tab: Tab
         let label: String
-        let icon: WontonIcon
-        let selectedIcon: WontonIcon
+        let icon: AnyView
+        let selectedIcon: AnyView
+        var badge = false
+        var isDimmed = false
     }
 
     let items: [Item]
     @Binding var selection: Tab
+    let reselect: (Tab) -> Void
+    let longPress: (Tab) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -47,13 +52,22 @@ struct WontonBottomBar<Tab: Hashable>: View {
         let isSelected = item.tab == selection
         let color = Color(isSelected ? colors.accentInkOnFill : colors.textSecondary)
         return Button {
-            selection = item.tab
+            if isSelected { reselect(item.tab) } else { selection = item.tab }
         } label: {
             VStack(spacing: 2) {
-                (isSelected ? item.selectedIcon : item.icon).view()
-                Text(item.label).wontonText(WontonTheme.typography.caption)
+                ZStack(alignment: .topTrailing) {
+                    isSelected ? item.selectedIcon : item.icon
+                    if item.badge {
+                        Circle()
+                            .fill(Color(colors.danger))
+                            .frame(width: 7, height: 7)
+                            .offset(x: 5, y: -2)
+                    }
+                }
+                Text(item.label).wontonText(WontonTheme.typography.caption).lineLimit(1)
             }
             .foregroundStyle(color)
+            .opacity(item.isDimmed ? 0.45 : 1)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
             .padding(.vertical, WontonTheme.spacing.s4)
             .background {
@@ -64,11 +78,12 @@ struct WontonBottomBar<Tab: Hashable>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu { Button(TabText.bottomBar) { longPress(item.tab) } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.label)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityShowsLargeContentViewer {
-            (isSelected ? item.selectedIcon : item.icon).view()
+            isSelected ? item.selectedIcon : item.icon
             Text(item.label)
         }
     }

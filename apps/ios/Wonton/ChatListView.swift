@@ -10,6 +10,11 @@ struct ChatListView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     notices
+                    if model.pendingDraft != nil {
+                        Text(TabText.selectChat)
+                            .wontonText(WontonTheme.typography.supporting)
+                            .padding(WontonTheme.spacing.pageInset)
+                    }
                     ForEach(Array(model.viewModel.rooms.enumerated()), id: \.element.roomId) { index, row in
                         if index > 0 {
                             WontonSeparator().padding(.leading, WontonTheme.size.avatar + WontonTheme.spacing.s12)

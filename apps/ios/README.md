@@ -6,8 +6,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 ## 结构
 
 - `Wonton/`：App 源码。`ChatModel`、`HomeModel`、`PluginsModel` 持有核心推来的 ViewModel 并转发操作，`TimelineModel` 按顺序
-  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`PluginWebView`
-  把 WKWebView 的 HTTP 代理设为核心的本地代理（CONNECT 加会话凭据），插件网页经隧道打开。`PairingView` 是扫码配对页，
+  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`TabsModel` 持有核心底栏状态；`TabPageView` 和 `TabWebSession`
+  共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
   把核心要来的配对码画成二维码。`HomeView` 是底栏的“应用”页，配上以后按图标列出插件，最后一格进商店，连接和“添加设备”在右上角的“连接”里；`StoreView`、
   `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsView` 是底栏的设置页（ADR-0028）。`EgressSettingsView` 是“连接”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“连接”里的升级服务器（ADR-0025）。
@@ -16,6 +16,12 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   等几行胶水代码。
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
+
+固定入口在插件详情、应用长按菜单、安装完成页和设置的“底栏”页。底栏顺序、上限和页面状态只由核心决定（ADR-0033）；
+壳在首次选中后保留 WKWebView，取消固定或关闭未固定页面时释放。桥的 `ui/message` 只把文字追加到用户选的聊天草稿，
+没有选房间或所选房间只读时先到聊天列表，选择可写房间后再填入，不调用发送接口。
+停止页的启动操作直接交给核心，失败留在页面上；加载失败的 HTTP 状态放在收起的详情里，不显示上游错误页。
+WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期间显示骨架。
 
 ## 构建
 
@@ -60,15 +66,11 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 
 - 配上以后连接信息存在 App 的数据目录里，之后直接启动也会自动重连，不用再传码；配对码只能用一次。
 - `WONTON_DEV_OPEN_WEB=<插件网页地址>`（比如装好 Grafana 示例插件后的 `http://app-grafana.wonton.localhost:18480/`）
-  让 App 停在“应用”，本地代理就绪后自动打开这个网页，并把加载结果打到控制台，真机上不用点按也能测。真机用
+  在“应用”页按已安装列表的网页地址查找插件并打开它的第一个页面，加载结果写入控制台；不接受任意未安装网页。真机用
   `xcrun devicectl device process launch --console --environment-variables` 传同样的变量；码里的直连地址写 Mac 的
   局域网 IP（`dev.sh pair <IP>:18482`，核心要 `WONTON_DEV_TUNNEL_BIND=0.0.0.0`）。
 - `WONTON_LOG` 换核心的日志过滤规则，例如 `wonton_client=info,wonton_tunnel=debug,warn` 打开本地代理的
   逐连接日志。
-- `WONTON_DEV_RELOAD_ON_FOREGROUND=1` 让网页每次从后台回来都重新加载，并把加载过程带上 UTC 时间打到控制台。
-  测前后台切换时，用 `xcrun devicectl device process launch --device <设备 UDID> com.apple.Preferences`
-  把 App 切到后台，等若干秒再 `launch app.wonton.ios` 拉回来，对照控制台里的“回到前台，隧道检查完成”
-  和“网页加载完成”。
 
 ## 聊天（开发）
 
