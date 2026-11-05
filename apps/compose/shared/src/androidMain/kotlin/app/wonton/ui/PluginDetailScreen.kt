@@ -47,6 +47,7 @@ import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSeparator
+import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Blocked
@@ -128,12 +129,7 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
-        val offer = detail.lanWebui
-        if (offer != null && detail.installed != null) InstalledLanWebui(plugins, detail.id, offer, onToggled)
-        if (detail.installed != null && detail.saveGrants.isNotEmpty()) {
-            SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
-        }
-        if (detail.installed != null) ToolPolicySection(plugins, detail.id, detail.version)
+        detail.installed?.let { InstalledDetailSections(detail, plugins, onToggled) }
         DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(
@@ -194,7 +190,67 @@ private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>,
     }
 }
 
+/** 只有装好的插件才有的节：各页内开关。底栏固定开关在截图之前，位置不在这里。 */
+@Composable
+private fun InstalledDetailSections(
+    detail: PluginDetail,
+    plugins: PluginsState,
+    onToggled: (PluginDetail) -> Unit,
+) {
+    val installed = detail.installed ?: return
+    detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
+    if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
+    ToolPolicySection(plugins, detail.id, detail.version)
+    if (installed.writtenBy != null) {
+        AskEveryUpdateSection(plugins, detail.id, detail.askEveryUpdate ?: false, onToggled)
+    }
+}
+
 private class DetailAction(val title: String, val enabled: Boolean, val perform: () -> Unit)
+
+/** 更新一节：Agent 写的插件有“每次都问”（ADR-0033）。失败显示原因并把开关弹回。 */
+@Composable
+private fun AskEveryUpdateSection(
+    plugins: PluginsState,
+    id: String,
+    enabled: Boolean,
+    onUpdated: (PluginDetail) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var isOn by remember(id) { mutableStateOf(enabled) }
+    var busy by remember(id) { mutableStateOf(false) }
+    var problem by remember(id) { mutableStateOf<Problem?>(null) }
+    DetailSection(tabText("更新", "Updates")) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                tabText("每次都问", "Ask every update"),
+                Modifier.weight(1f),
+                style = WontonTheme.typography.body,
+                color = WontonTheme.colors.textPrimary.toColor(),
+            )
+            WontonSwitch(isOn, { turn ->
+                busy = true
+                problem = null
+                scope.launch {
+                    try {
+                        val detail = plugins.core.setAskEveryUpdate(id, turn)
+                        isOn = detail.askEveryUpdate ?: turn
+                        onUpdated(detail)
+                    } catch (failure: CoreException) {
+                        problem = failure.problem
+                        isOn = enabled
+                    }
+                    busy = false
+                }
+            }, !busy)
+        }
+        problem?.let { ProblemNotice(it) }
+    }
+}
 
 /** 标题旁的按钮：没装的“获取”，能升级的“更新”，装着的“打开”。 */
 private fun detailAction(detail: PluginDetail, working: Boolean, navigation: PluginNavigation): DetailAction? {
@@ -229,6 +285,13 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
                     Tag(detail.trust.label, detail.trust.tint)
                     detail.provider?.let {
                         Text(it, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
+                    }
+                    detail.installed?.writtenBy?.let { writer ->
+                        Text(
+                            tabText("你的 Agent · ${writer.title}", "Your agent · ${writer.title}"),
+                            style = WontonTheme.typography.caption,
+                            color = colors.textSecondary.toColor(),
+                        )
                     }
                 }
             }

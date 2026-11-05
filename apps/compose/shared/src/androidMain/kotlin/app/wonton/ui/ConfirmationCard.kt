@@ -10,6 +10,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -19,6 +23,7 @@ import app.wonton.protocol.Answer
 import app.wonton.protocol.CardChoice
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.WindowView
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -38,6 +43,7 @@ import java.util.Date
 fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     val card = view.card
     val colors = WontonTheme.colors
+    val tabs = LocalTabs.current
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
         card.lines.forEach { line ->
@@ -51,6 +57,14 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
+        // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
+        // 刷新）时如实不显示。
+        val installed = if (card.state is ConfirmationState.Succeeded) {
+            card.pluginId?.let { id -> tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id } }
+        } else {
+            null
+        }
+        installed?.let { CardInstalledActions(it, tabs, onAction) }
         if (card.choices.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -64,6 +78,31 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
             }
         }
     }
+}
+
+/** 卡片上已装插件的按钮：“打开”到第一项 tab；“放到底栏”走现有固定流程，已固定时不显示。 */
+@Composable
+private fun CardInstalledActions(installed: InstalledPlugin, tabs: TabsState, onAction: (Action) -> Unit) {
+    var showsPages by remember(installed.id) { mutableStateOf(false) }
+    val choices = installed.tabChoices
+    val pinned = choices.any { choice -> tabs.viewModel.items.any { it.tab == choice.tab } }
+    if (choices.isEmpty()) return
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+    ) {
+        WontonButton(tabText("打开", "Open"), { onAction(Action.SelectTab(choices[0].tab)) })
+        if (!pinned) {
+            WontonButton(tabText("放到底栏", "Pin to tab bar"), {
+                if (choices.size > 1) {
+                    showsPages = true
+                } else {
+                    tabs.pin(choices.single().tab, choices.single().title)
+                }
+            })
+        }
+    }
+    if (showsPages) TabPageChoiceSheet(installed) { showsPages = false }
 }
 
 @Composable
