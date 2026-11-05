@@ -52,6 +52,15 @@ OMP 18.16 不读取 `OPENAI_BASE_URL` 和 `OPENAI_MODEL`。入口脚本将这三
 
 聊天里普通文字排队执行；`/wonton interrupt <文字>` 取消当前轮后重来，`/wonton queue <文字>` 显式排队，`/wonton steer <文字>` 在 Agent 声明 steering 时插话。Agent 请求自身工具权限时，桥经核心的确认卡片接口等主人回答。
 
+## 登录（C3）
+
+Agent 声明了 ACP 登录方式时，聊天里发 `/wonton login` 列出方式，`/wonton login <方式 ID>` 发起；URL 引导转成聊天里的链接，回复 `/wonton login accept` / `/wonton login decline`；终端类登录的链接和提示发进聊天，主人回复的授权码原样写入登录进程 stdin。`/wonton login cancel` 取消。
+
+- 入口脚本按 `WONTON_AGENT_COMMAND`（默认 `omp acp`）启动 Agent；终端登录用同一命令加登录方式声明的参数（ACP 要求同一程序）。
+- Agent 声明 terminal 登录方式的前提是入口脚本监听登录控制 socket：`<WONTON_ACP_SOCKET>` 同目录、后缀 `.login.sock`（如 `acp.login.sock`）。桥检测到该文件才对 Agent 声明 `auth.terminal`。
+- 终端登录成功（进程退出码 0）后桥退出重连，由 Compose 拉起；登录态在 Agent 数据卷里，重启后保留。
+- 用官方账号登录的插件要申请 `network.egress`（ADR-0007）；本样例的 OMP 走模型网关，不涉及。
+
 停止并清理本样例自己的资源：
 
 ```bash

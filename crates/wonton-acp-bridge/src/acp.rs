@@ -20,6 +20,12 @@ use crate::{
     error::{Error, Result},
     permission::{PermissionBroker, PermissionResult, parse_pending},
 };
+
+pub mod auth;
+use auth::{AuthMethod, AuthRequests, parse_auth_methods};
+#[cfg(test)]
+#[path = "acp_test_support.rs"]
+pub(crate) mod test_support;
 #[cfg(test)]
 #[path = "acp_tests.rs"]
 mod tests;
@@ -52,6 +58,7 @@ pub struct PromptResult {
 
 #[derive(Debug)]
 struct RpcError {
+    code: i64,
     message: String,
 }
 
@@ -68,7 +75,12 @@ impl Drop for PendingGuard {
         let inner = self.inner.clone();
         let id = self.id;
         drop(handle.spawn(async move {
-            inner.pending.lock().await.remove(&id);
+            if inner.pending.lock().await.remove(&id).is_some() {
+                let bytes = json!({"jsonrpc":"2.0", "method":"$/cancel_request", "params":{"requestId":id}}).to_string();
+                let mut writer = inner.writer.lock().await;
+                let _ = writer.write_all(bytes.as_bytes()).await;
+                let _ = writer.write_all(b"\n").await;
+            }
         }));
     }
 }
@@ -84,6 +96,7 @@ struct Inner {
     old_message_ids: Mutex<HashMap<String, HashSet<String>>>,
     cancelled_sessions: Mutex<HashSet<String>>,
     closed: watch::Sender<bool>,
+    auth: AuthRequests,
 }
 
 struct PermissionWaiter {
@@ -94,6 +107,7 @@ struct PermissionWaiter {
 pub struct AcpClient {
     inner: Arc<Inner>,
     capabilities: Capabilities,
+    auth_methods: Vec<AuthMethod>,
 }
 
 impl AcpClient {
@@ -114,6 +128,7 @@ impl AcpClient {
             old_message_ids: Mutex::new(HashMap::new()),
             cancelled_sessions: Mutex::new(HashSet::new()),
             closed: watch::channel(false).0,
+            auth: AuthRequests::new(),
         });
         tokio::spawn(read_loop(inner.clone(), reader));
         let client = Self {
@@ -125,13 +140,17 @@ impl AcpClient {
                 steering: false,
                 mcp_http: false,
             },
+            auth_methods: Vec::new(),
         };
         let result = client
             .request(
                 "initialize",
                 json!({
                     "protocolVersion": 1,
-                    "clientCapabilities": {},
+                    "clientCapabilities": {
+                        "elicitation": {"url": {}},
+                        "auth": {"terminal": path.with_extension("login.sock").exists()}
+                    },
                     "clientInfo": {"name": "wonton-acp-bridge", "version": env!("CARGO_PKG_VERSION")}
                 }),
             )
@@ -139,6 +158,7 @@ impl AcpClient {
             .map_err(|error| Error::AgentNotReady(error.message))?;
         Ok(Self {
             capabilities: parse_capabilities(&result),
+            auth_methods: parse_auth_methods(result.get("authMethods")),
             ..client
         })
     }
@@ -168,7 +188,7 @@ impl AcpClient {
                 }),
             )
             .await
-            .map_err(|error| Error::AgentNotReady(error.message))?;
+            .map_err(|error| if error.code == -32000 { Error::AuthenticationRequired } else { Error::AgentNotReady(error.message) })?;
         let session_id = result["sessionId"]
             .as_str()
             .ok_or_else(|| Error::AgentNotReady("session/new 没有返回 sessionId".into()))?
@@ -206,6 +226,9 @@ impl AcpClient {
     async fn restore_with(&self, method: &str, params: Value) -> Result<()> {
         let mut notices = self.subscribe();
         self.request(method, params).await.map_err(|error| {
+            if error.code == -32000 {
+                return Error::AuthenticationRequired;
+            }
             let detail = error.message;
             let lower = detail.to_ascii_lowercase();
             let unsupported = lower.contains("method not found")
@@ -323,7 +346,11 @@ impl AcpClient {
                         Ok(result) => result,
                         Err(error) => {
                             self.clear_cancelled(session_id).await;
-                            return Err(Error::TransportUnavailable(error.message));
+                            return Err(match error.code {
+                                -32000 => Error::AuthenticationRequired,
+                                -32098 => Error::TransportUnavailable(error.message),
+                                _ => Error::Upstream(error.message),
+                            });
                         }
                     };
                     tracing::debug!(result = %result, "ACP prompt 响应");
@@ -418,10 +445,12 @@ impl AcpClient {
         if let Err(error) = self.write(message).await {
             self.inner.pending.lock().await.remove(&id);
             return Err(RpcError {
+                code: -32098,
                 message: error.to_string(),
             });
         }
         receiver.await.map_err(|_| RpcError {
+            code: -32098,
             message: "ACP 连接已关闭".into(),
         })?
     }
@@ -464,6 +493,7 @@ async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
         }
     }
     let _ = inner.closed.send(true);
+    inner.auth.close().await;
     let waiters = std::mem::take(&mut *inner.permission_waiters.lock().await);
     for (_, waiter) in waiters {
         let _ = waiter.cancel.send(());
@@ -471,6 +501,7 @@ async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
     let pending = std::mem::take(&mut *inner.pending.lock().await);
     for (_, sender) in pending {
         let _ = sender.send(Err(RpcError {
+            code: -32098,
             message: "ACP Agent 连接断开".into(),
         }));
     }
@@ -482,6 +513,7 @@ async fn settle_response(inner: &Arc<Inner>, id: u64, message: &Value) {
     let Some(sender) = sender else { return };
     let result = if let Some(error) = message.get("error") {
         Err(RpcError {
+            code: error["code"].as_i64().unwrap_or(-32603),
             message: error["message"]
                 .as_str()
                 .unwrap_or("ACP 请求失败")
@@ -504,6 +536,7 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
     }
     if method == "$/cancel_request" {
         cancel_permission_request(inner, &message["params"]["requestId"]).await;
+        inner.auth.cancel(&message["params"]["requestId"]).await;
         return;
     }
     let Some(id) = message.get("id").cloned() else {
@@ -515,7 +548,9 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
             let request = message.clone();
             tokio::spawn(async move { handle_permission_request(inner, id, request).await });
         }
-        "elicitation/create" => send_result(inner, &id, json!({"action": "decline"})).await,
+        "elicitation/create" => {
+            tokio::spawn(auth::elicit(inner.clone(), id, message["params"].clone()));
+        }
         _ => send_error(inner, &id, -32601, "方法未实现").await,
     }
 }

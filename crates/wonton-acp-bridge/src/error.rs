@@ -7,6 +7,8 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("Agent 需要登录；发送 /wonton login 查看登录方式")]
+    AuthenticationRequired,
     #[error("Agent 未就绪：{0}")]
     AgentNotReady(String),
     #[error("ACP 传输不可用：{0}")]

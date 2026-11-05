@@ -13,6 +13,7 @@ use crate::{
     acp::{AcpClient, PromptResult},
     config::{Config, Limits},
     error::{Error, Result as BridgeResult},
+    login::{LoginFlow, LoginSink},
     matrix::{IncomingText, new_owner_messages},
     state::{SessionRecord, SessionStore},
 };
@@ -43,6 +44,16 @@ struct PromptFinished {
     result: BridgeResult<PromptResult>,
 }
 
+struct RoomSink<'a> {
+    room: &'a ChatRoom,
+}
+
+impl LoginSink for RoomSink<'_> {
+    async fn send_login_text(&self, text: &str) -> BridgeResult<()> {
+        Ok(self.room.send_text(text).await?)
+    }
+}
+
 struct RoomState {
     session_id: Option<String>,
     loaded: bool,
@@ -50,6 +61,7 @@ struct RoomState {
     queue: VecDeque<Job>,
     pending_interrupt: Option<Job>,
     last_activity: Instant,
+    login: LoginFlow,
 }
 
 pub async fn run() -> Result<()> {
@@ -130,6 +142,7 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
         .filter_map(|message| message.event_id.as_ref().map(ToString::to_string))
         .collect::<HashSet<_>>();
     let (finished_tx, mut finished_rx) = mpsc::channel(16);
+    let (login, mut login_rx) = LoginFlow::new();
     let mut state = RoomState {
         session_id: bridge
             .sessions
@@ -141,6 +154,7 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
         queue: VecDeque::new(),
         pending_interrupt: None,
         last_activity: Instant::now(),
+        login,
     };
     let mut idle_tick = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
@@ -158,6 +172,13 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
                     start_or_report(&bridge, &room, &mut state, job, &finished_tx).await?;
                 } else if let Some(job) = state.queue.pop_front() {
                     start_or_report(&bridge, &room, &mut state, job, &finished_tx).await?;
+                }
+            }
+            Some(event) = login_rx.recv() => {
+                if state.login.event(event, &RoomSink { room: room.as_ref() }).await? {
+                    // 终端登录成功后重开 ACP 连接：进程退出码 0，Compose 拉起后重新 initialize。
+                    room.send_text("Agent 登录完成，桥将重连。").await?;
+                    return Ok(());
                 }
             }
             _ = idle_tick.tick() => {
@@ -192,6 +213,21 @@ async fn receive_job(
     if incoming.text.is_empty() {
         room.send_text("输入不支持：ACP 桥 C2 只接受普通文字。")
             .await?;
+        return Ok(());
+    }
+    if state
+        .login
+        .receive(
+            &incoming.text,
+            &RoomSink {
+                room: room.as_ref(),
+            },
+            &bridge.acp,
+            &bridge.config.socket,
+            state.active,
+        )
+        .await?
+    {
         return Ok(());
     }
     let job = match parse_job(&incoming.text, &bridge.config.limits) {
@@ -442,6 +478,7 @@ async fn stop_for_agent_disconnect(room: &ChatRoom) -> BridgeResult<()> {
 
 fn format_error(error: &Error) -> String {
     match error {
+        Error::AuthenticationRequired => "Agent 需要登录：发送 /wonton login 查看登录方式。".into(),
         Error::AgentNotReady(message) => format!("Agent 未就绪：{message}"),
         Error::TransportUnavailable(message) => format!("传输不可用：{message}"),
         Error::SessionUnavailable(message) => format!("ACP 会话不可用：{message}"),

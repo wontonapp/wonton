@@ -5,6 +5,7 @@ mod acp;
 mod bridge;
 mod config;
 mod error;
+mod login;
 mod matrix;
 mod permission;
 mod state;
