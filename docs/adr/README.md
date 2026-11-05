@@ -39,6 +39,7 @@
 | [0027](0027-bot-save-file.md) | Bot 把文件存进共享文件夹：按路径授权 |
 | [0028](0028-settings-page.md) | 设置页：明暗、重点色、字号和字体 |
 | [0029](0029-platform-material.md) | App 的材质和形态：令牌共用，栏和菜单按平台走 |
+| [0030](0030-owner-profile-in-app.md) | 显示名和邮箱在 App 里填 |
 | [0031](0031-plugin-sources.md) | 插件的五种来源：官方、社区、添加的仓库、第三方索引和上传的文件 |
 | [0032](0032-connection-quality.md) | 和家里服务器的连接：自动恢复，用人话说状态 |
 | [0033](0033-plugin-tabs.md) | 底栏的插件页、全屏和 Agent 写插件：网页打底，App 管栏和主题，桥接用 MCP Apps 的词汇 |

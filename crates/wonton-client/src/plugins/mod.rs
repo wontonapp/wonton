@@ -5,6 +5,7 @@ pub(crate) mod api;
 mod cache;
 mod core_upgrade;
 mod egress;
+mod owner_profile;
 mod takeover;
 mod tasks;
 mod tool_policy;
@@ -261,6 +262,7 @@ impl PluginsLink {
             view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;
+            view.owner_profile_prompt = false;
             view.tasks
                 .retain(|task| task.state == PluginTaskState::Running);
             for task in &mut view.tasks {
@@ -650,6 +652,9 @@ async fn follow_home(link: Weak<PluginsLink>) {
         if now_connected && !connected {
             link.refresh_installed();
             link.fetch_core_upgrade();
+            if link.home.take_freshly_linked() {
+                link.prompt_owner_profile_if_empty();
+            }
             if link.store_wanted.load(Ordering::Relaxed) {
                 link.refresh_store(false);
             }

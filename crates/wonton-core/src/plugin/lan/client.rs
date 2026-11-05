@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{LanClient, LanWebuiOffer};
 
-use crate::config::Owner;
 use crate::plugin::manager::PluginManager;
 use crate::plugin::manifest::{Manifest, ManifestError, PluginId};
 use crate::plugin::proxy_auth;
@@ -77,12 +76,7 @@ impl PluginManager {
         let stored = self.store.secrets().load(id).map_err(|e| e.to_string())?;
         let stored = stored.ok_or("密钥库里没有这个插件")?;
         let generated = secrets::generated_values(manifest, &stored)?;
-        let owner = Owner {
-            id: self.cfg.owner.clone(),
-            username: self.cfg.owner.clone(),
-            display_name: self.cfg.owner.clone(),
-            email: self.cfg.owner_email.clone(),
-        };
+        let owner = self.cfg.profile.owner();
         let fill = |template| proxy_auth::fill_template(template, &owner, &generated);
         let mut hosts = BTreeSet::new();
         let slug = id.slug();

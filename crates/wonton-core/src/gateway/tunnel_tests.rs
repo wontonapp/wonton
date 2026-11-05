@@ -33,6 +33,7 @@ use crate::device::Devices;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
+use crate::owner::OwnerStore;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
@@ -95,6 +96,7 @@ impl Home {
             };
             (Hydra::new(http.clone(), &cfg), cfg.public_url)
         });
+        let profile = OwnerStore::for_test(dir.path(), &owner());
         let lifecycle = LifecycleConfig {
             public: public.clone(),
             data_dir: dir.path().to_owned(),
@@ -106,7 +108,7 @@ impl Home {
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
-            owner_email: Some("owner@example.com".into()),
+            profile: profile.clone(),
             gateway_port: 8080,
             instance: Default::default(),
         };
@@ -123,7 +125,7 @@ impl Home {
         let tunnel = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(
             public,
-            owner(),
+            profile,
             TOKEN.into(),
             manager.clone(),
             hydra,

@@ -120,6 +120,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         InstallError::Conflict(_)
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
+        | InstallError::OwnerProfileIncomplete
         | InstallError::CoreUpgrading => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
@@ -160,7 +161,7 @@ pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
         _ => Some(error_response(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
-            "需要 Authorization: Bearer <主人令牌>",
+            "这台设备没有配对或者已被移除，要重新配对；命令行要带 Authorization: Bearer <令牌>",
         )),
     }
 }

@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
-    Action, AddedSource, AddedTools, CoreError, PluginFailure, PluginImage, PluginOperation,
-    PluginState, PluginTaskState, SourceKind, StoreSection,
+    Action, AddedSource, AddedTools, CoreError, OwnerProfileUpdate, PluginFailure, PluginImage,
+    PluginOperation, PluginState, PluginTaskState, SourceKind, StoreSection,
 };
 
 use rig::{Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview, running};
@@ -277,6 +277,97 @@ async fn a_preview_that_says_no_is_not_sent() {
             .seen(&Method::POST, "/_wonton/api/plugins")
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn a_preview_that_needs_the_profile_is_not_sent() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut needs_email = preview("app.photos");
+    needs_email.missing_profile = Some("这个应用要用你的邮箱，填好才能装".to_owned());
+    assert!(matches!(
+        rig.app.dispatch(Action::InstallPlugin {
+            preview: needs_email
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+    assert!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins")
+            .is_empty()
+    );
+}
+
+const PROFILE: &str = "/_wonton/api/owner-profile";
+
+fn profile(name: Option<&str>, email: Option<&str>) -> Canned {
+    let body = serde_json::json!({"username": "owner", "display_name": name, "email": email});
+    Canned(200, body.to_string())
+}
+
+#[tokio::test]
+async fn pairing_with_a_server_that_has_no_profile_asks_once() {
+    let rig = Rig::new().await;
+    rig.core.answer(Method::GET, PROFILE, profile(None, None));
+    rig.connected().await;
+    rig.wait_for(|view| view.owner_profile_prompt).await;
+    rig.app.dispatch(Action::DismissOwnerProfilePrompt).unwrap();
+    assert!(!rig.app.plugins().owner_profile_prompt);
+}
+
+#[tokio::test]
+async fn pairing_with_a_server_that_has_a_profile_does_not_ask() {
+    let rig = Rig::new().await;
+    let filled = profile(Some("云吞"), Some("me@example.com"));
+    rig.core.answer(Method::GET, PROFILE, filled);
+    rig.connected().await;
+    let deadline = Instant::now() + WAIT;
+    while rig.core.seen(&Method::GET, PROFILE).is_empty() {
+        assert!(Instant::now() < deadline, "没去取资料");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(!rig.app.plugins().owner_profile_prompt);
+}
+
+#[tokio::test]
+async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
+    let rig = Rig::new().await;
+    rig.core.answer(Method::GET, PROFILE, profile(None, None));
+    rig.connected().await;
+    rig.wait_for(|view| view.owner_profile_prompt).await;
+
+    let update = OwnerProfileUpdate {
+        display_name: "云吞".to_owned(),
+        email: "bad".to_owned(),
+    };
+    let refused = core_error(400, "invalid_input", "不像邮箱");
+    rig.core.answer(Method::PUT, PROFILE, refused);
+    let error = rig
+        .app
+        .save_owner_profile(update.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        CoreError::InvalidInput {
+            reason: "不像邮箱".to_owned()
+        }
+    );
+    assert!(rig.app.plugins().owner_profile_prompt, "没存上，还要填");
+
+    let saved = profile(Some("云吞"), Some("me@example.com"));
+    rig.core.answer(Method::PUT, PROFILE, saved);
+    let good = OwnerProfileUpdate {
+        email: "me@example.com".to_owned(),
+        ..update
+    };
+    let profile = rig.app.save_owner_profile(good).await.unwrap();
+    assert_eq!(profile.email.as_deref(), Some("me@example.com"));
+    assert!(!rig.app.plugins().owner_profile_prompt);
+    let sent = rig.core.seen(&Method::PUT, PROFILE);
+    assert!(sent[1].body.contains("me@example.com"), "{}", sent[1].body);
+    assert!(!sent[1].from_page);
 }
 
 #[tokio::test]

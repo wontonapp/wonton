@@ -21,6 +21,7 @@ use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
+use crate::owner::OwnerStore;
 use crate::plugin::PluginManager;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
@@ -60,6 +61,7 @@ impl Home {
             base_domain: CORE.into(),
             port: 18480,
         };
+        let profile = OwnerStore::for_test(dir.path(), &owner());
         let lifecycle = LifecycleConfig {
             public: public.clone(),
             data_dir: dir.path().to_owned(),
@@ -71,7 +73,7 @@ impl Home {
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
-            owner_email: Some("owner@example.com".into()),
+            profile: profile.clone(),
             gateway_port: 8080,
             instance: Default::default(),
         };
@@ -91,7 +93,7 @@ impl Home {
             Arc::new(Push::open(dir.path().join("push.json"), tunnel.devices.clone()).unwrap());
         let gateway = Gateway::new(
             public,
-            owner(),
+            profile,
             TOKEN.into(),
             plugins.clone(),
             None,

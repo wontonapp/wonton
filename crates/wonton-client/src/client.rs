@@ -7,9 +7,10 @@ use tokio::sync::watch;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatViewModel, CoreError, DeviceNetwork, FileCard,
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
-    InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel, PluginDetail,
-    PluginImage, PluginsViewModel, PushNotification, RoomTransfers, SessionListViewModel,
-    StoreItem, TabsViewModel, ToolPolicyView, TransfersViewModel,
+    InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel, OwnerProfile,
+    OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel, PushNotification,
+    RoomTransfers, SessionListViewModel, StoreItem, TabsViewModel, ToolPolicyView,
+    TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -244,6 +245,22 @@ impl ClientCore {
     pub async fn preview_install(&self, source: String) -> Result<InstallPreview, CoreError> {
         let plugins = self.plugins.clone();
         self.run(async move { plugins.preview_install(source).await })
+            .await
+    }
+
+    /// 取家里服务器上的资料（ADR-0030），设置页和填资料的页面渲染它。
+    pub async fn owner_profile(&self) -> Result<OwnerProfile, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.owner_profile().await }).await
+    }
+
+    /// 保存资料。不合规则时返回 `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
+    pub async fn save_owner_profile(
+        &self,
+        update: OwnerProfileUpdate,
+    ) -> Result<OwnerProfile, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.save_owner_profile(update).await })
             .await
     }
 

@@ -55,7 +55,7 @@ pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<R
     if m.kind == PluginKind::System {
         report
             .warnings
-            .push("kind: system 的插件只能随核心预装，主人装不了".to_owned());
+            .push("kind: system 的插件只能随核心预装，用户装不了".to_owned());
     }
     for permission in m.permissions.iter().filter(|p| !supported(p)) {
         report
@@ -155,7 +155,7 @@ fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Repor
         ));
     } else if m.lan.is_some() {
         report.warnings.push(format!(
-            "{advice}。否则网页所在服务的局域网端口默认不开，要主人打开开关 lan_webui"
+            "{advice}。否则网页所在服务的局域网端口默认不开，要用户打开开关 lan_webui"
         ));
     } else {
         report.warnings.push(format!(

@@ -1,10 +1,13 @@
-//! 主人的身份（ADR-0022）：用户名、邮箱和时区的规则，以及把用户名记进数据目录。
+//! 主人的身份：用户名、显示名、邮箱和时区的规则，以及记进数据目录的记录。用户名装好后不变（ADR-0022），显示名和邮箱在
+//! App 里填（ADR-0030）。
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::{OwnerProfile, OwnerProfileUpdate};
 
 /// 没配 `WONTON_OWNER_NAME`、数据目录里也没有记录时的用户名。
 pub const DEFAULT_USERNAME: &str = "owner";
@@ -51,8 +54,23 @@ const SYSTEM_NAMES: &[&str] = &[
     "xfs",
 ];
 
-/// 主人还没配邮箱、插件又要用时的错误，写明怎么修。`docker restart` 不重新读 `.env`。
-pub const NO_EMAIL: &str = "主人还没配邮箱：在安装目录的 .env 里写上 WONTON_OWNER_EMAIL，再执行一次 install.sh 或 docker compose up -d";
+/// 主人的身份，单点登录和插件从这里取。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Owner {
+    pub username: String,
+    /// 还没填时是用户名：应用要显示点什么，用户名是真的，不另外编一个。
+    pub display_name: String,
+    /// 还没填时没有：核心不拼一个收不到信的地址（ADR-0022）。
+    pub email: Option<String>,
+}
+
+/// 还没填邮箱、插件又要用时的错误，写明怎么修。
+pub const NO_EMAIL: &str = "你还没填邮箱：在 App 的设置里填好再试";
+
+/// 安装页上的说明，旁边就是去填的按钮。
+pub const EMAIL_NEEDED: &str = "这个应用要用你的邮箱，填好才能装";
+
+const MAX_DISPLAY_NAME_CHARS: usize = 64;
 
 /// 可移植的 POSIX 用户名（`^[a-z][a-z0-9_-]{0,31}$`），同时是合法的 Matrix localpart。
 pub fn check_username(name: &str) -> Result<(), String> {
@@ -94,6 +112,20 @@ pub fn check_email(email: &str) -> Result<(), String> {
     }
 }
 
+/// 显示名会原样进 OIDC 声明和代登录的请求头，有控制字符时写不进 HTTP。
+pub fn check_display_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("名字不能为空".to_owned());
+    }
+    if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+        return Err(format!("名字太长：最多 {MAX_DISPLAY_NAME_CHARS} 个字"));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("名字里不能有换行和控制字符".to_owned());
+    }
+    Ok(())
+}
+
 /// 只接受 IANA 时区名。POSIX 写法（`CST-8`）和 `:/etc/localtime` 让用严格时区库的插件起不来。时区库内嵌在核心里：
 /// 镜像里不一定有 `/usr/share/zoneinfo`。
 pub fn check_time_zone(tz: &str) -> Result<(), String> {
@@ -107,7 +139,7 @@ pub fn check_time_zone(tz: &str) -> Result<(), String> {
 #[derive(Debug, thiserror::Error)]
 pub enum LockError {
     #[error(
-        "WONTON_OWNER_NAME 是 {configured}，但这台服务器的主人用户名是 {recorded}（记在 {}）。用户名装好后不能改：\
+        "WONTON_OWNER_NAME 是 {configured}，但这台服务器的用户名是 {recorded}（记在 {}）。用户名装好后不能改：\
          Matrix 账号和插件里的账号都挂在它上面。把 WONTON_OWNER_NAME 改回 {recorded} 或者删掉它；要换用户名只能用新的\
          数据目录重新安装",
         path.display()
@@ -119,18 +151,128 @@ pub enum LockError {
     },
     #[error("WONTON_OWNER_NAME 不能用：{0}")]
     Reserved(String),
-    #[error("主人用户名的记录 {} 读不了：{message}。核心不覆盖它：从备份恢复这个文件", path.display())]
+    #[error("身份记录 {} 读不了：{message}。核心不覆盖它：从备份恢复这个文件", path.display())]
     Unreadable { path: PathBuf, message: String },
-    #[error("写不进主人用户名的记录 {}：{source}", path.display())]
+    #[error("写不进身份记录 {}：{source}", path.display())]
     Write {
         path: PathBuf,
         source: std::io::Error,
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Record {
     username: String,
+    display_name: Option<String>,
+    email: Option<String>,
+}
+
+impl Record {
+    fn check(&self) -> Result<(), String> {
+        check_username(&self.username)?;
+        if let Some(name) = &self.display_name {
+            check_display_name(name)?;
+        }
+        if let Some(email) = &self.email {
+            check_email(email)?;
+        }
+        Ok(())
+    }
+}
+
+/// 保存资料失败。
+#[derive(Debug, thiserror::Error)]
+pub enum ProfileError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error("写不进身份记录 {}：{source}", path.display())]
+    Write {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+}
+
+/// 记在数据目录里的身份。显示名和邮箱随时会改，用的地方每次都从这里取，不留副本。
+#[derive(Debug)]
+pub struct OwnerStore {
+    state_dir: PathBuf,
+    username: String,
+    profile: RwLock<(Option<String>, Option<String>)>,
+}
+
+impl OwnerStore {
+    /// 读 [`lock_username`] 记下的身份。
+    pub fn open(state_dir: &Path) -> Result<Arc<Self>, LockError> {
+        let record = read_record(state_dir)?.ok_or_else(|| LockError::Unreadable {
+            path: state_dir.join(RECORD),
+            message: "文件不在".to_owned(),
+        })?;
+        Ok(Arc::new(Self {
+            state_dir: state_dir.to_owned(),
+            username: record.username,
+            profile: RwLock::new((record.display_name, record.email)),
+        }))
+    }
+
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    pub fn owner(&self) -> Owner {
+        let profile = self.profile.read().expect("身份记录锁中毒");
+        Owner {
+            username: self.username.clone(),
+            display_name: profile.0.clone().unwrap_or_else(|| self.username.clone()),
+            email: profile.1.clone(),
+        }
+    }
+
+    pub fn email(&self) -> Option<String> {
+        self.profile.read().expect("身份记录锁中毒").1.clone()
+    }
+
+    pub fn profile(&self) -> OwnerProfile {
+        let profile = self.profile.read().expect("身份记录锁中毒");
+        OwnerProfile {
+            username: self.username.clone(),
+            display_name: profile.0.clone(),
+            email: profile.1.clone(),
+        }
+    }
+
+    /// 校验、写盘、再换内存里的值：写不进去时还是原来的身份。
+    pub fn update(&self, update: &OwnerProfileUpdate) -> Result<OwnerProfile, ProfileError> {
+        let display_name = update.display_name.trim();
+        let email = update.email.trim();
+        check_display_name(display_name).map_err(ProfileError::Invalid)?;
+        check_email(email).map_err(ProfileError::Invalid)?;
+        let mut profile = self.profile.write().expect("身份记录锁中毒");
+        let record = Record {
+            username: self.username.clone(),
+            display_name: Some(display_name.to_owned()),
+            email: Some(email.to_owned()),
+        };
+        write_record(&self.state_dir, &record).map_err(|source| ProfileError::Write {
+            path: self.state_dir.join(RECORD),
+            source,
+        })?;
+        *profile = (record.display_name, record.email);
+        drop(profile);
+        Ok(self.profile())
+    }
+
+    /// 测试用：`dir` 下一份写好的身份。
+    #[cfg(test)]
+    pub(crate) fn for_test(dir: &Path, owner: &Owner) -> Arc<Self> {
+        let state_dir = dir.join("owner-record");
+        let record = Record {
+            username: owner.username.clone(),
+            display_name: Some(owner.display_name.clone()),
+            email: owner.email.clone(),
+        };
+        write_record(&state_dir, &record).unwrap();
+        Self::open(&state_dir).unwrap()
+    }
 }
 
 /// 定下主人的用户名：有记录时以记录为准，`configured` 和它不一致就报错；没有记录时取 `configured`（没配时是
@@ -141,7 +283,12 @@ pub fn lock_username(state_dir: &Path, configured: Option<&str>) -> Result<Strin
     }
     let username = configured.unwrap_or(DEFAULT_USERNAME);
     check_not_reserved(username).map_err(LockError::Reserved)?;
-    write_record(state_dir, username).map_err(|source| LockError::Write {
+    let record = Record {
+        username: username.to_owned(),
+        display_name: None,
+        email: None,
+    };
+    write_record(state_dir, &record).map_err(|source| LockError::Write {
         path: state_dir.join(RECORD),
         source,
     })?;
@@ -163,6 +310,20 @@ fn recorded_username(
     state_dir: &Path,
     configured: Option<&str>,
 ) -> Result<Option<String>, LockError> {
+    let Some(record) = read_record(state_dir)? else {
+        return Ok(None);
+    };
+    match configured {
+        Some(configured) if configured != record.username => Err(LockError::Mismatch {
+            configured: configured.to_owned(),
+            recorded: record.username,
+            path: state_dir.join(RECORD),
+        }),
+        _ => Ok(Some(record.username)),
+    }
+}
+
+fn read_record(state_dir: &Path) -> Result<Option<Record>, LockError> {
     let path = state_dir.join(RECORD);
     let unreadable = |message: String| LockError::Unreadable {
         path: path.clone(),
@@ -174,24 +335,14 @@ fn recorded_username(
         Err(e) => return Err(unreadable(e.to_string())),
     };
     let record: Record = serde_json::from_str(&text).map_err(|e| unreadable(e.to_string()))?;
-    check_username(&record.username).map_err(unreadable)?;
-    match configured {
-        Some(configured) if configured != record.username => Err(LockError::Mismatch {
-            configured: configured.to_owned(),
-            recorded: record.username,
-            path,
-        }),
-        _ => Ok(Some(record.username)),
-    }
+    record.check().map_err(unreadable)?;
+    Ok(Some(record))
 }
 
 /// 先写临时文件再改名：写到一半掉电时，下次启动不会读到半个记录。
-fn write_record(state_dir: &Path, username: &str) -> std::io::Result<()> {
+fn write_record(state_dir: &Path, record: &Record) -> std::io::Result<()> {
     fs::create_dir_all(state_dir)?;
-    let record = Record {
-        username: username.to_owned(),
-    };
-    let text = serde_json::to_string(&record).map_err(std::io::Error::other)?;
+    let text = serde_json::to_string(record).map_err(std::io::Error::other)?;
     let tmp = state_dir.join(format!("{RECORD}.tmp"));
     let mut file = fs::File::create(&tmp)?;
     file.write_all(text.as_bytes())?;
@@ -236,6 +387,75 @@ mod tests {
             assert!(matches!(error, LockError::Unreadable { .. }), "{text}");
             assert_eq!(fs::read_to_string(&path).unwrap(), text);
         }
+    }
+
+    fn filled_in(
+        store: &OwnerStore,
+        name: &str,
+        email: &str,
+    ) -> Result<OwnerProfile, ProfileError> {
+        store.update(&OwnerProfileUpdate {
+            display_name: name.to_owned(),
+            email: email.to_owned(),
+        })
+    }
+
+    #[test]
+    fn a_new_identity_has_only_the_username_and_filling_it_in_survives_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        lock_username(dir.path(), Some("alice")).unwrap();
+        let store = OwnerStore::open(dir.path()).unwrap();
+        assert_eq!(store.profile().display_name, None);
+        assert_eq!(store.owner().display_name, "alice");
+        assert_eq!(store.owner().email, None);
+
+        let saved = filled_in(&store, "  爱丽丝 ", " alice@example.com ").unwrap();
+        assert_eq!(saved.display_name.as_deref(), Some("爱丽丝"));
+        assert_eq!(saved.email.as_deref(), Some("alice@example.com"));
+
+        lock_username(dir.path(), Some("alice")).unwrap();
+        let reopened = OwnerStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.owner().display_name, "爱丽丝");
+        assert_eq!(reopened.email().as_deref(), Some("alice@example.com"));
+        assert_eq!(reopened.username(), "alice");
+    }
+
+    #[test]
+    fn a_bad_update_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        lock_username(dir.path(), None).unwrap();
+        let store = OwnerStore::open(dir.path()).unwrap();
+        filled_in(&store, "你", "me@example.com").unwrap();
+        let too_long = "字".repeat(65);
+        for (name, email) in [
+            ("", "new@example.com"),
+            ("  ", "new@example.com"),
+            (too_long.as_str(), "new@example.com"),
+            ("a\nb", "new@example.com"),
+            ("新", ""),
+            ("新", "not-an-email"),
+        ] {
+            assert!(matches!(
+                filled_in(&store, name, email),
+                Err(ProfileError::Invalid(_))
+            ));
+        }
+        assert_eq!(store.owner().display_name, "你");
+        assert_eq!(store.email().as_deref(), Some("me@example.com"));
+    }
+
+    #[test]
+    fn a_record_with_a_bad_email_stops_the_start() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(RECORD),
+            r#"{"username":"owner","display_name":null,"email":"not-an-email"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            lock_username(dir.path(), None),
+            Err(LockError::Unreadable { .. })
+        ));
     }
 
     #[test]

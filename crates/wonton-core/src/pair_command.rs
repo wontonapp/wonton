@@ -51,7 +51,7 @@ async fn wait_for_first_device(core: &LocalCore, body: &str) -> anyhow::Result<(
         let (status, bytes) = core.post("/_wonton/api/pairing-codes/first", body).await?;
         if status == StatusCode::CONFLICT {
             if shown.is_some() {
-                println!("配对成功，这台设备就是主人的设备了。");
+                println!("配对成功，这台设备已经连上服务器。");
             } else {
                 println!(
                     "服务器上已经有配对的设备。要加设备，在已配对的 App 里点“添加设备”；设备都丢了，在服务器上执行 sudo wonton pair。"
@@ -99,9 +99,8 @@ impl LocalCore {
     fn open() -> anyhow::Result<Self> {
         let cfg = Config::from_env()?;
         let token_path = cfg.core_state_dir().join("owner-token");
-        let token = std::fs::read_to_string(&token_path).with_context(|| {
-            format!("读取主人令牌 {}（核心还没启动过？）", token_path.display())
-        })?;
+        let token = std::fs::read_to_string(&token_path)
+            .with_context(|| format!("读取令牌 {}（核心还没启动过？）", token_path.display()))?;
         Ok(Self {
             url: format!("http://127.0.0.1:{}", cfg.listen.port()),
             host: cfg.public.core_host().to_owned(),

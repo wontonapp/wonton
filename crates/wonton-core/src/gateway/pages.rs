@@ -58,7 +58,7 @@ pub fn login(next: &str, failed: bool) -> Response {
     };
     let body = format!(
         "<h1>登录 Wonton</h1>\
-         <p class=\"muted\">M0 用主人令牌登录（核心数据目录下的 <code>core/owner-token</code>）；\
+         <p class=\"muted\">用令牌登录（核心数据目录下的 <code>core/owner-token</code>）；\
          App 配对上线后改为扫码。</p>{hint}\
          <form method=\"post\" action=\"/_wonton/login\">\
          <input type=\"hidden\" name=\"next\" value=\"{next}\">\

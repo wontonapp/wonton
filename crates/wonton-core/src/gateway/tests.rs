@@ -20,9 +20,10 @@ use tower::ServiceExt;
 
 use super::tunnel_tests::loopback_tunnel;
 use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
-use crate::config::{OidcProviderConfig, Owner, PublicUrls};
+use crate::config::{OidcProviderConfig, PublicUrls};
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
+use crate::owner::{Owner, OwnerStore};
 use crate::plugin::egress::settings::Egress;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
@@ -193,9 +194,8 @@ pub(super) struct Harness {
 
 pub(super) fn owner() -> Owner {
     Owner {
-        id: "owner".into(),
         username: "owner".into(),
-        display_name: "主人".into(),
+        display_name: "云吞".into(),
         email: Some("owner@wonton.localhost".into()),
     }
 }
@@ -249,6 +249,7 @@ impl Harness {
             };
             (Hydra::new(http.clone(), &cfg), cfg.public_url)
         });
+        let profile = OwnerStore::for_test(dir.path(), &owner());
         let lifecycle = LifecycleConfig {
             public: public.clone(),
             data_dir: dir.path().to_owned(),
@@ -260,7 +261,7 @@ impl Harness {
             pgid: 1000,
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
-            owner_email: Some("owner@example.com".into()),
+            profile: profile.clone(),
             gateway_port: 8080,
             instance: Default::default(),
         };
@@ -283,7 +284,7 @@ impl Harness {
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let gateway = Gateway::new(
             public,
-            owner(),
+            profile,
             TOKEN.into(),
             manager.clone(),
             hydra,
@@ -321,7 +322,7 @@ impl Harness {
         };
         let gateway = Gateway::new(
             public,
-            owner(),
+            OwnerStore::for_test(self._dir.path(), &owner()),
             TOKEN.into(),
             self.manager.clone(),
             None,

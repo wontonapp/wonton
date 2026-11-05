@@ -23,6 +23,7 @@ use crate::config::PublicUrls;
 use crate::files::record::{Accessor, Origin};
 use crate::files::test_support::Fixture;
 use crate::http::HttpClient;
+use crate::owner::OwnerStore;
 use crate::plugin::PluginManager;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
@@ -51,6 +52,7 @@ pub(super) async fn home_with(tusd: Option<String>) -> Home {
     };
     let dir = f.dir.path();
     let http = HttpClient::new();
+    let profile = OwnerStore::for_test(dir, &owner());
     let lifecycle = LifecycleConfig {
         public: public.clone(),
         data_dir: dir.to_owned(),
@@ -62,7 +64,7 @@ pub(super) async fn home_with(tusd: Option<String>) -> Home {
         pgid: 1000,
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
-        owner_email: Some("owner@example.com".into()),
+        profile: profile.clone(),
         gateway_port: 8080,
         instance: Default::default(),
     };
@@ -79,7 +81,7 @@ pub(super) async fn home_with(tusd: Option<String>) -> Home {
     tunnel.devices.add(key.public(), None).unwrap();
     let gateway = Gateway::new(
         public,
-        owner(),
+        profile,
         TOKEN.into(),
         manager,
         None,

@@ -68,25 +68,39 @@ import app.wonton.ui.icons.WontonIcon
 
 private const val EXPANDED_DEGREES = 90f
 
+/** 设置下面的页面，第一层是 [MAIN]。 */
+enum class SettingsSubpage { MAIN, BACKUP, PROFILE }
+
 @Composable
 fun SettingsPage(
-    core: ClientCore,
+    plugins: PluginsState,
     appearance: AppearanceViewModel,
     chat: ChatViewModel,
-    showingBackup: Boolean,
-    onShowBackup: (Boolean) -> Unit,
+    paired: Boolean,
+    subpage: SettingsSubpage,
+    onSubpage: (SettingsSubpage) -> Unit,
 ) {
+    val core = plugins.core
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    if (showingBackup) {
-        BackHandler { onShowBackup(false) }
-        ChatBackupScreen(
-            chat.encryption,
-            onAction = { action -> rejection = core.send(action) },
-            onClose = { onShowBackup(false) },
-        )
-    } else {
-        WontonScreen(bar = { WontonRootBar("设置") }) {
-            SettingsScreen(core, appearance, chat.encryption.recovery) { onShowBackup(true) }
+    when (subpage) {
+        SettingsSubpage.BACKUP -> {
+            BackHandler { onSubpage(SettingsSubpage.MAIN) }
+            ChatBackupScreen(
+                chat.encryption,
+                onAction = { action -> rejection = core.send(action) },
+                onClose = { onSubpage(SettingsSubpage.MAIN) },
+            )
+        }
+        SettingsSubpage.PROFILE -> OwnerProfilePage(plugins) { onSubpage(SettingsSubpage.MAIN) }
+        SettingsSubpage.MAIN -> WontonScreen(bar = { WontonRootBar("设置") }) {
+            SettingsScreen(
+                core,
+                appearance,
+                chat.encryption.recovery,
+                // 资料存在家里的服务器上，没配对时没有地方存。
+                onOpenProfile = { onSubpage(SettingsSubpage.PROFILE) }.takeIf { paired },
+                onOpenBackup = { onSubpage(SettingsSubpage.BACKUP) },
+            )
         }
     }
     chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.DismissChatProblem) } }
@@ -99,6 +113,7 @@ private fun SettingsScreen(
     core: ClientCore,
     appearance: AppearanceViewModel,
     recovery: RecoveryStatus,
+    onOpenProfile: (() -> Unit)?,
     onOpenBackup: () -> Unit,
 ) {
     var rejection by remember { mutableStateOf<Problem?>(null) }
@@ -108,6 +123,9 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         (rejection ?: appearance.problem?.problem)?.let { ProblemNotice(it) }
+        onOpenProfile?.let {
+            WontonGroup { WontonRow("你的资料", showsForward = true, onClick = it) }
+        }
         WontonGroup {
             WontonRow("聊天记录备份", recovery.backupValue, showsForward = true, onClick = onOpenBackup)
         }

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use hyper::header::{HeaderName, HeaderValue};
 
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
-use crate::config::Owner;
+use crate::owner::Owner;
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
@@ -136,7 +136,7 @@ impl ProxyAuth {
     }
 }
 
-/// 模板用了 `{email}`，主人却没配邮箱：不代加一个空值。
+/// 模板用了 `{email}`，主人却没填邮箱：不代加一个空值。
 #[derive(Debug, thiserror::Error)]
 #[error("{}", crate::owner::NO_EMAIL)]
 pub struct NoEmail;

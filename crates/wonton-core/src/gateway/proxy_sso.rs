@@ -10,10 +10,10 @@ use hyper::header::{COOKIE, HeaderMap, HeaderName, HeaderValue, SET_COOKIE};
 
 use super::isolation::sent_name;
 use super::session::strip_cookies;
-use crate::config::Owner;
+use crate::owner::Owner;
 use crate::plugin::proxy_auth::ProxyAuth;
 
-/// 转发前：换上代加的请求头和 Cookie。值写不进 HTTP（比如主人的显示名里有换行）或者主人没配模板要的邮箱时报错，
+/// 转发前：换上代加的请求头和 Cookie。值写不进 HTTP 或者主人没填模板要的邮箱时报错，
 /// 不转发。
 pub fn attach(headers: &mut HeaderMap, auth: &ProxyAuth, owner: &Owner) -> Result<(), String> {
     for (name, value) in auth.headers(owner).map_err(|e| e.to_string())? {

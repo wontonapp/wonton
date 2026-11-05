@@ -24,6 +24,7 @@ use super::{env_of_container, example, package};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
+use crate::owner::OwnerStore;
 
 /// 核心在容器里（`WONTON_CORE_CONTAINER`）的管理器，其余同 [`manager_with`]。
 pub(super) fn manager_in_container(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
@@ -96,7 +97,14 @@ fn manager_for(
         pgid: owner.gid(),
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
-        owner_email: Some("owner@example.com".into()),
+        profile: OwnerStore::for_test(
+            dir.path(),
+            &crate::owner::Owner {
+                username: "owner".into(),
+                display_name: "云吞".into(),
+                email: Some("owner@example.com".into()),
+            },
+        ),
         gateway_port: 8080,
         instance,
     };
@@ -357,8 +365,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         preview.notices
     );
     m.install(&compose, &[]).await.unwrap();
-    let owner = crate::config::Owner {
-        id: "owner".into(),
+    let owner = crate::owner::Owner {
         username: "owner".into(),
         display_name: "主人".into(),
         email: Some("owner@wonton.localhost".into()),

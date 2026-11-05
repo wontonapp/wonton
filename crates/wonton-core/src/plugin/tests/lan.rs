@@ -289,14 +289,16 @@ async fn an_address_change_rebuilds_only_the_lan_containers() {
 
 #[tokio::test]
 async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
-    let (docker, mut m, detected, _dir) = on(office()).await;
+    let (docker, mut m, detected, dir) = on(office()).await;
     let compose = package(
         "  samba:\n    image: example/samba\n    environment: {MAIL: '${WONTON_OWNER_EMAIL:?}'}",
         "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
          permissions: [network.lan, owner.identity]",
     );
     m.install(&compose, &granted(&compose)).await.unwrap();
-    Arc::get_mut(&mut m).unwrap().cfg.owner_email = None;
+    let state = dir.path().join("owner-without-profile");
+    crate::owner::lock_username(&state, None).unwrap();
+    Arc::get_mut(&mut m).unwrap().cfg.profile = crate::owner::OwnerStore::open(&state).unwrap();
 
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));

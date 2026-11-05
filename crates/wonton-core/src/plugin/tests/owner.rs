@@ -1,9 +1,11 @@
 //! 主人的身份交给插件的规则（ADR-0022）：和 `sso` 解耦，没配邮箱时如实失败。
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
+use wonton_protocol::OwnerProfileUpdate;
 
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
@@ -15,7 +17,7 @@ use super::super::render::dry_run;
 use super::egress::serve;
 use super::manager::manager_with;
 use super::{env_of_container, package};
-use crate::config::Owner;
+use crate::owner::{Owner, OwnerStore};
 
 async fn web() -> SocketAddr {
     serve(Router::new().route("/", get(|| async { "ok" }))).await
@@ -23,8 +25,15 @@ async fn web() -> SocketAddr {
 
 fn without_email(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
     let mut manager = manager_with(engine, dir);
-    manager.cfg.owner_email = None;
+    manager.cfg.profile = no_email_profile(dir);
     manager
+}
+
+/// 只有用户名、还没填资料的身份。
+fn no_email_profile(dir: &tempfile::TempDir) -> Arc<OwnerStore> {
+    let state = dir.path().join("owner-without-profile");
+    crate::owner::lock_username(&state, None).unwrap();
+    OwnerStore::open(&state).unwrap()
 }
 
 /// 一个 `sso: none`、申请了 `owner.identity` 的插件，环境变量 `MAIL` 写成 `mail`。
@@ -160,17 +169,46 @@ async fn without_an_email_a_plugin_that_requires_it_does_not_install() {
         .preview_install(&parsed(&compose), &Languages::default())
         .await
         .unwrap();
-    let blocked = preview.blocked.expect("预览写明装不上");
-    assert_eq!(blocked, crate::owner::NO_EMAIL);
+    assert_eq!(preview.blocked, None, "填了就能装，不算装不了");
+    assert_eq!(
+        preview.missing_profile.as_deref(),
+        Some(crate::owner::EMAIL_NEEDED)
+    );
     let error = m
         .install(&compose, &[Permission::OwnerIdentity])
         .await
         .unwrap_err();
-    assert_eq!(error.kind(), "unsupported", "{error}");
+    assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
         error.to_string().contains(crate::owner::NO_EMAIL),
         "{error}"
     );
+}
+
+#[tokio::test]
+async fn filling_in_the_email_lets_the_plugin_install_with_it() {
+    let port = web().await.port();
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = without_email(engine, &dir);
+    let compose = identity_app("${WONTON_OWNER_EMAIL:?}", port);
+    m.cfg
+        .profile
+        .update(&OwnerProfileUpdate {
+            display_name: "云吞".into(),
+            email: "filled@example.com".into(),
+        })
+        .unwrap();
+    let preview = m
+        .preview_install(&parsed(&compose), &Languages::default())
+        .await
+        .unwrap();
+    assert_eq!(preview.missing_profile, None);
+    m.install(&compose, &[Permission::OwnerIdentity])
+        .await
+        .unwrap();
+    let env = env_of_container(&docker, "wonton-app-test--web");
+    assert_eq!(env["MAIL"], "filled@example.com");
 }
 
 #[tokio::test]
@@ -210,9 +248,12 @@ async fn without_an_email_a_proxy_template_that_uses_it_does_not_install() {
         .preview_install(&parsed(&compose), &Languages::default())
         .await
         .unwrap();
-    assert_eq!(preview.blocked.as_deref(), Some(crate::owner::NO_EMAIL));
+    assert_eq!(
+        preview.missing_profile.as_deref(),
+        Some(crate::owner::EMAIL_NEEDED)
+    );
     let error = m.install(&compose, &[]).await.unwrap_err();
-    assert_eq!(error.kind(), "unsupported", "{error}");
+    assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
         error.to_string().contains(crate::owner::NO_EMAIL),
         "{error}"
@@ -235,9 +276,8 @@ async fn a_proxy_template_stops_forwarding_when_the_email_is_removed_later() {
     m.install(&compose, &[]).await.unwrap();
     let auth = m.route("app-test").unwrap().proxy.unwrap();
     let mut owner = Owner {
-        id: "owner".into(),
         username: "owner".into(),
-        display_name: "主人".into(),
+        display_name: "云吞".into(),
         email: Some("me@example.com".into()),
     };
     assert_eq!(auth.headers(&owner).unwrap()[0].1, "me@example.com");

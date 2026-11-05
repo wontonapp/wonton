@@ -86,6 +86,7 @@ private struct MainView: View {
                 ) { self.page = nil }
             }
         }
+        .fullScreenCover(isPresented: isPromptingProfile) { OwnerProfileView(model: plugins) }
         .modifier(ChatDialogs(model: chat))
         // 应用页和应用商店都用这两份状态，切到别的页面时也要接着更新。提示条在哪个页面都要，聊天也一样。
         .task { await home.observe() }
@@ -97,6 +98,21 @@ private struct MainView: View {
                 home.send(.networkChanged(network: network))
             }
         }
+    }
+
+    /// 刚配对、资料还没填时弹一次，由核心决定。关掉了就不再弹，要用资料时安装页还会让主人填。
+    private var isPromptingProfile: Binding<Bool> {
+        Binding(
+            get: { plugins.viewModel.ownerProfilePrompt },
+            set: { isShowing in
+                if !isShowing { plugins.send(.dismissOwnerProfilePrompt) }
+            }
+        )
+    }
+
+    private var isPaired: Bool {
+        if case .notConfigured = home.viewModel.status { return false }
+        return true
     }
 
     private var tabs: some View {
@@ -113,7 +129,7 @@ private struct MainView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(AppTab.apps)
             // 外观不依赖家里的服务器，没配对时也能进。
-            SettingsTab(appearance: appearance, chat: chat)
+            SettingsTab(appearance: appearance, chat: chat, plugins: plugins, isPaired: isPaired)
                 .toolbar(.hidden, for: .tabBar)
                 .tag(AppTab.settings)
         }

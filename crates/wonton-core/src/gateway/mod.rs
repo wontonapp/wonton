@@ -31,6 +31,7 @@ pub mod matrix;
 mod mcp;
 mod models;
 mod onboarding;
+mod owner_profile;
 mod pages;
 mod proxy;
 mod proxy_sso;
@@ -51,10 +52,11 @@ use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
 
-use crate::config::{self, HostKind, Owner, PublicUrls};
+use crate::config::{self, HostKind, PublicUrls};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
+use crate::owner::OwnerStore;
 use crate::plugin::{PluginManager, PluginStatus};
 use crate::push::Push;
 use crate::secret::constant_time_eq;
@@ -70,7 +72,7 @@ pub struct TunnelPeer(pub EndpointId);
 
 pub struct Gateway {
     pub public: PublicUrls,
-    pub owner: Owner,
+    pub owner: Arc<OwnerStore>,
     owner_token: String,
     pub plugins: Arc<PluginManager>,
     pub hydra: Option<Hydra>,
@@ -99,7 +101,7 @@ impl Gateway {
     /// `http://主机:端口`。
     pub fn new(
         public: PublicUrls,
-        owner: Owner,
+        owner: Arc<OwnerStore>,
         owner_token: String,
         plugins: Arc<PluginManager>,
         hydra: Option<(Hydra, String)>,
@@ -190,7 +192,7 @@ impl Gateway {
         self.tunnel
             .devices
             .contains(&id)
-            .then(|| self.owner.id.clone())
+            .then(|| self.owner.username().to_owned())
     }
 
     /// 核心域名上的当前用户（M0 只有主人）：经隧道的已配对设备，或者局域网浏览器的核心会话。
@@ -333,7 +335,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         }
     };
     if let Some(auth) = &route.proxy
-        && let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &gateway.owner)
+        && let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &gateway.owner.owner())
     {
         return pages::error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -431,6 +433,8 @@ mod mcp_tests;
 mod models_tests;
 #[cfg(test)]
 mod onboarding_tests;
+#[cfg(test)]
+mod owner_profile_tests;
 #[cfg(test)]
 mod pairing_tests;
 #[cfg(test)]

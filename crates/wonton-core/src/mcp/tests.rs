@@ -18,6 +18,7 @@ use super::upstream::{ReadError, Upstreams};
 use super::{AnswerError, Bus, Caller, Confirmations};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
+use crate::owner::{Owner, OwnerStore};
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
@@ -88,7 +89,14 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginMana
         pgid: owner.gid(),
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
-        owner_email: Some("owner@example.com".into()),
+        profile: OwnerStore::for_test(
+            dir.path(),
+            &Owner {
+                username: "owner".into(),
+                display_name: "云吞".into(),
+                email: Some("owner@example.com".into()),
+            },
+        ),
         gateway_port: 8080,
         instance: Default::default(),
     };

@@ -45,8 +45,8 @@ pub struct LifecycleConfig {
     pub install_timeout: Duration,
     /// 主人的用户名，也是主人的 Matrix 用户名（localpart）。
     pub owner: String,
-    /// 主人的邮箱，注入给声明了单点登录的插件。
-    pub owner_email: Option<String>,
+    /// 主人的显示名和邮箱，随时会改。邮箱注入给要身份的插件。
+    pub profile: Arc<crate::owner::OwnerStore>,
     /// 核心网关监听的端口：插件经核心在插件网络里的别名（如 `matrix.wonton.internal`）访问它。
     pub gateway_port: u16,
     /// 核心的实例名（`WONTON_INSTANCE`），决定插件的资源名和标签。
@@ -283,8 +283,8 @@ impl PluginManager {
         secret: Option<&str>,
         generated: BTreeMap<String, String>,
     ) -> Result<InstallContext, InstallError> {
-        if self.cfg.owner_email.is_none() && proxy_auth::uses_email(manifest) {
-            return Err(InstallError::Unsupported(crate::owner::NO_EMAIL.to_owned()));
+        if self.cfg.profile.email().is_none() && proxy_auth::uses_email(manifest) {
+            return Err(InstallError::OwnerProfileIncomplete);
         }
         let public = &self.cfg.public;
         let slug = manifest.id.slug();
@@ -335,7 +335,7 @@ impl PluginManager {
             oidc,
             owner: manifest.gets_owner_identity().then(|| OwnerVars {
                 name: self.cfg.owner.clone(),
-                email: self.cfg.owner_email.clone(),
+                email: self.cfg.profile.email(),
             }),
             matrix: None,
             models: None,
@@ -494,7 +494,7 @@ impl PluginManager {
             // 收回主房间要用 Bot 的令牌，所以在吊销设备之前。
             if undo.handed_over {
                 note(
-                    format!("交给主人的主房间 {}", bot.account.home_room),
+                    format!("交给你的主房间 {}", bot.account.home_room),
                     self.withdraw_home_room(bot).await,
                 );
             }

@@ -46,7 +46,6 @@ fn the_core_refuses_to_start_with_bad_owner_settings() {
     for (name, value) in [
         ("WONTON_OWNER_NAME", "a/b"),
         ("WONTON_OWNER_NAME", "nobody"),
-        ("WONTON_OWNER_EMAIL", "not-an-email"),
         ("TZ", "CST-8"),
     ] {
         let vars = [("WONTON_DATA_DIR", data_dir(dir.path())), (name, value)];

@@ -65,7 +65,7 @@ pub async fn login_token(
         );
     };
     // M1 的已配对设备都属于主人。
-    let localpart = &gateway.owner.username;
+    let localpart = gateway.owner.username();
     Json(LoginToken {
         homeserver_url: gateway.public.origin(&gateway.public.matrix_host()),
         server_name: matrix.server_name().to_owned(),

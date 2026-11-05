@@ -105,7 +105,11 @@ impl Core {
             pgid: owner.gid(),
             install_timeout: Duration::from_secs(300),
             owner: "owner".into(),
-            owner_email: None,
+            profile: {
+                let state = self.dir.path().join("owner");
+                wonton_core::owner::lock_username(&state, None).unwrap();
+                wonton_core::owner::OwnerStore::open(&state).unwrap()
+            },
             gateway_port: 8080,
             instance: self.instance.clone(),
         };

@@ -9,10 +9,8 @@
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
 #   WONTON_TUNNEL_PORT  隧道的 UDP 端口（默认 8482）
 #   WONTON_BASE_DOMAIN  基础域名，同时是 Matrix 的服务器名，装好后不能改（默认 wonton.localhost）
-#   WONTON_OWNER_NAME   主人的用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
+#   WONTON_OWNER_NAME   用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
 #                       最长 32 个字符，装好后不能改（默认 owner）
-#   WONTON_OWNER_DISPLAY_NAME  主人的显示名（默认 Owner）。设成空就取消
-#   WONTON_OWNER_EMAIL  主人的邮箱（默认没有；要邮箱的插件这时装不上）。设成空就取消
 #   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
 #   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改；
 #                       ADR-0019）。设成空就取消
@@ -106,8 +104,6 @@ domain=${domain:-wonton.localhost}
 owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
 lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
-owner_display_name=${WONTON_OWNER_DISPLAY_NAME-$(saved WONTON_OWNER_DISPLAY_NAME)}
-owner_email=${WONTON_OWNER_EMAIL-$(saved WONTON_OWNER_EMAIL)}
 egress_proxy=${WONTON_EGRESS_PROXY-$(saved WONTON_EGRESS_PROXY)}
 egress_detected=$(saved WONTON_EGRESS_PROXY_DETECTED)
 tz=${TZ:-$(saved TZ)}
@@ -276,7 +272,7 @@ settle_proxy() {
 
 # 从 /dev/tty 读：脚本经管道运行时，标准输入是脚本本身。
 confirm() {
-  (: </dev/tty) 2>/dev/null || die "退回要主人确认，这里没有终端，什么都没动"
+  (: </dev/tty) 2>/dev/null || die "退回要你确认，这里没有终端，什么都没动"
   printf '%s\n继续吗？[y/N] ' "$1" >/dev/tty
   read -r answer </dev/tty || answer=
   case "$answer" in
@@ -308,7 +304,7 @@ write_config() {
   info "生成密钥和配置（已有的沿用）"
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
   docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
-    -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e WONTON_OWNER_EMAIL="$owner_email" -e TZ="$tz" \
+    -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e TZ="$tz" \
     "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
   settle_proxy
@@ -326,8 +322,6 @@ WONTON_PORT=$port
 WONTON_TUNNEL_PORT=$tunnel_port
 WONTON_BASE_DOMAIN=$domain
 WONTON_OWNER_NAME=$owner_name
-WONTON_OWNER_DISPLAY_NAME=$owner_display_name
-WONTON_OWNER_EMAIL=$owner_email
 TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_EGRESS_PROXY=$egress_proxy

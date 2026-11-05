@@ -57,7 +57,7 @@ impl PluginManager {
                 .collect();
             if !strangers.is_empty() {
                 return Err(InstallError::NameTaken(format!(
-                    "网络 {network} 上还接着 {}，可能是另一套核心或主人的容器。一台 Docker 上跑几套核心时，每套都要设自己的实例名（WONTON_INSTANCE）",
+                    "网络 {network} 上还接着 {}，可能是另一套核心或你自己的容器。一台 Docker 上跑几套核心时，每套都要设自己的实例名（WONTON_INSTANCE）",
                     strangers.join("、")
                 )));
             }

@@ -177,7 +177,7 @@ pub async fn oidc_consent(
         Ok(request) => request,
         Err(e) => return oidc_failure(&e),
     };
-    if request.subject != user || user != gateway.owner.id {
+    if request.subject != user || user != gateway.owner.username() {
         return pages::error(
             StatusCode::FORBIDDEN,
             "permission_denied",
@@ -185,7 +185,7 @@ pub async fn oidc_consent(
         );
     }
     let granted = granted_scopes(&request.requested_scope);
-    let claims = id_token_claims(&gateway.owner, &granted);
+    let claims = id_token_claims(&gateway.owner.owner(), &granted);
     tracing::info!(client = %request.client.client_id, ?granted, "接受 OIDC 授权");
     match hydra
         .accept_consent(&query.consent_challenge, &granted, claims)

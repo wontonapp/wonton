@@ -34,6 +34,7 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Blocked
 import app.wonton.ui.icons.Close
+import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.launch
 
@@ -44,6 +45,7 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
+    var fillingProfile by remember { mutableStateOf(false) }
     val loaded by produceState<Result<InstallPreview>?>(null, confirmation, attempt) {
         value = null
         value = try {
@@ -62,6 +64,14 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
             Result.failure(failure)
         }
     }
+    if (fillingProfile) {
+        // 填完回到这里，预览重新算，缺的资料有了就能装。
+        OwnerProfilePage(plugins) {
+            fillingProfile = false
+            attempt++
+        }
+        return
+    }
     val title = confirmation.actionTitle
     WontonScreen(bar = { WontonPushedBar(title, onClose, WontonIcon.Close, "关闭") }) {
         val result = loaded
@@ -71,7 +81,13 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                 when {
                     result == null -> LoadingView()
                     result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
-                    preview != null -> PreviewContent(preview, plugins, lanWebui) { lanWebui = it }
+                    preview != null -> PreviewContent(
+                        preview,
+                        plugins,
+                        lanWebui,
+                        onFillProfile = { fillingProfile = true },
+                        onLanWebui = { lanWebui = it },
+                    )
                 }
             }
             preview?.let {
@@ -87,8 +103,9 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                     Modifier.windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(WontonTheme.spacing.pageInset)
                         .fillMaxWidth(),
-                    // 装不了（blocked）或者有核心不支持的权限时不能确认。
-                    enabled = it.blocked == null && it.permissions.all { line -> line.supported },
+                    // 装不了（blocked）、缺资料或者有核心不支持的权限时不能确认。
+                    enabled = it.blocked == null && it.missingProfile == null &&
+                        it.permissions.all { line -> line.supported },
                 )
             }
         }
@@ -101,6 +118,7 @@ private fun PreviewContent(
     preview: InstallPreview,
     plugins: PluginsState,
     lanWebui: Boolean,
+    onFillProfile: () -> Unit,
     onLanWebui: (Boolean) -> Unit,
 ) {
     val colors = WontonTheme.colors
@@ -130,6 +148,9 @@ private fun PreviewContent(
             }
         }
         preview.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
+        preview.missingProfile?.let {
+            WontonNotice(WontonIcon.Info, it, isError = false) { WontonButton("填写资料", onFillProfile) }
+        }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
         if (preview.permissions.isNotEmpty()) {
             DetailSection("权限") { preview.permissions.forEach { PermissionRow(it) } }

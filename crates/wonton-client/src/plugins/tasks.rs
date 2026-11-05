@@ -373,7 +373,11 @@ fn lan_webui_chosen(preview: &InstallPreview) -> bool {
 
 /// 确认页上看到的就是授予的：预览里列出的全部权限（ADR-0017）。预览说装不了时不发请求。
 fn confirmed(preview: &InstallPreview) -> Result<Vec<String>, CoreError> {
-    if let Some(blocked) = &preview.blocked {
+    if let Some(blocked) = preview
+        .blocked
+        .as_ref()
+        .or(preview.missing_profile.as_ref())
+    {
         return Err(CoreError::NotReady {
             reason: blocked.clone(),
         });

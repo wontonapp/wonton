@@ -16,10 +16,13 @@ use crate::oidc::OidcError;
 pub enum InstallError {
     #[error("{0}")]
     Invalid(String),
-    #[error("以下权限需要主人确认后才能安装：{}", .0.join(", "))]
+    #[error("以下权限需要你确认后才能安装：{}", .0.join(", "))]
     PermissionNotGranted(Vec<String>),
     #[error("{0}")]
     Unsupported(String),
+    /// 插件要用的资料（如邮箱）还没填（ADR-0030）。
+    #[error("{}", crate::owner::NO_EMAIL)]
+    OwnerProfileIncomplete,
     #[error("{0}")]
     Conflict(String),
     /// 插件要用的网络或卷的名字被别的插件或主人占了（见 [`super::leftovers`]）。对外也是 `conflict`；预装时和
@@ -81,6 +84,7 @@ impl InstallError {
             Self::Invalid(_) => "invalid_input",
             Self::PermissionNotGranted(_) => "permission_denied",
             Self::Unsupported(_) => "unsupported",
+            Self::OwnerProfileIncomplete => "owner_profile_incomplete",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
             Self::NotInstalled(_) => "not_installed",
             Self::DockerUnavailable(_) => "docker_unavailable",
@@ -111,6 +115,7 @@ impl InstallError {
             Self::Invalid(m) => Self::Invalid(add(m)),
             Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
             Self::Unsupported(m) => Self::Unsupported(add(m)),
+            Self::OwnerProfileIncomplete => Self::OwnerProfileIncomplete,
             Self::Conflict(m) => Self::Conflict(add(m)),
             Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
@@ -152,8 +157,8 @@ impl From<PackageError> for InstallError {
 impl From<RenderError> for InstallError {
     fn from(e: RenderError) -> Self {
         match e {
-            // 插件没写错，这台主机上缺邮箱。
-            RenderError::NoOwnerEmail => Self::Unsupported(e.to_string()),
+            // 插件没写错，是还没填邮箱。
+            RenderError::NoOwnerEmail => Self::OwnerProfileIncomplete,
             e => Self::Invalid(e.to_string()),
         }
     }

@@ -34,6 +34,7 @@ import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.protocol.ProxySettings
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonBarItem
 import app.wonton.ui.design.WontonBottomBar
@@ -90,7 +91,7 @@ fun WontonApp(
         LaunchedEffect(chatView) { chat.onUpdate(chatView) }
         var page by remember { mutableStateOf<PluginEntry.Web?>(null) }
         var appsPage by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
-        var showingBackup by rememberSaveable { mutableStateOf(false) }
+        var settingsPage by rememberSaveable { mutableStateOf(SettingsSubpage.MAIN) }
         // 应用页和应用商店里打开插件：Agent 插件打开和它的 Bot 的私聊，返回时回到这里；有网页的全屏打开。
         val open = remember(core) {
             { entry: PluginEntry ->
@@ -107,19 +108,14 @@ fun WontonApp(
                 chat.openWhenJoined(core, roomId)
             }
         }
-        LaunchedEffect(requestedRoom) {
-            if (requestedRoom != null) {
-                openCardRoom(requestedRoom)
-                onRoomRequestHandled()
-            }
-        }
+        RequestedRoomEffect(requestedRoom, openCardRoom, onRoomRequestHandled)
         val appsPlugins = remember(open) { PluginNavigation(open) }
         PluginsEffects(plugins)
-        val proxy = home.proxy
-        LaunchedEffect(devWebUrl, proxy) {
-            if (devWebUrl != null && proxy != null) {
-                page = PluginEntry.Web(devWebUrl, Uri.parse(devWebUrl).host.orEmpty())
-            }
+        OpenDevWebEffect(devWebUrl, home.proxy) { page = it }
+        // 刚配对、资料还没填时弹一次，由核心决定。关掉了就不再弹，要用资料时安装页还会让主人填。
+        if (plugins.viewModel.ownerProfilePrompt) {
+            OwnerProfilePage(plugins) { plugins.send(Action.DismissOwnerProfilePrompt) }
+            return@WontonTheme
         }
         val shown = page
         if (shown != null) {
@@ -146,7 +142,7 @@ fun WontonApp(
         MainTabs(
             tab = tab,
             onSelect = { tab = it },
-            hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins, showingBackup),
+            hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins, settingsPage),
         ) {
             WithPendingCards(elsewhere, openCardRoom) {
                 CompositionLocalProvider(LocalWontonBarStatus provides barStatus) {
@@ -162,13 +158,40 @@ fun WontonApp(
                             pendingCards = chatView.pendingConfirmations,
                             onOpenCardRoom = openCardRoom,
                         )
-                        else -> SettingsPage(core, appearance, chatView, showingBackup) { showingBackup = it }
+                        else -> SettingsPage(
+                            plugins,
+                            appearance,
+                            chatView,
+                            paired = home.status !is HomeStatus.NotConfigured,
+                            settingsPage,
+                        ) { settingsPage = it }
                     }
                 }
                 OpeningChat(chat)
             }
         }
         plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
+    }
+}
+
+/** 点通知要打开的房间。 */
+@Composable
+private fun RequestedRoomEffect(roomId: String?, open: (String) -> Unit, onHandled: () -> Unit) {
+    LaunchedEffect(roomId) {
+        if (roomId != null) {
+            open(roomId)
+            onHandled()
+        }
+    }
+}
+
+/** 开发时连上后自动打开这个网页。 */
+@Composable
+private fun OpenDevWebEffect(url: String?, proxy: ProxySettings?, open: (PluginEntry.Web) -> Unit) {
+    LaunchedEffect(url, proxy) {
+        if (url != null && proxy != null) {
+            open(PluginEntry.Web(url, Uri.parse(url).host.orEmpty()))
+        }
     }
 }
 
@@ -229,12 +252,12 @@ private fun hidesBottomBar(
     chat: ChatNavigation,
     appsPage: HomePage,
     apps: PluginNavigation,
-    showingBackup: Boolean,
+    settingsPage: SettingsSubpage,
 ): Boolean =
     when (tab) {
         CHAT -> chat.openRoom != null || chat.showingBackup || chat.startingChat
         APPS -> appsPage != HomePage.LAUNCHER || apps.detail != null || apps.confirmation != null
-        else -> showingBackup
+        else -> settingsPage != SettingsSubpage.MAIN
     }
 
 /** 核心起不来或开发时传入的配对码被拒绝：如实显示原因，不进入主界面。 */

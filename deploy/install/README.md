@@ -26,13 +26,13 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 | --- | --- |
 | `/opt/wonton/compose.yaml`、`/opt/wonton/wonton` | 由当前的核心镜像写出，每次 `init` 重写 |
 | `/usr/local/bin/wonton` | 链接到 `/opt/wonton/wonton` |
-| `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、主人的用户名、显示名和邮箱、时区、数据目录，由 `install.sh` 写 |
+| `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、用户名、时区、数据目录，由 `install.sh` 写 |
 | `/opt/wonton/secrets/` | Matrix 签发私钥、Tuwunel 配置（含公钥和注册共享密钥）、Hydra 的系统密钥；0700 |
 | `/var/lib/wonton/`（`WONTON_DATA_DIR`） | 核心和插件的数据，容器内外路径相同 |
 | Docker 卷 `wonton_hydra`、`wonton_tuwunel` | Hydra 的 SQLite、Tuwunel 的数据库 |
 
-主人的显示名和邮箱可以改：改 `.env` 再执行一次 `install.sh`。用户名不能改（ADR-0022）：核心把它记在
-`<数据目录>/core/owner.json`，对不上就拒绝启动，要换只能用新的数据目录重新安装。
+显示名和邮箱在 App 的设置里填（ADR-0030）。用户名不能改（ADR-0022）：核心把它们都记在
+`<数据目录>/core/owner.json`，用户名对不上就拒绝启动，要换只能用新的数据目录重新安装。
 
 ## 升级
 

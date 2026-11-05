@@ -253,6 +253,11 @@ async fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, Stri
     dry_run(&package)
         .map_err(InstallError::from)
         .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
+    if bus.plugins.missing_profile(&package).is_some() {
+        return Err(format!(
+            "{id} 要用主人的邮箱，主人还没填：请主人在 App 的设置里填好再装"
+        ));
+    }
     Ok(package)
 }
 

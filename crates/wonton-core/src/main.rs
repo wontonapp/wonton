@@ -33,6 +33,7 @@ use wonton_core::matrix::{Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
 use wonton_core::oidc::Hydra;
+use wonton_core::owner::OwnerStore;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::egress::check;
@@ -128,7 +129,8 @@ fn check_host_dev(cfg: &Config) -> anyhow::Result<()> {
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
-    tracing::info!(owner = %cfg.owner.username, "主人的用户名已核对");
+    tracing::info!(owner = %cfg.username, "主人的用户名已核对");
+    let owner = OwnerStore::open(&cfg.core_state_dir())?;
     check_host_dev(&cfg)?;
     let engine = Engine::connect()?;
     let docker = engine.check_server().await.context("连接 Docker")?;
@@ -156,7 +158,7 @@ async fn serve() -> anyhow::Result<()> {
             store,
             http.clone(),
             hydra.as_ref().map(|(h, _)| h.clone()),
-            lifecycle_config(&cfg),
+            lifecycle_config(&cfg, owner.clone()),
             images.clone(),
         )
         .with_matrix(matrix.clone())
@@ -180,7 +182,7 @@ async fn serve() -> anyhow::Result<()> {
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     let notices = matrix.clone().map(|matrix| {
         let saved = cfg.core_state_dir().join("matrix-notice-room");
-        Arc::new(NoticeRoom::new(matrix, &cfg.owner.username, saved))
+        Arc::new(NoticeRoom::new(matrix, &cfg.username, saved))
     });
     let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
@@ -193,7 +195,7 @@ async fn serve() -> anyhow::Result<()> {
     let gateway = Arc::new(
         Gateway::new(
             cfg.public.clone(),
-            cfg.owner.clone(),
+            owner,
             owner_token,
             manager,
             hydra,
@@ -228,7 +230,7 @@ async fn serve() -> anyhow::Result<()> {
     served
 }
 
-fn lifecycle_config(cfg: &Config) -> LifecycleConfig {
+fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
     LifecycleConfig {
         public: cfg.public.clone(),
         data_dir: cfg.data_dir.clone(),
@@ -239,8 +241,8 @@ fn lifecycle_config(cfg: &Config) -> LifecycleConfig {
         puid: cfg.puid,
         pgid: cfg.pgid,
         install_timeout: cfg.install_timeout,
-        owner: cfg.owner.username.clone(),
-        owner_email: cfg.owner.email.clone(),
+        owner: cfg.username.clone(),
+        profile: owner,
         gateway_port: cfg.listen.port(),
         instance: cfg.instance.clone(),
     }

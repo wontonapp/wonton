@@ -11,8 +11,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::time::{Instant, sleep};
 
-use crate::config::{OidcProviderConfig, Owner};
+use crate::config::OidcProviderConfig;
 use crate::http::{HttpClient, HttpError};
+use crate::owner::Owner;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -290,9 +291,8 @@ mod tests {
     #[test]
     fn claims_follow_granted_scopes() {
         let owner = Owner {
-            id: "owner".into(),
             username: "owner".into(),
-            display_name: "主人".into(),
+            display_name: "云吞".into(),
             email: Some("owner@wonton.localhost".into()),
         };
         let requested: Vec<String> = ["openid", "email", "admin:all"].map(String::from).into();

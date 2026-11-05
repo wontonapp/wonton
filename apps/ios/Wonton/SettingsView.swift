@@ -4,13 +4,18 @@ import WontonClient
 struct SettingsTab: View {
     let appearance: AppearanceModel
     let chat: ChatModel
+    let plugins: PluginsModel
+    let isPaired: Bool
+    @State private var isEditingProfile = false
 
     var body: some View {
         NavigationStack {
-            SettingsView(model: appearance, chat: chat)
+            // 资料存在家里的服务器上，没配对时没有地方存。
+            SettingsView(model: appearance, chat: chat, editProfile: isPaired ? { isEditingProfile = true } : nil)
                 .wontonRootScreen("设置") { EmptyView() }
                 .navigationDestination(for: SettingsRoute.self) { _ in ChatBackupView(model: chat) }
         }
+        .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
     }
 }
 
@@ -22,14 +27,16 @@ private enum SettingsRoute: Hashable {
 struct SettingsView: View {
     let model: AppearanceModel
     let chat: ChatModel
+    let editProfile: (() -> Void)?
     @Environment(\.wontonColors) private var colors
     @State private var showsMoreColors: Bool
     @State private var hexText: String
     @State private var isHexInvalid = false
 
-    init(model: AppearanceModel, chat: ChatModel) {
+    init(model: AppearanceModel, chat: ChatModel, editProfile: (() -> Void)?) {
         self.model = model
         self.chat = chat
+        self.editProfile = editProfile
         let appearance = model.viewModel
         _showsMoreColors = State(initialValue: !appearance.presets.contains(appearance.accent))
         _hexText = State(initialValue: accentHex(color: appearance.accent))
@@ -42,6 +49,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let problem = model.rejection ?? appearance.problem?.problem {
                     ProblemNotice(problem: problem)
+                }
+                if let editProfile {
+                    WontonGroup {
+                        Button(action: editProfile) {
+                            WontonRow(title: "你的资料", showsForward: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.chatBackup) {

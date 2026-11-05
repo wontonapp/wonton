@@ -163,16 +163,6 @@ impl std::fmt::Debug for MatrixConfig {
     }
 }
 
-/// M0 只有主人一个用户；配对和家人账号在后续里程碑加入。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Owner {
-    pub id: String,
-    pub username: String,
-    pub display_name: String,
-    /// 主人没配时没有：核心不拼一个收不到信的地址（ADR-0022）。
-    pub email: Option<String>,
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
     /// 数据根目录。核心在容器里运行时，必须以相同路径挂载进核心容器，
@@ -215,8 +205,9 @@ pub struct Config {
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
-    pub owner: Owner,
-    /// `WONTON_OWNER_NAME` 的值。`owner.username` 要等 [`Self::lock_owner`] 对过数据目录里的记录才算数。
+    /// 主人的用户名。要等 [`Self::lock_owner`] 对过数据目录里的记录才算数。
+    pub username: String,
+    /// `WONTON_OWNER_NAME` 的值。
     pub owner_name: Option<String>,
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
@@ -286,12 +277,6 @@ impl Config {
         let username = owner_name
             .clone()
             .unwrap_or_else(|| owner::DEFAULT_USERNAME.into());
-        let owner = Owner {
-            id: username.clone(),
-            display_name: get("WONTON_OWNER_DISPLAY_NAME").unwrap_or_else(|| "Owner".into()),
-            email: get("WONTON_OWNER_EMAIL"),
-            username,
-        };
         let core_container = get("WONTON_CORE_CONTAINER");
         let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
         Ok(Self {
@@ -327,7 +312,7 @@ impl Config {
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
-            owner,
+            username,
             owner_name,
             install_timeout: Duration::from_secs(parse(&get, "WONTON_INSTALL_TIMEOUT_SECS", 300)?),
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
@@ -338,9 +323,7 @@ impl Config {
 
     /// 按数据目录里的记录定下主人的用户名，第一次启动时记下来（ADR-0022）。对不上就启动失败。
     pub fn lock_owner(mut self) -> Result<Self, owner::LockError> {
-        let username = owner::lock_username(&self.core_state_dir(), self.owner_name.as_deref())?;
-        self.owner.id.clone_from(&username);
-        self.owner.username = username;
+        self.username = owner::lock_username(&self.core_state_dir(), self.owner_name.as_deref())?;
         Ok(self)
     }
 
@@ -403,14 +386,13 @@ fn store_config(get: &impl Fn(&str) -> Option<String>) -> Result<StoreConfig, Co
     })
 }
 
-/// 主人的用户名、邮箱和时区的规则。`wonton-core init` 也查：安装脚本在启动容器前就能报错。
+/// 主人的用户名和时区的规则。`wonton-core init` 也查：安装脚本在启动容器前就能报错。
 pub fn check_owner_settings(get: &impl Fn(&str) -> Option<String>) -> Result<(), ConfigError> {
     let check = |name: &'static str, rule: fn(&str) -> Result<(), String>| match get(name) {
         Some(value) => rule(&value).map_err(|message| ConfigError::Invalid { name, message }),
         None => Ok(()),
     };
     check("WONTON_OWNER_NAME", owner::check_username)?;
-    check("WONTON_OWNER_EMAIL", owner::check_email)?;
     check("TZ", owner::check_time_zone)
 }
 
@@ -669,7 +651,7 @@ mod tests {
                 settings.push(("WONTON_OWNER_NAME", name));
                 config(&settings)
             };
-            assert_eq!(with_owner("alice-1").unwrap().owner.username, "alice-1");
+            assert_eq!(with_owner("alice-1").unwrap().username, "alice-1");
             for bad in ["Alice", "a/b", "a+b", "a=b", "_foo"] {
                 let error = with_owner(bad).unwrap_err().to_string();
                 assert!(error.contains("WONTON_OWNER_NAME"), "{bad}：{error}");
@@ -686,26 +668,9 @@ mod tests {
             settings.extend(name.map(|name| ("WONTON_OWNER_NAME", name)));
             config(&settings).unwrap().lock_owner()
         };
-        let first = start(Some("alice")).unwrap();
-        assert_eq!(
-            (first.owner.id.as_str(), first.owner.username.as_str()),
-            ("alice", "alice")
-        );
-        let unset = start(None).unwrap();
-        assert_eq!(
-            (unset.owner.id.as_str(), unset.owner.username.as_str()),
-            ("alice", "alice")
-        );
+        assert_eq!(start(Some("alice")).unwrap().username, "alice");
+        assert_eq!(start(None).unwrap().username, "alice");
         assert!(start(Some("bob")).is_err());
-    }
-
-    #[test]
-    fn without_an_email_the_core_does_not_make_one_up() {
-        let base = ("WONTON_DATA_DIR", "/d");
-        assert_eq!(config(&[base]).unwrap().owner.email, None);
-        let set = config(&[base, ("WONTON_OWNER_EMAIL", "me@example.com")]).unwrap();
-        assert_eq!(set.owner.email.as_deref(), Some("me@example.com"));
-        assert!(config(&[base, ("WONTON_OWNER_EMAIL", "not-an-email")]).is_err());
     }
 
     #[test]

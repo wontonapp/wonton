@@ -9,6 +9,7 @@ struct InstallConfirmView: View {
     @State private var loaded: Result<InstallPreview, Error>?
     @State private var rejection: Problem?
     @State private var lanWebui = false
+    @State private var isFillingProfile = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +28,12 @@ struct InstallConfirmView: View {
         .wontonModalScreen(confirmation.actionTitle)
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .task { await load() }
+        // 填完回到这里，预览重新算，缺的资料有了就能装。
+        .fullScreenCover(
+            isPresented: $isFillingProfile,
+            onDismiss: { Task { await load() } },
+            content: { OwnerProfileView(model: model) }
+        )
     }
 
     @ViewBuilder private var content: some View {
@@ -38,7 +45,7 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui)
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui) { isFillingProfile = true }
         }
     }
 
@@ -49,10 +56,10 @@ struct InstallConfirmView: View {
         return nil
     }
 
-    /// 装不了（`blocked`）或者有核心不支持的权限时不能确认。
+    /// 装不了（`blocked`）、缺资料或者有核心不支持的权限时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
-        return preview.blocked == nil && preview.permissions.allSatisfy(\.supported)
+        return preview.blocked == nil && preview.missingProfile == nil && preview.permissions.allSatisfy(\.supported)
     }
 
     private var isShowingRejection: Binding<Bool> {
@@ -99,6 +106,7 @@ private struct PreviewContent: View {
     let model: PluginsModel
     let preview: InstallPreview
     @Binding var lanWebui: Bool
+    let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -107,6 +115,12 @@ private struct PreviewContent: View {
                 header
                 if let blocked = preview.blocked {
                     WontonNotice(icon: .blocked, title: blocked)
+                }
+                if let missing = preview.missingProfile {
+                    WontonNotice(icon: .info, title: missing, isError: false) {
+                        Button("填写资料", action: fillProfile)
+                            .buttonStyle(WontonButtonStyle())
+                    }
                 }
                 if !preview.notices.isEmpty {
                     NoticeLines(lines: preview.notices)

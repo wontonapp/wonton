@@ -32,6 +32,7 @@ use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
 use crate::mcp::test_support::{Cards, Notes, serve_notes};
 use crate::mcp::{Bus, Confirmations};
+use crate::owner::OwnerStore;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
@@ -74,6 +75,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         base_domain: CORE.into(),
         port: addr.port(),
     };
+    let profile = OwnerStore::for_test(dir.path(), &owner());
     let lifecycle = LifecycleConfig {
         public: public.clone(),
         data_dir: dir.path().to_owned(),
@@ -85,7 +87,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         pgid: owner_ids.gid(),
         install_timeout: Duration::from_secs(5),
         owner: "owner".into(),
-        owner_email: Some("owner@example.com".into()),
+        profile: profile.clone(),
         gateway_port: addr.port(),
         instance: Default::default(),
     };
@@ -117,7 +119,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
     );
     let gateway = Gateway::new(
         public,
-        owner(),
+        profile,
         TOKEN.into(),
         manager,
         None,

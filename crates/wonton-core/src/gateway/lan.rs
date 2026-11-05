@@ -83,7 +83,7 @@ fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>) -> String {
             // 渲染出来的是独立的 SVG 文件，嵌进 HTML 时去掉开头的 XML 声明。
             let svg = svg.find("<svg").map_or(svg.as_str(), |start| &svg[start..]);
             format!(
-                "<h2>配对</h2><p>用云吞 App 扫这个二维码，手机就成为这台服务器的主人。</p>\
+                "<h2>配对</h2><p>用云吞 App 扫这个二维码，手机就连上了这台服务器。</p>\
                  <div class=\"qr\">{svg}</div>\
                  <p class=\"muted\">只能用一次，{} 分钟内有效；页面会自己换新码。第一台设备配上后，这里不再显示二维码。</p>\
                  <details><summary>没法扫码？</summary><p>在 App 里粘贴这段配对码：</p>\

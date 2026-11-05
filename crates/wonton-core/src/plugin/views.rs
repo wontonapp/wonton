@@ -234,8 +234,7 @@ impl PluginManager {
         let blocked = blocked
             .or(gpu.blocked)
             .or(lan.blocked)
-            .or_else(|| egress_block.map(|p| p.message.clone()))
-            .or_else(|| self.no_email_block(package));
+            .or_else(|| egress_block.map(|p| p.message.clone()));
         let unpinned: Vec<String> = plan
             .containers
             .iter()
@@ -297,7 +296,7 @@ impl PluginManager {
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
-            missing_profile: None,
+            missing_profile: self.missing_profile(package),
             devices: None,
             lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
             always_allowed: Vec::new(),
@@ -390,11 +389,12 @@ impl PluginManager {
     }
 
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
-    /// 主人没配邮箱、插件又非要不可时，装不上的原因。
-    fn no_email_block(&self, package: &PluginPackage) -> Option<String> {
+    /// 主人还没填邮箱、插件又非要不可时的说明。
+    pub(crate) fn missing_profile(&self, package: &PluginPackage) -> Option<String> {
         let needs_email =
             proxy_auth::uses_email(&package.manifest) || dry_run_with_email(package, None).is_err();
-        (self.cfg.owner_email.is_none() && needs_email).then(|| crate::owner::NO_EMAIL.to_owned())
+        (self.cfg.profile.email().is_none() && needs_email)
+            .then(|| crate::owner::EMAIL_NEEDED.to_owned())
     }
 
     async fn precheck(&self, m: &Manifest) -> Result<(), InstallError> {
