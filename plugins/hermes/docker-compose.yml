@@ -12,14 +12,16 @@ x-image: &image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf33340179
 services:
   # 每次创建容器时（安装、升级、重建）把 Wonton 的 Hermes 插件（wonton/）放进这个 Bot 的数据目录，覆盖旧版本；包里的
   # config.yaml 只在首次启动前写入，已有配置时不覆盖（Hermes 自己也会改写它，比如 /model）。
+  # 帮助 skill（skills/wonton-help/）同样每次都覆盖，内容从 wonton-docs 原样取来（ADR-0034）。
   init:
     image: *image
     entrypoint:
       - /bin/sh
       - -c
       - >-
-        mkdir -p /opt/data/plugins/wonton &&
+        mkdir -p /opt/data/plugins/wonton /opt/data/skills/wonton-help &&
         cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
+        cp /seed/skills/wonton-help/SKILL.md /opt/data/skills/wonton-help/ &&
         { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; } &&
         /opt/hermes/.venv/bin/python /seed/gateway_trust_env.py
     volumes:
@@ -33,6 +35,8 @@ services:
         target: /seed/wonton/__init__.py
       - source: gateway_trust_env
         target: /seed/gateway_trust_env.py
+      - source: wonton_help_skill
+        target: /seed/skills/wonton-help/SKILL.md
     network_mode: none
     restart: "no"
 
@@ -95,11 +99,13 @@ configs:
     file: ./wonton/__init__.py
   gateway_trust_env:
     file: ./gateway_trust_env.py
+  wonton_help_skill:
+    file: ./skills/wonton-help/SKILL.md
 
 x-wonton:
   spec: "0.4"
   id: com.nousresearch.hermes
-  version: 0.5.2
+  version: 0.5.3
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:

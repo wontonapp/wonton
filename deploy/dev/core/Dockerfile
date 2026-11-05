@@ -76,7 +76,7 @@ FROM public.ecr.aws/docker/library/docker:29.9.2-cli AS compose
 # 帮助文档（ADR-0034）：wonton-docs 固定提交的一份，新装好的主机一定有文档。之后的更新靠官方索引的 `docs`。
 # 时间用归档里文件的修改时间，也就是这个提交的时间，重复构建结果不变。
 FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/debian:trixie-slim AS docs
-ARG WONTON_DOCS_COMMIT=549ad09ba8a49d13762ecac60f8ea26561ccd020
+ARG WONTON_DOCS_COMMIT=e6aab350e3810cdad27cd0dbf910d16b6ac900c7
 ADD https://codeload.github.com/geraldpeng6/wonton-docs/tar.gz/${WONTON_DOCS_COMMIT} /docs.tar.gz
 RUN mkdir -p /docs/user /unpacked \
     && tar xzf /docs.tar.gz --strip-components=1 -C /unpacked \
