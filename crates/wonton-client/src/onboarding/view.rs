@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use wonton_protocol::{
     ChatViewModel, Onboarding, OnboardingAgent, OnboardingAgentRow, OnboardingModelStep,
     OnboardingNeedRow, OnboardingStep, OnboardingTip, OnboardingViewModel, PluginState,
-    ReplacedAgent,
+    ReplacedAgent, StepNav,
 };
 
 use super::{LocalState, storage, text};
@@ -84,7 +84,7 @@ pub(super) fn render(
     let view = OnboardingViewModel {
         step: Some(onboarding.step),
         title: text::title(onboarding.step, language),
-        nav: None,
+        nav: navigation(state, onboarding.step, selected_agent_data),
         loading: state.loading,
         problem: state.problem.clone(),
         catalog_problem: onboarding.catalog_problem.clone(),
@@ -97,6 +97,36 @@ pub(super) fn render(
         tips: tips(records, language),
     };
     (view, primary_bot)
+}
+
+fn navigation(
+    state: &LocalState,
+    step: OnboardingStep,
+    selected: Option<&OnboardingAgent>,
+) -> Option<StepNav> {
+    let (position, can_next) = match step {
+        OnboardingStep::Profile => (1, true),
+        OnboardingStep::Agent => (2, selected.is_some_and(installable)),
+        OnboardingStep::Model => (
+            3,
+            state.providers.as_ref().is_some_and(|providers| {
+                providers
+                    .providers
+                    .as_ref()
+                    .is_some_and(|items| items.iter().any(|item| item.configured))
+            }),
+        ),
+        OnboardingStep::Apps => (4, true),
+        OnboardingStep::Finished | OnboardingStep::Other => return None,
+    };
+    let ready = !state.loading && state.saving.is_none();
+    Some(StepNav {
+        position,
+        total: 4,
+        can_back: ready && position > 1,
+        can_skip: ready,
+        can_next: ready && can_next,
+    })
 }
 
 fn tips(records: &storage::Records, language: Language) -> wonton_protocol::OnboardingTips {

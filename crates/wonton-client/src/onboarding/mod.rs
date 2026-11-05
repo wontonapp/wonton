@@ -1,6 +1,7 @@
 //! 新用户引导：步骤状态、模型服务商和设备上的一次性提示（ADR-0034）。
 
 mod api;
+mod refresh;
 mod storage;
 mod text;
 mod view;
@@ -24,9 +25,16 @@ use crate::plugins::PluginsLink;
 use storage::OnboardingStorage;
 use view::{next_step, render, selected_agent};
 
+#[derive(Clone, Copy)]
+enum Direction {
+    Forward,
+    Backward,
+}
+
 #[derive(Default)]
 struct LocalState {
     onboarding: Option<Onboarding>,
+    revision: u64,
     providers: Option<ModelProviders>,
     selected_agent: Option<String>,
     selected_needs: HashSet<String>,
@@ -80,6 +88,10 @@ impl OnboardingLink {
         runtime.spawn(follow_home(Arc::downgrade(&link), home.subscribe()));
         runtime.spawn(follow_chat(Arc::downgrade(&link), chat.subscribe()));
         runtime.spawn(follow_sent(Arc::downgrade(&link), chat.subscribe_sent()));
+        runtime.spawn(refresh::follow_plugins(
+            Arc::downgrade(&link),
+            link.plugins.subscribe(),
+        ));
         link
     }
 
@@ -118,6 +130,7 @@ impl OnboardingLink {
             Action::ChooseOnboardingAgent { id } => self.choose_agent(&id),
             Action::ContinueOnboarding => self.continue_step(false),
             Action::SkipOnboardingStep => self.continue_step(true),
+            Action::BackOnboardingStep => self.back_step(),
             Action::ToggleOnboardingNeed { id } => self.toggle_need(&id),
             Action::SaveModelProviderKey { id, key } => self.save_provider(&id, key),
             Action::DismissModelProviderProblem => {
@@ -132,6 +145,7 @@ impl OnboardingLink {
         }
     }
     fn begin_operation(&self) -> (u64, u64) {
+        let _state = lock(&self.state);
         (
             self.generation.load(Ordering::SeqCst),
             self.operation.fetch_add(1, Ordering::SeqCst) + 1,
@@ -174,6 +188,7 @@ impl OnboardingLink {
         {
             let mut state = lock(&self.state);
             state.onboarding = Some(onboarding.clone());
+            state.revision += 1;
             state.providers = None;
             state.saving = None;
             state.problem = None;
@@ -181,7 +196,8 @@ impl OnboardingLink {
         }
         self.publish();
         if onboarding.step == OnboardingStep::Model {
-            self.fetch_model(generation, operation).await;
+            self.fetch_model(generation, operation, Direction::Forward)
+                .await;
         } else {
             lock(&self.state).loading = false;
             self.publish();
@@ -189,7 +205,7 @@ impl OnboardingLink {
         self.maybe_mark_prompt_used();
     }
 
-    async fn fetch_model(&self, generation: u64, operation: u64) {
+    async fn fetch_model(&self, generation: u64, operation: u64, direction: Direction) {
         {
             let mut state = lock(&self.state);
             state.providers = None;
@@ -211,8 +227,11 @@ impl OnboardingLink {
                 lock(&self.state).providers = Some(providers);
                 self.publish();
                 if configured {
-                    self.put_step(generation, operation, OnboardingStep::Apps, None)
-                        .await;
+                    let step = match direction {
+                        Direction::Forward => OnboardingStep::Apps,
+                        Direction::Backward => OnboardingStep::Agent,
+                    };
+                    self.put_step(generation, operation, step, None).await;
                 } else {
                     lock(&self.state).loading = false;
                     self.publish();
@@ -307,7 +326,31 @@ impl OnboardingLink {
                 }
             }
         };
-        self.spawn_update(update, false);
+        self.spawn_update(update, false, Direction::Forward);
+        Ok(())
+    }
+
+    fn back_step(self: &Arc<Self>) -> Result<(), CoreError> {
+        let step = {
+            let state = lock(&self.state);
+            if state.loading || state.saving.is_some() {
+                return Err(invalid("正在保存或读取引导状态"));
+            }
+            match state.onboarding.as_ref().map(|onboarding| onboarding.step) {
+                Some(OnboardingStep::Agent) => OnboardingStep::Profile,
+                Some(OnboardingStep::Model) => OnboardingStep::Agent,
+                Some(OnboardingStep::Apps) => OnboardingStep::Model,
+                _ => return Err(invalid("这一步不能返回")),
+            }
+        };
+        self.spawn_update(
+            OnboardingUpdate {
+                step: Some(step),
+                ..OnboardingUpdate::default()
+            },
+            false,
+            Direction::Backward,
+        );
         Ok(())
     }
 
@@ -321,6 +364,7 @@ impl OnboardingLink {
                 ..OnboardingUpdate::default()
             },
             true,
+            Direction::Forward,
         );
         Ok(())
     }
@@ -346,6 +390,7 @@ impl OnboardingLink {
                 ..OnboardingUpdate::default()
             },
             false,
+            Direction::Forward,
         );
         Ok(())
     }
@@ -360,6 +405,7 @@ impl OnboardingLink {
                 ..OnboardingUpdate::default()
             },
             false,
+            Direction::Forward,
         );
         Ok(())
     }
@@ -372,7 +418,12 @@ impl OnboardingLink {
         Ok(())
     }
 
-    fn spawn_update(self: &Arc<Self>, update: OnboardingUpdate, reset_local: bool) {
+    fn spawn_update(
+        self: &Arc<Self>,
+        update: OnboardingUpdate,
+        reset_local: bool,
+        direction: Direction,
+    ) {
         let (generation, operation) = self.begin_operation();
         {
             let mut state = lock(&self.state);
@@ -395,6 +446,7 @@ impl OnboardingLink {
                     {
                         let mut state = lock(&link.state);
                         state.onboarding = Some(onboarding);
+                        state.revision += 1;
                         state.providers = None;
                         state.loading = fetch_model;
                         state.saving = None;
@@ -407,7 +459,7 @@ impl OnboardingLink {
                     }
                     link.publish();
                     if fetch_model {
-                        link.fetch_model(generation, operation).await;
+                        link.fetch_model(generation, operation, direction).await;
                     }
                 }
                 Err(problem) => {
@@ -507,6 +559,21 @@ impl OnboardingLink {
                     return;
                 }
                 let mut state = lock(&self.state);
+                if problem.reason == ModelProviderFailure::ProviderUnreachable {
+                    // 退出码 4 保证 key 已保存，即使随后取服务商列表失败也能继续。
+                    let LocalState {
+                        providers, saving, ..
+                    } = &mut *state;
+                    if let Some(items) = providers
+                        .as_mut()
+                        .and_then(|providers| providers.providers.as_mut())
+                        && let Some(provider) = items
+                            .iter_mut()
+                            .find(|provider| Some(provider.id.as_str()) == saving.as_deref())
+                    {
+                        provider.configured = true;
+                    }
+                }
                 state.saving = None;
                 state.model_problem = Some(problem);
                 drop(state);
@@ -544,6 +611,7 @@ impl OnboardingLink {
         match result {
             Ok(onboarding) => {
                 state.onboarding = Some(onboarding);
+                state.revision += 1;
                 state.problem = None;
                 state.model_problem = follow_up_problem;
             }
@@ -554,9 +622,12 @@ impl OnboardingLink {
     }
 
     fn server_changed(&self, server_id: Option<String>) {
-        self.generation.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut state = lock(&self.state);
+            self.generation.fetch_add(1, Ordering::SeqCst);
+            *state = LocalState::default();
+        }
         lock(&self.sent_rooms).clear();
-        *lock(&self.state) = LocalState::default();
         if let Some(server_id) = server_id
             && let Err(error) = self.storage.sync_server(&server_id)
         {

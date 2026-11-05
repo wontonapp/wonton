@@ -2,10 +2,12 @@ use std::fs;
 
 use axum::http::Method;
 use wonton_client::{
-    Action, CoreError, ModelProviderFailure, OnboardingStep, PluginFailure, SecretString,
+    Action, CoreError, ModelProviderFailure, OnboardingStep, PluginFailure, SecretString, StepNav,
 };
 
 use super::rig::{Canned, FakeHome, Rig, core_error};
+
+mod refresh;
 
 fn onboarding(step: &str) -> serde_json::Value {
     serde_json::json!({
@@ -218,8 +220,23 @@ async fn provider_errors_remain_distinct_and_fetch_failure_keeps_model() {
         let view = rig
             .wait_onboarding(|view| view.model.problem.is_some() && view.model.saving.is_none())
             .await;
+        let nav = view.nav.unwrap();
+        assert!(nav.can_back && nav.can_skip);
+        assert_eq!(
+            nav.can_next,
+            expected == ModelProviderFailure::ProviderUnreachable
+        );
         assert_eq!(view.step, Some(OnboardingStep::Model));
         assert_eq!(view.model.problem.unwrap().reason, expected);
+        if expected == ModelProviderFailure::ProviderUnreachable {
+            rig.app
+                .dispatch(Action::DismissModelProviderProblem)
+                .unwrap();
+            assert!(rig.app.onboarding().nav.unwrap().can_next);
+            rig.app.dispatch(Action::ContinueOnboarding).unwrap();
+            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+                .await;
+        }
     }
 
     let rig = Rig::new().await;
@@ -477,6 +494,7 @@ async fn an_installed_agent_is_not_blocked_but_an_uninstalled_one_is() {
 
     // 默认选中第一个能用的：已装的即使 blocked 也能选。
     let view = rig.app.onboarding();
+    assert!(view.nav.unwrap().can_next);
     assert_eq!(
         view.agents
             .iter()
@@ -521,6 +539,12 @@ async fn saving_a_key_while_one_is_saving_is_invalid_input() {
         .unwrap();
     rig.wait_onboarding(|view| view.model.saving.is_some())
         .await;
+    let nav = rig.app.onboarding().nav.unwrap();
+    assert!(!nav.can_back && !nav.can_skip && !nav.can_next);
+    assert!(matches!(
+        rig.app.dispatch(Action::BackOnboardingStep),
+        Err(CoreError::InvalidInput { .. })
+    ));
     assert!(matches!(
         rig.app.dispatch(Action::SaveModelProviderKey {
             id: "openai".to_owned(),
@@ -558,4 +582,178 @@ async fn a_broken_onboarding_file_does_not_block_the_app() {
     assert!(rig.app.onboarding().problem.is_none());
     let data = fs::read_to_string(rig.data_dir().join("onboarding.json")).unwrap();
     assert!(data.contains("confirmation_card"));
+}
+
+#[tokio::test]
+async fn navigation_reports_each_step_and_disables_buttons_while_loading() {
+    for (step, position, can_next) in [
+        ("profile", 1, true),
+        ("agent", 2, true),
+        ("model", 3, false),
+        ("apps", 4, true),
+        ("finished", 0, false),
+        ("future_step", 0, false),
+    ] {
+        let rig = Rig::new().await;
+        assert!(rig.app.onboarding().nav.is_none());
+        rig.core.set_onboarding(onboarding(step));
+        rig.core.set_providers(providers(false));
+        rig.connected().await;
+        let view = rig
+            .wait_onboarding(|view| view.step.is_some() && !view.loading)
+            .await;
+        assert_eq!(
+            view.nav,
+            (position > 0).then_some(StepNav {
+                position,
+                total: 4,
+                can_back: position > 1,
+                can_skip: true,
+                can_next,
+            })
+        );
+        if position <= 1 {
+            assert!(matches!(
+                rig.app.dispatch(Action::BackOnboardingStep),
+                Err(CoreError::InvalidInput { .. })
+            ));
+        }
+        rig.core.hold(Method::GET, "/_wonton/api/onboarding");
+        rig.app.dispatch(Action::RefreshOnboarding).unwrap();
+        let loading = rig.app.onboarding();
+        assert!(loading.loading);
+        if let Some(nav) = loading.nav {
+            assert!(!nav.can_back && !nav.can_skip && !nav.can_next);
+        }
+        rig.core.release(Method::GET, "/_wonton/api/onboarding");
+        rig.wait_onboarding(|view| !view.loading).await;
+    }
+}
+
+#[tokio::test]
+async fn back_walks_every_step_without_discarding_choices_or_applied_agent() {
+    let rig = Rig::new().await;
+    let mut state = installed_onboarding();
+    state["step"] = serde_json::json!("apps");
+    state["needs"] = serde_json::json!([{"id": "photos", "title": "Photos", "plugins": []}]);
+    rig.core.set_onboarding(state);
+    rig.core.set_providers(providers(false));
+    rig.connected().await;
+    rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+        .await;
+    rig.app
+        .dispatch(Action::ChooseOnboardingAgent {
+            id: "agent.one".to_owned(),
+        })
+        .unwrap();
+    rig.app
+        .dispatch(Action::ToggleOnboardingNeed {
+            id: "photos".to_owned(),
+        })
+        .unwrap();
+    for step in [
+        OnboardingStep::Model,
+        OnboardingStep::Agent,
+        OnboardingStep::Profile,
+    ] {
+        rig.app.dispatch(Action::BackOnboardingStep).unwrap();
+        let view = rig
+            .wait_onboarding(|view| view.step == Some(step) && !view.loading)
+            .await;
+        assert!(view.agents[0].selected);
+        assert!(view.needs[0].selected);
+        assert_eq!(view.primary_bot_user_id.as_deref(), Some("@two:home"));
+    }
+    let steps: Vec<_> = rig
+        .core
+        .seen(&Method::PUT, "/_wonton/api/onboarding")
+        .iter()
+        .map(|request| {
+            serde_json::from_str::<serde_json::Value>(&request.body).unwrap()["step"].clone()
+        })
+        .collect();
+    assert_eq!(steps, ["model", "agent", "profile"]);
+}
+
+#[tokio::test]
+async fn back_skips_configured_models_in_reverse_even_after_reopening() {
+    let mut rig = Rig::new().await;
+    rig.core.set_onboarding(onboarding("model"));
+    rig.core.set_providers(providers(true));
+    rig.connected().await;
+    rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+        .await;
+    for reopen in [false, true] {
+        if reopen {
+            rig.app.dispatch(Action::ContinueOnboarding).unwrap();
+            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+                .await;
+            rig.reopen();
+            rig.connected().await;
+            rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+                .await;
+        }
+        rig.app.dispatch(Action::BackOnboardingStep).unwrap();
+        rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Agent) && !view.loading)
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn agent_navigation_needs_an_installable_selection() {
+    let rig = Rig::new().await;
+    let mut state = onboarding("agent");
+    state["agents"][0]["blocked"] = serde_json::json!("Unavailable on this host");
+    rig.core.set_onboarding(state);
+    rig.connected().await;
+    let view = rig
+        .wait_onboarding(|view| view.step == Some(OnboardingStep::Agent) && !view.loading)
+        .await;
+    assert!(!view.nav.unwrap().can_next);
+    assert!(matches!(
+        rig.app.dispatch(Action::ContinueOnboarding),
+        Err(CoreError::InvalidInput { .. })
+    ));
+}
+
+#[tokio::test]
+async fn account_login_can_continue_without_a_configured_provider() {
+    let rig = Rig::new().await;
+    let mut state = onboarding("model");
+    state["agents"][0]["logins"] = serde_json::json!([{"id": "account", "title": "Account"}]);
+    rig.core.set_onboarding(state);
+    rig.core.set_providers(providers(false));
+    rig.connected().await;
+    let view = rig
+        .wait_onboarding(|view| view.step == Some(OnboardingStep::Model) && !view.loading)
+        .await;
+    assert!(!view.nav.unwrap().can_next);
+    assert_eq!(view.model.logins[0].id, "account");
+    rig.app.dispatch(Action::ContinueOnboarding).unwrap();
+    rig.wait_onboarding(|view| view.step == Some(OnboardingStep::Apps) && !view.loading)
+        .await;
+}
+
+#[tokio::test]
+async fn a_failed_back_request_keeps_the_step_and_reenables_navigation() {
+    let rig = model_rig().await;
+    rig.core.hold(Method::PUT, "/_wonton/api/onboarding");
+    rig.core.answer(
+        Method::PUT,
+        "/_wonton/api/onboarding",
+        core_error(500, "docker", "cannot save"),
+    );
+    rig.app.dispatch(Action::BackOnboardingStep).unwrap();
+    let nav = rig.app.onboarding().nav.unwrap();
+    assert!(!nav.can_back && !nav.can_skip && !nav.can_next);
+    assert!(matches!(
+        rig.app.dispatch(Action::BackOnboardingStep),
+        Err(CoreError::InvalidInput { .. })
+    ));
+    rig.core.release(Method::PUT, "/_wonton/api/onboarding");
+    let view = rig
+        .wait_onboarding(|view| view.problem.is_some() && !view.loading)
+        .await;
+    assert_eq!(view.step, Some(OnboardingStep::Model));
+    assert!(view.nav.unwrap().can_back);
 }
