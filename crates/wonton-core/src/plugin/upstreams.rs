@@ -1,6 +1,8 @@
 //! 核心和插件之间的入口：核心在插件网络里的别名（插件经它们访问核心转发的服务），以及核心访问插件的地址
 //! （网页、模型网关、MCP 服务）。
 
+use std::time::Duration;
+
 use super::PluginId;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
@@ -8,9 +10,13 @@ use super::models::ModelsRoute;
 use super::package::PluginPackage;
 use super::store::StoreError;
 use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PublicUrls};
+use crate::http::HttpError;
 
 /// MCP 服务没写 `path` 时的路径。
 const DEFAULT_MCP_PATH: &str = "/mcp";
+
+/// 网页探测一次的时限，和装完时的探测（[`super::health::wait_webui`]）一样。
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) fn uses_sso(manifest: &Manifest) -> bool {
     manifest.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc)
@@ -66,6 +72,20 @@ impl PluginManager {
         self.service_upstream(&name, webui.port, network)
             .await
             .map(Some)
+    }
+
+    /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测
+    /// （[`super::health::wait_webui`]）用同一个地址（核心在插件网络里看到的 `主机:端口` 加网页路径）
+    /// 和每请求 5 秒的时限。没有网页、还没部署到那一步的为空。
+    pub async fn webui_status(&self, id: &PluginId) -> Option<Result<u16, HttpError>> {
+        let url = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            let entry = plugins.get(id)?;
+            let upstream = entry.upstream.as_ref()?;
+            let path = &entry.listed.as_ref()?.manifest.webui.as_ref()?.path;
+            format!("http://{upstream}{path}")
+        };
+        Some(self.http.get_status(&url, PROBE_TIMEOUT).await)
     }
 
     /// 是模型网关时：核心转发模型请求、执行凭据命令的目标。

@@ -92,8 +92,7 @@ pub struct Outgoing {
 
 impl Outgoing {
     pub fn open(app_data: &Path, paths: &[String]) -> Result<Self, Failure> {
-        let app = open_absolute(app_data, "应用数据目录").map_err(no_outbox)?;
-        let outbox = open_subdir(app.as_fd(), OUTBOX).map_err(no_outbox)?;
+        let outbox = open_outbox(app_data, "存不了文件")?;
         let mut seen = HashSet::new();
         let mut sources = Vec::with_capacity(paths.len());
         for raw in paths {
@@ -153,11 +152,38 @@ impl Outgoing {
     }
 }
 
-fn no_outbox(e: ShareError) -> Failure {
+/// 打开 Bot 的 outbox：没挂载时报能分清的错（存文件和校验插件包共用，ADR-0027、ADR-0033）。
+/// `why` 说清这次要做的事本来是什么，如“存不了文件”。
+fn open_outbox(app_data: &Path, why: &str) -> Result<OwnedFd, Failure> {
+    let app = open_absolute(app_data, "应用数据目录").map_err(|e| no_outbox(e, why))?;
+    open_subdir(app.as_fd(), OUTBOX).map_err(|e| no_outbox(e, why))
+}
+
+/// Bot 的 outbox 里的一个目录，存文件和校验插件包（ADR-0033）同一套路径规则：相对路径，逐级
+/// `openat`（`O_NOFOLLOW`）打开，段规则和要存的文件一样。返回打开的目录和它对应的路径，调用方要经
+/// 这个路径再读时，用返回的目录核对没有被换掉。
+pub fn outbox_dir(app_data: &Path, raw: &str) -> Result<(OwnedFd, PathBuf), Failure> {
+    let outbox = open_outbox(app_data, "校验不了插件包")?;
+    let path: Vec<String> = raw.split('/').map(str::to_owned).collect();
+    for segment in &path {
+        check_visible(segment)?;
+    }
+    let dir = walk(outbox.as_fd(), &path).map_err(|e| match e {
+        ShareError::Gone => invalid(format!("outbox 里没有 {raw}")),
+        other => other.into(),
+    })?;
+    let mut joined = app_data.join(OUTBOX);
+    for segment in &path {
+        joined.push(segment);
+    }
+    Ok((dir, joined))
+}
+
+fn no_outbox(e: ShareError, why: &str) -> Failure {
     match e {
         ShareError::Gone => Failure::new(
             FileFailure::PermissionDenied,
-            format!("这个插件没有挂载 ${{WONTON_APP_DATA}}/{OUTBOX}，存不了文件"),
+            format!("这个插件没有挂载 ${{WONTON_APP_DATA}}/{OUTBOX}，{why}"),
         ),
         other => other.into(),
     }

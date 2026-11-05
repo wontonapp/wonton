@@ -9,6 +9,7 @@
 
 每轮带上发文件的办法（ADR-0020 的“Hermes 的 MEDIA:”）：Hermes 把工具结果里的预览存成缓存文件，写上 MEDIA:<路径>，它的 Matrix 提示
 又教模型用 MEDIA: 发文件，没有这句话时模型很可能把预览发给主人。存文件的办法（ADR-0027）也在这里：outbox 的路径是 Hermes 的挂载决定的。
+同一轮还带一句引导语（ADR-0033）：主人想要新页面或应用时，先调 wonton__plugin_guide。
 """
 
 import logging
@@ -33,6 +34,8 @@ SEND_FILES = (
     "主人要把文件放进音乐库这类共享文件夹时：把文件放进 /opt/data/outbox，用 wonton__list_shares 看有哪些文件夹，再调 wonton__save_file，"
     "这是唯一的办法。"
 )
+
+WRITE_PLUGIN = "主人想要一个新的页面、应用或小工具，或者要改你之前写的插件时：先调 wonton__plugin_guide，照它说的做。"
 
 
 async def missing_model_hint(text="", **_):
@@ -63,7 +66,7 @@ async def missing_model_hint(text="", **_):
 
 def send_files_context(**_):
     """``pre_llm_call``：返回的文字追加在这一轮的用户消息后面，不进系统提示。"""
-    return {"context": SEND_FILES}
+    return {"context": f"{SEND_FILES}\n{WRITE_PLUGIN}"}
 
 
 def register(ctx):

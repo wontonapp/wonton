@@ -133,6 +133,11 @@ impl Gallery {
         }
     }
 
+    /// 校验插件包的图标和截图用同一个进程（`plugin check` 的同一份代码）。
+    pub(super) fn images(&self) -> &Arc<ImageWorker> {
+        &self.images
+    }
+
     /// 记住预览过的插件包的图标：确认页显示它的时候，插件还没装。
     pub fn remember_preview(&self, source: &IconSource) {
         let mut previews = self.previews.lock().expect("图标表锁中毒");

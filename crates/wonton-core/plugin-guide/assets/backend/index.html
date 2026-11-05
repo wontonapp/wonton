@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>便签</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: calc(var(--wonton-inset-top, 0px) + 16px) 16px calc(var(--wonton-inset-bottom, 0px) + 16px);
+    background: var(--color-background-primary, Canvas);
+    color: var(--color-text-primary, CanvasText);
+    font: 16px/1.5 var(--font-sans, system-ui, sans-serif);
+  }
+  form { display: flex; gap: 8px; }
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-primary, GrayText);
+    border-radius: var(--border-radius-md, 12px);
+    background: var(--color-background-secondary, Field);
+    color: inherit;
+    font: inherit;
+  }
+  button {
+    border: 0;
+    padding: 8px 16px;
+    border-radius: var(--border-radius-md, 12px);
+    background: var(--wonton-accent-fill, ButtonFace);
+    color: var(--wonton-accent-ink, ButtonText);
+    font: inherit;
+  }
+  li { padding: 12px 0; border-bottom: 1px solid var(--color-border-primary, GrayText); list-style: none; }
+  ul { padding: 0; }
+  #error { color: var(--color-text-danger, red); }
+</style>
+</head>
+<body>
+<form id="add"><input id="text" placeholder="写点什么" autocomplete="off"><button>加上</button></form>
+<p id="error" hidden></p>
+<ul id="list"></ul>
+<script>
+  const list = document.getElementById("list");
+  const error = document.getElementById("error");
+  const show = (notes) => {
+    list.replaceChildren(...notes.map((text) => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      return li;
+    }));
+  };
+  const call = async (init) => {
+    error.hidden = true;
+    try {
+      const res = await fetch("/api/notes", init);
+      if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
+      show(await res.json());
+    } catch (e) {
+      error.textContent = `出错了：${e.message}`;
+      error.hidden = false;
+      throw e;
+    }
+  };
+  document.getElementById("add").onsubmit = async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("text");
+    await call({ method: "POST", body: JSON.stringify({ text: input.value }) });
+    input.value = "";
+  };
+  call();
+</script>
+</body>
+</html>

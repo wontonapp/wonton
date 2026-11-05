@@ -4,6 +4,7 @@
 
 mod agent_permission;
 pub mod audit;
+mod authoring_tools;
 mod bounded_http;
 mod cards;
 mod confirm;
@@ -562,6 +563,8 @@ impl Bus {
 
 #[cfg(test)]
 mod agent_permission_tests;
+#[cfg(test)]
+mod authoring_tests;
 #[cfg(test)]
 mod file_tests;
 #[cfg(test)]

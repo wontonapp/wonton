@@ -1,5 +1,7 @@
-//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载、帮助文档，文件工具在 [`file_tools`]。安装和卸载要
-//! 主人确认，高权限也一样，主人点了就装（ADR-0033）。Bot 经 `id` 只能装官方索引里的插件。
+//! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载、帮助文档，文件工具在
+//! [`file_tools`]，存文件在 [`save_tools`]，Agent 写插件用的只读工具（说明、校验、状态，ADR-0033）在
+//! [`authoring_tools`]。安装和卸载要主人确认，高权限也一样，主人点了就装（ADR-0033）。Bot 经 `id` 只能装官方
+//! 索引里的插件。
 
 use std::sync::Arc;
 
@@ -7,7 +9,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
-use super::{Bus, Caller, Outcome, cards, file_tools, naming, save_tools};
+use super::{Bus, Caller, Outcome, authoring_tools, cards, file_tools, naming, save_tools};
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
@@ -87,6 +89,7 @@ pub fn definitions() -> Vec<Tool> {
     ));
     tools.extend(file_tools::definitions());
     tools.extend(save_tools::definitions());
+    tools.extend(authoring_tools::definitions());
     tools
 }
 
@@ -103,6 +106,9 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
         INSTALL => return install(bus, caller, &name, args).await,
         UNINSTALL => return uninstall(bus, caller, &name, args).await,
         HELP => help(bus, &args).await,
+        authoring_tools::GUIDE => Ok(authoring_tools::guide()),
+        authoring_tools::CHECK => authoring_tools::check(bus, caller, &args).await,
+        authoring_tools::STATUS => authoring_tools::status(bus, &args).await,
         file_tools::VIEW | file_tools::SHARE => {
             return file_tools::call(bus, caller, tool, args).await;
         }

@@ -129,7 +129,7 @@ pub(super) struct Entry {
     pub(super) health: Option<Health>,
     /// 列表和详情页显示的信息；记录读不出来的插件为空。
     pub(super) listed: Option<Arc<Listed>>,
-    upstream: Option<String>,
+    pub(super) upstream: Option<String>,
     /// 声明了 `provides.models`（不论状态）。
     pub(super) provides_models: bool,
     /// 运行中的模型网关的转发目标。
@@ -408,6 +408,11 @@ impl PluginManager {
                 upstream: entry.upstream.clone(),
                 proxy: entry.proxy.clone(),
             })
+    }
+
+    /// 处理插件包里的图标和截图（校验插件包时用，`plugin check` 同一份代码）。
+    pub fn images(&self) -> &Arc<ImageWorker> {
+        self.gallery.images()
     }
 
     fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {
