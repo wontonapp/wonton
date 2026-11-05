@@ -72,13 +72,20 @@ final class ChatModel {
         }
     }
 
-    /// 从 `origin` 这一页打开和 `userId` 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
+    /// 从 `origin` 这一页打开和 `peer` 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
     /// 对方的邀请还没接受时停在列表上，邀请就在那里。返回主界面要不要切到聊天页。
     @discardableResult
-    func openDirectChat(with userId: String, from origin: AppTab = .chat) -> Bool {
+    func openDirectChat(with peer: String, from origin: AppTab = .chat) -> Bool {
         awaitedPeer = nil
         path = []
         visiting = nil
+        let userId: String
+        do {
+            userId = try core.resolveUserId(input: peer)
+        } catch {
+            rejection = error.problem
+            return true
+        }
         let rooms = viewModel.rooms.filter { $0.directUserId == userId }
         if let joined = rooms.first(where: { $0.membership == .joined }) {
             show(joined.roomId, from: origin)

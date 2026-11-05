@@ -2,8 +2,8 @@
 
 use futures_util::{Stream, StreamExt, future, stream};
 use wonton_matrix::{
-    BackPaginationStatus, ChatRoom, EntryKind, MatrixSession, Membership, Message, MessageBody,
-    OwnedRoomId, RoomInfo, TimelineEntry, Vector, VectorDiff,
+    BackPaginationStatus, ChatRoom, EntryKind, Error, MatrixSession, Membership, Message,
+    MessageBody, OwnedRoomId, RoomInfo, TimelineEntry, Vector, VectorDiff,
 };
 
 use crate::support::{TestServer, eventually, unique};
@@ -236,6 +236,22 @@ async fn synced_rooms_open_from_the_local_store_when_the_server_hangs() {
         "应能看到本机缓存的消息：{messages:#?}"
     );
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_chat_with_someone_who_does_not_exist_is_refused() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let nobody: wonton_matrix::OwnedUserId = format!("@nobody:{}", alice.user_id().server_name())
+        .parse()
+        .expect("用户 ID");
+    let result = alice.create_direct_chat(&nobody, true).await;
+    assert!(
+        matches!(result, Err(Error::InvalidInput(_))),
+        "不应建出只有自己的房间：{result:?}"
+    );
+    assert!(alice.direct_chat_with(&nobody).is_none());
 }
 
 /// `alice` 建私聊邀请 `bob`，`bob` 看到邀请后加入。

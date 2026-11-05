@@ -39,6 +39,14 @@ pub struct PendingConfirmation {
     pub title: String,
 }
 
+/// 发起私聊时能直接选的人。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ChatContact {
+    pub user_id: String,
+    pub name: String,
+}
+
 /// 本设备的 Matrix 账号。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

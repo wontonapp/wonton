@@ -12,7 +12,10 @@ use matrix_sdk::{
     Room, RoomDisplayName, RoomMemberships, RoomState,
     ruma::{
         MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
-        api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+        api::{
+            client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+            error::ErrorKind,
+        },
         events::{
             GlobalAccountDataEvent, direct::DirectEventContent,
             room::message::RoomMessageEventContent,
@@ -107,6 +110,12 @@ pub struct LatestMessage {
 impl MatrixSession {
     /// 和另一个用户建一个私聊房间并邀请对方，返回房间 ID。`encrypted` 决定是否开端到端加密。
     pub async fn create_direct_chat(&self, peer: &UserId, encrypted: bool) -> Result<OwnedRoomId> {
+        // 建房时邀请失败，服务器只记日志：对方不存在时房间照样建出来，里面只有自己（Tuwunel 上实测）。
+        if let Err(error) = self.client.account().fetch_user_profile_of(peer).await
+            && error.client_api_error_kind() == Some(&ErrorKind::NotFound)
+        {
+            return Err(Error::InvalidInput(format!("找不到用户 {peer}")));
+        }
         let room = if encrypted {
             self.client.create_dm(peer).await?
         } else {

@@ -6,6 +6,7 @@
 //! 标准的 Matrix 服务器（ADR-0015）。
 
 mod confirmation;
+mod contacts;
 mod login;
 mod onboarding;
 mod pending;

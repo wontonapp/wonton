@@ -312,28 +312,41 @@ private struct InviteRow: View {
     }
 }
 
-/// 输入对方的 Matrix ID 发起私聊，房间出现后打开。
+/// 选一个人或输入用户名发起私聊，房间出现后打开。
 private struct StartChatView: View {
     let model: ChatModel
     @State private var peer = ""
 
     var body: some View {
-        let userId = peer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let input = peer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contacts = model.core.chatContacts(query: input)
         ScrollView {
             VStack(spacing: WontonTheme.spacing.s12) {
-                TextField("@hermes:wonton.localhost", text: $peer)
+                TextField("用户名或 Matrix ID", text: $peer)
                     .textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .wontonField()
-                    .accessibilityLabel("对方的 Matrix ID")
                 Button {
-                    model.openDirectChat(with: userId)
+                    model.openDirectChat(with: input)
                 } label: {
                     Text("发起").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
-                .disabled(userId.isEmpty)
+                .disabled(input.isEmpty)
+                if !contacts.isEmpty {
+                    WontonGroup {
+                        ForEach(Array(contacts.enumerated()), id: \.element.userId) { index, contact in
+                            if index > 0 { WontonSeparator() }
+                            Button {
+                                model.openDirectChat(with: contact.userId)
+                            } label: {
+                                WontonRow(title: contact.name, showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
             }
             .padding(WontonTheme.spacing.pageInset)
         }

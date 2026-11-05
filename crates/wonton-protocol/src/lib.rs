@@ -38,9 +38,9 @@ pub use appearance::{
     ThemeColors, ThemeMode, ThemeModeOption,
 };
 pub use chat::{
-    ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, DeviceVerification,
-    EncryptionStatus, ImageThumbnail, ImageUpload, PendingConfirmation, RecoveryStatus,
-    RoomMembership, RoomPreview, RoomRow,
+    ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
+    DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, PendingConfirmation,
+    RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,

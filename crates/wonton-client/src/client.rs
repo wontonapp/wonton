@@ -5,12 +5,12 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatViewModel, CoreError, DeviceNetwork, FileCard,
-    FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
-    InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel, OwnerProfile,
-    OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel, PushNotification,
-    RoomTransfers, SessionListViewModel, StoreItem, TabsViewModel, ToolPolicyView,
-    TransfersViewModel,
+    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, DeviceNetwork,
+    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
+    HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
+    OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel,
+    PushNotification, RoomTransfers, SessionListViewModel, StoreItem, TabsViewModel,
+    ToolPolicyView, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -188,6 +188,21 @@ impl ClientCore {
     /// 订阅聊天状态，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_chat(&self) -> Arc<ChatSubscription> {
         Arc::new(ChatSubscription::new(self.chat.subscribe()))
+    }
+
+    /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
+    pub fn chat_contacts(&self, query: String) -> Vec<ChatContact> {
+        let installed = self.plugins.view().installed;
+        let plugins = installed
+            .map(|installed| installed.plugins)
+            .unwrap_or_default();
+        self.chat.contacts(&query, &plugins)
+    }
+
+    /// 把发起私聊时输入的用户名或 Matrix ID 变成完整的 ID：只输用户名时补上本账号的服务器。不合法时返回
+    /// `InvalidInput`，还没登录时返回 `NotReady`。
+    pub fn resolve_user_id(&self, input: String) -> Result<String, CoreError> {
+        self.chat.resolve_user_id(&input)
     }
 
     /// 订阅一个已加入房间的时间线：第一批是全部条目，之后是按顺序应用的增量。同一时间只打开一个房间，

@@ -89,6 +89,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
         navigation.startingChat -> {
             BackHandler { navigation.startingChat = false }
             StartChatScreen(
+                core = core,
                 onStart = { userId ->
                     navigation.startingChat = false
                     rejection = navigation.openDirectChat(core, userId)
@@ -333,11 +334,12 @@ private fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
     }
 }
 
-/** 输入对方的 Matrix ID 发起私聊，房间出现后打开。 */
+/** 选一个人或输入用户名发起私聊，房间出现后打开。 */
 @Composable
-private fun StartChatScreen(onStart: (String) -> Unit, onClose: () -> Unit) {
+private fun StartChatScreen(core: ClientCore, onStart: (String) -> Unit, onClose: () -> Unit) {
     var peer by rememberSaveable { mutableStateOf("") }
-    val userId = peer.trim()
+    val input = peer.trim()
+    val contacts = remember(input) { core.chatContacts(input) }
     WontonScreen(bar = { WontonPushedBar("发起私聊", onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
@@ -347,14 +349,21 @@ private fun StartChatScreen(onStart: (String) -> Unit, onClose: () -> Unit) {
                 value = peer,
                 onValueChange = { peer = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = "@hermes:wonton.localhost",
-                label = "对方的 Matrix ID",
+                placeholder = "用户名或 Matrix ID",
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
                     autoCorrectEnabled = false,
                 ),
             )
-            WontonButton("发起", { onStart(userId) }, Modifier.fillMaxWidth(), enabled = userId.isNotEmpty())
+            WontonButton("发起", { onStart(input) }, Modifier.fillMaxWidth(), enabled = input.isNotEmpty())
+            if (contacts.isNotEmpty()) {
+                WontonGroup {
+                    contacts.forEachIndexed { index, contact ->
+                        if (index > 0) WontonSeparator()
+                        WontonRow(contact.name, showsForward = true, onClick = { onStart(contact.userId) })
+                    }
+                }
+            }
         }
     }
 }
