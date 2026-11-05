@@ -1,8 +1,9 @@
 //! Docker Engine API 的薄封装（bollard）。只暴露插件管理器用到的操作，并把错误归类：
-//! Docker 不可达、资源不存在、Docker 拒绝请求。
+//! Docker 不可达、没按时处理完、资源不存在、Docker 拒绝请求。
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use bollard::Docker;
 use bollard::errors::Error as BollardError;
@@ -25,6 +26,10 @@ use super::sources::Subnet;
 /// （moby#48724），内部网络也才有 `isolated` 网关模式。
 pub const MIN_ENGINE_MAJOR: u32 = 28;
 
+/// 停、删容器和删网络、卷的时限，比 bollard 默认的 120 秒长。磁盘慢时 Docker 删一个容器的层要两分钟以上，事后手动删只要
+/// 2 秒（根盘满载的主机上实测，Docker 29.7.2），SD 卡这样的低配主机上也一样。
+const SLOW_REQUEST: Duration = Duration::from_secs(300);
+
 pub(super) const GATEWAY_MODES: [&str; 2] = [
     "com.docker.network.bridge.gateway_mode_ipv4",
     "com.docker.network.bridge.gateway_mode_ipv6",
@@ -34,6 +39,9 @@ pub(super) const GATEWAY_MODES: [&str; 2] = [
 pub enum EngineError {
     #[error("无法连接 Docker：{0}")]
     Unavailable(String),
+    /// 连得上，但 Docker 没按时处理完。操作可能还在 Docker 里继续，结果不确定。
+    #[error("Docker 没有按时处理完（{0}），操作可能还在继续")]
+    TimedOut(String),
     #[error("{0}")]
     Unsupported(String),
     #[error("Docker 中不存在：{0}")]
@@ -57,6 +65,7 @@ impl EngineError {
                 context: context.to_owned(),
                 message,
             },
+            BollardError::RequestTimeoutError => Self::TimedOut(context.to_owned()),
             other => Self::Unavailable(format!("{context}：{other}")),
         }
     }
@@ -136,6 +145,20 @@ impl Engine {
         Self {
             docker,
             one_shot: Arc::default(),
+        }
+    }
+
+    /// Docker 可能处理很久的请求用这个客户端，见 [`SLOW_REQUEST`]。
+    fn patient(&self) -> Docker {
+        self.docker.clone().with_timeout(SLOW_REQUEST)
+    }
+
+    /// 测试用：换掉普通请求的时限，不用真等两分钟。
+    #[cfg(test)]
+    pub(crate) fn with_request_limit_for_test(self, limit: Duration) -> Self {
+        Self {
+            docker: self.docker.with_timeout(limit),
+            ..self
         }
     }
 
@@ -352,7 +375,7 @@ impl Engine {
     /// 删除网络；不存在视为成功。
     pub async fn remove_network(&self, name: &str) -> Result<()> {
         ignore_missing(
-            self.docker
+            self.patient()
                 .remove_network(name)
                 .await
                 .map_err(|e| EngineError::from_bollard(&format!("删除网络 {name}"), e)),
@@ -433,7 +456,7 @@ impl Engine {
     pub async fn remove_volume(&self, name: &str) -> Result<()> {
         let options = RemoveVolumeOptionsBuilder::default().force(true).build();
         ignore_missing(
-            self.docker
+            self.patient()
                 .remove_volume(name, Some(options))
                 .await
                 .map_err(|e| EngineError::from_bollard(&format!("删除卷 {name}"), e)),
@@ -523,8 +546,8 @@ impl Engine {
     /// 停止并删除容器（连同匿名卷）；不存在视为成功。
     pub async fn remove_container(&self, name: &str) -> Result<()> {
         let stop = StopContainerOptionsBuilder::default().t(10).build();
-        let stopped = self
-            .docker
+        let docker = self.patient();
+        let stopped = docker
             .stop_container(name, Some(stop))
             .await
             .map_err(|e| EngineError::from_bollard(&format!("停止容器 {name}"), e));
@@ -537,7 +560,7 @@ impl Engine {
             .v(true)
             .build();
         ignore_missing(
-            self.docker
+            docker
                 .remove_container(name, Some(options))
                 .await
                 .map_err(|e| EngineError::from_bollard(&format!("删除容器 {name}"), e)),

@@ -217,10 +217,10 @@ impl Engine {
     }
 }
 
-/// Docker 连不上照常报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）算没跑成。
+/// Docker 连不上或没按时处理完照常报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）算没跑成。
 fn unless_unavailable(e: EngineError) -> Result<Result<OneShot, String>, EngineError> {
     match e {
-        EngineError::Unavailable(_) => Err(e),
+        EngineError::Unavailable(_) | EngineError::TimedOut(_) => Err(e),
         other => Ok(Err(other.to_string())),
     }
 }

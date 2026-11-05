@@ -76,7 +76,7 @@ impl Engine {
             Ok(stderr)
         };
         let stderr = tokio::time::timeout(timeout, run).await.map_err(|_| {
-            EngineError::Unavailable(format!("{context}：{} 秒没有结束", timeout.as_secs()))
+            EngineError::TimedOut(format!("{context}：{} 秒没有结束", timeout.as_secs()))
         })??;
         let inspected = self
             .docker

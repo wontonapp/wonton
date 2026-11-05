@@ -12,6 +12,7 @@ mod bot_lifecycle;
 mod bots;
 mod check;
 mod configs;
+mod docker_timeouts;
 mod egress;
 mod egress_probe;
 mod egress_relay;
