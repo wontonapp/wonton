@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use rustix::io::Errno;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use wonton_protocol::LanChoice;
+use wonton_protocol::{LanChoice, PluginWriter};
 
 use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
@@ -56,6 +56,12 @@ pub struct InstalledRecord {
     /// 按来源装的插件从哪里来（来源、tag、提交）；上传的和预装的为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
+    /// 写这个插件的 Agent（ADR-0033）；只有 Agent 经 outbox 装的插件才有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written_by: Option<PluginWriter>,
+    /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ask_every_update: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -405,6 +411,8 @@ mod tests {
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
             origin: None,
+            written_by: None,
+            ask_every_update: false,
         }
     }
 

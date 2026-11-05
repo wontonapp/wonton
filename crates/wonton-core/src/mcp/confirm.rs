@@ -22,6 +22,9 @@ use crate::secret::random_token;
 /// 同一个插件同时等待确认的请求最多这么多，再多的直接拒绝。
 const MAX_PENDING_PER_CALLER: usize = 3;
 
+/// [`Self::supersede`] 送给等待方的标记：这次等待结束是因为被新提交取代，不是主人拒绝。
+const SUPERSEDED: &str = "superseded";
+
 /// 回答过、过期的确认留这么久，之后再回答得到“不存在”。
 const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
 
@@ -45,6 +48,8 @@ pub trait Notifier: Send + Sync {
 pub enum Refusal {
     Rejected,
     Expired,
+    /// 同一个（Bot，插件）有了新的确认请求，旧的这份被取代（ADR-0033 的暂存），等新的那份。
+    Superseded,
     /// 这个插件已经有太多请求在等主人。
     TooMany,
     /// 卡片发不出去，没法问主人。
@@ -56,6 +61,9 @@ impl Refusal {
         match self {
             Self::Rejected => "主人拒绝了，没有执行".to_owned(),
             Self::Expired => "主人没有在期限内确认，已经过期，没有执行".to_owned(),
+            Self::Superseded => {
+                "这个插件有了新的确认请求，这一份已经被取代，只有最新的那份能确认".to_owned()
+            }
             Self::TooMany => {
                 format!("已经有 {MAX_PENDING_PER_CALLER} 个请求在等主人确认，等主人处理完再试")
             }
@@ -180,6 +188,10 @@ impl Confirmations {
                     window,
                 })
             }
+            // [`Self::supersede`] 让这次等待结束：不是主人的回答，错误要能和拒绝分清。
+            Answer::Reject if chosen.choice_id.as_deref() == Some(SUPERSEDED) => {
+                Err(Refusal::Superseded)
+            }
             // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
             Answer::Reject | Answer::Unknown => Err(Refusal::Rejected),
         }
@@ -199,7 +211,7 @@ impl Confirmations {
             lines: draft.lines,
             choices: draft.choices,
             expires_at_ms: now_ms(created + self.ttl),
-            plugin_id: None,
+            plugin_id: draft.plugin_id,
             window: None,
         };
         let (waiter, answered) = oneshot::channel();
@@ -318,6 +330,47 @@ impl Confirmations {
     pub async fn finish(&self, ticket: Ticket, state: ConfirmationState) {
         self.settle(&ticket.id, state).await;
         self.save_windows();
+    }
+
+    /// 还在等主人的确认被新提交取代（ADR-0033 的暂存）：卡片改成“已被新版本取代”，
+    /// 等待的那次工具调用拿到 [`Refusal::Superseded`]。已经不在等（回答了或在执行）时不动，返回假。
+    pub(super) async fn supersede(&self, id: &str) -> bool {
+        let chosen = self.lock().slots.get_mut(id).and_then(|slot| {
+            let waiter = slot.waiter.take()?;
+            slot.card.state = ConfirmationState::Failed {
+                message: "已被新版本取代".to_owned(),
+            };
+            Some(waiter)
+        });
+        let Some(waiter) = chosen else {
+            return false;
+        };
+        let _ = waiter.send(Chosen {
+            answer: Answer::Reject,
+            choice_id: Some(SUPERSEDED.to_owned()),
+        });
+        self.publish(id).await;
+        true
+    }
+
+    /// 这个 Bot 还在等的、关于某个插件的卡片：被这个插件的新提交取代（ADR-0033 的暂存）。
+    pub(super) async fn supersede_pending(&self, caller: &PluginId, plugin: &PluginId) -> bool {
+        let pending = {
+            let table = self.lock();
+            table
+                .slots
+                .values()
+                .find(|slot| {
+                    slot.caller == *caller
+                        && slot.waiter.is_some()
+                        && slot.card.plugin_id.as_deref() == Some(plugin.as_str())
+                })
+                .map(|slot| slot.card.id.clone())
+        };
+        let Some(id) = pending else {
+            return false;
+        };
+        self.supersede(&id).await
     }
 
     pub(super) async fn settle(&self, id: &str, state: ConfirmationState) {

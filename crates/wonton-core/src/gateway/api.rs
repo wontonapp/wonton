@@ -42,8 +42,8 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{
-    AddSourceRequest, AddedTools, EgressProxyUpdate, InstallRequest, InstallSource, LanChoice,
-    LanWebuiUpdate, UpgradeRequest, UpgradeResult,
+    AddSourceRequest, AddedTools, AskEveryUpdate, EgressProxyUpdate, InstallRequest, InstallSource,
+    LanChoice, LanWebuiUpdate, UpgradeRequest, UpgradeResult,
 };
 
 use super::{Gateway, TunnelPeer, isolation, pages};
@@ -403,6 +403,10 @@ pub async fn upgrade(
     if let Err(e) = upgraded {
         return install_error(&e);
     }
+    // 主人经文件或来源升级后，插件不再归 Agent（ADR-0033）：归属和“每次都问”一起清掉。
+    if let Err(e) = gateway.plugins.set_writer(&id, None) {
+        tracing::error!(plugin = %id, error = %e, "清插件的归属失败");
+    }
     let added_tools = match &gateway.mcp {
         Some(mcp) => mcp.bus.added_tools(&id, before).await,
         None => AddedTools::NotCompared {
@@ -652,6 +656,37 @@ pub async fn set_lan_webui(
         .plugins
         .set_lan_webui(id, update.enabled, langs)
         .await
+    {
+        Ok(detail) => Json(detail).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+/// 开关“每次都问”（ADR-0033）：Agent 写的插件每次更新都发卡片。改完返回详情。
+pub async fn set_ask_every_update(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let update = match serde_json::from_slice::<AskEveryUpdate>(&body) {
+        Ok(update) => update,
+        Err(e) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string());
+        }
+    };
+    let langs = languages(&headers);
+    match gateway
+        .plugins
+        .set_ask_every_update(&id, update.enabled, &langs)
     {
         Ok(detail) => Json(detail).into_response(),
         Err(e) => install_error(&e),

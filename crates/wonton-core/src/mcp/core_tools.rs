@@ -9,7 +9,9 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
-use super::{Bus, Caller, Outcome, authoring_tools, cards, file_tools, naming, save_tools};
+use super::{
+    Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, save_tools,
+};
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
@@ -44,6 +46,8 @@ pub(super) fn tool(name: &str, description: &str, input: Value, read_only: bool)
 
 pub fn definitions() -> Vec<Tool> {
     let id = json!({"type": "string", "description": "插件 ID，如 app.example.files"});
+    let dir_param =
+        json!({"type": "string", "description": "outbox 里的相对路径，如 myapp；装的是你写的插件"});
     let mut tools = vec![
         tool(
             LIST,
@@ -61,9 +65,11 @@ pub fn definitions() -> Vec<Tool> {
         ),
         tool(
             INSTALL,
-            "安装官方索引里的一个插件。调用前先用一句话告诉主人：确认卡片会发到 Wonton App 里的“Wonton”私聊，\
-             请去那里确认。调用会一直等到主人回答或者确认过期（10 分钟）；确认后安装，返回结果。",
-            json!({"type": "object", "properties": {"id": id}, "required": ["id"]}),
+            "安装一个插件。`id` 是官方索引里的插件；`dir` 是你自己写的、放在 outbox 里的插件目录\
+             （先用 wonton__plugin_guide 读说明、wonton__check_plugin 校验到没有 problems）。两种安装都会\
+             先用一句话告诉主人：确认卡片会发到 Wonton App 里的“Wonton”私聊，请去那里确认。调用会一直等到\
+             主人回答或者确认过期（10 分钟）；确认后安装，返回结果。",
+            json!({"type": "object", "properties": {"id": id, "dir": dir_param}, "required": []}),
             false,
         ),
         tool(
@@ -103,12 +109,12 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
     let read = match tool {
         LIST => Ok(list(bus)),
         SEARCH => search(bus, &args).await,
-        INSTALL => return install(bus, caller, &name, args).await,
+        INSTALL => return agent_install::install(bus, caller, &name, args).await,
         UNINSTALL => return uninstall(bus, caller, &name, args).await,
         HELP => help(bus, &args).await,
         authoring_tools::GUIDE => Ok(authoring_tools::guide()),
         authoring_tools::CHECK => authoring_tools::check(bus, caller, &args).await,
-        authoring_tools::STATUS => authoring_tools::status(bus, &args).await,
+        authoring_tools::STATUS => authoring_tools::status(bus, caller, &args).await,
         file_tools::VIEW | file_tools::SHARE => {
             return file_tools::call(bus, caller, tool, args).await;
         }
@@ -230,8 +236,7 @@ fn required<'a>(args: &'a JsonObject, key: &str) -> Result<&'a str, String> {
 }
 
 /// 不需要主人确认就能做的检查：官方索引里有没有、装没装、这台主机放不放得下、插件包取不取得到、合不合法。
-async fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, String> {
-    let id = required(args, "id")?;
+pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, String> {
     let (listed, _) = official(bus).await?;
     let listed = listed
         .iter()
@@ -259,42 +264,6 @@ async fn installable(bus: &Bus, args: &JsonObject) -> Result<PluginPackage, Stri
         ));
     }
     Ok(package)
-}
-
-async fn install(bus: &Arc<Bus>, caller: &Caller, name: &str, args: JsonObject) -> CallToolResult {
-    let value = Value::Object(args.clone());
-    let package = match installable(bus, &args).await {
-        Ok(package) => package,
-        Err(message) => return bus.deny(caller, name, &value, &message),
-    };
-    let draft = cards::install(&caller.name, &package.manifest);
-    let permissions = package.manifest.permissions.clone();
-    let id = package.manifest.id.clone();
-    let run = move |bus: Arc<Bus>| async move {
-        match bus
-            .plugins
-            .install_detached(package, permissions, false)
-            .await
-        {
-            Ok(view) => {
-                let title = cards::text(&view.title);
-                let message = match &view.url {
-                    Some(url) => format!("已装好 {title}，网页地址 {url}"),
-                    None => format!("已装好 {title}"),
-                };
-                let result = json!({
-                    "installed": view.id,
-                    "title": title,
-                    "version": view.version,
-                    "status": view.status,
-                    "url": view.url,
-                });
-                Outcome::ok(result.to_string(), message)
-            }
-            Err(e) => Outcome::failed(format!("安装 {id} 失败（{}）：{e}", e.kind())),
-        }
-    };
-    bus.confirmed(caller, name, value, draft, run).await
 }
 
 async fn uninstall(

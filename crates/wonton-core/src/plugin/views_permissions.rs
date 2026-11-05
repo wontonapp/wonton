@@ -118,7 +118,7 @@ fn permission_notice(permission: &Permission, langs: &Languages) -> Option<Strin
     Some(langs.pick_owned(&text))
 }
 
-pub(super) fn permission_line(permission: &Permission, langs: &Languages) -> PermissionLine {
+pub fn permission_line(permission: &Permission, langs: &Languages) -> PermissionLine {
     let text = LocalizedText::from([
         ("zh".to_owned(), permission_text(permission)),
         ("en".to_owned(), permission_text_en(permission)),

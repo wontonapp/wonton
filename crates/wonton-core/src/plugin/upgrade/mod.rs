@@ -249,7 +249,9 @@ impl PluginManager {
             }
         }
         let blocked = self.host_block(&package.manifest).await?;
-        let mut preview = self.preview_with(&package, langs, blocked).await?;
+        let mut preview = self
+            .preview_with(&package, langs, blocked, record.written_by.clone())
+            .await?;
         preview.upgrade_from = Some(record.version.clone());
         if upload {
             preview.source = Some(self.staged.stage(package.clone()));

@@ -2,6 +2,7 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_install;
 mod agent_permission;
 pub mod audit;
 mod authoring_tools;
@@ -490,6 +491,70 @@ impl Bus {
             .unwrap_or_else(|e| error(&format!("确认流程意外中止：{e}")))
     }
 
+    /// 最高级的安装和更新（ADR-0036）：第一张批准后，再请主人点一张“我知道这个插件能控制整台主机”
+    /// 的卡片，两张都同意才执行。`second` 是第二张的内容；没有最高级权限时是一次普通确认。
+    /// 两张卡片都没有放宽选项：安装和更新不进放行时段（ADR-0024 对它们不适用）。
+    async fn confirmed_twice<F, Fut>(
+        self: &Arc<Self>,
+        caller: &Caller,
+        name: &str,
+        args: Value,
+        draft: Draft,
+        second: Option<Draft>,
+        run: F,
+    ) -> CallToolResult
+    where
+        F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
+        Fut: Future<Output = Outcome> + Send,
+    {
+        let Some(second) = second else {
+            return self.confirmed(caller, name, args, draft, run).await;
+        };
+        let bus = self.clone();
+        let caller = caller.clone();
+        let name = name.to_owned();
+        let task = tokio::spawn(async move {
+            let ticket = match bus.confirmations.ask(&caller.id, draft).await {
+                Ok(ticket) => ticket,
+                Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
+            };
+            // 第一张批准了还没执行：第二张拒绝或过期时什么都不装，两张卡片都说清楚。
+            let second_ticket = match bus.confirmations.ask(&caller.id, second).await {
+                Ok(second) => second,
+                Err(refusal) => {
+                    let message = refusal.message();
+                    bus.confirmations
+                        .finish(
+                            ticket,
+                            ConfirmationState::Failed {
+                                message: message.clone(),
+                            },
+                        )
+                        .await;
+                    return bus.refused(&caller, &name, &args, &refusal, None);
+                }
+            };
+            let outcome = run(bus.clone()).await;
+            bus.record(
+                &caller,
+                &name,
+                &args,
+                Decision::Approved,
+                Some(Grounds {
+                    basis: Basis::Card,
+                    held_ms: None,
+                }),
+                &outcome,
+            );
+            let state = outcome.state.clone();
+            bus.confirmations.finish(ticket, state.clone()).await;
+            bus.confirmations.finish(second_ticket, state).await;
+            outcome.result
+        });
+        task.await
+            .unwrap_or_else(|e| error(&format!("确认流程意外中止：{e}")))
+    }
+
     /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
     fn refused(
         &self,
@@ -561,6 +626,10 @@ impl Bus {
     }
 }
 
+#[cfg(test)]
+mod agent_install_card_tests;
+#[cfg(test)]
+mod agent_install_tests;
 #[cfg(test)]
 mod agent_permission_tests;
 #[cfg(test)]

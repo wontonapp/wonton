@@ -5,6 +5,8 @@
 use rmcp::model::{JsonObject, Tool};
 use serde_json::{Value, json};
 
+use std::os::fd::AsFd;
+
 use super::Bus;
 use super::Caller;
 use super::core_tools::tool;
@@ -115,24 +117,14 @@ pub(super) async fn check(bus: &Bus, caller: &Caller, args: &JsonObject) -> Resu
         .filter(|dir| !dir.is_empty())
         .ok_or("invalid_input：缺少参数 dir")?;
     let app_data = bus.plugins.app_data_dir(&caller.id);
-    let (opened, path) = saving::outbox_dir(&app_data, dir).map_err(|e| e.to_string())?;
-    let before = inode_of(&opened, dir)?;
-    // `check` 经路径读目录里的文件；读完核对路径还是打开时的那个目录，中间被换掉（比如换成软链接）就报错。
-    let report = match check::check(&path, false, bus.plugins.images()).await {
+    // 目录 fd 一路钉住，包里的文件都从它读，中途换成软链接也出不去。
+    let (opened, _) = saving::outbox_dir(&app_data, dir).map_err(|e| e.to_string())?;
+    let report = match check::check_at(opened.as_fd(), false, bus.plugins.images()).await {
         Ok(report) => report_value(&report),
         // 清单解析不了也是校验结果，不是工具错误。
         Err(e) => json!({ "problems": [e] }),
     };
-    let after = saving::outbox_dir(&app_data, dir).map_err(|e| e.to_string())?;
-    if inode_of(&after.0, dir)? != before {
-        return Err(format!("invalid_input：{dir} 在校验时被改动，再试一次"));
-    }
     Ok(report)
-}
-
-fn inode_of(fd: &std::os::fd::OwnedFd, what: &str) -> Result<(u64, u64), String> {
-    let stat = rustix::fs::fstat(fd).map_err(|e| format!("invalid_input：{what} 读不了：{e}"))?;
-    Ok((stat.st_dev, stat.st_ino))
 }
 
 fn report_value(report: &Report) -> Value {
@@ -151,7 +143,7 @@ fn report_value(report: &Report) -> Value {
     })
 }
 
-pub(super) async fn status(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
+pub(super) async fn status(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Value, String> {
     let id = args
         .get("id")
         .and_then(Value::as_str)
@@ -171,6 +163,21 @@ pub(super) async fn status(bus: &Bus, args: &JsonObject) -> Result<Value, String
     });
     if let Some(health) = view.health {
         result["health"] = json!(health);
+    }
+    // 写这个插件的 Bot 看得到每个服务最近的日志；别的 Bot 和不是 Agent 写的插件不带（ADR-0033）。
+    let writer = bus.plugins.writer(&id).ok().flatten();
+    if writer.is_some_and(|w| w.plugin_id == caller.id.to_string()) {
+        match bus.plugins.service_logs(&id).await {
+            Ok(logs) if !logs.is_empty() => {
+                result["logs"] = json!(
+                    logs.into_iter()
+                        .map(|(service, text)| json!({"service": service, "text": text}))
+                        .collect::<Vec<_>>()
+                );
+            }
+            Ok(_) => {}
+            Err(e) => result["logs_error"] = json!(e.to_string()),
+        }
     }
     match bus.plugins.webui_status(&id).await {
         Some(Ok(code)) => result["web_status"] = json!(code),

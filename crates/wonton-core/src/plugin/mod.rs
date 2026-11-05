@@ -65,6 +65,7 @@ pub(crate) mod upstreams;
 pub mod views;
 mod views_permissions;
 mod watch;
+pub mod written_by;
 
 #[cfg(test)]
 pub(crate) mod fake_docker;

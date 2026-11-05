@@ -62,24 +62,9 @@ fn model_provider_routes() -> Router<Arc<Gateway>> {
         )
 }
 
-pub fn routes(gateway: Arc<Gateway>) -> Router {
+/// 插件管理这一组路由：装、看、升级、开关，都挂在 `/_wonton/api/plugins` 下。
+fn plugin_routes() -> Router<Arc<Gateway>> {
     Router::new()
-        .route("/", get(home))
-        .route(
-            "/_wonton/health",
-            get(|| async { Json(serde_json::json!({"status": "ok"})) }),
-        )
-        .route("/_wonton/login", get(login_page).post(login))
-        .route("/_wonton/logout", post(logout))
-        .route("/_wonton/sso", get(sso::start))
-        .route("/_wonton/oidc/login", get(sso::oidc_login))
-        .route("/_wonton/oidc/consent", get(sso::oidc_consent))
-        .route("/_wonton/matrix/login-token", post(matrix::login_token))
-        .merge(model_provider_routes())
-        .route(
-            "/_wonton/push/registration",
-            put(push::register).delete(push::unregister),
-        )
         .route(
             "/_wonton/api/plugins",
             get(api::list)
@@ -107,10 +92,41 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             put(api::set_lan_webui),
         )
         .route(
+            "/_wonton/api/plugins/{id}/ask-every-update",
+            put(api::set_ask_every_update),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/save-grants",
             delete(api::revoke_save_grant),
         )
+        .route("/_wonton/api/store", get(api::store))
+        .route("/_wonton/api/store/plugin", get(api::store_plugin))
+        .route(
+            "/_wonton/api/store/sources",
+            post(api::add_store_source).delete(api::remove_store_source),
+        )
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
+}
+
+pub fn routes(gateway: Arc<Gateway>) -> Router {
+    Router::new()
+        .route("/", get(home))
+        .route(
+            "/_wonton/health",
+            get(|| async { Json(serde_json::json!({"status": "ok"})) }),
+        )
+        .route("/_wonton/login", get(login_page).post(login))
+        .route("/_wonton/logout", post(logout))
+        .route("/_wonton/sso", get(sso::start))
+        .route("/_wonton/oidc/login", get(sso::oidc_login))
+        .route("/_wonton/oidc/consent", get(sso::oidc_consent))
+        .route("/_wonton/matrix/login-token", post(matrix::login_token))
+        .merge(model_provider_routes())
+        .route(
+            "/_wonton/push/registration",
+            put(push::register).delete(push::unregister),
+        )
+        .merge(plugin_routes())
         .route("/_wonton/api/lan", get(api::lan).put(api::set_lan))
         .route("/_wonton/api/storage", get(api::storage))
         .route(
@@ -124,12 +140,6 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route(
             wonton_protocol::ONBOARDING_PATH,
             get(onboarding::get).put(onboarding::put),
-        )
-        .route("/_wonton/api/store", get(api::store))
-        .route("/_wonton/api/store/plugin", get(api::store_plugin))
-        .route(
-            "/_wonton/api/store/sources",
-            post(api::add_store_source).delete(api::remove_store_source),
         )
         .route(
             wonton_protocol::CORE_UPGRADE_PATH,

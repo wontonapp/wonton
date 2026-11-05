@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use wonton_protocol::{
     CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginDetail,
-    PluginHealth, PluginKind as Kind, PluginState, PluginTab, PluginTrust, RequirementLine,
-    RequirementStatus,
+    PluginHealth, PluginKind as Kind, PluginState, PluginTab, PluginTrust, PluginWriter,
+    RequirementLine, RequirementStatus,
 };
 
 use super::egress::probe::blocks;
@@ -155,6 +155,14 @@ impl PluginManager {
         };
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
+        // “每次都问”只有 Agent 写的插件才有（ADR-0033）。
+        let ask_every_update = installed.written_by.is_some().then(|| {
+            self.store
+                .load(id)
+                .ok()
+                .flatten()
+                .is_some_and(|record| record.ask_every_update)
+        });
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
             provider: origin.map(Origin::provider),
@@ -197,7 +205,8 @@ impl PluginManager {
                 .as_ref()
                 .map(|switched| switched.offer(listed.lan_webui)),
             save_grants: self.save_grants(id),
-            ask_every_update: None,
+            // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
+            ask_every_update,
             limits: None,
         })
     }
@@ -209,7 +218,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
         let blocked = blocked_by(self.precheck(&package.manifest).await)?;
-        let mut preview = self.preview_with(package, langs, blocked).await?;
+        let mut preview = self.preview_with(package, langs, blocked, None).await?;
         if let Some(notice) = self.retained_data(&package.manifest.id).await? {
             let after_review_notice = usize::from(preview.trust != PluginTrust::Official);
             preview.notices.insert(after_review_notice, notice);
@@ -218,7 +227,10 @@ impl PluginManager {
     }
 
     /// 没装着、却留着这个 ID 的数据（不删数据的卸载留下的）时的提示：新装的会接着用它们，不管它来自哪里（ADR-0031）。
-    async fn retained_data(&self, id: &PluginId) -> Result<Option<CardLine>, InstallError> {
+    pub(crate) async fn retained_data(
+        &self,
+        id: &PluginId,
+    ) -> Result<Option<CardLine>, InstallError> {
         let volumes = !self.own_resources(id).await?.volumes.is_empty();
         let secrets = self.store.secrets().load(id)?.is_some();
         let dir = self.cfg.apps_dir.join(id.slug()).exists();
@@ -236,6 +248,7 @@ impl PluginManager {
         package: &PluginPackage,
         langs: &Languages,
         blocked: Option<String>,
+        written_by: Option<PluginWriter>,
     ) -> Result<InstallPreview, InstallError> {
         let plan = dry_run(package)?;
         let icon = self.check_icon(package).await?;
@@ -298,7 +311,7 @@ impl PluginManager {
             source: package.origin.as_ref().map(Origin::source),
             provider: package.origin.as_ref().map(Origin::provider),
             via_index: package.origin.as_ref().and_then(Origin::via_index),
-            written_by: None,
+            written_by,
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
             id: m.id.to_string(),
@@ -527,7 +540,7 @@ impl PluginManager {
         }
     }
 
-    /// 填上插件的 Bot：读 Bot 记录要读文件，不在插件表的锁里做。
+    /// 填上插件的 Bot 和写它的人：读记录要读文件，不在插件表的锁里做。
     fn with_bot(&self, mut plugin: InstalledPlugin) -> InstalledPlugin {
         let Ok(id) = PluginId::parse(&plugin.id) else {
             return plugin;
@@ -535,6 +548,10 @@ impl PluginManager {
         match self.store.bots().load(&id) {
             Ok(record) => plugin.bot_user_id = record.map(|r| r.account.user_id),
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
+        }
+        match self.store.load(&id) {
+            Ok(record) => plugin.written_by = record.and_then(|record| record.written_by),
+            Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),
         }
         plugin
     }
@@ -653,7 +670,7 @@ fn image_repository(image: &str) -> String {
     }
 }
 
-pub(super) use super::views_permissions::permission_line;
+pub(crate) use super::views_permissions::permission_line;
 pub use super::views_permissions::permission_text;
 
 pub(super) fn requirement_checks(manifest: &Manifest, facts: &HostFacts) -> Vec<RequirementLine> {

@@ -6,6 +6,7 @@
 //! 再按 Compose 子集解析每个服务。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::os::fd::AsFd;
 use std::path::Path;
 
 use serde_json::{Map, Value};
@@ -131,15 +132,22 @@ impl PluginPackage {
         Self::with_files(&source, files)
     }
 
-    /// 读插件包目录：`docker-compose.yml` 和它引用的文件，路径和软链接的规则见 [`package_files`]。
+    /// 读插件包目录：`docker-compose.yml` 和它引用的文件，路径和软链接的规则见 [`super::package_files`]。
     pub fn load_dir(dir: &Path) -> Result<Self, PackageError> {
-        let source = package_files::read(dir, COMPOSE_FILE).map_err(PackageError::ComposeFile)?;
+        let opened = super::package_files::open_dir(dir).map_err(PackageError::ComposeFile)?;
+        Self::load_dir_at(opened.as_fd())
+    }
+
+    /// 同 [`Self::load_dir`]，从已打开的目录读：调用方（如 outbox 的解析）钉住目录，中途换不掉。
+    pub fn load_dir_at(dir: std::os::fd::BorrowedFd<'_>) -> Result<Self, PackageError> {
+        let source =
+            package_files::read_at(dir, COMPOSE_FILE).map_err(PackageError::ComposeFile)?;
         let source = String::from_utf8(source)
             .map_err(|_| PackageError::Yaml("不是 UTF-8 文本".to_owned()))?;
         let package = Self::structure(&source)?;
         let mut files = PackageFiles::new();
         for (field, path) in package.references()? {
-            let data = package_files::read(dir, &path).map_err(|source| PackageError::File {
+            let data = package_files::read_at(dir, &path).map_err(|source| PackageError::File {
                 field,
                 path: path.clone(),
                 source,

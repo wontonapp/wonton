@@ -69,7 +69,7 @@ pub(super) struct Setup {
     pub(super) notes: Notes,
     pub(super) manager: Arc<PluginManager>,
     pub(super) caller: Caller,
-    dir: tempfile::TempDir,
+    pub(super) dir: tempfile::TempDir,
 }
 
 pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
@@ -184,6 +184,8 @@ async fn setup_with(
     );
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
+    // 主人的语言：生产里由 App 的请求写入，卡片文字按它出中文。
+    manager.note_owner_languages(Some("zh"));
     Setup {
         bus,
         cards,
@@ -464,6 +466,7 @@ async fn an_answer_has_to_match_a_button_on_the_card() {
             button(Answer::Reject, "no"),
         ],
         scope: None,
+        plugin_id: None,
     };
     let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
     let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });

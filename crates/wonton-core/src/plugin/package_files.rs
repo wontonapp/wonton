@@ -1,13 +1,16 @@
 //! 插件包里被 compose 和清单引用的文件：路径规则，以及从插件包目录里安全地读出它们。
 //!
-//! 引用的路径相对 compose 文件所在的目录，不能是绝对路径、不能含 `..`，也不能经过软链接：读文件时
-//! 逐级 lstat，遇到软链接就拒绝，不让插件包借软链接把宿主上的文件带进插件的容器。
+//! 引用的路径相对 compose 文件所在的目录，不能是绝对路径、不能含 `..`，也不能经过软链接：目录和文件都
+//! 逐级 `openat`（`O_NOFOLLOW`）打开，遇到软链接就拒绝，不让插件包借软链接把宿主上的文件带进插件的容器。
+//! 从路径打开的目录和从调用方（如 outbox 的解析）交来的目录 fd 走同一套实现，中途换不掉。
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::io::Read;
-use std::os::unix::fs::MetadataExt;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::path::{Component, Path};
+
+use rustix::fs::{CWD, FileType, Mode, OFlags, openat, statat};
+use rustix::io::Errno;
 
 /// 被引用的文件：规范化后的相对路径 → 内容。
 pub type PackageFiles = BTreeMap<String, Vec<u8>>;
@@ -55,8 +58,6 @@ pub enum FileError {
     NotText,
     #[error("超过 {} KiB", MAX_FILE_BYTES >> 10)]
     TooBig,
-    #[error("读取时被替换")]
-    Replaced,
     #[error("读取失败：{0}")]
     Io(String),
 }
@@ -87,48 +88,99 @@ pub fn normalize(raw: &str) -> Result<String, String> {
     Ok(parts.join("/"))
 }
 
-/// 从插件包目录里读出 `rel`（已规范化）：逐级 lstat，路径上有软链接、中间一级不是目录、最后一级不是
-/// 普通文件或超过大小上限都拒绝。打开后再核对一次是同一个文件，防止检查之后被换成软链接。
-pub fn read(dir: &Path, rel: &str) -> Result<Vec<u8>, FileError> {
-    let io = |e: std::io::Error| FileError::Io(e.to_string());
-    let parts: Vec<&str> = rel.split('/').collect();
-    let mut path = dir.to_path_buf();
-    let mut last = None;
-    for (index, part) in parts.iter().enumerate() {
-        path.push(part);
-        let meta = fs::symlink_metadata(&path).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => FileError::Missing,
-            _ => io(e),
-        })?;
-        let shown = || parts[..=index].join("/");
-        if meta.file_type().is_symlink() {
-            return Err(FileError::Symlink(shown()));
+/// 打开插件包目录：逐级 `openat`（`O_NOFOLLOW`），任何一级是软链接或不是目录都拒绝。给 [`read_at`]
+/// 和按路径的入口用。
+pub fn open_dir(dir: &Path) -> Result<OwnedFd, FileError> {
+    let shown = || dir.display().to_string();
+    let mut parts = dir.components().peekable();
+    let mut current = match parts.peek() {
+        Some(Component::RootDir) | None => {
+            openat(CWD, "/", open_flags(), Mode::empty()).map_err(|e| dir_error(e, shown))?
         }
-        if index + 1 < parts.len() && !meta.is_dir() {
-            return Err(FileError::NotDir(shown()));
-        }
-        last = Some(meta);
+        _ => openat(CWD, ".", open_flags(), Mode::empty()).map_err(|e| dir_error(e, shown))?,
+    };
+    for component in parts {
+        let name: &std::ffi::OsStr = match component {
+            Component::RootDir | Component::CurDir => continue,
+            Component::Normal(part) => part,
+            Component::ParentDir => "..".as_ref(),
+            Component::Prefix(_) => return Err(FileError::NotDir(shown())),
+        };
+        current = open_component(&current, name, true, shown)?;
     }
-    let meta = last.ok_or(FileError::Missing)?;
-    if !meta.is_file() {
+    Ok(current)
+}
+
+/// 中间目录和叶子文件都不带 `DIRECTORY`：带着它时软链接报的是 ENOTDIR，分不清是不是软链接。
+/// `NONBLOCK`：换成命名管道时不能卡住。打开后用 [`FileError`] 核对类型。
+fn open_flags() -> OFlags {
+    OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK
+}
+
+/// 打开路径上的一级并核对类型：`want_dir` 时必须是目录，否则按 `NotDir` 拒绝；软链接按 `Symlink`。
+fn open_component(
+    dir: &OwnedFd,
+    name: &std::ffi::OsStr,
+    want_dir: bool,
+    shown: impl Fn() -> String,
+) -> Result<OwnedFd, FileError> {
+    let fd = match openat(dir, name, open_flags(), Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::LOOP) => return Err(FileError::Symlink(shown())),
+        Err(e) => return Err(dir_error(e, shown)),
+    };
+    let meta =
+        statat(&fd, "", rustix::fs::AtFlags::EMPTY_PATH).map_err(|e| dir_error(e, &shown))?;
+    let is_dir = FileType::from_raw_mode(meta.st_mode) == FileType::Directory;
+    if want_dir && !is_dir {
+        return Err(FileError::NotDir(shown()));
+    }
+    Ok(fd)
+}
+
+fn dir_error(e: Errno, shown: impl Fn() -> String) -> FileError {
+    match e {
+        Errno::NOENT => FileError::Missing,
+        _ => FileError::Io(format!("{}：{e}", shown())),
+    }
+}
+
+/// 从已打开的插件包目录读出 `rel`（已规范化）：逐级 `openat`（`O_NOFOLLOW`），路径上有软链接、中间一级
+/// 不是目录、最后一级不是普通文件或超过大小上限都拒绝。没有检查后换文件的窗口：fd 一路钉住。
+pub fn read_at(dir: BorrowedFd<'_>, rel: &str) -> Result<Vec<u8>, FileError> {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let mut current = dir.try_clone_to_owned().map_err(|e| io_error(&e, rel))?;
+    for (index, part) in parts.iter().enumerate() {
+        let shown = || parts[..=index].join("/");
+        // 中间一级必须是目录；叶子是什么类型打开后核对（普通文件才算数）。
+        current = open_component(&current, (*part).as_ref(), index + 1 < parts.len(), shown)?;
+    }
+    let meta = statat(&current, "", rustix::fs::AtFlags::EMPTY_PATH)
+        .map_err(|e| dir_error(e, || rel.to_owned()))?;
+    if FileType::from_raw_mode(meta.st_mode) != FileType::RegularFile {
         return Err(FileError::NotFile);
     }
-    if meta.len() > MAX_FILE_BYTES {
+    if meta.st_size < 0 || (meta.st_size as u64) > MAX_FILE_BYTES {
         return Err(FileError::TooBig);
     }
-    let file = fs::File::open(&path).map_err(io)?;
-    let opened = file.metadata().map_err(io)?;
-    if (opened.dev(), opened.ino()) != (meta.dev(), meta.ino()) {
-        return Err(FileError::Replaced);
-    }
+    let file = std::fs::File::from(current);
     let mut data = Vec::new();
     file.take(MAX_FILE_BYTES + 1)
         .read_to_end(&mut data)
-        .map_err(io)?;
+        .map_err(|e| io_error(&e, rel))?;
     if data.len() as u64 > MAX_FILE_BYTES {
         return Err(FileError::TooBig);
     }
     Ok(data)
+}
+
+fn io_error(e: &std::io::Error, what: &str) -> FileError {
+    FileError::Io(format!("{what}：{e}"))
+}
+
+/// 从插件包目录的路径读出 `rel`：先按同一套规则打开目录，再 [`read_at`]。
+pub fn read(dir: &Path, rel: &str) -> Result<Vec<u8>, FileError> {
+    read_at(open_dir(dir)?.as_fd(), rel)
 }
 
 /// 把插件包打成 tar 归档，[`super::package_archive`] 读得回来：compose 文件在前，被引用的文件按路径排序；修改时间写 0，
@@ -155,6 +207,7 @@ pub fn write_archive(compose: &[u8], files: &PackageFiles) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::os::unix::fs::symlink;
 
     use super::*;

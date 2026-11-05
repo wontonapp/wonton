@@ -2,6 +2,7 @@
 //! 截图（和核心一样在子进程里处理）；`--official` 再按官方索引的收录要求检查。最后给出插件包摘要。不连 Docker，也不联网。
 
 use std::collections::BTreeSet;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::Path;
 
 use bollard::models::ContainerCreateBody;
@@ -36,7 +37,28 @@ pub struct Report {
 
 /// 检查插件包目录。插件包解析不了时直接报错（和安装时报的一样）；解析得了时把其余的问题都列出来。
 pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<Report, String> {
-    let package = PluginPackage::load_dir(dir).map_err(|e| e.to_string())?;
+    let opened = package_files::open_dir(dir).map_err(|e| e.to_string())?;
+    check_at(opened.as_fd(), official, images).await
+}
+
+/// 同 [`check`]，从已打开的目录读：调用方（如 outbox 的解析）钉住目录，中途换不掉。
+pub async fn check_at(
+    dir: BorrowedFd<'_>,
+    official: bool,
+    images: &ImageWorker,
+) -> Result<Report, String> {
+    let package = PluginPackage::load_dir_at(dir).map_err(|e| e.to_string())?;
+    check_package(&package, dir, official, images).await
+}
+
+/// 对已经读出的插件包做检查：装的和校验的是同一份（安装路径先 `load_dir_at` 再调这里），
+/// 截图这类不在包里的文件再从目录 fd 读。
+pub async fn check_package(
+    package: &PluginPackage,
+    dir: BorrowedFd<'_>,
+    official: bool,
+    images: &ImageWorker,
+) -> Result<Report, String> {
     let m = &package.manifest;
     let mut files: Vec<(String, usize)> = package
         .files()
@@ -62,14 +84,14 @@ pub async fn check(dir: &Path, official: bool, images: &ImageWorker) -> Result<R
             .problems
             .push(format!("核心还不支持权限 {permission}，装不上"));
     }
-    match dry_run(&package) {
+    match dry_run(package) {
         Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
-    check_trusts_core(&package, official, &mut report);
-    check_icon(&package, official, images, &mut report).await;
-    check_tab_icons(&package, images, &mut report).await;
-    check_tab_title_lengths(&package, &mut report);
+    check_trusts_core(package, official, &mut report);
+    check_icon(package, official, images, &mut report).await;
+    check_tab_icons(package, images, &mut report).await;
+    check_tab_title_lengths(package, &mut report);
     check_screenshots(dir, m, images, &mut report).await;
     if official {
         let required = [
@@ -259,9 +281,9 @@ fn check_tab_title_lengths(package: &PluginPackage, report: &mut Report) {
     }
 }
 
-/// 截图不算插件包的一部分，从仓库目录里读。
+/// 截图不算插件包的一部分，从插件包目录里读。
 async fn check_screenshots(
-    dir: &Path,
+    dir: BorrowedFd<'_>,
     manifest: &Manifest,
     images: &ImageWorker,
     report: &mut Report,
@@ -269,7 +291,7 @@ async fn check_screenshots(
     let mut landscape = BTreeSet::new();
     for raw in manifest.screenshots.iter().flatten() {
         let path = package_files::normalize(raw).unwrap_or_else(|_| raw.clone());
-        let shot = match package_files::read(dir, &path) {
+        let shot = match package_files::read_at(dir, &path) {
             Ok(data) => images.screenshot(&data).await.map_err(|e| e.to_string()),
             Err(e) => Err(e.to_string()),
         };

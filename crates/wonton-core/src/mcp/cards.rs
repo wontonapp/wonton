@@ -1,17 +1,23 @@
 //! 确认卡片的内容（ADR-0016）：标题、说明行、按钮，以及给其他 Matrix 客户端看的纯文本。文字都由核心写好，
 //! App 原样渲染。
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow,
+    ConfirmationState, ConfirmationWindow, PermissionRisk,
 };
 
 use super::file_results::human_size;
 use crate::files::share_fs::saving::{SaveTarget, StagedFile};
+use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{LocalizedText, Manifest};
+use crate::plugin::privileges::{self, CapabilityRisk};
+use crate::plugin::store::InstalledRecord;
+use crate::plugin::views::permission_line;
+use crate::plugin::{PluginPackage, render};
 
 /// 还没编号、没定到期时间的卡片内容。
 pub struct Draft {
@@ -20,6 +26,8 @@ pub struct Draft {
     pub choices: Vec<CardChoice>,
     /// 这张卡片能打开放行时段时，时段管哪个插件。
     pub scope: Option<String>,
+    /// 卡片关于哪个插件：壳用它画“打开”和“放到底栏”。
+    pub plugin_id: Option<String>,
 }
 
 impl Draft {
@@ -87,8 +95,98 @@ fn choices(approve: &str, reject: &str) -> Vec<CardChoice> {
 
 pub use crate::plugin::views::permission_text as permission;
 
+/// 权限行：说明加风险醒目，有提示的权限（局域网端口、宿主网络、最高级）在下面带一行醒目的提示
+/// （ADR-0036 的三级提示，文字由 [`permission_line`] 给）。
+fn permission_lines(manifest: &Manifest, langs: &Languages) -> Vec<CardLine> {
+    let mut lines = Vec::new();
+    for permission in &manifest.permissions {
+        let line = permission_line(permission, langs);
+        lines.push(CardLine {
+            text: format!("· {}", line.text),
+            emphasis: line.risk.is_some(),
+        });
+        if let Some(notice) = line.notice {
+            lines.push(emphasized(notice));
+        }
+    }
+    lines
+}
+
+/// 服务和镜像：镜像要按摘要固定，主人在卡片上就能看到要跑的是哪些。
+fn image_lines(package: &PluginPackage) -> Vec<CardLine> {
+    match render::dry_run(package) {
+        Ok(plan) => plan
+            .containers
+            .iter()
+            .map(|c| line(format!("服务 {} 用镜像 {}", c.service, c.image)))
+            .collect(),
+        // 渲染不了的问题由校验和安装报，卡片上不放报错。
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Agent 的更新比装着的宽出来的项（ADR-0033）：新增的权限、局域网端口和 GPU 服务；换镜像不算。
+/// 共享文件夹的挂载来自 storage.share 权限，权限行已覆盖。
+pub fn added_lines(
+    record: &InstalledRecord,
+    package: &PluginPackage,
+    langs: &Languages,
+) -> Vec<CardLine> {
+    let manifest = &package.manifest;
+    let mut lines = Vec::new();
+    for permission in &manifest.permissions {
+        if record
+            .granted_permissions
+            .iter()
+            .any(|granted| granted == permission)
+        {
+            continue;
+        }
+        let line = permission_line(permission, langs);
+        lines.push(CardLine {
+            text: format!("· {}", line.text),
+            emphasis: line.risk.is_some(),
+        });
+        if let Some(notice) = line.notice {
+            lines.push(emphasized(notice));
+        }
+    }
+    let old = PluginPackage::manifest_of(&record.source).ok();
+    let ports = |m: Option<&Manifest>| {
+        m.and_then(|m| m.lan.as_ref())
+            .map(|lan| lan.ports.iter().map(|p| p.key()).collect::<BTreeSet<_>>())
+            .unwrap_or_default()
+    };
+    let added_ports: Vec<String> = ports(Some(manifest))
+        .difference(&ports(old.as_ref()))
+        .cloned()
+        .collect();
+    if !added_ports.is_empty() {
+        lines.push(emphasized(format!(
+            "新增局域网端口 {}",
+            added_ports.join("、")
+        )));
+    }
+    let services = |m: Option<&Manifest>| {
+        m.and_then(|m| m.gpu.as_ref())
+            .map(|gpu| gpu.services.iter().cloned().collect::<BTreeSet<_>>())
+            .unwrap_or_default()
+    };
+    let added_gpu: Vec<String> = services(Some(manifest))
+        .difference(&services(old.as_ref()))
+        .cloned()
+        .collect();
+    if !added_gpu.is_empty() {
+        lines.push(emphasized(format!(
+            "新增用显卡的服务 {}",
+            added_gpu.join("、")
+        )));
+    }
+    lines
+}
+
 /// 安装插件。
-pub fn install(requester: &str, manifest: &Manifest) -> Draft {
+pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft {
     let mut lines = vec![
         line(text(&manifest.description)),
         line(format!("版本 {}，来自官方索引", manifest.version)),
@@ -97,16 +195,129 @@ pub fn install(requester: &str, manifest: &Manifest) -> Draft {
         lines.push(line("不需要额外的权限"));
     } else {
         lines.push(line("要授予的权限："));
-        lines.extend(manifest.permissions.iter().map(|p| CardLine {
-            text: format!("· {}", permission(p)),
-            emphasis: p.is_high(),
-        }));
+        lines.extend(permission_lines(manifest, langs));
     }
     Draft {
         title: format!("{requester} 想安装 {}", text(&manifest.title)),
         lines,
         choices: choices("安装", "不装"),
         scope: None,
+        plugin_id: Some(manifest.id.to_string()),
+    }
+}
+
+/// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像，和“以后不再问”的说明。
+/// 有很高或最高级权限时这些权限每次更新都问，“不再问”不成立，就不写。
+pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages) -> Draft {
+    let manifest = &package.manifest;
+    let mut lines = vec![
+        emphasized(format!(
+            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，主人自己把关"
+        )),
+        line(text(&manifest.description)),
+        line(format!("版本 {}", manifest.version)),
+    ];
+    lines.extend(image_lines(package));
+    if manifest.permissions.is_empty() {
+        lines.push(line("不需要额外的权限"));
+    } else {
+        lines.push(line("要授予的权限："));
+        lines.extend(permission_lines(manifest, langs));
+    }
+    let always_asks = manifest.permissions.iter().any(|p| {
+        matches!(
+            privileges::risk(p),
+            Some(CapabilityRisk::VeryHigh) | Some(CapabilityRisk::Highest)
+        )
+    });
+    if !always_asks {
+        lines.push(line(format!(
+            "以后 {requester} 改这个插件不再问，除非要更多权限"
+        )));
+    }
+    Draft {
+        title: format!("{requester} 想安装 {}", text(&manifest.title)),
+        lines,
+        choices: choices("安装", "不装"),
+        scope: None,
+        plugin_id: Some(manifest.id.to_string()),
+    }
+}
+
+/// Agent 写的插件的更新：`header` 说这次为什么发卡片（新增了项、申请了很高或最高级、主人要求每次都问），
+/// `added` 是要给主人看的行（ADR-0033）。
+pub fn agent_update(
+    requester: &str,
+    package: &PluginPackage,
+    header: &str,
+    added: &[CardLine],
+    from: &str,
+) -> Draft {
+    let manifest = &package.manifest;
+    let mut lines = vec![
+        emphasized(format!(
+            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，主人自己把关"
+        )),
+        line(format!("从版本 {from} 更新到 {}", manifest.version)),
+        line(header),
+    ];
+    lines.extend_from_slice(added);
+    Draft {
+        title: format!("{requester} 想更新 {}", text(&manifest.title)),
+        lines,
+        choices: choices("更新", "不更新"),
+        scope: None,
+        plugin_id: Some(manifest.id.to_string()),
+    }
+}
+
+/// 很高和最高级的权限行：说明加提示，别的权限不列（ADR-0036 的三级提示）。
+pub fn risky_lines(package: &PluginPackage, langs: &Languages) -> Vec<CardLine> {
+    package
+        .manifest
+        .permissions
+        .iter()
+        .filter_map(|p| {
+            let line = permission_line(p, langs);
+            matches!(
+                line.risk,
+                Some(PermissionRisk::VeryHigh | PermissionRisk::Highest)
+            )
+            .then(|| {
+                let mut lines = vec![CardLine {
+                    text: format!("· {}", line.text),
+                    emphasis: true,
+                }];
+                if let Some(notice) = line.notice {
+                    lines.push(emphasized(notice));
+                }
+                lines
+            })
+        })
+        .flatten()
+        .collect()
+}
+
+/// 最高级的安装和更新要多点一步（ADR-0036）：第一张批准后再点这张，两张都同意才执行。
+/// 提示文字用 [`permission_line`] 给的，写明代码会以本机 root 身份运行。
+pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
+    let manifest = &package.manifest;
+    let notice = manifest
+        .permissions
+        .iter()
+        .filter_map(|p| {
+            let line = permission_line(p, langs);
+            (line.risk == Some(PermissionRisk::Highest)).then_some(line.notice)
+        })
+        .flatten()
+        .next()
+        .unwrap_or_default();
+    Draft {
+        title: format!("{} 能控制整台主机", text(&manifest.title)),
+        lines: vec![emphasized(notice), emphasized("代码会以本机 root 身份运行")],
+        choices: choices("我知道这个插件能控制整台主机", "不装"),
+        scope: None,
+        plugin_id: Some(manifest.id.to_string()),
     }
 }
 
@@ -122,6 +333,7 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool) -> Draft {
         lines: vec![data],
         choices: choices("卸载", "取消"),
         scope: None,
+        plugin_id: None,
     }
 }
 
@@ -132,6 +344,7 @@ pub fn tool_call(requester: &str, plugin: &str, tool: &str, arguments: &Value) -
         lines: vec![line("这个工具会改动数据"), arguments_line(arguments)],
         choices: choices("允许", "拒绝"),
         scope: None,
+        plugin_id: None,
     }
 }
 
@@ -174,6 +387,7 @@ pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Dr
         lines,
         choices: buttons,
         scope: None,
+        plugin_id: None,
     }
 }
 
@@ -216,6 +430,7 @@ pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> 
         lines,
         choices: buttons,
         scope: None,
+        plugin_id: None,
     }
 }
 

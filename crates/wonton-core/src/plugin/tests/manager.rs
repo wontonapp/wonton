@@ -236,6 +236,8 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             oidc_client_secret: None,
             installed_at: 1,
             origin: None,
+            written_by: None,
+            ask_every_update: false,
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");

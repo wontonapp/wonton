@@ -228,6 +228,8 @@ impl PluginManager {
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
             origin: package.origin.clone(),
+            written_by: None,
+            ask_every_update: false,
         })?;
         Ok(Deployed {
             upstream,
