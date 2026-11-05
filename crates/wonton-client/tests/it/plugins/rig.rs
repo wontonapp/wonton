@@ -282,6 +282,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         title: format!("标题 {id}"),
         summary: String::new(),
         version: "1.0.0".to_owned(),
+        revision: "1.0.0".to_owned(),
         kind: PluginKind::App,
         icon: None,
         trust: PluginTrust::Official,

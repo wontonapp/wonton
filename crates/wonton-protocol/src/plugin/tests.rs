@@ -32,6 +32,7 @@ fn installed() -> InstalledPlugin {
         title: "相册".into(),
         summary: "照片备份、人脸与语义搜索".into(),
         version: "2.0.0".into(),
+        revision: "opaque:revision/版本-2".into(),
         kind: PluginKind::App,
         icon: Some(icon("ab")),
         trust: PluginTrust::Official,
@@ -366,6 +367,10 @@ fn plugin_actions_round_trip_through_json() {
 /// 契约：核心和客户端核心之间的 JSON 写法。改了就要两边一起改，旧的 App 也会读不懂。
 #[test]
 fn wire_format_is_stable() {
+    assert_eq!(
+        serde_json::to_value(installed()).unwrap()["revision"],
+        json!("opaque:revision/版本-2")
+    );
     assert_eq!(
         serde_json::to_value(PluginLimits {
             memory: Some(1024),

@@ -110,6 +110,7 @@ mod tests {
             title: title.to_owned(),
             summary: String::new(),
             version: "1".to_owned(),
+            revision: "1".to_owned(),
             kind: PluginKind::Agent,
             icon: None,
             trust: PluginTrust::Official,

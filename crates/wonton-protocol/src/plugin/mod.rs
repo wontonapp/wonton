@@ -152,6 +152,8 @@ pub struct InstalledPlugin {
     /// 一句话说明（清单的 `description`）。
     pub summary: String,
     pub version: String,
+    /// 插件内容变化时随之变化，仅用于比较相等。
+    pub revision: String,
     pub kind: PluginKind,
     /// 没有图标时为空，壳画占位图标。
     pub icon: Option<PluginIcon>,
