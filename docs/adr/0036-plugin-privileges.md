@@ -201,7 +201,24 @@ npchy，Docker Engine 29.7.2。假 Docker 下让行为测试复现后修复：�
 
 假插件和假 Docker 的行为测试：最高级的只读工具连续调用两次，每次一张卡片，卡片都写明以 root 身份执行；同时打开只读标记、始终允许和一律允许后仍然发卡，审计 `basis` 为 `card`；拒绝卡片时工具没有执行。
 
-**待验证：** Home Assistant 作为第一个样例，装上后要自动发现局域网设备、在 App 里能用；要哪些能力、不用 `privileged` 够不够。一个没有防火墙的主机上走一遍同样的流程。串口设备的选择和拔插。
+### Home Assistant 作为第一个样例（2026-11-06）
+
+npchy，开着 ufw。插件 `wonton-plugin-home-assistant` 头部 `a9444526`，Home Assistant 2026.10.4，核心 main `d3f3bf96`（手动流程）和 `wonton-core:m1v4b`（冒烟）。主服务 `network_mode: host`，只加 `cap.NET_RAW`，`privileged=false`。
+
+| 检查 | 结果 |
+| --- | --- |
+| 自动发现局域网设备（`config_entries/flow/progress`） | 发现 apple_tv、ipp、nut、upnp 四类 |
+| 手机尺寸的浏览器经网关打开，添加一个 zeroconf 发现的 IPP 集成 | 成功 |
+| 重装后这个集成 | 保留，`entry_id` 和发现来源都不变 |
+| 网页只监听 `127.0.0.1`，经中继打开；匿名请求 | 打得开；匿名 401 |
+| HA 不接受核心中继带来的转发头 | 实测带转发头直连返回 400；插件用官方 nginx 去掉转发头后正常 |
+| 主人身份（官方回环可信网络登录，经网关 WebSocket 查当前用户） | 认出主人，是管理员 |
+
+自动发现和添加集成不需要 `privileged`，`NET_RAW` 只为 DHCP 发现。没有做 `privileged` 对照，也没有测蓝牙和 USB。
+
+蓝牙走不通：完整接入还要挂 `/run/dbus`，清单校验拒绝这个宿主路径。
+
+**待验证：** 在 App 里打开 Home Assistant（上面用的是手机尺寸的浏览器）。没有防火墙的主机。蓝牙和串口设备，串口的选择和拔插。
 
 ## 关联
 
