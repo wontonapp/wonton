@@ -103,6 +103,7 @@ impl ClientCore {
             | Action::ChooseOnboardingAgent { .. }
             | Action::ContinueOnboarding
             | Action::SkipOnboardingStep
+            | Action::BackOnboardingStep
             | Action::ToggleOnboardingNeed { .. }
             | Action::SaveModelProviderKey { .. }
             | Action::DismissModelProviderProblem

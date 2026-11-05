@@ -84,6 +84,7 @@ pub(super) fn render(
     let view = OnboardingViewModel {
         step: Some(onboarding.step),
         title: text::title(onboarding.step, language),
+        nav: None,
         loading: state.loading,
         problem: state.problem.clone(),
         catalog_problem: onboarding.catalog_problem.clone(),

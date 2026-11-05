@@ -141,6 +141,8 @@ pub struct OnboardingViewModel {
     pub step: Option<OnboardingStep>,
     /// 当前步骤的标题。
     pub title: String,
+    /// 第几步和哪些按钮能点；走完了或者还没取到时为空。
+    pub nav: Option<StepNav>,
     /// 正在从家里的服务器取状态。
     pub loading: bool,
     /// 最近一次取状态或者保存进度失败的原因。
@@ -158,6 +160,18 @@ pub struct OnboardingViewModel {
     /// [`Action::DismissReplacedAgentOffer`](crate::Action::DismissReplacedAgentOffer)。
     pub replaced_agent: Option<ReplacedAgent>,
     pub tips: OnboardingTips,
+}
+
+/// 一步一张的外框：第几步、共几步，哪些按钮能点。壳的外框只认这个类型。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct StepNav {
+    /// 从 1 起。
+    pub position: u32,
+    pub total: u32,
+    pub can_back: bool,
+    pub can_skip: bool,
+    pub can_next: bool,
 }
 
 /// 选 Agent 这一步的一行。

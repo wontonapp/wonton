@@ -159,6 +159,8 @@ pub enum Action {
     ContinueOnboarding,
     /// 跳过这一步，不算做完：没接模型时 Agent 的私聊照常说明要接模型。
     SkipOnboardingStep,
+    /// 回到上一步。已经生效的不撤销（选的默认 Agent、保存的 key、发起的安装）。
+    BackOnboardingStep,
     /// 选中或者取消一项需求。
     ToggleOnboardingNeed { id: String },
     /// 保存一个服务商的 key 并测试。

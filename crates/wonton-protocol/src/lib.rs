@@ -78,7 +78,7 @@ pub use onboarding::{
     AgentLogin, MODEL_PROVIDERS_PATH, ModelProvider, ModelProviderFailure, ModelProviderKey,
     ModelProviderProblem, ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent,
     OnboardingAgentRow, OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingStep,
-    OnboardingTip, OnboardingTips, OnboardingUpdate, OnboardingViewModel, ReplacedAgent,
+    OnboardingTip, OnboardingTips, OnboardingUpdate, OnboardingViewModel, ReplacedAgent, StepNav,
     model_provider_path,
 };
 pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
