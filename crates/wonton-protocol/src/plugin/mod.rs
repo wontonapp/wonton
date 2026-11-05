@@ -7,7 +7,9 @@
 
 mod tool_policy;
 
-pub use tool_policy::{BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView};
+pub use tool_policy::{
+    AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -520,6 +522,8 @@ pub struct InstallPreview {
     pub devices: Option<Vec<PluginDevice>>,
     /// 有要主人打开开关才开的局域网端口时是开关的情况；主人的选择放在请求的 `lan_webui` 字段带回。
     pub lan_webui: Option<LanWebuiOffer>,
+    /// 升级时已经对这个插件始终允许的 Bot（ADR-0024）：新版本多出来的工具也算在内，主人在确认页可以关。新装时为空。
+    pub always_allowed: Vec<BotSwitch>,
 }
 
 /// `POST /_wonton/api/plugins` 的请求体（JSON）：按来源安装。
@@ -647,6 +651,15 @@ pub struct PluginTask {
     pub icon: Option<PluginIcon>,
     pub operation: PluginOperation,
     pub state: PluginTaskState,
+    /// 升级比旧版本多了哪些工具；不是升级、没做完或者等不到结果时为空。
+    pub added_tools: Option<AddedTools>,
+}
+
+/// `POST /_wonton/api/plugins/{id}/upgrade` 的响应。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpgradeResult {
+    pub plugin: InstalledPlugin,
+    pub added_tools: AddedTools,
 }
 
 /// 任务做的是什么。

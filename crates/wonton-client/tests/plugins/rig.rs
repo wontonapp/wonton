@@ -223,6 +223,7 @@ pub fn preview(id: &str) -> InstallPreview {
         blocked: None,
         devices: None,
         lan_webui: None,
+        always_allowed: Vec::new(),
     }
 }
 

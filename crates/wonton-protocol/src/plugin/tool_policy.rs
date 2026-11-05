@@ -60,3 +60,14 @@ pub struct OpenWindow {
     pub name: String,
     pub expires_at_ms: u64,
 }
+
+/// 升级前后比较工具的结果（ADR-0024）：工具要等新版本跑起来才知道。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AddedTools {
+    /// 新版本多出来的工具，可以为空。
+    Compared { names: Vec<String> },
+    /// 比不了的原因：旧版本或新版本列不出工具。
+    NotCompared { reason: String },
+}

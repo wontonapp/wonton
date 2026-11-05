@@ -275,6 +275,7 @@ impl PluginManager {
             missing_profile: None,
             devices: None,
             lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
+            always_allowed: Vec::new(),
         })
     }
 

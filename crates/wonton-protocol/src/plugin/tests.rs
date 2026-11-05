@@ -185,6 +185,11 @@ fn preview() -> InstallPreview {
             risk: "局域网里的设备，以及这台主机上能出网的插件，不用密码就能以你的身份打开它".into(),
             enabled: false,
         }),
+        always_allowed: vec![BotSwitch {
+            caller: "app.hermes".into(),
+            name: "Hermes".into(),
+            enabled: true,
+        }],
     }
 }
 
@@ -287,6 +292,9 @@ fn interface_types_round_trip_through_json() {
                 reason: PluginFailure::Changed,
                 message: "插件包在预览之后变了".into(),
             },
+            added_tools: Some(AddedTools::NotCompared {
+                reason: "插件没有运行，列不出工具".into(),
+            }),
         }],
         egress: EgressViewModel::default(),
         core_upgrade: crate::CoreUpgradeViewModel::default(),

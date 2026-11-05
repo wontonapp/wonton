@@ -186,6 +186,7 @@ impl PluginsLink {
                 icon,
                 operation,
                 state: PluginTaskState::Running,
+                added_tools: None,
             });
             true
         });
