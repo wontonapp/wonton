@@ -4,7 +4,9 @@
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
 # 主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
-# Hermes 一步要真实模型：开发机上要有在运行的 magpie（容器里经 host.docker.internal:3425 访问），
+# Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425，
+# 凭据是冒烟自己新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id 删掉
+# （失败退出也删），凭据不进日志、不写进仓库。
 # 提供 auto/glm-5.3-flashx（WONTON_SMOKE_MODEL 可以换）。
 #
 #   deploy/dev/core/smoke.sh                          本机 Docker
@@ -34,7 +36,6 @@ phone="$WONTON_DEV_PROJECT-phone"
 phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
 curl_image="curlimages/curl:8.23.0"
-socat_image="alpine/socat:1.8.0.3"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -52,11 +53,8 @@ plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client 
 
 # 构建镜像经 dev.sh：远端主机上经它自己的代理、限制并发（WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS）。
 build() { "$dev" build -q "$@" >/dev/null; }
-# 真实模型：冒烟里的 magpie 经开发机上的 magpie 调模型（同 deploy/dev/agent），不读取、不复制它的配置和密钥。
-# 默认在 host.docker.internal:3425（OrbStack、Docker Desktop）；Linux 主机上没有这个名字，用 WONTON_SMOKE_MODEL_RELAY
-# 指向那台主机上只监听回环地址的 magpie（如 127.0.0.1:3425），冒烟起一个只让冒烟的 magpie 用的转发，结束时删掉。
+# 真实模型：冒烟的 magpie 容器直连宿主上的 magpie（地址见模型段的按 Docker 种类区分），凭据见文件头。
 model="${WONTON_SMOKE_MODEL:-auto/glm-5.3-flashx}"
-relay="$WONTON_DEV_PROJECT-model-relay"
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ✓ %s\n' "$*"; }
@@ -97,11 +95,13 @@ labeled() {
 cleanup() {
   local status=$?
   [[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true
+  # 一次性网关凭据按建 key 时记下的 id 删（失败退出也删，KEEP 也删）；没建过（id 为空）就什么都不做。
+  [[ -z "${host_model_key_id:-}" ]] || magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true
   if [[ "${KEEP:-}" == 1 ]]; then
     echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
     return
   fi
-  docker rm -f "$browser" "$phone" "$relay" >/dev/null 2>&1 || true
+  docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true
   # 中途失败时插件可能还在：先删插件容器，再停核心，最后删插件网络和卷。
   local id resource
   for id in "${plugins[@]}"; do
@@ -140,7 +140,7 @@ started=$(date +%s)
 installed="$("$dev" install "$repo/plugins/examples/grafana" --yes 2>/dev/null)"
 install_seconds=$(($(date +%s) - started))
 expect "安装完成且健康检查通过（${install_seconds}s）" "$(json status.state <<<"$installed")" running
-expect "网页地址" "$(json web_url <<<"$installed")" "$grafana_url"
+expect "网页地址" "$(json web_url <<<"$installed")" "$grafana_url/"
 
 step "隔离"
 expect "插件容器不向宿主暴露端口" \
@@ -222,17 +222,27 @@ step "已配对设备经隧道打开插件：不用登录，直接是主人"
 build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
 server_id="$("$dev" tunnel | json endpoint_id)"
 # 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
-# 和 App 一样只接受带本次会话凭据的请求。
-docker run -d --name "$phone" --network "container:$core" --entrypoint sh "$phone_image" -c \
-  "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
-   --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
-   --listen 127.0.0.1:18008" >/dev/null
-for _ in $(seq 30); do
-  docker logs "$phone" 2>/dev/null | grep -q '^本地代理' && break
-  sleep 1
-done
-device_id="$(docker logs "$phone" 2>/dev/null | head -1)"
-credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
+# 和 App 一样只接受带本次会话凭据的请求。私钥放在数据目录：重启手机进程（模拟 App 回前台触发重连，
+# 隧道客户端被拒后按 ADR-0032 等 retry_now，不自动重拨）后还是同一个设备。客户端对已存在的空文件不生成
+# 私钥，所以先用一次性容器把它生成出来。
+phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
+[[ -s "$phone_key" ]] || docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" \
+  -c "tunnel-client --key /k/phone.key id" >/dev/null
+start_phone() {
+  docker rm -f "$phone" >/dev/null 2>&1 || true
+  docker run -d --name "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
+    "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
+     --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
+     --listen 127.0.0.1:18008" >/dev/null
+  for _ in $(seq 30); do
+    # 不用 grep -q：它匹配就退出，docker logs 会吃 SIGPIPE，pipefail 下会杀掉整个脚本。
+    docker logs "$phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
+    sleep 1
+  done
+  credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
+}
+start_phone
+device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
 [[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
 expect "家里服务器以外的地址不进隧道" \
   "$(t -o /dev/null -w '%{http_code}' http://cdn.example.com/app.js)" 403
@@ -251,6 +261,10 @@ expect "手机用首次配对码配对" \
 expect "配对后状态页不再出码" "$(lan_page | grep -c 'pairing-code')" 0
 expect "同一个码不能再用" \
   "$(docker exec "$phone" tunnel-client --key /tmp/other.key pair "$pairing_code" | json reason)" used
+# 配对成功后重启手机进程，模拟 App 回前台触发重连：同一个设备身份，新连接应被接受。
+start_phone
+[[ -n "$credential" ]] || fail "重连后的手机没有会话凭据：$(docker logs "$phone" 2>&1)"
+ok "配对后重连（同一个设备身份）"
 reply="$(t -L -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{url_effective} %{num_redirects}' "$grafana_url/")"
 read -r code final redirects <<<"$reply"
 expect "直接落在 Grafana 首页（经过 $redirects 次跳转：只有 OIDC，没有登录和会话交接）" "$code $final" "200 $grafana_url/"
@@ -263,9 +277,9 @@ ok "手机没有拿到任何网关 Cookie"
 expect "已配对设备能调插件管理接口" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 200
 expect "插件网页经隧道也调不了" \
   "$(t -o /dev/null -w '%{http_code}' -H "Origin: $grafana_url" "$core_url/_wonton/api/plugins")" 403
-for api in devices tunnel; do
-  expect "主人专属的 $api 接口不接受隧道身份" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/$api")" 401
-done
+expect "主人专属的 devices 接口不接受隧道身份" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/devices")" 401
+expect "经隧道的已配对设备能读 tunnel 接口（ADR-0032：App 连上后跟着服务器地址走）" \
+  "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/tunnel")" 200
 
 step "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"
 matrix_url="http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -394,19 +408,28 @@ talk_to_hermes "$said" "你好" || fail "Hermes 没有回答：$(cat "$said")"
 grep '^第' "$said" | sed 's/^/   · /'
 grep -q '模型设置' "$said" || fail "没有模型时 Hermes 应提示去“模型设置”添加：$(cat "$said")"
 ok "没有模型时，Hermes 提示主人去“模型设置”添加模型服务商"
-# 模型只经开发机上的 magpie（容器里是 host.docker.internal:3425），不读取、不复制主人 magpie 的配置和密钥。
-model_url="http://host.docker.internal:3425/v1"
-if [[ -n "${WONTON_SMOKE_MODEL_RELAY:-}" ]]; then
-  # 转发监听在 magpie 插件网络的网关上，只接受冒烟的 magpie 容器。
-  network="$magpie_network"
-  gateway="$(docker network inspect "$network" --format '{{(index .IPAM.Config 0).Gateway}}')"
-  address="$(docker inspect "$magpie" --format "{{(index .NetworkSettings.Networks \"$network\").IPAddress}}")"
-  docker run -d --name "$relay" --network host "$socat_image" \
-    "TCP-LISTEN:13425,bind=$gateway,reuseaddr,fork,range=$address/32" "TCP:$WONTON_SMOKE_MODEL_RELAY" >/dev/null
-  model_url="http://$gateway:13425/v1"
-fi
+# 模型只经开发机上的 magpie：冒烟的 magpie 容器直连宿主 3425，不读取、不复制主人 magpie 的配置和密钥。
+# 地址按 Docker 的种类定：OrbStack 和 Docker Desktop 的网络网关在虚拟机里，到不了宿主上的 magpie，
+# 用 host.docker.internal；其余用插件网络的网关地址。凭据是本冒烟新建的一次性网关凭据：限定到这次的
+# 模型，cleanup 按建 key 时记下的 id 删掉（失败退出也删），凭据不进日志、不写进仓库。
+case "$(docker info --format '{{.OperatingSystem}}')" in
+  *"Docker Desktop"* | *OrbStack*) model_host=host.docker.internal ;;
+  *) model_host="$(docker network inspect "$magpie_network" --format '{{(index .IPAM.Config 0).Gateway}}')" ;;
+esac
+model_url="http://$model_host:3425/v1"
+model_no_proxy="host.docker.internal,localhost,127.0.0.1,$model_host"
+model_key="$(openssl rand -hex 24)"
+host_model_key_name="wonton-smoke-core-$$"
+magpie gateway-key add "$host_model_key_name" --key - <<<"$model_key" >/dev/null \
+  || fail "宿主 magpie 建不了一次性网关凭据"
+host_model_key_id="$(magpie gateway-key list 2>/dev/null | awk -v n="$host_model_key_name" '$2 == n { print $1; exit }')" \
+  || fail "建了凭据但读不到凭据列表"
+[[ -n "$host_model_key_id" ]] || fail "建了凭据但在列表里找不到它"
+magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "一次性凭据限定模型失败"
+
 # 只加 provider，不建路由组：默认路由组由 magpie 插件建好，成员跟着 provider 变。
-docker exec "$magpie" magpie provider add upstream url="$model_url" key=placeholder \
+docker exec -e no_proxy="$model_no_proxy" -e NO_PROXY="$model_no_proxy" "$magpie" \
+  magpie provider add upstream url="$model_url" key="$model_key" \
   models="$model" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
 [[ " $(hermes_models) " == *" group/wonton-default "* ]] ||
   fail "加了 provider，默认路由组应当可用：$(hermes_models)"
@@ -505,8 +528,9 @@ ok "Hermes 发出了文件链接，App 显示成文件卡片"
 
 step "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"
 navidrome_src="$(mktemp -d)"
-git clone -q --depth 1 --branch v0.1.0 https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
-installed="$("$dev" install "$navidrome_src" --yes 2>/dev/null)" || fail "Navidrome 安装失败：$installed"
+# 跟默认分支：v0.1.0 tag 的 manifest 还带着已废弃的 `category` 字段，当前核心按规范拒收（仓库 main 已是 0.1.1）。
+git clone -q --depth 1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
+installed="$("$dev" install "$navidrome_src" --yes 2>&1)" || fail "Navidrome 安装失败：$installed"
 rm -rf "$navidrome_src"
 expect "Navidrome 装好了" "$(plugin_state org.navidrome.navidrome)" running
 shares="$WONTON_DEV_DATA/shares"
@@ -519,8 +543,8 @@ song_task() {
     printf '用 Python 标准库的 wave 模块生成一个 1 秒的静音 WAV 文件 %s' "$1"
   fi
 }
-song_ext="${WONTON_SMOKE_SONG_URL##*.}"
-[[ -n "${WONTON_SMOKE_SONG_URL:-}" ]] || song_ext=wav
+song_ext=wav
+if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then song_ext="${WONTON_SMOKE_SONG_URL##*.}"; fi
 # 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
 pending_card() {
   local card=""

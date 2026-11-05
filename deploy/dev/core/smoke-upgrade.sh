@@ -206,7 +206,18 @@ status="$(api GET)"
 expect "新核心报告新版本" "$(json current.digest <<<"$status")" "$two"
 expect ".env 换了镜像" "$(env_image)" "$channel@$two"
 expect "升级器不会再被拉起" "$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}} {{.State.Running}}' wonton-updater)" "no false"
-expect "检查结果是最新" "$(json check.state <<<"$(check; api GET)")" up_to_date
+# 检查是异步的：发起后轮询到它出结果为止（不加固定 sleep）。
+check_state() {
+  local state
+  for _ in $(seq 30); do
+    check
+    state="$(json check.state <<<"$(api GET)" 2>/dev/null || true)"
+    [[ "$state" == up_to_date ]] && { echo up_to_date; return 0; }
+    sleep 2
+  done
+  echo "${state:-无结果}"
+}
+expect "检查结果是最新" "$(check_state)" up_to_date
 root_read "$data_dir/core/upgrade/backup/$one/.complete" >/dev/null || fail "没有 $one 的备份"
 ok "留下了旧版本的备份"
 

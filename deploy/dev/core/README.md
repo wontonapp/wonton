@@ -36,6 +36,10 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
 - 镜像里编进了构建它的提交号（`dev.sh commit`；Cargo 工作区有没提交的改动时带 `-dirty`），核心启动日志的
   第一行就是它（`docker logs <核心容器> 2>&1 | grep 核心启动`），`docker run --rm wonton-core:dev --version`
   也能看到。验证前先看一眼，确认镜像里是这个检出的代码。
+- 宿主的 Docker 客户端配了代理（`~/.docker/config.json` 的 `proxies`，#372）时，它注入的
+  `HTTP_PROXY` 等变量会进到本目录起的容器里，容器访问 `*.wonton.internal` 和宿主上的服务会走代理返回 502。
+  跑 `smoke.sh` 前用一个不含 `proxies` 的客户端配置：`DOCKER_CONFIG=<空目录> deploy/dev/core/smoke.sh`。
+  核心自己的 compose 有 `x-no-proxy` 不受影响；插件容器统一补空代理变量是底座待办（#372）。
 - 所有 worktree 共用一份 cargo 编译缓存，而 cargo 按修改时间判断要不要重编：源码比别的 worktree 上次编译时
   还旧，就会直接用别人的产物。所以 Dockerfile 每次编译前把工作区的源码 touch 一遍，依赖仍命中缓存，只重编
   工作区的 crate；源码没变时整层命中 Docker 的构建缓存，不重编。
