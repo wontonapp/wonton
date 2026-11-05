@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.AddedTools
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
@@ -113,6 +114,7 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
             TaskState(task.operation, task.state, onReview)
+            if (task.state is PluginTaskState.Succeeded) task.addedTools?.let { AddedToolsLine(it) }
         }
         if (task.state is PluginTaskState.Running) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
@@ -139,6 +141,29 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
         is PluginTaskState.Uncertain -> StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)
     }
 }
+
+@Composable
+private fun AddedToolsLine(added: AddedTools) {
+    val colors = WontonTheme.colors
+    val style = WontonTheme.typography.supporting
+    when (added) {
+        is AddedTools.Compared -> if (added.names.isNotEmpty()) {
+            Text("新增的工具：${added.names.joinToString("、")}", style = style, color = colors.textSecondary.toColor())
+        }
+        is AddedTools.NotCompared -> {
+            Text("不知道这次多了哪些工具", style = style, color = colors.warning.toColor())
+            ProblemDetail(added.reason)
+        }
+    }
+}
+
+/** 详情页重取后已经看得出升级成功，但多了哪些工具只有这一行会说。 */
+val PluginTask.hasAddedToolsNews: Boolean
+    get() = when (val added = addedTools) {
+        is AddedTools.Compared -> added.names.isNotEmpty()
+        is AddedTools.NotCompared -> true
+        null -> false
+    }
 
 /** 一行结果：小图标紧贴文字，和文字的第一行对齐。 */
 @Composable

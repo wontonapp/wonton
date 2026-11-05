@@ -312,6 +312,7 @@ struct TaskRow: View {
                 Text(task.operation.doneText)
             }
             .foregroundStyle(Color(colors.success))
+            addedTools
         case let .failed(reason, message):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 let problem = reason.problem(detail: message)
@@ -330,6 +331,30 @@ struct TaskRow: View {
                 Text("结果不确定：\(message)")
             }
             .foregroundStyle(Color(colors.warning))
+        }
+    }
+
+    @ViewBuilder private var addedTools: some View {
+        switch task.addedTools {
+        case let .compared(names) where !names.isEmpty:
+            Text("新增的工具：\(names.joined(separator: "、"))")
+                .foregroundStyle(Color(colors.textSecondary))
+        case let .notCompared(reason):
+            Text("不知道这次多了哪些工具").foregroundStyle(Color(colors.warning))
+            ProblemDetail(text: reason)
+        default:
+            EmptyView()
+        }
+    }
+}
+
+extension PluginTask {
+    /// 详情页重取后已经看得出升级成功，但多了哪些工具只有这一行会说。
+    var hasAddedToolsNews: Bool {
+        switch addedTools {
+        case let .compared(names): !names.isEmpty
+        case .notCompared: true
+        case nil: false
         }
     }
 }

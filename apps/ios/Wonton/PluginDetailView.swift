@@ -56,7 +56,7 @@ struct PluginDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
-                    if let task, task.state != .succeeded {
+                    if let task, task.state != .succeeded || task.hasAddedToolsNews {
                         TaskRow(model: model, task: task) {
                             confirmation = model.reconfirmation(for: task)
                         }

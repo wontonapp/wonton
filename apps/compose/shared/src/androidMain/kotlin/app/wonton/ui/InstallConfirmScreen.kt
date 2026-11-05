@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +35,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Blocked
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.WontonIcon
+import kotlinx.coroutines.launch
 
 /** 安装、升级的确认页：原样显示家里的服务器给的预览，确认后把这份预览交回核心，授予的就是这里列出的权限。 */
 @Composable
@@ -132,11 +134,39 @@ private fun PreviewContent(
         if (preview.permissions.isNotEmpty()) {
             DetailSection("权限") { preview.permissions.forEach { PermissionRow(it) } }
         }
+        AlwaysAllowed(preview, plugins)
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->
             DetailSection("更新说明") {
                 Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
             }
         }
+    }
+}
+
+/** 升级时已经始终允许的 Bot，当场可以关。关掉是立刻生效的，主人不确认升级也一样。 */
+@Composable
+private fun AlwaysAllowed(preview: InstallPreview, plugins: PluginsState) {
+    var bots by remember(preview) { mutableStateOf(preview.alwaysAllowed) }
+    var problem by remember(preview) { mutableStateOf<Problem?>(null) }
+    val scope = rememberCoroutineScope()
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        BotSwitches(
+            "始终允许",
+            "这些 Bot 用这个插件的工具不再问，新版本多出来的工具也算在内",
+            bots,
+            enabled = true,
+        ) { caller, isOn ->
+            scope.launch {
+                try {
+                    plugins.core.setToolAlways(preview.id, caller, isOn)
+                    problem = null
+                    bots = bots.map { if (it.caller == caller) it.copy(enabled = isOn) else it }
+                } catch (failure: CoreException) {
+                    problem = failure.problem
+                }
+            }
+        }
+        problem?.let { ProblemNotice(it) }
     }
 }

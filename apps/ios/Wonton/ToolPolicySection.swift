@@ -131,7 +131,7 @@ private struct OpenWindows: View {
     }
 }
 
-private struct BotSwitches: View {
+struct BotSwitches: View {
     let title: String
     let risk: String
     let bots: [BotSwitch]

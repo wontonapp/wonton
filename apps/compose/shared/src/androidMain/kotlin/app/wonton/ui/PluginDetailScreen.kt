@@ -117,7 +117,7 @@ private fun DetailContent(
     ) {
         val working = task?.state is PluginTaskState.Running
         DetailHeader(detail, plugins, detailAction(detail, working, navigation))
-        task?.takeIf { it.state !is PluginTaskState.Succeeded }?.let {
+        task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
             TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }

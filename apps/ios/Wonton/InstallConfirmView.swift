@@ -116,6 +116,7 @@ private struct PreviewContent: View {
                         ForEach(preview.permissions, id: \.permission) { PermissionRow(line: $0) }
                     }
                 }
+                AlwaysAllowedSection(model: model, preview: preview)
                 if let offer = preview.lanWebui {
                     LanWebuiToggle(offer: offer, isOn: $lanWebui)
                 }
@@ -158,5 +159,46 @@ private struct PreviewContent: View {
     private var version: String {
         guard let from = preview.upgradeFrom else { return preview.version }
         return "\(from) → \(preview.version)"
+    }
+}
+
+/// 升级时已经始终允许的 Bot，当场可以关。关掉是立刻生效的，主人不确认升级也一样。
+private struct AlwaysAllowedSection: View {
+    let model: PluginsModel
+    let preview: InstallPreview
+    @State private var bots: [BotSwitch]
+    @State private var problem: Problem?
+
+    init(model: PluginsModel, preview: InstallPreview) {
+        self.model = model
+        self.preview = preview
+        _bots = State(initialValue: preview.alwaysAllowed)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            BotSwitches(
+                title: "始终允许",
+                risk: "这些 Bot 用这个插件的工具不再问，新版本多出来的工具也算在内",
+                bots: bots,
+                enabled: true,
+                change: change
+            )
+            if let problem { ProblemNotice(problem: problem) }
+        }
+    }
+
+    private func change(caller: String, isOn: Bool) {
+        Task {
+            do {
+                _ = try await model.core.setToolAlways(id: preview.id, caller: caller, enabled: isOn)
+                problem = nil
+                if let index = bots.firstIndex(where: { $0.caller == caller }) {
+                    bots[index].enabled = isOn
+                }
+            } catch {
+                problem = error.problem
+            }
+        }
     }
 }

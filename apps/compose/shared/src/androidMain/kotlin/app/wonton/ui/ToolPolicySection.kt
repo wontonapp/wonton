@@ -146,7 +146,7 @@ private fun OpenWindows(windows: List<OpenWindow>, enabled: Boolean, onStop: (St
 }
 
 @Composable
-private fun BotSwitches(
+fun BotSwitches(
     title: String,
     risk: String,
     bots: List<BotSwitch>,
