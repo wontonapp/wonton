@@ -1,7 +1,9 @@
 package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -268,10 +270,13 @@ private fun WithPendingCards(
         Box(below.padding(top = if (fullscreen) 0.dp else banner).fillMaxSize()) {
             content(if (fullscreen) banner else 0.dp)
         }
-        if (cards.isNotEmpty()) Box(Modifier.onSizeChanged { measured = with(density) { it.height.toDp() } }
+        // 提示条排在横幅下面：横幅自己让出状态栏，同层叠放会让提示条画进状态栏。
+        if (cards.isNotEmpty()) Column(Modifier.onSizeChanged { measured = with(density) { it.height.toDp() } }
             .then(if (fullscreen) Modifier.displayCutoutPadding() else Modifier)) {
             PendingCardBanner(cards, onOpen)
-            OnboardingTipNotice(app.wonton.protocol.OnboardingTip.CONFIRMATION_CARD)
+            Box(Modifier.background(WontonTheme.colors.canvas.toColor())) {
+                OnboardingTipNotice(app.wonton.protocol.OnboardingTip.CONFIRMATION_CARD)
+            }
         }
     }
 }
