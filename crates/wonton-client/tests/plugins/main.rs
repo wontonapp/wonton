@@ -225,6 +225,7 @@ async fn an_added_source_shows_up_in_the_store_and_a_refused_one_says_why() {
             plugins: vec![item("app.added", "Added", &[])],
             fetched_at_ms: None,
             problem: None,
+            unreadable: Vec::new(),
         },
     };
     rig.core.answer(

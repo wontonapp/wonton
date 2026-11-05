@@ -290,6 +290,18 @@ pub struct StoreSection {
     pub fetched_at_ms: Option<u64>,
     /// 列表可能不是最新的、或者不完整时的原因；刚取到的完整列表为空。
     pub problem: Option<StoreProblem>,
+    /// 来源里有、但清单读不懂所以没列出的插件。
+    #[serde(default)]
+    pub unreadable: Vec<StoreUnreadable>,
+}
+
+/// 清单读不懂的插件。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct StoreUnreadable {
+    /// 来源，如 `github:owner/repo`。
+    pub source: String,
+    pub reason: String,
 }
 
 /// 商店列表的问题。

@@ -23,7 +23,7 @@ use super::github::{GitHub, GitHubError, Repo};
 use super::manager::now_secs;
 use super::store::{create_private_dir, read_json, write_json};
 use added::AddedSources;
-pub use community::Community;
+pub use community::{Community, Listing};
 use index::{Files, Index, IndexError};
 
 /// 官方索引所在的仓库。
@@ -112,7 +112,7 @@ pub struct Storefront {
     /// 磁盘上的官方索引的路径。
     cache: PathBuf,
     official: tokio::sync::Mutex<Section<Index>>,
-    community: tokio::sync::Mutex<Section<Vec<Community>>>,
+    community: tokio::sync::Mutex<Section<Listing>>,
     /// 读过的社区仓库：仓库 → （推送时间，读到的结果）。仓库没有新推送就不重读。
     read: tokio::sync::Mutex<community::Read>,
     /// 主人添加的来源。在后台读，所以放在 `Arc` 里。
@@ -157,10 +157,7 @@ impl Storefront {
                 })
                 .and_then(|json| Index::parse(&json).map_err(|e| index_failure(&e)));
             return match read {
-                Ok(index) => {
-                    let problem = incomplete(&index);
-                    (index, None, problem)
-                }
+                Ok(index) => (index, None, None),
                 Err((reason, details)) => (
                     Index::default(),
                     None,
@@ -174,8 +171,7 @@ impl Storefront {
         if section.due(OFFICIAL_TTL, refresh) {
             match self.fetch_index().await {
                 Ok((index, raw)) => {
-                    let problem = incomplete(&index);
-                    section.succeeded(index, problem);
+                    section.succeeded(index, None);
                     save(&self.cache, section.fetched_at_ms, raw);
                 }
                 Err((reason, details)) => section.failed(reason, details),
@@ -221,13 +217,13 @@ impl Storefront {
         &self,
         official: &Index,
         refresh: bool,
-    ) -> (Vec<Community>, Option<u64>, Option<StoreProblem>) {
+    ) -> (Listing, Option<u64>, Option<StoreProblem>) {
         if !self.config.community {
             let problem = StoreProblem {
                 reason: StoreFailure::Disabled,
                 details: "WONTON_STORE_COMMUNITY=off".to_owned(),
             };
-            return (Vec::new(), None, Some(problem));
+            return (Listing::default(), None, Some(problem));
         }
         let mut section = self.community.lock().await;
         if section.due(COMMUNITY_TTL, refresh) {
@@ -237,19 +233,14 @@ impl Storefront {
                 Err(e) => section.failed(failure(&e), format!("取不到社区应用：{e}")),
             }
         }
-        let listed = section
-            .value
-            .iter()
-            .flatten()
-            .filter(|c| {
-                !official
-                    .plugins
-                    .iter()
-                    .any(|o| o.repo == c.repo || o.manifest.id == c.manifest.id)
-            })
-            .cloned()
-            .collect();
-        (listed, section.fetched_at_ms, section.problem.clone())
+        let mut listing = section.value.clone().unwrap_or_default();
+        listing.plugins.retain(|c| {
+            !official
+                .plugins
+                .iter()
+                .any(|o| o.repo == c.repo || o.manifest.id == c.manifest.id)
+        });
+        (listing, section.fetched_at_ms, section.problem.clone())
     }
 }
 
@@ -257,16 +248,10 @@ impl Storefront {
     /// 社区插件列表里这个仓库的星数；没列出过时为空。
     pub async fn stars(&self, repo: &Repo) -> Option<u32> {
         let section = self.community.lock().await;
-        let found = section.value.as_ref()?.iter().find(|c| &c.repo == repo)?;
+        let plugins = &section.value.as_ref()?.plugins;
+        let found = plugins.iter().find(|c| &c.repo == repo)?;
         Some(found.stars)
     }
-}
-
-fn incomplete(index: &Index) -> Option<StoreProblem> {
-    (!index.skipped.is_empty()).then(|| StoreProblem {
-        reason: StoreFailure::Incomplete,
-        details: format!("官方索引里有几项用不了：{}", index.skipped.join("；")),
-    })
 }
 
 /// 读磁盘上的官方索引。时间照旧，所以 `due` 仍然会去取一次；读不了的当作没有。

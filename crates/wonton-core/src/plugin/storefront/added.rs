@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{SourceKind, StoreFailure, StoreProblem};
+use wonton_protocol::{SourceKind, StoreFailure, StoreProblem, StoreUnreadable};
 
 use super::super::gallery::IconSource;
 use super::super::github::{GitHub, GitHubError, Repo};
@@ -22,7 +22,7 @@ use super::super::package_files::{COMPOSE_FILE, normalize};
 use super::super::source_address::Address;
 use super::super::store::{create_private_dir, read_json, write_json};
 use super::index::{Files, Index, Listed};
-use super::{COMMUNITY_TTL, MAX_INDEX_BYTES, OFFICIAL_TTL, Section, incomplete};
+use super::{COMMUNITY_TTL, MAX_INDEX_BYTES, OFFICIAL_TTL, Section};
 
 const MAX_SOURCES: usize = 50;
 /// 列表最多等读得快的来源这么久，读得慢的接着在后台读。
@@ -78,6 +78,7 @@ pub struct AddedView {
     pub plugins: Vec<AddedPlugin>,
     pub fetched_at_ms: Option<u64>,
     pub problem: Option<StoreProblem>,
+    pub unreadable: Vec<StoreUnreadable>,
 }
 
 pub struct AddedPlugin {
@@ -174,8 +175,7 @@ impl AddedSources {
                 added_at_ms: now_secs() * 1000,
             };
             let mut section = Section::default();
-            let problem = contents_problem(&contents);
-            section.succeeded(contents, problem);
+            section.succeeded(contents, None);
             sources.push(Source {
                 saved,
                 section,
@@ -305,10 +305,7 @@ impl AddedSources {
         };
         source.reading = false;
         match result {
-            Ok(contents) => {
-                let problem = contents_problem(&contents);
-                source.section.succeeded(contents, problem);
-            }
+            Ok(contents) => source.section.succeeded(contents, None),
             Err(e) => {
                 tracing::warn!(address = %saved.address, error = %e, "添加的来源没读到");
                 source.section.failed(store_failure(&e), e.to_string());
@@ -364,13 +361,6 @@ impl AddedSources {
 
 fn already_added(address: &str) -> InstallError {
     InstallError::Conflict(format!("{address} 已经添加过了"))
-}
-
-fn contents_problem(contents: &Contents) -> Option<StoreProblem> {
-    match contents {
-        Contents::Repo { .. } => None,
-        Contents::Index { index, .. } => incomplete(index),
-    }
 }
 
 /// 给 App 看的原因，详细的写在 `details` 里。
@@ -513,5 +503,9 @@ fn view(source: &Source) -> AddedView {
         plugins,
         fetched_at_ms: source.section.fetched_at_ms,
         problem: source.section.problem.clone(),
+        unreadable: match &source.section.value {
+            Some(Contents::Index { index, .. }) => index.skipped.clone(),
+            _ => Vec::new(),
+        },
     }
 }

@@ -173,6 +173,7 @@ private fun LazyListScope.added(
     sources.forEach { source ->
         val shown = source.section.plugins.filter { tag == null || tag in it.tags }
         items(shown, key = { "added:${source.address}:${it.source}" }) { row(it) }
+        unreadable(source.address, source.section.unreadable)
         val problem = source.section.problem
         if (problem != null || source.section.fetchedAtMs == null) {
             item(key = "problem:${source.address}") {
@@ -205,7 +206,7 @@ private fun LazyListScope.section(
     row: @Composable (StoreItem) -> Unit,
 ) {
     val shown = content.plugins.filter { tag == null || tag in it.tags }
-    if (shown.isEmpty() && content.problem == null) return
+    if (shown.isEmpty() && content.problem == null && content.unreadable.isEmpty()) return
     item(key = "header:$title") { StoreSectionTitle(title) }
     items(shown, key = { "$title:${it.source}" }) { row(it) }
     content.problem?.let { problem ->
@@ -215,6 +216,7 @@ private fun LazyListScope.section(
             }
         }
     }
+    unreadable(title, content.unreadable)
 }
 
 private fun LazyListScope.results(found: List<StoreItem>, row: @Composable (StoreItem) -> Unit) {

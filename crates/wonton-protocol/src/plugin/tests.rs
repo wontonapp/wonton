@@ -97,6 +97,7 @@ fn store() -> StoreListing {
             plugins: vec![item.clone()],
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
+            unreadable: Vec::new(),
         },
         added: vec![AddedSource {
             address: "https://example.com/index.json".into(),
@@ -112,6 +113,7 @@ fn store() -> StoreListing {
                 }],
                 fetched_at_ms: Some(1_793_000_000_000),
                 problem: None,
+                unreadable: Vec::new(),
             },
         }],
         community: StoreSection {
@@ -128,6 +130,10 @@ fn store() -> StoreListing {
                 reason: StoreFailure::Unreachable,
                 details: "连不上 GitHub".into(),
             }),
+            unreadable: vec![StoreUnreadable {
+                source: "github:acme/old".into(),
+                reason: "unknown field `category`".into(),
+            }],
         },
     }
 }

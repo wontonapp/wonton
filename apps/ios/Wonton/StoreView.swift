@@ -86,6 +86,7 @@ struct StoreView: View {
             sectionTitle("我添加的")
             ForEach(sources, id: \.address) { source in
                 ForEach(source.section.plugins.filter(matchesTag), id: \.source) { row($0) }
+                unreadable(source.section.unreadable)
                 if let problem = source.section.problem {
                     ProblemRow(
                         problem: problem.problem.titled(from: source.provider),
@@ -121,7 +122,7 @@ struct StoreView: View {
 
     @ViewBuilder private func section(_ title: String, _ content: StoreSection) -> some View {
         let items = content.plugins.filter(matchesTag)
-        if !items.isEmpty || content.problem != nil {
+        if !items.isEmpty || content.problem != nil || !content.unreadable.isEmpty {
             sectionTitle(title)
             ForEach(items, id: \.source) { row($0) }
             if let problem = content.problem {
@@ -132,6 +133,15 @@ struct StoreView: View {
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s8)
             }
+            unreadable(content.unreadable)
+        }
+    }
+
+    private func unreadable(_ plugins: [StoreUnreadable]) -> some View {
+        ForEach(plugins, id: \.source) { plugin in
+            WontonNotice(icon: .warning, title: "\(plugin.source) 读不懂：\(plugin.reason)")
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+                .padding(.vertical, WontonTheme.spacing.s8)
         }
     }
 

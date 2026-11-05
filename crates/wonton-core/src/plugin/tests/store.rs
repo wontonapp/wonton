@@ -131,7 +131,7 @@ async fn files_that_do_not_match_the_index_are_refused() {
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
 
-    // compose 和 files 里记的对不上：这一项不列出，列表如实标为不完整。
+    // compose 和 files 里记的对不上：这一项不列出，原因告诉主人。
     let other = compose("1.0.0", "evil");
     let mut raw: serde_json::Value =
         serde_json::from_slice(&fs::read(index.path().join("index.json")).unwrap()).unwrap();
@@ -139,8 +139,20 @@ async fn files_that_do_not_match_the_index_are_refused() {
     fs::write(index.path().join("index.json"), raw.to_string()).unwrap();
     let listing = m.store_listing(&zh(), false).await;
     assert!(listing.official.plugins.is_empty());
-    let problem = listing.official.problem.unwrap();
-    assert_eq!(problem.reason, StoreFailure::Incomplete);
+    assert_eq!(listing.official.unreadable[0].source, "github:acme/hello");
+
+    // 清单有核心不认的字段：同样告诉主人是哪一个、为什么。
+    let unknown =
+        compose("1.0.0", "nginx").replace("x-wonton:\n", "x-wonton:\n  category: music\n");
+    let mut raw: serde_json::Value =
+        serde_json::from_slice(&fs::read(index.path().join("index.json")).unwrap()).unwrap();
+    raw["plugins"][0]["compose"] = json!(unknown);
+    raw["plugins"][0]["files"]["docker-compose.yml"] = json!(sha256_hex(unknown.as_bytes()));
+    fs::write(index.path().join("index.json"), raw.to_string()).unwrap();
+    let listing = m.store_listing(&zh(), false).await;
+    assert!(listing.official.plugins.is_empty());
+    assert_eq!(listing.official.problem, None);
+    assert!(listing.official.unreadable[0].reason.contains("category"));
 
     // 格式比核心新：读不懂，照实说明。
     fs::write(
@@ -179,11 +191,16 @@ async fn community_plugins_are_listed_by_stars_without_official_ones() {
     let same_id = compose("1.0.0", "nginx");
     github.publish("bob/hello", "v1.0.0", &[("docker-compose.yml", &same_id)]);
     github.publish("carol/empty", "nightly", &[]);
+    let old = compose("1.0.0", "nginx")
+        .replace("app.hello", "app.old")
+        .replace("x-wonton:\n", "x-wonton:\n  category: music\n");
+    github.publish("dan/old", "v1.0.0", &[("docker-compose.yml", &old)]);
     *github.topic.lock().unwrap() = vec![
         ("acme/hello".into(), 50),
         ("bob/tool".into(), 9),
         ("bob/hello".into(), 3),
         ("carol/empty".into(), 1),
+        ("dan/old".into(), 1),
     ];
 
     let listing = m.store_listing(&zh(), true).await;
@@ -199,6 +216,10 @@ async fn community_plugins_are_listed_by_stars_without_official_ones() {
     );
     assert!(listing.community.fetched_at_ms.is_some());
     assert_eq!(listing.community.problem, None);
+    let unreadable = &listing.community.unreadable;
+    assert_eq!(unreadable.len(), 1, "没有正式版本的 carol/empty 不算读不懂");
+    assert_eq!(unreadable[0].source, "github:dan/old");
+    assert!(unreadable[0].reason.contains("category"));
     assert!(
         !github
             .tag_reads

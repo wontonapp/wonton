@@ -44,6 +44,7 @@ pub use subscription::{
     SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use wonton_protocol::LanClient;
+pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
     Action, AddedSource, AddedTools, AgentLogin, Answer, AppearanceProblem, AppearanceViewModel,
     BackPagination, BotSwitch, CardChoice, CardLine, ChatAccount, ChatFailure, ChatProblem,

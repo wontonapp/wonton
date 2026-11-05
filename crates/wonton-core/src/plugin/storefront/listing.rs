@@ -42,7 +42,8 @@ impl PluginManager {
         let (official, mut icons) = self.official_items(&index, &facts, langs).await;
         // 主人添加过的只在“我添加的”里列一次。
         let added_repos: Vec<&Repo> = added.iter().filter_map(|a| a.repo.as_ref()).collect();
-        let community = community
+        let community_plugins = community
+            .plugins
             .iter()
             .filter(|c| !added_repos.contains(&&c.repo))
             .map(|c| {
@@ -70,12 +71,14 @@ impl PluginManager {
                 plugins: official,
                 fetched_at_ms: official_at,
                 problem: official_problem,
+                unreadable: index.skipped.clone(),
             },
             added: sections,
             community: StoreSection {
-                plugins: community,
+                plugins: community_plugins,
                 fetched_at_ms: community_at,
                 problem: community_problem,
+                unreadable: community.unreadable,
             },
         }
     }
@@ -112,6 +115,7 @@ impl PluginManager {
                 plugins,
                 fetched_at_ms: source.fetched_at_ms,
                 problem: source.problem.clone(),
+                unreadable: source.unreadable.clone(),
             },
         }
     }

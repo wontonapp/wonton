@@ -564,7 +564,7 @@ impl PluginManager {
         for file in self.store.load_all()? {
             let entry = match &file.record {
                 Ok(record) => self.restore_one(record).await,
-                Err(e) => Entry::broken(&file.id, String::new(), e.to_string()),
+                Err(e) => Entry::broken(&file.id, String::new(), unreadable_record(&e)),
             };
             match &entry.status {
                 PluginStatus::Running => tracing::info!(plugin = %file.id, "已恢复插件"),
@@ -601,11 +601,7 @@ impl PluginManager {
                     }
                 }
             }
-            Err(e) => Entry::broken(
-                &record.id,
-                record.version.clone(),
-                format!("记录里的插件包无法解析：{e}"),
-            ),
+            Err(e) => Entry::broken(&record.id, record.version.clone(), unreadable_record(&e)),
         }
     }
 
@@ -788,4 +784,9 @@ pub(super) fn check_permissions(
         return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
     }
     Ok(())
+}
+
+/// 记录读不懂时给主人看的原因：比如核心升级后不再认记录里的字段。
+fn unreadable_record(error: &dyn std::fmt::Display) -> String {
+    format!("插件记录读不懂，卸载（可以保留数据）后重新安装：{error}")
 }

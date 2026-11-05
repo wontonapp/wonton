@@ -1,10 +1,11 @@
 //! 社区插件的发现（ADR-0017 的“社区插件”）：搜 topic `wonton-plugin`、没归档、不是 fork 的公开仓库，按星数排，最多
-//! 1000 个；官方索引里的仓库不读，其余的取最新正式版本的 compose 和图标。没有正式版本、清单读不懂的不列出，日志里记下原因。
+//! 1000 个；官方索引里的仓库不读，其余的取最新正式版本的 compose 和图标。没有正式版本的不列出，日志里记下原因；清单读不懂的
+//! 告诉主人。
 
 use std::collections::HashMap;
 
 use futures_util::StreamExt;
-use wonton_protocol::{StoreFailure, StoreProblem};
+use wonton_protocol::{StoreFailure, StoreProblem, StoreUnreadable};
 
 use super::super::gallery::IconSource;
 use super::super::github::{Found, GitHub, GitHubError, Repo, Tag};
@@ -30,15 +31,31 @@ pub struct Community {
     pub icon: Option<IconSource>,
 }
 
-/// 读过的仓库：仓库 → （推送时间，读到的插件；不列出时为空）。
-pub type Read = HashMap<Repo, (String, Option<Community>)>;
+/// 搜一轮的结果。
+#[derive(Debug, Clone, Default)]
+pub struct Listing {
+    pub plugins: Vec<Community>,
+    pub unreadable: Vec<StoreUnreadable>,
+}
+
+/// 读一个仓库的结果。
+#[derive(Debug, Clone)]
+pub enum RepoRead {
+    Plugin(Box<Community>),
+    /// 不是给商店的正式版本（没有版本 tag、没有 compose 文件之类），日志里有原因。
+    NotListed,
+    Unreadable(String),
+}
+
+/// 读过的仓库：仓库 → （推送时间，读到的结果）。
+pub type Read = HashMap<Repo, (String, RepoRead)>;
 
 /// 搜一轮，读有新推送的仓库。搜索的第一页就失败时报错；后面的页、个别仓库没读到时列表不完整，如实说明。
 pub async fn discover(
     github: &GitHub,
     official: &Index,
     read: &mut Read,
-) -> Result<(Vec<Community>, Option<StoreProblem>), GitHubError> {
+) -> Result<(Listing, Option<StoreProblem>), GitHubError> {
     let mut found: Vec<Found> = Vec::new();
     let mut missing = Vec::new();
     for page in 1..=MAX_PAGES {
@@ -57,9 +74,13 @@ pub async fn discover(
             }
         }
     }
-    let jobs: Vec<(Found, Option<Option<Community>>)> = found
+    let jobs: Vec<(Found, Option<RepoRead>)> = found
         .into_iter()
         .filter(|f| !official.plugins.iter().any(|o| o.repo == f.repo))
+        .filter(|f| {
+            let source = format!("github:{}", f.repo);
+            !official.skipped.iter().any(|s| s.source == source)
+        })
         .map(|f| {
             let cached = read
                 .get(&f.repo)
@@ -68,27 +89,33 @@ pub async fn discover(
             (f, cached)
         })
         .collect();
-    let results: Vec<(Found, Result<Option<Community>, GitHubError>)> =
-        futures_util::stream::iter(jobs)
-            .map(|(f, cached)| async move {
-                let result = match cached {
-                    Some(plugin) => Ok(plugin),
-                    None => read_repo(github, &f).await,
-                };
-                (f, result)
-            })
-            .buffered(PARALLEL)
-            .collect()
-            .await;
-    let mut listed = Vec::new();
+    let results: Vec<(Found, Result<RepoRead, GitHubError>)> = futures_util::stream::iter(jobs)
+        .map(|(f, cached)| async move {
+            let result = match cached {
+                Some(plugin) => Ok(plugin),
+                None => read_repo(github, &f).await,
+            };
+            (f, result)
+        })
+        .buffered(PARALLEL)
+        .collect()
+        .await;
+    let mut listing = Listing::default();
     for (f, result) in results {
         match result {
-            Ok(plugin) => {
-                read.insert(f.repo.clone(), (f.pushed_at.clone(), plugin.clone()));
-                listed.extend(plugin.map(|p| Community {
-                    stars: f.stars,
-                    ..p
-                }));
+            Ok(repo) => {
+                read.insert(f.repo.clone(), (f.pushed_at.clone(), repo.clone()));
+                match repo {
+                    RepoRead::Plugin(plugin) => listing.plugins.push(Community {
+                        stars: f.stars,
+                        ..*plugin
+                    }),
+                    RepoRead::NotListed => {}
+                    RepoRead::Unreadable(reason) => listing.unreadable.push(StoreUnreadable {
+                        source: format!("github:{}", f.repo),
+                        reason,
+                    }),
+                }
             }
             Err(e) => missing.push(format!("{}（{e}）", f.repo)),
         }
@@ -97,16 +124,19 @@ pub async fn discover(
         reason: StoreFailure::Incomplete,
         details: format!("有的没读到：{}", missing.join("、")),
     });
-    Ok((listed, problem))
+    Ok((listing, problem))
 }
 
-/// 读一个仓库最新正式版本的清单和图标。仓库本身的问题（没有正式版本、清单读不懂）返回 `Ok(None)`，不列出；
-/// 连不上 GitHub 之类的返回错误，下次再读。
-async fn read_repo(github: &GitHub, found: &Found) -> Result<Option<Community>, GitHubError> {
+/// 读一个仓库最新正式版本的清单和图标。连不上 GitHub 之类的返回错误，下次再读。
+async fn read_repo(github: &GitHub, found: &Found) -> Result<RepoRead, GitHubError> {
     let repo = &found.repo;
     let skip = |why: String| {
         tracing::info!(%repo, reason = %why, "社区插件不列出");
-        Ok(None)
+        Ok(RepoRead::NotListed)
+    };
+    let unreadable = |why: String| {
+        tracing::warn!(%repo, reason = %why, "社区插件读不懂，不列出");
+        Ok(RepoRead::Unreadable(why))
     };
     let tags = match github.tags(repo).await {
         Err(GitHubError::NotFound(why)) => return skip(why),
@@ -123,11 +153,11 @@ async fn read_repo(github: &GitHub, found: &Found) -> Result<Option<Community>, 
         other => other?,
     };
     let Ok(compose) = String::from_utf8(compose) else {
-        return skip(format!("{COMPOSE_FILE} 不是 UTF-8 文本"));
+        return unreadable(format!("{COMPOSE_FILE} 不是 UTF-8 文本"));
     };
     let manifest = match PluginPackage::manifest_of(&compose) {
         Ok(manifest) => manifest,
-        Err(e) => return skip(format!("清单读不懂：{e}")),
+        Err(e) => return unreadable(format!("清单读不懂：{e}")),
     };
     if tag.name.strip_prefix('v') != Some(manifest.version.as_str()) {
         return skip(format!(
@@ -146,11 +176,11 @@ async fn read_repo(github: &GitHub, found: &Found) -> Result<Option<Community>, 
         },
         Some(Err(_)) | None => None,
     };
-    Ok(Some(Community {
+    Ok(RepoRead::Plugin(Box::new(Community {
         repo: repo.clone(),
         stars: found.stars,
         tag,
         manifest,
         icon,
-    }))
+    })))
 }

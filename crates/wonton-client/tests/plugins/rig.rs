@@ -255,6 +255,7 @@ pub fn listing() -> StoreListing {
         plugins,
         fetched_at_ms: None,
         problem: None,
+        unreadable: Vec::new(),
     };
     StoreListing {
         official: section(vec![item("app.photos", "Photos", &["相册"])]),

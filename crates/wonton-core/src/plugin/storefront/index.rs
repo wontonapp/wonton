@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::StoreUnreadable;
 
 use super::super::github::{GitHub, Repo, is_commit_id};
 use super::super::github_source::{Origin, SourceRef, Trust, Wanted, github_error};
@@ -147,12 +148,12 @@ impl Listed {
     }
 }
 
-/// 读懂的索引：能用的项，和读不懂、对不上的项的原因（每项一句）。
+/// 读懂的索引：能用的项，和读不懂、对不上的项。
 #[derive(Debug, Clone, Default)]
 pub struct Index {
     pub name: Option<String>,
     pub plugins: Vec<Listed>,
-    pub skipped: Vec<String>,
+    pub skipped: Vec<StoreUnreadable>,
     pub docs: Option<DocsSpec>,
     /// `docs` 读不懂的原因。
     pub docs_problem: Option<String>,
@@ -213,7 +214,7 @@ impl Index {
                 Ok(listed) => index.plugins.push(listed),
                 Err(reason) => {
                     tracing::warn!(%source, %reason, "索引里的一项用不了，跳过");
-                    index.skipped.push(format!("{source}：{reason}"));
+                    index.skipped.push(StoreUnreadable { source, reason });
                 }
             }
         }
