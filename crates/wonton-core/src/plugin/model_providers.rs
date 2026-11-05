@@ -46,14 +46,17 @@ impl PluginManager {
         let Some(commands) = route.spec.providers.as_ref() else {
             return Ok(ModelProviders {
                 providers: None,
+                any_configured: false,
                 web_url: self.model_web_url(&route.id),
             });
         };
         let listed = self.list_providers(&route, commands).await?;
         let recommendations = self.provider_recommendations(langs).await;
+        let any_configured = !listed.configured.is_empty();
         let providers = merge_providers(listed, &recommendations);
         Ok(ModelProviders {
             providers: Some(providers),
+            any_configured,
             web_url: self.model_web_url(&route.id),
         })
     }

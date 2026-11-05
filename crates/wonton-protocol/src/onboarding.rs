@@ -106,9 +106,13 @@ pub struct OnboardingNeed {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ModelProviders {
-    /// 推荐的在前。模型网关没有声明 `providers` 时为空，这时打开 `web_url`。
+    /// 官方索引列出的主流服务商，主人语言推荐的在前，其余的壳收进“更多服务商”。模型网关没有声明 `providers` 时为空；取不到
+    /// 索引时是空列表。这两种都打开 `web_url`。
     pub providers: Option<Vec<ModelProvider>>,
-    /// 模型网关的网页，用于“更多服务商”；网关没有网页时为空。
+    /// 模型网关里已经接了模型，包括不在 `providers` 里的。接模型这一步看它，不看列表里的 `configured`。
+    #[serde(default)]
+    pub any_configured: bool,
+    /// 模型网关的网页；网关没有网页时为空。
     pub web_url: Option<String>,
 }
 
