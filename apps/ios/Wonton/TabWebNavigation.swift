@@ -71,9 +71,12 @@ extension TabWebSession: WKNavigationDelegate {
             return
         }
         let entry = input?.page.url.flatMap(URL.init(string:))
-        let authHost = input?.proxy.map { "auth.\($0.domain)" }
+        let domain = input?.proxy?.domain
+        let authHost = domain.map { "auth.\($0)" }
+        // OIDC 登录会经过核心的这段路径；系统浏览器没有隧道和设备身份，走不完。
+        let coreLogin = url.host == domain && url.path.hasPrefix("/_wonton/oidc/")
         let local = (url.scheme == "http" || url.scheme == "https")
-            && (url.host == entry?.host || url.host == authHost)
+            && (url.host == entry?.host || url.host == authHost || coreLogin)
         if local {
             if navigation.targetFrame == nil {
                 decisionHandler(.cancel)

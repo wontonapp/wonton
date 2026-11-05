@@ -314,8 +314,11 @@ private class ProxyAuthClient(
         if (!request.isForMainFrame) return false
         val uri = request.url
         val isHttp = uri.scheme == "http" || uri.scheme == "https"
+        // OIDC 登录会经过核心的这段路径；系统浏览器没有隧道和设备身份，走不完。
+        val coreLogin = uri.host.equals(proxy.domain, ignoreCase = true) &&
+            uri.path.orEmpty().startsWith("/_wonton/oidc/")
         val staysInside = isHttp && (pluginOrigin(uri.toString()) == pluginOrigin(url) ||
-            uri.host.equals("auth.${proxy.domain}", ignoreCase = true))
+            uri.host.equals("auth.${proxy.domain}", ignoreCase = true) || coreLogin)
         if (isHttp && !staysInside) onOpenLink(uri.toString())
         return !staysInside
     }
