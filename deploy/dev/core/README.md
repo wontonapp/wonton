@@ -120,6 +120,11 @@ Tuwunel 默认不往私网地址推送（`ip_range_denylist`），compose 里的
 
 核心一键升级有单独的一条（ADR-0025）：`deploy/dev/core/smoke-upgrade.sh`，在要测的主机上直接执行，用 install.sh 安装，走升级、自动回滚和手动退回，这台主机上不能有真装的云吞。
 
+引导和帮助有单独的一条（ADR-0034）：`deploy/dev/core/smoke-onboarding.sh`，用独立的 compose 项目和临时数据，
+验证官方索引读得懂、引导如实推荐、帮助文档跟着索引更新（更新、失败保旧、min_core 挡旧核心），以及模型网关
+三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
+上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
+
 ```bash
 deploy/dev/core/smoke.sh                           # 本机 Docker
 DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机

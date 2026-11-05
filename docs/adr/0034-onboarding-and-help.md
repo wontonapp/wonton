@@ -296,6 +296,36 @@ requires_core: 0.9.0
 - Codex 和 Claude Code：经桥调总线工具（ADR-0007 没测 ACP 的 `mcpServers`），用账号完整登录一次，容器重启后登录态还在。
 - 模型网关：错的 key、断网、网关没启动，三种错误显示不一样。
 
+### 引导和帮助的核心层冒烟（2026-11-06）
+
+`deploy/dev/core/smoke-onboarding.sh` 在开发 Docker 主机跑通。条件：核心取自 main（构建时的提交号 `4d70e68`），镜像的
+版本号按官方索引的 `min_core` 写（`0.1.0-beta.1`，比较才有意义）；官方索引取自 wonton-store 的 main，文档 pin
+`0e732eea`，16 页 blob 全部按 sha256 核对后放在本地；索引和 blob 在场景里原地替换，不需要外网。
+
+- 取不到索引：`/onboarding` 报 `catalog_problem`、agents/needs/prompts 全空，不造后备清单；`wonton__help` 用镜像内置
+  文档回答并带 `refresh_problem`。
+- 文档更新：索引换一个内容可控的 `docs.commit`（devices 页加冒烟标记）后，`docs_commit` 和正文都变。
+- 取新文档失败（本地索引按 sha256 取文件，指向一个不存在的 blob，和断网取不到文件是同一条失败路径）：旧文档
+  照常服务，`refresh_problem` 写明原因，`docs_commit` 不变。
+- `min_core` 99.0.0 比核心（0.1.0-beta.1）新：不切换，工具结果说明要升级核心。
+- 模型网关三种错误的核心返回各不相同：错的 key 是 400 `invalid_input`（「拒绝了 key，key 没有保存」），断网是
+  502 `upstream_unavailable`（「连接失败，key 已保存」），网关没启动是 503 `models_unavailable`。key 用
+  `not-a-real-key` 字面量，没有登录任何服务、没有真实模型。
+
+### 两端走查（2026-11-06）
+
+核心取自 main 的 `93bc9a38`，官方索引和文档 blob 放在本地（文档 pin `0e732eea`）。设备是 iOS 26.5 模拟器和 Android 15 模拟器，从第一次配对开始。
+
+- 配对、填资料、选 Hermes，装推荐的 Memos（确认权限后回到引导，显示已安装）：两端都通过。
+- 从 App 内打开 Memos 网页，留在 App 里完成 OIDC 登录，身份是 owner：两端都通过。
+- 完成后进入 Hermes 私聊。点推荐问题只填草稿，手动发送后真实模型回答；问怎么再加一台手机，Hermes 日志里调了 `wonton__help`，回答和 `user/zh/devices.md` 对得上：两端都通过。
+- 重看引导后一路跳过，回到主界面：两端都通过。已接模型时模型这一步被跳过，符合上面的规则。
+- 错的 key 被拒且不保存，网关停机、核心断连各显示不同的错误并能重试或跳过：iOS 实测；Android 实测了错的 key。
+
+条件和没测的：
+- 模型经开发机上的 magpie 接入（`magpie provider add upstream url=… key=placeholder`），没有在 App 里填真实厂商的 key，所以“填真实的 key”这条只验证了错的 key。
+- `magpie provider test` 对可用上游（magpie 0.1.1327）输出 `✓ chat 345 ms · auto/glm-5.3-flashx`，退出码 0，输出不含 key，走 `providers.sh` 的成功路径。这个上游不校验 key，错的 key 同样通过，所以它不能代表真实厂商对 key 的校验；厂商拒绝错 key 的输出见 `providers.sh` 的注释。
+
 ## 参考
 
 - [Agent Skills 规范](https://agentskills.io/specification)、[Skills over MCP](https://modelcontextprotocol.io/extensions/skills/overview)、[MCP 扩展支持表](https://modelcontextprotocol.io/extensions/client-matrix)
