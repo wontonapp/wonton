@@ -357,6 +357,17 @@ impl TabsLink {
         })
     }
 
+    pub(crate) fn load_succeeded(&self, tab: TabRef) -> Result<(), CoreError> {
+        // 没有失败记录时什么都不发布：runtime_change 无条件发新状态，会白白唤醒壳。
+        if !lock(&self.state).failures.contains_key(&tab) {
+            return Ok(());
+        }
+        self.runtime_change(|state, _| {
+            state.failures.remove(&tab);
+            Ok(())
+        })
+    }
+
     pub(crate) fn dismiss_uninstalled(&self) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
             state.uninstalled.clear();

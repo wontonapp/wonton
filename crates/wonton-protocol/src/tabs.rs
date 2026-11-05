@@ -323,6 +323,7 @@ mod tests {
                 tab: page(),
                 status: None,
             },
+            Action::TabLoadSucceeded { tab: page() },
             Action::DismissUninstalledTabs,
         ] {
             round_trip(action);

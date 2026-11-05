@@ -252,6 +252,8 @@ pub enum Action {
     ReloadTab { tab: TabRef },
     /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。
     TabLoadFailed { tab: TabRef, status: Option<u16> },
+    /// 壳报告网页加载成功（如按返回回到成功的历史页），核心清掉这个页面的加载失败显示。
+    TabLoadSucceeded { tab: TabRef },
     /// 主人看过了“已卸载，已从底栏移除”的提示。
     DismissUninstalledTabs,
 }

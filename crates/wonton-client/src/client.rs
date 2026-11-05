@@ -137,6 +137,7 @@ impl ClientCore {
             Action::ExitFullscreen { tab } => self.tabs.exit_fullscreen(tab),
             Action::ReloadTab { tab } => self.tabs.reload(tab),
             Action::TabLoadFailed { tab, status } => self.tabs.load_failed(tab, status),
+            Action::TabLoadSucceeded { tab } => self.tabs.load_succeeded(tab),
             Action::DismissUninstalledTabs => self.tabs.dismiss_uninstalled(),
             other => self.dispatch_plugins_or_chat(other),
         }

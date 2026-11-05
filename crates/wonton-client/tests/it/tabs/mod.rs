@@ -517,6 +517,59 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
 }
 
 #[tokio::test]
+async fn tab_load_succeeded_clears_failure_without_counting_a_reload() {
+    let (rig, page_tab, _) = connected_page_rig("app.recovery", "recovery").await;
+    rig.app
+        .dispatch(Action::TabLoadFailed {
+            tab: page_tab.clone(),
+            status: Some(502),
+        })
+        .unwrap();
+    assert_eq!(
+        item(&rig.app.tabs(), &page_tab)
+            .page
+            .as_ref()
+            .unwrap()
+            .state,
+        TabState::LoadFailed {
+            failure: TabLoadFailure::Upstream,
+            status: Some(502),
+        }
+    );
+
+    // 按返回回到成功的历史页：壳报告加载成功，失败状态清掉，reload 计数不动。
+    let before = item(&rig.app.tabs(), &page_tab)
+        .page
+        .as_ref()
+        .unwrap()
+        .reload;
+    rig.app
+        .dispatch(Action::TabLoadSucceeded {
+            tab: page_tab.clone(),
+        })
+        .unwrap();
+    let recovered_view = rig.app.tabs();
+    let recovered = item(&recovered_view, &page_tab).page.as_ref().unwrap();
+    assert_eq!(recovered.state, TabState::Ready);
+    assert_eq!(recovered.reload, before);
+
+    // 没有失败记录时再发：不报错，状态不变。
+    rig.app
+        .dispatch(Action::TabLoadSucceeded {
+            tab: page_tab.clone(),
+        })
+        .unwrap();
+    assert_eq!(
+        item(&rig.app.tabs(), &page_tab)
+            .page
+            .as_ref()
+            .unwrap()
+            .state,
+        TabState::Ready
+    );
+}
+
+#[tokio::test]
 async fn corrupted_config_recovers_and_restart_does_not_restore_runtime_selection() {
     let mut rig = Rig::new().await;
     let plugin_id = "app.persist";
