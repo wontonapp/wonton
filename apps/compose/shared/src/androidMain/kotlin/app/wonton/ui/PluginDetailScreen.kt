@@ -132,6 +132,7 @@ private fun DetailContent(
         if (detail.installed != null && detail.saveGrants.isNotEmpty()) {
             SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
         }
+        if (detail.installed != null) ToolPolicySection(plugins, detail.id, detail.version)
         DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(

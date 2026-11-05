@@ -78,6 +78,9 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
                     }
+                    if let installed = detail.installed {
+                        ToolPolicySection(model: model, id: installed.id, version: detail.version)
+                    }
                     DetailSections(detail: detail)
                     if let installed = detail.installed, installed.removable, !isWorking {
                         Button {

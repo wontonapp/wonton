@@ -47,11 +47,16 @@ impl Bus {
         let policy = self.plugins.tool_policy();
         let callers = self.plugins.tool_callers();
         let name = plugin.as_str();
-        let always = callers.iter().map(|(caller, title)| BotSwitch {
-            caller: caller.to_string(),
-            name: cards::text(title),
-            enabled: policy.is_always(name, caller.as_str()),
-        });
+        // 没有工具的插件，始终允许不起作用。
+        let declares_mcp = self.plugins.declares_mcp(plugin);
+        let always = callers
+            .iter()
+            .filter(|_| declares_mcp)
+            .map(|(caller, title)| BotSwitch {
+                caller: caller.to_string(),
+                name: cards::text(title),
+                enabled: policy.is_always(name, caller.as_str()),
+            });
         let allow_all =
             callers
                 .iter()

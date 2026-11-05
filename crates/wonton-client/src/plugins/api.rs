@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use url::Url;
 use wonton_protocol::{
     CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
-    PluginImage, PluginProblem,
+    PluginImage, PluginProblem, window_path,
 };
 
 use crate::chat::proxy_url;
@@ -221,6 +221,36 @@ impl CoreApi {
             .send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
             .await?;
         parse(&bytes)
+    }
+
+    /// 没有请求体，响应是 JSON。
+    pub(super) async fn empty<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        segments: &[&str],
+        timeout: Duration,
+    ) -> Result<T, PluginProblem> {
+        let bytes = self
+            .send(method, self.url(segments, &[]), None, timeout)
+            .await?;
+        parse(&bytes)
+    }
+
+    /// 停止放行时段。核心回 404 说明已经结束了，主人要的就是这个。
+    pub(super) async fn stop_window(
+        &self,
+        card: &str,
+        timeout: Duration,
+    ) -> Result<(), PluginProblem> {
+        let mut url = self.base.clone();
+        url.set_path(&window_path(card));
+        let (status, bytes) = self
+            .exchange(Method::DELETE, url, None, "application/json", timeout)
+            .await?;
+        if status >= 400 && status != 404 {
+            return Err(core_error(status, &bytes));
+        }
+        Ok(())
     }
 
     /// 只看成败，不解析响应：安装的结果以已安装列表为准，核心比 App 新时响应的形状可以变。

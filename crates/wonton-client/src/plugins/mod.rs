@@ -6,6 +6,7 @@ mod cache;
 mod core_upgrade;
 mod egress;
 mod tasks;
+mod tool_policy;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
