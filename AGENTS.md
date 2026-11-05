@@ -99,10 +99,13 @@
 - 一个分支一个 PR；squash 合并后自动删除分支。
 - 一个 issue 可以分几个 PR：最后一个写 `Closes #N`，合并时 GitHub 自动关掉 issue；之前的写 `Refs #N`，并在
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
-- PR 的 CI 要在含同模块最新提交的 `main` 上跑绿；落后的提交只动了其他模块，可以直接合。`apps/ios`、`apps/compose`、
-  每个 crate、每个插件、`docs` 各算一个模块；`wonton-protocol`、构建脚本和 CI 配置算所有模块。GitHub 上没有强制，
+- PR 自己的 CI 绿、和 `main` 没有冲突就合，不要求先在最新的 `main` 上重跑。两个各自绿的 PR 合在一起才出错的情况很少，
+  `main` 合并后的 CI 会发现；为它让每个 PR 在别人合并后都重跑一遍，排队的代价大得多。分支落后 `main` 超过一天的，先更新再合。
+- 改到 `wonton-protocol`、构建脚本或 CI 配置的 PR 影响所有模块，要在含最新提交的 `main` 上跑绿再合。GitHub 上没有强制，
   靠合并的人看 CI。
-- `main` 红了，谁合的谁马上修。
+- `main` 每次合并后都跑 CI。红了，谁合的谁马上看：是 PR 引起的，先 revert 那次合并让 `main` 回绿，再在新 PR 里修；
+  是环境问题，修环境后重跑。`main` 红着、原因没查清时不合别的 PR。
+- 时好时坏的测试修测试本身或它依赖的环境，不加自动重试：重试会把真问题一起盖住。
 - 分支名用 `<type>/<简述>`，如 `feat/tunnel-http-proxy`。
 - 提交信息用 Conventional Commits：`type(scope): 中文摘要`。`type` 取 `feat`、`fix`、`docs`、
   `test`、`refactor`、`chore`、`build`、`ci`；摘要说清行为变化，不写 `Update files` 这类空话。
