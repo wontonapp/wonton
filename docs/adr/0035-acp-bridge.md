@@ -1,6 +1,6 @@
 # ADR-0035 ACP 桥：Matrix 与 ACP Agent 的连接形态
 
-- 状态：已接受（2026-11-05）。[ADR-0038](0038-multi-step-cards.md) 补充：表单模式的 `elicitation/create` 转成多步卡片，不再一律 `decline`
+- 状态：已接受（2026-11-05）。表单模式的 `elicitation/create` 回 `decline`，转成多步卡片的提议见 [ADR-0038](0038-multi-step-cards.md)，M1 不做
 
 ## 背景
 

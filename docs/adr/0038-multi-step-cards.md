@@ -1,6 +1,6 @@
 # ADR-0038 多步卡片：一组问题一步一张，最后一起提交
 
-- 状态：提议（2026-11-05 接受后重新打开）。问题卡片由谁发、加不加密，待主人决定（见“问题卡片怎么进 Bot 私聊”）；其余取舍由主人确认（见“已定”）
+- 状态：提议（2026-11-05 接受后重新打开）。主人决定 M1 不做 Agent 的问题卡片（见“问题卡片 M1 不做”）；其余取舍由主人确认（见“已定”）
 - 补充：[ADR-0016](0016-mcp-bus-and-confirmations.md)（卡片和回答的接口）、[ADR-0034](0034-onboarding-and-help.md)（引导的外观）、[ADR-0035](0035-acp-bridge.md)（`elicitation/create`）、[ADR-0036](0036-plugin-privileges.md)（最高级“多点一步”的做法）
 
 ## 背景
@@ -25,6 +25,20 @@
 所以：**工具的形状抄 AskUserQuestion 和 `clarify`，结果的词汇和规则抄 MCP elicitation，答案怎么交回沿用 ADR-0016。** 要自己设计的只有卡片上多出来的“步”，因为上面没有一个标准能在 Matrix 消息里表达“一组题一起提交”。
 
 ## 决策
+
+### 问题卡片 M1 不做
+
+**主人 2026-11-05 决定：Agent 发的问题卡片 M1 先不做。** Agent 要问主人时用文字：
+
+- **Hermes：** 用它默认的 `clarify`，在 Matrix 上是带编号的文字，主人回一条消息当答案。
+- **ACP 桥：** 表单模式的 `elicitation/create` 照旧回 `decline`，Agent 在聊天里打字问。
+- **OpenClaw 这类改不了 Matrix 层的 Agent：** 用它自带的文字提问。
+
+两个方案都没选：核心代发的明文卡片，主人不接受，因为题目和答案会以明文存在加密房间里；Agent 自己发加密卡片可行（见“验证结果”），但主人看过代价后选了 M1 不做。代价是每种自带 Matrix 层的 Agent 都要单独适配，核心没法审计和限流，Hermes 升级时插件可能要跟着改。
+
+这篇里写 `question`、`wonton__ask_owner`、`/agent/questions` 和 Bot 聊天面板的部分，是明文方案的设计，没有实施。以后要做时，界面和 ViewModel 可以沿用，传输按“验证结果”里的加密方案重写。
+
+这个决定只管 Agent 的问题。操作确认和新用户引导（`StepNav`）不受影响。
 
 ### 共用什么
 
@@ -91,7 +105,7 @@
 
 ### 问题卡片怎么进 Bot 私聊
 
-> **待主人决定。** 这一节的明文方案主人没有接受，倾向由 Agent 自己发卡片，全程端到端加密。可行性和工作量调研后再定，依赖这个发法的部分（答案走 `POST /_wonton/confirmations/{id}`、工具由核心提供、`/agent/questions`）随之改。
+> **没有采用。** 主人不接受这一节的明文方案，见“问题卡片 M1 不做”。
 
 **核心用 Bot 的令牌，往 Bot 的主房间发一条不加密的 `m.room.message`，编辑同样。** 主人看到的是 Bot 发的一条消息。答案不进房间：走 `POST /_wonton/confirmations/{id}` 交给核心，核心作为工具结果还给 Agent。
 
@@ -303,7 +317,7 @@ POST /_wonton/confirmations/{id}
 
 ## 没选的做法
 
-- **Agent 的 Matrix 层自己发进加密房间。** 真正端到端加密。但 Hermes 的 `send_clarify(question, choices, …)` 一次一道题，一起提交做不到；要在插件里替换它的适配器方法，每次升级 Hermes 都要回归；答案要走它自己的 `resolve_gateway_clarify`。别的 Agent 再各写一遍，只会调 MCP 工具的 Agent 用不了。核心也看不到加密的答案，`wonton__ask_owner` 就等不到结果。
+- **Agent 的 Matrix 层自己发进加密房间。** 真正端到端加密，实测可行（见“验证结果”）。不用替换 Hermes 的适配器方法，工具也不再由核心提供。代价见“问题卡片 M1 不做”，主人选了 M1 不做。
 - **核心带加密加入 Bot 私聊，或者给 Bot 多开一台带加密的设备代发。** 核心要跑带加密的 Matrix 客户端，存每个 Bot 的密钥（ADR-0016 否过）。第三个成员还会把私聊变成群聊。换来的只是 Matrix 数据库里看不到题目，而核心同一台主机上已经经手过了。
 - **消息发在 Wonton 私聊，客户端把卡片放进 Bot 聊天。** 不降级加密，不用 Bot 的令牌。主人要的是记录留在 Bot 聊天里，换设备、翻历史都在。
 - **不发消息，核心单独存问题，客户端自己轮询。** 也不降级，但没有推送，也不是消息。
@@ -320,7 +334,7 @@ POST /_wonton/confirmations/{id}
 
 ## 代价与风险
 
-- **题目和答案在加密房间里是明文，** 见“问题卡片怎么进 Bot 私聊”。这是明文方案的代价，待主人决定。
+- **题目和答案在加密房间里是明文，** 见“问题卡片怎么进 Bot 私聊”。这是明文方案的代价，主人不接受，所以没有采用。
 - **核心用 Bot 的令牌发消息。** 主人和 Agent 都看不出这条是核心发的还是 Agent 自己的 Matrix 层发的，这里两者同权。
 - **等回答时 Bot 说不了话。** 和确认卡片一样（ADR-0016）：Agent 的调用一直等着。主人要说别的，先关掉问题。
 - **旧 App 答不了多步卡片，** 只看到文字。最高级插件的卡片也是：这期间 Bot 装不了最高级插件，到期后 Agent 收到“主人没有确认”。
@@ -331,13 +345,14 @@ POST /_wonton/confirmations/{id}
 
 主人 2026-11-05 定：
 
-1. **问题显示在哪：** “就在 Bot 聊天里，和消息一样”。还给了 Claude App 的截图，见“显示在 Bot 聊天里”。协调会话补充：要是 Hermes 的适配器发不了，就改适配器，或者让核心注入进房间，代价写进 ADR。这篇先选了注入，明文的代价主人没有接受，发法待定（见“问题卡片怎么进 Bot 私聊”）。
+1. **问题显示在哪：** “就在 Bot 聊天里，和消息一样”。还给了 Claude App 的截图，见“显示在 Bot 聊天里”。协调会话补充：要是 Hermes 的适配器发不了，就改适配器，或者让核心注入进房间，代价写进 ADR。这篇先选了注入，明文的代价主人没有接受，见第 8 条。
 2. **引导：** “每步生效”。外观同卡片，每步能跳过。
 3. **最高级安装：** “只要两步”。权限和 root 提示，加一行“以后每次调用它的工具都会问”。ADR-0036 不变。
 4. **上限：** “4 题 × 4 个选项”，每题有输入框，超了报错不截断。
 5. **汇总页：** “不要，答完最后一题就提交”。
 6. **跳过：** “都能跳过”。Agent 的问题每道都能跳过，也能整张不回答；操作确认不能跳过。
 7. **过期：** “10 分钟”，和确认卡片相同。
+8. **问题卡片：** M1 先不做，Agent 用文字提问，见“问题卡片 M1 不做”。第 1、4、5、6 条里关于问题卡片的部分留到以后做时再用。
 
 ## 验证结果
 
@@ -353,12 +368,38 @@ POST /_wonton/confirmations/{id}
 
 **没测：** 明文消息的推送（默认规则按事件类型判定，这里是 `m.room.message`，应当和单步卡片相同）；真实 Hermes 容器（见“待验证”，只看了 v0.22.5 的源码 `_on_room_message` 先跳过自己的消息）；Element 怎么显示。
 
+### Agent 自己发加密卡片
+
+2026-11-05 在 npchy 上实测：Hermes v0.22.5 官方镜像（固定摘要，没改镜像）、Tuwunel v1.9.4，主人一侧是 `wonton-matrix` 的 matrix-sdk，模型是假的。测试代码没有进仓库。
+
+| 步骤 | 结果 |
+| --- | --- |
+| `wonton/` 插件用 `ctx.register_platform_handler("matrix", factory)` 拿到 matrix client，`client.send_message_event` 发卡片 | 主人一侧解密后读到完整的 `app.wonton.step_card` |
+| 主人 `room.send_raw("app.wonton.step_answer", …)` 发答案，插件 `client.add_event_handler` 收 | 插件收到解密后的答案，等着的工具调用继续，答案成为工具结果交给模型 |
+| 插件加密编辑卡片为已回答 | 主人一侧卡片状态更新 |
+| 看服务器上的事件 | 全是 `m.room.encrypted`，没有 `m.room.message`，查不到答案文字和字段名 |
+| 答案事件的去向 | 不进 Hermes 的消息流程，也不出现在 App 时间线 |
+| `agent.disabled_toolsets: [clarify]` | 模型的工具表里没有 `clarify` |
+| 插件工具和 Hermes 默认的 `tool_search` | 工具不直接出现，模型经 `tool_call` 调用，这条路也跑通 |
+
+**没测：** 真实模型会不会调它；`/stop` 打断；等回答时 Hermes 重启；推送；两台设备同时答；App 的界面。
+
+**其他 Agent（只读了源码或搜索，没有运行）：**
+
+- **ACP 桥：** 用的就是 `wonton-matrix`，把 `elicitation/create` 转成卡片估计约 1 天。`claude-agent-acp` 把 AskUserQuestion 转成 elicitation；`codex-acp` 没搜到相关代码，omp 没查到，要实测。
+- **OpenClaw：** 有自己的 `ask_user` 工具，经 Matrix 插件发文字、主人打字回答。Matrix client 在内置插件里，没有给其他插件的接口。要出卡片得给上游提 PR，估计 2～3 天加等待时间。
+
+**这样做时要改的：** 答案不走核心，所以 App 拿不到同步的结果，要等 Bot 编辑卡片，等不到就如实显示 Agent 没有回应。10 分钟的计时放到适配层，App 用 `expires_at_ms` 自己判断。Hermes 重启后等待就没了，卡片在到期前还能点，但不会有回应。
+
+估算全部工作约 8.25 个工作日，明文方案约 7.25 个。两个数都是估计。
+
 ## 待验证
 
-- Hermes：`agent.disabled_toolsets: [clarify]` 能不能让 Matrix 上看不到这个工具，模型有几件事要问时会不会真调 `wonton__ask_owner`（真实模型）。
+要做问题卡片时：
+
+- 真实模型有几件事要问时，会不会真调这个工具。
 - 面板和键盘的关系，两端真机各走一遍。
-- 真实 Hermes 容器（mautrix 带加密）收到自己令牌发的明文消息时确实跳过，不报错也不进会话。
-- Claude Code 的 AskUserQuestion 经 `claude-agent-acp` 是发 `elicitation/create` 还是别的，Codex、omp 有没有类似的请求。
+- `codex-acp`、omp 有没有 elicitation 这类请求。
 
 ## 关联
 
