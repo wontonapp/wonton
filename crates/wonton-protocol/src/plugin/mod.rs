@@ -453,6 +453,9 @@ pub struct PluginDetail {
     pub installed: Option<InstalledPlugin>,
     /// 装不了的原因；能装时为空。
     pub blocked: Option<String>,
+    /// 要主人知道的情况，如本机防火墙可能挡住了局域网设备；按顺序显示，`emphasis` 的醒目显示。
+    #[serde(default)]
+    pub notices: Vec<CardLine>,
     /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
     pub lan_webui: Option<LanWebuiOffer>,
     /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。

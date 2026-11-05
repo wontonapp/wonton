@@ -1,5 +1,6 @@
 //! 总线要连的 MCP 服务器和工具调用的期限。
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use super::manifest::{DEFAULT_TOOL_TOTAL_SECONDS, LocalizedText, McpEndpoint, PluginId};
@@ -9,8 +10,10 @@ use super::manifest::{DEFAULT_TOOL_TOTAL_SECONDS, LocalizedText, McpEndpoint, Pl
 pub struct McpServer {
     pub id: PluginId,
     pub title: LocalizedText,
-    /// `http://主机:端口/路径`。
+    /// `http://主机:端口/路径`；宿主网络里主机名是占位的 `localhost`。
     pub url: String,
+    /// 宿主网络里经 unix 套接字连。
+    pub socket: Option<PathBuf>,
     pub tool_limits: ToolLimits,
 }
 

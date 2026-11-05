@@ -38,6 +38,14 @@ impl Subnet {
         Self { gateway, ..self }
     }
 
+    /// 网段里第一个可分配地址，Docker 网桥通常就是它。
+    pub fn first_host(&self) -> Option<IpAddr> {
+        ipnet::IpNet::new(self.addr, self.prefix)
+            .ok()?
+            .hosts()
+            .next()
+    }
+
     pub fn contains(&self, ip: IpAddr) -> bool {
         let ip = ip.to_canonical();
         if self

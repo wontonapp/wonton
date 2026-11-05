@@ -102,8 +102,9 @@ async fn forward(
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
+    let endpoint = crate::plugin::upstreams::Endpoint::Tcp(authority.to_owned());
     let target = proxy::Target {
-        authority,
+        endpoint: &endpoint,
         name: "tusd",
     };
     let unavailable = |why: String| Failure::new(FileFailure::ServiceUnavailable, why);

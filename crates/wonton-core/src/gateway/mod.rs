@@ -295,8 +295,9 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
+    let endpoint = crate::plugin::upstreams::Endpoint::Tcp(authority.clone());
     let target = proxy::Target {
-        authority,
+        endpoint: &endpoint,
         name: "身份提供方",
     };
     proxy::forward(&gateway.http, target, req, fwd).await
@@ -349,7 +350,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         scheme: &gateway.public.scheme,
     };
     let target = proxy::Target {
-        authority: &upstream,
+        endpoint: &upstream,
         name: route.id.as_str(),
     };
     let mut response = proxy::forward(&gateway.http, target, req, fwd).await;

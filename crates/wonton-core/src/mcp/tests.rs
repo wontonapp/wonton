@@ -764,6 +764,7 @@ async fn plugin_resources_are_read_with_a_size_limit() {
         id: PluginId::parse("app.example.notes").unwrap(),
         title: Default::default(),
         url: serve_notes(Notes::default()).await,
+        socket: None,
         tool_limits: Default::default(),
     };
     let upstreams = Upstreams::new();

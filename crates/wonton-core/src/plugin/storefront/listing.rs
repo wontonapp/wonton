@@ -206,6 +206,7 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed,
             blocked: blocked(m, &facts),
+            notices: Vec::new(),
             // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
             lan_webui: self
                 .with_lan_client(

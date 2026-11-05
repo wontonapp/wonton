@@ -22,6 +22,7 @@ mod gpu;
 mod health;
 mod host_check;
 mod host_facts;
+mod host_relay;
 mod instances;
 mod lan;
 mod lan_webui;

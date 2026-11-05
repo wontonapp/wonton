@@ -230,20 +230,20 @@ pub async fn check_now(
 /// 反复请求网页入口，直到返回非 5xx 的响应。
 pub async fn wait_webui(
     client: &HttpClient,
-    url: &str,
+    endpoint: &super::upstreams::Endpoint,
+    path: &str,
     deadline: Instant,
 ) -> Result<(), HealthError> {
+    let url = endpoint.url(path);
     loop {
-        let last_error = match client.get_status(url, Duration::from_secs(5)).await {
-            Ok(status) if status < 500 => return Ok(()),
-            Ok(status) => format!("HTTP {status}"),
-            Err(e) => e.to_string(),
-        };
+        let last_error =
+            match super::upstreams::status(client, endpoint, path, Duration::from_secs(5)).await {
+                Ok(status) if status < 500 => return Ok(()),
+                Ok(status) => format!("HTTP {status}"),
+                Err(e) => e.to_string(),
+            };
         if Instant::now() >= deadline {
-            return Err(HealthError::WebUi {
-                url: url.to_owned(),
-                last_error,
-            });
+            return Err(HealthError::WebUi { url, last_error });
         }
         sleep(POLL).await;
     }

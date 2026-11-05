@@ -19,6 +19,7 @@ use super::configs::{self, ConfigError, ConfigFile};
 use super::core_address;
 use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
+use super::host_relay::HostRelay;
 use super::hostdir::Owner;
 use super::interpolate::Vars;
 use super::lan::{self, LanGrant};
@@ -230,6 +231,8 @@ pub struct Deployment {
     pub dirs: BTreeMap<PathBuf, Owner>,
     /// 按依赖排好序的容器。
     pub containers: Vec<ContainerPlan>,
+    /// 宿主网络网页和 MCP 服务的中继。
+    pub relays: Vec<HostRelay>,
 }
 
 pub fn share_var(name: &str) -> String {
@@ -485,7 +488,9 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         containers.push(plan);
     }
     check_not_nested(&binds)?;
-    let dirs = dir_owners(&binds, &services, ctx)?;
+    let mut dirs = dir_owners(&binds, &services, ctx)?;
+    let relays = super::host_relay::needed(manifest, &services);
+    add_relays(manifest, ctx, &relays, &mut containers, &mut dirs);
     let volumes = package
         .named_volumes()
         .iter()
@@ -497,7 +502,31 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         volumes,
         dirs,
         containers,
+        relays,
     })
+}
+
+fn add_relays(
+    manifest: &Manifest,
+    ctx: &InstallContext,
+    relays: &[HostRelay],
+    containers: &mut Vec<ContainerPlan>,
+    dirs: &mut BTreeMap<PathBuf, Owner>,
+) {
+    let owner = Owner {
+        uid: ctx.puid,
+        gid: ctx.pgid,
+    };
+    for relay in relays {
+        dirs.insert(super::host_relay::dir(&ctx.app_data), owner);
+        containers.push(super::host_relay::plan(
+            &ctx.instance,
+            manifest,
+            &ctx.app_data,
+            owner,
+            relay,
+        ));
+    }
 }
 
 /// `network_mode: none` 的服务没有网络，网页入口和 MCP 入口不能指向它。

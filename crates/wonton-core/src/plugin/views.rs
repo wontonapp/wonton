@@ -39,10 +39,17 @@ pub struct Listed {
     /// 要开关 `lan_webui` 才开的局域网端口（见 [`webui`]）。
     pub lan_switched: Option<Switched>,
     pub lan_webui: bool,
+    /// 直连宿主网络的网页连不上过，见 [`super::host_relay`]。
+    pub firewalled: bool,
 }
 
 impl Listed {
-    pub fn new(package: &PluginPackage, installed_at: u64, lan_webui: bool) -> Arc<Self> {
+    pub fn new(
+        package: &PluginPackage,
+        installed_at: u64,
+        lan_webui: bool,
+        firewalled: bool,
+    ) -> Arc<Self> {
         let tab_icons = package
             .manifest
             .tabs
@@ -68,6 +75,7 @@ impl Listed {
             origin: package.origin.clone(),
             lan_switched: webui::switched(package),
             lan_webui,
+            firewalled,
         })
     }
 
@@ -86,6 +94,7 @@ impl Listed {
             origin: None,
             lan_switched: None,
             lan_webui: false,
+            firewalled: false,
         })
     }
 }
@@ -175,6 +184,14 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed: Some(installed),
             blocked: None,
+            notices: listed
+                .firewalled
+                .then(|| line("本机防火墙可能挡住了外来连接，局域网设备可能连不进来".to_owned()))
+                .map(|mut notice| {
+                    notice.emphasis = true;
+                    vec![notice]
+                })
+                .unwrap_or_default(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
@@ -267,6 +284,11 @@ impl PluginManager {
             notices.push(line(permission_text(&Permission::OwnerIdentity)));
         }
         notices.extend(requirement_notices(m, &self.host_facts().await));
+        if m.permissions.contains(&Permission::NetworkHost) {
+            notices.push(line(
+                "宿主网络里的服务出网走宿主自己的路由，不经 Wonton 的出口代理".to_owned(),
+            ));
+        }
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
         // 不挡安装的问题：探测只试了一个网站。
@@ -722,6 +744,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         has_web: false,
         installed: Some(installed),
         blocked: None,
+        notices: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         ask_every_update: None,

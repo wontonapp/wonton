@@ -40,8 +40,9 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         client: client_addr(&req),
         scheme: "http",
     };
+    let endpoint = crate::plugin::upstreams::Endpoint::Tcp(route.upstream.clone());
     let target = proxy::Target {
-        authority: &route.upstream,
+        endpoint: &endpoint,
         name: "模型网关",
     };
     match proxy::forward_or(&gateway.http, target, req, fwd).await {

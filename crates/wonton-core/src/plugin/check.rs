@@ -114,6 +114,14 @@ fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
         &mut report.warnings
     };
     for container in &plan.containers {
+        // 中继是核心自己的组件，镜像由核心固定。
+        if plan
+            .relays
+            .iter()
+            .any(|r| r.service_name() == container.service)
+        {
+            continue;
+        }
         if !container.image.contains("@sha256:") {
             list.push(format!(
                 "服务 {} 的镜像 {} 没有按摘要固定（写成 名字:标签@sha256:…）",

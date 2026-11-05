@@ -1,9 +1,12 @@
 //! 核心和插件之间的入口：核心在插件网络里的别名（插件经它们访问核心转发的服务），以及核心访问插件的地址
-//! （网页、模型网关、MCP 服务）。
+//! （网页、模型网关、MCP 服务）。宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
+
+use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 
 use super::PluginId;
+use super::host_relay::{HostRelay, Purpose};
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
@@ -17,6 +20,64 @@ const DEFAULT_MCP_PATH: &str = "/mcp";
 
 /// 网页探测一次的时限，和装完时的探测（[`super::health::wait_webui`]）一样。
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 核心访问插件服务的地址：普通网络里是 `host:port`，宿主网络里是插件数据目录里的 unix 套接字。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Endpoint {
+    Tcp(String),
+    Unix(PathBuf),
+}
+
+impl Endpoint {
+    pub fn unix(path: impl Into<PathBuf>) -> Self {
+        Self::Unix(path.into())
+    }
+
+    /// 给 HTTP 客户端用的 URL。unix 套接字的主机名不参与解析，用 `localhost` 占位。
+    pub fn url(&self, path: &str) -> String {
+        match self {
+            Self::Tcp(authority) => format!("http://{authority}{path}"),
+            Self::Unix(_) => format!("http://localhost{path}"),
+        }
+    }
+
+    pub fn socket(&self) -> Option<&Path> {
+        match self {
+            Self::Tcp(_) => None,
+            Self::Unix(path) => Some(path),
+        }
+    }
+}
+
+/// 总线连一个插件的 MCP 服务要的东西：地址，宿主网络里还有套接字。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpTarget {
+    pub url: String,
+    pub socket: Option<PathBuf>,
+}
+
+/// 请求一次网页入口，返回状态码。unix 套接字走 reqwest，普通网络走共享的 HTTP 客户端。
+pub(super) async fn status(
+    http: &crate::http::HttpClient,
+    endpoint: &Endpoint,
+    path: &str,
+    timeout: Duration,
+) -> Result<u16, HttpError> {
+    let Some(socket) = endpoint.socket() else {
+        return http.get_status(&endpoint.url(path), timeout).await;
+    };
+    let client = reqwest::Client::builder()
+        .unix_socket(socket.to_path_buf())
+        .no_proxy()
+        .build()
+        .map_err(|e| HttpError::Connect(e.to_string()))?;
+    let request = client.get(endpoint.url(path)).send();
+    tokio::time::timeout(timeout, request)
+        .await
+        .map_err(|_| HttpError::Timeout(timeout))?
+        .map(|response| response.status().as_u16())
+        .map_err(|e| HttpError::Connect(e.to_string()))
+}
 
 pub(super) fn uses_sso(manifest: &Manifest) -> bool {
     manifest.webui.as_ref().is_some_and(|w| w.sso == Sso::Oidc)
@@ -61,7 +122,7 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
         network: &str,
-    ) -> Result<Option<String>, InstallError> {
+    ) -> Result<Option<Endpoint>, InstallError> {
         let Some(webui) = &manifest.webui else {
             return Ok(None);
         };
@@ -69,8 +130,15 @@ impl PluginManager {
             .cfg
             .instance
             .container(&manifest.id.slug(), &webui.service);
+        if let Some(endpoint) = self
+            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service)
+            .await?
+        {
+            return Ok(Some(endpoint));
+        }
         self.service_upstream(&name, webui.port, network)
             .await
+            .map(Endpoint::Tcp)
             .map(Some)
     }
 
@@ -78,14 +146,15 @@ impl PluginManager {
     /// （[`super::health::wait_webui`]）用同一个地址（核心在插件网络里看到的 `主机:端口` 加网页路径）
     /// 和每请求 5 秒的时限。没有网页、还没部署到那一步的为空。
     pub async fn webui_status(&self, id: &PluginId) -> Option<Result<u16, HttpError>> {
-        let url = {
+        let (endpoint, path) = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             let entry = plugins.get(id)?;
-            let upstream = entry.upstream.as_ref()?;
-            let path = &entry.listed.as_ref()?.manifest.webui.as_ref()?.path;
-            format!("http://{upstream}{path}")
+            (
+                entry.upstream.clone()?,
+                entry.listed.as_ref()?.manifest.webui.as_ref()?.path.clone(),
+            )
         };
-        Some(self.http.get_status(&url, PROBE_TIMEOUT).await)
+        Some(status(&self.http, &endpoint, &path, PROBE_TIMEOUT).await)
     }
 
     /// 是模型网关时：核心转发模型请求、执行凭据命令的目标。
@@ -116,17 +185,58 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
         network: &str,
-    ) -> Result<Option<String>, InstallError> {
+    ) -> Result<Option<McpTarget>, InstallError> {
         let Some(mcp) = &manifest.mcp else {
             return Ok(None);
         };
+        let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
+        if let Some(endpoint) = self
+            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service)
+            .await?
+        {
+            return Ok(Some(McpTarget {
+                url: endpoint.url(path),
+                socket: endpoint.socket().map(Path::to_path_buf),
+            }));
+        }
         let name = self
             .cfg
             .instance
             .container(&manifest.id.slug(), &mcp.service);
         let upstream = self.service_upstream(&name, mcp.port, network).await?;
-        let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
-        Ok(Some(format!("http://{upstream}{path}")))
+        Ok(Some(McpTarget {
+            url: format!("http://{upstream}{path}"),
+            socket: None,
+        }))
+    }
+
+    /// 服务是宿主网络、又该有中继时套接字地址；普通网络为空。
+    async fn host_relay_endpoint(
+        &self,
+        manifest: &Manifest,
+        purpose: Purpose,
+        service: &str,
+    ) -> Result<Option<Endpoint>, InstallError> {
+        let name = self.cfg.instance.container(&manifest.id.slug(), service);
+        let host = self
+            .engine
+            .inspect_container(&name)
+            .await?
+            .and_then(|info| info.host_config)
+            .and_then(|config| config.network_mode)
+            .is_some_and(|mode| mode == "host");
+        if !host {
+            return Ok(None);
+        }
+        let relay = HostRelay {
+            purpose,
+            service: service.to_owned(),
+            port: 0,
+        };
+        let app_data = self.cfg.apps_dir.join(manifest.id.slug());
+        Ok(Some(Endpoint::unix(super::host_relay::socket_path(
+            &app_data, &relay,
+        ))))
     }
 
     pub(crate) fn is_running(&self, id: &PluginId) -> bool {

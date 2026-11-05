@@ -61,6 +61,9 @@ impl PluginManager {
         };
         let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
+        if !record.relays.is_empty() {
+            self.ensure_relays(&package.manifest, &record).await?;
+        }
         match self.check_containers(&package).await {
             Ok(health) if self.status_of(id) == Some(PluginStatus::Running) => {
                 self.saw_running(id, health);

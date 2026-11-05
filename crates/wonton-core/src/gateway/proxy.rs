@@ -9,9 +9,12 @@ use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use hyper::{StatusCode, Uri, Version};
 use hyper_util::rt::TokioIo;
 
+use tokio::net::UnixStream;
+
 use super::pages;
 use super::session::{is_reserved_cookie, strip_cookies};
 use crate::http::HttpClient;
+use crate::plugin::upstreams::Endpoint;
 
 const HOP_BY_HOP: &[&str] = &[
     "connection",
@@ -34,9 +37,9 @@ const UNTRUSTED: &[&str] = &[
     "x-real-ip",
 ];
 
-/// 转发目标：`host:port`，以及出错时给用户看的名称。
+/// 转发目标：内网地址或 unix 套接字，以及出错时给用户看的名称。
 pub struct Target<'a> {
-    pub authority: &'a str,
+    pub endpoint: &'a Endpoint,
     pub name: &'a str,
 }
 
@@ -110,7 +113,11 @@ pub async fn forward_or(
         .path_and_query()
         .map_or("/", |p| p.as_str())
         .to_owned();
-    let Ok(uri) = format!("http://{}{path}", target.authority).parse::<Uri>() else {
+    let uri = match target.endpoint {
+        Endpoint::Tcp(authority) => format!("http://{authority}{path}").parse::<Uri>(),
+        Endpoint::Unix(_) => path.parse::<Uri>(),
+    };
+    let Ok(uri) = uri else {
         return Ok(pages::error(
             StatusCode::BAD_REQUEST,
             "invalid_input",
@@ -139,11 +146,15 @@ pub async fn forward_or(
     parts.version = Version::HTTP_11;
     let outbound = Request::from_parts(parts, body);
 
-    let mut response = match http.send(outbound).await {
+    let sent = match target.endpoint {
+        Endpoint::Tcp(_) => http.send(outbound).await.map_err(|e| e.to_string()),
+        Endpoint::Unix(socket) => unix_send(socket, outbound).await,
+    };
+    let mut response = match sent {
         Ok(response) => response,
         Err(e) => {
             tracing::warn!(target = target.name, error = %e, "上游不可达");
-            return Err(e.to_string());
+            return Err(e);
         }
     };
     if response.status() == StatusCode::SWITCHING_PROTOCOLS
@@ -168,9 +179,179 @@ pub async fn forward_or(
     Ok(Response::from_parts(parts, Body::new(body)).into_response())
 }
 
+/// 响应活着时保住连接：删掉它 hyper 会在响应流完之前就关连接，流式响应和协议升级会被切断。
+#[derive(Clone)]
+struct KeepAlive(
+    #[allow(dead_code)]
+    std::sync::Arc<std::sync::Mutex<hyper::client::conn::http1::SendRequest<Body>>>,
+);
+
+/// 经 unix 套接字发一个请求。连接只给这一个请求用；响应体读完、连接任务结束。
+async fn unix_send(
+    socket: &std::path::Path,
+    request: Request<Body>,
+) -> Result<hyper::Response<hyper::body::Incoming>, String> {
+    let stream = UnixStream::connect(socket)
+        .await
+        .map_err(|e| format!("连不上 {}：{e}", socket.display()))?;
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+        .await
+        .map_err(|e| e.to_string())?;
+    let connection = connection.with_upgrades();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            tracing::warn!(error = %e, "unix 上游连接结束");
+        }
+    });
+    let mut response = sender
+        .send_request(request)
+        .await
+        .map_err(|e| e.to_string())?;
+    response
+        .extensions_mut()
+        .insert(KeepAlive(std::sync::Arc::new(std::sync::Mutex::new(
+            sender,
+        ))));
+    Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn upgrades_travel_over_the_unix_socket() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("web.sock");
+        let upstream = tokio::net::UnixListener::bind(&path).unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = upstream.accept().await.unwrap();
+            let io = TokioIo::new(stream);
+            let service =
+                hyper::service::service_fn(|mut req: Request<hyper::body::Incoming>| async move {
+                    let mut response = Response::new(Body::empty());
+                    *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+                    response
+                        .headers_mut()
+                        .insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
+                    response
+                        .headers_mut()
+                        .insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+                    tokio::spawn(async move {
+                        let upgrade = hyper::upgrade::on(&mut req).await.unwrap();
+                        let mut io = TokioIo::new(upgrade);
+                        let mut frame = [0u8; 4];
+                        io.read_exact(&mut frame).await.unwrap();
+                        io.write_all(&frame).await.unwrap();
+                    });
+                    Ok::<_, std::convert::Infallible>(response)
+                });
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(io, service)
+                .with_upgrades()
+                .await;
+        });
+
+        let endpoint = Endpoint::unix(path.clone());
+        let gateway = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = gateway.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = gateway.accept().await.unwrap();
+            let io = TokioIo::new(stream);
+            let service =
+                hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| {
+                    let endpoint = endpoint.clone();
+                    async move {
+                        Ok::<_, std::convert::Infallible>(
+                            forward(
+                                &HttpClient::new(),
+                                Target {
+                                    endpoint: &endpoint,
+                                    name: "x",
+                                },
+                                request.map(Body::new),
+                                Forwarded {
+                                    client: None,
+                                    scheme: "http",
+                                },
+                            )
+                            .await,
+                        )
+                    }
+                });
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(io, service)
+                .with_upgrades()
+                .await;
+        });
+
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(
+                b"GET /ws HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let mut head = Vec::new();
+        let mut byte = [0u8; 1];
+        while !head.ends_with(b"\r\n\r\n") {
+            client.read_exact(&mut byte).await.unwrap();
+            head.push(byte[0]);
+        }
+        assert!(
+            head.starts_with(b"HTTP/1.1 101"),
+            "{}",
+            String::from_utf8_lossy(&head)
+        );
+        client.write_all(b"ping").await.unwrap();
+        let mut frame = [0u8; 4];
+        client.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame, b"ping");
+    }
+
+    #[tokio::test]
+    async fn forwards_over_a_unix_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("web.sock");
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let io = TokioIo::new(stream);
+            let service = hyper::service::service_fn(|_req| async {
+                Ok::<_, std::convert::Infallible>(hyper::Response::new(Body::from("ok")))
+            });
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(io, service)
+                .await;
+        });
+        let endpoint = Endpoint::unix(path.clone());
+        let request = Request::builder()
+            .uri("/hello")
+            .body(Body::empty())
+            .unwrap();
+        let forwarded = Forwarded {
+            client: None,
+            scheme: "http",
+        };
+        let response = forward(
+            &HttpClient::new(),
+            Target {
+                endpoint: &endpoint,
+                name: "x",
+            },
+            request,
+            forwarded,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        assert_eq!(&body[..], b"ok");
+    }
 
     #[test]
     fn hop_by_hop_headers_are_removed() {

@@ -207,9 +207,11 @@ impl PluginManager {
         let models = self.models_upstream(manifest, &plan.network).await?;
         let mcp = self.mcp_upstream(manifest, &plan.network).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            let url = format!("http://{upstream}{}", webui.path);
-            health::wait_webui(&self.http, &url, deadline).await?;
+            health::wait_webui(&self.http, upstream, &webui.path, deadline).await?;
         }
+        let firewalled = self
+            .host_webui_firewalled(manifest, &plan.relays, &plan.network)
+            .await;
         if let Some((_, bot)) = &undo.bot {
             undo.handed_over = self.hand_over_home_room(bot).await?;
         }
@@ -220,6 +222,8 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
+            relays: plan.relays.clone(),
+            firewalled,
             proxied: ctx.egress.is_some(),
             oidc_client_secret: secret,
             installed_at: super::manager::now_secs(),
@@ -231,6 +235,7 @@ impl PluginManager {
             models,
             proxy: proxy.map(Arc::new),
             mcp,
+            firewalled,
         })
     }
 
@@ -399,7 +404,7 @@ impl PluginManager {
     }
 
     /// 主人的用户（PUID:PGID）：共享文件夹、应用数据目录本身和中间各级目录都交给它。
-    fn owner(&self) -> Owner {
+    pub(super) fn owner(&self) -> Owner {
         Owner {
             uid: self.cfg.puid,
             gid: self.cfg.pgid,
@@ -596,6 +601,7 @@ impl PluginManager {
             self.attach_core(&network, core, manifest).await?;
         }
         let health = self.check_containers(package).await?;
+        self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let generated = self.check_secrets(manifest).await?;
         let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
@@ -613,6 +619,7 @@ impl PluginManager {
             models: self.models_upstream(manifest, &network).await?,
             mcp: self.mcp_upstream(manifest, &network).await?,
             proxy: proxy.map(Arc::new),
+            firewalled: record.firewalled,
         })
     }
 

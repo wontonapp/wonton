@@ -312,6 +312,7 @@ fn server_at(url: String) -> McpServer {
         id: PluginId::parse("app.example.notes").unwrap(),
         title: Default::default(),
         url,
+        socket: None,
         tool_limits: Default::default(),
     }
 }
@@ -745,6 +746,7 @@ async fn a_stuck_plugin_holds_up_nobody_and_times_out() {
         id: PluginId::parse("app.example.stuck").unwrap(),
         title: Default::default(),
         url: stuck_plugin().await,
+        socket: None,
         tool_limits: Default::default(),
     };
     let fine = server_at(serve_notes(Notes::default()).await);

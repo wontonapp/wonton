@@ -238,6 +238,7 @@ fn detail() -> PluginDetail {
         has_web: true,
         installed: Some(installed()),
         blocked: None,
+        notices: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         ask_every_update: Some(false),

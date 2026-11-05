@@ -157,8 +157,9 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
+    let endpoint = crate::plugin::upstreams::Endpoint::Tcp(matrix.authority().to_owned());
     let target = proxy::Target {
-        authority: matrix.authority(),
+        endpoint: &endpoint,
         name: "Tuwunel",
     };
     match proxy::forward_or(&gateway.http, target, req, fwd).await {

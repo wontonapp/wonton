@@ -32,6 +32,7 @@ use super::staged::StagedUploads;
 use super::store::{InstalledRecord, Store};
 use super::storefront::{StoreConfig, Storefront};
 use super::upgrade::Upgrades;
+use super::upstreams::{Endpoint, McpTarget};
 use super::views::Listed;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
@@ -113,8 +114,8 @@ pub struct BotReport {
 pub struct Route {
     pub id: PluginId,
     pub status: PluginStatus,
-    /// `host:port`，核心可直接访问的插件网页地址。
-    pub upstream: Option<String>,
+    /// 核心可直接访问的插件网页地址。
+    pub upstream: Option<Endpoint>,
     /// `sso: proxy` 时网关代加的凭据。
     pub proxy: Option<Arc<ProxyAuth>>,
 }
@@ -129,30 +130,36 @@ pub(super) struct Entry {
     pub(super) health: Option<Health>,
     /// 列表和详情页显示的信息；记录读不出来的插件为空。
     pub(super) listed: Option<Arc<Listed>>,
-    pub(super) upstream: Option<String>,
+    pub(super) upstream: Option<Endpoint>,
     /// 声明了 `provides.models`（不论状态）。
     pub(super) provides_models: bool,
     /// 运行中的模型网关的转发目标。
     models: Option<ModelsRoute>,
     /// `sso: proxy` 时网关代加的凭据。
-    proxy: Option<Arc<ProxyAuth>>,
+    pub(super) proxy: Option<Arc<ProxyAuth>>,
     /// 运行中时 MCP 服务的地址。
-    mcp: Option<String>,
+    pub(super) mcp: Option<McpTarget>,
     /// 这个异常是容器决定的，容器好了就恢复（见 [`super::watch`]）。
     pub(super) follows_containers: bool,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
 pub(super) struct Deployed {
-    pub upstream: Option<String>,
+    pub upstream: Option<Endpoint>,
     pub health: Health,
     pub models: Option<ModelsRoute>,
     pub proxy: Option<Arc<ProxyAuth>>,
-    pub mcp: Option<String>,
+    pub mcp: Option<McpTarget>,
+    /// 直连宿主网络网页连不上。
+    pub firewalled: bool,
 }
 
 impl Entry {
-    pub(super) fn new(listed: Arc<Listed>, status: PluginStatus, upstream: Option<String>) -> Self {
+    pub(super) fn new(
+        listed: Arc<Listed>,
+        status: PluginStatus,
+        upstream: Option<Endpoint>,
+    ) -> Self {
         let manifest = &listed.manifest;
         Self {
             version: manifest.version.clone(),
@@ -358,14 +365,15 @@ impl PluginManager {
             .iter()
             .filter(|(_, entry)| entry.status == PluginStatus::Running)
             .filter_map(|(id, entry)| {
-                let url = entry.mcp.clone()?;
+                let target = entry.mcp.clone()?;
                 let title = entry.title.clone();
                 let listed = entry.listed.as_ref();
                 let tool_limits = ToolLimits::of(listed.and_then(|l| l.manifest.mcp.as_ref()));
                 Some(McpServer {
                     id: id.clone(),
                     title,
-                    url,
+                    url: target.url,
+                    socket: target.socket,
                     tool_limits,
                 })
             })
@@ -499,38 +507,6 @@ impl PluginManager {
         entry.models = Some(route);
     }
 
-    /// 测试用：不经 Docker 直接登记一个插件，供网关测试指向本地的假上游。
-    #[cfg(test)]
-    pub(crate) fn register_for_test(
-        &self,
-        manifest: Manifest,
-        status: PluginStatus,
-        upstream: Option<String>,
-    ) {
-        let id = manifest.id.clone();
-        let entry = Entry::new(Listed::of_manifest(manifest), status, upstream);
-        self.plugins
-            .write()
-            .expect("插件表锁中毒")
-            .insert(id, entry);
-    }
-
-    /// 测试用：给登记过的插件设上 MCP 服务的地址。
-    #[cfg(test)]
-    pub(crate) fn mcp_for_test(&self, id: &PluginId, url: String) {
-        let mut plugins = self.plugins.write().expect("插件表锁中毒");
-        plugins.get_mut(id).expect("先 register_for_test").mcp = Some(url);
-        drop(plugins);
-        self.changed();
-    }
-
-    /// 测试用：给登记过的插件设上网关代登录的凭据。
-    #[cfg(test)]
-    pub(crate) fn proxy_for_test(&self, id: &PluginId, auth: ProxyAuth) {
-        let mut plugins = self.plugins.write().expect("插件表锁中毒");
-        plugins.get_mut(id).expect("先 register_for_test").proxy = Some(Arc::new(auth));
-    }
-
     /// 测试用：登记一个插件网络的地址段，供网关测试按来源地址认出插件。
     #[cfg(test)]
     pub(crate) fn register_source_for_test(
@@ -548,7 +524,7 @@ impl PluginManager {
         &self,
         id: &PluginId,
         status: PluginStatus,
-        upstream: Option<Option<String>>,
+        upstream: Option<Option<Endpoint>>,
     ) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
@@ -594,7 +570,12 @@ impl PluginManager {
                 if let Err(e) = self.register_source(manifest, &network).await {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
-                let listed = Listed::new(&package, record.installed_at, record.lan_webui);
+                let listed = Listed::new(
+                    &package,
+                    record.installed_at,
+                    record.lan_webui,
+                    record.firewalled,
+                );
                 match self.reconcile(&package, record).await {
                     Ok(deployed) => Entry::running(listed, deployed),
                     Err(e) => {
@@ -628,12 +609,13 @@ impl PluginManager {
         // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui).await?;
-        let listed = Listed::new(&package, now_secs(), lan_webui);
+        let listed = Listed::new(&package, now_secs(), lan_webui, false);
         self.reserve(&listed)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
         match self.deploy(&package, granted, gpu, lan).await {
             Ok(deployed) => {
                 tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
+                let listed = Listed::new(&package, now_secs(), lan_webui, deployed.firewalled);
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");
                 let entry = Entry::running(listed, deployed);
                 let view = self.view(&manifest.id, &entry);

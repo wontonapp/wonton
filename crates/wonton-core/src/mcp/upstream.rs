@@ -298,9 +298,17 @@ impl Upstreams {
         if let Ok(connection) = self.live(server) {
             return Ok(connection);
         }
+        let http = match &server.socket {
+            Some(path) => reqwest::Client::builder()
+                .unix_socket(path.clone())
+                .no_proxy()
+                .build()
+                .map_err(|e| format!("连不上插件 {} 的 MCP 套接字：{e}", server.id))?,
+            None => self.http.clone(),
+        };
         let transport = StreamableHttpClientTransport::with_client(
             BoundedHttp {
-                http: self.http.clone(),
+                http,
                 limit: self.message_limit,
             },
             StreamableHttpClientTransportConfig::with_uri(server.url.clone()),

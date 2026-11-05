@@ -41,6 +41,12 @@ pub struct InstalledRecord {
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
     #[serde(default)]
     pub lan_webui: bool,
+    /// 宿主网络网页和 MCP 服务的中继（见 [`super::host_relay`]）。
+    #[serde(default)]
+    pub relays: Vec<super::host_relay::HostRelay>,
+    /// 装好后直连宿主网络的网页连不上：本机防火墙可能挡住了局域网设备。
+    #[serde(default)]
+    pub firewalled: bool,
     /// 容器的环境变量里有代理变量（ADR-0023）：和现在的设置对不上时要重建。
     #[serde(default)]
     pub proxied: bool,
@@ -388,6 +394,8 @@ mod tests {
     fn record(id: &str) -> InstalledRecord {
         InstalledRecord {
             lan_webui: false,
+            relays: Vec::new(),
+            firewalled: false,
             proxied: false,
             id: PluginId::parse(id).unwrap(),
             version: "1.0.0".into(),

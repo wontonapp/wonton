@@ -154,7 +154,7 @@ impl PluginManager {
                     .listed
                     .as_ref()
                     .map_or_else(now_secs, |l| l.installed_at);
-                let listed = Listed::new(package, installed_at, lan_webui);
+                let listed = Listed::new(package, installed_at, lan_webui, deployed.firewalled);
                 *entry = Entry::running(listed, deployed);
                 self.lan.clear_degraded(id);
                 self.upgrades.forget(id);
@@ -207,7 +207,12 @@ impl PluginManager {
         if !progress.touched {
             return Outcome::Untouched(self.undo_prepared(&old, progress, error).await);
         }
-        let listed = Listed::new(&old.package, old.record.installed_at, old.record.lan_webui);
+        let listed = Listed::new(
+            &old.package,
+            old.record.installed_at,
+            old.record.lan_webui,
+            old.record.firewalled,
+        );
         match self.back_to_old(&old, package, progress).await {
             Ok(deployed) => {
                 let note = format!("升级到 {new} 失败，已退回 {version}");
@@ -283,9 +288,11 @@ impl PluginManager {
         let models = self.models_upstream(manifest, &network).await?;
         let mcp = self.mcp_upstream(manifest, &network).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            let url = format!("http://{upstream}{}", webui.path);
-            health::wait_webui(&self.http, &url, deadline).await?;
+            health::wait_webui(&self.http, upstream, &webui.path, deadline).await?;
         }
+        let firewalled = self
+            .host_webui_firewalled(manifest, &plan.relays, &network)
+            .await;
         if let Some((_, bot)) = &progress.undo.bot {
             progress.undo.handed_over = self.hand_over_home_room(bot).await?;
         }
@@ -296,6 +303,8 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
+            relays: plan.relays.clone(),
+            firewalled,
             proxied: ctx.egress.is_some(),
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
@@ -307,6 +316,7 @@ impl PluginManager {
             models,
             proxy: proxy.map(Arc::new),
             mcp,
+            firewalled,
         })
     }
 

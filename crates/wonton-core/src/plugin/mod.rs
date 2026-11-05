@@ -17,6 +17,7 @@ pub mod gpu;
 pub mod health;
 pub mod host_check;
 pub mod host_facts;
+pub mod host_relay;
 pub mod hostdir;
 pub mod image_worker;
 pub mod images;
@@ -56,6 +57,8 @@ pub mod store;
 pub mod store_info;
 pub mod storefront;
 pub mod system;
+#[cfg(test)]
+mod tests_support;
 pub mod tool_policy;
 mod upgrade;
 pub(crate) mod upstreams;
