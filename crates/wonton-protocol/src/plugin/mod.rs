@@ -620,8 +620,6 @@ pub struct PluginsViewModel {
     pub storage: Option<StorageUsage>,
     /// 连着家里的服务器却查不到磁盘空间的原因。
     pub storage_problem: Option<PluginProblem>,
-    /// 刚配对、资料还没填：壳弹出填资料的页面，关掉时发 [`Action::DismissOwnerProfilePrompt`](crate::Action::DismissOwnerProfilePrompt)。
-    pub owner_profile_prompt: bool,
     /// “我来操作”；没在操作时为空。结束了但不是主人交还的，留着告诉主人，等 `EndTakeover` 或者下一次 `StartTakeover`。
     pub takeover: Option<PluginTakeover>,
 }

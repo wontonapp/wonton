@@ -307,36 +307,9 @@ fn profile(name: Option<&str>, email: Option<&str>) -> Canned {
 }
 
 #[tokio::test]
-async fn pairing_with_a_server_that_has_no_profile_asks_once() {
-    let rig = Rig::new().await;
-    rig.core.answer(Method::GET, PROFILE, profile(None, None));
-    rig.connected().await;
-    rig.wait_for(|view| view.owner_profile_prompt).await;
-    rig.app.dispatch(Action::DismissOwnerProfilePrompt).unwrap();
-    assert!(!rig.app.plugins().owner_profile_prompt);
-}
-
-#[tokio::test]
-async fn pairing_with_a_server_that_has_a_profile_does_not_ask() {
-    let rig = Rig::new().await;
-    let filled = profile(Some("云吞"), Some("me@example.com"));
-    rig.core.answer(Method::GET, PROFILE, filled);
-    rig.connected().await;
-    let deadline = Instant::now() + WAIT;
-    while rig.core.seen(&Method::GET, PROFILE).is_empty() {
-        assert!(Instant::now() < deadline, "没去取资料");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert!(!rig.app.plugins().owner_profile_prompt);
-}
-
-#[tokio::test]
 async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     let rig = Rig::new().await;
-    rig.core.answer(Method::GET, PROFILE, profile(None, None));
     rig.connected().await;
-    rig.wait_for(|view| view.owner_profile_prompt).await;
 
     let update = OwnerProfileUpdate {
         display_name: "云吞".to_owned(),
@@ -355,7 +328,6 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
             reason: "不像邮箱".to_owned()
         }
     );
-    assert!(rig.app.plugins().owner_profile_prompt, "没存上，还要填");
 
     let saved = profile(Some("云吞"), Some("me@example.com"));
     rig.core.answer(Method::PUT, PROFILE, saved);
@@ -365,7 +337,6 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     };
     let profile = rig.app.save_owner_profile(good).await.unwrap();
     assert_eq!(profile.email.as_deref(), Some("me@example.com"));
-    assert!(!rig.app.plugins().owner_profile_prompt);
     let sent = rig.core.seen(&Method::PUT, PROFILE);
     assert!(sent[1].body.contains("me@example.com"), "{}", sent[1].body);
     assert!(!sent[1].from_page);

@@ -138,11 +138,6 @@ impl PluginsLink {
         }
     }
 
-    pub(crate) fn dismiss_owner_profile_prompt(&self) {
-        self.view
-            .send_modify(|view| view.owner_profile_prompt = false);
-    }
-
     pub(crate) fn foregrounded(self: &Arc<Self>) {
         self.foreground.store(true, Ordering::SeqCst);
         self.poll_changed.notify_one();
@@ -282,7 +277,6 @@ impl PluginsLink {
             view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;
-            view.owner_profile_prompt = false;
             view.tasks
                 .retain(|task| task.state == PluginTaskState::Running);
             for task in &mut view.tasks {
@@ -638,9 +632,6 @@ async fn follow_home(link: Weak<PluginsLink>) {
         if now_connected && !connected {
             link.refresh_installed();
             link.fetch_core_upgrade();
-            if link.home.take_freshly_linked() {
-                link.prompt_owner_profile_if_empty();
-            }
             if link.store_wanted.load(Ordering::Relaxed) {
                 link.refresh_store(false);
             }

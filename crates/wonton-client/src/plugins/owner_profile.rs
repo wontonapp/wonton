@@ -1,7 +1,4 @@
-//! 你的资料（ADR-0030）：设置页和安装页读写显示名和邮箱；刚配对、资料还没填时让壳弹一次填资料的页面。
-
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+//! 你的资料（ADR-0030）：设置页和安装页读写显示名和邮箱。
 
 use wonton_protocol::{CoreError, OwnerProfile, OwnerProfileUpdate};
 
@@ -28,29 +25,6 @@ impl PluginsLink {
             .put(&PATH, &update, READ_TIMEOUT)
             .await
             .map_err(to_core_error)?;
-        self.dismiss_owner_profile_prompt();
         Ok(saved)
-    }
-
-    /// 这次连上的是刚配对的服务器：资料还没填就提示一次。取不到时不提示，也不算错：要用资料的时候安装页还会让主人填。
-    pub(super) fn prompt_owner_profile_if_empty(self: &Arc<Self>) {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let link = self.clone();
-        self.runtime.spawn(async move {
-            let profile = match link.owner_profile().await {
-                Ok(profile) => profile,
-                Err(e) => {
-                    tracing::info!("取不到资料，这次不提示：{e}");
-                    return;
-                }
-            };
-            if link.is_current(generation)
-                && profile.display_name.is_none()
-                && profile.email.is_none()
-            {
-                link.view
-                    .send_modify(|view| view.owner_profile_prompt = true);
-            }
-        });
     }
 }

@@ -314,7 +314,6 @@ fn interface_types_round_trip_through_json() {
             free_bytes: 200,
         }),
         storage_problem: None,
-        owner_profile_prompt: true,
         takeover: Some(PluginTakeover {
             id: "app.memos".into(),
             state: TakeoverState::Lost {

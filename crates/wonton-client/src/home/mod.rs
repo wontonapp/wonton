@@ -12,7 +12,7 @@ mod storage;
 mod ticket;
 
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -70,8 +70,6 @@ pub(crate) struct HomeLink {
     ticket: std::sync::Mutex<Option<String>>,
     /// 当前连接信息里核心自己的地址，聊天从这里取 Matrix 登录令牌。
     core_url: std::sync::Mutex<Option<Url>>,
-    /// 刚换上一份新的连接信息（配对），还没连上过。App 重启后按存下的连接信息重连不算。
-    freshly_linked: AtomicBool,
     /// 当前的连接。换服务器时整个替换；锁保证同一时刻只有一次建连或检查。
     link: Mutex<Option<Link>>,
     tracker: std::sync::Mutex<Tracker>,
@@ -124,7 +122,6 @@ impl HomeLink {
             view,
             ticket: std::sync::Mutex::new(None),
             core_url: std::sync::Mutex::new(None),
-            freshly_linked: AtomicBool::new(false),
             link: Mutex::new(None),
             tracker: std::sync::Mutex::default(),
             recount: watch::Sender::new(()),
@@ -158,14 +155,8 @@ impl HomeLink {
             return Ok(());
         }
         self.storage.save_ticket(text)?;
-        self.freshly_linked.store(true, Ordering::SeqCst);
         self.start(text.to_owned(), ticket);
         Ok(())
-    }
-
-    /// 这次连上是不是刚配对后的第一次，问过就不算了。
-    pub(crate) fn take_freshly_linked(&self) -> bool {
-        self.freshly_linked.swap(false, Ordering::SeqCst)
     }
 
     /// `AppForegrounded`：在后台检查连接，必要时重连。

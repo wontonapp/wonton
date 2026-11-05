@@ -142,9 +142,6 @@ pub enum Action {
     /// 主人没有确认，什么都不改。
     DismissEgressConfirmation,
 
-    /// 主人关掉了配对后弹出的填资料页面（[`PluginsViewModel::owner_profile_prompt`](crate::PluginsViewModel::owner_profile_prompt)）。
-    DismissOwnerProfilePrompt,
-
     // 新用户引导（ADR-0034）。网络操作都在后台执行，进展和结果在 `OnboardingViewModel` 里。
     /// 取引导的状态、推荐清单和服务商列表。
     RefreshOnboarding,
