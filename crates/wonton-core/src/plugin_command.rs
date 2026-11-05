@@ -8,6 +8,7 @@
 //!   文件按 sha256 放进 `blobs/`，同一个来源的旧条目换掉。插件包目录要是那个提交的检出：核心不连 Git，不核对。
 //! - `plugin host [插件包目录]`：这台主机实际有什么（内存、系统、架构、显卡），JSON 写到标准输出，读不出来的项写明原因。
 //!   和判断插件的“要求”时用的是同一份。给了插件包时还有它的要求逐条的判断和装不了的原因。
+//! - `plugin check-index <index.json>`：官方索引里的每一项这个版本的核心都读得懂，CI 用它防止改了清单写法后商店变空。
 //!
 //! 通过时退出码 0；插件包不合格时 1；用法不对时 2。
 
@@ -21,13 +22,14 @@ use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::image_worker::ImageWorker;
 use wonton_core::plugin::names::Instance;
-use wonton_core::plugin::storefront::index::IndexEntry;
+use wonton_core::plugin::storefront::index::{Index, IndexEntry};
 use wonton_core::plugin::{host_check, host_facts};
 
 const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--official]\n      \
                      wonton-core plugin pack <插件包目录> > 插件包.tar\n      \
                      wonton-core plugin index-entry <插件包目录> <github:owner/repo> <提交号> [--index <索引目录>]\n      \
-                     wonton-core plugin host [插件包目录]";
+                     wonton-core plugin host [插件包目录]\n      \
+                     wonton-core plugin check-index <index.json>";
 
 pub async fn run(args: &[String]) -> ExitCode {
     match args {
@@ -37,6 +39,9 @@ pub async fn run(args: &[String]) -> ExitCode {
         [command] if command == "host" => host(None).await,
         [command, dir] if command == "host" && !dir.starts_with('-') => {
             host(Some(Path::new(dir))).await
+        }
+        [command, path] if command == "check-index" && !path.starts_with('-') => {
+            check_index(Path::new(path))
         }
         _ => usage(),
     }
@@ -145,6 +150,27 @@ fn pack(dir: &Path) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn check_index(path: &Path) -> ExitCode {
+    let index = std::fs::read(path)
+        .map_err(|e| e.to_string())
+        .and_then(|json| Index::parse(&json).map_err(|e| e.to_string()));
+    let index = match index {
+        Ok(index) => index,
+        Err(e) => {
+            eprintln!("读不了 {}：{e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    for plugin in &index.skipped {
+        eprintln!("读不懂 {}：{}", plugin.source, plugin.reason);
+    }
+    if !index.skipped.is_empty() {
+        return ExitCode::FAILURE;
+    }
+    println!("{} 个插件都读得懂", index.plugins.len());
+    ExitCode::SUCCESS
 }
 
 fn index_entry(args: &[String]) -> ExitCode {

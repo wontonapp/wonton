@@ -69,3 +69,7 @@ jobs:
       - name: Docker 集成测试（标了 #[ignore] 的都是）
         # 参数和上一步相同，不再编译。
         run: cargo test --workspace --locked -- --ignored
+      - name: 官方索引里的清单这份核心都读得懂
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+          cargo run -q -p wonton-core --locked -- plugin check-index "$RUNNER_TEMP/index.json"
