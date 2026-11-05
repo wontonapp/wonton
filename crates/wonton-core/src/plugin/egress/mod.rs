@@ -40,8 +40,13 @@ const NODE_SWITCH: (&str, &str) = ("NODE_USE_ENV_PROXY", "1");
 
 /// 不走代理的地址，放在 `NO_PROXY` 的两头：中间是核心的身份提供方和本插件的服务名。
 const NO_PROXY_LOOPBACK: &str = "localhost,127.0.0.1,::1,.wonton.internal";
+/// 私有网段只写 IPv4。IPv6 网段（`fc00::/7`、`fe80::/10`）带冒号，httpx 把 NO_PROXY 条目转成挂载键时给
+/// IPv6 加方括号，`fc00::/7` 变成 `all://[fc00::/7]`，建客户端解析这个键就报 `InvalidURL: Invalid port: ':'`
+/// 崩掉（Immich 机器学习下载模型就是这样 500 的，httpx 0.28.1 实测），也没有一种所有客户端都认的 IPv6
+/// 网段写法（`[::1]` 在 curl 里反而不匹配）。删掉后这些网段的目标发给出口容器，被它的拒绝名单挡回 403，
+/// 和本来就不认网段的 httpx、aiohttp、Node、wget 一样（curl、requests、Go 从直连变成 403）。
 const NO_PROXY_PRIVATE: &str = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
-                                172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
+                                172.16.0.0/12,192.168.0.0/16";
 
 /// 主人配了代理时，注入给出网插件的内容。没配代理时没有它，插件和没有这个功能时一样直连。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,9 +132,24 @@ mod tests {
         assert_eq!(value(&env, "NODE_USE_ENV_PROXY"), Some("1"));
         let expected = "localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.example,web,db,\
                         .local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
-                        172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10";
+                        172.16.0.0/12,192.168.0.0/16";
         assert_eq!(value(&env, "NO_PROXY"), Some(expected));
         assert_eq!(value(&env, "no_proxy"), Some(expected));
+    }
+
+    #[test]
+    fn no_proxy_has_no_ipv6_cidr_entries() {
+        // httpx 把 NO_PROXY 条目转成挂载键，IPv6 加方括号：`fc00::/7` 变成 `all://[fc00::/7]`，
+        // 建客户端解析就崩（httpx 0.28.1 实测）。NO_PROXY 里带前缀长度的条目只能是 IPv4。
+        let all = format!("{NO_PROXY_LOOPBACK},{NO_PROXY_PRIVATE}");
+        for entry in all.split(',') {
+            if let Some((addr, _)) = entry.split_once('/') {
+                assert!(
+                    addr.parse::<std::net::Ipv4Addr>().is_ok(),
+                    "{entry} 不是 IPv4 网段，httpx 会崩"
+                );
+            }
+        }
     }
 
     #[test]
