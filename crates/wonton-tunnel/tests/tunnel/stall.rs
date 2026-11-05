@@ -10,7 +10,10 @@ use std::{
 };
 
 use iroh::{EndpointAddr, SecretKey};
-use tokio::{net::UdpSocket, task::JoinHandle};
+use tokio::{
+    net::UdpSocket,
+    task::{JoinHandle, JoinSet},
+};
 use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelError, TunnelStatus};
 
 use crate::support::{Home, Phone, Timeouts, Upstream, endpoint_on};
@@ -20,11 +23,12 @@ const DEADLINE: Duration = Duration::from_secs(1);
 /// 连接活着的测试用：机器忙时一次往返也可能超过 [`DEADLINE`]，那会被当成卡住换掉连接。
 const PATIENT: Duration = Duration::from_secs(30);
 
-/// 手机和服务端之间的一段 UDP 转发，可以丢包。
+/// 手机和服务端之间的一段 UDP 转发，可以丢包或延迟。
 struct Flaky {
     addr: SocketAddr,
     /// 大于这么多字节的包丢掉。
     limit: Arc<AtomicUsize>,
+    delay_ms: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
@@ -33,37 +37,50 @@ const DROP_ALL: usize = 0;
 
 impl Flaky {
     async fn start(target: SocketAddr) -> Self {
-        let front = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
-        let back = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let front = Arc::new(UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap());
+        let back = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
         let addr = front.local_addr().unwrap();
         let limit = Arc::new(AtomicUsize::new(PASS));
         let shared = limit.clone();
+        let delay_ms = Arc::new(AtomicUsize::new(0));
+        let delay = delay_ms.clone();
         let task = tokio::spawn(async move {
             let mut phone = None;
             let (mut up, mut down) = (vec![0u8; 65536], vec![0u8; 65536]);
+            let mut delayed = JoinSet::new();
             loop {
                 tokio::select! {
                     received = front.recv_from(&mut up) => {
                         let (len, from) = received.unwrap();
                         phone = Some(from);
                         if len <= shared.load(Ordering::SeqCst) {
-                            back.send_to(&up[..len], target).await.ok();
+                            forward_packet(&mut delayed, &back, target, &up[..len], &delay).await;
                         }
                     }
                     received = back.recv_from(&mut down) => {
                         let (len, _) = received.unwrap();
                         if let Some(phone) = phone && len <= shared.load(Ordering::SeqCst) {
-                            front.send_to(&down[..len], phone).await.ok();
+                            forward_packet(&mut delayed, &front, phone, &down[..len], &delay).await;
                         }
                     }
+                    Some(result) = delayed.join_next() => { result.unwrap(); }
                 }
             }
         });
-        Self { addr, limit, task }
+        Self {
+            addr,
+            limit,
+            delay_ms,
+            task,
+        }
     }
 
     fn drop_above(&self, bytes: usize) {
         self.limit.store(bytes, Ordering::SeqCst);
+    }
+
+    fn delay_each_way(&self, millis: usize) {
+        self.delay_ms.store(millis, Ordering::SeqCst);
     }
 }
 
@@ -71,6 +88,26 @@ impl Drop for Flaky {
     fn drop(&mut self) {
         self.task.abort();
     }
+}
+
+async fn forward_packet(
+    delayed: &mut JoinSet<()>,
+    socket: &Arc<UdpSocket>,
+    target: SocketAddr,
+    bytes: &[u8],
+    delay: &AtomicUsize,
+) {
+    let millis = delay.load(Ordering::SeqCst);
+    if millis == 0 {
+        socket.send_to(bytes, target).await.ok();
+        return;
+    }
+    let socket = socket.clone();
+    let bytes = bytes.to_vec();
+    delayed.spawn(async move {
+        tokio::time::sleep(Duration::from_millis(millis as u64)).await;
+        socket.send_to(&bytes, target).await.ok();
+    });
 }
 
 /// 手机只绑 IPv6，服务端只绑 IPv4，两边只能经 [`Flaky`] 互通：服务端会经 QUIC 把自己绑定的地址告诉手机，同一族的话手机
@@ -170,4 +207,68 @@ async fn probing_a_live_connection_keeps_it() {
     assert_eq!(phone.get("/after").await.status, 200);
     let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
     assert_eq!(opened.get(), 1);
+}
+
+#[tokio::test]
+async fn revalidating_a_proven_slow_path_keeps_the_connection() {
+    let (_upstream, home, flaky, phone) = rig().await;
+    assert_eq!(phone.get("/before").await.status, 200);
+    flaky.delay_each_way(900);
+    for _ in 0..2 {
+        phone.client.probe(PATIENT).await.unwrap();
+    }
+
+    phone.client.revalidate().await.unwrap();
+
+    assert_eq!(
+        home.server()
+            .endpoint()
+            .metrics()
+            .socket
+            .num_conns_opened
+            .get(),
+        1
+    );
+    assert_eq!(phone.get("/after").await.body, "/after");
+}
+
+#[tokio::test]
+async fn a_proven_slow_path_is_still_replaced_when_it_dies() {
+    let (_upstream, home, flaky, phone) = rig().await;
+    assert_eq!(phone.get("/before").await.status, 200);
+    flaky.delay_each_way(900);
+    for _ in 0..2 {
+        phone.client.probe(PATIENT).await.unwrap();
+    }
+    flaky.delay_each_way(0);
+    flaky.drop_above(DROP_ALL);
+    let mut status = phone.client.watch_status();
+    let client = phone.client.clone();
+    let revalidating = tokio::spawn(async move { client.revalidate().await });
+
+    // 不等 QUIC 的 30 秒空闲超时；看到主动重拨再恢复网络，而不是猜握手何时开始。
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        status.wait_for(|s| *s == TunnelStatus::Connecting),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    flaky.drop_above(PASS);
+    tokio::time::timeout(PATIENT, revalidating)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        home.server()
+            .endpoint()
+            .metrics()
+            .socket
+            .num_conns_opened
+            .get(),
+        2
+    );
+    assert_eq!(phone.get("/after").await.body, "/after");
 }

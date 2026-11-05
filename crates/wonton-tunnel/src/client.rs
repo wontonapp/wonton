@@ -119,10 +119,12 @@ impl fmt::Display for PathKind {
     }
 }
 
-/// 回到前台时等现有连接回应的时限。这段时间里新的请求都在等检查结果，所以取得短：直连往返通常几十毫秒，
-/// n0 中继的往返 P90 约 1 秒（ADR-0004 实测）。偶尔把慢的连接误判成失效，代价只是重连一次。挂起后
-/// QUIC 的往返时间估计会被挂起期间积压的确认拉高，不能拿来定时限。
+/// 快直连的前台检查窗口。不使用 QUIC RTT：挂起期间积压的确认会把它拉高。
 const REVALIDATE_DEADLINE: Duration = Duration::from_millis(1500);
+/// ADR-0004 的历史中继往返在负载下到过 2.8 秒；未证实慢时不让死连接白等 8 秒。
+const RELAY_REVALIDATE_DEADLINE: Duration = Duration::from_secs(3);
+/// 连续两次主动检查都超过短窗口的路径，沿用定时 probe 的耐心。
+const SLOW_REVALIDATE_DEADLINE: Duration = Duration::from_secs(8);
 /// 一次建连最长这么久。n0 中继冷启动的 P90 约 5.5 秒（ADR-0004）；不设时要等 QUIC 的 30 秒超时，网络恢复时
 /// 还卡在这次注定失败的握手上（ADR-0032 的改前实测：恢复后 32 秒才连上）。
 const DIAL_DEADLINE: Duration = Duration::from_secs(12);
@@ -147,6 +149,32 @@ struct Inner {
     stats: Mutex<TunnelStats>,
     /// 服务端确认过的连接：没确认就断开的（比如被拒绝）要退避，确认过的断开了可以马上重连。
     confirmed: Mutex<Option<usize>>,
+    slow_path: Mutex<Option<SlowPath>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct CheckedPath {
+    conn_id: usize,
+    remote: TransportAddr,
+    relay: bool,
+}
+
+impl CheckedPath {
+    fn selected(conn: &Connection) -> Option<Self> {
+        let paths = conn.paths();
+        let path = paths.iter().find(|path| path.is_selected())?;
+        Some(Self {
+            conn_id: conn.stable_id(),
+            remote: path.remote_addr().clone(),
+            relay: path.is_relay(),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct SlowPath {
+    path: CheckedPath,
+    samples: u8,
 }
 
 /// 一次建连，或者回到前台时的一次确认。结果留在 watch 里，任务被取消时发送端丢弃，等的人重新取一次。
@@ -219,6 +247,7 @@ impl TunnelClient {
                 pacing: Mutex::default(),
                 stats: Mutex::default(),
                 confirmed: Mutex::new(None),
+                slow_path: Mutex::new(None),
             }),
         }
     }
@@ -289,9 +318,17 @@ impl TunnelClient {
         let Some(conn) = self.inner.live_connection() else {
             return self.ping().await;
         };
+        let path = CheckedPath::selected(&conn);
         let started = Instant::now();
         match tokio::time::timeout(deadline, self.ping_on(&conn)).await {
-            Ok(result) => result.map(|()| started.elapsed()),
+            Ok(Ok(())) => {
+                let elapsed = started.elapsed();
+                if self.inner.is_current(conn.stable_id()) && path == CheckedPath::selected(&conn) {
+                    self.record_checked_path(path, elapsed);
+                }
+                Ok(elapsed)
+            }
+            Ok(Err(err)) => Err(err),
             Err(_) => {
                 info!(?deadline, "现有连接限时内没有回应，断开");
                 let err = TunnelError::transport("连接限时内没有回应");
@@ -302,6 +339,31 @@ impl TunnelClient {
                 Err(err)
             }
         }
+    }
+
+    fn record_checked_path(&self, path: Option<CheckedPath>, elapsed: Duration) {
+        let mut proof = lock(&self.inner.slow_path);
+        let Some(path) = path.filter(|_| elapsed >= REVALIDATE_DEADLINE) else {
+            *proof = None;
+            return;
+        };
+        match proof.as_mut() {
+            Some(previous) if previous.path == path => {
+                previous.samples = previous.samples.saturating_add(1).min(2);
+            }
+            _ => *proof = Some(SlowPath { path, samples: 1 }),
+        }
+    }
+
+    fn revalidate_deadline(&self, conn: &Connection) -> Duration {
+        let Some(path) = CheckedPath::selected(conn) else {
+            return REVALIDATE_DEADLINE;
+        };
+        let slow = lock(&self.inner.slow_path);
+        let proven_slow = slow
+            .as_ref()
+            .is_some_and(|proof| proof.path == path && proof.samples == 2);
+        revalidation_window(path.relay, proven_slow)
     }
 
     /// 别等了，马上重试：清零退避，取消正在进行的建连。回到前台、网络变化、主人点“重试”时调用。
@@ -404,10 +466,11 @@ impl TunnelClient {
 
     /// 限时在 `conn` 上做一次往返；没有回应或已经出错，就关掉它，建一条新连接。
     async fn confirm_or_replace(self, conn: Connection) -> Result<Connection, TunnelError> {
-        match tokio::time::timeout(REVALIDATE_DEADLINE, self.ping_on(&conn)).await {
+        let deadline = self.revalidate_deadline(&conn);
+        match tokio::time::timeout(deadline, self.ping_on(&conn)).await {
             Ok(Ok(())) => return Ok(conn),
             Ok(Err(err)) => info!("现有连接不可用，重新建连：{err}"),
-            Err(_) => info!(deadline = ?REVALIDATE_DEADLINE, "现有连接限时内没有回应，换新连接"),
+            Err(_) => info!(?deadline, "现有连接限时内没有回应，换新连接"),
         }
         conn.close(CLOSE_NORMAL, b"no response");
         self.inner.clone().dial().await
@@ -610,4 +673,33 @@ async fn open_stream(conn: &Connection, request: Request) -> Result<TunnelStream
         recv,
         conn_id: conn.stable_id(),
     })
+}
+
+fn revalidation_window(relay: bool, proven_slow: bool) -> Duration {
+    match (relay, proven_slow) {
+        (_, true) => SLOW_REVALIDATE_DEADLINE,
+        (true, false) => RELAY_REVALIDATE_DEADLINE,
+        (false, false) => REVALIDATE_DEADLINE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::revalidation_window;
+    use std::time::Duration;
+
+    #[test]
+    fn revalidation_balances_dead_relay_recovery_and_proven_slow_paths() {
+        for (relay, slow, millis) in [
+            (false, false, 1500),
+            (true, false, 3000),
+            (false, true, 8000),
+            (true, true, 8000),
+        ] {
+            assert_eq!(
+                revalidation_window(relay, slow),
+                Duration::from_millis(millis)
+            );
+        }
+    }
 }
