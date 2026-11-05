@@ -43,7 +43,12 @@ import kotlinx.coroutines.launch
 
 /** 安装、升级的确认页：原样显示家里的服务器给的预览，确认后把这份预览交回核心，授予的就是这里列出的权限。 */
 @Composable
-fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation, onClose: () -> Unit) {
+fun InstallConfirmScreen(
+    plugins: PluginsState,
+    confirmation: PluginConfirmation,
+    onAccepted: (() -> Unit)? = null,
+    onClose: () -> Unit,
+) {
     val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
@@ -104,7 +109,11 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                         previousTask = plugins.viewModel.tasks.firstOrNull { task -> task.id == shown.id }
                         rejection = plugins.core.send(action)
                         if (rejection == null) {
-                            if (isUpgrade) onClose() else submittedId = shown.id
+                            when {
+                                onAccepted != null -> onAccepted()
+                                isUpgrade -> onClose()
+                                else -> submittedId = shown.id
+                            }
                         }
                     },
                     Modifier.windowInsetsPadding(WindowInsets.navigationBars)
@@ -163,6 +172,7 @@ private fun InstallCompletion(
             }
             plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
             if (succeeded && installed != null) PluginTabPinButton(installed)
+            if (succeeded) OnboardingTipNotice(app.wonton.protocol.OnboardingTip.APP_INSTALLED)
             WontonButton(tabText("完成", "Done"), onClose)
         }
     }

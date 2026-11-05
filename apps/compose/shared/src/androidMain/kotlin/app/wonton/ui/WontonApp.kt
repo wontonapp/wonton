@@ -70,8 +70,10 @@ fun WontonApp(
         CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft) {
             PluginsEffects(plugins)
             OpenDevWebEffect(devWebUrl, plugins, tabs)
-            AppContent(navigation, home, appearance, chatView)
-            tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
+            OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
+                AppContent(navigation, home, appearance, chatView)
+                tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
+            }
             plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
         }
     }
@@ -94,6 +96,15 @@ private class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
         settingsOverlay = false
         tabs.send(Action.SelectTab(TabRef.Chat))
         chat.openWhenJoined(tabs.core, roomId)
+    }
+
+    fun finishOnboarding(peer: String?) {
+        settingsOverlay = false
+        chat.closeRoom()
+        chat.showingBackup = false
+        chat.startingChat = false
+        tabs.send(Action.SelectTab(TabRef.Chat))
+        if (peer != null) tabs.plugins.reject(chat.openDirectChat(tabs.core, peer))
     }
 
     fun settings(page: SettingsSubpage = SettingsSubpage.MAIN) {
@@ -132,10 +143,9 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
     val tabs = nav.tabs
     val view = tabs.viewModel
     val draft = LocalTabDraft.current
-    val profile = tabs.plugins.viewModel.ownerProfilePrompt
     val shown = view.overlay?.tab ?: view.selected
-    val native = shown !is TabRef.Plugin || nav.settingsOverlay || profile
-    val showsBar = !WindowInsets.isImeVisible && !nav.hidesBar() && view.overlay == null && !profile
+    val native = shown !is TabRef.Plugin || nav.settingsOverlay
+    val showsBar = !WindowInsets.isImeVisible && !nav.hidesBar() && view.overlay == null
     var reselected by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -163,7 +173,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
                         onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
                     )
                     if (native) Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
-                        NativeContent(nav, home, appearance, chat, profile, nativeState)
+                        NativeContent(nav, home, appearance, chat, nativeState)
                     }
                     OpeningChat(nav.chat)
                 }
@@ -183,10 +193,9 @@ private fun OpeningChat(chat: ChatNavigation) {
 @Composable
 private fun NativeContent(
     nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel,
-    chat: ChatViewModel, profile: Boolean, holder: SaveableStateHolder,
+    chat: ChatViewModel, holder: SaveableStateHolder,
 ) {
-    if (profile) OwnerProfilePage(nav.tabs.plugins) { nav.tabs.send(Action.DismissOwnerProfilePrompt) }
-    else holder.SaveableStateProvider(nav.tabs.viewModel.selected.toString()) {
+    holder.SaveableStateProvider(nav.tabs.viewModel.selected.toString()) {
         NativeTab(nav, home, appearance, chat)
     }
 }
@@ -233,7 +242,10 @@ private fun WithPendingCards(
     cards: List<PendingConfirmation>, onOpen: (String) -> Unit, content: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        if (cards.isNotEmpty()) PendingCardBanner(cards, onOpen)
+        if (cards.isNotEmpty()) {
+            PendingCardBanner(cards, onOpen)
+            OnboardingTipNotice(app.wonton.protocol.OnboardingTip.CONFIRMATION_CARD)
+        }
         val below = if (cards.isNotEmpty()) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier
         Box(below.weight(1f).fillMaxSize()) { content() }
     }

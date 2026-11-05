@@ -298,7 +298,7 @@ private fun webViewSupportsTabs(): Boolean = listOf(
 ).all(WebViewFeature::isFeatureSupported)
 
 @Composable
-private fun externalLinkOpener(onFailure: (Problem) -> Unit): (String) -> Unit {
+internal fun externalLinkOpener(onFailure: (Problem) -> Unit): (String) -> Unit {
     val context = LocalContext.current
     val title = tabText("打不开浏览器", "Cannot open the browser")
     return { url ->

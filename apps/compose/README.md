@@ -57,6 +57,16 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
 
+## 新用户引导
+
+配对后的四步引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)。进度存在家里的服务器；
+验证首次体验时使用没有 `core/onboarding.json` 的独立开发数据目录，重看则从设置进入，不删除既有应用或模型配置。
+安装确认后即可继续，不等待镜像下载；完成时核心还没有给出默认 Agent 的聊天身份，就留在聊天列表。
+
+服务商 key 不进入 Android 的可恢复状态，不提供自动填充保存或输入法个性化学习，发出保存操作后清空输入框。
+“更多服务商”在同页展开核心给出的其余服务商；列表为空时才提供网关网页入口，经已有 WebView 的隧道代理打开。
+取 key 的厂商链接交给系统浏览器。
+
 ## 插件标签页
 
 固定页和未固定的页面共用 WebView 容器。只在首次打开时创建；切换底栏保留网页历史和滚动位置，重选回到顶部。

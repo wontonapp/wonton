@@ -82,6 +82,7 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> 
     val spacing = WontonTheme.spacing
     val size = WontonTheme.size
     val isEmpty = draft.isBlank()
+    OnboardingChatPrompts(roomId)
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
         WontonIconButton(WontonIcon.Attach, "附件", { isChoosingAttachment = true })
         ComposerField(

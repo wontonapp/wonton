@@ -138,6 +138,7 @@ private fun SettingsScreen(
         }
         onOpenProfile?.let {
             WontonGroup { WontonRow("你的资料", showsForward = true, onClick = it) }
+            OnboardingSettingsRows()
         }
         WontonGroup {
             WontonRow("聊天记录备份", recovery.backupValue, showsForward = true, onClick = onOpenBackup)

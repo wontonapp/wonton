@@ -85,7 +85,7 @@ fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Comp
 
 /** 卸载前确认：可以保留数据，也可以连数据一起删。 */
 @Composable
-private fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDismiss: () -> Unit) {
+internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDismiss: () -> Unit) {
     val uninstall = { deleteData: Boolean ->
         onDismiss()
         plugins.send(Action.UninstallPlugin(target.id, deleteData))

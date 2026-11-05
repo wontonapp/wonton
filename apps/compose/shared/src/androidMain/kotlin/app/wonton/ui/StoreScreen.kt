@@ -34,7 +34,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
-import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
@@ -351,7 +350,7 @@ private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: Plug
     val installed = item.installedVersion
     val entry = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.entries?.firstOrNull()
     return when {
-        viewModel.tasks.any { it.id == item.id && it.state is PluginTaskState.Running } -> StoreButton.Busy
+        viewModel.hasRunningTask(item.id) -> StoreButton.Busy
         installed == null -> StoreButton.Get("获取", item.blocked == null) {
             navigation.confirmation = PluginConfirmation.Install(item.source)
         }

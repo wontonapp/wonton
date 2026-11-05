@@ -14,6 +14,8 @@ import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginState
+import app.wonton.protocol.PluginTaskState
+import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.TabRef
@@ -101,6 +103,9 @@ val InstalledPlugin.isBusy: Boolean
         is PluginState.Installing, is PluginState.Upgrading, is PluginState.Uninstalling -> true
         else -> false
     }
+
+internal fun PluginsViewModel.hasRunningTask(id: String): Boolean =
+    tasks.any { it.id == id && it.state is PluginTaskState.Running }
 
 /** 插件详情页：商店里的（来源最新的版本）或者装着的。 */
 sealed interface PluginRoute {

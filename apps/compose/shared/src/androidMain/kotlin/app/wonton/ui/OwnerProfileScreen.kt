@@ -1,7 +1,6 @@
 package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,17 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.OwnerProfile
 import app.wonton.protocol.OwnerProfileUpdate
 import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonPushedBar
-import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
-import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.WontonIcon
@@ -70,7 +63,11 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
                 when {
                     result == null -> LoadingView()
                     result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
-                    profile != null -> ProfileForm(profile, name, { name = it }, email, { email = it }, problem)
+                    profile != null -> OwnerProfileForm(
+                        profile, name, { name = it }, email, { email = it }, problem,
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                            .padding(WontonTheme.spacing.pageInset),
+                    )
                 }
             }
             if (profile != null) {
@@ -94,46 +91,5 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ProfileForm(
-    profile: OwnerProfile,
-    name: String,
-    onName: (String) -> Unit,
-    email: String,
-    onEmail: (String) -> Unit,
-    problem: Problem?,
-) {
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
-        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
-    ) {
-        DetailSection("名字") {
-            WontonTextField(
-                name,
-                onName,
-                Modifier.fillMaxWidth(),
-                label = "名字",
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-            )
-        }
-        DetailSection("邮箱") {
-            WontonTextField(
-                email,
-                onEmail,
-                Modifier.fillMaxWidth(),
-                placeholder = "me@example.com",
-                label = "邮箱",
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Email,
-                ),
-            )
-        }
-        problem?.let { ProblemNotice(it) }
-        WontonGroup { WontonRow("用户名", profile.username) }
     }
 }
