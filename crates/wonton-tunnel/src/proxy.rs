@@ -32,7 +32,7 @@ use crate::{
 /// 和 `bad-request`（请求头不合法或太大）。
 pub const ERROR_HEADER: &str = "x-wonton-tunnel-error";
 
-/// 回完错误响应后，最多再花这么久读掉客户端没发完的请求，再关闭连接。
+/// 响应结束后，最多再花这么久收尾客户端没发完的请求，避免空闲写端长期占住流。
 const LINGER: Duration = Duration::from_secs(2);
 
 /// accept 出错（例如文件描述符耗尽）后暂停多久再继续，避免空转。
@@ -175,29 +175,35 @@ async fn relay(
         recv,
         conn_id,
     } = stream;
-    let mut upload = pin!(forward::tcp_to_tunnel(tcp_read, send));
-    let mut download = pin!(download(client, recv, *conn_id, tcp_write));
-    let mut upload_done = false;
-    loop {
-        tokio::select! {
-            result = &mut upload, if !upload_done => {
-                upload_done = true;
-                if let Err(PumpError::Tcp(err)) = result {
-                    return Err(RelayError::Aborted(PumpError::Tcp(err)));
+    {
+        let mut upload = pin!(forward::tcp_to_tunnel(tcp_read, send));
+        let mut download = pin!(download(client, recv, *conn_id, tcp_write));
+        let mut upload_done = false;
+        loop {
+            tokio::select! {
+                result = &mut upload, if !upload_done => {
+                    upload_done = true;
+                    if let Err(PumpError::Tcp(err)) = result {
+                        return Err(RelayError::Aborted(PumpError::Tcp(err)));
+                    }
                 }
-            }
-            result = &mut download => {
-                result?;
-                debug!(upload_done, "服务端已回完");
-                if !upload_done {
-                    // 服务端已经回完；等本地客户端读到 EOF 后关掉它那一侧。
-                    upload.await.map_err(RelayError::Aborted)?;
+                result = &mut download => {
+                    result?;
+                    if !upload_done {
+                        match tokio::time::timeout(LINGER, &mut upload).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(err)) => debug!("响应已结束，上传收尾中断：{err}"),
+                            Err(_) => debug!("响应已结束，不再等待客户端 EOF"),
+                        }
+                    }
+                    break;
                 }
-                debug!("本地连接结束");
-                return Ok(());
             }
         }
     }
+    // 下载已正常结束，不再让迟到的上传错误 reset 响应；取消 pump 后结束剩余发送方向。
+    send.finish().ok();
+    Ok(())
 }
 
 async fn download(

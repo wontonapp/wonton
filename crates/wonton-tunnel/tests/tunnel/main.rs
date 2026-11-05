@@ -3,6 +3,7 @@
 
 mod embedded;
 mod forwarding;
+mod lifecycle;
 mod local_proxy;
 mod pacing;
 mod pairing;
