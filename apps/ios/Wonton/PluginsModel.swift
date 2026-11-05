@@ -23,14 +23,16 @@ final class PluginsModel {
         viewModel = core.plugins()
     }
 
+    func isWorking(on id: String) -> Bool {
+        viewModel.tasks.contains { $0.id == id && $0.state == .running }
+    }
+
     /// 失败的任务里，插件包在确认之后变了的要重新确认。
-    func reconfirmation(for task: PluginTask) -> PluginConfirmation? {
+    func reconfirmation(for task: PluginTask, source: String? = nil) -> PluginConfirmation? {
         switch task.operation {
         case .install:
-            let item = viewModel.store.flatMap { store in
-                store.allPlugins.first { $0.id == task.id }
-            }
-            return item.map { .install(source: $0.source) }
+            let source = source ?? viewModel.store?.allPlugins.first { $0.id == task.id }?.source
+            return source.map { .install(source: $0) }
         case .upgrade:
             return .upgrade(id: task.id)
         case .uninstall:

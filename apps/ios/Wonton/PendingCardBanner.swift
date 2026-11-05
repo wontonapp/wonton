@@ -7,6 +7,7 @@ struct PendingCardBanner: View {
     let open: (String) -> Void
 
     @Environment(\.wontonColors) private var colors
+    @Environment(OnboardingModel.self) private var onboarding
 
     var body: some View {
         Button {
@@ -33,6 +34,9 @@ struct PendingCardBanner: View {
             }
         }
         .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)
+        if let tip = onboarding.viewModel.tips.confirmationCard {
+            OnboardingTipView(text: tip) { onboarding.send(.dismissOnboardingTip(tip: .confirmationCard)) }
+        }
     }
 
     /// 只有一张卡片时说是什么事。

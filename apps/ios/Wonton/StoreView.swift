@@ -164,7 +164,7 @@ struct StoreView: View {
 
     /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载时转圈。
     private func button(for item: StoreItem) -> StoreButton {
-        if model.viewModel.tasks.contains(where: { $0.id == item.id && $0.state == .running }) {
+        if model.isWorking(on: item.id) {
             return .busy
         }
         guard let version = item.installedVersion else {

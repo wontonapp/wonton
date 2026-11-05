@@ -39,6 +39,7 @@ struct SettingsView: View {
     let chat: ChatModel
     let editProfile: (() -> Void)?
     @Environment(\.wontonColors) private var colors
+    @Environment(OnboardingModel.self) private var onboarding
     @State private var showsMoreColors: Bool
     @State private var hexText: String
     @State private var isHexInvalid = false
@@ -67,6 +68,7 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    OnboardingSettings(model: onboarding)
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.chatBackup) {

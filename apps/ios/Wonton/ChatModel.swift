@@ -72,7 +72,7 @@ final class ChatModel {
         appendDraft(text, to: roomId)
     }
 
-    private func appendDraft(_ text: String, to roomId: String) {
+    func appendDraft(_ text: String, to roomId: String) {
         let existing = drafts[roomId, default: ""]
         drafts[roomId] = existing.isEmpty ? text : existing + "\n" + text
     }

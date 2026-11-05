@@ -6,12 +6,16 @@ struct InstallCompletionView: View {
     let pluginId: String
     let close: () -> Void
     let review: () -> Void
+    @Environment(OnboardingModel.self) private var onboarding
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s16) {
             if let task = model.viewModel.tasks.first(where: { $0.id == pluginId }) {
                 TaskRow(model: model, task: task, review: review, showsDismiss: false)
                 if task.state == .succeeded {
+                    if let tip = onboarding.viewModel.tips.appInstalled {
+                        OnboardingTipView(text: tip) { onboarding.send(.dismissOnboardingTip(tip: .appInstalled)) }
+                    }
                     if let plugin = model.viewModel.installed?.plugins.first(where: { $0.id == pluginId }) {
                         PluginPinButton(plugin: plugin)
                     }

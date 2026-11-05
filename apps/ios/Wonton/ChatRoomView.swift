@@ -10,6 +10,7 @@ struct ChatRoomView: View {
     @State private var pin = BottomPin()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
+    @Environment(OnboardingModel.self) private var onboarding
 
     init(model: ChatModel, roomId: String, title: String) {
         self.model = model
@@ -29,6 +30,13 @@ struct ChatRoomView: View {
             }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
+                if let bot = onboarding.viewModel.primaryBotUserId,
+                   model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
+                   !onboarding.viewModel.chatPrompts.isEmpty {
+                    OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {
+                        model.appendDraft($0, to: roomId)
+                    }
+                }
                 ComposerView(model: model, roomId: roomId, pin: pin)
             }
         }

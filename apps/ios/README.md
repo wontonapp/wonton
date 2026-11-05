@@ -26,6 +26,12 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 全屏仍使用同一个 WebView；关闭目标由核心决定。`inset` 页留在安全区内并让出胶囊，`edge-to-edge` 页读取栏高变量。
 顶部色带使用 WebKit 的 `themeColor`，未声明时使用 `canvas`；不注入 `viewport-fit=cover`。
 
+新用户引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：`OnboardingGate` 在配对后按核心的步骤接管页面，
+`Design/StepCardFrame` 和 `StepOptionRow` 只渲染导航与选项，不推算步骤。资料表单同时供设置和安装确认使用；
+模型 key 只留在密文输入框，发出操作后清空。引导的安装复用权限确认，Agent 确认后继续下一步；应用下载时可关闭完成页返回引导。
+推荐问题和网页文字共用房间草稿，只有发送按钮发送；设置可以重看引导或更换默认 Agent。
+模型列表为空时沿用已安装插件的网页容器，经配对隧道和单点登录打开；关闭网页后刷新引导。
+
 ## 构建
 
 需要 Xcode、[XcodeGen](https://github.com/yonaskolb/XcodeGen)、SwiftLint，以及 Rust 的 iOS target：

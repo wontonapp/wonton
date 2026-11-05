@@ -8,11 +8,13 @@ struct MainView: View {
     let appearance: AppearanceModel
     let devWebURL: URL?
     @State private var tabs: TabsModel
+    @State private var onboarding: OnboardingModel
     @State private var visited: Set<TabRef> = []
     @State private var isKeyboardVisible = false
     @State private var showsTabSettings = false
     @State private var showsSettings = false
     @EnvironmentObject private var orientation: FullscreenOrientation
+    @State private var onboardingGateway: TabChoice?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel, devWebURL: URL?) {
         self.chat = chat
@@ -21,21 +23,36 @@ struct MainView: View {
         self.appearance = appearance
         self.devWebURL = devWebURL
         _tabs = State(initialValue: TabsModel(core: chat.core))
+        _onboarding = State(initialValue: OnboardingModel(core: chat.core))
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if !selectedFullscreen, !pendingElsewhere.isEmpty {
-                PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
+        OnboardingGate(model: onboarding, plugins: plugins, isPaired: isPaired,
+                       finished: finishOnboarding, openGateway: openOnboardingGateway, content: {
+            VStack(spacing: 0) {
+                if !selectedFullscreen, !pendingElsewhere.isEmpty {
+                    PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
+                }
+                notices
+                pages
             }
-            notices
-            pages
-        }
+        })
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .statusBarHidden(selectedFullscreen && tabs.viewModel.overlay == nil)
         .modifier(ChatDialogs(model: chat))
         .fullScreenCover(isPresented: overlayPresented) { overlay }
-        .fullScreenCover(isPresented: isPromptingProfile) { OwnerProfileView(model: plugins) }
+        .fullScreenCover(
+            item: $onboardingGateway, onDismiss: { onboarding.send(.refreshOnboarding) }, content: { choice in
+                if let page = onboardingGatewayPage {
+                    TabPageView(tabs: tabs, home: home, plugins: plugins, appearance: appearance,
+                                tab: choice.tab, page: page, isOverlay: true, draft: receiveDraft, open: open,
+                                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom, close: {
+                        tabs.send(.closeTabOverlay)
+                        onboardingGateway = nil
+                    })
+                }
+            }
+        )
         .fullScreenCover(isPresented: $showsSettings) {
             SettingsTab(appearance: appearance, chat: chat, plugins: plugins, isPaired: isPaired, isModal: true)
         }
@@ -61,6 +78,13 @@ struct MainView: View {
             for await network in DeviceNetwork.changes() { home.send(.networkChanged(network: network)) }
         }
         .environment(tabs)
+        .environment(onboarding)
+        .onChange(of: onboarding.viewModel.step) { _, step in
+            if step == .profile { showsSettings = false; showsTabSettings = false }
+        }
+        .onChange(of: onboardingGatewayPage) { _, page in
+            if page == nil { onboardingGateway = nil }
+        }
         .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showHomeRoute)
         })
@@ -182,18 +206,21 @@ struct MainView: View {
 
     private var isPaired: Bool { home.viewModel.status != .notConfigured }
     private var overlayPresented: Binding<Bool> {
-        Binding(get: { tabs.viewModel.overlay != nil }, set: { if !$0 { tabs.send(.closeTabOverlay) } })
+        Binding(get: { tabs.viewModel.overlay != nil && onboardingGateway == nil },
+                set: { if !$0 { tabs.send(.closeTabOverlay) } })
     }
-    private var isPromptingProfile: Binding<Bool> {
-        Binding(
-            get: { plugins.viewModel.ownerProfilePrompt },
-            set: { if !$0 { plugins.send(.dismissOwnerProfilePrompt) } }
-        )
+
+    private var onboardingGatewayPage: TabPage? {
+        guard let choice = onboardingGateway else { return nil }
+        if let item = tabs.viewModel.items.first(where: { $0.tab == choice.tab }) { return item.page }
+        guard tabs.viewModel.overlay?.tab == choice.tab else { return nil }
+        return tabs.viewModel.overlay?.page
     }
 
     private func showHomeRoute(_ route: HomeRoute) {
         showsSettings = false
         showsTabSettings = false
+        onboardingGateway = nil
         tabs.select(.apps)
         home.requestedRoute = route
     }
@@ -201,9 +228,31 @@ struct MainView: View {
     private func openCardRoom(_ roomId: String) {
         showsSettings = false
         showsTabSettings = false
+        onboardingGateway = nil
         tabs.select(.chat)
         chat.visiting = nil
         chat.path = [.room(roomId)]
+    }
+
+    private func finishOnboarding(_ bot: String?) {
+        tabs.select(.chat)
+        chat.path = []
+        chat.visiting = nil
+        if let bot { chat.openDirectChat(with: bot) }
+    }
+
+    private func openOnboardingGateway(_ url: URL) {
+        // 两个核心接口的根地址可能分别带和不带末尾斜杠。
+        let gateway = url.appendingPathComponent("")
+        guard let plugin = plugins.viewModel.installed?.plugins.first(where: {
+            $0.webUrl.flatMap(URL.init(string:))?.appendingPathComponent("") == gateway
+        }),
+              let choice = plugin.tabChoices.first else {
+            onboarding.rejection = Problem(title: "找不到模型网关的网页", nextStep: "重试后再打开。")
+            return
+        }
+        onboardingGateway = choice
+        tabs.select(choice.tab)
     }
 
     private func receiveDraft(_ text: String) {

@@ -13,6 +13,7 @@ struct TabPageView: View {
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
     let openCardRoom: (String) -> Void
+    private let close: (() -> Void)?
     @State private var session: TabWebSession
     @State private var showsDetails = false
     @State private var isVisible = false
@@ -29,7 +30,8 @@ struct TabPageView: View {
         tabs: TabsModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
         tab: TabRef, page: TabPage, isOverlay: Bool,
         draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void,
-        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String) -> Void
+        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String) -> Void,
+        close: (() -> Void)? = nil
     ) {
         self.tabs = tabs
         self.home = home
@@ -42,6 +44,7 @@ struct TabPageView: View {
         self.open = open
         self.pendingCards = pendingCards
         self.openCardRoom = openCardRoom
+        self.close = close
         _session = State(initialValue: tabs.webViews.session(for: tab, core: tabs.core))
     }
 
@@ -60,7 +63,9 @@ struct TabPageView: View {
                 TabPageStateView(
                     page: page, session: session, connected: connected,
                     details: { showsDetails = true },
-                    remove: { tabs.send(isOverlay ? .closeTabOverlay : .unpinTab(tab: tab)) }
+                    remove: {
+                        if let close { close() } else { tabs.send(isOverlay ? .closeTabOverlay : .unpinTab(tab: tab)) }
+                    }
                 )
                 .padding(.top, topHeight)
                 .padding(.bottom, contentBottom)
@@ -165,7 +170,9 @@ struct TabPageView: View {
                         tabs.send(.enterFullscreen(tab: tab))
                     }
                     if isOverlay {
-                        WontonIconButton(icon: .close, label: TabText.close) { tabs.send(.closeTabOverlay) }
+                        WontonIconButton(icon: .close, label: TabText.close) {
+                            if let close { close() } else { tabs.send(.closeTabOverlay) }
+                        }
                     }
                 }
                 .padding(.horizontal, WontonTheme.spacing.s4)
