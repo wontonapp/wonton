@@ -137,42 +137,6 @@ struct PluginDetailView: View {
     }
 }
 
-/// 已装插件的开关：核心重建容器期间不能再点，失败时写原因，并重取详情（关失败时插件标为异常）。
-private struct InstalledLanWebui: View {
-    let model: PluginsModel
-    let id: String
-    let offer: LanWebuiOffer
-    let updated: (PluginDetail) -> Void
-    @State private var target: Bool?
-    @State private var problem: Problem?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            LanWebuiToggle(
-                offer: offer,
-                isOn: Binding(get: { target ?? offer.enabled }, set: { change(to: $0) })
-            )
-            .disabled(target != nil)
-            if target != nil { ProgressView() }
-            if let problem { ProblemNotice(problem: problem) }
-        }
-    }
-
-    private func change(to enabled: Bool) {
-        target = enabled
-        problem = nil
-        Task {
-            do {
-                updated(try await model.core.setLanWebui(id: id, enabled: enabled))
-            } catch {
-                problem = error.problem
-                if let detail = try? await model.core.installedPlugin(id: id) { updated(detail) }
-            }
-            target = nil
-        }
-    }
-}
-
 /// Bot 能存文件的路径（ADR-0027）。撤销只拦后面的调用，已经放进去的文件不动。
 private struct SaveGrants: View {
     let model: PluginsModel

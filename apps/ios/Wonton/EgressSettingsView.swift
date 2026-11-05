@@ -180,7 +180,7 @@ struct LanWebuiToggle: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             Toggle(isOn: $isOn) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("在局域网开放网页")
+                    Text("在局域网开放")
                         .wontonText(WontonTheme.typography.body)
                         .foregroundStyle(Color(colors.textPrimary))
                     Text("端口 " + offer.ports.map { String($0.port) }.joined(separator: ", "))

@@ -1,8 +1,9 @@
 //! 开关 `lan_webui`（ADR-0023 的“网页的局域网端口”）：有两种局域网端口，开了别人就能冒充主人或者抢先注册，默认不开，
 //! 主人看过风险后打开。开关存在插件的记录里，改开关时重建开端口的容器（同地址变化），数据不动。
 //!
-//! 哪些端口要开关，只看插件包：`sso: proxy` 用请求头认用户而 `webui.service` 不是只信任核心时，这个服务的局域网端口；
-//! `sso: none` 把网页的端口列进 `lan.ports` 时，这个端口。其余的局域网端口身份由插件自己验证（ADR-0019），装好就开。
+//! 哪些端口要开关，只看插件包：写了 `lan.client` 时，全部局域网端口；`sso: proxy` 用请求头认用户而 `webui.service`
+//! 不是只信任核心时，这个服务的局域网端口；`sso: none` 把网页的端口列进 `lan.ports` 时，这个端口。其余的局域网端口身份
+//! 由插件自己验证（ADR-0019），装好就开。
 
 use std::collections::BTreeSet;
 use std::net::IpAddr;
@@ -22,6 +23,8 @@ use crate::plugin::views::Listed;
 const IMPERSONATE: &str =
     "局域网里的设备，以及这台主机上能出网的插件，不用密码就能以你的身份打开它";
 const REGISTER: &str = "管理员注册之前，局域网里的设备和这台主机上能出网的插件可能抢先注册";
+const CLIENT: &str =
+    "局域网里的设备拿到账号和密码就能连上它。在它自己的网页里改了密码，这里不会跟着变";
 
 /// 要开关打开才开的局域网端口。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +39,8 @@ impl Switched {
             ports: self.ports.iter().map(lan_port).collect(),
             risk: self.risk.to_owned(),
             enabled,
+            client: None,
+            client_problem: None,
         }
     }
 }
@@ -67,6 +72,12 @@ pub fn impersonable(package: &PluginPackage) -> bool {
 /// 这个插件包要开关的端口；没有时为空。
 pub fn switched(package: &PluginPackage) -> Option<Switched> {
     let m = &package.manifest;
+    if let Some(lan) = m.lan.as_ref().filter(|lan| lan.client.is_some()) {
+        return Some(Switched {
+            ports: lan.ports.clone(),
+            risk: CLIENT,
+        });
+    }
     let webui = m.webui.as_ref()?;
     let ports = m.lan.iter().flat_map(|lan| &lan.ports);
     let (ports, risk): (Vec<LanPortSpec>, _) = if impersonable(package) {
@@ -112,7 +123,8 @@ impl PluginManager {
         let this = Arc::clone(self);
         detached(async move {
             this.switch_lan_webui(&id, enabled).await?;
-            this.installed_detail(&id, &langs)
+            this.judged_detail(&id, &langs)
+                .await
                 .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
         })
         .await

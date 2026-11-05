@@ -43,6 +43,7 @@ pub use subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, PluginsSubscription,
     SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
+pub use wonton_protocol::LanClient;
 pub use wonton_protocol::{
     Action, AddedSource, AgentLogin, Answer, AppearanceProblem, AppearanceViewModel,
     BackPagination, BotSwitch, CardChoice, CardLine, ChatAccount, ChatFailure, ChatProblem,

@@ -298,6 +298,8 @@ async fn the_choice_on_the_confirmation_page_reaches_the_core() {
         ports: Vec::new(),
         risk: "风险".to_owned(),
         enabled: true,
+        client: None,
+        client_problem: None,
     });
     rig.app
         .dispatch(Action::InstallPlugin { preview: shown })

@@ -95,6 +95,80 @@ fn logins_the_lan_cannot_borrow_need_no_switch() {
     assert_eq!(open_ports(&parsed(&compose), false).len(), 1);
 }
 
+fn with_client(port: u16, client: &str) -> String {
+    app(port, OWN_LOGIN, "A: b", ", {service: smb, port: 445}").replace(
+        "  permissions:",
+        &format!(
+            "    client: {client}\n  secrets:\n    pw: {{generate: {{bytes: 32}}}}\n  permissions:"
+        ),
+    )
+}
+
+const CLIENT: &str = "{address: 'http://{host}:4533', username: '{user}', password: '{secret:pw}'}";
+
+#[test]
+fn the_client_address_needs_a_host_and_its_password_a_generated_secret() {
+    assert!(PluginPackage::parse(&with_client(80, CLIENT)).is_ok());
+    for bad in [
+        "{address: 'http://nas:4533', username: '{user}', password: '{secret:pw}'}",
+        "{address: 'http://{host}', username: '{user}', password: '{secret:other}'}",
+        "{address: 'http://{host}', username: '{what}', password: '{secret:pw}'}",
+    ] {
+        assert!(
+            PluginPackage::parse(&with_client(80, bad)).is_err(),
+            "{bad}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
+    let (docker, m, _detected, _dir) = on(office()).await;
+    let port = web_port().await;
+    let compose = with_client(port, CLIENT);
+    assert_eq!(ports_of(&parsed(&compose)), [port, 445], "全部局域网端口");
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    assert_eq!(published(&docker, "smb"), Value::Null);
+    let langs = Languages::default();
+    let closed = m.judged_detail(&id(), &langs).await.unwrap();
+    assert_eq!(closed.lan_webui.unwrap().client, None);
+
+    let opened = m.set_lan_webui(id(), true, langs.clone()).await.unwrap();
+    let offer = opened.lan_webui.unwrap();
+    assert_eq!(offer.client_problem, None);
+    let client = offer.client.expect("开着就有账号");
+    assert_eq!(client.addresses, ["http://192.168.0.193:4533"]);
+    assert_eq!(client.username, m.cfg.owner);
+    let installed = m.installed_detail(&id(), &langs).unwrap();
+    assert_eq!(
+        installed.lan_webui.unwrap().client,
+        None,
+        "只有主人的接口带密码"
+    );
+    let secrets = m.store.secrets().load(&id()).unwrap().unwrap();
+    let values = crate::plugin::secrets::generated_values(&parsed(&compose).manifest, &secrets);
+    assert_eq!(client.password, values.unwrap()["pw"]);
+
+    let closed = m.set_lan_webui(id(), false, langs).await.unwrap();
+    assert_eq!(closed.lan_webui.unwrap().client, None);
+}
+
+#[tokio::test]
+async fn the_switch_answers_with_the_same_requirements_as_the_detail() {
+    let (_docker, m, _detected, _dir) = on(office()).await;
+    let compose = app(web_port().await, OWN_LOGIN, "A: b", "").replace(
+        "  permissions:",
+        "  requirements: {memory: 2G}\n  permissions:",
+    );
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    let langs = Languages::default();
+
+    let answer = m.set_lan_webui(id(), true, langs.clone()).await.unwrap();
+    let detail = m.judged_detail(&id(), &langs).await.unwrap();
+    assert!(!detail.requirements.is_empty());
+    assert_eq!(answer.requirements, detail.requirements);
+}
+
 #[tokio::test]
 async fn closed_ports_are_not_published_and_need_no_address() {
     let (docker, m, detected, _dir) = on(office()).await;

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import app.wonton.protocol.EgressConfirmation
 import app.wonton.protocol.EgressCurrent
 import app.wonton.protocol.EgressPathState
 import app.wonton.protocol.EgressProxySource
+import app.wonton.protocol.LanClient
 import app.wonton.protocol.LanWebuiOffer
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.Rgb
@@ -38,6 +40,7 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
@@ -47,6 +50,8 @@ import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.launch
 
 /** 出网代理的设置页（ADR-0023）：结论都在核心，这里渲染，并把输入框的内容发回去。 */
@@ -204,7 +209,7 @@ fun LanWebuiToggle(offer: LanWebuiOffer, checked: Boolean, enabled: Boolean, onC
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("在局域网开放网页", style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+                Text("在局域网开放", style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
                 Secondary("端口 " + offer.ports.joinToString(", ") { it.port.toString() })
             }
             WontonSwitch(checked, onChange, enabled)
@@ -235,5 +240,28 @@ fun InstalledLanWebui(plugins: PluginsState, id: String, offer: LanWebuiOffer, o
         }
         if (target != null) CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = 2.dp)
         problem?.let { ProblemNotice(it) }
+        offer.clientProblem?.let { WontonNotice(WontonIcon.Warning, it) }
+        offer.client?.let { LanClientAccount(it) }
+    }
+}
+
+/** 第三方客户端连这个插件用的地址和账号，可以选中复制。 */
+@Composable
+private fun LanClientAccount(client: LanClient) {
+    SelectionContainer {
+        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            client.addresses.forEach { LanClientRow("地址", it) }
+            LanClientRow("账号", client.username)
+            LanClientRow("密码", client.password)
+        }
+    }
+}
+
+@Composable
+private fun LanClientRow(name: String, value: String) {
+    val colors = WontonTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        Text(name, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
+        Text(value, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
     }
 }

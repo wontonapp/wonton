@@ -133,7 +133,13 @@ impl PluginManager {
                 .filter_map(|(id, entry)| {
                     let listed = entry.listed.as_ref().filter(|l| !l.lan_webui)?;
                     let ports = listed.lan_switched.as_ref()?.ports.clone();
-                    Some((id.clone(), LanSpec { ports }))
+                    Some((
+                        id.clone(),
+                        LanSpec {
+                            ports,
+                            client: None,
+                        },
+                    ))
                 })
                 .collect()
         };
@@ -156,8 +162,15 @@ impl PluginManager {
             .filter_map(|(id, entry)| {
                 let listed = entry.listed.as_ref()?;
                 let ports = listed.open_ports(listed.lan_webui);
-                (!ports.is_empty() || self.lan.is_degraded(id))
-                    .then(|| (id.clone(), LanSpec { ports }))
+                (!ports.is_empty() || self.lan.is_degraded(id)).then(|| {
+                    (
+                        id.clone(),
+                        LanSpec {
+                            ports,
+                            client: None,
+                        },
+                    )
+                })
             })
             .collect()
     }

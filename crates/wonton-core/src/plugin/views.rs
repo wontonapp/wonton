@@ -120,9 +120,10 @@ impl PluginManager {
         Some(self.with_bot(plugin))
     }
 
-    /// 同 [`Self::installed_detail`]，要求逐条判断过：判断要问 Docker，只有详情接口要等。
+    /// 给主人的详情，返回详情的接口都走这里：要求逐条判断过（要问 Docker），开关开着时带上第三方客户端的连接信息。
     pub async fn judged_detail(&self, id: &PluginId, langs: &Languages) -> Option<PluginDetail> {
         let mut detail = self.installed_detail(id, langs)?;
+        detail.lan_webui = self.with_lan_client(id, detail.lan_webui.take()).await;
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(id)?.listed.clone()

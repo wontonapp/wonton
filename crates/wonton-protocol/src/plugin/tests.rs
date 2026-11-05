@@ -184,6 +184,8 @@ fn preview() -> InstallPreview {
             }],
             risk: "局域网里的设备，以及这台主机上能出网的插件，不用密码就能以你的身份打开它".into(),
             enabled: false,
+            client: None,
+            client_problem: None,
         }),
         always_allowed: vec![BotSwitch {
             caller: "app.hermes".into(),

@@ -5,8 +5,9 @@
 //! - [`detect`]：起检测容器，列出 Docker 的网桥；
 //! - [`select`]：按检测结果和主人的选择算出地址；
 //! - `state`：主人的选择和上次检测的结果；`grant`：安装和预览；`monitor`：定期检测、地址变了重建容器；
-//!   `settings`：管理接口；[`webui`]：网页端口的开关。
+//!   `settings`：管理接口；[`webui`]：网页端口的开关；[`client`]：第三方客户端的连接信息。
 
+pub mod client;
 pub mod detect;
 mod grant;
 mod monitor;
@@ -38,6 +39,8 @@ pub const ADDRESSES_VAR: &str = "WONTON_LAN_ADDRESSES";
 #[serde(deny_unknown_fields)]
 pub struct LanSpec {
     pub ports: Vec<LanPortSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client: Option<client::LanClientSpec>,
 }
 
 /// 一个端口。宿主端口和容器端口相同：SMB 客户端只认 445，换了端口就等于不能用。
@@ -116,6 +119,9 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
                 port.key()
             ));
         }
+    }
+    if let Some(lan_client) = &lan.client {
+        client::validate(manifest, lan_client)?;
     }
     Ok(())
 }

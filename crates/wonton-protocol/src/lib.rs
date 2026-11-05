@@ -82,6 +82,7 @@ pub use onboarding::{
     model_provider_path,
 };
 pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
+pub use plugin::LanClient;
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BotSwitch, InstallPreview,
     InstallRequest, InstallSource, InstalledPlugin, InstalledPlugins, LanWebuiOffer,

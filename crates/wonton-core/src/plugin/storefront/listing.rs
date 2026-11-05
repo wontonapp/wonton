@@ -203,8 +203,12 @@ impl PluginManager {
             blocked: blocked(m, &facts),
             // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
             lan_webui: self
-                .installed_detail(&m.id, langs)
-                .and_then(|detail| detail.lan_webui),
+                .with_lan_client(
+                    &m.id,
+                    self.installed_detail(&m.id, langs)
+                        .and_then(|detail| detail.lan_webui),
+                )
+                .await,
             save_grants: self.save_grants(&m.id),
             ask_every_update: None,
             limits: None,

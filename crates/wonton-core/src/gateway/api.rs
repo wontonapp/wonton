@@ -668,7 +668,7 @@ pub async fn revoke_save_grant(
     if let Err(e) = mcp.bus.revoke_save_grant(&id, &query.folder) {
         return install_error(&e.into());
     }
-    match gateway.plugins.installed_detail(&id, &langs) {
+    match gateway.plugins.judged_detail(&id, &langs).await {
         Some(detail) => Json(detail).into_response(),
         None => install_error(&InstallError::NotInstalled(id.to_string())),
     }

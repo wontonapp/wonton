@@ -469,6 +469,21 @@ pub struct LanWebuiOffer {
     pub risk: String,
     /// 开关现在的值：新装时是 `false`；升级时是装着的版本的值。
     pub enabled: bool,
+    /// 第三方客户端的连接信息（清单写了 `lan.client`，开关开着时才有）。
+    #[serde(default)]
+    pub client: Option<LanClient>,
+    /// 连接信息取不到的原因。
+    #[serde(default)]
+    pub client_problem: Option<String>,
+}
+
+/// 第三方客户端（比如音乐播放器）在局域网上连这个插件用的地址和账号。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LanClient {
+    pub addresses: Vec<String>,
+    pub username: String,
+    pub password: String,
 }
 
 /// `POST /_wonton/api/plugins/preview` 和 `POST /_wonton/api/plugins/{id}/upgrade/preview` 的请求体（JSON）：按来源预览。

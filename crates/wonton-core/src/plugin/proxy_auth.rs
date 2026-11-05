@@ -155,6 +155,50 @@ fn render(parts: &[Part], owner: &Owner) -> Result<String, NoEmail> {
         .collect()
 }
 
+/// 值模板的写法对，`{secret:…}` 只引用插件自己由核心生成、够长的密钥。局域网客户端的账号（`lan.client`）也用这套模板。
+pub fn check_template(manifest: &Manifest, template: &str) -> Result<(), String> {
+    for part in parse(template)? {
+        if let Part::Secret(name) = part
+            && !secret_ok(manifest, &name)
+        {
+            return Err(unknown_secret(&name));
+        }
+    }
+    Ok(())
+}
+
+/// 按主人和插件密钥填好一个值模板。
+pub fn fill_template(
+    template: &str,
+    owner: &Owner,
+    generated: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let parts = parse(template)?
+        .into_iter()
+        .map(|part| match part {
+            Part::Secret(name) => generated
+                .get(&name)
+                .map(|value| Part::Secret(value.clone()))
+                .ok_or_else(|| format!("插件密钥 {name} 不在密钥库里")),
+            other => Ok(other),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    render(&parts, owner).map_err(|e| e.to_string())
+}
+
+fn secret_ok(manifest: &Manifest, name: &str) -> bool {
+    matches!(
+        manifest.secrets.get(name),
+        Some(SecretSpec::Generate(g)) if g.bytes >= MIN_SECRET_BYTES
+    )
+}
+
+fn unknown_secret(name: &str) -> String {
+    format!(
+        "{{secret:{name}}} 要引用 secrets 里由核心生成（generate）、至少 {MIN_SECRET_BYTES} 字节的一项"
+    )
+}
+
 /// 清单的代登录模板用没用 `{email}`。
 pub fn uses_email(manifest: &Manifest) -> bool {
     any_part(manifest, |part| matches!(part, Part::Email))
@@ -239,19 +283,11 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let Some(proxy) = manifest.webui.as_ref().and_then(|w| w.proxy.as_ref()) else {
         return Ok(());
     };
-    let secret_ok = |name: &str| {
-        matches!(
-            manifest.secrets.get(name),
-            Some(SecretSpec::Generate(g)) if g.bytes >= MIN_SECRET_BYTES
-        )
-    };
     let check_template = |template: &str, in_cookie: bool| -> Result<(), ManifestError> {
         for part in parse(template).map_err(invalid)? {
             match part {
-                Part::Secret(name) if !secret_ok(&name) => {
-                    return Err(invalid(format!(
-                        "{{secret:{name}}} 要引用 secrets 里由核心生成（generate）、至少 {MIN_SECRET_BYTES} 字节的一项"
-                    )));
+                Part::Secret(name) if !secret_ok(manifest, &name) => {
+                    return Err(invalid(unknown_secret(&name)));
                 }
                 Part::User | Part::Name | Part::Email if in_cookie => {
                     return Err(invalid(format!(
