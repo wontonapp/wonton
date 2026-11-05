@@ -63,3 +63,48 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           push: true
+
+  acp-bridge-image:
+    name: ACP bridge 镜像
+    runs-on: [self-hosted, Linux, X64, docker]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: 版本和代理
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
+          tags="$image:$version,$image:beta"
+          case "$version" in *-*) ;; *) tags="$tags,$image:stable" ;; esac
+          {
+            echo "version=$version"
+            echo "tags=$tags"
+            echo "http_proxy=${http_proxy:-}"
+            echo "https_proxy=${https_proxy:-}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+          buildkitd-flags: --allow-insecure-entitlement network.host
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/dev/acp-bridge/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          network: host
+          allow: network.host
+          build-args: |
+            http_proxy=${{ steps.meta.outputs.http_proxy }}
+            https_proxy=${{ steps.meta.outputs.https_proxy }}
+            CARGO_BUILD_JOBS=8
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          push: true

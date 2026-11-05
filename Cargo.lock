@@ -7675,6 +7675,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "wonton-acp-bridge"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "wonton-matrix",
+ "wonton-protocol",
+]
+
+[[package]]
 name = "wonton-client"
 version = "0.0.0"
 dependencies = [
@@ -7785,6 +7804,7 @@ dependencies = [
  "pem",
  "serde",
  "serde_json",
+ "tempfile",
  "testcontainers",
  "thiserror 2.0.21",
  "tokio",

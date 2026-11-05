@@ -1,0 +1,8 @@
+*
+!deploy/
+!deploy/dev/
+!deploy/dev/acp-bridge/
+!deploy/dev/acp-bridge/Agent.Dockerfile
+!deploy/dev/acp-bridge/LICENSE.omp
+!deploy/dev/acp-bridge/agent-entrypoint.py
+**/.data

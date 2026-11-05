@@ -5,11 +5,13 @@ use std::sync::Arc;
 
 use futures_util::{Stream, stream};
 use matrix_sdk::{
-    Client, ClientBuildError, SessionChange,
+    Client, ClientBuildError, SessionChange, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession as SdkSession,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
+    reqwest,
     ruma::{DeviceId, OwnedDeviceId, OwnedUserId, UserId, serde::JsonObject},
     sliding_sync::VersionBuilder,
+    store::RoomLoadSettings,
 };
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
@@ -147,6 +149,43 @@ impl MatrixSession {
         Self::with_client(client, response.user_id, response.device_id).await
     }
 
+    /// 用核心交给 Bot 的访问令牌恢复设备；令牌只用于本次进程，不写进 Matrix 状态库。
+    ///
+    /// 先通过 `whoami` 得到令牌绑定的用户和设备，再把完整会话交给 SDK 恢复加密存储。重装插件时 Bot 会换一个
+    /// 设备，旧设备的加密存储不能直接套给新设备；设备变了就丢掉旧存储，从新设备重新开始。
+    pub async fn login_with_access_token(config: &SessionConfig, token: &str) -> Result<Self> {
+        if token.trim().is_empty() {
+            return Err(Error::InvalidInput("Matrix 访问令牌为空".to_owned()));
+        }
+        let (user_id, device_id) = access_token_identity(config, token).await?;
+        let marker = reconcile_store(config, &device_id).await?;
+        let client = build_client(config, VersionBuilder::DiscoverNative).await?;
+        client
+            .matrix_auth()
+            .restore_session(
+                SdkSession {
+                    meta: SessionMeta {
+                        user_id: user_id.clone(),
+                        device_id: device_id.clone(),
+                    },
+                    tokens: SessionTokens {
+                        access_token: token.to_owned(),
+                        refresh_token: None,
+                    },
+                },
+                RoomLoadSettings::default(),
+            )
+            .await
+            .map_err(|error| Error::Upstream(format!("恢复 Matrix 会话失败：{error}")))?;
+        let session = Self::with_client(client, user_id, device_id.clone()).await?;
+        if let Some(marker) = marker {
+            tokio::fs::write(&marker, device_id.as_str())
+                .await
+                .map_err(|error| Error::Upstream(format!("保存 Matrix 设备标记失败：{error}")))?;
+        }
+        Ok(session)
+    }
+
     /// 用存下来的登录状态恢复会话，不经服务器登录。
     ///
     /// 用 SQLite 存储时要传登录时的同一个目录：设备密钥、交叉签名和密钥备份都在里面。令牌已经失效的话，
@@ -243,6 +282,98 @@ impl MatrixSession {
     }
 }
 
+async fn access_token_identity(
+    config: &SessionConfig,
+    token: &str,
+) -> Result<(OwnedUserId, OwnedDeviceId)> {
+    let mut http = reqwest::Client::builder();
+    if let Some(proxy) = &config.proxy {
+        http = http.proxy(
+            reqwest::Proxy::all(proxy)
+                .map_err(|error| Error::InvalidInput(format!("Matrix 代理地址无效：{error}")))?,
+        );
+    }
+    let url = format!(
+        "{}/_matrix/client/v3/account/whoami",
+        config.homeserver_url.trim_end_matches('/')
+    );
+    let response = http
+        .build()
+        .map_err(|error| Error::Transport(format!("建立 Matrix HTTP 客户端失败：{error}")))?
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|error| Error::Transport(format!("查询 Matrix 令牌身份失败：{error}")))?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| Error::Transport(format!("读取 Matrix 身份响应失败：{error}")))?;
+    let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+        Error::Upstream(format!(
+            "Matrix 身份响应不是 JSON（HTTP {status}）：{error}"
+        ))
+    })?;
+    if !status.is_success() {
+        let message = body["error"]
+            .as_str()
+            .unwrap_or("Matrix 拒绝了这个访问令牌")
+            .to_owned();
+        return Err(match status.as_u16() {
+            401 | 403 => Error::Unauthorized {
+                errcode: body["errcode"].as_str().unwrap_or_default().to_owned(),
+                message,
+            },
+            400 => Error::InvalidInput(message),
+            _ => Error::Upstream(format!("HTTP {status}: {message}")),
+        });
+    }
+    let user_id = body["user_id"]
+        .as_str()
+        .ok_or_else(|| Error::Upstream("Matrix 身份响应缺少 user_id".to_owned()))?
+        .parse::<OwnedUserId>()
+        .map_err(|error| Error::InvalidInput(format!("Matrix user_id 无效：{error}")))?;
+    let device_id: OwnedDeviceId = body["device_id"]
+        .as_str()
+        .ok_or_else(|| Error::Upstream("Matrix 身份响应缺少 device_id".to_owned()))?
+        .into();
+    Ok((user_id, device_id))
+}
+
+/// 设备变了就丢掉旧 SQLite 存储，返回要写入新设备号的标记文件。
+async fn reconcile_store(config: &SessionConfig, device_id: &DeviceId) -> Result<Option<PathBuf>> {
+    let StoreConfig::Sqlite { path, .. } = &config.store else {
+        return Ok(None);
+    };
+    let marker = path.with_extension("device");
+    let previous = match tokio::fs::read_to_string(&marker).await {
+        Ok(previous) => Some(previous),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(Error::Upstream(format!(
+                "读取 Matrix 设备标记失败：{error}"
+            )));
+        }
+    };
+    let old_store = path.exists()
+        && previous
+            .as_deref()
+            .is_none_or(|value| value.trim() != device_id.as_str());
+    if old_store {
+        match tokio::fs::remove_dir_all(path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(Error::Upstream(format!(
+                    "清理旧设备的 Matrix 存储失败：{error}"
+                )));
+            }
+        }
+    }
+    Ok(Some(marker))
+}
+
 async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Result<Client> {
     let mut builder = Client::builder()
         .homeserver_url(&config.homeserver_url)
@@ -299,5 +430,47 @@ mod tests {
         assert!(!printed.contains("proxy-password"), "{printed}");
         assert!(!printed.contains("store-passphrase"), "{printed}");
         assert!(printed.contains("matrix.wonton.localhost"), "{printed}");
+    }
+
+    #[tokio::test]
+    async fn a_changed_device_clears_the_previous_matrix_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("matrix");
+        std::fs::create_dir(&store).unwrap();
+        std::fs::write(store.join("state"), b"old").unwrap();
+        let marker = store.with_extension("device");
+        std::fs::write(&marker, "old-device").unwrap();
+        let config = SessionConfig {
+            homeserver_url: "http://matrix.wonton.localhost".to_owned(),
+            device_name: "Bot".to_owned(),
+            store: StoreConfig::Sqlite {
+                path: store.clone(),
+                passphrase: None,
+            },
+            proxy: None,
+        };
+        let device = OwnedDeviceId::from("new-device");
+        let written = reconcile_store(&config, &device).await.unwrap();
+        assert_eq!(written, Some(marker));
+        assert!(!store.exists(), "旧设备的存储应被删除");
+    }
+
+    #[tokio::test]
+    async fn a_store_without_a_device_marker_is_treated_as_old() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("matrix");
+        std::fs::create_dir(&store).unwrap();
+        let config = SessionConfig {
+            homeserver_url: "http://matrix.wonton.localhost".to_owned(),
+            device_name: "Bot".to_owned(),
+            store: StoreConfig::Sqlite {
+                path: store.clone(),
+                passphrase: None,
+            },
+            proxy: None,
+        };
+        let device = OwnedDeviceId::from("new-device");
+        reconcile_store(&config, &device).await.unwrap();
+        assert!(!store.exists());
     }
 }

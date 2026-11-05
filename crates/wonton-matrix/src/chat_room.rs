@@ -133,6 +133,12 @@ impl ChatRoom {
         Ok(())
     }
 
+    /// 设置本账号在房间里的输入状态。
+    pub async fn typing_notice(&self, typing: bool) -> Result<()> {
+        self.room.typing_notice(typing).await?;
+        Ok(())
+    }
+
     /// 不经发送队列发一条内容任意的 `m.room.message`，返回事件 ID。测试里扮演核心、发确认卡片和编辑用。
     #[cfg(feature = "testkit")]
     pub async fn send_raw_message(

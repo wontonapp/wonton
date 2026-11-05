@@ -1,0 +1,12 @@
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!crates/
+crates/**/target
+!deploy/
+!deploy/dev/
+!deploy/dev/acp-bridge/
+!deploy/dev/acp-bridge/Dockerfile
+!deploy/dev/acp-bridge/entrypoint.sh
+**/.data

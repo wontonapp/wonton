@@ -1,0 +1,343 @@
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
+
+use serde_json::{Value, json};
+use url::Url;
+use wonton_protocol::{
+    AGENT_PERMISSION_PATH, AgentPermissionKind, AgentPermissionOption, AgentPermissionOutcome,
+    AgentPermissionRequest,
+};
+
+use crate::error::{Error, Result};
+
+const REQUEST_GRACE_SECS: u64 = 5;
+
+#[derive(Clone, Debug)]
+pub struct PendingPermission {
+    pub request: AgentPermissionRequest,
+    pub option_ids: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PermissionResult {
+    Selected { option_id: String },
+    Cancelled,
+    Expired,
+}
+
+#[derive(Clone)]
+pub struct PermissionBroker {
+    client: reqwest::Client,
+    endpoint: Url,
+}
+
+impl PermissionBroker {
+    pub fn new(mcp_url: &str) -> Result<Self> {
+        let mut endpoint = Url::parse(mcp_url)
+            .map_err(|error| Error::InvalidInput(format!("WONTON_MCP_URL 无效：{error}")))?;
+        endpoint.set_path(AGENT_PERMISSION_PATH);
+        endpoint.set_query(None);
+        endpoint.set_fragment(None);
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(
+                wonton_protocol::AGENT_PERMISSION_TTL_SECS + REQUEST_GRACE_SECS + 5,
+            ))
+            .build()
+            .map_err(|error| {
+                Error::InvalidInput(format!("建立确认卡片 HTTP 客户端失败：{error}"))
+            })?;
+        Ok(Self { client, endpoint })
+    }
+
+    pub async fn ask(&self, pending: PendingPermission) -> Result<PermissionResult> {
+        let response = tokio::time::timeout(
+            Duration::from_secs(wonton_protocol::AGENT_PERMISSION_TTL_SECS + REQUEST_GRACE_SECS),
+            async {
+                let response = self
+                    .client
+                    .post(self.endpoint.clone())
+                    .json(&pending.request)
+                    .send()
+                    .await
+                    .map_err(|error| {
+                        Error::ConfirmationUnavailable(format!("连接确认卡片接口失败：{error}"))
+                    })?;
+                let status = response.status();
+                let body = response.bytes().await.map_err(|error| {
+                    Error::ConfirmationUnavailable(format!("读取确认卡片响应失败：{error}"))
+                })?;
+                Ok::<_, Error>((status, body))
+            },
+        )
+        .await
+        .map_err(|_| Error::ConfirmationUnavailable("确认卡片请求超时".into()))??;
+        let (status, body) = response;
+        if !status.is_success() {
+            let detail = serde_json::from_slice::<Value>(&body)
+                .ok()
+                .and_then(|value| value["error"]["message"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| format!("HTTP {status}"));
+            return Err(match status.as_u16() {
+                400 => Error::InvalidInput(detail),
+                429 => Error::Busy(detail),
+                _ => Error::ConfirmationUnavailable(detail),
+            });
+        }
+        let outcome: AgentPermissionOutcome = serde_json::from_slice(&body).map_err(|error| {
+            Error::ConfirmationUnavailable(format!("确认卡片响应无效：{error}"))
+        })?;
+        Ok(match outcome {
+            AgentPermissionOutcome::Selected { choice_id } => pending
+                .option_ids
+                .get(&choice_id)
+                .cloned()
+                .map(|option_id| PermissionResult::Selected { option_id })
+                .unwrap_or(PermissionResult::Cancelled),
+            AgentPermissionOutcome::Cancelled => PermissionResult::Cancelled,
+            AgentPermissionOutcome::Expired => PermissionResult::Expired,
+        })
+    }
+}
+
+pub fn parse_pending(params: &Value) -> Result<PendingPermission> {
+    let tool_call = &params["toolCall"];
+    let tool_call_id = required_string(tool_call, "toolCallId")?;
+    let title = required_string(tool_call, "title")?;
+    let description = tool_call
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            tool_call["kind"]
+                .as_str()
+                .map(|kind| format!("ACP 工具类型：{kind}"))
+        });
+    let arguments = tool_call
+        .get("rawInput")
+        .filter(|value| !value.is_null())
+        .map(redact_secrets);
+    let mut options = Vec::new();
+    let mut option_ids = HashMap::new();
+    let mut seen_option_ids = HashSet::new();
+    for (index, option) in params["options"]
+        .as_array()
+        .ok_or_else(|| Error::InvalidInput("ACP 权限请求缺少 options".into()))?
+        .iter()
+        .enumerate()
+    {
+        let option_id = required_string(option, "optionId")?;
+        if !seen_option_ids.insert(option_id.clone()) {
+            return Err(Error::InvalidInput("ACP 权限请求的 optionId 重复".into()));
+        }
+        let kind: AgentPermissionKind = serde_json::from_value(json!(option["kind"].clone()))
+            .map_err(|error| Error::InvalidInput(format!("ACP 权限选项 kind 无效：{error}")))?;
+        let name = required_string(option, "name")?;
+        let choice_id = format!("acp-{index}");
+        option_ids.insert(choice_id.clone(), option_id);
+        options.push(AgentPermissionOption {
+            choice_id,
+            kind,
+            name,
+        });
+    }
+    if options.is_empty() {
+        return Err(Error::InvalidInput("ACP 权限请求没有 options".into()));
+    }
+    Ok(PendingPermission {
+        request: AgentPermissionRequest {
+            tool_call_id,
+            title,
+            description,
+            arguments,
+            options,
+        },
+        option_ids,
+    })
+}
+
+fn required_string(value: &Value, field: &str) -> Result<String> {
+    value[field]
+        .as_str()
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| Error::InvalidInput(format!("ACP 权限请求缺少 {field}")))
+}
+
+fn redact_secrets(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| {
+                    let lower = key.to_ascii_lowercase();
+                    let redacted = lower.contains("token")
+                        || lower.contains("secret")
+                        || lower.contains("password")
+                        || lower.contains("api_key")
+                        || lower.contains("apikey")
+                        || lower == "key";
+                    (
+                        key.clone(),
+                        if redacted {
+                            Value::String("[已隐藏]".into())
+                        } else {
+                            redact_secrets(value)
+                        },
+                    )
+                })
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(redact_secrets).collect()),
+        _ => value.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+    use tokio::{
+        io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+        net::TcpListener,
+    };
+
+    fn pending() -> PendingPermission {
+        PendingPermission {
+            request: AgentPermissionRequest {
+                tool_call_id: "call-1".into(),
+                title: "运行 ls".into(),
+                description: None,
+                arguments: None,
+                options: vec![AgentPermissionOption {
+                    choice_id: "acp-0".into(),
+                    kind: AgentPermissionKind::AllowOnce,
+                    name: "允许一次".into(),
+                }],
+            },
+            option_ids: HashMap::from([(String::from("acp-0"), String::from("allow_once"))]),
+        }
+    }
+
+    async fn permission_server(
+        body: Value,
+        status: &str,
+    ) -> (SocketAddr, tokio::task::JoinHandle<String>) {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let status = status.to_owned();
+        let task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).await.unwrap();
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).await.unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    content_length = value.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body_bytes = vec![0; content_length];
+            tokio::io::AsyncReadExt::read_exact(&mut reader, &mut body_bytes)
+                .await
+                .unwrap();
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.to_string().len(),
+                body
+            );
+            reader
+                .get_mut()
+                .write_all(response.as_bytes())
+                .await
+                .unwrap();
+            String::from_utf8(body_bytes).unwrap()
+        });
+        (address, task)
+    }
+
+    async fn ask_from(body: Value, status: &str) -> (Result<PermissionResult>, String) {
+        let (address, server) = permission_server(body, status).await;
+        let broker = PermissionBroker::new(&format!("http://{address}/mcp")).unwrap();
+        let result = broker.ask(pending()).await;
+        (result, server.await.unwrap())
+    }
+
+    #[test]
+    fn maps_acp_options_to_opaque_core_choices() {
+        let pending = parse_pending(&json!({
+            "toolCall": {
+                "toolCallId": "call-1",
+                "title": "运行命令",
+                "kind": "execute",
+                "rawInput": {"command": "echo hi", "api_token": "secret"}
+            },
+            "options": [
+                {"optionId": "allow_once", "kind": "allow_once", "name": "允许一次"},
+                {"optionId": "reject_once", "kind": "reject_once", "name": "拒绝"}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(pending.request.options[0].choice_id, "acp-0");
+        assert_eq!(pending.option_ids["acp-1"], "reject_once");
+        assert_eq!(
+            pending.request.arguments.as_ref().unwrap()["api_token"],
+            "[已隐藏]"
+        );
+    }
+
+    #[tokio::test]
+    async fn selected_choice_maps_back_to_acp_option_id() {
+        let (result, request) =
+            ask_from(json!({"outcome":"selected","choice_id":"acp-0"}), "200 OK").await;
+        assert_eq!(
+            result.unwrap(),
+            PermissionResult::Selected {
+                option_id: "allow_once".into()
+            }
+        );
+        assert!(request.contains("\"tool_call_id\":\"call-1\""));
+    }
+
+    #[tokio::test]
+    async fn cancelled_and_expired_are_not_approval() {
+        let (cancelled, _) = ask_from(json!({"outcome":"cancelled"}), "200 OK").await;
+        let (expired, _) = ask_from(json!({"outcome":"expired"}), "200 OK").await;
+        assert_eq!(cancelled.unwrap(), PermissionResult::Cancelled);
+        assert_eq!(expired.unwrap(), PermissionResult::Expired);
+    }
+
+    #[tokio::test]
+    async fn confirmation_errors_are_classified_without_approval() {
+        let (invalid, _) = ask_from(
+            json!({"error":{"message":"bad request"}}),
+            "400 Bad Request",
+        )
+        .await;
+        let (busy, _) = ask_from(
+            json!({"error":{"message":"too many"}}),
+            "429 Too Many Requests",
+        )
+        .await;
+        let (unavailable, _) = ask_from(
+            json!({"error":{"message":"down"}}),
+            "503 Service Unavailable",
+        )
+        .await;
+        assert!(matches!(invalid, Err(Error::InvalidInput(message)) if message == "bad request"));
+        assert!(matches!(busy, Err(Error::Busy(message)) if message == "too many"));
+        assert!(
+            matches!(unavailable, Err(Error::ConfirmationUnavailable(message)) if message == "down")
+        );
+    }
+}
