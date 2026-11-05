@@ -53,15 +53,6 @@ struct ChatBackupView: View {
 
     @ViewBuilder private var nextStep: some View {
         switch encryption.recovery {
-        case .disabled:
-            if encryption.verification != .unverified {
-                Button {
-                    model.send(.setUpRecovery)
-                } label: {
-                    Text("开启备份").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
         case .incomplete:
             VStack(spacing: WontonTheme.spacing.s12) {
                 SecureField("恢复密钥", text: $key)
@@ -80,7 +71,7 @@ struct ChatBackupView: View {
             }
         case .inProgress:
             ProgressView().frame(maxWidth: .infinity)
-        case .enabled, .unknown:
+        case .disabled, .enabled, .unknown:
             EmptyView()
         }
     }
@@ -127,19 +118,22 @@ extension EncryptionStatus {
         case .disabled:
             // 未验证的设备开启不了，核心会拒绝。
             return verification == .unverified
-                ? "要到最早配对的那台设备上开启。那台设备不在手边，就重置备份。"
-                : "开启后，换手机或新设备时也能看到以前的消息。"
+                ? "请打开最早配对的那台设备，备份会自动开启。那台设备不在手边，就重置备份。"
+                : "设备验证后会自动开启备份。"
         case .incomplete: return "输入开启备份时保存的恢复密钥。密钥丢了，就重置备份。"
         case .inProgress: return nil
         case .unknown: return "连上家里的服务器后才能确认。"
         }
     }
+}
 
-    /// 真需要主人动手时才有，显示在聊天列表顶上。
-    var backupReminder: String? {
-        if recoveryKey != nil { return "恢复密钥还没保存" }
-        if recovery == .incomplete { return "输入恢复密钥，取回以前的消息" }
-        return nil
+extension BackupReminder {
+    var text: String? {
+        switch self {
+        case .saveRecoveryKey: return "保存恢复密钥，换手机时要用"
+        case .enterRecoveryKey: return "输入恢复密钥，取回以前的消息"
+        case .other: return nil
+        }
     }
 }
 

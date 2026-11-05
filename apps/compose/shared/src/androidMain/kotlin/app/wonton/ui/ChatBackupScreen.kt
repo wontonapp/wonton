@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import app.wonton.protocol.Action
+import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.RecoveryStatus
@@ -97,9 +98,6 @@ private fun ResetBackup(onAction: (Action) -> Unit) {
 private fun NextStep(encryption: EncryptionStatus, onAction: (Action) -> Unit) {
     var key by rememberSaveable { mutableStateOf("") }
     when (encryption.recovery) {
-        RecoveryStatus.DISABLED -> if (encryption.verification != DeviceVerification.UNVERIFIED) {
-            WontonButton("开启备份", { onAction(Action.SetUpRecovery) }, Modifier.fillMaxWidth())
-        }
         RecoveryStatus.INCOMPLETE -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
             WontonTextField(
                 value = key,
@@ -125,7 +123,7 @@ private fun NextStep(encryption: EncryptionStatus, onAction: (Action) -> Unit) {
             )
         }
         RecoveryStatus.IN_PROGRESS -> CircularProgressIndicator()
-        RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
+        RecoveryStatus.DISABLED, RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
     }
 }
 
@@ -151,9 +149,9 @@ val EncryptionStatus.backupDetail: String?
         RecoveryStatus.ENABLED -> "换手机或新设备时，输入恢复密钥就能看到以前的消息。"
         // 未验证的设备开启不了，核心会拒绝。
         RecoveryStatus.DISABLED -> if (verification == DeviceVerification.UNVERIFIED) {
-            "要到最早配对的那台设备上开启。那台设备不在手边，就重置备份。"
+            "请打开最早配对的那台设备，备份会自动开启。那台设备不在手边，就重置备份。"
         } else {
-            "开启后，换手机或新设备时也能看到以前的消息。"
+            "设备验证后会自动开启备份。"
         }
         RecoveryStatus.INCOMPLETE -> "输入开启备份时保存的恢复密钥。密钥丢了，就重置备份。"
         RecoveryStatus.IN_PROGRESS -> null
@@ -169,12 +167,11 @@ val RecoveryStatus.backupValue: String
         RecoveryStatus.UNKNOWN -> "不确定"
     }
 
-/** 真需要主人动手时才有，显示在聊天列表顶上。 */
-val EncryptionStatus.backupReminder: String?
-    get() = when {
-        recoveryKey != null -> "恢复密钥还没保存"
-        recovery == RecoveryStatus.INCOMPLETE -> "输入恢复密钥，取回以前的消息"
-        else -> null
+val BackupReminder.text: String?
+    get() = when (this) {
+        BackupReminder.SAVE_RECOVERY_KEY -> "保存恢复密钥，换手机时要用"
+        BackupReminder.ENTER_RECOVERY_KEY -> "输入恢复密钥，取回以前的消息"
+        BackupReminder.OTHER -> null
     }
 
 @Composable

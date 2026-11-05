@@ -230,6 +230,7 @@ mod tests {
                 verification: DeviceVerification::Unknown,
                 recovery: RecoveryStatus::Unknown,
                 recovery_key: None,
+                backup_reminder: None,
             },
             rooms: vec![RoomRow {
                 room_id: room_id.to_owned(),

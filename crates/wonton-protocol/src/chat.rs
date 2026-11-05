@@ -124,6 +124,19 @@ pub struct EncryptionStatus {
     /// （[`Action::ConfirmRecoveryKeySaved`](crate::Action::ConfirmRecoveryKeySaved)）之前给出，确认后核心
     /// 把它从快照和本机清掉；其余时候为空。
     pub recovery_key: Option<SecretString>,
+    /// 聊天列表需要主人处理的备份提醒；文字和跳转由原生壳呈现。
+    pub backup_reminder: Option<BackupReminder>,
+}
+
+/// 聊天备份需要主人处理的事项。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum BackupReminder {
+    SaveRecoveryKey,
+    EnterRecoveryKey,
+    #[serde(other)]
+    Other,
 }
 
 /// 本设备有没有被自己账号的交叉签名身份验证过。验证过的设备能解密历史消息，别人也会信任它。
@@ -145,7 +158,7 @@ pub enum DeviceVerification {
 pub enum RecoveryStatus {
     /// 还不知道，比如还没登录或者还在同步。
     Unknown,
-    /// 账号还没设置恢复：用 [`Action::SetUpRecovery`](crate::Action::SetUpRecovery) 设置。
+    /// 账号还没设置恢复：已验证的设备在聊天会话就绪后自动开启。
     Disabled,
     /// 正在设置或恢复。
     InProgress,
@@ -288,6 +301,7 @@ mod tests {
                 verification: DeviceVerification::Unverified,
                 recovery: RecoveryStatus::Incomplete,
                 recovery_key: Some(SecretString::new(KEY)),
+                backup_reminder: Some(BackupReminder::SaveRecoveryKey),
             },
             rooms: vec![RoomRow {
                 room_id: "!bot:home.example".into(),

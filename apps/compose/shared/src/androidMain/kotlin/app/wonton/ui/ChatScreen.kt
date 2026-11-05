@@ -174,7 +174,7 @@ private fun ChatListScreen(
 private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
-    val reminder = viewModel.encryption.backupReminder
+    val reminder = viewModel.encryption.backupReminder?.text
     // 连不上由标题栏说，连上后自动重来。
     val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
         ?.let { it.reason.problem(it.message) }

@@ -21,7 +21,7 @@ mod view;
 
 use std::future::Future;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures_util::StreamExt;
@@ -43,7 +43,7 @@ pub(crate) use view::{failure, summary};
 use crate::home::HomeLink;
 use confirmation::{Answers, Cards, core_account};
 use storage::ChatStorage;
-use view::{core_error, recovery, room_row, sort_rooms, verification};
+use view::{core_error, room_row, sort_rooms};
 
 /// 向前翻页一次最多加载的事件数。
 const PAGE: u16 = 30;
@@ -61,8 +61,8 @@ pub(crate) struct ChatLink {
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
-    /// 正在重置恢复。途中 SDK 会报“未设置”，这时不能让它盖掉“处理中”，否则界面上会冒出“开启备份”。
-    resetting_recovery: Arc<AtomicBool>,
+    /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。
+    resetting_recovery: AtomicBool,
     /// 主人的默认 Agent 在 Matrix 上的用户 ID，聊天列表里它的房间排第一。
     primary_bot: Arc<Mutex<Option<String>>>,
     /// 房间列表的基准顺序，显示时把默认 Agent 的房间提到最前。
@@ -90,14 +90,17 @@ impl ChatLink {
         data_dir: &Path,
     ) -> Result<Arc<Self>, CoreError> {
         let storage = ChatStorage::open(data_dir)?;
+        let mut encryption = EncryptionStatus {
+            verification: DeviceVerification::Unknown,
+            recovery: RecoveryStatus::Unknown,
+            recovery_key: storage.recovery_key()?,
+            backup_reminder: None,
+        };
+        recovery::update_reminder(&mut encryption);
         let view = watch::Sender::new(ChatViewModel {
             account: ChatAccount::SignedOut,
             sync: ChatSync::Idle,
-            encryption: EncryptionStatus {
-                verification: DeviceVerification::Unknown,
-                recovery: RecoveryStatus::Unknown,
-                recovery_key: storage.recovery_key()?,
-            },
+            encryption,
             rooms: Vec::new(),
             problem: None,
             push: PushStatus::NoEndpoint,
@@ -113,7 +116,7 @@ impl ChatLink {
             session: Mutex::new(None),
             open_room: Mutex::new(None),
             answers: watch::Sender::default(),
-            resetting_recovery: Arc::default(),
+            resetting_recovery: AtomicBool::default(),
             primary_bot: Arc::new(Mutex::new(None)),
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
@@ -224,7 +227,6 @@ impl ChatLink {
                 });
                 Ok(())
             }
-            Action::SetUpRecovery => self.set_up_recovery(),
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
@@ -257,8 +259,10 @@ impl ChatLink {
 
     fn confirm_recovery_key_saved(&self) -> Result<(), CoreError> {
         self.storage.forget_recovery_key()?;
-        self.view
-            .send_modify(|view| view.encryption.recovery_key = None);
+        self.view.send_modify(|view| {
+            view.encryption.recovery_key = None;
+            recovery::update_reminder(&mut view.encryption);
+        });
         Ok(())
     }
 
@@ -631,22 +635,9 @@ impl ChatLink {
                 }
             })
         };
-        let encryption = {
-            let states = session.encryption_states();
-            let view = view.clone();
-            let resetting = self.resetting_recovery.clone();
-            self.runtime.spawn(async move {
-                let mut states = std::pin::pin!(states);
-                while let Some(state) = states.next().await {
-                    view.send_modify(|view| {
-                        view.encryption.verification = verification(state.verification);
-                        if !resetting.load(Ordering::Relaxed) {
-                            view.encryption.recovery = recovery(state.recovery);
-                        }
-                    });
-                }
-            })
-        };
+        let encryption = self
+            .runtime
+            .spawn(recovery::watch(Arc::downgrade(self), session.clone()));
         let sync = {
             let statuses = session.sync_status();
             let view = view.clone();

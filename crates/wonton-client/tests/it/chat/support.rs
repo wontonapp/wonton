@@ -64,6 +64,7 @@ struct Core {
     /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
+    reject_backup_creation: AtomicBool,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
 }
@@ -86,6 +87,7 @@ impl Home {
             matrix_down: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
+            reject_backup_creation: AtomicBool::new(false),
             onboarding: Mutex::default(),
         });
         let (addr, task) = fake_core(core.clone()).await;
@@ -110,6 +112,12 @@ impl Home {
     /// Tuwunel 挂了或恢复了，隧道不受影响。
     pub fn set_matrix_down(&self, down: bool) {
         self.core.matrix_down.send_replace(down);
+    }
+
+    pub fn reject_backup_creation(&self, reject: bool) {
+        self.core
+            .reject_backup_creation
+            .store(reject, Ordering::SeqCst);
     }
 
     /// 设置假核心的引导状态；没设置时引导接口回 404。
@@ -257,6 +265,19 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     }
     let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
     if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
+        if text.starts_with("post /_matrix/client/v3/room_keys/version ")
+            && core.reject_backup_creation.load(Ordering::SeqCst)
+        {
+            let body = r#"{"errcode":"M_FORBIDDEN","error":"Backup creation rejected"}"#;
+            let response = format!(
+                "HTTP/1.1 403 Forbidden\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            tcp.write_all(response.as_bytes()).await.unwrap();
+            tcp.shutdown().await.unwrap();
+            return;
+        }
         if text.starts_with("post /_matrix/media/")
             && text
                 .lines()

@@ -38,7 +38,7 @@ pub use appearance::{
     ThemeColors, ThemeMode, ThemeModeOption,
 };
 pub use chat::{
-    ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
+    BackupReminder, ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
     DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, PendingConfirmation,
     RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
 };

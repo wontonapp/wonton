@@ -8,6 +8,7 @@ mod confirmation;
 mod onboarding;
 mod pending;
 mod push;
+mod recovery;
 mod resume;
 mod send;
 mod server_switch;
@@ -46,7 +47,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&phone, &bot).await;
     chat_with_the_bot(&phone, &bot, &room_id).await;
-    let recovery_key = read_and_set_up_recovery(&phone, &room_id).await;
+    let recovery_key = read_and_wait_for_recovery(&phone, &room_id).await;
     drop(phone);
 
     // 重启：用同一个数据目录，恢复上次的会话，不再要登录令牌；加密的历史仍能解密。主人还没确认保存恢复密钥，
@@ -331,8 +332,8 @@ async fn bot_receives<R>(
     .await
 }
 
-/// 标为已读后未读清零；设置恢复后得到恢复密钥，状态变为已开启。
-async fn read_and_set_up_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
+/// 标为已读后未读清零；等待自动开启恢复并得到恢复密钥。
+async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
     phone
         .dispatch(Action::MarkRoomRead {
             room_id: room_id.to_string(),
@@ -346,9 +347,8 @@ async fn read_and_set_up_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Secre
                 .then_some(())
         })
         .await;
-    phone.dispatch(Action::SetUpRecovery).unwrap();
     phone
-        .wait_chat("恢复已开启", |view| {
+        .wait_chat("恢复自动开启", |view| {
             (view.encryption.recovery == RecoveryStatus::Enabled)
                 .then(|| view.encryption.recovery_key.clone())
                 .flatten()

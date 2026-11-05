@@ -1,28 +1,69 @@
 //! 恢复（密钥备份加秘密存储）：设置、用恢复密钥取回、重置，以及它们在 ViewModel 上的进展。
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 
-use wonton_matrix::Error;
-use wonton_protocol::{ChatFailure, ChatProblem, CoreError, RecoveryStatus, SecretString};
+use futures_util::StreamExt;
+use wonton_matrix::{Error, MatrixSession};
+use wonton_protocol::{
+    BackupReminder, ChatFailure, ChatProblem, CoreError, DeviceVerification, EncryptionStatus,
+    RecoveryStatus, SecretString,
+};
 
-use super::view::{failure, recovery};
+use super::view::{failure, recovery, verification};
 use super::{ChatLink, invalid, login};
 
-impl ChatLink {
-    pub(super) fn set_up_recovery(self: &Arc<Self>) -> Result<(), CoreError> {
-        let session = self.current()?;
-        let chat = self.clone();
-        let before = self.begin_recovery();
-        self.runtime.spawn(async move {
-            match session.enable_recovery().await {
-                Ok(key) => chat.show_recovery_key(SecretString::new(key)),
-                Err(error) => chat.fail_recovery(before, &error),
+pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
+    let mut states = std::pin::pin!(session.encryption_states());
+    let mut attempted = false;
+    while states.next().await.is_some() {
+        let Some(link) = chat.upgrade() else { return };
+        // 开启恢复时状态流会积累事件；读最新快照，不让排队的旧状态盖掉结果。
+        let state = session.encryption_state();
+        let resetting = link.resetting_recovery.load(Ordering::Relaxed);
+        let mut enable = false;
+        link.view.send_modify(|view| {
+            let encryption = &mut view.encryption;
+            encryption.verification = verification(state.verification);
+            if !resetting {
+                encryption.recovery = recovery(state.recovery);
             }
+            update_reminder(encryption);
+            enable = !attempted
+                && !resetting
+                && encryption.verification == DeviceVerification::Verified
+                && encryption.recovery == RecoveryStatus::Disabled
+                && encryption.recovery_key.is_none();
         });
-        Ok(())
+        if !enable {
+            continue;
+        }
+        attempted = true;
+        let before = link.begin_recovery();
+        drop(link);
+        let result = session.enable_recovery().await;
+        let Some(link) = chat.upgrade() else { return };
+        match result {
+            Ok(key) => {
+                link.set_recovery(recovery(session.encryption_state().recovery));
+                link.show_recovery_key(SecretString::new(key));
+            }
+            Err(error) => link.fail_recovery(before, &error),
+        }
     }
+}
 
+pub(super) fn update_reminder(encryption: &mut EncryptionStatus) {
+    encryption.backup_reminder = if encryption.recovery_key.is_some() {
+        Some(BackupReminder::SaveRecoveryKey)
+    } else if encryption.recovery == RecoveryStatus::Incomplete {
+        Some(BackupReminder::EnterRecoveryKey)
+    } else {
+        None
+    };
+}
+
+impl ChatLink {
     /// 重置恢复。先要登录令牌：要不到就还什么都没动，账号保持原样。之后 SDK 一上来就删备份，中途失败时账号可能
     /// 停在“没有备份”，所以失败后显示实际状态，不放回原来的。
     pub(super) fn reset_recovery(self: &Arc<Self>) -> Result<(), CoreError> {
@@ -90,6 +131,7 @@ impl ChatLink {
         let saved = self.storage.save_recovery_key(&key);
         self.view.send_modify(|view| {
             view.encryption.recovery_key = Some(key);
+            update_reminder(&mut view.encryption);
             if let Err(error) = saved {
                 view.problem = Some(ChatProblem {
                     reason: ChatFailure::Upstream,
@@ -118,12 +160,15 @@ impl ChatLink {
     fn show_recovery_failure(&self, before: RecoveryStatus, reason: ChatFailure, message: String) {
         self.view.send_modify(|view| {
             view.encryption.recovery = before;
+            update_reminder(&mut view.encryption);
             view.problem = Some(ChatProblem { reason, message });
         });
     }
 
     fn set_recovery(&self, status: RecoveryStatus) {
-        self.view
-            .send_modify(|view| view.encryption.recovery = status);
+        self.view.send_modify(|view| {
+            view.encryption.recovery = status;
+            update_reminder(&mut view.encryption);
+        });
     }
 }

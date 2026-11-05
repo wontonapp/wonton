@@ -53,7 +53,7 @@ struct ChatListView: View {
 
     @ViewBuilder private var notices: some View {
         let status = ChatStatus(model.viewModel)
-        let reminder = model.viewModel.encryption.backupReminder
+        let reminder = model.viewModel.encryption.backupReminder?.text
         if status != nil || reminder != nil {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 status.map(ChatStatusView.init)
