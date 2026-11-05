@@ -152,12 +152,17 @@ fn draft_text(params: &Value) -> Result<String, RpcError> {
     if params["role"] != "user" {
         return Err(invalid_params());
     }
-    let content = params["content"].as_array().ok_or_else(invalid_params)?;
-    if content.is_empty() {
+    // 规范原文（ext-apps 2026-01-26）的 content 是单个对象，官方 SDK 发的却是数组
+    // （ext-apps#48）：两种都收，单个对象按只有一个元素处理。
+    let blocks: &[Value] = match params["content"].as_array() {
+        Some(array) => array,
+        None => std::slice::from_ref(&params["content"]),
+    };
+    if blocks.is_empty() {
         return Err(invalid_params());
     }
     let mut text = String::new();
-    for (index, block) in content.iter().enumerate() {
+    for (index, block) in blocks.iter().enumerate() {
         if block["type"] != "text" {
             return Err(invalid_params());
         }

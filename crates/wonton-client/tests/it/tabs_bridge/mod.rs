@@ -231,9 +231,23 @@ async fn links_only_open_https_and_messages_only_create_text_drafts() {
         })
     );
     assert_eq!(rig.app.chat(), before);
+    // 规范原文（ext-apps 2026-01-26）是单个对象，SDK 发数组：两种都收。
+    let reply = request(
+        &rig,
+        &tab,
+        "ui/message",
+        json!({"role":"user","content":{"type":"text","text":"照规范写的单对象"}}),
+    );
+    assert_eq!(
+        reply.action,
+        Some(TabBridgeAction::DraftMessage {
+            text: "照规范写的单对象".to_owned()
+        })
+    );
     for params in [
         json!({"role":"assistant","content":[{"type":"text","text":"wrong role"}]}),
         json!({"role":"user","content":[{"type":"image","data":"AA==","mimeType":"image/png"}]}),
+        json!({"role":"user","content":{"type":"image","data":"AA==","mimeType":"image/png"}}),
     ] {
         let reply = request(&rig, &tab, "ui/message", params);
         assert_eq!(response(&reply)["error"]["code"], -32602);
