@@ -6,8 +6,10 @@ import android.graphics.Bitmap
 import android.content.res.Configuration
 import android.net.Uri
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.view.ContextThemeWrapper
+import android.webkit.WebChromeClient
 import android.webkit.HttpAuthHandler
 import android.webkit.WebResourceError
 import android.webkit.RenderProcessGoneDetail
@@ -43,11 +45,51 @@ private const val TAG = "WontonWeb"
 /** 和 `wonton-tunnel` 的 `ERROR_HEADER` 一致。 */
 private const val TUNNEL_ERROR_HEADER = "x-wonton-tunnel-error"
 
+/** 只有服务端错误才算加载失败;4xx 是插件自己的内容。 */
+private const val HTTP_SERVER_ERROR = 500
+
 /** UI 线程能力引用；脚本仅接收核心返回值，不在 Android 壳中解释桥协议。 */
 class PluginWebViewController {
     internal var view: WebView? = null
     var canGoBack by mutableStateOf(false)
         private set
+    var themeColor: Int? by mutableStateOf(null)
+        private set
+    var customView: View? by mutableStateOf(null)
+        private set
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    /** 退出网页视频全屏；胶囊和系统返回都走原生回调，不接管 Activity 的窗口。 */
+    fun closeCustomView(): Boolean {
+        val current = customView ?: return false
+        val callback = customViewCallback
+        customView = null
+        customViewCallback = null
+        (current.parent as? ViewGroup)?.removeView(current)
+        callback?.onCustomViewHidden()
+        return true
+    }
+
+    internal fun showCustomView(owner: WebView, custom: View, callback: WebChromeClient.CustomViewCallback) {
+        if (view !== owner || customView != null) {
+            callback.onCustomViewHidden()
+            return
+        }
+        customViewCallback = callback
+        customView = custom
+    }
+
+    internal fun updateThemeColor(color: Int?) {
+        themeColor = color
+    }
+
+    internal fun release(owner: WebView) {
+        if (view !== owner) return
+        view = null
+        canGoBack = false
+        themeColor = null
+        closeCustomView()
+    }
 
     fun goBack(): Boolean {
         val current = view
@@ -136,7 +178,7 @@ fun PluginWebView(
                 val wrapped = pluginContext(context, darkTheme)
                 val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
                 WebView.setWebContentsDebuggingEnabled(debuggable)
-                ThemedPluginWebView(wrapped, darkTheme).apply {
+                ThemedPluginWebView(wrapped, darkTheme, controller).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                     )
@@ -144,26 +186,23 @@ fun PluginWebView(
                     settings.domStorageEnabled = true
                     configureAppearance(this, canvas, darkTheme)
                     controller.view = this
+                    webChromeClient = PluginChromeClient(this, controller)
                     webViewClient = ProxyAuthClient(proxy, reload, url, controller, snapshot,
                         { loaded() }, { failed(it) }, { loadStarted() }, { openLink(it) }, {
-                            controller.view = null
-                            controller.updateHistory()
                             generation++
                             gone()
                         })
                 }
             },
             onRelease = { view ->
-                if (controller.view === view) {
-                    controller.view = null
-                    controller.updateHistory()
-                }
+                view.disposePage()
                 if (!view.rendererGone) view.destroy()
             },
             update = { view ->
                 view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
                     bridge(origin, main, message)
                 }
+                view.pageAppearance.updateOrigins(allowedOrigins)
                 configureBackground(view, canvas)
                 view.updateTheme(darkTheme, canvas)
                 view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.INVISIBLE
@@ -191,11 +230,26 @@ private fun pluginTheme(dark: Boolean): Int = if (dark) android.R.style.Theme_Ma
 private class ThemedPluginWebView(
     private val wrapped: ContextThemeWrapper,
     private var dark: Boolean,
+    private val controller: PluginWebViewController,
 ) : WebView(wrapped) {
     var rendererGone = false
+    private var disposed = false
     private var bridgeOrigins: Set<String>? = null
     private var startScript: String? = null
     private var scriptHandler: androidx.webkit.ScriptHandler? = null
+    val pageAppearance = PluginPageAppearance(this, controller)
+
+    fun disposePage() {
+        if (disposed) return
+        disposed = true
+        pageAppearance.dispose()
+        scriptHandler?.remove()
+        scriptHandler = null
+        if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")
+        bridgeOrigins = null
+        controller.release(this)
+        webChromeClient = null
+    }
 
     fun updateBridge(origins: Set<String>, script: String, onMessage: (Uri, Boolean, String) -> Unit) {
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
@@ -291,6 +345,9 @@ private class ProxyAuthClient(
     private val onRendererGone: () -> Unit,
 ) : WebViewClient() {
     private var failedThisLoad = false
+
+    /** HTTP 错误的 URL。错误回调早于 onPageStarted 到达（实测），同 URL 的 pageStarted 不能清失败标记。 */
+    private var failedUrl: String? = null
     private var started = false
     private var navigatedProxy: ProxySettings? = null
     private var currentUrl = url
@@ -305,6 +362,9 @@ private class ProxyAuthClient(
         reload = nextReload
         snapshot.url = nextUrl
         snapshot.reload = nextReload
+        // 重试（reload 变化）是新一次加载：这里清掉上一轮失败，成功由 onPageFinished 恢复。
+        failedThisLoad = false
+        failedUrl = null
         val recovery = snapshot.recoveryUrl.takeIf { restore }
         snapshot.recoveryUrl = null
         view.loadUrl(recovery ?: nextUrl)
@@ -332,6 +392,7 @@ private class ProxyAuthClient(
         Log.w(TAG, "WebView 渲染器退出 didCrash=${detail.didCrash()}")
         snapshot.recoveryUrl = currentUrl
         (view as ThemedPluginWebView).rendererGone = true
+        view.disposePage()
         (view.parent as? ViewGroup)?.removeView(view)
         view.destroy()
         onRendererGone()
@@ -339,25 +400,45 @@ private class ProxyAuthClient(
     }
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+        (view as ThemedPluginWebView).pageAppearance.reset()
+        controller.closeCustomView()
+        if (url == failedUrl) {
+            // HTTP 错误回调已到达并标记本轮失败：保持失败和隐藏，不当作新加载开始。
+            currentUrl = url
+            return
+        }
         view.visibility = android.view.View.INVISIBLE
         currentUrl = url
         failedThisLoad = false
         onLoadStarted()
     }
 
-    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-        if (request.isForMainFrame) failed(view)
+    override fun onPageCommitVisible(view: WebView, url: String) {
+        if (!failedThisLoad && url == currentUrl) (view as ThemedPluginWebView).pageAppearance.activate()
     }
 
-    /** 状态码交核心分类；隧道错误头优先作为连接错误，而非插件 HTTP 错误。 */
+    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (request.isForMainFrame) {
+            failedUrl = request.url.toString()
+            failed(view)
+        }
+    }
+
+    /** 网关失败与 5xx 才算加载失败；4xx 是插件自己的内容（登录页、站内 404），照常显示。
+     * 规则与 iOS 的 `tunnelFailed || statusCode >= 500` 一致（TabWebNavigation.swift）。 */
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+        if (!request.isForMainFrame) return
         val headers = response.responseHeaders.orEmpty().keys
         val fromProxy = headers.any { it.equals(TUNNEL_ERROR_HEADER, ignoreCase = true) }
-        if (request.isForMainFrame) failed(view, if (fromProxy) null else response.statusCode)
+        if (!fromProxy && response.statusCode < HTTP_SERVER_ERROR) return
+        failedUrl = request.url.toString()
+        failed(view, if (fromProxy) null else response.statusCode)
     }
 
     private fun failed(view: WebView, status: Int? = null) {
         view.visibility = android.view.View.INVISIBLE
+        (view as ThemedPluginWebView).pageAppearance.reset()
+        controller.closeCustomView()
         failedThisLoad = true
         onFailed(status)
     }
@@ -371,11 +452,15 @@ private class ProxyAuthClient(
     }
 
     override fun onPageFinished(view: WebView, url: String) {
+        failedUrl = null
         // 只记到路径：查询串和片段里可能有 OAuth 授权码等秘密（例如 /login/generic_oauth?code=…）。
         val page = Uri.parse(url).buildUpon().clearQuery().fragment(null).build()
         Log.i(TAG, "网页加载完成 page=$page")
         controller.updateHistory()
         // 出错的加载也会走到这里。
-        if (!failedThisLoad) onLoaded()
+        if (!failedThisLoad) {
+            if (url == currentUrl) (view as ThemedPluginWebView).pageAppearance.activate()
+            onLoaded()
+        }
     }
 }

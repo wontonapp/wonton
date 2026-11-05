@@ -8,16 +8,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -30,18 +27,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewFeature
 import app.wonton.client.TabBridgeAction
 import app.wonton.client.TabEnvironment
-import app.wonton.client.TabPlatform
-import app.wonton.client.TabSafeArea
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
@@ -52,15 +48,8 @@ import app.wonton.protocol.TabLayout
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
-import app.wonton.ui.design.LocalWontonBarStatus
-import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Back
-import app.wonton.ui.icons.Close
-import app.wonton.ui.icons.Refresh
-import app.wonton.ui.icons.WontonIcon
-import java.util.TimeZone
 import kotlin.math.roundToInt
 
 @Composable
@@ -74,6 +63,7 @@ fun PluginTabsHost(
     onReselected: () -> Unit,
     onDetails: (String) -> Unit,
     onDraft: (String) -> Unit,
+    bannerTop: Dp,
 ) {
     val visited = remember { mutableStateMapOf<TabRef, Boolean>() }
     val items = tabs.viewModel.items + listOfNotNull(tabs.viewModel.overlay)
@@ -86,7 +76,7 @@ fun PluginTabsHost(
             PluginTabContainer(
                 item, tabs, home, appearance, bottom, active == item.tab,
                 overlay = tabs.viewModel.overlay?.tab == item.tab,
-                reselected = reselected == item.tab, onReselected, onDetails, onDraft,
+                reselected = reselected == item.tab, onReselected, onDetails, onDraft, bannerTop,
             )
         }
     }
@@ -111,9 +101,10 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
         null
     }
 
-    fun back(overlay: Boolean) {
-        if (controller.goBack()) return
-        if (overlay) tabs.send(Action.CloseTabOverlay)
+    fun back(fullscreen: Boolean, overlay: Boolean) {
+        if (controller.closeCustomView() || controller.goBack()) return
+        if (fullscreen) tabs.send(Action.ExitFullscreen(tab))
+        else if (overlay) tabs.send(Action.CloseTabOverlay)
         else tabs.viewModel.items.firstOrNull()?.let { tabs.send(Action.SelectTab(it.tab)) }
     }
 
@@ -122,6 +113,7 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
     fun loadFinished(environment: TabEnvironment) {
         loaded = true
         failed = false
+        tabs.send(Action.TabLoadSucceeded(tab))
         script(environment)?.let { controller.evaluateJavascript(it) }
         controller.evaluateJavascript(tabs.core.tabConnectionScript())
     }
@@ -137,44 +129,89 @@ private fun PluginTabContainer(
     item: TabItem, tabs: TabsState, home: HomeViewModel, appearance: AppearanceViewModel,
     bottom: Dp, active: Boolean, overlay: Boolean, reselected: Boolean,
     onReselected: () -> Unit, onDetails: (String) -> Unit, onDraft: (String) -> Unit,
+    bannerTop: Dp,
 ) {
     val page = item.page ?: return
     val state = remember { WebPageState(item.tab, tabs) }
-    val density = LocalDensity.current
     var top by remember { mutableStateOf(0.dp) }
     val edge = page.layout == TabLayout.EDGE_TO_EDGE
+    val safe = tabSafeInsets()
+    val direction = LocalLayoutDirection.current
     var retainedBottom by remember { mutableStateOf(bottom) }
-    SideEffect { if (active) retainedBottom = bottom }
-    val environment = tabEnvironment(top, retainedBottom, edge)
-    val script = remember(page.url, appearance, environment) { state.script(environment, document = true) }
+    SideEffect { if (active) retainedBottom = if (page.fullscreen) safe.calculateBottomPadding() else bottom }
+    val environment = tabEnvironment(top, retainedBottom, edge, safe)
+    val script = remember(page.url, page.fullscreen, page.display, appearance, environment) {
+        state.script(environment, document = true)
+    }
     val openLink = externalLinkOpener { state.problem = it }
     val supported = remember { webViewSupportsTabs() }
     PageEffects(state, page, home, active, appearance, environment)
     ReselectedEffect(state, reselected, onReselected)
-    val back = { state.back(overlay) }
-    TabBackHandler(state, active, overlay, back)
+    val back = { state.back(page.fullscreen, overlay) }
+    TabBackHandler(state, active, page.fullscreen, overlay, back)
     val cover = state.covers(page)
-    val inset = if (edge) PaddingValues(0.dp) else PaddingValues(top = top, bottom = retainedBottom)
+    val inset = if (edge) PaddingValues(0.dp) else PaddingValues(
+        start = safe.calculateStartPadding(direction), end = safe.calculateEndPadding(direction),
+        top = top, bottom = retainedBottom,
+    )
     val takeover = pageTakeover(item.tab, tabs, active)
     Box(Modifier.fillMaxSize().imePadding()) {
         if (state.started && supported && script != null) {
             PageWebView(state, page, home, environment, script, inset, active && !cover, openLink, onDraft)
         }
+        if (active && page.fullscreen) state.controller.customView?.let { video ->
+            AndroidView(factory = { video }, modifier = Modifier.padding(inset).fillMaxSize())
+        }
         if (active) {
-            if (cover || !supported || state.problem != null) {
-                Box(Modifier.padding(top = top, bottom = retainedBottom).fillMaxSize()
-                    .background(WontonTheme.colors.canvas.toColor())) {
-                    PluginTabStatus(page, item.tab, tabs, state.problem, supported, onDetails)
-                }
-            }
-            Column(Modifier.align(Alignment.TopStart).onSizeChanged { top = with(density) { it.height.toDp() } }) {
-                PluginTabBar(page, state.controller.canGoBack, overlay, back,
-                    { tabs.send(Action.CloseTabOverlay) }, takeover) {
-                    state.problem = null
-                    tabs.send(Action.ReloadTab(item.tab))
-                }
-                takeover?.let { TakeoverNotice(it) }
-            }
+            PageStatusOverlay(state, page, item.tab, supported, PaddingValues(top = top, bottom = retainedBottom),
+                onDetails)
+            PageChrome(state, item, page, safe, edge, bannerTop, overlay, back, takeover,
+                onDetails, onTop = { top = it })
+        }
+    }
+}
+
+@Composable
+private fun PageStatusOverlay(
+    state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, inset: PaddingValues,
+    onDetails: (String) -> Unit,
+) {
+    if (state.covers(page) || !supported || state.problem != null) {
+        Box(Modifier.padding(inset).fillMaxSize().background(WontonTheme.colors.canvas.toColor())) {
+            PluginTabStatus(page, tab, state.tabs, state.problem, supported, onDetails)
+        }
+    }
+    if (page.fullscreen && page.layout != TabLayout.EDGE_TO_EDGE) Box(Modifier.fillMaxSize()) {
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(inset.calculateBottomPadding())
+            .background(WontonTheme.colors.canvas.toColor()))
+    }
+}
+
+@Composable
+private fun PageChrome(
+    state: WebPageState, item: TabItem, page: TabPage, safe: PaddingValues, edge: Boolean,
+    bannerTop: Dp, overlay: Boolean, back: () -> Unit, takeover: PageTakeover?,
+    onDetails: (String) -> Unit, onTop: (Dp) -> Unit,
+) {
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val canvas = WontonTheme.colors.canvas.toColor()
+    Column(Modifier.onSizeChanged { onTop(with(density) { it.height.toDp() }) }
+        .padding(top = if (page.fullscreen) bannerTop else 0.dp)) {
+        val reload = { state.problem = null; state.tabs.send(Action.ReloadTab(item.tab)) }
+        if (page.fullscreen) {
+            FullscreenTabBar(item.tab, page, state.tabs,
+                PaddingValues(start = safe.calculateStartPadding(direction),
+                    top = if (bannerTop > 0.dp) 0.dp else safe.calculateTopPadding(),
+                    end = safe.calculateEndPadding(direction)),
+                if (edge) null else state.controller.themeColor?.let { Color(it) } ?: canvas,
+                onClose = { state.controller.closeCustomView(); state.tabs.send(Action.ExitFullscreen(item.tab)) },
+                onReload = reload, onDetails = onDetails)
+        } else {
+            PluginTabBar(page, state.controller.canGoBack, overlay, back,
+                { state.tabs.send(Action.CloseTabOverlay) }, takeover,
+                onExpand = { state.tabs.send(Action.EnterFullscreen(item.tab)) }, onReload = reload)
+            takeover?.let { TakeoverNotice(it) }
         }
     }
 }
@@ -191,9 +228,11 @@ private fun ReselectedEffect(state: WebPageState, reselected: Boolean, onHandled
 }
 
 @Composable
-private fun TabBackHandler(state: WebPageState, active: Boolean, overlay: Boolean, back: () -> Unit) {
-    val canLeave = overlay || state.tabs.viewModel.items.firstOrNull()?.tab != state.tab
-    BackHandler(active && (state.controller.canGoBack || canLeave), back)
+private fun TabBackHandler(
+    state: WebPageState, active: Boolean, fullscreen: Boolean, overlay: Boolean, back: () -> Unit,
+) {
+    val canLeave = fullscreen || overlay || state.tabs.viewModel.items.firstOrNull()?.tab != state.tab
+    BackHandler(active && (state.controller.customView != null || state.controller.canGoBack || canLeave), back)
 }
 
 @Composable
@@ -205,6 +244,12 @@ private fun PageEffects(
     val fontScale = LocalDensity.current.fontScale
     LaunchedEffect(active, connected, page.state) {
         if (active && connected && page.state is TabState.Ready) state.started = true
+    }
+    LaunchedEffect(state.controller.customView, active) {
+        if (state.controller.customView != null) {
+            if (!active) state.controller.closeCustomView()
+            else if (!page.fullscreen) state.tabs.send(Action.EnterFullscreen(state.tab))
+        }
     }
     LaunchedEffect(appearance, environment, page.fullscreen, page.display, fontScale) {
         if (state.started) state.script(environment)?.let { state.controller.evaluateJavascript(it) }
@@ -250,47 +295,7 @@ private fun pageTakeover(tab: TabRef, tabs: TabsState, active: Boolean): PageTak
     return takeover
 }
 
-@Composable
-private fun tabEnvironment(top: Dp, bottom: Dp, edge: Boolean): TabEnvironment {
-    val density = LocalDensity.current
-    val safe = WindowInsets.safeDrawing
-    val configuration = LocalConfiguration.current
-    return TabEnvironment(
-        configuration.locales[0].toLanguageTag(), TimeZone.getDefault().id, TabPlatform.ANDROID,
-        WontonTheme.isDark, top.value.toDouble(), bottom.value.toDouble(),
-        TabSafeArea(
-            if (edge) (safe.getTop(density) / density.density).toDouble() else 0.0,
-            0.0, if (edge) (safe.getBottom(density) / density.density).toDouble() else 0.0, 0.0,
-        ),
-    )
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PluginTabBar(
-    page: TabPage, canGoBack: Boolean, overlay: Boolean, onBack: () -> Unit,
-    onClose: () -> Unit, takeover: PageTakeover?, onReload: () -> Unit,
-) {
-    val colors = WontonTheme.colors
-    val status = LocalWontonBarStatus.current
-    Column(Modifier.fillMaxWidth().background(colors.surface.toColor())) {
-        TopAppBar(
-            title = { Text(status.title ?: page.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            navigationIcon = { if (canGoBack) WontonIconButton(WontonIcon.Back, tabText("返回", "Back"), onBack) },
-            actions = {
-                takeover?.let { TakeoverButton(it) }
-                WontonIconButton(WontonIcon.Refresh, tabText("重新加载", "Reload"), onReload)
-                if (overlay) WontonIconButton(WontonIcon.Close, tabText("关闭", "Close"), onClose)
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface.toColor()),
-        )
-        status.line?.let { Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset)) { it() } }
-        if (page.state is TabState.Upgrading) Text(
-            tabText("正在升级…", "Updating…"), Modifier.padding(horizontal = WontonTheme.spacing.pageInset),
-            color = colors.textSecondary.toColor(), style = WontonTheme.typography.supporting,
-        )
-    }
-}
 
 private fun webViewSupportsTabs(): Boolean = listOf(
     WebViewFeature.WEB_MESSAGE_LISTENER, WebViewFeature.DOCUMENT_START_SCRIPT,

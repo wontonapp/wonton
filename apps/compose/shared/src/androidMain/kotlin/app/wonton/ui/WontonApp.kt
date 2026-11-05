@@ -2,7 +2,6 @@ package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -28,6 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
@@ -145,8 +148,11 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
     val draft = LocalTabDraft.current
     val shown = view.overlay?.tab ?: view.selected
     val native = shown !is TabRef.Plugin || nav.settingsOverlay
-    val showsBar = !WindowInsets.isImeVisible && !nav.hidesBar() && view.overlay == null
+    val fullscreen = !native && isFullscreen(tabs, shown)
+    FullscreenSystemBars(fullscreen)
+    val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible)
     var reselected by remember { mutableStateOf<TabRef?>(null) }
+    var tabMenu by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::connection)
@@ -154,7 +160,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
         shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
     }
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
-        WithPendingCards(cards, nav::openRoom) {
+        WithPendingCards(cards, fullscreen, nav::openRoom) { bannerTop ->
             Scaffold(
                 containerColor = WontonTheme.colors.canvas.toColor(),
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -162,7 +168,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
                     if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
                         if (view.selected == selected) reselected = selected
                         tabs.send(Action.SelectTab(selected))
-                    }, { nav.settings(SettingsSubpage.TABS) })
+                    }, { tabMenu = it })
                 },
             ) { padding ->
                 Box(Modifier.fillMaxSize()) {
@@ -171,6 +177,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
                         active = shown.takeUnless { native }, reselected = reselected,
                         onReselected = { reselected = null }, onDetails = nav::detail,
                         onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
+                        bannerTop = bannerTop,
                     )
                     if (native) Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
                         NativeContent(nav, home, appearance, chat, nativeState)
@@ -181,7 +188,16 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
         }
     }
     TabNotices(tabs) { nav.settings(SettingsSubpage.TABS) }
+    view.items.firstOrNull { it.tab == tabMenu }?.let { item ->
+        TabBarMenu(item, tabs, { nav.settings(SettingsSubpage.TABS) }, { tabMenu = null })
+    }
 }
+
+private fun isFullscreen(tabs: TabsState, shown: TabRef): Boolean =
+    (tabs.viewModel.overlay ?: tabs.viewModel.items.firstOrNull { it.tab == shown })?.page?.fullscreen == true
+
+private fun showsBottomBar(nav: AppNavigation, fullscreen: Boolean, keyboard: Boolean): Boolean =
+    !fullscreen && !keyboard && !nav.hidesBar() && nav.tabs.viewModel.overlay == null
 
 @Composable
 private fun OpeningChat(chat: ChatNavigation) {
@@ -239,15 +255,24 @@ private fun OpenDevWebEffect(url: String?, plugins: PluginsState, tabs: TabsStat
 
 @Composable
 private fun WithPendingCards(
-    cards: List<PendingConfirmation>, onOpen: (String) -> Unit, content: @Composable () -> Unit,
+    cards: List<PendingConfirmation>, fullscreen: Boolean, onOpen: (String) -> Unit,
+    content: @Composable (bannerTop: Dp) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
-        if (cards.isNotEmpty()) {
+    val density = LocalDensity.current
+    var measured by remember { mutableStateOf(0.dp) }
+    val banner = if (cards.isEmpty()) 0.dp else measured
+    Box(Modifier.fillMaxSize()) {
+        val below = if (cards.isNotEmpty() && !fullscreen) {
+            Modifier.consumeWindowInsets(WindowInsets.statusBars)
+        } else Modifier
+        Box(below.padding(top = if (fullscreen) 0.dp else banner).fillMaxSize()) {
+            content(if (fullscreen) banner else 0.dp)
+        }
+        if (cards.isNotEmpty()) Box(Modifier.onSizeChanged { measured = with(density) { it.height.toDp() } }
+            .then(if (fullscreen) Modifier.displayCutoutPadding() else Modifier)) {
             PendingCardBanner(cards, onOpen)
             OnboardingTipNotice(app.wonton.protocol.OnboardingTip.CONFIRMATION_CARD)
         }
-        val below = if (cards.isNotEmpty()) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier
-        Box(below.weight(1f).fillMaxSize()) { content() }
     }
 }
 

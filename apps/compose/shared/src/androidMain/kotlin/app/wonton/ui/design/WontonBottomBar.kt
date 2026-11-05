@@ -45,9 +45,11 @@ import app.wonton.ui.icons.WontonIcon
 private const val DIMMED_ALPHA = 0.4f
 
 @Composable
-fun WontonBottomBar(tabs: TabsViewModel, plugins: PluginsState, onSelect: (TabRef) -> Unit, onEdit: () -> Unit) {
+fun WontonBottomBar(
+    tabs: TabsViewModel, plugins: PluginsState, onSelect: (TabRef) -> Unit, onMenu: (TabRef) -> Unit,
+) {
     val colors = WontonTheme.colors
-    val editLabel = tabText("编辑底栏", "Edit tab bar")
+    val menuLabel = tabText("标签菜单", "Tab menu")
     NavigationBar(
         containerColor = colors.surface.toColor(),
         tonalElevation = 0.dp,
@@ -58,14 +60,14 @@ fun WontonBottomBar(tabs: TabsViewModel, plugins: PluginsState, onSelect: (TabRe
             NavigationBarItem(
                 selected = selected,
                 onClick = { onSelect(item.tab) },
-                modifier = Modifier.pointerInput(onEdit) {
+                modifier = Modifier.pointerInput(onMenu, item.tab) {
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                             waitForUpOrCancellation(pass = PointerEventPass.Initial)
                         }
                         if (up == null) {
-                            onEdit()
+                            onMenu(item.tab)
                             do {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 event.changes.forEach { it.consume() }
@@ -73,7 +75,7 @@ fun WontonBottomBar(tabs: TabsViewModel, plugins: PluginsState, onSelect: (TabRe
                         }
                     }
                 }.semantics {
-                    customActions = listOf(CustomAccessibilityAction(editLabel) { onEdit(); true })
+                    customActions = listOf(CustomAccessibilityAction(menuLabel) { onMenu(item.tab); true })
                 },
                 icon = {
                     BadgedBox(badge = {
