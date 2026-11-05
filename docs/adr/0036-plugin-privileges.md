@@ -193,15 +193,13 @@ npchy，Docker Engine 29.7.2，`systemctl is-active ufw` 为 active，没改防�
 | 经同一路径做 WebSocket 升级，发一帧收回同一帧 | 101，帧原样回来 |
 | `docker kill` 中继后在原进程里重启（套接字文件残留） | 没有 `unlink-early` 时 socat 报 “exists”，容器反复重启；加上 `unlink-early` 后启动成功，套接字继续可用 |
 
-<<<<<<< HEAD
 ### 只监听回环时的防火墙提示（2026-11-05）
 
 npchy，Docker Engine 29.7.2。假 Docker 下让行为测试复现后修复：只监听回环、监听所有地址、读不到监听表三种情况。另用 `public.ecr.aws/docker/library/busybox:1.37` 在宿主网络里 `nc -l -s 127.0.0.1`，确认真实内核的 `/proc/net/tcp` 格式能被解析成回环监听。
-=======
+
 ### 最高级工具的卡片（2026-11-05）
 
 假插件和假 Docker 的行为测试：最高级的只读工具连续调用两次，每次一张卡片，卡片都写明以 root 身份执行；同时打开只读标记、始终允许和一律允许后仍然发卡，审计 `basis` 为 `card`；拒绝卡片时工具没有执行。
->>>>>>> fa12b55 (feat(mcp): 最高级插件的工具每次一张确认卡片)
 
 **待验证：** Home Assistant 作为第一个样例，装上后要自动发现局域网设备、在 App 里能用；要哪些能力、不用 `privileged` 够不够。一个没有防火墙的主机上走一遍同样的流程。串口设备的选择和拔插。
 
