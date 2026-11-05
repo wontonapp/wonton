@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
-    Action, AddedSource, CoreError, PluginFailure, PluginImage, PluginOperation, PluginState,
-    PluginTaskState, SourceKind, StoreSection,
+    Action, AddedSource, AddedTools, CoreError, PluginFailure, PluginImage, PluginOperation,
+    PluginState, PluginTaskState, SourceKind, StoreSection,
 };
 
 use rig::{Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview, running};
@@ -470,4 +470,61 @@ async fn images_are_cached_and_only_come_from_the_image_api() {
             .seen(&Method::GET, "/_wonton/api/devices")
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn an_upgrade_says_which_tools_the_new_version_added() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let result = serde_json::json!({
+        "plugin": running("app.photos"),
+        "added_tools": {"type": "compared", "names": ["delete_album"]},
+    });
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins/app.photos/upgrade",
+        Canned(200, result.to_string()),
+    );
+    rig.app
+        .dispatch(Action::UpgradePlugin {
+            preview: preview("app.photos"),
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.state == PluginTaskState::Succeeded)
+        })
+        .await;
+    assert_eq!(
+        view.tasks[0].added_tools,
+        Some(AddedTools::Compared {
+            names: vec!["delete_album".to_owned()]
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins/app.photos/upgrade",
+        Canned(200, "{}".to_owned()),
+    );
+    rig.app
+        .dispatch(Action::UpgradePlugin {
+            preview: preview("app.photos"),
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.state == PluginTaskState::Succeeded)
+        })
+        .await;
+    assert_eq!(view.tasks[0].added_tools, None);
 }

@@ -268,6 +268,7 @@ impl PluginManager {
             let kept = record.lan_webui && switched(&old).is_some();
             s.offer(kept)
         });
+        preview.always_allowed = self.always_allowed(id, langs);
         Ok(preview)
     }
 

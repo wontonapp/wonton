@@ -1,12 +1,20 @@
 //! 放宽确认的设置：工具列表和各个开关（ADR-0024）。一次调用怎么判定见 [`Bus::call_plugin`]。
 
-use wonton_protocol::{BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView};
+use std::collections::BTreeSet;
+use std::time::Duration;
+
+use wonton_protocol::{
+    AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
+};
 
 use super::Bus;
 use super::audit::PolicyRecord;
 use super::cards;
 use crate::plugin::PluginId;
 use crate::plugin::tool_policy::{PolicyUnavailable, ToolPolicy};
+
+const NEW_VERSION_TOOL_RETRIES: u32 = 15;
+const NEW_VERSION_TOOL_WAIT: Duration = Duration::from_secs(1);
 
 /// 主人要改的一个开关。
 #[derive(Debug, Clone, Copy)]
@@ -120,6 +128,44 @@ impl Bus {
             }
         };
         Ok(tools.into_iter().map(entry).collect())
+    }
+
+    /// 升级前记下工具名，给 [`Self::added_tools`] 比较。
+    pub async fn tool_names(&self, plugin: &PluginId) -> Result<BTreeSet<String>, String> {
+        let tools = self.listed_tools(plugin).await?;
+        Ok(tools.into_iter().map(|entry| entry.name).collect())
+    }
+
+    /// 新版本比 `before` 多了哪些工具。新版本的健康检查过了不代表 MCP 服务起来了，所以列不出来时多等一会儿。
+    pub async fn added_tools(
+        &self,
+        plugin: &PluginId,
+        before: Result<BTreeSet<String>, String>,
+    ) -> AddedTools {
+        let before = match before {
+            Ok(before) => before,
+            Err(reason) => {
+                return AddedTools::NotCompared {
+                    reason: format!("旧版本列不出工具：{reason}"),
+                };
+            }
+        };
+        let mut after = self.tool_names(plugin).await;
+        for _ in 0..NEW_VERSION_TOOL_RETRIES {
+            if after.is_ok() {
+                break;
+            }
+            tokio::time::sleep(NEW_VERSION_TOOL_WAIT).await;
+            after = self.tool_names(plugin).await;
+        }
+        match after {
+            Ok(after) => AddedTools::Compared {
+                names: after.difference(&before).cloned().collect(),
+            },
+            Err(reason) => AddedTools::NotCompared {
+                reason: format!("新版本列不出工具：{reason}"),
+            },
+        }
     }
 
     /// 插件列得出工具，里面却没有这一个。列不出来时不算：插件没运行时主人也能取消标记。

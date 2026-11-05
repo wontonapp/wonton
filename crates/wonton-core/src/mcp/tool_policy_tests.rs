@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
-use wonton_protocol::{Answer, ConfirmationState};
+use wonton_protocol::{AddedTools, Answer, ConfirmationState};
 
 use super::Caller;
 use super::tests::{Setup, setup, text};
@@ -99,4 +99,26 @@ async fn read_only_mark_clears_a_tool_for_all_bots_until_removed() {
     s.answer(&card.id, Answer::Approve).unwrap();
     again.await.unwrap();
     assert_eq!(s.audit().last().unwrap()["basis"], "card");
+}
+
+#[tokio::test]
+async fn an_upgrade_reports_the_tools_the_old_version_did_not_have() {
+    let s = setup_notes().await;
+    let notes = PluginId::parse(NOTES).unwrap();
+    let all = s.bus.tool_names(&notes).await.unwrap();
+    let mut before = all.clone();
+    let new_tool = before.pop_first().unwrap();
+
+    assert_eq!(
+        s.bus.added_tools(&notes, Ok(before)).await,
+        AddedTools::Compared {
+            names: vec![new_tool]
+        }
+    );
+    assert_eq!(
+        s.bus.added_tools(&notes, Ok(all)).await,
+        AddedTools::Compared { names: Vec::new() }
+    );
+    let not_listed = s.bus.added_tools(&notes, Err("没有运行".to_owned())).await;
+    assert!(matches!(not_listed, AddedTools::NotCompared { .. }));
 }

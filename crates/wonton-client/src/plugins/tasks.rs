@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use wonton_protocol::{
     CoreError, InstallPreview, InstallRequest, PluginFailure, PluginIcon, PluginOperation,
-    PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest,
+    PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest, UpgradeResult,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT};
@@ -94,7 +94,14 @@ impl PluginsLink {
                 return;
             };
             let path = ["plugins", id.as_str(), "upgrade"];
-            let sent = api.post_unit(&path, &request, INSTALL_TIMEOUT);
+            let generation = link.generation.load(Ordering::SeqCst);
+            let sent = async {
+                let bytes = api.post_raw(&path, &request, INSTALL_TIMEOUT).await?;
+                if link.is_current(generation) {
+                    link.set_added_tools(&id, &bytes);
+                }
+                Ok(())
+            };
             let outcome = Outcome::Running {
                 version: Some(version.clone()),
             };
@@ -217,6 +224,22 @@ impl PluginsLink {
         self.view.send_modify(|view| {
             if let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) {
                 task.state = state;
+            }
+        });
+    }
+
+    /// 升级已经成功了，响应读不出来不算失败：核心比 App 新时形状可以变，这时不显示新增的工具。
+    fn set_added_tools(&self, id: &str, response: &[u8]) {
+        let added = match serde_json::from_slice::<UpgradeResult>(response) {
+            Ok(result) => result.added_tools,
+            Err(error) => {
+                tracing::warn!("升级的响应读不出来：{error}");
+                return;
+            }
+        };
+        self.view.send_modify(|view| {
+            if let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) {
+                task.added_tools = Some(added);
             }
         });
     }

@@ -260,13 +260,21 @@ impl CoreApi {
         body: &impl serde::Serialize,
         timeout: Duration,
     ) -> Result<(), PluginProblem> {
+        self.post_raw(segments, body, timeout).await.map(drop)
+    }
+
+    pub(super) async fn post_raw(
+        &self,
+        segments: &[&str],
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
             message: format!("请求体写不出来：{e}"),
         })?;
         self.send(Method::POST, self.url(segments, &[]), Some(body), timeout)
             .await
-            .map(drop)
     }
 
     pub(super) async fn delete(

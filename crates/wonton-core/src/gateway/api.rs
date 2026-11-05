@@ -10,7 +10,7 @@
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 `{}` 时取能升到的版本，带 `source` 或者插件包时换到主人选的，可以比装着的旧；返回要主人确认的内容（`InstallPreview`） |
-//! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`UpgradeResult`） |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
 //! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
 //! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
@@ -40,8 +40,8 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{
-    AddSourceRequest, EgressProxyUpdate, InstallRequest, InstallSource, LanChoice, LanWebuiUpdate,
-    UpgradeRequest,
+    AddSourceRequest, AddedTools, EgressProxyUpdate, InstallRequest, InstallSource, LanChoice,
+    LanWebuiUpdate, UpgradeRequest, UpgradeResult,
 };
 
 use super::{Gateway, TunnelPeer, isolation, pages};
@@ -362,6 +362,8 @@ pub async fn preview_upgrade(
     }
 }
 
+const NO_BUS: &str = "核心没有启用 MCP 总线";
+
 pub async fn upgrade(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -376,6 +378,10 @@ pub async fn upgrade(
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let before = match &gateway.mcp {
+        Some(mcp) => mcp.bus.tool_names(&id).await,
+        None => Err(NO_BUS.to_owned()),
     };
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
@@ -393,8 +399,18 @@ pub async fn upgrade(
     if let Err(e) = upgraded {
         return install_error(&e);
     }
+    let added_tools = match &gateway.mcp {
+        Some(mcp) => mcp.bus.added_tools(&id, before).await,
+        None => AddedTools::NotCompared {
+            reason: NO_BUS.to_owned(),
+        },
+    };
     match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-        Some(installed) => Json(installed).into_response(),
+        Some(plugin) => Json(UpgradeResult {
+            plugin,
+            added_tools,
+        })
+        .into_response(),
         None => install_error(&InstallError::NotInstalled(id.to_string())),
     }
 }

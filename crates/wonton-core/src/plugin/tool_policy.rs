@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::BotSwitch;
 
+use super::languages::Languages;
 use super::manager::PluginManager;
 use super::manifest::{LocalizedText, Permission, PluginId};
 use super::store::write_json;
@@ -212,6 +214,20 @@ impl PluginManager {
                     .is_some_and(|listed| listed.manifest.permissions.contains(&Permission::Tools))
             })
             .map(|(id, entry)| (id.clone(), entry.title.clone()))
+            .collect()
+    }
+
+    /// 已经对这个插件始终允许的 Bot，放在升级确认页上。
+    pub(super) fn always_allowed(&self, id: &PluginId, langs: &Languages) -> Vec<BotSwitch> {
+        let policy = self.tool_policy();
+        self.tool_callers()
+            .into_iter()
+            .filter(|(caller, _)| policy.is_always(id.as_str(), caller.as_str()))
+            .map(|(caller, title)| BotSwitch {
+                caller: caller.to_string(),
+                name: langs.pick_owned(&title),
+                enabled: true,
+            })
             .collect()
     }
 

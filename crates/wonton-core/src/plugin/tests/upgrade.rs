@@ -544,3 +544,35 @@ async fn serve_any() -> u16 {
         .await
         .port()
 }
+
+#[tokio::test]
+async fn always_allow_stays_through_an_upgrade_and_the_preview_lists_it() {
+    let (github, _docker, m, _dir) = with_github(true).await;
+    let bot = "  permissions: [tools]\n";
+    release(&github, &hello("1.0.0", "", bot));
+    install(&m, SOURCE).await;
+    let policy = m.tool_policy();
+    policy.set_always("app.hello", "app.hello", true).unwrap();
+    release(&github, &hello("1.1.0", "", bot));
+    m.check_upgrades_now().await;
+
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap();
+    let listed: Vec<_> = preview.always_allowed.iter().map(|b| &b.caller).collect();
+    assert_eq!(listed, ["app.hello"]);
+
+    upgrade(&m).await.unwrap();
+    assert_eq!(version(&m), "1.1.0");
+    assert!(policy.is_always("app.hello", "app.hello"));
+
+    policy.set_always("app.hello", "app.hello", false).unwrap();
+    release(&github, &hello("1.2.0", "", bot));
+    m.check_upgrades_now().await;
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap();
+    assert!(preview.always_allowed.is_empty());
+}

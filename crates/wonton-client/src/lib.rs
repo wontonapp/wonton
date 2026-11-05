@@ -45,7 +45,7 @@ pub use subscription::{
 };
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::{
-    Action, AddedSource, AgentLogin, Answer, AppearanceProblem, AppearanceViewModel,
+    Action, AddedSource, AddedTools, AgentLogin, Answer, AppearanceProblem, AppearanceViewModel,
     BackPagination, BotSwitch, CardChoice, CardLine, ChatAccount, ChatFailure, ChatProblem,
     ChatSync, ChatViewModel, ConfirmationCard, ConfirmationState, ConfirmationView,
     ConnectionNotice, CoreError, CoreUpgradeCheck, CoreUpgradeFailure, CoreUpgradeOffer,
