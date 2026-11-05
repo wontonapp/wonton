@@ -16,6 +16,7 @@
 //! 引导卡片由 [`OnboardingViewModel::nav`] 控制按钮；账号登录仍直接发 [`Action::ContinueOnboarding`]。
 //! 上一步不撤销已保存的资料、默认 Agent、key 或安装，也保留本机选项；已配置模型时，反向导航跳回 Agent，
 //! 不把主人送回 Apps。插件安装完成会静默更新推荐行，保存 key 和已有错误不受影响（ADR-0034、ADR-0038）。
+//! 后台通知不倒退已发布的引导状态；新操作接替旧操作的忙碌标记，失败后仍能返回或跳过。
 
 // matrix-sdk 的 future 嵌套很深，默认的 128 层不够算出聊天后台任务的类型布局。
 #![recursion_limit = "256"]

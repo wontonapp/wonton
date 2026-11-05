@@ -144,8 +144,10 @@ impl OnboardingLink {
             _ => Err(invalid("不是新用户引导操作")),
         }
     }
-    fn begin_operation(&self) -> (u64, u64) {
-        let _state = lock(&self.state);
+    fn begin_operation(&self, state: &mut LocalState) -> (u64, u64) {
+        // 被取代的操作不会再清理状态；忙碌标记必须一起交给新操作。
+        state.loading = false;
+        state.saving = None;
         (
             self.generation.load(Ordering::SeqCst),
             self.operation.fetch_add(1, Ordering::SeqCst) + 1,
@@ -158,14 +160,14 @@ impl OnboardingLink {
     }
 
     fn refresh(self: &Arc<Self>) {
-        let (generation, operation) = self.begin_operation();
-        {
+        let (generation, operation) = {
             let mut state = lock(&self.state);
+            let current = self.begin_operation(&mut state);
             state.loading = true;
-            state.saving = None;
             state.problem = None;
             state.model_problem = None;
-        }
+            current
+        };
         self.publish();
         let link = self.clone();
         self.runtime.spawn(async move {
@@ -421,12 +423,13 @@ impl OnboardingLink {
         reset_local: bool,
         direction: Direction,
     ) {
-        let (generation, operation) = self.begin_operation();
-        {
+        let (generation, operation) = {
             let mut state = lock(&self.state);
+            let current = self.begin_operation(&mut state);
             state.loading = true;
             state.problem = None;
-        }
+            current
+        };
         self.publish();
         let link = self.clone();
         self.runtime.spawn(async move {
@@ -481,7 +484,7 @@ impl OnboardingLink {
             return Err(invalid("key 不能为空"));
         }
         let key = wonton_protocol::SecretString::new(trimmed.to_owned());
-        {
+        let (generation, operation) = {
             let mut state = lock(&self.state);
             if state.saving.is_some() {
                 return Err(invalid("已经有一个 key 在保存"));
@@ -501,11 +504,12 @@ impl OnboardingLink {
             if !providers.iter().any(|provider| provider.id == id) {
                 return Err(invalid("这个服务商不在列表里"));
             }
+            let current = self.begin_operation(&mut state);
             state.saving = Some(id.to_owned());
             state.model_problem = None;
             state.problem = None;
-        }
-        let (generation, operation) = self.begin_operation();
+            current
+        };
         self.publish();
         let link = self.clone();
         let id = id.to_owned();
@@ -685,9 +689,10 @@ impl OnboardingLink {
             &sent_rooms,
             language,
         );
+        // 快照必须在持锁时发布，不能让较早渲染的 loading 覆盖完成状态。
+        self.view.send_replace(view);
         drop(state);
         self.chat.set_primary_bot(primary_bot);
-        self.view.send_replace(view);
     }
 }
 

@@ -7,6 +7,7 @@ use wonton_client::{
 
 use super::rig::{Canned, FakeHome, Rig, core_error};
 
+mod loading;
 mod refresh;
 
 fn onboarding(step: &str) -> serde_json::Value {
