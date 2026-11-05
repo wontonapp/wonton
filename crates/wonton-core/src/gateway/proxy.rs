@@ -1,6 +1,6 @@
 //! 反向代理：把已鉴权的请求转发给插件或身份提供方，支持 WebSocket 等协议升级。
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use axum::body::Body;
 use axum::extract::Request;
@@ -13,8 +13,13 @@ use tokio::net::UnixStream;
 
 use super::pages;
 use super::session::{is_reserved_cookie, strip_cookies};
-use crate::http::HttpClient;
+use crate::http::{
+    HttpClient, HttpError,
+    deadline::{FlushIo, ResponseDeadline},
+};
 use crate::plugin::upstreams::Endpoint;
+
+const RESPONSE_HEADER_DEADLINE: Duration = Duration::from_secs(120);
 
 const HOP_BY_HOP: &[&str] = &[
     "connection",
@@ -86,27 +91,71 @@ pub async fn forward(
     req: Request,
     fwd: Forwarded<'_>,
 ) -> Response {
-    let name = target.name;
-    forward_or(http, target, req, fwd)
-        .await
-        .unwrap_or_else(|e| {
-            pages::error(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unreachable",
-                &format!("{name} 暂时无法访问：{e}"),
-            )
-        })
+    forward_with_deadline(http, target, req, fwd, RESPONSE_HEADER_DEADLINE).await
 }
 
-/// 同 [`forward`]，上游不可达时把原因交给调用方，由它按自己的格式回错误（比如 Matrix 的 JSON）。
+/// 同 [`forward`]，期限由调用方指定（测试用短期限），失败回 HTML 错误页。
+pub(crate) async fn forward_with_deadline(
+    http: &HttpClient,
+    target: Target<'_>,
+    req: Request,
+    fwd: Forwarded<'_>,
+    limit: Duration,
+) -> Response {
+    let name = target.name;
+    match forward_with_limit(http, target, req, fwd, limit).await {
+        Ok(response) => response,
+        Err(ForwardError::Unreachable(e)) => pages::error(
+            StatusCode::BAD_GATEWAY,
+            "upstream_unreachable",
+            &format!("{name} 暂时无法访问：{e}"),
+        ),
+        Err(ForwardError::HeaderTimeout) => pages::error(
+            StatusCode::GATEWAY_TIMEOUT,
+            "upstream_timeout",
+            &format!("{name} 迟迟没有回应，可以稍后重试"),
+        ),
+    }
+}
+
+/// 上游转发失败的原因：给调用方按自己的格式回错误（比如 Matrix 的 JSON），不在转发层拼响应。
+#[derive(Debug)]
+pub enum ForwardError {
+    /// 连不上上游，或请求发不出去。
+    Unreachable(String),
+    /// 请求体发完后，上游迟迟没有回响应头。
+    HeaderTimeout,
+}
+
+impl std::fmt::Display for ForwardError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreachable(e) => f.write_str(e),
+            Self::HeaderTimeout => f.write_str("迟迟没有回应（超过响应头期限）"),
+        }
+    }
+}
+
+/// 同 [`forward`]，失败时把原因交给调用方，由它按自己的格式回错误。
 pub async fn forward_or(
+    http: &HttpClient,
+    target: Target<'_>,
+    req: Request,
+    fwd: Forwarded<'_>,
+) -> Result<Response, ForwardError> {
+    forward_with_limit(http, target, req, fwd, RESPONSE_HEADER_DEADLINE).await
+}
+
+async fn forward_with_limit(
     http: &HttpClient,
     target: Target<'_>,
     mut req: Request,
     fwd: Forwarded<'_>,
-) -> Result<Response, String> {
+    limit: Duration,
+) -> Result<Response, ForwardError> {
     let upgrade = is_upgrade(req.headers());
     let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
+    let limit = response_header_deadline(&req, upgrade, limit);
     let (mut parts, body) = req.into_parts();
     let path = parts
         .uri
@@ -146,15 +195,16 @@ pub async fn forward_or(
     parts.version = Version::HTTP_11;
     let outbound = Request::from_parts(parts, body);
 
-    let sent = match target.endpoint {
-        Endpoint::Tcp(_) => http.send(outbound).await.map_err(|e| e.to_string()),
-        Endpoint::Unix(socket) => unix_send(socket, outbound).await,
-    };
+    let sent = send_upstream(http, target.endpoint, outbound, limit).await;
     let mut response = match sent {
         Ok(response) => response,
+        Err(e @ HttpError::ResponseHeadersTimeout(_)) => {
+            tracing::warn!(target = target.name, error = %e, "上游响应头超时");
+            return Err(ForwardError::HeaderTimeout);
+        }
         Err(e) => {
             tracing::warn!(target = target.name, error = %e, "上游不可达");
-            return Err(e);
+            return Err(ForwardError::Unreachable(e.to_string()));
         }
     };
     if response.status() == StatusCode::SWITCHING_PROTOCOLS
@@ -179,6 +229,24 @@ pub async fn forward_or(
     Ok(Response::from_parts(parts, Body::new(body)).into_response())
 }
 
+fn response_header_deadline(req: &Request, upgrade: bool, limit: Duration) -> Option<Duration> {
+    let matrix = req.uri().path().starts_with("/_matrix/");
+    (!matrix && !upgrade && req.method() != hyper::Method::CONNECT).then_some(limit)
+}
+
+async fn send_upstream(
+    http: &HttpClient,
+    endpoint: &Endpoint,
+    request: Request,
+    limit: Option<Duration>,
+) -> Result<hyper::Response<hyper::body::Incoming>, HttpError> {
+    match (endpoint, limit) {
+        (Endpoint::Tcp(_), Some(limit)) => http.send_with_header_deadline(request, limit).await,
+        (Endpoint::Tcp(_), None) => http.send(request).await,
+        (Endpoint::Unix(socket), _) => unix_send(socket, request, limit).await,
+    }
+}
+
 /// 响应活着时保住连接：删掉它 hyper 会在响应流完之前就关连接，流式响应和协议升级会被切断。
 #[derive(Clone)]
 struct KeepAlive(
@@ -190,23 +258,38 @@ struct KeepAlive(
 async fn unix_send(
     socket: &std::path::Path,
     request: Request<Body>,
-) -> Result<hyper::Response<hyper::body::Incoming>, String> {
+    limit: Option<Duration>,
+) -> Result<hyper::Response<hyper::body::Incoming>, HttpError> {
     let stream = UnixStream::connect(socket)
         .await
-        .map_err(|e| format!("连不上 {}：{e}", socket.display()))?;
-    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+        .map_err(|e| HttpError::Connect(format!("连不上 {}：{e}", socket.display())))?;
+    let io = FlushIo::new(TokioIo::new(stream));
+    let (request, deadline) = match limit {
+        Some(limit) => {
+            let (request, deadline) = ResponseDeadline::unix(request, io.flushed.clone(), limit);
+            (request, Some(deadline))
+        }
+        None => (request, None),
+    };
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(io)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| HttpError::Connect(e.to_string()))?;
     let connection = connection.with_upgrades();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             tracing::warn!(error = %e, "unix 上游连接结束");
         }
     });
-    let mut response = sender
-        .send_request(request)
-        .await
-        .map_err(|e| e.to_string())?;
+    let sending = async {
+        sender
+            .send_request(request)
+            .await
+            .map_err(|e| HttpError::Connect(e.to_string()))
+    };
+    let mut response = match deadline {
+        Some(deadline) => deadline.wait(sending).await?,
+        None => sending.await?,
+    };
     response
         .extensions_mut()
         .insert(KeepAlive(std::sync::Arc::new(std::sync::Mutex::new(
@@ -214,6 +297,10 @@ async fn unix_send(
         ))));
     Ok(response)
 }
+
+#[cfg(test)]
+#[path = "proxy_deadline_tests.rs"]
+mod deadline_tests;
 
 #[cfg(test)]
 mod tests {

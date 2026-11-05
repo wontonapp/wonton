@@ -164,11 +164,24 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
     };
     match proxy::forward_or(&gateway.http, target, req, fwd).await {
         Ok(response) => response,
-        Err(e) => matrix_error(
+        Err(e) => matrix_forward_error(e),
+    }
+}
+
+/// Matrix 接口本身不走响应头期限，但匹配要写全：期限如果放开，错误也按 Matrix 的 JSON 格式回。
+fn matrix_forward_error(error: proxy::ForwardError) -> Response {
+    match error {
+        proxy::ForwardError::Unreachable(e) => matrix_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "M_UNKNOWN",
             KIND_UNAVAILABLE,
             &format!("Tuwunel 暂时无法访问：{e}"),
+        ),
+        proxy::ForwardError::HeaderTimeout => matrix_error(
+            StatusCode::GATEWAY_TIMEOUT,
+            "M_UNKNOWN",
+            "upstream_timeout",
+            "Tuwunel 迟迟没有回应，可以稍后重试",
         ),
     }
 }
@@ -232,6 +245,26 @@ pub(super) fn matrix_error(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn forward_failures_keep_their_own_status_and_kind() {
+        for (error, status, kind) in [
+            (
+                proxy::ForwardError::Unreachable("连不上".into()),
+                StatusCode::SERVICE_UNAVAILABLE,
+                KIND_UNAVAILABLE,
+            ),
+            (
+                proxy::ForwardError::HeaderTimeout,
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream_timeout",
+            ),
+        ] {
+            let response = matrix_forward_error(error);
+            assert_eq!(response.status(), status);
+            assert_eq!(response.headers()[pages::ERROR_HEADER], kind);
+        }
+    }
+
     use super::*;
 
     /// 契约：App 那一路按 ADR-0009 写的字段名解析响应。

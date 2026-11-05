@@ -7,7 +7,7 @@
 插件网页只经核心网关打开，只有已配对的 Wonton App 能经 iroh 隧道连回家（ADR-0004、ADR-0009）。Immich 手机 App、Bitwarden、Jellyfin 和 Subsonic 播放器、CalDAV/CardDAV、OPDS 阅读器、Git 客户端都连不进来。50 个候选插件的调研里（npchy 上的 `~/wonton-dev/research/plugin-candidates.md`），这是最大的共性缺口。那份调研的结论第 1、2、13 项核对后：
 
 - **第 1、2 项的缺口属实。** `lan.ports` 确实不能列 `webui` 的端口（插件规范的“局域网”）。它建议的“把网页端口发布到局域网”没有采用，理由见“没选的做法”；它建议的“一个 TLS 端口按 SNI 路由”采用了，名字问题见“局域网直连”。
-- **第 13 项不是缺口。** 按 `f664c6b` 的 `gateway/proxy.rs`，网关流式转发请求和响应，没有总超时，`Range` 原样带给插件。这篇的新入口复用它。
+- **第 13 项不是缺口。** 按 `f664c6b` 的 `gateway/proxy.rs`，网关流式转发请求和响应，`Range` 原样带给插件；请求体发完后等响应头最多 120 秒（ADR-0006），响应体仍然不限时。这篇的新入口复用它。
 
 主人 2026-11-03 定的方向：
 

@@ -11,6 +11,9 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 use serde_json::Value;
 
+pub(crate) mod deadline;
+use deadline::{FlushConnector, ResponseDeadline};
+
 /// JSON 响应体的上限，防止异常的上游把核心内存撑爆。
 const MAX_JSON_BYTES: usize = 1 << 20;
 
@@ -22,6 +25,8 @@ pub enum HttpError {
     Connect(String),
     #[error("请求超时（{0:?}）")]
     Timeout(Duration),
+    #[error("上游迟迟没有回应：请求体发送完成后 {0:?} 内没有响应头")]
+    ResponseHeadersTimeout(Duration),
     #[error("响应体读取失败：{0}")]
     Body(String),
     #[error("响应不是合法的 JSON：{0}")]
@@ -40,7 +45,7 @@ pub enum RequestBody<'a> {
 
 #[derive(Clone)]
 pub struct HttpClient {
-    inner: Client<HttpConnector, Body>,
+    inner: Client<FlushConnector, Body>,
 }
 
 impl Default for HttpClient {
@@ -56,7 +61,7 @@ impl HttpClient {
         connector.set_nodelay(true);
         let inner = Client::builder(TokioExecutor::new())
             .pool_idle_timeout(Duration::from_secs(60))
-            .build(connector);
+            .build(FlushConnector(connector));
         Self { inner }
     }
 
@@ -66,6 +71,16 @@ impl HttpClient {
             .request(request)
             .await
             .map_err(|e| HttpError::Connect(error_chain(&e)))
+    }
+
+    /// 只限制请求体写入上游之后的响应头等待，不限制上传或响应体。
+    pub(crate) async fn send_with_header_deadline(
+        &self,
+        request: Request<Body>,
+        limit: Duration,
+    ) -> Result<Response<Incoming>, HttpError> {
+        let (request, deadline) = ResponseDeadline::tcp(request, limit);
+        deadline.wait(self.send(request)).await
     }
 
     pub async fn get_status(&self, url: &str, timeout: Duration) -> Result<u16, HttpError> {

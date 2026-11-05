@@ -47,10 +47,52 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
     };
     match proxy::forward_or(&gateway.http, target, req, fwd).await {
         Ok(response) => response,
-        Err(e) => error_response(
+        Err(e) => forward_error(&route.id, e),
+    }
+}
+
+fn forward_error(
+    route: &crate::plugin::manifest::PluginId,
+    error: proxy::ForwardError,
+) -> Response {
+    match error {
+        proxy::ForwardError::Unreachable(e) => error_response(
             StatusCode::BAD_GATEWAY,
             "upstream_unreachable",
-            &format!("模型网关 {} 暂时无法访问：{e}", route.id),
+            &format!("模型网关 {route} 暂时无法访问：{e}"),
         ),
+        proxy::ForwardError::HeaderTimeout => error_response(
+            StatusCode::GATEWAY_TIMEOUT,
+            "upstream_timeout",
+            &format!("模型网关 {route} 迟迟没有回应，可以稍后重试"),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forward_failures_keep_their_own_status_and_kind() {
+        for (error, status, kind) in [
+            (
+                proxy::ForwardError::Unreachable("连不上".into()),
+                StatusCode::BAD_GATEWAY,
+                "upstream_unreachable",
+            ),
+            (
+                proxy::ForwardError::HeaderTimeout,
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream_timeout",
+            ),
+        ] {
+            let response = forward_error(
+                &crate::plugin::manifest::PluginId::parse("a.b.c").unwrap(),
+                error,
+            );
+            assert_eq!(response.status(), status);
+            assert_eq!(response.headers()["x-wonton-error"], kind);
+        }
     }
 }

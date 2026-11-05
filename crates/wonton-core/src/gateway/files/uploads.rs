@@ -125,16 +125,56 @@ async fn forward(
     } else {
         forwarded.await
     };
-    forwarded.map_err(|e| {
-        if broke.load(Ordering::Relaxed) {
-            Failure::new(
-                FileFailure::InvalidInput,
-                format!("请求体没有传完，客户端可能断开了：{e}"),
-            )
-        } else {
-            unavailable(format!("连不上 tusd：{e}"))
+    forwarded.map_err(|e| tusd_failure(broke.load(Ordering::Relaxed), e))
+}
+
+fn tusd_failure(broke: bool, error: proxy::ForwardError) -> Failure {
+    if broke {
+        return Failure::new(
+            FileFailure::InvalidInput,
+            format!("请求体没有传完，客户端可能断开了：{error}"),
+        );
+    }
+    match error {
+        // 沿用 service_unavailable：整套服务重启的几秒里客户端会暂停后接着传（`pausable`），
+        // tusd 卡住超过期限时重试同样成立，不为它新加协议类别。
+        proxy::ForwardError::Unreachable(e) => {
+            Failure::new(FileFailure::ServiceUnavailable, format!("连不上 tusd：{e}"))
         }
-    })
+        proxy::ForwardError::HeaderTimeout => Failure::new(
+            FileFailure::ServiceUnavailable,
+            "tusd 迟迟没有回应，稍后再试",
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tusd_failures_stay_in_their_own_kinds() {
+        for (broke, error, kind) in [
+            (
+                false,
+                proxy::ForwardError::Unreachable("连不上".into()),
+                FileFailure::ServiceUnavailable,
+            ),
+            (
+                false,
+                proxy::ForwardError::HeaderTimeout,
+                FileFailure::ServiceUnavailable,
+            ),
+            (
+                true,
+                proxy::ForwardError::HeaderTimeout,
+                FileFailure::InvalidInput,
+            ),
+        ] {
+            let failure = tusd_failure(broke, error);
+            assert_eq!(failure.kind, kind);
+        }
+    }
 }
 
 /// 客户端还没拿到编号的上传。它接不上也取消不了，部分数据不留着占盘 24 小时、让重传报 `storage_full`。请求断了 handler 会被丢掉，所以
