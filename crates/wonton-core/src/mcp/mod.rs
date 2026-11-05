@@ -370,9 +370,12 @@ impl Bus {
             .as_ref()
             .and_then(|a| a.read_only_hint)
             == Some(true);
+        let highest = self.plugins.requires_root_confirmation(&server.id);
         let policy = self.plugins.tool_policy();
         let clearance = || policy.clearance(caller.id.as_str(), server.id.as_str(), tool);
-        let not_sensitive = if read_only {
+        let not_sensitive = if highest {
+            None
+        } else if read_only {
             Some(Basis::PluginReadOnly)
         } else {
             clearance()
@@ -390,12 +393,16 @@ impl Bus {
                 Ok(held_ms) => held_ms,
                 Err(result) => return result,
             };
-            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。
-            let cleared = clearance().map(Basis::from).or_else(|| {
-                self.confirmations
-                    .allow_in_window(&caller.id, server.id.as_str())
-                    .map(Basis::Window)
-            });
+            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。最高级的工具全部不放宽。
+            let cleared = if highest {
+                None
+            } else {
+                clearance().map(Basis::from).or_else(|| {
+                    self.confirmations
+                        .allow_in_window(&caller.id, server.id.as_str())
+                        .map(Basis::Window)
+                })
+            };
             (cleared, held_ms)
         };
         if let Some(basis) = basis {
@@ -411,8 +418,10 @@ impl Bus {
             return outcome.result;
         }
         let plugin = cards::text(&server.title);
-        let draft = cards::tool_call(&caller.name, &plugin, tool, &args)
-            .with_window(server.id.as_str(), self.confirmations.window_length());
+        let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest);
+        if !highest {
+            draft = draft.with_window(server.id.as_str(), self.confirmations.window_length());
+        }
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>| async move {
@@ -499,8 +508,7 @@ impl Bus {
         caller: &Caller,
         name: &str,
         args: Value,
-        draft: Draft,
-        second: Option<Draft>,
+        (draft, second, held_ms): (Draft, Option<Draft>, Option<u64>),
         run: F,
     ) -> CallToolResult
     where
@@ -508,7 +516,9 @@ impl Bus {
         Fut: Future<Output = Outcome> + Send,
     {
         let Some(second) = second else {
-            return self.confirmed(caller, name, args, draft, run).await;
+            return self
+                .confirmed_after_hold(caller, name, args, draft, run, held_ms)
+                .await;
         };
         let bus = self.clone();
         let caller = caller.clone();
@@ -542,7 +552,7 @@ impl Bus {
                 Decision::Approved,
                 Some(Grounds {
                     basis: Basis::Card,
-                    held_ms: None,
+                    held_ms,
                 }),
                 &outcome,
             );
@@ -639,9 +649,13 @@ mod file_tests;
 #[cfg(test)]
 mod help_tests;
 #[cfg(test)]
+mod highest_tool_tests;
+#[cfg(test)]
 mod save_tests;
 #[cfg(test)]
 mod takeover_tests;
+#[cfg(test)]
+mod test_setup;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

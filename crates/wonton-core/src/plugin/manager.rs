@@ -380,6 +380,19 @@ impl PluginManager {
             .collect()
     }
 
+    /// 这个插件的最高级权限：它的工具每次都以 root 身份执行，不能放宽（ADR-0036）。
+    pub fn requires_root_confirmation(&self, id: &PluginId) -> bool {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .get(id)
+            .and_then(|entry| entry.listed.as_ref())
+            .is_some_and(|listed| {
+                listed.manifest.permissions.iter().any(|p| {
+                    super::privileges::risk(p) == Some(super::privileges::CapabilityRisk::Highest)
+                })
+            })
+    }
+
     /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。
     pub fn source(&self, ip: IpAddr) -> Option<Source> {
         self.sources.find(ip)

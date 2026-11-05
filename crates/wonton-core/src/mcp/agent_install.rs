@@ -88,7 +88,7 @@ async fn official(
             Err(e) => Outcome::failed(format!("安装失败（{}）：{e}", e.kind())),
         }
     };
-    bus.confirmed_twice(caller, name, value.clone(), draft, second, run)
+    bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
         .await
 }
 
@@ -211,7 +211,7 @@ async fn first_install(
             Err(e) => Outcome::failed(format!("安装 {} 失败（{}）：{}", id_for_run, e.kind(), e)),
         }
     };
-    bus.confirmed_twice(caller, name, value.clone(), draft, second, run)
+    bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
         .await
 }
 
@@ -338,6 +338,6 @@ async fn update(
             Err(e) => Outcome::failed(format!("更新 {} 失败（{}）：{}", id_for_run, e.kind(), e)),
         }
     };
-    bus.confirmed_twice(caller, name, value.clone(), draft, second, run)
+    bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
         .await
 }

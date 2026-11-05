@@ -180,7 +180,7 @@ async fn core_tools_offer_no_window_and_refuse_the_answer() {
 /// 没有总线的场合：一张能开时段的卡片，点了“都允许”。
 async fn open_on(confirmations: &Arc<Confirmations>, cards: &Arc<Cards>) -> String {
     let caller = PluginId::parse("com.example.agent").unwrap();
-    let draft = cards::tool_call("Bot", "笔记", "delete", &json!({}))
+    let draft = cards::tool_call("Bot", "笔记", "delete", &json!({}), false)
         .with_window("app.example.notes", confirmations.window_length());
     let asking = confirmations.clone();
     let ask = tokio::spawn(async move { asking.ask(&caller, draft).await });

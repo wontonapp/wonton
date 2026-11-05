@@ -337,11 +337,22 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool) -> Draft {
     }
 }
 
-/// 调用插件里会改数据的工具。参数原样列出，太长时截断。
-pub fn tool_call(requester: &str, plugin: &str, tool: &str, arguments: &Value) -> Draft {
+/// 调用插件里会改数据的工具。参数原样列出，太长时截断。最高级插件的工具写明以 root 执行。
+pub fn tool_call(
+    requester: &str,
+    plugin: &str,
+    tool: &str,
+    arguments: &Value,
+    highest: bool,
+) -> Draft {
+    let mut lines = vec![line("这个工具会改动数据")];
+    if highest {
+        lines.push(emphasized("这个操作以本机 root 身份执行"));
+    }
+    lines.push(arguments_line(arguments));
     Draft {
         title: format!("{requester} 想用 {plugin} 的 {tool}"),
-        lines: vec![line("这个工具会改动数据"), arguments_line(arguments)],
+        lines,
         choices: choices("允许", "拒绝"),
         scope: None,
         plugin_id: None,
