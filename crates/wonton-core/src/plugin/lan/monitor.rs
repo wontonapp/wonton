@@ -307,6 +307,7 @@ impl PluginManager {
         let generated = self.check_secrets(manifest).await?;
         let secret = record.oidc_client_secret.as_deref();
         let mut ctx = self.install_context(manifest, secret, generated).await?;
+        ctx.limits = record.limits;
         ctx.gpu = self.gpu_grant(manifest).await?;
         ctx.models = self.stored_model_vars(package)?;
         if let Some(network) = lan.as_ref().and_then(|grant| grant.network.as_ref())

@@ -382,6 +382,16 @@ pub struct Service {
     #[serde(default)]
     pub shm_size: Option<Scalar>,
     #[serde(default)]
+    pub mem_limit: Option<Scalar>,
+    #[serde(default)]
+    pub mem_reservation: Option<Scalar>,
+    #[serde(default)]
+    pub cpus: Option<Scalar>,
+    #[serde(default)]
+    pub cpu_shares: Option<Scalar>,
+    #[serde(default)]
+    pub pids_limit: Option<Scalar>,
+    #[serde(default)]
     pub tmpfs: Option<StringOrList>,
     #[serde(default)]
     pub stop_signal: Option<String>,

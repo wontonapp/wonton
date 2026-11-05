@@ -111,6 +111,7 @@ impl Core {
                 wonton_core::owner::OwnerStore::open(&state).unwrap()
             },
             gateway_port: 8080,
+            plugin_slice: None,
             instance: self.instance.clone(),
         };
         let store = Store::open(self.dir.path().join("plugins")).unwrap();

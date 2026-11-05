@@ -17,6 +17,7 @@ use super::super::health;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::lifecycle::{Undo, VolumeAction, client_spec, volume_action};
+use super::super::listed::Listed;
 use super::super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
     now_secs,
@@ -28,9 +29,16 @@ use super::super::render::{Deployment, InstallContext, MatrixVars, dry_run, rend
 use super::super::secrets::{self, Secrets};
 use super::super::store::InstalledRecord;
 use super::super::upstreams::{core_aliases, uses_sso};
-use super::super::views::Listed;
 use super::{installed_package, newer};
 use crate::secret::random_token;
+
+fn old_limits(entry: &Entry) -> wonton_protocol::PluginLimits {
+    entry
+        .listed
+        .as_ref()
+        .map(|listed| listed.limits)
+        .unwrap_or_default()
+}
 
 /// 退回旧版本要用的：Bot 的令牌在 `ctx` 里。
 struct Old {
@@ -154,7 +162,13 @@ impl PluginManager {
                     .listed
                     .as_ref()
                     .map_or_else(now_secs, |l| l.installed_at);
-                let listed = Listed::new(package, installed_at, lan_webui, deployed.firewalled);
+                let listed = Listed::new(
+                    package,
+                    installed_at,
+                    lan_webui,
+                    deployed.firewalled,
+                    old_limits(entry),
+                );
                 *entry = Entry::running(listed, deployed);
                 self.lan.clear_degraded(id);
                 self.upgrades.forget(id);
@@ -207,12 +221,7 @@ impl PluginManager {
         if !progress.touched {
             return Outcome::Untouched(self.undo_prepared(&old, progress, error).await);
         }
-        let listed = Listed::new(
-            &old.package,
-            old.record.installed_at,
-            old.record.lan_webui,
-            old.record.firewalled,
-        );
+        let listed = Listed::of_record(&old.package, &old.record);
         match self.back_to_old(&old, package, progress).await {
             Ok(deployed) => {
                 let note = format!("升级到 {new} 失败，已退回 {version}");
@@ -302,6 +311,7 @@ impl PluginManager {
             source: package.source.clone(),
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
+            limits: old.record.limits,
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
             firewalled,
@@ -342,6 +352,7 @@ impl PluginManager {
         let mut ctx = self
             .install_context(manifest, oidc_secret.as_deref(), generated)
             .await?;
+        ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
         ctx.matrix = self.upgrade_bot(old, package, &mut progress.undo).await?;

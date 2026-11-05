@@ -156,6 +156,34 @@ compose() {
 docker run --rm --network none --entrypoint docker-compose "$pinned" version >/dev/null 2>&1 ||
   die "核心镜像 $pinned 里没有 compose：这个版本太旧，这个安装脚本用不了它"
 
+setup_plugin_slice() {
+  plugin_slice=
+  if ! cgroup_info=$(docker info --format '{{.CgroupDriver}} {{.CgroupVersion}}' 2>/dev/null); then
+    info "Docker 没报告 systemd cgroup v2；插件只设置每个服务的资源限制"
+    return
+  fi
+  if [ "$cgroup_info" != "systemd 2" ] || ! command -v systemctl >/dev/null 2>&1; then
+    info "Docker 不是 systemd cgroup v2，或没有 systemctl；插件只设置每个服务的资源限制"
+    return
+  fi
+  slice_tmp=$(mktemp /etc/systemd/system/.wonton_plugins.slice.XXXXXX) ||
+    die "创建插件 slice 临时文件失败"
+  if ! docker run --rm --entrypoint wonton-core "$pinned" plugin slice-unit >"$slice_tmp"; then
+    rm -f "$slice_tmp"
+    die "核心镜像 $pinned 生成插件 slice 失败"
+  fi
+  [ -s "$slice_tmp" ] || {
+    rm -f "$slice_tmp"
+    die "核心镜像 $pinned 生成了空的插件 slice"
+  }
+  chmod 644 "$slice_tmp" && mv "$slice_tmp" /etc/systemd/system/wonton_plugins.slice || {
+    rm -f "$slice_tmp"
+    die "安装 /etc/systemd/system/wonton_plugins.slice 失败"
+  }
+  systemctl daemon-reload || die "systemd 重新加载插件 slice 失败"
+  plugin_slice=wonton_plugins.slice
+}
+
 # 下面几个函数处理出网代理（ADR-0023 的“代理地址从哪里来”）。
 
 # 打印时不带用户名和密码。
@@ -308,6 +336,7 @@ write_config() {
     "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
   settle_proxy
+  setup_plugin_slice
 
   umask 077
   # 写临时文件、落盘、改名：一键升级也读这个文件，不能让它读到写了一半的。
@@ -326,6 +355,9 @@ TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_EGRESS_PROXY=$egress_proxy
 EOF
+  if [ -n "$plugin_slice" ]; then
+    echo "WONTON_PLUGIN_SLICE=$plugin_slice" >>"$env_file.tmp"
+  fi
 # 主人指定了地址时没有检测过，以后取消了还要检测，所以不留这一行。
   if [ -n "$record_detected" ]; then
     echo "WONTON_EGRESS_PROXY_DETECTED=$egress_detected" >>"$env_file.tmp"

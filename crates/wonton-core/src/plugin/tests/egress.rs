@@ -91,6 +91,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             version: "1.0.0".into(),
             source: app(""),
             files: Default::default(),
+            limits: Default::default(),
             granted_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,

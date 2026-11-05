@@ -27,6 +27,7 @@ mod instances;
 mod lan;
 mod lan_webui;
 mod leftovers;
+mod limits;
 mod manager;
 mod model_providers;
 mod models;

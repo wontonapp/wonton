@@ -70,6 +70,9 @@ impl Lan {
         changed
     }
 
+    pub(in crate::plugin) async fn lock_pass(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.pass.lock().await
+    }
     pub fn is_rebuilding(&self, id: &PluginId) -> bool {
         self.memory().rebuilding.contains(id)
     }

@@ -1,0 +1,111 @@
+//! 核心重启或巡检时核对已装的插件：容器、网络、OIDC 客户端和密钥是否还和记录一致。
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use super::docker::NetworkReach;
+use super::health::{self, Checked};
+use super::lifecycle::client_spec;
+use super::manager::{Deployed, Health, InstallError, PluginManager};
+use super::manifest::Manifest;
+use super::package::PluginPackage;
+use super::proxy_auth::ProxyAuth;
+use super::secrets;
+use super::store::InstalledRecord;
+
+impl PluginManager {
+    /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
+    /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。
+    pub(super) async fn reconcile(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+    ) -> Result<Deployed, InstallError> {
+        let manifest = &package.manifest;
+        let slug = manifest.id.slug();
+        let network = self.cfg.instance.network(&slug);
+        let expected = self.network_reach(manifest);
+        let actual = self.engine.network_reach(&network).await?;
+        if actual != Some(expected) {
+            return Err(InstallError::Conflict(format!(
+                "插件网络 {network} {}，按清单和核心的运行方式应该{}：重装插件（可以不删数据）后生效",
+                describe_reach(actual),
+                describe_reach(Some(expected))
+            )));
+        }
+        // 先接核心再看容器：靠核心的内部别名才起得来的插件，核心不接回去就一直崩，先看容器的话两边互相等。
+        if let Some(core) = &self.cfg.core_container {
+            self.attach_core(&network, core, manifest).await?;
+        }
+        let health = self.check_containers(package).await?;
+        self.ensure_relays(manifest, record).await?;
+        self.check_bot(manifest).await?;
+        let generated = self.check_secrets(manifest).await?;
+        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
+        if let Some(secret) = &record.oidc_client_secret {
+            let ctx = self
+                .install_context(manifest, Some(secret), generated)
+                .await?;
+            self.hydra()?
+                .upsert_client(&client_spec(manifest, &ctx, secret))
+                .await?;
+        }
+        Ok(Deployed {
+            upstream: self.webui_upstream(manifest, &network).await?,
+            health,
+            models: self.models_upstream(manifest, &network).await?,
+            mcp: self.mcp_upstream(manifest, &network).await?,
+            proxy: proxy.map(Arc::new),
+            firewalled: record.firewalled,
+        })
+    }
+
+    /// 看一眼插件的每个容器，不等待。不在应有的状态是 [`InstallError::Unhealthy`]。
+    pub(super) async fn check_containers(
+        &self,
+        package: &PluginPackage,
+    ) -> Result<Health, InstallError> {
+        let slug = package.manifest.id.slug();
+        let one_shot = package.one_shot_services();
+        let mut healthy = Vec::new();
+        for service in package.service_names() {
+            let name = self.cfg.instance.container(&slug, service);
+            match health::check_now(&self.engine, &name, service, one_shot.contains(service))
+                .await?
+            {
+                Checked::Completed => {}
+                Checked::Healthy => healthy.push(true),
+                Checked::Running => healthy.push(false),
+                Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
+            }
+        }
+        Ok(Health::of(healthy))
+    }
+
+    /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。
+    pub(super) async fn check_secrets(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<BTreeMap<String, String>, InstallError> {
+        if manifest.secrets.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let store = self.store.secrets();
+        let mut secrets = store.load(&manifest.id)?.unwrap_or_default();
+        let generated =
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
+            store.save(&manifest.id, &secrets)?;
+        }
+        Ok(generated)
+    }
+}
+
+fn describe_reach(reach: Option<NetworkReach>) -> &'static str {
+    match reach {
+        None => "不存在",
+        Some(NetworkReach::Egress) => "能出网",
+        Some(NetworkReach::Internal) => "不能出网",
+        Some(NetworkReach::Isolated) => "不能出网、和宿主隔开",
+    }
+}

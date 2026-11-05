@@ -11,6 +11,7 @@
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 `{}` 时取能升到的版本，带 `source` 或者插件包时换到主人选的，可以比装着的旧；返回要主人确认的内容（`InstallPreview`） |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`UpgradeResult`） |
+//! | PUT | `/_wonton/api/plugins/{id}/limits` | 请求体是 `PluginLimits`，改资源上限后返回 `PluginDetail` |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
 //! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
 //! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
@@ -43,7 +44,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{
     AddSourceRequest, AddedTools, AskEveryUpdate, EgressProxyUpdate, InstallRequest, InstallSource,
-    LanChoice, LanWebuiUpdate, UpgradeRequest, UpgradeResult,
+    LanChoice, LanWebuiUpdate, PluginLimits, UpgradeRequest, UpgradeResult,
 };
 
 use super::{Gateway, TunnelPeer, isolation, pages};
@@ -655,6 +656,35 @@ pub async fn set_lan_webui(
     match gateway
         .plugins
         .set_lan_webui(id, update.enabled, langs)
+        .await
+    {
+        Ok(detail) => Json(detail).into_response(),
+        Err(e) => install_error(&e),
+    }
+}
+
+/// 改插件每个服务的资源上限（ADR-0037），请求断开时更新仍继续。
+pub async fn set_limits(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let limits = match serde_json::from_slice::<PluginLimits>(&body) {
+        Ok(limits) => limits,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
+    };
+    match gateway
+        .plugins
+        .set_limits(id, limits, languages(&headers))
         .await
     {
         Ok(detail) => Json(detail).into_response(),

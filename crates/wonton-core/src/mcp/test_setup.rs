@@ -113,6 +113,7 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginMana
             },
         ),
         gateway_port: 8080,
+        plugin_slice: None,
         instance: Default::default(),
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();

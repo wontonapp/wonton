@@ -5,29 +5,45 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use axum::body::{Body, Bytes};
+use axum::body::Bytes;
 use axum::extract::{Request, State};
-use axum::http::{Method, StatusCode, Uri, header};
+use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use http_body_util::BodyExt;
-use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::{Notify, Semaphore, broadcast};
 
+use self::events::events_response;
+use self::exec::start_exec;
 use self::networks::{endpoint_settings, networks, running};
+use self::update::update_container;
 use super::docker::Engine;
 use super::names::LABEL_PLUGIN;
 
+mod events;
+mod exec;
 mod networks;
+mod update;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FakeDocker {
     resources: Arc<Mutex<Resources>>,
     /// [`Self::pause`] 拿着写锁时请求都等着：每个请求先拿读锁再处理。
     gate: Arc<tokio::sync::RwLock<()>>,
+    events: broadcast::Sender<Value>,
+}
+
+impl Default for FakeDocker {
+    fn default() -> Self {
+        let (events, _) = broadcast::channel(16);
+        Self {
+            resources: Arc::default(),
+            gate: Arc::default(),
+            events,
+        }
+    }
 }
 
 /// 容器里执行的命令怎么回应：（容器名，argv，标准输入）→（退出码，标准错误）。
@@ -116,6 +132,8 @@ struct Resources {
     image_healthchecks: BTreeMap<String, Value>,
     /// 容器名 → 跑完时的（退出码，标准输出，标准错误），`wait` 和 `logs` 按它回答；没设的以 0 退出、没有输出。
     outputs: BTreeMap<String, (i64, String, String)>,
+    /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
+    update_error: Option<String>,
     hold: Option<Hold>,
 }
 
@@ -342,58 +360,19 @@ impl FakeDocker {
     fn lock(&self) -> MutexGuard<'_, Resources> {
         self.resources.lock().expect("假 Docker 的锁中毒")
     }
-}
+    /// 发一条 Docker 容器 OOM 事件，事件里的 ID 使用容器名，和 Docker inspect 一样可查询。
+    pub fn emit_oom(&self, container: &str) {
+        let _ = self.events.send(json!({
+            "Type": "container",
+            "Action": "oom",
+            "Actor": {"ID": container},
+        }));
+    }
 
-/// `POST /exec/<id>/start`：和 Docker 一样升级成原始连接，读完标准输入（客户端关闭写端）后按 Docker 的多路
-/// 复用格式写回标准错误，再关闭连接。
-fn start_exec(fake: FakeDocker, id: &str, mut request: Request) -> Response {
-    let Some(exec) = fake.lock().execs.get(id).cloned() else {
-        return gone(false);
-    };
-    let upgrade = hyper::upgrade::on(&mut request);
-    let id = id.to_owned();
-    tokio::spawn(async move {
-        let mut io = TokioIo::new(upgrade.await.expect("exec 连接升级"));
-        let mut stdin = Vec::new();
-        io.read_to_end(&mut stdin)
-            .await
-            .expect("读 exec 的标准输入");
-        let handler = fake.lock().exec_handler.clone();
-        let output_handler = fake.lock().exec_output_handler.clone();
-        let (code, stdout, stderr) = match output_handler {
-            Some(handler) => handler(&exec.container, &exec.cmd, &stdin),
-            None => match handler {
-                Some(handler) => {
-                    let (code, stderr) = handler(&exec.container, &exec.cmd, &stdin);
-                    (code, String::new(), stderr)
-                }
-                None => (0, String::new(), String::new()),
-            },
-        };
-        if let Some(exec) = fake.lock().execs.get_mut(&id) {
-            exec.stdin = stdin;
-            exec.exit_code = Some(code);
-        }
-        if !stdout.is_empty() {
-            let mut frame = vec![1, 0, 0, 0];
-            frame.extend_from_slice(&u32::try_from(stdout.len()).unwrap().to_be_bytes());
-            frame.extend_from_slice(stdout.as_bytes());
-            io.write_all(&frame).await.expect("写 exec 的标准输出");
-        }
-        if !stderr.is_empty() {
-            let mut frame = vec![2, 0, 0, 0];
-            frame.extend_from_slice(&u32::try_from(stderr.len()).unwrap().to_be_bytes());
-            frame.extend_from_slice(stderr.as_bytes());
-            io.write_all(&frame).await.expect("写 exec 的标准错误");
-        }
-        io.shutdown().await.ok();
-    });
-    Response::builder()
-        .status(StatusCode::SWITCHING_PROTOCOLS)
-        .header(header::CONNECTION, "Upgrade")
-        .header(header::UPGRADE, "tcp")
-        .body(Body::empty())
-        .unwrap()
+    /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
+    pub fn fail_updates(&self, message: Option<&str>) {
+        self.lock().update_error = message.map(str::to_owned);
+    }
 }
 
 async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
@@ -440,6 +419,9 @@ fn api_path(uri: &Uri) -> &str {
 
 fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Response {
     let path = api_path(uri);
+    if *method == Method::GET && path == "/events" {
+        return events_response(fake.events.subscribe());
+    }
     let call = format!("{method} {path}");
     let query = uri.query().unwrap_or_default();
     let mut docker = fake.lock();
@@ -460,7 +442,6 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
     })
 }
 
-/// `/containers/...` 的端点。
 fn containers(
     docker: &mut Resources,
     method: &Method,
@@ -506,6 +487,7 @@ fn containers(
             docker.created.insert(name.clone(), body);
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
         }
+        (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name]) => {
             for endpoints in docker.endpoints.values_mut() {
@@ -640,7 +622,7 @@ fn others(
                 .collect();
             json_reply(
                 StatusCode::OK,
-                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux"}),
+                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32}),
             )
         }
         (&Method::GET, ["images", image @ .., "json"]) => {

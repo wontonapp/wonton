@@ -8,6 +8,7 @@
 //!   文件按 sha256 放进 `blobs/`，同一个来源的旧条目换掉。插件包目录要是那个提交的检出：核心不连 Git，不核对。
 //! - `plugin host [插件包目录]`：这台主机实际有什么（内存、系统、架构、显卡），JSON 写到标准输出，读不出来的项写明原因。
 //!   和判断插件的“要求”时用的是同一份。给了插件包时还有它的要求逐条的判断和装不了的原因。
+//! - `plugin slice-unit`：根据宿主 `/proc/meminfo` 输出插件 systemd slice unit。读不到总内存时退出码 1，并把原因写到标准错误。
 //! - `plugin check-index <index.json>`：官方索引里的每一项这个版本的核心都读得懂，CI 用它防止改了清单写法后商店变空。
 //!
 //! 通过时退出码 0；插件包不合格时 1；用法不对时 2。
@@ -29,6 +30,7 @@ const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--offi
                      wonton-core plugin pack <插件包目录> > 插件包.tar\n      \
                      wonton-core plugin index-entry <插件包目录> <github:owner/repo> <提交号> [--index <索引目录>]\n      \
                      wonton-core plugin host [插件包目录]\n      \
+                     wonton-core plugin slice-unit\n      \
                      wonton-core plugin check-index <index.json>";
 
 pub async fn run(args: &[String]) -> ExitCode {
@@ -40,10 +42,31 @@ pub async fn run(args: &[String]) -> ExitCode {
         [command, dir] if command == "host" && !dir.starts_with('-') => {
             host(Some(Path::new(dir))).await
         }
+        [command] if command == "slice-unit" => slice_unit(),
         [command, path] if command == "check-index" && !path.starts_with('-') => {
             check_index(Path::new(path))
         }
         _ => usage(),
+    }
+}
+
+fn slice_unit() -> ExitCode {
+    let text = match std::fs::read_to_string("/proc/meminfo") {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!("读不了 /proc/meminfo：{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match wonton_core::plugin::limits::slice_unit_from_meminfo(&text) {
+        Ok(unit) => {
+            print!("{unit}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("生成插件 slice 失败：{error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -65,18 +88,40 @@ async fn host(dir: Option<&Path>) -> ExitCode {
     let dev = std::env::var_os("WONTON_HOST_DEV").map_or_else(|| "/dev".into(), PathBuf::from);
     let paths = HostPaths::new(Some(dev));
     let engine = Engine::connect();
-    let docker = match &engine {
+    let docker_info = match &engine {
         Ok(engine) => engine.host_info().await.map_err(|e| e.to_string()),
-        Err(e) => Err(e.to_string()),
+        Err(error) => Err(error.to_string()),
     };
-    let mut facts = host_facts::read(&paths, docker);
+    let limits = docker_info.as_ref().map_or_else(
+        |_| serde_json::json!({
+            "MemoryLimit": null,
+            "SwapLimit": null,
+            "CPUShares": null,
+            "PidsLimit": null,
+            "WONTON_PLUGIN_SLICE": std::env::var("WONTON_PLUGIN_SLICE").ok().filter(|value| !value.is_empty()),
+            "CgroupDriver": null,
+            "CgroupVersion": null,
+        }),
+        |info| {
+            serde_json::json!({
+                "MemoryLimit": info.memory_limit,
+                "SwapLimit": info.swap_limit,
+                "CPUShares": info.cpu_shares,
+                "PidsLimit": info.pids_limit,
+                "WONTON_PLUGIN_SLICE": std::env::var("WONTON_PLUGIN_SLICE").ok().filter(|value| !value.is_empty()),
+                "CgroupDriver": info.cgroup_driver,
+                "CgroupVersion": info.cgroup_version,
+            })
+        },
+    );
+    let mut facts = host_facts::read(&paths, docker_info);
     if let Ok(engine) = &engine {
         let core = std::env::var("WONTON_CORE_CONTAINER").ok();
         host_facts::NvidiaMemory::default()
             .fill(&mut facts, engine, core.as_deref(), &instance)
             .await;
     }
-    let mut report = serde_json::json!({ "host": facts });
+    let mut report = serde_json::json!({ "host": facts, "limits": limits });
     if let Some(package) = &package {
         let manifest = &package.manifest;
         let checks = manifest

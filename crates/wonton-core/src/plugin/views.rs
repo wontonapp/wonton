@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use wonton_protocol::{
     CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginDetail,
-    PluginHealth, PluginKind as Kind, PluginState, PluginTab, PluginTrust, PluginWriter,
-    RequirementLine, RequirementStatus,
+    PluginHealth, PluginKind as Kind, PluginLimits, PluginState, PluginTab, PluginTrust,
+    PluginWriter, RequirementLine, RequirementStatus,
 };
 
 use super::egress::probe::blocks;
@@ -15,89 +15,15 @@ use super::github_source::{Origin, Trust};
 use super::host_check::{self, Item};
 use super::host_facts::HostFacts;
 use super::image_worker::ImageError;
-use super::lan::LanPortSpec;
-use super::lan::webui::{self, Switched};
+use super::lan::webui;
 use super::languages::Languages;
+use super::listed::Listed;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
 use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::proxy_auth;
 use super::render::{dry_run, dry_run_with_email};
-
-/// 已安装插件在列表和详情页里显示的信息，装上时从插件包里取出。
-#[derive(Debug, Clone)]
-pub struct Listed {
-    pub manifest: Manifest,
-    pub icon: Option<IconSource>,
-    /// 每项 tabs 的普通图标和选中图标原文件。
-    pub tab_icons: Vec<(Option<IconSource>, Option<IconSource>)>,
-    /// 装上的时间（Unix 秒），列表按它排序。
-    pub installed_at: u64,
-    /// 按来源装的从哪里来。
-    pub origin: Option<Origin>,
-    /// 要开关 `lan_webui` 才开的局域网端口（见 [`webui`]）。
-    pub lan_switched: Option<Switched>,
-    pub lan_webui: bool,
-    /// 直连宿主网络的网页连不上过，见 [`super::host_relay`]。
-    pub firewalled: bool,
-}
-
-impl Listed {
-    pub fn new(
-        package: &PluginPackage,
-        installed_at: u64,
-        lan_webui: bool,
-        firewalled: bool,
-    ) -> Arc<Self> {
-        let tab_icons = package
-            .manifest
-            .tabs
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .map(|tab| {
-                (
-                    tab.icon
-                        .as_deref()
-                        .and_then(|path| IconSource::of_path(package, path)),
-                    tab.icon_selected
-                        .as_deref()
-                        .and_then(|path| IconSource::of_path(package, path)),
-                )
-            })
-            .collect();
-        Arc::new(Self {
-            manifest: package.manifest.clone(),
-            icon: IconSource::of(package),
-            tab_icons,
-            installed_at,
-            origin: package.origin.clone(),
-            lan_switched: webui::switched(package),
-            lan_webui,
-            firewalled,
-        })
-    }
-
-    /// 开关是 `enabled` 时开着的局域网端口。
-    pub fn open_ports(&self, enabled: bool) -> Vec<LanPortSpec> {
-        webui::open_ports_of(&self.manifest, self.lan_switched.as_ref(), enabled)
-    }
-
-    #[cfg(test)]
-    pub fn of_manifest(manifest: Manifest) -> Arc<Self> {
-        Arc::new(Self {
-            manifest,
-            icon: None,
-            tab_icons: Vec::new(),
-            installed_at: 0,
-            origin: None,
-            lan_switched: None,
-            lan_webui: false,
-            firewalled: false,
-        })
-    }
-}
 
 impl PluginManager {
     /// 已安装的插件：系统插件在前，其余按安装的先后。
@@ -207,7 +133,7 @@ impl PluginManager {
             save_grants: self.save_grants(id),
             // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
             ask_every_update,
-            limits: None,
+            limits: Some(listed.limits),
         })
     }
 
@@ -476,9 +402,9 @@ impl PluginManager {
     fn listing(&self, id: &PluginId, entry: &Entry, langs: &Languages) -> InstalledPlugin {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
         let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
-        let (upgrade, notices) = self
-            .upgrades
-            .listing(id, &entry.version, &entry.status, langs);
+        let (upgrade, mut notices) =
+            self.upgrades
+                .listing(id, &entry.version, &entry.status, langs);
         let tabs = entry
             .listed
             .as_ref()
@@ -500,6 +426,9 @@ impl PluginManager {
                     .collect()
             })
             .unwrap_or_default();
+        if entry.status == PluginStatus::Running {
+            notices.extend(self.oom_notices(id));
+        }
         InstalledPlugin {
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
@@ -554,6 +483,17 @@ impl PluginManager {
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),
         }
         plugin
+    }
+    pub(super) fn set_listed_limits(&self, id: &PluginId, limits: PluginLimits) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        if let Some(entry) = plugins.get_mut(id)
+            && let Some(listed) = entry.listed.clone()
+        {
+            entry.listed = Some(Arc::new(Listed {
+                limits,
+                ..(*listed).clone()
+            }));
+        }
     }
 }
 

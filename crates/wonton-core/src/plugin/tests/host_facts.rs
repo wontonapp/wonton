@@ -75,6 +75,13 @@ fn docker(runtimes: &[&str]) -> Result<HostInfo, String> {
         os_type: "linux".to_owned(),
         arch: "x86_64".to_owned(),
         runtimes: runtimes.iter().map(|&r| r.to_owned()).collect(),
+        memory_limit: None,
+        swap_limit: None,
+        cpu_shares: None,
+        pids_limit: None,
+        cgroup_driver: None,
+        ncpu: None,
+        cgroup_version: None,
     })
 }
 

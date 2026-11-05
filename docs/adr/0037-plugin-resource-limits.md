@@ -43,9 +43,9 @@ Kubernetes 和 CasaOS 这两条凭对它们的了解写，没有逐条再查。
 
 Agent 插件没有例外。一次性服务也一样。核心自己、Tuwunel 和其他系统服务不受这些限制，继续用默认权重。
 
-### 所有插件的总量：`wonton-plugins.slice`
+### 所有插件的总量：`wonton_plugins.slice`
 
-安装脚本以 root 运行，写入 `/etc/systemd/system/wonton-plugins.slice`：
+安装脚本以 root 运行，写入 `/etc/systemd/system/wonton_plugins.slice`：
 
 ```ini
 [Slice]
@@ -53,14 +53,14 @@ CPUWeight=50
 IOWeight=50
 # 给系统留 max(1G, 总内存的 10%)，最多留总内存的 25%。
 MemoryMax=<总内存 - 留出的>
-MemoryHigh=<MemoryMax 的 90%>
 TasksMax=50%
 ```
 
-- 写好后在 `.env` 里记 `WONTON_PLUGIN_SLICE=wonton-plugins.slice`，核心给每个插件容器设 `CgroupParent`。没有这个变量时不设，只有每个服务那一层。
-- `MemoryHigh` 是软上限：超过时内核先回收、放慢这些进程，不杀。`MemoryMax` 才杀。
+- 名字里不用 `-`：systemd 把 `-` 当层级，`wonton-plugins.slice` 会落在 `wonton.slice` 下面。`CPUWeight` 只和同级比，那样它唯一的同级没有别人，`wonton.slice` 还是默认权重。
+- 写好后在 `.env` 里记 `WONTON_PLUGIN_SLICE=wonton_plugins.slice`，核心给每个插件容器设 `CgroupParent`。没有这个变量时不设，只有每个服务那一层。
+- 只有硬上限 `MemoryMax`，超过时内核杀 slice 里的进程，`oom_score` 高的先杀。不设 `MemoryHigh`，原因见“实测”。
 - 核心和系统服务不在这个 slice 里，留出的内存和 CPU 权重就是给它们和 `sshd` 的。
-- 不设总量的 CPU 硬上限（`CPUQuota`）。权重在忙时已经让路，验收时实测 SSH 和核心的响应；实测不够再加。
+- 不设总量的 CPU 硬上限（`CPUQuota`）。权重在忙时已经让路，SSH 和核心的响应见“实测”。
 
 ### 哪些主机上是什么效果
 
@@ -92,7 +92,7 @@ TasksMax=50%
 ### 超过限制时用户看到什么
 
 - **内存：** 核心订阅 Docker 的 `oom` 事件，记下哪个插件的哪个服务、什么时候。
-  - 容器起不来、在反复重启：插件的状态是异常，原因写“服务 web 内存不够，被系统结束（上限 4 GB）”。
+  - 容器起不来、在反复重启：插件的状态是异常，原因写“服务 web 内存不够，被系统结束（上限 4 GB）”。容器在 slice 里时，事件分不清是服务自己到顶还是总量到顶，两种可能都写上：“（服务上限 4 GB，也可能是所有插件加起来到了总上限）”。
   - 只杀了子进程，或者重启后好了：插件照常运行，`notices` 里留一行，24 小时后消失。
   - 事件只存在内存里，核心重启后丢失。核心启动时还会读容器的 `State.OOMKilled`，反复重启的情况不会漏。
 - **进程数：** 超限时 `fork` 返回错误，由插件自己报，核心看不到，也不伪装成知道。
@@ -117,7 +117,20 @@ Docker 29.7.2，Linux 7.2.5-3-omarchy，cgroup v2，systemd 驱动：
 | 子进程超内存被杀，主进程活着 | 发 `oom` 事件；主进程退出前读不到别的信号，退出后 `OOMKilled=true`，退出码是主进程自己的 0 |
 | 主进程超内存被杀，`unless-stopped` | 每次都发 `oom` 事件，状态 `restarting`，`OOMKilled=true`，退出码 137 |
 
-父 slice 超限时 `oom` 事件是否还发，以及压满 CPU 和内存时 SSH 和核心的响应，由验收实测，结果写回这里。
+压满机器的实测：Docker 29.7.2，Linux 7.2.5-3-omarchy，cgroup v2，systemd 驱动，20 核 126 GiB，核心提交 f1cc34f5，真实核心加一个测试插件，默认限制，SSH 经局域网跳板和 Wi-Fi。slice 由 `install.sh` 的函数写入，内存上限用 `systemctl set-property --runtime` 临时调到 6 GB，没有把整机内存压满。
+
+| 操作 | 结果 |
+| --- | --- |
+| 插件 40 个空转进程压满 CPU | 用满 20 核；核心 `/_wonton/health` 最大 2.7 ms；SSH 新连接最大 0.33 s，已有会话最大 0.13 s，无失败 |
+| 同时和默认权重的容器抢 CPU，15 秒 | 插件 slice 103 核秒，对方 194 核秒，约 1:2 |
+| 只有 `MemoryMax=6G`，服务子进程超限（服务自己的上限 100.5 GiB） | 约 2 秒被杀；发 `oom` 事件；slice 的 `memory.events` 记 `oom`，容器的 scope 只记 `oom_kill`；`OOMKilled=true`，主进程活着 |
+| 只有 `MemoryMax=6G`，服务主进程超限，`unless-stopped` | 约 2 秒被杀；发 `oom` 事件；已经重启时读到 `OOMKilled=false`，`RestartCount=1` |
+| 只有 `MemoryMax=6G`，超限时 CPU 也压满 | 核心 health 最大 0.7 ms |
+| 加上 `MemoryHigh=5400M`，服务子进程不停要内存 | 到 5.4 GB 附近被压到每秒约 1 MB，300 秒后还活着，停在 5.9 GB；没有 `oom` 事件。同 slice 的另一个服务分配 100 MB，空闲时 6 ms，这时 60 秒没做完。核心和 SSH 不受影响 |
+
+最后一行是不设 `MemoryHigh` 的原因：真实大小下软硬上限差总内存的约 9%（126 GiB 的主机上约 11 GiB），按这个速度要几小时才被杀，这段时间所有插件都卡着，主人也看不到原因。
+
+SSH 新连接在加压的间隙出现过最大 5.6 s 的尖峰，没有负载时同样有，判断来自网络路径，没有单独证实。
 
 ## 没选的做法
 
@@ -125,13 +138,14 @@ Docker 29.7.2，Linux 7.2.5-3-omarchy，cgroup v2，systemd 驱动：
 - **只有每个服务一层：** CasaOS 的做法，多个插件加起来仍然能占满内存。
 - **核心自己写父 cgroup 或调 systemd：** 核心在容器里，cgroup namespace 里看不到父级。要么挂 D-Bus，要么起特权容器，都比安装脚本写一个文件复杂，而且绕开了 systemd。
 - **每个插件一个子 slice，按插件分总量：** 要为每个插件写 unit，核心没有权限；按服务设已经够用。
-- **内存只用软上限：** `MemoryHigh` 不杀进程，只放慢。失控的进程能把自己和机器一起拖住，需要有硬上限收场。
+- **总量上加软上限 `MemoryHigh`：** 本意是先放慢再杀，实测是所有插件一起卡住，失控的进程却迟迟不被杀，违反“失败即停”，见“实测”。Kubernetes 的父 cgroup 也只设硬上限。
 - **清单里新加 `resources` 字段：** 和 compose 已有的字段重复，Agent 还得多学一套。
 
 ## 代价与风险
 
 - 80% 和 4096 是经验值。内存特别大的单体应用可能碰到，由插件写 `mem_limit`、`pids_limit`，或者主人调高。
 - `IOWeight` 只有在 BFQ 或 iocost 生效时才起作用，常见的 NVMe 默认调度器下没有效果，I/O 抢占没有解决。主要靠内存上限避免换页引发的 I/O 风暴。
+- 快到总量时不会先放慢，直接杀 `oom_score` 高的进程。一个插件的峰值可能让别的插件被杀。
 - 共用内存的显卡（ADR-0018）跑模型时显存算在内存里，会碰到内存上限。
 - 单个服务的默认上限按建容器时的总内存算，换内存条后要重建才更新。
 - 一键升级核心不跑安装脚本，已有主机要重跑一次才有 slice。绿地阶段接受。

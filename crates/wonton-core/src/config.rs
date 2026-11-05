@@ -183,6 +183,8 @@ pub struct Config {
     pub egress_proxy: Option<ProxyAddress>,
     /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
     pub egress_proxy_detected: Option<ProxyAddress>,
+    /// 插件容器的 Docker `CgroupParent`（`WONTON_PLUGIN_SLICE`）；空值不设置。
+    pub plugin_slice: Option<String>,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
@@ -295,6 +297,7 @@ impl Config {
                 .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
+            plugin_slice: get("WONTON_PLUGIN_SLICE").filter(|value| !value.is_empty()),
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),

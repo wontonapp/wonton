@@ -14,11 +14,11 @@ use wonton_protocol::{LanPort, LanProtocol, LanWebuiOffer, PluginDetail};
 use super::{LanPortSpec, Protocol};
 use crate::plugin::core_address;
 use crate::plugin::languages::Languages;
+use crate::plugin::listed::Listed;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, detached};
 use crate::plugin::manifest::{Manifest, PluginId, Sso};
 use crate::plugin::package::PluginPackage;
 use crate::plugin::proxy_auth;
-use crate::plugin::views::Listed;
 
 const IMPERSONATE: &str =
     "局域网里的设备，以及这台主机上能出网的插件，不用密码就能以你的身份打开它";

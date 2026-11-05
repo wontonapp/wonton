@@ -48,6 +48,13 @@ impl PluginManager {
         self.host = host;
         self
     }
+    /// 测试用：设置插件容器的父 cgroup。
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_plugin_slice(mut self, slice: Option<String>) -> Self {
+        self.cfg.plugin_slice = slice;
+        self
+    }
 
     /// 怎么检测局域网地址、`WONTON_LAN_ADDRESSES`（见 [`super::lan`]）。
     #[must_use]

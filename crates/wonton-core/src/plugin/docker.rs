@@ -84,6 +84,14 @@ pub struct HostInfo {
     pub os_type: String,
     pub arch: String,
     pub runtimes: Vec<String>,
+    pub memory_limit: Option<bool>,
+    pub swap_limit: Option<bool>,
+    pub cpu_shares: Option<bool>,
+    pub pids_limit: Option<bool>,
+    pub cgroup_driver: Option<String>,
+    /// Docker `/info` 报告的逻辑 CPU 数；主人设置 CPU 上限时必须使用它。
+    pub ncpu: Option<i64>,
+    pub cgroup_version: Option<String>,
 }
 
 /// 插件网络能连到哪里。
@@ -213,9 +221,15 @@ impl Engine {
             os_type: info.os_type.unwrap_or_default(),
             arch: info.architecture.unwrap_or_default(),
             runtimes,
+            memory_limit: info.memory_limit,
+            swap_limit: info.swap_limit,
+            cpu_shares: info.cpu_shares,
+            pids_limit: info.pids_limit,
+            ncpu: info.ncpu,
+            cgroup_driver: info.cgroup_driver.map(|value| value.to_string()),
+            cgroup_version: info.cgroup_version.map(|value| value.to_string()),
         })
     }
-
     /// 核心启动时检查 Docker：连得上，而且 Engine 版本不低于 [`MIN_ENGINE_MAJOR`]。低于时报错，不降级运行：
     /// 插件网络的隔离靠的是新版的行为。
     pub async fn check_server(&self) -> Result<ServerInfo> {
@@ -465,11 +479,15 @@ impl Engine {
 
     pub async fn create_container(&self, name: &str, body: ContainerCreateBody) -> Result<()> {
         let options = CreateContainerOptionsBuilder::default().name(name).build();
-        self.docker
+        let response = self
+            .docker
             .create_container(Some(options), body)
             .await
-            .map(|_| ())
-            .map_err(|e| EngineError::from_bollard(&format!("创建容器 {name}"), e))
+            .map_err(|e| EngineError::from_bollard(&format!("创建容器 {name}"), e))?;
+        for warning in response.warnings {
+            tracing::warn!(container = name, warning = %warning, "Docker 创建容器时给出警告");
+        }
+        Ok(())
     }
 
     /// 把 tar 归档解到容器里的 `path` 下，容器创建后还没启动时也可以。属主和权限按归档里的记录；
@@ -531,7 +549,6 @@ impl Engine {
             .await
             .map_err(|e| EngineError::from_bollard(&format!("启动容器 {name}"), e))
     }
-
     /// 查询容器；不存在时返回 `None`。
     pub async fn inspect_container(&self, name: &str) -> Result<Option<ContainerInspectResponse>> {
         match self.docker.inspect_container(name, None).await {

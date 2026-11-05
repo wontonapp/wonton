@@ -7,6 +7,7 @@ use tokio::time::{Instant, sleep};
 
 use super::compose::DependCondition;
 use super::docker::{Engine, EngineError};
+use super::oom::{OomLimit, oom_reason};
 use crate::http::HttpClient;
 
 const POLL: Duration = Duration::from_millis(500);
@@ -198,6 +199,7 @@ pub enum Checked {
 pub async fn check_now(
     engine: &Engine,
     container: &str,
+    service: &str,
     one_shot: bool,
 ) -> Result<Checked, EngineError> {
     let Some(info) = engine.inspect_container(container).await? else {
@@ -208,6 +210,11 @@ pub async fn check_now(
     let exit_code = state.exit_code.unwrap_or_default();
     let health = state.health.and_then(|h| h.status);
     let running = status == ContainerStateStatusEnum::RUNNING;
+    let limit = OomLimit::of(info.host_config.as_ref());
+    // 只杀了子进程时主进程可以自己以 0 退出，`OOMKilled` 也是 true：一次性服务这样算做完了。
+    if state.oom_killed == Some(true) && !running && !(one_shot && exit_code == 0) {
+        return Ok(Checked::Failed(oom_reason(service, limit)));
+    }
     Ok(match (one_shot, status) {
         (true, ContainerStateStatusEnum::EXITED) if exit_code == 0 => Checked::Completed,
         (true, _) if running => Checked::Completed,

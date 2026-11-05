@@ -21,13 +21,14 @@ use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
 use super::host_relay::HostRelay;
 use super::hostdir::Owner;
-use super::interpolate::Vars;
 use super::lan::{self, LanGrant};
+use super::limits;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners, mount_targets};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
-use super::secrets::secret_var;
+use super::requirements::Requirements;
+use super::vars::injected_vars;
 
 /// 容器是插件的哪个服务。
 pub const LABEL_SERVICE: &str = "wonton.service";
@@ -178,6 +179,12 @@ pub struct InstallContext {
     pub egress: Option<EgressVars>,
     /// 声明了 `webui.sso: proxy` 时：核心在这个插件网络里的地址（见 [`super::core_address`]）。
     pub core_address: Option<String>,
+    /// 宿主总内存；未知时插件服务不设置默认内存上限。
+    pub memory_total: Option<u64>,
+    /// 主人给插件服务设置的覆盖上限；安装和 dry run 使用默认值。
+    pub limits: wonton_protocol::PluginLimits,
+    /// 插件 systemd slice；没有安装 slice 时不设置父 cgroup。
+    pub cgroup_parent: Option<String>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -202,10 +209,12 @@ impl std::fmt::Debug for InstallContext {
             .field("lan", &self.lan)
             .field("egress", &self.egress)
             .field("core_address", &self.core_address)
+            .field("memory_total", &self.memory_total)
+            .field("limits", &self.limits)
+            .field("cgroup_parent", &self.cgroup_parent)
             .finish()
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct ContainerPlan {
     pub service: String,
@@ -221,6 +230,14 @@ pub struct ContainerPlan {
     pub one_shot: bool,
 }
 
+struct ContainerOptions<'a> {
+    requirements: Option<&'a Requirements>,
+    network: &'a str,
+    aliases: Vec<String>,
+    labels: &'a HashMap<String, String>,
+    gpu: Option<&'a GpuGrant>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Deployment {
     pub network: String,
@@ -233,83 +250,6 @@ pub struct Deployment {
     pub containers: Vec<ContainerPlan>,
     /// 宿主网络网页和 MCP 服务的中继。
     pub relays: Vec<HostRelay>,
-}
-
-pub fn share_var(name: &str) -> String {
-    format!(
-        "WONTON_SHARE_{}",
-        name.to_ascii_uppercase().replace('-', "_")
-    )
-}
-
-/// 核心为插件提供的插值变量。
-pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
-    let mut vars = Vars::new();
-    let mut set = |k: &str, v: String| {
-        vars.insert(k.to_owned(), v);
-    };
-    set("WONTON_APP_ID", manifest.id.to_string());
-    set("WONTON_APP_DATA", ctx.app_data.display().to_string());
-    set("TZ", ctx.tz.clone());
-    set("PUID", ctx.puid.to_string());
-    set("PGID", ctx.pgid.to_string());
-    for (name, path) in &ctx.shares {
-        set(&share_var(name), path.display().to_string());
-    }
-    if let Some(url) = &ctx.app_url {
-        set("WONTON_APP_URL", url.clone());
-    }
-    for (name, value) in &ctx.secrets {
-        set(&secret_var(name), value.clone());
-    }
-    if let Some(oidc) = &ctx.oidc {
-        set("WONTON_OIDC_ISSUER", oidc.issuer.clone());
-        set("WONTON_OIDC_CLIENT_ID", oidc.client_id.clone());
-        set("WONTON_OIDC_CLIENT_SECRET", oidc.client_secret.clone());
-        set("WONTON_OIDC_AUTH_URL", oidc.auth_url.clone());
-        set("WONTON_OIDC_TOKEN_URL", oidc.token_url.clone());
-        set("WONTON_OIDC_USERINFO_URL", oidc.userinfo_url.clone());
-    }
-    if let Some(owner) = &ctx.owner {
-        set("WONTON_OWNER_NAME", owner.name.clone());
-        if let Some(email) = &owner.email {
-            set("WONTON_OWNER_EMAIL", email.clone());
-        }
-    }
-    if let Some(models) = &ctx.models {
-        set("WONTON_MODEL_BASE_URL", models.base_url.clone());
-        if let Some(url) = &models.anthropic_url {
-            set("WONTON_MODEL_ANTHROPIC_BASE_URL", url.clone());
-        }
-        if let Some(url) = &models.gemini_url {
-            set("WONTON_MODEL_GEMINI_BASE_URL", url.clone());
-        }
-        if let Some(key) = &models.plugin_key {
-            set("WONTON_MODEL_API_KEY", key.clone());
-        }
-        set("WONTON_MODEL_DEFAULT", models.default_model.clone());
-    }
-    if let Some(url) = &ctx.mcp_url {
-        set("WONTON_MCP_URL", url.clone());
-    }
-    if let Some(grant) = &ctx.lan {
-        set(lan::ADDRESSES_VAR, grant.var());
-    }
-    if let Some(address) = &ctx.core_address {
-        set(core_address::VAR, address.clone());
-    }
-    if manifest.permissions.contains(&Permission::NetworkEgress) {
-        let url = ctx.egress.as_ref().map_or("", |_| egress::PROXY_URL);
-        set(egress::URL_VAR, url.to_owned());
-    }
-    if let Some(matrix) = &ctx.matrix {
-        set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
-        set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
-        set("WONTON_MATRIX_ACCESS_TOKEN", matrix.access_token.clone());
-        set("WONTON_MATRIX_OWNER", matrix.owner.clone());
-        set("WONTON_MATRIX_HOME_ROOM", matrix.home_room.clone());
-    }
-    vars
 }
 
 /// 用占位环境渲染一遍，在不接触 Docker 的情况下检查插件包能否安装。
@@ -407,6 +347,9 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
         core_address: webui
             .filter(|w| w.sso == Sso::Proxy)
             .map(|_| core_address::PLACEHOLDER.to_owned()),
+        limits: Default::default(),
+        memory_total: None,
+        cgroup_parent: None,
         slug,
     }
 }
@@ -417,6 +360,7 @@ pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deploymen
 
 fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
     let manifest = &package.manifest;
+    let requirements = manifest.requirements.as_ref();
     let bot_key = ctx.models.as_ref().and_then(|m| m.bot_key.clone());
     let vars = ServiceVars::new(
         manifest,
@@ -472,8 +416,14 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
                 ConfigError::Package(e) => e.into(),
                 ConfigError::Rule(m) => service_err(&name, m),
             })?;
-        let endpoint = (network.as_str(), vars.aliases(&name));
-        let mut plan = container_plan(&name, service, mounts, ctx, endpoint, &labels, gpu)?;
+        let options = ContainerOptions {
+            requirements,
+            network: network.as_str(),
+            aliases: vars.aliases(&name),
+            labels: &labels,
+            gpu,
+        };
+        let mut plan = container_plan(&name, service, mounts, ctx, options)?;
         if let Some(grant) = &ctx.lan {
             lan::publish(&name, service, grant, &mut plan.body)?;
         }
@@ -602,9 +552,7 @@ fn container_plan(
     service: &Service,
     mounts: Vec<Mount>,
     ctx: &InstallContext,
-    (network, aliases): (&str, Vec<String>),
-    labels: &HashMap<String, String>,
-    gpu: Option<&GpuGrant>,
+    options: ContainerOptions<'_>,
 ) -> Result<ContainerPlan, RenderError> {
     let env = match &service.environment {
         Some(kv) => kv.pairs("environment").map_err(|m| service_err(name, m))?,
@@ -621,7 +569,7 @@ fn container_plan(
     if all_labels.keys().any(|k| k.starts_with("wonton.")) {
         return Err(service_err(name, "`wonton.` 开头的标签由核心保留"));
     }
-    all_labels.extend(labels.clone());
+    all_labels.extend(options.labels.clone());
     all_labels.insert(LABEL_SERVICE.to_owned(), name.to_owned());
 
     let depends_on = service
@@ -634,9 +582,9 @@ fn container_plan(
         .collect();
     let networking_config = service.network_mode.is_none().then(|| NetworkingConfig {
         endpoints_config: Some(HashMap::from([(
-            network.to_owned(),
+            options.network.to_owned(),
             EndpointSettings {
-                aliases: Some(aliases),
+                aliases: Some(options.aliases),
                 ..Default::default()
             },
         )])),
@@ -662,7 +610,15 @@ fn container_plan(
             .map(|d| parse_duration(d).map(|d| d.as_secs() as i64))
             .transpose()
             .map_err(|m| service_err(name, m))?,
-        host_config: Some(host_config(name, service, mounts, ctx, network, gpu)?),
+        host_config: Some(host_config(
+            name,
+            service,
+            mounts,
+            ctx,
+            options.requirements,
+            options.network,
+            options.gpu,
+        )?),
         networking_config,
         ..Default::default()
     };
@@ -683,6 +639,7 @@ fn host_config(
     service: &Service,
     mounts: Vec<Mount>,
     ctx: &InstallContext,
+    requirements: Option<&Requirements>,
     network: &str,
     gpu: Option<&GpuGrant>,
 ) -> Result<HostConfig, RenderError> {
@@ -717,6 +674,15 @@ fn host_config(
             .then(|| ctx.extra_hosts.clone()),
         ..Default::default()
     };
+    limits::apply(
+        &mut host,
+        service,
+        requirements,
+        ctx.memory_total,
+        ctx.cgroup_parent.as_deref(),
+        &ctx.limits,
+    )
+    .map_err(|message| service_err(name, message))?;
     if let Some(grant) = gpu {
         grant.apply(&mut host);
     }

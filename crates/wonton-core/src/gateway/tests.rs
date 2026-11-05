@@ -264,6 +264,7 @@ impl Harness {
             owner: "owner".into(),
             profile: profile.clone(),
             gateway_port: 8080,
+            plugin_slice: None,
             instance: Default::default(),
         };
         // 安装预览要查宿主架构，和安装一样连 Docker。

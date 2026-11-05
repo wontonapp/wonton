@@ -430,6 +430,8 @@ mod lan_api_tests;
 #[cfg(test)]
 mod lan_tests;
 #[cfg(test)]
+mod limits_tests;
+#[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
 mod model_providers_tests;

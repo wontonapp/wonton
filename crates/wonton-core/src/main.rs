@@ -175,6 +175,7 @@ async fn serve() -> anyhow::Result<()> {
     manager.spawn_lan_monitor();
     manager.spawn_egress_monitor();
     manager.spawn_upgrade_checks();
+    manager.spawn_oom_watch();
     manager.spawn_container_watch();
     upgrades.spawn();
     preinstall(&cfg, manager.clone(), upgrades.clone())?;
@@ -244,6 +245,7 @@ fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
         owner: cfg.username.clone(),
         profile: owner,
         gateway_port: cfg.listen.port(),
+        plugin_slice: cfg.plugin_slice.clone(),
         instance: cfg.instance.clone(),
     }
 }

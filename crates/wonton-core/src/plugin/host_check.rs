@@ -24,6 +24,15 @@ impl PluginManager {
             .await;
         facts
     }
+
+    /// 主机总内存，读不出来时为空。
+    pub(super) async fn memory_total(&self) -> Option<u64> {
+        let docker = self.engine.host_info().await.map_err(|e| e.to_string());
+        match host_facts::read(&self.host, docker).memory_total {
+            Known::Known(total) => Some(total),
+            Known::Unknown(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,7 +145,7 @@ fn memory(wanted: &str, facts: &HostFacts) -> Verdict {
 }
 
 /// 给人看的大小，如 `1.5 GB`、`512 MB`。
-fn size(bytes: u64) -> String {
+pub(super) fn size(bytes: u64) -> String {
     const MIB: u64 = 1024 * 1024;
     const GIB: u64 = 1024 * MIB;
     if bytes < GIB {

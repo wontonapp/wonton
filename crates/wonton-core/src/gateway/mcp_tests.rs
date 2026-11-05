@@ -89,6 +89,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         owner: "owner".into(),
         profile: profile.clone(),
         gateway_port: addr.port(),
+        plugin_slice: None,
         instance: Default::default(),
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();

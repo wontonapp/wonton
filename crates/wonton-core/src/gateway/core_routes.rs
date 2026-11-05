@@ -91,6 +91,7 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             "/_wonton/api/plugins/{id}/lan-webui",
             put(api::set_lan_webui),
         )
+        .route("/_wonton/api/plugins/{id}/limits", put(api::set_limits))
         .route(
             "/_wonton/api/plugins/{id}/ask-every-update",
             put(api::set_ask_every_update),

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use rustix::io::Errno;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{LanChoice, PluginWriter};
+use wonton_protocol::{LanChoice, PluginLimits, PluginWriter};
 
 use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
@@ -38,6 +38,8 @@ pub struct InstalledRecord {
     )]
     pub files: PackageFiles,
     pub granted_permissions: Vec<Permission>,
+    #[serde(default, skip_serializing_if = "limits_empty")]
+    pub limits: PluginLimits,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
     #[serde(default)]
     pub lan_webui: bool,
@@ -62,6 +64,10 @@ pub struct InstalledRecord {
     /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ask_every_update: bool,
+}
+
+fn limits_empty(limits: &PluginLimits) -> bool {
+    *limits == PluginLimits::default()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -408,6 +414,7 @@ mod tests {
             source: "services: {}".into(),
             files: [("config.yaml".to_owned(), b"a: \x01\xff".to_vec())].into(),
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
+            limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
             origin: None,

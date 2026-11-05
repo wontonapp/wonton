@@ -191,6 +191,9 @@ fn install_contexts_print_no_tokens_or_secrets() {
         lan: None,
         egress: None,
         core_address: None,
+        memory_total: None,
+        limits: Default::default(),
+        cgroup_parent: None,
     };
     let printed = format!("{ctx:?}");
     for secret in [

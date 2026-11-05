@@ -3,7 +3,7 @@
 use std::fs;
 use std::sync::Arc;
 
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::sync::watch;
 use wonton_protocol::{InstallRequest, PluginState, PluginTrust, UpgradeRequest};
 
@@ -26,6 +26,7 @@ use crate::matrix::fake::start;
 
 const REPO: &str = "acme/hello";
 const SOURCE: &str = "github:acme/hello";
+const GIB: u64 = 1 << 30;
 
 /// `web` 的镜像跟着版本走，`services` 追加在后面，`manifest` 追加在清单里。
 fn hello(version: &str, services: &str, manifest: &str) -> String {
@@ -115,6 +116,34 @@ fn image(docker: &FakeDocker, container: &str) -> String {
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+#[tokio::test]
+async fn owner_limits_survive_the_upgrade() {
+    let (github, docker, m, _dir) = with_github(false).await;
+    release(&github, &hello("1.0.0", "", "  permissions: []\n"));
+    install(&m, SOURCE).await;
+    m.set_limits(id(), memory_only(6 * GIB), Default::default())
+        .await
+        .unwrap();
+
+    release(&github, &hello("1.1.0", "", "  permissions: []\n"));
+    upgrade(&m).await.unwrap();
+    assert_eq!(version(&m), "1.1.0");
+    let host = &docker.created(&web()).unwrap()["HostConfig"];
+    assert_eq!(host["Memory"], json!(6 * GIB));
+    assert_eq!(host["MemorySwap"], json!(6 * GIB));
+    // 记录里没调过 CPU，compose 也没写 cpus：重建出来的容器不设 NanoCpus（默认不限）。
+    assert_eq!(host["NanoCpus"], Value::Null);
+    let detail = m.installed_detail(&id(), &zh()).unwrap();
+    assert_eq!(detail.limits, Some(memory_only(6 * GIB)));
+}
+
+fn memory_only(memory: u64) -> wonton_protocol::PluginLimits {
+    wonton_protocol::PluginLimits {
+        memory: Some(memory),
+        cpu_percent: None,
+    }
 }
 
 #[tokio::test]

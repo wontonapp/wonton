@@ -75,6 +75,7 @@ impl Home {
             owner: "owner".into(),
             profile: profile.clone(),
             gateway_port: 8080,
+            plugin_slice: None,
             instance: Default::default(),
         };
         let http = HttpClient::new();

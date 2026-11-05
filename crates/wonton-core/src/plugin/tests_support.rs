@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
+use super::listed::Listed;
 use super::manager::{Entry, PluginManager, PluginStatus};
 use super::manifest::{Manifest, PluginId};
 use super::proxy_auth::ProxyAuth;
 use super::upstreams::{Endpoint, McpTarget};
-use super::views::Listed;
 
 impl PluginManager {
     /// 测试用：不经 Docker 直接登记一个插件，供网关测试指向本地的假上游。

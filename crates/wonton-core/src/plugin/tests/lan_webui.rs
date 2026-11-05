@@ -268,6 +268,29 @@ async fn switching_rebuilds_the_opening_containers_only() {
 }
 
 #[tokio::test]
+async fn switching_keeps_the_owners_limits() {
+    let (docker, m, _detected, _dir) = on(office()).await;
+    let port = web_port().await;
+    let compose = app(port, OWN_LOGIN, "A: b", "");
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    let limits = wonton_protocol::PluginLimits {
+        memory: Some(1 << 30),
+        cpu_percent: Some(150),
+    };
+    m.set_limits(id(), limits, Languages::default())
+        .await
+        .unwrap();
+
+    m.set_lan_webui(id(), true, Languages::default())
+        .await
+        .unwrap();
+    let web = id().slug();
+    let host = &docker.created(&container_name(&web, "web")).unwrap()["HostConfig"];
+    assert_eq!(host["Memory"], serde_json::json!(1u64 << 30));
+    assert_eq!(host["NanoCpus"], serde_json::json!(1_500_000_000i64));
+}
+
+#[tokio::test]
 async fn opening_reports_why_it_failed_and_keeps_the_switch_off() {
     let (docker, m, detected, _dir) = on(office()).await;
     let port = web_port().await;

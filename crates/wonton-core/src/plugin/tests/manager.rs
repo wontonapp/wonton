@@ -106,6 +106,7 @@ fn manager_for(
             },
         ),
         gateway_port: 8080,
+        plugin_slice: None,
         instance,
     };
     let store = Store::open(dir.path().join("plugins")).unwrap();
@@ -232,6 +233,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             version: "1.0.0".into(),
             source: app("app.good"),
             files: Default::default(),
+            limits: Default::default(),
             granted_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,

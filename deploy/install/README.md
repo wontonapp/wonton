@@ -28,6 +28,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 | `/usr/local/bin/wonton` | 链接到 `/opt/wonton/wonton` |
 | `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、用户名、时区、数据目录，由 `install.sh` 写 |
 | `/opt/wonton/secrets/` | Matrix 签发私钥、Tuwunel 配置（含公钥和注册共享密钥）、Hydra 的系统密钥；0700 |
+| `/etc/systemd/system/wonton_plugins.slice` | systemd + cgroup v2 主机上由安装脚本生成的插件总量限制；删除时先删 `.env` 里的 `WONTON_PLUGIN_SLICE` 行，再删这个文件并执行 `systemctl daemon-reload` |
 | `/var/lib/wonton/`（`WONTON_DATA_DIR`） | 核心和插件的数据，容器内外路径相同 |
 | Docker 卷 `wonton_hydra`、`wonton_tuwunel` | Hydra 的 SQLite、Tuwunel 的数据库 |
 
