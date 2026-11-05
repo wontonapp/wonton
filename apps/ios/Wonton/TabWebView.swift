@@ -30,7 +30,7 @@ struct TabWebInputs: Equatable {
     let connected: Bool
     let appearance: AppearanceViewModel
     let environment: TabEnvironment
-    let zoom: CGFloat
+    let textScale: CGFloat
 }
 
 /// WKWebView、历史和加载进度跟着标签页存活，不跟着 SwiftUI 的挂载次数存活。
@@ -55,6 +55,7 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var lastContext: String?
     @ObservationIgnored var lastConnection: String?
     @ObservationIgnored var documentScript: String?
+    @ObservationIgnored private var lastTextScale: CGFloat?
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
 
     init(tab: TabRef, core: ClientCore) {
@@ -127,8 +128,9 @@ final class TabWebSession: NSObject {
         view.backgroundColor = background
         view.scrollView.backgroundColor = background
         view.underPageBackgroundColor = background
-        view.pageZoom = input.zoom
+        view.pageZoom = 1
         let script = try core.tabDocumentScript(tab: tab, environment: input.environment)
+            + "\n" + textSizeScript(input.textScale)
         if script != documentScript || view !== webView {
             let controller = view.configuration.userContentController
             controller.removeAllUserScripts()
@@ -141,8 +143,13 @@ final class TabWebSession: NSObject {
 
     func updateContext(_ view: WKWebView, force: Bool = false) throws {
         guard let input, view.url != nil else { return }
+        let textChanged = input.textScale != lastTextScale
+        if force || textChanged {
+            evaluate(textSizeScript(input.textScale), in: view)
+            lastTextScale = input.textScale
+        }
         let context = try core.tabContextScript(tab: tab, environment: input.environment)
-        if force || context != lastContext {
+        if force || textChanged || context != lastContext {
             evaluate(context, in: view)
             lastContext = context
         }
@@ -158,6 +165,26 @@ final class TabWebSession: NSObject {
             guard let self, self.webView === view, let error else { return }
             self.problem = error.problem
         }
+    }
+
+    private func textSizeScript(_ scale: CGFloat) -> String {
+        """
+        (() => {
+          const apply = () => {
+            if (!document.documentElement) return false;
+            document.documentElement.style.setProperty(
+              '-webkit-text-size-adjust', '\(Double(scale * 100))%', 'important'
+            );
+            return true;
+          };
+          if (!apply()) {
+            const observer = new MutationObserver(() => {
+              if (apply()) observer.disconnect();
+            });
+            observer.observe(document, { childList: true });
+          }
+        })();
+        """
     }
 
     func reselect() {
@@ -187,6 +214,7 @@ final class TabWebSession: NSObject {
         documentScript = nil
         lastContext = nil
         lastConnection = nil
+        lastTextScale = nil
         update(input, action: action)
     }
 

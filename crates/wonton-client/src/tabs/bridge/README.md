@@ -17,7 +17,8 @@
    壳不另写来源判定，把 `reply_script` 原样注入同一个页面；`initialized` 为真时可撤骨架。
    只按 `action` 枚举打开系统链接或切到聊天填草稿，不自动发送、不解析 JSON-RPC。
 4. 订阅外观、底栏状态以及平台环境变化，调用 `tab_context_script` 注入；全屏结果以后发布的 `TabsViewModel` 为准。
-   字号由壳的 `pageZoom` / `textZoom` 应用，再通知环境变化，不往 SDK 上下文加自定义字号字段。
+   字号由壳应用：iOS 保持 `pageZoom = 1`，用 `-webkit-text-size-adjust` 放大文字；Android 用 `textZoom`。
+   然后通知环境变化，不往 SDK 上下文加自定义字号字段；安全区和栏高不随文字比例换算。
 5. 重选当前标签时注入 `tab_reselected_script()`；连接状态变化时注入 `tab_connection_script()`。
    后者的 `CustomEvent.detail` 为 `{ connected: boolean }`，只在核心确认为 Connected 时为真。
 

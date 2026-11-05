@@ -20,7 +20,7 @@ struct TabPageView: View {
     @Environment(\.wontonTabBar) private var bottomBar
     @Environment(\.wontonBarStatus) private var status
     @Environment(\.openURL) private var openURL
-    @ScaledMetric(relativeTo: .body) private var zoom: CGFloat = 1
+    @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
 
     init(
         tabs: TabsModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
@@ -107,13 +107,13 @@ struct TabPageView: View {
             environment: TabEnvironment(
                 locale: Locale.preferredLanguages.first ?? Locale.current.identifier,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: edgeToEdge ? Double((topHeight + safe.top) / zoom) : 0,
-                insetBottom: edgeToEdge ? Double((bottom + safe.bottom) / zoom) : 0,
+                insetTop: edgeToEdge ? Double(topHeight + safe.top) : 0,
+                insetBottom: edgeToEdge ? Double(bottom + safe.bottom) : 0,
                 safeArea: TabSafeArea(
-                    top: edgeToEdge ? Double(safe.top / zoom) : 0, right: 0,
-                    bottom: edgeToEdge ? Double(safe.bottom / zoom) : 0, left: 0
+                    top: edgeToEdge ? Double(safe.top) : 0, right: 0,
+                    bottom: edgeToEdge ? Double(safe.bottom) : 0, left: 0
                 )
-            ), zoom: zoom
+            ), textScale: textScale
         )
     }
 

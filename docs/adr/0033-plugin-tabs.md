@@ -141,7 +141,7 @@ x-wonton:
 | 骨架什么时候撤 | 收到 SDK 握手（`ui/notifications/initialized`）或页面加载完，以先到为准；没适配的页面靠后者，这和 Telegram 的 `ready()` 一样 |
 | 第一帧的颜色 | 文档开始前注入脚本（iOS `WKUserScript`，Android `addDocumentStartJavaScript`），把令牌写到根元素，同时设 `color-scheme` 和根元素背景 |
 | 切换明暗和重点色 | 不重新加载：换根元素上的变量，再发 `host-context-changed` |
-| 字号（ADR-0028） | iOS `pageZoom`，Android `textZoom`。字体跟不了，页面用 `--font-sans` 的才跟 |
+| 字号（ADR-0028） | iOS 保持 `pageZoom = 1`，壳在文档开始时注入 `-webkit-text-size-adjust: <百分比> !important`，变更时原地更新；Android 用 `textZoom`。只放大文字，不缩小布局视口；安全区和栏高不除以文字比例。字体跟不了，页面用 `--font-sans` 的才跟 |
 | 切标签 | WebView 常驻，切回来在原来的位置。第一次点才创建，不预加载：多数人不会每次都打开所有页面 |
 | 进程被系统收掉 | iOS `webViewWebContentProcessDidTerminate`、Android `onRenderProcessGone`（Android 必须处理，否则整个 App 被杀）：重建，恢复地址，骨架盖着 |
 | 顶栏 | App 的，标题取清单，能后退时显示返回。适配过的页面内容从下面滚过（iOS 材质），Android 不透明（ADR-0029） |
@@ -427,6 +427,22 @@ Skills over MCP 等宿主支持了再加，内容是同一个目录。
 - **Agent 更新自己写的插件：** 权限没变宽就不问，变宽才发卡片。详情页能打开“每次都问”。
 
 ## 验证
+
+### iOS 文字缩放
+
+iOS 26.5 模拟器、402pt 宽、Debug 壳，真实代理与隧道；Notes、手写 JSON-RPC 探针和 Actual Server 26.11.0 欢迎页。
+`pageZoom` 在 `extra_large` 下让视口变成约 301 CSS px、文档仍宽 402 CSS px，出现横向滚动。
+保持 `pageZoom = 1`，壳注入根元素 `-webkit-text-size-adjust`，标准 → 特大 → 标准时：
+
+| 页面 | 标准 / 特大的标题字号（CSS px） | 两档视口 / 文档宽（CSS px） |
+| --- | --- | --- |
+| Notes | 28 / 37.33 | 402 / 402 |
+| JSON-RPC 探针 | 28 / 37.33 | 402 / 402 |
+| Actual 欢迎页 | 40 / 53.33 | 402 / 402 |
+
+切换期间每页只有首次打开的一次 `didFinish`；探针的 `loads` 保持 1，文字重新换行，栏高变量保持原 CSS px。
+Notes 的“加上”“删掉”不再需要横向滚动。Actual 欢迎页的固定底部内容在特大字号下与表单纵向重叠，
+这项验证只证明文字缩放与横向宽度，不证明 Actual 全部页面的大字号可用性；壳没有改上游布局。
 
 ### 原型（不合并）
 
