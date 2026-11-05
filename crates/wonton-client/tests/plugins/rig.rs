@@ -176,6 +176,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         status,
         web_url: None,
         web_display: wonton_protocol::TabDisplay::default(),
+        declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
         upgrade: None,

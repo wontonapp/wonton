@@ -88,10 +88,11 @@ pub use plugin::{
     InstallRequest, InstallSource, InstalledPlugin, InstalledPlugins, LanWebuiOffer,
     MAX_PLUGIN_ARCHIVE_BYTES, OpenWindow, PermissionLine, PermissionRisk, PluginAuthor,
     PluginDetail, PluginDevice, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
-    PluginLimits, PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState,
-    PluginTrust, PluginWriter, PluginsViewModel, RequirementLine, RequirementStatus, SourceKind,
-    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, ToolAccess,
-    ToolPolicyEntry, ToolPolicyView, UpgradeOffer, UpgradeRequest, UpgradeResult,
+    PluginLimits, PluginOperation, PluginProblem, PluginState, PluginTakeover, PluginTask,
+    PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
+    RequirementStatus, SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing,
+    StoreProblem, StoreSection, TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView,
+    UpgradeOffer, UpgradeRequest, UpgradeResult,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use secret::SecretString;

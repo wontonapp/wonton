@@ -47,6 +47,7 @@ fn installed() -> InstalledPlugin {
         },
         web_url: Some("http://app-immich-photos.wonton.localhost:8480".into()),
         web_display: TabDisplay::Fullscreen,
+        declares_tools: true,
         tabs: vec![PluginTab {
             id: "photos".into(),
             title: "照片".into(),
@@ -306,6 +307,15 @@ fn interface_types_round_trip_through_json() {
         }),
         storage_problem: None,
         owner_profile_prompt: true,
+        takeover: Some(PluginTakeover {
+            id: "app.memos".into(),
+            state: TakeoverState::Lost {
+                problem: PluginProblem {
+                    reason: PluginFailure::TransportUnavailable,
+                    message: "连不上家里的服务器".into(),
+                },
+            },
+        }),
     };
     assert_eq!(round_trip(&view_model), view_model);
 }
@@ -324,6 +334,12 @@ fn plugin_actions_round_trip_through_json() {
                 upgrade_from: Some("0.9.0".into()),
                 ..preview()
             },
+        },
+        Action::StartTakeover {
+            id: "app.memos".into(),
+        },
+        Action::EndTakeover {
+            id: "app.memos".into(),
         },
         Action::UninstallPlugin {
             id: "app.samba".into(),

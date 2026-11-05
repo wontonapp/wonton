@@ -171,6 +171,9 @@ pub struct InstalledPlugin {
     /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
     #[serde(default)]
     pub web_display: TabDisplay,
+    /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
+    #[serde(default)]
+    pub declares_tools: bool,
     /// 插件声明的底栏页面。
     #[serde(default)]
     pub tabs: Vec<PluginTab>,
@@ -600,6 +603,31 @@ pub struct PluginsViewModel {
     pub storage_problem: Option<PluginProblem>,
     /// 刚配对、资料还没填：壳弹出填资料的页面，关掉时发 [`Action::DismissOwnerProfilePrompt`](crate::Action::DismissOwnerProfilePrompt)。
     pub owner_profile_prompt: bool,
+    /// “我来操作”；没在操作时为空。结束了但不是主人交还的，留着告诉主人，等 `EndTakeover` 或者下一次 `StartTakeover`。
+    pub takeover: Option<PluginTakeover>,
+}
+
+/// 这台设备上的“我来操作”，同时只操作一个插件。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginTakeover {
+    pub id: String,
+    pub state: TakeoverState,
+}
+
+/// “我来操作”走到哪一步了。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum TakeoverState {
+    /// 请求发出去了，家里的服务器还没回：Bot 的调用还没有停住。
+    Starting,
+    /// 家里的服务器确认了：Bot 的敏感调用都先停住。
+    Operating,
+    /// 没开始成，Bot 的调用照常判定。
+    NotStarted { problem: PluginProblem },
+    /// 操作到一半断了：续不上约，或者插件停了、设备被吊销。Bot 的调用不再停住。
+    Lost { problem: PluginProblem },
 }
 
 /// 家里服务器存数据的那块盘。

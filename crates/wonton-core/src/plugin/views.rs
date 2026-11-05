@@ -496,6 +496,7 @@ impl PluginManager {
                 .and_then(|m| m.webui.as_ref())
                 .and_then(|webui| manifest_tabs::display(&webui.display))
                 .unwrap_or_default(),
+            declares_tools: manifest.is_some_and(|m| m.mcp.is_some()),
             tabs,
             bot_user_id: None,
             upgrade,

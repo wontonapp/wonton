@@ -121,6 +121,13 @@ pub enum Action {
     /// 清掉一个做完的任务（成功或失败的提示）。
     DismissPluginTask { id: String },
 
+    // “我来操作”（ADR-0024）。续约在核心里，进展和结果在 `PluginsViewModel.takeover` 里。
+    /// 主人在插件网页的标题栏上点了“我来操作”。正在操作别的插件时，那个先交还。
+    StartTakeover { id: String },
+    /// 主人点了“交还”或者离开了这个网页。`id` 不是正在操作的插件时什么都不做，换页面时后一页的开始可能先到。
+    /// 进后台不用发，核心自己交还。
+    EndTakeover { id: String },
+
     // 出网代理的设置页（ADR-0023）。网络操作都在后台执行，进展和结果在 `PluginsViewModel.egress` 里。
     /// 打开设置页：取设置。探测结果太旧时家里的服务器在后台再测，这里接着取几次，把新结果带回来。
     RefreshEgressProxy,
