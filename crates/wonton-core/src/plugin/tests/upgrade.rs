@@ -210,6 +210,28 @@ async fn a_new_tag_is_offered_and_the_upgrade_keeps_the_data() {
 }
 
 #[tokio::test]
+async fn stopped_plugins_are_offered_new_versions() {
+    let (github, docker, m, _dir) = with_github(false).await;
+    release(&github, &hello("1.0.0", "", "  permissions: []\n"));
+    install(&m, SOURCE).await;
+    docker.set_state(
+        &web(),
+        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
+    );
+    m.watch_containers().await;
+    assert_eq!(
+        m.installed_plugin(&id(), &zh()).unwrap().status,
+        PluginState::Stopped
+    );
+
+    release(&github, &hello("1.1.0", "", "  permissions: []\n"));
+    assert_eq!(m.check_upgrades_now().await, None);
+    let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+    assert_eq!(plugin.status, PluginState::Stopped);
+    assert_eq!(plugin.upgrade.unwrap().version, "1.1.0");
+}
+
+#[tokio::test]
 async fn a_new_version_that_will_not_start_rolls_back_to_the_old_containers() {
     let (github, docker, m, _dir) = with_github(false).await;
     release(&github, &hello("1.0.0", "", "  permissions: []\n"));

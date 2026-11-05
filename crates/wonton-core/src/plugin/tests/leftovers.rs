@@ -239,7 +239,7 @@ async fn a_plugin_of_another_running_core_is_not_taken_for_leftovers() {
     assert!(docker.writes().is_empty(), "{:?}", docker.writes());
 }
 
-/// 清理的前提：有安装记录的插件走不到部署，它的容器和网络不算残留。运行中和异常的都一样。
+/// 清理的前提：有安装记录的插件走不到部署，它的容器和网络不算残留。运行中、异常和已停止的都一样。
 #[tokio::test]
 async fn an_installed_plugin_is_never_taken_for_leftovers() {
     for failed in [false, true] {
@@ -253,7 +253,7 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
         if failed {
             docker.set_state(
                 &web,
-                json!({"Status": "exited", "Running": false, "ExitCode": 1}),
+                json!({"Status": "restarting", "Running": true, "ExitCode": 1}),
             );
         }
         let m = manager_with(engine, &dir);
@@ -269,4 +269,30 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
             "{writes:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn a_stopped_plugin_is_never_taken_for_leftovers() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    manager_with(engine.clone(), &dir)
+        .install(&app(), &[])
+        .await
+        .unwrap();
+    docker.set_state(
+        &container_name("app-test", "web"),
+        json!({"Status": "exited", "Running": false, "ExitCode": 1}),
+    );
+    let m = manager_with(engine, &dir);
+    m.restore().await.unwrap();
+    assert_eq!(status(&m), Some(PluginStatus::Stopped));
+
+    let before = docker.writes().len();
+    let err = m.install(&app(), &[]).await.unwrap_err();
+    assert_eq!(err.kind(), "conflict", "{err}");
+    let writes = docker.writes().split_off(before);
+    assert!(
+        !writes.iter().any(|w| w.starts_with("DELETE")),
+        "{writes:?}"
+    );
 }

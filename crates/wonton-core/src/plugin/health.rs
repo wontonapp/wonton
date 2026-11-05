@@ -191,6 +191,8 @@ pub enum Checked {
     Healthy,
     /// 长期运行，但没有健康检查，或者检查还没通过：只知道它在运行。
     Running,
+    /// 常驻容器已退出或已创建但未启动。
+    Stopped,
     /// 不在应有的状态，原因如实给出。
     Failed(String),
 }
@@ -221,6 +223,9 @@ pub async fn check_now(
         (true, _) => Checked::Failed(format!(
             "一次性服务的容器 {container} 没有以 0 退出（{status:?}，退出码 {exit_code}）"
         )),
+        (false, ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::CREATED) => {
+            Checked::Stopped
+        }
         (false, _) if !running => {
             Checked::Failed(format!("容器 {container} 不在运行（{status:?}）"))
         }

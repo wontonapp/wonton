@@ -104,7 +104,7 @@ impl Upgrades {
         notices.extend(found.rewritten.as_deref().map(line));
         let idle = matches!(
             status,
-            PluginStatus::Running | PluginStatus::Degraded { .. }
+            PluginStatus::Running | PluginStatus::Stopped | PluginStatus::Degraded { .. }
         );
         let offer = found
             .offer

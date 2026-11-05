@@ -60,6 +60,7 @@ pub mod secrets;
 pub mod source_address;
 pub mod sources;
 pub mod staged;
+mod start;
 pub mod store;
 pub mod store_info;
 pub mod storefront;

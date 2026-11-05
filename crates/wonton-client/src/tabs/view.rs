@@ -101,13 +101,14 @@ fn page_from_metadata(
     plugins: &PluginsViewModel,
 ) -> TabPage {
     let badge = matches!(state_value, TabState::Failed { .. } | TabState::PageRemoved);
+    let dimmed = matches!(state_value, TabState::Stopped);
     TabPage {
         title: metadata.title,
         icon: metadata.icon,
         url,
         layout: normalize_layout(metadata.layout),
         state: state_value,
-        dimmed: false,
+        dimmed,
         badge,
         display: choice,
         opens_fullscreen: opens_fullscreen(&stored.tab, choice, plugins),
@@ -128,6 +129,9 @@ pub(super) fn page_state(
     if !has_url {
         return TabState::PageRemoved;
     }
+    if matches!(plugin.status, PluginState::Stopped) {
+        return TabState::Stopped;
+    }
     if let Some((failure, status)) = state.failures.get(tab) {
         return TabState::LoadFailed {
             failure: *failure,
@@ -136,7 +140,7 @@ pub(super) fn page_state(
     }
     match &plugin.status {
         PluginState::Installing => TabState::Starting,
-        PluginState::Stopped => TabState::Unknown,
+        PluginState::Stopped => TabState::Stopped,
         PluginState::Running { .. } => TabState::Ready,
         PluginState::Upgrading => TabState::Upgrading,
         PluginState::Uninstalling => TabState::Uninstalling,

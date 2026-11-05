@@ -99,6 +99,9 @@ pub struct PluginPackage {
     pub origin: Option<Origin>,
 }
 
+pub(super) type ServiceDependencies<'a> =
+    BTreeMap<&'a str, Vec<(String, super::compose::DependCondition)>>;
+
 impl PluginPackage {
     /// compose 里有没有这个服务。
     pub fn has_service(&self, name: &str) -> bool {
@@ -311,6 +314,27 @@ impl PluginPackage {
 
     pub fn service_names(&self) -> impl Iterator<Item = &str> {
         self.services.keys().map(String::as_str)
+    }
+
+    /// 启动现存容器只需要依赖条件，不重新插值环境或改写容器配置。
+    pub(super) fn service_dependencies(&self) -> Result<ServiceDependencies<'_>, PackageError> {
+        self.services
+            .iter()
+            .map(|(name, service)| {
+                let dependencies = service
+                    .get("depends_on")
+                    .map(|value| serde_json::from_value::<super::compose::DependsOn>(value.clone()))
+                    .transpose()
+                    .map_err(|error| PackageError::Service {
+                        service: name.clone(),
+                        message: error.to_string(),
+                    })?;
+                Ok((
+                    name.as_str(),
+                    dependencies.map(|deps| deps.entries()).unwrap_or_default(),
+                ))
+            })
+            .collect()
     }
 
     pub fn named_volumes(&self) -> &BTreeSet<String> {

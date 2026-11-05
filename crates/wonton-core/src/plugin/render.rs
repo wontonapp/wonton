@@ -390,7 +390,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
     let gpu_services: &[String] = manifest.gpu.as_ref().map_or(&[], |g| &g.services);
     let mut binds = Vec::new();
     let mut containers = Vec::new();
-    for name in start_order(&services)? {
+    for name in start_order(dependencies(&services))? {
         let service = &services[&name];
         check_network_mode(manifest, &name, service)?;
         let gpu = ctx.gpu.as_ref().filter(|_| gpu_services.contains(&name));
@@ -510,22 +510,31 @@ fn share_writable(manifest: &Manifest, share: &str) -> bool {
     )
 }
 
+fn dependencies(services: &BTreeMap<String, Service>) -> BTreeMap<&str, Vec<String>> {
+    services
+        .iter()
+        .map(|(name, service)| {
+            let deps = service
+                .depends_on
+                .as_ref()
+                .map(|deps| deps.entries().into_iter().map(|(name, _)| name).collect())
+                .unwrap_or_default();
+            (name.as_str(), deps)
+        })
+        .collect()
+}
+
 /// 按 `depends_on` 拓扑排序；同层按名字排序，保证结果确定。
-fn start_order(services: &BTreeMap<String, Service>) -> Result<Vec<String>, RenderError> {
-    let mut pending: BTreeMap<&str, Vec<String>> = BTreeMap::new();
-    for (name, service) in services {
-        let deps: Vec<String> = service
-            .depends_on
-            .as_ref()
-            .map(|d| d.entries().into_iter().map(|(n, _)| n).collect())
-            .unwrap_or_default();
-        if let Some(missing) = deps.iter().find(|d| !services.contains_key(*d)) {
+pub(super) fn start_order(
+    mut pending: BTreeMap<&str, Vec<String>>,
+) -> Result<Vec<String>, RenderError> {
+    for (name, deps) in &pending {
+        if let Some(missing) = deps.iter().find(|d| !pending.contains_key(d.as_str())) {
             return Err(service_err(
                 name,
                 format!("depends_on 引用了不存在的服务 `{missing}`"),
             ));
         }
-        pending.insert(name, deps);
     }
     let mut order: Vec<String> = Vec::new();
     while !pending.is_empty() {

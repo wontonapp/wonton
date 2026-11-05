@@ -302,7 +302,7 @@ impl PluginManager {
         self.gallery.images()
     }
 
-    fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {
+    pub(super) fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {
         PluginView {
             id: id.clone(),
             version: entry.version.clone(),
@@ -428,6 +428,7 @@ impl PluginManager {
             };
             match &entry.status {
                 PluginStatus::Running => tracing::info!(plugin = %file.id, "已恢复插件"),
+                PluginStatus::Stopped => tracing::info!(plugin = %file.id, "插件已停止"),
                 status => tracing::warn!(plugin = %file.id, ?status, "插件状态异常"),
             }
             self.plugins
@@ -451,7 +452,8 @@ impl PluginManager {
                 }
                 let listed = Listed::of_record(&package, record);
                 match self.reconcile(&package, record).await {
-                    Ok(deployed) => Entry::running(listed, deployed),
+                    Ok(Some(deployed)) => Entry::running(listed, deployed),
+                    Ok(None) => Entry::stopped(listed),
                     Err(e) => {
                         // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。
                         if !listed.open_ports(record.lan_webui).is_empty() {
@@ -615,7 +617,9 @@ pub(super) fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError>
         PluginStatus::Installing => "安装",
         PluginStatus::Uninstalling => "卸载",
         PluginStatus::Upgrading => "升级",
-        PluginStatus::Running | PluginStatus::Degraded { .. } => return None,
+        PluginStatus::Running | PluginStatus::Stopped | PluginStatus::Degraded { .. } => {
+            return None;
+        }
     };
     Some(InstallError::Conflict(format!("应用 {id} 正在{doing}")))
 }

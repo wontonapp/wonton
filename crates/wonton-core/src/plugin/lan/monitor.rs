@@ -254,7 +254,7 @@ impl PluginManager {
         let plugins = self.plugins.write().expect("插件表锁中毒");
         let idle = matches!(
             plugins.get(id).map(|e| &e.status),
-            Some(PluginStatus::Running | PluginStatus::Degraded { .. })
+            Some(PluginStatus::Running | PluginStatus::Stopped | PluginStatus::Degraded { .. })
         );
         idle && self.lan.begin(id)
     }
@@ -277,7 +277,7 @@ impl PluginManager {
             self.rebuild_lan(&package, &record, &addresses, &lan_services(spec))
                 .await?;
         }
-        self.reconcile(&package, &record).await
+        self.reconcile_running(&package, &record).await
     }
 
     /// 照安装时一样渲染，只删掉、重建 `services` 的容器。

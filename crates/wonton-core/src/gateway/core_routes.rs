@@ -80,6 +80,10 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             get(api::detail).delete(api::uninstall),
         )
         .route(
+            "/_wonton/api/plugins/{id}/start",
+            post(super::plugin_start::start),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/upgrade",
             post(api::upgrade).layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
         )

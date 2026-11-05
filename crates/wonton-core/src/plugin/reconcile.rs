@@ -13,14 +13,20 @@ use super::proxy_auth::ProxyAuth;
 use super::secrets;
 use super::store::InstalledRecord;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ContainersState {
+    Running(Health),
+    Stopped,
+}
+
 impl PluginManager {
     /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
-    /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。
+    /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。`None` 表示常驻服务全部停止。
     pub(super) async fn reconcile(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-    ) -> Result<Deployed, InstallError> {
+    ) -> Result<Option<Deployed>, InstallError> {
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
         let network = self.cfg.instance.network(&slug);
@@ -37,7 +43,10 @@ impl PluginManager {
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
-        let health = self.check_containers(package).await?;
+        let health = match self.check_containers(package).await? {
+            ContainersState::Running(health) => health,
+            ContainersState::Stopped => return Ok(None),
+        };
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let generated = self.check_secrets(manifest).await?;
@@ -50,36 +59,66 @@ impl PluginManager {
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
         }
-        Ok(Deployed {
+        Ok(Some(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
             health,
             models: self.models_upstream(manifest, &network).await?,
             mcp: self.mcp_upstream(manifest, &network).await?,
             proxy: proxy.map(Arc::new),
             firewalled: record.firewalled,
-        })
+        }))
+    }
+
+    pub(super) async fn reconcile_running(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+    ) -> Result<Deployed, InstallError> {
+        match self.reconcile(package, record).await? {
+            Some(deployed) => Ok(deployed),
+            None => Err(InstallError::Unhealthy("插件的常驻服务已停止".to_owned())),
+        }
     }
 
     /// 看一眼插件的每个容器，不等待。不在应有的状态是 [`InstallError::Unhealthy`]。
     pub(super) async fn check_containers(
         &self,
         package: &PluginPackage,
-    ) -> Result<Health, InstallError> {
+    ) -> Result<ContainersState, InstallError> {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
-        let mut healthy = Vec::new();
+        let mut running = 0;
+        let mut healthy = true;
+        let mut stopped = None;
         for service in package.service_names() {
             let name = self.cfg.instance.container(&slug, service);
             match health::check_now(&self.engine, &name, service, one_shot.contains(service))
                 .await?
             {
                 Checked::Completed => {}
-                Checked::Healthy => healthy.push(true),
-                Checked::Running => healthy.push(false),
+                Checked::Healthy => running += 1,
+                Checked::Running => {
+                    running += 1;
+                    healthy = false;
+                }
+                Checked::Stopped => stopped = Some(name),
                 Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
             }
         }
-        Ok(Health::of(healthy))
+        if let Some(container) = stopped {
+            return if running == 0 {
+                Ok(ContainersState::Stopped)
+            } else {
+                Err(InstallError::Unhealthy(format!(
+                    "部分常驻服务仍在运行，容器 {container} 已停止"
+                )))
+            };
+        }
+        Ok(ContainersState::Running(if healthy {
+            Health::Healthy
+        } else {
+            Health::Unknown
+        }))
     }
 
     /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。

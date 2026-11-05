@@ -15,7 +15,8 @@ use super::upstreams::{Endpoint, McpTarget};
 pub enum PluginStatus {
     Installing,
     Running,
-    /// 已安装但状态异常（容器缺失或停止、卸载中途失败等），原因如实给出。
+    Stopped,
+    /// 已安装但状态异常（容器缺失、部分服务未运行、卸载中途失败等），原因如实给出。
     Degraded {
         reason: String,
     },
@@ -113,6 +114,13 @@ impl Entry {
             proxy: deployed.proxy,
             mcp: deployed.mcp,
             ..Self::new(listed, PluginStatus::Running, deployed.upstream)
+        }
+    }
+
+    pub(super) fn stopped(listed: Arc<Listed>) -> Self {
+        Self {
+            follows_containers: true,
+            ..Self::new(listed, PluginStatus::Stopped, None)
         }
     }
 

@@ -113,6 +113,8 @@ struct Resources {
     files: BTreeMap<(String, String), FakeFile>,
     /// 按容器名指定的状态（Docker inspect 里的 `State`），没指定的报告为运行中且健康。
     states: BTreeMap<String, Value>,
+    start_states: BTreeMap<String, Value>,
+    start_error: Option<String>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
@@ -285,6 +287,14 @@ impl FakeDocker {
     /// `{"Status": "exited", "ExitCode": 0}`。
     pub fn set_state(&self, container: &str, state: Value) {
         self.lock().states.insert(container.to_owned(), state);
+    }
+
+    pub fn set_start_state(&self, container: &str, state: Value) {
+        self.lock().start_states.insert(container.to_owned(), state);
+    }
+
+    pub fn fail_starts(&self, message: Option<&str>) {
+        self.lock().start_error = message.map(str::to_owned);
     }
 
     /// 容器里执行的命令由 `handler` 回应。
@@ -488,6 +498,7 @@ fn containers(
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
+        (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name]) => {
             for endpoints in docker.endpoints.values_mut() {
@@ -544,6 +555,19 @@ fn containers(
         _ => return None,
     };
     Some(reply)
+}
+
+fn start_container(docker: &mut Resources, name: &str) -> Response {
+    if let Some(message) = &docker.start_error {
+        return json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": message}),
+        );
+    }
+    if let Some(state) = docker.start_states.get(name).cloned() {
+        docker.states.insert(name.to_owned(), state);
+    }
+    gone(true)
 }
 
 fn inspect_container(docker: &Resources, name: &str) -> Response {

@@ -96,6 +96,7 @@ pub(super) fn state_of(status: &PluginStatus) -> String {
     match status {
         PluginStatus::Installing => "安装中".to_owned(),
         PluginStatus::Running => "运行中".to_owned(),
+        PluginStatus::Stopped => "已停止".to_owned(),
         PluginStatus::Degraded { reason } => format!("异常：{reason}"),
         PluginStatus::Uninstalling => "卸载中".to_owned(),
         PluginStatus::Upgrading => "升级中".to_owned(),

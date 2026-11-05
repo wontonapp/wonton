@@ -34,6 +34,7 @@ mod models;
 mod onboarding;
 mod owner_profile;
 mod pages;
+mod plugin_start;
 mod proxy;
 mod proxy_sso;
 mod push;
@@ -443,6 +444,8 @@ mod onboarding_tests;
 mod owner_profile_tests;
 #[cfg(test)]
 mod pairing_tests;
+#[cfg(test)]
+mod plugin_start_tests;
 #[cfg(test)]
 mod proxy_sso_tests;
 #[cfg(test)]

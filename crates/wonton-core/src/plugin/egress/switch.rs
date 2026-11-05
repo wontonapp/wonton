@@ -170,7 +170,7 @@ impl PluginManager {
         self.replace_containers(&ctx, plan).await?;
         record.proxied = ctx.egress.is_some();
         self.store.save(&record)?;
-        self.reconcile(&package, &record).await
+        self.reconcile_running(&package, &record).await
     }
 
     /// Bot 插件的 Matrix 变量，令牌从旧容器读回。读不到时报错，容器还没动。

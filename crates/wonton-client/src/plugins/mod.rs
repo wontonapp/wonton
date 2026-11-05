@@ -1,4 +1,4 @@
-//! 插件页面的状态（ADR-0017 的“客户端核心”）：已安装的插件、商店、取列表的问题，以及安装、升级、卸载的进展。文字由
+//! 插件页面的状态（ADR-0017 的“客户端核心”）：已安装的插件、商店、取列表及启动的问题，以及安装、升级、卸载的进展。文字由
 //! 家里的服务器按主人的语言挑好，这里原样放进 ViewModel。
 
 pub(crate) mod api;
@@ -6,10 +6,12 @@ mod cache;
 mod core_upgrade;
 mod egress;
 mod owner_profile;
+mod start;
 mod takeover;
 mod tasks;
 mod tool_policy;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -31,11 +33,12 @@ use api::{CoreApi, INSTALL_TIMEOUT, READ_TIMEOUT, SOURCE_TIMEOUT, proxied_client
 /// 有插件在安装、升级、卸载时，隔这么久重新取一次已安装列表。
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 
-/// `PluginsViewModel.problem` 是取哪个列表时留下的。
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// `PluginsViewModel.problem` 是哪个请求留下的。
+#[derive(Clone, PartialEq, Eq)]
 enum Listing {
     Installed,
     Store,
+    Start(String),
 }
 
 pub(crate) struct PluginsLink {
@@ -51,7 +54,7 @@ pub(crate) struct PluginsLink {
     /// 主人打开过商店：隧道重新连上时也重新取它。
     store_wanted: AtomicBool,
     polling: AtomicBool,
-    /// `view.problem` 来自哪个列表。
+    /// `view.problem` 来自哪个请求。
     problem_of: Mutex<Option<Listing>>,
     /// 已安装列表存在本机的位置。
     installed_cache: PathBuf,
@@ -61,6 +64,7 @@ pub(crate) struct PluginsLink {
     egress_epoch: AtomicU64,
     upgrade: Mutex<core_upgrade::UpgradeLocal>,
     takeover: Mutex<takeover::Slot>,
+    starts: Mutex<HashMap<String, u64>>,
     data_dir: PathBuf,
 }
 
@@ -90,6 +94,7 @@ impl PluginsLink {
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
             takeover: Mutex::new(takeover::Slot::default()),
+            starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
         });
         link.restore_core_upgrade();
@@ -213,16 +218,21 @@ impl PluginsLink {
         }
     }
 
-    /// 失败时记下原因，显示的还是上次取到的列表。连不上不算列表的问题：`HomeViewModel::notice` 负责说，连上后
-    /// [`follow_home`] 自动再取（ADR-0032）。`problem` 只有一个字段，两个列表共用，成功只清自己留下的：否则有插件在装、
-    /// 每 3 秒取一次已安装列表时，商店取不到的原因马上就没了，商店页一直转圈。
+    /// 失败时记下原因，显示的还是上次取到的列表。列表连不上由 `HomeViewModel::notice` 负责说，连上后
+    /// [`follow_home`] 自动再取（ADR-0032）；启动失败则必须明确显示，不能假装成功。成功只清同一个来源留下的问题，
+    /// 避免后台轮询清掉商店或启动错误，也避免另一插件的启动成功覆盖失败。
     fn record(&self, listing: Listing, result: Result<(), PluginProblem>) {
         self.view.send_if_modified(|view| {
             let mut source = lock(&self.problem_of);
             match result {
-                Err(problem) if problem.reason == PluginFailure::TransportUnavailable => false,
+                Err(problem)
+                    if !matches!(listing, Listing::Start(_))
+                        && problem.reason == PluginFailure::TransportUnavailable =>
+                {
+                    false
+                }
                 Ok(()) => {
-                    let clears = view.problem.is_some() && *source == Some(listing);
+                    let clears = view.problem.is_some() && source.as_ref() == Some(&listing);
                     if clears {
                         view.problem = None;
                         *source = None;
@@ -252,6 +262,7 @@ impl PluginsLink {
     /// 正开着。
     fn forget_server(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        lock(&self.starts).clear();
         cache::forget(&self.installed_cache);
         self.view.send_modify(|view| {
             *lock(&self.problem_of) = None;
@@ -271,6 +282,10 @@ impl PluginsLink {
         });
         self.forget_core_upgrade();
         self.forget_takeover();
+    }
+
+    fn is_current_home(&self, generation: u64, server: &Option<String>) -> bool {
+        self.is_current(generation) && self.home.view().server_id == *server
     }
 
     fn is_current(&self, generation: u64) -> bool {
@@ -306,15 +321,30 @@ impl PluginsLink {
     /// 取已安装列表放进 ViewModel，有插件正在变化时开始盯着。其间换了服务器时，成败都不算数。
     async fn fetch_installed(self: &Arc<Self>) -> Result<(), PluginProblem> {
         let generation = self.generation.load(Ordering::SeqCst);
-        let result = self.list_installed().await;
-        if !self.is_current(generation) {
+        let server = self.home.view().server_id;
+        let api = self.api()?;
+        self.fetch_installed_from(&api, generation, &server).await
+    }
+
+    async fn fetch_installed_from(
+        self: &Arc<Self>,
+        api: &CoreApi,
+        generation: u64,
+        server: &Option<String>,
+    ) -> Result<(), PluginProblem> {
+        let result: Result<InstalledPlugins, PluginProblem> =
+            api.get(&["plugins"], &[], READ_TIMEOUT).await;
+        if !self.is_current_home(generation, server) {
             return Ok(());
         }
         let installed = result?;
         if self.view.borrow().installed.as_ref() != Some(&installed)
-            && let Some(server) = self.home.view().server_id
+            && let Some(server) = server
         {
-            cache::save(&self.installed_cache, server, installed.clone()).await;
+            cache::save(&self.installed_cache, server.clone(), installed.clone()).await;
+        }
+        if !self.is_current_home(generation, server) {
+            return Ok(());
         }
         self.view
             .send_modify(|view| view.installed = Some(installed));

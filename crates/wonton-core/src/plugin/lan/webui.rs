@@ -223,7 +223,7 @@ impl PluginManager {
         let services: BTreeSet<&str> = ports.map(|p| p.service.as_str()).collect();
         self.rebuild_lan(&package, &record, addresses, &services)
             .await?;
-        self.reconcile(&package, &record).await
+        self.reconcile_running(&package, &record).await
     }
 
     fn lan_webui_applied(&self, id: &PluginId, enabled: bool, deployed: Deployed) {

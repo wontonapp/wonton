@@ -538,7 +538,7 @@ impl PluginManager {
         let mut plan = render(&old.package, &ctx)?;
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan).await?;
-        self.reconcile(&old.package, &old.record).await
+        self.reconcile_running(&old.package, &old.record).await
     }
 
     /// 新版本不要了的：记录已经写好，失败只记日志，主人卸载时一并清掉。

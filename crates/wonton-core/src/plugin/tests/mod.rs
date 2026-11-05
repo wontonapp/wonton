@@ -36,6 +36,8 @@ mod preinstall;
 mod resources;
 mod secrets;
 mod sources;
+mod stopped;
+mod stopped_docker;
 mod store;
 mod tabs;
 mod upgrade;

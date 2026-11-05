@@ -712,6 +712,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
 fn state(status: &PluginStatus, health: Option<Health>) -> PluginState {
     match status {
         PluginStatus::Installing => PluginState::Installing,
+        PluginStatus::Stopped => PluginState::Stopped,
         PluginStatus::Running => PluginState::Running {
             health: match health {
                 Some(Health::Healthy) => PluginHealth::Healthy,

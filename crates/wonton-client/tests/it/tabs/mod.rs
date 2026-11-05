@@ -1,6 +1,7 @@
 //! 底栏行为测试：只经由 ClientCore 和 Action 驱动，插件管理接口由本机假核心提供。
 
 mod state;
+mod stopped;
 
 use std::time::{Duration, Instant};
 
@@ -495,13 +496,9 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
 
     rig.core.set_lists(vec![vec![plugin]]);
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
-    wait_plugin_status(
-        &rig,
-        plugin_id,
-        PluginState::Running {
-            health: PluginHealth::Healthy,
-        },
-    )
+    wait_tabs(&rig, |view| {
+        item(view, &page_tab).page.as_ref().unwrap().state == TabState::Ready
+    })
     .await;
     let before = item(&rig.app.tabs(), &page_tab)
         .page

@@ -9,6 +9,7 @@ use std::time::Duration;
 use super::manager::{Deployed, Entry, Health, InstallError, PluginManager, PluginStatus};
 use super::manifest::PluginId;
 use super::package::PluginPackage;
+use super::reconcile::ContainersState;
 use super::store::InstalledRecord;
 
 /// 多久看一次。只读容器状态，不进容器、不访问网络。
@@ -48,7 +49,7 @@ impl PluginManager {
 
     fn follows_containers(&self, id: &PluginId, entry: &Entry) -> bool {
         let ours = match entry.status {
-            PluginStatus::Running => true,
+            PluginStatus::Running | PluginStatus::Stopped => true,
             PluginStatus::Degraded { .. } => entry.follows_containers,
             _ => false,
         };
@@ -61,15 +62,23 @@ impl PluginManager {
         };
         let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
-        if !record.relays.is_empty() {
-            self.ensure_relays(&package.manifest, &record).await?;
-        }
         match self.check_containers(&package).await {
-            Ok(health) if self.status_of(id) == Some(PluginStatus::Running) => {
+            Ok(ContainersState::Running(health))
+                if self.status_of(id) == Some(PluginStatus::Running) =>
+            {
+                if !record.relays.is_empty() {
+                    self.ensure_relays(&package.manifest, &record).await?;
+                }
                 self.saw_running(id, health);
             }
-            Ok(_) => self.recover(id, &package, &record).await,
-            Err(e @ InstallError::Unhealthy(_)) => self.saw_failed(id, e.to_string()),
+            Ok(ContainersState::Running(_)) => self.recover(id, &package, &record).await,
+            Ok(ContainersState::Stopped) => self.saw_unavailable(id, PluginStatus::Stopped),
+            Err(e @ InstallError::Unhealthy(_)) => self.saw_unavailable(
+                id,
+                PluginStatus::Degraded {
+                    reason: e.to_string(),
+                },
+            ),
             Err(e) => return Err(e),
         }
         Ok(())
@@ -92,16 +101,16 @@ impl PluginManager {
     }
 
     /// 路由留着：容器回来前网关看状态如实回答“没在运行”，回来时再核对一次。
-    fn saw_failed(&self, id: &PluginId, reason: String) {
+    fn saw_unavailable(&self, id: &PluginId, status: PluginStatus) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if !self.follows_containers(id, entry) || entry.failed_with(&reason) {
+        if !self.follows_containers(id, entry) || entry.status == status {
             return;
         }
-        tracing::warn!(plugin = %id, %reason, "插件的容器异常");
-        entry.status = PluginStatus::Degraded { reason };
+        tracing::info!(plugin = %id, ?status, "插件的容器状态变化");
+        entry.status = status;
         entry.health = None;
         entry.follows_containers = true;
         drop(plugins);
@@ -116,8 +125,16 @@ impl PluginManager {
         let result = self.reconcile(package, record).await;
         self.lan.end(id);
         let deployed = match result {
-            Ok(deployed) => deployed,
-            Err(e) => return self.saw_failed(id, e.to_string()),
+            Ok(Some(deployed)) => deployed,
+            Ok(None) => return self.saw_unavailable(id, PluginStatus::Stopped),
+            Err(e) => {
+                return self.saw_unavailable(
+                    id,
+                    PluginStatus::Degraded {
+                        reason: e.to_string(),
+                    },
+                );
+            }
         };
         // 核心启动时模型网关不在，使用方的凭据没对上账。
         if self.recovered(id, deployed) {

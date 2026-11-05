@@ -499,7 +499,7 @@ fn update_reload_counters(
             for plugin in &installed.plugins {
                 if matches!(
                     state.previous_plugin_states.get(&plugin.id),
-                    Some(PluginState::Upgrading)
+                    Some(PluginState::Upgrading | PluginState::Stopped | PluginState::Installing)
                 ) && matches!(plugin.status, PluginState::Running { .. })
                 {
                     reload_plugin_pages(state, &plugin.id);

@@ -657,9 +657,7 @@ impl ClientCore {
                 self.plugins.refresh_installed();
                 Ok(())
             }
-            Action::StartPlugin { .. } => Err(CoreError::NotReady {
-                reason: "这个版本的客户端核心不支持启动插件".into(),
-            }),
+            Action::StartPlugin { plugin_id } => self.plugins.start(plugin_id),
             Action::RefreshStore { force } => {
                 self.plugins.refresh_store(force);
                 Ok(())
