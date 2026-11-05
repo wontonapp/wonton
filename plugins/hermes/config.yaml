@@ -50,6 +50,10 @@ display:
 # 群聊里每个人各自一段会话，互不共享上下文。
 group_sessions_per_user: true
 
+# 主人还没有设备时发进加密房间的低磁盘提问，配对后也解不开；显式关闭只是不再询问，自动清理仍按上游默认关闭。
+sessions:
+  auto_prune: false
+
 # Wonton 的 Hermes 插件（包里的 wonton/，init 服务放进数据目录）：模型网关里还没有默认模型时，直接告诉主人去
 # 「模型设置」添加模型服务商，不把网关的报错发进聊天。
 plugins:
