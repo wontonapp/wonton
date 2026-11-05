@@ -35,6 +35,7 @@ use crate::secret::random_token;
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
     pub public: PublicUrls,
+    pub data_dir: PathBuf,
     pub apps_dir: PathBuf,
     pub shares_dir: PathBuf,
     pub core_container: Option<String>,

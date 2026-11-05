@@ -76,6 +76,7 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
     };
     let lifecycle = LifecycleConfig {
         public: public.clone(),
+        data_dir: dir.path().to_owned(),
         apps_dir: dir.path().join("apps"),
         shares_dir: dir.path().join("shares"),
         core_container: None,

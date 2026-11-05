@@ -16,6 +16,7 @@ use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tower::ServiceExt;
 
 use super::tunnel_tests::loopback_tunnel;
 use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
@@ -27,6 +28,7 @@ use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
+use crate::plugin::storefront::StoreConfig;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
 
 pub(super) const TOKEN: &str = "test-owner-token";
@@ -200,24 +202,35 @@ pub(super) fn owner() -> Owner {
 
 impl Harness {
     pub async fn start(hydra_admin: Option<SocketAddr>) -> Self {
-        Self::start_full(hydra_admin, Egress::default(), None).await
+        Self::start_full(hydra_admin, Egress::default(), None, StoreConfig::default()).await
     }
 
     pub async fn start_with(hydra_admin: Option<SocketAddr>, egress: Egress) -> Self {
-        Self::start_full(hydra_admin, egress, None).await
+        Self::start_full(hydra_admin, egress, None, StoreConfig::default()).await
+    }
+
+    pub async fn start_with_store(hydra_admin: Option<SocketAddr>, store: StoreConfig) -> Self {
+        Self::start_full(hydra_admin, Egress::default(), None, store).await
     }
 
     pub async fn start_with_upgrades(
         hydra_admin: Option<SocketAddr>,
         upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     ) -> Self {
-        Self::start_full(hydra_admin, Egress::default(), upgrades).await
+        Self::start_full(
+            hydra_admin,
+            Egress::default(),
+            upgrades,
+            StoreConfig::default(),
+        )
+        .await
     }
 
     async fn start_full(
         hydra_admin: Option<SocketAddr>,
         egress: Egress,
         upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
+        store_config: StoreConfig,
     ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
@@ -238,6 +251,7 @@ impl Harness {
         });
         let lifecycle = LifecycleConfig {
             public: public.clone(),
+            data_dir: dir.path().to_owned(),
             apps_dir: dir.path().join("apps"),
             shares_dir: dir.path().join("shares"),
             core_container: None,
@@ -261,6 +275,7 @@ impl Harness {
                 lifecycle,
                 ImageWorker::in_process(),
             )
+            .with_store(store_config)
             .with_lan(super::lan_api_tests::lan())
             .with_egress(egress),
         );
@@ -288,6 +303,51 @@ impl Harness {
 
     pub fn origin(&self, host: &str) -> String {
         format!("http://{host}:{}", self.addr.port())
+    }
+    pub fn data_dir(&self) -> &std::path::Path {
+        self._dir.path()
+    }
+
+    pub async fn get_after_restart(
+        &self,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> Reply {
+        let public = PublicUrls {
+            scheme: "http".into(),
+            base_domain: CORE.into(),
+            port: self.addr.port(),
+        };
+        let gateway = Gateway::new(
+            public,
+            owner(),
+            TOKEN.into(),
+            self.manager.clone(),
+            None,
+            self.http.clone(),
+            loopback_tunnel(self._dir.path()).await,
+        );
+        let app = router(Arc::new(gateway));
+        let mut request = hyper::Request::builder()
+            .method(Method::GET)
+            .uri(format!("http://{}{path}", self.addr))
+            .header(header::HOST, format!("{host}:{}", self.addr.port()));
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = app
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        Reply {
+            status,
+            headers,
+            text: String::from_utf8_lossy(&bytes).into_owned(),
+        }
     }
 
     pub async fn send(

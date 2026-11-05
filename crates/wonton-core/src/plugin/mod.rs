@@ -31,6 +31,7 @@ pub mod lifecycle;
 pub mod manager;
 mod manager_options;
 pub mod manifest;
+mod manifest_agent;
 mod manifest_tabs;
 mod mcp_server;
 pub mod models;

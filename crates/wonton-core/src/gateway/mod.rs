@@ -30,6 +30,7 @@ mod lan;
 pub mod matrix;
 mod mcp;
 mod models;
+mod onboarding;
 mod pages;
 mod proxy;
 mod proxy_sso;
@@ -89,6 +90,7 @@ pub struct Gateway {
     pub tusd: Option<String>,
     /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
+    pub(crate) onboarding: Arc<onboarding::OnboardingState>,
     sessions: session::SessionStore,
 }
 
@@ -112,6 +114,7 @@ impl Gateway {
             }
             None => (None, None),
         };
+        let onboarding = Arc::new(onboarding::OnboardingState::new(plugins.data_dir()));
         Self {
             public,
             owner,
@@ -127,6 +130,7 @@ impl Gateway {
             files: None,
             tusd: None,
             upgrades: None,
+            onboarding,
             sessions: session::SessionStore::default(),
         }
     }
@@ -425,6 +429,8 @@ mod lan_tests;
 mod mcp_tests;
 #[cfg(test)]
 mod models_tests;
+#[cfg(test)]
+mod onboarding_tests;
 #[cfg(test)]
 mod pairing_tests;
 #[cfg(test)]

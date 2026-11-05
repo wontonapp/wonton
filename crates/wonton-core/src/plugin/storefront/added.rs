@@ -57,7 +57,7 @@ enum Contents {
         icon: Option<IconSource>,
     },
     Index {
-        index: Index,
+        index: Box<Index>,
         icons: HashMap<String, IconSource>,
     },
 }
@@ -395,7 +395,10 @@ async fn read(github: &GitHub, target: &Target) -> Result<Contents, InstallError
         Target::Index(location) => {
             let index = read_index(github, location).await?;
             let icons = read_icons(github, location, &index).await;
-            Ok(Contents::Index { index, icons })
+            Ok(Contents::Index {
+                index: Box::new(index),
+                icons,
+            })
         }
     }
 }

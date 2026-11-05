@@ -10,6 +10,7 @@ pub mod added;
 mod community;
 pub mod index;
 mod listing;
+pub mod onboarding;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

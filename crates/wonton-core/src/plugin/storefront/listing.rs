@@ -17,7 +17,7 @@ use super::super::package::PluginPackage;
 use super::super::package_files::normalize;
 use super::super::views::{author, kind, permission_line, requirement_checks};
 use super::added::AddedView;
-use super::index::Listed;
+use super::index::{Index, Listed};
 
 /// 列表和详情里一个插件共有的部分。
 struct Shown<'a> {
@@ -39,22 +39,7 @@ impl PluginManager {
         self.storefront.added.refresh(refresh).await;
         let added = self.storefront.added.views();
         let facts = self.host_facts().await;
-        let mut icons = Vec::new();
-        let mut official = Vec::new();
-        for listed in &index.plugins {
-            let icon = self.official_icon(listed).await;
-            icons.extend(icon.clone());
-            let shown = Shown {
-                source: listed.entry.source.clone(),
-                provider: listed.entry.source.replacen("github:", "github.com/", 1),
-                via_index: None,
-                manifest: &listed.manifest,
-                icon,
-                trust: PluginTrust::Official,
-                stars: None,
-            };
-            official.push(self.item(&shown, &facts, langs));
-        }
+        let (official, mut icons) = self.official_items(&index, &facts, langs).await;
         // 主人添加过的只在“我添加的”里列一次。
         let added_repos: Vec<&Repo> = added.iter().filter_map(|a| a.repo.as_ref()).collect();
         let community = community
@@ -129,6 +114,22 @@ impl PluginManager {
                 problem: source.problem.clone(),
             },
         }
+    }
+
+    /// 引导使用的官方插件清单，不刷新社区来源。
+    pub async fn onboarding_store_listing(
+        &self,
+        langs: &Languages,
+    ) -> (
+        super::index::Index,
+        Option<wonton_protocol::StoreProblem>,
+        Vec<StoreItem>,
+    ) {
+        let (index, _, problem) = self.storefront.official(false).await;
+        let facts = self.host_facts().await;
+        let (items, icons) = self.official_items(&index, &facts, langs).await;
+        self.gallery.remember_store(icons);
+        (index, problem, items)
     }
 
     /// 来源最新的版本的详情：官方插件是索引里的版本，社区插件是最新的正式版本。
@@ -255,6 +256,32 @@ impl PluginManager {
                 None
             }
         }
+    }
+    async fn official_items(
+        &self,
+        index: &Index,
+        facts: &HostFacts,
+        langs: &Languages,
+    ) -> (Vec<StoreItem>, Vec<IconSource>) {
+        let mut icons = Vec::new();
+        let mut items = Vec::with_capacity(index.plugins.len());
+        for listed in &index.plugins {
+            let icon = self.official_icon(listed).await;
+            if let Some(icon) = &icon {
+                icons.push(icon.clone());
+            }
+            let shown = Shown {
+                source: listed.entry.source.clone(),
+                provider: listed.entry.source.replacen("github:", "github.com/", 1),
+                via_index: None,
+                manifest: &listed.manifest,
+                icon,
+                trust: PluginTrust::Official,
+                stars: None,
+            };
+            items.push(self.item(&shown, facts, langs));
+        }
+        (items, icons)
     }
 }
 

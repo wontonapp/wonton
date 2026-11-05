@@ -40,9 +40,9 @@ fn store_info_parses() {
 /// 比核心新的清单可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
 #[test]
 fn newer_spec_is_reported_before_unknown_fields() {
-    let yaml = without_spec("  spec: \"0.6\"\n  shortcuts: []");
+    let yaml = without_spec("  spec: \"0.7\"\n  shortcuts: []");
     let err = PluginPackage::parse(&yaml).unwrap_err();
-    assert!(err.to_string().contains("规范 0.6"), "{err}");
+    assert!(err.to_string().contains("规范 0.7"), "{err}");
     assert!(err.to_string().contains("先升级核心"), "{err}");
     assert_eq!(InstallError::from(err).kind(), "unsupported");
     let reject = |yaml: String| PluginPackage::parse(&yaml).unwrap_err().to_string();

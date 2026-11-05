@@ -14,6 +14,7 @@ use super::super::install_error::InstallError;
 use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
 use super::super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles, sha256_hex};
+use super::onboarding::OnboardingCatalog;
 
 /// 核心读得懂的索引格式。
 pub const FORMAT: u32 = 1;
@@ -30,6 +31,9 @@ struct IndexFile {
     /// 读不懂时只影响帮助文档，所以这里不按 [`DocsSpec`] 解析。
     #[serde(default)]
     docs: Option<serde_json::Value>,
+    /// 读不懂时只影响引导，所以这里不按 [`OnboardingCatalog`] 解析。
+    #[serde(default)]
+    onboarding: Option<serde_json::Value>,
 }
 
 /// 帮助文档的最新提交（ADR-0034）。
@@ -152,6 +156,9 @@ pub struct Index {
     pub docs: Option<DocsSpec>,
     /// `docs` 读不懂的原因。
     pub docs_problem: Option<String>,
+    pub onboarding: Option<OnboardingCatalog>,
+    /// `onboarding` 读不懂的原因。
+    pub onboarding_problem: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -188,6 +195,16 @@ impl Index {
         match file.docs.map(serde_json::from_value::<DocsSpec>) {
             Some(Ok(docs)) => index.docs = Some(docs),
             Some(Err(e)) => index.docs_problem = Some(format!("官方索引的 docs 读不懂：{e}")),
+            None => {}
+        }
+        match file
+            .onboarding
+            .map(serde_json::from_value::<OnboardingCatalog>)
+        {
+            Some(Ok(onboarding)) => index.onboarding = Some(onboarding),
+            Some(Err(e)) => {
+                index.onboarding_problem = Some(format!("官方索引的 onboarding 读不懂：{e}"))
+            }
             None => {}
         }
         for entry in file.plugins {
@@ -323,4 +340,93 @@ fn read_blob(dir: &Path, sha256: &str) -> Result<Vec<u8>, InstallError> {
     let path = dir.join("blobs").join(sha256);
     std::fs::read(&path)
         .map_err(|e| InstallError::NotFound(format!("索引目录里没有 {}：{e}", path.display())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_onboarding_catalog() {
+        let json = r#"{
+            "format": 1,
+            "plugins": [],
+            "onboarding": {
+                "agents": ["com.example.agent"],
+                "needs": [{
+                    "id": "photos",
+                    "title": {"zh": "备份照片", "en": "Back up photos"},
+                    "plugins": ["app.example.photos"]
+                }],
+                "providers": {
+                    "en": [{"id": "openrouter", "key_url": "https://openrouter.ai/keys"}]
+                },
+                "prompts": [{"zh": "你能帮我做什么", "en": "What can you help me with"}]
+            }
+        }"#;
+
+        let index = Index::parse(json.as_bytes()).unwrap();
+        let onboarding = index.onboarding.unwrap();
+        assert_eq!(onboarding.agents, ["com.example.agent"]);
+        assert_eq!(onboarding.needs[0].plugins, ["app.example.photos"]);
+        assert_eq!(
+            onboarding.providers["en"][0].key_url,
+            "https://openrouter.ai/keys"
+        );
+        assert_eq!(onboarding.prompts[0]["en"], "What can you help me with");
+        assert_eq!(index.onboarding_problem, None);
+    }
+
+    #[test]
+    fn unknown_onboarding_fields_are_ignored() {
+        let json = r#"{
+            "format": 1,
+            "plugins": [],
+            "onboarding": {
+                "agents": ["com.example.agent"],
+                "needs": [{
+                    "id": "photos",
+                    "title": {"en": "Photos"},
+                    "plugins": ["app.example.photos"],
+                    "future_need": true
+                }],
+                "providers": {
+                    "en": [{
+                        "id": "openrouter",
+                        "key_url": "https://openrouter.ai/keys",
+                        "future_provider": true
+                    }]
+                },
+                "prompts": [{"en": "What can you help me with"}],
+                "future_catalog": true
+            }
+        }"#;
+
+        let index = Index::parse(json.as_bytes()).unwrap();
+        let onboarding = index.onboarding.unwrap();
+        assert_eq!(onboarding.needs[0].id, "photos");
+        assert_eq!(onboarding.providers["en"][0].id, "openrouter");
+        assert_eq!(index.onboarding_problem, None);
+    }
+
+    #[test]
+    fn an_unreadable_onboarding_catalog_does_not_reject_the_index() {
+        let json = r#"{
+            "format": 1,
+            "plugins": [],
+            "onboarding": {"agents": "not a list"}
+        }"#;
+
+        let index = Index::parse(json.as_bytes()).unwrap();
+        assert_eq!(index.onboarding, None);
+        assert!(index.onboarding_problem.is_some());
+    }
+
+    #[test]
+    fn an_index_without_onboarding_has_no_catalog_problem() {
+        let index = Index::parse(br#"{"format": 1, "plugins": []}"#).unwrap();
+
+        assert_eq!(index.onboarding, None);
+        assert_eq!(index.onboarding_problem, None);
+    }
 }

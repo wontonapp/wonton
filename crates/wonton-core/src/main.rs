@@ -231,6 +231,7 @@ async fn serve() -> anyhow::Result<()> {
 fn lifecycle_config(cfg: &Config) -> LifecycleConfig {
     LifecycleConfig {
         public: cfg.public.clone(),
+        data_dir: cfg.data_dir.clone(),
         apps_dir: cfg.apps_dir(),
         shares_dir: cfg.shares_dir(),
         core_container: cfg.core_container.clone(),

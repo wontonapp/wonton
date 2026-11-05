@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
+pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
 use super::provides::Provides;
@@ -66,7 +67,7 @@ impl PluginId {
 }
 
 /// 一段由小写字母和数字组成、可用单个连字符分隔的标签。
-fn is_label(segment: &str) -> bool {
+pub(super) fn is_label(segment: &str) -> bool {
     !segment.is_empty()
         && segment.split('-').all(|part| {
             !part.is_empty()
@@ -224,19 +225,6 @@ pub struct BotProfile {
 #[serde(deny_unknown_fields)]
 pub struct BotServices {
     pub services: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentProtocol {
-    Matrix,
-    Acp,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentSpec {
-    pub protocol: AgentProtocol,
 }
 
 /// 一项插件密钥：核心生成（`generate`）或插件运行中生成、交给核心保管（`collect`），恰好一种。
@@ -567,11 +555,7 @@ impl Manifest {
         require_locales("title", &self.title)?;
         require_locales("description", &self.description)?;
         super::store_info::validate(self)?;
-        if self.kind == PluginKind::Agent && self.agent.is_none() {
-            return Err(ManifestError::Invalid(
-                "kind 为 agent 时必须提供 agent.protocol".to_owned(),
-            ));
-        }
+        super::manifest_agent::validate(self)?;
         validate_bots(self)?;
         super::privileges::validate_manifest(self)?;
         super::gpu::validate(self)?;
@@ -795,3 +779,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "manifest_tests.rs"]
+mod manifest_tests;

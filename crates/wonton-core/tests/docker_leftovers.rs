@@ -96,6 +96,7 @@ impl Core {
                 base_domain: "wonton.localhost".into(),
                 port: 8080,
             },
+            data_dir: self.dir.path().to_owned(),
             apps_dir: self.dir.path().join("apps"),
             shares_dir: self.dir.path().join("shares"),
             core_container: Some(self.core_container()),

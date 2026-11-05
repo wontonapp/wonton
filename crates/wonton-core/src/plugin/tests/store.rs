@@ -5,9 +5,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use serde_json::json;
-use wonton_protocol::{InstallRequest, PluginTrust, StoreFailure};
-
 use super::super::fake_docker::FakeDocker;
 use super::super::gallery::Variant;
 use super::super::package_files::sha256_hex;
@@ -16,6 +13,8 @@ use super::super::storefront::index::IndexEntry;
 use super::super::{PluginId, PluginManager, PluginPackage};
 use super::github::{FakeGitHub, ICON, compose, release, zh};
 use super::manager::manager_with;
+use serde_json::{Value, json};
+use wonton_protocol::{InstallRequest, PluginTrust, StoreFailure};
 
 /// 在 `dir` 里放一份官方索引：`acme/hello` 的 1.0.0 版，文件按 sha256 放在 `blobs/` 下（同 `plugin index-entry`）。
 fn write_index(dir: &Path, compose: &str, icon: &str) {
@@ -79,6 +78,9 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         .unwrap()
         .to_owned();
     assert!(m.icon_png(&sha256, Variant::Small).await.unwrap().is_some());
+
+    let (_, _, onboarding) = m.onboarding_store_listing(&zh()).await;
+    assert!(onboarding[0].icon.is_some());
 
     // 不带版本、或者就是索引里的版本：官方的，没有“未审核”的提示，不用去 GitHub 取。
     let preview = m
@@ -342,4 +344,28 @@ async fn the_index_comes_through_the_api_when_raw_is_down() {
         listing.official.problem.unwrap().reason,
         StoreFailure::RateLimited
     );
+}
+
+#[tokio::test]
+async fn onboarding_keeps_a_cached_catalog_when_the_official_source_breaks() {
+    let data = tempfile::tempdir().unwrap();
+    let (github, m) = online(&data).await;
+    let mut index: Value = serde_json::from_slice(&index_json(&compose("1.0.0", "nginx"))).unwrap();
+    index["onboarding"] = json!({
+        "agents": [],
+        "needs": [],
+        "providers": {},
+        "prompts": [{"en": "What can you help me with"}]
+    });
+    github.publish_index(serde_json::to_vec(&index).unwrap());
+    let (first, first_problem, _) = m.onboarding_store_listing(&zh()).await;
+    assert!(first.onboarding.is_some());
+    assert_eq!(first_problem, None);
+    drop(m);
+
+    let (github, m) = online(&data).await;
+    github.broken.store(true, Ordering::Relaxed);
+    let (cached, problem, _) = m.onboarding_store_listing(&zh()).await;
+    assert!(cached.onboarding.is_some());
+    assert_eq!(problem.unwrap().reason, StoreFailure::Unreachable);
 }

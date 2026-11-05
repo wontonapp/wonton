@@ -15,6 +15,7 @@
 //! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
 //! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
 //! | PUT | `/_wonton/api/egress-proxy` | 请求体是 `EgressProxyUpdate`，改地址和额外直连的网段，做完再返回 |
+//! | GET/PUT | `/_wonton/api/onboarding` | 引导状态和官方推荐清单（`Onboarding`） |
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/store/sources` | 添加来源（`AddSourceRequest`），能读到才写下来（201 `AddedSource`） |
@@ -53,7 +54,7 @@ use crate::plugin::{InstallError, Permission, PluginId, PluginPackage, PluginVie
 /// 上传插件包的请求体上限：压缩包里可以带着插件包以外的文件。插件包本身的大小由解析时检查。
 pub const MAX_UPLOAD_BYTES: usize = package_archive::MAX_ARCHIVE_BYTES;
 
-fn languages(headers: &HeaderMap) -> Languages {
+pub(super) fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()))
 }
 
@@ -87,7 +88,7 @@ fn package(headers: &HeaderMap, body: &[u8]) -> Result<PluginPackage, InstallErr
     Ok(PluginPackage::parse(source)?)
 }
 
-pub(super) fn error_response(status: StatusCode, kind: &'static str, message: &str) -> Response {
+pub(crate) fn error_response(status: StatusCode, kind: &'static str, message: &str) -> Response {
     let body = Json(json!({"error": {"kind": kind, "message": message}}));
     let mut response = (status, body).into_response();
     response
@@ -96,7 +97,7 @@ pub(super) fn error_response(status: StatusCode, kind: &'static str, message: &s
     response
 }
 
-pub(super) fn install_error(error: &InstallError) -> Response {
+pub(crate) fn install_error(error: &InstallError) -> Response {
     if let InstallError::EgressProxyUnavailable { reason, message } = error {
         let body = json!({"error": {
             "kind": error.kind(),
@@ -167,7 +168,7 @@ pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
 /// 插件管理接口的鉴权：主人令牌，或者经隧道的已配对设备。设备身份随隧道上的每个请求自动带上，App 的 WebView 里打开的
 /// 插件网页发的请求也带着它，所以设备的请求还要不是别的网页发起的，读也一样（ADR-0017）：插件网页不能拿商店刷新消耗
 /// 限速，也不能探测装了哪些插件。
-pub(super) fn plugin_denied(
+pub(crate) fn plugin_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,

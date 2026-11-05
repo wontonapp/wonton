@@ -79,6 +79,7 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginMana
             base_domain: "wonton.localhost".into(),
             port: 8080,
         },
+        data_dir: dir.path().to_owned(),
         apps_dir: dir.path().join("apps"),
         shares_dir: dir.path().join("shares"),
         core_container: None,

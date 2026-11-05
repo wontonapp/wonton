@@ -53,6 +53,7 @@ pub(super) async fn home_with(tusd: Option<String>) -> Home {
     let http = HttpClient::new();
     let lifecycle = LifecycleConfig {
         public: public.clone(),
+        data_dir: dir.to_owned(),
         apps_dir: dir.join("apps"),
         shares_dir: dir.join("shares"),
         core_container: None,

@@ -19,7 +19,7 @@ use super::lan::LanPortSpec;
 use super::lan::webui::{self, Switched};
 use super::languages::Languages;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
-use super::manifest::{Manifest, Permission, PluginId, PluginKind, Sso};
+use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::proxy_auth;
@@ -514,6 +514,56 @@ impl PluginManager {
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
         }
         plugin
+    }
+}
+
+impl PluginManager {
+    /// 已安装 Agent 的账号登录选项，文字按请求语言挑选。
+    pub fn agent_logins(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Vec<wonton_protocol::AgentLogin> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .get(id)
+            .and_then(|entry| entry.listed.as_ref())
+            .and_then(|listed| listed.manifest.agent.as_ref())
+            .map(|agent| agent_login_options(agent, langs))
+            .unwrap_or_default()
+    }
+}
+
+pub(crate) fn agent_login_options(
+    agent: &AgentSpec,
+    langs: &Languages,
+) -> Vec<wonton_protocol::AgentLogin> {
+    agent
+        .login
+        .iter()
+        .map(|login| wonton_protocol::AgentLogin {
+            id: login.id.clone(),
+            title: langs.pick_owned(&login.title),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+impl PluginManager {
+    pub(crate) fn bot_for_test(&self, id: &PluginId, user_id: &str) {
+        self.store
+            .bots()
+            .save(
+                id,
+                &super::bots::BotRecord {
+                    account: crate::matrix::BotAccount {
+                        user_id: user_id.to_owned(),
+                        home_room: "!test:example.com".to_owned(),
+                    },
+                    device_id: None,
+                },
+            )
+            .unwrap();
     }
 }
 
