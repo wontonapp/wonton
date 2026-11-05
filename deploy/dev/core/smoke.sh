@@ -528,8 +528,7 @@ ok "Hermes 发出了文件链接，App 显示成文件卡片"
 
 step "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"
 navidrome_src="$(mktemp -d)"
-# 跟默认分支：v0.1.0 tag 的 manifest 还带着已废弃的 `category` 字段，当前核心按规范拒收（仓库 main 已是 0.1.1）。
-git clone -q --depth 1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
+git clone -q --depth 1 --branch v0.1.1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
 installed="$("$dev" install "$navidrome_src" --yes 2>&1)" || fail "Navidrome 安装失败：$installed"
 rm -rf "$navidrome_src"
 expect "Navidrome 装好了" "$(plugin_state org.navidrome.navidrome)" running
