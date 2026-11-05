@@ -7,10 +7,12 @@
 
 mod confirmation;
 mod login;
+mod onboarding;
 mod pending;
 mod read_mark;
 mod recovery;
 mod rich;
+mod session;
 mod sign_in;
 mod storage;
 mod timeline;
@@ -25,9 +27,7 @@ use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use wonton_matrix::{
-    ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SessionEvent, SyncStatus,
-};
+use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
     ConfirmationAnswer, CoreError, DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel,
@@ -62,6 +62,12 @@ pub(crate) struct ChatLink {
     answers: watch::Sender<Answers>,
     /// 正在重置恢复。途中 SDK 会报“未设置”，这时不能让它盖掉“处理中”，否则界面上会冒出“开启备份”。
     resetting_recovery: Arc<AtomicBool>,
+    /// 主人的默认 Agent 在 Matrix 上的用户 ID，聊天列表里它的房间排第一。
+    primary_bot: Arc<Mutex<Option<String>>>,
+    /// 房间列表的基准顺序，显示时把默认 Agent 的房间提到最前。
+    room_order: Arc<onboarding::RoomOrder>,
+    /// 发过消息的房间，引导提示用。
+    sent: watch::Sender<Vec<String>>,
 }
 
 struct Active {
@@ -107,6 +113,9 @@ impl ChatLink {
             open_room: Mutex::new(None),
             answers: watch::Sender::default(),
             resetting_recovery: Arc::default(),
+            primary_bot: Arc::new(Mutex::new(None)),
+            room_order: Arc::new(onboarding::RoomOrder::new()),
+            sent: watch::Sender::new(Vec::new()),
         });
         runtime.spawn(follow_home(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -118,6 +127,26 @@ impl ChatLink {
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<ChatViewModel> {
         self.view.subscribe()
+    }
+
+    pub(crate) fn subscribe_sent(&self) -> watch::Receiver<Vec<String>> {
+        self.sent.subscribe()
+    }
+
+    pub(crate) fn set_primary_bot(&self, bot: Option<String>) {
+        let changed = {
+            let mut current = lock(&self.primary_bot);
+            if *current == bot {
+                false
+            } else {
+                *current = bot.clone();
+                true
+            }
+        };
+        if changed {
+            let rows = self.room_order.display(bot.as_deref());
+            self.view.send_modify(|view| view.rooms = rows);
+        }
     }
 
     /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）的话重新登录；已经登录的接着用同一个会话，同步和发送队列
@@ -166,7 +195,12 @@ impl ChatLink {
             Action::SendImage { room_id, image } => self.send_image(&room_id, image),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
-                self.spawn_op("重发消息", async move { room.retry_send(&item_id).await });
+                let sent = self.sent.clone();
+                self.spawn_op_with_success(
+                    "重发消息",
+                    async move { room.retry_send(&item_id).await },
+                    move || onboarding::record_sent(&sent, room_id),
+                );
                 Ok(())
             }
             Action::CancelSend { room_id, item_id } => {
@@ -209,10 +243,14 @@ impl ChatLink {
             return Err(invalid("消息不能为空"));
         }
         let chat = self.clone();
+        let sent = self.sent.clone();
         let (_, room_id) = self.send_target(room_id)?;
-        self.spawn_op("发送消息", async move {
-            chat.room(&room_id).await?.send_text(&body).await
-        });
+        let sent_room = room_id.to_string();
+        self.spawn_op_with_success(
+            "发送消息",
+            async move { chat.room(&room_id).await?.send_text(&body).await },
+            move || onboarding::record_sent(&sent, sent_room),
+        );
         Ok(())
     }
 
@@ -259,7 +297,9 @@ impl ChatLink {
         session
             .send_text_to(&room_id, body)
             .await
-            .map_err(|e| core_error(&e))
+            .map_err(|e| core_error(&e))?;
+        onboarding::record_sent(&self.sent, room_id.to_string());
+        Ok(())
     }
 
     fn start_direct_chat(self: &Arc<Self>, user_id: &str) -> Result<(), CoreError> {
@@ -282,7 +322,9 @@ impl ChatLink {
             return Err(invalid(&format!("不是图片类型：{}", image.mime_type)));
         }
         let chat = self.clone();
+        let sent = self.sent.clone();
         let (_, room_id) = self.send_target(room_id)?;
+        let sent_room = room_id.to_string();
         let upload = wonton_matrix::ImageUpload {
             filename: image.filename,
             mime_type: image.mime_type,
@@ -298,9 +340,11 @@ impl ChatLink {
                     height: thumbnail.height,
                 }),
         };
-        self.spawn_op("发送图片", async move {
-            chat.room(&room_id).await?.send_image(upload).await
-        });
+        self.spawn_op_with_success(
+            "发送图片",
+            async move { chat.room(&room_id).await?.send_image(upload).await },
+            move || onboarding::record_sent(&sent, sent_room),
+        );
         Ok(())
     }
 
@@ -356,25 +400,38 @@ impl ChatLink {
         Ok(())
     }
 
+    /// 在后台执行一个操作，成功时先回调，失败时把原因放进 `problem`。
+    fn spawn_op_with_success(
+        &self,
+        what: &'static str,
+        op: impl Future<Output = Result<(), Error>> + Send + 'static,
+        success: impl FnOnce() + Send + 'static,
+    ) {
+        let view = self.view.clone();
+        self.runtime.spawn(async move {
+            match op.await {
+                Ok(()) => success(),
+                Err(error) => {
+                    tracing::info!("{what}失败：{error}");
+                    let reason = failure(&error);
+                    let message = if reason == ChatFailure::TransportUnavailable {
+                        view::NOT_CONNECTED.to_owned()
+                    } else {
+                        format!("{what}失败：{error}")
+                    };
+                    view.send_modify(|view| view.problem = Some(ChatProblem { reason, message }));
+                }
+            }
+        });
+    }
+
     /// 在后台执行一个操作，失败时把原因放进 `problem`。
     fn spawn_op(
         &self,
         what: &'static str,
         op: impl Future<Output = Result<(), Error>> + Send + 'static,
     ) {
-        let view = self.view.clone();
-        self.runtime.spawn(async move {
-            if let Err(error) = op.await {
-                tracing::info!("{what}失败：{error}");
-                let reason = failure(&error);
-                let message = if reason == ChatFailure::TransportUnavailable {
-                    view::NOT_CONNECTED.to_owned()
-                } else {
-                    format!("{what}失败：{error}")
-                };
-                view.send_modify(|view| view.problem = Some(ChatProblem { reason, message }));
-            }
-        });
+        self.spawn_op_with_success(what, op, || {});
     }
 
     /// 推送的状态由 `push` 模块维护，放在聊天的 ViewModel 里。
@@ -530,6 +587,8 @@ impl ChatLink {
 
     async fn forget_current(&self) {
         *lock(&self.open_room) = None;
+        self.room_order.clear();
+        self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);
         self.view.send_modify(|view| {
             view.pending_confirmations.clear();
@@ -547,6 +606,8 @@ impl ChatLink {
         let rooms = {
             let session = session.clone();
             let view = view.clone();
+            let room_order = self.room_order.clone();
+            let primary_bot = self.primary_bot.clone();
             self.runtime.spawn(async move {
                 let rooms = match session.rooms().await {
                     Ok(rooms) => rooms,
@@ -563,6 +624,8 @@ impl ChatLink {
                         .map(|room| room_row(room, &core))
                         .collect();
                     sort_rooms(&mut rows);
+                    let bot = lock(&primary_bot).clone();
+                    let rows = room_order.replace(rows, bot.as_deref());
                     view.send_modify(|view| view.rooms = rows);
                 }
             })
@@ -611,7 +674,7 @@ impl ChatLink {
         };
         let events = self
             .runtime
-            .spawn(watch_session(Arc::downgrade(self), session.clone()));
+            .spawn(session::watch(Arc::downgrade(self), session.clone()));
         let syncing = {
             let session = session.clone();
             self.runtime
@@ -633,41 +696,6 @@ impl ChatLink {
             })
         };
         vec![rooms, encryption, sync, events, syncing, cards, catching_up]
-    }
-}
-
-/// 令牌刷新后存下新的登录状态；设备被吊销时如实显示，并删掉用不上的登录状态和本地存储。
-async fn watch_session(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
-    let mut events = std::pin::pin!(session.session_events());
-    while let Some(event) = events.next().await {
-        let Some(chat) = chat.upgrade() else { return };
-        match event {
-            SessionEvent::TokensRefreshed => {
-                let saved = chat.storage.session().and_then(|stored| match stored {
-                    Some(stored) => chat.save(&session, stored.homeserver_url, stored.server_id),
-                    None => Ok(()),
-                });
-                if let Err(error) = saved {
-                    tracing::warn!("刷新后的 Matrix 令牌没能存下：{error}");
-                }
-            }
-            SessionEvent::TokenRejected { soft_logout } => {
-                tracing::warn!(soft_logout, "Matrix 服务器不再接受本设备的令牌");
-                if !soft_logout {
-                    session.stop_sync().await;
-                    if let Err(error) = chat.storage.forget_session() {
-                        tracing::warn!("删除失效的 Matrix 登录状态失败：{error}");
-                    }
-                }
-                chat.view.send_modify(|view| {
-                    view.account = ChatAccount::Failed {
-                        reason: ChatFailure::Unauthorized,
-                        message: "这台设备在 Matrix 上已被吊销，需要主人重新配对".to_owned(),
-                    };
-                    view.sync = ChatSync::Idle;
-                });
-            }
-        }
     }
 }
 

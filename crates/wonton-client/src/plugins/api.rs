@@ -16,9 +16,9 @@ use wonton_protocol::{
 use crate::chat::proxy_url;
 
 /// 列表、详情、图片：只读家里服务器上已有的东西。隧道卡住时按“连不上”失败，不一直转圈。
-pub(super) const READ_TIMEOUT: Duration = Duration::from_secs(30);
-/// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览。
-pub(super) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览，以及引导要取的官方索引和图标。
+pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
 /// 结果从已安装列表里看。
 pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -36,10 +36,19 @@ struct ErrorDetail {
     kind: String,
     message: String,
 }
+pub(crate) enum CoreApiError {
+    Transport(PluginProblem),
+    Http {
+        status: u16,
+        kind: Option<String>,
+        message: String,
+    },
+    Protocol(String),
+}
 
 /// 一次请求要用的连接信息：核心的地址、本地代理，以及主人的语言。
 #[derive(Clone)]
-pub(super) struct CoreApi {
+pub(crate) struct CoreApi {
     pub(super) base: Url,
     pub(super) client: Client,
     pub(super) languages: String,
@@ -158,7 +167,7 @@ impl CoreApi {
         })
     }
 
-    pub(super) async fn get<T: DeserializeOwned>(
+    pub(crate) async fn get<T: DeserializeOwned>(
         &self,
         segments: &[&str],
         query: &[(&str, &str)],
@@ -171,7 +180,7 @@ impl CoreApi {
     }
 
     /// 发 JSON 请求体，响应是 JSON。
-    pub(super) async fn post<T: DeserializeOwned>(
+    pub(crate) async fn post<T: DeserializeOwned>(
         &self,
         segments: &[&str],
         body: &impl serde::Serialize,
@@ -207,7 +216,7 @@ impl CoreApi {
     }
 
     /// 发 JSON 请求体，响应是 JSON。
-    pub(super) async fn put<T: DeserializeOwned>(
+    pub(crate) async fn put<T: DeserializeOwned>(
         &self,
         segments: &[&str],
         body: &impl serde::Serialize,
@@ -221,6 +230,54 @@ impl CoreApi {
             .send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
             .await?;
         parse(&bytes)
+    }
+    pub(crate) async fn put_unit_detailed(
+        &self,
+        segments: &[&str],
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<(), CoreApiError> {
+        let body = serde_json::to_vec(body)
+            .map_err(|error| CoreApiError::Protocol(format!("请求体写不出来：{error}")))?;
+        let (status, bytes) = self
+            .exchange(
+                Method::PUT,
+                self.url(segments, &[]),
+                Some(body),
+                "application/json",
+                timeout,
+            )
+            .await
+            .map_err(CoreApiError::Transport)?;
+        if status < 400 {
+            return Ok(());
+        }
+        Err(http_error(status, &bytes))
+    }
+
+    /// `GET` 但错误带类别和消息：取模型服务商列表要分得清网关没就绪和别的失败，响应本身还是 JSON。
+    pub(crate) async fn get_detailed<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        query: &[(&str, &str)],
+        timeout: Duration,
+    ) -> Result<T, CoreApiError> {
+        let (status, bytes) = self
+            .exchange(
+                Method::GET,
+                self.url(segments, query),
+                None,
+                "application/json",
+                timeout,
+            )
+            .await
+            .map_err(CoreApiError::Transport)?;
+        if status < 400 {
+            return serde_json::from_slice(&bytes).map_err(|error| {
+                CoreApiError::Protocol(format!("家里的服务器给的内容格式不对：{error}"))
+            });
+        }
+        Err(http_error(status, &bytes))
     }
 
     /// 没有请求体，响应是 JSON。
@@ -319,6 +376,22 @@ impl CoreApi {
             });
         }
         self.send(Method::GET, url, None, READ_TIMEOUT).await
+    }
+}
+
+/// 错误响应里能认出来的类别和原话；认不出来时只留状态码。
+fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
+    let detail = serde_json::from_slice::<ErrorBody>(bytes)
+        .ok()
+        .map(|body| body.error);
+    let (kind, message) = match detail {
+        Some(ErrorDetail { kind, message }) => (Some(kind), message),
+        None => (None, format!("家里的服务器回了 {status}")),
+    };
+    CoreApiError::Http {
+        status,
+        kind,
+        message,
     }
 }
 

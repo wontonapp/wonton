@@ -17,8 +17,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{
-    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, Network, TimelineDiff, TimelineItem,
-    TimelineSubscription,
+    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, Network, OnboardingViewModel,
+    TimelineDiff, TimelineItem, TimelineSubscription,
 };
 use wonton_matrix::MatrixSession;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
@@ -64,6 +64,8 @@ struct Core {
     /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
+    /// 引导状态：没有就是没有这个接口（404）。
+    onboarding: Mutex<Option<Value>>,
 }
 
 impl Home {
@@ -84,6 +86,7 @@ impl Home {
             matrix_down: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
+            onboarding: Mutex::default(),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -107,6 +110,11 @@ impl Home {
     /// Tuwunel 挂了或恢复了，隧道不受影响。
     pub fn set_matrix_down(&self, down: bool) {
         self.core.matrix_down.send_replace(down);
+    }
+
+    /// 设置假核心的引导状态；没设置时引导接口回 404。
+    pub fn set_onboarding(&self, onboarding: Value) {
+        *self.core.onboarding.lock().unwrap() = Some(onboarding);
     }
 
     /// 取房间成员的请求断开或恢复。
@@ -356,6 +364,9 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
     } else if head.starts_with("put /_wonton/push/registration ") {
         push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
         json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
+    } else if head.starts_with("get /_wonton/api/onboarding ") {
+        let value = core.onboarding.lock().unwrap().clone()?;
+        return Some((200, value.to_string()));
     } else if head.starts_with("delete /_wonton/push/registration ") {
         push("DELETE", Value::Null);
         json!({"removed": true})
@@ -440,6 +451,30 @@ impl Phone {
             }
         })
         .await
+    }
+
+    /// 等引导的视图满足条件。
+    pub async fn wait_onboarding_prompts<R>(
+        &self,
+        what: &str,
+        mut check: impl FnMut(&OnboardingViewModel) -> Option<R>,
+    ) -> R {
+        let subscription = self.subscribe_onboarding();
+        let waiting = async {
+            while let Some(view) = subscription.next().await {
+                if let Some(found) = check(&view) {
+                    return found;
+                }
+            }
+            panic!("订阅提前结束");
+        };
+        match tokio::time::timeout(WAIT, waiting).await {
+            Ok(found) => found,
+            Err(_) => panic!(
+                "{what}：{WAIT:?} 内没有等到，当前：{:#?}",
+                self.onboarding()
+            ),
+        }
     }
 }
 

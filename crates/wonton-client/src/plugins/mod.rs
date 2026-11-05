@@ -1,7 +1,7 @@
 //! 插件页面的状态（ADR-0017 的“客户端核心”）：已安装的插件、商店、取列表的问题，以及安装、升级、卸载的进展。文字由
 //! 家里的服务器按主人的语言挑好，这里原样放进 ViewModel。
 
-mod api;
+pub(crate) mod api;
 mod cache;
 mod core_upgrade;
 mod egress;
@@ -405,7 +405,7 @@ impl PluginsLink {
         outcome
     }
 
-    fn api(&self) -> Result<CoreApi, PluginProblem> {
+    pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {
         let proxy = self.home.view().proxy.ok_or_else(api::not_connected)?;
         let base = self.home.core_url().ok_or_else(api::not_connected)?;
         let client = {

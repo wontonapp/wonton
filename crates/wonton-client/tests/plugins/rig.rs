@@ -14,10 +14,11 @@ use axum::response::{IntoResponse, Response};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use wonton_client::{
     Action, ClientCore, HomeStatus, InstallPreview, InstalledPlugin, InstalledPlugins, Network,
-    PermissionLine, PluginHealth, PluginKind, PluginState, PluginTaskState, PluginTrust,
-    PluginsViewModel, StoreItem, StoreListing, StoreSection,
+    OnboardingViewModel, PermissionLine, PluginHealth, PluginKind, PluginState, PluginTaskState,
+    PluginTrust, PluginsViewModel, StoreItem, StoreListing, StoreSection,
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
@@ -33,14 +34,31 @@ pub fn core_error(status: u16, kind: &str, message: &str) -> Canned {
     Canned(status, body.to_string())
 }
 
+fn json_value(value: serde_json::Value) -> Response {
+    (StatusCode::OK, value.to_string()).into_response()
+}
+
+fn core_error_response(status: u16) -> Response {
+    let Canned(status, body) = core_error(status, "not_found", "没有这个");
+    (StatusCode::from_u16(status).unwrap(), body).into_response()
+}
+
+/// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
+type Holds = Mutex<HashMap<(Method, String), Arc<watch::Sender<bool>>>>;
+
 #[derive(Default)]
 pub struct CoreState {
     /// 依次给出的已安装列表，最后一份一直用下去。
     lists: Mutex<VecDeque<Vec<InstalledPlugin>>>,
+    /// 假核心保存的引导状态和服务商列表。
+    onboarding: Mutex<Option<serde_json::Value>>,
+    providers: Mutex<Option<serde_json::Value>>,
     /// 某个方法和路径下一次的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
     canned: Mutex<HashMap<(Method, String), Canned>>,
     /// 用完预设的回应后，某个方法和路径一直用的回应。
     standing: Mutex<HashMap<(Method, String), Canned>>,
+    /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
+    holds: Holds,
     seen: Mutex<Vec<Seen>>,
 }
 
@@ -68,8 +86,30 @@ impl CoreState {
             .insert((method, path.to_owned()), canned);
     }
 
+    /// 让这个请求一直等，直到 [`Self::release`]。
+    pub fn hold(&self, method: Method, path: &str) {
+        self.holds
+            .lock()
+            .unwrap()
+            .insert((method, path.to_owned()), Arc::new(watch::channel(true).0));
+    }
+
+    pub fn release(&self, method: Method, path: &str) {
+        if let Some(held) = self.holds.lock().unwrap().get(&(method, path.to_owned())) {
+            held.send_replace(false);
+        }
+    }
+
     pub fn set_lists(&self, lists: Vec<Vec<InstalledPlugin>>) {
         *self.lists.lock().unwrap() = lists.into();
+    }
+
+    pub fn set_onboarding(&self, onboarding: serde_json::Value) {
+        *self.onboarding.lock().unwrap() = Some(onboarding);
+    }
+
+    pub fn set_providers(&self, providers: serde_json::Value) {
+        *self.providers.lock().unwrap() = Some(providers);
     }
 
     pub fn seen(&self, method: &Method, path: &str) -> Vec<Seen> {
@@ -101,6 +141,16 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             || parts.headers.contains_key("sec-fetch-site"),
         body: String::from_utf8_lossy(&body).into_owned(),
     });
+    let held = core
+        .holds
+        .lock()
+        .unwrap()
+        .get(&(parts.method.clone(), parts.uri.path().to_owned()))
+        .cloned();
+    if let Some(held) = held {
+        let mut released = held.subscribe();
+        released.wait_for(|held| !*held).await.ok();
+    }
     if path == IMAGE {
         return (StatusCode::OK, vec![0x89, 0x50]).into_response();
     }
@@ -121,6 +171,9 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             .status(status)
             .body(Body::from(body))
             .unwrap();
+    }
+    if let Some(response) = onboarding_routes(&core, &parts.method, parts.uri.path(), &body).await {
+        return response;
     }
     let json = |value: String| (StatusCode::OK, value).into_response();
     match (&parts.method, parts.uri.path()) {
@@ -158,6 +211,65 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             (StatusCode::from_u16(status).unwrap(), body).into_response()
         }
     }
+}
+
+async fn onboarding_routes(
+    core: &Arc<CoreState>,
+    method: &Method,
+    path: &str,
+    body: &[u8],
+) -> Option<Response> {
+    if path == "/_wonton/api/onboarding" {
+        return Some(match *method {
+            Method::GET => core
+                .onboarding
+                .lock()
+                .unwrap()
+                .clone()
+                .map(json_value)
+                .unwrap_or_else(|| core_error_response(404)),
+            Method::PUT => {
+                let mut state = core.onboarding.lock().unwrap();
+                let Some(value) = state.as_mut() else {
+                    return Some(core_error_response(404));
+                };
+                if let Ok(update) = serde_json::from_slice::<serde_json::Value>(body) {
+                    for field in ["step", "primary_agent", "replaced_agent_asked"] {
+                        if let Some(next) = update.get(field).filter(|value| !value.is_null()) {
+                            value[field] = next.clone();
+                        }
+                    }
+                }
+                json_value(value.clone())
+            }
+            _ => core_error_response(405),
+        });
+    }
+    if path == "/_wonton/api/models/providers" {
+        return Some(match *method {
+            Method::GET => core
+                .providers
+                .lock()
+                .unwrap()
+                .clone()
+                .map(json_value)
+                .unwrap_or_else(|| core_error_response(404)),
+            _ => core_error_response(405),
+        });
+    }
+    if path.starts_with("/_wonton/api/models/providers/") && method == Method::PUT {
+        if let Some(providers) = core.providers.lock().unwrap().as_mut()
+            && let Some(items) = providers
+                .get_mut("providers")
+                .and_then(|items| items.as_array_mut())
+        {
+            for provider in items {
+                provider["configured"] = serde_json::Value::Bool(true);
+            }
+        }
+        return Some(StatusCode::OK.into_response());
+    }
+    None
 }
 
 pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
@@ -343,10 +455,23 @@ impl Rig {
             ClientCore::with_network(self._dir.path().to_str().unwrap(), Network::DirectOnly)
                 .unwrap();
     }
-
-    #[allow(dead_code)]
     pub fn data_dir(&self) -> &Path {
         self._dir.path()
+    }
+
+    pub async fn wait_onboarding(
+        &self,
+        mut done: impl FnMut(&OnboardingViewModel) -> bool,
+    ) -> OnboardingViewModel {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let view = self.app.onboarding();
+            if done(&view) {
+                return view;
+            }
+            assert!(Instant::now() < deadline, "{view:?}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 
     pub fn device(&self) -> EndpointId {

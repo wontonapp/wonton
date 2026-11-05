@@ -5,8 +5,7 @@
 //!
 //! - 操作进：壳调用 [`ClientCore::dispatch`]，参数是 [`Action`]。
 //! - ViewModel 出：壳调用 [`ClientCore::subscribe_session_list`]、[`ClientCore::subscribe_home`]、
-//!   [`ClientCore::subscribe_chat`]、[`ClientCore::subscribe_plugins`]、[`ClientCore::subscribe_transfers`]、[`ClientCore::subscribe_appearance`]，循环等待订阅的 `next()`，包装成 Swift 的
-//!   `AsyncSequence` 或 Kotlin 的 `Flow`。打开的房间的时间线用 [`ClientCore::subscribe_timeline`]，推的是不能合并的
+//!   [`ClientCore::subscribe_chat`]、[`ClientCore::subscribe_plugins`]、[`ClientCore::subscribe_onboarding`]、[`ClientCore::subscribe_transfers`]、[`ClientCore::subscribe_appearance`]，循环等待订阅的 `next()`，包装成 Swift 的 `AsyncSequence` 或 Kotlin 的 `Flow`。打开的房间的时间线用 [`ClientCore::subscribe_timeline`]，推的是不能合并的
 //!   增量批次。
 //!
 //! 和家里服务器的连接见 `home` 模块：iroh 隧道加 WebView 和 HTTP 客户端用的本地代理（ADR-0004）。聊天见
@@ -27,6 +26,7 @@ mod client;
 mod files;
 mod home;
 mod logging;
+mod onboarding;
 mod plugins;
 mod push;
 mod session_store;
@@ -40,8 +40,8 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use logging::init_logging;
 pub use subscription::{
-    AppearanceSubscription, ChatSubscription, HomeSubscription, PluginsSubscription,
-    SessionListSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
+    PluginsSubscription, SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;

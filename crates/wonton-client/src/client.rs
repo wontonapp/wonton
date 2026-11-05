@@ -7,21 +7,22 @@ use tokio::sync::watch;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatViewModel, CoreError, DeviceNetwork, FileCard,
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
-    InstallPreview, LanChoice, LanSettings, MediaHandle, PluginDetail, PluginImage,
-    PluginsViewModel, PushNotification, RoomTransfers, SessionListViewModel, StoreItem,
-    TabsViewModel, ToolPolicyView, TransfersViewModel,
+    InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel, PluginDetail,
+    PluginImage, PluginsViewModel, PushNotification, RoomTransfers, SessionListViewModel,
+    StoreItem, TabsViewModel, ToolPolicyView, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
 use crate::chat::{ChatLink, TimelineSubscription};
 use crate::files::{FileOpener, FilesLink};
 use crate::home::{HomeLink, Network, Storage};
+use crate::onboarding::OnboardingLink;
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppearanceSubscription, ChatSubscription, HomeSubscription, PluginsSubscription,
-    SessionListSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
+    PluginsSubscription, SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
 use crate::tabs::TabsLink;
 
@@ -39,6 +40,7 @@ pub struct ClientCore {
     tabs: Arc<TabsLink>,
     files: Arc<FilesLink>,
     appearance: AppearanceLink,
+    onboarding: Arc<OnboardingLink>,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -94,7 +96,7 @@ impl ClientCore {
                 self.push.unavailable(message);
                 Ok(())
             }
-            Action::RefreshOnboarding
+            action @ (Action::RefreshOnboarding
             | Action::RestartOnboarding
             | Action::ChooseOnboardingAgent { .. }
             | Action::ContinueOnboarding
@@ -104,9 +106,7 @@ impl ClientCore {
             | Action::DismissModelProviderProblem
             | Action::SetPrimaryAgent { .. }
             | Action::DismissReplacedAgentOffer
-            | Action::DismissOnboardingTip { .. } => Err(CoreError::NotReady {
-                reason: "这个版本的客户端核心不支持新用户引导".to_owned(),
-            }),
+            | Action::DismissOnboardingTip { .. }) => self.onboarding.dispatch(action),
             action @ (Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
@@ -214,6 +214,15 @@ impl ClientCore {
     /// 订阅插件页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_plugins(&self) -> Arc<PluginsSubscription> {
         Arc::new(PluginsSubscription::new(self.plugins.subscribe()))
+    }
+    /// 当前的新用户引导状态，用于首帧渲染。
+    pub fn onboarding(&self) -> OnboardingViewModel {
+        self.onboarding.view()
+    }
+
+    /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
+    pub fn subscribe_onboarding(&self) -> Arc<OnboardingSubscription> {
+        Arc::new(OnboardingSubscription::new(self.onboarding.subscribe()))
     }
 
     /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
@@ -519,6 +528,13 @@ impl ClientCore {
             Path::new(data_dir),
         );
         let appearance = AppearanceLink::new(Path::new(data_dir));
+        let onboarding = OnboardingLink::new(
+            runtime.handle().clone(),
+            home.clone(),
+            chat.clone(),
+            plugins.clone(),
+            Path::new(data_dir),
+        );
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
@@ -528,6 +544,7 @@ impl ClientCore {
             tabs,
             files,
             appearance,
+            onboarding,
             runtime: Some(runtime),
         }))
     }
@@ -551,7 +568,8 @@ impl ClientCore {
     fn dispatch_plugins_or_chat(&self, action: Action) -> Result<(), CoreError> {
         match action {
             Action::SetLanguages { languages } => {
-                self.plugins.set_languages(languages);
+                self.plugins.set_languages(languages.clone());
+                self.onboarding.set_languages(languages);
                 Ok(())
             }
             Action::RefreshPlugins => {

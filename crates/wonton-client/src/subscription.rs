@@ -1,7 +1,7 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
-    AppearanceViewModel, ChatViewModel, HomeViewModel, PluginsViewModel, SessionListViewModel,
-    TabsViewModel, TransfersViewModel,
+    AppearanceViewModel, ChatViewModel, HomeViewModel, OnboardingViewModel, PluginsViewModel,
+    SessionListViewModel, TabsViewModel, TransfersViewModel,
 };
 
 use crate::session_store::SessionStore;
@@ -173,6 +173,33 @@ impl TabsSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<TabsViewModel> {
         self.updates.next(TabsViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// 新用户引导的订阅，用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct OnboardingSubscription {
+    updates: Updates<OnboardingViewModel>,
+}
+
+impl OnboardingSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<OnboardingViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl OnboardingSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<OnboardingViewModel> {
+        self.updates.next(OnboardingViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
