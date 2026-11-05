@@ -13,6 +13,7 @@ on:
       - "clippy.toml"
       - "rust-toolchain.toml"
       - ".github/workflows/rust.yml"
+      - "scripts/clean-docker-test-leftovers.sh"
       - "!**/*.md"
   push:
     branches: [main]
@@ -54,6 +55,8 @@ jobs:
         run: rustup toolchain install
       - name: 确认 Docker 可用
         run: docker version
+      - name: 清理被中断的 Docker 测试遗留
+        run: bash scripts/clean-docker-test-leftovers.sh
       - name: 格式
         run: cargo fmt --all --check
       - name: Clippy（含函数不超过 100 行）

@@ -9,6 +9,9 @@ excluded:
   - WontonClient/Sources/WontonClient/Generated
   - Wonton/Design/Generated
 
+disabled_rules:
+  - file_length
+
 function_body_length:
   warning: 100
   error: 100
