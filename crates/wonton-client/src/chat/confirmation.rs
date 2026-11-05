@@ -303,6 +303,26 @@ impl CardsView {
         cards
     }
 
+    /// 时间线里带插件 ID 的卡片，按 `(卡片 ID, 是否已经成功, 插件 ID)` 报。已经成功的包括历史里
+    /// 本来就是结果的：补取只认本会话里亲眼看到从没结束变成成功的那次，历史结果由 follow_room 认出。
+    pub(super) fn plugin_cards(
+        &self,
+        entries: &Vector<TimelineEntry>,
+    ) -> Vec<(String, bool, String)> {
+        entries
+            .iter()
+            .filter_map(|entry| {
+                let EntryKind::Message(message) = &entry.kind else {
+                    return None;
+                };
+                let view = self.view_of(message)?;
+                let plugin_id = view.card.plugin_id.clone()?;
+                let succeeded = matches!(view.card.state, ConfirmationState::Succeeded { .. });
+                Some((view.card.id, succeeded, plugin_id))
+            })
+            .collect()
+    }
+
     /// 还有多久有一张显示着等回答的卡片或者生效中的时段到期，到时候显示要变。已经到期的是零，尽快刷新。
     pub(super) fn next_expiry(&self, entries: &Vector<TimelineEntry>) -> Option<Duration> {
         let now = now_ms();

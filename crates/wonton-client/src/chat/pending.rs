@@ -2,7 +2,7 @@
 //!
 //! 打开的房间才有完整的时间线，所以这个私聊单独订阅（`MatrixSession::watch_room`），和主人打开着哪个房间无关。
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -17,11 +17,12 @@ use super::confirmation::{Answers, Cards, RoomCards, core_account};
 const CARD_LOOKBACK: u16 = 50;
 
 /// 跟着房间列表找出和核心账号的私聊，逐个跟着，把结果汇总进 ViewModel。主人退出过私聊时核心会换一个新的，旧的会从 `m.direct`
-/// 去掉，所以列表里通常只有一个。
+/// 去掉，所以列表里通常只有一个。卡片在本会话里从没结束变成成功时往 `succeeded` 报一次插件 ID：装好插件的卡片出现时，已装列表多半还是旧的。
 pub(super) async fn follow_cards(
     view: watch::Sender<ChatViewModel>,
     session: Arc<MatrixSession>,
     answers: watch::Sender<Answers>,
+    succeeded: mpsc::UnboundedSender<String>,
 ) {
     let core = core_account(session.user_id()).to_string();
     let mut rooms = view.subscribe();
@@ -60,6 +61,7 @@ pub(super) async fn follow_cards(
                 room.clone(),
                 Cards::new(session.user_id(), answers.subscribe()),
                 sender.clone(),
+                succeeded.clone(),
             ));
             followed.insert(room, Active { tasks: vec![task] });
         }
@@ -78,11 +80,13 @@ pub(super) async fn follow_cards(
 }
 
 /// 跟着一个房间，卡片的情况每次可能变化时报一次：来了新事件、这台设备的回答有了进展、有卡片到期。
+/// 卡片在本会话里从没结束变成成功时往 `succeeded` 报一次插件 ID。
 async fn follow_room(
     session: Arc<MatrixSession>,
     room_id: String,
     mut cards: Cards,
     out: mpsc::UnboundedSender<(String, RoomCards)>,
+    succeeded: mpsc::UnboundedSender<String>,
 ) {
     let room = match room_id.parse::<OwnedRoomId>() {
         Ok(room) => session.watch_room(&room).await,
@@ -102,6 +106,8 @@ async fn follow_room(
     let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
     let mut diffs = std::pin::pin!(diffs);
     let mut newest = None;
+    // 本会话里见过、还没结束的卡片：它变成成功时报一次插件 ID。
+    let mut watched = HashSet::new();
     loop {
         // 同步只给最新的事件，更早的卡片要往回翻才看得到。缺口是同步带来的，所以最底下来了新事件就翻一次；翻回来的在上面，不会再触发。
         let latest = entries.back().map(|entry| entry.id.clone());
@@ -112,6 +118,18 @@ async fn follow_room(
             }
         }
         let shown = cards.view();
+        for (card_id, done, plugin_id) in shown.plugin_cards(&entries) {
+            if done {
+                // 只认本会话里亲眼看到从没结束变成成功的：启动时翻回来的历史结果不补取，
+                // 那时连上后的取列表本来就会跑。报过一次就把卡片从待成功的名单里拿掉，
+                // 重放和重复编辑自然不再报。
+                if watched.remove(&card_id) {
+                    let _ = succeeded.send(plugin_id);
+                }
+            } else {
+                watched.insert(card_id);
+            }
+        }
         if out
             .send((room_id.clone(), shown.standing(&room_id, &entries)))
             .is_err()

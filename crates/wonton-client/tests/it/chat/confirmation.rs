@@ -610,7 +610,7 @@ pub(crate) async fn edit(room: &ChatRoom, event: &OwnedEventId, card: &Value) {
     send(room, edit).await;
 }
 
-fn answer(phone: &Phone, id: &str, answer: Answer) {
+pub(crate) fn answer(phone: &Phone, id: &str, answer: Answer) {
     phone
         .dispatch(Action::AnswerConfirmation {
             id: id.to_owned(),
@@ -620,7 +620,7 @@ fn answer(phone: &Phone, id: &str, answer: Answer) {
         .unwrap();
 }
 
-fn view_of(item: &TimelineItem, id: &str) -> Option<ConfirmationView> {
+pub(crate) fn view_of(item: &TimelineItem, id: &str) -> Option<ConfirmationView> {
     let TimelineContent::Message { message } = &item.content else {
         return None;
     };
@@ -643,7 +643,7 @@ async fn card_view(timeline: &mut Timeline, id: &str, what: &str) -> Confirmatio
     until_card(timeline, id, what, |_| true).await
 }
 
-async fn until_card(
+pub(crate) async fn until_card(
     timeline: &mut Timeline,
     id: &str,
     what: &str,

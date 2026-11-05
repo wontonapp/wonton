@@ -3,6 +3,7 @@
 
 pub(crate) mod api;
 mod cache;
+pub(crate) mod cards;
 mod core_upgrade;
 mod egress;
 mod owner_profile;

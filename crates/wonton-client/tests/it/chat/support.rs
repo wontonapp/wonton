@@ -17,8 +17,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{
-    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, Network, OnboardingViewModel,
-    TimelineDiff, TimelineItem, TimelineSubscription,
+    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin, InstalledPlugins,
+    Network, OnboardingViewModel, TimelineDiff, TimelineItem, TimelineSubscription,
 };
 use wonton_matrix::MatrixSession;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
@@ -67,6 +67,10 @@ struct Core {
     reject_backup_creation: AtomicBool,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
+    /// 已装插件的应答：没有就是没有这个接口（404）。
+    installed: Mutex<Option<Value>>,
+    /// 取已装列表的请求次数。
+    installed_requests: AtomicUsize,
 }
 
 impl Home {
@@ -89,6 +93,8 @@ impl Home {
             members_requests_dropped: AtomicUsize::new(0),
             reject_backup_creation: AtomicBool::new(false),
             onboarding: Mutex::default(),
+            installed: Mutex::default(),
+            installed_requests: AtomicUsize::new(0),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -123,6 +129,21 @@ impl Home {
     /// 设置假核心的引导状态；没设置时引导接口回 404。
     pub fn set_onboarding(&self, onboarding: Value) {
         *self.core.onboarding.lock().unwrap() = Some(onboarding);
+    }
+
+    /// 设置假核心的已装列表应答；没设置时这个接口回 404。
+    pub fn set_installed_plugins(&self, plugins: Vec<InstalledPlugin>) {
+        let installed = serde_json::to_value(InstalledPlugins {
+            plugins,
+            upgrade_check: None,
+        })
+        .unwrap();
+        *self.core.installed.lock().unwrap() = Some(installed);
+    }
+
+    /// 取已装列表的请求次数，数的是这个测试会话里的全部。
+    pub fn installed_requests(&self) -> usize {
+        self.core.installed_requests.load(Ordering::SeqCst)
     }
 
     /// 取房间成员的请求断开或恢复。
@@ -371,6 +392,11 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
         return Some(reply.map_or((204, String::new()), |(status, reply)| {
             (status, reply.to_string())
         }));
+    }
+    if head.starts_with("get /_wonton/api/plugins ") {
+        core.installed_requests.fetch_add(1, Ordering::SeqCst);
+        let installed = core.installed.lock().unwrap().clone()?;
+        return Some((200, installed.to_string()));
     }
     let response = if head.starts_with("post /_wonton/matrix/login-token ") {
         core.login_tokens.fetch_add(1, Ordering::SeqCst);

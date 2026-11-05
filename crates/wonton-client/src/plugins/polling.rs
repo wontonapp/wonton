@@ -24,7 +24,7 @@ impl PluginsLink {
     }
 
     // 隧道断着时请求会触发重连；自动检查不能把后台或无连接变成一次主动重连。
-    fn can_poll(&self) -> bool {
+    pub(super) fn can_poll(&self) -> bool {
         self.foreground.load(Ordering::SeqCst) && self.home.view().status == HomeStatus::Connected
     }
 

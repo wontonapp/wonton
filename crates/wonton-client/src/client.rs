@@ -19,6 +19,7 @@ use crate::files::{FileOpener, FilesLink};
 use crate::home::{HomeLink, Network, Storage};
 use crate::onboarding::OnboardingLink;
 use crate::plugins::PluginsLink;
+use crate::plugins::cards::follow_card_success;
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{
@@ -605,9 +606,16 @@ impl ClientCore {
             .expect("创建 tokio 运行时失败");
         let storage = Storage::open(data_dir)?;
         let home = HomeLink::new(runtime.handle().clone(), storage, network)?;
-        let chat = ChatLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir))?;
+        let (card_success, card_refreshes) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let chat = ChatLink::new(
+            runtime.handle().clone(),
+            home.clone(),
+            Path::new(data_dir),
+            card_success,
+        )?;
         let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
         let plugins = PluginsLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir));
+        runtime.spawn(follow_card_success(plugins.clone(), card_refreshes));
         let tabs = TabsLink::new(
             runtime.handle().clone(),
             home.clone(),

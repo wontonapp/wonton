@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures_util::StreamExt;
 use tokio::runtime::Handle;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
 use wonton_protocol::{
@@ -61,6 +61,8 @@ pub(crate) struct ChatLink {
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
+    /// 本会话里亲眼看到从没结束变成成功的插件 ID：插件列表多半还是旧的，补取的逻辑在插件那头。
+    card_success: mpsc::UnboundedSender<String>,
     /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。
     resetting_recovery: AtomicBool,
     /// 主人的默认 Agent 在 Matrix 上的用户 ID，聊天列表里它的房间排第一。
@@ -88,6 +90,7 @@ impl ChatLink {
         runtime: Handle,
         home: Arc<HomeLink>,
         data_dir: &Path,
+        card_success: mpsc::UnboundedSender<String>,
     ) -> Result<Arc<Self>, CoreError> {
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
@@ -116,6 +119,7 @@ impl ChatLink {
             session: Mutex::new(None),
             open_room: Mutex::new(None),
             answers: watch::Sender::default(),
+            card_success,
             resetting_recovery: AtomicBool::default(),
             primary_bot: Arc::new(Mutex::new(None)),
             room_order: Arc::new(onboarding::RoomOrder::new()),
@@ -676,6 +680,7 @@ impl ChatLink {
             view,
             session.clone(),
             self.answers.clone(),
+            self.card_success.clone(),
         ));
         let catching_up = {
             let updates = session.catching_up();
