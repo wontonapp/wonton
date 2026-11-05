@@ -25,6 +25,7 @@ docker_reachable() {
 }
 
 bash scripts/check-file-size.sh
+bash scripts/check-conflict-markers.sh
 
 bash scripts/check-uniffi-comments.sh
 

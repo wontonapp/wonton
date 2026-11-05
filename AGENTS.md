@@ -56,7 +56,7 @@
 ## 开发环境与检查
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
-- 提交前运行 `bash scripts/check.sh`，和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
+- 提交前运行 `bash scripts/check.sh`（行数门禁、冲突标记检查、格式、Clippy、测试），和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
   命令。跳过不等于通过：PR 说明里写明没跑。CI 的“Rust”作业分两步：默认的测试故意让 Docker 不可用，保证它们不依赖
   Docker；接着运行这些标了 `#[ignore]` 的，Docker 不可用即失败。
