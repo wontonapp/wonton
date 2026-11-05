@@ -274,6 +274,7 @@ mod tests {
             lines: Vec::new(),
             choices: choices("安装", "不装"),
             expires_at_ms: 1,
+            plugin_id: None,
             window: None,
         };
         assert_eq!(content(&card)["msgtype"], "m.text");

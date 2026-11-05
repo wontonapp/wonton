@@ -206,6 +206,7 @@ impl PluginManager {
                 .installed_detail(&m.id, langs)
                 .and_then(|detail| detail.lan_webui),
             save_grants: self.save_grants(&m.id),
+            ask_every_update: None,
             limits: None,
         }
     }

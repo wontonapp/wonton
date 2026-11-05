@@ -157,6 +157,7 @@ impl PluginManager {
                 .as_ref()
                 .map(|switched| switched.offer(listed.lan_webui)),
             save_grants: self.save_grants(id),
+            ask_every_update: None,
             limits: None,
         })
     }
@@ -251,6 +252,7 @@ impl PluginManager {
             source: package.origin.as_ref().map(Origin::source),
             provider: package.origin.as_ref().map(Origin::provider),
             via_index: package.origin.as_ref().and_then(Origin::via_index),
+            written_by: None,
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
             id: m.id.to_string(),
@@ -390,6 +392,7 @@ impl PluginManager {
             source: origin.map(Origin::source),
             provider: origin.map(Origin::provider),
             via_index: origin.and_then(Origin::via_index),
+            written_by: None,
             status: state(&entry.status, entry.health),
             web_url: entry.has_webui.then(|| self.web_url(id)),
             web_display: TabDisplay::default(),
@@ -648,6 +651,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         blocked: None,
         lan_webui: None,
         save_grants: Vec::new(),
+        ask_every_update: None,
         limits: None,
     }
 }

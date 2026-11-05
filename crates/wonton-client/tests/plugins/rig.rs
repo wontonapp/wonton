@@ -171,6 +171,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         source: None,
         provider: None,
         via_index: None,
+        written_by: None,
         status,
         web_url: None,
         web_display: wonton_protocol::TabDisplay::default(),
@@ -205,6 +206,7 @@ pub fn preview(id: &str) -> InstallPreview {
         trust: PluginTrust::Official,
         provider: None,
         via_index: None,
+        written_by: None,
         author: None,
         permissions: vec![PermissionLine {
             permission: "storage.share.photos:read".to_owned(),

@@ -45,6 +45,9 @@ pub struct ConfirmationCard {
     /// 这张卡片打开的放行时段（ADR-0024）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<ConfirmationWindow>,
+    /// 这张卡片要装或要更新的插件（ADR-0033）。批准后插件有网页时，壳显示“打开”和“放到底栏”。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
 }
 
 /// 放行时段：这个 Bot 调这个插件，到期前不再发卡片。卡片只在时段开始和结束时更新。
@@ -247,12 +250,14 @@ mod tests {
             ],
             "expires_at_ms": 1,
             "window": {"expires_at_ms": 2, "allowed": 1, "ended": "new_reason"},
+            "plugin_id": "app.rss",
             "extra": {"expires_at_ms": 2},
         }))
         .unwrap();
         let answers: Vec<_> = card.choices.iter().map(|choice| choice.answer).collect();
         assert_eq!(answers, [Answer::Approve, Answer::Unknown, Answer::Reject]);
         assert_eq!(card.window.unwrap().ended, Some(WindowEnd::Unknown));
+        assert_eq!(card.plugin_id.as_deref(), Some("app.rss"));
     }
 
     /// 契约：`choice_id` 是可选的，没有时线上不出现，`Answer` 的方向不变。

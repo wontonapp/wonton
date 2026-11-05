@@ -417,6 +417,7 @@ mod tests {
                         choice_id: None,
                     }],
                     expires_at_ms: 1_793_000_600_000,
+                    plugin_id: None,
                     window: None,
                 },
                 sending,

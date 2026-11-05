@@ -38,6 +38,10 @@ fn installed() -> InstalledPlugin {
         source: Some("github:example/wonton-immich@v2.0.0".into()),
         provider: Some("github.com/example/wonton-immich".into()),
         via_index: None,
+        written_by: Some(PluginWriter {
+            plugin_id: "app.hermes".into(),
+            title: "Hermes".into(),
+        }),
         status: PluginState::Running {
             health: PluginHealth::Healthy,
         },
@@ -141,6 +145,10 @@ fn preview() -> InstallPreview {
         trust: PluginTrust::Community,
         provider: Some("github.com/someone/wonton-samba".into()),
         via_index: None,
+        written_by: Some(PluginWriter {
+            plugin_id: "app.hermes".into(),
+            title: "Hermes".into(),
+        }),
         author: None,
         permissions: vec![
             permission(
@@ -218,6 +226,7 @@ fn detail() -> PluginDetail {
         blocked: None,
         lan_webui: None,
         save_grants: Vec::new(),
+        ask_every_update: Some(false),
         limits: Some(PluginLimits {
             memory: Some(4 * 1024 * 1024 * 1024),
             cpu_percent: None,
@@ -438,6 +447,26 @@ fn an_uncertain_task_keeps_its_wire_format() {
         .unwrap(),
         json!({"type": "uncertain", "message": "x"})
     );
+}
+
+#[test]
+fn the_ask_every_update_switch_keeps_its_wire_format() {
+    let switch = AskEveryUpdate { enabled: true };
+    assert_eq!(json!(switch), json!({"enabled": true}));
+    assert_eq!(round_trip(&switch), switch);
+}
+
+#[test]
+fn a_core_without_writers_lists_plugins_without_them() {
+    let mut item = serde_json::to_value(installed()).unwrap();
+    item.as_object_mut().unwrap().remove("written_by");
+    let item: InstalledPlugin = serde_json::from_value(item).unwrap();
+    assert_eq!(item.written_by, None);
+
+    let mut shown = serde_json::to_value(detail()).unwrap();
+    shown.as_object_mut().unwrap().remove("ask_every_update");
+    let shown: PluginDetail = serde_json::from_value(shown).unwrap();
+    assert_eq!(shown.ask_every_update, None);
 }
 
 #[test]

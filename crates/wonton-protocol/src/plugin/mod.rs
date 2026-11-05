@@ -71,6 +71,16 @@ pub struct PluginAuthor {
     pub url: Option<String>,
 }
 
+/// 写这个插件的 Agent（ADR-0033）。Agent 的名字核实不了代码位置，所以不算 `provider`。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginWriter {
+    /// Agent 插件的 ID。
+    pub plugin_id: String,
+    /// Agent 的名字，如 `Hermes`，显示成“你的 Agent · Hermes”。
+    pub title: String,
+}
+
 /// 权限的风险级别。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -150,6 +160,9 @@ pub struct InstalledPlugin {
     pub provider: Option<String>,
     /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
     pub via_index: Option<String>,
+    /// Agent 写的插件是写它的 Agent。主人用文件升级或卸载后为空，这个插件不再归 Agent。
+    #[serde(default)]
+    pub written_by: Option<PluginWriter>,
     pub status: PluginState,
     /// 插件网页的地址，点开就是小程序；没有网页时为空。
     pub web_url: Option<String>,
@@ -431,6 +444,16 @@ pub struct PluginDetail {
     /// 主人给它定的资源上限；没装时为空。
     #[serde(default)]
     pub limits: Option<PluginLimits>,
+    /// 开关“每次都问”：Agent 写的插件是当前值，打开后这个 Agent 每次更新都发卡片；别的插件为空。
+    #[serde(default)]
+    pub ask_every_update: Option<bool>,
+}
+
+/// `PUT /_wonton/api/plugins/{id}/ask-every-update` 的请求体，响应是更新后的 [`PluginDetail`]。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AskEveryUpdate {
+    pub enabled: bool,
 }
 
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。
@@ -476,6 +499,9 @@ pub struct InstallPreview {
     pub provider: Option<String>,
     /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
     pub via_index: Option<String>,
+    /// Agent 写的插件是写它的 Agent。
+    #[serde(default)]
+    pub written_by: Option<PluginWriter>,
     pub author: Option<PluginAuthor>,
     /// 要授予的全部权限；主人确认的就是这些。
     pub permissions: Vec<PermissionLine>,

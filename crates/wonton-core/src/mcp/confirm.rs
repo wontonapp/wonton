@@ -199,6 +199,7 @@ impl Confirmations {
             lines: draft.lines,
             choices: draft.choices,
             expires_at_ms: now_ms(created + self.ttl),
+            plugin_id: None,
             window: None,
         };
         let (waiter, answered) = oneshot::channel();
