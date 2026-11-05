@@ -395,6 +395,17 @@ impl ClientCore {
             .await
     }
 
+    /// 开关“每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发卡片；返回开关之后的详情。
+    pub async fn set_ask_every_update(
+        &self,
+        id: String,
+        enabled: bool,
+    ) -> Result<PluginDetail, CoreError> {
+        let plugins = self.plugins.clone();
+        self.run(async move { plugins.set_ask_every_update(&id, enabled).await })
+            .await
+    }
+
     /// 撤销 Bot 往这个路径存文件的授权（ADR-0027），只拦后面的调用；返回撤销之后的详情。
     pub async fn revoke_save_grant(
         &self,

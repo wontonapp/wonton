@@ -22,10 +22,10 @@ use reqwest::Client;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, watch};
 use wonton_protocol::{
-    AddSourceRequest, AddedSource, CoreError, CoreUpgradeViewModel, EgressViewModel, HomeStatus,
-    InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure,
-    PluginImage, PluginProblem, PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage,
-    StoreItem, StoreListing, TabRef,
+    AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
+    EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
+    PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState, PluginsViewModel,
+    ProxySettings, StorageUsage, StoreItem, StoreListing, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -533,6 +533,19 @@ impl PluginsLink {
             .map_err(to_core_error);
         self.refresh_installed();
         result
+    }
+
+    /// 开关“每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发卡片；返回开关之后的详情。
+    pub(crate) async fn set_ask_every_update(
+        &self,
+        id: &str,
+        enabled: bool,
+    ) -> Result<PluginDetail, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        let update = AskEveryUpdate { enabled };
+        api.put(&["plugins", id, "ask-every-update"], &update, READ_TIMEOUT)
+            .await
+            .map_err(to_core_error)
     }
 
     pub(crate) async fn revoke_save_grant(

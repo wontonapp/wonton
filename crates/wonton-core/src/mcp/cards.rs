@@ -212,7 +212,7 @@ pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages
     let manifest = &package.manifest;
     let mut lines = vec![
         emphasized(format!(
-            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，主人自己把关"
+            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，你自己把关"
         )),
         line(text(&manifest.description)),
         line(format!("版本 {}", manifest.version)),
@@ -256,7 +256,7 @@ pub fn agent_update(
     let manifest = &package.manifest;
     let mut lines = vec![
         emphasized(format!(
-            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，主人自己把关"
+            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，你自己把关"
         )),
         line(format!("从版本 {from} 更新到 {}", manifest.version)),
         line(header),
