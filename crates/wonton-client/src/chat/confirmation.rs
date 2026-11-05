@@ -262,6 +262,12 @@ impl CardsView {
         }
     }
 
+    /// 这台设备在本会话里回答过这张卡片（答了什么、收没收下都算）。回答只记到进程结束，
+    /// 所以回答过它就不是启动时翻回来的历史结果：哪怕跟随第一次见到的就是结果，也认作本会话的。
+    pub(super) fn answered_here(&self, card_id: &str) -> bool {
+        self.answers.answers.contains_key(card_id)
+    }
+
     /// `room_id` 的时间线里，卡片现在的情况。
     pub(super) fn standing(&self, room_id: &str, entries: &Vector<TimelineEntry>) -> RoomCards {
         let mut cards = RoomCards::default();

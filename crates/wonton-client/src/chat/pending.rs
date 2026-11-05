@@ -17,7 +17,8 @@ use super::confirmation::{Answers, Cards, RoomCards, core_account};
 const CARD_LOOKBACK: u16 = 50;
 
 /// 跟着房间列表找出和核心账号的私聊，逐个跟着，把结果汇总进 ViewModel。主人退出过私聊时核心会换一个新的，旧的会从 `m.direct`
-/// 去掉，所以列表里通常只有一个。卡片在本会话里从没结束变成成功时往 `succeeded` 报一次插件 ID：装好插件的卡片出现时，已装列表多半还是旧的。
+/// 去掉，所以列表里通常只有一个。卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时往
+/// `succeeded` 报一次插件 ID：装好插件的卡片出现时，已装列表多半还是旧的。
 pub(super) async fn follow_cards(
     view: watch::Sender<ChatViewModel>,
     session: Arc<MatrixSession>,
@@ -80,7 +81,7 @@ pub(super) async fn follow_cards(
 }
 
 /// 跟着一个房间，卡片的情况每次可能变化时报一次：来了新事件、这台设备的回答有了进展、有卡片到期。
-/// 卡片在本会话里从没结束变成成功时往 `succeeded` 报一次插件 ID。
+/// 卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时往 `succeeded` 报一次插件 ID。
 async fn follow_room(
     session: Arc<MatrixSession>,
     room_id: String,
@@ -108,6 +109,8 @@ async fn follow_room(
     let mut newest = None;
     // 本会话里见过、还没结束的卡片：它变成成功时报一次插件 ID。
     let mut watched = HashSet::new();
+    // 报过成功结果的卡片：重放和重复编辑不再报。
+    let mut reported = HashSet::new();
     loop {
         // 同步只给最新的事件，更早的卡片要往回翻才看得到。缺口是同步带来的，所以最底下来了新事件就翻一次；翻回来的在上面，不会再触发。
         let latest = entries.back().map(|entry| entry.id.clone());
@@ -120,10 +123,12 @@ async fn follow_room(
         let shown = cards.view();
         for (card_id, done, plugin_id) in shown.plugin_cards(&entries) {
             if done {
-                // 只认本会话里亲眼看到从没结束变成成功的：启动时翻回来的历史结果不补取，
-                // 那时连上后的取列表本来就会跑。报过一次就把卡片从待成功的名单里拿掉，
-                // 重放和重复编辑自然不再报。
-                if watched.remove(&card_id) {
+                // 本会话里见过的卡片变成成功才报：亲眼见过它没结束，或这台设备回答过它。
+                // 同一批同步里卡片和结果一起到时，亲眼这条路赶不上，回答过的照报。
+                // 启动时翻回来的历史结果（两条都不占）不报——那时连上后的取列表本来就会跑。
+                // 报过一次就不再报，重放和重复编辑不再触发。
+                let witnessed = watched.remove(&card_id) || shown.answered_here(&card_id);
+                if witnessed && reported.insert(card_id.clone()) {
                     let _ = succeeded.send(plugin_id);
                 }
             } else {
