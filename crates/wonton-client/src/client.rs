@@ -9,7 +9,7 @@ use wonton_protocol::{
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
     InstallPreview, LanChoice, LanSettings, MediaHandle, PluginDetail, PluginImage,
     PluginsViewModel, PushNotification, RoomTransfers, SessionListViewModel, StoreItem,
-    TransfersViewModel,
+    TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -21,8 +21,9 @@ use crate::push::PushLink;
 use crate::session_store::SessionStore;
 use crate::subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, PluginsSubscription,
-    SessionListSubscription, TransfersSubscription,
+    SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
+use crate::tabs::TabsLink;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -35,6 +36,7 @@ pub struct ClientCore {
     chat: Arc<ChatLink>,
     push: Arc<PushLink>,
     plugins: Arc<PluginsLink>,
+    tabs: Arc<TabsLink>,
     files: Arc<FilesLink>,
     appearance: AppearanceLink,
     /// 网络操作用的运行时，随核心释放。
@@ -121,19 +123,29 @@ impl ClientCore {
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
             Action::SetFont { font } => self.appearance.set_font(font),
-            Action::SelectTab { .. }
-            | Action::CloseTabOverlay
-            | Action::PinTab { .. }
-            | Action::UnpinTab { .. }
-            | Action::MoveTab { .. }
-            | Action::SetTabDisplay { .. }
-            | Action::EnterFullscreen { .. }
-            | Action::ExitFullscreen { .. }
-            | Action::ReloadTab { .. }
-            | Action::TabLoadFailed { .. }
-            | Action::DismissUninstalledTabs => Err(tabs_unsupported()),
+            Action::SelectTab { tab } => self.tabs.select(tab),
+            Action::CloseTabOverlay => self.tabs.close_overlay(),
+            Action::PinTab { tab, replacing } => self.tabs.pin(tab, replacing),
+            Action::UnpinTab { tab } => self.tabs.unpin(tab),
+            Action::MoveTab { tab, index } => self.tabs.move_tab(tab, index),
+            Action::SetTabDisplay { tab, display } => self.tabs.set_display(tab, display),
+            Action::EnterFullscreen { tab } => self.tabs.enter_fullscreen(tab),
+            Action::ExitFullscreen { tab } => self.tabs.exit_fullscreen(tab),
+            Action::ReloadTab { tab } => self.tabs.reload(tab),
+            Action::TabLoadFailed { tab, status } => self.tabs.load_failed(tab, status),
+            Action::DismissUninstalledTabs => self.tabs.dismiss_uninstalled(),
             other => self.dispatch_plugins_or_chat(other),
         }
+    }
+
+    /// 当前的底栏和插件页面，用于首帧渲染。
+    pub fn tabs(&self) -> TabsViewModel {
+        self.tabs.view()
+    }
+
+    /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
+        Arc::new(TabsSubscription::new(self.tabs.subscribe()))
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -427,6 +439,12 @@ impl ClientCore {
         let chat = ChatLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir))?;
         let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
         let plugins = PluginsLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir));
+        let tabs = TabsLink::new(
+            runtime.handle().clone(),
+            home.clone(),
+            plugins.clone(),
+            Path::new(data_dir),
+        );
         let files = FilesLink::new(
             runtime.handle().clone(),
             home.clone(),
@@ -440,6 +458,7 @@ impl ClientCore {
             chat,
             push,
             plugins,
+            tabs,
             files,
             appearance,
             runtime: Some(runtime),
@@ -521,12 +540,6 @@ impl ClientCore {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
-    }
-}
-
-fn tabs_unsupported() -> CoreError {
-    CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持调整底栏".into(),
     }
 }
 

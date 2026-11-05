@@ -31,6 +31,7 @@ mod plugins;
 mod push;
 mod session_store;
 mod subscription;
+mod tabs;
 
 pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;
@@ -39,8 +40,8 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use logging::init_logging;
 pub use subscription::{
-    ChatSubscription, HomeSubscription, PluginsSubscription, SessionListSubscription,
-    TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, HomeSubscription, PluginsSubscription,
+    SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use wonton_protocol::{
     Action, AddedSource, AgentLogin, Answer, AppearanceProblem, AppearanceViewModel,
@@ -61,13 +62,14 @@ pub use wonton_protocol::{
     OnboardingModelStep, OnboardingNeedRow, OnboardingStep, OnboardingTip, OnboardingTips,
     OnboardingViewModel, PairingFailure, PairingStatus, PendingConfirmation, PermissionLine,
     PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure, PluginHealth,
-    PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTask,
-    PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation, PushContent,
-    PushEndpoint, PushNotification, PushStatus, RecoveryStatus, ReplacedAgent, RequirementLine,
-    RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString,
-    SendState, SessionListViewModel, SessionRow, SourceKind, StoreFailure, StoreItem, StoreListing,
-    StoreProblem, StoreSection, TextSize, TextSizeOption, ThemeColors, ThemeMode, ThemeModeOption,
-    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, Transfer,
-    TransferAction, TransferDirection, TransferElsewhere, TransferState, TransfersViewModel,
-    UpgradeOffer, UploadSource,
+    PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTab,
+    PluginTask, PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation,
+    PushContent, PushEndpoint, PushNotification, PushStatus, RecoveryStatus, ReplacedAgent,
+    RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers,
+    SecretString, SendState, SessionListViewModel, SessionRow, SourceKind, StoreFailure, StoreItem,
+    StoreListing, StoreProblem, StoreSection, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
+    TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TextSize,
+    TextSizeOption, ThemeColors, ThemeMode, ThemeModeOption, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineMessage, TimelineUpdate, Transfer, TransferAction, TransferDirection,
+    TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource,
 };

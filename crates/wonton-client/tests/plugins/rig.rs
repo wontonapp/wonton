@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -341,6 +342,11 @@ impl Rig {
                 .unwrap();
     }
 
+    #[allow(dead_code)]
+    pub fn data_dir(&self) -> &Path {
+        self._dir.path()
+    }
+
     pub fn device(&self) -> EndpointId {
         self.app.home().device_id.parse().unwrap()
     }
@@ -351,6 +357,14 @@ impl Rig {
 
     pub fn connect_to(&self, ticket: String) {
         self.app.dispatch(Action::ConnectHome { ticket }).unwrap();
+    }
+
+    #[allow(dead_code)]
+    pub fn unreachable_ticket(&self) -> String {
+        ticket(
+            self._home.server.endpoint().id(),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 9)),
+        )
     }
 
     pub async fn connected(&self) {
