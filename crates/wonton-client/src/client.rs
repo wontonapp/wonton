@@ -9,7 +9,7 @@ use wonton_protocol::{
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
     OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel,
-    PushNotification, RoomTransfers, SessionListViewModel, StoreItem, TabsViewModel,
+    PushNotification, RoomTransfers, SessionListViewModel, StoreItem, TabRef, TabsViewModel,
     ToolPolicyView, TransfersViewModel,
 };
 
@@ -26,6 +26,7 @@ use crate::subscription::{
     PluginsSubscription, SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
 use crate::tabs::TabsLink;
+use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -148,6 +149,53 @@ impl ClientCore {
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
         Arc::new(TabsSubscription::new(self.tabs.subscribe()))
+    }
+
+    /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
+    pub fn tab_document_script(
+        &self,
+        tab: TabRef,
+        environment: TabEnvironment,
+    ) -> Result<String, CoreError> {
+        bridge::document_script(&self.tabs, &self.appearance.view(), &tab, &environment)
+    }
+
+    /// 壳原样交入消息及原生回调的主框架标志、来源；核心校验来源，草稿不发送。
+    pub fn tab_handle_message(
+        &self,
+        tab: TabRef,
+        is_main_frame: bool,
+        origin: String,
+        message: String,
+        environment: TabEnvironment,
+    ) -> TabBridgeResult {
+        bridge::handle_message(
+            &self.tabs,
+            &self.appearance,
+            &tab,
+            is_main_frame,
+            &origin,
+            &message,
+            &environment,
+        )
+    }
+
+    /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
+    pub fn tab_context_script(
+        &self,
+        tab: TabRef,
+        environment: TabEnvironment,
+    ) -> Result<String, CoreError> {
+        bridge::context_script(&self.tabs, &self.appearance.view(), &tab, &environment)
+    }
+
+    pub fn tab_reselected_script(&self) -> String {
+        bridge::reselected_script()
+    }
+
+    /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
+    pub fn tab_connection_script(&self) -> String {
+        bridge::connection_script(&self.home.view().status)
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。

@@ -43,6 +43,9 @@ pub use subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
     PluginsSubscription, SessionListSubscription, TabsSubscription, TransfersSubscription,
 };
+pub use tabs::bridge::{
+    TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
+};
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{

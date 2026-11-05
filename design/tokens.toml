@@ -76,3 +76,32 @@ state = 180
 panel = 240
 messageInsert = 180
 reduced = 100
+
+# ADR-0033：公开变量只增不改名。颜色引用 ThemeColors，字体引用 AppearanceViewModel。
+# --wonton-* 只注入根元素；--wonton-inset-* 由运行时环境提供。
+[web_variables]
+"--color-background-primary" = { color = "canvas" }
+"--color-background-secondary" = { color = "surface_subtle" }
+"--color-text-primary" = { color = "text_primary" }
+"--color-text-secondary" = { color = "text_secondary" }
+"--color-border-primary" = { color = "separator" }
+"--color-background-danger" = { color = "danger" }
+"--color-text-danger" = { color = "danger" }
+"--color-border-danger" = { color = "danger" }
+"--color-ring-danger" = { color = "danger" }
+"--color-background-success" = { color = "success" }
+"--color-text-success" = { color = "success" }
+"--color-border-success" = { color = "success" }
+"--color-ring-success" = { color = "success" }
+"--color-background-warning" = { color = "warning" }
+"--color-text-warning" = { color = "warning" }
+"--color-border-warning" = { color = "warning" }
+"--color-ring-warning" = { color = "warning" }
+"--wonton-accent-fill" = { color = "accent_fill" }
+"--wonton-accent-ink" = { color = "accent_ink" }
+"--wonton-accent-ink-on-fill" = { color = "accent_ink_on_fill" }
+"--border-radius-xs" = { radius = "bubbleJoined" }
+"--border-radius-md" = { radius = "control" }
+"--border-radius-lg" = { radius = "card" }
+"--border-radius-full" = { radius = "pill" }
+"--font-sans" = { font = "font" }

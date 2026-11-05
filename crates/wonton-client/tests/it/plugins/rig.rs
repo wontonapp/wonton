@@ -112,6 +112,10 @@ impl CoreState {
         *self.providers.lock().unwrap() = Some(providers);
     }
 
+    pub fn all_seen(&self) -> Vec<Seen> {
+        self.seen.lock().unwrap().clone()
+    }
+
     pub fn seen(&self, method: &Method, path: &str) -> Vec<Seen> {
         self.seen
             .lock()

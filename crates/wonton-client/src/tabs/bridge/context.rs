@@ -1,0 +1,105 @@
+use serde_json::{Map, Value, json};
+use wonton_protocol::{
+    AppearanceViewModel, CoreError, FontStyle, TabDisplayChoice, TabLayout, TabPage,
+};
+
+use super::tokens::{COLOR_VARIABLES, FONT_VARIABLE, RADIUS_VARIABLES};
+use super::{TabEnvironment, TabPlatform};
+
+pub(super) fn payload(
+    appearance: &AppearanceViewModel,
+    page: &TabPage,
+    environment: &TabEnvironment,
+) -> Result<Value, CoreError> {
+    validate_environment(environment)?;
+    let colors = if environment.dark {
+        &appearance.dark
+    } else {
+        &appearance.light
+    };
+    let mut variables = Map::new();
+    for (name, color) in COLOR_VARIABLES {
+        variables.insert(
+            (*name).to_owned(),
+            crate::appearance::accent_hex(color(colors)).into(),
+        );
+    }
+    for (name, ios, android) in RADIUS_VARIABLES {
+        let radius = match environment.platform {
+            TabPlatform::Ios => ios,
+            TabPlatform::Android => android,
+        };
+        variables.insert((*name).to_owned(), format!("{radius}px").into());
+    }
+    variables.insert(
+        FONT_VARIABLE.to_owned(),
+        font_family(appearance.font).into(),
+    );
+    let standard: Map<String, Value> = variables
+        .iter()
+        .filter(|(name, _)| !name.starts_with("--wonton-"))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    let (top, bottom) = if page.layout == TabLayout::EdgeToEdge {
+        (environment.inset_top, environment.inset_bottom)
+    } else {
+        (0.0, 0.0)
+    };
+    variables.insert("--wonton-inset-top".to_owned(), format!("{top}px").into());
+    variables.insert(
+        "--wonton-inset-bottom".to_owned(),
+        format!("{bottom}px").into(),
+    );
+    Ok(json!({
+        "variables": variables,
+        "context": {
+            "theme": if environment.dark { "dark" } else { "light" },
+            "styles": { "variables": standard },
+            "locale": environment.locale,
+            "timeZone": environment.time_zone,
+            "platform": "mobile",
+            "displayMode": display_mode(page),
+            "availableDisplayModes": if page.display == TabDisplayChoice::Standard {
+                vec!["inline"]
+            } else { vec!["inline", "fullscreen"] },
+            "safeAreaInsets": environment.safe_area,
+        },
+    }))
+}
+
+pub(super) fn display_mode(page: &TabPage) -> &'static str {
+    if page.fullscreen {
+        "fullscreen"
+    } else {
+        "inline"
+    }
+}
+
+fn font_family(font: FontStyle) -> &'static str {
+    match font {
+        FontStyle::Default => "system-ui, sans-serif",
+        FontStyle::Rounded => "ui-rounded, system-ui, sans-serif",
+        FontStyle::Serif => "ui-serif, serif",
+        FontStyle::Monospaced => "ui-monospace, monospace",
+    }
+}
+
+fn validate_environment(environment: &TabEnvironment) -> Result<(), CoreError> {
+    let safe = environment.safe_area;
+    if [
+        environment.inset_top,
+        environment.inset_bottom,
+        safe.top,
+        safe.right,
+        safe.bottom,
+        safe.left,
+    ]
+    .iter()
+    .any(|value| !value.is_finite() || *value < 0.0)
+    {
+        return Err(CoreError::InvalidInput {
+            reason: "页面栏高和安全区必须是有限的非负数".to_owned(),
+        });
+    }
+    Ok(())
+}

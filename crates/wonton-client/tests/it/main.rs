@@ -15,3 +15,4 @@ mod pairing;
 mod plugins;
 mod session_list;
 mod tabs;
+mod tabs_bridge;

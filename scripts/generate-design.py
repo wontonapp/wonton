@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从 design/ 生成两端的令牌、图标和噪点（ADR-0026）。--check 只比对，不一致时失败。"""
+"""从 design/ 生成原生令牌、图标、噪点和客户端网页令牌映射。--check 只比对，不一致时失败。"""
 
 import hashlib
 import json
@@ -18,11 +18,13 @@ DESIGN = ROOT / "design"
 IOS = ROOT / "apps/ios/Wonton"
 COMPOSE = ROOT / "apps/compose/shared/src/androidMain"
 KOTLIN = COMPOSE / "kotlin/app/wonton/ui"
+WEB_GENERATED = ROOT / "crates/wonton-client/src/tabs/bridge/generated"
 GENERATED_DIRS = [
     IOS / "Design/Generated",
     IOS / "Assets.xcassets/Icons",
     KOTLIN / "design/generated",
     KOTLIN / "icons",
+    WEB_GENERATED,
 ]
 
 VALKYRIE_VERSION = "1.2.1"
@@ -91,6 +93,40 @@ def kotlin_tokens(tokens):
         + "import androidx.compose.ui.unit.dp\n"
         + "import androidx.compose.ui.unit.sp\n\n"
         + "\n".join(parts)
+    )
+
+
+def rust_web_tokens(tokens):
+    colors = []
+    radii = []
+    fonts = []
+    platforms = {platform: for_platform(tokens, platform) for platform in ("ios", "android")}
+    for variable, source in tokens["web_variables"].items():
+        if len(source) != 1:
+            raise ValueError(f"网页变量必须只有一个来源：{variable}")
+        kind, name = next(iter(source.items()))
+        if kind == "color":
+            colors.append(f'    ("{variable}", |c| c.{name}),')
+        elif kind == "radius":
+            ios, android = (float(platforms[platform]["radii"][name]) for platform in ("ios", "android"))
+            radii.append(f'    ("{variable}", {ios}, {android}),')
+        elif kind == "font" and name == "font":
+            fonts.append(variable)
+        else:
+            raise ValueError(f"未知网页变量来源：{variable} = {source}")
+    if len(fonts) != 1:
+        raise ValueError("网页变量必须声明一个 AppearanceViewModel 字体来源")
+    return (
+        BANNER
+        + "use wonton_protocol::{Rgb, ThemeColors};\n\n"
+        + "type ColorVariable = (&'static str, fn(&ThemeColors) -> Rgb);\n\n"
+        + "pub(crate) const COLOR_VARIABLES: &[ColorVariable] = &[\n"
+        + "\n".join(colors)
+        + "\n];\n\n"
+        + "pub(crate) const RADIUS_VARIABLES: &[(&str, f64, f64)] = &[\n"
+        + "\n".join(radii)
+        + "\n];\n\n"
+        + f'pub(crate) const FONT_VARIABLE: &str = "{fonts[0]}";\n'
     )
 
 
@@ -195,6 +231,7 @@ def expected_files():
         IOS / "noise.png": noise,
         COMPOSE / "res/drawable-nodpi/wonton_noise.png": noise,
         KOTLIN / "design/generated/WontonTokens.kt": kotlin_tokens(for_platform(tokens, "android")).encode(),
+        WEB_GENERATED / "tokens.rs": rust_web_tokens(tokens).encode(),
     }
     files.update(ios_assets(icons))
     files.update(compose_icons(icons))

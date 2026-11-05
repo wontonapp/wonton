@@ -235,6 +235,7 @@ x-wonton:
 没有的方法回 JSON-RPC 错误，`hostCapabilities` 如实不声明，SDK 能据此判断。标准里没有的两件事（再点一次标签、连接状态）不进 JSON-RPC，用 `window` 上的 `wonton:*` 事件：SDK 校验严格，自定义消息容易被它拒绝，没用 SDK 的页面也能收到。
 
 消息只在 Rust 里处理：壳把字符串交给核心，把回复注入回去，注入脚本也由核心给。两端不解析。
+壳的通道、环境单位与调用顺序见 [客户端桥接入](../../crates/wonton-client/src/tabs/bridge/README.md)。
 
 ### 页面能拿到什么
 

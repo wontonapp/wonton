@@ -14,6 +14,8 @@ use wonton_protocol::{
 use crate::home::HomeLink;
 use crate::plugins::PluginsLink;
 
+pub(crate) mod bridge;
+
 mod config;
 use config::*;
 

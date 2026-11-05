@@ -1,11 +1,12 @@
 //! 底栏 ViewModel 的页面和状态映射。
 
-use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
 use url::Url;
 use wonton_protocol::{
     CoreError, InstalledPlugin, PluginState, PluginsViewModel, TabDisplay, TabDisplayChoice,
     TabIcon, TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
 };
+
+use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
 
 pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsViewModel {
     let items = state
