@@ -32,6 +32,9 @@ pub struct FakeDocker {
 
 /// 容器里执行的命令怎么回应：（容器名，argv，标准输入）→（退出码，标准错误）。
 pub type ExecHandler = Arc<dyn Fn(&str, &[String], &[u8]) -> (i64, String) + Send + Sync>;
+/// 可分别回应标准输出和标准错误的 exec 替身。
+pub type ExecOutputHandler =
+    Arc<dyn Fn(&str, &[String], &[u8]) -> (i64, String, String) + Send + Sync>;
 
 /// 一次 `docker exec`。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +105,7 @@ struct Resources {
     execs: BTreeMap<String, FakeExec>,
     /// 没设时命令都以 0 退出。
     exec_handler: Option<ExecHandler>,
+    exec_output_handler: Option<ExecOutputHandler>,
     /// 设了时本地没有镜像，拉取时 Docker 回这个错误；没设时镜像都在本地。
     pull_error: Option<String>,
     /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
@@ -278,6 +282,14 @@ impl FakeDocker {
         self.lock().pinned_network_rejection = Some((times, message.to_owned()));
     }
 
+    /// 容器里执行的命令可分别回应标准输出和标准错误。
+    pub fn on_exec_output(
+        &self,
+        handler: impl Fn(&str, &[String], &[u8]) -> (i64, String, String) + Send + Sync + 'static,
+    ) {
+        self.lock().exec_output_handler = Some(Arc::new(handler));
+    }
+
     /// 之后镜像都不在本地、拉取时 Docker 回 `message`（500）；`None` 恢复成镜像都在本地。
     pub fn fail_pulls(&self, message: Option<&str>) {
         self.lock().pull_error = message.map(str::to_owned);
@@ -347,13 +359,26 @@ fn start_exec(fake: FakeDocker, id: &str, mut request: Request) -> Response {
             .await
             .expect("读 exec 的标准输入");
         let handler = fake.lock().exec_handler.clone();
-        let (code, stderr) = match handler {
+        let output_handler = fake.lock().exec_output_handler.clone();
+        let (code, stdout, stderr) = match output_handler {
             Some(handler) => handler(&exec.container, &exec.cmd, &stdin),
-            None => (0, String::new()),
+            None => match handler {
+                Some(handler) => {
+                    let (code, stderr) = handler(&exec.container, &exec.cmd, &stdin);
+                    (code, String::new(), stderr)
+                }
+                None => (0, String::new(), String::new()),
+            },
         };
         if let Some(exec) = fake.lock().execs.get_mut(&id) {
             exec.stdin = stdin;
             exec.exit_code = Some(code);
+        }
+        if !stdout.is_empty() {
+            let mut frame = vec![1, 0, 0, 0];
+            frame.extend_from_slice(&u32::try_from(stdout.len()).unwrap().to_be_bytes());
+            frame.extend_from_slice(stdout.as_bytes());
+            io.write_all(&frame).await.expect("写 exec 的标准输出");
         }
         if !stderr.is_empty() {
             let mut frame = vec![2, 0, 0, 0];

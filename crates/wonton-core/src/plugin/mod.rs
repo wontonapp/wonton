@@ -34,6 +34,7 @@ pub mod manifest;
 mod manifest_agent;
 mod manifest_tabs;
 mod mcp_server;
+pub(crate) mod model_providers;
 pub mod models;
 pub mod mounts;
 pub mod names;

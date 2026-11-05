@@ -51,6 +51,11 @@ impl Languages {
             .or_else(|| text.values().next())
     }
 
+    /// 从按语言组织的清单里挑一项，使用与插件文字相同的回退规则。
+    pub fn pick_map<'t, T>(&self, text: &'t BTreeMap<String, T>) -> Option<&'t T> {
+        self.choose(text)
+    }
+
     /// 挑出一种语言的文字。清单保证至少有一种语言；空表给空串。
     pub fn pick<'t>(&self, text: &'t LocalizedText) -> &'t str {
         self.choose(text).map_or("", String::as_str)

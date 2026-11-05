@@ -44,6 +44,9 @@ pub enum InstallError {
     MatrixUnavailable(String),
     #[error("模型网关不可用：{0}")]
     ModelsUnavailable(String),
+    /// 上游服务商拒绝或无法访问，但网关本身仍然可用。
+    #[error("{0}")]
+    UpstreamUnavailable(String),
     /// 插件要显卡（`requirements.gpu: required`），本机没有可用的：没有设备、没有驱动，或者没有运行时。
     #[error("本机没有可用的显卡：{0}")]
     GpuUnavailable(String),
@@ -93,6 +96,7 @@ impl InstallError {
             Self::OidcUnavailable(_) => "oidc_unavailable",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::ModelsUnavailable(_) => "models_unavailable",
+            Self::UpstreamUnavailable(_) => "upstream_unavailable",
             Self::GpuUnavailable(_) => "gpu_unavailable",
             Self::LanUnavailable(_) => "lan_unavailable",
             Self::EgressProxyUnavailable { .. } => "egress_proxy_unavailable",
@@ -125,6 +129,7 @@ impl InstallError {
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
+            Self::UpstreamUnavailable(m) => Self::UpstreamUnavailable(add(m)),
             Self::GpuUnavailable(m) => Self::GpuUnavailable(add(m)),
             Self::LanUnavailable(m) => Self::LanUnavailable(add(m)),
             Self::EgressProxyUnavailable { reason, message } => Self::EgressProxyUnavailable {

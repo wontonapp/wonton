@@ -12,22 +12,48 @@ use super::docker::{Engine, EngineError};
 
 /// 标准错误只留这么多，写进错误信息够用了。
 const STDERR_LIMIT: usize = 4 << 10;
+/// 标准输出只留这么多，防止 provider 命令把核心内存撑爆。
+const STDOUT_LIMIT: usize = 1 << 20;
 
-/// 命令的结果：退出码和标准错误。标准输出不看：按凭据助手的约定，结果只看退出码。
+/// 命令的结果。凭据命令只看退出码；provider 命令还要读取标准输出。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecOutput {
     pub exit_code: i64,
+    pub stdout: String,
     pub stderr: String,
 }
 
 impl Engine {
-    /// 在容器里执行 `argv`（不经 shell）。`stdin` 写进标准输入后关闭。超过 `timeout` 算失败。
+    /// 在容器里执行 `argv`，只保留标准错误。秘密值走标准输入，不进命令行参数。
     pub async fn exec(
         &self,
         container: &str,
         argv: &[String],
         stdin: Option<&[u8]>,
         timeout: Duration,
+    ) -> Result<ExecOutput, EngineError> {
+        self.exec_inner(container, argv, stdin, timeout, false)
+            .await
+    }
+
+    /// 在容器里执行 `argv`，同时保留标准输出供 provider 命令解析。
+    pub async fn exec_output(
+        &self,
+        container: &str,
+        argv: &[String],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<ExecOutput, EngineError> {
+        self.exec_inner(container, argv, stdin, timeout, true).await
+    }
+
+    async fn exec_inner(
+        &self,
+        container: &str,
+        argv: &[String],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
+        capture_stdout: bool,
     ) -> Result<ExecOutput, EngineError> {
         let context = format!("在容器 {container} 里执行 {}", argv.join(" "));
         let config = ExecConfig {
@@ -63,19 +89,22 @@ impl Engine {
                 input.write_all(data).await.map_err(io)?;
             }
             input.shutdown().await.map_err(io)?;
+            let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             while let Some(chunk) = output.next().await {
-                if let LogOutput::StdErr { message } =
-                    chunk.map_err(|e| EngineError::from_bollard(&context, e))?
-                    && stderr.len() < STDERR_LIMIT
-                {
-                    stderr.extend_from_slice(&message);
+                match chunk.map_err(|e| EngineError::from_bollard(&context, e))? {
+                    LogOutput::StdOut { message } if capture_stdout => {
+                        collect(&mut stdout, &message, STDOUT_LIMIT)
+                    }
+                    LogOutput::StdErr { message } => collect(&mut stderr, &message, STDERR_LIMIT),
+                    _ => {}
                 }
             }
+            stdout.truncate(STDOUT_LIMIT);
             stderr.truncate(STDERR_LIMIT);
-            Ok(stderr)
+            Ok((stdout, stderr))
         };
-        let stderr = tokio::time::timeout(timeout, run).await.map_err(|_| {
+        let (stdout, stderr) = tokio::time::timeout(timeout, run).await.map_err(|_| {
             EngineError::TimedOut(format!("{context}：{} 秒没有结束", timeout.as_secs()))
         })??;
         let inspected = self
@@ -85,7 +114,13 @@ impl Engine {
             .map_err(|e| EngineError::from_bollard(&context, e))?;
         Ok(ExecOutput {
             exit_code: inspected.exit_code.unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&stdout).trim().to_owned(),
             stderr: String::from_utf8_lossy(&stderr).trim().to_owned(),
         })
     }
+}
+
+fn collect(buffer: &mut Vec<u8>, message: &[u8], limit: usize) {
+    let remaining = limit.saturating_sub(buffer.len());
+    buffer.extend_from_slice(&message[..message.len().min(remaining)]);
 }

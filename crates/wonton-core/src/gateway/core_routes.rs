@@ -14,7 +14,8 @@ use serde::Deserialize;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, files, isolation, matrix,
-    onboarding, owner_profile, pages, push, same_origin_path, sso, tool_policy, with_cookie,
+    model_providers, onboarding, owner_profile, pages, push, same_origin_path, sso, tool_policy,
+    with_cookie,
 };
 
 /// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
@@ -48,6 +49,19 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
         )
 }
 
+/// 模型网关的服务商接口（ADR-0034"接模型"）：列出预设和保存 key。save 的请求体很小，显式限 8 KiB。
+fn model_provider_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::MODEL_PROVIDERS_PATH,
+            get(model_providers::list),
+        )
+        .route(
+            "/_wonton/api/models/providers/{id}",
+            put(model_providers::save).layer(DefaultBodyLimit::max(8 << 10)),
+        )
+}
+
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
         .route("/", get(home))
@@ -61,6 +75,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/oidc/login", get(sso::oidc_login))
         .route("/_wonton/oidc/consent", get(sso::oidc_consent))
         .route("/_wonton/matrix/login-token", post(matrix::login_token))
+        .merge(model_provider_routes())
         .route(
             "/_wonton/push/registration",
             put(push::register).delete(push::unregister),

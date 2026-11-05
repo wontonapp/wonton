@@ -123,6 +123,7 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::OidcUnavailable(_)
         | InstallError::MatrixUnavailable(_)
         | InstallError::ModelsUnavailable(_)
+        | InstallError::UpstreamUnavailable(_)
         // 宿主刚启动时 DHCP 可能还没拿到地址。
         | InstallError::LanUnavailable(_)
         // 代理可能还没起来。

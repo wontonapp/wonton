@@ -32,6 +32,8 @@ services:
       # 核心签发、吊销网关凭据时在本容器里执行（x-wonton.provides.models.credentials）。
       - source: credentials
         target: /wonton/credentials.sh
+      - source: providers
+        target: /wonton/providers.sh
     healthcheck:
       test: ["CMD", "/magpie", "healthcheck"]
       interval: 30s
@@ -66,13 +68,15 @@ services:
 configs:
   credentials:
     file: ./credentials.sh
+  providers:
+    file: ./providers.sh
   default_model:
     file: ./default-model.sh
 
 x-wonton:
-  spec: "0.4"
+  spec: "0.6"
   id: ai.usemagpie.magpie
-  version: 0.4.0
+  version: 0.6.0
   kind: system
   title: { zh: 模型设置, en: Models }
   description:
@@ -103,6 +107,9 @@ x-wonton:
       credentials:
         issue: [sh, /wonton/credentials.sh, issue, "{name}"]
         revoke: [sh, /wonton/credentials.sh, revoke, "{name}"]
+      providers:
+        list: [sh, /wonton/providers.sh, list]
+        save: [sh, /wonton/providers.sh, save, "{id}"]
   secrets:
     web_key:
       generate: { bytes: 32 }

@@ -22,6 +22,17 @@ pub struct ModelsProvider {
     /// 注入给使用方的 `WONTON_MODEL_DEFAULT`。
     pub default_model: String,
     pub credentials: CredentialCommands,
+    /// 列出和保存模型服务商的命令，在 credentials 容器里执行。
+    #[serde(default)]
+    pub providers: Option<ProviderCommands>,
+}
+
+/// 列出和保存模型服务商的命令（argv，不经 shell）。`{id}` 换成服务商 ID。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderCommands {
+    pub list: Vec<String>,
+    pub save: Vec<String>,
 }
 
 /// 网关提供的接口及其基础路径。
@@ -45,6 +56,9 @@ pub struct CredentialCommands {
     #[serde(default)]
     pub service: Option<String>,
 }
+
+/// 服务商命令里的服务商 ID 占位符。
+pub const ID_PLACEHOLDER: &str = "{id}";
 
 /// 凭据命令里的凭据名占位符。
 pub const NAME_PLACEHOLDER: &str = "{name}";
@@ -98,6 +112,22 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
             return Err(ManifestError::Invalid(format!(
                 "provides.models.credentials.{field} 是非空的 argv，并用 {NAME_PLACEHOLDER} 指明凭据名"
             )));
+        }
+    }
+    if let Some(providers) = &models.providers {
+        if providers.list.is_empty() || providers.save.is_empty() {
+            return Err(invalid(
+                "provides.models.providers.list 和 save 都必须是非空的 argv",
+            ));
+        }
+        if !providers
+            .save
+            .iter()
+            .any(|arg| arg.contains(ID_PLACEHOLDER))
+        {
+            return Err(invalid(
+                "provides.models.providers.save 要用 {id} 指明服务商 ID",
+            ));
         }
     }
     Ok(())

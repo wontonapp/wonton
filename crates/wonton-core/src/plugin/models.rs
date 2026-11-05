@@ -24,7 +24,7 @@ use crate::http::RequestBody;
 use crate::secret::random_token;
 
 /// 凭据命令的超时（规范：30 秒）。
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 /// 验证凭据的请求超时。
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(30);
 

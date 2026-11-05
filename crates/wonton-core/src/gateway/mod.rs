@@ -29,6 +29,7 @@ mod isolation;
 mod lan;
 pub mod matrix;
 mod mcp;
+mod model_providers;
 mod models;
 mod onboarding;
 mod owner_profile;
@@ -429,6 +430,8 @@ mod lan_api_tests;
 mod lan_tests;
 #[cfg(test)]
 mod mcp_tests;
+#[cfg(test)]
+mod model_providers_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]

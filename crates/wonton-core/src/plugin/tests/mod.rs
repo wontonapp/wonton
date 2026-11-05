@@ -27,6 +27,7 @@ mod lan;
 mod lan_webui;
 mod leftovers;
 mod manager;
+mod model_providers;
 mod models;
 mod owner;
 mod preinstall;

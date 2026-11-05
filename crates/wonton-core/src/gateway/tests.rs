@@ -189,6 +189,7 @@ pub(super) struct Harness {
     pub http: HttpClient,
     pub hits: Arc<AtomicUsize>,
     pub manager: Arc<PluginManager>,
+    pub docker: FakeDocker,
     _dir: tempfile::TempDir,
 }
 
@@ -266,7 +267,7 @@ impl Harness {
             instance: Default::default(),
         };
         // 安装预览要查宿主架构，和安装一样连 Docker。
-        let (_docker, engine) = FakeDocker::start().await;
+        let (docker, engine) = FakeDocker::start().await;
         let manager = Arc::new(
             PluginManager::new(
                 engine,
@@ -298,6 +299,7 @@ impl Harness {
             http,
             hits,
             manager,
+            docker,
             _dir: dir,
         }
     }
