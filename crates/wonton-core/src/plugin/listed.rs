@@ -16,6 +16,8 @@ use super::store::InstalledRecord;
 #[derive(Debug, Clone)]
 pub struct Listed {
     pub manifest: Manifest,
+    /// 包内容摘要只在构建展示信息时计算，不随列表轮询重复散列。
+    pub revision: String,
     pub icon: Option<IconSource>,
     /// 每项 tabs 的普通图标和选中图标原文件。
     pub tab_icons: Vec<(Option<IconSource>, Option<IconSource>)>,
@@ -58,6 +60,7 @@ impl Listed {
             .collect();
         Arc::new(Self {
             manifest: package.manifest.clone(),
+            revision: package.digest(),
             icon: IconSource::of(package),
             tab_icons,
             installed_at,
@@ -87,6 +90,7 @@ impl Listed {
     #[cfg(test)]
     pub fn of_manifest(manifest: Manifest) -> Arc<Self> {
         Arc::new(Self {
+            revision: manifest.version.clone(),
             manifest,
             icon: None,
             tab_icons: Vec::new(),

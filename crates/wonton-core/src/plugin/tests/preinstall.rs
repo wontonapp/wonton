@@ -13,7 +13,7 @@ use super::super::gpu::fake_host::FakeHost;
 use super::super::image_worker::ImageWorker;
 use super::super::names::container_name;
 use super::super::preinstall::Backoff;
-use super::super::{PluginId, PluginManager, PluginStatus};
+use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::{manager_with, manager_with_images};
 use super::package;
 
@@ -93,13 +93,28 @@ async fn a_default_plugin_is_installed_once_and_stays_removed_after_the_owner_un
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let defaults = defaults(&dir, "  permissions: []");
+    let revision = PluginPackage::load_dir(&defaults.join("test"))
+        .unwrap()
+        .digest();
     let m = manager_with(engine.clone(), &dir);
     m.ensure_defaults(&defaults, QUICK).await.unwrap();
     assert_eq!(status(&m), Some(PluginStatus::Running));
+    assert_eq!(
+        m.installed_plugin(&id(), &Default::default())
+            .unwrap()
+            .revision,
+        revision
+    );
     // 重启时它还装着：照常恢复，不重装。
     let m = restart(&engine, &dir, &defaults).await;
     assert_eq!(status(&m), Some(PluginStatus::Running));
     assert_eq!(creates(&docker), 1);
+    assert_eq!(
+        m.installed_plugin(&id(), &Default::default())
+            .unwrap()
+            .revision,
+        revision
+    );
     m.uninstall(&id(), false).await.unwrap();
     let m = restart(&engine, &dir, &defaults).await;
     assert!(m.list().is_empty(), "主人卸掉的默认插件不能装回来");

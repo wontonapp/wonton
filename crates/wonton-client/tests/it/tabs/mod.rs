@@ -1,5 +1,7 @@
 //! 底栏行为测试：只经由 ClientCore 和 Action 驱动，插件管理接口由本机假核心提供。
 
+mod polling;
+mod revision;
 mod state;
 mod stopped;
 

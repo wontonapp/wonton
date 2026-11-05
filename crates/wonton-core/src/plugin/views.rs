@@ -434,7 +434,11 @@ impl PluginManager {
             title: langs.pick_owned(&entry.title),
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),
             version: entry.version.clone(),
-            revision: entry.version.clone(),
+            revision: entry
+                .listed
+                .as_ref()
+                .map_or(&entry.version, |listed| &listed.revision)
+                .clone(),
             kind: manifest.map_or(Kind::Other, |m| kind(m.kind)),
             icon: entry
                 .listed

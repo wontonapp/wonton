@@ -123,9 +123,11 @@ async fn owner_limits_survive_the_upgrade() {
     let (github, docker, m, _dir) = with_github(false).await;
     release(&github, &hello("1.0.0", "", "  permissions: []\n"));
     install(&m, SOURCE).await;
+    let revision = m.installed_plugin(&id(), &zh()).unwrap().revision;
     m.set_limits(id(), memory_only(6 * GIB), Default::default())
         .await
         .unwrap();
+    assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().revision, revision);
 
     release(&github, &hello("1.1.0", "", "  permissions: []\n"));
     upgrade(&m).await.unwrap();
@@ -214,6 +216,7 @@ async fn stopped_plugins_are_offered_new_versions() {
     let (github, docker, m, _dir) = with_github(false).await;
     release(&github, &hello("1.0.0", "", "  permissions: []\n"));
     install(&m, SOURCE).await;
+    let revision = m.installed_plugin(&id(), &zh()).unwrap().revision;
     docker.set_state(
         &web(),
         json!({"Status": "exited", "Running": false, "ExitCode": 0}),
@@ -229,6 +232,7 @@ async fn stopped_plugins_are_offered_new_versions() {
     let plugin = m.installed_plugin(&id(), &zh()).unwrap();
     assert_eq!(plugin.status, PluginState::Stopped);
     assert_eq!(plugin.upgrade.unwrap().version, "1.1.0");
+    assert_eq!(plugin.revision, revision);
 }
 
 #[tokio::test]
@@ -236,6 +240,7 @@ async fn a_new_version_that_will_not_start_rolls_back_to_the_old_containers() {
     let (github, docker, m, _dir) = with_github(false).await;
     release(&github, &hello("1.0.0", "", "  permissions: []\n"));
     install(&m, SOURCE).await;
+    let revision = m.installed_plugin(&id(), &zh()).unwrap().revision;
     let worker = container_name("app-hello", "worker");
     docker.set_state(
         &worker,
@@ -254,6 +259,16 @@ async fn a_new_version_that_will_not_start_rolls_back_to_the_old_containers() {
     assert!(err.to_string().contains("已退回 1.0.0"), "{err}");
     assert_eq!(version(&m), "1.0.0");
     assert_eq!(m.status_of(&id()), Some(PluginStatus::Running));
+    assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().revision, revision);
+    assert_eq!(m.installed(&zh()).plugins[0].revision, revision);
+    assert_eq!(
+        m.installed_detail(&id(), &zh())
+            .unwrap()
+            .installed
+            .unwrap()
+            .revision,
+        revision
+    );
     assert_eq!(image(&docker, &web()), "web:1.0.0");
     assert!(!docker.containers().contains(&worker), "新版本的容器都删了");
     assert_eq!(m.store.load(&id()).unwrap().unwrap().version, "1.0.0");

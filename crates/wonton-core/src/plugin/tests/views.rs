@@ -1,4 +1,6 @@
 //! 管理接口给 App 的视图：已安装列表、详情、安装预览和图标。
+use std::sync::Arc;
+
 use axum::{Router, routing::get};
 use tokio::net::TcpListener;
 use wonton_protocol::{PluginKind, PluginState, PluginTrust, TabDisplay, TabLayout};
@@ -85,6 +87,58 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     assert_eq!(detail.release_notes.as_deref(), Some("First release"));
     assert_eq!(detail.requirements[0].text, "需要 2G 内存");
     assert_eq!(detail.author.unwrap().name, "Example");
+}
+
+#[tokio::test]
+async fn content_revision_changes_without_a_version_bump_and_survives_restore() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine.clone(), &dir));
+    let id = PluginId::parse("app.photos").unwrap();
+    let original = photos(ICON);
+    let original_digest = original.digest();
+    m.install_package(original, &[]).await.unwrap();
+    let before = m.installed_plugin(&id, &english()).unwrap();
+    assert_eq!(before.revision, original_digest);
+
+    let updated = photos(&ICON.replace("#22aa66", "#aa2266"));
+    let updated_digest = updated.digest();
+    m.upgrade_upload(&id, updated, Vec::new(), false)
+        .await
+        .unwrap();
+    let after = m.installed_plugin(&id, &english()).unwrap();
+    assert_eq!(after.version, before.version);
+    assert_ne!(after.revision, before.revision);
+    assert_eq!(after.revision, updated_digest);
+    assert_eq!(m.installed(&english()).plugins[0].revision, after.revision);
+    assert_eq!(
+        m.installed_detail(&id, &english())
+            .unwrap()
+            .installed
+            .unwrap()
+            .revision,
+        after.revision
+    );
+
+    drop(m);
+    let restored = manager_with(engine, &dir);
+    restored.restore().await.unwrap();
+    let plugin = restored.installed_plugin(&id, &english()).unwrap();
+    assert!(matches!(plugin.status, PluginState::Running { .. }));
+    assert_eq!(plugin.revision, after.revision);
+    assert_eq!(
+        restored.installed(&english()).plugins[0].revision,
+        after.revision
+    );
+    assert_eq!(
+        restored
+            .installed_detail(&id, &english())
+            .unwrap()
+            .installed
+            .unwrap()
+            .revision,
+        after.revision
+    );
 }
 
 #[tokio::test]

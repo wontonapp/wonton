@@ -36,6 +36,7 @@ async fn stopped_rig() -> (Rig, TabRef) {
             tab: page_tab.clone(),
         })
         .unwrap();
+    rig.wait_for(|view| !view.refreshing).await;
     (rig, page_tab)
 }
 

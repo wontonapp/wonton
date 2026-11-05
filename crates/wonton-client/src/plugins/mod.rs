@@ -6,6 +6,7 @@ mod cache;
 mod core_upgrade;
 mod egress;
 mod owner_profile;
+mod polling;
 mod start;
 mod takeover;
 mod tasks;
@@ -19,12 +20,12 @@ use std::time::Duration;
 
 use reqwest::Client;
 use tokio::runtime::Handle;
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, CoreError, CoreUpgradeViewModel, EgressViewModel, HomeStatus,
     InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate, PluginDetail, PluginFailure,
-    PluginImage, PluginProblem, PluginState, PluginTaskState, PluginsViewModel, ProxySettings,
-    StorageUsage, StoreItem, StoreListing,
+    PluginImage, PluginProblem, PluginTaskState, PluginsViewModel, ProxySettings, StorageUsage,
+    StoreItem, StoreListing, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -54,6 +55,9 @@ pub(crate) struct PluginsLink {
     /// 主人打开过商店：隧道重新连上时也重新取它。
     store_wanted: AtomicBool,
     polling: AtomicBool,
+    foreground: AtomicBool,
+    active_page: Mutex<Option<TabRef>>,
+    poll_changed: Notify,
     /// `view.problem` 来自哪个请求。
     problem_of: Mutex<Option<Listing>>,
     /// 已安装列表存在本机的位置。
@@ -88,6 +92,9 @@ impl PluginsLink {
             in_flight: AtomicUsize::new(0),
             store_wanted: AtomicBool::new(false),
             polling: AtomicBool::new(false),
+            foreground: AtomicBool::new(true),
+            active_page: Mutex::new(None),
+            poll_changed: Notify::new(),
             problem_of: Mutex::new(None),
             installed_cache,
             generation: AtomicU64::new(0),
@@ -137,6 +144,8 @@ impl PluginsLink {
     }
 
     pub(crate) fn foregrounded(self: &Arc<Self>) {
+        self.foreground.store(true, Ordering::SeqCst);
+        self.poll_changed.notify_one();
         self.refresh_installed();
         self.fetch_core_upgrade();
     }
@@ -348,7 +357,7 @@ impl PluginsLink {
         }
         self.view
             .send_modify(|view| view.installed = Some(installed));
-        if self.needs_polling() {
+        if self.needs_polling().is_some() {
             self.start_polling();
         }
         Ok(())
@@ -369,72 +378,6 @@ impl PluginsLink {
         let store = result?;
         self.view.send_modify(|view| view.store = Some(store));
         Ok(())
-    }
-
-    /// 还有插件没到稳定状态，或者任务没做完。
-    fn needs_polling(&self) -> bool {
-        let view = self.view.borrow();
-        let settling = view.installed.as_ref().is_some_and(|installed| {
-            installed.plugins.iter().any(|plugin| {
-                matches!(
-                    plugin.status,
-                    PluginState::Installing | PluginState::Upgrading | PluginState::Uninstalling
-                )
-            })
-        });
-        settling
-            || view
-                .tasks
-                .iter()
-                .any(|task| task.state == PluginTaskState::Running)
-    }
-
-    /// 全新主机上 Hermes 要装好几分钟，这期间主屏上它的状态要跟着变，不靠主人下拉刷新。连不上时停下（任务还在做时除外），
-    /// 隧道连上后由 [`follow_home`] 接着。
-    fn start_polling(self: &Arc<Self>) {
-        if self.polling.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let link = self.clone();
-        self.runtime.spawn(async move {
-            let unreachable = loop {
-                tokio::time::sleep(POLL_INTERVAL).await;
-                if !link.needs_polling() {
-                    break false;
-                }
-                let result = link.poll_once().await;
-                if result.is_err() && !link.has_running_task() {
-                    break true;
-                }
-            };
-            link.polling.store(false, Ordering::SeqCst);
-            // 决定退出之后才开始的任务或安装，那时看到轮询还在，没有再启动。因为连不上才退出的不算：接着盯就是在反复重连。
-            if link.has_running_task() || (!unreachable && link.needs_polling()) {
-                link.start_polling();
-            }
-        });
-    }
-
-    fn has_running_task(&self) -> bool {
-        self.view
-            .borrow()
-            .tasks
-            .iter()
-            .any(|task| task.state == PluginTaskState::Running)
-    }
-
-    async fn poll_once(&self) -> Result<(), PluginProblem> {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let result = self.list_installed().await;
-        if !self.is_current(generation) {
-            return Ok(());
-        }
-        let outcome = result.map(|installed| {
-            self.view
-                .send_modify(|view| view.installed = Some(installed));
-        });
-        self.record(Listing::Installed, outcome.clone());
-        outcome
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {

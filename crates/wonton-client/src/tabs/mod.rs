@@ -29,6 +29,12 @@ struct Fullscreen {
 }
 
 #[derive(Clone)]
+struct PreviousPlugin {
+    status: PluginState,
+    revision: String,
+}
+
+#[derive(Clone)]
 struct TabsState {
     config: TabsFile,
     problem: Option<TabsProblem>,
@@ -38,7 +44,7 @@ struct TabsState {
     failures: HashMap<TabRef, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<TabRef, u64>,
     uninstalled: Vec<String>,
-    previous_plugin_states: HashMap<String, PluginState>,
+    previous_plugins: HashMap<String, PreviousPlugin>,
     connected: bool,
 }
 
@@ -90,7 +96,7 @@ impl TabsLink {
             failures: HashMap::new(),
             reloads: HashMap::new(),
             uninstalled: Vec::new(),
-            previous_plugin_states: HashMap::new(),
+            previous_plugins: HashMap::new(),
             connected: matches!(home_view.status, HomeStatus::Connected),
         };
         let link = Arc::new(Self {
@@ -405,7 +411,7 @@ impl TabsLink {
         }
         let view = make_view(&state, &plugins);
         *lock(&self.state) = state;
-        self.view.send_replace(view);
+        self.publish(view);
     }
 
     fn config_change<F>(&self, change: F) -> Result<(), CoreError>
@@ -424,13 +430,13 @@ impl TabsLink {
             failed.problem = Some(storage_problem(&error));
             let view = make_view(&failed, &plugins);
             *lock(&self.state) = failed;
-            self.view.send_replace(view);
+            self.publish(view);
             return Err(error);
         }
         state.problem = None;
         let view = make_view(&state, &plugins);
         *lock(&self.state) = state;
-        self.view.send_replace(view);
+        self.publish(view);
         Ok(())
     }
 
@@ -452,8 +458,17 @@ impl TabsLink {
         }
         let view = make_view(&state, &plugins);
         *lock(&self.state) = state;
-        self.view.send_replace(view);
+        self.publish(view);
         Ok(())
+    }
+
+    fn publish(&self, view: TabsViewModel) {
+        let page =
+            view.overlay.as_ref().map(|item| &item.tab).or_else(|| {
+                matches!(view.selected, TabRef::Plugin { .. }).then_some(&view.selected)
+            });
+        self.plugins.set_active_page(page);
+        self.view.send_replace(view);
     }
 }
 
@@ -481,7 +496,7 @@ fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeV
         }
         state.config.server_id = home.server_id.clone();
         config_changed = true;
-        state.previous_plugin_states.clear();
+        state.previous_plugins.clear();
         state.failures.clear();
         state.connected = matches!(home.status, HomeStatus::Connected);
     }
@@ -508,19 +523,29 @@ fn update_reload_counters(
     if let Some(installed) = &plugins.installed {
         if !server_changed {
             for plugin in &installed.plugins {
-                if matches!(
-                    state.previous_plugin_states.get(&plugin.id),
-                    Some(PluginState::Upgrading | PluginState::Stopped | PluginState::Installing)
-                ) && matches!(plugin.status, PluginState::Running { .. })
+                if let Some(previous) = state.previous_plugins.get(&plugin.id)
+                    && (previous.revision != plugin.revision
+                        || (matches!(
+                            previous.status,
+                            PluginState::Stopped | PluginState::Installing
+                        ) && matches!(plugin.status, PluginState::Running { .. })))
                 {
                     reload_plugin_pages(state, &plugin.id);
                 }
             }
         }
-        state.previous_plugin_states = installed
+        state.previous_plugins = installed
             .plugins
             .iter()
-            .map(|plugin| (plugin.id.clone(), plugin.status.clone()))
+            .map(|plugin| {
+                (
+                    plugin.id.clone(),
+                    PreviousPlugin {
+                        status: plugin.status.clone(),
+                        revision: plugin.revision.clone(),
+                    },
+                )
+            })
             .collect();
     }
     let connected = matches!(home.status, HomeStatus::Connected);

@@ -1,5 +1,6 @@
 //! “我来操作”（ADR-0024）：开始后隔一会儿续一次约。续约和交还在同一个任务里按顺序发，交还不会被还在路上的续约盖掉。
 
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -76,6 +77,8 @@ impl PluginsLink {
 
     /// 进后台算交还。已经断了的留着，回来时主人还要看到。
     pub(crate) fn backgrounded(&self) {
+        self.foreground.store(false, Ordering::SeqCst);
+        self.poll_changed.notify_one();
         let going = self
             .view
             .borrow()

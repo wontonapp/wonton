@@ -214,8 +214,9 @@ async fn reentering_automatic_fullscreen_keeps_its_previous_tab() {
 }
 
 #[tokio::test]
-async fn upgrade_reload_clears_a_previous_load_failure() {
-    let (rig, page_tab, running_plugin) = connected_page_rig("app.upgrade-reload", "home").await;
+async fn content_change_reload_clears_a_previous_load_failure() {
+    let (rig, page_tab, mut running_plugin) =
+        connected_page_rig("app.upgrade-reload", "home").await;
     rig.app
         .dispatch(Action::TabLoadFailed {
             tab: page_tab.clone(),
@@ -232,6 +233,7 @@ async fn upgrade_reload_clears_a_previous_load_failure() {
         PluginState::Upgrading,
         vec![page("home", TabDisplay::Standard)],
     );
+    running_plugin.revision = "changed-content".to_owned();
     rig.core
         .set_lists(vec![vec![upgrading], vec![running_plugin]]);
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
