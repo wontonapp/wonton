@@ -82,6 +82,9 @@ struct PluginDetailView: View {
                     if let installed = detail.installed {
                         ToolPolicySection(model: model, id: installed.id, version: detail.version)
                     }
+                    if let installed = detail.installed, installed.writtenBy != nil {
+                        AskEveryUpdateSection(model: model, id: installed.id, enabled: detail.askEveryUpdate ?? false)
+                    }
                     DetailSections(detail: detail)
                     if let installed = detail.installed, installed.removable, !isWorking {
                         Button {
@@ -186,6 +189,49 @@ private struct DetailAction {
     let perform: () -> Void
 }
 
+/// “每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发确认卡片。只有 Agent 写的插件有这一节。
+private struct AskEveryUpdateSection: View {
+    let model: PluginsModel
+    let id: String
+    let enabled: Bool
+    @State private var isOn = false
+    @State private var busy = false
+    @State private var problem: Problem?
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        DetailSection(title: "更新") {
+            Toggle(isOn: Binding(get: { isOn }, set: { set($0) })) {
+                Text("每次都问")
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textPrimary))
+            }
+            .toggleStyle(WontonToggleStyle())
+            .disabled(busy)
+            if let problem { ProblemNotice(problem: problem) }
+        }
+        .task(id: enabled) {
+            isOn = enabled
+            problem = nil
+        }
+    }
+
+    private func set(_ enabled: Bool) {
+        busy = true
+        problem = nil
+        Task {
+            do {
+                let detail = try await model.core.setAskEveryUpdate(id: id, enabled: enabled)
+                isOn = detail.askEveryUpdate ?? enabled
+            } catch {
+                problem = error.problem
+                isOn = self.enabled
+            }
+            busy = false
+        }
+    }
+}
+
 private struct DetailHeader: View {
     let model: PluginsModel
     let detail: PluginDetail
@@ -211,6 +257,11 @@ private struct DetailHeader: View {
                         Tag(text: detail.trust.label, tint: detail.trust.tint(colors))
                         if let provider = detail.provider {
                             Text(provider)
+                                .wontonText(WontonTheme.typography.caption)
+                                .foregroundStyle(Color(colors.textSecondary))
+                        }
+                        if let writer = detail.installed?.writtenBy {
+                            Text("你的 Agent · \(writer.title)")
                                 .wontonText(WontonTheme.typography.caption)
                                 .foregroundStyle(Color(colors.textSecondary))
                         }

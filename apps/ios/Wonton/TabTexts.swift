@@ -17,6 +17,8 @@ enum TabText {
     static var close: String { choose("关闭", "Close") }
     static var retry: String { choose("重试", "Retry") }
     static var details: String { choose("查看详情", "View details") }
+    static var open: String { choose("打开", "Open") }
+    static var pinToBar: String { choose("放到底栏", "Pin to tab bar") }
     static var fullscreen: String { choose("全屏打开", "Open fullscreen") }
     static var alwaysFullscreen: String { choose("总是全屏", "Always fullscreen") }
     static var reload: String { choose("重新加载", "Reload") }

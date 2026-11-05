@@ -85,6 +85,7 @@ struct MainView: View {
         .onChange(of: onboardingGatewayPage) { _, page in
             if page == nil { onboardingGateway = nil }
         }
+        .environment(plugins)
         .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showHomeRoute)
         })
