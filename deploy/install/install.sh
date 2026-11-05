@@ -33,6 +33,25 @@ info() {
   echo "==> $*"
 }
 
+# Docker 报错里有拨号、超时、重置、DNS 或代理拨号一类的词，才算连不上镜像仓库；认证、清单不存在、磁盘满这些另说，
+# 不要全都猜成代理问题。
+looks_like_registry_outage() {
+  grep -qiE 'dial tcp|connection refused|network is (unreachable|down)|i/o timeout|connection reset|no such host|server misbehaving|temporary failure|context deadline exceeded|TLS handshake timeout|proxyconnect|connect through proxy' "$1"
+}
+
+# 连不上镜像仓库时给的做法，地址用文档网段占位。
+registry_outage_help() {
+  cat >&2 <<'EOF'
+安装失败：连不上 Docker 镜像仓库（Docker 报的是拨号、超时一类的网络错误，完整输出在上面）。
+常见在国内网络：直连 Docker Hub 和 ghcr.io 不通。给 Docker daemon 配代理（地址换成你的代理）：
+  sudo mkdir -p /etc/systemd/system/docker.service.d
+  printf '[Service]\nEnvironment="HTTP_PROXY=http://192.0.2.10:7899"\nEnvironment="HTTPS_PROXY=http://192.0.2.10:7899"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' | sudo tee /etc/systemd/system/docker.service.d/proxy.conf
+  sudo systemctl daemon-reload && sudo systemctl restart docker
+配好后再执行一次安装命令。daemon 已经配了代理还这样报，就是代理本身连不上镜像仓库，先修代理。
+EOF
+  exit 1
+}
+
 [ "$(id -u)" = 0 ] || die "要用 root 执行（sudo sh）：要装进 /opt 和 /var/lib，并管理 Docker"
 
 case "$(uname -m)" in
@@ -132,13 +151,28 @@ if [ -n "$pin" ]; then
 else
   pull_image=$image
 fi
+# 磁盘粗查：Hermes 的镜像约 4.3 GB，加上系统镜像和数据，全新安装要 8 GB 上下；已有的镜像越多要得越少，所以只提醒不拦。
+docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || docker_root=
+if [ -n "$docker_root" ] && disk_kb=$(df -Pk "$docker_root" 2>/dev/null | awk 'NR==2 {print $4}') && [ -n "$disk_kb" ] && [ "$disk_kb" -lt 8388608 ]; then
+  echo "警告：Docker 数据目录 $docker_root 所在盘只剩 $((disk_kb / 1048576)) GB，不到 8 GB。默认插件里 Hermes 的镜像约 4.3 GB，加上核心和系统镜像，全新安装可能装不下（已有的镜像越多，要的越少）；装不下时核心会显示拉镜像失败并隔一阵自动重试。" >&2
+fi
 if [ "${WONTON_PULL:-}" = never ]; then
   docker image inspect "$pull_image" >/dev/null 2>&1 || die "本机没有镜像 $pull_image"
 elif [ -n "$pin" ] && docker image inspect "$pull_image" >/dev/null 2>&1; then
   : # 要退回的版本一般还在本机，这时可能正好上不了网。
 else
   info "拉取核心镜像 $pull_image"
-  docker pull "$pull_image" >/dev/null || die "拉不到镜像 $pull_image"
+  pull_err=$(mktemp "${TMPDIR:-/tmp}/wonton-pull.XXXXXX")
+  docker pull "$pull_image" >/dev/null 2>"$pull_err" || {
+    cat "$pull_err" >&2
+    if looks_like_registry_outage "$pull_err"; then
+      rm -f "$pull_err"
+      registry_outage_help
+    fi
+    rm -f "$pull_err"
+    die "拉不到镜像 $pull_image"
+  }
+  rm -f "$pull_err"
 fi
 # 能写成 digest 就写 digest：升级、回滚都按它（ADR-0012）。本机构建的镜像没有 digest，照原样写。
 pinned=$pull_image
@@ -275,7 +309,13 @@ detect_proxy() {
 # 主人指定的地址测一下；没指定又没检测过的，检测一次。结果在 egress_proxy、egress_detected 和 record_detected 里。
 settle_proxy() {
   record_detected=
-  [ ! -f "$env_file" ] || ! grep -q '^WONTON_EGRESS_PROXY_DETECTED=' "$env_file" || record_detected=yes
+  if [ -f "$env_file" ]; then
+    detected_value=$(saved WONTON_EGRESS_PROXY_DETECTED)
+    daemon_proxy=$(docker info --format '{{.HTTPSProxy}}{{.HTTPProxy}}' 2>/dev/null) || daemon_proxy=
+    # 检测值为空、而 daemon 后来配上了代理时再测一次：上一轮可能就是没代理才失败的。daemon 没配代理就不重复
+    # （环境没变，测也是空）；检测到过值的不动，主人可能在 App 里调过。
+    { [ -n "$detected_value" ] || [ -z "$daemon_proxy" ]; } && record_detected=yes
+  fi
   if [ -n "$egress_proxy" ]; then
     egress_proxy=$(proxy_for_containers "$egress_proxy")
     shown=$(masked_proxy "$egress_proxy")
@@ -393,8 +433,21 @@ else
 fi
 
 info "启动核心、身份提供方和 Matrix 服务器（第一次要拉镜像，几分钟）"
-compose up -d --wait --wait-timeout 600 --remove-orphans ||
+# 输出经 tee 原样实时打印，同时留一份给失败时判断原因（compose 里的拉镜像报错出自 daemon，是最真实的连通性证据）。
+# if 包住 compose：脚本开着 set -e，裸命令失败会把子壳直接带走，退出的原因码就丢了。
+up_log=$(mktemp "${TMPDIR:-/tmp}/wonton-up.XXXXXX")
+up_rc_file=$(mktemp "${TMPDIR:-/tmp}/wonton-up-rc.XXXXXX")
+( if compose up -d --wait --wait-timeout 600 --remove-orphans; then echo 0; else echo $?; fi >"$up_rc_file" ) 2>&1 | tee "$up_log"
+up_rc=$(cat "$up_rc_file")
+if [ "$up_rc" != 0 ]; then
+  if looks_like_registry_outage "$up_log"; then
+    rm -f "$up_log" "$up_rc_file"
+    registry_outage_help
+  fi
+  rm -f "$up_log" "$up_rc_file"
   die "服务没有在 10 分钟内就绪，看看日志：docker logs wonton-core"
+fi
+rm -f "$up_log" "$up_rc_file"
 
 # 主人手动修好了，App 不再显示旧的结果。备份留多久不受影响。
 state_file="$data_dir/core/upgrade/state.json"
