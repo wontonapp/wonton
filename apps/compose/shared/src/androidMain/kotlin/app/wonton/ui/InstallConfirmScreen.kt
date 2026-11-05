@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -26,6 +27,8 @@ import androidx.compose.ui.Modifier
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
+import app.wonton.protocol.PluginTask
+import app.wonton.protocol.PluginTaskState
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -46,19 +49,13 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
     var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
     var fillingProfile by remember { mutableStateOf(false) }
+    var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
+    var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
     val loaded by produceState<Result<InstallPreview>?>(null, confirmation, attempt) {
         value = null
         value = try {
             Result.success(
-                when (confirmation) {
-                    is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
-                    is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
-                    is PluginConfirmation.Upload -> plugins.core.previewUpload(confirmation.archive)
-                    is PluginConfirmation.UpgradeFrom ->
-                        plugins.core.previewUpgradeFrom(confirmation.id, confirmation.source)
-                    is PluginConfirmation.UpgradeUpload ->
-                        plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
-                }.also { lanWebui = it.lanWebui?.enabled ?: false },
+                loadInstallPreview(plugins, confirmation).also { lanWebui = it.lanWebui?.enabled ?: false },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
@@ -68,6 +65,13 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
         // 填完回到这里，预览重新算，缺的资料有了就能装。
         OwnerProfilePage(plugins) {
             fillingProfile = false
+            attempt++
+        }
+        return
+    }
+    submittedId?.let { id ->
+        InstallCompletion(plugins, id, previousTask, onClose) {
+            submittedId = null
             attempt++
         }
         return
@@ -97,8 +101,11 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
                         // 在这里直接发给核心：被拒绝时原因留在确认页上，不随确认页关掉。
                         val shown = it.copy(lanWebui = it.lanWebui?.copy(enabled = lanWebui))
                         val action = if (isUpgrade) Action.UpgradePlugin(shown) else Action.InstallPlugin(shown)
+                        previousTask = plugins.viewModel.tasks.firstOrNull { task -> task.id == shown.id }
                         rejection = plugins.core.send(action)
-                        if (rejection == null) onClose()
+                        if (rejection == null) {
+                            if (isUpgrade) onClose() else submittedId = shown.id
+                        }
                     },
                     Modifier.windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(WontonTheme.spacing.pageInset)
@@ -111,6 +118,54 @@ fun InstallConfirmScreen(plugins: PluginsState, confirmation: PluginConfirmation
         }
     }
     rejection?.let { ProblemDialog(it) { rejection = null } }
+}
+
+private suspend fun loadInstallPreview(plugins: PluginsState, confirmation: PluginConfirmation): InstallPreview =
+    when (confirmation) {
+        is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
+        is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
+        is PluginConfirmation.Upload -> plugins.core.previewUpload(confirmation.archive)
+        is PluginConfirmation.UpgradeFrom -> plugins.core.previewUpgradeFrom(confirmation.id, confirmation.source)
+        is PluginConfirmation.UpgradeUpload -> plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
+    }
+
+/** 留在安装页等核心任务完成，成功后才提供固定入口。 */
+@Composable
+private fun InstallCompletion(
+    plugins: PluginsState,
+    id: String,
+    previousTask: PluginTask?,
+    onClose: () -> Unit,
+    onReview: () -> Unit,
+) {
+    val task = plugins.viewModel.tasks.firstOrNull { it.id == id }?.takeUnless { it == previousTask }
+    val installed = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
+    val succeeded = task?.state is PluginTaskState.Succeeded
+    WontonScreen(bar = { WontonPushedBar(tabText("安装应用", "Install app"), onClose) }) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
+        ) {
+            when (val state = task?.state) {
+                null, is PluginTaskState.Running -> {
+                    CircularProgressIndicator()
+                    Text(tabText("正在安装…", "Installing…"), style = WontonTheme.typography.body,
+                        color = WontonTheme.colors.textPrimary.toColor())
+                }
+                is PluginTaskState.Succeeded -> Text(tabText("安装完成", "Installed"),
+                    style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
+                is PluginTaskState.Failed -> {
+                    ProblemNotice(Problem(tabText("安装失败", "Installation failed"), null, state.message))
+                    WontonButton(tabText("重新查看", "Review again"), onReview)
+                }
+                is PluginTaskState.Uncertain -> ProblemNotice(Problem(
+                    tabText("安装结果不确定", "Installation result is uncertain"), null, state.message))
+            }
+            plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
+            if (succeeded && installed != null) PluginTabPinButton(installed)
+            WontonButton(tabText("完成", "Done"), onClose)
+        }
+    }
 }
 
 @Composable

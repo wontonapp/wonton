@@ -153,7 +153,7 @@ val CoreException.problem: Problem
 
 /** 收起的技术细节。排查时才看，能选中复制。 */
 @Composable
-fun ProblemDetail(text: String) {
+fun ProblemDetail(text: String, label: String = "详情") {
     var expanded by remember { mutableStateOf(false) }
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
@@ -164,7 +164,7 @@ fun ProblemDetail(text: String) {
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("详情", style = style, color = tint)
+            Text(label, style = style, color = tint)
             Icon(
                 WontonIcon.Forward,
                 contentDescription = null,

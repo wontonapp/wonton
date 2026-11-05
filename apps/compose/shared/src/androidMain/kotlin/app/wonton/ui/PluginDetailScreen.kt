@@ -121,6 +121,7 @@ private fun DetailContent(
             TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
+        detail.installed?.let { PluginTabPinControls(it) }
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
                 items(detail.screenshots, key = { it.path }) { Screenshot(it, plugins) }

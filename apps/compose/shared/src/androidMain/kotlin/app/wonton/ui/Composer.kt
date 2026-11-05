@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +56,13 @@ private const val MAX_LINES = 6
 @Composable
 fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> Unit) {
     var draft by rememberSaveable(roomId) { mutableStateOf("") }
+    val incoming = LocalTabDraft.current
+    LaunchedEffect(incoming.text, roomId) {
+        incoming.text?.let { text ->
+            draft = if (draft.isBlank()) text else "$draft\n$text"
+            incoming.text = null
+        }
+    }
     var isChoosingAttachment by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

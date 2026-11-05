@@ -74,8 +74,6 @@ class WontonSheetAction(
     val onClick: () -> Unit,
 )
 
-class WontonBarItem(val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
-
 /** 自己画的按钮（ADR-0026）：语义还是 `clickable` 的按钮，命中区 48。 */
 @Composable
 fun WontonButton(

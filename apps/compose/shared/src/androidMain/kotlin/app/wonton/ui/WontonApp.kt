@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,8 +8,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -20,11 +21,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -32,37 +33,17 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
+import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeStatus
+import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
-import app.wonton.protocol.ProxySettings
+import app.wonton.protocol.TabRef
 import app.wonton.ui.design.LocalWontonBarStatus
-import app.wonton.ui.design.WontonBarItem
 import app.wonton.ui.design.WontonBottomBar
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Apps
-import app.wonton.ui.icons.AppsFill
-import app.wonton.ui.icons.Chat
-import app.wonton.ui.icons.ChatFill
-import app.wonton.ui.icons.Settings
-import app.wonton.ui.icons.SettingsFill
-import app.wonton.ui.icons.WontonIcon
 
-internal const val CHAT = 0
-private const val APPS = 1
-private const val SETTINGS = 2
-private val tabs = listOf(
-    WontonBarItem("聊天", WontonIcon.Chat, WontonIcon.ChatFill),
-    WontonBarItem("应用", WontonIcon.Apps, WontonIcon.AppsFill),
-    WontonBarItem("设置", WontonIcon.Settings, WontonIcon.SettingsFill),
-)
-
-/**
- * 应用的根界面。平台入口（Android 的 Activity，以后的桌面窗口）只负责创建核心并调用它。
- * `devWebUrl` 只在开发时给出：本地代理就绪后自动打开这个插件网页，不用点按也能测。
- * `requestedRoom` 是点通知要打开的房间，打开后调 `onRoomRequestHandled`；`onCardsSettled` 收到不用再回答的卡片 ID，
- * 撤下它们的通知。
- */
 @Composable
 fun WontonApp(
     core: ClientCore,
@@ -71,131 +52,127 @@ fun WontonApp(
     onRoomRequestHandled: () -> Unit = {},
     onCardsSettled: (List<String>) -> Unit = {},
 ) {
-    val appearanceUpdates = remember(core) { core.appearanceUpdates() }
-    val initialAppearance = remember(core) { core.appearance() }
-    val appearance by appearanceUpdates.collectAsState(initial = initialAppearance)
+    val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
+    val home by remember(core) { core.homeUpdates() }.collectAsState(remember(core) { core.home() })
+    val chatView by remember(core) { core.chatUpdates() }.collectAsState(remember(core) { core.chat() })
+    val plugins = remember(core) { PluginsState(core) }
+    val tabs = remember(core) { TabsState(plugins) }
+    val draft = remember(core) { TabDraft() }
+    val chat = rememberChatNavigation { tabs.send(Action.SelectTab(it)) }
+    val navigation = remember(core) { AppNavigation(tabs, chat) }
+    LaunchedEffect(tabs) { tabs.observe() }
+    LaunchedEffect(chatView) { chat.onUpdate(chatView) }
+    LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
+    LaunchedEffect(requestedRoom) {
+        requestedRoom?.let { navigation.openRoom(it); onRoomRequestHandled() }
+    }
     WontonTheme(appearance) {
-        val updates = remember(core) { core.homeUpdates() }
-        val initial = remember(core) { core.home() }
-        val home by updates.collectAsState(initial = initial)
-        val plugins = remember(core) { PluginsState(core) }
-        // 提示条和撤通知不管在哪个页面都要，所以这里也收集一份。
-        val chatUpdates = remember(core) { core.chatUpdates() }
-        val initialChat = remember(core) { core.chat() }
-        val chatView by chatUpdates.collectAsState(initial = initialChat)
-        LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
-        // 还没配对时先到“应用”的配对页；开发时要自动打开网页的也停在“应用”。
-        val startAtApps = initial.status is HomeStatus.NotConfigured || devWebUrl != null
-        var tab by rememberSaveable { mutableIntStateOf(if (startAtApps) APPS else CHAT) }
-        val chat = rememberChatNavigation(selectTab = { tab = it })
-        LaunchedEffect(chatView) { chat.onUpdate(chatView) }
-        var page by remember { mutableStateOf<PluginEntry.Web?>(null) }
-        var appsPage by rememberSaveable { mutableStateOf(HomePage.LAUNCHER) }
-        var settingsPage by rememberSaveable { mutableStateOf(SettingsSubpage.MAIN) }
-        // 应用页和应用商店里打开插件：Agent 插件打开和它的 Bot 的私聊，返回时回到这里；有网页的全屏打开。
-        val open = remember(core) {
-            { entry: PluginEntry ->
-                when (entry) {
-                    is PluginEntry.Chat -> plugins.reject(chat.openDirectChat(core, entry.botUserId, from = tab))
-                    is PluginEntry.Web -> page = entry
-                }
-            }
+        CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft) {
+            PluginsEffects(plugins)
+            OpenDevWebEffect(devWebUrl, plugins, tabs)
+            AppContent(navigation, home, appearance, chatView)
+            tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
+            plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
         }
-        val openCardRoom = remember(core) {
-            { roomId: String ->
-                page = null
-                tab = CHAT
-                chat.openWhenJoined(core, roomId)
-            }
+    }
+}
+
+private class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
+    var appsPage by mutableStateOf(HomePage.LAUNCHER)
+    var settingsPage by mutableStateOf(SettingsSubpage.MAIN)
+    var settingsOverlay by mutableStateOf(false)
+    val plugins = PluginNavigation { entry ->
+        when (entry) {
+            is PluginEntry.Chat -> tabs.plugins.reject(
+                chat.openDirectChat(tabs.core, entry.botUserId, tabs.viewModel.selected),
+            )
+            is PluginEntry.Web -> tabs.send(Action.SelectTab(entry.tab))
         }
-        RequestedRoomEffect(requestedRoom, openCardRoom, onRoomRequestHandled)
-        val appsPlugins = remember(open) { PluginNavigation(open) }
-        PluginsEffects(plugins)
-        OpenDevWebEffect(devWebUrl, home.proxy) { page = it }
-        // 刚配对、资料还没填时弹一次，由核心决定。关掉了就不再弹，要用资料时安装页还会让主人填。
-        if (plugins.viewModel.ownerProfilePrompt) {
-            OwnerProfilePage(plugins) { plugins.send(Action.DismissOwnerProfilePrompt) }
-            return@WontonTheme
+    }
+
+    fun openRoom(roomId: String) {
+        settingsOverlay = false
+        tabs.send(Action.SelectTab(TabRef.Chat))
+        chat.openWhenJoined(tabs.core, roomId)
+    }
+
+    fun settings(page: SettingsSubpage = SettingsSubpage.MAIN) {
+        settingsPage = page
+        if (tabs.viewModel.items.any { it.tab == TabRef.Settings }) {
+            tabs.send(Action.SelectTab(TabRef.Settings))
+        } else {
+            settingsOverlay = true
         }
-        val shown = page
-        if (shown != null) {
-            BackHandler { page = null }
-            WithPendingCards(chatView.pendingConfirmations, openCardRoom) {
-                val takeover = shown.toolsOf?.let { PageTakeover(it, plugins.viewModel.takeover, plugins::send) }
-                PluginPage(shown.title, shown.url, home, takeover, onClose = { page = null })
-            }
-            return@WontonTheme
-        }
-        // 卡片所在的房间就在眼前时不用提示。
-        val elsewhere = chatView.pendingConfirmations.filter { tab != CHAT || it.roomId != chat.openRoom }
-        val barStatus = connectionBarStatus(
-            home.notice,
-            onRetry = { core.send(Action.RetryConnection) },
-            onOpen = {
-                tab = APPS
-                appsPage = it
-                // 详情页和确认页叠在页面上面，不收掉就看不到连接页。
-                appsPlugins.detail = null
-                appsPlugins.confirmation = null
-            },
-        )
-        MainTabs(
-            tab = tab,
-            onSelect = { tab = it },
-            hidesBottomBar = hidesBottomBar(tab, chat, appsPage, appsPlugins, settingsPage),
-        ) {
-            WithPendingCards(elsewhere, openCardRoom) {
-                CompositionLocalProvider(LocalWontonBarStatus provides barStatus) {
-                    when (tab) {
-                        CHAT -> ChatRoute(core, chat, plugins)
-                        APPS -> HomeRoute(
-                            core,
-                            home,
-                            plugins,
-                            appsPlugins,
-                            appsPage,
-                            onPage = { appsPage = it },
-                            pendingCards = chatView.pendingConfirmations,
-                            onOpenCardRoom = openCardRoom,
-                        )
-                        else -> SettingsPage(
-                            plugins,
-                            appearance,
-                            chatView,
-                            paired = home.status !is HomeStatus.NotConfigured,
-                            settingsPage,
-                        ) { settingsPage = it }
+    }
+
+    fun connection(page: HomePage) {
+        tabs.send(Action.SelectTab(TabRef.Apps))
+        appsPage = page
+        plugins.detail = null
+        plugins.confirmation = null
+    }
+
+    fun detail(id: String) {
+        tabs.send(Action.SelectTab(TabRef.Apps))
+        appsPage = HomePage.LAUNCHER
+        plugins.detail = PluginRoute.Installed(id)
+    }
+
+    fun hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
+        TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
+        TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
+        TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
+        is TabRef.Plugin -> false
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel, chat: ChatViewModel) {
+    val tabs = nav.tabs
+    val view = tabs.viewModel
+    val draft = LocalTabDraft.current
+    val profile = tabs.plugins.viewModel.ownerProfilePrompt
+    val shown = view.overlay?.tab ?: view.selected
+    val native = shown !is TabRef.Plugin || nav.settingsOverlay || profile
+    val showsBar = !WindowInsets.isImeVisible && !nav.hidesBar() && view.overlay == null && !profile
+    var reselected by remember { mutableStateOf<TabRef?>(null) }
+    val nativeState = rememberSaveableStateHolder()
+    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::connection)
+    val cards = chat.pendingConfirmations.filter {
+        shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
+    }
+    CompositionLocalProvider(LocalWontonBarStatus provides status) {
+        WithPendingCards(cards, nav::openRoom) {
+            Scaffold(
+                containerColor = WontonTheme.colors.canvas.toColor(),
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                bottomBar = {
+                    if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
+                        if (view.selected == selected) reselected = selected
+                        tabs.send(Action.SelectTab(selected))
+                    }, { nav.settings(SettingsSubpage.TABS) })
+                },
+            ) { padding ->
+                Box(Modifier.fillMaxSize()) {
+                    PluginTabsHost(
+                        tabs, home, appearance, if (showsBar) padding.calculateBottomPadding() else systemBottom,
+                        active = shown.takeUnless { native }, reselected = reselected,
+                        onReselected = { reselected = null }, onDetails = nav::detail,
+                        onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
+                    )
+                    if (native) Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
+                        NativeContent(nav, home, appearance, chat, profile, nativeState)
                     }
+                    OpeningChat(nav.chat)
                 }
-                OpeningChat(chat)
             }
         }
-        plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
     }
+    TabNotices(tabs) { nav.settings(SettingsSubpage.TABS) }
 }
 
-/** 点通知要打开的房间。 */
-@Composable
-private fun RequestedRoomEffect(roomId: String?, open: (String) -> Unit, onHandled: () -> Unit) {
-    LaunchedEffect(roomId) {
-        if (roomId != null) {
-            open(roomId)
-            onHandled()
-        }
-    }
-}
-
-/** 开发时连上后自动打开这个网页。 */
-@Composable
-private fun OpenDevWebEffect(url: String?, proxy: ProxySettings?, open: (PluginEntry.Web) -> Unit) {
-    LaunchedEffect(url, proxy) {
-        if (url != null && proxy != null) {
-            open(PluginEntry.Web(url, Uri.parse(url).host.orEmpty()))
-        }
-    }
-}
-
-/** 发起了私聊、房间还没出现时留在原页，转圈。 */
 @Composable
 private fun OpeningChat(chat: ChatNavigation) {
     if (chat.isOpeningChat) {
@@ -203,30 +180,57 @@ private fun OpeningChat(chat: ChatNavigation) {
     }
 }
 
-/** 三个页面和底栏。进到下一层的页面和打字时让出底部的位置。 */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MainTabs(tab: Int, onSelect: (Int) -> Unit, hidesBottomBar: Boolean, content: @Composable () -> Unit) {
-    val showsBottomBar = !WindowInsets.isImeVisible && !hidesBottomBar
-    Scaffold(
-        containerColor = WontonTheme.colors.canvas.toColor(),
-        bottomBar = {
-            if (showsBottomBar) WontonBottomBar(tabs, tab, onSelect)
-        },
-    ) { padding ->
-        // 内层页面自己的标题栏和输入框不再重复让出系统栏和底部导航栏占掉的空间。
-        Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
-            content()
+private fun NativeContent(
+    nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel,
+    chat: ChatViewModel, profile: Boolean, holder: SaveableStateHolder,
+) {
+    if (profile) OwnerProfilePage(nav.tabs.plugins) { nav.tabs.send(Action.DismissOwnerProfilePrompt) }
+    else holder.SaveableStateProvider(nav.tabs.viewModel.selected.toString()) {
+        NativeTab(nav, home, appearance, chat)
+    }
+}
+
+@Composable
+private fun NativeTab(nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel, chat: ChatViewModel) {
+    val tabs = nav.tabs
+    if (nav.settingsOverlay) BackHandler {
+        if (nav.settingsPage == SettingsSubpage.MAIN) nav.settingsOverlay = false
+        else nav.settingsPage = SettingsSubpage.MAIN
+    }
+    when (if (nav.settingsOverlay) TabRef.Settings else tabs.viewModel.selected) {
+        TabRef.Chat -> ChatRoute(tabs.core, nav.chat, tabs.plugins)
+        TabRef.Apps -> HomeRoute(
+            tabs.core, home, tabs.plugins, nav.plugins, nav.appsPage, { nav.appsPage = it },
+            chat.pendingConfirmations, nav::openRoom,
+            onSettings = { nav.settings() }.takeIf { tabs.viewModel.items.none { it.tab == TabRef.Settings } },
+        )
+        TabRef.Settings -> SettingsPage(
+            tabs.plugins, appearance, chat, home.status !is HomeStatus.NotConfigured, nav.settingsPage,
+            onClose = { nav.settingsOverlay = false }.takeIf { nav.settingsOverlay },
+        ) { nav.settingsPage = it }
+        is TabRef.Plugin -> Unit
+    }
+}
+
+@Composable
+private fun OpenDevWebEffect(url: String?, plugins: PluginsState, tabs: TabsState) {
+    val installed = plugins.viewModel.installed
+    var handled by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(url, installed) {
+        if (url != null && installed != null && !handled) {
+            val plugin = installed.plugins.firstOrNull { it.webUrl == url }
+            if (plugin != null) {
+                handled = true
+                plugin.tabChoices.firstOrNull()?.let { tabs.send(Action.SelectTab(it.tab)) }
+            }
         }
     }
 }
 
-/** 有卡片在等时，在 [content] 上面放提示条，状态栏的位置由提示条让出，内层的标题栏不再重复让。 */
 @Composable
 private fun WithPendingCards(
-    cards: List<PendingConfirmation>,
-    onOpen: (String) -> Unit,
-    content: @Composable () -> Unit,
+    cards: List<PendingConfirmation>, onOpen: (String) -> Unit, content: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         if (cards.isNotEmpty()) PendingCardBanner(cards, onOpen)
@@ -235,37 +239,16 @@ private fun WithPendingCards(
     }
 }
 
-/** 插件状态在应用页和应用商店之间共用，App 在前台时一直收集。 */
 @Composable
 private fun PluginsEffects(plugins: PluginsState) {
     LaunchedEffect(plugins) { plugins.observe() }
-    // 名字和说明按主人的语言挑。系统语言变了时 Activity 重建，这里随之再告诉核心一次。
     val locales = LocalConfiguration.current.locales
-    LaunchedEffect(plugins, locales) {
-        plugins.refresh(Action.SetLanguages(locales.toLanguageTags().split(",")))
-    }
+    LaunchedEffect(plugins, locales) { plugins.refresh(Action.SetLanguages(locales.toLanguageTags().split(","))) }
 }
 
-/** 底栏只留在每个标签页的第一层。 */
-private fun hidesBottomBar(
-    tab: Int,
-    chat: ChatNavigation,
-    appsPage: HomePage,
-    apps: PluginNavigation,
-    settingsPage: SettingsSubpage,
-): Boolean =
-    when (tab) {
-        CHAT -> chat.openRoom != null || chat.showingBackup || chat.startingChat
-        APPS -> appsPage != HomePage.LAUNCHER || apps.detail != null || apps.confirmation != null
-        else -> settingsPage != SettingsSubpage.MAIN
-    }
-
-/** 核心起不来或开发时传入的配对码被拒绝：如实显示原因，不进入主界面。 */
 @Composable
 fun StartupFailure(reason: String) {
     WontonTheme(defaultAppearance()) {
-        Box(Modifier.fillMaxSize().padding(24.dp)) {
-            Text(reason, color = MaterialTheme.colorScheme.error)
-        }
+        Box(Modifier.fillMaxSize().padding(24.dp)) { Text(reason, color = MaterialTheme.colorScheme.error) }
     }
 }

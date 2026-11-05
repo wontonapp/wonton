@@ -27,6 +27,7 @@ fun HomeRoute(
     onPage: (HomePage) -> Unit,
     pendingCards: List<PendingConfirmation>,
     onOpenCardRoom: (String) -> Unit,
+    onSettings: (() -> Unit)? = null,
 ) {
     BackHandler(enabled = page != HomePage.LAUNCHER) {
         onPage(
@@ -60,6 +61,7 @@ fun HomeRoute(
                     onOpenCardRoom,
                     onShowStore = { onPage(HomePage.STORE) },
                     onConnection = { onPage(HomePage.CONNECTION) },
+                    onSettings = onSettings,
                 )
             }
         }

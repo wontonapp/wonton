@@ -54,6 +54,7 @@ import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.Rgb
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
@@ -69,7 +70,7 @@ import app.wonton.ui.icons.WontonIcon
 private const val EXPANDED_DEGREES = 90f
 
 /** 设置下面的页面，第一层是 [MAIN]。 */
-enum class SettingsSubpage { MAIN, BACKUP, PROFILE }
+enum class SettingsSubpage { MAIN, BACKUP, PROFILE, TABS }
 
 @Composable
 fun SettingsPage(
@@ -78,11 +79,15 @@ fun SettingsPage(
     chat: ChatViewModel,
     paired: Boolean,
     subpage: SettingsSubpage,
+    onClose: (() -> Unit)? = null,
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
     var rejection by remember { mutableStateOf<Problem?>(null) }
     when (subpage) {
+        SettingsSubpage.TABS -> TabsSettingsScreen(LocalTabs.current.viewModel) {
+            onSubpage(SettingsSubpage.MAIN)
+        }
         SettingsSubpage.BACKUP -> {
             BackHandler { onSubpage(SettingsSubpage.MAIN) }
             ChatBackupScreen(
@@ -92,7 +97,10 @@ fun SettingsPage(
             )
         }
         SettingsSubpage.PROFILE -> OwnerProfilePage(plugins) { onSubpage(SettingsSubpage.MAIN) }
-        SettingsSubpage.MAIN -> WontonScreen(bar = { WontonRootBar("设置") }) {
+        SettingsSubpage.MAIN -> WontonScreen(bar = {
+            val title = tabText("设置", "Settings")
+            if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
+        }) {
             SettingsScreen(
                 core,
                 appearance,
@@ -100,6 +108,7 @@ fun SettingsPage(
                 // 资料存在家里的服务器上，没配对时没有地方存。
                 onOpenProfile = { onSubpage(SettingsSubpage.PROFILE) }.takeIf { paired },
                 onOpenBackup = { onSubpage(SettingsSubpage.BACKUP) },
+                onOpenTabs = { onSubpage(SettingsSubpage.TABS) },
             )
         }
     }
@@ -115,6 +124,7 @@ private fun SettingsScreen(
     recovery: RecoveryStatus,
     onOpenProfile: (() -> Unit)?,
     onOpenBackup: () -> Unit,
+    onOpenTabs: () -> Unit,
 ) {
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
@@ -123,6 +133,9 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         (rejection ?: appearance.problem?.problem)?.let { ProblemNotice(it) }
+        WontonGroup {
+            WontonRow(tabText("底栏", "Tab bar"), showsForward = true, onClick = onOpenTabs)
+        }
         onOpenProfile?.let {
             WontonGroup { WontonRow("你的资料", showsForward = true, onClick = it) }
         }

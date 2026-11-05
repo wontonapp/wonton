@@ -408,7 +408,7 @@ Skills over MCP 等宿主支持了再加，内容是同一个目录。
 - **全屏时看不到底栏。** 要切页面得先退出。打开就全屏的页面点关闭回到进来之前的标签，这条路要一眼能看懂。
 - **全屏的顶部还有一条。** `inset` 的页面不是真的占满整个屏幕，顶部让出胶囊那一条，换来胶囊不挡页面。
 - **页面里的控件还是网页。** 长按菜单、文字选择、列表惯性有差别。作者用得好可以很接近，但不会和原生一样。
-- **内存。** 最多 3 个常驻 WebView，用量没有实测数字（见“验证”）。Android 上 WebView 可能共享渲染进程，一个崩了影响全部。如果低端机扛不住，退路是只留最近用的一到两个，其余按地址恢复。
+- **内存。** 最多 3 个固定的插件 WebView，未固定页另用 overlay。Android 上 WebView 可能共享渲染进程，一个崩了影响全部。模拟器的三页主进程采样见“Android 标签页容器”，不能代替低端真机评估。如果低端机扛不住，退路是只留最近用的一到两个，其余按地址恢复。
 - **App Store。** 4.7.1 和 4.7.4、4.7.5 针对的是“在 App 里提供软件”的开发者。自托管、主人自己装的情形没有明确说法。社区插件进底栏后，审核员更容易看到这一点。提审前单独评估，必要时提审版本只显示官方索引。这不是这一篇引入的，但这一篇让它更显眼。
 - **规范在动。** MCP Apps 还是扩展，SDK 已到 2.x，草案在继续改。注入脚本依赖 SDK 用 `event.source` 校验来源，键名校验也很严（见“验证”），SDK 升级可能打破，要有一条跟着新版 SDK 跑的测试。CSS 变量是最稳的接口，模板也优先教这个。
 - **Agent 能悄悄改已批准的插件。** 不发卡片的更新，让被提示注入的 Bot 能把自己写的插件改成别的样子，在已批准的权限内做事，比如把它能读的共享文件夹发出去（如果也批了 `network.egress`）。范围只限它写的插件和批过的权限，每次写审计，详情页能打开“每次都问”。主人接受了这个取舍。
@@ -445,7 +445,32 @@ iOS 26.5 模拟器，`@modelcontextprotocol/ext-apps` 2.0.4，本机服务器让
 | 内容从栏下面滚过 | `edge-to-edge` 的页面按 `--wonton-inset-*` 留白，内容穿过胶囊的材质 |
 | 没适配的 Immich（`inset`，官方镜像 v3.3.5） | 能放，登录态由原型的转发代替网关的单点登录。深色和浅色都跟（它自己写了 `prefers-color-scheme`），重点色不跟。App 的顶栏下面是 Immich 自己的顶栏，两层标题；底栏不挡内容，也没有内容从栏下滚过 |
 
-没有验证到：深色切浅色的当场变化（启动时选浅色或深色的路径相同，但没有实际切过）、3 个 WebView 的内存、`ui/open-link`。原型只有 iOS，Android 全部没有实测。
+这个 iOS 原型没有验证：深色切浅色的当场变化（启动时选浅色或深色的路径相同，但没有实际切过）、3 个 WebView 的内存、`ui/open-link`。Android 容器见下一节；全屏另列。
+
+### Android 标签页容器
+
+验证条件：API 35 x86_64 模拟器、390×844、Android System WebView 124.0.6367.219、targetSdk 36、
+Debug 壳加 release Rust 核心，真实配对后经本地代理、iroh 隧道和 Docker 网关访问插件；不是物理手机。
+
+- App 浅色→深色→浅色和更换重点色，探针的文档 UUID 与 `loads=1` 不变，`prefers-color-scheme` 和桥上下文同步变化。
+  页面没有 `color-scheme` meta。`ContextThemeWrapper` 随 Compose 外观更新，不靠 Activity 换主题或重载网页。
+  配置了 `DARK_STRATEGY_WEB_THEME_DARKENING_ONLY`；targetSdk ≥33 的 WebView 忽略旧 force-dark API，
+  同时关闭算法反色，不能仅凭调用成功宣称旧策略生效。
+- Jellyfin 官方镜像 `sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771`
+  的初始向导在 App 明暗切换时保留自己的深色内容，文字可读；根元素虽收到 App 的颜色，未观察到内容被强行反色。
+  这里只覆盖初始向导，不代表全部播放器页面。Actual 官方镜像
+  `sha256:06cf186569cf58d93e12659ff1a517b65b5b0ebee7050a3991d4bd8a1d398da6` 报 `SharedArrayBuffer`
+  不可用，未用它宣称主题兼容。
+- 手写 JSON-RPC 页面完成握手并撤骨架；`ui/message` 进入聊天只填草稿，`ui/open-link` 打开系统浏览器。
+  切回保留滚动位置，重选回顶部；`inset` 留在栏内，`edge-to-edge` 收到顶部 112 CSS px、底部 104 CSS px。
+- 主框架 HTTP 503 显示原生错误页，状态码放在折叠详情；重试恢复。断连保留已加载内容并通知 `connected=false`，
+  恢复后同一文档收到 `true`。主动终止 WebView 渲染进程后 App PID 不变，容器重建并恢复地址。
+- 三个已加载探针页常驻时，`adb shell dumpsys meminfo app.wonton.android` 报告 `WebViews: 3`、
+  主进程 PSS 227983 KiB、RSS 376256 KiB。数字含 Rust/Matrix 和调试壳，不含独立 WebView 渲染进程，
+  不是三张任意复杂网页的内存上限。
+- 停止页与淡化图标用临时 Android 调试夹具输入 `TabState::Stopped` / `dimmed=true` 验证，按钮调用真实
+  Rust 核心。`c5206ad` 的 `StartPlugin` 返回 `NotReady`，原始原因完整显示。夹具不进入交付构建；
+  这不是容器成功启动的端到端证明。
 
 ### 全屏（原型，不合并）
 
@@ -495,7 +520,7 @@ GLM-5.3-Flash，只给公开规范（v0.4）和模板仓库，不能联网，也
 - 全屏：Actual（自带底栏）和适配过的 `edge-to-edge` 页面，两端走一遍上面“没有验证到”的几项。
 - 断网、插件停止、卸载、升级，页面状态符合上表，全程不露 502。
 - 打开 3 个页面后的内存，两端低端设备各测一次，结果写在这里。
-- Android 上 `prefers-color-scheme` 由主题的 `isLightTheme` 决定，App 在 Compose 里切明暗时 Activity 主题不变（ADR-0028），要用 `ContextThemeWrapper` 给 WebView，没有 `color-scheme` 元标签的页面还要 `DARK_STRATEGY_WEB_THEME_DARKENING_ONLY`。没有实测。
+- Android WebView 124 / API 35 的主题验证见“Android 标签页容器”。旧 force-dark API 与 targetSdk ≥33 的行为不同，其他 WebView 版本和低端真机仍需验证。
 
 ## 参考
 

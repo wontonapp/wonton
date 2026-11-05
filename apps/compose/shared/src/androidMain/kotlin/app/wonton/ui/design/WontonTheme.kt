@@ -37,6 +37,7 @@ fun Rgb.toColor(): Color = Color(red.toInt(), green.toInt(), blue.toInt())
 private val LocalWontonColors = compositionLocalOf<ThemeColors> { error("WontonTheme 之外没有颜色令牌") }
 private val LocalWontonTypography = compositionLocalOf<WontonTypography> { error("WontonTheme 之外没有字号令牌") }
 private val LocalWontonFontScale = compositionLocalOf<Float?> { null }
+private val LocalWontonDark = compositionLocalOf { false }
 
 /** `enableEdgeToEdge` 默认的导航栏底色：三键导航时要有底才看得清按钮。 */
 private val LIGHT_NAVIGATION_SCRIM = AndroidColor.argb(0xE6, 0xFF, 0xFF, 0xFF)
@@ -49,6 +50,10 @@ object WontonTheme {
     val size = WontonSize
     val ratio = WontonRatio
     val motion = WontonMotion
+
+    val isDark: Boolean
+        @Composable @ReadOnlyComposable
+        get() = LocalWontonDark.current
 
     /** 带着用户选的字体。字号在 [WontonTheme] 里经 `fontScale` 统一放大，这里还是令牌的值。 */
     val typography: WontonTypography
@@ -76,6 +81,7 @@ fun WontonTheme(appearance: AppearanceViewModel, content: @Composable () -> Unit
         LocalWontonColors provides colors,
         LocalWontonTypography provides typography,
         LocalWontonFontScale provides appearance.textSize.fontScale,
+        LocalWontonDark provides dark,
     ) {
         WontonFontScale {
             MaterialTheme(colorScheme = materialColors(colors)) {

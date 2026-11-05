@@ -42,19 +42,29 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 
 起本地核心后（`deploy/dev/core/dev.sh up`），还没配对时“应用”页就是配对页：扫局域网状态页上或 `dev.sh pair` 打出的
 二维码（CameraX 取景、ZXing 识别），也可以粘贴码的文字。配上以后“应用”页右上角“连接”里的“添加设备”向核心要一个码，用 ZXing
-画成二维码给新设备扫。模拟器里用 `dev.sh pair 10.0.2.2:18482` 发码（模拟器里
-`10.0.2.2` 就是 Mac），经 intent 把最后一行传给 Debug 构建：
+画成二维码给新设备扫。票据的直连地址必须能从模拟器到达。Linux 的 headless 模拟器可用核心容器的 Docker
+网络地址和隧道端口；`10.0.2.2` 经宿主端口映射时可能改变 UDP 回包源地址，导致握手超时。经 intent 把码传给 Debug 构建：
 
 ```bash
-adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code '$(deploy/dev/core/dev.sh pair 10.0.2.2:18482 | tail -n 1)'"
+direct_addr=192.0.2.10:18482 # 换成模拟器可达的核心直连地址
+adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code '$(deploy/dev/core/dev.sh pair "$direct_addr" | tail -n 1)'"
 ```
 
 - 配上以后连接信息存在 App 的数据目录里，之后直接启动也会自动重连，不用再传码；配对码只能用一次。
 - `--es wonton_open_web <插件网页地址>`（比如装好 Grafana 示例插件后的 `http://app-grafana.wonton.localhost:18480/`）
-  让本地代理就绪后自动打开这个网页，加载结果在 logcat 的 `WontonWeb` 标签下。
+  选择已安装插件中地址匹配的页面，不把任意 URL 当成插件。加载结果在 logcat 的 `WontonWeb` 标签下。
 - 核心日志写在 App 的 `files/core.log`（`--es wonton_log` 改过滤规则）：
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
+
+## 插件标签页
+
+固定页和未固定的页面共用 WebView 容器。只在首次打开时创建；切换底栏保留网页历史和滚动位置，重选回到顶部。
+页面可从详情页、应用图标长按菜单和安装完成页固定；设置的“底栏”页支持排序和开关，长按底栏也能进入。
+移除设置后，入口在“应用”页右上角。满栏时必须选替换项，不自动挤掉页面。
+
+停止页的“启动”只发送核心操作，失败显示核心原因。明暗、字号与 WebView 生命周期的实测边界见
+[ADR-0033 的 Android 验证](../../docs/adr/0033-plugin-tabs.md#android-标签页容器)。
 
 ## 聊天（开发）
 

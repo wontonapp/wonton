@@ -1,64 +1,121 @@
 package app.wonton.ui.design
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.TabIcon
+import app.wonton.protocol.TabItem
+import app.wonton.protocol.TabRef
+import app.wonton.protocol.TabsViewModel
+import app.wonton.ui.PluginIconImage
+import app.wonton.ui.PluginsState
+import app.wonton.ui.rememberPluginImage
+import app.wonton.ui.tabText
+import app.wonton.ui.tabTitle
+import app.wonton.ui.icons.Apps
+import app.wonton.ui.icons.AppsFill
+import app.wonton.ui.icons.Chat
+import app.wonton.ui.icons.ChatFill
+import app.wonton.ui.icons.Settings
+import app.wonton.ui.icons.SettingsFill
+import app.wonton.ui.icons.WontonIcon
 
-/** 主界面的底栏（ADR-0026）：浮起的表面加噪点，选中的一项是重点色的填充和实心图标。 */
+private const val DIMMED_ALPHA = 0.4f
+
 @Composable
-fun WontonBottomBar(items: List<WontonBarItem>, selected: Int, onSelect: (Int) -> Unit) {
+fun WontonBottomBar(tabs: TabsViewModel, plugins: PluginsState, onSelect: (TabRef) -> Unit, onEdit: () -> Unit) {
     val colors = WontonTheme.colors
-    val shape = RoundedCornerShape(WontonTheme.radii.bar)
-    Row(
-        Modifier.navigationBarsPadding()
-            .padding(start = WontonTheme.spacing.s16, end = WontonTheme.spacing.s16, bottom = WontonTheme.spacing.s12)
-            .fillMaxWidth()
-            .shadow(3.dp, shape)
-            .background(colors.surface.toColor(), shape)
-            .noise(shape)
-            .border(WontonTheme.size.hairline, colors.separator.toColor(), shape)
-            .padding(WontonTheme.spacing.s8),
+    val editLabel = tabText("编辑底栏", "Edit tab bar")
+    NavigationBar(
+        containerColor = colors.surface.toColor(),
+        tonalElevation = 0.dp,
     ) {
-        items.forEachIndexed { index, item ->
-            val isSelected = index == selected
-            val content = (if (isSelected) colors.accentInkOnFill else colors.textSecondary).toColor()
-            val itemShape = RoundedCornerShape(WontonTheme.radii.barItem)
-            Column(
-                Modifier.weight(1f)
-                    .heightIn(min = WontonTheme.size.target)
-                    .clip(itemShape)
-                    .then(if (isSelected) Modifier.accentFill(itemShape, border = false) else Modifier)
-                    .selectable(selected = isSelected, role = Role.Tab, onClick = { onSelect(index) })
-                    .padding(vertical = WontonTheme.spacing.s4),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
-            ) {
-                Icon(
-                    if (isSelected) item.selectedIcon else item.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(WontonTheme.size.icon),
-                    tint = content,
-                )
-                Text(item.label, style = WontonTheme.typography.caption, color = content)
-            }
+        tabs.items.forEach { item ->
+            val selected = item.tab == tabs.selected
+            val ink = (if (selected) colors.accentInkOnFill else colors.textSecondary).toColor()
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onSelect(item.tab) },
+                modifier = Modifier.pointerInput(onEdit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                            waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        }
+                        if (up == null) {
+                            onEdit()
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+                }.semantics {
+                    customActions = listOf(CustomAccessibilityAction(editLabel) { onEdit(); true })
+                },
+                icon = {
+                    BadgedBox(badge = {
+                        if (item.page?.badge == true) Badge(containerColor = colors.danger.toColor())
+                    }) {
+                        Box(Modifier.alpha(if (item.page?.dimmed == true) DIMMED_ALPHA else 1f)) {
+                            TabBarIcon(item, selected, ink, plugins)
+                        }
+                    }
+                },
+                label = { Text(item.tabTitle(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = colors.accentInkOnFill.toColor(),
+                    selectedTextColor = colors.textPrimary.toColor(),
+                    indicatorColor = colors.accentFill.toColor(),
+                    unselectedIconColor = colors.textSecondary.toColor(),
+                    unselectedTextColor = colors.textSecondary.toColor(),
+                ),
+            )
         }
+    }
+}
+
+@Composable
+private fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: PluginsState) {
+    val size = WontonTheme.size.icon
+    val builtIn = when (item.tab) {
+        TabRef.Chat -> if (selected) WontonIcon.ChatFill else WontonIcon.Chat
+        TabRef.Apps -> if (selected) WontonIcon.AppsFill else WontonIcon.Apps
+        TabRef.Settings -> if (selected) WontonIcon.SettingsFill else WontonIcon.Settings
+        is TabRef.Plugin -> null
+    }
+    if (builtIn != null) {
+        Icon(builtIn, null, Modifier.size(size), tint)
+        return
+    }
+    when (val icon = item.page?.icon) {
+        is TabIcon.Plugin -> PluginIconImage(icon.icon, size, plugins)
+        is TabIcon.Monochrome -> {
+            val image = rememberPluginImage(plugins, if (selected) icon.selected ?: icon.icon else icon.icon)
+            if (image != null) Image(image, null, Modifier.size(size), colorFilter = ColorFilter.tint(tint))
+        }
+        null -> Icon(WontonIcon.Apps, null, Modifier.size(size), tint)
     }
 }

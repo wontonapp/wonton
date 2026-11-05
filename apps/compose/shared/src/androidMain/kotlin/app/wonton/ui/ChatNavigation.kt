@@ -12,6 +12,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.TabRef
 
 /**
  * 聊天页打开的房间。应用页和应用商店里点 Agent 插件时直接打开和它的 Bot 的私聊，关掉房间回到点的那一页。
@@ -19,10 +20,10 @@ import app.wonton.protocol.RoomMembership
  */
 class ChatNavigation(
     openRoom: MutableState<String?>,
-    returnTab: MutableState<Int?>,
+    returnTab: MutableState<TabRef?>,
     showingBackup: MutableState<Boolean>,
     startingChat: MutableState<Boolean>,
-    private val selectTab: (Int) -> Unit,
+    private val selectTab: (TabRef) -> Unit,
 ) {
     var openRoom by openRoom
     private var returnTab by returnTab
@@ -31,7 +32,7 @@ class ChatNavigation(
 
     /** 刚发起了和这个用户的私聊，房间出现后打开。 */
     private var awaitedPeer by mutableStateOf<String?>(null)
-    private var awaitedFrom = CHAT
+    private var awaitedFrom: TabRef = TabRef.Chat
 
     /** 要打开的房间，同步到了再打开：点通知冷启动时，会话还没恢复。 */
     private var awaitedRoom: String? = null
@@ -58,7 +59,7 @@ class ChatNavigation(
      * 从 [from] 这一页打开和 [peer] 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
      * 对方的邀请还没接受时到聊天列表，邀请就在那里。返回核心拒绝的原因。
      */
-    fun openDirectChat(core: ClientCore, peer: String, from: Int = CHAT): Problem? {
+    fun openDirectChat(core: ClientCore, peer: String, from: TabRef = TabRef.Chat): Problem? {
         awaitedPeer = null
         awaitedRoom = null
         openRoom = null
@@ -81,15 +82,15 @@ class ChatNavigation(
                 awaitedFrom = from
             }
         } else {
-            selectTab(CHAT)
+            selectTab(TabRef.Chat)
         }
         return rejection
     }
 
-    private fun show(roomId: String, from: Int) {
-        returnTab = from.takeIf { it != CHAT }
+    private fun show(roomId: String, from: TabRef) {
+        returnTab = from.takeIf { it != TabRef.Chat }
         openRoom = roomId
-        selectTab(CHAT)
+        selectTab(TabRef.Chat)
     }
 
     fun onUpdate(viewModel: ChatViewModel) {
@@ -106,15 +107,15 @@ class ChatNavigation(
         } else if (viewModel.problem != null) {
             // 发起失败的原因显示在聊天页。
             awaitedPeer = null
-            selectTab(CHAT)
+            selectTab(TabRef.Chat)
         }
     }
 }
 
 @Composable
-fun rememberChatNavigation(selectTab: (Int) -> Unit): ChatNavigation {
+fun rememberChatNavigation(selectTab: (TabRef) -> Unit): ChatNavigation {
     val openRoom = rememberSaveable { mutableStateOf<String?>(null) }
-    val returnTab = rememberSaveable { mutableStateOf<Int?>(null) }
+    val returnTab = remember { mutableStateOf<TabRef?>(null) }
     val showingBackup = rememberSaveable { mutableStateOf(false) }
     val startingChat = rememberSaveable { mutableStateOf(false) }
     return remember { ChatNavigation(openRoom, returnTab, showingBackup, startingChat, selectTab) }

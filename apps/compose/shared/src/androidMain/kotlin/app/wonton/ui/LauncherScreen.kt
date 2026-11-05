@@ -56,6 +56,7 @@ import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.Store
+import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WarningCircleFill
@@ -73,11 +74,13 @@ fun LauncherScreen(
     onOpenCardRoom: (String) -> Unit,
     onShowStore: () -> Unit,
     onConnection: () -> Unit,
+    onSettings: (() -> Unit)? = null,
 ) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
     WontonScreen(
         bar = {
             WontonRootBar("应用") {
+                onSettings?.let { WontonIconButton(WontonIcon.Settings, tabText("设置", "Settings"), it) }
                 // 要主人动手时换成警告；没连上时变浅。
                 val colors = WontonTheme.colors
                 val status = home.status
@@ -202,6 +205,8 @@ private fun StoreTile(onClick: () -> Unit) {
 @Composable
 private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigation: PluginNavigation) {
     var showingMenu by remember { mutableStateOf(false) }
+    var choosingPage by remember { mutableStateOf(false) }
+    val tabs = LocalTabs.current
     val entry = plugin.entries.firstOrNull()?.takeUnless { plugin.isBusy }
     val size = WontonTheme.size.launcherIcon
     Column(
@@ -238,7 +243,12 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
             overflow = TextOverflow.Ellipsis,
         )
     }
-    if (showingMenu) LauncherMenu(plugin, navigation) { showingMenu = false }
+    if (showingMenu) LauncherMenu(plugin, navigation, onPin = {
+        val choices = plugin.tabChoices.filter { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
+        if (choices.size == 1) tabs.pin(choices.single().tab, choices.single().title)
+        else if (choices.isNotEmpty()) choosingPage = true
+    }) { showingMenu = false }
+    if (choosingPage) TabPageChoiceSheet(plugin) { choosingPage = false }
 }
 
 @Composable
@@ -260,8 +270,17 @@ private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
 }
 
 @Composable
-private fun LauncherMenu(plugin: InstalledPlugin, navigation: PluginNavigation, onDismiss: () -> Unit) {
+private fun LauncherMenu(
+    plugin: InstalledPlugin,
+    navigation: PluginNavigation,
+    onPin: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val pinLabel = tabText("固定到底栏", "Pin to tab bar")
+    val tabs = LocalTabs.current
+    val canPin = plugin.tabChoices.any { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
     val actions = buildList {
+        if (canPin) add(WontonSheetAction(pinLabel, WontonIcon.Web, onClick = onPin))
         add(WontonSheetAction("详情", WontonIcon.Info) { navigation.detail = PluginRoute.Installed(plugin.id) })
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         plugin.entries.takeIf { it.size > 1 }?.last()?.let { web ->
