@@ -19,7 +19,7 @@
 //! | GET/PUT | `/_wonton/api/registry-mirror` | 镜像加速的设置（`RegistryMirrorSettings` / `RegistryMirrorUpdate`） |
 //! | POST | `/_wonton/api/registry-mirror/test` | 按摘要测速给定地址和 Docker Hub（`RegistryMirrorTests`） |
 //! | GET/PUT | `/_wonton/api/onboarding` | 引导状态和官方推荐清单（`Onboarding`） |
-//! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
+//! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时官方索引、社区插件和已安装插件的新版本都不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/store/sources` | 添加来源（`AddSourceRequest`），能读到才写下来（201 `AddedSource`） |
 //! | DELETE | `/_wonton/api/store/sources?address=…` | 删除添加的来源，已安装的插件不动 |
@@ -441,7 +441,7 @@ pub async fn store(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    drop(gateway.plugins.spawn_upgrade_check());
+    drop(gateway.plugins.spawn_upgrade_check(query.refresh));
     let listing = gateway
         .plugins
         .store_listing(&languages(&headers), query.refresh)

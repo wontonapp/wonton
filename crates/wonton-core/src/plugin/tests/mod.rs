@@ -42,6 +42,7 @@ mod sources;
 mod stopped;
 mod stopped_docker;
 mod store;
+mod store_refresh;
 mod tabs;
 mod upgrade;
 mod views;

@@ -244,6 +244,17 @@ impl Storefront {
     }
 }
 
+#[cfg(test)]
+impl Storefront {
+    /// 把官方索引上次取和上次去取的时间往前挪：测试不用真等 [`MIN_RETRY`]。
+    pub(in crate::plugin) async fn age_official(&self, by: Duration) {
+        let mut section = self.official.lock().await;
+        let back = |t: Instant| t.checked_sub(by).expect("测试挪的时间太长");
+        section.fetched = section.fetched.map(back);
+        section.attempted = section.attempted.map(back);
+    }
+}
+
 impl Storefront {
     /// 社区插件列表里这个仓库的星数；没列出过时为空。
     pub async fn stars(&self, repo: &Repo) -> Option<u32> {

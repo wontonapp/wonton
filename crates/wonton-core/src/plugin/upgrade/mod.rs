@@ -1,13 +1,14 @@
 //! 升级已装的插件（ADR-0017 的“升级”、插件规范的“升级”）：检查新版本（[`offers`]），预览，主人确认后换容器（[`run`]）。
 //! 按预览给的摘要升级：主人确认的就是装上的，来源在这之间变了就要重新预览、重新确认。
 
+mod adopt;
 mod offers;
 mod run;
 
 use std::sync::Arc;
 
 pub use offers::Upgrades;
-use wonton_protocol::{CardLine, InstallPreview, UpgradeRequest};
+use wonton_protocol::{CardLine, InstallPreview, StoreFailure, StoreProblem, UpgradeRequest};
 
 use super::github_source::{self, Origin, SourceRef, Trust, Wanted};
 use super::lan::webui::{open_ports, switched};
@@ -100,6 +101,18 @@ fn installed_package(record: &InstalledRecord) -> Result<PluginPackage, InstallE
     Ok(package)
 }
 
+/// 官方索引这次没取到：上次的索引里没有新版本，不等于真的没有。
+fn index_unavailable(problem: StoreProblem) -> InstallError {
+    let details = format!("官方索引没取到，查不了新版本：{}", problem.details);
+    match problem.reason {
+        StoreFailure::Unreachable | StoreFailure::Timeout | StoreFailure::RateLimited => {
+            InstallError::SourceUnavailable(details)
+        }
+        StoreFailure::IndexTooNew => InstallError::Unsupported(details),
+        _ => InstallError::UpstreamUnavailable(details),
+    }
+}
+
 /// 按提交装的固定在那个提交上，不检查新版本。
 fn pinned(record: &InstalledRecord) -> bool {
     record.origin.as_ref().is_some_and(|o| o.tag.is_none())
@@ -169,19 +182,21 @@ impl PluginManager {
         if pinned(record) {
             return Err(none());
         }
-        let (index, problem) = self.official_index().await;
+        // 主人在等结果：不等缓存过期。这次没取到时上次的索引说不清有没有新版本，如实报没取到。
+        let (index, problem) = self.refreshed_official_index(true).await;
+        let none_or_unknown = || problem.clone().map_or_else(none, index_unavailable);
         if let Some(listed) = self.official_entry(&index, record) {
             if !newer(&listed.manifest.version, &record.version) {
-                return Err(none());
+                return Err(none_or_unknown());
             }
             return self.official_package(listed).await;
         }
         let Some(origin) = &record.origin else {
-            let no_index = problem
-                .map(|p| format!("：{}", p.details))
-                .unwrap_or_default();
+            if self.expects_official(record) {
+                return Err(none_or_unknown());
+            }
             return Err(InstallError::NotFound(format!(
-                "插件 {id} 没有来源，查不到新版本{no_index}"
+                "插件 {id} 没有来源，查不到新版本"
             )));
         };
         if let Some(source) = &origin.index {
@@ -193,7 +208,7 @@ impl PluginManager {
         }
         // 官方索引不再收录时不改从 GitHub 升级：那样信任级别就悄悄降了。
         if origin.trust == Trust::Official {
-            return Err(none());
+            return Err(none_or_unknown());
         }
         let source = SourceRef {
             repo: SourceRef::parse(&origin.repo)?.repo,

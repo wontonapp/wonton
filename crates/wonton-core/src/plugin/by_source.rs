@@ -60,6 +60,15 @@ impl PluginManager {
         (index, problem)
     }
 
+    /// 主人主动操作（升级预览、手动刷新）时用的官方索引：不等缓存过期，离上次去取不到一分钟的除外。
+    pub(in crate::plugin) async fn refreshed_official_index(
+        &self,
+        refresh: bool,
+    ) -> (Index, Option<StoreProblem>) {
+        let (index, _, problem) = self.storefront.official(refresh).await;
+        (index, problem)
+    }
+
     /// 官方索引的文件从哪里取。
     pub fn official_files(&self) -> Files {
         self.storefront.files()

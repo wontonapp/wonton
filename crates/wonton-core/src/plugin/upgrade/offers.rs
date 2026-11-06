@@ -1,5 +1,5 @@
 //! 检查新版本（ADR-0017 的“升级”）：官方插件看官方索引，社区插件看仓库最新的正式版本 tag；每 [`CHECK_EVERY`] 一次，
-//! 主人打开已安装列表或商店时也查，受同样的缓存约束。上传的和按提交装的不查。
+//! 主人打开已安装列表或商店时也查，受同样的缓存约束；主人手动刷新商店时不等缓存过期。上传的和按提交装的不查。
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -137,7 +137,7 @@ fn offer_of(manifest: &Manifest, record: &InstalledRecord) -> Offer {
 impl PluginManager {
     /// 已安装的插件，先查一次新版本（受缓存约束）。
     pub async fn installed_checked(self: &Arc<Self>, langs: &Languages) -> InstalledPlugins {
-        if tokio::time::timeout(LIST_WAIT, self.spawn_upgrade_check())
+        if tokio::time::timeout(LIST_WAIT, self.spawn_upgrade_check(false))
             .await
             .is_err()
         {
@@ -146,10 +146,10 @@ impl PluginManager {
         self.installed(langs)
     }
 
-    /// 在后台查一次新版本（受缓存约束）。
-    pub fn spawn_upgrade_check(self: &Arc<Self>) -> JoinHandle<()> {
+    /// 在后台查一次新版本。`force` 是主人要求刷新：不等缓存过期，连官方索引一起重新取，离上次查不到一分钟的除外。
+    pub fn spawn_upgrade_check(self: &Arc<Self>, force: bool) -> JoinHandle<()> {
         let this = Arc::clone(self);
-        tokio::spawn(async move { this.check_upgrades().await })
+        tokio::spawn(async move { this.check_upgrades(force).await })
     }
 
     /// 每 [`CHECK_EVERY`] 查一次新版本。
@@ -163,27 +163,41 @@ impl PluginManager {
                 let Some(manager) = this.upgrade() else {
                     return;
                 };
-                manager.check_upgrades().await;
+                manager.check_upgrades(false).await;
             }
         });
     }
 
-    async fn check_upgrades(&self) {
+    async fn check_upgrades(&self, force: bool) {
         let Ok(mut last) = self.upgrades.last.try_lock() else {
             return;
         };
-        if last.is_some_and(|l| !l.due()) {
+        let wait = |l: LastCheck| {
+            if force {
+                l.at.elapsed() < MIN_RETRY
+            } else {
+                !l.due()
+            }
+        };
+        if last.is_some_and(wait) {
             return;
         }
-        let problem = self.check_upgrades_now().await;
+        let problem = self.check_round(force).await;
         *last = Some(LastCheck {
             at: Instant::now(),
             failed: problem.is_some(),
         });
     }
 
-    /// 不管缓存查一轮，返回没查成的原因。一个插件没查到时留着它上次的结果。没有要查的插件时不连外面。
+    /// 不管缓存查一轮，官方索引用缓存里的。
+    #[cfg(test)]
     pub(in crate::plugin) async fn check_upgrades_now(&self) -> Option<StoreProblem> {
+        self.check_round(false).await
+    }
+
+    /// 查一轮，返回没查成的原因；`refresh` 时官方索引不等缓存过期。一个插件没查到时留着它上次的结果。
+    /// 没有要查的插件时不连外面。
+    async fn check_round(&self, refresh: bool) -> Option<StoreProblem> {
         let records: Vec<InstalledRecord> = match self.store.load_all() {
             Ok(files) => files.into_iter().filter_map(|f| f.record.ok()).collect(),
             Err(e) => {
@@ -191,14 +205,15 @@ impl PluginManager {
                 return None;
             }
         };
-        let records: Vec<InstalledRecord> = records
+        let mut records: Vec<InstalledRecord> = records
             .into_iter()
             .filter(|r| self.has_source_to_check(r))
             .collect();
         let mut results = HashMap::new();
         let mut problem = None;
         if !records.is_empty() {
-            let (index, index_problem) = self.official_index().await;
+            let (index, index_problem) = self.refreshed_official_index(refresh).await;
+            self.adopt_official(&index, &mut records);
             let uses_index = records.iter().any(|r| self.expects_official(r));
             for record in &records {
                 let id = record.id.clone();
@@ -232,7 +247,7 @@ impl PluginManager {
     }
 
     /// 这个插件的新版本要看官方索引，索引读不到就查不了。
-    fn expects_official(&self, record: &InstalledRecord) -> bool {
+    pub(super) fn expects_official(&self, record: &InstalledRecord) -> bool {
         match &record.origin {
             Some(origin) => origin.trust == Trust::Official && origin.tag.is_some(),
             None => self
