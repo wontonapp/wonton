@@ -36,6 +36,7 @@ phone="$WONTON_DEV_PROJECT-phone"
 phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
 curl_image="curlimages/curl:8.23.0"
+busybox_image="public.ecr.aws/docker/library/busybox:1.37"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -107,6 +108,7 @@ cleanup() {
     return
   fi
   docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true
+  [[ -z "${fake_upstream:-}" ]] || docker rm -f "$fake_upstream" >/dev/null 2>&1 || true
   # 中途失败时插件可能还在：先删插件容器，再停核心，最后删插件网络和卷。
   local id resource
   for id in "${plugins[@]}"; do
@@ -220,8 +222,32 @@ gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { p
 expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
 expect "卸载时在网关里吊销凭据" "$(gateway_keys | grep -cx app.model-client)" 0
-expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' -sS -o /dev/null -w '%{http_code}' \
-  -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")" 401
+# 吊销后旧凭据换不到上游：网关前面加一个假上游（来什么都回 200 和固定的模型列表、记下收到的凭据），用旧凭据请求，
+# 假上游不能收到网关替它配的上游凭据。不断言网关回哪个状态码：magpie 0.1.1327 碰到不认识的凭据不在本地回 401，
+# 转发出去回 502（2026-11-07 实测），把客户端自己的凭据原样转给上游也说得通；那是 magpie 自己的行为，
+# 这里只测吊销以后旧凭据不能再用网关替使用方配的上游凭据。
+fake_upstream="$magpie-smoke-upstream"
+fake_key="sk-smoke-upstream-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+fake_sh='auth=
+while IFS= read -r line; do
+  line=$(printf "%s" "$line" | tr -d "\r")
+  [ -z "$line" ] && break
+  case "$line" in [Aa]uthorization:*) auth=${line#*: } ;; esac
+done
+echo "$auth" >>/tmp/auth.log
+body="{\"object\":\"list\",\"data\":[{\"id\":\"smoke-fake\",\"object\":\"model\",\"owned_by\":\"smoke\"}]}"
+printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s" "${#body}" "$body"'
+docker run -d --rm --name "$fake_upstream" --network "container:$magpie" -e FAKE_SH="$fake_sh" "$busybox_image" \
+  sh -c 'printf "%s\n" "$FAKE_SH" >/fake.sh && chmod +x /fake.sh && while :; do nc -l -p 18099 -e /fake.sh; done' >/dev/null \
+  || fail "起不了假上游"
+docker exec -e no_proxy=127.0.0.1 -e NO_PROXY=127.0.0.1 "$magpie" magpie provider add smoke-fake url=http://127.0.0.1:18099/v1 key="$fake_key" models=smoke-fake >/dev/null \
+  || fail "网关加不上假上游"
+docker exec "$fake_upstream" sh -c ': >/tmp/auth.log'
+revoked_code="$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' -sS -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")"
+expect "吊销后旧凭据换不到网关的上游凭据（网关回 HTTP $revoked_code）" "$(docker exec "$fake_upstream" grep -c "$fake_key" /tmp/auth.log)" 0
+docker exec "$magpie" magpie provider rm smoke-fake >/dev/null || fail "删不掉假上游"
+docker rm -f "$fake_upstream" >/dev/null
 
 step "已配对设备经隧道打开插件：不用登录，直接是主人"
 build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
