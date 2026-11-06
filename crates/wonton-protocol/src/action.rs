@@ -149,7 +149,7 @@ pub enum Action {
     PushUnavailable { message: String },
 
     // 插件（ADR-0017）。网络操作都在后台执行，进展和结果在 `PluginsViewModel` 里。
-    /// 主人偏好的语言（BCP 47，按优先级），壳在启动时和系统语言变了时告诉核心。家里的服务器按它挑插件的名字和说明。
+    /// App 使用的语言在第一项，后接系统语言偏好（BCP 47）；壳在启动和语言改变时发送。客户端详情用第一项，服务器按列表挑插件文字。
     SetLanguages { languages: Vec<String> },
     /// 重新取已安装的插件和它们能不能升级。
     RefreshPlugins,

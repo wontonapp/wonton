@@ -573,6 +573,7 @@ impl ClientCore {
 
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
+        crate::l10n::init();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("wonton-core")
@@ -655,6 +656,7 @@ impl ClientCore {
     fn dispatch_plugins_or_chat(&self, action: Action) -> Result<(), CoreError> {
         match action {
             Action::SetLanguages { languages } => {
+                crate::l10n::set_languages(&languages);
                 self.plugins.set_languages(languages.clone());
                 self.onboarding.set_languages(languages);
                 Ok(())

@@ -30,6 +30,7 @@ mod chat;
 mod client;
 mod files;
 mod home;
+mod l10n;
 mod link;
 mod logging;
 mod onboarding;

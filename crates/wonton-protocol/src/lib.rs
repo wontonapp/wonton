@@ -72,7 +72,7 @@ pub use egress::{
     EgressProxyProvider, EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart,
     EgressViewModel, LanWebuiUpdate,
 };
-pub use error::CoreError;
+pub use error::{CoreError, set_core_error_formatter};
 pub use family::{
     BotContact, BotContacts, BotKeeper, BotRef, ContactRequest, ContactState, FAMILY_ROOM_EVENT,
     FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS,

@@ -91,6 +91,8 @@ flowchart LR
 
 界面文字在两端各自的本地化资源里，语言跟随系统，也能按平台惯例单独设置；客户端核心只给类别和原始值，App 的语言经 `Accept-Language` 带给家里的服务器和插件页（ADR-0043）。
 
+客户端核心的“详情”用 `crates/wonton-client/locales` 的 Fluent 目录写，按 `SetLanguages` 第一项（App 在用的语言）协商，不支持的退到英文；一次请求用开始时的语言，上游原文和错误码原样嵌入，日志用英文。`CoreError` 的字段不变，前缀由客户端注册给协议 crate 的格式化函数按语言生成，不增加 UniFFI 类型。客户端和服务器共用 `wonton-l10n`（目录、CLDR 协商、一致性检查），资源和当前语言各自持有。
+
 ## 主要链路
 
 ### 安装与配对
@@ -210,6 +212,7 @@ crates/
   wonton-protocol/   核心 API、ViewModel、插件清单类型：跨端唯一事实源，生成 Swift/Kotlin 类型
   wonton-tunnel/     iroh 隧道，服务端与客户端共用
   wonton-matrix/     Matrix 客户端封装（matrix-rust-sdk），供客户端核心使用
+  wonton-l10n/       Fluent 目录、语言协商与资源一致性检查，客户端与服务器共用
   wonton-core/       服务端核心
   wonton-client/     客户端厚核心，UniFFI 导出
 apps/
@@ -243,6 +246,7 @@ scripts/             CI 与开发脚本
 | 出口代理 | gost | MIT，独立容器 | 已定（ADR-0023） |
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
+| Rust 本地化 | fluent-bundle、fluent-langneg（cldr）、unic-langid、fluent-syntax | Apache-2.0 / MIT | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
 | 图标 | Phosphor（白名单加生成，无运行时依赖） | MIT | 已定（ADR-0026） |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
