@@ -209,12 +209,14 @@ impl Phone {
             .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.home()))
     }
 
-    async fn pairing_failure(&self) -> PairingFailure {
+    /// 失败的原因连同原文一起带出去：断言消息里要能看到 TunnelError 的原文，CI 再红时才能区分
+    /// 服务端先关（LINGER）和服务端没读到请求（REQUEST_TIMEOUT）两个失败窗口。
+    async fn pairing_failure(&self) -> (PairingFailure, String) {
         let view = self
             .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
             .await;
         match view.pairing {
-            Some(PairingStatus::Failed { reason, .. }) => reason,
+            Some(PairingStatus::Failed { reason, message }) => (reason, message),
             _ => unreachable!(),
         }
     }
@@ -256,7 +258,8 @@ async fn a_rejected_code_says_what_to_do_next() {
         (Some(RejectReason::ServerError), PairingFailure::Upstream),
     ] {
         phone.pair(&home.code(outcome)).unwrap();
-        assert_eq!(phone.pairing_failure().await, failure, "{outcome:?}");
+        let (got, message) = phone.pairing_failure().await;
+        assert_eq!(got, failure, "{outcome:?}: {message}");
         assert_eq!(
             phone.home().status,
             HomeStatus::NotConfigured,
@@ -286,7 +289,8 @@ async fn other_qr_codes_are_rejected_and_newer_codes_ask_for_an_update() {
     let home = Home::start().await;
     let newer = home.code(None).replace("v=0", "v=9");
     phone.pair(&newer).unwrap();
-    assert_eq!(phone.pairing_failure().await, PairingFailure::Protocol);
+    let (failure, message) = phone.pairing_failure().await;
+    assert_eq!(failure, PairingFailure::Protocol, "{message}");
 }
 
 #[tokio::test]

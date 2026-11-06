@@ -3,10 +3,10 @@
 use std::time::Duration;
 
 use iroh::Endpoint;
-use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError, VarInt};
+use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError, RecvStream, VarInt};
 
 use super::{MAX_MESSAGE_LEN, PAIR_ALPN, PairRequest, PairResponse, PairingCode};
-use crate::error::{TunnelError, from_connect_error, from_write_error};
+use crate::error::{TunnelError, from_connect_error, from_read_error, from_write_error};
 
 /// 建连（包括打洞或经中继）到读完回应的总时间。和隧道的请求一样，超时按传输不可用处理。
 const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
@@ -44,13 +44,36 @@ async fn exchange(
         .await
         .map_err(|e| from_write_error(&e))?;
     send.finish().map_err(TunnelError::transport)?;
-    let reply = recv
-        .read_to_end(MAX_MESSAGE_LEN)
-        .await
-        .map_err(TunnelError::transport)?;
+    let reply = read_reply(&mut recv).await?;
     conn.close(VarInt::from_u32(0), b"done");
     serde_json::from_slice(&reply)
         .map_err(|e| TunnelError::protocol(format!("服务端的配对回应不合规：{e}")))
+}
+
+/// 读服务端的回应，直到回应结束（FIN）。
+///
+/// 服务端总是先写完整回应再关连接（等不到设备先关时由服务端超时关闭，见 server.rs 的 `LINGER`），但
+/// FIN 可能没能到达设备：负载下丢包，或连接先一步关闭、排队中的 FIN 连同回应一起被丢弃。这时设备拿不到
+/// FIN，只看到连接以 `done` 关闭，而已送达的字节正是服务端已经做出的决定：能解析出完整回应就按它处理，
+/// 不把已送达的决定丢成传输问题；一个字节都没到（服务端没来得及回应）或回应不完整时，如实报传输错误。
+async fn read_reply(recv: &mut RecvStream) -> Result<Vec<u8>, TunnelError> {
+    let mut reply = Vec::new();
+    loop {
+        // 协议里回应不会接近这个长度；到上限还没读到结束就不再收，与回应长度上限一致。
+        if reply.len() >= MAX_MESSAGE_LEN {
+            return Err(TunnelError::transport("服务端的配对回应超过长度上限"));
+        }
+        match recv.read_chunk(MAX_MESSAGE_LEN - reply.len()).await {
+            Ok(Some(bytes)) => reply.extend_from_slice(&bytes),
+            Ok(None) => return Ok(reply),
+            Err(err) => {
+                if serde_json::from_slice::<PairResponse>(&reply).is_ok() {
+                    return Ok(reply);
+                }
+                return Err(from_read_error(&err));
+            }
+        }
+    }
 }
 
 fn connect_error(err: &ConnectError) -> TunnelError {
