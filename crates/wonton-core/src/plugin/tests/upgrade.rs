@@ -551,6 +551,42 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
     assert_eq!(image(&docker, &web()), "web:1.2.0");
 }
 
+/// 核心升级后读不懂旧记录（清单新增了必填字段，插件版本号却没变）：接口重装不了系统插件，升级要先读旧包也走不通。
+/// 启动时保留数据，用随核心带来的包重装。
+#[tokio::test]
+async fn a_system_plugin_whose_record_the_core_cannot_read_is_reinstalled_from_the_image() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let system = dir.path().join("system");
+    fs::create_dir_all(system.join("hello")).unwrap();
+    let compose = hello("1.0.0", "", "  permissions: []\n").replace("kind: app", "kind: system");
+    fs::write(system.join("hello/docker-compose.yml"), &compose).unwrap();
+    let m = manager_with(engine.clone(), &dir);
+    m.ensure_system(&system, Backoff::default()).await.unwrap();
+    let kept = dir.path().join("apps").join(id().slug()).join("kept");
+    fs::create_dir_all(kept.parent().unwrap()).unwrap();
+    fs::write(&kept, "主人的数据").unwrap();
+
+    let old = compose.replace("  title: {zh: 你好, en: Hello}\n", "");
+    assert!(PluginPackage::parse(&old).is_err(), "旧记录这份核心读不懂");
+    let mut record = m.store.load(&id()).unwrap().unwrap();
+    record.source = old;
+    m.store.save(&record).unwrap();
+
+    let m = manager_with(engine, &dir);
+    m.restore().await.unwrap();
+    assert!(
+        matches!(m.list()[0].status, PluginStatus::Degraded { .. }),
+        "重启后记录读不懂"
+    );
+    m.ensure_system(&system, Backoff::default()).await.unwrap();
+    assert!(matches!(m.list()[0].status, PluginStatus::Running));
+    assert_eq!(version(&m), "1.0.0");
+    assert_eq!(m.store.load(&id()).unwrap().unwrap().source, compose);
+    assert_eq!(fs::read_to_string(&kept).unwrap(), "主人的数据");
+    assert_eq!(image(&docker, &web()), "web:1.0.0");
+}
+
 #[tokio::test]
 async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let (docker, engine) = FakeDocker::start().await;

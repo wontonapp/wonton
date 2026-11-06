@@ -76,7 +76,7 @@ configs:
 x-wonton:
   spec: "0.6"
   id: ai.usemagpie.magpie
-  version: 0.6.0
+  version: 0.6.1
   kind: system
   title: { zh: 模型设置, en: Models }
   description:
