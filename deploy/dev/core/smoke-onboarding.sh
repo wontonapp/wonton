@@ -3,9 +3,10 @@
 # 帮助文档跟着索引更新、半途失败不切换、min_core 挡住旧核心 → 模型网关的三种错误原因各不相同。
 # 真实的核心和真实的 MCP 总线，不 mock；索引和文档 blob 都在本地，场景里换索引不需要外网。
 #
-#   deploy/dev/core/smoke-onboarding.sh                          本机 Docker
-#   DOCKER_HOST=ssh://<主机> deploy/dev/core/smoke-onboarding.sh 远端 Linux 主机（远端只需要 Docker）
+#   deploy/dev/core/smoke-onboarding.sh
 #
+# 在要测的主机上直接执行：场景里在本机改索引目录，核心把同一路径绑定挂载进去，DOCKER_HOST 指向远端时核心
+# 看到的是远端那边的空目录。
 # 使用独立的 compose 项目、端口和临时数据目录，结束时清理全部容器、网络、卷和数据；KEEP=1 保留现场。
 # 不读不打印任何 key。官方索引取自 wonton-store 的 main，文档 blob 按 sha256 从 GitHub 取：GitHub 连不上时
 # 给脚本 export https_proxy。模型网关的三种错误里，「错的 key」和「断网」要经出口容器到真实上游：
@@ -202,6 +203,9 @@ print(f"索引 {len(index['plugins'])} 个插件，文档 pin {docs['commit'][:8
 PY
 }
 
+case "${DOCKER_HOST:-}" in
+  ssh://* | tcp://*) fail "DOCKER_HOST 指向远端（$DOCKER_HOST）：到那台主机上直接执行这个脚本" ;;
+esac
 trap cleanup EXIT
 
 step "预检"
@@ -290,8 +294,9 @@ expect "不造后备清单：prompts 为空" "$(json prompts <<<"$REPLY" | json_
 bundled="$(help_json '{"topic":"devices","lang":"zh"}')"
 expect_contains "内置文档能答" "$(json body <<<"$bundled")" "配对"
 [[ -n "$(json refresh_problem <<<"$bundled")" ]] || fail "索引取不到时 refresh_problem 是空的：$bundled"
-[[ "$(json docs_commit <<<"$bundled")" != "$pinned_docs" ]] ||
-  fail "文档不该是刚固定过的官方版本：$(json docs_commit <<<"$bundled")"
+# 镜像内置的和索引固定的常是同一个提交（两边同步更新），所以对照镜像自己的固定值，不和索引比。
+expect "文档是镜像内置的版本" "$(json docs_commit <<<"$bundled")" \
+  "$(sed -n 's/^ARG WONTON_DOCS_COMMIT=//p' "$here/Dockerfile")"
 ok "catalog_problem 如实，清单是空的，帮助答的是镜像内置文档并带 refresh_problem"
 
 step "场景 1：本地索引 + blobs，引导和帮助都正常"
