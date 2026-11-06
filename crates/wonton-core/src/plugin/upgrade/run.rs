@@ -444,7 +444,10 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         progress.touched = true;
         self.remove_own_containers(&manifest.id).await?;
-        if self.engine.network_reach(network).await? != Some(self.network_reach(manifest)) {
+        let reach_changed =
+            self.engine.network_reach(network).await? != Some(self.network_reach(manifest));
+        // 网段不在地址段里也重建：旧版核心让 Docker 分的网段，升级时迁进地址段。
+        if reach_changed || self.engine.network_outside_pool(network).await? {
             progress.network_rebuilt = true;
             self.rebuild_network(manifest, network).await?;
         }
@@ -454,7 +457,7 @@ impl PluginManager {
     }
 
     /// 能不能出网是建网络时定的，新版本改了 `network.egress` 只能重建。容器都已经删了。
-    async fn rebuild_network(
+    pub(in crate::plugin) async fn rebuild_network(
         &self,
         manifest: &Manifest,
         network: &str,

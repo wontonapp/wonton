@@ -33,6 +33,8 @@ deploy/dev/core/dev.sh down                  # 停止；reset 连数据一起删
   （ADR-0018）；核心直接跑在宿主上时不用设，读的就是 `/dev`。
 - 申请了 `network.lan` 的插件，端口开在哪个地址上由核心起一个宿主网络里的一次性容器检测（`wonton-<实例名>-lan-probe`，
   没设实例名时是 `wonton-lan-probe`，ADR-0019）；`WONTON_DEV_LAN_ADDRESSES` 指定地址时照样检测，但只用指定的地址。
+- 插件网络地址段由 `WONTON_PLUGIN_NETWORK_POOL` 指定（默认 `10.213.0.0/16`，私有 IPv4 CIDR），核心从中分配 `/26`，
+  不影响 Compose 的核心网络。用完时卸载不用的插件，或扩大这个地址段后重启核心。
 - 镜像里编进了构建它的提交号（`dev.sh commit`；Cargo 工作区有没提交的改动时带 `-dirty`），核心启动日志的
   第一行就是它（`docker logs <核心容器> 2>&1 | grep 核心启动`），`docker run --rm wonton-core:dev --version`
   也能看到。验证前先看一眼，确认镜像里是这个检出的代码。

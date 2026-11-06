@@ -166,6 +166,8 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
         let lan = self.lan_grant(&package, record.lan_webui).await?;
+        // 要迁网络就在渲染前迁：重建的容器要按迁好后的网络拿变量（核心地址、网关）。
+        self.migrate_network_into_pool(&package.manifest).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan).await?;
         ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
         let plan = render(&package, &ctx)?;

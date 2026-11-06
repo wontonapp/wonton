@@ -95,6 +95,9 @@ async fn run() -> ExitCode {
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
         Some("init") => init(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("updater") => run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await,
+        Some(wonton_core::plugin::network_pool_command::COMMAND) => {
+            wonton_core::plugin::network_pool_command::run().await
+        }
         Some("manual-rollback") => {
             manual_rollback(&std::env::args().skip(2).collect::<Vec<_>>()).await
         }
@@ -127,13 +130,21 @@ fn check_host_dev(cfg: &Config) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn plugin_engine(cfg: &Config) -> anyhow::Result<Engine> {
+    let detector = match &cfg.core_container {
+        Some(core) => lan::Detector::Container { core: core.clone() },
+        None => lan::Detector::Here,
+    };
+    Ok(Engine::connect()?.with_network_pool(cfg.plugin_network_pool, detector))
+}
+
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
     tracing::info!(owner = %cfg.username, "主人的用户名已核对");
     let owner = OwnerStore::open(&cfg.core_state_dir())?;
     check_host_dev(&cfg)?;
-    let engine = Engine::connect()?;
+    let engine = plugin_engine(&cfg)?;
     let docker = engine.check_server().await.context("连接 Docker")?;
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
@@ -511,6 +522,11 @@ async fn healthcheck() -> anyhow::Result<()> {
 fn check_owner_before_install() -> anyhow::Result<()> {
     let get = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     wonton_core::config::check_owner_settings(&get)?;
+    if let Some(pool) = get(wonton_core::plugin::network_pool::VAR) {
+        pool.parse::<wonton_core::plugin::network_pool::NetworkPool>()
+            .map_err(anyhow::Error::msg)
+            .context("环境变量 WONTON_PLUGIN_NETWORK_POOL 不合法")?;
+    }
     if let Some(data_dir) = get("WONTON_DATA_DIR") {
         let state = std::path::Path::new(&data_dir).join("core");
         let configured = get("WONTON_OWNER_NAME");

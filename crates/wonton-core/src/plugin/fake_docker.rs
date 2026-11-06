@@ -105,8 +105,7 @@ struct Resources {
     network_bodies: BTreeMap<String, Value>,
     /// 接下来这么多次指定网段的建网络，Docker 回这个错误。
     pinned_network_rejection: Option<(u32, String)>,
-    /// 接下来这么多次让 Docker 分配网段的建网络，Docker 回这个错误。
-    auto_network_rejection: Option<(u32, String)>,
+    network_collisions: u32,
     /// 卷名 → 标签。
     volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
@@ -145,14 +144,23 @@ struct Resources {
 }
 
 impl FakeDocker {
-    /// 启动假 Docker，返回它和连到它的 [`Engine`]。
-    pub async fn start() -> (Self, Engine) {
-        let fake = Self::default();
-        let app = Router::new().fallback(handle).with_state(fake.clone());
+    /// 连到这个假 Docker 的新 [`Engine`]：进程内的锁是全新的，测试用它当第二个独立核心。
+    /// 假状态是共享的，多个 Engine 看到同一份资源。
+    pub async fn engine(&self) -> Engine {
+        let app = Router::new().fallback(handle).with_state(self.clone());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        (fake, Engine::http_for_test(&format!("http://{addr}")))
+        let engine = Engine::http_for_test(&format!("http://{addr}"));
+        let detector = super::lan::Detector::Fixed(Arc::new(Mutex::new(Ok(Default::default()))));
+        engine.with_network_pool(Default::default(), detector)
+    }
+
+    /// 启动假 Docker，返回它和连到它的 [`Engine`]。
+    pub async fn start() -> (Self, Engine) {
+        let fake = Self::default();
+        let engine = fake.engine().await;
+        (fake, engine)
     }
 
     /// 放进一个运行中的容器，比如核心重启前就装好的插件的容器。
@@ -168,6 +176,10 @@ impl FakeDocker {
 
     pub fn networks(&self) -> Vec<String> {
         self.lock().networks.keys().cloned().collect()
+    }
+
+    pub fn network_collisions(&self) -> u32 {
+        self.lock().network_collisions
     }
 
     pub fn volumes(&self) -> Vec<String> {
@@ -322,11 +334,6 @@ impl FakeDocker {
     /// 接下来 `times` 次指定网段的建网络，Docker 回 `message`（403）。
     pub fn reject_pinned_networks(&self, times: u32, message: &str) {
         self.lock().pinned_network_rejection = Some((times, message.to_owned()));
-    }
-
-    /// 接下来 `times` 次不指定网段的建网络，Docker 回 `message`（403）。
-    pub fn reject_auto_networks(&self, times: u32, message: &str) {
-        self.lock().auto_network_rejection = Some((times, message.to_owned()));
     }
 
     /// 容器里执行的命令可分别回应标准输出和标准错误。

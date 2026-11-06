@@ -187,7 +187,7 @@ impl PluginManager {
         self.write_relay_lists(config).await
     }
 
-    /// 出口容器自己的网络：安装脚本可能先建好了，沿用。
+    /// 安装器的代理预检也经核心分配网络，启动后沿用已建的出口网络。
     pub(in crate::plugin) async fn ensure_relay_network(&self) -> Result<(), InstallError> {
         let name = self.cfg.instance.egress();
         let labels = self.cfg.instance.component_labels();

@@ -341,7 +341,7 @@ impl Engine {
         name: &str,
         labels: &HashMap<String, String>,
     ) -> Result<(), EngineError> {
-        self.create_raw(NetworkCreateRequest {
+        self.create_reserved(NetworkCreateRequest {
             name: name.to_owned(),
             driver: Some("bridge".to_owned()),
             labels: Some(labels.clone()),

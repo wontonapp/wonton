@@ -166,8 +166,18 @@ async fn the_lists_let_the_host_through_and_stop_everything_else_inside() {
     rig.install(&egress_app()).await;
     let direct = rig.lines("direct.txt");
     // 选出的地址 192.168.0.193 所在的网段，主人多放行的网段，假 Docker 里网桥的网关。
-    let expected = ["100.64.0.0/10", "172.30.0.1/32", "192.168.0.0/24"];
-    assert_eq!(direct, expected.map(str::to_owned).into());
+    let mut expected = BTreeSet::from([
+        "100.64.0.0/10".to_owned(),
+        "172.17.0.1/32".to_owned(),
+        "192.168.0.0/24".to_owned(),
+    ]);
+    for name in [NETWORK, RELAY] {
+        expected.insert(format!(
+            "{}/32",
+            rig.m.engine.network_gateway(name).await.unwrap()
+        ));
+    }
+    assert_eq!(direct, expected);
     let deny = rig.lines("deny.txt");
     assert!(deny.contains("127.0.0.0/8"), "{deny:?}");
     assert!(deny.contains("*.wonton.internal"), "{deny:?}");
@@ -181,12 +191,25 @@ async fn the_lists_let_the_host_through_and_stop_everything_else_inside() {
 #[tokio::test]
 async fn a_segment_overlapping_a_network_the_relay_is_on_stays_denied() {
     let rig = Rig::new(proxy("http://host.docker.internal:7899")).await;
-    rig.save(None, &["172.30.0.0/16"]);
+    rig.m.reconcile_relay().await.unwrap();
+    let body = rig.docker.network(RELAY).unwrap();
+    let subnet = body["IPAM"]["Config"][0]["Subnet"].as_str().unwrap();
+    let net: ipnet::Ipv4Net = subnet.parse().unwrap();
+    rig.save(None, &[subnet]);
     rig.install(&egress_app()).await;
     let direct = rig.lines("direct.txt");
-    assert!(!direct.contains("172.30.0.0/16"), "{direct:?}");
-    assert!(direct.contains("172.30.0.1/32"), "{direct:?}");
-    assert!(rig.lines("deny.txt").contains("172.30.0.2/31"));
+    assert!(!direct.contains(subnet), "{direct:?}");
+    for name in [NETWORK, RELAY] {
+        assert!(
+            direct.contains(&format!(
+                "{}/32",
+                rig.m.engine.network_gateway(name).await.unwrap()
+            )),
+            "{direct:?}"
+        );
+    }
+    let denied = std::net::Ipv4Addr::from(net.network().to_bits() + 2);
+    assert!(rig.lines("deny.txt").contains(&format!("{denied}/31")));
 }
 
 #[tokio::test]

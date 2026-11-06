@@ -150,10 +150,11 @@ async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gatew
     let m = manager_with_oidc(engine, &dir, super::fake_hydra().await);
     m.install(&compose, &[]).await.unwrap();
     // 内部网络没有默认路由，host-gateway 走不通；经插件网络的网关（宿主上网桥的地址）访问核心。
+    let gateway = m.engine.network_gateway("wonton-app-test").await.unwrap();
     let created = docker.created(&container_name("app-test", "web")).unwrap();
     assert_eq!(
         created["HostConfig"]["ExtraHosts"],
-        json!(["auth.wonton.localhost:172.30.0.1"])
+        json!([format!("auth.wonton.localhost:{gateway}")])
     );
     assert_eq!(created["HostConfig"]["NetworkMode"], "wonton-app-test");
 }
@@ -275,9 +276,6 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
     assert_eq!(service(&plan, "web").body.healthcheck, None);
 }
 
-/// 按假 Docker 分配的网段 172.30.0.0/24 留给核心的地址。
-const CORE_ADDRESS: &str = "172.30.0.254";
-
 #[tokio::test]
 async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
@@ -294,8 +292,9 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     // 核心直接跑在宿主上（开发时）：是网关地址。
     let m = manager_with(engine.clone(), &dir);
     m.install(&compose, &[]).await.unwrap();
+    let gateway = m.engine.network_gateway("wonton-app-test").await.unwrap();
     let env = docker.env(&container_name("app-test", "web"));
-    assert!(env.contains(&"TRUSTED=172.30.0.1/32".to_owned()), "{env:?}");
+    assert!(env.contains(&format!("TRUSTED={gateway}/32")), "{env:?}");
 
     // 核心在容器里：是留给它的地址。网络按新建法建好后才算得出。
     let package = PluginPackage::parse(&compose).unwrap();
@@ -305,7 +304,10 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
         .core_address_var(&package.manifest, network)
         .await
         .unwrap();
-    assert_eq!(var.as_deref(), Some(CORE_ADDRESS));
+    assert_eq!(
+        var,
+        Some(m.engine.core_address(network).await.unwrap().to_string())
+    );
 
     // 不是代登录的插件不注入，引用了就报错。
     let other = PluginPackage::parse(&app("")).unwrap();
@@ -335,12 +337,9 @@ async fn the_core_attaches_at_its_reserved_address_and_reconnects_when_it_is_wro
         .await
         .unwrap();
     let network = "wonton-app-test";
-    let body = docker.network(network).unwrap();
-    let config = &body["IPAM"]["Config"][0];
-    assert_eq!(config["Subnet"], "172.30.0.0/24");
-    assert_eq!(config["IPRange"], "172.30.0.0/25");
     let endpoint = docker.endpoint(network, "wonton-core").unwrap();
-    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
+    let address = m.engine.core_address(network).await.unwrap().to_string();
+    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], address);
     assert_eq!(endpoint["GwPriority"], -1);
 
     // 核心容器还接着，但地址不对（比如手工接过）：断开重接。
@@ -353,5 +352,5 @@ async fn the_core_attaches_at_its_reserved_address_and_reconnects_when_it_is_wro
     let m = manager_in_container(engine, &dir);
     m.restore().await.unwrap();
     let endpoint = docker.endpoint(network, "wonton-core").unwrap();
-    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
+    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], address);
 }

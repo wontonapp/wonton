@@ -18,6 +18,7 @@
 #                       ADR-0019）。设成空就取消
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
+#   WONTON_PLUGIN_NETWORK_POOL  插件网络使用的私有 IPv4 地址段（默认 10.213.0.0/16），核心从中分配 /26
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
 #   WONTON_CORE_PIN     手动退回到这个 digest（sha256:…），之后照样跟渠道（ADR-0025）。有当时升级留下的备份就恢复核心
 #                       数据和安装目录
@@ -121,6 +122,8 @@ tunnel_port=${WONTON_TUNNEL_PORT:-$(saved WONTON_TUNNEL_PORT)}
 tunnel_port=${tunnel_port:-8482}
 domain=${WONTON_BASE_DOMAIN:-$(saved WONTON_BASE_DOMAIN)}
 domain=${domain:-wonton.localhost}
+plugin_network_pool=${WONTON_PLUGIN_NETWORK_POOL:-$(saved WONTON_PLUGIN_NETWORK_POOL)}
+plugin_network_pool=${plugin_network_pool:-10.213.0.0/16}
 # 没给也没记下时留空：核心用数据目录里记下的，第一次启动时是 owner。
 owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
@@ -246,10 +249,10 @@ proxy_fits_env() {
 
 # 测试容器接在核心以后用的网络上：防火墙常按网段放行，别的网桥上测通不算数。这个网络核心沿用，标签要和核心建的一样。
 ensure_egress_network() {
-  docker network inspect wonton-egress >/dev/null 2>&1 ||
-    docker network create --driver bridge --label wonton.managed-by=core \
-      --label wonton.core.component=wonton-egress wonton-egress >/dev/null ||
-    die "建不了 Docker 网络 wonton-egress"
+  docker run --rm --network host -v /var/run/docker.sock:/var/run/docker.sock \
+    --cap-drop ALL --security-opt no-new-privileges --read-only \
+    -e WONTON_PLUGIN_NETWORK_POOL="$plugin_network_pool" \
+    "$pinned" prepare-egress-network || die "建不了出口网络：按上面的错误处理后重试"
 }
 
 # 打印一行 JSON（测通时是 null），退出码 0 是代理能用。地址经环境变量传入容器，不出现在 docker 的命令行上。
@@ -376,6 +379,7 @@ write_config() {
   docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
     -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e TZ="$tz" \
     -e WONTON_MATRIX_SERVER_NAME="${WONTON_MATRIX_SERVER_NAME:-}" \
+    -e WONTON_PLUGIN_NETWORK_POOL="$plugin_network_pool" \
     "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
   settle_proxy
@@ -394,6 +398,7 @@ WONTON_PORT=$port
 WONTON_TUNNEL_PORT=$tunnel_port
 WONTON_BASE_DOMAIN=$domain
 WONTON_OWNER_NAME=$owner_name
+WONTON_PLUGIN_NETWORK_POOL=$plugin_network_pool
 TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_EGRESS_PROXY=$egress_proxy

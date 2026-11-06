@@ -36,7 +36,7 @@ fn nic(name: &str, addresses: &[&str]) -> HostInterface {
 }
 
 /// 有线 eno1 走默认路由，另有 Wi-Fi、Tailscale 和 Docker 的默认网桥。
-fn host(eno1: &[&str]) -> HostNetwork {
+pub(super) fn host(eno1: &[&str]) -> HostNetwork {
     let mut wifi = nic("wlp2s0", &["192.168.0.82"]);
     wifi.devtype = Some("wlan".into());
     let mut tailscale = nic("tailscale0", &["100.101.102.103"]);
@@ -57,6 +57,7 @@ fn host(eno1: &[&str]) -> HostNetwork {
             },
         ],
         interfaces: vec![nic("eno1", eno1), wifi, tailscale, docker0],
+        subnets: vec![],
     }
 }
 
@@ -66,7 +67,10 @@ pub(super) fn office() -> HostNetwork {
 
 /// Docker 的默认网桥：网卡名写在网络的选项里。
 pub(super) fn add_default_bridge(docker: &FakeDocker) {
-    let options = json!({"Options": {"com.docker.network.bridge.name": "docker0"}});
+    let options = json!({
+        "Options": {"com.docker.network.bridge.name": "docker0"},
+        "IPAM": {"Config": [{"Subnet": "172.17.0.0/16", "Gateway": "172.17.0.1"}]}
+    });
     docker.add_network("bridge", "", options);
 }
 

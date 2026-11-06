@@ -28,6 +28,7 @@ pub(super) fn lan() -> Lan {
             metric: 100,
         }],
         interfaces: vec![nic("eth0", "192.168.1.10"), nic("eth1", "fd00::1")],
+        subnets: vec![],
     };
     Lan::new(Detector::Fixed(Arc::new(Mutex::new(Ok(network)))), None)
 }

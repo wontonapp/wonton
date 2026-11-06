@@ -250,11 +250,19 @@ gost -C /etc/gost/gost.yaml
 - **新的插值变量 `WONTON_CORE_ADDRESS`。** 声明 `webui.sso: proxy` 时注入。网络建好才知道这个地址，所以和 `hosts_via_gateway` 一样，建好网络后再渲染一次。
 - **地址要固定：** 核心容器重建后地址变了，插件就不信任它了，又不能为此重建插件。每个插件网络的最后一个可用地址留给核心：
 
-  1. 不指定网段建一次网络，读出 Docker 分配的网段，删掉。这样网段仍由 Docker 从地址池里选，核心不用自己避冲突。
-  2. 用这个网段再建一次，`IPRange` 只给前一半，容器自动分配不会占到后一半。冲突（别的网络抢先用了这段）就从头重试，最多 3 次，仍失败就报错。
+  1. 核心从 `WONTON_PLUGIN_NETWORK_POOL` 指定的私有 IPv4 地址段（默认 `10.213.0.0/16`，可分 1024 个）里挑空闲的 `/26`。
+     每次创建前现查所有 Docker 网络的 IPAM 网段和宿主 IPv4 路由（不含默认路由），跳过任何重叠的候选网段。
+  2. 带显式 IPAM 建一次网络：子网是选出的 `/26`，`IPRange` 只给前一半 `/27`，容器自动分配不会占到后一半；
+     普通桥接和内部网络的网关是第一个可用地址，隔离网络不设网关。Docker 报重叠时换一个空闲网段重试，最多尝试 10 次，
+     沿用 50–500 毫秒的随机间隔；插件网络、`--lan` 网络和出口网络都走这条路径，核心自己的 Compose 网络不变。
+     安装器的代理预检调用核心的 `prepare-egress-network`，也不直接让 Docker 自动选网段。
   3. 核心接入时用 `IPAddress` 指定最后一个可用地址；已经接着但地址不对时断开重接。
 
-  Engine 28 不许在自动分配的网段上指定地址（实测报 `user specified IP address is supported only when connecting to networks with user configured subnets`，Engine 29.7.2 可以），所以要有前两步。
+  Docker 默认地址池大约建 30 个网络就用完（[#120](https://github.com/geraldpeng6/wonton/issues/120)），所以由核心分配小网段，
+  不改 `daemon.json`。地址段没有空闲 `/26` 时复用地址池用完的拒绝路径：提示主人卸载不用的插件，或者扩大
+  `WONTON_PLUGIN_NETWORK_POOL`；详情带上地址段和已用数量。Engine 28 不许在自动分配的网段上指定地址（实测报
+  `user specified IP address is supported only when connecting to networks with user configured subnets`，Engine 29.7.2 可以），
+  显式 IPAM 也满足这一限制。
 - **核心直接跑在宿主上（开发时）：** `WONTON_CORE_ADDRESS` 是网关地址，这条不起作用。只用于开发。
 
 ### 网页的局域网端口：默认不开，主人可以打开

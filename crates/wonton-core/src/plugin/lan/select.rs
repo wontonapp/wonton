@@ -382,6 +382,7 @@ mod tests {
                 veth,
                 lo,
             ],
+            subnets: vec![],
         }
     }
 
@@ -445,6 +446,7 @@ mod tests {
         let network = HostNetwork {
             routes: vec![route("br0", 0)],
             interfaces: vec![br0],
+            subnets: vec![],
         };
         let host = classify(&network, &docker());
         assert_eq!(host.candidates[0].kind, Kind::Bridge);
@@ -483,6 +485,7 @@ mod tests {
             &HostNetwork {
                 routes: vec![],
                 interfaces: vec![nic("eth1", &["fd00::20"])],
+                subnets: vec![],
             },
             &docker(),
         );

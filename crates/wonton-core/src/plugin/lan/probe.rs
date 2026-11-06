@@ -1,5 +1,5 @@
 //! 读宿主的路由和网卡（`wonton-core lan-probe`）。核心在容器里时，这段代码跑在宿主网络里的一次性小容器里（见
-//! [`super::detect`]），所以只读、只打印：从 `/proc/net/route` 读 main 表的默认路由，经 netlink 列出地址，从
+//! [`super::detect`]），所以只读、只打印：从 `/proc/net/route` 读 main 表的默认路由和已用网段，经 netlink 列出地址，从
 //! `/sys/class/net` 认出网卡的类型。选哪个地址在核心里算（[`super::select`]）。
 //!
 //! `/proc/net/route` 只列 main 表：Tailscale 用出口节点时，策略路由把流量导到 tailscale0，`ip route get` 查到的就是
@@ -10,6 +10,7 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::process::ExitCode;
 
+use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
 
 /// 子命令名：`wonton-core lan-probe`。
@@ -24,6 +25,8 @@ pub struct HostNetwork {
     /// main 表里的 IPv4 默认路由。
     pub routes: Vec<DefaultRoute>,
     pub interfaces: Vec<HostInterface>,
+    /// main 表里已启用的 IPv4 路由网段，不含默认路由。
+    pub subnets: Vec<Ipv4Net>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +104,7 @@ pub fn assemble(
     Ok(HostNetwork {
         routes: default_routes(route),
         interfaces: interfaces.into_iter().map(|(_, i)| i).collect(),
+        subnets: super::route_subnets::parse(route)?,
     })
 }
 

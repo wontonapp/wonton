@@ -329,8 +329,10 @@ async fn editing_the_direct_list_under_an_env_address_leaves_what_was_detected_a
 async fn a_direct_segment_on_a_docker_network_is_refused() {
     let rig = Rig::proxied().await;
     rig.m.reconcile_relay().await.unwrap();
-    // 假 Docker 给没指定网段的网络分配的。
-    let subnet = "172.30.0.0/24".to_owned();
+    let subnet = rig.docker.network("wonton-egress").unwrap()["IPAM"]["Config"][0]["Subnet"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let update = EgressProxyUpdate {
         url: Some("http://proxy.lan:7899".to_owned()),
         direct_cidrs: vec![subnet],

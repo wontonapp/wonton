@@ -1,9 +1,8 @@
 //! 每个插件网络的最后一个可用地址留给核心（ADR-0023 的“只信任核心的地址”）。用请求头认用户的应用，信任的代理地址
 //! 只写这个地址（`WONTON_CORE_ADDRESS`）：地址要固定，核心容器重建后还是它，不能为此重建插件。
 //!
-//! Engine 28 不许在自动分配的网段上指定地址，`AuxiliaryAddresses` 预留的地址谁都分配不了（都实测），所以这样建：
-//! 不指定网段建一次，读出 Docker 分配的网段，删掉；再用这个网段建一次，`IPRange` 只给前一半，容器自动分配占不到后一半。
-//! 网段仍由 Docker 从地址池里选，核心不用自己避冲突。
+//! Engine 28 不许在自动分配的网段上指定地址，`AuxiliaryAddresses` 预留的地址谁都分配不了（都实测）。
+//! 核心从自己的地址池挑 /26，显式 IPAM 的 `IPRange` 只给前一半，容器自动分配占不到后一半。
 
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
@@ -20,10 +19,7 @@ use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, Sso};
 use super::upstreams::core_aliases;
 
-/// 建网络时别的网络抢先用了这一段，就从头再来，最多这么多次。删和重建之间，别的调用（别的 Compose 项目也算）可能
-/// 拿到同一段。实测 8 个进程各并发建 8 个网络、不重试时，24 个进程里 4 个撞上（Docker 29.7.2，负载 40）；Docker 越慢
-/// 窗口越大，CI 负载高时 3 次都会撞（#327）。让 Docker 分配网段的那一步也会撞：地址池已经认为这段空着，网桥驱动
-/// 却还记着同时在建的另一张网络，报重叠（CI 实测，Docker 29.7.2）。两步都从头再来。
+/// 别的核心或程序可能同时选中同一段。沿用 #474 的重试次数与间隔，不把并发碰撞当地址池耗尽。
 const CREATE_ATTEMPTS: u32 = 10;
 
 /// 重试前等 50 到 500 毫秒。一起撞上的调用如果马上重来，又会一起选中同一段。
@@ -100,6 +96,18 @@ pub(super) fn subnet_taken(error: &EngineError) -> bool {
         if message.contains("overlap") || message.contains("already in use"))
 }
 
+fn pool_exhausted_error(name: &str, pool: super::network_pool::NetworkPool) -> EngineError {
+    let count = 1u32 << (26 - pool.subnet().prefix_len());
+    EngineError::Rejected {
+        context: format!(
+            "创建网络 {name}，核心给插件网络留的地址段用完了，插件装不上；卸掉不用的插件，\
+             或把核心配置 {} 里的地址段改大",
+            super::network_pool::VAR
+        ),
+        message: format!("地址段 {}，已用 {count}/{count} 个 /26 网段", pool.subnet()),
+    }
+}
+
 /// 试满次数还是撞：仍是 Docker 的拒绝，原话不动，前面写明重试过。
 fn kept_taken(error: EngineError) -> EngineError {
     match error {
@@ -131,41 +139,65 @@ impl Engine {
         self.create_reserved(request).await
     }
 
-    /// 让 Docker 分配网段，再带着留出的地址建一次：Docker 不许在建网络时只写 `IPRange`。
+    /// 宿主路由只查一次（一次建网络的过程里不会变），Docker 网段每轮重查；Docker 报重叠时换下一段，
+    /// 保留这轮已撞的网段。整个挑选加创建在 [`Engine::reserved_creation`] 锁内进行，本进程的
+    /// 并发建网络排队挨个挑段；锁外的并发（外部程序）才靠重试。
     pub(super) async fn create_reserved(
         &self,
         request: NetworkCreateRequest,
     ) -> Result<(), EngineError> {
-        let mut attempt = 1;
-        loop {
-            match self.try_create_reserved(&request).await {
-                Err(e) if subnet_taken(&e) && attempt < CREATE_ATTEMPTS => {
-                    attempt += 1;
+        let _serial = self.reserved_creation.lock().await;
+        let host = self.host_subnets(&request.name).await?;
+        let mut taken = Vec::new();
+        for attempt in 1..=CREATE_ATTEMPTS {
+            let mut used = self.docker_subnets(&request.name).await?;
+            used.extend(host.iter().copied());
+            used.extend_from_slice(&taken);
+            let subnet = self
+                .network_pool
+                .available(&used)
+                .ok_or_else(|| pool_exhausted_error(&request.name, self.network_pool))?;
+            let isolated = request
+                .options
+                .as_ref()
+                .and_then(|options| options.get(GATEWAY_MODES[0]))
+                .is_some_and(|mode| mode == "isolated");
+            let gateway =
+                (!isolated).then(|| Ipv4Addr::from(subnet.network().to_bits() + 1).to_string());
+            let ipam = reserved_ipam(subnet, gateway).expect("/26 能给核心留地址");
+            match self
+                .create_raw(NetworkCreateRequest {
+                    ipam: Some(ipam),
+                    ..request.clone()
+                })
+                .await
+            {
+                Err(error) if subnet_taken(&error) && attempt < CREATE_ATTEMPTS => {
+                    taken.push(subnet);
                     tokio::time::sleep(retry_delay()).await;
                 }
-                Err(e) if subnet_taken(&e) => return Err(kept_taken(e)),
+                Err(error) if subnet_taken(&error) => return Err(kept_taken(error)),
                 other => return other,
             }
         }
+        unreachable!("最后一次创建的结果直接返回")
     }
 
-    async fn try_create_reserved(&self, request: &NetworkCreateRequest) -> Result<(), EngineError> {
-        let name = &request.name;
-        let context = format!("创建网络 {name}");
-        self.create_raw(request.clone()).await?;
-        let found = self.inspect_network(name).await;
-        self.remove_network(name).await?;
-        let layout = found?
-            .as_ref()
-            .and_then(layout_of)
-            .ok_or_else(|| no_layout(&context))?;
-        let ipam =
-            reserved_ipam(layout.subnet, layout.gateway).ok_or_else(|| no_layout(&context))?;
-        self.create_raw(NetworkCreateRequest {
-            ipam: Some(ipam),
-            ..request.clone()
-        })
-        .await
+    /// 网络的网段是否不在这套核心的地址段里。旧版核心让 Docker 从默认地址池分插件网络的网段，主人升级
+    /// 核心后，下一次为这个插件重建容器时把它删掉在段内重建（卷和数据不动）；网络不存在时不迁，新建走
+    /// [`Self::create_reserved`]。没写 IPAM 网段的网络不归这套判断管，不迁。
+    pub(super) async fn network_outside_pool(&self, name: &str) -> Result<bool, EngineError> {
+        let Some(found) = self.inspect_network(name).await? else {
+            return Ok(false);
+        };
+        let subnets: Vec<Ipv4Net> = found
+            .ipam
+            .and_then(|ipam| ipam.config)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|config| config.subnet.as_deref().and_then(|text| text.parse().ok()))
+            .collect();
+        Ok(!subnets.is_empty() && !subnets.iter().all(|s| self.network_pool.covers(*s)))
     }
 
     pub(super) async fn create_raw(
@@ -337,22 +369,10 @@ mod tests {
         engine.core_address("n").await.unwrap();
     }
 
-    // 实测（CI，Docker 29.7.2）：别的进程同时在建网络时，让 Docker 分配网段的那一步也会被网桥驱动以重叠拒绝。
-    #[tokio::test]
-    async fn a_subnet_taken_while_docker_picks_it_is_retried() {
-        let (docker, engine) = FakeDocker::start().await;
-        docker.reject_auto_networks(3, OVERLAP);
-        engine
-            .create_network("n", &HashMap::new(), NetworkReach::Isolated)
-            .await
-            .unwrap();
-        engine.core_address("n").await.unwrap();
-    }
-
     #[tokio::test]
     async fn a_subnet_that_stays_taken_is_reported_as_a_docker_rejection() {
         let (docker, engine) = FakeDocker::start().await;
-        docker.reject_auto_networks(CREATE_ATTEMPTS, OVERLAP);
+        docker.reject_pinned_networks(CREATE_ATTEMPTS, OVERLAP);
         let error = engine
             .create_network("n", &HashMap::new(), NetworkReach::Isolated)
             .await
@@ -371,6 +391,7 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("permission denied"), "{error}");
         assert!(docker.networks().is_empty());
+        assert_eq!(docker.writes(), ["POST /networks/create"]);
     }
 
     fn net(text: &str) -> Ipv4Net {
@@ -383,6 +404,7 @@ mod tests {
             ("172.18.0.0/16", "172.18.255.254", "172.18.0.0/17"),
             ("192.168.32.0/20", "192.168.47.254", "192.168.32.0/21"),
             ("10.1.2.0/24", "10.1.2.254", "10.1.2.0/25"),
+            ("10.213.0.64/26", "10.213.0.126", "10.213.0.64/27"),
         ];
         for (subnet, core, lower) in cases {
             assert_eq!(last_usable(net(subnet)).unwrap().to_string(), core);

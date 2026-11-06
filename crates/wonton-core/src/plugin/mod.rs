@@ -10,6 +10,8 @@ pub mod compose;
 pub mod configs;
 pub(super) mod configs_store;
 pub mod core_address;
+#[cfg(test)]
+mod core_address_tests;
 pub mod docker;
 pub mod docker_exec;
 mod docker_limits;
@@ -50,6 +52,12 @@ pub(crate) mod model_providers;
 pub mod models;
 pub mod mounts;
 pub mod names;
+pub mod network_pool;
+pub mod network_pool_command;
+#[cfg(test)]
+mod network_pool_probe_tests;
+#[cfg(test)]
+mod network_pool_tests;
 pub(crate) mod oom;
 pub mod package;
 pub mod package_archive;

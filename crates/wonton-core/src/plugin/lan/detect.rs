@@ -209,11 +209,7 @@ impl Engine {
             options: Some(HashMap::from([(MASQUERADE.to_owned(), "false".to_owned())])),
             ..Default::default()
         };
-        self.docker
-            .create_network(request)
-            .await
-            .map(|_| ())
-            .map_err(|e| EngineError::from_bollard(&format!("创建网络 {name}"), e))
+        self.create_reserved(request).await
     }
 }
 

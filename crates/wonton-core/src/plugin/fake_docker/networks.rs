@@ -5,17 +5,14 @@ use std::collections::BTreeMap;
 use axum::body::Bytes;
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use ipnet::Ipv4Net;
 use serde_json::{Value, json};
 
 use super::{Resources, gone, json_reply, labeled, labels_of};
 
-/// 还有要拒绝的次数时，拒绝建网络：指定网段的和让 Docker 分配网段的分开计数。
 fn reject_create(docker: &mut Resources, body: &Value) -> Option<Response> {
-    let slot = if body["IPAM"]["Config"][0]["Subnet"].is_string() {
-        &mut docker.pinned_network_rejection
-    } else {
-        &mut docker.auto_network_rejection
-    };
+    body["IPAM"]["Config"][0]["Subnet"].as_str()?;
+    let slot = &mut docker.pinned_network_rejection;
     let (times, message) = slot.as_mut()?;
     if *times == 0 {
         return None;
@@ -24,6 +21,35 @@ fn reject_create(docker: &mut Resources, body: &Value) -> Option<Response> {
     Some(json_reply(
         StatusCode::FORBIDDEN,
         json!({"message": message.clone()}),
+    ))
+}
+
+fn reject_overlap(docker: &mut Resources, body: &Value) -> Option<Response> {
+    let subnet = body["IPAM"]["Config"][0]["Subnet"]
+        .as_str()?
+        .parse::<Ipv4Net>()
+        .ok()?;
+    let taken = docker.network_bodies.values().any(|network| {
+        ipam_configs(network)
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|config| {
+                config["Subnet"]
+                    .as_str()
+                    .and_then(|text| text.parse::<Ipv4Net>().ok())
+                    .is_some_and(|used| {
+                        used.contains(&subnet.network()) || subnet.contains(&used.network())
+                    })
+            })
+    });
+    if !taken {
+        return None;
+    }
+    docker.network_collisions += 1;
+    Some(json_reply(
+        StatusCode::FORBIDDEN,
+        json!({"message": "Pool overlaps with other one on this address space"}),
     ))
 }
 
@@ -37,7 +63,7 @@ pub(super) fn networks(
 ) -> Option<Response> {
     let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
     if let (&Method::POST, ["create"]) = (method, parts)
-        && let Some(reply) = reject_create(docker, &body)
+        && let Some(reply) = reject_create(docker, &body).or_else(|| reject_overlap(docker, &body))
     {
         return Some(reply);
     }
@@ -93,7 +119,7 @@ pub(super) fn networks(
                 json!({
                     "Name": name, "Driver": "bridge", "Internal": created["Internal"],
                     "Options": created["Options"], "Labels": docker.networks[*name],
-                    "IPAM": {"Config": [ipam_config(created)]}, "Containers": containers,
+                    "IPAM": {"Config": ipam_configs(created)}, "Containers": containers,
                 }),
             )
         }
@@ -120,7 +146,7 @@ pub(super) fn networks(
                     let created = &docker.network_bodies[n];
                     json!({"Name": n, "Id": n, "Driver": "bridge", "Labels": labels,
                            "Options": created["Options"],
-                           "IPAM": {"Config": [ipam_config(created)]}})
+                           "IPAM": {"Config": ipam_configs(created)}})
                 })
                 .collect();
             json_reply(StatusCode::OK, json!(list))
@@ -131,10 +157,11 @@ pub(super) fn networks(
 }
 
 /// 网络的 IPAM：建的时候指定了就用它，没指定时是假 Docker 分配的网段。
-fn ipam_config(created: &Value) -> Value {
-    let default = json!({"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"});
-    let config = created["IPAM"]["Config"].get(0).cloned().unwrap_or(default);
-    json!({"Subnet": config["Subnet"], "Gateway": config["Gateway"], "IPRange": config["IPRange"]})
+fn ipam_configs(created: &Value) -> Value {
+    created["IPAM"]["Config"].as_array().map_or_else(
+        || json!([{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]),
+        |configs| json!(configs),
+    )
 }
 
 /// 和 Docker 一样：网络的查询接口不列停着的容器，它们的端点也没有地址。

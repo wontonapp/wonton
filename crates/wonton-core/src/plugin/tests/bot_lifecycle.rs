@@ -76,6 +76,15 @@ impl Bed {
     fn token_valid(&self, token: &str) -> bool {
         self.tuwunel.state().tokens.contains_key(token)
     }
+    fn source_address(&self) -> std::net::IpAddr {
+        let body = self.docker.network("wonton-app-echo").unwrap();
+        let subnet: ipnet::Ipv4Net = body["IPAM"]["Config"][0]["Subnet"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        std::net::Ipv4Addr::from(subnet.network().to_bits() + 9).into()
+    }
 }
 
 fn id() -> PluginId {
@@ -102,11 +111,9 @@ async fn a_bot_plugin_gets_its_own_matrix_identity_through_the_core() {
     // 核心在插件网络里的别名，插件经它访问 Matrix；网关按来源地址认出这个插件。
     let aliases = bed.docker.aliases("wonton-app-echo");
     assert_eq!(aliases, ["matrix.wonton.internal"]);
-    let source = m.source("172.30.0.9".parse().unwrap()).unwrap();
+    let source = m.source(bed.source_address()).unwrap();
     assert_eq!(source.id, id());
     assert!(source.permissions.contains(&granted()[0]));
-    // 网桥自己的地址是宿主那一侧，不算这个插件。
-    assert!(m.source("172.30.0.1".parse().unwrap()).is_none());
 }
 
 #[tokio::test]
@@ -115,6 +122,7 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
     let m = bed.manager();
     m.install(&echo(), &granted()).await.unwrap();
     let first = bed.env();
+    let source_address = bed.source_address();
     bed.matrix
         .as_bot(&first["USER"], async |session| {
             session.set_display_name("自选名字").await
@@ -132,7 +140,7 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
         !bed.token_valid(&first["TOKEN"]),
         "卸载后 Bot 的令牌立即失效"
     );
-    assert!(m.source("172.30.0.9".parse().unwrap()).is_none());
+    assert!(m.source(source_address).is_none());
 
     // 不删数据重装：同一个账号、同一个主房间，新的设备。
     m.install(&echo(), &granted()).await.unwrap();
@@ -271,7 +279,7 @@ async fn a_restart_reports_a_bot_whose_device_was_revoked() {
     };
     assert!(reason.contains("吊销"), "{reason}");
     // 状态异常也照样认得出来源：插件恢复正常前也能经核心连 Matrix。
-    assert!(restarted.source("172.30.0.9".parse().unwrap()).is_some());
+    assert!(restarted.source(bed.source_address()).is_some());
 }
 
 #[tokio::test]

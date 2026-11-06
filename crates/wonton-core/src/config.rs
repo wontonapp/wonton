@@ -8,6 +8,7 @@ use crate::gateway::send_limits::SendLimits;
 use crate::owner;
 use crate::plugin::egress::address::ProxyAddress;
 use crate::plugin::names::Instance;
+use crate::plugin::network_pool::{self, NetworkPool};
 use crate::plugin::storefront::StoreConfig;
 
 #[derive(Debug, thiserror::Error)]
@@ -204,6 +205,7 @@ pub struct Config {
     pub egress_proxy_detected: Option<ProxyAddress>,
     /// 插件容器的 Docker `CgroupParent`（`WONTON_PLUGIN_SLICE`）；空值不设置。
     pub plugin_slice: Option<String>,
+    pub plugin_network_pool: NetworkPool,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
@@ -319,6 +321,7 @@ impl Config {
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
             plugin_slice: get("WONTON_PLUGIN_SLICE").filter(|value| !value.is_empty()),
+            plugin_network_pool: parse(&get, network_pool::VAR, NetworkPool::default())?,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
@@ -557,7 +560,6 @@ fn is_domain(text: &str) -> bool {
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         })
 }
-
 #[cfg(test)]
 #[path = "config_tests.rs"]
 mod tests;

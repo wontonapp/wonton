@@ -176,9 +176,15 @@ async fn consumers_get_their_own_verified_credential_through_the_core() {
         .created(&container_name("app-test", "web"))
         .unwrap();
     let hosts = created["HostConfig"]["ExtraHosts"].clone();
+    let gateway = bed
+        .manager
+        .engine
+        .network_gateway("wonton-app-test")
+        .await
+        .unwrap();
     assert_eq!(
         hosts,
-        serde_json::json!(["models.wonton.internal:172.30.0.1"])
+        serde_json::json!([format!("models.wonton.internal:{gateway}")])
     );
 }
 

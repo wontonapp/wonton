@@ -245,3 +245,19 @@ fn matrix_needs_its_url_key_and_secret_together() {
         assert!(config(&partial).is_err(), "少了 {}", full[missing].0);
     }
 }
+
+#[test]
+fn plugin_network_pool_is_validated_before_startup() {
+    for value in ["10.213.0.0/27", "203.0.113.0/24", "10.213.0.1/16"] {
+        assert!(config(&[("WONTON_DATA_DIR", "/d"), (network_pool::VAR, value)]).is_err());
+    }
+    let cfg = config(&[
+        ("WONTON_DATA_DIR", "/d"),
+        (network_pool::VAR, "10.214.0.0/16"),
+    ])
+    .unwrap();
+    assert_eq!(
+        cfg.plugin_network_pool.subnet().to_string(),
+        "10.214.0.0/16"
+    );
+}

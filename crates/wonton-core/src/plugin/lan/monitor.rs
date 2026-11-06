@@ -286,19 +286,24 @@ impl PluginManager {
         record: &InstalledRecord,
         addresses: &[IpAddr],
     ) -> Result<(), InstallError> {
+        // 要迁网络就在渲染前迁：核心地址等变量得按迁好后的网络算。迁移删掉插件的全部容器
+        // （每个都挂在插件网络上），迁移后全部重建。
+        let migrating = self.migrate_network_into_pool(&package.manifest).await?;
         let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
         let ctx = self.rebuild_context(package, record, Some(grant)).await?;
         let mut plan = render(package, &ctx)?;
-        let services: BTreeSet<&str> = package
-            .manifest
-            .lan
-            .iter()
-            .flat_map(|lan| &lan.ports)
-            .map(|port| port.service.as_str())
-            .collect();
-        plan.containers.retain(|c| {
-            services.contains(c.service.as_str()) || c.variables.contains(super::ADDRESSES_VAR)
-        });
+        if !migrating {
+            let services: BTreeSet<&str> = package
+                .manifest
+                .lan
+                .iter()
+                .flat_map(|lan| &lan.ports)
+                .map(|port| port.service.as_str())
+                .collect();
+            plan.containers.retain(|c| {
+                services.contains(c.service.as_str()) || c.variables.contains(super::ADDRESSES_VAR)
+            });
+        }
         self.replace_containers(&ctx, plan).await
     }
 
