@@ -95,7 +95,7 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 
 - `scripts/check-ui-text.py`，进 CI 和 `check.sh`：
   - 在 iOS 和 Android 的源码（不含测试）和 `wonton-client`、`wonton-protocol`（不含测试）里，含中文、日文假名或全角标点的字符串字面量一律报错，注释不算。
-  - 两端的源码里，直接传给 `Text`、`Button`、`Label`、`navigationTitle`、`contentDescription` 这类接口的字符串字面量也报错。
+  - 两端的源码里，直接传给界面接口的字符串字面量像界面文字时也报错：`Text`、`Button`、`Label`、`navigationTitle`、`contentDescription` 这类系统接口，设计系统组件（名单从 `design/`、`Design/` 目录和 `Wonton` 前缀读出）的第一个参数，以及 `title`、`message`、`label`、`detail` 这类文字参数。迁移前按语言二选一的 `TabText.choose`、`tabText` 一律报错。
   - 四种语言的键要一样，同一条的占位符个数和类型要一样，没有翻译的条目报错。
   - 例外写进 `.ui-text-allowlist`，格式和 `.size-allowlist` 一样：`路径 | 原因 | 到期日 YYYY-MM-DD`。迁移期间现有文件都列进去，每抽完一批删掉对应的行。
 - 客户端核心和服务器的 `.ftl` 由 Rust 测试检查：每种语言的消息一样，变量一样。

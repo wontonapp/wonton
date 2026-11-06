@@ -17,3 +17,6 @@ dist/
 
 # 系统文件
 .DS_Store
+
+# Python 缓存（scripts/ 下的检查脚本）
+__pycache__/

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 提交前的本地检查，和 CI 的 Rust 部分一致：行数门禁、格式、Clippy（含函数长度）、测试。
+# 提交前的本地检查，和 CI 的结构门禁、Rust 部分一致：行数门禁、界面文字检查、格式、Clippy（含函数长度）、测试。
 # 依赖 Docker 的集成测试标了 #[ignore]：连得上 Docker 就一起运行；连不上就跳过，并在末尾说明跳过了什么
 # （跳过不等于通过，CI 的 Rust 作业不会跳过）。
 set -euo pipefail
@@ -25,6 +25,8 @@ docker_reachable() {
 }
 
 bash scripts/check-file-size.sh
+python3 -m unittest discover -q -s scripts/ui_text -t scripts
+python3 scripts/check-ui-text.py
 bash scripts/check-conflict-markers.sh
 
 bash scripts/check-uniffi-comments.sh
