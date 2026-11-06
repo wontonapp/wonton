@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use super::core_address;
 use super::egress;
 use super::interpolate::Vars;
@@ -55,8 +57,9 @@ impl std::fmt::Debug for MatrixVars {
     }
 }
 
-/// 注入给使用方的模型网关配置（`models`）。`Debug` 不打印凭据。
-#[derive(Clone, PartialEq, Eq)]
+/// 注入给使用方的模型网关配置（`models`）。记进使用方的凭据文件（见 [`super::models`]），重建容器时
+/// 网关不在也注入同一套值。`Debug` 不打印凭据。
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelVars {
     pub base_url: String,
     pub anthropic_url: Option<String>,

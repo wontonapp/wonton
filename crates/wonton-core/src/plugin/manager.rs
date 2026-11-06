@@ -564,12 +564,24 @@ impl PluginManager {
                     deployed.firewalled,
                     Default::default(),
                 );
-                let mut plugins = self.plugins.write().expect("插件表锁中毒");
-                let entry = Entry::running(listed, deployed);
-                let view = self.view(&manifest.id, &entry);
-                plugins.insert(manifest.id.clone(), entry);
-                drop(plugins);
+                let view = {
+                    let mut plugins = self.plugins.write().expect("插件表锁中毒");
+                    let entry = Entry::running(listed, deployed);
+                    let view = self.view(&manifest.id, &entry);
+                    plugins.insert(manifest.id.clone(), entry);
+                    view
+                };
                 self.changed();
+                // 装的是模型网关：给没接上的使用方签发凭据、按新变量重建（见 super::models）。
+                if manifest
+                    .provides
+                    .as_ref()
+                    .is_some_and(|p| p.models.is_some())
+                {
+                    for (plugin, error) in self.reconcile_models().await {
+                        tracing::error!(%plugin, %error, "模型网关装好了，接上使用方失败");
+                    }
+                }
                 Ok(view)
             }
             Err(e) => {

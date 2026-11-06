@@ -17,8 +17,11 @@ use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, PluginId};
 use super::package::PluginPackage;
 use super::provides::{ModelsProvider, NAME_PLACEHOLDER};
-use super::render::ModelVars;
-use super::store::{StoreError, create_private_dir, read_json, remove_file, write_json};
+use super::render;
+use super::store::{
+    InstalledRecord, StoreError, create_private_dir, read_json, remove_file, write_json,
+};
+use super::vars::ModelVars;
 use crate::config::PLUGIN_MODELS_HOST;
 use crate::http::RequestBody;
 use crate::secret::random_token;
@@ -42,15 +45,28 @@ pub struct ModelsRoute {
 /// 凭据名 → 值。
 type Keys = BTreeMap<String, String>;
 
-/// 一个使用方的凭据。
+/// 一个使用方的凭据，和最近一次成功注入的变量。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct KeyFile {
     keys: Keys,
+    /// 最近一次成功注入给使用方的变量：之后重建容器时网关不在，也注入同一套值，网关回来就对上了。
+    #[serde(default)]
+    vars: Option<ModelVars>,
+    /// 最近一次签发或验证失败的原因；接上了就清掉。详情页的轻提示带它（类别 [`wonton_protocol::PluginHintCategory::ModelsNotConnected`]）。
+    #[serde(default)]
+    problem: Option<String>,
 }
 
 /// 使用方的凭据，每个插件一个 JSON 文件（0600）。卸载时连同网关里的凭据一起删掉。
 pub struct ModelKeyStore {
     dir: PathBuf,
+}
+
+impl KeyFile {
+    /// 凭据签发过、也没有没签发完的问题：使用方已接上网关。
+    fn connected(&self) -> bool {
+        !self.keys.is_empty() && self.problem.is_none()
+    }
 }
 
 impl ModelKeyStore {
@@ -62,24 +78,21 @@ impl ModelKeyStore {
         self.dir.join(format!("{id}.json"))
     }
 
-    fn load(&self, id: &PluginId) -> Result<Keys, StoreError> {
-        Ok(read_json::<KeyFile>(&self.path(id))?
-            .unwrap_or_default()
-            .keys)
+    fn load(&self, id: &PluginId) -> Result<KeyFile, StoreError> {
+        Ok(read_json::<KeyFile>(&self.path(id))?.unwrap_or_default())
     }
 
-    fn save(&self, id: &PluginId, keys: &Keys) -> Result<(), StoreError> {
+    fn save(&self, id: &PluginId, file: &KeyFile) -> Result<(), StoreError> {
         create_private_dir(&self.dir)?;
-        let file = KeyFile { keys: keys.clone() };
-        write_json(&self.path(id), &file)
+        write_json(&self.path(id), file)
     }
 
     fn remove(&self, id: &PluginId) -> Result<(), StoreError> {
         remove_file(&self.path(id))
     }
 
-    /// 有凭据的使用方。
-    fn all(&self) -> Result<Vec<(PluginId, Keys)>, StoreError> {
+    /// 记着凭据的使用方。
+    fn all(&self) -> Result<Vec<(PluginId, KeyFile)>, StoreError> {
         let entries = match std::fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -100,8 +113,8 @@ impl ModelKeyStore {
             if let Some(id) = id
                 && path.extension().and_then(|e| e.to_str()) == Some("json")
             {
-                let keys = self.load(&id)?;
-                all.push((id, keys));
+                let file = self.load(&id)?;
+                all.push((id, file));
             }
         }
         Ok(all)
@@ -149,6 +162,20 @@ fn unavailable(message: impl Into<String>) -> InstallError {
     InstallError::ModelsUnavailable(message.into())
 }
 
+/// 没接上网关时注入的变量：`WONTON_MODEL_*` 全部定义成空字符串，compose 引用它们不会因为变量缺失而失败，
+/// 插件用它自己的登录或 key 设置。
+fn empty_model_vars(package: &PluginPackage) -> ModelVars {
+    let (plugin, bot) = credential_names(package);
+    ModelVars {
+        base_url: String::new(),
+        anthropic_url: Some(String::new()),
+        gemini_url: Some(String::new()),
+        plugin_key: plugin.map(|_| String::new()),
+        bot_key: bot.map(|_| String::new()),
+        default_model: String::new(),
+    }
+}
+
 impl PluginManager {
     /// 当前可用的提供方：已安装、运行中的、声明了 `provides.models` 的插件。
     pub fn models_route(&self) -> Option<ModelsRoute> {
@@ -168,7 +195,9 @@ impl PluginManager {
         }
     }
 
-    /// 安装声明了 `models` 的插件时：签发并验证凭据，返回要注入的变量。网关没装或没就绪时安装失败。
+    /// 安装声明了 `models` 的插件时：网关就绪就签发并验证凭据；没装、没就绪或签发失败都照样装，
+    /// 变量定义成空字符串（见 [`empty_model_vars`]）。签发失败记日志、原因记进凭据文件，
+    /// 详情页的轻提示带上它；网关不在的情形详情页现场就能算出来，不记。
     pub(super) async fn provision_models(
         &self,
         package: &PluginPackage,
@@ -177,32 +206,69 @@ impl PluginManager {
         if !uses_models(manifest) {
             return Ok(None);
         }
-        let route = self.provider()?;
+        let vars = match self.provider() {
+            Err(e) => {
+                tracing::info!(plugin = %manifest.id, error = %e, "模型网关没接上，照样安装，模型变量为空");
+                empty_model_vars(package)
+            }
+            Ok(route) => match self.issue_consumer_credentials(&route, package).await {
+                Ok(vars) => vars,
+                Err(e) => {
+                    tracing::warn!(plugin = %manifest.id, error = %e, "模型网关凭据签发失败，照样安装，模型变量为空");
+                    empty_model_vars(package)
+                }
+            },
+        };
+        Ok(Some(vars))
+    }
+
+    /// 给使用方签发凭据并验证：缺的名字生成新值，逐个签发；成功后把变量一并记下（重建容器时用），
+    /// 失败就吊销已经签发的、清掉记下的值，只留下原因。网关在签发中途坏掉时也照此办理，不留半套凭据。
+    async fn issue_consumer_credentials(
+        &self,
+        route: &ModelsRoute,
+        package: &PluginPackage,
+    ) -> Result<ModelVars, InstallError> {
         let store = self.store.model_keys();
-        let mut keys = store.load(&manifest.id)?;
+        let id = &package.manifest.id;
+        let mut file = store.load(id)?;
         let (plugin, bot) = credential_names(package);
         for name in plugin.iter().chain(bot.iter()) {
-            keys.entry(name.clone()).or_insert_with(random_token);
+            file.keys.entry(name.clone()).or_insert_with(random_token);
         }
-        store.save(&manifest.id, &keys)?;
         let issued = async {
             for name in plugin.iter().chain(bot.iter()) {
-                self.issue_verified(&route, name, &keys[name]).await?;
+                self.issue_verified(route, name, &file.keys[name]).await?;
             }
             Ok::<_, InstallError>(())
         }
         .await;
-        if let Err(e) = issued {
-            // 没签发完：已经签发的吊销掉，记下的值也删掉，不留半套凭据。
-            if let Err(cleanup) = self.revoke_models(&manifest.id).await {
-                tracing::error!(plugin = %manifest.id, error = %cleanup, "吊销没签发完的模型网关凭据失败");
+        match issued {
+            Ok(()) => {
+                let vars = self.model_vars(route, package, &file.keys);
+                file.vars = Some(vars.clone());
+                file.problem = None;
+                store.save(id, &file)?;
+                Ok(vars)
             }
-            return Err(e);
+            Err(e) => {
+                for name in file.keys.keys() {
+                    let revoke = &route.spec.credentials.revoke;
+                    if let Err(cleanup) = self.run_command(route, revoke, name, None).await {
+                        tracing::error!(plugin = %id, credential = %name, error = %cleanup, "吊销没签发完的模型网关凭据失败");
+                    }
+                }
+                file.keys.clear();
+                file.vars = None;
+                file.problem = Some(e.to_string());
+                store.save(id, &file)?;
+                Err(e)
+            }
         }
-        Ok(Some(self.model_vars(&route, package, &keys)))
     }
 
-    /// 升级时：旧凭据原样留着（新版本装不好还要退回去），只签发新版本多要的，记进 `added`。
+    /// 升级时：旧凭据原样留着（新版本装不好还要退回去），新版本多要的名字网关就绪就补签（记进 `added`），
+    /// 网关不在就沿用记下的变量（可能为空），缺的等网关回来在对账时补。
     pub(super) async fn upgrade_model_vars(
         &self,
         package: &PluginPackage,
@@ -212,24 +278,34 @@ impl PluginManager {
         if !uses_models(manifest) {
             return Ok(None);
         }
-        let route = self.provider()?;
         let store = self.store.model_keys();
-        let mut keys = store.load(&manifest.id)?;
+        let mut file = store.load(&manifest.id)?;
+        let Ok(route) = self.provider() else {
+            return Ok(Some(
+                file.vars
+                    .clone()
+                    .unwrap_or_else(|| empty_model_vars(package)),
+            ));
+        };
         let (plugin, bot) = credential_names(package);
         for name in plugin.iter().chain(bot.iter()) {
-            if keys.contains_key(name) {
+            if file.keys.contains_key(name) {
                 continue;
             }
             let key = random_token();
-            keys.insert(name.clone(), key.clone());
-            store.save(&manifest.id, &keys)?;
+            file.keys.insert(name.clone(), key.clone());
             added.push(name.clone());
             self.issue_verified(&route, name, &key).await?;
         }
-        Ok(Some(self.model_vars(&route, package, &keys)))
+        let vars = self.model_vars(&route, package, &file.keys);
+        file.vars = Some(vars.clone());
+        file.problem = None;
+        store.save(&manifest.id, &file)?;
+        Ok(Some(vars))
     }
 
-    /// 退回旧版本时吊销 [`Self::upgrade_model_vars`] 多签发的。
+    /// 退回旧版本时吊销 [`Self::upgrade_model_vars`] 多签发的。网关已经卸载就没有可吊销的，只清掉记下的值；
+    /// 网关装着但没在运行时吊销不了，如实报错。
     pub(super) async fn revoke_model_names(
         &self,
         id: &PluginId,
@@ -238,23 +314,35 @@ impl PluginManager {
         if names.is_empty() {
             return Ok(());
         }
-        let route = self.provider()?;
         let store = self.store.model_keys();
-        let mut keys = store.load(id)?;
-        for name in names {
-            self.run_command(&route, &route.spec.credentials.revoke, name, None)
-                .await?;
-            keys.remove(name);
+        let mut file = store.load(id)?;
+        match self.models_provider() {
+            ProviderState::Absent => {}
+            ProviderState::NotReady(_) => {
+                return Err(unavailable(format!(
+                    "模型网关没在运行，吊销不了 {id} 的凭据"
+                )));
+            }
+            ProviderState::Ready(route) => {
+                for name in names {
+                    let revoke = &route.spec.credentials.revoke;
+                    self.run_command(&route, revoke, name, None).await?;
+                }
+            }
         }
-        if keys.is_empty() {
+        for name in names {
+            file.keys.remove(name);
+        }
+        if file.keys.is_empty() {
             store.remove(id)?;
         } else {
-            store.save(id, &keys)?;
+            store.save(id, &file)?;
         }
         Ok(())
     }
 
-    /// 重建容器时（见 [`super::lan`]）：用记下的凭据，不重新签发。网关没在运行时如实报错。
+    /// 重建容器时（见 [`super::lan`]、[`super::egress`]）：注入记下的变量，不问网关在不在——网关不在，
+    /// 变量也保持原样，等网关回来对账后就接上了。从来没接上的注入空变量。
     pub(super) fn stored_model_vars(
         &self,
         package: &PluginPackage,
@@ -262,17 +350,12 @@ impl PluginManager {
         if !uses_models(&package.manifest) {
             return Ok(None);
         }
-        let route = self.provider()?;
-        let keys = self.store.model_keys().load(&package.manifest.id)?;
-        let (plugin, bot) = credential_names(package);
-        if let Some(missing) = plugin
-            .iter()
-            .chain(bot.iter())
-            .find(|n| !keys.contains_key(*n))
-        {
-            return Err(unavailable(format!("没有记下模型网关凭据 {missing}")));
-        }
-        Ok(Some(self.model_vars(&route, package, &keys)))
+        let file = self.store.model_keys().load(&package.manifest.id)?;
+        Ok(Some(
+            file.vars
+                .clone()
+                .unwrap_or_else(|| empty_model_vars(package)),
+        ))
     }
 
     /// 注入的变量；`keys` 里有使用方要的每个凭据。
@@ -290,17 +373,18 @@ impl PluginManager {
         }
     }
 
-    /// 卸载使用方或安装失败回滚：在网关里吊销它的凭据，再删掉记下的值。网关已经卸载了就没有可吊销的；网关装着
-    /// 但没在运行时吊销不了，如实报错。
+    /// 卸载使用方或安装失败回滚：在网关里吊销它的凭据，再删掉记下的文件（没有凭据也删——里面可能只记着
+    /// 签发失败的原因）。网关已经卸载了就没有可吊销的；网关装着但没在运行时吊销不了，如实报错。
     pub(super) async fn revoke_models(&self, id: &PluginId) -> Result<(), InstallError> {
         let store = self.store.model_keys();
-        let keys = store.load(id)?;
-        if keys.is_empty() {
-            return Ok(());
-        }
+        let keys = store.load(id)?.keys;
         match self.models_provider() {
             ProviderState::Absent => {}
             ProviderState::NotReady(provider) => {
+                if keys.is_empty() {
+                    store.remove(id)?;
+                    return Ok(());
+                }
                 return Err(unavailable(format!(
                     "模型网关 {provider} 没在运行，吊销不了 {id} 的凭据"
                 )));
@@ -316,14 +400,15 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 网关启动后（安装、核心重启后的恢复）为所有使用方对一次账：用记下的值重新签发并验证。对账失败的使用方
-    /// 标为异常、写明原因，不影响其他使用方。
+    /// 网关启动后（安装、恢复、升级）为使用方对一次账：记着凭据的用原值重新签发并验证，对账失败的标为异常、
+    /// 写明原因；没接上的（装它的时候网关不在或签发失败）现在签发，并按新变量重建运行中的容器。
     pub async fn reconcile_models(&self) -> Vec<(PluginId, InstallError)> {
-        let failures = self.reconcile_model_keys().await;
+        let mut failures = self.reconcile_model_keys().await;
         for (id, error) in &failures {
             let reason = format!("模型网关凭据对账失败：{error}");
             self.set(id, PluginStatus::Degraded { reason }, None);
         }
+        failures.extend(self.connect_unconnected_consumers().await);
         failures
     }
 
@@ -336,15 +421,131 @@ impl PluginManager {
             Err(e) => return vec![(route.id.clone(), e.into())],
         };
         let mut failures = Vec::new();
-        for (id, keys) in all {
-            for (name, value) in &keys {
+        for (id, file) in all {
+            for (name, value) in &file.keys {
                 if let Err(e) = self.issue_verified(&route, name, value).await {
                     tracing::warn!(plugin = %id, credential = %name, error = %e, "模型网关凭据对账失败");
                     failures.push((id.clone(), e));
                 }
             }
+            // 网关升级可能改了接口路径和默认模型：对账顺手把记下的变量刷新成现在的。
+            if !file.keys.is_empty()
+                && let Ok(Some(record)) = self.store.load(&id)
+                && let Ok(mut package) = PluginPackage::with_files(&record.source, record.files)
+            {
+                package.origin = record.origin.clone();
+                let vars = self.model_vars(&route, &package, &file.keys);
+                let mut file = file;
+                file.vars = Some(vars);
+                file.problem = None;
+                if let Err(e) = self.store.model_keys().save(&id, &file) {
+                    tracing::warn!(plugin = %id, error = %e, "记下模型网关变量失败");
+                }
+            }
         }
         failures
+    }
+
+    /// 给没接上的使用方签发凭据：装它的时候网关不在或签发失败，变量是空的。签发成功后，运行中的按新变量
+    /// 重建容器；没在运行的等下次启动时从记下的变量里拿。还接不上的记下原因，详情页的轻提示带它。
+    async fn connect_unconnected_consumers(&self) -> Vec<(PluginId, InstallError)> {
+        let Some(route) = self.models_route() else {
+            return Vec::new();
+        };
+        let candidates: Vec<(PluginId, bool)> = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            plugins
+                .iter()
+                .filter(|(id, entry)| {
+                    **id != route.id
+                        && entry.listed.as_ref().is_some_and(|listed| {
+                            uses_models(&listed.manifest)
+                                && matches!(
+                                    entry.status,
+                                    PluginStatus::Running | PluginStatus::Stopped
+                                )
+                        })
+                })
+                .map(|(id, entry)| (id.clone(), entry.status == PluginStatus::Running))
+                // 只补没接上的：已接上的对账刚把凭据对好，变量没变，容器不用动。
+                .filter(|(id, _)| {
+                    !self
+                        .store
+                        .model_keys()
+                        .load(id)
+                        .is_ok_and(|file| file.connected())
+                })
+                .collect()
+        };
+        let mut failures = Vec::new();
+        for (id, running) in candidates {
+            let Ok(Some(record)) = self.store.load(&id) else {
+                continue;
+            };
+            let Ok(mut package) = PluginPackage::with_files(&record.source, record.files.clone())
+            else {
+                continue;
+            };
+            package.origin = record.origin.clone();
+            match self.issue_consumer_credentials(&route, &package).await {
+                Err(e) => {
+                    tracing::warn!(plugin = %id, error = %e, "模型网关凭据签发失败，使用方保持没接上");
+                    failures.push((id, e));
+                }
+                Ok(_) if running => match self.rebuild_for_models(&package, &record).await {
+                    Ok(()) => tracing::info!(plugin = %id, "模型网关接上了，使用方已按新变量重建"),
+                    Err(e) => {
+                        tracing::error!(plugin = %id, error = %e, "模型网关接上了，重建使用方失败");
+                        failures.push((id, e));
+                    }
+                },
+                Ok(_) => {
+                    tracing::info!(plugin = %id, "模型网关接上了，使用方没在运行，下次启动带上变量")
+                }
+            }
+        }
+        failures
+    }
+
+    /// 模型网关接上后重建使用方的容器：和安装时一样渲染，全部容器换一遍。
+    async fn rebuild_for_models(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+    ) -> Result<(), InstallError> {
+        let lan = self.lan_grant(package, record.lan_webui).await?;
+        let mut ctx = self.rebuild_context(package, record, lan).await?;
+        ctx.matrix = self.bot_vars_read_back(package, &ctx).await?;
+        let plan = render::render(package, &ctx)?;
+        self.replace_containers(&ctx, plan).await?;
+        self.reconcile_running(package, record).await?;
+        Ok(())
+    }
+
+    /// 详情页的轻提示（ADR-0043：核心给类别，App 按类别写文字）：声明了 `models` 的插件没接上网关时给。
+    /// 网关不在、没就绪，或凭据还没签发（包括签发失败，原因在 detail 里）都算没接上。
+    pub(in crate::plugin) fn models_hint(
+        &self,
+        id: &PluginId,
+        manifest: &Manifest,
+    ) -> Option<wonton_protocol::PluginHint> {
+        if !uses_models(manifest) {
+            return None;
+        }
+        let detail = match self.models_provider() {
+            ProviderState::Ready(_) => {
+                let file = self.store.model_keys().load(id).ok()?;
+                if file.connected() {
+                    return None;
+                }
+                file.problem
+            }
+            _ => None,
+        };
+        Some(wonton_protocol::PluginHint {
+            category: wonton_protocol::PluginHintCategory::ModelsNotConnected,
+            detail,
+        })
     }
 
     /// 签发，再用这个凭据请求一次模型列表。返回 401 说明网关里的同名凭据不是这个值：先吊销再签发一次。

@@ -1,7 +1,8 @@
 # Hermes：默认 Agent（按 docs/plugin-spec.md 草案 v0.1），随核心镜像附带，核心启动后自动装一次（WONTON_DEFAULT_PLUGINS，
 # 见 ADR-0007）。
 #
-# Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型请求只发给模型网关（magpie）。
+# Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型默认走模型网关（magpie），
+# 没接上网关时用主人在“模型设置”里自己配的服务商（ADR-0055）。
 # 每个 Bot 一组 init + gateway 容器（x-wonton.bots）：Hermes 的 profile 不隔离文件系统，
 # 不同人的 Bot 不能共用一个容器。M1 只有默认 Bot。
 # 在 deploy/dev/agent 里验证过同样的运行配置；配置方式见 ADR-0008 的“验证结果”。
@@ -23,7 +24,12 @@ services:
         cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
         cp /seed/skills/wonton-help/SKILL.md /opt/data/skills/wonton-help/ &&
         { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; } &&
-        /opt/hermes/.venv/bin/python /seed/gateway_trust_env.py
+        /opt/hermes/.venv/bin/python /seed/init_config.py
+    environment:
+      # init 要按注入值修 config.yaml：网关的三个变量为空表示没接上，magpie 标成 disabled（ADR-0055）。
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
     volumes:
       - ${WONTON_BOT_DATA}:/opt/data
     configs:
@@ -33,8 +39,8 @@ services:
         target: /seed/wonton/plugin.yaml
       - source: wonton_hooks
         target: /seed/wonton/__init__.py
-      - source: gateway_trust_env
-        target: /seed/gateway_trust_env.py
+      - source: init_config
+        target: /seed/init_config.py
       - source: wonton_help_skill
         target: /seed/skills/wonton-help/SKILL.md
     network_mode: none
@@ -97,20 +103,20 @@ configs:
     file: ./wonton/plugin.yaml
   wonton_hooks:
     file: ./wonton/__init__.py
-  gateway_trust_env:
-    file: ./gateway_trust_env.py
+  init_config:
+    file: ./init_config.py
   wonton_help_skill:
     file: ./skills/wonton-help/SKILL.md
 
 x-wonton:
   spec: "0.4"
   id: com.nousresearch.hermes
-  version: 0.5.4
+  version: 0.6.0
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:
-    zh: 默认 Agent：以 Matrix bot 身份和你对话，模型经 magpie
-    en: Default agent that chats as a Matrix bot and reaches models through magpie
+    zh: 默认 Agent：以 Matrix bot 身份和你对话，模型走模型网关或你自己的服务商
+    en: Default agent that chats as a Matrix bot, using the model gateway or your own provider
   icon: icon.png
   notices: [LICENSE.icon]
   tags: { zh: [AI], en: [AI] }

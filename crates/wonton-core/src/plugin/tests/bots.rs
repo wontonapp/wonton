@@ -4,10 +4,8 @@
 use super::super::PluginId;
 use super::super::bots::{BotRecord, BotStore};
 use super::super::package::{PackageError, PluginPackage};
-use super::super::render::{
-    ContainerPlan, Deployment, InstallContext, MatrixVars, ModelVars, OidcVars, RenderError,
-    dry_run,
-};
+use super::super::render::{ContainerPlan, Deployment, InstallContext, RenderError, dry_run};
+use super::super::vars::{MatrixVars, ModelVars, OidcVars};
 use super::{env_of, package};
 use crate::matrix::BotAccount;
 

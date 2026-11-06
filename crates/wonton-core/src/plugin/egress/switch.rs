@@ -12,7 +12,8 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
 use crate::plugin::manifest::{Manifest, Permission, PluginId};
 use crate::plugin::package::PluginPackage;
-use crate::plugin::render::{Deployment, InstallContext, MatrixVars, render};
+use crate::plugin::render::{Deployment, InstallContext, render};
+use crate::plugin::vars::MatrixVars;
 
 /// 找哪里引用了令牌时代替它。令牌不会长这样，插件也不会写出这串字。
 const PLACEHOLDER: &str = "wonton-matrix-token-to-read-back";

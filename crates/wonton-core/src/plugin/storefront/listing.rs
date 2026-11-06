@@ -211,8 +211,11 @@ impl PluginManager {
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
                 .collect(),
-            hints: Vec::new(),
-            // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
+            // 从商店点进已装的插件也是同一个详情页：轻提示、局域网开关和资源上限都跟着装着的版本走。
+            hints: self
+                .installed_detail(&m.id, langs)
+                .map(|detail| detail.hints)
+                .unwrap_or_default(),
             lan_webui: self
                 .with_lan_client(
                     &m.id,

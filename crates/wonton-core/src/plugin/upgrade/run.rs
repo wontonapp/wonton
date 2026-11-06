@@ -25,10 +25,11 @@ use super::super::manager::{
 use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
-use super::super::render::{Deployment, InstallContext, MatrixVars, dry_run, render};
+use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::InstalledRecord;
 use super::super::upstreams::{core_aliases, uses_sso};
+use super::super::vars::MatrixVars;
 use super::{installed_package, newer};
 use crate::secret::random_token;
 

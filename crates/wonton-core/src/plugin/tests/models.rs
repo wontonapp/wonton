@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
+use super::github::zh;
 use super::manager::manager_with;
 use super::{env_of_container, package};
 use crate::http::HttpClient;
@@ -84,11 +85,18 @@ struct Bed {
 
 /// 装好假网关（预装系统插件的路径），凭据命令由假 Docker 按 magpie 脚本的约定回应。
 async fn bed() -> Bed {
-    let (docker, engine) = FakeDocker::start().await;
-    let keys = Keys::default();
-    let script = keys.clone();
-    docker.on_exec(move |_, cmd, stdin| {
-        let mut keys = script.lock().unwrap();
+    let bed = bed_without_gateway().await;
+    bed.install_gateway().await;
+    bed
+}
+
+/// magpie 脚本的约定（`credentials.sh`）：`issue` 已有同名凭据时不改动，`revoke` 本来没有也算成功。
+/// 失败注入把处理函数换掉之后，用它换回真的：issue 成功必须把值写进假网关的 `keys`。
+fn credential_script(
+    keys: Keys,
+) -> impl Fn(&str, &[String], &[u8]) -> (i64, String) + Send + Sync + 'static {
+    move |_, cmd, stdin| {
+        let mut keys = keys.lock().unwrap();
         let value = String::from_utf8_lossy(stdin).trim().to_owned();
         match cmd {
             [_, _, action, name] if action == "issue" => {
@@ -101,8 +109,14 @@ async fn bed() -> Bed {
             }
             _ => (2, "用法不对".to_owned()),
         }
-    });
-    let port = fake_gateway(keys.clone()).await;
+    }
+}
+
+/// 同 [`bed`]，但没有模型网关：声明 `models` 的插件就装在“没接上”的状态。
+async fn bed_without_gateway() -> Bed {
+    let (docker, engine) = FakeDocker::start().await;
+    let keys = Keys::default();
+    docker.on_exec(credential_script(keys.clone()));
     let dir = tempfile::tempdir().unwrap();
     // 有 Bot 的使用方还要 Matrix。
     let (_tuwunel, config) = crate::matrix::fake::start().await;
@@ -110,15 +124,30 @@ async fn bed() -> Bed {
         .await
         .unwrap();
     let manager = manager_with(engine, &dir).with_matrix(Some(Arc::new(matrix)));
-    manager
-        .install_checked(provider(port), &[], false)
-        .await
-        .unwrap();
     Bed {
         docker,
         keys,
         manager,
         _dir: dir,
+    }
+}
+
+impl Bed {
+    /// 装上假网关：装完核心就给没接上的使用方签发凭据（见安装完成的那条钩子）。
+    async fn install_gateway(&self) {
+        let port = fake_gateway(self.keys.clone()).await;
+        self.manager
+            .install_checked(provider(port), &[], false)
+            .await
+            .unwrap();
+    }
+
+    /// 使用方详情页的轻提示。
+    async fn hints(&self) -> wonton_protocol::PluginDetail {
+        self.manager
+            .judged_detail(&PluginId::parse("app.test").unwrap(), &zh())
+            .await
+            .unwrap()
     }
 }
 
@@ -184,39 +213,192 @@ async fn uninstall_revokes_the_credential() {
 }
 
 #[tokio::test]
-async fn consumers_need_a_gateway_that_accepts_the_credential() {
-    // 没有网关：安装失败，说明是网关的原因。
+async fn installs_without_a_gateway_and_the_variables_come_up_empty() {
+    // 没有网关：照样装，状态照常 Running，模型变量全是空字符串。
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let err = m.install(&consumer(), &models()).await.unwrap_err();
-    assert_eq!(err.kind(), "models_unavailable", "{err}");
-    assert!(docker.networks().is_empty());
+    m.install(&consumer(), &models()).await.unwrap();
+    let env = env_of_container(&docker, &container_name("app-test", "web"));
+    for name in ["BASE", "ANTHROPIC", "KEY", "MODEL"] {
+        assert_eq!(env[name], "", "{name}");
+    }
+    // 详情页有“没接上”的轻提示，没有签发失败的原因可带。
+    let detail = m
+        .judged_detail(&PluginId::parse("app.test").unwrap(), &zh())
+        .await
+        .unwrap();
+    assert_eq!(detail.hints.len(), 1);
+    assert_eq!(
+        detail.hints[0].category,
+        wonton_protocol::PluginHintCategory::ModelsNotConnected
+    );
+    assert_eq!(detail.hints[0].detail, None);
+}
 
-    // 网关拒绝签发：错误里带上命令的标准错误，安装回滚。
+#[tokio::test]
+async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
+    let bed = bed_without_gateway().await;
+    bed.manager.install(&consumer(), &models()).await.unwrap();
+    assert_eq!(web_env(&bed)["BASE"], "");
+
+    // 网关装上：核心给没接上的使用方签发凭据、按新变量重建容器，轻提示消失。
+    bed.install_gateway().await;
+    let env = web_env(&bed);
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(bed.keys.lock().unwrap()["app.test"], env["KEY"]);
+    assert!(bed.hints().await.hints.is_empty());
+}
+
+#[tokio::test]
+async fn the_gateway_coming_back_again_leaves_connected_consumers_alone() {
+    let bed = bed().await;
+    bed.manager.install(&consumer(), &models()).await.unwrap();
+    let env = web_env(&bed);
+    let web = container_name("app-test", "web");
+    assert_eq!(bed.docker.creations(&web), 1);
+
+    // 网关再就绪一次（核心重启、网关容器恢复、升级都对一次账）：已接上的使用方
+    // 凭据值没变，容器不动，不白重启一遍。
+    assert!(bed.manager.reconcile_models().await.is_empty());
+    assert_eq!(bed.docker.creations(&web), 1);
+    assert_eq!(web_env(&bed), env);
+}
+
+#[tokio::test]
+async fn a_failed_issue_still_installs_and_the_hint_carries_the_reason() {
     let bed = bed().await;
     bed.docker
         .on_exec(|_, cmd, _| match cmd.get(2).map(String::as_str) {
             Some("issue") => (1, "数据库被锁住了".to_owned()),
             _ => (0, String::new()),
         });
-    let err = bed
+    // 签发失败：照样装，状态照常，变量为空。
+    bed.manager.install(&consumer(), &models()).await.unwrap();
+    assert_eq!(web_env(&bed)["KEY"], "");
+    let consumer = bed
         .manager
-        .install(&consumer(), &models())
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "models_unavailable", "{err}");
-    assert!(err.to_string().contains("数据库被锁住了"), "{err}");
-    assert_eq!(bed.manager.list().len(), 1, "只剩网关");
-    let stored = bed._dir.path().join("plugins/model-keys/app.test.json");
-    assert!(!stored.exists(), "没签发成功的凭据吊销后不留下");
+        .list()
+        .into_iter()
+        .find(|p| p.id.as_str() == "app.test")
+        .unwrap();
+    assert!(
+        matches!(consumer.status, PluginStatus::Running),
+        "签发失败不改变插件状态"
+    );
+    // 轻提示带上签发失败的原因；记下的文件里只有原因，没有凭据值。
+    let detail = bed.hints().await;
+    assert_eq!(detail.hints.len(), 1);
+    let reason = detail.hints[0].detail.as_deref().unwrap();
+    assert!(reason.contains("数据库被锁住了"), "{reason}");
+    let stored =
+        std::fs::read_to_string(bed._dir.path().join("plugins/model-keys/app.test.json")).unwrap();
+    assert!(stored.contains("数据库被锁住了"), "{stored}");
 
-    // 同一时间只能有一个网关。
+    // 网关修好：对账时签发、按新变量重建，提示消失。
+    bed.docker.on_exec(credential_script(bed.keys.clone()));
+    let failures = bed.manager.reconcile_models().await;
+    assert!(failures.is_empty(), "{failures:?}");
+    assert_eq!(
+        web_env(&bed)["BASE"],
+        "http://models.wonton.internal:8080/v1"
+    );
+    assert!(bed.hints().await.hints.is_empty());
+}
+
+#[tokio::test]
+async fn uninstalling_the_gateway_leaves_the_consumer_running_and_the_hint_returns() {
+    let bed = bed().await;
+    bed.manager.install(&consumer(), &models()).await.unwrap();
+    let key = web_env(&bed)["KEY"].clone();
+
+    // 网关卸掉：使用方不动，还在运行，轻提示变回“没接上”。
+    bed.manager
+        .uninstall(&PluginId::parse("system.models").unwrap(), false)
+        .await
+        .unwrap();
+    let consumer = bed
+        .manager
+        .list()
+        .into_iter()
+        .find(|p| p.id.as_str() == "app.test")
+        .unwrap();
+    assert!(matches!(consumer.status, PluginStatus::Running));
+    assert_eq!(web_env(&bed)["KEY"], key, "使用方的容器没动");
+    let detail = bed.hints().await;
+    assert_eq!(detail.hints.len(), 1);
+    assert_eq!(
+        detail.hints[0].category,
+        wonton_protocol::PluginHintCategory::ModelsNotConnected
+    );
+    // 网关不在：对账不碰使用方。
+    assert!(bed.manager.reconcile_models().await.is_empty());
+
+    // 网关装回来：凭据值还记着，对账用同一个值重新签发，容器不用重建就接上了。
+    bed.install_gateway().await;
+    assert_eq!(web_env(&bed)["KEY"], key, "重新签发用记下的同一个值");
+    assert!(bed.hints().await.hints.is_empty());
+}
+
+#[tokio::test]
+async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
+    let (docker, engine) = FakeDocker::start().await;
+    let keys = Keys::default();
+    let script = keys.clone();
+    docker.on_exec(move |_, cmd, stdin| {
+        let mut keys = script.lock().unwrap();
+        let value = String::from_utf8_lossy(stdin).trim().to_owned();
+        match cmd {
+            [_, _, action, name] if action == "issue" => {
+                keys.entry(name.clone()).or_insert(value);
+                (0, String::new())
+            }
+            [_, _, action, name] if action == "revoke" => {
+                keys.remove(name);
+                (0, String::new())
+            }
+            _ => (2, "用法不对".to_owned()),
+        }
+    });
+    let port = fake_gateway(keys).await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(engine, &dir));
+    manager
+        .install_checked(provider(port), &[], false)
+        .await
+        .unwrap();
+    manager.install(&consumer(), &models()).await.unwrap();
+    let env = env_of_container(&docker, &container_name("app-test", "web"));
+
+    // 网关不在时重建使用方（改资源上限）：注入记下的变量，不退回空值。
+    manager
+        .uninstall(&PluginId::parse("system.models").unwrap(), false)
+        .await
+        .unwrap();
+    let detail = manager
+        .set_limits(
+            PluginId::parse("app.test").unwrap(),
+            wonton_protocol::PluginLimits {
+                memory: Some(1024 * 1024 * 1024),
+                cpu_percent: None,
+            },
+            zh(),
+        )
+        .await
+        .unwrap();
+    let rebuilt = env_of_container(&docker, &container_name("app-test", "web"));
+    assert_eq!(rebuilt["KEY"], env["KEY"], "记下的凭据原样注入");
+    assert_eq!(rebuilt["BASE"], env["BASE"]);
+    assert_eq!(detail.hints.len(), 1, "网关不在，重建后轻提示照给");
+}
+
+#[tokio::test]
+async fn only_one_gateway_can_be_installed() {
+    let bed = bed().await;
     let port = fake_gateway(Keys::default()).await;
-    let second = provider(port);
     let err = bed
         .manager
-        .install_checked(second, &[], false)
+        .install_checked(provider(port), &[], false)
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");

@@ -46,6 +46,10 @@ async def missing_model_hint(text="", **_):
     key = os.environ.get("WONTON_MODEL_API_KEY", "")
     model = os.environ.get("WONTON_MODEL_DEFAULT", "")
     if not (base and key and model):
+        # 模型网关没接上（变量为空，ADR-0055“模型网关可选”）：主人的模型还配在网关这个 provider 上时，
+        # 直接给指引，不把 Hermes 对空地址的原始报错发进聊天；主人已经换成自己的服务商就不拦。
+        if _gateway_provider_active():
+            return {"action": "handled", "reply": NO_MODELS}
         return None
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -62,6 +66,19 @@ async def missing_model_hint(text="", **_):
     else:
         reply = NO_MODELS
     return {"action": "handled", "reply": reply}
+
+
+def _gateway_provider_active() -> bool:
+    """主人的模型还配在网关这个 provider 上才算（配置读不出来时不拦，不误导）。"""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        model_cfg = (load_config_readonly() or {}).get("model") or {}
+        provider = str(model_cfg.get("provider") or "").strip()
+    except Exception:
+        logger.warning("读 config.yaml 里的模型 provider 失败，不当成网关处理", exc_info=True)
+        return False
+    return provider in ("", "magpie", "custom:magpie")
 
 
 def send_files_context(**_):

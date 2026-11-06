@@ -14,8 +14,8 @@ use super::manager::{BotReport, InstallError, PluginManager};
 use super::manifest::{LocalizedText, Manifest, Permission, PluginId};
 use super::package::PluginPackage;
 use super::package_files;
-use super::render::MatrixVars;
 use super::store::{StoreError, create_private_dir, read_json, remove_file, write_json};
+use super::vars::MatrixVars;
 use crate::config::PLUGIN_MATRIX_HOST;
 use crate::matrix::{Avatar, BotAccount, BotSpec, Matrix, MatrixError, ProvisionedBot};
 

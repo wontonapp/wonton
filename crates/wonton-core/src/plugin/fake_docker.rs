@@ -97,6 +97,8 @@ struct Resources {
     containers: BTreeMap<String, Labels>,
     /// 容器名 → 创建它的请求。
     created: BTreeMap<String, Value>,
+    /// 容器名 → 被创建过的次数：重建会计数，断言“容器没被动过”用。
+    creation_count: BTreeMap<String, u32>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
@@ -274,6 +276,15 @@ impl FakeDocker {
     /// 容器最近一次创建时的请求。
     pub fn created(&self, container: &str) -> Option<Value> {
         self.lock().created.get(container).cloned()
+    }
+
+    /// 容器被创建过的次数（重建会计数）。
+    pub fn creations(&self, container: &str) -> u32 {
+        self.lock()
+            .creation_count
+            .get(container)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// 让容器里出现（`Some`）或去掉（`None`）一个路径，比如插件运行中写下的文件。
@@ -507,6 +518,7 @@ fn containers(
                     .insert(name.clone(), json!({}));
             }
             docker.created.insert(name.clone(), body);
+            *docker.creation_count.entry(name.clone()).or_default() += 1;
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),

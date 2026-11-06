@@ -136,7 +136,7 @@ impl PluginManager {
                     ])))
                 }))
                 .collect(),
-            hints: Vec::new(),
+            hints: self.models_hint(id, m).into_iter().collect(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
