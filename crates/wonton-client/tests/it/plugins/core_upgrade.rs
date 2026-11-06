@@ -1,4 +1,5 @@
 //! 核心的一键升级在 App 里怎么显示（ADR-0025 的“App 显示”）。
+//! 阶段等待使用快照订阅；watch 会合并中间值，限时阶段的等待者要先于触发它的请求挂起。
 
 use axum::http::Method;
 use wonton_client::{
@@ -7,7 +8,7 @@ use wonton_client::{
     CoreUpgradeTarget, CoreVersion, PluginsViewModel,
 };
 
-use super::rig::{Canned, Rig, core_error};
+use super::rig::{Canned, Rig, WAIT, core_error};
 
 const PATH: &str = "/_wonton/api/core/upgrade";
 const CHECK_PATH: &str = "/_wonton/api/core/upgrade/check";
@@ -91,7 +92,17 @@ fn unreachable(rig: &Rig) {
 }
 
 async fn stage(rig: &Rig, wanted: Wanted) -> PluginsViewModel {
-    rig.wait_for(|view| wanted(&view.core_upgrade.stage)).await
+    let updates = rig.app.subscribe_plugins();
+    tokio::time::timeout(WAIT, async {
+        loop {
+            let view = updates.next().await.expect("插件订阅提前结束");
+            if wanted(&view.core_upgrade.stage) {
+                return view;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("等待升级阶段超时：{:?}", rig.app.plugins().core_upgrade))
 }
 
 #[tokio::test]
@@ -104,8 +115,15 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
     })
     .await;
 
+    // watch 只保存最新快照；先挂起等待者，再触发请求，不靠三秒轮询撞上四秒时限。
+    let reconnecting = stage(&rig, |stage| *stage == CoreUpgradeStage::Reconnecting);
+    tokio::pin!(reconnecting);
+    assert!(futures_util::poll!(&mut reconnecting).is_pending());
     unreachable(&rig);
-    stage(&rig, |stage| *stage == CoreUpgradeStage::Reconnecting).await;
+    rig.app
+        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .unwrap();
+    reconnecting.await;
     let view = stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::Uncertain { .. })
     })
@@ -133,6 +151,97 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
         CoreUpgradeStage::RolledBack {
             to: version(OLD),
             problem: problem(CoreUpgradeFailure::Unhealthy),
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it() {
+    let rig = Rig::new().await;
+    reports(&rig, &in_progress(CoreUpgradePhase::Switching, 4));
+    rig.connected().await;
+    stage(&rig, |stage| {
+        matches!(stage, CoreUpgradeStage::InProgress { .. })
+    })
+    .await;
+
+    let published = rig.app.subscribe_plugins();
+    published.next().await.unwrap();
+    // 网络在核心自己的运行时里跑；只冻结测试时钟，明确禁止等待者靠轮询定时器醒来。
+    tokio::time::pause();
+    let waiting = stage(&rig, |stage| *stage == CoreUpgradeStage::Reconnecting);
+    tokio::pin!(waiting);
+    assert!(futures_util::poll!(&mut waiting).is_pending());
+
+    unreachable(&rig);
+    rig.app
+        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .unwrap();
+    // 读到快照不代表 watch 已经提交通知；独立订阅确认发布完成后才检查等待者。
+    let delivered = async {
+        loop {
+            let view = published.next().await.expect("插件订阅提前结束");
+            if view.core_upgrade.stage == CoreUpgradeStage::Reconnecting {
+                return;
+            }
+        }
+    };
+    tokio::pin!(delivered);
+    let deadline = std::time::Instant::now() + WAIT;
+    while futures_util::poll!(&mut delivered).is_pending() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}",
+            rig.app.plugins()
+        );
+        // 保持测试运行时可运行，Tokio 不会在等网络响应期间自动推进暂停的时钟。
+        tokio::task::yield_now().await;
+    }
+    let observed = futures_util::poll!(&mut waiting).map(|view| view.core_upgrade.stage);
+
+    reports(
+        &rig,
+        &run(CoreUpgradeRunState::Unknown {
+            problem: problem(CoreUpgradeFailure::UpdaterFailed),
+        }),
+    );
+    rig.app
+        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .unwrap();
+    let later = async {
+        loop {
+            let view = published.next().await.expect("插件订阅提前结束");
+            if matches!(view.core_upgrade.stage, CoreUpgradeStage::Uncertain { .. }) {
+                return view;
+            }
+        }
+    };
+    tokio::pin!(later);
+    let view = loop {
+        if let std::task::Poll::Ready(view) = futures_util::poll!(&mut later) {
+            break view;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        tokio::task::yield_now().await;
+    };
+    // 后续报告已经替换快照，才放行旧等待者的轮询时钟：这时再取当前值就错过了重连。
+    tokio::time::advance(std::time::Duration::from_millis(20)).await;
+    let observed = match observed {
+        std::task::Poll::Ready(stage) => std::task::Poll::Ready(stage),
+        std::task::Poll::Pending => {
+            futures_util::poll!(&mut waiting).map(|view| view.core_upgrade.stage)
+        }
+    };
+    assert_eq!(
+        observed,
+        std::task::Poll::Ready(CoreUpgradeStage::Reconnecting),
+        "后续报告取代当前值前，等待者必须先收到重连阶段"
+    );
+    tokio::time::resume();
+    assert_eq!(
+        view.core_upgrade.stage,
+        CoreUpgradeStage::Uncertain {
+            problem: problem(CoreUpgradeFailure::UpdaterFailed),
         }
     );
 }
