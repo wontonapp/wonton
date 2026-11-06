@@ -50,9 +50,9 @@ impl PushLink {
             .event_id
             .parse()
             .map_err(|e| invalid(&format!("推送里的事件 ID 不合法：{e}")))?;
-        let server_id = self.home.view().server_id;
         let notification = |content| PushNotification {
-            server_id: server_id.clone(),
+            // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
+            server_id: None,
             room_id: payload.room_id.clone(),
             event_id: payload.event_id.clone(),
             sender: payload

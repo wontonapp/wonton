@@ -73,14 +73,18 @@ pub(super) struct Store {
 
 impl Store {
     /// 读不懂的列表不拦着 App 启动：挪到一边、记下错误，从空列表开始。App 被杀时还在传的算暂停。
-    pub(super) fn open(path: PathBuf, downloads_dir: PathBuf) -> Self {
+    pub(super) fn open(
+        path: PathBuf,
+        downloads_dir: PathBuf,
+        view: Option<watch::Sender<TransfersViewModel>>,
+    ) -> Self {
         let mut records = read(&path);
         for record in &mut records {
             if record.state == TransferState::Running {
                 record.state = TransferState::Paused;
             }
         }
-        let view = watch::Sender::new(view_of(&records, &downloads_dir, None));
+        let view = crate::scope::reuse(view, view_of(&records, &downloads_dir, None));
         Self {
             path,
             downloads_dir,
@@ -104,8 +108,8 @@ impl Store {
         self.view.borrow().clone()
     }
 
-    pub(super) fn subscribe(&self) -> watch::Receiver<TransfersViewModel> {
-        self.view.subscribe()
+    pub(super) fn sender(&self) -> watch::Sender<TransfersViewModel> {
+        self.view.clone()
     }
 
     /// 写盘失败时不加：不然主人以为 App 重启后还能接着传。

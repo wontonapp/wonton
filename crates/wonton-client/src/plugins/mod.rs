@@ -31,6 +31,7 @@ use wonton_protocol::{
 };
 
 use crate::home::HomeLink;
+use crate::scope::reuse;
 use api::{CoreApi, INSTALL_TIMEOUT, READ_TIMEOUT, SOURCE_TIMEOUT, proxied_client, to_core_error};
 
 /// 有插件在安装、升级、卸载时，隔这么久重新取一次已安装列表。
@@ -76,7 +77,12 @@ pub(crate) struct PluginsLink {
 }
 
 impl PluginsLink {
-    pub(crate) fn new(runtime: Handle, home: Arc<HomeLink>, data_dir: &Path) -> Arc<Self> {
+    pub(crate) fn new(
+        runtime: Handle,
+        home: Arc<HomeLink>,
+        data_dir: &Path,
+        view: Option<watch::Sender<PluginsViewModel>>,
+    ) -> Arc<Self> {
         let installed_cache = data_dir.join("installed-plugins.json");
         let installed = home
             .view()
@@ -85,10 +91,13 @@ impl PluginsLink {
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
-            view: watch::Sender::new(PluginsViewModel {
-                installed,
-                ..PluginsViewModel::default()
-            }),
+            view: reuse(
+                view,
+                PluginsViewModel {
+                    installed,
+                    ..PluginsViewModel::default()
+                },
+            ),
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
             images_dir: data_dir.join("plugin-images"),
@@ -115,6 +124,11 @@ impl PluginsLink {
 
     pub(crate) fn view(&self) -> PluginsViewModel {
         self.view.borrow().clone()
+    }
+
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<PluginsViewModel> {
+        self.view.clone()
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<PluginsViewModel> {

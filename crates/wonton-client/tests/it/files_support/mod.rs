@@ -566,7 +566,7 @@ impl World {
     pub fn downloaded(&self, file: &FileId, name: &str) -> PathBuf {
         self.dir
             .path()
-            .join("phone/downloads")
+            .join("phone/servers/1/downloads")
             .join(file.as_str())
             .join(name)
     }

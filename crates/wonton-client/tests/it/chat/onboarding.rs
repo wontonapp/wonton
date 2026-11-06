@@ -69,7 +69,7 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
             view.chat_prompts.is_empty().then_some(())
         })
         .await;
-    let records = std::fs::read_to_string(dir.path().join("onboarding.json")).unwrap();
+    let records = std::fs::read_to_string(dir.path().join("servers/1/onboarding.json")).unwrap();
     assert!(
         records.contains(&room),
         "发过消息的房间要记进本机：{records}"

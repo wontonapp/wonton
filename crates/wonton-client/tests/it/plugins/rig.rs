@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -518,8 +518,9 @@ impl Rig {
             ClientCore::with_network(self._dir.path().to_str().unwrap(), Network::DirectOnly)
                 .unwrap();
     }
-    pub fn data_dir(&self) -> &Path {
-        self._dir.path()
+    /// 第一台服务器的槽位目录（ADR-0042）。
+    pub fn data_dir(&self) -> PathBuf {
+        self._dir.path().join("servers/1")
     }
 
     pub async fn wait_onboarding(

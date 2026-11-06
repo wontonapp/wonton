@@ -36,6 +36,7 @@ mod logging;
 mod onboarding;
 mod plugins;
 mod push;
+mod scope;
 mod servers;
 mod session_store;
 mod settings;

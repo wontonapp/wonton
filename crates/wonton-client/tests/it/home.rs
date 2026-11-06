@@ -262,9 +262,10 @@ async fn reported_lan_and_public_addresses_replace_seven_old_addresses() {
         .unwrap();
 
     wait_until_ticket_has(dir.path(), public).await;
-    let saved: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dir.path().join("home-ticket.json")).unwrap())
-            .unwrap();
+    let saved: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(dir.path().join("servers/1/home-ticket.json")).unwrap(),
+    )
+    .unwrap();
     // 核心报来的地址是替换：旧的 7 个容器地址一个都不留。
     assert_eq!(
         saved["server"]["direct_addrs"],
@@ -442,7 +443,7 @@ async fn retrying_reaches_a_device_paired_after_it_was_rejected() {
 }
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
-struct Phone {
+pub(crate) struct Phone {
     core: Arc<ClientCore>,
 }
 
@@ -455,23 +456,26 @@ impl Deref for Phone {
 }
 
 impl Phone {
-    fn open(dir: &std::path::Path) -> Self {
+    pub(crate) fn open(dir: &std::path::Path) -> Self {
         let core = ClientCore::with_network(dir.to_str().unwrap(), Network::DirectOnly).unwrap();
         Self { core }
     }
 
-    fn device_id(&self) -> EndpointId {
+    pub(crate) fn device_id(&self) -> EndpointId {
         EndpointId::from_str(&self.home().device_id).unwrap()
     }
 
-    fn connect(&self, home: &Home) {
+    pub(crate) fn connect(&self, home: &Home) {
         self.dispatch(Action::ConnectHome {
             ticket: home.ticket(),
         })
         .unwrap();
     }
 
-    async fn wait_for(&self, mut done: impl FnMut(&HomeViewModel) -> bool) -> HomeViewModel {
+    pub(crate) async fn wait_for(
+        &self,
+        mut done: impl FnMut(&HomeViewModel) -> bool,
+    ) -> HomeViewModel {
         let subscription = self.subscribe_home();
         let waiting = async {
             while let Some(view) = subscription.next().await {
@@ -488,7 +492,7 @@ impl Phone {
 }
 
 /// 测试里的家里服务器：只走回环地址的隧道服务端，上游回显请求路径。可以用同样的身份和端口重启。
-struct Home {
+pub(crate) struct Home {
     server: Option<TunnelServer>,
     key: SecretKey,
     allowlist: Allowlist,
@@ -499,7 +503,7 @@ struct Home {
 }
 
 impl Home {
-    async fn start(devices: &[EndpointId]) -> Self {
+    pub(crate) async fn start(devices: &[EndpointId]) -> Self {
         let tunnel_info = Arc::new(Mutex::new(None));
         let (upstream, task) = path_echo(tunnel_info.clone()).await;
         let key = SecretKey::generate();
@@ -523,7 +527,7 @@ impl Home {
         ));
     }
 
-    fn server(&self) -> &TunnelServer {
+    pub(crate) fn server(&self) -> &TunnelServer {
         self.server.as_ref().expect("服务端没在运行")
     }
 
@@ -608,7 +612,7 @@ async fn wait_until_ticket_has(dir: &std::path::Path, addr: SocketAddr) {
     let deadline = tokio::time::Instant::now() + WAIT;
     let wanted = addr.to_string();
     let has_it = || {
-        std::fs::read_to_string(dir.join("home-ticket.json"))
+        std::fs::read_to_string(dir.join("servers/1/home-ticket.json"))
             .is_ok_and(|text| text.contains(&wanted))
     };
     while !has_it() {

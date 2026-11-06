@@ -1,4 +1,4 @@
-//! 本机存储：设备密钥和上次的连接信息，都在壳给的数据目录里。
+//! 本机存储：设备密钥在壳给的数据目录里，所有服务器共用；上次的连接信息在这台服务器自己的目录里（ADR-0042）。
 //!
 //! 设备密钥决定本机的 endpoint ID，换了就要重新配对，所以第一次启动生成后一直保留。M0 存成文件（仅本人
 //! 可读写）；上架前换成系统钥匙串（iOS Keychain、Android Keystore），并且不进备份，避免恢复到另一台手机后
@@ -16,19 +16,25 @@ const DEVICE_KEY: &str = "device-key";
 const TICKET: &str = "home-ticket.json";
 
 pub(crate) struct Storage {
+    root: PathBuf,
     dir: PathBuf,
 }
 
 impl Storage {
-    pub(crate) fn open(dir: impl Into<PathBuf>) -> Result<Self, CoreError> {
-        let dir = dir.into();
-        fs::create_dir_all(&dir).map_err(|e| storage_error(&dir, &e))?;
-        Ok(Self { dir })
+    /// `root` 是壳给的数据目录，`dir` 是这台服务器的目录。
+    pub(crate) fn open(root: &Path, dir: &Path) -> Result<Self, CoreError> {
+        for dir in [root, dir] {
+            fs::create_dir_all(dir).map_err(|e| storage_error(dir, &e))?;
+        }
+        Ok(Self {
+            root: root.to_owned(),
+            dir: dir.to_owned(),
+        })
     }
 
     /// 读取设备密钥；第一次启动时生成并保存。
     pub(crate) fn device_key(&self) -> Result<SecretKey, CoreError> {
-        let path = self.dir.join(DEVICE_KEY);
+        let path = self.root.join(DEVICE_KEY);
         match fs::read_to_string(&path) {
             Ok(text) => SecretKey::from_str(text.trim()).map_err(|e| CoreError::Storage {
                 reason: format!("设备密钥 {} 已损坏：{e}", path.display()),

@@ -4,8 +4,12 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
     ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PluginsViewModel, PushMethod,
-    PushStatus, RecoveryStatus, SettingsEntry, SettingsSection, SettingsViewModel,
+    PushStatus, RecoveryStatus, ServersViewModel, SettingsEntry, SettingsSection,
+    SettingsViewModel,
 };
+
+use crate::scope::reuse;
+use crate::servers::current_name;
 
 pub(crate) struct SettingsLink {
     view: watch::Sender<SettingsViewModel>,
@@ -17,19 +21,23 @@ impl SettingsLink {
         mut home: watch::Receiver<HomeViewModel>,
         mut chat: watch::Receiver<ChatViewModel>,
         mut plugins: watch::Receiver<PluginsViewModel>,
+        mut servers: watch::Receiver<ServersViewModel>,
+        view: Option<watch::Sender<SettingsViewModel>>,
     ) -> Self {
         let compute = |home: &watch::Receiver<HomeViewModel>,
                        chat: &watch::Receiver<ChatViewModel>,
-                       plugins: &watch::Receiver<PluginsViewModel>| {
+                       plugins: &watch::Receiver<PluginsViewModel>,
+                       servers: &watch::Receiver<ServersViewModel>| {
             let chat = chat.borrow();
             settings_view(
                 &home.borrow().status,
+                current_name(&servers.borrow()),
                 chat.encryption.recovery,
                 &chat.push,
                 plugins.borrow().core_upgrade.is_prompting(),
             )
         };
-        let view = watch::Sender::new(compute(&home, &chat, &plugins));
+        let view = reuse(view, compute(&home, &chat, &plugins, &servers));
         let sender = view.clone();
         runtime.spawn(async move {
             loop {
@@ -37,8 +45,9 @@ impl SettingsLink {
                     changed = home.changed() => if changed.is_err() { break },
                     changed = chat.changed() => if changed.is_err() { break },
                     changed = plugins.changed() => if changed.is_err() { break },
+                    changed = servers.changed() => if changed.is_err() { break },
                 }
-                let next = compute(&home, &chat, &plugins);
+                let next = compute(&home, &chat, &plugins, &servers);
                 sender.send_if_modified(|view| {
                     let modified = *view != next;
                     *view = next;
@@ -49,12 +58,14 @@ impl SettingsLink {
         Self { view }
     }
 
-    pub(crate) fn view(&self) -> SettingsViewModel {
+    #[cfg(test)]
+    fn view(&self) -> SettingsViewModel {
         self.view.borrow().clone()
     }
 
-    pub(crate) fn subscribe(&self) -> watch::Receiver<SettingsViewModel> {
-        self.view.subscribe()
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<SettingsViewModel> {
+        self.view.clone()
     }
 }
 
@@ -62,6 +73,7 @@ impl SettingsLink {
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
 fn settings_view(
     status: &HomeStatus,
+    name: Option<String>,
     recovery: RecoveryStatus,
     push: &PushStatus,
     upgrade: bool,
@@ -82,7 +94,7 @@ fn settings_view(
         vec![
             vec![SettingsEntry::Profile],
             vec![SettingsEntry::Server {
-                name: None,
+                name,
                 status: status.clone(),
                 upgrade,
             }],
@@ -117,6 +129,7 @@ mod tests {
         for status in [HomeStatus::NotConfigured, HomeStatus::Connected] {
             let view = settings_view(
                 &status,
+                None,
                 RecoveryStatus::Unknown,
                 &PushStatus::NoEndpoint,
                 false,
@@ -134,6 +147,7 @@ mod tests {
     fn before_pairing_only_this_phones_settings_show() {
         let view = settings_view(
             &HomeStatus::NotConfigured,
+            None,
             RecoveryStatus::Unknown,
             &PushStatus::NoEndpoint,
             false,
@@ -165,6 +179,7 @@ mod tests {
     fn after_pairing_profile_and_server_come_first() {
         let view = settings_view(
             &HomeStatus::Connected,
+            Some("办公室".into()),
             RecoveryStatus::Enabled,
             &PushStatus::Registered,
             true,
@@ -173,7 +188,7 @@ mod tests {
         assert_eq!(
             view.sections[1].entries,
             [SettingsEntry::Server {
-                name: None,
+                name: Some("办公室".into()),
                 status: HomeStatus::Connected,
                 upgrade: true
             }]
@@ -219,8 +234,16 @@ mod tests {
         let (home_tx, home_rx) = watch::channel(home(HomeStatus::NotConfigured));
         let (chat_tx, chat_rx) = watch::channel(chat);
         let (plugins_tx, plugins_rx) = watch::channel(PluginsViewModel::default());
-        let link = SettingsLink::new(&Handle::current(), home_rx, chat_rx, plugins_rx);
-        let mut updates = link.subscribe();
+        let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());
+        let link = SettingsLink::new(
+            &Handle::current(),
+            home_rx,
+            chat_rx,
+            plugins_rx,
+            servers_rx,
+            None,
+        );
+        let mut updates = link.sender().subscribe();
         assert!(!entries(&link.view()).contains(&SettingsEntry::Profile));
 
         home_tx.send_replace(home(HomeStatus::Connected));

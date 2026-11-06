@@ -1,8 +1,6 @@
-use std::future::Future;
-use std::path::Path;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 
-use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, DeviceNetwork,
@@ -14,44 +12,42 @@ use wonton_protocol::{
 };
 
 use crate::appearance::AppearanceLink;
-use crate::chat::{ChatLink, TimelineSubscription};
-use crate::files::{FileOpener, FilesLink};
-use crate::home::{HomeLink, Network, Storage};
-use crate::onboarding::OnboardingLink;
-use crate::plugins::PluginsLink;
-use crate::push::PushLink;
-use crate::servers::ServersLink;
+use crate::chat::TimelineSubscription;
+use crate::files::FileOpener;
+use crate::home::Network;
+use crate::scope::{Scope, Views};
+use crate::servers::ServerList;
 use crate::session_store::SessionStore;
-use crate::settings::SettingsLink;
 use crate::subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
     PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
     TabsSubscription, TransfersSubscription,
 };
-use crate::tabs::TabsLink;
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
+use switch::{PushInput, Replay};
 
+mod limits;
+mod switch;
 mod tool_policy;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
-/// 状态只存在这里：watch 通道既保存当前状态，也负责通知订阅者。网络操作在核心自己的 tokio 运行时
-/// 里执行，进度和结果体现在 ViewModel 里。
+/// 状态只存在这里：watch 通道既保存当前状态，也负责通知订阅者。连着服务器的部件都在当前的作用域里
+/// （[`Scope`]），网络操作在作用域自己的 tokio 运行时里执行，进度和结果体现在 ViewModel 里。切换服务器时
+/// 换掉作用域，壳的订阅接在 `views` 上，不用重建。
 #[derive(uniffi::Object)]
 pub struct ClientCore {
     state: watch::Sender<SessionStore>,
-    home: Arc<HomeLink>,
-    chat: Arc<ChatLink>,
-    push: Arc<PushLink>,
-    plugins: Arc<PluginsLink>,
-    tabs: Arc<TabsLink>,
-    files: Arc<FilesLink>,
     appearance: AppearanceLink,
-    onboarding: Arc<OnboardingLink>,
-    settings: SettingsLink,
-    servers: ServersLink,
-    /// 网络操作用的运行时，随核心释放。
-    runtime: Option<Runtime>,
+    servers: Arc<ServerList>,
+    root: PathBuf,
+    network: Network,
+    scope: RwLock<Arc<Scope>>,
+    views: Views,
+    /// 切换后要在新作用域里重放的、壳只发一次的输入。
+    replay: Mutex<Replay>,
+    /// 串行化切换：列表改动和换作用域要一起做完。
+    switching: Mutex<()>,
 }
 
 #[uniffi::export]
@@ -67,6 +63,7 @@ impl ClientCore {
     ///
     /// 这个调用不阻塞，可以在主线程上直接调用。连接家里服务器这类网络操作在后台执行。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
+        let scope = self.scope();
         match action {
             Action::CreateSession { title } => self.update_sessions(|store| store.create(&title)),
             Action::SelectSession { session_id } => {
@@ -75,44 +72,46 @@ impl ClientCore {
             Action::DeleteSession { session_id } => {
                 self.update_sessions(|store| store.delete(&session_id))
             }
-            Action::ConnectHome { ticket } => self.home.connect(&ticket),
-            Action::PairHome { code, device_name } => self.home.pair(code.expose(), &device_name),
-            Action::InviteDevice => self.home.invite(),
-            Action::AddServer
-            | Action::CancelAddServer
-            | Action::SwitchServer { .. }
-            | Action::RenameServer { .. }
-            | Action::RemoveServer { .. } => ServersLink::unsupported(),
+            Action::ConnectHome { ticket } => scope.home.connect(&ticket),
+            Action::PairHome { code, device_name } => scope.home.pair(code.expose(), &device_name),
+            Action::InviteDevice => scope.home.invite(),
+            Action::AddServer => self.change_servers(ServerList::add),
+            Action::CancelAddServer => self.change_servers(ServerList::cancel_add),
+            Action::SwitchServer { id } => self.change_servers(|servers| servers.switch(&id)),
+            Action::RenameServer { id, name } => {
+                self.change_servers(|servers| servers.rename(&id, &name))
+            }
+            Action::RemoveServer { id } => self.change_servers(|servers| servers.remove(&id)),
             Action::RefreshPeers
             | Action::ShowPeerCode
             | Action::ScanPeerCode { .. }
             | Action::RemovePeer { .. } => Err(peers_unsupported()),
             Action::AppForegrounded => {
-                self.home.foregrounded();
-                self.chat.app_foregrounded();
-                self.push.foregrounded();
-                self.plugins.foregrounded();
-                self.files.foregrounded();
+                scope.foregrounded();
                 Ok(())
             }
             Action::AppBackgrounded => {
-                self.home.backgrounded();
-                self.chat.backgrounded();
-                self.plugins.backgrounded();
+                scope.backgrounded();
                 Ok(())
             }
             Action::NetworkChanged { network } => {
-                self.home.network_changed(network);
+                self.replay().network = Some(network);
+                scope.home.network_changed(network);
                 if network != DeviceNetwork::None {
                     // 连接可能没断、只是迁移了路径：同步和发送队列的退避不用等完。
-                    self.chat.foregrounded();
+                    scope.chat.foregrounded();
                 }
                 Ok(())
             }
-            Action::RetryConnection => self.home.retry(),
-            Action::SetPushEndpoint { endpoint } => self.push.set_endpoint(endpoint),
+            Action::RetryConnection => scope.home.retry(),
+            Action::SetPushEndpoint { endpoint } => {
+                scope.push.set_endpoint(endpoint.clone())?;
+                self.replay().push = Some(PushInput::Endpoint(endpoint));
+                Ok(())
+            }
             Action::PushUnavailable { message } => {
-                self.push.unavailable(message);
+                scope.push.unavailable(message.clone());
+                self.replay().push = Some(PushInput::Unavailable(message));
                 Ok(())
             }
             action @ (Action::RefreshOnboarding
@@ -130,7 +129,7 @@ impl ClientCore {
             | Action::DismissModelProviderProblem
             | Action::SetPrimaryAgent { .. }
             | Action::DismissReplacedAgentOffer
-            | Action::DismissOnboardingTip { .. }) => self.onboarding.dispatch(action),
+            | Action::DismissOnboardingTip { .. }) => scope.onboarding.dispatch(action),
             action @ (Action::UploadFile { .. }
             | Action::DownloadFile { .. }
             | Action::CancelTransfer { .. }
@@ -139,40 +138,40 @@ impl ClientCore {
             | Action::DeleteFile { .. }
             | Action::SendFileToDevices { .. }
             | Action::GrantFileToRoom { .. }
-            | Action::DismissFileProblem) => self.files.dispatch(action),
+            | Action::DismissFileProblem) => scope.files.dispatch(action),
             action @ (Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade
-            | Action::SkipCoreUpgrade { .. }) => self.plugins.dispatch_core_upgrade(action),
+            | Action::SkipCoreUpgrade { .. }) => scope.plugins.dispatch_core_upgrade(action),
             Action::SetAccentColor { color } => self.appearance.set_accent(color),
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
             Action::SetFont { font } => self.appearance.set_font(font),
-            Action::SelectTab { tab } => self.tabs.select(tab),
-            Action::CloseTabOverlay => self.tabs.close_overlay(),
-            Action::PinTab { tab, replacing } => self.tabs.pin(tab, replacing),
-            Action::UnpinTab { tab } => self.tabs.unpin(tab),
-            Action::MoveTab { tab, index } => self.tabs.move_tab(tab, index),
-            Action::SetTabLabels { visible } => self.tabs.set_labels(visible),
-            Action::SetTabDisplay { tab, display } => self.tabs.set_display(tab, display),
-            Action::EnterFullscreen { tab } => self.tabs.enter_fullscreen(tab),
-            Action::ExitFullscreen { tab } => self.tabs.exit_fullscreen(tab),
-            Action::ReloadTab { tab } => self.tabs.reload(tab),
-            Action::TabLoadFailed { tab, status } => self.tabs.load_failed(tab, status),
-            Action::TabLoadSucceeded { tab } => self.tabs.load_succeeded(tab),
-            Action::DismissUninstalledTabs => self.tabs.dismiss_uninstalled(),
-            other => self.dispatch_plugins_or_chat(other),
+            Action::SelectTab { tab } => scope.tabs.select(tab),
+            Action::CloseTabOverlay => scope.tabs.close_overlay(),
+            Action::PinTab { tab, replacing } => scope.tabs.pin(tab, replacing),
+            Action::UnpinTab { tab } => scope.tabs.unpin(tab),
+            Action::MoveTab { tab, index } => scope.tabs.move_tab(tab, index),
+            Action::SetTabLabels { visible } => scope.tabs.set_labels(visible),
+            Action::SetTabDisplay { tab, display } => scope.tabs.set_display(tab, display),
+            Action::EnterFullscreen { tab } => scope.tabs.enter_fullscreen(tab),
+            Action::ExitFullscreen { tab } => scope.tabs.exit_fullscreen(tab),
+            Action::ReloadTab { tab } => scope.tabs.reload(tab),
+            Action::TabLoadFailed { tab, status } => scope.tabs.load_failed(tab, status),
+            Action::TabLoadSucceeded { tab } => scope.tabs.load_succeeded(tab),
+            Action::DismissUninstalledTabs => scope.tabs.dismiss_uninstalled(),
+            other => self.dispatch_plugins_or_chat(&scope, other),
         }
     }
 
     /// 当前的底栏和插件页面，用于首帧渲染。
     pub fn tabs(&self) -> TabsViewModel {
-        self.tabs.view()
+        self.views.tabs.borrow().clone()
     }
 
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
-        Arc::new(TabsSubscription::new(self.tabs.subscribe()))
+        Arc::new(TabsSubscription::new(self.views.tabs.subscribe()))
     }
 
     /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
@@ -181,7 +180,12 @@ impl ClientCore {
         tab: TabRef,
         environment: TabEnvironment,
     ) -> Result<String, CoreError> {
-        bridge::document_script(&self.tabs, &self.appearance.view(), &tab, &environment)
+        bridge::document_script(
+            &self.scope().tabs,
+            &self.appearance.view(),
+            &tab,
+            &environment,
+        )
     }
 
     /// 壳原样交入消息及原生回调的主框架标志、来源；核心校验来源，草稿不发送。
@@ -194,7 +198,7 @@ impl ClientCore {
         environment: TabEnvironment,
     ) -> TabBridgeResult {
         bridge::handle_message(
-            &self.tabs,
+            &self.scope().tabs,
             &self.appearance,
             &tab,
             is_main_frame,
@@ -210,7 +214,12 @@ impl ClientCore {
         tab: TabRef,
         environment: TabEnvironment,
     ) -> Result<String, CoreError> {
-        bridge::context_script(&self.tabs, &self.appearance.view(), &tab, &environment)
+        bridge::context_script(
+            &self.scope().tabs,
+            &self.appearance.view(),
+            &tab,
+            &environment,
+        )
     }
 
     pub fn tab_reselected_script(&self) -> String {
@@ -219,7 +228,7 @@ impl ClientCore {
 
     /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
     pub fn tab_connection_script(&self) -> String {
-        bridge::connection_script(&self.home.view().status)
+        bridge::connection_script(&self.scope().home.view().status)
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -244,12 +253,12 @@ impl ClientCore {
 
     /// 当前的设置首页，用于首帧渲染。
     pub fn settings(&self) -> SettingsViewModel {
-        self.settings.view()
+        self.views.settings.borrow().clone()
     }
 
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
-        Arc::new(SettingsSubscription::new(self.settings.subscribe()))
+        Arc::new(SettingsSubscription::new(self.views.settings.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -264,37 +273,37 @@ impl ClientCore {
 
     /// 当前和家里服务器的连接，用于首帧渲染。
     pub fn home(&self) -> HomeViewModel {
-        self.home.view()
+        self.views.home.borrow().clone()
     }
 
     /// 订阅和家里服务器的连接，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_home(&self) -> Arc<HomeSubscription> {
-        Arc::new(HomeSubscription::new(self.home.subscribe()))
+        Arc::new(HomeSubscription::new(self.views.home.subscribe()))
     }
 
     /// 当前的聊天状态（账号、同步、加密、房间列表），用于首帧渲染。
     pub fn chat(&self) -> ChatViewModel {
-        self.chat.view()
+        self.views.chat.borrow().clone()
     }
 
     /// 订阅聊天状态，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_chat(&self) -> Arc<ChatSubscription> {
-        Arc::new(ChatSubscription::new(self.chat.subscribe()))
+        Arc::new(ChatSubscription::new(self.views.chat.subscribe()))
     }
 
     /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
     pub fn chat_contacts(&self, query: String) -> Vec<ChatContact> {
-        let installed = self.plugins.view().installed;
+        let installed = self.scope().plugins.view().installed;
         let plugins = installed
             .map(|installed| installed.plugins)
             .unwrap_or_default();
-        self.chat.contacts(&query, &plugins)
+        self.scope().chat.contacts(&query, &plugins)
     }
 
     /// 把发起私聊时输入的用户名或 Matrix ID 变成完整的 ID：只输用户名时补上本账号的服务器。不合法时返回
     /// `InvalidInput`，还没登录时返回 `NotReady`。
     pub fn resolve_user_id(&self, input: String) -> Result<String, CoreError> {
-        self.chat.resolve_user_id(&input)
+        self.scope().chat.resolve_user_id(&input)
     }
 
     /// 订阅一个已加入房间的时间线：第一批是全部条目，之后是按顺序应用的增量。同一时间只打开一个房间，
@@ -303,68 +312,85 @@ impl ClientCore {
         &self,
         room_id: String,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
-        let chat = self.chat.clone();
-        self.run(async move { chat.open_timeline(&room_id).await })
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.open_timeline(&room_id).await })
             .await
     }
 
     /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。
     pub async fn load_media(&self, media: MediaHandle) -> Result<Vec<u8>, CoreError> {
-        let chat = self.chat.clone();
-        self.run(async move { chat.load_media(media).await }).await
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope.run(async move { chat.load_media(media).await }).await
     }
 
     /// 视频头像的本机缓存文件；相同媒体的并发请求共用一次下载。
     pub async fn avatar_file(&self, media: MediaHandle) -> Result<String, CoreError> {
-        let chat = self.chat.clone();
-        self.run(async move { chat.avatar_file(media).await }).await
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.avatar_file(media).await })
+            .await
     }
 
     /// 当前的插件页面（已安装的插件、商店、安装的进展），用于首帧渲染。
     pub fn plugins(&self) -> PluginsViewModel {
-        self.plugins.view()
+        self.views.plugins.borrow().clone()
     }
 
     /// 订阅插件页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_plugins(&self) -> Arc<PluginsSubscription> {
-        Arc::new(PluginsSubscription::new(self.plugins.subscribe()))
+        Arc::new(PluginsSubscription::new(self.views.plugins.subscribe()))
     }
     /// 当前的新用户引导状态，用于首帧渲染。
     pub fn onboarding(&self) -> OnboardingViewModel {
-        self.onboarding.view()
+        self.views.onboarding.borrow().clone()
     }
 
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
     pub fn subscribe_onboarding(&self) -> Arc<OnboardingSubscription> {
-        Arc::new(OnboardingSubscription::new(self.onboarding.subscribe()))
+        Arc::new(OnboardingSubscription::new(
+            self.views.onboarding.subscribe(),
+        ))
     }
 
     /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
     pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.store_plugin(&source).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.store_plugin(&source).await })
             .await
     }
 
     /// 一个已安装插件的详情（装着的版本）。
     pub async fn installed_plugin(&self, id: String) -> Result<PluginDetail, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.installed_plugin(&id).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.installed_plugin(&id).await })
             .await
     }
 
     /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是
     /// [`StoreItem::source`]，或者主人输入的 `github:<owner>/<repo>[@<tag>]`。
     pub async fn preview_install(&self, source: String) -> Result<InstallPreview, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.preview_install(source).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.preview_install(source).await })
             .await
     }
 
     /// 取家里服务器上的资料（ADR-0030），设置页和填资料的页面渲染它。
     pub async fn owner_profile(&self) -> Result<OwnerProfile, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.owner_profile().await }).await
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.owner_profile().await })
+            .await
     }
 
     /// 保存资料，名字同步成 Matrix 上的显示名。不合规则时返回 `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
@@ -372,47 +398,32 @@ impl ClientCore {
         &self,
         update: OwnerProfileUpdate,
     ) -> Result<OwnerProfile, CoreError> {
-        let plugins = self.plugins.clone();
-        let saved = self
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        let saved = scope
             .run(async move { plugins.save_owner_profile(update).await })
             .await?;
         if let Some(name) = saved.display_name.clone() {
-            self.chat.set_owner_display_name(name);
+            scope.chat.set_owner_display_name(name);
         }
         Ok(saved)
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。
     pub async fn preview_upgrade(&self, id: String) -> Result<InstallPreview, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.preview_upgrade(&id).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.preview_upgrade(&id).await })
             .await
-    }
-
-    /// 插件的压缩包最大多少字节。壳读文件之前先看大小，太大的不读进内存。
-    pub fn max_plugin_archive_bytes(&self) -> u64 {
-        wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES
-    }
-
-    /// 头像的边长上限（像素）。壳按它把主人选的图裁成方形、缩放。
-    pub fn max_avatar_edge(&self) -> u32 {
-        wonton_protocol::MAX_AVATAR_EDGE
-    }
-
-    /// 单个头像文件的大小上限（字节）。壳读文件之前先看大小，太大的不读进内存。
-    pub fn max_avatar_bytes(&self) -> u64 {
-        wonton_protocol::MAX_AVATAR_BYTES
-    }
-
-    /// 动图和视频头像的时长上限（毫秒）。壳按它截取。
-    pub fn max_avatar_duration_ms(&self) -> u32 {
-        wonton_protocol::MAX_AVATAR_DURATION_MS
     }
 
     /// 主人选的压缩包的预览（ADR-0031）：`archive` 是文件的内容，壳只负责选文件和读字节。确认后按预览安装，不用再传。
     pub async fn preview_upload(&self, archive: Vec<u8>) -> Result<InstallPreview, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.preview_upload(archive).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.preview_upload(archive).await })
             .await
     }
 
@@ -422,8 +433,10 @@ impl ClientCore {
         id: String,
         source: String,
     ) -> Result<InstallPreview, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.preview_upgrade_from(&id, source).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.preview_upgrade_from(&id, source).await })
             .await
     }
 
@@ -433,22 +446,28 @@ impl ClientCore {
         id: String,
         archive: Vec<u8>,
     ) -> Result<InstallPreview, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.preview_upgrade_upload(&id, archive).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.preview_upgrade_upload(&id, archive).await })
             .await
     }
 
     /// 添加来源：地址可以是仓库地址、`owner/repo`，或者索引的 https 地址。
     pub async fn add_store_source(&self, address: String) -> Result<AddedSource, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.add_store_source(address).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.add_store_source(address).await })
             .await
     }
 
     /// 删除添加的来源，已安装的插件不动。
     pub async fn remove_store_source(&self, address: String) -> Result<(), CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.remove_store_source(&address).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.remove_store_source(&address).await })
             .await
     }
 
@@ -458,8 +477,10 @@ impl ClientCore {
         id: String,
         enabled: bool,
     ) -> Result<PluginDetail, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.set_lan_webui(&id, enabled).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.set_lan_webui(&id, enabled).await })
             .await
     }
 
@@ -469,8 +490,10 @@ impl ClientCore {
         id: String,
         enabled: bool,
     ) -> Result<PluginDetail, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.set_ask_every_update(&id, enabled).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.set_ask_every_update(&id, enabled).await })
             .await
     }
 
@@ -480,45 +503,53 @@ impl ClientCore {
         id: String,
         folder: String,
     ) -> Result<PluginDetail, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.revoke_save_grant(&id, &folder).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.revoke_save_grant(&id, &folder).await })
             .await
     }
 
     /// 取插件的图标或截图：PNG 或 JPEG 的字节，经隧道取回并缓存，同 [`load_media`](Self::load_media)。
     pub async fn load_plugin_image(&self, image: PluginImage) -> Result<Vec<u8>, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.load_image(&image).await })
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.load_image(&image).await })
             .await
     }
 
     /// 给 [`UploadSource::Opaque`](wonton_protocol::UploadSource::Opaque) 的来源换文件描述符。壳在创建核心之后、发出
     /// 第一个操作之前设置：App 重启后核心要接着传。
     pub fn set_file_opener(&self, opener: Arc<dyn FileOpener>) {
-        self.files.set_opener(opener);
+        self.scope().files.set_opener(opener.clone());
+        self.replay().opener = Some(opener);
     }
 
     /// 当前的传输列表，用于首帧渲染。
     pub fn transfers(&self) -> TransfersViewModel {
-        self.files.view()
+        self.views.transfers.borrow().clone()
     }
 
     /// 这个房间的传输条列什么。不走网络，传输列表一变就可以重新取。
     pub fn room_transfers(&self, room_id: String) -> RoomTransfers {
-        self.files
+        let scope = self.scope();
+        scope
+            .files
             .view()
-            .for_room(&room_id, &self.chat.view().rooms)
+            .for_room(&room_id, &scope.chat.view().rooms)
     }
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_transfers(&self) -> Arc<TransfersSubscription> {
-        Arc::new(TransfersSubscription::new(self.files.subscribe()))
+        Arc::new(TransfersSubscription::new(self.views.transfers.subscribe()))
     }
 
     /// 消息下面的文件卡片：取信息并缓存。结果写在卡片里，壳等待时画 [`FileCard::Loading`]。
     pub async fn file_card(&self, id: FileId) -> FileCard {
-        let files = self.files.clone();
-        let card = self.run(async move { Ok(files.card(id).await) }).await;
+        let scope = self.scope();
+        let files = scope.files.clone();
+        let card = scope.run(async move { Ok(files.card(id).await) }).await;
         card.unwrap_or_else(|error| FileCard::Failed {
             reason: FileFailure::Other,
             message: error.to_string(),
@@ -527,27 +558,30 @@ impl ClientCore {
 
     /// 卡片上的按钮和下载进展。不走网络，传输列表一变就可以重新取。
     pub fn file_card_actions(&self, info: FileInfo) -> FileCardActions {
-        self.files.card_actions(&info)
+        self.scope().files.card_actions(&info)
     }
 
     /// 文件的缩略图：JPEG 字节。不在访问范围里时返回 `Unauthorized`；文件没了、这个类型没有缩略图时返回 `InvalidInput`。
     pub async fn file_thumbnail(&self, id: FileId) -> Result<Vec<u8>, CoreError> {
-        let files = self.files.clone();
-        self.run(async move { files.thumbnail(id).await }).await
+        let scope = self.scope();
+        let files = scope.files.clone();
+        scope.run(async move { files.thumbnail(id).await }).await
     }
 
     /// 给 App 自己的播放器用的回环地址，带 `Range`：播放器不能给单个请求设代理。令牌每次启动换一个；App 回到前台后要重新取，
     /// 端口可能变了。
     pub async fn file_stream_url(&self, id: FileId) -> Result<String, CoreError> {
-        let files = self.files.clone();
-        self.run(async move { files.stream_url(id).await }).await
+        let scope = self.scope();
+        let files = scope.files.clone();
+        scope.run(async move { files.stream_url(id).await }).await
     }
 
     /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。说明里写着可以下载后用其他 App 打开。
     pub async fn file_playback_problem(&self, id: FileId) -> FileProblem {
-        let files = self.files.clone();
+        let scope = self.scope();
+        let files = scope.files.clone();
         let asked = id.clone();
-        let problem = self
+        let problem = scope
             .run(async move { Ok(files.playback_problem(asked).await) })
             .await;
         problem.unwrap_or_else(|error| FileProblem {
@@ -574,7 +608,7 @@ impl ClientCore {
 
     /// 在最近取到的商店列表里按关键词找插件：名字、说明、标签和 ID，不分大小写，官方的在前。还没取过商店时为空。
     pub fn search_store(&self, query: String) -> Vec<StoreItem> {
-        self.plugins.search_store(&query)
+        self.scope().plugins.search_store(&query)
     }
 
     /// 处理收到的一条推送：`payload` 是壳在本机解开后的明文（Android 上 UnifiedPush 连接库已经按 RFC 8291 解开）。
@@ -585,8 +619,15 @@ impl ClientCore {
         &self,
         payload: Vec<u8>,
     ) -> Result<Option<PushNotification>, CoreError> {
-        let push = self.push.clone();
-        self.run(async move { push.resolve(&payload).await }).await
+        let scope = self.scope();
+        let push = scope.push.clone();
+        let notification = scope
+            .run(async move { push.resolve(&payload).await })
+            .await?;
+        Ok(notification.map(|notification| PushNotification {
+            server_id: Some(scope.slot.clone()),
+            ..notification
+        }))
     }
 }
 
@@ -594,165 +635,114 @@ impl ClientCore {
     /// 关掉隧道的定时检查，只留回到前台、网络变化和重试触发的检查。只给测试用。
     #[doc(hidden)]
     pub fn stop_periodic_checks(&self) {
-        self.home.stop_periodic_checks();
+        self.scope().home.stop_periodic_checks();
+        self.replay().no_periodic_checks = true;
     }
 
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
         crate::l10n::init();
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("wonton-core")
-            .enable_all()
-            .build()
-            .expect("创建 tokio 运行时失败");
-        let storage = Storage::open(data_dir)?;
-        let home = HomeLink::new(runtime.handle().clone(), storage, network)?;
-        let plugins = PluginsLink::new(runtime.handle().clone(), home.clone(), Path::new(data_dir));
-        let card_success = {
-            let plugins = plugins.clone();
-            Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
-        };
-        let chat = ChatLink::new(
-            runtime.handle().clone(),
-            home.clone(),
-            Path::new(data_dir),
-            card_success,
-            plugins.clone(),
+        let root = PathBuf::from(data_dir);
+        let servers = Arc::new(ServerList::open(&root)?);
+        let slot = servers.current();
+        let scope = Scope::open(
+            &slot,
+            &root,
+            &servers.slot_dir(&slot),
+            network,
+            servers.subscribe(),
+            None,
         )?;
-        let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
-        let tabs = TabsLink::new(
-            runtime.handle().clone(),
-            home.clone(),
-            plugins.clone(),
-            Path::new(data_dir),
-        );
-        let files = FilesLink::new(
-            runtime.handle().clone(),
-            home.clone(),
-            chat.clone(),
-            Path::new(data_dir),
-        );
-        let appearance = AppearanceLink::new(Path::new(data_dir));
-        let onboarding = OnboardingLink::new(
-            runtime.handle().clone(),
-            home.clone(),
-            chat.clone(),
-            plugins.clone(),
-            Path::new(data_dir),
-        );
-        let servers = ServersLink::new(runtime.handle(), home.subscribe());
-        let settings = SettingsLink::new(
-            runtime.handle(),
-            home.subscribe(),
-            chat.subscribe(),
-            plugins.subscribe(),
-        );
-        Ok(Arc::new(Self {
+        let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
-            home,
-            chat,
-            push,
-            plugins,
-            tabs,
-            files,
-            appearance,
-            onboarding,
-            settings,
+            appearance: AppearanceLink::new(&root),
+            views: Views::of(&scope),
+            scope: RwLock::new(scope.clone()),
             servers,
-            runtime: Some(runtime),
-        }))
-    }
-
-    /// 在核心自己的运行时里执行：壳（Swift / Kotlin）驱动导出的 async 方法时，线程上没有 tokio 运行时，
-    /// matrix-sdk 的网络操作离不开它。
-    async fn run<T: Send + 'static>(
-        &self,
-        task: impl Future<Output = Result<T, CoreError>> + Send + 'static,
-    ) -> Result<T, CoreError> {
-        let runtime = self.runtime.as_ref().expect("核心释放前运行时一直在");
-        runtime
-            .spawn(task)
-            .await
-            .map_err(|error| CoreError::Upstream {
-                reason: format!("核心的后台任务异常结束：{error}"),
-            })?
+            root,
+            network,
+            replay: Mutex::default(),
+            switching: Mutex::new(()),
+        });
+        core.attach(&scope);
+        Ok(core)
     }
 
     /// `dispatch` 的后半：插件的操作，其余都是聊天的。分开放是因为函数长度有上限。
-    fn dispatch_plugins_or_chat(&self, action: Action) -> Result<(), CoreError> {
+    fn dispatch_plugins_or_chat(&self, scope: &Scope, action: Action) -> Result<(), CoreError> {
         match action {
-            Action::SetBotName { plugin_id, name } => self.chat.set_bot_name(plugin_id, name),
+            Action::SetBotName { plugin_id, name } => scope.chat.set_bot_name(plugin_id, name),
             Action::SetBotAvatar {
                 plugin_id,
                 state,
                 upload,
-            } => self.chat.set_bot_avatar(plugin_id, state, upload),
+            } => scope.chat.set_bot_avatar(plugin_id, state, upload),
             Action::ClearBotAvatar { plugin_id, state } => {
-                self.chat.clear_bot_avatar(plugin_id, state)
+                scope.chat.clear_bot_avatar(plugin_id, state)
             }
             Action::DismissBotProfileProblem { plugin_id } => {
-                self.chat.dismiss_bot_profile_problem(&plugin_id);
+                scope.chat.dismiss_bot_profile_problem(&plugin_id);
                 Ok(())
             }
             Action::SetLanguages { languages } => {
                 crate::l10n::set_languages(&languages);
-                self.plugins.set_languages(languages.clone());
-                self.onboarding.set_languages(languages);
+                scope.plugins.set_languages(languages.clone());
+                scope.onboarding.set_languages(languages.clone());
+                self.replay().languages = Some(languages);
                 Ok(())
             }
             Action::RefreshPlugins => {
-                self.plugins.refresh_installed();
+                scope.plugins.refresh_installed();
                 Ok(())
             }
-            Action::StartPlugin { plugin_id } => self.plugins.start(plugin_id),
+            Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
             Action::RefreshStore { force } => {
-                self.plugins.refresh_store(force);
+                scope.plugins.refresh_store(force);
                 Ok(())
             }
-            Action::InstallPlugin { preview } => self.plugins.install(preview),
-            Action::UpgradePlugin { preview } => self.plugins.upgrade(preview),
-            Action::UninstallPlugin { id, delete_data } => self.plugins.uninstall(id, delete_data),
-            Action::DismissPluginTask { id } => self.plugins.dismiss_task(&id),
+            Action::InstallPlugin { preview } => scope.plugins.install(preview),
+            Action::UpgradePlugin { preview } => scope.plugins.upgrade(preview),
+            Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
+            Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
             Action::StartTakeover { id } => {
-                self.plugins.start_takeover(id);
+                scope.plugins.start_takeover(id);
                 Ok(())
             }
             Action::EndTakeover { id } => {
-                self.plugins.end_takeover(&id);
+                scope.plugins.end_takeover(&id);
                 Ok(())
             }
             Action::RefreshRegistryMirror => {
-                self.plugins.refresh_registry_mirror();
+                scope.plugins.refresh_registry_mirror();
                 Ok(())
             }
-            Action::SaveRegistryMirror { mirror } => self.plugins.save_registry_mirror(mirror),
-            Action::TestRegistryMirrors => self.plugins.test_registry_mirrors(),
+            Action::SaveRegistryMirror { mirror } => scope.plugins.save_registry_mirror(mirror),
+            Action::TestRegistryMirrors => scope.plugins.test_registry_mirrors(),
             Action::RefreshEgressProxy => {
-                self.plugins.refresh_egress();
+                scope.plugins.refresh_egress();
                 Ok(())
             }
             Action::SaveEgressProxy {
                 address,
                 direct_cidrs,
                 use_plugin,
-            } => self
+            } => scope
                 .plugins
                 .save_egress(&address, &direct_cidrs, use_plugin),
-            Action::ConfirmEgressProxy => self.plugins.confirm_egress(),
+            Action::ConfirmEgressProxy => scope.plugins.confirm_egress(),
             Action::DismissEgressConfirmation => {
-                self.plugins.dismiss_egress_confirmation();
+                scope.plugins.dismiss_egress_confirmation();
                 Ok(())
             }
             Action::AskAgent { text } => {
-                let bot = self.onboarding.view().primary_bot_user_id.ok_or_else(|| {
+                let bot = scope.onboarding.view().primary_bot_user_id.ok_or_else(|| {
                     CoreError::NotReady {
                         reason: "还没有默认 Agent：先在设置里选一个".to_owned(),
                     }
                 })?;
-                self.chat.ask(&bot, &text)
+                scope.chat.ask(&bot, &text)
             }
-            chat => self.chat.dispatch(chat),
+            chat => scope.chat.dispatch(chat),
         }
     }
 
@@ -788,10 +778,6 @@ fn peers_unsupported() -> CoreError {
 
 impl Drop for ClientCore {
     fn drop(&mut self) {
-        self.files.close();
-        // 不等后台任务结束：壳可能在主线程上释放核心，测试可能在异步上下文里释放。
-        if let Some(runtime) = self.runtime.take() {
-            runtime.shutdown_background();
-        }
+        self.scope().close(false);
     }
 }

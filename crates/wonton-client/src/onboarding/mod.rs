@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::runtime::Handle;
-use tokio::sync::{watch, watch::Receiver};
+use tokio::sync::watch;
 use wonton_protocol::{
     Action, CoreError, HomeStatus, ModelProviderFailure, ModelProviderProblem, ModelProviders,
     Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingUpdate,
@@ -26,6 +26,7 @@ use wonton_protocol::{
 use crate::chat::ChatLink;
 use crate::home::HomeLink;
 use crate::plugins::PluginsLink;
+use crate::scope::reuse;
 use draft::Draft;
 use review::ReviewEntry;
 use storage::OnboardingStorage;
@@ -75,6 +76,7 @@ impl OnboardingLink {
         chat: Arc<ChatLink>,
         plugins: Arc<PluginsLink>,
         data_dir: &Path,
+        view: Option<watch::Sender<OnboardingViewModel>>,
     ) -> Arc<Self> {
         let (storage, problem) = OnboardingStorage::open(data_dir);
         let sent_rooms = storage.snapshot().prompt_rooms.into_iter().collect();
@@ -83,7 +85,7 @@ impl OnboardingLink {
             home: home.clone(),
             chat: chat.clone(),
             plugins,
-            view: watch::Sender::new(OnboardingViewModel::default()),
+            view: reuse(view, OnboardingViewModel::default()),
             state: Mutex::new(LocalState {
                 problem: problem.map(storage_problem),
                 ..LocalState::default()
@@ -107,8 +109,9 @@ impl OnboardingLink {
         self.view.borrow().clone()
     }
 
-    pub(crate) fn subscribe(&self) -> Receiver<OnboardingViewModel> {
-        self.view.subscribe()
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<OnboardingViewModel> {
+        self.view.clone()
     }
 
     pub(crate) fn set_languages(self: &Arc<Self>, languages: Vec<String>) {

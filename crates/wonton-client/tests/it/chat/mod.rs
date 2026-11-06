@@ -88,7 +88,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
 
     // 本机的聊天存储丢了（比如只恢复了一部分 App 数据）：登录状态单独留着也不能用，重新要令牌登录成一台新设备，
     // 不拿旧的设备 ID 配一套新的设备密钥。
-    std::fs::remove_dir_all(dir.path().join("matrix/store")).expect("删掉聊天存储");
+    std::fs::remove_dir_all(dir.path().join("servers/1/matrix/store")).expect("删掉聊天存储");
     let phone = Phone::open(dir.path());
     let (_, fresh) = phone.signed_in().await;
     assert_ne!(fresh, device_id, "存储丢了应登录成新设备");
@@ -140,7 +140,7 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
     let room_id = accept_the_bots_invite(&phone, &bot).await;
     chat_with_the_bot(&phone, &bot, &room_id).await;
     drop(phone);
-    std::fs::remove_dir_all(dir.path().join("matrix/store")).expect("删掉聊天存储");
+    std::fs::remove_dir_all(dir.path().join("servers/1/matrix/store")).expect("删掉聊天存储");
 
     home.set_members_down(true);
     let phone = Phone::open(dir.path());

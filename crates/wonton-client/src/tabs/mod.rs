@@ -16,6 +16,7 @@ use wonton_protocol::{
 
 use crate::home::HomeLink;
 use crate::plugins::PluginsLink;
+use crate::scope::reuse;
 
 pub(crate) mod bridge;
 
@@ -71,6 +72,7 @@ impl TabsLink {
         home: Arc<HomeLink>,
         plugins: Arc<PluginsLink>,
         data_dir: &Path,
+        view: Option<watch::Sender<TabsViewModel>>,
     ) -> Arc<Self> {
         let path = data_dir.join(TABS_FILE);
         let home_view = home.view();
@@ -112,7 +114,7 @@ impl TabsLink {
             plugins_view: plugins.subscribe(),
             plugins,
             path,
-            view: watch::Sender::new(empty_view()),
+            view: reuse(view, empty_view()),
             state: Mutex::new(state),
             writing: Mutex::new(()),
         });
@@ -125,8 +127,9 @@ impl TabsLink {
         self.view.borrow().clone()
     }
 
-    pub(crate) fn subscribe(&self) -> watch::Receiver<TabsViewModel> {
-        self.view.subscribe()
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<TabsViewModel> {
+        self.view.clone()
     }
 
     pub(crate) fn select(&self, tab: TabRef) -> Result<(), CoreError> {

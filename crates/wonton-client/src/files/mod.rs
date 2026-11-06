@@ -80,10 +80,15 @@ impl FilesLink {
         home: Arc<HomeLink>,
         chat: Arc<ChatLink>,
         data_dir: &Path,
+        view: Option<watch::Sender<TransfersViewModel>>,
     ) -> Arc<Self> {
         let link = Arc::new(Self {
             runtime: runtime.clone(),
-            store: Store::open(data_dir.join("transfers.json"), data_dir.join("downloads")),
+            store: Store::open(
+                data_dir.join("transfers.json"),
+                data_dir.join("downloads"),
+                view,
+            ),
             downloads_dir: data_dir.join("downloads"),
             home: home.clone(),
             chat,
@@ -115,8 +120,9 @@ impl FilesLink {
         self.store.view()
     }
 
-    pub(crate) fn subscribe(&self) -> watch::Receiver<TransfersViewModel> {
-        self.store.subscribe()
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<TransfersViewModel> {
+        self.store.sender()
     }
 
     pub(crate) fn foregrounded(self: &Arc<Self>) {

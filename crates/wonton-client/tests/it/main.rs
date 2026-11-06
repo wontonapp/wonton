@@ -13,6 +13,7 @@ mod files_support;
 mod home;
 mod pairing;
 mod plugins;
+mod servers;
 mod session_list;
 mod tabs;
 mod tabs_bridge;

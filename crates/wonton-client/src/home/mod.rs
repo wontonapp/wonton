@@ -31,6 +31,7 @@ use wonton_tunnel::{
     TunnelStatus,
 };
 
+use crate::scope::reuse;
 use connection::Tracker;
 pub(crate) use storage::{Storage, write_private};
 use ticket::Ticket;
@@ -104,23 +105,27 @@ impl HomeLink {
         runtime: Handle,
         storage: Storage,
         network: Network,
+        view: Option<watch::Sender<HomeViewModel>>,
     ) -> Result<Arc<Self>, CoreError> {
         let device_key = storage.device_key()?;
         tracing::info!(device_id = %device_key.public(), "本机设备身份");
         let saved = storage.ticket()?;
-        let view = watch::Sender::new(HomeViewModel {
-            device_id: device_key.public().to_string(),
-            server_id: None,
-            status: HomeStatus::NotConfigured,
-            path: None,
-            notice: None,
-            details: ConnectionDetails::default(),
-            proxy: None,
-            web_url: None,
-            pairing: None,
-            invite: None,
-            keep_connection: false,
-        });
+        let view = reuse(
+            view,
+            HomeViewModel {
+                device_id: device_key.public().to_string(),
+                server_id: None,
+                status: HomeStatus::NotConfigured,
+                path: None,
+                notice: None,
+                details: ConnectionDetails::default(),
+                proxy: None,
+                web_url: None,
+                pairing: None,
+                invite: None,
+                keep_connection: false,
+            },
+        );
         let home = Arc::new(Self {
             runtime,
             storage,
@@ -149,6 +154,11 @@ impl HomeLink {
 
     pub(crate) fn view(&self) -> HomeViewModel {
         self.view.borrow().clone()
+    }
+
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<HomeViewModel> {
+        self.view.clone()
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<HomeViewModel> {

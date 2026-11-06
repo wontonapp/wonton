@@ -14,11 +14,12 @@ impl Rig {
         let runtime = Handle::current();
         let home_link = HomeLink::new(
             runtime.clone(),
-            crate::home::Storage::open(dir.path()).unwrap(),
+            crate::home::Storage::open(dir.path(), dir.path()).unwrap(),
             crate::home::Network::DirectOnly,
+            None,
         )
         .unwrap();
-        let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path());
+        let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path(), None);
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
         let tabs = TabsLink {

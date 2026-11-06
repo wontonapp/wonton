@@ -50,6 +50,7 @@ pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
+use crate::scope::reuse;
 use confirmation::{Answers, Cards};
 use storage::ChatStorage;
 use view::{core_error, room_row, sort_rooms};
@@ -101,6 +102,21 @@ impl Drop for Active {
     }
 }
 
+/// matrix-sdk 的 sqlite 连接池释放连接时要在 tokio 运行时的上下文里（`spawn_blocking`），没有就 panic，接着释放下一个
+/// 连接时再 panic，进程直接中止。最后一个引用可能在壳的线程上释放：换服务器时旧作用域在 `dispatch` 里释放（实测
+/// Android 上点“添加服务器”闪退），临时作用域在壳驱动的 async 方法里释放。所以在自己运行时的上下文里放掉会话、Bot 那边
+/// 存的会话和打开的房间；那个运行时这时多半已经停了，`spawn_blocking` 不再执行，连接就地关闭。Bot 那边只放会话，不走
+/// `set_session`：它会改 ViewModel，而发送端这时已经交给了新服务器的作用域。
+impl Drop for ChatLink {
+    fn drop(&mut self) {
+        let _context = self.runtime.enter();
+        lock(&self.open_room).take();
+        lock(&self.session).take();
+        self.bots.session.send_replace(None);
+        self.active.get_mut().take();
+    }
+}
+
 impl ChatLink {
     pub(crate) fn new(
         runtime: Handle,
@@ -108,6 +124,7 @@ impl ChatLink {
         data_dir: &Path,
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
+        view: Option<watch::Sender<ChatViewModel>>,
     ) -> Result<Arc<Self>, CoreError> {
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
@@ -119,18 +136,21 @@ impl ChatLink {
             verification_flow: None,
         };
         recovery::update_reminder(&mut encryption);
-        let view = watch::Sender::new(ChatViewModel {
-            account: ChatAccount::SignedOut,
-            sync: ChatSync::Idle,
-            encryption,
-            rooms: Vec::new(),
-            problem: None,
-            push: PushStatus::NoEndpoint,
-            pending_confirmations: Vec::new(),
-            settled_confirmations: Vec::new(),
-            background_notifications: Vec::new(),
-            bots: Vec::new(),
-        });
+        let view = reuse(
+            view,
+            ChatViewModel {
+                account: ChatAccount::SignedOut,
+                sync: ChatSync::Idle,
+                encryption,
+                rooms: Vec::new(),
+                problem: None,
+                push: PushStatus::NoEndpoint,
+                pending_confirmations: Vec::new(),
+                settled_confirmations: Vec::new(),
+                background_notifications: Vec::new(),
+                bots: Vec::new(),
+            },
+        );
         let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins, view.clone());
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
@@ -156,6 +176,11 @@ impl ChatLink {
 
     pub(crate) fn view(&self) -> ChatViewModel {
         self.view.borrow().clone()
+    }
+
+    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
+    pub(crate) fn sender(&self) -> watch::Sender<ChatViewModel> {
+        self.view.clone()
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<ChatViewModel> {
