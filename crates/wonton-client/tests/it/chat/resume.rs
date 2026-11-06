@@ -140,3 +140,45 @@ async fn the_chat_recovers_when_the_tunnel_comes_back() {
 
     chat.caught_up().await;
 }
+
+/// 服务器丢了房间列表那条连接的位置（`M_UNKNOWN_POS`，负载高时 Tuwunel 实测会回）：SDK 从头同步，打开着的房间只剩最新
+/// 的一段。新消息照常到，往回翻能把更早的找回来。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over() {
+    let mut chat = Chat::open().await;
+    chat.bot_room.send_text("之前的").await.expect("Bot 发消息");
+    chat.timeline
+        .until("之前的", |item| text(item, "之前的"))
+        .await;
+
+    // 过期落在“同一批的”带回来之后的那次请求上；SDK 从头同步后列表清空，只剩最新的一段。
+    chat.home.expire_room_list_sync();
+    chat.bot_room
+        .send_text("同一批的")
+        .await
+        .expect("Bot 发消息");
+    chat.timeline
+        .until("同一批的", |item| text(item, "同一批的"))
+        .await;
+    let deadline = Instant::now() + Duration::from_secs(40);
+    while !chat.home.room_list_sync_expired() {
+        assert!(
+            Instant::now() < deadline,
+            "房间列表的同步一直没发下一个请求"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    chat.bot_room.send_text("之后的").await.expect("Bot 发消息");
+
+    chat.timeline
+        .until_items("新消息到了，更早的也翻回来了", |items| {
+            let has = |body| items.iter().any(|item| text(item, body).is_some());
+            (has("之前的") && has("同一批的") && has("之后的")).then_some(())
+        })
+        .await;
+    assert!(
+        chat.timeline.was_cleared(),
+        "同步没有从头开始，这条测试没测到"
+    );
+}

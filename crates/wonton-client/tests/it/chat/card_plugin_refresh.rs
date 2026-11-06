@@ -75,6 +75,30 @@ async fn wait_for<R>(
     }
 }
 
+/// 跟着核心私聊的那一路（补取靠它）和打开着的时间线各自订阅，可能晚一步：它把卡片列进等回答的，才算看见了没结束。
+async fn followed_pending(phone: &Phone, id: &str) {
+    phone
+        .wait_chat("跟随看见卡片在等回答", |view| {
+            view.pending_confirmations
+                .iter()
+                .any(|card| card.id == id)
+                .then_some(())
+        })
+        .await;
+}
+
+/// 跟随把卡片列进不用回答的，补不补取就已经定了。
+async fn followed_settled(phone: &Phone, id: &str) {
+    phone
+        .wait_chat("跟随看见卡片有了结果", |view| {
+            view.settled_confirmations
+                .iter()
+                .any(|card| card == id)
+                .then_some(())
+        })
+        .await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_succeeded_card_fetches_the_installed_list_once() {
@@ -168,6 +192,7 @@ async fn listed_plugins_do_not_refetch_and_missing_ones_only_fetch_once() {
         view.card.state == ConfirmationState::Pending
     })
     .await;
+    followed_pending(&phone, "install").await;
     edit(
         &room,
         &posted,
@@ -178,6 +203,7 @@ async fn listed_plugins_do_not_refetch_and_missing_ones_only_fetch_once() {
         matches!(view.card.state, ConfirmationState::Succeeded { .. })
     })
     .await;
+    followed_settled(&phone, "install").await;
     assert_eq!(home.installed_requests(), baseline);
 
     // 卸载后（列表里没有了）：新一张成功卡片恰好补取一次，旧卡片不重试、不循环。
@@ -197,11 +223,13 @@ async fn listed_plugins_do_not_refetch_and_missing_ones_only_fetch_once() {
         view.card.state == ConfirmationState::Pending
     })
     .await;
+    followed_pending(&phone, "second").await;
     edit(&room, &posted, &with_state(&second, succeeded("又装好了"))).await;
     until_card(&mut timeline, "second", "执行完了", |view| {
         matches!(view.card.state, ConfirmationState::Succeeded { .. })
     })
     .await;
+    followed_settled(&phone, "second").await;
     // 假核心回的是空列表，列表里不会有这个插件；等补取的请求落地。
     wait_for(&phone, "卸载后补取的请求", |_| {
         (home.installed_requests() == after_uninstall + 1).then_some(())

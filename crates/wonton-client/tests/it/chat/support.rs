@@ -17,8 +17,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{
-    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin, InstalledPlugins,
-    Network, OnboardingViewModel, TimelineDiff, TimelineItem, TimelineSubscription,
+    Action, BackPagination, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin,
+    InstalledPlugins, Network, OnboardingViewModel, TimelineDiff, TimelineItem,
+    TimelineSubscription,
 };
 use wonton_matrix::MatrixSession;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
@@ -70,6 +71,8 @@ struct Core {
     /// 有值时下一个带着这个房间加入事件的同步应答被改写成“受邀”，见 [`super::stale_join`]。
     stale_join: watch::Sender<Option<StaleJoin>>,
     join_reported_as_invited: AtomicBool,
+    /// 为真时房间列表的下一个同步请求回 `M_UNKNOWN_POS`，像服务器丢了这条连接的位置。
+    expire_room_list: AtomicBool,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
@@ -99,6 +102,7 @@ impl Home {
             reject_backup_creation: AtomicBool::new(false),
             stale_join: watch::Sender::new(None),
             join_reported_as_invited: AtomicBool::new(false),
+            expire_room_list: AtomicBool::new(false),
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
@@ -125,6 +129,16 @@ impl Home {
     /// Tuwunel 挂了或恢复了，隧道不受影响。
     pub fn set_matrix_down(&self, down: bool) {
         self.core.matrix_down.send_replace(down);
+    }
+
+    /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。
+    pub fn expire_room_list_sync(&self) {
+        self.core.expire_room_list.store(true, Ordering::SeqCst);
+    }
+
+    /// 上一次 [`Self::expire_room_list_sync`] 已经用掉。
+    pub fn room_list_sync_expired(&self) -> bool {
+        !self.core.expire_room_list.load(Ordering::SeqCst)
     }
 
     pub fn reject_backup_creation(&self, reject: bool) {
@@ -346,6 +360,9 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
             }
             return;
         }
+        if expire_room_list(&mut tcp, &core, &text, &mut head).await {
+            return;
+        }
         let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();
         upstream.write_all(&head).await.unwrap();
         tokio::select! {
@@ -355,15 +372,9 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         }
         return;
     }
-    let length = text
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length:"))
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(0);
-    let mut body = vec![0u8; length];
-    if tcp.read_exact(&mut body).await.is_err() {
+    let Some(body) = read_body(&mut tcp, &text).await else {
         return;
-    }
+    };
     if text.starts_with("post /_wonton/confirmations/")
         || text.starts_with("delete /_wonton/confirmations/")
     {
@@ -382,6 +393,50 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     };
     tcp.write_all(response.as_bytes()).await.ok();
     tcp.shutdown().await.ok();
+}
+
+/// 要求过期时，房间列表的下一个同步请求回 `M_UNKNOWN_POS`。连接号在请求体里，所以先读完请求体，别的同步请求连同
+/// 请求体照常转发。回真时这个请求已经答完（或者读不下去了）。
+async fn expire_room_list(
+    tcp: &mut TcpStream,
+    core: &Core,
+    text: &str,
+    head: &mut Vec<u8>,
+) -> bool {
+    if !text.starts_with("post /_matrix/client/unstable/org.matrix.simplified_msc3575/sync")
+        || !core.expire_room_list.load(Ordering::SeqCst)
+    {
+        return false;
+    }
+    let Some(body) = read_body(tcp, text).await else {
+        return true;
+    };
+    if String::from_utf8_lossy(&body).contains(r#""conn_id":"room-list""#)
+        && core.expire_room_list.swap(false, Ordering::SeqCst)
+    {
+        let body = r#"{"errcode":"M_UNKNOWN_POS","error":"Unknown position"}"#;
+        let response = format!(
+            "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+             connection: close\r\n\r\n{body}",
+            body.len()
+        );
+        tcp.write_all(response.as_bytes()).await.ok();
+        tcp.shutdown().await.ok();
+        return true;
+    }
+    head.extend_from_slice(&body);
+    false
+}
+
+async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
+    let length = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length:"))
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0);
+    let mut body = vec![0u8; length];
+    tcp.read_exact(&mut body).await.ok()?;
+    Some(body)
 }
 
 /// 核心自己的接口；不认识的请求回 `None`（404）。
@@ -552,10 +607,17 @@ impl Phone {
     }
 }
 
-/// 壳那一侧维护的时间线：按顺序应用每一批增量。
+/// 壳那一侧维护的时间线：按顺序应用每一批增量。同步从头开始时（服务器回 `M_UNKNOWN_POS`）SDK 只留最新的一段，
+/// 列表被清空重来；壳这时露出顶上那一行，自己往回翻，这里也一样。
 pub struct Timeline {
     pub items: Vec<TimelineItem>,
     subscription: Arc<TimelineSubscription>,
+    core: Arc<ClientCore>,
+    room_id: String,
+    back_pagination: BackPagination,
+    started: bool,
+    cleared: bool,
+    paging: bool,
 }
 
 impl Timeline {
@@ -567,6 +629,44 @@ impl Timeline {
         Self {
             items: Vec::new(),
             subscription,
+            core: phone.core.clone(),
+            room_id: room_id.to_owned(),
+            back_pagination: BackPagination::Idle,
+            started: false,
+            cleared: false,
+            paging: false,
+        }
+    }
+
+    /// 应用一批增量。首批之后的 `Clear`、`Reset` 是列表被清空重来。
+    fn apply_update(&mut self, diffs: Vec<TimelineDiff>, back_pagination: BackPagination) {
+        // 翻页开始了，或者翻回来的条目到了：这一页算翻过，下回还在顶上就再翻。
+        if back_pagination != BackPagination::Idle || !diffs.is_empty() {
+            self.paging = false;
+        }
+        for diff in diffs {
+            if self.started && matches!(diff, TimelineDiff::Clear | TimelineDiff::Reset { .. }) {
+                self.cleared = true;
+            }
+            apply(&mut self.items, diff);
+        }
+        self.started = true;
+        self.back_pagination = back_pagination;
+    }
+
+    pub fn was_cleared(&self) -> bool {
+        self.cleared
+    }
+
+    /// 清空过、还没翻到头、没在翻：像壳一样再翻一页。
+    fn page_back_if_cleared(&mut self) {
+        if self.cleared && !self.paging && self.back_pagination == BackPagination::Idle {
+            self.paging = true;
+            self.core
+                .dispatch(Action::PaginateBackwards {
+                    room_id: self.room_id.clone(),
+                })
+                .expect("往回翻");
         }
     }
 
@@ -591,10 +691,9 @@ impl Timeline {
                 if let Some(found) = check(&self.items) {
                     return found;
                 }
+                self.page_back_if_cleared();
                 let update = self.subscription.next().await.expect("时间线订阅提前结束");
-                for diff in update.diffs {
-                    apply(&mut self.items, diff);
-                }
+                self.apply_update(update.diffs, update.back_pagination);
             }
         };
         match tokio::time::timeout(WAIT, waiting).await {

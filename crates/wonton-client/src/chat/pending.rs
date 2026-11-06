@@ -10,20 +10,20 @@ use tokio::sync::{mpsc, watch};
 use wonton_matrix::{MatrixSession, OwnedRoomId, TimelineEntry, Vector};
 use wonton_protocol::{ChatViewModel, RoomMembership};
 
-use super::Active;
 use super::confirmation::{Answers, Cards, RoomCards, core_account};
+use super::{Active, CardSuccess};
 
 /// 开始跟一个房间时往回看多少条事件。卡片 10 分钟就过期，同一个插件同时等确认的又有上限，这些够了。
 const CARD_LOOKBACK: u16 = 50;
 
 /// 跟着房间列表找出和核心账号的私聊，逐个跟着，把结果汇总进 ViewModel。主人退出过私聊时核心会换一个新的，旧的会从 `m.direct`
 /// 去掉，所以列表里通常只有一个。卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时往
-/// `succeeded` 报一次插件 ID：装好插件的卡片出现时，已装列表多半还是旧的。
+/// 调一次 `succeeded`：装好插件的卡片出现时，已装列表多半还是旧的。
 pub(super) async fn follow_cards(
     view: watch::Sender<ChatViewModel>,
     session: Arc<MatrixSession>,
     answers: watch::Sender<Answers>,
-    succeeded: mpsc::UnboundedSender<String>,
+    succeeded: CardSuccess,
 ) {
     let core = core_account(session.user_id()).to_string();
     let mut rooms = view.subscribe();
@@ -81,13 +81,13 @@ pub(super) async fn follow_cards(
 }
 
 /// 跟着一个房间，卡片的情况每次可能变化时报一次：来了新事件、这台设备的回答有了进展、有卡片到期。
-/// 卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时往 `succeeded` 报一次插件 ID。
+/// 卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时调一次 `succeeded`。
 async fn follow_room(
     session: Arc<MatrixSession>,
     room_id: String,
     mut cards: Cards,
     out: mpsc::UnboundedSender<(String, RoomCards)>,
-    succeeded: mpsc::UnboundedSender<String>,
+    succeeded: CardSuccess,
 ) {
     let room = match room_id.parse::<OwnedRoomId>() {
         Ok(room) => session.watch_room(&room).await,
@@ -129,7 +129,7 @@ async fn follow_room(
                 // 报过一次就不再报，重放和重复编辑不再触发。
                 let witnessed = watched.remove(&card_id) || shown.answered_here(&card_id);
                 if witnessed && reported.insert(card_id.clone()) {
-                    let _ = succeeded.send(plugin_id);
+                    succeeded(&plugin_id);
                 }
             } else {
                 watched.insert(card_id);
