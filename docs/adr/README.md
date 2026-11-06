@@ -51,3 +51,4 @@
 | [0039](0039-egress-proxy-plugin.md) | 代理插件：没有自己代理的主人，装一个插件就能让出网插件走代理 |
 | [0040](0040-registry-mirror.md) | 镜像加速：核心经加速地址按摘要拉 Docker Hub 的镜像 |
 | [0041](0041-app-links-and-shortcuts.md) | App 链接、快捷指令和桌面快捷方式 |
+| [0042](0042-multiple-servers.md) | 一台手机连多台服务器：同一时间连一台，各自保留数据，每台都推送 |

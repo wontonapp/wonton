@@ -82,9 +82,11 @@ struct SettingsView: View {
         switch entry {
         case .profile:
             Button(action: editProfile) { WontonRow(title: "你的资料", showsForward: true) }
-        case let .server(status, upgrade):
+        case let .server(name, status, upgrade):
             NavigationLink(value: SettingsRoute.server) {
-                WontonRow(title: "家里的服务器", value: status.connectionText, badge: upgrade, showsForward: true)
+                WontonRow(
+                    title: name ?? "家里的服务器", value: status.connectionText, badge: upgrade, showsForward: true
+                )
             }
         case .appearance:
             NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }

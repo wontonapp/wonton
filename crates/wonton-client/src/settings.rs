@@ -80,6 +80,7 @@ fn settings_view(
         vec![
             vec![SettingsEntry::Profile],
             vec![SettingsEntry::Server {
+                name: None,
                 status: status.clone(),
                 upgrade,
             }],
@@ -149,6 +150,7 @@ mod tests {
         assert_eq!(
             view.sections[1].entries,
             [SettingsEntry::Server {
+                name: None,
                 status: HomeStatus::Connected,
                 upgrade: true
             }]
@@ -220,6 +222,7 @@ mod tests {
         assert_eq!(
             server(&link),
             SettingsEntry::Server {
+                name: None,
                 status: HomeStatus::Connected,
                 upgrade: true
             }
@@ -229,6 +232,7 @@ mod tests {
         assert_eq!(
             server(&link),
             SettingsEntry::Server {
+                name: None,
                 status: HomeStatus::Connected,
                 upgrade: false
             }

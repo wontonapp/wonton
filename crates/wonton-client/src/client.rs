@@ -9,8 +9,8 @@ use wonton_protocol::{
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
     OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel,
-    PushNotification, RoomTransfers, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
-    TabsViewModel, ToolPolicyView, TransfersViewModel,
+    PushNotification, RoomTransfers, ServersViewModel, SessionListViewModel, SettingsViewModel,
+    StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -21,15 +21,18 @@ use crate::onboarding::OnboardingLink;
 use crate::plugins::PluginsLink;
 use crate::plugins::cards::follow_card_success;
 use crate::push::PushLink;
+use crate::servers::ServersLink;
 use crate::session_store::SessionStore;
 use crate::settings::SettingsLink;
 use crate::subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PluginsSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
-    TransfersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TabsSubscription, TransfersSubscription,
 };
 use crate::tabs::TabsLink;
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
+
+mod tool_policy;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -47,6 +50,7 @@ pub struct ClientCore {
     appearance: AppearanceLink,
     onboarding: Arc<OnboardingLink>,
     settings: SettingsLink,
+    servers: ServersLink,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -75,6 +79,11 @@ impl ClientCore {
             Action::ConnectHome { ticket } => self.home.connect(&ticket),
             Action::PairHome { code, device_name } => self.home.pair(code.expose(), &device_name),
             Action::InviteDevice => self.home.invite(),
+            Action::AddServer
+            | Action::CancelAddServer
+            | Action::SwitchServer { .. }
+            | Action::RenameServer { .. }
+            | Action::RemoveServer { .. } => ServersLink::unsupported(),
             Action::AppForegrounded => {
                 self.home.foregrounded();
                 self.chat.foregrounded();
@@ -217,6 +226,16 @@ impl ClientCore {
     /// 订阅外观，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_appearance(&self) -> Arc<AppearanceSubscription> {
         Arc::new(AppearanceSubscription::new(self.appearance.subscribe()))
+    }
+
+    /// 配过的服务器，用于首帧渲染。
+    pub fn servers(&self) -> ServersViewModel {
+        self.servers.view()
+    }
+
+    /// 订阅配过的服务器，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_servers(&self) -> Arc<ServersSubscription> {
+        Arc::new(ServersSubscription::new(self.servers.subscribe()))
     }
 
     /// 当前的设置首页，用于首帧渲染。
@@ -441,72 +460,6 @@ impl ClientCore {
             .await
     }
 
-    /// 插件的工具权限（ADR-0024）：工具、始终允许、一律允许、生效中的放行时段。
-    pub async fn tool_policy(&self, id: String) -> Result<ToolPolicyView, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.tool_policy(&id).await })
-            .await
-    }
-
-    /// 这个 Bot（`caller`）调这个插件不再问，包括会改数据的工具；返回改完的设置。
-    pub async fn set_tool_always(
-        &self,
-        id: String,
-        caller: String,
-        enabled: bool,
-    ) -> Result<ToolPolicyView, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move {
-            plugins
-                .set_tool_policy(&id, "always", &caller, enabled)
-                .await
-        })
-        .await
-    }
-
-    /// 这个插件自己的 Bot（`caller`）调所有插件不再问，以后装的也算；返回改完的设置。
-    pub async fn set_tool_allow_all(
-        &self,
-        id: String,
-        caller: String,
-        enabled: bool,
-    ) -> Result<ToolPolicyView, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move {
-            plugins
-                .set_tool_policy(&id, "allow-all", &caller, enabled)
-                .await
-        })
-        .await
-    }
-
-    /// 主人把这个工具标成只读，所有 Bot 调它都不再问；返回改完的设置。
-    pub async fn set_tool_read_only(
-        &self,
-        id: String,
-        tool: String,
-        enabled: bool,
-    ) -> Result<ToolPolicyView, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move {
-            plugins
-                .set_tool_policy(&id, "read-only", &tool, enabled)
-                .await
-        })
-        .await
-    }
-
-    /// 停止这张卡片（`card`）打开的放行时段：已经结束的也算成功；返回停止后的设置。
-    pub async fn stop_tool_window(
-        &self,
-        id: String,
-        card: String,
-    ) -> Result<ToolPolicyView, CoreError> {
-        let plugins = self.plugins.clone();
-        self.run(async move { plugins.stop_tool_window(&id, &card).await })
-            .await
-    }
-
     /// 取插件的图标或截图：PNG 或 JPEG 的字节，经隧道取回并缓存，同 [`load_media`](Self::load_media)。
     pub async fn load_plugin_image(&self, image: PluginImage) -> Result<Vec<u8>, CoreError> {
         let plugins = self.plugins.clone();
@@ -659,6 +612,7 @@ impl ClientCore {
             plugins.clone(),
             Path::new(data_dir),
         );
+        let servers = ServersLink::new(runtime.handle(), home.subscribe());
         let settings = SettingsLink::new(
             runtime.handle(),
             home.subscribe(),
@@ -676,6 +630,7 @@ impl ClientCore {
             appearance,
             onboarding,
             settings,
+            servers,
             runtime: Some(runtime),
         }))
     }

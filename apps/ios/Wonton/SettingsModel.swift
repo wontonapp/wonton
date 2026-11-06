@@ -23,7 +23,7 @@ final class SettingsModel {
     var hasServerUpgrade: Bool {
         viewModel.sections.contains { section in
             section.entries.contains { entry in
-                if case let .server(_, upgrade) = entry { return upgrade }
+                if case let .server(_, _, upgrade) = entry { return upgrade }
                 return false
             }
         }

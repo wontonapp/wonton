@@ -35,6 +35,7 @@ mod logging;
 mod onboarding;
 mod plugins;
 mod push;
+mod servers;
 mod session_store;
 mod settings;
 mod subscription;
@@ -49,8 +50,8 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PluginsSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
-    TransfersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
@@ -86,12 +87,13 @@ pub use wonton_protocol::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
     RegistryProblem, ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership,
-    RoomPreview, RoomRow, RoomTransfers, SecretString, SendState, SessionListViewModel, SessionRow,
-    SettingsEntry, SettingsSection, SettingsViewModel, SourceKind, StepNav, StoreFailure,
-    StoreItem, StoreListing, StoreProblem, StoreSection, TabCandidate, TabDisplay,
-    TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
-    TabsProblem, TabsViewModel, TakeoverState, TextSize, TextSizeOption, ThemeColors, ThemeMode,
-    ThemeModeOption, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction, TransferDirection,
-    TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource, WindowView,
+    RoomPreview, RoomRow, RoomTransfers, SecretString, SendState, ServerRow, ServersViewModel,
+    SessionListViewModel, SessionRow, SettingsEntry, SettingsSection, SettingsViewModel,
+    SourceKind, StepNav, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure,
+    TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, TextSizeOption,
+    ThemeColors, ThemeMode, ThemeModeOption, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer,
+    TransferAction, TransferDirection, TransferElsewhere, TransferState, TransfersViewModel,
+    UpgradeOffer, UploadSource, WindowView,
 };

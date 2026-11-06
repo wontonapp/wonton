@@ -26,6 +26,8 @@ pub enum SettingsEntry {
     Profile,
     /// 家里的服务器：连接状态，以及出网代理、升级、添加设备、重新配对。配对以后才有。
     Server {
+        /// 配了不止一台时是当前这台的名字，壳和状态并排显示；只有一台时为空。
+        name: Option<String>,
         status: HomeStatus,
         /// 服务器有新版本、主人还没跳过，画角标。
         upgrade: bool,
@@ -64,6 +66,7 @@ mod tests {
                 SettingsSection {
                     entries: vec![
                         SettingsEntry::Server {
+                            name: Some("办公室".into()),
                             status: HomeStatus::Connected,
                             upgrade: true,
                         },

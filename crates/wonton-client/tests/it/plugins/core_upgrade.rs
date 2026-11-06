@@ -502,7 +502,9 @@ async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipp
             .iter()
             .flat_map(|s| s.entries.clone())
             .find_map(|entry| match entry {
-                SettingsEntry::Server { status, upgrade } => Some((status, upgrade)),
+                SettingsEntry::Server {
+                    status, upgrade, ..
+                } => Some((status, upgrade)),
                 _ => None,
             });
         let tab = rig

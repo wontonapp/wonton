@@ -26,6 +26,7 @@ mod plugin;
 mod push;
 mod registry_mirror;
 mod secret;
+mod servers;
 mod session;
 mod settings;
 mod tabs;
@@ -115,6 +116,7 @@ pub use registry_mirror::{
     RegistryProblem,
 };
 pub use secret::SecretString;
+pub use servers::{ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
 pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
 pub use tabs::{

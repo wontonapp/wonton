@@ -35,6 +35,19 @@ pub enum Action {
     /// 时返回 `NotReady`；进展和码在 [`HomeViewModel::invite`](crate::HomeViewModel::invite) 里。再发一次换一个新码，
     /// 旧码到期前仍然能用。
     InviteDevice,
+    /// 添加一台服务器：在一个新位置上走配对，当前那台的连接先断开、数据留着。配对成功后新的那台成为当前这台；
+    /// 配对前可以 [`Action::CancelAddServer`] 回去（ADR-0042）。
+    AddServer,
+    /// 放弃添加，回到原来那台服务器。没在添加时返回 `InvalidInput`。
+    CancelAddServer,
+    /// 换到另一台配过的服务器：断开当前这台（进行中的传输暂停，换回来接着传），连上那台。`id` 是
+    /// [`ServerRow::id`](crate::ServerRow::id)。
+    SwitchServer { id: String },
+    /// 给配过的服务器改名，只存在这台手机上。名字去掉首尾空白后不能为空。
+    RenameServer { id: String, name: String },
+    /// 从这台手机上移除一台服务器：删掉它在手机上的全部数据，不吊销这台设备（吊销在服务器那边）。移除的是当前这台时
+    /// 换到剩下的第一台；一台都不剩时回到配对页。
+    RemoveServer { id: String },
     /// App 回到前台。核心检查隧道和本地代理是否还能用，必要时重建；系统挂起 App 期间可能回收了套接字。
     /// Matrix 同步停了的话也在这时重启。
     AppForegrounded,

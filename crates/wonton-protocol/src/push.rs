@@ -46,6 +46,9 @@ pub enum PushStatus {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PushNotification {
+    /// 消息来自哪台服务器（[`ServerRow::id`](crate::ServerRow::id)）。点开通知时先切到这台再进房间。推送来自一台
+    /// 已经从手机上移除的服务器时为空，内容是 [`PushContent::Unavailable`]。
+    pub server_id: Option<String>,
     /// 消息所在的房间，点开通知时进入它。同一个房间的通知用它合并，卡片除外：答完要单独撤掉。
     pub room_id: String,
     pub event_id: String,
@@ -143,6 +146,7 @@ mod tests {
             assert_eq!(round_trip(&status), status);
         }
         let notification = PushNotification {
+            server_id: Some("a1".into()),
             room_id: "!bot:home.example".into(),
             event_id: "$reply".into(),
             sender: "Hermes".into(),
