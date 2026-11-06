@@ -1,6 +1,6 @@
 # ADR-0017 插件生态：独立仓库、商店和来源
 
-- 状态：已接受（2026-10-30）。“App 只按来源安装”“没有降级”和 `Local` 的标签已被 [ADR-0031](0031-plugin-sources.md) 取代；“谁能装”里 Bot 的部分和小程序 JS SDK 已被 [ADR-0033](0033-plugin-tabs.md) 取代；导入 CasaOS 已撤销（主人 2026-11-04 定）
+- 状态：已接受（2026-10-30）。“App 只按来源安装”“没有降级”和 `Local` 的标签已被 [ADR-0031](0031-plugin-sources.md) 取代；“谁能装”里 Bot 的部分和小程序 JS SDK 已被 [ADR-0033](0033-plugin-tabs.md) 取代；导入 CasaOS 已撤销（主人 2026-11-04 定）；挑语言的规则已被 [ADR-0043](0043-app-languages.md) 取代
 
 ## 背景
 
@@ -204,7 +204,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 - 插件包同原有的接口：compose 文本，或者插件包目录的 tar（`Content-Type: application/x-tar`）。JSON 请求的
   `Content-Type` 是 `application/json`。App 上传压缩包见 ADR-0031。
-- 文字按请求的 `Accept-Language` 挑语言：先找完全一样的语言标签，再找主语言相同的，都没有时用英文，再没有就用任意一种。
+- 文字按请求的 `Accept-Language` 挑语言。~~先找完全一样的语言标签，再找主语言相同的，都没有时用英文，再没有就用任意一种。~~挑法已被 [ADR-0043](0043-app-languages.md) 取代：按可能子标签补全文字系统后协商。
 - 新的错误类别：`source_unavailable`（503，家里的服务器连不上插件的来源，如 GitHub）、`not_found`（404，来源里没有这个
   仓库或版本）、`changed`（409，插件包在预览之后变了，摘要对不上，要重新预览）、`images_unavailable`（503，核心起不了
   处理图片的进程；图片本身处理不了是 `invalid_input`）。原有的类别照旧（`invalid_input`、`permission_denied`、

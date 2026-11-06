@@ -52,3 +52,4 @@
 | [0040](0040-registry-mirror.md) | 镜像加速：核心经加速地址按摘要拉 Docker Hub 的镜像 |
 | [0041](0041-app-links-and-shortcuts.md) | App 链接、快捷指令和桌面快捷方式 |
 | [0042](0042-multiple-servers.md) | 一台手机连多台服务器：同一时间连一台，各自保留数据，每台都推送 |
+| [0043](0043-app-languages.md) | App 的多语言：文字放在各平台的本地化资源里，核心只给类别 |

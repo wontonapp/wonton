@@ -50,6 +50,8 @@
 - 错误、权限和来源（如“未审核”）的提示不算多余，照常写清楚（见“运行时原则：失败即停”）。
 - 加载和出错的界面写给普通用户看：一句人话说发生了什么、能做什么，配重试；仓库名、超时秒数、错误码收进默认收起的“详情”；
   部分失败是一条轻提示。类别由核心给，文字按类别写在壳里，不伪装成功、不藏错误。
+- 界面文字放进各平台的本地化资源（iOS 的 String Catalog、Android 的 `strings.xml`），四种语言齐全，不在代码里写死或拼句子；
+  核心只给类别和原始值，“详情”由核心按 App 的语言写。见 [ADR-0043](docs/adr/0043-app-languages.md)。
 - App 的界面走 [ADR-0026](docs/adr/0026-design-system.md) 的设计系统，哪些共用、哪些按平台走以
   [ADR-0029](docs/adr/0029-platform-material.md) 为准。
 
@@ -81,7 +83,7 @@
 
 文档和注释只记录读代码得不到的信息。会变的状态写进文档就会过时，过时的文字会把人和 AI 都带偏。
 
-- 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、公开仓库里的插件规范、
+- 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、`docs/glossary.md`（术语表）、公开仓库里的插件规范、
   `docs/adr/`，以及各模块目录下简短的 README。
 - 改变架构、协议或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
 - 插件规范在公开仓库 [wonton-docs](https://github.com/geraldpeng6/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
