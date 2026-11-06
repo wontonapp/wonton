@@ -85,6 +85,8 @@ pub struct Route {
     pub status: PluginStatus,
     /// 核心可直接访问的插件网页地址。
     pub upstream: Option<Endpoint>,
+    /// 网页响应是否要加跨源隔离策略头。
+    pub cross_origin_isolated: bool,
     /// `sso: proxy` 时网关代加的凭据。
     pub proxy: Option<Arc<ProxyAuth>>,
 }
@@ -293,6 +295,11 @@ impl PluginManager {
                 id: id.clone(),
                 status: entry.status.clone(),
                 upstream: entry.upstream.clone(),
+                cross_origin_isolated: entry
+                    .listed
+                    .as_ref()
+                    .and_then(|listed| listed.manifest.webui.as_ref())
+                    .is_some_and(|webui| webui.cross_origin_isolated),
                 proxy: entry.proxy.clone(),
             })
     }

@@ -391,3 +391,43 @@ async fn onboarding_keeps_a_cached_catalog_when_the_official_source_breaks() {
     assert!(cached.onboarding.is_some());
     assert_eq!(problem.unwrap().reason, StoreFailure::Unreachable);
 }
+
+#[tokio::test]
+async fn store_details_warn_about_isolation_before_install_in_the_requested_language() {
+    use super::super::languages::Languages;
+
+    for isolation in [None, Some(false), Some(true)] {
+        let index = tempfile::tempdir().unwrap();
+        let mut source = compose("1.0.0", "nginx");
+        if let Some(value) = isolation {
+            source.push_str(&format!(
+                "  webui: {{service: web, port: 8080, cross_origin_isolated: {value}}}\n"
+            ));
+        }
+        write_index(index.path(), &source, ICON);
+        let bed = bed(index.path(), false).await;
+        let mut localized = Vec::new();
+        for language in ["zh-Hans", "en-US"] {
+            let detail = bed
+                .m
+                .store_plugin("github:acme/hello", &Languages::from_header(Some(language)))
+                .await
+                .unwrap();
+            assert!(detail.installed.is_none());
+            if isolation == Some(true) {
+                let [notice] = detail.notices.as_slice() else {
+                    panic!("{detail:?}")
+                };
+                assert!(notice.emphasis);
+                localized.push(notice.text.clone());
+            } else {
+                assert!(detail.notices.is_empty(), "{detail:?}");
+            }
+        }
+        if isolation == Some(true) {
+            assert_ne!(localized[0], localized[1]);
+            assert!(!localized[0].is_ascii());
+            assert!(localized[1].is_ascii());
+        }
+    }
+}

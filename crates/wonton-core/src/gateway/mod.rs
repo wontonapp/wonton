@@ -354,10 +354,16 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         endpoint: &upstream,
         name: route.id.as_str(),
     };
-    let mut response = proxy::forward(&gateway.http, target, req, fwd).await;
+    let mut response = match proxy::forward_or(&gateway.http, target, req, fwd).await {
+        Ok(response) => response,
+        Err(error) => return error.response(route.id.as_str()),
+    };
     isolation::sanitize_set_cookies(response.headers_mut());
     if let Some(auth) = &route.proxy {
         proxy_sso::scrub(response.headers_mut(), auth);
+    }
+    if route.cross_origin_isolated {
+        proxy::add_document_isolation_policy(&mut response);
     }
     response
 }
@@ -424,6 +430,8 @@ mod files_upload_failure_tests;
 mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
+#[cfg(test)]
+mod isolation_policy_tests;
 #[cfg(test)]
 mod isolation_tests;
 #[cfg(test)]

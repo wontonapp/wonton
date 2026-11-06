@@ -20,6 +20,8 @@ use crate::http::{
 use crate::plugin::upstreams::Endpoint;
 
 const RESPONSE_HEADER_DEADLINE: Duration = Duration::from_secs(120);
+const DOCUMENT_ISOLATION_POLICY: HeaderName = HeaderName::from_static("document-isolation-policy");
+const ISOLATION_POLICY: HeaderValue = HeaderValue::from_static("isolate-and-credentialless");
 
 const HOP_BY_HOP: &[&str] = &[
     "connection",
@@ -105,16 +107,7 @@ pub(crate) async fn forward_with_deadline(
     let name = target.name;
     match forward_with_limit(http, target, req, fwd, limit).await {
         Ok(response) => response,
-        Err(ForwardError::Unreachable(e)) => pages::error(
-            StatusCode::BAD_GATEWAY,
-            "upstream_unreachable",
-            &format!("{name} 暂时无法访问：{e}"),
-        ),
-        Err(ForwardError::HeaderTimeout) => pages::error(
-            StatusCode::GATEWAY_TIMEOUT,
-            "upstream_timeout",
-            &format!("{name} 迟迟没有回应，可以稍后重试"),
-        ),
+        Err(error) => error.response(name),
     }
 }
 
@@ -125,6 +118,23 @@ pub enum ForwardError {
     Unreachable(String),
     /// 请求体发完后，上游迟迟没有回响应头。
     HeaderTimeout,
+}
+
+impl ForwardError {
+    pub(super) fn response(self, name: &str) -> Response {
+        match self {
+            Self::Unreachable(e) => pages::error(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unreachable",
+                &format!("{name} 暂时无法访问：{e}"),
+            ),
+            Self::HeaderTimeout => pages::error(
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream_timeout",
+                &format!("{name} 迟迟没有回应，可以稍后重试"),
+            ),
+        }
+    }
 }
 
 impl std::fmt::Display for ForwardError {
@@ -227,6 +237,13 @@ async fn forward_with_limit(
     let (mut parts, body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers, false);
     Ok(Response::from_parts(parts, Body::new(body)).into_response())
+}
+
+/// 插件声明跨源隔离时覆盖上游的同名头；核心和其他上游不调用这个函数。
+pub(crate) fn add_document_isolation_policy(response: &mut Response) {
+    response
+        .headers_mut()
+        .insert(DOCUMENT_ISOLATION_POLICY, ISOLATION_POLICY);
 }
 
 fn response_header_deadline(req: &Request, upgrade: bool, limit: Duration) -> Option<Duration> {

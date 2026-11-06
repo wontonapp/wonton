@@ -15,7 +15,9 @@ use super::super::manager::{PluginManager, supported};
 use super::super::manifest::{Manifest, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::package_files::normalize;
-use super::super::views::{author, kind, permission_line, requirement_checks};
+use super::super::views::{
+    author, cross_origin_isolation_notice, kind, permission_line, requirement_checks,
+};
 use super::added::AddedView;
 use super::index::{Index, Listed};
 
@@ -206,7 +208,9 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed,
             blocked: blocked(m, &facts),
-            notices: Vec::new(),
+            notices: cross_origin_isolation_notice(m, langs)
+                .into_iter()
+                .collect(),
             // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
             lan_webui: self
                 .with_lan_client(

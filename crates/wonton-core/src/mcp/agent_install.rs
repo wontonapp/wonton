@@ -309,7 +309,14 @@ async fn update(
     } else {
         ("权限没有变宽，主人打开了“每次都问”：", Vec::new())
     };
-    let draft = cards::agent_update(&caller.name, &package, header, &lines, &record.version);
+    let draft = cards::agent_update(
+        &caller.name,
+        &package,
+        header,
+        &lines,
+        &record.version,
+        langs,
+    );
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id.clone();
     let run = move |bus: Arc<Bus>| async move {

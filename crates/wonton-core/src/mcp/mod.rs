@@ -639,6 +639,8 @@ impl Bus {
 #[cfg(test)]
 mod agent_install_card_tests;
 #[cfg(test)]
+mod agent_install_isolation_tests;
+#[cfg(test)]
 mod agent_install_tests;
 #[cfg(test)]
 mod agent_permission_tests;

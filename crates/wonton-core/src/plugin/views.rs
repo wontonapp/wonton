@@ -123,9 +123,11 @@ impl PluginManager {
                 .then(|| line("本机防火墙可能挡住了外来连接，局域网设备可能连不进来".to_owned()))
                 .map(|mut notice| {
                     notice.emphasis = true;
-                    vec![notice]
+                    notice
                 })
-                .unwrap_or_default(),
+                .into_iter()
+                .chain(cross_origin_isolation_notice(m, langs))
+                .collect(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
@@ -666,6 +668,31 @@ pub(super) fn trust(origin: Option<&Origin>) -> PluginTrust {
         Some(Trust::Community) => PluginTrust::Community,
         None => PluginTrust::Local,
     }
+}
+
+pub(crate) fn cross_origin_isolation_notice(
+    manifest: &Manifest,
+    langs: &Languages,
+) -> Option<CardLine> {
+    if !manifest
+        .webui
+        .as_ref()
+        .is_some_and(|webui| webui.cross_origin_isolated)
+    {
+        return None;
+    }
+    static TEXT: std::sync::LazyLock<super::manifest::LocalizedText> = std::sync::LazyLock::new(
+        || {
+            [
+            ("zh".to_owned(), "这个应用放宽了跨源隔离：在 Android 上，它的页面可能和别的网页共用进程。".to_owned()),
+            ("en".to_owned(), "This app relaxes cross-origin isolation: on Android, its pages may share a process with other web pages.".to_owned()),
+        ].into()
+        },
+    );
+    Some(CardLine {
+        text: langs.pick_owned(&TEXT),
+        emphasis: true,
+    })
 }
 
 fn line(text: String) -> CardLine {

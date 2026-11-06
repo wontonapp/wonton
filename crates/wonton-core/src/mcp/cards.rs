@@ -16,7 +16,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{LocalizedText, Manifest};
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::InstalledRecord;
-use crate::plugin::views::permission_line;
+use crate::plugin::views::{cross_origin_isolation_notice, permission_line};
 use crate::plugin::{PluginPackage, render};
 
 /// 还没编号、没定到期时间的卡片内容。
@@ -125,7 +125,7 @@ fn image_lines(package: &PluginPackage) -> Vec<CardLine> {
     }
 }
 
-/// Agent 的更新比装着的宽出来的项（ADR-0033）：新增的权限、局域网端口和 GPU 服务；换镜像不算。
+/// Agent 的更新比装着的宽出来的项（ADR-0033）：权限、局域网端口、GPU 服务和跨源隔离放宽；换镜像不算。
 /// 共享文件夹的挂载来自 storage.share 权限，权限行已覆盖。
 pub fn added_lines(
     record: &InstalledRecord,
@@ -152,6 +152,13 @@ pub fn added_lines(
         }
     }
     let old = PluginPackage::manifest_of(&record.source).ok();
+    if !old
+        .as_ref()
+        .and_then(|manifest| manifest.webui.as_ref())
+        .is_some_and(|webui| webui.cross_origin_isolated)
+    {
+        lines.extend(cross_origin_isolation_notice(manifest, langs));
+    }
     let ports = |m: Option<&Manifest>| {
         m.and_then(|m| m.lan.as_ref())
             .map(|lan| lan.ports.iter().map(|p| p.key()).collect::<BTreeSet<_>>())
@@ -224,6 +231,7 @@ pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages
         lines.push(line("要授予的权限："));
         lines.extend(permission_lines(manifest, langs));
     }
+    lines.extend(cross_origin_isolation_notice(manifest, langs));
     let always_asks = manifest.permissions.iter().any(|p| {
         matches!(
             privileges::risk(p),
@@ -252,6 +260,7 @@ pub fn agent_update(
     header: &str,
     added: &[CardLine],
     from: &str,
+    langs: &Languages,
 ) -> Draft {
     let manifest = &package.manifest;
     let mut lines = vec![
@@ -262,6 +271,11 @@ pub fn agent_update(
         line(header),
     ];
     lines.extend_from_slice(added);
+    if let Some(notice) = cross_origin_isolation_notice(manifest, langs)
+        && !lines.contains(&notice)
+    {
+        lines.push(notice);
+    }
     Draft {
         title: format!("{requester} 想更新 {}", text(&manifest.title)),
         lines,
