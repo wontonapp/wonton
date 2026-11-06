@@ -30,16 +30,21 @@ fn other_bot(s: &Setup) -> tokio::task::JoinHandle<CallToolResult> {
     })
 }
 
-/// 发一次调用，点“都允许”，等它执行完。返回打开时段的卡片。
-async fn open_window(s: &Setup) -> ConfirmationCard {
-    let call = s.spawn(DELETE, delete_args("first"));
+/// 卡片一出来就开的时段，和还没跑完的第一次调用。
+struct Opened {
+    card: ConfirmationCard,
+    first: tokio::task::JoinHandle<CallToolResult>,
+}
+
+/// 发一次调用，点“都允许”，卡片一出来就返回（不等调用跑完，它的耗时不该算进时段）。
+async fn open_window(s: &Setup) -> Opened {
+    let first = s.spawn(DELETE, delete_args("first"));
     let n = s.cards.posted.lock().unwrap().len() + 1;
     let card = s.cards.wait_for(n).await;
     s.bus
         .answer_card(&card.id, Answer::AllowWindow, None, "owner_token")
         .unwrap();
-    assert_eq!(text(&call.await.unwrap()), "删掉了 first.txt");
-    card
+    Opened { card, first }
 }
 
 fn posted(s: &Setup) -> usize {
@@ -59,27 +64,50 @@ fn windows_audit(s: &Setup) -> Vec<Value> {
         .collect()
 }
 
+/// 某次调用自己写的那条审计。时段打开和结束的行没有 `basis`，不能拿 `last()` 当这次调用的判定。
+fn last_call(s: &Setup, name: &str) -> Value {
+    s.audit()
+        .into_iter()
+        .rfind(|line| line.get("basis").is_some() && line["arguments"]["name"] == name)
+        .unwrap()
+}
+
+fn ended(s: &Setup) -> bool {
+    windows_audit(s)
+        .iter()
+        .any(|line| line["window"] == "ended")
+}
+
 #[tokio::test]
 async fn a_window_clears_later_calls_and_calling_does_not_extend_it() {
     let s = setup_window(Duration::from_millis(600)).await;
-    let card = open_window(&s).await;
+    let Opened { card, first } = open_window(&s).await;
     let choices: Vec<_> = card.choices.iter().map(|c| c.answer).collect();
     assert_eq!(
         choices,
         [Answer::Approve, Answer::AllowWindow, Answer::Reject]
     );
-    let started = std::time::Instant::now();
-    while started.elapsed() < Duration::from_millis(450) {
-        let result = s.call(DELETE, delete_args("again")).await;
-        assert_eq!(text(&result), "删掉了 again.txt");
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    // 打开后立刻一起发：判定在每通调用进入时做，错开串行发只会让后面几通更贴近到期。
+    let again: Vec<_> = (0..3)
+        .map(|_| s.spawn(DELETE, delete_args("again")))
+        .collect();
+    for call in again {
+        assert_eq!(text(&call.await.unwrap()), "删掉了 again.txt");
     }
+    assert_eq!(text(&first.await.unwrap()), "删掉了 first.txt");
     assert_eq!(posted(&s), 1, "时段内不发卡片");
-    let line = s.audit().last().unwrap().clone();
+    // 等到期那条写进审计再读，复现它抢在调用后面。
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !ended(&s) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let line = last_call(&s, "again");
     assert_eq!(line["basis"], "window");
     assert_eq!(line["card"], card.id.as_str());
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
     let late = s.spawn(DELETE, delete_args("late"));
     let next = s.cards.wait_for(2).await;
     s.answer(&next.id, Answer::Reject).unwrap();
@@ -104,6 +132,7 @@ async fn opening_releases_what_this_bot_is_waiting_on_but_not_other_bots() {
     let other_card = s.cards.wait_for(2).await;
 
     let opened = open_window(&s).await;
+    assert_eq!(text(&opened.first.await.unwrap()), "删掉了 first.txt");
     assert_eq!(text(&waiting.await.unwrap()), "删掉了 waiting.txt");
     let line = s
         .audit()
@@ -111,7 +140,7 @@ async fn opening_releases_what_this_bot_is_waiting_on_but_not_other_bots() {
         .find(|line| line["arguments"]["name"] == "waiting")
         .unwrap();
     assert_eq!(line["basis"], "window");
-    assert_eq!(line["card"], opened.id.as_str());
+    assert_eq!(line["card"], opened.card.id.as_str());
     assert!(matches!(
         s.cards.states(&waiting_card.id).last(),
         Some(ConfirmationState::Succeeded { .. })
@@ -130,7 +159,9 @@ async fn opening_releases_what_this_bot_is_waiting_on_but_not_other_bots() {
 #[tokio::test]
 async fn stopping_stops_later_calls_and_can_only_happen_once() {
     let s = setup_window(DEFAULT_WINDOW).await;
-    let card = open_window(&s).await;
+    let opened = open_window(&s).await;
+    assert_eq!(text(&opened.first.await.unwrap()), "删掉了 first.txt");
+    let card = opened.card;
     s.call(DELETE, delete_args("a")).await;
 
     let by = "device:abc";
@@ -277,7 +308,8 @@ async fn a_window_does_not_answer_an_agents_own_permission_card() {
         Err(AnswerError::UnknownAnswer)
     );
 
-    open_window(&s).await;
+    let opened = open_window(&s).await;
+    assert_eq!(text(&opened.first.await.unwrap()), "删掉了 first.txt");
     assert!(!asked.is_finished());
     let waiting = s.bus.confirmations().pending();
     assert_eq!(waiting.len(), 1);
