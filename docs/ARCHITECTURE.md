@@ -191,7 +191,7 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 的工具白名单放�
   Gemini CLI、OpenCode 等）通过通用“ACP 桥”插件接入：一个聊天房间对应一个 ACP 会话，ACP 的权限
   请求对应聊天里的确认按钮。
 - 模型默认经 magpie。订阅账号只在 Agent 官方程序里登录，不经 magpie（ADR-0034）。
-- 每个家人有自己的私人 Bot；Bot 之间可以互发消息，规则见 [ADR-0007](adr/0007-agents-and-bots.md)。
+- 每个家人有自己的账号、私人 Bot 和私人空间，主人可以建共享 Bot 拉进家庭群；同机的 Bot 之间经联系人互发消息，网关限频率和跳数。见 [ADR-0045](adr/0045-family-members.md)。
 
 ## 安全模型
 
