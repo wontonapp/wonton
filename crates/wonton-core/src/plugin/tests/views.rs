@@ -142,6 +142,49 @@ async fn content_revision_changes_without_a_version_bump_and_survives_restore() 
 }
 
 #[tokio::test]
+async fn open_urls_carry_the_declared_entry_path_and_query() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/", get(|| async { "ok" }))
+                .route("/vnc.html", get(|| async { "ok" })),
+        )
+        .await
+        .unwrap();
+    });
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let yaml = package(
+        "  web:\n    image: nginx:1.27",
+        &format!(
+            "  icon: icon.svg\n  webui: {{service: web, port: {port}, path: '/vnc.html?autoconnect=1&resize=remote'}}\n  permissions: []"
+        ),
+    )
+    .replace("id: app.test", "id: app.entry");
+    let package = PluginPackage::with_files(
+        &yaml,
+        PackageFiles::from([("icon.svg".to_owned(), ICON.as_bytes().to_vec())]),
+    )
+    .unwrap();
+    manager.install_package(package, &[]).await.unwrap();
+
+    // 已安装列表（App 主屏）和 PluginView（安装、启动接口和状态页）给的是同一个地址：
+    // origin 加清单声明的入口路径，query 原样保留。
+    let expected = "http://app-entry.wonton.localhost:8080/vnc.html?autoconnect=1&resize=remote";
+    let installed = manager.installed(&english());
+    assert_eq!(installed.plugins[0].web_url.as_deref(), Some(expected));
+    let views = manager.list();
+    let [view] = views.as_slice() else {
+        panic!("应有一个插件")
+    };
+    assert_eq!(view.url.as_deref(), Some(expected));
+}
+
+#[tokio::test]
 async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

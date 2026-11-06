@@ -53,12 +53,10 @@ struct ProviderPreset {
 }
 
 impl PluginManager {
-    /// 网关插件的网页地址（和已安装列表里给插件 webui 的同一个算法），没有网页时为空。
+    /// 网关插件的网页地址，没有网页时为空。
     pub(crate) fn model_web_url(&self, id: &PluginId) -> Option<String> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins
-            .get(id)
-            .and_then(|entry| entry.has_webui.then(|| self.web_url(id)))
+        plugins.get(id).and_then(|entry| self.open_url(id, entry))
     }
 
     /// 列出官方索引允许且模型网关支持的服务商。

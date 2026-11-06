@@ -470,12 +470,7 @@ impl PluginManager {
             via_index: origin.and_then(Origin::via_index),
             written_by: None,
             status: state(&entry.status, entry.health),
-            web_url: entry.has_webui.then(|| {
-                let path = manifest
-                    .and_then(|m| m.webui.as_ref())
-                    .map_or("/", |webui| webui.path.as_str());
-                format!("{}{path}", self.web_url(id))
-            }),
+            web_url: self.open_url(id, entry),
             web_display: manifest
                 .and_then(|m| m.webui.as_ref())
                 .and_then(|webui| manifest_tabs::display(&webui.display))

@@ -103,6 +103,9 @@ pub(super) fn validate(
     }
 }
 
+/// 入口路径（`webui.path` 和 `tabs[].path` 共用）的规则：以 / 开头的绝对路径，可以带 `?query`；
+/// 不能有 `#`、空白、控制字符；URL 里不允许原样出现的字符（含非 ASCII）必须已经百分号编码——
+/// 核心原样拼接、不再编码。规则写在规范（wonton-docs）里，两边保持一致。
 pub(super) fn validate_path(field: &str, path: &str) -> Option<String> {
     if !path.starts_with('/') {
         return Some(format!("{field} 必须以 / 开头"));
@@ -113,10 +116,52 @@ pub(super) fn validate_path(field: &str, path: &str) -> Option<String> {
     if path.contains('\\') {
         return Some(format!("{field} 不能包含反斜杠"));
     }
-    if path.chars().any(char::is_control) {
-        return Some(format!("{field} 不能包含控制字符"));
+    let chars: Vec<char> = path.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '%' {
+            let encoded = chars.get(i + 1).is_some_and(char::is_ascii_hexdigit)
+                && chars.get(i + 2).is_some_and(char::is_ascii_hexdigit);
+            if !encoded {
+                return Some(format!(
+                    "{field} 的 % 要写成完整的百分号编码（% 后跟两位十六进制）"
+                ));
+            }
+            i += 3;
+            continue;
+        }
+        if ch.is_control() {
+            return Some(format!("{field} 不能包含控制字符（U+{:04X}）", ch as u32));
+        }
+        if ch.is_whitespace() {
+            return Some(format!("{field} 不能包含空白字符，空格要写成 %20"));
+        }
+        if ch == '#' {
+            return Some(format!("{field} 不能包含 #，要写成 %23"));
+        }
+        if !ch.is_ascii() || !raw_allowed(ch) {
+            return Some(format!(
+                "{field} 的字符「{ch}」要先写成百分号编码（{}），核心原样拼接、不再编码",
+                encoded(ch)
+            ));
+        }
+        i += 1;
     }
     None
+}
+
+/// 允许原样出现的字符：RFC 3986 的 path 和 query 里不用转义的字符。
+fn raw_allowed(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || "-._~!$&'()*+,;=:@/?".contains(ch)
+}
+
+fn encoded(ch: char) -> String {
+    let mut buf = [0u8; 4];
+    ch.encode_utf8(&mut buf)
+        .bytes()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect()
 }
 
 fn is_tab_id(value: &str) -> bool {

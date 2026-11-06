@@ -324,15 +324,23 @@ impl PluginManager {
             title: entry.title.clone(),
             status: entry.status.clone(),
             health: entry.health,
-            url: entry.has_webui.then(|| self.web_url(id)),
+            url: self.open_url(id, entry),
         }
     }
 
-    /// 插件网页的地址。
+    /// 插件网页的 origin；用户打开的地址还要加清单声明的入口路径（见 [`Self::open_url`]）。
     pub(super) fn web_url(&self, id: &PluginId) -> String {
         self.cfg
             .public
             .origin(&self.cfg.public.plugin_host(&id.slug()))
+    }
+
+    /// 用户打开的插件网页地址：origin 加清单声明的入口路径（核心原样拼接，不再编码）。
+    /// 网关按 Host 转发，代理路由不含入口路径；入口路径只决定打开时落在哪一页。
+    pub(super) fn open_url(&self, id: &PluginId, entry: &Entry) -> Option<String> {
+        entry
+            .has_webui
+            .then(|| format!("{}{}", self.web_url(id), entry.entry_path()))
     }
 
     pub(crate) fn is_installed(&self, id: &PluginId) -> bool {

@@ -177,6 +177,14 @@ impl Entry {
         }
     }
 
+    /// 用户打开的入口路径：清单 `webui.path`，没写就是 `/`。
+    pub(super) fn entry_path(&self) -> &str {
+        self.listed
+            .as_ref()
+            .and_then(|listed| listed.manifest.webui.as_ref())
+            .map_or("/", |webui| webui.path.as_str())
+    }
+
     pub(super) fn failed_with(&self, reason: &str) -> bool {
         matches!(&self.status, PluginStatus::Degraded { reason: r } if r == reason)
     }

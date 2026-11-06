@@ -135,6 +135,77 @@ fn tab_validation_reports_each_field_rule() {
 }
 
 #[test]
+fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
+    // noVNC 这类入口路径：query 原样保留，核心不再编码。
+    let novnc = tab("").replace(
+        "      path: /feed",
+        "      path: /vnc.html?autoconnect=1&resize=remote",
+    );
+    let novnc_package = PluginPackage::with_files(
+        &package(SERVICES, &novnc),
+        PackageFiles::from([(ICON.to_owned(), b"svg".to_vec())]),
+    )
+    .unwrap();
+    let [declared] = novnc_package.manifest.tabs.as_deref().unwrap() else {
+        panic!("应有一项 tabs")
+    };
+    assert_eq!(declared.path, "/vnc.html?autoconnect=1&resize=remote");
+
+    let with_query = tab("").replace(
+        WEBUI,
+        "  webui: {service: web, port: 8080, path: '/vnc.html?autoconnect=1&resize=remote'}",
+    );
+    let manifest = PluginPackage::with_files(
+        &package(SERVICES, &with_query),
+        PackageFiles::from([(ICON.to_owned(), b"svg".to_vec())]),
+    )
+    .unwrap()
+    .manifest;
+    assert_eq!(
+        manifest.webui.unwrap().path,
+        "/vnc.html?autoconnect=1&resize=remote"
+    );
+
+    // 同一条规则管 webui.path 和 tabs[].path：#、非 ASCII 的错误带正确的编码值，
+    // 空白和不完整的 % 只断言字段名，不把文案钉进测试。
+    for (bad, encoded) in [("/feed#frag", "%23"), ("/中文", "%E4%B8%AD")] {
+        let source = tab("").replace("      path: /feed", &format!("      path: '{bad}'"));
+        let err = PluginPackage::parse(&package(SERVICES, &source))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("tabs[0].path") && err.contains(encoded),
+            "{err}"
+        );
+
+        let source = tab("").replace(
+            WEBUI,
+            &format!("  webui: {{service: web, port: 8080, path: '{bad}'}}"),
+        );
+        let err = PluginPackage::parse(&package(SERVICES, &source))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("webui.path") && err.contains(encoded), "{err}");
+    }
+    for bad in ["/fe ed", "/100%"] {
+        let source = tab("").replace("      path: /feed", &format!("      path: '{bad}'"));
+        let err = PluginPackage::parse(&package(SERVICES, &source))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tabs[0].path"), "{err}");
+
+        let source = tab("").replace(
+            WEBUI,
+            &format!("  webui: {{service: web, port: 8080, path: '{bad}'}}"),
+        );
+        let err = PluginPackage::parse(&package(SERVICES, &source))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("webui.path"), "{err}");
+    }
+}
+
+#[test]
 fn tab_icon_files_are_required_when_declared() {
     let source = tab("      icon_selected: tabs/missing.svg\n");
     let files = PackageFiles::from([(ICON.to_owned(), b"svg".to_vec())]);

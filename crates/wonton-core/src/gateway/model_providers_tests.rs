@@ -10,9 +10,9 @@ use crate::plugin::names::container_name;
 use crate::plugin::storefront::StoreConfig;
 use crate::plugin::{PluginPackage, PluginStatus};
 
-const PROVIDER: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.6'\n  id: system.models\n  version: 0.6.0\n  kind: system\n  title: {zh: 模型, en: Models}\n  description: {zh: 模型, en: Models}\n  webui: {service: magpie, port: 3430}\n  provides:\n    models:\n      service: magpie\n      port: 3425\n      apis: {openai: /v1}\n      default_model: group/default\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n      providers:\n        list: [providers, list]\n        save: [providers, save, '{id}']\n        test: [providers, test, '{id}']\n        custom:\n          save: [providers, custom-save]\n          test: [providers, custom-test]\n  permissions: []";
+const PROVIDER: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.6'\n  id: system.models\n  version: 0.6.0\n  kind: system\n  title: {zh: 模型, en: Models}\n  description: {zh: 模型, en: Models}\n  webui: {service: magpie, port: 3430, path: '/index.html?autoconnect=1'}\n  provides:\n    models:\n      service: magpie\n      port: 3425\n      apis: {openai: /v1}\n      default_model: group/default\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n      providers:\n        list: [providers, list]\n        save: [providers, save, '{id}']\n        test: [providers, test, '{id}']\n        custom:\n          save: [providers, custom-save]\n          test: [providers, custom-test]\n  permissions: []";
 
-const PROVIDER_WITHOUT_COMMANDS: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.6'\n  id: system.models\n  version: 0.6.0\n  kind: system\n  title: {zh: 模型, en: Models}\n  description: {zh: 模型, en: Models}\n  webui: {service: magpie, port: 3430}\n  provides:\n    models:\n      service: magpie\n      port: 3425\n      apis: {openai: /v1}\n      default_model: group/default\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n  permissions: []";
+const PROVIDER_WITHOUT_COMMANDS: &str = "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.6'\n  id: system.models\n  version: 0.6.0\n  kind: system\n  title: {zh: 模型, en: Models}\n  description: {zh: 模型, en: Models}\n  webui: {service: magpie, port: 3430, path: '/index.html?autoconnect=1'}\n  provides:\n    models:\n      service: magpie\n      port: 3425\n      apis: {openai: /v1}\n      default_model: group/default\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n  permissions: []";
 
 fn command(cmd: &[String], expected: &[&str]) -> bool {
     cmd.iter().map(String::as_str).eq(expected.iter().copied())
@@ -158,7 +158,13 @@ async fn list_filters_and_orders_catalog_providers() {
     }
     assert_eq!(body["any_configured"], true);
     assert_eq!(body["custom"], true);
-    assert!(body["web_url"].as_str().unwrap().contains("system-models"));
+    assert_eq!(
+        body["web_url"],
+        json!(format!(
+            "http://system-models.wonton.localhost:{}/index.html?autoconnect=1",
+            harness.addr.port()
+        ))
+    );
 }
 
 #[tokio::test]
@@ -176,7 +182,13 @@ async fn missing_index_or_catalog_returns_empty_providers() {
         let body = response.json();
         assert_eq!(body["providers"], json!([]));
         assert_eq!(body["any_configured"], true);
-        assert!(body["web_url"].as_str().unwrap().contains("system-models"));
+        assert_eq!(
+            body["web_url"],
+            json!(format!(
+                "http://system-models.wonton.localhost:{}/index.html?autoconnect=1",
+                harness.addr.port()
+            ))
+        );
     }
 }
 
@@ -290,7 +302,13 @@ async fn gateway_without_provider_commands_returns_web_url() {
     assert_eq!(response.status, StatusCode::OK, "{}", response.text());
     let body = response.json();
     assert!(body["providers"].is_null());
-    assert!(body["web_url"].as_str().unwrap().contains("system-models"));
+    assert_eq!(
+        body["web_url"],
+        json!(format!(
+            "http://system-models.wonton.localhost:{}/index.html?autoconnect=1",
+            harness.addr.port()
+        ))
+    );
     assert_eq!(body["custom"], false);
 }
 
