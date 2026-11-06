@@ -22,7 +22,8 @@ use super::upstreams::core_aliases;
 
 /// 建网络时别的网络抢先用了这一段，就从头再来，最多这么多次。删和重建之间，别的调用（别的 Compose 项目也算）可能
 /// 拿到同一段。实测 8 个进程各并发建 8 个网络、不重试时，24 个进程里 4 个撞上（Docker 29.7.2，负载 40）；Docker 越慢
-/// 窗口越大，CI 负载高时 3 次都会撞（#327）。
+/// 窗口越大，CI 负载高时 3 次都会撞（#327）。让 Docker 分配网段的那一步也会撞：地址池已经认为这段空着，网桥驱动
+/// 却还记着同时在建的另一张网络，报重叠（CI 实测，Docker 29.7.2）。两步都从头再来。
 const CREATE_ATTEMPTS: u32 = 10;
 
 /// 重试前等 50 到 500 毫秒。一起撞上的调用如果马上重来，又会一起选中同一段。
@@ -99,6 +100,17 @@ pub(super) fn subnet_taken(error: &EngineError) -> bool {
         if message.contains("overlap") || message.contains("already in use"))
 }
 
+/// 试满次数还是撞：仍是 Docker 的拒绝，原话不动，前面写明重试过。
+fn kept_taken(error: EngineError) -> EngineError {
+    match error {
+        EngineError::Rejected { context, message } => EngineError::Rejected {
+            context: format!("{context}，{CREATE_ATTEMPTS} 次都和同时建的网络撞了网段"),
+            message,
+        },
+        other => other,
+    }
+}
+
 impl Engine {
     /// 建插件网络，给核心留出最后一个可用地址。
     pub async fn create_network(
@@ -124,31 +136,36 @@ impl Engine {
         &self,
         request: NetworkCreateRequest,
     ) -> Result<(), EngineError> {
-        let name = request.name.clone();
-        let context = format!("创建网络 {name}");
         let mut attempt = 1;
         loop {
-            self.create_raw(request.clone()).await?;
-            let found = self.inspect_network(&name).await;
-            self.remove_network(&name).await?;
-            let layout = found?
-                .as_ref()
-                .and_then(layout_of)
-                .ok_or_else(|| no_layout(&context))?;
-            let ipam =
-                reserved_ipam(layout.subnet, layout.gateway).ok_or_else(|| no_layout(&context))?;
-            let pinned = NetworkCreateRequest {
-                ipam: Some(ipam),
-                ..request.clone()
-            };
-            match self.create_raw(pinned).await {
+            match self.try_create_reserved(&request).await {
                 Err(e) if subnet_taken(&e) && attempt < CREATE_ATTEMPTS => {
                     attempt += 1;
                     tokio::time::sleep(retry_delay()).await;
                 }
+                Err(e) if subnet_taken(&e) => return Err(kept_taken(e)),
                 other => return other,
             }
         }
+    }
+
+    async fn try_create_reserved(&self, request: &NetworkCreateRequest) -> Result<(), EngineError> {
+        let name = &request.name;
+        let context = format!("创建网络 {name}");
+        self.create_raw(request.clone()).await?;
+        let found = self.inspect_network(name).await;
+        self.remove_network(name).await?;
+        let layout = found?
+            .as_ref()
+            .and_then(layout_of)
+            .ok_or_else(|| no_layout(&context))?;
+        let ipam =
+            reserved_ipam(layout.subnet, layout.gateway).ok_or_else(|| no_layout(&context))?;
+        self.create_raw(NetworkCreateRequest {
+            ipam: Some(ipam),
+            ..request.clone()
+        })
+        .await
     }
 
     pub(super) async fn create_raw(
@@ -318,6 +335,30 @@ mod tests {
             .await
             .unwrap();
         engine.core_address("n").await.unwrap();
+    }
+
+    // 实测（CI，Docker 29.7.2）：别的进程同时在建网络时，让 Docker 分配网段的那一步也会被网桥驱动以重叠拒绝。
+    #[tokio::test]
+    async fn a_subnet_taken_while_docker_picks_it_is_retried() {
+        let (docker, engine) = FakeDocker::start().await;
+        docker.reject_auto_networks(3, OVERLAP);
+        engine
+            .create_network("n", &HashMap::new(), NetworkReach::Isolated)
+            .await
+            .unwrap();
+        engine.core_address("n").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_subnet_that_stays_taken_is_reported_as_a_docker_rejection() {
+        let (docker, engine) = FakeDocker::start().await;
+        docker.reject_auto_networks(CREATE_ATTEMPTS, OVERLAP);
+        let error = engine
+            .create_network("n", &HashMap::new(), NetworkReach::Isolated)
+            .await
+            .unwrap_err();
+        assert!(subnet_taken(&error), "{error}");
+        assert!(docker.networks().is_empty());
     }
 
     #[tokio::test]

@@ -103,6 +103,8 @@ struct Resources {
     network_bodies: BTreeMap<String, Value>,
     /// 接下来这么多次指定网段的建网络，Docker 回这个错误。
     pinned_network_rejection: Option<(u32, String)>,
+    /// 接下来这么多次让 Docker 分配网段的建网络，Docker 回这个错误。
+    auto_network_rejection: Option<(u32, String)>,
     /// 卷名 → 标签。
     volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
@@ -309,6 +311,11 @@ impl FakeDocker {
     /// 接下来 `times` 次指定网段的建网络，Docker 回 `message`（403）。
     pub fn reject_pinned_networks(&self, times: u32, message: &str) {
         self.lock().pinned_network_rejection = Some((times, message.to_owned()));
+    }
+
+    /// 接下来 `times` 次不指定网段的建网络，Docker 回 `message`（403）。
+    pub fn reject_auto_networks(&self, times: u32, message: &str) {
+        self.lock().auto_network_rejection = Some((times, message.to_owned()));
     }
 
     /// 容器里执行的命令可分别回应标准输出和标准错误。

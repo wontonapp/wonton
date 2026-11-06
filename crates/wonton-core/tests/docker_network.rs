@@ -275,6 +275,58 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
     }
 }
 
+/// 主机上已经有网络占着 Docker 下一个要分配的网段：Docker 跳过它，核心照常建好插件网络，不用自己避开。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_network_already_on_the_next_subnet_is_skipped() {
+    use bollard::models::{Ipam, IpamConfig, NetworkCreateRequest};
+    let _serial = SERIAL.lock().await;
+    let engine = Engine::connect().unwrap();
+    let (taken, plugin) = (prefix("taken"), prefix("plugin"));
+    engine.remove_network(&plugin).await.unwrap();
+    engine.remove_network(&taken).await.unwrap();
+    let create = |name: &str, subnet: Option<String>| NetworkCreateRequest {
+        name: name.to_owned(),
+        internal: Some(true),
+        ipam: subnet.map(|subnet| Ipam {
+            config: Some(vec![IpamConfig {
+                subnet: Some(subnet),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let subnet_of = async |name: &str| {
+        inspect(name).await.ipam.unwrap().config.unwrap()[0]
+            .subnet
+            .clone()
+            .unwrap()
+    };
+    docker().create_network(create(&taken, None)).await.unwrap();
+    let next = subnet_of(&taken).await;
+    docker().remove_network(&taken).await.unwrap();
+    docker()
+        .create_network(create(&taken, Some(next.clone())))
+        .await
+        .unwrap();
+
+    let created = engine
+        .create_network(&plugin, &HashMap::new(), NetworkReach::Internal)
+        .await;
+    let got = match &created {
+        Ok(()) => Some(subnet_of(&plugin).await),
+        Err(_) => None,
+    };
+    let address = engine.core_address(&plugin).await;
+    engine.remove_network(&plugin).await.unwrap();
+    engine.remove_network(&taken).await.unwrap();
+
+    created.unwrap();
+    assert_ne!(got.as_deref(), Some(next.as_str()));
+    address.unwrap();
+}
+
 async fn cleanup(engine: &Engine, network: &str, containers: &[&str]) {
     for container in containers {
         engine.remove_container(container).await.unwrap();

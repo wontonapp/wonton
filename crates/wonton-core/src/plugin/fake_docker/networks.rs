@@ -9,10 +9,15 @@ use serde_json::{Value, json};
 
 use super::{Resources, gone, json_reply, labeled, labels_of};
 
-/// 还有要拒绝的次数时，拒绝指定网段的建网络。
-fn reject_pinned(docker: &mut Resources, body: &Value) -> Option<Response> {
-    let (times, message) = docker.pinned_network_rejection.as_mut()?;
-    if *times == 0 || !body["IPAM"]["Config"][0]["Subnet"].is_string() {
+/// 还有要拒绝的次数时，拒绝建网络：指定网段的和让 Docker 分配网段的分开计数。
+fn reject_create(docker: &mut Resources, body: &Value) -> Option<Response> {
+    let slot = if body["IPAM"]["Config"][0]["Subnet"].is_string() {
+        &mut docker.pinned_network_rejection
+    } else {
+        &mut docker.auto_network_rejection
+    };
+    let (times, message) = slot.as_mut()?;
+    if *times == 0 {
         return None;
     }
     *times -= 1;
@@ -32,7 +37,7 @@ pub(super) fn networks(
 ) -> Option<Response> {
     let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
     if let (&Method::POST, ["create"]) = (method, parts)
-        && let Some(reply) = reject_pinned(docker, &body)
+        && let Some(reply) = reject_create(docker, &body)
     {
         return Some(reply);
     }
