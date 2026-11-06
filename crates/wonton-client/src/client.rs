@@ -83,6 +83,10 @@ impl ClientCore {
             | Action::SwitchServer { .. }
             | Action::RenameServer { .. }
             | Action::RemoveServer { .. } => ServersLink::unsupported(),
+            Action::RefreshPeers
+            | Action::ShowPeerCode
+            | Action::ScanPeerCode { .. }
+            | Action::RemovePeer { .. } => Err(peers_unsupported()),
             Action::AppForegrounded => {
                 self.home.foregrounded();
                 self.chat.app_foregrounded();
@@ -772,6 +776,13 @@ impl ClientCore {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
+    }
+}
+
+/// 服务器配对的接口先于实现合并（ADR-0050）：实现之前如实失败。
+fn peers_unsupported() -> CoreError {
+    CoreError::NotReady {
+        reason: "这个版本的客户端核心不支持服务器配对".into(),
     }
 }
 

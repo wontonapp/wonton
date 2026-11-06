@@ -34,6 +34,11 @@ pub enum SettingsEntry {
     },
     /// 明暗、重点色、字号和字体。
     Appearance,
+    /// 其他服务器：配对过的 Matrix 服务器（ADR-0050）。只给主人。
+    Peers {
+        /// 已配对的台数。
+        count: u32,
+    },
     /// 底栏的项、顺序和是否显示文字。
     BottomBar,
     /// 通知：推送收不收得到，以及按类别的开关（开关在系统设置里，Android 是每个类别的通知渠道）。

@@ -91,6 +91,9 @@ struct SettingsView: View {
             }
         case .appearance:
             NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }
+        case .peers:
+            // 这一版先不显示这一行；页面在 #552 的 App PR 里做。
+            EmptyView()
         case .bottomBar:
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
         case .notifications:

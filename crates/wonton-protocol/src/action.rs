@@ -322,4 +322,19 @@ pub enum Action {
     TabLoadSucceeded { tab: TabRef },
     /// 主人看过了“已卸载，已从底栏移除”的提示。
     DismissUninstalledTabs,
+
+    // 跨服务器配对（ADR-0050）。进展和失败原因都在 PeersViewModel 里。
+    /// 打开“其他服务器”页面或下拉刷新：经隧道取配对过的服务器列表和出码状态（`GET /_wonton/api/peers`），
+    /// 结果在 [`PeersViewModel`](crate::PeersViewModel) 里。
+    RefreshPeers,
+    /// 出一张配对二维码：一次性密钥，10 分钟有效（ADR-0050）。码和到期时间在
+    /// [`PeersViewModel::code`](crate::PeersViewModel::code) 里，壳画成二维码。
+    ShowPeerCode,
+    /// 提交扫来的配对码（`wonton://peer?…`）：核心经 `POST /_wonton/api/peers` 交给自己的服务器，出码方同意后
+    /// 配对成立。扫码这一步就认证了出码方，密钥认证了扫码方。码过期、出码方拒绝这些原因见
+    /// [`PeerError`](crate::PeerError)，体现在 [`PeersViewModel::state`](crate::PeersViewModel::state) 里。
+    ScanPeerCode { code: SecretString },
+    /// 删除和一台服务器的配对（`DELETE /_wonton/api/peers/{server_name}`）：两边的名单各自撤掉，已有的跨机房间
+    /// 留着，消息停发。`server_name` 是 [`PeerRow::server_name`](crate::PeerRow::server_name)。
+    RemovePeer { server_name: String },
 }

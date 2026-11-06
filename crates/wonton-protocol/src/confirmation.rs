@@ -48,6 +48,19 @@ pub struct ConfirmationCard {
     /// 这张卡片要装或要更新的插件（ADR-0033）。批准后插件有网页时，壳显示“打开”和“放到底栏”。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_id: Option<String>,
+    /// 这张卡片是服务器配对请求时才有（ADR-0050）：出码方收到“某某的服务器想和你的服务器连接”。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_request: Option<PeerRequest>,
+}
+
+/// 服务器配对请求卡片的内容（ADR-0050）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PeerRequest {
+    /// 对方的 Matrix 服务器名。
+    pub server_name: String,
+    /// 对方主人的显示名。
+    pub owner_display_name: String,
 }
 
 /// 放行时段：这个 Bot 调这个插件，到期前不再发卡片。卡片只在时段开始和结束时更新。
@@ -289,6 +302,46 @@ mod tests {
         let answer: ConfirmationAnswer =
             serde_json::from_value(json!({"answer": "reject"})).unwrap();
         assert_eq!(answer.choice_id, None);
+    }
+
+    /// 契约：配对请求卡片带上对方的服务器名和主人显示名；没有这个字段的卡片（旧核心、其他种类）读成
+    /// `None`。
+    #[test]
+    fn a_pairing_request_card_carries_the_peer() {
+        let card: ConfirmationCard = serde_json::from_value(json!({
+            "id": "abc",
+            "state": {"type": "pending"},
+            "title": "Alex 的服务器想和你的服务器连接",
+            "lines": [],
+            "choices": [
+                {"answer": "approve", "label": "同意"},
+                {"answer": "reject", "label": "拒绝"},
+            ],
+            "expires_at_ms": 1,
+            "peer_request": {
+                "server_name": "abc12345.wonton",
+                "owner_display_name": "Alex",
+            },
+        }))
+        .unwrap();
+        assert_eq!(
+            card.peer_request,
+            Some(PeerRequest {
+                server_name: "abc12345.wonton".into(),
+                owner_display_name: "Alex".into(),
+            })
+        );
+
+        let card: ConfirmationCard = serde_json::from_value(json!({
+            "id": "abc",
+            "state": {"type": "pending"},
+            "title": "Hermes 想安装 Grafana",
+            "lines": [],
+            "choices": [{"answer": "approve", "label": "安装"}],
+            "expires_at_ms": 1,
+        }))
+        .unwrap();
+        assert_eq!(card.peer_request, None);
     }
 
     #[test]

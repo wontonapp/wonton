@@ -24,6 +24,7 @@ mod lan;
 mod link;
 mod onboarding;
 mod owner;
+mod peers;
 mod plugin;
 mod plugin_notice;
 mod push;
@@ -59,7 +60,7 @@ pub use chat::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
     ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    WindowEnd, WindowView, answer_path, window_path,
+    PeerRequest, WindowEnd, WindowView, answer_path, window_path,
 };
 pub use core_upgrade::{
     CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
@@ -111,6 +112,10 @@ pub use onboarding::{
 pub use owner::{
     OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate, check_display_name, check_email,
     check_email_change, normalized_email,
+};
+pub use peers::{
+    PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRow,
+    PeerScan, PeerStatus, PeersState, PeersView, PeersViewModel, peer_code_path, peer_path,
 };
 pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;
