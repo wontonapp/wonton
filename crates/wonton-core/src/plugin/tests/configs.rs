@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use super::super::configs::ConfigFile;
 use super::super::package::{PackageError, PluginPackage};
-use super::super::package_files::{FileError, PackageFiles};
+use super::super::package_files::{FileError, MAX_FILE_BYTES, PackageFiles};
 use super::super::render::{RenderError, dry_run};
 use super::package;
 
@@ -85,7 +85,10 @@ fn referenced_files_cannot_come_through_symlinks_or_leave_the_package() {
         Err(PackageError::Reference { .. })
     ));
     let too_big: PackageFiles = [
-        ("conf/app.yaml".to_owned(), vec![0; 2 << 20]),
+        (
+            "conf/app.yaml".to_owned(),
+            vec![0; MAX_FILE_BYTES as usize + 1],
+        ),
         ("icon.png".to_owned(), Vec::new()),
     ]
     .into();

@@ -1,6 +1,6 @@
 use super::super::InstallError;
-use super::super::package::PluginPackage;
-use super::super::package_files::PackageFiles;
+use super::super::package::{PackageError, PluginPackage};
+use super::super::package_files::{MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles};
 use super::super::storefront::index::IndexEntry;
 
 fn without_spec(extra: &str) -> String {
@@ -112,14 +112,15 @@ fn icon_must_be_a_png_or_svg_in_the_package() {
 
 #[test]
 fn package_size_is_limited() {
-    let yaml = compose("") + "configs:\n  a:\n    file: a.bin\n  b:\n    file: b.bin\n";
-    let mib = vec![b'x'; 1 << 20];
-    let files = PackageFiles::from([("a.bin".to_owned(), mib.clone()), ("b.bin".to_owned(), mib)]);
+    let count = MAX_PACKAGE_BYTES / MAX_FILE_BYTES + 1;
+    let mut yaml = compose("") + "configs:\n";
+    let mut files = PackageFiles::new();
+    for i in 0..count {
+        yaml += &format!("  c{i}:\n    file: c{i}.bin\n");
+        files.insert(format!("c{i}.bin"), vec![b'x'; MAX_FILE_BYTES as usize]);
+    }
     let err = PluginPackage::with_files(&yaml, files).unwrap_err();
-    assert!(
-        err.to_string().contains("一共 2049 KiB，超过 2048 KiB"),
-        "{err}"
-    );
+    assert!(matches!(err, PackageError::TooBig(_)), "{err}");
 }
 
 #[test]

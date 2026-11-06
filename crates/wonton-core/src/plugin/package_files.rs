@@ -18,11 +18,12 @@ pub type PackageFiles = BTreeMap<String, Vec<u8>>;
 /// 插件包目录里的 compose 文件名。
 pub const COMPOSE_FILE: &str = "docker-compose.yml";
 
-/// 单个文件（包括 compose 文件本身）的大小上限。
-pub const MAX_FILE_BYTES: u64 = 1 << 20;
+/// 单个文件（包括 compose 文件本身）的大小上限。和 Bot 头像的上限一样，清单里的默认状态头像才装得进包（ADR-0044）。
+pub const MAX_FILE_BYTES: u64 = wonton_protocol::MAX_AVATAR_BYTES;
 
-/// 整个插件包（compose 文件和它引用的文件）的大小上限。
-pub const MAX_PACKAGE_BYTES: u64 = 2 << 20;
+/// 整个插件包（compose 文件和它引用的文件）的大小上限，和上传的插件包压缩包一样：一套默认状态头像（4 段视频、
+/// 4 张首帧和静态头像）连同 compose 装得下。
+pub const MAX_PACKAGE_BYTES: u64 = wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES;
 
 /// 插件包摘要（插件规范的“插件包摘要”）：每个文件一行 `<sha256>  <路径>`，按路径的字节序排列，即 `sha256sum`
 /// 的输出；这段文字的 sha256 写成 `sha256:<十六进制>`。只取决于文件的内容，和文件从哪里取、怎么打包无关。
