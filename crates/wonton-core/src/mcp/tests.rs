@@ -11,6 +11,7 @@ use wonton_protocol::{Answer, CardChoice, ConfirmationState};
 
 use super::AnswerError;
 use super::cards::Draft;
+use super::confirm::DEFAULT_WINDOW;
 use super::test_support::{Notes, serve_notes};
 use super::upstream::{ReadError, Upstreams};
 use crate::plugin::docker::Engine;
@@ -44,6 +45,9 @@ async fn agents_see_the_core_tools_and_the_tools_of_running_plugins() {
         "wonton__help",
         "app-example-notes__search",
         "app-example-notes__delete",
+        // 清单没写 `mcp.tools`：全部提供。
+        "app-example-notes__find",
+        "app-example-notes__archive",
     ] {
         assert!(names.contains(&expected), "{names:?}");
     }
@@ -57,6 +61,70 @@ async fn agents_see_the_core_tools_and_the_tools_of_running_plugins() {
         "插件的注解原样带过来"
     );
     assert_eq!(read_only("wonton__install_plugin"), Some(false));
+}
+
+/// 清单写了 `mcp.tools` 就只提供列表里的工具：其余的不出现在总线上，调用它们和调用不存在的工具一样被拒，
+/// 请求不发给插件。
+#[tokio::test]
+async fn a_plugin_only_provides_the_tools_its_manifest_lists() {
+    let s = setup_with(
+        Engine::unreachable_for_test(),
+        Duration::from_secs(60),
+        DEFAULT_WINDOW,
+        Upstreams::new(),
+        &NOTES.replace(
+            "streamable-http}",
+            "streamable-http, tools: [search, find]}",
+        ),
+    )
+    .await;
+    let tools = s.bus.tools(&s.caller).await;
+    let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+    for expected in ["app-example-notes__search", "app-example-notes__find"] {
+        assert!(names.contains(&expected), "{names:?}");
+    }
+    for absent in ["app-example-notes__delete", "app-example-notes__archive"] {
+        assert!(!names.contains(&absent), "{names:?}");
+    }
+
+    let result = s
+        .call("app-example-notes__delete", json!({"name": "x"}))
+        .await;
+    assert!(failed(&result), "{result:?}");
+    assert!(text(&result).contains("没有工具"), "{}", text(&result));
+    assert!(s.notes.deleted.lock().unwrap().is_empty(), "请求不能到插件");
+}
+
+/// 清单声明的工具上游没有：其余工具照常提供，缺哪些写在 `tools_error` 里，不整个消失。
+#[tokio::test]
+async fn declared_tools_the_upstream_does_not_have_do_not_hide_the_rest() {
+    let s = setup_with(
+        Engine::unreachable_for_test(),
+        Duration::from_secs(60),
+        DEFAULT_WINDOW,
+        Upstreams::new(),
+        &NOTES.replace(
+            "streamable-http}",
+            "streamable-http, tools: [search, find, gone]}",
+        ),
+    )
+    .await;
+    let tools = s.bus.tools(&s.caller).await;
+    let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+    for expected in ["app-example-notes__search", "app-example-notes__find"] {
+        assert!(names.contains(&expected), "{names:?}");
+    }
+
+    let listed = s.call("wonton__list_plugins", json!({})).await;
+    let listed: Value = serde_json::from_str(&text(&listed)).unwrap();
+    let plugins = listed["plugins"].as_array().unwrap();
+    let plugin = plugins
+        .iter()
+        .find(|p| p["id"] == "app.example.notes")
+        .unwrap();
+    let error = plugin["tools_error"].as_str().unwrap();
+    assert!(error.contains("清单声明的工具上游没有"), "{error}");
+    assert!(error.contains("gone"), "{error}");
 }
 
 /// 插件的会话不回答、TCP 没断：只是不列它的工具，别的插件和核心自己的工具照常。
@@ -218,6 +286,32 @@ fn a_plugin_can_declare_longer_tool_limits_within_reason() {
     assert!(parse(", tool_idle_seconds: 7200").is_err());
     assert!(parse(", tool_idle_seconds: 1800").is_ok());
     assert!(parse(", tool_idle_seconds: 3600, tool_total_seconds: 3600").is_ok());
+}
+
+/// 清单的 `mcp.tools`：不写时全部提供；写了就必须是非空、不重复的合法工具名列表（MCP 2025-11-25 的
+/// 工具名规定，见 `manifest_mcp.rs`）。
+#[test]
+fn a_plugin_can_limit_its_tools_to_a_valid_allowlist() {
+    let parse = |extra: &str| {
+        let text = NOTES.replace("streamable-http}", &format!("streamable-http{extra}}}"));
+        PluginPackage::parse(&text).map(|package| package.manifest.mcp.unwrap())
+    };
+    let mcp = parse(", tools: [search, find, a.b_c-d]").unwrap();
+    assert_eq!(
+        mcp.tools,
+        Some(vec!["search".into(), "find".into(), "a.b_c-d".into()])
+    );
+    // 不写这个字段就是全部提供，和现在一样。
+    assert_eq!(parse("").unwrap().tools, None);
+    for (extra, why) in [
+        (", tools: []", "mcp.tools"),
+        (", tools: [search, search]", "重复"),
+        (", tools: [\"search files\"]", "不是合法的工具名"),
+        (", tools: [搜索]", "不是合法的工具名"),
+    ] {
+        let error = parse(extra).unwrap_err().to_string();
+        assert!(error.contains(why), "{extra}: {error}");
+    }
 }
 
 #[tokio::test]
@@ -560,6 +654,7 @@ async fn plugin_resources_are_read_with_a_size_limit() {
         socket: None,
         headers: Default::default(),
         tool_limits: Default::default(),
+        tools: None,
     };
     let upstreams = Upstreams::new();
     let read = |uri: &'static str, limit| {

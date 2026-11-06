@@ -239,14 +239,15 @@ impl PluginManager {
                 let target = entry.mcp.clone()?;
                 let title = entry.title.clone();
                 let listed = entry.listed.as_ref();
-                let tool_limits = ToolLimits::of(listed.and_then(|l| l.manifest.mcp.as_ref()));
+                let mcp = listed.and_then(|l| l.manifest.mcp.as_ref());
                 Some(McpServer {
                     id: id.clone(),
                     title,
                     url: target.url,
                     socket: target.socket,
                     headers: target.headers,
-                    tool_limits,
+                    tool_limits: ToolLimits::of(mcp),
+                    tools: mcp.and_then(|mcp| mcp.tools.clone()),
                 })
             })
             .collect()

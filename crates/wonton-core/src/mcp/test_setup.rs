@@ -200,7 +200,7 @@ pub(super) async fn setup_root() -> Setup {
     .await
 }
 
-async fn setup_with(
+pub(super) async fn setup_with(
     engine: Engine,
     ttl: Duration,
     window: Duration,

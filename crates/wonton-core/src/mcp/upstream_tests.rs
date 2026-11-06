@@ -491,6 +491,7 @@ async fn a_stuck_plugin_holds_up_nobody_and_times_out() {
         socket: None,
         headers: Default::default(),
         tool_limits: Default::default(),
+        tools: None,
     };
     let fine = server_at(serve_notes(Notes::default()).await);
     let stuck_read = upstreams.read_resource(&stuck, "x://a", 64);

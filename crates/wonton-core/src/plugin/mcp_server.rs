@@ -18,6 +18,8 @@ pub struct McpServer {
     /// 发往上游的每个请求都带上的头（`mcp.headers` 按插件密钥解析好的）。
     pub headers: McpHeaders,
     pub tool_limits: ToolLimits,
+    /// 清单只提供这些工具（上游的原名，允许列表）；不写时全部提供。
+    pub tools: Option<Vec<String>>,
 }
 
 /// 工具调用等多久（插件规范的“工具调用的期限”）。

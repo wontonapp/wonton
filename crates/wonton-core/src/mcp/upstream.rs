@@ -422,10 +422,10 @@ impl Upstreams {
 
     /// 插件现在提供的工具。卡住的插件最多让调用方等 [`TOOLS_TIMEOUT`]（包括没连上时的握手）。
     pub async fn tools(&self, server: &McpServer) -> Result<Vec<Tool>, String> {
-        let listed = self.list_tools(server).await;
+        let (listed, problem) = allowlist(server, self.list_tools(server).await);
         let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
         if let Some(slot) = clients.get_mut(&server.id) {
-            slot.tools_problem = listed.as_ref().err().cloned();
+            slot.tools_problem = problem.or(listed.as_ref().err().cloned());
         }
         listed
     }
@@ -681,6 +681,41 @@ fn never_connected(error: &ServiceError) -> bool {
         transport.error.downcast_ref::<HttpError>(),
         Some(StreamableHttpError::Client(e)) if e.is_connect()
     )
+}
+
+/// 清单写了 `mcp.tools`（允许列表）时只提供列表里的工具：调用不在列表里的和调用不存在的工具一样报错
+/// （`call_plugin` 和确认策略视图都经 [`Upstreams::tools`] 拿工具）。列表里写了但上游没有的名字不拦别的
+/// 工具，缺哪些写在问题里，由 `wonton__list_plugins` 的 `tools_error` 显示；上游整个列不出来时如实报
+/// 原来的错。
+fn allowlist(
+    server: &McpServer,
+    listed: Result<Vec<Tool>, String>,
+) -> (Result<Vec<Tool>, String>, Option<String>) {
+    let Some(declared) = &server.tools else {
+        let problem = listed.as_ref().err().cloned();
+        return (listed, problem);
+    };
+    match listed {
+        Ok(tools) => {
+            let names: std::collections::HashSet<&str> =
+                tools.iter().map(|tool| tool.name.as_ref()).collect();
+            let missing: Vec<&str> = declared
+                .iter()
+                .map(String::as_str)
+                .filter(|name| !names.contains(name))
+                .collect();
+            let problem = (!missing.is_empty())
+                .then(|| format!("清单声明的工具上游没有：{}", missing.join("、")));
+            let provided: std::collections::HashSet<&str> =
+                declared.iter().map(String::as_str).collect();
+            let kept = tools
+                .into_iter()
+                .filter(|tool| provided.contains(tool.name.as_ref()))
+                .collect();
+            (Ok(kept), problem)
+        }
+        Err(why) => (Err(why), None),
+    }
 }
 
 /// 列工具为什么失败。

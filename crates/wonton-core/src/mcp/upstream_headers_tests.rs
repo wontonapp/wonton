@@ -19,6 +19,7 @@ fn server_with(url: String, token: &str) -> McpServer {
         socket: None,
         headers: McpHeaders::from_pairs([("authorization", format!("Bearer {token}"))]),
         tool_limits: Default::default(),
+        tools: None,
     }
 }
 
