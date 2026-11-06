@@ -24,8 +24,10 @@ const SESSION_WAIT: Duration = Duration::from_secs(12);
 const FETCH_WAIT: Duration = Duration::from_secs(15);
 
 /// 推送解开后的明文，字段同核心的 `DevicePayload`（核心有契约测试锁住字段名）。
-#[derive(Deserialize)]
-struct Payload {
+#[derive(Clone, Deserialize)]
+pub(crate) struct Payload {
+    /// 发推送的服务器的 endpoint ID。
+    pub(crate) server: String,
     room_id: String,
     event_id: String,
     sender: Option<String>,
@@ -33,15 +35,39 @@ struct Payload {
     room_name: Option<String>,
 }
 
+impl Payload {
+    /// 不是家里推送代理发的格式时返回 `InvalidInput`。
+    pub(crate) fn parse(payload: &[u8]) -> Result<Self, CoreError> {
+        serde_json::from_slice(payload).map_err(|e| invalid(&format!("推送内容的格式不对：{e}")))
+    }
+
+    /// 取不到正文时的通知：只有推送里带的发送者和房间，原因照实写。
+    pub(crate) fn unavailable(&self, reason: ChatFailure, message: String) -> PushNotification {
+        PushNotification {
+            // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
+            server_id: None,
+            room_id: self.room_id.clone(),
+            event_id: self.event_id.clone(),
+            sender: self
+                .sender_display_name
+                .clone()
+                .or_else(|| self.sender.clone())
+                .unwrap_or_else(|| "未知的发送者".to_owned()),
+            room_name: self.room_name.clone(),
+            content: PushContent::Unavailable { reason, message },
+            category: NotificationCategory::Message,
+            confirmation: None,
+        }
+    }
+}
+
 impl PushLink {
-    /// 推送内容不是家里推送代理发的格式时返回 `InvalidInput`；不用显示（按推送规则不该响、消息已撤回）时返回 `None`。
+    /// 不用显示（按推送规则不该响、消息已撤回）时返回 `None`。
     pub(crate) async fn resolve(
         &self,
-        payload: &[u8],
+        payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
         let started = Instant::now();
-        let payload: Payload = serde_json::from_slice(payload)
-            .map_err(|e| invalid(&format!("推送内容的格式不对：{e}")))?;
         let room_id: OwnedRoomId = payload
             .room_id
             .parse()
@@ -50,23 +76,7 @@ impl PushLink {
             .event_id
             .parse()
             .map_err(|e| invalid(&format!("推送里的事件 ID 不合法：{e}")))?;
-        let notification = |content| PushNotification {
-            // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
-            server_id: None,
-            room_id: payload.room_id.clone(),
-            event_id: payload.event_id.clone(),
-            sender: payload
-                .sender_display_name
-                .clone()
-                .or_else(|| payload.sender.clone())
-                .unwrap_or_else(|| "未知的发送者".to_owned()),
-            room_name: payload.room_name.clone(),
-            content,
-            category: NotificationCategory::Message,
-            confirmation: None,
-        };
-        let unavailable =
-            |reason, message| notification(PushContent::Unavailable { reason, message });
+        let unavailable = |reason, message| payload.unavailable(reason, message);
         let session = match self.wait_session().await {
             Ok(session) => session,
             Err((reason, message)) => {
@@ -112,6 +122,9 @@ impl PushLink {
             },
         };
         Ok(Some(PushNotification {
+            server_id: None,
+            room_id: payload.room_id.clone(),
+            event_id: payload.event_id.clone(),
             sender: message.sender_name,
             room_name: message.room_name,
             category: if confirmation.is_some() {
@@ -121,8 +134,8 @@ impl PushLink {
             } else {
                 NotificationCategory::Message
             },
+            content,
             confirmation,
-            ..notification(content)
         }))
     }
 

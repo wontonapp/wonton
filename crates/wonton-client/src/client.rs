@@ -6,16 +6,16 @@ use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, DeviceNetwork,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
-    OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel,
-    PushNotification, RoomTransfers, ServersViewModel, SessionListViewModel, SettingsViewModel,
-    StoreItem, TabRef, TabsViewModel, TransfersViewModel,
+    OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
+    TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
 use crate::home::Network;
-use crate::scope::{Scope, Views};
+use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
@@ -27,6 +27,7 @@ use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::{PushInput, Replay};
 
 mod limits;
+mod push_route;
 mod switch;
 mod tool_policy;
 
@@ -47,7 +48,9 @@ pub struct ClientCore {
     /// 切换后要在新作用域里重放的、壳只发一次的输入。
     replay: Mutex<Replay>,
     /// 串行化切换：列表改动和换作用域要一起做完。
-    switching: Mutex<()>,
+    switching: Arc<Mutex<()>>,
+    /// 为不是当前这台的服务器临时开的作用域。
+    visits: Arc<Visits>,
 }
 
 #[uniffi::export]
@@ -106,6 +109,7 @@ impl ClientCore {
             Action::RetryConnection => scope.home.retry(),
             Action::SetPushEndpoint { endpoint } => {
                 scope.push.set_endpoint(endpoint.clone())?;
+                self.register_others(&scope, endpoint.clone());
                 self.replay().push = Some(PushInput::Endpoint(endpoint));
                 Ok(())
             }
@@ -610,25 +614,6 @@ impl ClientCore {
     pub fn search_store(&self, query: String) -> Vec<StoreItem> {
         self.scope().plugins.search_store(&query)
     }
-
-    /// 处理收到的一条推送：`payload` 是壳在本机解开后的明文（Android 上 UnifiedPush 连接库已经按 RFC 8291 解开）。
-    /// 核心经隧道取回那条消息、在本机解密，给出要弹出的通知；取不到正文时通知里照实写原因。推送唤醒的进程可以
-    /// 一创建核心就调用，核心等会话从本机恢复。不用显示（按推送规则不该响、消息已撤回）时返回空，内容不是家里
-    /// 推送代理发的格式时返回 `InvalidInput`。最多等二三十秒。
-    pub async fn resolve_push(
-        &self,
-        payload: Vec<u8>,
-    ) -> Result<Option<PushNotification>, CoreError> {
-        let scope = self.scope();
-        let push = scope.push.clone();
-        let notification = scope
-            .run(async move { push.resolve(&payload).await })
-            .await?;
-        Ok(notification.map(|notification| PushNotification {
-            server_id: Some(scope.slot.clone()),
-            ..notification
-        }))
-    }
 }
 
 impl ClientCore {
@@ -653,6 +638,8 @@ impl ClientCore {
             servers.subscribe(),
             None,
         )?;
+        let switching = Arc::new(Mutex::new(()));
+        let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
@@ -662,7 +649,8 @@ impl ClientCore {
             root,
             network,
             replay: Mutex::default(),
-            switching: Mutex::new(()),
+            switching,
+            visits,
         });
         core.attach(&scope);
         Ok(core)

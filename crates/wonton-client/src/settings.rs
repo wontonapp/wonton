@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
     ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PluginsViewModel, PushMethod,
-    PushStatus, RecoveryStatus, ServersViewModel, SettingsEntry, SettingsSection,
+    PushStatus, RecoveryStatus, ServerName, ServersViewModel, SettingsEntry, SettingsSection,
     SettingsViewModel,
 };
 
@@ -73,7 +73,7 @@ impl SettingsLink {
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
 fn settings_view(
     status: &HomeStatus,
-    name: Option<String>,
+    name: Option<ServerName>,
     recovery: RecoveryStatus,
     push: &PushStatus,
     upgrade: bool,
@@ -179,7 +179,9 @@ mod tests {
     fn after_pairing_profile_and_server_come_first() {
         let view = settings_view(
             &HomeStatus::Connected,
-            Some("办公室".into()),
+            Some(ServerName::Named {
+                name: "办公室".into(),
+            }),
             RecoveryStatus::Enabled,
             &PushStatus::Registered,
             true,
@@ -188,7 +190,9 @@ mod tests {
         assert_eq!(
             view.sections[1].entries,
             [SettingsEntry::Server {
-                name: Some("办公室".into()),
+                name: Some(ServerName::Named {
+                    name: "办公室".into(),
+                }),
                 status: HomeStatus::Connected,
                 upgrade: true
             }]

@@ -292,3 +292,10 @@ plugins-registry-save-in-progress = 上一次下載鏡像站的變更還沒做�
 plugins-registry-not-loaded = 還沒取到下載鏡像站的設定。
 # $reason 是連線問題的原始詳細資訊。
 plugins-registry-save-uncertain = 不確定改好了沒有，連上後重新讀取設定：{ $reason }
+
+# 多台伺服器（crates/wonton-client/src/servers.rs、client/push_route.rs）。
+servers-removed = 這台伺服器已經從這支手機上移除。
+servers-push-from-removed = 傳來這則訊息的伺服器已經從這支手機上移除。
+servers-push-scope-closed = 那台伺服器已經關閉了。
+# $seconds 是等待登記的秒數。
+servers-push-register-timeout = { $seconds } 秒內未能登記推播。

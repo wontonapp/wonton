@@ -2,11 +2,16 @@
 //! 推送代理的 pusher；收到推送时取回那条消息、在本机解密（见 `notification`）。
 //!
 //! 登记跟着聊天走：每次登录（包括从本机恢复会话）后都重新登记一遍，pusher 被 Tuwunel 删掉过（推送代理回过
-//! `rejected`）也能补回来。推送订阅不存盘：壳每次启动都从分发器重新拿到它，推送唤醒的进程用不着它。
+//! `rejected`）也能补回来。推送订阅不存盘：壳每次启动都从分发器重新拿到它，推送唤醒的进程用不着它。登记过的地址
+//! 和公钥记在槽位里（见 `record`），给不是当前这台的服务器用。
 
 mod notification;
+pub(crate) mod record;
 mod registration;
 
+pub(crate) use notification::Payload;
+
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use base64::Engine as _;
@@ -32,6 +37,8 @@ pub(crate) struct PushLink {
     runtime: Handle,
     home: Arc<HomeLink>,
     chat: Arc<ChatLink>,
+    /// 槽位目录。
+    dir: PathBuf,
     state: Mutex<State>,
     /// 串行化登记和取消登记。
     busy: tokio::sync::Mutex<()>,
@@ -45,11 +52,17 @@ struct State {
 }
 
 impl PushLink {
-    pub(crate) fn new(runtime: Handle, home: Arc<HomeLink>, chat: Arc<ChatLink>) -> Arc<Self> {
+    pub(crate) fn new(
+        runtime: Handle,
+        home: Arc<HomeLink>,
+        chat: Arc<ChatLink>,
+        dir: &Path,
+    ) -> Arc<Self> {
         let push = Arc::new(Self {
             runtime: runtime.clone(),
             home,
             chat: chat.clone(),
+            dir: dir.to_owned(),
             state: Mutex::new(State::default()),
             busy: tokio::sync::Mutex::new(()),
         });
@@ -70,6 +83,7 @@ impl PushLink {
     /// 删不掉的 pusher，推送代理下次会回 `rejected`，Tuwunel 随之删掉它。
     pub(crate) fn unavailable(self: &Arc<Self>, message: String) {
         self.lock().endpoint = None;
+        record::clear(&self.dir);
         self.chat.set_push(PushStatus::Unavailable { message });
         self.runtime.spawn(self.clone().unregister());
     }
@@ -132,6 +146,7 @@ impl PushLink {
                 Ok(pushkey) => {
                     state.pushkey = Some(pushkey);
                     drop(state);
+                    record::save(&self.dir, &endpoint);
                     tracing::info!("推送已登记");
                     self.chat.set_push(PushStatus::Registered);
                 }

@@ -1,11 +1,12 @@
 //! 服务器作用域（ADR-0042）：连着一台服务器的那些部件和它们的运行时。切换服务器就是关掉一个、按另一个槽位建一个。
 
+mod runtime;
+mod visit;
+
 use std::future::Future;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::sync::Arc;
 
-use tokio::runtime::{Handle, Runtime};
 use tokio::sync::watch;
 use wonton_protocol::{
     ChatViewModel, CoreError, HomeViewModel, OnboardingViewModel, PluginsViewModel,
@@ -20,6 +21,8 @@ use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::settings::SettingsLink;
 use crate::tabs::TabsLink;
+pub(crate) use runtime::ScopeRuntime;
+pub(crate) use visit::{Entered, Visits};
 
 pub(crate) struct Scope {
     pub(crate) slot: String,
@@ -31,7 +34,7 @@ pub(crate) struct Scope {
     pub(crate) files: Arc<FilesLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) settings: SettingsLink,
-    runtime: Mutex<Option<Runtime>>,
+    runtime: ScopeRuntime,
 }
 
 /// 壳订阅的那些 ViewModel 的发送端。第一个作用域新建，之后每个作用域接着用（ADR-0042）：壳拿到的订阅不用换，
@@ -83,13 +86,8 @@ impl Scope {
         servers: watch::Receiver<ServersViewModel>,
         views: Option<&Views>,
     ) -> Result<Arc<Self>, CoreError> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("wonton-core")
-            .enable_all()
-            .build()
-            .expect("创建 tokio 运行时失败");
-        let handle = runtime.handle().clone();
+        let runtime = ScopeRuntime::new();
+        let handle = runtime.handle().expect("刚建好的运行时");
         let storage = Storage::open(root, dir)?;
         let home = HomeLink::new(
             handle.clone(),
@@ -115,7 +113,7 @@ impl Scope {
             plugins.clone(),
             views.map(|v| v.chat.clone()),
         )?;
-        let push = PushLink::new(handle.clone(), home.clone(), chat.clone());
+        let push = PushLink::new(handle.clone(), home.clone(), chat.clone(), dir);
         let tabs = TabsLink::new(
             handle.clone(),
             home.clone(),
@@ -156,7 +154,7 @@ impl Scope {
             files,
             onboarding,
             settings,
-            runtime: Mutex::new(Some(runtime)),
+            runtime,
         }))
     }
 
@@ -174,66 +172,28 @@ impl Scope {
         self.plugins.backgrounded();
     }
 
-    fn handle(&self) -> Option<Handle> {
-        let runtime = lock(&self.runtime);
-        runtime.as_ref().map(|runtime| runtime.handle().clone())
-    }
-
-    /// 在这个作用域的运行时里执行：壳（Swift / Kotlin）驱动导出的 async 方法时，线程上没有 tokio 运行时，
-    /// matrix-sdk 的网络操作离不开它。
     pub(crate) async fn run<T: Send + 'static>(
         &self,
         task: impl Future<Output = Result<T, CoreError>> + Send + 'static,
     ) -> Result<T, CoreError> {
-        let handle = self.handle().ok_or_else(switched)?;
-        handle.spawn(task).await.map_err(|error| {
-            if error.is_cancelled() {
-                switched()
-            } else {
-                CoreError::Upstream {
-                    reason: format!("核心的后台任务异常结束：{error}"),
-                }
-            }
-        })?
+        self.runtime.run(task).await
     }
 
     pub(crate) fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
-        if let Some(handle) = self.handle() {
-            handle.spawn(task);
-        }
+        self.runtime.spawn(task);
     }
 
     /// 停掉这台服务器：进行中的传输记成暂停，后台任务一起结束。
     ///
-    /// 换服务器时（`wait`）等旧任务都停下，最多一秒：它们和新作用域共用壳订阅的发送端，停下前最后的发送、任务析构时
-    /// 的发送不能盖掉新服务器的状态（实测过：不等的话，连上新服务器后连接状态会被旧的“未配对”盖掉）。在另一个线程上等，
-    /// 调用方可能在异步上下文里，那里不能阻塞地关运行时。核心释放时不等：壳可能在主线程上释放核心。
+    /// 换服务器时（`wait`）等旧任务都停下：它们和新作用域共用壳订阅的发送端，停下前最后的发送、任务析构时的发送不能
+    /// 盖掉新服务器的状态（实测过：不等的话，连上新服务器后连接状态会被旧的“未配对”盖掉）。核心释放时不等：壳可能在
+    /// 主线程上释放核心。
     pub(crate) fn close(&self, wait: bool) {
         self.files.close();
-        let Some(runtime) = lock(&self.runtime).take() else {
-            return;
-        };
         if wait {
-            let stopping = std::thread::spawn(move || runtime.shutdown_timeout(STOP_TIMEOUT));
-            if stopping.join().is_err() {
-                tracing::warn!("旧服务器的运行时没能正常停下");
-            }
+            self.runtime.stop();
         } else {
-            runtime.shutdown_background();
+            self.runtime.stop_background();
         }
-    }
-}
-
-const STOP_TIMEOUT: Duration = Duration::from_secs(1);
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-fn switched() -> CoreError {
-    CoreError::NotReady {
-        reason: "已经切到另一台服务器".to_owned(),
     }
 }

@@ -1,14 +1,14 @@
 //! 一台手机配多台服务器（ADR-0042）：同一时间连一台，其他几台的数据留在手机上。只经由导出给原生壳的接口驱动，
 //! 隧道服务端跑在本机。聊天的部分（切回来不用重新登录）在 `chat::server_switch`，传输的部分在 `files`。
 
-use wonton_client::{Action, CoreError, HomeStatus, ServerRow, SettingsEntry};
+use wonton_client::{Action, CoreError, HomeStatus, ServerName, ServerRow, SettingsEntry};
 
 use crate::home::{Home, Phone};
 
-fn row(id: &str, name: &str, current: bool) -> ServerRow {
+fn row(id: &str, number: u32, current: bool) -> ServerRow {
     ServerRow {
         id: id.to_owned(),
-        name: name.to_owned(),
+        name: ServerName::Default { number },
         current,
     }
 }
@@ -48,7 +48,7 @@ async fn a_second_server_is_added_beside_the_first_and_both_are_kept() {
     );
     phone.connect(&a);
     connected_to(&phone, &a).await;
-    assert_eq!(phone.servers().servers, [row("1", "家里的服务器", true)]);
+    assert_eq!(phone.servers().servers, [row("1", 1, true)]);
 
     phone.dispatch(Action::AddServer).unwrap();
     wait_unpaired(&phone).await;
@@ -58,7 +58,7 @@ async fn a_second_server_is_added_beside_the_first_and_both_are_kept() {
     wait_servers(&phone, |servers| !servers.adding).await;
     assert_eq!(
         phone.servers().servers,
-        [row("1", "家里的服务器", false), row("2", "服务器 2", true)]
+        [row("1", 1, false), row("2", 2, true)]
     );
 
     phone
@@ -70,7 +70,7 @@ async fn a_second_server_is_added_beside_the_first_and_both_are_kept() {
     connected_to(&phone, &a).await;
     assert_eq!(
         phone.servers().servers,
-        [row("1", "家里的服务器", true), row("2", "服务器 2", false)]
+        [row("1", 1, true), row("2", 2, false)]
     );
 }
 
@@ -88,6 +88,10 @@ async fn the_current_servers_name_follows_renames() {
     wait_unpaired(&phone).await;
     phone.connect(&b);
     wait_servers(&phone, |servers| servers.servers.len() == 2).await;
+    wait_settings(&phone, |name| {
+        name == Some(&ServerName::Default { number: 2 })
+    })
+    .await;
 
     phone
         .dispatch(Action::RenameServer {
@@ -95,8 +99,11 @@ async fn the_current_servers_name_follows_renames() {
             name: " 办公室 ".into(),
         })
         .unwrap();
-    assert_eq!(phone.servers().servers[1], row("2", "办公室", true));
-    wait_settings(&phone, |name| name == Some("办公室")).await;
+    let renamed = ServerName::Named {
+        name: "办公室".into(),
+    };
+    assert_eq!(phone.servers().servers[1].name, renamed);
+    wait_settings(&phone, |name| name == Some(&renamed)).await;
     for (id, name) in [("2", "  "), ("9", "别处")] {
         let renamed = phone.dispatch(Action::RenameServer {
             id: id.into(),
@@ -107,6 +114,10 @@ async fn the_current_servers_name_follows_renames() {
             "{id} {name}"
         );
     }
+    drop(phone);
+    let phone = Phone::open(dir.path());
+    connected_to(&phone, &b).await;
+    assert_eq!(phone.servers().servers[1].name, renamed);
 }
 
 /// 添加到一半取消：回到原来那台，配对中的位置不留。
@@ -126,7 +137,7 @@ async fn cancelling_an_add_returns_to_the_server_you_were_on() {
     connected_to(&phone, &a).await;
     let servers = phone.servers();
     assert!(!servers.adding);
-    assert_eq!(servers.servers, [row("1", "家里的服务器", true)]);
+    assert_eq!(servers.servers, [row("1", 1, true)]);
     assert!(!dir.path().join("servers/2").exists());
 }
 
@@ -148,7 +159,7 @@ async fn removing_servers_deletes_their_data_and_the_last_one_returns_to_pairing
         .dispatch(Action::RemoveServer { id: "2".into() })
         .unwrap();
     connected_to(&phone, &a).await;
-    assert_eq!(phone.servers().servers, [row("1", "家里的服务器", true)]);
+    assert_eq!(phone.servers().servers, [row("1", 1, true)]);
     assert!(!dir.path().join("servers/2").exists());
 
     phone
@@ -174,7 +185,7 @@ async fn pairing_the_same_server_again_replaces_its_old_place() {
     phone.connect(&a);
 
     wait_servers(&phone, |servers| {
-        servers.servers == [row("2", "家里的服务器", true)] && !servers.adding
+        servers.servers == [row("2", 1, true)] && !servers.adding
     })
     .await;
     let old = dir.path().join("servers/1");
@@ -185,9 +196,30 @@ async fn pairing_the_same_server_again_replaces_its_old_place() {
     })
     .await
     .expect("旧位置应删掉");
+    phone
+        .dispatch(Action::RenameServer {
+            id: "2".into(),
+            name: "办公室".into(),
+        })
+        .unwrap();
+    phone.dispatch(Action::AddServer).unwrap();
+    wait_unpaired(&phone).await;
+    phone.connect(&a);
+    wait_servers(&phone, |servers| {
+        servers.servers
+            == [ServerRow {
+                id: "3".into(),
+                name: ServerName::Named {
+                    name: "办公室".into(),
+                },
+                current: true,
+            }]
+            && !servers.adding
+    })
+    .await;
 }
 
-fn server_name(phone: &Phone) -> Option<String> {
+fn server_name(phone: &Phone) -> Option<ServerName> {
     phone
         .settings()
         .sections
@@ -218,11 +250,11 @@ async fn wait_servers(
         .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", phone.servers()));
 }
 
-async fn wait_settings(phone: &Phone, mut done: impl FnMut(Option<&str>) -> bool) {
+async fn wait_settings(phone: &Phone, mut done: impl FnMut(Option<&ServerName>) -> bool) {
     let subscription = phone.subscribe_settings();
     let waiting = async {
         while subscription.next().await.is_some() {
-            if done(server_name(phone).as_deref()) {
+            if done(server_name(phone).as_ref()) {
                 return;
             }
         }

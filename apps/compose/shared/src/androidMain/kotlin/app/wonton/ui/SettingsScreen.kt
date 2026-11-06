@@ -17,6 +17,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.ServerName
 import app.wonton.protocol.SettingsEntry
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.ui.design.wontonContentPadding
@@ -102,7 +103,8 @@ private fun SettingsEntryRow(
     when (entry) {
         SettingsEntry.Profile -> WontonRow("你的资料", showsForward = true) { onSubpage(SettingsSubpage.PROFILE) }
         is SettingsEntry.Server -> WontonRow(
-            entry.name ?: "家里的服务器", entry.status.connectionText, showsForward = true, badge = entry.upgrade,
+            (entry.name as? ServerName.Named)?.name ?: "家里的服务器", entry.status.connectionText,
+            showsForward = true, badge = entry.upgrade,
             onClick = { onSubpage(SettingsSubpage.SERVER) },
         )
         SettingsEntry.Appearance -> WontonRow("外观", showsForward = true) { onSubpage(SettingsSubpage.APPEARANCE) }

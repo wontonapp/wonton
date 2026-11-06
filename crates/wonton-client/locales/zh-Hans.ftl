@@ -291,3 +291,10 @@ plugins-registry-save-in-progress = 上一次镜像加速改动还没做完。
 plugins-registry-not-loaded = 还没取到镜像加速设置。
 # $reason 是连接问题的原始详情。
 plugins-registry-save-uncertain = 不确定改好了没有，连上后重新读取设置：{ $reason }
+
+# 多台服务器（crates/wonton-client/src/servers.rs、client/push_route.rs）。
+servers-removed = 这台服务器已经从这台手机上移除。
+servers-push-from-removed = 发来这条消息的服务器已经从这台手机上移除。
+servers-push-scope-closed = 那台服务器已经关掉了。
+# $seconds 是等待登记的秒数。
+servers-push-register-timeout = { $seconds } 秒内没能登记推送。

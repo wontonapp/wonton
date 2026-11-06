@@ -13,14 +13,22 @@ pub struct ServersViewModel {
     pub adding: bool,
 }
 
+/// 主人起的名字，或由壳按编号和 App 语言显示的默认名。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ServerName {
+    Named { name: String },
+    Default { number: u32 },
+}
+
 /// 一台配过的服务器。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ServerRow {
     /// 这台服务器在本机的 ID。操作和通知都用它引用服务器，和服务器自己的 endpoint ID 不是一回事。
     pub id: String,
-    /// 主人起的名字；没改过时是“家里的服务器”“服务器 2”这样的默认名。
-    pub name: String,
+    pub name: ServerName,
     /// 正在连的就是这台。
     pub current: bool,
 }
@@ -37,12 +45,14 @@ mod tests {
             servers: vec![
                 ServerRow {
                     id: "a1".into(),
-                    name: "家里的服务器".into(),
+                    name: ServerName::Default { number: 1 },
                     current: true,
                 },
                 ServerRow {
                     id: "b2".into(),
-                    name: "办公室".into(),
+                    name: ServerName::Named {
+                        name: "办公室".into(),
+                    },
                     current: false,
                 },
             ],

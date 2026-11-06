@@ -192,6 +192,11 @@ impl Home {
     }
 
     /// 家里的隧道断了：手机连不上，Tuwunel 和直连它的 Bot 不受影响。
+    /// 隧道的 endpoint ID，推送里写的就是它。
+    pub fn server_id(&self) -> String {
+        self.tunnel_key.public().to_string()
+    }
+
     pub async fn stop_tunnel(&mut self) {
         self.tunnel.take().expect("隧道没在运行").shutdown().await;
     }

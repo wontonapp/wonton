@@ -90,8 +90,14 @@ impl Home {
         let tunnel = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();
         tunnel.devices.add(phone, None).unwrap();
-        let push =
-            Arc::new(Push::open(dir.path().join("push.json"), tunnel.devices.clone()).unwrap());
+        let push = Arc::new(
+            Push::open(
+                dir.path().join("push.json"),
+                tunnel.devices.clone(),
+                tunnel.endpoint.id(),
+            )
+            .unwrap(),
+        );
         let gateway = Gateway::new(
             public,
             profile,

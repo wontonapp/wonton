@@ -47,6 +47,7 @@ impl ClientCore {
         let previous = self.scope();
         if let Some(slot) = change.switch_to.filter(|slot| *slot != previous.slot) {
             previous.close(true);
+            self.visits.end(&slot);
             match self.open_scope(&slot) {
                 Ok(next) => self.install(next),
                 Err(error) => {
@@ -55,6 +56,9 @@ impl ClientCore {
                     return Err(error);
                 }
             }
+        }
+        for slot in &change.discard {
+            self.visits.end(slot);
         }
         self.servers.discard(&change.discard)
     }
@@ -133,7 +137,7 @@ impl ClientCore {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())

@@ -306,7 +306,7 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
 
     let woken = Phone::open(dir.path());
     let notification = woken
-        .resolve_push(device_payload(&pushed))
+        .resolve_push(device_payload(&home, &pushed))
         .await
         .expect("推送内容是对的")
         .expect("卡片要通知");

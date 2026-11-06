@@ -1,4 +1,4 @@
-//! 配过的服务器（ADR-0042）：每台一个槽位目录，`servers.json` 记着槽位、服务器 ID、名字和当前是哪台。
+//! 配过的服务器（ADR-0042）：每台一个槽位目录，`servers.json` 记着槽位、服务器 ID、自定义名字、编号和当前是哪台。
 //!
 //! 这里只管列表，不碰作用域：每个操作返回切到哪个槽位、哪些槽位的目录可以删，由 [`ClientCore`](crate::ClientCore)
 //! 停掉旧作用域、建新的，再删目录。
@@ -10,13 +10,14 @@ use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
-use wonton_protocol::{CoreError, ServerRow, ServersViewModel};
+use wonton_l10n::l10n;
+use wonton_protocol::{CoreError, ServerName, ServerRow, ServersViewModel};
 
 use crate::home::write_private;
+use crate::l10n::{CATALOG, language};
 
 const FILE: &str = "servers.json";
 const SLOTS_DIR: &str = "servers";
-const FIRST_NAME: &str = "家里的服务器";
 
 pub(crate) struct ServerList {
     root: PathBuf,
@@ -40,6 +41,7 @@ struct Slot {
     /// 服务器的隧道 endpoint ID。
     server_id: Option<String>,
     name: Option<String>,
+    number: u32,
 }
 
 /// 一次改动之后要做的事。
@@ -86,6 +88,15 @@ impl ServerList {
 
     pub(crate) fn current(&self) -> String {
         self.lock().current.clone()
+    }
+
+    /// 配在哪个槽位上；没配过（或已移除）时为空。`server_id` 是服务器的 endpoint ID。
+    pub(crate) fn slot_of(&self, server_id: &str) -> Option<String> {
+        self.lock()
+            .servers
+            .iter()
+            .find(|slot| slot.server_id.as_deref() == Some(server_id))
+            .map(|slot| slot.slot.clone())
     }
 
     pub(crate) fn slot_dir(&self, slot: &str) -> PathBuf {
@@ -181,7 +192,7 @@ impl ServerList {
     }
 
     /// 这个槽位配上了服务器 `server_id`（隧道连上后的 `HomeViewModel::server_id`）。同一台服务器以前配在别的槽位上的，
-    /// 那个旧槽位要删掉，名字留给新槽位。
+    /// 那个旧槽位要删掉，名字和编号留给新槽位。
     pub(crate) fn paired(&self, slot: &str, server_id: &str) -> Result<Change, CoreError> {
         self.update(|saved| {
             let Some(index) = saved.servers.iter().position(|s| s.slot == slot) else {
@@ -200,19 +211,19 @@ impl ServerList {
                 saved.adding_from = None;
             }
             let Some(old) = old else {
-                if saved.servers[index].name.is_none() {
-                    let ordinal = saved
+                if saved.servers[index].number == 0 {
+                    saved.servers[index].number = saved
                         .servers
                         .iter()
                         .filter(|s| s.server_id.is_some())
-                        .count();
-                    saved.servers[index].name = Some(default_name(ordinal));
+                        .count() as u32;
                 }
                 return Ok(Change::default());
             };
             if saved.servers[index].name.is_none() {
                 saved.servers[index].name = old.name;
             }
+            saved.servers[index].number = old.number;
             saved.servers.retain(|s| s.slot != old.slot);
             Ok(Change {
                 switch_to: None,
@@ -263,6 +274,7 @@ impl Saved {
             slot: slot.clone(),
             server_id: None,
             name: None,
+            number: 0,
         });
         slot
     }
@@ -286,7 +298,8 @@ impl Saved {
             .iter_mut()
             .find(|slot| slot.slot == id && slot.server_id.is_some())
             .ok_or_else(|| CoreError::InvalidInput {
-                reason: format!("没有这台服务器：{id}"),
+                // 现实里只会是点了已经移除的服务器发来的旧通知；槽位号对用户没有意义，不写进文案。
+                reason: l10n!(CATALOG, language(), "servers-removed"),
             })
     }
 
@@ -320,7 +333,12 @@ impl Saved {
             .filter(|slot| slot.server_id.is_some())
             .map(|slot| ServerRow {
                 id: slot.slot.clone(),
-                name: slot.name.clone().unwrap_or_else(|| FIRST_NAME.to_owned()),
+                name: slot.name.clone().map_or(
+                    ServerName::Default {
+                        number: slot.number,
+                    },
+                    |name| ServerName::Named { name },
+                ),
                 current: slot.slot == self.current,
             })
             .collect();
@@ -332,7 +350,7 @@ impl Saved {
 }
 
 /// 当前这台的名字；只配了一台时为空，设置首页不用写名字。
-pub(crate) fn current_name(servers: &ServersViewModel) -> Option<String> {
+pub(crate) fn current_name(servers: &ServersViewModel) -> Option<ServerName> {
     if servers.servers.len() < 2 {
         return None;
     }
@@ -341,14 +359,6 @@ pub(crate) fn current_name(servers: &ServersViewModel) -> Option<String> {
         .iter()
         .find(|row| row.current)
         .map(|row| row.name.clone())
-}
-
-fn default_name(ordinal: usize) -> String {
-    if ordinal == 1 {
-        FIRST_NAME.to_owned()
-    } else {
-        format!("服务器 {ordinal}")
-    }
 }
 
 fn storage_error(path: &Path, error: &io::Error) -> CoreError {

@@ -418,7 +418,7 @@ fn mcp_bus(
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
     let path = cfg.core_state_dir().join("push.json");
-    Push::open(&path, tunnel.devices.clone())
+    Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id())
         .and_then(|push| push.with_proxy(manager.core_proxy()))
         .with_context(|| format!("打开推送登记表 {}", path.display()))
 }

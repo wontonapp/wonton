@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{HomeStatus, NotificationCategory, PushMethod, PushStatus, RecoveryStatus};
+use crate::{HomeStatus, NotificationCategory, PushMethod, PushStatus, RecoveryStatus, ServerName};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -27,7 +27,7 @@ pub enum SettingsEntry {
     /// 家里的服务器：连接状态，以及出网代理、升级、添加设备、重新配对。配对以后才有。
     Server {
         /// 配了不止一台时是当前这台的名字，壳和状态并排显示；只有一台时为空。
-        name: Option<String>,
+        name: Option<ServerName>,
         status: HomeStatus,
         /// 服务器有新版本、主人还没跳过，画角标。
         upgrade: bool,
@@ -74,7 +74,9 @@ mod tests {
                 SettingsSection {
                     entries: vec![
                         SettingsEntry::Server {
-                            name: Some("办公室".into()),
+                            name: Some(ServerName::Named {
+                                name: "办公室".into(),
+                            }),
                             status: HomeStatus::Connected,
                             upgrade: true,
                         },

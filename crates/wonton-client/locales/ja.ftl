@@ -292,3 +292,10 @@ plugins-registry-save-in-progress = 前回のダウンロードミラーの変�
 plugins-registry-not-loaded = ダウンロードミラーの設定がまだ取得できていません。
 # $reason は接続問題の元の詳細です。
 plugins-registry-save-uncertain = 変更が保存できたかはっきりしません。接続後に設定をもう一度読み込んでください：{ $reason }
+
+# 複数のサーバー（crates/wonton-client/src/servers.rs、client/push_route.rs）。
+servers-removed = このサーバーはこのスマートフォンから削除されています。
+servers-push-from-removed = このメッセージを送ったサーバーはこのスマートフォンから削除されています。
+servers-push-scope-closed = そのサーバーはすでに閉じられています。
+# $seconds は登録を待った秒数です。
+servers-push-register-timeout = { $seconds } 秒以内に通知を登録できませんでした。

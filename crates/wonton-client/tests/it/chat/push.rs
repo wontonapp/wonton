@@ -1,10 +1,12 @@
 //! 推送：手机把推送订阅登记给家里、注册 pusher；App 被杀后 Bot 回复，Tuwunel 推给推送代理；推送唤醒的进程
 //! 一创建核心就把推送交给它，核心等会话从本机恢复，经隧道取回消息、在本机解密，给出通知（ADR-0003）。
 
+use std::time::Duration;
+
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, ChatFailure, CoreError, PushContent, PushEndpoint, PushStatus, RoomMembership,
-    SecretString,
+    Action, ChatFailure, CoreError, HomeStatus, PushContent, PushEndpoint, PushStatus,
+    RoomMembership, SecretString,
 };
 use wonton_matrix::testkit::Received;
 
@@ -25,11 +27,12 @@ pub(crate) fn endpoint() -> PushEndpoint {
     }
 }
 
-/// 推送代理会转给设备的明文（字段同核心的 `DevicePayload`），从它收到的通知里取。
-pub(crate) fn device_payload(received: &Received) -> Vec<u8> {
+/// `home` 的推送代理会转给设备的明文（字段同核心的 `DevicePayload`），从它收到的通知里取。
+pub(crate) fn device_payload(home: &Home, received: &Received) -> Vec<u8> {
     let notification = &received.notification;
     let field = |name: &str| notification.get(name).cloned().unwrap_or(Value::Null);
     json!({
+        "server": home.server_id(),
         "room_id": field("room_id"),
         "event_id": field("event_id"),
         "sender": field("sender"),
@@ -92,7 +95,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     // 推送唤醒的进程：用同一个数据目录创建核心，马上把推送交给它。
     let woken = Phone::open(dir.path());
     let notification = woken
-        .resolve_push(device_payload(&pushed))
+        .resolve_push(device_payload(&home, &pushed))
         .await
         .expect("推送内容是对的")
         .expect("这条消息要通知");
@@ -147,6 +150,7 @@ async fn a_push_that_cannot_be_fetched_says_why() {
 
     // 推送说的消息服务器上没有（比如被伪造的推送）：不显示成正常的消息，照实说取不到。
     let forged = json!({
+        "server": home.server_id(),
         "room_id": "!nowhere:wonton.localhost",
         "event_id": "$forged",
         "sender_display_name": "Hermes",
@@ -211,4 +215,137 @@ async fn wait_for_unregistered(home: &Home) {
         );
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+}
+
+/// 推送来自不是当前连着的那台（ADR-0042）：临时连上那台取回、解密，当前这台不受影响。从手机上移除了那台以后，
+/// 照实说是已移除的服务器发来的，不显示成消息。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let a = Home::start(&[phone.device_id()]).await;
+    let b = Home::start(&[phone.device_id()]).await;
+    phone.connect(&a);
+    phone.signed_in().await;
+    phone
+        .dispatch(Action::SetPushEndpoint {
+            endpoint: endpoint(),
+        })
+        .unwrap();
+    let registered =
+        |view: &wonton_client::ChatViewModel| (view.push == PushStatus::Registered).then_some(());
+    phone.wait_chat("A 上推送已登记", registered).await;
+    let bot = a.bot("hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&phone, &bot).await;
+
+    phone.dispatch(Action::AddServer).unwrap();
+    phone.connect(&b);
+    let (_, on_b) = phone.signed_in().await;
+    phone.wait_chat("B 上推送已登记", registered).await;
+
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+    bot_room.send_text("A 上的新消息").await.expect("Bot 回复");
+    let pushed = a
+        .push
+        .wait_for("A 的推送代理收到通知", |received| {
+            received.notification["type"] == "m.room.encrypted"
+                && received.notification["devices"][0]["pushkey"] == a.pushkey()
+        })
+        .await;
+    let payload = device_payload(&a, &pushed);
+    let notification = phone
+        .resolve_push(payload.clone())
+        .await
+        .expect("推送内容是对的")
+        .expect("这条消息要通知");
+    assert_eq!(notification.server_id.as_deref(), Some("1"));
+    assert_eq!(notification.room_id, room_id.as_str());
+    assert_eq!(
+        notification.content,
+        PushContent::Message {
+            body: "A 上的新消息".to_owned()
+        }
+    );
+    assert_eq!(phone.signed_in().await.1, on_b, "当前还连着 B");
+    assert_eq!(a.login_tokens(), 1, "临时连 A 用的是原来的会话");
+
+    phone
+        .dispatch(Action::RemoveServer { id: "1".into() })
+        .unwrap();
+    let notification = phone
+        .resolve_push(payload)
+        .await
+        .expect("推送内容是对的")
+        .expect("要告诉主人有推送");
+    assert_eq!(notification.server_id, None);
+    assert!(
+        matches!(
+            notification.content,
+            PushContent::Unavailable {
+                reason: ChatFailure::NotReady,
+                ..
+            }
+        ),
+        "{:?}",
+        notification.content
+    );
+}
+
+/// 推送地址变了（ADR-0042）：当前这台马上重新登记，配过的另一台在后台临时连上去登记。地址没变时（每次启动壳都会
+/// 再给一遍）另一台不用再登记。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let a = Home::start(&[phone.device_id()]).await;
+    let b = Home::start(&[phone.device_id()]).await;
+    let registered =
+        |view: &wonton_client::ChatViewModel| (view.push == PushStatus::Registered).then_some(());
+    phone.connect(&a);
+    phone.signed_in().await;
+    phone
+        .dispatch(Action::SetPushEndpoint {
+            endpoint: endpoint(),
+        })
+        .unwrap();
+    phone.wait_chat("A 上推送已登记", registered).await;
+    phone.dispatch(Action::AddServer).unwrap();
+    phone.connect(&b);
+    phone.signed_in().await;
+    phone.wait_chat("B 上推送已登记", registered).await;
+
+    let mut moved = endpoint();
+    moved.url = "https://ntfy.example/upWonton456?up=1".to_owned();
+    phone
+        .dispatch(Action::SetPushEndpoint {
+            endpoint: moved.clone(),
+        })
+        .unwrap();
+    phone.wait_chat("B 上用新地址登记", registered).await;
+    let registered_on_a =
+        async {
+            while !a.push_requests().iter().any(|(method, subscription)| {
+                method == "PUT" && subscription["endpoint"] == moved.url
+            }) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        };
+    tokio::time::timeout(Duration::from_secs(90), registered_on_a)
+        .await
+        .expect("A 应在后台用新地址重新登记");
+    assert!(
+        matches!(phone.home().status, HomeStatus::Connected) && phone.servers().servers[1].current,
+        "当前还连着 B"
+    );
+
+    let on_a = a.push_requests().len();
+    let on_b = b.push_requests().len();
+    phone
+        .dispatch(Action::SetPushEndpoint { endpoint: moved })
+        .unwrap();
+    phone.wait_chat("B 再登记一遍", registered).await;
+    assert!(b.push_requests().len() > on_b);
+    assert_eq!(a.push_requests().len(), on_a, "地址没变，A 不用再登记");
 }

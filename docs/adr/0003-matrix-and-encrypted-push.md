@@ -116,8 +116,9 @@ App 被杀后收不到任何消息。
 - Matrix 推送网关没有鉴权，pushkey 是核心生成的 256 位随机串，兼作凭据；推送代理另外只接受 Tuwunel 的地址来的
   请求（按核心配置里的 Matrix 服务器地址现查，容器重建后地址会变），局域网、插件网络和隧道来的都拒绝。
 - 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。
-- 发给设备的明文（加密前）是 Matrix 推送通知的子集：
-  `{"room_id", "event_id", "sender", "sender_display_name", "room_name", "prio"}`，只有前两项一定有。
+- 发给设备的明文（加密前）是 Matrix 推送通知的子集，加上发推送的服务器：
+  `{"server", "room_id", "event_id", "sender", "sender_display_name", "room_name", "prio"}`，只有前三项一定有。
+  `server` 是核心隧道的 endpoint ID，手机配了多台服务器时靠它找到该连哪台（ADR-0042）。
 - Web Push 请求带 `Content-Encoding: aes128gcm`、`TTL: 86400`，`Urgency` 为 `high`（`prio` 为 `low` 时为
   `normal`）。
 - 响应：推送服务收下了（2xx），或者 pushkey 没登记，回 200 `{"rejected": [...]}`。推送地址回 404、410 表示订阅已

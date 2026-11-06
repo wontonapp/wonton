@@ -317,3 +317,10 @@ plugins-registry-save-in-progress = The previous Download Mirror change is still
 plugins-registry-not-loaded = The Download Mirror settings haven't loaded yet.
 # $reason is the connection problem's original detail.
 plugins-registry-save-uncertain = It isn't certain that the change was saved. Read the settings again once you're connected: { $reason }
+
+# Multiple servers (crates/wonton-client/src/servers.rs, client/push_route.rs).
+servers-removed = This server has been removed from this phone.
+servers-push-from-removed = The server that sent this message has been removed from this phone.
+servers-push-scope-closed = That server has already been closed.
+# $seconds is how long registration waited.
+servers-push-register-timeout = Couldn't register for notifications within { $seconds } seconds.

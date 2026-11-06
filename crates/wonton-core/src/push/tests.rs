@@ -92,6 +92,7 @@ impl PushService {
 /// 一台已配对、已登记推送的设备，和它的推送服务。
 struct Home {
     push: Push,
+    server: EndpointId,
     devices: Arc<Devices>,
     device: EndpointId,
     pushkey: String,
@@ -105,12 +106,14 @@ impl Home {
         let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
         let device = SecretKey::generate().public();
         devices.add(device, None).unwrap();
-        let push = Push::open(dir.path().join("push.json"), devices.clone()).unwrap();
+        let server = SecretKey::generate().public();
+        let push = Push::open(dir.path().join("push.json"), devices.clone(), server).unwrap();
         let service = PushService::start().await;
         let subscription = Subscription::new(&service.endpoint(), UA_PUBLIC, AUTH).unwrap();
         let pushkey = push.register(device, subscription).unwrap().pushkey;
         Self {
             push,
+            server,
             devices,
             device,
             pushkey,
@@ -184,6 +187,7 @@ async fn a_paired_device_gets_an_encrypted_notification_without_the_message_cont
     assert_eq!(
         decrypt(&push.body),
         DevicePayload {
+            server: home.server.to_string(),
             room_id: "!bot:wonton.localhost".into(),
             event_id: "$reply-1".into(),
             sender: Some("@hermes:wonton.localhost".into()),
@@ -292,7 +296,7 @@ async fn registrations_survive_a_restart_and_keep_their_pushkey() {
     assert_eq!(again.pushkey, home.pushkey, "换了推送地址，pushkey 不变");
 
     let path = home.dir.path().join("push.json");
-    let reopened = Push::open(&path, home.devices.clone()).unwrap();
+    let reopened = Push::open(&path, home.devices.clone(), home.server).unwrap();
     let registration = reopened.registration(&home.device).unwrap();
     assert_eq!(registration.pushkey, home.pushkey);
     assert_eq!(registration.subscription, moved);
@@ -306,7 +310,7 @@ async fn registrations_survive_a_restart_and_keep_their_pushkey() {
 
     assert!(reopened.unregister(&home.device).unwrap());
     assert!(!reopened.unregister(&home.device).unwrap());
-    let restarted = Push::open(&path, home.devices.clone()).unwrap();
+    let restarted = Push::open(&path, home.devices.clone(), home.server).unwrap();
     assert!(restarted.registration(&home.device).is_none());
 }
 

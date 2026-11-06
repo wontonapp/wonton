@@ -40,15 +40,23 @@ pub enum PushError {
 }
 
 pub struct Push {
+    /// 这台服务器的 endpoint ID，写进每条推送。
+    server: String,
     registrations: Registrations,
     devices: Arc<Devices>,
     sender: WebPush,
 }
 
 impl Push {
-    /// 读取登记表（`core/push.json`）。`devices` 是隧道用的同一份设备登记表：已吊销的设备收不到推送。
-    pub fn open(path: impl Into<PathBuf>, devices: Arc<Devices>) -> Result<Self, PushError> {
+    /// 读取登记表（`core/push.json`）。`devices` 是隧道用的同一份设备登记表：已吊销的设备收不到推送。`server` 是
+    /// 隧道的 endpoint ID。
+    pub fn open(
+        path: impl Into<PathBuf>,
+        devices: Arc<Devices>,
+        server: EndpointId,
+    ) -> Result<Self, PushError> {
         Ok(Self {
+            server: server.to_string(),
             registrations: Registrations::open(path)?,
             devices,
             sender: WebPush::new(&CoreProxy::default())?,
@@ -88,7 +96,7 @@ impl Push {
     /// 处理 Tuwunel 的一次通知，返回不再有效的 pushkey（推送网关响应的 `rejected`）。推送服务暂时不可用时返回
     /// [`PushError::Unavailable`]，推送代理据此回 502，Tuwunel 稍后重试。
     pub async fn notify(&self, notification: &Notification) -> Result<Vec<String>, PushError> {
-        let payload = notification.payload();
+        let payload = notification.payload(&self.server);
         let mut rejected = Vec::new();
         let mut unavailable = None;
         for device in &notification.devices {
