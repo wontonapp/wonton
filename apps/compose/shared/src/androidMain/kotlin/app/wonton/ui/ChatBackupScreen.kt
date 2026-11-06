@@ -35,6 +35,7 @@ import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.RecoveryStatus
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
@@ -51,7 +52,8 @@ fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
     val colors = WontonTheme.colors
     WontonScreen(bar = { WontonPushedBar("聊天记录备份", onClose) }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             encryption.recoveryKey?.let { key ->

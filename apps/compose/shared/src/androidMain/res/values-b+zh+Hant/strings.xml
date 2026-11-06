@@ -457,8 +457,20 @@
     <string name="store_update">更新</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">經 %1$s</string>
+    <!-- 全屏頁面膠囊上退出全屏的按鈕。 -->
+    <string name="tab_exit_fullscreen">退出全螢幕</string>
+    <!-- 全屏膠囊選單項:帶開關,控制這個頁面從底欄打開時是否直接全屏。 -->
+    <string name="tab_menu_always_fullscreen">總是全螢幕</string>
+    <!-- 全屏膠囊選單項:在頁面的歷史裡後退一步。 -->
+    <string name="tab_menu_back">返回</string>
+    <!-- 全屏膠囊選單項:打開應用的詳情頁。 -->
+    <string name="tab_menu_details">插件詳情</string>
+    <!-- 全屏膠囊選單項:重新載入頁面。 -->
+    <string name="tab_menu_reload">重新載入</string>
     <!-- Small button on an approval request card: open the app that was just installed. -->
     <string name="tab_open">開啟</string>
+    <!-- 全屏頁面膠囊左鍵的無障礙標籤,點它打開選單。 -->
+    <string name="tab_page_menu">頁面選單</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">放到標籤列</string>
     <!-- Warning under the allow-all switches. -->

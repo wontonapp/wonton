@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import app.wonton.ui.design.WontonEdgeToEdgeScaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -101,7 +101,7 @@ private fun AppContent(
     val shown = view.overlay?.tab ?: view.selected
     val native = shown !is TabRef.Plugin || nav.settingsOverlay
     val fullscreen = !native && isFullscreen(tabs, shown)
-    FullscreenSystemBars(fullscreen, !native)
+    FullscreenSystemBars(fullscreen)
     val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible)
     var reselected by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
@@ -112,7 +112,7 @@ private fun AppContent(
     }
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, fullscreen, nav::openRoom) { bannerTop ->
-            Scaffold(
+            WontonEdgeToEdgeScaffold(
                 containerColor = WontonTheme.colors.canvas.toColor(),
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
@@ -130,7 +130,7 @@ private fun AppContent(
                         onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
                         bannerTop = bannerTop,
                     )
-                    if (native) Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
+                    if (native) Box(Modifier.fillMaxSize()) {
                         NativeContent(nav, home, settings, appearance, chat, nativeState)
                     }
                     OpeningChat(nav.chat)

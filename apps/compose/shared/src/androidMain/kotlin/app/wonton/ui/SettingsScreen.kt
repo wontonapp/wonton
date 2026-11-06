@@ -19,6 +19,7 @@ import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.SettingsEntry
 import app.wonton.protocol.SettingsViewModel
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
@@ -71,7 +72,8 @@ private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpa
     val onboarding = LocalOnboarding.current
     var choosingAgent by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         settings.sections.forEach { section ->
@@ -128,7 +130,8 @@ private fun SettingsEntryRow(
 @Composable
 private fun AboutPage(version: String, onBack: () -> Unit) {
     WontonScreen(bar = { WontonPushedBar("关于", onBack) }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset)) {
             WontonGroup { WontonRow("版本", version) }
         }
     }

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.DeviceInvite
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
@@ -60,7 +61,8 @@ fun InviteScreen(core: ClientCore, invite: DeviceInvite?, modifier: Modifier = M
     LaunchedEffect(Unit) { request() }
     val colors = WontonTheme.colors
     Column(
-        modifier.verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        modifier.verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         refusal?.let { ProblemNotice(it, WontonIcon.Error) }

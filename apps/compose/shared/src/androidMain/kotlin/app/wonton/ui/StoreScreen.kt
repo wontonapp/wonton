@@ -39,6 +39,7 @@ import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreSection
+import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonChip
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
@@ -72,26 +73,28 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
     WontonScreen(
         bar = {
-            WontonPushedBar(stringResource(R.string.store_title), onBack, showsStatusLine = true) {
-                WontonIconButton(
-                    WontonIcon.Add,
-                    stringResource(R.string.store_add_source),
-                    { navigation.addingSource = true },
+            Column {
+                WontonPushedBar(stringResource(R.string.store_title), onBack, showsStatusLine = true) {
+                    WontonIconButton(
+                        WontonIcon.Add,
+                        stringResource(R.string.store_add_source),
+                        { navigation.addingSource = true },
+                    )
+                }
+                WontonSearchField(
+                    query,
+                    { query = it },
+                    stringResource(R.string.store_search_prompt),
+                    Modifier.padding(
+                        start = WontonTheme.spacing.pageInset,
+                        end = WontonTheme.spacing.pageInset,
+                        bottom = WontonTheme.spacing.s8,
+                    ),
                 )
             }
         },
     ) {
         Column(Modifier.fillMaxSize()) {
-            WontonSearchField(
-                query,
-                { query = it },
-                stringResource(R.string.store_search_prompt),
-                Modifier.padding(
-                    start = WontonTheme.spacing.pageInset,
-                    end = WontonTheme.spacing.pageInset,
-                    bottom = WontonTheme.spacing.s8,
-                ),
-            )
             PullToRefreshBox(
                 // 第一次取的时候 StorePlaceholder 已经在转圈，这里不再转一个。
                 isRefreshing = viewModel.refreshing && store != null,
@@ -103,7 +106,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                 } else {
                     LazyColumn(
                         Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = WontonTheme.spacing.s8),
+                        contentPadding = wontonContentPaddingValues(bottom = WontonTheme.spacing.s8),
                     ) {
                         items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
                             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {

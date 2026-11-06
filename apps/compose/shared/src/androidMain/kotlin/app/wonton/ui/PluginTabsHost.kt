@@ -3,7 +3,6 @@ package app.wonton.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -11,8 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,10 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
+import app.wonton.ui.design.LocalWontonBarStatus
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -82,6 +79,7 @@ fun PluginTabsHost(
 
 private class WebPageState(val tab: TabRef, val tabs: TabsState) {
     val controller = PluginWebViewController()
+    val capsule = TabCapsuleVisibility()
     var loaded by mutableStateOf(false)
     var failed by mutableStateOf(false)
     var started by mutableStateOf(false)
@@ -114,6 +112,7 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
         tabs.send(Action.TabLoadSucceeded(tab))
         script(environment)?.let { controller.evaluateJavascript(it) }
         controller.evaluateJavascript(tabs.core.tabConnectionScript())
+        capsule.show()
     }
 
     fun loadFailed(status: Int?) {
@@ -134,7 +133,13 @@ private fun PluginTabContainer(
     val state = remember { WebPageState(item.tab, tabs) }
     var top by remember { mutableStateOf(0.dp) }
     val viewport = tabViewport(page, overlay, active, top, bottom)
-    val edges = remember { TabPageEdges() }
+    // 胶囊和它的手势旁听只挂在全屏页;带栏页有标题栏,不显示胶囊。
+    TabCapsuleEffects(state.capsule, active && page.fullscreen, page.fullscreen)
+    val touchObserver = rememberCapsuleTouchObserver(state.capsule, active && page.fullscreen)
+    DisposableEffect(state.controller, touchObserver) {
+        state.controller.touchObserver = touchObserver
+        onDispose { state.controller.touchObserver = null }
+    }
     val environment = viewport.environment
     val script = remember(page.url, page.fullscreen, page.display, appearance, environment) {
         state.script(environment, document = true)
@@ -152,11 +157,10 @@ private fun PluginTabContainer(
     TabBackHandler(state, active, page.fullscreen, overlay, back)
     val cover = state.covers(page)
     val takeover = pageTakeover(item.tab, tabs, active)
-    PageEdgeEffects(state, page, viewport, edges, active, bannerTop)
     Box(
         Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding(),
     ) {
-        if (active) TabPageBackdrop(edges, viewport.gaps)
+        if (active) Box(Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()))
         if (state.started && supported && script != null) {
             PageWebView(state, page, plugin, home, environment, script, viewport.inset, active && !cover, openLink,
                 onDraft)
@@ -166,23 +170,40 @@ private fun PluginTabContainer(
         }
         if (active) {
             PageStatusOverlay(state, page, item.tab, supported, crossOriginBlocked,
-                PaddingValues(top = top, bottom = viewport.bottom), onDetails)
-            PageChrome(state, item, page, viewport.safe, bannerTop, overlay, back, takeover,
-                onDetails, onTop = { top = it })
+                PaddingValues(top = viewport.chromeTop, bottom = viewport.bottom), onDetails)
+            PageChrome(item.tab, page, tabs, state.capsule, state.controller, viewport.safe, bannerTop,
+                top = { top = it }, overlay, back, takeover, onDetails)
         }
     }
 }
 
 @Composable
-private fun PageEdgeEffects(
-    state: WebPageState, page: TabPage, viewport: TabViewport, edges: TabPageEdges,
-    active: Boolean, bannerTop: Dp,
+private fun PageChrome(
+    tab: TabRef, page: TabPage, tabs: TabsState, capsule: TabCapsuleVisibility,
+    controller: PluginWebViewController, safe: PaddingValues, bannerTop: Dp, top: (Dp) -> Unit,
+    overlay: Boolean, back: () -> Unit, takeover: PageTakeover?, onDetails: (String) -> Unit,
 ) {
-    val visible = active && !state.covers(page) && state.problem == null && state.controller.customView == null
-    SampleTabEdges(edges, state.controller, LocalActivity.current?.window, visible,
-        viewport.gaps, page.fullscreen, viewport.webBottom, bannerTop)
-    if (active) PageSystemBarIcons(edges, page.fullscreen, viewport.webBottom && !viewport.keyboard)
+    if (page.fullscreen) {
+        PluginPageChrome(tab, page, tabs, safe, bannerTop, shortStatus(page), capsule, controller, takeover,
+            onClose = { controller.closeCustomView(); tabs.send(Action.ExitFullscreen(tab)) },
+            onReload = { tabs.send(Action.ReloadTab(tab)) }, onDetails = onDetails)
+    } else {
+        val density = LocalDensity.current
+        Column(Modifier.onSizeChanged { top(with(density) { it.height.toDp() }) }) {
+            PluginTabBar(page, controller.canGoBack, overlay, back,
+                { tabs.send(Action.CloseTabOverlay) }, takeover,
+                onExpand = { tabs.send(Action.EnterFullscreen(tab)) },
+                onReload = { tabs.send(Action.ReloadTab(tab)) })
+            takeover?.let { TakeoverNotice(it) }
+        }
+    }
 }
+
+/** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
+@Composable
+private fun shortStatus(page: TabPage): String? =
+    LocalWontonBarStatus.current.title ?: if (page.state is TabState.Upgrading) tabText("正在升级…", "Updating…") else null
+
 
 @Composable
 private fun PageStatusOverlay(
@@ -193,33 +214,6 @@ private fun PageStatusOverlay(
     if (state.covers(page) || platformBlocked || state.problem != null) {
         Box(Modifier.padding(inset).fillMaxSize().background(WontonTheme.colors.canvas.toColor())) {
             PluginTabStatus(page, tab, state.tabs, state.problem, supported, crossOriginBlocked, onDetails)
-        }
-    }
-}
-
-@Composable
-private fun PageChrome(
-    state: WebPageState, item: TabItem, page: TabPage, safe: PaddingValues,
-    bannerTop: Dp, overlay: Boolean, back: () -> Unit, takeover: PageTakeover?,
-    onDetails: (String) -> Unit, onTop: (Dp) -> Unit,
-) {
-    val density = LocalDensity.current
-    val direction = LocalLayoutDirection.current
-    Column(Modifier.onSizeChanged { onTop(with(density) { it.height.toDp() }) }
-        .padding(top = if (page.fullscreen) bannerTop else 0.dp)) {
-        val reload = { state.problem = null; state.tabs.send(Action.ReloadTab(item.tab)) }
-        if (page.fullscreen) {
-            FullscreenTabBar(item.tab, page, state.tabs,
-                PaddingValues(start = safe.calculateStartPadding(direction),
-                    top = if (bannerTop > 0.dp) 0.dp else safe.calculateTopPadding(),
-                    end = safe.calculateEndPadding(direction)),
-                onClose = { state.controller.closeCustomView(); state.tabs.send(Action.ExitFullscreen(item.tab)) },
-                onReload = reload, onDetails = onDetails)
-        } else {
-            PluginTabBar(page, state.controller.canGoBack, overlay, back,
-                { state.tabs.send(Action.CloseTabOverlay) }, takeover,
-                onExpand = { state.tabs.send(Action.EnterFullscreen(item.tab)) }, onReload = reload)
-            takeover?.let { TakeoverNotice(it) }
         }
     }
 }

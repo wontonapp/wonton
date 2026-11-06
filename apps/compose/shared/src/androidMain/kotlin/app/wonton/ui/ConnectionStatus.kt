@@ -24,6 +24,7 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.ui.design.WontonBarStatus
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
@@ -127,7 +128,8 @@ fun ConnectionPage(
     val details = viewModel.details
     WontonScreen(bar = { WontonPushedBar("家里的服务器", { onNavigate(SettingsSubpage.MAIN) }) }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             WontonGroup {
@@ -177,7 +179,8 @@ fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
     val details = viewModel.details
     WontonScreen(bar = { WontonPushedBar("详情", onBack) }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             WontonGroup {

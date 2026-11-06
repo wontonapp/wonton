@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,7 +48,10 @@ import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
@@ -141,7 +143,7 @@ private fun ChatListScreen(
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
+                contentPadding = wontonContentPaddingValues(
                     bottom = WontonTheme.size.floatingActionButton + WontonTheme.spacing.pageInset * 2,
                 ),
             ) {
@@ -173,7 +175,10 @@ private fun ChatListScreen(
             FloatingActionButton(
                 onClick = onStartChat,
                 modifier = Modifier.align(Alignment.BottomEnd)
-                    .padding(end = WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.pageInset)
+                    .padding(
+                        end = WontonTheme.spacing.pageInset,
+                        bottom = LocalWontonBottomInset.current + WontonTheme.spacing.pageInset,
+                    )
                     .size(WontonTheme.size.floatingActionButton),
                 containerColor = WontonTheme.colors.accentFill.toColor(),
                 contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
@@ -366,7 +371,8 @@ private fun StartChatScreen(core: ClientCore, onStart: (String) -> Unit, onClose
     val contacts = remember(input) { core.chatContacts(input) }
     WontonScreen(bar = { WontonPushedBar("发起私聊", onClose) }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
             WontonTextField(

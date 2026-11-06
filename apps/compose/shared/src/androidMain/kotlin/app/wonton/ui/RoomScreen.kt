@@ -3,7 +3,6 @@ package app.wonton.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +40,7 @@ import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
+import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
@@ -196,9 +196,10 @@ private fun Messages(
         modifier.fillMaxWidth(),
         state = listState,
         reverseLayout = true,
-        contentPadding = PaddingValues(
+        contentPadding = wontonContentPaddingValues(
             horizontal = WontonTheme.spacing.pageInset,
-            vertical = WontonTheme.spacing.s8,
+            top = WontonTheme.spacing.s8,
+            bottom = WontonTheme.spacing.s8,
         ),
         verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
     ) {

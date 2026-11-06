@@ -460,8 +460,20 @@
     <string name="store_update">Update</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">via %1$s</string>
+    <!-- Button on the fullscreen page capsule that leaves fullscreen. -->
+    <string name="tab_exit_fullscreen">Exit fullscreen</string>
+    <!-- Fullscreen capsule menu item with the switch that opens this page fullscreen from the tab bar. -->
+    <string name="tab_menu_always_fullscreen">Always fullscreen</string>
+    <!-- Fullscreen capsule menu item that goes one step back in the page's history. -->
+    <string name="tab_menu_back">Back</string>
+    <!-- Fullscreen capsule menu item that opens the app's detail page. -->
+    <string name="tab_menu_details">App details</string>
+    <!-- Fullscreen capsule menu item that loads the page again. -->
+    <string name="tab_menu_reload">Reload</string>
     <!-- Small button on an approval request card: open the app that was just installed. -->
     <string name="tab_open">Open</string>
+    <!-- Accessibility label of the left button on the fullscreen page capsule, which opens its menu. -->
+    <string name="tab_page_menu">Page menu</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">Pin to tab bar</string>
     <!-- Warning under the allow-all switches. -->

@@ -20,8 +20,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -46,6 +44,8 @@ import app.wonton.protocol.TabCandidate
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabsViewModel
+import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.TabBarIcon
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonIconButton
@@ -55,7 +55,6 @@ import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
-import app.wonton.ui.icons.Back
 import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
@@ -78,6 +77,7 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
+            contentPadding = wontonContentPaddingValues(),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             item(key = "labels") { WontonGroup { TabLabelsRow(viewModel.labels) } }
@@ -227,7 +227,10 @@ private fun TabDragHandle() {
 private fun TabCandidatesScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     WontonScreen(bar = { TabSettingsBar(tabText("添加到底栏", "Add to tab bar"), onBack) }) {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
+            contentPadding = wontonContentPaddingValues(),
+        ) {
             items(viewModel.candidates, key = { it.tab.toString() }) { candidate ->
                 WontonGroup { TabCandidateRow(candidate) }
             }
@@ -239,11 +242,7 @@ private fun TabCandidatesScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TabSettingsBar(title: String, onBack: () -> Unit) {
-    TopAppBar(
-        title = { Text(title) },
-        navigationIcon = { WontonIconButton(WontonIcon.Back, tabText("返回", "Back"), onBack) },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.surface.toColor()),
-    )
+    WontonPushedBar(title, onBack)
 }
 
 @Composable

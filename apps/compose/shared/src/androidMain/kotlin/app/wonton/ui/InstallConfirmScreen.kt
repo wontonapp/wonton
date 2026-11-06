@@ -4,12 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -30,6 +27,8 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
+import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -117,7 +116,7 @@ fun InstallConfirmScreen(
                             }
                         }
                     },
-                    Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+                    Modifier.padding(bottom = LocalWontonBottomInset.current)
                         .padding(WontonTheme.spacing.pageInset)
                         .fillMaxWidth(),
                     // 装不了（blocked）、缺资料或者有核心不支持的权限时不能确认。
@@ -153,7 +152,8 @@ private fun InstallCompletion(
     val succeeded = task?.state is PluginTaskState.Succeeded
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.install_completion_title), onClose) }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             when (val state = task?.state) {
@@ -189,7 +189,8 @@ private fun PreviewContent(
 ) {
     val colors = WontonTheme.colors
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         Row(

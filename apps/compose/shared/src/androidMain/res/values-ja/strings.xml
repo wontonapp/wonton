@@ -457,8 +457,20 @@
     <string name="store_update">アップデート</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">%1$s経由</string>
+    <!-- 全画面ページのカプセルで全画面を終了するボタン。 -->
+    <string name="tab_exit_fullscreen">全画面を終了</string>
+    <!-- 全画面カプセルのメニュー項目:タブバーから開いたときに全画面にするスイッチ。 -->
+    <string name="tab_menu_always_fullscreen">常に全画面</string>
+    <!-- 全画面カプセルのメニュー項目:ページ履歴を一つ戻る。 -->
+    <string name="tab_menu_back">戻る</string>
+    <!-- 全画面カプセルのメニュー項目:アプリの詳細ページを開く。 -->
+    <string name="tab_menu_details">アプリ詳細</string>
+    <!-- 全画面カプセルのメニュー項目:ページを再読み込みする。 -->
+    <string name="tab_menu_reload">再読み込み</string>
     <!-- Small button on an approval request card: open the app that was just installed. -->
     <string name="tab_open">開く</string>
+    <!-- 全画面ページのカプセル左ボタンのラベル。タップでメニューを開く。 -->
+    <string name="tab_page_menu">ページメニュー</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">タブバーに追加</string>
     <!-- Warning under the allow-all switches. -->

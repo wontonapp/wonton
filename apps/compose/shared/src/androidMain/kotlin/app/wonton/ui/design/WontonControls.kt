@@ -240,7 +240,7 @@ fun WontonRootBar(title: String, actions: (@Composable RowScope.() -> Unit)? = n
     val status = LocalWontonBarStatus.current
     val statusTitle = status.title?.takeIf { it.isNotBlank() }
     Column(
-        Modifier.fillMaxWidth().background(WontonTheme.colors.canvas.toColor())
+        Modifier.fillMaxWidth()
             .statusBarsPadding().semantics { paneTitle = title },
     ) {
         if (statusTitle != null || actions != null) {
@@ -324,7 +324,7 @@ fun WontonPushedBar(
             },
             navigationIcon = { WontonIconButton(icon, iconLabel, onBack) },
             actions = actions,
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
         line?.let {
             Box(
@@ -335,11 +335,3 @@ fun WontonPushedBar(
     }
 }
 
-/** 页面的底色和标题栏。内容占满标题栏以下的部分。 */
-@Composable
-fun WontonScreen(bar: @Composable () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Column(modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor())) {
-        bar()
-        Box(Modifier.weight(1f).fillMaxWidth()) { content() }
-    }
-}

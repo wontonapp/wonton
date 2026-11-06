@@ -54,6 +54,7 @@ import app.wonton.protocol.Rgb
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeMode
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
@@ -71,7 +72,8 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         (rejection ?: appearance.problem?.problem)?.let { ProblemNotice(it) }

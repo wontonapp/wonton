@@ -47,6 +47,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.PairingFailure
 import app.wonton.protocol.PairingStatus
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
@@ -95,7 +96,8 @@ fun PairingScreen(
     }
     val secondary = WontonTheme.colors.textSecondary.toColor()
     Column(
-        modifier.verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        modifier.verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {

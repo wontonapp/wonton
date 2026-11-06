@@ -5,6 +5,10 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -16,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
@@ -52,7 +57,11 @@ fun WontonBottomBar(
     val colors = WontonTheme.colors
     val menuLabel = tabText("标签菜单", "Tab menu")
     NavigationBar(
-        containerColor = colors.surface.toColor(),
+        modifier = Modifier.navigationBarsPadding()
+            .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
+            .clip(RoundedCornerShape(percent = 50)),
+        containerColor = colors.surface.toColor().copy(alpha = 0.85f),
+        windowInsets = WindowInsets(0, 0, 0, 0),
         tonalElevation = 0.dp,
     ) {
         tabs.items.forEach { item ->

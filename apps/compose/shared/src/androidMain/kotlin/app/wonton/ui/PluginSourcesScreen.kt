@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import app.wonton.protocol.AddedSource
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.SourceKind
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
@@ -75,7 +76,8 @@ fun AddSourceScreen(plugins: PluginsState, navigation: PluginNavigation) {
         },
     ) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             WontonNotice(
@@ -187,7 +189,8 @@ fun ChangeVersionScreen(plugins: PluginsState, navigation: PluginNavigation, id:
         },
     ) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             problem?.let { ProblemNotice(it) }

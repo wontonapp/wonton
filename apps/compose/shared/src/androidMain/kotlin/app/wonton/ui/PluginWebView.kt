@@ -7,6 +7,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.util.Log
 import android.view.View
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ContextThemeWrapper
 import android.webkit.WebChromeClient
@@ -67,6 +68,7 @@ private val pinchZoomScript = """
 /** UI 线程能力引用；脚本仅接收核心返回值，不在 Android 壳中解释桥协议。 */
 class PluginWebViewController {
     internal var view: WebView? = null
+    internal var touchObserver: ((MotionEvent) -> Unit)? = null
     var canGoBack by mutableStateOf(false)
         private set
     var customView: View? by mutableStateOf(null)
@@ -248,6 +250,11 @@ private class ThemedPluginWebView(
     private var bridgeOrigins: Set<String>? = null
     private var startScript: String? = null
     private var scriptHandler: androidx.webkit.ScriptHandler? = null
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        controller.touchObserver?.invoke(event)
+        return super.dispatchTouchEvent(event)
+    }
 
     fun disposePage() {
         if (disposed) return

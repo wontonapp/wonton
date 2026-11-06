@@ -24,6 +24,7 @@ import app.wonton.protocol.PushStatus
 import app.wonton.protocol.SettingsEntry
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
@@ -80,7 +81,8 @@ fun NotificationSettingsScreen(settings: SettingsViewModel, onBack: () -> Unit) 
     val manager = context.getSystemService(NotificationManager::class.java)
     WontonScreen(bar = { WontonPushedBar("通知", onBack) }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             WontonGroup {

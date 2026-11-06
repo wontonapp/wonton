@@ -8,7 +8,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +52,7 @@ import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Download
@@ -99,7 +99,10 @@ fun LauncherScreen(
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(WontonTheme.size.launcherCell),
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(WontonTheme.spacing.pageInset),
+                        contentPadding = wontonContentPaddingValues(
+                            horizontal = WontonTheme.spacing.pageInset,
+                            bottom = WontonTheme.spacing.pageInset,
+                        ),
                         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s24),
                         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
                     ) {

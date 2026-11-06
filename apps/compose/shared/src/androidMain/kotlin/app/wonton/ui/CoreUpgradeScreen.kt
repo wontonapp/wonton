@@ -39,6 +39,7 @@ import app.wonton.protocol.CoreUpgradeProgress
 import app.wonton.protocol.CoreUpgradeStage
 import app.wonton.protocol.CoreUpgradeStatus
 import app.wonton.protocol.CoreUpgradeTarget
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonPushedBar
@@ -74,7 +75,8 @@ private fun CoreUpgradeContent(plugins: PluginsState, status: CoreUpgradeStatus)
     val upgrade = plugins.viewModel.coreUpgrade
     val colors = WontonTheme.colors
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         upgrade.problem?.let {

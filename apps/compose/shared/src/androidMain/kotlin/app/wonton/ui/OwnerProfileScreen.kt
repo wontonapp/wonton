@@ -7,9 +7,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +23,8 @@ import androidx.compose.ui.Modifier
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.OwnerProfile
 import app.wonton.protocol.OwnerProfileUpdate
+import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
@@ -58,14 +58,14 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
         val result = loaded
         val profile = result?.getOrNull()
         // 保存按钮顶在键盘上面，不然填完要先收起键盘才点得到。
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime)) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
                     result == null -> LoadingView()
                     result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
                     profile != null -> OwnerProfileForm(
                         profile, name, { name = it }, email, { email = it }, problem,
-                        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).wontonContentPadding()
                             .padding(WontonTheme.spacing.pageInset),
                     )
                 }
@@ -86,7 +86,8 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
                             saving = false
                         }
                     },
-                    Modifier.padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
+                    Modifier.padding(bottom = LocalWontonBottomInset.current)
+                        .padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
                     enabled = !saving && name.isNotBlank(),
                 )
             }

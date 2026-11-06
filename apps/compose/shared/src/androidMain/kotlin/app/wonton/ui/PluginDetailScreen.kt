@@ -39,6 +39,7 @@ import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
+import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
@@ -113,7 +114,8 @@ private fun DetailContent(
 ) {
     val colors = WontonTheme.colors
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         val working = task?.state is PluginTaskState.Running
