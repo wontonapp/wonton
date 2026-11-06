@@ -5,6 +5,8 @@
 //! `cargo test -p wonton-client --test it chat:: -- --include-ignored`（`scripts/check.sh` 有 Docker 时自动运行）。
 
 mod ask_agent;
+mod bot_profile;
+mod bot_profile_support;
 mod card_plugin_refresh;
 mod confirmation;
 mod onboarding;

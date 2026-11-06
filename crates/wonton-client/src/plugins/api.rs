@@ -35,6 +35,8 @@ struct ErrorBody {
 struct ErrorDetail {
     kind: String,
     message: String,
+    #[serde(default)]
+    problem: Option<String>,
 }
 pub(crate) enum CoreApiError {
     Transport(PluginProblem),
@@ -42,6 +44,7 @@ pub(crate) enum CoreApiError {
         status: u16,
         kind: Option<String>,
         message: String,
+        problem: Option<String>,
     },
     Protocol(String),
 }
@@ -277,6 +280,31 @@ impl CoreApi {
         Err(http_error(status, &bytes))
     }
 
+    pub(crate) async fn put_detailed<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<T, CoreApiError> {
+        let body = serde_json::to_vec(body)
+            .map_err(|error| CoreApiError::Protocol(format!("Cannot encode request: {error}")))?;
+        let (status, bytes) = self
+            .exchange(
+                Method::PUT,
+                self.url(segments, &[]),
+                Some(body),
+                "application/json",
+                timeout,
+            )
+            .await
+            .map_err(CoreApiError::Transport)?;
+        if status >= 400 {
+            return Err(http_error(status, &bytes));
+        }
+        serde_json::from_slice(&bytes)
+            .map_err(|error| CoreApiError::Protocol(format!("Invalid core response: {error}")))
+    }
+
     /// `GET` 但错误带类别和消息：取模型服务商列表要分得清网关没就绪和别的失败，响应本身还是 JSON。
     pub(crate) async fn get_detailed<T: DeserializeOwned>(
         &self,
@@ -406,14 +434,19 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
     let detail = serde_json::from_slice::<ErrorBody>(bytes)
         .ok()
         .map(|body| body.error);
-    let (kind, message) = match detail {
-        Some(ErrorDetail { kind, message }) => (Some(kind), message),
-        None => (None, format!("家里的服务器回了 {status}")),
+    let (kind, message, problem) = match detail {
+        Some(ErrorDetail {
+            kind,
+            message,
+            problem,
+        }) => (Some(kind), message, problem),
+        None => (None, format!("Core returned HTTP {status}"), None),
     };
     CoreApiError::Http {
         status,
         kind,
         message,
+        problem,
     }
 }
 

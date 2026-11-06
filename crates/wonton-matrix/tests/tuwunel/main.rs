@@ -15,6 +15,7 @@ mod egress;
 mod encryption;
 mod login;
 mod messaging;
+mod profile;
 mod push;
 mod send_queue;
 mod support;

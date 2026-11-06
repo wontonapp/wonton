@@ -23,6 +23,7 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
             }
             SessionEvent::TokenRejected { soft_logout } => {
                 tracing::warn!(soft_logout, "Matrix 服务器不再接受本设备的令牌");
+                chat.bots.set_session(None);
                 if !soft_logout {
                     session.stop_sync().await;
                     if let Err(error) = chat.storage.forget_session() {

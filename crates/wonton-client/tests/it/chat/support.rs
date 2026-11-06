@@ -34,6 +34,7 @@ pub const OWNER: &str = "@owner:wonton.localhost";
 
 pub struct Home {
     pub matrix: TestServer,
+    pub bot_api: Arc<super::bot_profile_support::BotApi>,
     /// 扮演核心的推送代理：Tuwunel 经出站代理把通知发到这里，和产品里一样。
     pub push: PushGateway,
     core: Arc<Core>,
@@ -79,6 +80,7 @@ struct Core {
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
+    bot_api: Arc<super::bot_profile_support::BotApi>,
 }
 
 impl Home {
@@ -106,6 +108,7 @@ impl Home {
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
+            bot_api: Arc::default(),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -116,6 +119,7 @@ impl Home {
         Self {
             matrix,
             push,
+            bot_api: core.bot_api.clone(),
             core,
             tunnel: Some(tunnel),
             tunnel_key,
@@ -317,6 +321,7 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     }
     let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
     if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
+        core.bot_api.observe_matrix(&text);
         if text.starts_with("post /_matrix/client/v3/room_keys/version ")
             && core.reject_backup_creation.load(Ordering::SeqCst)
         {
@@ -381,7 +386,11 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         let mut released = core.hold_answers.subscribe();
         released.wait_for(|hold| !hold).await.ok();
     }
-    let response = match respond(&core, &text, &body) {
+    let reply = match core.bot_api.respond(&text, &body).await {
+        Some(reply) => Some(reply),
+        None => respond(&core, &text, &body),
+    };
+    let response = match reply {
         Some((status, body)) => format!(
             "HTTP/1.1 {status} Whatever\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
              connection: close\r\n\r\n{body}",

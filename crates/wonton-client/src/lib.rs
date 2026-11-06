@@ -44,6 +44,7 @@ mod tabs;
 
 pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;
+pub use chat::bot_current_avatar;
 pub use client::ClientCore;
 pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
@@ -97,4 +98,9 @@ pub use wonton_protocol::{
     TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer,
     TransferAction, TransferDirection, TransferElsewhere, TransferState, TransfersViewModel,
     UpgradeOffer, UploadSource, WindowView,
+};
+pub use wonton_protocol::{
+    AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload, BotActivity,
+    BotActivityFacts, BotActivityReport, BotNameProblem, BotProfileFailure, BotProfileProblem,
+    BotView, StateAvatar,
 };

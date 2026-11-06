@@ -4,10 +4,19 @@
 
 use matrix_sdk::{
     media::{MediaFormat, MediaRequestParameters},
-    ruma::events::room::MediaSource,
+    ruma::{OwnedMxcUri, events::room::MediaSource},
 };
 
 use crate::{Error, ImageContent, MatrixSession, Result};
+
+/// 把未加密的 Matrix 媒体地址编成可交给 [`MatrixSession::download_media`] 的句柄。
+pub fn media_token(url: &str) -> Result<String> {
+    let uri: OwnedMxcUri = url.into();
+    uri.validate()
+        .map_err(|error| Error::InvalidInput(format!("Matrix 媒体地址无效：{error}")))?;
+    serde_json::to_string(&MediaSource::Plain(uri))
+        .map_err(|error| Error::InvalidInput(format!("媒体句柄编码失败：{error}")))
+}
 
 impl ImageContent {
     /// 取这张图片原图用的句柄，交给 [`MatrixSession::download_media`]。
@@ -24,6 +33,19 @@ impl ImageContent {
 }
 
 impl MatrixSession {
+    /// 用当前登录账号上传媒体，返回服务器分配的 `mxc://` 地址。
+    pub async fn upload_media(&self, mime_type: &str, data: Vec<u8>) -> Result<String> {
+        let content_type: mime::Mime = mime_type
+            .parse()
+            .map_err(|error| Error::InvalidInput(format!("Invalid media MIME type: {error}")))?;
+        let response = self
+            .client
+            .media()
+            .upload(&content_type, data, None)
+            .await?;
+        Ok(response.content_uri.to_string())
+    }
+
     /// 凭 [`ImageContent::media_token`] 给出的句柄下载原文件。加密附件在本机解密；下载过的文件存在本地
     /// 存储里，再取不用重新下载。
     pub async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
@@ -38,5 +60,17 @@ impl MatrixSession {
             .media()
             .get_media_content(&request, true)
             .await?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_handle_rejects_non_mxc_and_incomplete_urls() {
+        for url in ["https://example.org/avatar", "mxc://example.org", "mxc://"] {
+            assert!(matches!(media_token(url), Err(Error::InvalidInput(_))));
+        }
     }
 }

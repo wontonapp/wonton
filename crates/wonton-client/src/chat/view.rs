@@ -94,6 +94,17 @@ pub(crate) fn timeline_item(
             message: timeline_message(*message, cards, read_by),
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
+        EntryKind::ProfileChange {
+            user_id,
+            name,
+            previous_name,
+            avatar_changed,
+        } => TimelineContent::ProfileChange {
+            user_id: user_id.to_string(),
+            name,
+            previous_name,
+            avatar_changed,
+        },
         EntryKind::DateDivider(timestamp_ms) => TimelineContent::DateDivider { timestamp_ms },
         EntryKind::ReadMarker => TimelineContent::ReadMarker,
         EntryKind::TimelineStart => TimelineContent::TimelineStart,

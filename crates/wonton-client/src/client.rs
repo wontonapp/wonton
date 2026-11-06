@@ -85,7 +85,7 @@ impl ClientCore {
             | Action::RemoveServer { .. } => ServersLink::unsupported(),
             Action::AppForegrounded => {
                 self.home.foregrounded();
-                self.chat.foregrounded();
+                self.chat.app_foregrounded();
                 self.push.foregrounded();
                 self.plugins.foregrounded();
                 self.files.foregrounded();
@@ -93,6 +93,7 @@ impl ClientCore {
             }
             Action::AppBackgrounded => {
                 self.home.backgrounded();
+                self.chat.backgrounded();
                 self.plugins.backgrounded();
                 Ok(())
             }
@@ -309,6 +310,12 @@ impl ClientCore {
         self.run(async move { chat.load_media(media).await }).await
     }
 
+    /// 视频头像的本机缓存文件；相同媒体的并发请求共用一次下载。
+    pub async fn avatar_file(&self, media: MediaHandle) -> Result<String, CoreError> {
+        let chat = self.chat.clone();
+        self.run(async move { chat.avatar_file(media).await }).await
+    }
+
     /// 当前的插件页面（已安装的插件、商店、安装的进展），用于首帧渲染。
     pub fn plugins(&self) -> PluginsViewModel {
         self.plugins.view()
@@ -381,6 +388,21 @@ impl ClientCore {
     /// 插件的压缩包最大多少字节。壳读文件之前先看大小，太大的不读进内存。
     pub fn max_plugin_archive_bytes(&self) -> u64 {
         wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES
+    }
+
+    /// 头像的边长上限（像素）。壳按它把主人选的图裁成方形、缩放。
+    pub fn max_avatar_edge(&self) -> u32 {
+        wonton_protocol::MAX_AVATAR_EDGE
+    }
+
+    /// 单个头像文件的大小上限（字节）。壳读文件之前先看大小，太大的不读进内存。
+    pub fn max_avatar_bytes(&self) -> u64 {
+        wonton_protocol::MAX_AVATAR_BYTES
+    }
+
+    /// 动图和视频头像的时长上限（毫秒）。壳按它截取。
+    pub fn max_avatar_duration_ms(&self) -> u32 {
+        wonton_protocol::MAX_AVATAR_DURATION_MS
     }
 
     /// 主人选的压缩包的预览（ADR-0031）：`archive` 是文件的内容，壳只负责选文件和读字节。确认后按预览安装，不用再传。
@@ -592,6 +614,7 @@ impl ClientCore {
             home.clone(),
             Path::new(data_dir),
             card_success,
+            plugins.clone(),
         )?;
         let push = PushLink::new(runtime.handle().clone(), home.clone(), chat.clone());
         let tabs = TabsLink::new(
@@ -655,6 +678,19 @@ impl ClientCore {
     /// `dispatch` 的后半：插件的操作，其余都是聊天的。分开放是因为函数长度有上限。
     fn dispatch_plugins_or_chat(&self, action: Action) -> Result<(), CoreError> {
         match action {
+            Action::SetBotName { plugin_id, name } => self.chat.set_bot_name(plugin_id, name),
+            Action::SetBotAvatar {
+                plugin_id,
+                state,
+                upload,
+            } => self.chat.set_bot_avatar(plugin_id, state, upload),
+            Action::ClearBotAvatar { plugin_id, state } => {
+                self.chat.clear_bot_avatar(plugin_id, state)
+            }
+            Action::DismissBotProfileProblem { plugin_id } => {
+                self.chat.dismiss_bot_profile_problem(&plugin_id);
+                Ok(())
+            }
             Action::SetLanguages { languages } => {
                 crate::l10n::set_languages(&languages);
                 self.plugins.set_languages(languages.clone());

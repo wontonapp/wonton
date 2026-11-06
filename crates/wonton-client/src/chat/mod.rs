@@ -6,6 +6,12 @@
 //! 标准的 Matrix 服务器（ADR-0015）。
 
 mod ask;
+mod avatar_files;
+mod bot_activity;
+mod bot_poll;
+mod bot_profile;
+mod bot_typing;
+mod bots;
 mod confirmation;
 mod contacts;
 mod display_name;
@@ -37,6 +43,7 @@ use wonton_protocol::{
     ImageUpload, MediaHandle, ProxySettings, PushStatus, RecoveryStatus,
 };
 
+pub use bots::bot_current_avatar;
 pub(crate) use confirmation::{PushedCard, pushed_card};
 pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
@@ -75,6 +82,8 @@ pub(crate) struct ChatLink {
     sent: watch::Sender<Vec<String>>,
     /// 还没登录 Matrix 时改的显示名，登录后再设。
     display_name: Mutex<Option<String>>,
+    bots: Arc<bots::Bots>,
+    avatar_files: avatar_files::AvatarFiles,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -98,6 +107,7 @@ impl ChatLink {
         home: Arc<HomeLink>,
         data_dir: &Path,
         card_success: CardSuccess,
+        plugins: Arc<crate::plugins::PluginsLink>,
     ) -> Result<Arc<Self>, CoreError> {
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
@@ -120,6 +130,7 @@ impl ChatLink {
             settled_confirmations: Vec::new(),
             bots: Vec::new(),
         });
+        let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins, view.clone());
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.clone(),
@@ -135,6 +146,8 @@ impl ChatLink {
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
             display_name: Mutex::new(None),
+            bots,
+            avatar_files: avatar_files::AvatarFiles::new(data_dir),
         });
         runtime.spawn(follow_home(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -187,6 +200,10 @@ impl ChatLink {
             }
             ChatAccount::Failed { .. } | ChatAccount::SignedOut | ChatAccount::SigningIn => {}
         }
+    }
+
+    pub(crate) fn backgrounded(&self) {
+        self.bots.backgrounded();
     }
 
     /// 处理聊天操作。参数不合法、还没登录时直接返回错误；网络操作在后台执行，失败放进 `problem`。
@@ -294,6 +311,9 @@ impl ChatLink {
         room_id: &str,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let (session, room_id) = self.target(room_id)?;
+        if *self.bots.foreground.borrow() {
+            self.bots.refresh_all();
+        }
         let room = Arc::new(
             session
                 .open_room(&room_id)
@@ -312,6 +332,11 @@ impl ChatLink {
             .download_media(&media.token)
             .await
             .map_err(|e| core_error(&e))
+    }
+
+    pub(crate) async fn avatar_file(&self, media: MediaHandle) -> Result<String, CoreError> {
+        let session = lock(&self.session).clone();
+        self.avatar_files.get(session, media).await
     }
 
     /// 发一条文字，不打开房间：传完文件发链接时，主人可能已经在看别的房间了，打开这个房间会打断那边的时间线。
@@ -580,6 +605,7 @@ impl ChatLink {
             }
         };
         *lock(&self.session) = Some(session.clone());
+        self.bots.set_session(Some(session.clone()));
         self.apply_pending_display_name(&session);
         self.view.send_modify(|view| {
             view.account = ChatAccount::SignedIn {
@@ -614,6 +640,7 @@ impl ChatLink {
     }
 
     async fn forget_current(&self) {
+        self.bots.set_session(None);
         *lock(&self.open_room) = None;
         self.room_order.clear();
         self.sent.send_replace(Vec::new());
