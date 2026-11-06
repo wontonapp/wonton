@@ -25,6 +25,12 @@ struct TimelineRow: View {
             )
         case let .notice(text):
             note(Text(text))
+        case let .profileChange(_, name, previousName, _):
+            if let previousName {
+                note(Text("\(previousName) 改名为 \(name)"))
+            } else {
+                note(Text("\(name) 换了头像"))
+            }
         case let .dateDivider(timestampMs):
             note(Text(Self.date(timestampMs), format: .dateTime.year().month().day().weekday()))
         case .readMarker:

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, ModelProviderInput,
-    OnboardingTip, PushEndpoint, Rgb, SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode,
-    UploadSource,
+    Answer, AvatarUpload, BotActivity, DeviceNetwork, FileId, FontStyle, ImageUpload,
+    InstallPreview, ModelProviderInput, OnboardingTip, PushEndpoint, Rgb, SecretString,
+    TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -110,6 +110,24 @@ pub enum Action {
     /// [`ConfirmationView::window`](crate::ConfirmationView::window)。已经在发时什么都不做，家里的服务器还没连上时返回
     /// `NotReady`。
     StopConfirmationWindow { id: String },
+
+    // Bot 的资料（ADR-0044）。进展和结果在 `ChatViewModel::bots` 对应那一项的 `saving`、`problem` 里。
+    /// 改 Bot 的名字。名字先过 [`check_bot_name`](crate::check_bot_name)，不行时返回 `InvalidInput`。
+    SetBotName { plugin_id: String, name: String },
+    /// 换 Bot 的头像：`state` 为空是静态头像，否则是这个状态的头像。核心先以主人的身份传到 Matrix 的媒体库，再请家里的
+    /// 服务器写进 Bot 的资料。
+    SetBotAvatar {
+        plugin_id: String,
+        state: Option<BotActivity>,
+        upload: AvatarUpload,
+    },
+    /// 清掉静态头像（`state` 为空）或一个状态的头像。
+    ClearBotAvatar {
+        plugin_id: String,
+        state: Option<BotActivity>,
+    },
+    /// 清掉这个 Bot 的 `BotView::problem`。
+    DismissBotProfileProblem { plugin_id: String },
 
     // 推送（ADR-0003 的“设计：加密推送”）。进展在 `ChatViewModel::push` 里。
     /// 平台给了（或者换了）推送地址。核心经隧道把它登记给家里的服务器，再在 Matrix 上注册指向家里推送代理的

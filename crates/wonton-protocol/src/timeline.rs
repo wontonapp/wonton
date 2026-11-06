@@ -84,6 +84,15 @@ pub enum TimelineContent {
     Notice {
         text: String,
     },
+    /// 有人改了名字或头像（ADR-0044），文字由壳写：名字变了是“旧名 改名为 新名”，只换了头像是“某某 换了头像”。
+    ProfileChange {
+        user_id: String,
+        /// 改之后的名字。
+        name: String,
+        /// 改之前的名字；名字没变时为空。
+        previous_name: Option<String>,
+        avatar_changed: bool,
+    },
     /// 日期分隔线，`timestamp_ms` 是这一天里第一条消息的时间（Unix 毫秒），壳按本地时区显示日期。
     DateDivider {
         timestamp_ms: u64,

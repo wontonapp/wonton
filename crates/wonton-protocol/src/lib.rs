@@ -11,6 +11,7 @@ uniffi::setup_scaffolding!();
 mod action;
 mod agent_permission;
 mod appearance;
+mod bot_profile;
 mod chat;
 mod confirmation;
 mod core_upgrade;
@@ -39,6 +40,13 @@ pub use agent_permission::{
 };
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
+};
+pub use bot_profile::{
+    AVATARS_FIELD, AvatarChange, AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem,
+    AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity, BotActivityFacts,
+    BotActivityReport, BotNameProblem, BotProfileFailure, BotProfileProblem, BotProfileUpdate,
+    BotProfileUpdated, BotView, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
+    MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_profile_path, check_bot_name,
 };
 pub use chat::{
     BackupReminder, ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,

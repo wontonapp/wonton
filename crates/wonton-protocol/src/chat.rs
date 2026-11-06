@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{PushStatus, SecretString};
+use crate::{BotView, PushStatus, SecretString};
 
 /// 聊天页的 ViewModel。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +25,8 @@ pub struct ChatViewModel {
     pub pending_confirmations: Vec<PendingConfirmation>,
     /// 这台设备知道已经不用回答的卡片 ID：壳撤下它们的通知。
     pub settled_confirmations: Vec<String>,
+    /// 已装插件的 Bot：名字、头像、状态头像和此刻的状态（ADR-0044）。壳按 [`RoomRow::direct_user_id`] 找私聊对方是哪个 Bot。
+    pub bots: Vec<BotView>,
 }
 
 /// 一张等主人回答的确认卡片。
@@ -351,6 +353,7 @@ mod tests {
                 title: "Hermes 想安装 文件搜索".into(),
             }],
             settled_confirmations: vec!["older-card".into()],
+            bots: Vec::new(),
         };
         assert_eq!(round_trip(&view_model), view_model);
 

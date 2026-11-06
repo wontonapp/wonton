@@ -187,6 +187,7 @@ mod tests {
             push: PushStatus::NoEndpoint,
             pending_confirmations: Vec::new(),
             settled_confirmations: Vec::new(),
+            bots: Vec::new(),
         };
         let (home_tx, home_rx) = watch::channel(home(HomeStatus::NotConfigured));
         let (chat_tx, chat_rx) = watch::channel(chat);

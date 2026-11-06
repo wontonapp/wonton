@@ -237,6 +237,7 @@ mod tests {
             push: PushStatus::NoEndpoint,
             pending_confirmations: Vec::new(),
             settled_confirmations: Vec::new(),
+            bots: Vec::new(),
         }
     }
 

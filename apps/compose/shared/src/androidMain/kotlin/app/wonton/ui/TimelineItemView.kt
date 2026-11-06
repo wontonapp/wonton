@@ -88,6 +88,9 @@ fun TimelineItemView(
             onOpenMenu,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
+        is TimelineContent.ProfileChange -> CenteredNote(
+            content.previousName?.let { "$it 改名为 ${content.name}" } ?: "${content.name} 换了头像",
+        )
         is TimelineContent.DateDivider ->
             CenteredNote(DateFormat.getDateInstance(DateFormat.FULL).format(Date(content.timestampMs.toLong())))
         TimelineContent.ReadMarker -> Row(
