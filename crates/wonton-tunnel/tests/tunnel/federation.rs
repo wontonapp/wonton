@@ -1,0 +1,485 @@
+//! 联邦转发的行为测试：两台“服务器”都在本机进程内，各自一个 endpoint、入站协议和出站转发器；
+//! Tuwunel 用本机 TCP 连接模拟，上游是回环上的记录/回显服务。不依赖外网和 Docker。
+
+use std::{
+    collections::BTreeMap,
+    net::{Ipv4Addr, SocketAddr},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+use iroh::{
+    EndpointAddr, EndpointId, SecretKey,
+    endpoint::{Connection, ConnectionError, VarInt},
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::watch,
+    task::JoinHandle,
+    time::timeout,
+};
+use wonton_tunnel::{
+    Allowlist, TunnelServer,
+    federation::{
+        FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerStates, PeerStatus,
+        ServerLookup,
+    },
+    pair::{PairHandler, PairProtocol, PairResponse, PairingSecret, RejectReason},
+};
+
+use crate::support::{Timeouts, WAIT, loopback_endpoint};
+
+use wonton_tunnel::ALPN as TUNNEL_ALPN;
+
+/// 对探活周期和超时取测试用的小值：状态变化都在几秒内出现。
+const PING_INTERVAL: Duration = Duration::from_millis(300);
+const PING_TIMEOUT: Duration = Duration::from_millis(2000);
+
+/// 上游回给每条连接的固定字节。转发器只转发字节，内容是什么都行。
+const REPLY: &[u8] = b"tuwunel-reply";
+
+/// 测试用的 Matrix 服务器名。绑定由测试的查找表定，和真实命名没有关系。
+const B_NAME: &str = "b.example.internal";
+const C_NAME: &str = "c.example.internal";
+
+/// 所有测试共用的“配对记录”：服务器名 → 对方 endpoint ID 和地址。出站的查找函数查它。
+type Pairings = Arc<Mutex<BTreeMap<String, (EndpointId, EndpointAddr)>>>;
+
+fn pairings() -> Pairings {
+    Arc::new(Mutex::new(BTreeMap::new()))
+}
+
+/// 按 [`Pairings`] 实现的查找函数，和核心按 `core/peers.json` 实现的形状一样。
+fn lookup_from(table: &Pairings) -> ServerLookup {
+    let table = table.clone();
+    Arc::new(move |name| table.lock().unwrap().get(name).cloned())
+}
+
+/// 出码方拒绝一切的配对处理方：联邦测试不开配对。
+#[derive(Debug)]
+struct NoPairing;
+
+impl PairHandler for NoPairing {
+    fn pair(&self, _: EndpointId, _: &PairingSecret, _: &str) -> PairResponse {
+        PairResponse::Rejected {
+            reason: RejectReason::Closed,
+            message: "联邦测试不开配对".into(),
+        }
+    }
+}
+
+/// 测试里当 Tuwunel 用的上游：把每条连接收到的字节记下来，回一段固定回应，然后关连接。
+struct Upstream {
+    addr: SocketAddr,
+    received: Arc<Mutex<Vec<u8>>>,
+    connections: Arc<AtomicUsize>,
+    task: JoinHandle<()>,
+}
+
+impl Upstream {
+    async fn spawn() -> Self {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let connections = Arc::new(AtomicUsize::new(0));
+        let task = {
+            let (received, connections) = (received.clone(), connections.clone());
+            tokio::spawn(async move {
+                while let Ok((mut tcp, _)) = listener.accept().await {
+                    connections.fetch_add(1, Ordering::SeqCst);
+                    let received = received.clone();
+                    tokio::spawn(async move {
+                        let mut buf = Vec::new();
+                        if timeout(WAIT, tcp.read_to_end(&mut buf)).await.is_err() {
+                            panic!("上游等 EOF 超时");
+                        }
+                        received.lock().unwrap().extend_from_slice(&buf);
+                        let _ = tcp.write_all(REPLY).await;
+                        let _ = tcp.shutdown().await;
+                    });
+                }
+            })
+        };
+        Self {
+            addr,
+            received,
+            connections,
+            task,
+        }
+    }
+
+    /// 上游到目前为止收到的全部字节。
+    fn received(&self) -> Vec<u8> {
+        self.received.lock().unwrap().clone()
+    }
+
+    fn connections(&self) -> usize {
+        self.connections.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for Upstream {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// 测试里的一台“服务器”：入站联邦协议 + 出站转发器 + 上游，可停掉后用同样的身份和端口重启。
+struct TestPeer {
+    key: SecretKey,
+    id: EndpointId,
+    addr: EndpointAddr,
+    device_allowlist: Allowlist,
+    server_allowlist: Allowlist,
+    upstream: Upstream,
+    /// endpoint 的 UDP 端口和出站转发器的监听地址，重启要用同一组。
+    endpoint_port: u16,
+    listen: SocketAddr,
+    lookup: ServerLookup,
+    server: Option<TunnelServer>,
+    _listener: wonton_tunnel::TunnelListener,
+    forwarder: Option<FederationForwarder>,
+    states: watch::Receiver<PeerStates>,
+}
+
+impl TestPeer {
+    /// `lookup` 是本方出站用的“服务器名 → 对方”查找函数。
+    async fn start(key: SecretKey, lookup: ServerLookup) -> Self {
+        let endpoint = loopback_endpoint(key.clone(), 0, Timeouts::Short).await;
+        let endpoint_port = endpoint.bound_sockets()[0].port();
+        let addr = endpoint.addr();
+        let device_allowlist = Allowlist::default();
+        let server_allowlist = Allowlist::default();
+        let upstream = Upstream::spawn().await;
+        let federation = FederationProtocol::new(server_allowlist.clone(), upstream.addr);
+        let forwarder = FederationForwarder::bind(
+            endpoint.clone(),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            lookup.clone(),
+            PING_INTERVAL,
+            PING_TIMEOUT,
+        )
+        .await
+        .unwrap();
+        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and(
+            endpoint,
+            device_allowlist.clone(),
+            PairProtocol::new(Arc::new(NoPairing)),
+            FEDERATION_ALPN,
+            federation,
+        );
+        let states = forwarder.watch_status();
+        Self {
+            key,
+            id: addr.id,
+            addr,
+            device_allowlist,
+            server_allowlist,
+            upstream,
+            endpoint_port,
+            listen: forwarder.listen_addr(),
+            lookup,
+            server: Some(server),
+            _listener: listener,
+            forwarder: Some(forwarder),
+            states,
+        }
+    }
+
+    fn forwarder(&self) -> &FederationForwarder {
+        self.forwarder.as_ref().expect("转发器没在运行")
+    }
+
+    async fn stop(&mut self) {
+        self.forwarder.take();
+        self.server.take().expect("服务端没在运行").shutdown().await;
+    }
+
+    /// 用同样的身份、端口、名单和查找函数重启。停掉之前要先 [`stop`](Self::stop)。
+    async fn restart(&mut self) {
+        assert!(self.server.is_none(), "服务端还在运行");
+        wait_until_port_is_free(self.endpoint_port).await;
+        let endpoint =
+            loopback_endpoint(self.key.clone(), self.endpoint_port, Timeouts::Short).await;
+        assert_eq!(endpoint.addr().id, self.id, "重启后 endpoint ID 变了");
+        let federation = FederationProtocol::new(self.server_allowlist.clone(), self.upstream.addr);
+        let forwarder = FederationForwarder::bind(
+            endpoint.clone(),
+            self.listen,
+            self.lookup.clone(),
+            PING_INTERVAL,
+            PING_TIMEOUT,
+        )
+        .await
+        .unwrap();
+        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and(
+            endpoint,
+            self.device_allowlist.clone(),
+            PairProtocol::new(Arc::new(NoPairing)),
+            FEDERATION_ALPN,
+            federation,
+        );
+        self.states = forwarder.watch_status();
+        self.server = Some(server);
+        self._listener = listener;
+        self.forwarder = Some(forwarder);
+    }
+
+    /// 等某台对方服务器的状态变成想要的值。
+    async fn wait_for(&self, name: &str, want: fn(&PeerStatus) -> bool) {
+        let mut states = self.states.clone();
+        timeout(
+            WAIT,
+            states.wait_for(|states| states.get(name).is_some_and(want)),
+        )
+        .await
+        .expect("等待状态变化超时")
+        .unwrap();
+    }
+}
+
+/// 等旧 endpoint 的 UDP 端口空出来（同 support 里的做法）。
+async fn wait_until_port_is_free(port: u16) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "旧 endpoint 的 UDP 端口 {port} 一直没有释放"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+}
+
+/// 把客户端 hello 和后续字节发给本方转发器，半关写端，读回全部字节。
+async fn federate(listen: SocketAddr, hello: &[u8], payload: &[u8]) -> Vec<u8> {
+    let mut tcp = TcpStream::connect(listen).await.unwrap();
+    tcp.write_all(hello).await.unwrap();
+    tcp.write_all(payload).await.unwrap();
+    tcp.shutdown().await.unwrap();
+    let mut reply = Vec::new();
+    timeout(WAIT, tcp.read_to_end(&mut reply))
+        .await
+        .expect("等待回应超时")
+        .unwrap();
+    reply
+}
+
+/// 断言这条连接被对方用 403 关闭（未授权：对端这次连的 ALPN 的名单里没有它）。
+async fn assert_closed_unauthorized(conn: Connection) {
+    let reason = timeout(WAIT, conn.closed())
+        .await
+        .expect("等待连接关闭超时");
+    let ConnectionError::ApplicationClosed(close) = reason else {
+        panic!("不是应用层关闭：{reason:?}");
+    };
+    assert_eq!(close.error_code, VarInt::from_u32(403));
+}
+
+/// 最小的 TLS ClientHello：只带 SNI 和 signature_algorithms 扩展（rustls 的解析要求后者存在）。
+/// 转发器只解析到 SNI 为止，不会回握手。
+fn client_hello(sni: &str) -> Vec<u8> {
+    let host = sni.as_bytes();
+    // SNI 扩展（RFC 6066）：host_name 类型的 ServerName。
+    let mut sni_ext = Vec::new();
+    sni_ext.extend_from_slice(&(host.len() as u16 + 3).to_be_bytes());
+    sni_ext.push(0);
+    sni_ext.extend_from_slice(&(host.len() as u16).to_be_bytes());
+    sni_ext.extend_from_slice(host);
+    // signature_algorithms 扩展（RFC 8446）。
+    const SCHEMES: [[u8; 2]; 3] = [[0x04, 0x03], [0x08, 0x04], [0x04, 0x01]];
+    let mut sig_algs_ext = Vec::new();
+    sig_algs_ext.extend_from_slice(&((SCHEMES.len() * 2) as u16).to_be_bytes());
+    for scheme in SCHEMES {
+        sig_algs_ext.extend_from_slice(&scheme);
+    }
+    let mut extensions = Vec::new();
+    for (kind, body) in [(0u16, &sni_ext[..]), (0x000d, &sig_algs_ext[..])] {
+        extensions.extend_from_slice(&kind.to_be_bytes());
+        extensions.extend_from_slice(&(body.len() as u16).to_be_bytes());
+        extensions.extend_from_slice(body);
+    }
+    let mut body = Vec::new();
+    body.extend_from_slice(&[0x03, 0x03]); // legacy_version: TLS 1.2
+    body.extend_from_slice(&[0xab; 32]); // random
+    body.push(0); // 空 session_id
+    body.extend_from_slice(&2u16.to_be_bytes()); // cipher_suites 长度
+    body.extend_from_slice(&[0x13, 0x01]); // TLS_AES_128_GCM_SHA256
+    body.push(1);
+    body.push(0); // compression: null
+    body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+    body.extend_from_slice(&extensions);
+    let mut handshake = vec![0x01]; // handshake_type: client_hello
+    handshake.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+    handshake.extend_from_slice(&body);
+    let mut record = vec![0x16, 0x03, 0x01]; // record_type: handshake
+    record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+    record.extend_from_slice(&handshake);
+    record
+}
+
+/// 断言这条连接被关且一个字节都没回（SNI 不认识时的行为）。
+async fn closed_without_reply(mut tcp: TcpStream) {
+    let mut buf = Vec::new();
+    let n = timeout(WAIT, tcp.read_to_end(&mut buf))
+        .await
+        .expect("等待连接关闭超时")
+        .unwrap();
+    assert_eq!(n, 0, "连接关闭前回了 {buf:?}");
+}
+
+/// 把两台服务器互相放进对方的名单和查找表，完成一次 A → B 的联邦往返。
+async fn pair_a_to_b(a: &TestPeer, b: &TestPeer, table: &Pairings, payload: &[u8]) {
+    table
+        .lock()
+        .unwrap()
+        .insert(B_NAME.to_owned(), (b.id, b.addr.clone()));
+    a.server_allowlist.allow(b.id);
+    b.server_allowlist.allow(a.id);
+    let hello = client_hello(B_NAME);
+    let reply = federate(a.listen, &hello, payload).await;
+    assert_eq!(b.upstream.received(), [&hello[..], payload].concat());
+    assert_eq!(reply, REPLY);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+}
+
+/// 两台互在名单里：A 的本机 Tuwunel 发一个带 SNI 的 ClientHello 加任意字节，B 的上游原样收到，
+/// 回的字节 A 也原样收到。
+#[tokio::test]
+async fn forwards_by_sni_to_the_paired_server() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_a_to_b(&a, &b, &table, &[0xde, 0xad, 0xbe, 0xef]).await;
+    // 共享连接：再来一条连接走同一条 iroh 连接，B 的上游各自收到自己的字节。
+    let hello = client_hello(B_NAME);
+    let reply = federate(a.listen, &hello, b"second").await;
+    assert_eq!(
+        b.upstream.received(),
+        [
+            &hello[..],
+            &[0xde, 0xad, 0xbe, 0xef][..],
+            &hello[..],
+            b"second"
+        ]
+        .concat()
+    );
+    assert_eq!(reply, REPLY);
+}
+
+/// SNI 不认识：连接被关，转发器记下原因，状态表里没有这个服务器。
+#[tokio::test]
+async fn closes_connections_for_unknown_server_names() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let mut tcp = TcpStream::connect(a.listen).await.unwrap();
+    tcp.write_all(&client_hello("stranger.example.internal"))
+        .await
+        .unwrap();
+    tcp.shutdown().await.unwrap();
+    closed_without_reply(tcp).await;
+    assert_eq!(a.forwarder().outbound_errors().unknown_server, 1);
+    assert!(a.states.borrow().is_empty());
+}
+
+/// 连接开头不是带 SNI 的 ClientHello：同样关闭并计数。
+#[tokio::test]
+async fn closes_connections_without_a_usable_client_hello() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    // 应用数据记录出现在握手里：rustls 当场报错，不用等超时。
+    let mut tcp = TcpStream::connect(a.listen).await.unwrap();
+    tcp.write_all(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x00, 0x00])
+        .await
+        .unwrap();
+    tcp.shutdown().await.unwrap();
+    closed_without_reply(tcp).await;
+    assert_eq!(a.forwarder().outbound_errors().invalid_client_hello, 1);
+}
+
+/// B 把 A 移出名单：A 的状态变成 RemovedByPeer。
+#[tokio::test]
+async fn reports_removed_by_peer_when_the_peer_revokes_us() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_a_to_b(&a, &b, &table, b"before").await;
+    b.server_allowlist.revoke(&a.id);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::RemovedByPeer)
+        .await;
+}
+
+/// B 停掉：A 变 Offline；B 回来后 A 恢复 Connected。
+#[tokio::test]
+async fn goes_offline_when_the_peer_stops_and_recovers_when_it_returns() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let mut b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_a_to_b(&a, &b, &table, b"before").await;
+    b.stop().await;
+    a.wait_for(B_NAME, |status| {
+        matches!(status, PeerStatus::Offline { .. })
+    })
+    .await;
+    b.restart().await;
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+}
+
+/// 设备名单的 ID 连不上联邦 ALPN，服务器名单的 ID 连不上隧道 ALPN：都以 403 关闭。
+#[tokio::test]
+async fn keeps_device_and_server_allowlists_separate() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    // 配对过的设备连联邦 ALPN：联邦的名单里没有它，403。
+    let device = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Short).await;
+    a.device_allowlist.allow(device.id());
+    let conn = device
+        .connect(a.addr.clone(), FEDERATION_ALPN)
+        .await
+        .unwrap();
+    assert_closed_unauthorized(conn).await;
+    // 配对过的服务器连隧道 ALPN：设备的名单里没有它，403。
+    let server = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Short).await;
+    a.server_allowlist.allow(server.id());
+    let conn = server.connect(a.addr.clone(), TUNNEL_ALPN).await.unwrap();
+    assert_closed_unauthorized(conn).await;
+}
+
+/// 一个服务器名只会被转到它绑定的 endpoint ID（ADR-0050“代价与风险”）：SNI 是 C 的连接到 C，
+/// B 一条连接都收不到；SNI 是 B 的连接到 B。
+#[tokio::test]
+async fn routes_a_server_name_only_to_its_bound_endpoint() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let c = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    table.lock().unwrap().extend([
+        (B_NAME.to_owned(), (b.id, b.addr.clone())),
+        (C_NAME.to_owned(), (c.id, c.addr.clone())),
+    ]);
+    a.server_allowlist.allow(b.id);
+    a.server_allowlist.allow(c.id);
+    b.server_allowlist.allow(a.id);
+    c.server_allowlist.allow(a.id);
+
+    let hello = client_hello(C_NAME);
+    let reply = federate(a.listen, &hello, b"to-c").await;
+    assert_eq!(c.upstream.received(), [&hello[..], b"to-c"].concat());
+    assert_eq!(b.upstream.connections(), 0);
+    assert_eq!(reply, REPLY);
+    a.wait_for(C_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+
+    let hello = client_hello(B_NAME);
+    let reply = federate(a.listen, &hello, b"to-b").await;
+    assert_eq!(b.upstream.received(), [&hello[..], b"to-b"].concat());
+    assert_eq!(c.upstream.connections(), 1);
+    assert_eq!(reply, REPLY);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+}

@@ -73,6 +73,29 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 上游已经开始返回数据后再出错，只能断开连接。`CONNECT` 已经回了 200 之后的隧道错误，作为里面第一个请求的
 响应回给客户端。
 
+## 联邦转发（ALPN `wonton/federation/0`）
+
+配对过的两台服务器的 Matrix 联邦流量经 iroh 互转（ADR-0050）。挂在和隧道、配对同一个 endpoint 上：
+对外只有一个 UDP 端口、一个 endpoint ID。线协议和隧道的一样（1 字节请求类型、1 字节状态、出错复位流），
+白名单分开：**服务器名单**只放行联邦的 ALPN，**设备名单**只放行隧道的 ALPN——配对过的手机进不了联邦，
+配对过的服务器也进不了 App 的隧道，互相都以 403 关闭。
+
+- **入站**：`FederationProtocol`（`TunnelServer::spawn_embedded_with_pairing_and` 挂到核心的 router 上）。
+  名单认过的连接，每条双向流原样接到本机 Tuwunel 的联邦端口（8448），不解 TLS。对方从名单里被去掉时，
+  它的现有连接随即被关闭。
+- **出站**：`FederationForwarder::bind` 在 Tuwunel 的网络上监听（Tuwunel 的 `/etc/hosts` 把每个配对过的
+  服务器名指向这个地址）。每条连接先读 TLS ClientHello 取 SNI（rustls 的 Acceptor，只解析、不回握手、
+  不终结 TLS），SNI 就是对方的 Matrix 服务器名；按嵌入方提供的查找函数（服务器名 → 配对时记下的
+  endpoint ID 和地址）选路，把已读的 ClientHello 和后续字节原样转过去。查找函数返回 `None`（名字不在
+  配对名单里）或开头不是带 SNI 的 ClientHello：关闭连接，分别记一次 `unknown_server` /
+  `invalid_client_hello`。
+- **每台对方服务器一条共享连接**（`TunnelClient` 的形状：复用、退避、探活）。断了下次用时按退避重连；
+  定时 ping 探活，周期和超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
+- **状态**：`watch_status` 给出每台对方服务器的 `PeerStatus`。`Connected` 是最近一次探活或数据往返成功；
+  `Offline { since, last_error }` 是连不上（传输问题，不是对方的态度）；`RemovedByPeer` 是握手后被对方用
+  403 关闭（对方名单里没有本机），对方的名单恢复后自动回到 `Connected`。Tuwunel 分不清“对方离线”和
+  “对方拒绝”，嵌入方按这里的状态给 App 出不同的提示（ADR-0050 的“状态”）。
+
 ## 示例与实地测试
 
 ```bash

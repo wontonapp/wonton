@@ -234,6 +234,24 @@ impl TunnelServer {
         (Self { router, allowlist }, listener)
     }
 
+    /// 同 [`spawn_embedded_with_pairing`](Self::spawn_embedded_with_pairing)，同一个 endpoint 上再多挂一个
+    /// 协议的处理器（如联邦转发），`extra_alpn` 是它的 ALPN。
+    pub fn spawn_embedded_with_pairing_and<H: PairHandler>(
+        endpoint: Endpoint,
+        allowlist: Allowlist,
+        pairing: PairProtocol<H>,
+        extra_alpn: &'static [u8],
+        extra: impl ProtocolHandler,
+    ) -> (Self, TunnelListener) {
+        let (protocol, listener) = TunnelProtocol::embedded(allowlist.clone());
+        let router = Router::builder(endpoint)
+            .accept(ALPN, protocol)
+            .accept(PAIR_ALPN, pairing)
+            .accept(extra_alpn, extra)
+            .spawn();
+        (Self { router, allowlist }, listener)
+    }
+
     fn with_protocol(endpoint: Endpoint, allowlist: Allowlist, protocol: TunnelProtocol) -> Self {
         let router = Router::builder(endpoint).accept(ALPN, protocol).spawn();
         Self { router, allowlist }

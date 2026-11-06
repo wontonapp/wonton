@@ -8177,6 +8177,7 @@ dependencies = [
  "getrandom 0.4.3",
  "httparse",
  "iroh",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
