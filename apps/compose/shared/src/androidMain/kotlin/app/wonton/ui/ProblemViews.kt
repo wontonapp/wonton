@@ -153,14 +153,14 @@ val CoreException.problem: Problem
 
 /** 收起的技术细节。排查时才看，能选中复制。 */
 @Composable
-fun ProblemDetail(text: String, label: String = "详情") {
+fun ProblemDetail(text: String, label: String = "详情", modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
     val tint = colors.textSecondary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(
-            Modifier.clickable(role = Role.Button) { expanded = !expanded },
+            modifier.clickable(role = Role.Button) { expanded = !expanded },
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             verticalAlignment = Alignment.CenterVertically,
         ) {

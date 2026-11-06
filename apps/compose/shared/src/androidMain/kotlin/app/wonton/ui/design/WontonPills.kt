@@ -132,7 +132,12 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
 
 /** 开关：语义还是 `toggleable`，样子自己画。 */
 @Composable
-fun WontonSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+fun WontonSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
     val colors = WontonTheme.colors
     val inset = (WontonTheme.size.switchHeight - WontonTheme.size.switchKnob) / 2
     val travel = WontonTheme.size.switchWidth - WontonTheme.size.switchKnob - inset
@@ -142,7 +147,7 @@ fun WontonSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: 
         label = "switch",
     )
     Box(
-        Modifier.heightIn(min = WontonTheme.size.target)
+        modifier.heightIn(min = WontonTheme.size.target)
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
         contentAlignment = Alignment.Center,

@@ -21,6 +21,7 @@ internal fun ServerSettingsPage(
         )
         SettingsSubpage.CONNECTION_DETAILS -> ConnectionDetailsPage(home, back)
         SettingsSubpage.EGRESS -> EgressPage(plugins, back)
+        SettingsSubpage.REGISTRY_MIRROR -> RegistryMirrorPage(plugins, back)
         SettingsSubpage.CORE_UPGRADE -> CoreUpgradePage(plugins, back)
         SettingsSubpage.INVITE -> WontonScreen(bar = { WontonPushedBar("添加设备", back) }) {
             InviteScreen(core, home.invite)

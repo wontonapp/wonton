@@ -42,6 +42,7 @@ struct SettingsTab: View {
             PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
                 .wontonPushedScreen("重新配对")
         case .egress: EgressSettingsView(model: plugins)
+        case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
         case .appearance: AppearanceView(model: appearance).wontonPushedScreen("外观")
         case .chatBackup: ChatBackupView(model: chat)

@@ -145,6 +145,7 @@ extension Error {
 /// 收起的技术细节。排查时才看，能选中复制。
 struct ProblemDetail: View {
     let text: String
+    var minimumTargetHeight: CGFloat?
     @State private var isExpanded = false
     @Environment(\.wontonColors) private var colors
 
@@ -158,6 +159,7 @@ struct ProblemDetail: View {
                     WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
                         .rotationEffect(isExpanded ? .degrees(90) : .zero)
                 }
+                .frame(minHeight: minimumTargetHeight)
                 .foregroundStyle(Color(colors.textSecondary))
             }
             .buttonStyle(.plain)

@@ -40,6 +40,7 @@ enum SettingsRoute: Hashable {
     case invite
     case pairing
     case egress
+    case registryMirror
     case coreUpgrade
     case appearance
     case chatBackup

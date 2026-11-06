@@ -6,9 +6,11 @@ struct EgressSettingsView: View {
     let model: PluginsModel
     @State private var address = ""
     @State private var directCidrs = ""
+    @State private var usePlugin = false
     @Environment(\.wontonColors) private var colors
 
     private var egress: EgressViewModel { model.viewModel.egress }
+    private var selectedPlugin: Bool { egress.current?.settings.provider != nil && usePlugin }
 
     var body: some View {
         content
@@ -17,7 +19,7 @@ struct EgressSettingsView: View {
                 if egress.saving {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
-                    Button("保存") { save(address: address) }
+                    Button("保存") { save(address: selectedPlugin ? "" : address, usePlugin: selectedPlugin) }
                         .buttonStyle(WontonSmallButtonStyle())
                         .disabled(egress.current == nil)
                         .padding(.trailing, WontonTheme.spacing.s12)
@@ -27,6 +29,7 @@ struct EgressSettingsView: View {
             // 核心给的值变了才覆盖输入框：保存失败时主人填的还在。
             .onChange(of: egress.current?.address, initial: true) { _, value in address = value ?? "" }
             .onChange(of: egress.current?.directCidrs, initial: true) { _, value in directCidrs = value ?? "" }
+            .onChange(of: egress.current?.usePlugin, initial: true) { _, value in usePlugin = value ?? false }
             .wontonDialog(
                 egress.confirmation?.cancelling == true ? "取消代理要重启这些应用" : "配上代理要重启这些应用",
                 message: egress.confirmation.map { $0.restarts.map(\.title).joined(separator: "、") + "\n数据不动。" },
@@ -64,9 +67,9 @@ struct EgressSettingsView: View {
                     }
                 }
                 rangesSection(current)
-                if current.settings.url != nil, !current.addressLocked {
+                if current.settings.url != nil || current.settings.source == .plugin, !current.addressLocked {
                     Button(role: .destructive) {
-                        save(address: "")
+                        save(address: "", usePlugin: false)
                     } label: {
                         Text("取消代理").frame(maxWidth: .infinity)
                     }
@@ -81,19 +84,33 @@ struct EgressSettingsView: View {
 
     private func addressSection(_ current: EgressCurrent) -> some View {
         DetailSection(title: "代理地址") {
-            // verbatim：字符串字面量会按 Markdown 认成链接，占位符显示成蓝色，像是已经填好了。
-            TextField("代理地址", text: $address, prompt: Text(verbatim: "http://192.168.1.2:7890"))
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .disabled(current.addressLocked)
-                .wontonField()
+            if let provider = current.settings.provider {
+                StepOptionRow(title: TabText.choose("使用 \(provider.title)", "Use \(provider.title)"),
+                              isSelected: usePlugin) { usePlugin = true }
+                    .disabled(current.addressLocked)
+                StepOptionRow(title: TabText.choose("填写代理地址", "Enter proxy address"),
+                              isSelected: !usePlugin) { usePlugin = false }
+                    .disabled(current.addressLocked)
+            }
+            if !usePlugin || current.settings.provider == nil {
+                // verbatim：占位地址不是链接，也不是已经填好的内容。
+                TextField("代理地址", text: $address, prompt: Text(verbatim: "http://192.0.2.10:7890"))
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .disabled(current.addressLocked)
+                    .wontonField()
+            }
             switch current.settings.source {
             case .env:
                 secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
             case .detected:
                 secondary("安装时检测到的。")
-            case .unset, .settings, .plugin, .unknown:
+            case .plugin:
+                if let provider = current.settings.provider {
+                    secondary(TabText.choose("来自 \(provider.title)", "From \(provider.title)"))
+                }
+            case .unset, .settings, .unknown:
                 EmptyView()
             }
         }
@@ -120,8 +137,8 @@ struct EgressSettingsView: View {
             .foregroundStyle(Color(tint ?? colors.textSecondary))
     }
 
-    private func save(address: String) {
-        model.send(.saveEgressProxy(address: address, directCidrs: directCidrs))
+    private func save(address: String, usePlugin: Bool) {
+        model.send(.saveEgressProxy(address: address, directCidrs: directCidrs, usePlugin: usePlugin))
     }
 }
 

@@ -153,6 +153,10 @@ struct ConnectionView: View {
                         WontonRow(title: "出网代理", showsForward: true)
                     }
                     WontonSeparator()
+                    NavigationLink(value: SettingsRoute.registryMirror) {
+                        WontonRow(title: RegistryMirrorText.title, showsForward: true)
+                    }
+                    WontonSeparator()
                     NavigationLink(value: SettingsRoute.coreUpgrade) {
                         WontonRow(
                             title: "升级服务器",

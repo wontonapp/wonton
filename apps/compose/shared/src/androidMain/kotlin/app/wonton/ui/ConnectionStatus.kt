@@ -143,6 +143,10 @@ fun ConnectionPage(
             WontonGroup {
                 WontonRow("出网代理", showsForward = true, onClick = { onNavigate(SettingsSubpage.EGRESS) })
                 WontonSeparator()
+                WontonRow(tabText("镜像加速", "Image mirrors"), showsForward = true) {
+                    onNavigate(SettingsSubpage.REGISTRY_MIRROR)
+                }
+                WontonSeparator()
                 WontonRow(
                     "升级服务器",
                     value = "有新版本".takeIf { plugins.viewModel.coreUpgrade.isPrompting() },

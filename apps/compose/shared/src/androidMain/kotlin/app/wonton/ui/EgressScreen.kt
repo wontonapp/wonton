@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -35,6 +36,7 @@ import app.wonton.protocol.LanClient
 import app.wonton.protocol.LanWebuiOffer
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.Rgb
+import app.wonton.ui.design.WontonRadioRow
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
@@ -61,9 +63,13 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
     val current = egress.current
     LaunchedEffect(Unit) { plugins.send(Action.RefreshEgressProxy) }
     // 核心给的值变了才覆盖输入框：保存失败时主人填的还在。
-    var address by remember(current?.address) { mutableStateOf(current?.address.orEmpty()) }
+    var address by remember(current?.address, current?.usePlugin) { mutableStateOf(current?.address.orEmpty()) }
+    var usePlugin by remember(current?.address, current?.usePlugin) { mutableStateOf(current?.usePlugin == true) }
     var directCidrs by remember(current?.directCidrs) { mutableStateOf(current?.directCidrs.orEmpty()) }
-    val save = { target: String -> plugins.send(Action.SaveEgressProxy(target, directCidrs)) }
+    val selectedPlugin = current?.settings?.provider != null && usePlugin
+    val save = { target: String, plugin: Boolean ->
+        plugins.send(Action.SaveEgressProxy(address = target, directCidrs = directCidrs, usePlugin = plugin))
+    }
     val bar = @Composable {
         WontonPushedBar("出网代理", onBack) {
             if (egress.saving) {
@@ -73,7 +79,9 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                 )
             } else {
                 Box(Modifier.padding(end = WontonTheme.spacing.s12)) {
-                    WontonSmallButton("保存", { save(address) }, enabled = current != null)
+                    WontonSmallButton(
+                        "保存", { save(if (selectedPlugin) "" else address, selectedPlugin) }, current != null,
+                    )
                 }
             }
         }
@@ -88,7 +96,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                 ) {
                     egress.saveProblem?.let { ProblemNotice(it.saveProblem) }
                     problem?.let { ProblemNotice(it.problem) }
-                    AddressField(current, address, !egress.saving) { address = it }
+                    AddressField(current, address, selectedPlugin, !egress.saving, { usePlugin = it }) { address = it }
                     val plugin = current.pluginPath
                     val core = current.corePath
                     if (plugin != null && core != null) {
@@ -99,10 +107,12 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                         }
                     }
                     RangesField(current, directCidrs, !egress.saving) { directCidrs = it }
-                    if (current.settings.url != null && !current.addressLocked) {
+                    if (!current.addressLocked &&
+                        (current.settings.url != null || current.settings.source == EgressProxySource.PLUGIN)
+                    ) {
                         WontonButton(
                             "取消代理",
-                            { save("") },
+                            { save("", false) },
                             Modifier.fillMaxWidth(),
                             WontonButtonKind.DANGER,
                             enabled = !egress.saving,
@@ -132,23 +142,47 @@ private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsStat
 }
 
 @Composable
-private fun AddressField(current: EgressCurrent, value: String, enabled: Boolean, onChange: (String) -> Unit) {
+private fun AddressField(
+    current: EgressCurrent,
+    value: String,
+    usePlugin: Boolean,
+    enabled: Boolean,
+    onModeChange: (Boolean) -> Unit,
+    onChange: (String) -> Unit,
+) {
     DetailSection("代理地址") {
-        WontonTextField(
-            value,
-            onChange,
-            Modifier.fillMaxWidth(),
-            placeholder = "http://192.168.1.2:7890",
-            label = "代理地址",
-            enabled = enabled && !current.addressLocked,
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-        )
+        current.settings.provider?.let { provider ->
+            Column(
+                Modifier.selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            ) {
+                val canSelect = enabled && !current.addressLocked
+                WontonRadioRow(
+                    tabText("使用 ${provider.title}", "Use ${provider.title}"), usePlugin, canSelect,
+                    { onModeChange(true) },
+                )
+                WontonRadioRow(
+                    tabText("填写代理地址", "Enter proxy address"), !usePlugin, canSelect,
+                    { onModeChange(false) },
+                )
+            }
+        }
+        if (!usePlugin) {
+            WontonTextField(
+                value, onChange, Modifier.fillMaxWidth(),
+                placeholder = "http://192.0.2.10:7890", label = "代理地址",
+                enabled = enabled && !current.addressLocked,
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+            )
+        }
         when (current.settings.source) {
             EgressProxySource.ENV -> Secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
             EgressProxySource.DETECTED -> Secondary("安装时检测到的。")
+            EgressProxySource.PLUGIN -> current.settings.provider?.let {
+                Secondary(tabText("来自 ${it.title}", "From ${it.title}"))
+            }
             EgressProxySource.UNSET,
             EgressProxySource.SETTINGS,
-            EgressProxySource.PLUGIN,
             EgressProxySource.UNKNOWN,
             -> Unit
         }
