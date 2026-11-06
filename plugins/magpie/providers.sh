@@ -150,7 +150,9 @@ list() {
     case "$presets" in
       *"\"id\":\"$id\""*) ;;
       *)
+        # 实测 0.1.1327：非预设行的名字列后面跟着 magpie 自己加的 " custom" 标记。
         title=$(provider_title "$id")
+        title=${title% custom}
         [ -n "$title" ] || title="$id"
         presets="$presets,{\"id\":\"$id\",\"title\":\"$title\"}"
         ;;
@@ -354,7 +356,10 @@ custom_input() {
 
 create_custom() {
   status=0
-  timeout "${PROVIDER_TIMEOUT}s" magpie provider add "$1" "id=$1" \
+  # 不给 name 时 magpie 用 id 当名字，App 里会显示成 wonton-custom-…，所以写成“模型 · 主机”。
+  host=${base_url#*://}
+  host=${host%%/*}
+  timeout "${PROVIDER_TIMEOUT}s" magpie provider add "$1" "id=$1" "name=$model · $host" \
     "url=$base_url" "models=$model" "key=$key" >/dev/null 2>&1 || status=$?
   case "$status" in 0) ;; 124) return 4 ;; *) return 1 ;; esac
   # models= 用逗号分隔；models 子命令把每个 argv 当一个完整模型名。

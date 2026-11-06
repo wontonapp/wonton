@@ -146,6 +146,8 @@ import json, sys
 listed = json.load(sys.stdin)
 assert sys.argv[1] in listed["configured"] and sys.argv[2] in listed["configured"]
 assert set(listed["configured"]) <= {preset["id"] for preset in listed["presets"]}
+titles = {preset["id"]: preset["title"] for preset in listed["presets"]}
+assert titles[sys.argv[1]] == "exact-model · upstream:8000", titles[sys.argv[1]]
 ' "$id" "$new_id"
 # 默认组必须使用显式模型，且维护器不能覆盖主人已修改的组。
 docker exec -d "$prefix-magpie" sh /wonton/default-model.sh
