@@ -146,8 +146,10 @@ async fn serve() -> anyhow::Result<()> {
         Arc::new(DockerHost::new(engine.clone())),
     ));
     let http = HttpClient::new();
-    let hydra = connect_hydra(&cfg, &http).await?;
-    let matrix = connect_matrix(&cfg, &http).await?;
+    let system_http =
+        HttpClient::for_system_services(&engine, cfg.core_container.as_deref()).await?;
+    let hydra = connect_hydra(&cfg, &system_http).await?;
+    let matrix = connect_matrix(&cfg, &system_http).await?;
 
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
     let images =
@@ -200,6 +202,7 @@ async fn serve() -> anyhow::Result<()> {
             http,
             tunnel.clone(),
         )
+        .with_system_http(system_http)
         .with_matrix(matrix)
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))

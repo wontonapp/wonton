@@ -82,6 +82,7 @@ pub struct Gateway {
     /// 身份提供方公开端点的内部地址（`host:port`），`auth.<base>` 的请求转发到这里。
     pub hydra_public: Option<String>,
     pub http: HttpClient,
+    system_http: HttpClient,
     pub tunnel: Tunnel,
     /// Matrix 服务器；没接时 App 的 Matrix 入口如实报不可用。
     pub matrix: Option<Arc<Matrix>>,
@@ -128,6 +129,7 @@ impl Gateway {
             hydra,
             hydra_public,
             http,
+            system_http: HttpClient::system_loopback(),
             tunnel,
             matrix: None,
             push: None,
@@ -138,6 +140,12 @@ impl Gateway {
             onboarding,
             sessions: session::SessionStore::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_system_http(mut self, http: HttpClient) -> Self {
+        self.system_http = http;
+        self
     }
 
     /// 接上 Matrix 服务器：App 的登录令牌和 `matrix.<base>` 这才可用。
@@ -302,7 +310,7 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
         endpoint: &endpoint,
         name: "身份提供方",
     };
-    proxy::forward(&gateway.http, target, req, fwd).await
+    proxy::forward(&gateway.system_http, target, req, fwd).await
 }
 
 /// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件

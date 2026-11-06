@@ -325,6 +325,19 @@ async fn an_unreachable_or_missing_tusd_is_reported() {
 }
 
 #[tokio::test]
+async fn tusd_outside_the_core_network_is_an_upstream_error() {
+    let home = home_with(Some("192.0.2.10:8080".into())).await;
+    let request = home
+        .request(Method::POST, "/_wonton/files/uploads/")
+        .header("tus-resumable", "1.0.0")
+        .body(Body::empty())
+        .unwrap();
+    let reply = home.send(request).await;
+    assert_eq!(reply.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(reply.error_kind(), "upstream_error");
+}
+
+#[tokio::test]
 async fn the_last_patch_answers_only_when_the_file_is_available() {
     let (home, fake, tusd) = home().await;
     let id = home.pending(tusd, 5, b"hello").await;

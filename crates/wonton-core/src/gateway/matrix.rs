@@ -162,7 +162,7 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         endpoint: &endpoint,
         name: "Tuwunel",
     };
-    match proxy::forward_or(&gateway.http, target, req, fwd).await {
+    match proxy::forward_or(&gateway.system_http, target, req, fwd).await {
         Ok(response) => response,
         Err(e) => matrix_forward_error(e),
     }
@@ -171,12 +171,14 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
 /// Matrix 接口本身不走响应头期限，但匹配要写全：期限如果放开，错误也按 Matrix 的 JSON 格式回。
 fn matrix_forward_error(error: proxy::ForwardError) -> Response {
     match error {
-        proxy::ForwardError::Unreachable(e) => matrix_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "M_UNKNOWN",
-            KIND_UNAVAILABLE,
-            &format!("Tuwunel 暂时无法访问：{e}"),
-        ),
+        proxy::ForwardError::Unreachable(e) | proxy::ForwardError::SystemResolution(e) => {
+            matrix_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "M_UNKNOWN",
+                KIND_UNAVAILABLE,
+                &format!("Tuwunel 暂时无法访问：{e}"),
+            )
+        }
         proxy::ForwardError::HeaderTimeout => matrix_error(
             StatusCode::GATEWAY_TIMEOUT,
             "M_UNKNOWN",

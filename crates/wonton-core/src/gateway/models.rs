@@ -56,11 +56,13 @@ fn forward_error(
     error: proxy::ForwardError,
 ) -> Response {
     match error {
-        proxy::ForwardError::Unreachable(e) => error_response(
-            StatusCode::BAD_GATEWAY,
-            "upstream_unreachable",
-            &format!("模型网关 {route} 暂时无法访问：{e}"),
-        ),
+        proxy::ForwardError::Unreachable(e) | proxy::ForwardError::SystemResolution(e) => {
+            error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unreachable",
+                &format!("模型网关 {route} 暂时无法访问：{e}"),
+            )
+        }
         proxy::ForwardError::HeaderTimeout => error_response(
             StatusCode::GATEWAY_TIMEOUT,
             "upstream_timeout",

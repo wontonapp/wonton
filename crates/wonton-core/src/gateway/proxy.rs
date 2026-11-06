@@ -116,6 +116,7 @@ pub(crate) async fn forward_with_deadline(
 pub enum ForwardError {
     /// 连不上上游，或请求发不出去。
     Unreachable(String),
+    SystemResolution(String),
     /// 请求体发完后，上游迟迟没有回响应头。
     HeaderTimeout,
 }
@@ -123,6 +124,9 @@ pub enum ForwardError {
 impl ForwardError {
     pub(super) fn response(self, name: &str) -> Response {
         match self {
+            Self::SystemResolution(e) => {
+                pages::error(StatusCode::BAD_GATEWAY, "upstream_unreachable", &e)
+            }
             Self::Unreachable(e) => pages::error(
                 StatusCode::BAD_GATEWAY,
                 "upstream_unreachable",
@@ -140,7 +144,7 @@ impl ForwardError {
 impl std::fmt::Display for ForwardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unreachable(e) => f.write_str(e),
+            Self::Unreachable(e) | Self::SystemResolution(e) => f.write_str(e),
             Self::HeaderTimeout => f.write_str("迟迟没有回应（超过响应头期限）"),
         }
     }
@@ -211,6 +215,10 @@ async fn forward_with_limit(
         Err(e @ HttpError::ResponseHeadersTimeout(_)) => {
             tracing::warn!(target = target.name, error = %e, "上游响应头超时");
             return Err(ForwardError::HeaderTimeout);
+        }
+        Err(e @ HttpError::SystemResolution { .. }) => {
+            tracing::warn!(target = target.name, error = %e, "系统服务解析到核心网络外，拒绝连接");
+            return Err(ForwardError::SystemResolution(e.to_string()));
         }
         Err(e) => {
             tracing::warn!(target = target.name, error = %e, "上游不可达");

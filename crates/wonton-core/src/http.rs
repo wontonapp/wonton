@@ -1,4 +1,4 @@
-//! 核心对内的 HTTP 客户端：网关转发、健康探测、调用身份提供方的管理接口共用一个连接池。
+//! 核心对内的 HTTP 客户端：插件流量和受核心网络限制的系统服务流量使用独立连接池。
 
 use std::time::Duration;
 
@@ -13,6 +13,8 @@ use serde_json::Value;
 
 pub(crate) mod deadline;
 use deadline::{FlushConnector, ResponseDeadline};
+mod system;
+use system::SystemConnector;
 
 /// JSON 响应体的上限，防止异常的上游把核心内存撑爆。
 const MAX_JSON_BYTES: usize = 1 << 20;
@@ -23,6 +25,13 @@ pub enum HttpError {
     BadUrl(String),
     #[error("连接失败：{0}")]
     Connect(String),
+    #[error(
+        "系统服务 {name} 的名字解析到了核心网络以外的地址：{addresses:?}；请检查系统容器和 DNS 配置"
+    )]
+    SystemResolution {
+        name: String,
+        addresses: Vec<std::net::SocketAddr>,
+    },
     #[error("请求超时（{0:?}）")]
     Timeout(Duration),
     #[error("上游迟迟没有回应：请求体发送完成后 {0:?} 内没有响应头")]
@@ -45,7 +54,13 @@ pub enum RequestBody<'a> {
 
 #[derive(Clone)]
 pub struct HttpClient {
-    inner: Client<FlushConnector, Body>,
+    inner: Pool,
+}
+
+#[derive(Clone)]
+enum Pool {
+    General(Client<FlushConnector<HttpConnector>, Body>),
+    System(Client<FlushConnector<SystemConnector>, Body>),
 }
 
 impl Default for HttpClient {
@@ -62,15 +77,43 @@ impl HttpClient {
         let inner = Client::builder(TokioExecutor::new())
             .pool_idle_timeout(Duration::from_secs(60))
             .build(FlushConnector(connector));
-        Self { inner }
+        Self {
+            inner: Pool::General(inner),
+        }
+    }
+
+    fn with_system_connector(connector: SystemConnector) -> Self {
+        let inner = Client::builder(TokioExecutor::new())
+            .pool_idle_timeout(Duration::from_secs(60))
+            .build(FlushConnector(connector));
+        Self {
+            inner: Pool::System(inner),
+        }
     }
 
     /// 原样发送请求（网关转发用），不设整体超时：长连接和流式响应由上游决定何时结束。
     pub async fn send(&self, request: Request<Body>) -> Result<Response<Incoming>, HttpError> {
-        self.inner
-            .request(request)
-            .await
-            .map_err(|e| HttpError::Connect(error_chain(&e)))
+        let result = match &self.inner {
+            Pool::General(client) => client.request(request).await,
+            Pool::System(client) => client.request(request).await,
+        };
+        result.map_err(|e| {
+            let mut cause: &dyn std::error::Error = &e;
+            loop {
+                if let Some(HttpError::SystemResolution { name, addresses }) =
+                    cause.downcast_ref::<HttpError>()
+                {
+                    return HttpError::SystemResolution {
+                        name: name.clone(),
+                        addresses: addresses.clone(),
+                    };
+                }
+                match cause.source() {
+                    Some(source) => cause = source,
+                    None => return HttpError::Connect(error_chain(&e)),
+                }
+            }
+        })
     }
 
     /// 只限制请求体写入上游之后的响应头等待，不限制上传或响应体。

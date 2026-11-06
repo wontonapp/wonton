@@ -20,9 +20,7 @@ use hyper::{
     body::{Body as HttpBody, Bytes, Frame, SizeHint},
 };
 use hyper_util::{
-    client::legacy::connect::{
-        CaptureConnection, Connected, Connection, HttpConnector, capture_connection,
-    },
+    client::legacy::connect::{CaptureConnection, Connected, Connection, capture_connection},
     rt::TokioIo,
 };
 use tokio::{net::TcpStream, sync::watch, time::Instant};
@@ -110,13 +108,15 @@ impl<T: Write + Unpin> Write for FlushIo<T> {
 }
 
 #[derive(Clone)]
-pub(super) struct FlushConnector(pub(super) HttpConnector);
+pub(super) struct FlushConnector<C>(pub(super) C);
 
-impl Service<Uri> for FlushConnector {
+impl<C> Service<Uri> for FlushConnector<C>
+where
+    C: Service<Uri, Response = TokioIo<TcpStream>>,
+{
     type Response = FlushIo<TokioIo<TcpStream>>;
-    type Error = <HttpConnector as Service<Uri>>::Error;
-    type Future =
-        MapOk<<HttpConnector as Service<Uri>>::Future, fn(TokioIo<TcpStream>) -> Self::Response>;
+    type Error = C::Error;
+    type Future = MapOk<C::Future, fn(TokioIo<TcpStream>) -> Self::Response>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.0.poll_ready(cx)

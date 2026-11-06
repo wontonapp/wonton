@@ -117,7 +117,7 @@ async fn forward(
             e
         }))
     });
-    let forwarded = proxy::forward_or(&gateway.http, target, req, fwd);
+    let forwarded = proxy::forward_or(&gateway.system_http, target, req, fwd);
     let forwarded = if matches!(method, Method::HEAD | Method::DELETE) {
         tokio::time::timeout(TUSD_CONTROL_TIMEOUT, forwarded)
             .await
@@ -141,6 +141,7 @@ fn tusd_failure(broke: bool, error: proxy::ForwardError) -> Failure {
         proxy::ForwardError::Unreachable(e) => {
             Failure::new(FileFailure::ServiceUnavailable, format!("连不上 tusd：{e}"))
         }
+        proxy::ForwardError::SystemResolution(e) => Failure::new(FileFailure::UpstreamError, e),
         proxy::ForwardError::HeaderTimeout => Failure::new(
             FileFailure::ServiceUnavailable,
             "tusd 迟迟没有回应，稍后再试",
