@@ -20,8 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # 比较随核心带的插件包要用到和 main 的分叉点。
-          fetch-depth: 0
+          # 插件包的版本检查只比当前提交和它的第一个父提交：PR 上检出的是合并提交，第一个父提交就是 base 的最新提交；
+          # push 到 main 时是上一个提交。拉全部历史太重，机器网络一抖 `--unshallow` 就断。
+          fetch-depth: 2
       - name: 源码文件不超过 800 行
         run: bash scripts/check-file-size.sh
       - name: 界面文字检查自己的用例
@@ -29,6 +30,6 @@ jobs:
       - name: 界面文字不写死，四种语言的字符串目录完整
         run: python3 scripts/check-ui-text.py
       - name: 随核心带的插件包改了文件就升版本号
-        run: bash scripts/check-bundled-plugin-versions.sh
+        run: bash scripts/check-bundled-plugin-versions.sh HEAD^1
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         run: bash scripts/check-uniffi-comments.sh
