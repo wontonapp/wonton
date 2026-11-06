@@ -70,6 +70,34 @@ fn env_of(plan: &super::render::ContainerPlan) -> Vec<String> {
     plan.body.env.clone().unwrap_or_default()
 }
 
+/// 只回答安装时用到的端点：发现文档、登记客户端。`sso: oidc` 的插件装上时要连身份提供方。
+pub(super) async fn fake_hydra() -> crate::oidc::Hydra {
+    let endpoint = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
+    let discovery = serde_json::json!({
+        "issuer": endpoint(""),
+        "authorization_endpoint": endpoint("/oauth2/auth"),
+        "token_endpoint": endpoint("/oauth2/token"),
+        "userinfo_endpoint": endpoint("/userinfo"),
+    });
+    let app = axum::Router::new()
+        .route(
+            "/.well-known/openid-configuration",
+            axum::routing::get(move || async move { axum::Json(discovery) }),
+        )
+        .route(
+            "/admin/clients/{id}",
+            axum::routing::put(|| async { hyper::StatusCode::OK }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let config = crate::config::OidcProviderConfig {
+        admin_url: format!("http://{addr}"),
+        public_url: format!("http://{addr}"),
+    };
+    crate::oidc::Hydra::new(crate::http::HttpClient::new(), &config)
+}
+
 /// 假 Docker 里容器创建时的环境变量：名字 → 值。
 fn env_of_container(
     docker: &super::fake_docker::FakeDocker,

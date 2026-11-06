@@ -150,6 +150,13 @@ pub struct OidcClient {
     /// 应用在令牌端点出示客户端密钥的方式，默认 `client_secret_basic`。
     #[serde(default)]
     pub token_endpoint_auth_method: TokenAuthMethod,
+    /// 给这个客户端的 `groups` 里，`owner` 之外再加这些组名，应用按组名映射角色。
+    /// 只发给这个客户端，别的插件看不到。
+    #[serde(default)]
+    pub owner_groups: Vec<String>,
+    /// 应用用 `email` 声明认人时写上：主人没填邮箱就装不上，预览和安装时报，不用等登录才失败。
+    #[serde(default)]
+    pub requires_email: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -642,6 +649,7 @@ fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
             if client.post_logout_paths.iter().any(|p| !p.starts_with('/')) {
                 return invalid("webui.oidc.post_logout_paths 每项以 / 开头");
             }
+            super::manifest_oidc::validate(client)?;
             Ok(())
         }
         (Sso::Oidc, None, _) => invalid("webui.sso 为 oidc 时必须提供 webui.oidc.redirect_paths"),

@@ -17,7 +17,7 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 - 一个插件一个 Bot（`plugin/bots.rs`），Bot 的主房间、`WONTON_MATRIX_OWNER`、Wonton 私聊、确认卡片都只对着主人。
 - 总线和 Bot 的 Matrix 入口按来源地址认插件，认不出是插件里的哪个 Bot。
 - 文件的访问者只有 `owner` 和 `bot:<名字>`，设备上传都进共享文件夹 `transfers`。
-- OIDC 的 `groups` 写死 `["owner"]`，代登录的 `{user}` 总是主人。
+- OIDC 的 `groups` 默认只有 `owner`，清单可以给单个客户端加组（见插件规范的“OIDC”），代登录的 `{user}` 总是主人。
 - 插件规范里有 `storage.home:*` 和 `bots`，核心没有兑现。
 
 ## 决策
@@ -95,7 +95,7 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 
 - 插件全家一份，由主人（和授权了的家人）装。每个插件有一个开关“家人能用”，默认关，安装页和插件设置里都能开：只有一个管理员账号的应用，开了就等于家人用主人的账号。家人的插件列表和底栏只有开放给他的插件，看不到商店。
 - **网页**：家人的设备打开插件网页，插件开放给家人才放行；ADR-0022 的两条照旧：应用的首次注册只有主人能做，写了 `setup_done` 的要它通过才对家人放行。
-- **身份**：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人是 `["owner"]`、家人是 `["member"]`；代登录的
+- **身份**：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人默认是 `["owner"]`、家人是 `["member"]`；代登录的
   `{user}`、`{name}`、`{email}` 也是当前这个人。`owner.identity` 不变，注入的是主人（服务器管理员）；在 `bots.services` 里注入的是这个 Bot 的归属人，
   共享 Bot 是主人。
 - **工具带上替谁办事**：总线给插件的 `tools/call` 在 `_meta` 里带 `app.wonton/user`：私人 Bot 是归属人的用户名，共享 Bot 不带。

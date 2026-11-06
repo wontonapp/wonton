@@ -130,10 +130,19 @@ pub(super) async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
         )
         .route(
             "/admin/oauth2/auth/requests/consent",
-            get(|| async {
+            get(|RawQuery(query): RawQuery| async move {
+                // 用 challenge 传客户端 ID：测试按客户端区分声明。
+                let challenge = query
+                    .as_deref()
+                    .and_then(|q| {
+                        q.split('&').find_map(|pair| {
+                            pair.strip_prefix("consent_challenge=").map(str::to_owned)
+                        })
+                    })
+                    .unwrap_or_default();
                 Json(json!({
                     "subject": "owner",
-                    "client": {"client_id": "app.whoami"},
+                    "client": {"client_id": challenge},
                     "requested_scope": ["openid", "profile", "email", "groups", "admin"],
                 }))
             }),
@@ -748,53 +757,4 @@ async fn plugin_api_answers_in_the_requested_language() {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{path}");
         assert_eq!(reply.error_kind(), Some("invalid_input"), "{path}");
     }
-}
-
-#[tokio::test]
-async fn oidc_login_and_consent_use_the_core_session() {
-    let accepted = Arc::new(Mutex::new(Vec::new()));
-    let hydra = fake_hydra(accepted.clone()).await;
-    let h = Harness::start(Some(hydra)).await;
-
-    let anonymous = h
-        .get(CORE, "/_wonton/oidc/login?login_challenge=abc", &[])
-        .await;
-    assert_eq!(anonymous.status, StatusCode::SEE_OTHER);
-    assert!(anonymous.location().starts_with("/_wonton/login?next="));
-    assert!(
-        accepted.lock().unwrap().is_empty(),
-        "未登录时不能接受 OIDC 登录"
-    );
-
-    let core = h.login(TOKEN).await.cookie(CORE_COOKIE);
-    let login = h
-        .get(
-            CORE,
-            "/_wonton/oidc/login?login_challenge=abc",
-            &[("cookie", &core)],
-        )
-        .await;
-    assert_eq!(login.location(), "http://auth.wonton.localhost/after-login");
-    let consent = h
-        .get(
-            CORE,
-            "/_wonton/oidc/consent?consent_challenge=def",
-            &[("cookie", &core)],
-        )
-        .await;
-    assert_eq!(
-        consent.location(),
-        "http://auth.wonton.localhost/after-consent"
-    );
-
-    let accepted = accepted.lock().unwrap();
-    assert_eq!(accepted[0]["subject"], "owner");
-    assert_eq!(
-        accepted[1]["grant_scope"],
-        json!(["openid", "profile", "email", "groups"])
-    );
-    let claims = &accepted[1]["session"]["id_token"];
-    assert_eq!(claims["email"], "owner@wonton.localhost");
-    assert_eq!(claims["preferred_username"], "owner");
-    assert_eq!(claims["groups"], json!(["owner"]));
 }

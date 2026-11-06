@@ -367,6 +367,23 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
+    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.owner_groups`）。
+    /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
+    pub fn oidc_owner_groups(&self, client_id: &str) -> Vec<String> {
+        let Ok(id) = PluginId::parse(client_id) else {
+            return Vec::new();
+        };
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(&id)
+            .and_then(|entry| entry.listed.as_ref())
+            .and_then(|listed| listed.manifest.webui.as_ref())
+            .and_then(|webui| webui.oidc.as_ref())
+            .map(|client| client.owner_groups.clone())
+            .unwrap_or_default()
+    }
+
     /// 没装成的插件也如实列出来（标为异常、写明原因），主人看得到，不悄悄跳过。
     pub(super) fn mark_failed(&self, manifest: &Manifest, reason: String) {
         let entry = Entry {

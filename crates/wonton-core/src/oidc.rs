@@ -266,8 +266,10 @@ pub fn granted_scopes(requested: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// ID 令牌里的用户声明，按授予的 scope 取舍。
-pub fn id_token_claims(owner: &Owner, granted: &[String]) -> Value {
+/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 在 `owner` 之外加上客户端声明的组
+/// （清单 `oidc.owner_groups`，只发给这个客户端）：Hydra 把 `session.id_token` 的声明
+/// 同时用作 ID 令牌和 userinfo 的内容。
+pub fn id_token_claims(owner: &Owner, granted: &[String], extra_groups: &[String]) -> Value {
     let has = |scope: &str| granted.iter().any(|s| s == scope);
     let mut claims = serde_json::Map::new();
     if has("profile") {
@@ -281,7 +283,10 @@ pub fn id_token_claims(owner: &Owner, granted: &[String]) -> Value {
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
-        claims.insert("groups".into(), json!(["owner"]));
+        let mut groups: Vec<&str> = Vec::with_capacity(extra_groups.len() + 1);
+        groups.push("owner");
+        groups.extend(extra_groups.iter().map(String::as_str));
+        claims.insert("groups".into(), json!(groups));
     }
     Value::Object(claims)
 }
@@ -300,14 +305,30 @@ mod tests {
         let requested: Vec<String> = ["openid", "email", "admin:all"].map(String::from).into();
         let granted = granted_scopes(&requested);
         assert_eq!(granted, ["openid", "email"]);
-        let claims = id_token_claims(&owner, &granted);
+        let claims = id_token_claims(&owner, &granted, &[]);
         assert_eq!(claims["email"], "owner@wonton.localhost");
         assert!(claims.get("name").is_none() && claims.get("groups").is_none());
         let no_email = Owner {
             email: None,
             ..owner
         };
-        let claims = id_token_claims(&no_email, &granted);
+        let claims = id_token_claims(&no_email, &granted, &[]);
         assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
+    }
+
+    #[test]
+    fn groups_extend_owner_with_the_clients_groups() {
+        let owner = Owner {
+            username: "owner".into(),
+            display_name: "云吞".into(),
+            email: None,
+        };
+        let granted: Vec<String> = ["openid", "groups"].map(String::from).into();
+        let claims = id_token_claims(&owner, &granted, &["admin".into(), "media".into()]);
+        assert_eq!(claims["groups"], json!(["owner", "admin", "media"]));
+        // 没授予 groups scope 就一个组也不发。
+        let granted: Vec<String> = ["openid"].map(String::from).into();
+        let claims = id_token_claims(&owner, &granted, &["admin".into()]);
+        assert!(claims.get("groups").is_none());
     }
 }

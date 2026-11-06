@@ -1,8 +1,7 @@
 //! 出网：没有声明 `network.egress` 的插件网络是 Docker 的内部网络；核心在容器里时连宿主也隔开。
 
+use axum::Router;
 use axum::routing::get;
-use axum::{Json, Router};
-use hyper::StatusCode;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
@@ -15,9 +14,6 @@ use super::super::store::{InstalledRecord, Store};
 use super::super::{PluginId, PluginStatus};
 use super::manager::{manager_in_container, manager_with, manager_with_oidc};
 use super::package;
-use crate::config::OidcProviderConfig;
-use crate::http::HttpClient;
-use crate::oidc::Hydra;
 
 fn app(permissions: &str) -> String {
     package(
@@ -137,32 +133,6 @@ pub(super) async fn serve(app: Router) -> std::net::SocketAddr {
     addr
 }
 
-/// 只回答安装时用到的端点：发现文档、登记客户端。
-async fn fake_hydra() -> Hydra {
-    let endpoint = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
-    let discovery = json!({
-        "issuer": endpoint(""),
-        "authorization_endpoint": endpoint("/oauth2/auth"),
-        "token_endpoint": endpoint("/oauth2/token"),
-        "userinfo_endpoint": endpoint("/userinfo"),
-    });
-    let app = Router::new()
-        .route(
-            "/.well-known/openid-configuration",
-            get(move || async move { Json(discovery) }),
-        )
-        .route(
-            "/admin/clients/{id}",
-            axum::routing::put(|| async { StatusCode::OK }),
-        );
-    let addr = serve(app).await;
-    let config = OidcProviderConfig {
-        admin_url: format!("http://{addr}"),
-        public_url: format!("http://{addr}"),
-    };
-    Hydra::new(HttpClient::new(), &config)
-}
-
 #[tokio::test]
 async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gateway() {
     // 假 Docker 把插件容器的地址报成 127.0.0.1，安装最后一步检查的网页就是这个本机服务。
@@ -177,7 +147,7 @@ async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gatew
     );
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let m = manager_with_oidc(engine, &dir, fake_hydra().await);
+    let m = manager_with_oidc(engine, &dir, super::fake_hydra().await);
     m.install(&compose, &[]).await.unwrap();
     // 内部网络没有默认路由，host-gateway 走不通；经插件网络的网关（宿主上网桥的地址）访问核心。
     let created = docker.created(&container_name("app-test", "web")).unwrap();

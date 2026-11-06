@@ -201,7 +201,7 @@ fn unknown_secret(name: &str) -> String {
 }
 
 /// 清单的代登录模板用没用 `{email}`。
-pub fn uses_email(manifest: &Manifest) -> bool {
+pub(super) fn uses_email(manifest: &Manifest) -> bool {
     any_part(manifest, |part| matches!(part, Part::Email))
 }
 

@@ -21,7 +21,7 @@ use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallRep
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
-use super::proxy_auth::{self, ProxyAuth};
+use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, OidcVars, OwnerVars, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
@@ -291,7 +291,7 @@ impl PluginManager {
         secret: Option<&str>,
         generated: BTreeMap<String, String>,
     ) -> Result<InstallContext, InstallError> {
-        if self.cfg.profile.email().is_none() && proxy_auth::uses_email(manifest) {
+        if self.cfg.profile.email().is_none() && super::manifest_oidc::needs_owner_email(manifest) {
             return Err(InstallError::OwnerProfileIncomplete);
         }
         let public = &self.cfg.public;

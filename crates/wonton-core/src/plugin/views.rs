@@ -22,7 +22,6 @@ use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, s
 use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
-use super::proxy_auth;
 use super::render::{dry_run, dry_run_with_email};
 
 impl PluginManager {
@@ -367,8 +366,8 @@ impl PluginManager {
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
     /// 主人还没填邮箱、插件又非要不可时的说明。
     pub(crate) fn missing_profile(&self, package: &PluginPackage) -> Option<String> {
-        let needs_email =
-            proxy_auth::uses_email(&package.manifest) || dry_run_with_email(package, None).is_err();
+        let needs_email = super::manifest_oidc::needs_owner_email(&package.manifest)
+            || dry_run_with_email(package, None).is_err();
         (self.cfg.profile.email().is_none() && needs_email)
             .then(|| crate::owner::EMAIL_NEEDED.to_owned())
     }

@@ -185,8 +185,9 @@ pub async fn oidc_consent(
         );
     }
     let granted = granted_scopes(&request.requested_scope);
-    let claims = id_token_claims(&gateway.owner.owner(), &granted);
-    tracing::info!(client = %request.client.client_id, ?granted, "接受 OIDC 授权");
+    let groups = gateway.plugins.oidc_owner_groups(&request.client.client_id);
+    let claims = id_token_claims(&gateway.owner.owner(), &granted, &groups);
+    tracing::info!(client = %request.client.client_id, ?granted, ?groups, "接受 OIDC 授权");
     match hydra
         .accept_consent(&query.consent_challenge, &granted, claims)
         .await

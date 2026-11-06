@@ -484,6 +484,8 @@ mod model_providers_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]
+mod oidc_consent_tests;
+#[cfg(test)]
 mod onboarding_tests;
 #[cfg(test)]
 mod owner_profile_tests;
