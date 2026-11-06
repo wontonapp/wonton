@@ -59,7 +59,7 @@ impl Core {
     async fn prepare(&self) {
         self.engine.check_server().await.unwrap();
         self.engine
-            .ensure_image(IMAGE, PullPolicy::Missing)
+            .ensure_image(IMAGE, PullPolicy::Missing, None)
             .await
             .unwrap();
         self.start_idle(&self.core_container()).await;

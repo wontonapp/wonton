@@ -152,6 +152,14 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             get(api::egress_proxy).put(api::set_egress_proxy),
         )
         .route(
+            "/_wonton/api/registry-mirror",
+            get(super::registry_mirror::get).put(super::registry_mirror::put),
+        )
+        .route(
+            "/_wonton/api/registry-mirror/test",
+            post(super::registry_mirror::test),
+        )
+        .route(
             wonton_protocol::OWNER_PROFILE_PATH,
             get(owner_profile::read).put(owner_profile::save),
         )

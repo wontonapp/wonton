@@ -15,8 +15,9 @@
 //! | PUT | `/_wonton/api/plugins/{id}/limits` | 请求体是 `PluginLimits`，改资源上限后返回 `PluginDetail` |
 //! | PUT | `/_wonton/api/plugins/{id}/lan-webui` | 请求体是 `LanWebuiUpdate`，改网页的局域网端口开关，重建完返回 `PluginDetail` |
 //! | DELETE | `/_wonton/api/plugins/{id}/save-grants?folder=` | 撤销 Bot 存文件的一条授权（ADR-0027），返回 `PluginDetail` |
-//! | GET | `/_wonton/api/egress-proxy` | 出网代理的设置和最近的探测结果（`EgressProxySettings`） |
-//! | PUT | `/_wonton/api/egress-proxy` | 请求体是 `EgressProxyUpdate`，改地址和额外直连的网段，做完再返回 |
+//! | GET/PUT | `/_wonton/api/egress-proxy` | 出网代理的设置（`EgressProxySettings` / `EgressProxyUpdate`），改完返回 |
+//! | GET/PUT | `/_wonton/api/registry-mirror` | 镜像加速的设置（`RegistryMirrorSettings` / `RegistryMirrorUpdate`） |
+//! | POST | `/_wonton/api/registry-mirror/test` | 按摘要测速给定地址和 Docker Hub（`RegistryMirrorTests`） |
 //! | GET/PUT | `/_wonton/api/onboarding` | 引导状态和官方推荐清单（`Onboarding`） |
 //! | GET | `/_wonton/api/store?refresh=true` | 商店（`StoreListing`）；`refresh` 时不等缓存过期 |
 //! | GET | `/_wonton/api/store/plugin?source=github:…` | 来源最新的版本的详情（`PluginDetail`） |
@@ -30,8 +31,7 @@
 //! | PUT/POST | `/_wonton/api/models/providers/{id}[/test]` | 保存或只测试模型服务商 key |
 //! | PUT/POST | `/_wonton/api/models/custom-provider[/test]` | 保存或只测试自定义服务商 |
 //!
-//! 插件包是 compose 文本，或者 tar、tar.gz、zip 压缩包（按内容认）。JSON 请求体（`Content-Type: application/json`）是按来源
-//! 预览和安装。
+//! 插件包是 compose 文本，或者 tar、tar.gz、zip 压缩包（按内容认）；JSON 请求体（`Content-Type: application/json`）按来源预览和安装。
 
 use std::sync::Arc;
 

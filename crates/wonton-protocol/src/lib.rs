@@ -57,8 +57,8 @@ pub use core_upgrade::{
 };
 pub use egress::{
     EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
-    EgressProxyProvider, EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart,
-    EgressViewModel, LanWebuiUpdate,
+    EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart, EgressViewModel,
+    LanWebuiUpdate,
 };
 pub use error::CoreError;
 pub use file::{
@@ -107,7 +107,8 @@ pub use plugin::{
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
 pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
-    RegistryMirrorTests, RegistryMirrorUpdate, RegistryProbe, RegistryProblem,
+    RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
+    RegistryProblem,
 };
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};

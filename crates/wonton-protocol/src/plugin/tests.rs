@@ -309,6 +309,7 @@ fn interface_types_round_trip_through_json() {
             }),
         }],
         egress: EgressViewModel::default(),
+        registry_mirror: crate::RegistryMirrorViewModel::default(),
         core_upgrade: crate::CoreUpgradeViewModel::default(),
         storage: Some(StorageUsage {
             total_bytes: 500,

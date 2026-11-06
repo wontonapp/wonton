@@ -167,6 +167,7 @@ async fn start_relay(engine: &Engine, names: &Names, files: &RelayFiles, proxy: 
         name: &names.relay,
         labels: &labels,
         files,
+        image: IMAGE,
     };
     engine.start_relay(&relay).await.unwrap();
     connect_relay(engine, &names.plugin, &names.relay, &[ALIAS]).await;
@@ -317,7 +318,7 @@ async fn the_relay_goes_through_the_owners_proxy_and_follows_its_lists() {
     engine.check_server().await.unwrap();
     for image in [IMAGE, BUSYBOX] {
         engine
-            .ensure_image(image, PullPolicy::Missing)
+            .ensure_image(image, PullPolicy::Missing, None)
             .await
             .unwrap();
     }

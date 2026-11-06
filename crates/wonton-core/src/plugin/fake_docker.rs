@@ -130,6 +130,7 @@ struct Resources {
     pull_spared: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
+    https_proxy: Option<String>,
     /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
     image_healthchecks: BTreeMap<String, Value>,
     /// 容器名 → 跑完时的（退出码，标准输出，标准错误），`wait` 和 `logs` 按它回答；没设的以 0 退出、没有输出。
@@ -365,6 +366,10 @@ impl FakeDocker {
 
     pub fn set_runtimes(&self, runtimes: &[&str]) {
         self.lock().runtimes = Some(runtimes.iter().map(|r| (*r).to_owned()).collect());
+    }
+
+    pub fn set_https_proxy(&self, address: &str) {
+        self.lock().https_proxy = Some(address.to_owned());
     }
 
     fn lock(&self) -> MutexGuard<'_, Resources> {
@@ -646,7 +651,7 @@ fn others(
                 .collect();
             json_reply(
                 StatusCode::OK,
-                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32}),
+                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
             )
         }
         (&Method::GET, ["images", image @ .., "json"]) => {

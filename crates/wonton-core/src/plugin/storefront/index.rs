@@ -35,6 +35,8 @@ struct IndexFile {
     /// 读不懂时只影响引导，所以这里不按 [`OnboardingCatalog`] 解析。
     #[serde(default)]
     onboarding: Option<serde_json::Value>,
+    #[serde(default)]
+    registry_mirrors: Option<serde_json::Value>,
 }
 
 /// 帮助文档的最新提交（ADR-0034）。
@@ -160,6 +162,8 @@ pub struct Index {
     pub onboarding: Option<OnboardingCatalog>,
     /// `onboarding` 读不懂的原因。
     pub onboarding_problem: Option<String>,
+    pub registry_mirrors: Vec<String>,
+    pub registry_mirrors_problem: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -205,6 +209,18 @@ impl Index {
             Some(Ok(onboarding)) => index.onboarding = Some(onboarding),
             Some(Err(e)) => {
                 index.onboarding_problem = Some(format!("官方索引的 onboarding 读不懂：{e}"))
+            }
+            None => {}
+        }
+        match file
+            .registry_mirrors
+            .map(super::super::registry_mirror::address::choices)
+        {
+            Some(Ok(choices)) => index.registry_mirrors = choices,
+            Some(Err(e)) => {
+                let reason = format!("官方索引的 registry_mirrors 读不懂：{e}");
+                tracing::warn!(%reason);
+                index.registry_mirrors_problem = Some(reason);
             }
             None => {}
         }

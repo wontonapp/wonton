@@ -120,6 +120,7 @@ pub struct PluginManager {
     pub(super) lan: Lan,
     /// 出网插件走哪个代理，见 [`super::egress`]。
     pub(super) egress: Egress,
+    pub(super) registry_mirror: super::registry_mirror::RegistryMirror,
     /// 核心升级没结束时是真，这时不动插件（ADR-0025）。
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
     /// 查到的新版本，见 [`super::upgrade`]。
@@ -205,6 +206,7 @@ impl PluginManager {
             bundled: RwLock::new(BTreeSet::new()),
             lan,
             egress: Egress::default(),
+            registry_mirror: Default::default(),
             upgrade_frozen: None,
             oom: Default::default(),
             upgrades: Upgrades::default(),

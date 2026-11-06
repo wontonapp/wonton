@@ -8,6 +8,7 @@ mod core_upgrade;
 mod egress;
 mod owner_profile;
 mod polling;
+mod registry_mirror;
 mod start;
 mod takeover;
 mod tasks;
@@ -68,6 +69,7 @@ pub(crate) struct PluginsLink {
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
     egress_epoch: AtomicU64,
     upgrade: Mutex<core_upgrade::UpgradeLocal>,
+    registry: Mutex<registry_mirror::RegistryLocal>,
     takeover: Mutex<takeover::Slot>,
     starts: Mutex<HashMap<String, u64>>,
     data_dir: PathBuf,
@@ -101,6 +103,7 @@ impl PluginsLink {
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
+            registry: Mutex::new(registry_mirror::RegistryLocal::default()),
             takeover: Mutex::new(takeover::Slot::default()),
             starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
@@ -266,6 +269,7 @@ impl PluginsLink {
     /// 配对到了另一台服务器：上一台的列表不能再显示；做完的任务不留，进行中的等不到结果了。还想看商店的话接着取，商店页可能
     /// 正开着。
     fn forget_server(&self) {
+        let _registry = lock(&self.registry);
         self.generation.fetch_add(1, Ordering::SeqCst);
         lock(&self.starts).clear();
         cache::forget(&self.installed_cache);
@@ -275,6 +279,7 @@ impl PluginsLink {
             view.store = None;
             view.problem = None;
             view.egress = EgressViewModel::default();
+            view.registry_mirror = wonton_protocol::RegistryMirrorViewModel::default();
             view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;

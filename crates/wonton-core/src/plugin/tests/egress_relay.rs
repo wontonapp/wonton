@@ -336,6 +336,22 @@ async fn a_relay_on_an_older_image_is_replaced() {
 }
 
 #[tokio::test]
+async fn registry_mirror_relay_with_the_same_digest_is_not_recreated() {
+    let rig = Rig::new(Egress::default()).await;
+    rig.save(Some("http://proxy:1"), &[]);
+    rig.install(&egress_app()).await;
+    let digest = IMAGE.split_once('@').unwrap().1;
+    let image = format!("mirror.example/gogost/gost@{digest}");
+    let body = json!({"Image": image, "Labels": rig.relay_created()["Labels"]});
+    rig.docker.add_stranger_container(RELAY, body);
+    let before = rig.relay_creations();
+    rig.m.reconcile_relay().await.unwrap();
+    rig.m.reconcile_relay().await.unwrap();
+    assert_eq!(rig.relay_creations(), before);
+    assert_eq!(rig.relay_created()["Image"], image);
+}
+
+#[tokio::test]
 async fn cancelling_removes_the_relay_and_its_password_but_not_its_network() {
     let rig = Rig::new(Egress::default()).await;
     rig.save(Some("http://me:s3cret@proxy:1"), &[]);

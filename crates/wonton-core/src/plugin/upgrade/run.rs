@@ -66,6 +66,7 @@ struct Prepared {
     secrets: Secrets,
     proxy: Option<ProxyAuth>,
     oidc_secret: Option<String>,
+    pulled: Deployment,
 }
 
 enum Outcome {
@@ -275,12 +276,14 @@ impl PluginManager {
             mut secrets,
             proxy,
             oidc_secret,
+            pulled,
         } = prepared;
         let network = self.cfg.instance.network(&ctx.slug);
         self.swap_network(old, manifest, &network, progress).await?;
         ctx.core_address = self.core_address_var(manifest, &network).await?;
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
         let mut plan = render(package, &ctx)?;
+        super::super::registry_mirror::use_pulled_images(&mut plan, pulled);
         if let Some(secret) = &oidc_secret {
             let spec = client_spec(manifest, &ctx, secret);
             self.hydra()?.upsert_client(&spec).await?;
@@ -359,12 +362,8 @@ impl PluginManager {
         ctx.models = self
             .upgrade_model_vars(package, &mut progress.added_models)
             .await?;
-        let plan = render(package, &ctx)?;
-        for container in &plan.containers {
-            self.engine
-                .ensure_image(&container.image, container.pull_policy)
-                .await?;
-        }
+        let mut plan = render(package, &ctx)?;
+        self.prepare_images(&mut plan).await?;
         self.prepare_dirs(&ctx, &plan.dirs, &mut progress.undo)?;
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;
@@ -386,6 +385,7 @@ impl PluginManager {
             secrets,
             proxy,
             oidc_secret,
+            pulled: plan,
         })
     }
 

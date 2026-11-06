@@ -329,11 +329,7 @@ impl PluginManager {
         ctx: &InstallContext,
         mut plan: Deployment,
     ) -> Result<(), InstallError> {
-        for container in &plan.containers {
-            self.engine
-                .ensure_image(&container.image, container.pull_policy)
-                .await?;
-        }
+        self.prepare_images(&mut plan).await?;
         for container in &plan.containers {
             self.engine.remove_container(&container.name).await?;
         }

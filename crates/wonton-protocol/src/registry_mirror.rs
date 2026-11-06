@@ -6,6 +6,22 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::PluginProblem;
+
+/// 镜像加速设置页；请求失败时保留最近取到的设置和测速结果。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RegistryMirrorViewModel {
+    pub settings: Option<RegistryMirrorSettings>,
+    pub loading: bool,
+    pub saving: bool,
+    pub testing: bool,
+    pub load_problem: Option<PluginProblem>,
+    pub save_problem: Option<PluginProblem>,
+    pub test_problem: Option<PluginProblem>,
+    pub tests: Option<RegistryMirrorTests>,
+}
+
 /// `GET /_wonton/api/registry-mirror` 和 `PUT /_wonton/api/registry-mirror` 的响应。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

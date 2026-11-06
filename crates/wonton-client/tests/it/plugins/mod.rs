@@ -5,6 +5,7 @@ mod connection;
 mod core_upgrade;
 mod egress;
 mod onboarding;
+mod registry_mirror;
 pub mod rig;
 mod takeover;
 mod tool_policy;

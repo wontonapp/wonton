@@ -135,11 +135,20 @@ impl PluginManager {
                 return Err(name_taken("容器", &name, &labels));
             }
         }
-        let current = created.and_then(|c| c.image.as_deref()) == Some(IMAGE);
+        let current = created
+            .and_then(|c| c.image.as_deref())
+            .is_some_and(|image| {
+                crate::plugin::registry_mirror::reference::same_image(image, IMAGE)
+            });
         let state = found.as_ref().and_then(|c| c.state.as_ref());
         let running = state.and_then(|s| s.running) == Some(true);
         // 镜像拉不到时什么都不动，正在跑的出口容器继续跑。
-        self.engine.ensure_image(IMAGE, PullPolicy::Missing).await?;
+        let mirror = self.registry_mirror_address()?;
+        let image = self
+            .engine
+            .ensure_image(IMAGE, PullPolicy::Missing, mirror.as_deref())
+            .await
+            .map_err(|error| self.registry_pull_error(error, mirror.as_deref()))?;
         let files = self.relay_files();
         let yaml = config_yaml(proxy).map_err(InstallError::Storage)?;
         let same = files.has_config(&yaml);
@@ -154,6 +163,7 @@ impl PluginManager {
                 name: &name,
                 labels: &labels,
                 files: &files,
+                image: &image,
             };
             self.engine.start_relay(&relay).await?;
             tracing::info!(proxy = %proxy.masked(), "出口容器已启动");

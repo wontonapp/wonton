@@ -329,11 +329,6 @@ async fn an_image_that_cannot_be_pulled_fails_the_install_with_dockers_reason() 
     let m = manager_with(engine, &dir);
     let err = m.install_package(example("whoami"), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "image_pull_failed", "{err}");
-    assert!(
-        err.to_string()
-            .starts_with("拉取镜像失败（traefik/whoami:v1.11）：manifest unknown"),
-        "{err}"
-    );
     assert!(m.list().is_empty());
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }

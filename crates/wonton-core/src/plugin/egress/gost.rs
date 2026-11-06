@@ -297,6 +297,7 @@ pub struct Relay<'a> {
     pub name: &'a str,
     pub labels: &'a HashMap<String, String>,
     pub files: &'a RelayFiles,
+    pub image: &'a str,
 }
 
 impl Relay<'_> {
@@ -304,7 +305,7 @@ impl Relay<'_> {
     fn body(&self) -> ContainerCreateBody {
         let owner = self.files.owner;
         ContainerCreateBody {
-            image: Some(IMAGE.to_owned()),
+            image: Some(self.image.to_owned()),
             cmd: Some(vec!["-C".to_owned(), format!("{MOUNT}/{CONFIG_FILE}")]),
             user: Some(format!("{}:{}", owner.uid, owner.gid)),
             env: Some(vec!["GOST_LOGGER_LEVEL=warn".to_owned()]),

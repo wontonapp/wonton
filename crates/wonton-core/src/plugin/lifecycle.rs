@@ -168,11 +168,7 @@ impl PluginManager {
             undo.models = Some(manifest.id.clone());
         }
         let mut plan = render(package, &ctx)?;
-        for container in &plan.containers {
-            self.engine
-                .ensure_image(&container.image, container.pull_policy)
-                .await?;
-        }
+        self.prepare_images(&mut plan).await?;
         self.prepare_dirs(&ctx, &plan.dirs, undo)?;
         self.create_networks(manifest, &plan, &ctx, undo).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
@@ -185,7 +181,9 @@ impl PluginManager {
         // 网络建好才知道的：核心在网络里的地址和网关。
         ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
-        plan = render(package, &ctx)?;
+        let pulled = plan;
+        let mut plan = render(package, &ctx)?;
+        super::registry_mirror::use_pulled_images(&mut plan, pulled);
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;
             if volume_action(volume, labels.as_ref(), &manifest.id)? == VolumeAction::Create {

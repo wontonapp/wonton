@@ -143,6 +143,13 @@ pub enum Action {
     /// 主人没有确认，什么都不改。
     DismissEgressConfirmation,
 
+    /// 取镜像加速设置。
+    RefreshRegistryMirror,
+    /// 保存加速地址；空串表示关闭。
+    SaveRegistryMirror { mirror: String },
+    /// 测官方候选地址和当前使用地址，按顺序去重。
+    TestRegistryMirrors,
+
     // 新用户引导（ADR-0034）。网络操作都在后台执行，进展和结果在 `OnboardingViewModel` 里。
     /// 取引导的状态、推荐清单和服务商列表。
     RefreshOnboarding,

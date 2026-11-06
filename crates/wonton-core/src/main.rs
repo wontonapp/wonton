@@ -171,12 +171,9 @@ async fn serve() -> anyhow::Result<()> {
         .with_store(cfg.store.clone())
         .with_upgrade_freeze(upgrades.frozen()),
     );
+    manager.spawn_registry_mirror_probe();
     manager.restore().await.context("恢复已安装的插件")?;
-    manager.spawn_lan_monitor();
-    manager.spawn_egress_monitor();
-    manager.spawn_upgrade_checks();
-    manager.spawn_oom_watch();
-    manager.spawn_container_watch();
+    spawn_plugin_monitors(&manager);
     upgrades.spawn();
     preinstall(&cfg, manager.clone(), upgrades.clone())?;
 
@@ -229,6 +226,14 @@ async fn serve() -> anyhow::Result<()> {
     .context("网关异常退出");
     entry.shutdown().await;
     served
+}
+
+fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
+    manager.spawn_lan_monitor();
+    manager.spawn_egress_monitor();
+    manager.spawn_upgrade_checks();
+    manager.spawn_oom_watch();
+    manager.spawn_container_watch();
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {

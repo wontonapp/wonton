@@ -39,6 +39,7 @@ mod proxy;
 mod proxy_sso;
 mod push;
 mod pushers;
+mod registry_mirror;
 mod session;
 mod sso;
 mod tool_policy;
@@ -458,6 +459,8 @@ mod plugin_start_tests;
 mod proxy_sso_tests;
 #[cfg(test)]
 mod push_tests;
+#[cfg(test)]
+mod registry_mirror_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

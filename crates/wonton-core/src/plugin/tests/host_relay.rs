@@ -143,7 +143,7 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
     engine.check_server().await.unwrap();
     const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing)
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
     let port = free_port();

@@ -224,6 +224,21 @@ impl Store {
         write_json(&dir.join("settings.json"), settings)
     }
 
+    pub fn registry_mirror(
+        &self,
+    ) -> Result<Option<wonton_protocol::RegistryMirrorUpdate>, StoreError> {
+        read_json(&self.dir.join("registry-mirror").join("settings.json"))
+    }
+
+    pub fn save_registry_mirror(
+        &self,
+        settings: &wonton_protocol::RegistryMirrorUpdate,
+    ) -> Result<(), StoreError> {
+        let dir = self.dir.join("registry-mirror");
+        create_private_dir(&dir)?;
+        write_json(&dir.join("settings.json"), settings)
+    }
+
     pub fn lan_choice(&self) -> Result<Option<LanChoice>, StoreError> {
         read_json(&self.dir.join("lan").join("choice.json"))
     }

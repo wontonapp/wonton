@@ -12,14 +12,13 @@ use bollard::models::{
     NetworkConnectRequest, NetworkDisconnectRequest, VolumeCreateRequest,
 };
 use bollard::query_parameters::{
-    CreateContainerOptionsBuilder, CreateImageOptionsBuilder, DownloadFromContainerOptionsBuilder,
+    CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
     ListContainersOptionsBuilder, ListNetworksOptionsBuilder, ListVolumesOptionsBuilder,
     LogsOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder,
     StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 
-use super::compose::PullPolicy;
 use super::sources::Subnet;
 
 /// 核心要求的 Docker Engine 最低主版本：28 起局域网里的其他主机不能再经路由直接访问容器里没发布的端口
@@ -238,27 +237,6 @@ impl Engine {
         Ok(info)
     }
 
-    pub async fn ensure_image(&self, image: &str, policy: PullPolicy) -> Result<()> {
-        let present = match self.docker.inspect_image(image).await {
-            Ok(_) => true,
-            // containerd 存储里，镜像索引对同一架构列了几个变体，本机只有别的变体（比如别的工具按 `--platform linux/amd64`
-            // 拉过）时，这个接口回 200，但 Config 和 RootFS 是空的，bollard 解析失败（实测 Docker 29.7.2、bollard 0.21.1）。
-            // 拉一次就有这台主机要的变体，之后才读得到镜像自带的健康检查。
-            Err(BollardError::JsonDataError { .. }) => false,
-            Err(e) => match EngineError::from_bollard("检查镜像", e) {
-                EngineError::NotFound(_) => false,
-                other => return Err(other),
-            },
-        };
-        match (policy, present) {
-            (PullPolicy::Never, false) => Err(EngineError::NotFound(format!(
-                "镜像 {image}（pull_policy: never）"
-            ))),
-            (PullPolicy::Never, true) | (PullPolicy::Missing, true) => Ok(()),
-            _ => self.pull(image).await,
-        }
-    }
-
     /// 镜像自带的 `HEALTHCHECK`；没有时为空。镜像要先拉下来（[`Self::ensure_image`]）。
     pub async fn image_healthcheck(&self, image: &str) -> Result<Option<HealthConfig>> {
         let inspect = self
@@ -267,25 +245,6 @@ impl Engine {
             .await
             .map_err(|e| EngineError::from_bollard(&format!("检查镜像 {image}"), e))?;
         Ok(inspect.config.and_then(|config| config.healthcheck))
-    }
-
-    async fn pull(&self, image: &str) -> Result<()> {
-        let reference = pull_reference(image);
-        let options = CreateImageOptionsBuilder::default()
-            .from_image(&reference)
-            .build();
-        let mut stream = self.docker.create_image(Some(options), None, None);
-        while let Some(item) = stream.next().await {
-            item.map_err(|e| match e {
-                BollardError::DockerResponseServerError { message, .. }
-                | BollardError::DockerStreamError { error: message } => EngineError::Pull {
-                    image: image.to_owned(),
-                    message,
-                },
-                other => EngineError::from_bollard(&format!("拉取镜像 {image}"), other),
-            })?;
-        }
-        Ok(())
     }
 
     /// 查询网络的标签；网络不存在时返回 `None`。
@@ -663,18 +622,6 @@ impl Engine {
     }
 }
 
-/// 拉取用的镜像引用：没写标签也没写摘要时补上 `latest`，和 compose 一致。只传仓库名时
-/// Engine API 会拉取该仓库的全部标签。标签只看最后一个 `/` 之后，仓库地址里的端口
-/// （`localhost:5000/foo`）不算标签。
-fn pull_reference(image: &str) -> String {
-    let name = image.rsplit('/').next().unwrap_or(image);
-    if image.contains('@') || name.contains(':') {
-        image.to_owned()
-    } else {
-        format!("{image}:latest")
-    }
-}
-
 /// 归档接口返回的 tar 里的第一项：只接受不超过 `max` 字节的普通文件。`archive` 可能在内容中间被截断
 /// （读到上限就停了），所以先看头部再读内容。
 fn single_file(archive: &[u8], max: usize) -> std::io::Result<ContainerFile> {
@@ -722,7 +669,8 @@ fn ignore_missing(result: Result<()>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ContainerFile, EngineError, check_engine_version, pull_reference, single_file};
+    use super::{ContainerFile, EngineError, check_engine_version, single_file};
+    use crate::plugin::registry_mirror::reference::pull_reference;
 
     #[test]
     fn engines_older_than_28_are_refused() {

@@ -724,6 +724,12 @@ impl ClientCore {
                 self.plugins.end_takeover(&id);
                 Ok(())
             }
+            Action::RefreshRegistryMirror => {
+                self.plugins.refresh_registry_mirror();
+                Ok(())
+            }
+            Action::SaveRegistryMirror { mirror } => self.plugins.save_registry_mirror(mirror),
+            Action::TestRegistryMirrors => self.plugins.test_registry_mirrors(),
             Action::RefreshEgressProxy => {
                 self.plugins.refresh_egress();
                 Ok(())

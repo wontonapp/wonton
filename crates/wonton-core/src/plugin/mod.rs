@@ -53,6 +53,7 @@ pub mod privileges;
 pub mod provides;
 pub mod proxy_auth;
 mod reconcile;
+pub mod registry_mirror;
 pub mod render;
 pub mod requirements;
 pub mod save_grants;

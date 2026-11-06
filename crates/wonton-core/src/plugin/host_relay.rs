@@ -219,8 +219,14 @@ impl super::manager::PluginManager {
         if record.relays.is_empty() {
             return Ok(());
         }
-        self.engine
-            .ensure_image(IMAGE, super::compose::PullPolicy::Missing)
+        let mirror = self.registry_mirror_address()?;
+        let image = self
+            .engine
+            .ensure_image(
+                IMAGE,
+                super::compose::PullPolicy::Missing,
+                mirror.as_deref(),
+            )
             .await?;
         let owner = self.owner();
         let app_data = self.cfg.apps_dir.join(manifest.id.slug());
@@ -239,7 +245,9 @@ impl super::manager::PluginManager {
                 continue;
             }
             self.engine.remove_container(&name).await?;
-            let plan = plan(&self.cfg.instance, manifest, &app_data, owner, relay);
+            let mut plan = plan(&self.cfg.instance, manifest, &app_data, owner, relay);
+            plan.body.image = Some(image.clone());
+            plan.image.clone_from(&image);
             self.engine.create_container(&name, plan.body).await?;
             self.engine.start_container(&name).await?;
         }

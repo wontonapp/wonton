@@ -86,7 +86,7 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
     let names = Names::new();
     names.remove(&engine).await;
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing)
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
     let labels = HashMap::new();
@@ -209,7 +209,7 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
     let _serial = SERIAL.lock().await;
     let engine = Engine::connect().unwrap();
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing)
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
     for reach in [
@@ -329,7 +329,7 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
     }
     let engine = Engine::connect().unwrap();
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing)
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
     let plugin = prefix("forward");
