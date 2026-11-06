@@ -37,6 +37,13 @@ final class TabsModel {
         send(.selectTab(tab: tab))
     }
 
+    /// 系统入口必须把核心拒绝抛给 Intent，而不是只在 App 内显示弹窗。
+    func selectForNavigation(_ tab: TabRef) throws {
+        try core.dispatch(action: .selectTab(tab: tab))
+        update(core.tabs())
+        rejection = nil
+    }
+
     func isPinned(_ tab: TabRef) -> Bool { viewModel.items.contains { $0.tab == tab } }
 
     private func update(_ view: TabsViewModel) {

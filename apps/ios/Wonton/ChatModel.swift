@@ -47,8 +47,9 @@ final class ChatModel {
 
     /// 在主界面的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
-        for await viewModel in core.subscribeChat().updates() {
-            self.viewModel = viewModel
+        for await _ in core.subscribeChat().updates() {
+            // 系统 Intent 可在订阅消费前改状态，不能用队列中的旧快照覆盖它。
+            viewModel = core.chat()
             openAwaitedChat()
         }
     }
@@ -96,10 +97,22 @@ final class ChatModel {
         }
     }
 
+    func resetNavigation() {
+        awaitedPeer = nil
+        openingFailed = false
+        visiting = nil
+        path = []
+    }
+
+    func startNewChat() {
+        resetNavigation()
+        path = [.startChat]
+    }
+
     /// 从 `origin` 这一页打开和 `peer` 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
-    /// 对方的邀请还没接受时停在列表上，邀请就在那里。返回主界面要不要切到聊天页。
+    /// 默认保留邀请供主人接受；系统打开默认 Agent 时接受邀请并等加入。返回主界面要不要切到聊天页。
     @discardableResult
-    func openDirectChat(with peer: String, from origin: AppTab = .chat) -> Bool {
+    func openDirectChat(with peer: String, from origin: AppTab = .chat, acceptingInvitation: Bool = false) -> Bool {
         awaitedPeer = nil
         path = []
         visiting = nil
@@ -110,21 +123,42 @@ final class ChatModel {
             rejection = error.problem
             return true
         }
+        if acceptingInvitation { viewModel = core.chat() }
         let rooms = viewModel.rooms.filter { $0.directUserId == userId }
         if let joined = rooms.first(where: { $0.membership == .joined }) {
             show(joined.roomId, from: origin)
             return origin == .chat
         }
-        guard rooms.isEmpty else { return true }
+        let invitation = rooms.first { $0.membership == .invited }
+        guard rooms.isEmpty || (acceptingInvitation && invitation != nil) else { return true }
         do {
-            try core.dispatch(action: .startDirectChat(userId: userId))
+            if acceptingInvitation { try core.dispatch(action: .dismissChatProblem) }
+            if let invitation, acceptingInvitation {
+                try core.dispatch(action: .joinRoom(roomId: invitation.roomId))
+            } else {
+                try core.dispatch(action: .startDirectChat(userId: userId))
+            }
             awaitedPeer = userId
             awaitedFrom = origin
+            if acceptingInvitation {
+                viewModel = core.chat()
+                openAwaitedChat()
+            }
             return origin == .chat
         } catch {
             rejection = error.problem
             return true
         }
+    }
+
+    /// AskAgent 已在核心里发起或加入房间；这里只等订阅里的房间出现，避免重复建房。
+    func openAskedAgentChat(with peer: String) {
+        path = []
+        visiting = nil
+        awaitedPeer = peer
+        awaitedFrom = .chat
+        viewModel = core.chat()
+        openAwaitedChat()
     }
 
     private func show(_ roomId: String, from origin: AppTab) {

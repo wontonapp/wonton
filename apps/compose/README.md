@@ -101,6 +101,18 @@ Android 按 WebView 能力检测配置默认 Profile 的精确来源允许列表
 不支持时，底栏和覆盖层都先显示状态页，折叠详情列出实际 WebView 版本和所需版本。
 “仍然打开”只在本次 App 进程里对该插件生效；不替网页开启降级模式、不持久保存选择。
 
+## App 链接和桌面快捷方式
+
+链接格式遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)，只由核心 `appLinkUrl` / `parseAppLink`
+编解码。`androidApp/.../MainActivity.kt` 接收 VIEW Intent，`shared/.../ui/AppNavigation.kt` 消费一次并打开页面。
+未配对或仍在引导时忽略导航；已配对的冷启动等首次状态恢复后再决定。扫码、粘贴与 Debug 配对仍交给 `PairHome`。
+未固定的设置页沿用原生覆盖层，不自动修改底栏（核心 `SelectTab` 只接受已固定的原生页）。
+
+`shared/.../ui/AppShortcuts.kt` 用 AndroidX Core（Apache-2.0）发布“新会话”“问 Bot”和固定的插件页；固定入口图标
+复用设计系统，插件图标经核心下载后转 `IconCompat`。总数不超过系统上限：两个固定入口优先，插件按底栏顺序显示。
+图标获取和系统更新失败会提示原因。卸载后同时停用动态项和已固定到桌面的项，显示“这个应用已卸载”；只移出底栏不禁用
+桌面项，重装后重新启用。实际菜单容量由桌面决定，`adb shell dumpsys shortcut` 可查看动态、固定和停用状态。
+
 ## 聊天（开发）
 
 “聊天”页登录主人的 Matrix 账号，家里的核心要接好 Tuwunel（`deploy/dev/core` 自带）；登录、本地存储和恢复密钥见

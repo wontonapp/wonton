@@ -29,6 +29,10 @@ targets:
     info:
       path: Wonton/Info.plist
       properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: app.wonton.navigation
+            CFBundleURLSchemes:
+              - wonton
         # M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），只对 WebView 里的内容放开。
         NSAppTransportSecurity:
           NSAllowsArbitraryLoadsInWebContent: true

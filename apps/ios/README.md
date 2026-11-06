@@ -36,6 +36,12 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 
 底栏根页不显示大标题，连接状态仍在顶栏显示，状态栏下垫系统材质。聊天列表右下角的材质加号在底栏胶囊上方，点按进入“发起私聊”；列表可滚动到按钮上方。
 
+快捷指令、Siri 和 Spotlight 的入口在 `Wonton/Intents/`，共用 App 启动时创建的核心和导航模型。
+`AppNavigation` 与 `MainView+Navigation` 接收系统链接；链接编解码遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)。
+未配对或引导未完成时忽略导航链接，带文字的“问 Bot”明确向 Siri 报错，不发送消息；扫码和粘贴配对码仍走 `PairingView`。
+已配对设备冷启动时先等核心恢复引导状态，再判断是否导航；“问 Bot”在核心接受操作后打开私聊，
+建房、接受邀请和发送在核心后台执行，后续失败由聊天页按原有错误类别显示。
+
 ## 构建
 
 需要 Xcode、[XcodeGen](https://github.com/yonaskolb/XcodeGen)、SwiftLint，以及 Rust 的 iOS target：

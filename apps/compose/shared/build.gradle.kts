@@ -73,6 +73,8 @@ kotlin {
                 implementation(libs.compose.foundation)
                 implementation(libs.compose.material3)
                 implementation(libs.kotlinx.coroutines.core)
+                // Apache-2.0。桌面快捷方式（ShortcutManagerCompat）和插件图标（IconCompat）。
+                implementation(libs.androidx.core)
                 // Apache-2.0。WebView 的代理设置（ProxyController），插件网页经核心的本地代理打开。
                 implementation(libs.androidx.webkit)
                 // Apache-2.0。系统的照片选择器（PickVisualMedia）和返回键处理（BackHandler）。

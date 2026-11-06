@@ -12,7 +12,9 @@ import androidx.compose.runtime.setValue
 import app.wonton.android.push.PushNotifications
 import app.wonton.android.push.PushRegistration
 import app.wonton.client.initLogging
+import app.wonton.client.parseAppLink
 import app.wonton.protocol.Action
+import app.wonton.ui.AppLinkRequest
 import app.wonton.ui.StartupFailure
 import app.wonton.ui.WontonApp
 import app.wonton.ui.defaultDeviceName
@@ -22,6 +24,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     /** 点通知要打开的房间。 */
     private var requestedRoom by mutableStateOf<String?>(null)
+    private var requestedLink by mutableStateOf<AppLinkRequest?>(null)
     private var networkWatcher: NetworkWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,12 +53,14 @@ class MainActivity : ComponentActivity() {
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
         PushRegistration(this, core).start()
         requestRoom(intent)
+        requestLink(intent)
         setContent {
             WontonApp(
                 core,
                 devWebUrl = devWebUrl,
                 requestedRoom = requestedRoom,
                 onRoomRequestHandled = { requestedRoom = null },
+                requestedLink = requestedLink,
                 onCardsSettled = { cards -> PushNotifications.cancelCards(this, cards) },
             )
         }
@@ -63,13 +68,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         requestRoom(intent)
+        requestLink(intent)
     }
 
     /** 取走就删：屏幕旋转重建 Activity 时拿到的还是这个 Intent，不能再跳一次。 */
     private fun requestRoom(intent: Intent) {
-        intent.getStringExtra(EXTRA_ROOM)?.let { requestedRoom = it }
+        intent.getStringExtra(EXTRA_ROOM)?.let {
+            requestedLink = null
+            requestedRoom = it
+        }
         intent.removeExtra(EXTRA_ROOM)
+    }
+
+    private fun requestLink(intent: Intent) {
+        if (intent.action != Intent.ACTION_VIEW) return
+        val url = intent.dataString ?: return
+        requestedLink = parseAppLink(url)?.let { link ->
+            AppLinkRequest(link) { intent.data = null }
+        }
+        if (requestedLink == null) intent.data = null
     }
 
     override fun onResume() {

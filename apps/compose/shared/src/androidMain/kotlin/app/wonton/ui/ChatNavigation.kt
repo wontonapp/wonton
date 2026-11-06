@@ -46,6 +46,16 @@ class ChatNavigation(
         returnTab = null
     }
 
+    /** 外部导航清掉旧的返回页和异步等待，不能在新页面打开后被旧房间覆盖。 */
+    fun reset() {
+        awaitedPeer = null
+        awaitedRoom = null
+        openRoom = null
+        returnTab = null
+        showingBackup = false
+        startingChat = false
+    }
+
     /** 打开 [roomId]。这时还没有同步到它的话，等它出现。 */
     fun openWhenJoined(core: ClientCore, roomId: String) {
         awaitedPeer = null
@@ -57,9 +67,11 @@ class ChatNavigation(
 
     /**
      * 从 [from] 这一页打开和 [peer] 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
-     * 对方的邀请还没接受时到聊天列表，邀请就在那里。返回核心拒绝的原因。
+     * 邀请默认留在列表由主人接受；[acceptInvite] 用于主人主动打开默认 Agent 的系统入口。
      */
-    fun openDirectChat(core: ClientCore, peer: String, from: TabRef = TabRef.Chat): Problem? {
+    fun openDirectChat(
+        core: ClientCore, peer: String, from: TabRef = TabRef.Chat, acceptInvite: Boolean = false,
+    ): Problem? {
         awaitedPeer = null
         awaitedRoom = null
         openRoom = null
@@ -72,9 +84,16 @@ class ChatNavigation(
         // 聊天页不在前台时没有收集，取核心当前的状态。
         val rooms = core.chat().rooms.filter { it.directUserId == userId }
         val joined = rooms.firstOrNull { it.membership == RoomMembership.JOINED }
+        val invited = rooms.firstOrNull { it.membership == RoomMembership.INVITED }
         var rejection: Problem? = null
         if (joined != null) {
             show(joined.roomId, from)
+        } else if (acceptInvite && invited != null) {
+            rejection = core.send(Action.JoinRoom(invited.roomId))
+            if (rejection == null) {
+                awaitedPeer = userId
+                awaitedFrom = from
+            }
         } else if (rooms.isEmpty()) {
             rejection = core.send(Action.StartDirectChat(userId))
             if (rejection == null) {

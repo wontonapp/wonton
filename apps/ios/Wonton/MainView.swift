@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 import WontonClient
 
@@ -7,25 +8,26 @@ struct MainView: View {
     let plugins: PluginsModel
     let appearance: AppearanceModel
     let devWebURL: URL?
-    @State private var tabs: TabsModel
-    @State private var onboarding: OnboardingModel
-    @State private var settings: SettingsModel
+    let navigation: AppNavigation
+    var tabs: TabsModel { navigation.tabs }
+    var onboarding: OnboardingModel { navigation.onboarding }
+    @State var settings: SettingsModel
     @State private var visited: Set<TabRef> = []
     @State private var isKeyboardVisible = false
-    @State private var showsTabSettings = false
-    @State private var showsSettings = false
-    @State private var pendingSettingsPresentation = false
+    @State var showsTabSettings = false
+    @State var showsSettings = false
+    @State var pendingSettingsPresentation = false
     @EnvironmentObject private var orientation: FullscreenOrientation
-    @State private var onboardingGateway: TabChoice?
+    @State var onboardingGateway: TabChoice?
 
-    init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel, devWebURL: URL?) {
+    init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
+         navigation: AppNavigation, devWebURL: URL?) {
         self.chat = chat
         self.home = home
         self.plugins = plugins
         self.appearance = appearance
         self.devWebURL = devWebURL
-        _tabs = State(initialValue: TabsModel(core: chat.core))
-        _onboarding = State(initialValue: OnboardingModel(core: chat.core))
+        self.navigation = navigation
         _settings = State(initialValue: SettingsModel(core: chat.core))
     }
 
@@ -93,6 +95,11 @@ struct MainView: View {
         .onChange(of: onboardingGatewayPage) { _, page in
             if page == nil { onboardingGateway = nil }
         }
+        .onOpenURL(perform: receiveAppURL)
+        .onChange(of: navigation.presentationRevision, initial: true) { _, _ in applyAppNavigation() }
+        .onChange(of: tabs.viewModel.items, initial: true) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
+        .onChange(of: tabs.viewModel.candidates) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
+        .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .environment(plugins)
         .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
@@ -189,7 +196,7 @@ struct MainView: View {
         return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
     }
 
-    private var nativeTab: AppTab {
+    var nativeTab: AppTab {
         switch tabs.viewModel.selected {
         case .chat: .chat
         case .apps, .plugin: .apps
@@ -198,7 +205,7 @@ struct MainView: View {
     }
 
     private var isPaired: Bool { home.viewModel.status != .notConfigured }
-    private var overlayPresented: Binding<Bool> {
+    var overlayPresented: Binding<Bool> {
         Binding(get: { tabs.viewModel.overlay != nil && onboardingGateway == nil },
                 set: { if !$0 { tabs.send(.closeTabOverlay) } })
     }
@@ -210,78 +217,9 @@ struct MainView: View {
         return tabs.viewModel.overlay?.page
     }
 
-    private func openCardRoom(_ roomId: String) {
-        showsSettings = false
-        showsTabSettings = false
-        onboardingGateway = nil
-        tabs.select(.chat)
-        chat.visiting = nil
-        chat.path = [.room(roomId)]
-    }
-
-    private func finishOnboarding(_ bot: String?) {
-        tabs.select(.chat)
-        chat.path = []
-        chat.visiting = nil
-        if let bot { chat.openDirectChat(with: bot) }
-    }
-
-    private func openOnboardingGateway(_ url: URL) {
-        // 两个核心接口的根地址可能分别带和不带末尾斜杠。
-        let gateway = url.appendingPathComponent("")
-        guard let plugin = plugins.viewModel.installed?.plugins.first(where: {
-            $0.webUrl.flatMap(URL.init(string:))?.appendingPathComponent("") == gateway
-        }),
-              let choice = plugin.tabChoices.first else {
-            onboarding.rejection = Problem(title: "找不到模型网关的网页", nextStep: "重试后再打开。")
-            return
-        }
-        onboardingGateway = choice
-        tabs.select(choice.tab)
-    }
-
-    private func receiveDraft(_ text: String) {
-        chat.receiveDraft(text)
-        tabs.select(.chat)
-    }
-
-    private func open(_ entry: PluginEntry) {
-        switch entry {
-        case let .chat(botUserId):
-            let origin: AppTab = if tabs.viewModel.overlay != nil {
-                .chat
-            } else if case .plugin = tabs.viewModel.selected {
-                .chat
-            } else { nativeTab }
-            if chat.openDirectChat(with: botUserId, from: origin) { tabs.select(.chat) }
-        case let .web(tab): tabs.select(tab)
-        }
-    }
 }
 
-// 底栏和去设置的跳转拆到扩展里，MainView 的正文才不超过 SwiftLint 的 type_body_length；同一文件里的扩展能读 private 状态。
 extension MainView {
-    private func showServerRoute(_ route: SettingsRoute) {
-        let dismissingCover = overlayPresented.wrappedValue || onboardingGateway != nil || showsTabSettings
-        showsTabSettings = false
-        onboardingGateway = nil
-        settings.openServer(route)
-        if tabs.isPinned(.settings) {
-            pendingSettingsPresentation = false
-            showsSettings = false
-            tabs.select(.settings)
-        } else {
-            pendingSettingsPresentation = dismissingCover
-            tabs.send(.closeTabOverlay)
-            if !dismissingCover { showsSettings = true }
-        }
-    }
-
-    private func presentPendingSettings() {
-        guard pendingSettingsPresentation else { return }
-        pendingSettingsPresentation = false
-        showsSettings = true
-    }
 
     private var bottomBar: some View {
         WontonBottomBar(

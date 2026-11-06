@@ -18,10 +18,11 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(chat, home, plugins, appearance):
+            case let .ready(chat, home, plugins, appearance, navigation):
                 WontonThemeRoot(appearance: appearance.viewModel) {
                     MainView(
-                        chat: chat, home: home, plugins: plugins, appearance: appearance, devWebURL: Launch.devWebURL
+                        chat: chat, home: home, plugins: plugins, appearance: appearance,
+                        navigation: navigation, devWebURL: Launch.devWebURL
                     )
                 }
                 .environmentObject(orientation)
@@ -45,7 +46,7 @@ struct WontonApp: App {
 /// 启动核心。核心失败时如实显示原因，不进入主界面。
 @MainActor
 private enum Launch {
-    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel)
+    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation)
     case failed(String)
 
     /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。
@@ -80,9 +81,11 @@ private enum Launch {
             }
         }
         #endif
-        return .ready(
-            ChatModel(core: core), HomeModel(core: core), PluginsModel(core: core), AppearanceModel(core: core)
-        )
+        let chat = ChatModel(core: core)
+        let home = HomeModel(core: core)
+        let plugins = PluginsModel(core: core)
+        let navigation = AppNavigation(chat: chat, home: home, plugins: plugins)
+        return .ready(chat, home, plugins, AppearanceModel(core: core), navigation)
     }
 
     /// App 私有的数据目录，存设备密钥和连接信息。

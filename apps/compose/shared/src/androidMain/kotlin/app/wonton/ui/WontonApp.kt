@@ -56,6 +56,7 @@ fun WontonApp(
     requestedRoom: String? = null,
     onRoomRequestHandled: () -> Unit = {},
     onCardsSettled: (List<String>) -> Unit = {},
+    requestedLink: AppLinkRequest? = null,
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -72,6 +73,8 @@ fun WontonApp(
     LaunchedEffect(requestedRoom) {
         requestedRoom?.let { navigation.openRoom(it); onRoomRequestHandled() }
     }
+    AppLinkEffect(requestedLink, navigation)
+    AppShortcutsEffect(tabs)
     WontonTheme(appearance) {
         CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft) {
             PluginsEffects(plugins)
@@ -85,57 +88,6 @@ fun WontonApp(
     }
 }
 
-private class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
-    var appsPage by mutableStateOf(HomePage.LAUNCHER)
-    var settingsPage by mutableStateOf(SettingsSubpage.MAIN)
-    var settingsOverlay by mutableStateOf(false)
-    val plugins = PluginNavigation { entry ->
-        when (entry) {
-            is PluginEntry.Chat -> tabs.plugins.reject(
-                chat.openDirectChat(tabs.core, entry.botUserId, tabs.viewModel.selected),
-            )
-            is PluginEntry.Web -> tabs.send(Action.SelectTab(entry.tab))
-        }
-    }
-
-    fun openRoom(roomId: String) {
-        settingsOverlay = false
-        tabs.send(Action.SelectTab(TabRef.Chat))
-        chat.openWhenJoined(tabs.core, roomId)
-    }
-
-    fun finishOnboarding(peer: String?) {
-        settingsOverlay = false
-        chat.closeRoom()
-        chat.showingBackup = false
-        chat.startingChat = false
-        tabs.send(Action.SelectTab(TabRef.Chat))
-        if (peer != null) tabs.plugins.reject(chat.openDirectChat(tabs.core, peer))
-    }
-
-    fun settings(page: SettingsSubpage = SettingsSubpage.MAIN) {
-        settingsPage = page
-        if (tabs.viewModel.items.any { it.tab == TabRef.Settings }) {
-            tabs.send(Action.SelectTab(TabRef.Settings))
-            settingsOverlay = false
-        } else {
-            settingsOverlay = true
-        }
-    }
-
-    fun detail(id: String) {
-        tabs.send(Action.SelectTab(TabRef.Apps))
-        appsPage = HomePage.LAUNCHER
-        plugins.detail = PluginRoute.Installed(id)
-    }
-
-    fun hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
-        TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
-        TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
-        TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
-        is TabRef.Plugin -> false
-    }
-}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -152,7 +104,6 @@ private fun AppContent(
     FullscreenSystemBars(fullscreen, !native)
     val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible)
     var reselected by remember { mutableStateOf<TabRef?>(null) }
-    var tabMenu by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::settings)
@@ -168,7 +119,7 @@ private fun AppContent(
                     if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
                         if (view.selected == selected) reselected = selected
                         tabs.send(Action.SelectTab(selected))
-                    }, { tabMenu = it })
+                    }, { nav.tabMenu = it })
                 },
             ) { padding ->
                 Box(Modifier.fillMaxSize()) {
@@ -188,8 +139,8 @@ private fun AppContent(
         }
     }
     TabNotices(tabs) { nav.settings(SettingsSubpage.TABS) }
-    view.items.firstOrNull { it.tab == tabMenu }?.let { item ->
-        TabBarMenu(item, tabs, { nav.settings(SettingsSubpage.TABS) }, { tabMenu = null })
+    view.items.firstOrNull { it.tab == nav.tabMenu }?.let { item ->
+        TabBarMenu(item, tabs, { nav.settings(SettingsSubpage.TABS) }, { nav.tabMenu = null })
     }
 }
 
