@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotView, PushStatus, SecretString};
+use crate::{BotView, PushStatus, SecretString, VerificationFlow};
 
 /// 聊天页的 ViewModel。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +128,12 @@ pub struct EncryptionStatus {
     pub recovery_key: Option<SecretString>,
     /// 聊天列表需要主人处理的备份提醒；文字和跳转由原生壳呈现。
     pub backup_reminder: Option<BackupReminder>,
+    /// 本设备没验证，账号里有别的已验证设备：可以请它确认（[`Action::StartDeviceVerification`]），和输入恢复密钥并列。
+    ///
+    /// [`Action::StartDeviceVerification`]: crate::Action::StartDeviceVerification
+    pub can_verify_with_other_device: bool,
+    /// 正在进行或刚结束的设备确认（ADR-0046），本设备发起的和收到的都在这里。
+    pub verification_flow: Option<VerificationFlow>,
 }
 
 /// 聊天备份需要主人处理的事项。
@@ -308,10 +314,8 @@ mod tests {
     /// 测试用的恢复密钥原文。
     const KEY: &str = "EsTc 1234 abcd";
 
-    /// 契约：聊天的 ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
-    #[test]
-    fn chat_types_round_trip_through_json() {
-        let view_model = ChatViewModel {
+    fn sample_view_model() -> ChatViewModel {
+        ChatViewModel {
             account: ChatAccount::SignedIn {
                 user_id: "@owner:home.example".into(),
                 device_id: "ABCDEFGH".into(),
@@ -325,6 +329,8 @@ mod tests {
                 recovery: RecoveryStatus::Incomplete,
                 recovery_key: Some(SecretString::new(KEY)),
                 backup_reminder: Some(BackupReminder::SaveRecoveryKey),
+                can_verify_with_other_device: true,
+                verification_flow: None,
             },
             rooms: vec![RoomRow {
                 room_id: "!bot:home.example".into(),
@@ -354,7 +360,13 @@ mod tests {
             }],
             settled_confirmations: vec!["older-card".into()],
             bots: Vec::new(),
-        };
+        }
+    }
+
+    /// 契约：聊天的 ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
+    #[test]
+    fn chat_types_round_trip_through_json() {
+        let view_model = sample_view_model();
         assert_eq!(round_trip(&view_model), view_model);
 
         let image = ImageUpload {

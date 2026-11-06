@@ -182,6 +182,8 @@ mod tests {
                 recovery: RecoveryStatus::Unknown,
                 recovery_key: None,
                 backup_reminder: None,
+                can_verify_with_other_device: false,
+                verification_flow: None,
             },
             rooms: Vec::new(),
             problem: None,

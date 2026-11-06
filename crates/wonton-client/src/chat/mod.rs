@@ -105,6 +105,8 @@ impl ChatLink {
             recovery: RecoveryStatus::Unknown,
             recovery_key: storage.recovery_key()?,
             backup_reminder: None,
+            can_verify_with_other_device: false,
+            verification_flow: None,
         };
         recovery::update_reminder(&mut encryption);
         let view = watch::Sender::new(ChatViewModel {
@@ -243,6 +245,13 @@ impl ChatLink {
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
+            Action::StartDeviceVerification
+            | Action::AcceptDeviceVerification { .. }
+            | Action::ConfirmVerification { .. }
+            | Action::DenyVerification { .. }
+            | Action::CancelDeviceVerification { .. } => Err(CoreError::NotReady {
+                reason: "这个版本还不能由另一台设备确认，请输入恢复密钥".to_owned(),
+            }),
             Action::AnswerConfirmation {
                 id,
                 answer,

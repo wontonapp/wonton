@@ -93,6 +93,17 @@ pub enum Action {
     ConfirmRecoveryKeySaved,
     /// 用恢复密钥恢复：取回交叉签名的秘密和密钥备份，本设备随之被验证，能解密历史消息。
     RecoverEncryption { recovery_key: SecretString },
+    /// 请账号里的另一台设备确认本设备（ADR-0046）：发给自己账号已验证的设备，进展在
+    /// `EncryptionStatus::verification_flow`。`EncryptionStatus::can_verify_with_other_device` 为假时前置条件不满足。
+    StartDeviceVerification,
+    /// 接受另一台设备发来的确认请求，随后两边出表情。
+    AcceptDeviceVerification { flow_id: String },
+    /// 主人看到两台设备上的表情一样。
+    ConfirmVerification { flow_id: String },
+    /// 主人看到两台设备上的表情不一样：取消这次确认，不信任对方。
+    DenyVerification { flow_id: String },
+    /// 取消这次确认，或者拒绝收到的请求。
+    CancelDeviceVerification { flow_id: String },
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
     /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用

@@ -34,6 +34,7 @@ mod session;
 mod settings;
 mod tabs;
 mod timeline;
+mod verification;
 
 pub use action::Action;
 pub use agent_permission::{
@@ -145,4 +146,7 @@ pub use timeline::{
     BackPagination, ImageContent, MediaHandle, MessageAction, MessageContent, RichBlock,
     RichBlockKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
     TimelineMessage, TimelineUpdate,
+};
+pub use verification::{
+    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };
