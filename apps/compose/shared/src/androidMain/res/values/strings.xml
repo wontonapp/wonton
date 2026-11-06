@@ -936,4 +936,8 @@
     <string name="transfer_share">Share</string>
     <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
     <string name="transfer_stop_sending">Stop sending</string>
+    <!-- Name of the notification channel for audio playing in plugin pages. -->
+    <string name="page_media_channel">Playback</string>
+    <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
+    <string name="page_media_start_failed">Could not start background playback; still playing, will retry: %1$s (foreground service: %2$s)</string>
 </resources>

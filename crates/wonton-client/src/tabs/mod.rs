@@ -19,6 +19,7 @@ use crate::plugins::PluginsLink;
 use crate::scope::reuse;
 
 pub(crate) mod bridge;
+pub(crate) mod media;
 
 mod config;
 use config::*;

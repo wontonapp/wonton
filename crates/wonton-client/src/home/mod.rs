@@ -12,7 +12,7 @@ mod storage;
 mod ticket;
 
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -56,6 +56,8 @@ const CHECK_FLOOR: Duration = Duration::from_millis(200);
 const NETWORK_CHANGE_DEADLINE: Duration = Duration::from_secs(4);
 /// 系统的网络回调一次变化会连着来好几个，等这么久合成一次。
 const NETWORK_CHANGE_SETTLE: Duration = Duration::from_millis(300);
+/// 网页媒体停下后继续保活这么久，盖住换曲的一瞬和暂停后马上回来。
+const MEDIA_RELEASE_GRACE: Duration = Duration::from_secs(60);
 /// 网络变化后，隔这么久还没连上就换一次握手。初始包同时发给所有候选地址，服务端按先到的那份认路径；那个地址要是有去
 /// 无回，之后的重传都白费，只有新握手才可能换路径（Android 模拟器上实测：`10.0.2.2` 的回包源地址是 127.0.0.1，到不了
 /// iroh，这次握手挂满 12 秒，下一次 9 毫秒连上）。只换这两次，之后留给最后一次走完建连时限：中继冷启动的握手本来就慢。
@@ -82,8 +84,16 @@ pub(crate) struct HomeLink {
     recount: watch::Sender<()>,
     /// 上次把每包变化的计数写进主 ViewModel 的时间。
     stats_at: std::sync::Mutex<Option<Instant>>,
-    /// App 在后台：不探测、不自动重连。
+    /// 合成的后台状态：App 在后台且没有网页媒体在放。为真时不探测、不自动重连。
     background: watch::Sender<bool>,
+    /// App 自己报的可见性。
+    app_backgrounded: AtomicBool,
+    /// 插件网页的音频在放：退到后台也保持探测和自动重连。
+    page_media: AtomicBool,
+    /// 媒体停下后延迟释放保活的任务，重新播放时取消。
+    media_release: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// 每次媒体状态变化加一。释放任务醒来后只认自己那次，被后来的播放抢先时不覆盖。
+    media_generation: AtomicU64,
     /// 定时检查开着。只有测试会关：要证明重连是某个动作促成的，不是碰巧赶上下一次检查。
     periodic_checks: watch::Sender<bool>,
     /// 每来一次网络变化加一，合并连着来的回调。
@@ -139,6 +149,10 @@ impl HomeLink {
             recount: watch::Sender::new(()),
             stats_at: std::sync::Mutex::new(None),
             background: watch::Sender::new(false),
+            app_backgrounded: AtomicBool::new(false),
+            page_media: AtomicBool::new(false),
+            media_release: std::sync::Mutex::new(None),
+            media_generation: AtomicU64::new(0),
             periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
         });
@@ -179,7 +193,8 @@ impl HomeLink {
 
     /// `AppForegrounded`：在后台检查连接，必要时重连。
     pub(crate) fn foregrounded(self: &Arc<Self>) {
-        self.background.send_replace(false);
+        self.app_backgrounded.store(false, Ordering::SeqCst);
+        self.sync_background();
         self.lock_tracker().foregrounded(Instant::now());
         self.recount();
         self.runtime.spawn(self.clone().resume());
@@ -189,9 +204,57 @@ impl HomeLink {
         self.periodic_checks.send_replace(false);
     }
 
-    /// `AppBackgrounded`：停止探测和自动重连。连接不主动断，后台音乐和正在传的文件还在用它。
+    /// `AppBackgrounded`：停止探测和自动重连；壳报告过在放声音时不真的停（见 [`Self::page_media_active`]）。
+    /// 连接不主动断，后台音乐和正在传的文件还在用它。
     pub(crate) fn backgrounded(&self) {
-        self.background.send_replace(true);
+        self.app_backgrounded.store(true, Ordering::SeqCst);
+        self.sync_background();
+    }
+
+    /// 网页媒体开始或停止播放：播放期间 App 退到后台也照常探测、自动重连，隧道不会空闲断开。
+    /// 停止后由核心再保活 [`MEDIA_RELEASE_GRACE`]，只留一瞬的换曲间隙也用这里盖住。
+    pub(crate) fn page_media_active(self: &Arc<Self>, active: bool) {
+        let mut pending = self
+            .media_release
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(release) = pending.take() {
+            release.abort();
+        }
+        let generation = self.media_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if active {
+            if self.page_media.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            self.sync_background();
+            self.lock_tracker().foregrounded(Instant::now());
+            self.recount();
+            self.runtime.spawn(self.clone().resume());
+        } else if self.page_media.load(Ordering::SeqCst) {
+            // 宽限期内保持 page_media 为真：这时切后台仍是前台保活，不会停探测。
+            let home = self.clone();
+            let release = self.runtime.spawn(async move {
+                tokio::time::sleep(MEDIA_RELEASE_GRACE).await;
+                let _pending = home
+                    .media_release
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if home.media_generation.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                home.page_media.store(false, Ordering::SeqCst);
+                home.sync_background();
+            });
+            *pending = Some(release);
+        }
+    }
+
+    fn sync_background(&self) {
+        let background =
+            self.app_backgrounded.load(Ordering::SeqCst) && !self.page_media.load(Ordering::SeqCst);
+        if *self.background.borrow() != background {
+            self.background.send_replace(background);
+        }
     }
 
     /// `NetworkChanged`：让 iroh 重新检查路径，取消旧网络上的建连，确认现有连接还通。在后台时只做第一件，回到前台再确认。
@@ -684,3 +747,6 @@ fn path_view(path: PathInfo) -> HomePath {
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
     }
 }
+
+#[cfg(test)]
+mod tests;

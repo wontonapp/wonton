@@ -27,6 +27,7 @@ use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::{PushInput, Replay};
 
 mod limits;
+mod media;
 mod push_route;
 mod switch;
 mod tool_policy;

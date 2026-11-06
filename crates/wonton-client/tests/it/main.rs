@@ -17,3 +17,4 @@ mod servers;
 mod session_list;
 mod tabs;
 mod tabs_bridge;
+mod tabs_media;

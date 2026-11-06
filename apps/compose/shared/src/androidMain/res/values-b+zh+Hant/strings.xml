@@ -929,4 +929,8 @@
     <string name="transfer_share">分享</string>
     <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
     <string name="transfer_stop_sending">停止傳送</string>
+    <!-- Name of the notification channel for audio playing in plugin pages. -->
+    <string name="page_media_channel">播放</string>
+    <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
+    <string name="page_media_start_failed">背景起不了服務，播放繼續，稍後重試：%1$s（前景服務：%2$s）</string>
 </resources>

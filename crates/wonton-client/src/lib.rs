@@ -59,6 +59,7 @@ pub use subscription::{
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
+pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{

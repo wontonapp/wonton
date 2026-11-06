@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 推送唤醒后，取消息期间不让手机睡回去。 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- 扫家里服务器上的配对二维码。没有相机的设备也能装，粘贴配对码即可。 -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -55,6 +58,14 @@
             <meta-data
                 android:name="autoStoreLocales"
                 android:value="true" />
+        </service>
+        <service
+            android:name="app.wonton.media.PageMediaService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
         </service>
         <!-- UnifiedPush 分发器转来的推送和推送地址，由连接库经它交给 App。 -->
         <service

@@ -39,6 +39,7 @@ import androidx.webkit.WebViewFeature
 import app.wonton.protocol.ProxySettings
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.media.PageMediaPage
 import java.util.concurrent.Executor
 
 private const val TAG = "WontonWeb"
@@ -196,6 +197,8 @@ fun PluginWebView(
                     )
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    // 插件页换曲时在新元素上自动播放，等不到用户手势；页面本来就是主人打开的。
+                    settings.mediaPlaybackRequiresUserGesture = false
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
                     configureAppearance(this, canvas, darkTheme)
@@ -250,6 +253,7 @@ private class ThemedPluginWebView(
     private var bridgeOrigins: Set<String>? = null
     private var startScript: String? = null
     private var scriptHandler: androidx.webkit.ScriptHandler? = null
+    private val pageMedia = PageMediaPage(this)
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         controller.touchObserver?.invoke(event)
@@ -261,6 +265,7 @@ private class ThemedPluginWebView(
         disposed = true
         scriptHandler?.remove()
         scriptHandler = null
+        pageMedia.dispose()
         if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")
         bridgeOrigins = null
         controller.release(this)
@@ -270,6 +275,7 @@ private class ThemedPluginWebView(
     fun updateBridge(origins: Set<String>, script: String, onMessage: (Uri, Boolean, String) -> Unit) {
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
         require(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+        pageMedia.update(origins)
         val originsChanged = bridgeOrigins != origins
         if (originsChanged) {
             if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")

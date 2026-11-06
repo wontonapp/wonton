@@ -29,6 +29,7 @@ targets:
     info:
       path: Wonton/Info.plist
       properties:
+        UIBackgroundModes: [audio]
         CFBundleURLTypes:
           - CFBundleURLName: app.wonton.navigation
             CFBundleURLSchemes:
