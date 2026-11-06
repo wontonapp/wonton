@@ -21,18 +21,21 @@ fn app(id: &str, service: &str) -> String {
     .replace("id: app.test", &format!("id: {id}"))
 }
 
-/// 核心接在每个插件网络上，插件的服务名会成为那里的别名。不能和系统服务的别名（带点）、别的插件的容器名（带 `--`）一样。
+/// 核心接在每个插件网络上，插件的服务名会成为那里的别名，也拼进 `wonton.internal` 的稳定域名，所以必须是
+/// 合法的 DNS 标签。不能和系统服务的别名（带点）、别的插件的容器名（带 `--`）一样。
 #[test]
 fn a_service_cannot_take_the_name_of_a_system_service_or_another_plugins_container() {
     for name in [
         "tusd.wonton.internal",
         "wonton-app-other--web",
         "wonton-app-other-",
+        // 下划线进不了 DNS 名字。
+        "my-web_1",
     ] {
         let err = PluginPackage::parse(&app("app.mine", name)).unwrap_err();
         assert!(matches!(err, PackageError::Service { .. }), "{name}: {err}");
     }
-    PluginPackage::parse(&app("app.mine", "my-web_1")).unwrap();
+    PluginPackage::parse(&app("app.mine", "my-web")).unwrap();
 }
 
 /// Bot 服务多一个别名 `<服务名>-default`：不能和别的插件的容器名 `wonton-app-b--default` 一样。
@@ -92,9 +95,9 @@ async fn only_a_plugins_own_services_have_an_upstream() {
     assert!(matches!(refused, Err(ResourceUpstreamError::Unavailable)));
 }
 
-/// 部署版的核心和插件在同一个网络里：按容器名连，不问 Docker 要 IP。
+/// 部署版的核心和插件在同一个网络里：按服务的稳定域名连（上游看到的 Host 就是它），不问 Docker 要 IP。
 #[tokio::test]
-async fn inside_a_container_the_core_reaches_a_service_by_its_container_name() {
+async fn inside_a_container_the_core_reaches_a_service_by_its_service_host() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine, &dir);
@@ -102,7 +105,7 @@ async fn inside_a_container_the_core_reaches_a_service_by_its_container_name() {
     let mine = PluginId::parse("app.mine").unwrap();
 
     let own = m.resource_upstream(&mine, "server", 2283).await.unwrap();
-    assert_eq!(own, "wonton-app-mine--server:2283");
+    assert_eq!(own, "server.app-mine.wonton.internal:2283");
 
     let refused = m.resource_upstream(&mine, "theirs", 2283).await;
     assert!(matches!(refused, Err(ResourceUpstreamError::NotItsService)));

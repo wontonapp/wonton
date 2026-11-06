@@ -154,7 +154,10 @@ fn whoami_example_splits_command_like_compose() {
     assert_eq!(cmd, ["--port", "8000", "--name", "app.whoami"]);
     let networks = plan.containers[0].body.networking_config.clone().unwrap();
     let endpoint = &networks.endpoints_config.unwrap()["wonton-app-whoami"];
-    assert_eq!(endpoint.aliases.as_deref(), Some(&["web".to_owned()][..]));
+    assert_eq!(
+        endpoint.aliases.as_deref(),
+        Some(&["web", "web.app-whoami.wonton.internal"].map(String::from)[..])
+    );
 }
 
 #[test]

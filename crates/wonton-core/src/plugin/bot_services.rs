@@ -32,6 +32,7 @@ pub struct ServiceVars<'a> {
     plugin: Vars,
     bot: Vars,
     bot_services: BTreeSet<&'a str>,
+    slug: String,
 }
 
 impl<'a> ServiceVars<'a> {
@@ -57,6 +58,7 @@ impl<'a> ServiceVars<'a> {
             plugin,
             bot,
             bot_services: bot_services(manifest),
+            slug: manifest.id.slug(),
         }
     }
 
@@ -68,12 +70,15 @@ impl<'a> ServiceVars<'a> {
         }
     }
 
-    /// 服务在插件网络里的别名：服务名；Bot 服务另有 `<服务名>-<Bot 名>`，同一个 Bot 的服务之间用它互访。
+    /// 服务在插件网络里的别名：服务名；Bot 服务另有 `<服务名>-<Bot 名>`，同一个 Bot 的服务之间用它互访；
+    /// 再加 `<服务名>.<slug>.wonton.internal`（[`super::names::service_host`]），核心连上游的 Host，
+    /// 插件经 `WONTON_SERVICE_DOMAIN` 把它写进上游服务的 Host 白名单。
     pub fn aliases(&self, service: &str) -> Vec<String> {
         let mut aliases = vec![service.to_owned()];
         if self.bot_services.contains(service) {
             aliases.push(bot_alias(service));
         }
+        aliases.push(super::names::service_host(&self.slug, service));
         aliases
     }
 

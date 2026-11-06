@@ -1,5 +1,6 @@
 //! 核心和插件之间的入口：核心在插件网络里的别名（插件经它们访问核心转发的服务），以及核心访问插件的地址
-//! （网页、模型网关、MCP 服务）。宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
+//! （网页、模型网关、MCP 服务）。普通网络里连 [`names::service_host`] 的稳定域名（上游看到的 Host 就是它），
+//! 宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
 
 use std::path::{Path, PathBuf};
 
@@ -10,6 +11,7 @@ use super::host_relay::{HostRelay, Purpose};
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
+use super::names;
 use super::package::PluginPackage;
 use super::proxy_auth::McpHeaders;
 use super::secrets::Secrets;
@@ -181,20 +183,23 @@ impl PluginManager {
         let Some(webui) = &manifest.webui else {
             return Ok(None);
         };
-        let name = self
-            .cfg
-            .instance
-            .container(&manifest.id.slug(), &webui.service);
+        let slug = manifest.id.slug();
+        let name = self.cfg.instance.container(&slug, &webui.service);
         if let Some(endpoint) = self
             .host_relay_endpoint(manifest, Purpose::Webui, &webui.service)
             .await?
         {
             return Ok(Some(endpoint));
         }
-        self.service_upstream(&name, webui.port, network)
-            .await
-            .map(Endpoint::Tcp)
-            .map(Some)
+        self.service_upstream(
+            &name,
+            &names::service_host(&slug, &webui.service),
+            webui.port,
+            network,
+        )
+        .await
+        .map(Endpoint::Tcp)
+        .map(Some)
     }
 
     /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测
@@ -223,7 +228,14 @@ impl PluginManager {
         };
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &spec.service);
-        let upstream = self.service_upstream(&name, spec.port, network).await?;
+        let upstream = self
+            .service_upstream(
+                &name,
+                &names::service_host(&slug, &spec.service),
+                spec.port,
+                network,
+            )
+            .await?;
         Ok(Some(ModelsRoute {
             id: manifest.id.clone(),
             spec: spec.clone(),
@@ -261,11 +273,16 @@ impl PluginManager {
                 headers,
             }));
         }
-        let name = self
-            .cfg
-            .instance
-            .container(&manifest.id.slug(), &mcp.service);
-        let upstream = self.service_upstream(&name, mcp.port, network).await?;
+        let slug = manifest.id.slug();
+        let name = self.cfg.instance.container(&slug, &mcp.service);
+        let upstream = self
+            .service_upstream(
+                &name,
+                &names::service_host(&slug, &mcp.service),
+                mcp.port,
+                network,
+            )
+            .await?;
         Ok(Some(McpTarget {
             url: format!("http://{upstream}{path}"),
             socket: None,
@@ -342,24 +359,26 @@ impl PluginManager {
         let slug = id.slug();
         let name = self.cfg.instance.container(&slug, service);
         let network = self.cfg.instance.network(&slug);
-        self.service_address(&name, port, &network)
+        self.service_address(&name, &names::service_host(&slug, service), port, &network)
             .await
             .map_err(|e| internal(e.to_string()))?
             .ok_or(ResourceUpstreamError::Unavailable)
     }
 
-    /// 核心访问容器里一个端口的地址：核心在容器里时用容器名（同一网络内的 DNS），否则用容器 IP。
+    /// 核心访问容器里一个端口的地址：核心在容器里时用服务的稳定域名（`服务名.<slug>.wonton.internal`，对上游
+    /// 可见的 Host），否则用容器 IP。
     pub(super) async fn service_upstream(
         &self,
-        name: &str,
+        container: &str,
+        host: &str,
         port: u16,
         network: &str,
     ) -> Result<String, InstallError> {
-        self.service_address(name, port, network)
+        self.service_address(container, host, port, network)
             .await?
             .ok_or_else(|| {
                 InstallError::Docker(format!(
-                    "容器 {name} 不存在，或者在网络 {network} 中没有地址"
+                    "容器 {container} 不存在，或者在网络 {network} 中没有地址"
                 ))
             })
     }
@@ -367,14 +386,15 @@ impl PluginManager {
     /// 容器不在或者在这个网络里没有地址时为空。
     async fn service_address(
         &self,
-        name: &str,
+        container: &str,
+        host: &str,
         port: u16,
         network: &str,
     ) -> Result<Option<String>, InstallError> {
         if self.cfg.core_container.is_some() {
-            return Ok(Some(format!("{name}:{port}")));
+            return Ok(Some(format!("{host}:{port}")));
         }
-        let info = self.engine.inspect_container(name).await?;
+        let info = self.engine.inspect_container(container).await?;
         let ip = info
             .and_then(|info| info.network_settings)
             .and_then(|s| s.networks)

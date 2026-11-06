@@ -3,6 +3,7 @@ use super::egress;
 use super::interpolate::Vars;
 use super::lan;
 use super::manifest::{Manifest, Permission};
+use super::names;
 use super::render::InstallContext;
 use super::secrets::secret_var;
 
@@ -21,6 +22,7 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     };
     set("WONTON_APP_ID", manifest.id.to_string());
     set("WONTON_APP_DATA", ctx.app_data.display().to_string());
+    set("WONTON_SERVICE_DOMAIN", names::service_domain(&ctx.slug));
     set("TZ", ctx.tz.clone());
     set("PUID", ctx.puid.to_string());
     set("PGID", ctx.pgid.to_string());

@@ -660,15 +660,16 @@ fn check_service_name(name: &str) -> Result<(), PackageError> {
         && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
         && name
             .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     if !valid {
         return Err(PackageError::Service {
             service: name.to_owned(),
-            message: "服务名只能包含小写字母、数字、- 和 _".to_owned(),
+            message: "服务名必须是合法的 DNS 标签：只含小写字母、数字和 -".to_owned(),
         });
     }
-    // 容器名是 `<插件网络>--<服务名>`，核心在容器里时按它访问插件。带 `--` 的网络别名可以和别的插件的容器名一样，抢走发给它的
-    // 请求。Bot 服务的别名是 `<服务名>-default`，所以结尾也不能是 `-`。
+    // 服务名会拼进网络别名 `<服务名>.<slug>.wonton.internal`（核心连上游的 Host，见 [`super::names`]），
+    // 结尾不能是 `-`；Bot 服务的别名是 `<服务名>-default`。带 `--` 的裸服务名别名可以和别的插件的容器名
+    // 一样，抢走发给它的请求。
     if name.ends_with('-') || name.contains("--") {
         return Err(PackageError::Service {
             service: name.to_owned(),

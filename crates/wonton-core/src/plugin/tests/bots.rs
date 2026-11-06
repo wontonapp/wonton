@@ -49,9 +49,19 @@ fn bot_services_get_the_bot_name_and_their_own_data_dir() {
     assert_eq!(mounts[0].source.as_deref(), Some(bot_data));
     let dirs: Vec<_> = plan.dirs.keys().cloned().collect();
     assert_eq!(dirs, [std::path::PathBuf::from(bot_data)]);
-    // 同一个 Bot 的服务之间用 `<服务名>-<Bot 名>` 互访。
-    assert_eq!(aliases(&plan, "gateway"), ["gateway", "gateway-default"]);
-    assert_eq!(aliases(&plan, "web"), ["web"]);
+    // 同一个 Bot 的服务之间用 `<服务名>-<Bot 名>` 互访；每个服务再有一个 `wonton.internal` 的稳定域名。
+    assert_eq!(
+        aliases(&plan, "gateway"),
+        [
+            "gateway",
+            "gateway-default",
+            "gateway.app-test.wonton.internal"
+        ]
+    );
+    assert_eq!(
+        aliases(&plan, "web"),
+        ["web", "web.app-test.wonton.internal"]
+    );
 
     // 全插件一份的服务没有 Bot 名，也不能依赖每个 Bot 一份的服务。
     let web_uses_bot = SERVICES.replace(
@@ -70,6 +80,21 @@ fn bot_services_get_the_bot_name_and_their_own_data_dir() {
 
 fn plan_err(services: &str, manifest: &str) -> RenderError {
     plan(services, manifest).unwrap_err()
+}
+
+/// 服务拿到 `WONTON_SERVICE_DOMAIN`，compose 里写 `mcp.${WONTON_SERVICE_DOMAIN}` 得到上游白名单要的 Host。
+#[test]
+fn services_get_the_service_domain() {
+    let plan = plan(
+        "  web:\n    image: nginx\n    command: --allowed-hosts mcp.${WONTON_SERVICE_DOMAIN}",
+        "  permissions: []",
+    )
+    .unwrap();
+    let web = container(&plan, "web");
+    assert_eq!(
+        web.body.cmd.clone().unwrap(),
+        ["--allowed-hosts", "mcp.app-test.wonton.internal"]
+    );
 }
 
 #[test]

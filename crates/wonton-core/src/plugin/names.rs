@@ -17,6 +17,22 @@ pub const EGRESS_COMPONENT: &str = "wonton-egress";
 
 const MAX_INSTANCE_LEN: usize = 16;
 
+/// 插件服务域名共享的后缀。基础域名不能用它（`PublicUrls` 校验），核心在插件网络里的别名（`mcp.wonton.internal`
+/// 等）也不会撞上：slug 至少两段、都含连字符。
+pub const SERVICE_DOMAIN_SUFFIX: &str = "wonton.internal";
+
+/// 安装时注入 `WONTON_SERVICE_DOMAIN` 的值：`<slug>.wonton.internal`。作者在 compose 里写
+/// `mcp.${WONTON_SERVICE_DOMAIN}` 放进上游服务的 Host 白名单。
+pub fn service_domain(slug: &str) -> String {
+    format!("{slug}.{SERVICE_DOMAIN_SUFFIX}")
+}
+
+/// 插件服务在它所在插件网络里的稳定地址名：`<服务名>.<slug>.wonton.internal`。核心连插件的网页、MCP 和
+/// internal_url 用它当 Host，这个别名加在每个插件服务的容器上。和实例名无关：网络本来就按实例分开。
+pub fn service_host(slug: &str, service: &str) -> String {
+    format!("{service}.{}", service_domain(slug))
+}
+
 /// 核心的实例名，没有时是正式安装。实例名只有小写字母和数字：插件的 slug 至少两段、都含连字符，所以
 /// `wonton-<实例名>--…` 和正式安装的 `wonton-<slug>…` 不会重名，不同实例之间也不会。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

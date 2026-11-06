@@ -182,8 +182,8 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub listen: SocketAddr,
     pub public: PublicUrls,
-    /// 核心自己的容器名。设置后核心会加入每个插件网络，用容器名访问插件；
-    /// 未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
+    /// 核心自己的容器名。设置后核心会加入每个插件网络，用服务的稳定域名（`服务名.<slug>.wonton.internal`）
+    /// 访问插件；未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
     pub core_container: Option<String>,
     /// 宿主的 `/dev` 在核心里的路径（`WONTON_HOST_DEV`），用来检测显卡设备和它们所属的组：核心在容器里时由
     /// compose 只读挂载进来；直接跑在宿主上时就是 `/dev`。在容器里却没设时为 `None`，申请显卡的插件装不上，
