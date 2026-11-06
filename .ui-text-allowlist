@@ -6,7 +6,6 @@ apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt | 待
 apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/PushNotifications.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/PushRegistration.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/WontonPushService.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/androidApp/src/main/res/values/strings.xml | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppNavigation.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppShortcuts.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppearanceScreen.kt | 待抽取（ADR-0043） | 2026-12-31

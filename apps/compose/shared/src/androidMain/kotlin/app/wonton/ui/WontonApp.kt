@@ -238,7 +238,8 @@ private fun WithPendingCards(
 private fun PluginsEffects(plugins: PluginsState) {
     LaunchedEffect(plugins) { plugins.observe() }
     val locales = LocalConfiguration.current.locales
-    LaunchedEffect(plugins, locales) { plugins.refresh(Action.SetLanguages(locales.toLanguageTags().split(","))) }
+    val shown = appLanguageTag()
+    LaunchedEffect(plugins, locales, shown) { plugins.refresh(Action.SetLanguages(coreLanguageTags(shown, locales))) }
 }
 
 @Composable

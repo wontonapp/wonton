@@ -7,6 +7,7 @@ detekt = "2.0.0-alpha.6"
 jna = "5.19.1"
 kotlinx-coroutines = "1.11.0"
 androidx-activity = "1.13.0"
+androidx-appcompat = "1.8.0"
 androidx-core = "1.18.0"
 androidx-webkit = "1.18.0"
 unifiedpush-connector = "3.3.5"
@@ -22,6 +23,7 @@ compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", v
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
 androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }
 androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "androidx-webkit" }
 unifiedpush-connector = { module = "org.unifiedpush.android:connector", version.ref = "unifiedpush-connector" }

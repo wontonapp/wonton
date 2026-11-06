@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- enableEdgeToEdge 启动后接管系统栏，这几项只影响 Activity 起来之前的启动窗口。 -->
-    <style name="Base.Theme.Wonton" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <style name="Base.Theme.Wonton" parent="@style/Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowBackground">@color/launch_background</item>
         <item name="android:statusBarColor">@color/launch_background</item>
         <item name="android:navigationBarColor">@color/launch_background</item>

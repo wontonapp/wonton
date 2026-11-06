@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.TabLayout
 import app.wonton.protocol.TabPage
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import app.wonton.client.TabEnvironment
@@ -35,10 +34,9 @@ internal fun tabSafeInsets(): PaddingValues =
 
 @Composable
 internal fun tabEnvironment(top: Dp, bottom: Dp, edge: Boolean, safe: PaddingValues): TabEnvironment {
-    val configuration = LocalConfiguration.current
     val direction = LocalLayoutDirection.current
     return TabEnvironment(
-        configuration.locales[0].toLanguageTag(), TimeZone.getDefault().id, TabPlatform.ANDROID,
+        appLanguageTag(), TimeZone.getDefault().id, TabPlatform.ANDROID,
         WontonTheme.isDark, maxOf(top, safe.calculateTopPadding()).value.toDouble(), bottom.value.toDouble(),
         TabSafeArea(
             if (edge) safe.calculateTopPadding().value.toDouble() else 0.0,

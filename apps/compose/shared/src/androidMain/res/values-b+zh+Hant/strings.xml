@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 资源实际落到的语言标签，App 靠它知道界面用的是哪种语言，再告诉核心（见 AppLanguage.kt）。
+         每种语言的这一条都保留原值，不要翻译。 -->
+    <string name="language_tag">zh-Hant</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">取消</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->

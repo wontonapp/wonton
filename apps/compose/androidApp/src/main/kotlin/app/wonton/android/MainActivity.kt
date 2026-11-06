@@ -3,9 +3,9 @@ package app.wonton.android
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,7 +21,7 @@ import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.send
 import java.io.File
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     /** 点通知要打开的房间。 */
     private var requestedRoom by mutableStateOf<String?>(null)
     private var requestedLink by mutableStateOf<AppLinkRequest?>(null)
