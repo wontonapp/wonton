@@ -196,7 +196,7 @@ struct TabPageView: View {
             page: page, proxy: home.viewModel.proxy, connected: connected,
             appearance: appearance.viewModel,
             environment: TabEnvironment(
-                locale: Locale.preferredLanguages.first ?? Locale.current.identifier,
+                locale: AppLanguage.current,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
                 insetTop: edgeToEdge ? Double(page.fullscreen ? max(safe.top, topHeight) : topHeight + safe.top) : 0,
                 insetBottom: edgeToEdge ? Double(bottom + safe.bottom) : 0,
