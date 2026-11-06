@@ -15,6 +15,7 @@ pub mod gost;
 pub mod healthcheck;
 pub mod lists;
 pub mod probe;
+pub(in crate::plugin) mod provider;
 mod relay;
 pub mod settings;
 mod switch;

@@ -127,6 +127,15 @@ impl PluginManager {
                 })
                 .into_iter()
                 .chain(cross_origin_isolation_notice(m, langs))
+                .chain(super::egress::provider::provides_proxy(m).then(|| {
+                    line(langs.pick_owned(&super::manifest::LocalizedText::from([
+                        ("zh".to_owned(), "在出网代理设置里选它".to_owned()),
+                        (
+                            "en".to_owned(),
+                            "Select it in egress proxy settings".to_owned(),
+                        ),
+                    ])))
+                }))
                 .collect(),
             lan_webui: listed
                 .lan_switched

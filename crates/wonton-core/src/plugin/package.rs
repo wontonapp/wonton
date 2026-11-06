@@ -428,6 +428,11 @@ impl PluginPackage {
             .as_ref()
             .and_then(|p| p.models.as_ref());
         let credentials = models.and_then(|m| m.credentials.service.as_ref());
+        let egress = self
+            .manifest
+            .provides
+            .as_ref()
+            .and_then(|p| p.egress_proxy.as_ref());
         let refs = [
             (
                 "webui.service",
@@ -439,6 +444,7 @@ impl PluginPackage {
             ),
             ("provides.models.service", models.map(|m| &m.service)),
             ("provides.models.credentials.service", credentials),
+            ("provides.egress_proxy.service", egress.map(|p| &p.service)),
         ];
         let collects = self
             .manifest
@@ -477,7 +483,7 @@ impl PluginPackage {
                 });
             }
         }
-        // 网页和 MCP 入口全插件一份，不能指向每个 Bot 一份的服务。
+        // 全插件一份的入口不能指向每个 Bot 一份的服务。
         let bot_entry = refs.iter().find_map(|(field, service)| {
             service
                 .filter(|s| bot_services.clone().any(|b| b == *s))
@@ -487,6 +493,16 @@ impl PluginPackage {
             return Err(PackageError::Service {
                 service: service.clone(),
                 message: format!("{field} 不能指向 Bot 服务：Bot 服务每个 Bot 一份"),
+            });
+        }
+        if let Some(provider) = egress
+            && self.services[&provider.service]
+                .as_object()
+                .is_some_and(|service| service.contains_key("network_mode"))
+        {
+            return Err(PackageError::Service {
+                service: provider.service.clone(),
+                message: "provides.egress_proxy.service 不能写 network_mode".to_owned(),
             });
         }
         Ok(())

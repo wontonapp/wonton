@@ -737,7 +737,10 @@ impl ClientCore {
             Action::SaveEgressProxy {
                 address,
                 direct_cidrs,
-            } => self.plugins.save_egress(&address, &direct_cidrs),
+                use_plugin,
+            } => self
+                .plugins
+                .save_egress(&address, &direct_cidrs, use_plugin),
             Action::ConfirmEgressProxy => self.plugins.confirm_egress(),
             Action::DismissEgressConfirmation => {
                 self.plugins.dismiss_egress_confirmation();

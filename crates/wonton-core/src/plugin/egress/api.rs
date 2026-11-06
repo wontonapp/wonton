@@ -42,9 +42,11 @@ impl PluginManager {
         let text = |cidrs: &[IpNet]| cidrs.iter().map(ToString::to_string).collect();
         let configured = config.url.is_some();
         Ok(EgressProxySettings {
-            url: config.url.as_ref().map(ProxyAddress::masked),
+            url: (config.source != EgressProxySource::Plugin)
+                .then(|| config.url.as_ref().map(ProxyAddress::masked))
+                .flatten(),
             source: config.source,
-            provider: None,
+            provider: self.egress_provider_view(langs),
             plugin_path: self.egress.plugin_path(),
             core_path: self.egress.core_path(),
             host_cidrs: text(&self.egress.host_cidrs().unwrap_or_default()),
@@ -69,17 +71,42 @@ impl PluginManager {
         update: EgressProxyUpdate,
         langs: &Languages,
     ) -> Result<EgressProxySettings, InstallError> {
-        if update.use_plugin {
-            return Err(plugin_unavailable(update.url.as_deref()));
-        }
         let _changing = self.egress.changing.lock().await;
         let current = self.egress_config()?;
-        let target = target_address(&current, update.url.as_deref())?;
+        let target = if update.use_plugin {
+            if update
+                .url
+                .as_ref()
+                .is_some_and(|url| !url.trim().is_empty())
+            {
+                return Err(InstallError::Invalid(
+                    "用代理插件时不能同时填代理地址".to_owned(),
+                ));
+            }
+            if current.source == EgressProxySource::Env {
+                return Err(env_locked());
+            }
+            Some(self.egress_provider()?.address)
+        } else {
+            target_address(&current, update.url.as_deref())?
+        };
         let direct_cidrs = self.checked_cidrs(&update.direct_cidrs).await?;
         self.check_restarts(target.is_some(), &update.restarts)?;
-        if let Some(proxy) = target.as_ref().filter(|t| Some(*t) != current.url.as_ref()) {
+        if let Some(proxy) = target.as_ref().filter(|t| {
+            Some(*t) != current.url.as_ref()
+                || (update.use_plugin && current.source != EgressProxySource::Plugin)
+        }) {
             self.ensure_relay_network().await?;
-            if let Some(problem) = self.diagnose(proxy).await?.filter(blocks) {
+            let problem = if update.use_plugin {
+                let provider = self.egress_provider()?;
+                match self.proxy_provider_problem().await? {
+                    Some(problem) => Some(problem),
+                    None => self.diagnose_at(proxy, &provider.network).await?,
+                }
+            } else {
+                self.diagnose_at(proxy, &self.cfg.instance.egress()).await?
+            };
+            if let Some(problem) = problem.filter(blocks) {
                 return Err(InstallError::EgressProxyUnavailable {
                     reason: problem.reason,
                     message: problem.message,
@@ -87,16 +114,25 @@ impl PluginManager {
             }
         }
         // 地址由环境变量指定时，存下的那份不动：环境变量取消后接着用。没有时不能写“清空了”：那是主人没做过的选择。
-        let url = if current.source == EgressProxySource::Env {
-            match self.store.egress_settings()? {
-                Some(stored) => stored.url,
-                None => self.egress.detected_text(),
-            }
+        let mut stored = if current.source == EgressProxySource::Env {
+            self.store
+                .egress_settings()?
+                .unwrap_or_else(|| StoredEgress {
+                    url: self.egress.detected_text(),
+                    ..StoredEgress::default()
+                })
         } else {
-            target.as_ref().map(|proxy| proxy.text().to_owned())
+            StoredEgress {
+                url: target
+                    .as_ref()
+                    .filter(|_| !update.use_plugin)
+                    .map(|proxy| proxy.text().to_owned()),
+                use_plugin: update.use_plugin,
+                ..StoredEgress::default()
+            }
         };
-        self.store
-            .save_egress_settings(&StoredEgress { url, direct_cidrs })?;
+        stored.direct_cidrs = direct_cidrs;
+        self.store.save_egress_settings(&stored)?;
         self.follow_core_proxy();
         self.egress.record_probes(None, None);
         self.apply_egress().await?;
@@ -146,11 +182,11 @@ impl PluginManager {
     }
 }
 
-fn plugin_unavailable(url: Option<&str>) -> InstallError {
-    if url.is_some_and(|url| !url.trim().is_empty()) {
-        return InstallError::Invalid("用代理插件时不能同时填代理地址".to_owned());
-    }
-    InstallError::NotInstalled("没有装能做出网代理的插件".to_owned())
+fn env_locked() -> InstallError {
+    InstallError::Conflict(
+        "代理地址由 WONTON_EGRESS_PROXY 指定，不能在这里改：改安装目录的设置后再执行一次安装脚本"
+            .to_owned(),
+    )
 }
 
 /// 主人要的地址。和 `GET` 给的打码地址一样时是不改：壳拿不到密码，改网段时带回来的就是它。
@@ -159,14 +195,13 @@ fn target_address(
     url: Option<&str>,
 ) -> Result<Option<ProxyAddress>, InstallError> {
     let url = url.map(str::trim).filter(|url| !url.is_empty());
-    let unchanged = url.map(str::to_owned) == current.url.as_ref().map(ProxyAddress::masked);
+    let unchanged = current.source != EgressProxySource::Plugin
+        && url.map(str::to_owned) == current.url.as_ref().map(ProxyAddress::masked);
     if unchanged {
         return Ok(current.url.clone());
     }
     if current.source == EgressProxySource::Env {
-        return Err(InstallError::Conflict(
-            "代理地址由 WONTON_EGRESS_PROXY 指定，不能在这里改：改安装目录的设置后再执行一次安装脚本".to_owned(),
-        ));
+        return Err(env_locked());
     }
     url.map(ProxyAddress::parse)
         .transpose()

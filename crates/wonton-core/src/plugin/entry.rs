@@ -59,6 +59,7 @@ pub(super) struct Entry {
     pub(super) upstream: Option<Endpoint>,
     /// 声明了 `provides.models`（不论状态）。
     pub(super) provides_models: bool,
+    pub(super) provides_egress_proxy: bool,
     /// 运行中的模型网关的转发目标。
     pub(super) models: Option<ModelsRoute>,
     /// `sso: proxy` 时网关代加的凭据。
@@ -99,6 +100,10 @@ impl Entry {
                 .provides
                 .as_ref()
                 .is_some_and(|p| p.models.is_some()),
+            provides_egress_proxy: manifest
+                .provides
+                .as_ref()
+                .is_some_and(|p| p.egress_proxy.is_some()),
             models: None,
             proxy: None,
             mcp: None,
@@ -145,6 +150,7 @@ impl Entry {
             health: None,
             upstream: None,
             provides_models: false,
+            provides_egress_proxy: false,
             models: None,
             proxy: None,
             mcp: None,

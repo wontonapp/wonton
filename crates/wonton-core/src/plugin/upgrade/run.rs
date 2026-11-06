@@ -118,6 +118,13 @@ impl PluginManager {
         let outcome = self.upgrade_begun(&package, granted, (gpu, lan)).await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
+        if result.is_ok()
+            && super::super::egress::provider::provides_proxy(manifest)
+            && self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
+        {
+            self.follow_core_proxy();
+            self.reconcile_relay().await?;
+        }
         self.changed();
         result
     }

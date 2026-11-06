@@ -1,14 +1,23 @@
-//! 系统插件给其他插件提供的能力（`provides`）。M1 只有模型网关（`provides.models`，插件规范的“模型网关”）。
+//! 插件给其他插件提供的能力（`provides`）。
 
 use serde::{Deserialize, Serialize};
 
-use super::manifest::{Manifest, ManifestError, PluginKind};
+use super::manifest::{Manifest, ManifestError, Permission, PluginKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Provides {
     #[serde(default)]
     pub models: Option<ModelsProvider>,
+    #[serde(default)]
+    pub egress_proxy: Option<EgressProxyProvider>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EgressProxyProvider {
+    pub service: String,
+    pub port: u16,
 }
 
 /// 模型网关：声明了 `models` 的插件经核心转发访问它，各自拿一个只属于自己的凭据。
@@ -84,18 +93,46 @@ fn invalid(message: &str) -> ManifestError {
     ManifestError::Invalid(message.to_owned())
 }
 
-/// 只有 `kind: system` 的插件能声明 `provides`：提供方看得到全部请求和 provider 的 key。服务名是否存在由
-/// [`super::package`] 对照 compose 检查。
+/// 服务名是否存在由 [`super::package`] 对照 compose 检查。
 pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+    let egress = manifest
+        .provides
+        .as_ref()
+        .and_then(|p| p.egress_proxy.as_ref());
+    let permission = manifest.permissions.contains(&Permission::EgressProxy);
+    match (egress, permission) {
+        (Some(_), false) => {
+            return Err(invalid("provides.egress_proxy 必须申请 egress.proxy 权限"));
+        }
+        (None, true) => return Err(invalid("egress.proxy 权限必须声明 provides.egress_proxy")),
+        _ => {}
+    }
+    if let Some(egress) = egress {
+        if !manifest.permissions.contains(&Permission::NetworkEgress) {
+            return Err(invalid(
+                "provides.egress_proxy 必须申请 network.egress 权限",
+            ));
+        }
+        if egress.port == 0 {
+            return Err(invalid("provides.egress_proxy.port 不能为 0"));
+        }
+    }
     let Some(provides) = &manifest.provides else {
         return Ok(());
     };
-    if manifest.kind != PluginKind::System {
-        return Err(invalid("只有 kind: system 的插件能声明 provides"));
+    if provides.models.is_none() && provides.egress_proxy.is_none() {
+        return Err(invalid("provides 至少声明一项能力"));
     }
     let Some(models) = &provides.models else {
-        return Err(invalid("provides 至少声明一项能力"));
+        return Ok(());
     };
+    if manifest.kind != PluginKind::System {
+        return Err(invalid("只有 kind: system 的插件能声明 provides.models"));
+    }
+    validate_models(models)
+}
+
+fn validate_models(models: &ModelsProvider) -> Result<(), ManifestError> {
     if models.port == 0 {
         return Err(invalid("provides.models.port 不能为 0"));
     }

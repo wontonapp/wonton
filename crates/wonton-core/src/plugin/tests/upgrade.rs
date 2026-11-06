@@ -417,6 +417,7 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     let settings = StoredEgress {
         url: Some("http://proxy:1".to_owned()),
         direct_cidrs: Vec::new(),
+        use_plugin: false,
     };
     m.store.save_egress_settings(&settings).unwrap();
     let id = PluginId::parse("app.echo").unwrap();

@@ -78,6 +78,7 @@ impl Rig {
         let settings = StoredEgress {
             url: url.map(str::to_owned),
             direct_cidrs: direct.iter().map(|c| c.parse().unwrap()).collect(),
+            use_plugin: false,
         };
         self.m.store.save_egress_settings(&settings).unwrap();
     }

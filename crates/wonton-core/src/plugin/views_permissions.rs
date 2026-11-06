@@ -22,6 +22,7 @@ pub fn permission_text(permission: &Permission) -> String {
         Permission::Notify => "给你发通知".to_owned(),
         Permission::OwnerIdentity => "知道你的用户名和邮箱".to_owned(),
         Permission::NetworkEgress => "访问外网和局域网".to_owned(),
+        Permission::EgressProxy => "提供出网代理（高权限）".to_owned(),
         Permission::NetworkLan => "在局域网上开放端口（高权限）".to_owned(),
         Permission::NetworkHost => "使用宿主的网络（很高权限）".to_owned(),
         Permission::Capability { name } => format!("增加内核能力 {name}"),
@@ -51,6 +52,7 @@ fn permission_text_en(permission: &Permission) -> String {
         Permission::Notify => "Send you notifications".to_owned(),
         Permission::OwnerIdentity => "Know your username and email".to_owned(),
         Permission::NetworkEgress => "Reach the internet and your local network".to_owned(),
+        Permission::EgressProxy => "Provide an egress proxy (high permission)".to_owned(),
         Permission::NetworkLan => "Open ports on your local network (high permission)".to_owned(),
         Permission::NetworkHost => "Use the host's network (very high permission)".to_owned(),
         Permission::Capability { name } => format!("Add the kernel capability {name}"),
@@ -68,9 +70,10 @@ fn permission_text_en(permission: &Permission) -> String {
 
 fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
     match permission {
-        Permission::NetworkLan | Permission::DevicesGpu | Permission::Device { .. } => {
-            Some(PermissionRisk::High)
-        }
+        Permission::EgressProxy
+        | Permission::NetworkLan
+        | Permission::DevicesGpu
+        | Permission::Device { .. } => Some(PermissionRisk::High),
         Permission::NetworkHost => Some(PermissionRisk::VeryHigh),
         Permission::Capability { name } => Some(match super::privileges::capability_risk(name) {
             super::privileges::CapabilityRisk::High => PermissionRisk::High,
@@ -88,6 +91,10 @@ fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
 
 fn permission_notice(permission: &Permission, langs: &Languages) -> Option<String> {
     let text = match permission {
+        Permission::EgressProxy => LocalizedText::from([
+            ("zh".to_owned(), "选它做出网代理后，所有出网插件的请求都经过它：它能看到这些插件访问了哪些网站，也能改写不加密的内容。".to_owned()),
+            ("en".to_owned(), "When you select it as your egress proxy, all requests from plugins with network access pass through it: it can see which websites they visit and modify unencrypted content.".to_owned()),
+        ]),
         Permission::NetworkHost => LocalizedText::from([
             ("zh".to_owned(), "这个插件能直接访问你家里的网络和本机所有端口，包括只给本机用的服务，也能绕过 Wonton 的登录连到部分其他插件。它开的端口会出现在本机所有网卡上，包括 Wi-Fi、Tailscale 和 IPv6 地址，本机有公网地址时互联网也能连上。本机开着防火墙时，局域网设备连不进来，要你自己放行。".to_owned()),
             ("en".to_owned(), "This plugin can directly access your home network and all ports on this machine, including services bound only to localhost, and bypass Wonton login to connect to some other plugins. Its ports will appear on all network interfaces, including Wi-Fi, Tailscale, and IPv6 addresses; if this machine has a public address, the internet can reach them too. If the machine firewall is on, LAN devices cannot connect until you allow them yourself.".to_owned()),

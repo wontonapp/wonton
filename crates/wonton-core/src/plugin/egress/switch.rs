@@ -4,6 +4,7 @@
 //! Bot 插件沿用同一台设备，令牌从旧容器读回（插件规范的“Matrix Bot”）：核心不单独保存令牌，它只在 Docker 的容器配置里。
 //! 先读后删，读不到就不动容器、标为异常，不悄悄签新设备：换设备要重新建加密身份。
 
+use super::provider::provides_proxy;
 use wonton_protocol::EgressRestart;
 
 use crate::plugin::bots::is_bot;
@@ -230,7 +231,7 @@ impl PluginManager {
 fn goes_out(entry: &Entry) -> bool {
     entry.listed.as_ref().is_some_and(|listed| {
         let permissions = &listed.manifest.permissions;
-        permissions.contains(&Permission::NetworkEgress)
+        permissions.contains(&Permission::NetworkEgress) && !provides_proxy(&listed.manifest)
     })
 }
 

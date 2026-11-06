@@ -157,6 +157,8 @@ pub struct EgressCurrent {
     pub address: String,
     /// 地址由 `WONTON_EGRESS_PROXY` 指定，这里不能改；网段还能改。
     pub address_locked: bool,
+    /// 选用已安装的代理插件；是否可选由 `settings.provider` 决定，也受 `address_locked` 限制。
+    pub use_plugin: bool,
     /// 直连网段输入框的内容。
     pub direct_cidrs: String,
     /// 插件的路径；没配代理时为空。

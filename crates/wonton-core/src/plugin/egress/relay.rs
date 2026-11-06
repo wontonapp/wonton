@@ -10,6 +10,7 @@ use super::EgressVars;
 use super::address::ProxyAddress;
 use super::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
 use super::lists::{self, Reach};
+use super::provider::provides_proxy;
 use super::settings::EgressConfig;
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::{Endpoint, layout_of};
@@ -21,9 +22,14 @@ use crate::plugin::manifest::{Manifest, Permission};
 impl PluginManager {
     pub(in crate::plugin) fn egress_config(&self) -> Result<EgressConfig, InstallError> {
         let stored = self.store.egress_settings()?;
-        self.egress
+        let mut config = self
+            .egress
             .resolve(stored.as_ref())
-            .map_err(InstallError::Storage)
+            .map_err(InstallError::Storage)?;
+        if config.source == wonton_protocol::EgressProxySource::Plugin {
+            config.url = Some(self.egress_provider()?.address);
+        }
+        Ok(config)
     }
 
     /// 设置读不出来时不用代理：设置页和探测都会报这个错。
@@ -42,7 +48,8 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
     ) -> Result<Option<EgressVars>, InstallError> {
-        if !manifest.permissions.contains(&Permission::NetworkEgress)
+        if provides_proxy(manifest)
+            || !manifest.permissions.contains(&Permission::NetworkEgress)
             || self.egress_config()?.url.is_none()
         {
             return Ok(None);

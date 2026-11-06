@@ -19,6 +19,8 @@ pub struct StoredEgress {
     pub url: Option<String>,
     #[serde(default)]
     pub direct_cidrs: Vec<IpNet>,
+    #[serde(default)]
+    pub use_plugin: bool,
 }
 
 /// 现在生效的设置。
@@ -41,7 +43,7 @@ pub struct Egress {
     /// 改设置一次做一个：要重启插件，可能很久。
     pub(super) applying: tokio::sync::Mutex<()>,
     /// 改设置时，核对要重启的插件和存下设置之间不能插进别的修改。
-    pub(super) changing: tokio::sync::Mutex<()>,
+    pub(in crate::plugin) changing: tokio::sync::Mutex<()>,
     /// 查原因的容器名字是固定的，一次起一个。
     pub(super) diagnosing: tokio::sync::Mutex<()>,
     prober: Prober,
@@ -137,6 +139,7 @@ impl Egress {
         let direct_cidrs = stored.map(|s| s.direct_cidrs.clone()).unwrap_or_default();
         let (url, source) = match (&self.env, stored, &self.detected) {
             (Some(env), _, _) => (Some(env.clone()), EgressProxySource::Env),
+            (None, Some(stored), _) if stored.use_plugin => (None, EgressProxySource::Plugin),
             (None, Some(stored), _) => {
                 let url = stored.url.as_deref().map(ProxyAddress::parse).transpose()?;
                 let source = if url.is_some() {
@@ -169,6 +172,7 @@ mod tests {
         StoredEgress {
             url: url.map(str::to_owned),
             direct_cidrs: vec!["100.64.0.0/10".parse().unwrap()],
+            use_plugin: false,
         }
     }
 

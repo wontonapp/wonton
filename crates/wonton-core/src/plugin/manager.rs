@@ -135,6 +135,7 @@ pub(super) fn supported(permission: &Permission) -> bool {
         permission,
         Permission::StorageShare { .. }
             | Permission::NetworkEgress
+            | Permission::EgressProxy
             | Permission::MatrixBot
             | Permission::Models
             | Permission::Tools
@@ -430,7 +431,21 @@ impl PluginManager {
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     pub async fn restore(&self) -> Result<(), InstallError> {
-        for file in self.store.load_all()? {
+        let files = self.store.load_all()?;
+        // 先登记代理提供方：恢复其他插件时就可能需要解析它的地址。
+        for file in &files {
+            if let Ok(record) = &file.record
+                && let Ok(package) = PluginPackage::with_files(&record.source, record.files.clone())
+                && super::egress::provider::provides_proxy(&package.manifest)
+            {
+                let listed = Listed::of_record(&package, record);
+                self.plugins.write().expect("插件表锁中毒").insert(
+                    file.id.clone(),
+                    Entry::new(listed, PluginStatus::Installing, None),
+                );
+            }
+        }
+        for file in files {
             let entry = match &file.record {
                 Ok(record) => self.restore_one(record).await,
                 Err(e) => Entry::broken(&file.id, String::new(), unreadable_record(&e)),
@@ -445,6 +460,7 @@ impl PluginManager {
                 .expect("插件表锁中毒")
                 .insert(file.id, entry);
         }
+        self.follow_core_proxy();
         self.changed();
         Ok(())
     }
@@ -535,6 +551,7 @@ impl PluginManager {
                 InstallError::Conflict(format!("应用 {} 已经装了", manifest.id))
             }));
         }
+        self.check_proxy_provider(manifest, &plugins)?;
         let slug = manifest.id.slug();
         if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
             return Err(InstallError::Conflict(format!(
@@ -550,6 +567,10 @@ impl PluginManager {
     }
 
     pub(super) async fn check_requirements(&self, manifest: &Manifest) -> Result<(), InstallError> {
+        {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            self.check_proxy_provider(manifest, &plugins)?;
+        }
         let provides_models = manifest
             .provides
             .as_ref()
@@ -586,6 +607,14 @@ impl PluginManager {
         purge: bool,
     ) -> Result<UninstallReport, InstallError> {
         self.check_not_upgrading()?;
+        let _changing = self.egress.changing.lock().await;
+        if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
+            && self.egress_provider()?.id == *id
+        {
+            return Err(InstallError::Conflict(
+                "正在使用这个代理插件：先在出网代理设置里换掉，再卸载".to_owned(),
+            ));
+        }
         {
             let mut plugins = self.plugins.write().expect("插件表锁中毒");
             let entry = plugins
@@ -600,6 +629,7 @@ impl PluginManager {
             }
             entry.status = PluginStatus::Uninstalling;
         }
+        drop(_changing);
         tracing::info!(plugin = %id, purge, "开始卸载插件");
         match self.teardown(id, purge).await {
             Ok(report) => {

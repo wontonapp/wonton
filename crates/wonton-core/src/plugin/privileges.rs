@@ -46,9 +46,10 @@ pub fn capability_risk(name: &str) -> CapabilityRisk {
 /// 权限对应的风险级别，供确认页和清单限制共用。
 pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
     match permission {
-        Permission::NetworkLan | Permission::DevicesGpu | Permission::Device { .. } => {
-            Some(CapabilityRisk::High)
-        }
+        Permission::EgressProxy
+        | Permission::NetworkLan
+        | Permission::DevicesGpu
+        | Permission::Device { .. } => Some(CapabilityRisk::High),
         Permission::Capability { name } => Some(capability_risk(name)),
         Permission::NetworkHost => Some(CapabilityRisk::VeryHigh),
         Permission::HostPid

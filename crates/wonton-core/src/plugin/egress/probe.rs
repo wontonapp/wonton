@@ -13,6 +13,7 @@ use wonton_protocol::{EgressFailure, EgressProbe, EgressProblem};
 
 use super::address::ProxyAddress;
 use super::check::{self, TARGET, URL_VAR};
+use super::provider::provides_proxy;
 use crate::plugin::lan::probe::NOBODY_USER;
 use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::manifest::{Manifest, Permission};
@@ -106,8 +107,18 @@ impl PluginManager {
             self.egress.record_probes(None, None);
             return Ok(());
         };
-        let plugin = self.probe_plugin_path(proxy).await?;
-        let core = self.egress.prober().direct(proxy).await;
+        let unavailable = if config.source == wonton_protocol::EgressProxySource::Plugin {
+            self.proxy_provider_problem().await?
+        } else {
+            None
+        };
+        let (plugin, core) = match unavailable {
+            Some(problem) => (Some(problem.clone()), Some(problem)),
+            None => (
+                self.probe_plugin_path(proxy).await?,
+                self.egress.prober().direct(proxy).await,
+            ),
+        };
         let probed_at_ms = now_ms();
         if let Some(problem) = &plugin {
             tracing::warn!(reason = ?problem.reason, message = %problem.message, "插件经代理出不去");
@@ -157,6 +168,20 @@ impl PluginManager {
         &self,
         proxy: &ProxyAddress,
     ) -> Result<Option<EgressProblem>, InstallError> {
+        let config = self.egress_config()?;
+        let network = if config.source == wonton_protocol::EgressProxySource::Plugin {
+            self.egress_provider()?.network
+        } else {
+            self.cfg.instance.egress()
+        };
+        self.diagnose_at(proxy, &network).await
+    }
+
+    pub(super) async fn diagnose_at(
+        &self,
+        proxy: &ProxyAddress,
+        network: &str,
+    ) -> Result<Option<EgressProblem>, InstallError> {
         let Some(core) = &self.cfg.core_container else {
             return Ok(self.egress.prober().direct(proxy).await);
         };
@@ -175,7 +200,7 @@ impl PluginManager {
             user: Some(NOBODY_USER.to_owned()),
             labels: Some(self.cfg.instance.core_labels()),
             host_config: Some(HostConfig {
-                network_mode: Some(self.cfg.instance.egress()),
+                network_mode: Some(network.to_owned()),
                 cap_drop: Some(vec!["ALL".to_owned()]),
                 security_opt: Some(vec!["no-new-privileges".to_owned()]),
                 readonly_rootfs: Some(true),
@@ -205,10 +230,16 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
     ) -> Result<Option<EgressProblem>, InstallError> {
-        if !manifest.permissions.contains(&Permission::NetworkEgress)
+        if provides_proxy(manifest)
+            || !manifest.permissions.contains(&Permission::NetworkEgress)
             || self.egress_config()?.url.is_none()
         {
             return Ok(None);
+        }
+        if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
+            && let Some(problem) = self.proxy_provider_problem().await?
+        {
+            return Ok(Some(problem));
         }
         let latest = self.egress.plugin_path().filter(fresh);
         let latest = match latest {

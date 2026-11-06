@@ -36,6 +36,7 @@ fn set_proxy(m: &PluginManager, url: Option<&str>) {
     let settings = StoredEgress {
         url: url.map(str::to_owned),
         direct_cidrs: Vec::new(),
+        use_plugin: false,
     };
     m.store.save_egress_settings(&settings).unwrap();
 }

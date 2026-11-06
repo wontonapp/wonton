@@ -335,6 +335,7 @@ pub enum Permission {
     Notify,
     OwnerIdentity,
     NetworkEgress,
+    EgressProxy,
     NetworkLan,
     NetworkHost,
     Capability { name: String },
@@ -353,6 +354,7 @@ impl Permission {
         matches!(
             self,
             Self::NetworkLan
+                | Self::EgressProxy
                 | Self::NetworkHost
                 | Self::Capability { .. }
                 | Self::HostPid
@@ -386,6 +388,7 @@ impl FromStr for Permission {
             "notify" => Some(Self::Notify),
             "owner.identity" => Some(Self::OwnerIdentity),
             "network.egress" => Some(Self::NetworkEgress),
+            "egress.proxy" => Some(Self::EgressProxy),
             "network.lan" => Some(Self::NetworkLan),
             "network.host" => Some(Self::NetworkHost),
             "host.pid" => Some(Self::HostPid),
@@ -453,6 +456,7 @@ impl fmt::Display for Permission {
             Self::Notify => f.write_str("notify"),
             Self::OwnerIdentity => f.write_str("owner.identity"),
             Self::NetworkEgress => f.write_str("network.egress"),
+            Self::EgressProxy => f.write_str("egress.proxy"),
             Self::NetworkLan => f.write_str("network.lan"),
             Self::NetworkHost => f.write_str("network.host"),
             Self::Capability { name } => write!(f, "cap.{name}"),

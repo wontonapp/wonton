@@ -72,6 +72,7 @@ impl PluginsLink {
         self: &Arc<Self>,
         address: &str,
         direct_cidrs: &str,
+        use_plugin: bool,
     ) -> Result<(), CoreError> {
         let (update, restarts) = {
             let view = self.view.borrow();
@@ -85,7 +86,7 @@ impl PluginsLink {
                     reason: "还没取到出网代理的设置".to_owned(),
                 });
             };
-            planned(&current.settings, address, direct_cidrs)
+            planned(&current.settings, address, direct_cidrs, use_plugin)?
         };
         if restarts.is_empty() {
             self.put_egress(update);
@@ -93,7 +94,7 @@ impl PluginsLink {
             self.view.send_modify(|view| {
                 view.egress.confirmation = Some(EgressConfirmation {
                     restarts,
-                    cancelling: update.url.is_none(),
+                    cancelling: !update.use_plugin && update.url.is_none(),
                     update,
                 });
             });
@@ -138,11 +139,17 @@ impl PluginsLink {
                 return;
             }
             match sent {
-                Ok(settings) => link.view.send_modify(|view| {
-                    view.egress.saving = false;
-                    view.egress.current = Some(current_of(settings));
-                    view.egress.load_problem = None;
-                }),
+                Ok(settings) => {
+                    let settled = probe_settled(&settings);
+                    link.view.send_modify(|view| {
+                        view.egress.saving = false;
+                        view.egress.current = Some(current_of(settings));
+                        view.egress.load_problem = None;
+                    });
+                    if !settled {
+                        link.follow_egress();
+                    }
+                }
                 Err(problem) => {
                     link.view.send_modify(|view| {
                         view.egress.saving = false;
@@ -161,25 +168,43 @@ fn planned(
     settings: &EgressProxySettings,
     address: &str,
     direct_cidrs: &str,
-) -> (EgressProxyUpdate, Vec<EgressRestart>) {
+    use_plugin: bool,
+) -> Result<(EgressProxyUpdate, Vec<EgressRestart>), CoreError> {
     let address = address.trim();
-    let wanted = !address.is_empty();
-    let restarts = if wanted == settings.url.is_some() {
+    if settings.source == EgressProxySource::Env
+        && (use_plugin || settings.url.as_deref().unwrap_or_default() != address)
+    {
+        return Err(CoreError::InvalidInput {
+            reason: "代理由 WONTON_EGRESS_PROXY 指定，不能在这里改".to_owned(),
+        });
+    }
+    if use_plugin && !address.is_empty() {
+        return Err(CoreError::InvalidInput {
+            reason: "使用代理插件时不能同时填写代理地址".to_owned(),
+        });
+    }
+    if use_plugin && settings.provider.is_none() {
+        return Err(CoreError::NotReady {
+            reason: "还没有安装代理插件".to_owned(),
+        });
+    }
+    let wanted = use_plugin || !address.is_empty();
+    let restarts = if wanted == configured(settings) {
         Vec::new()
     } else {
         settings.restarts.clone()
     };
     let update = EgressProxyUpdate {
-        url: wanted.then(|| address.to_owned()),
+        url: (!address.is_empty()).then(|| address.to_owned()),
         direct_cidrs: direct_cidrs
             .split(|c: char| c == ',' || c == '，' || c.is_whitespace())
             .filter(|cidr| !cidr.is_empty())
             .map(str::to_owned)
             .collect(),
         restarts: restarts.iter().map(|plugin| plugin.id.clone()).collect(),
-        use_plugin: false,
+        use_plugin,
     };
-    (update, restarts)
+    Ok((update, restarts))
 }
 
 /// 请求断开时核心照样做完（ADR-0023），这时不知道改好了没有。
@@ -194,10 +219,11 @@ fn save_problem(problem: PluginProblem) -> PluginProblem {
 }
 
 fn current_of(settings: EgressProxySettings) -> EgressCurrent {
-    let configured = settings.url.is_some();
+    let configured = configured(&settings);
     EgressCurrent {
         address: settings.url.clone().unwrap_or_default(),
         address_locked: settings.source == EgressProxySource::Env,
+        use_plugin: settings.source == EgressProxySource::Plugin,
         direct_cidrs: settings.direct_cidrs.join(", "),
         plugin_path: configured.then(|| path_state(settings.plugin_path.as_ref())),
         core_path: configured.then(|| path_state(settings.core_path.as_ref())),
@@ -225,7 +251,7 @@ fn path_state(probe: Option<&EgressProbe>) -> EgressPathState {
 
 /// 没配代理，或者手上的探测结果够新，不用接着取。
 fn probe_settled(settings: &EgressProxySettings) -> bool {
-    if settings.url.is_none() {
+    if !configured(settings) {
         return true;
     }
     let now = SystemTime::now()
@@ -235,4 +261,8 @@ fn probe_settled(settings: &EgressProxySettings) -> bool {
         .plugin_path
         .as_ref()
         .is_some_and(|probe| now.saturating_sub(probe.probed_at_ms) < PROBE_FRESH_MS)
+}
+
+fn configured(settings: &EgressProxySettings) -> bool {
+    settings.source == EgressProxySource::Plugin || settings.url.is_some()
 }

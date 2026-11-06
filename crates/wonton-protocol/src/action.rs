@@ -132,11 +132,14 @@ pub enum Action {
     // 出网代理的设置页（ADR-0023）。网络操作都在后台执行，进展和结果在 `PluginsViewModel.egress` 里。
     /// 打开设置页：取设置。探测结果太旧时家里的服务器在后台再测，这里接着取几次，把新结果带回来。
     RefreshEgressProxy,
-    /// 主人点了保存。`address` 空着表示取消代理；`direct_cidrs` 用逗号或空白分隔。要重启插件时先放进
-    /// `egress.confirmation`，等 [`Action::ConfirmEgressProxy`]。
+    /// 主人点了保存。`use_plugin` 选用已安装的代理插件，此时 `address` 必须为空；两者都空表示取消代理。
+    /// `direct_cidrs` 用逗号或空白分隔。要重启插件时先放进 `egress.confirmation`，等 [`Action::ConfirmEgressProxy`]。
     SaveEgressProxy {
         address: String,
         direct_cidrs: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+        use_plugin: bool,
     },
     /// 主人确认了 `egress.confirmation` 列出的重启。
     ConfirmEgressProxy,
