@@ -84,6 +84,16 @@ async fn bad_input_is_refused_by_kind_and_nothing_is_stored() {
             StatusCode::CONFLICT,
             "changed",
         ),
+        (
+            json!({"url": good, "direct_cidrs": [], "restarts": [], "use_plugin": true}),
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+        ),
+        (
+            json!({"url": null, "direct_cidrs": [], "restarts": [], "use_plugin": true}),
+            StatusCode::NOT_FOUND,
+            "not_installed",
+        ),
     ] {
         let reply = put(&h, &body).await;
         assert_eq!(reply.status, status, "{}", reply.text());

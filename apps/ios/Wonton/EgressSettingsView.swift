@@ -93,7 +93,7 @@ struct EgressSettingsView: View {
                 secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
             case .detected:
                 secondary("安装时检测到的。")
-            case .unset, .settings, .unknown:
+            case .unset, .settings, .plugin, .unknown:
                 EmptyView()
             }
         }

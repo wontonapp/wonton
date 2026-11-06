@@ -44,6 +44,7 @@ impl PluginManager {
         Ok(EgressProxySettings {
             url: config.url.as_ref().map(ProxyAddress::masked),
             source: config.source,
+            provider: None,
             plugin_path: self.egress.plugin_path(),
             core_path: self.egress.core_path(),
             host_cidrs: text(&self.egress.host_cidrs().unwrap_or_default()),
@@ -68,6 +69,9 @@ impl PluginManager {
         update: EgressProxyUpdate,
         langs: &Languages,
     ) -> Result<EgressProxySettings, InstallError> {
+        if update.use_plugin {
+            return Err(plugin_unavailable(update.url.as_deref()));
+        }
         let _changing = self.egress.changing.lock().await;
         let current = self.egress_config()?;
         let target = target_address(&current, update.url.as_deref())?;
@@ -140,6 +144,13 @@ impl PluginManager {
         }
         Ok(parsed)
     }
+}
+
+fn plugin_unavailable(url: Option<&str>) -> InstallError {
+    if url.is_some_and(|url| !url.trim().is_empty()) {
+        return InstallError::Invalid("用代理插件时不能同时填代理地址".to_owned());
+    }
+    InstallError::NotInstalled("没有装能做出网代理的插件".to_owned())
 }
 
 /// 主人要的地址。和 `GET` 给的打码地址一样时是不改：壳拿不到密码，改网段时带回来的就是它。

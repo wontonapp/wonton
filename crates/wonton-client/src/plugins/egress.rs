@@ -177,6 +177,7 @@ fn planned(
             .map(str::to_owned)
             .collect(),
         restarts: restarts.iter().map(|plugin| plugin.id.clone()).collect(),
+        use_plugin: false,
     };
     (update, restarts)
 }

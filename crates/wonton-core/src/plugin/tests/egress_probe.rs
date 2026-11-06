@@ -229,6 +229,7 @@ async fn the_core_joins_the_relay_network_to_probe_and_leaves_when_the_proxy_is_
         url: url.map(str::to_owned),
         direct_cidrs: Vec::new(),
         restarts: Vec::new(),
+        use_plugin: false,
     };
     rig.docker.set_output(CHECK, 0, "null", "");
     let on = rig
@@ -255,6 +256,7 @@ async fn plugins_to_restart_must_match_what_the_owner_confirmed() {
         url: Some("http://proxy.lan:7899".to_owned()),
         direct_cidrs: Vec::new(),
         restarts: restarts.iter().map(ToString::to_string).collect(),
+        use_plugin: false,
     };
     let stale = rig.m.set_egress_proxy(update(&[]), langs.clone()).await;
     assert!(matches!(stale, Err(InstallError::Changed(_))), "{stale:?}");
@@ -281,6 +283,7 @@ async fn sending_back_the_masked_address_keeps_the_password() {
         url: Some(url.to_owned()),
         direct_cidrs: direct.iter().map(ToString::to_string).collect(),
         restarts: Vec::new(),
+        use_plugin: false,
     };
     let saved = rig.m.set_egress_proxy(update(url, &[]), langs.clone());
     let masked = saved.await.unwrap().url.unwrap();
@@ -311,6 +314,7 @@ async fn editing_the_direct_list_under_an_env_address_leaves_what_was_detected_a
         url: Some("http://env.lan:1".to_owned()),
         direct_cidrs: vec!["100.64.0.0/10".to_owned()],
         restarts: Vec::new(),
+        use_plugin: false,
     };
     let m = Arc::new(m);
     m.set_egress_proxy(edit, Languages::default())
@@ -331,6 +335,7 @@ async fn a_direct_segment_on_a_docker_network_is_refused() {
         url: Some("http://proxy.lan:7899".to_owned()),
         direct_cidrs: vec![subnet],
         restarts: Vec::new(),
+        use_plugin: false,
     };
     let found = rig.m.set_egress_proxy(update, Languages::default()).await;
     assert!(matches!(found, Err(InstallError::Invalid(_))), "{found:?}");

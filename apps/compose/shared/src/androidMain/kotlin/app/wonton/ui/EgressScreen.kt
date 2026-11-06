@@ -146,7 +146,11 @@ private fun AddressField(current: EgressCurrent, value: String, enabled: Boolean
         when (current.settings.source) {
             EgressProxySource.ENV -> Secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
             EgressProxySource.DETECTED -> Secondary("安装时检测到的。")
-            EgressProxySource.UNSET, EgressProxySource.SETTINGS, EgressProxySource.UNKNOWN -> Unit
+            EgressProxySource.UNSET,
+            EgressProxySource.SETTINGS,
+            EgressProxySource.PLUGIN,
+            EgressProxySource.UNKNOWN,
+            -> Unit
         }
     }
 }

@@ -12,9 +12,12 @@ use crate::PluginProblem;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct EgressProxySettings {
-    /// 主人的代理地址，密码打码；没配代理时为空。
+    /// 主人的代理地址，密码打码；没配代理或者用的是代理插件时为空。
     pub url: Option<String>,
     pub source: EgressProxySource,
+    /// 装着的代理插件（清单声明了 `provides.egress_proxy`，ADR-0039）；没装时为空。装着不等于在用，在用时
+    /// `source` 是 [`EgressProxySource::Plugin`]。
+    pub provider: Option<EgressProxyProvider>,
     /// 插件的路径：经出口容器到主人的代理，再到外网。代理连不上时挡安装，见 [`EgressFailure`]。还没探测过时为空。
     pub plugin_path: Option<EgressProbe>,
     /// 核心自己的路径：核心直接连主人的代理。结果只影响 GitHub 和官方索引，不挡安装。还没探测过时为空。
@@ -43,6 +46,8 @@ pub enum EgressProxySource {
     Settings,
     /// 安装脚本检测到的，App 里能改。
     Detected,
+    /// 用装着的代理插件，见 [`EgressProxySettings::provider`]。
+    Plugin,
     /// 比这个 App 新的核心给的来源。
     #[serde(other)]
     Unknown,
@@ -85,6 +90,15 @@ pub enum EgressFailure {
     Other,
 }
 
+/// 能做出网代理的插件。一台服务器只能装一个。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EgressProxyProvider {
+    /// 插件 ID。
+    pub id: String,
+    pub title: String,
+}
+
 /// 配上或取消代理时要重启的一个插件。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -105,6 +119,9 @@ pub struct EgressProxyUpdate {
     pub direct_cidrs: Vec<String>,
     /// 主人确认要重启的插件 ID；和核心这时算出来的不一样时回 409 `changed`。只改地址时是空列表。
     pub restarts: Vec<String>,
+    /// 用装着的代理插件。这时 `url` 要为空，否则回 400 `invalid_input`；没装代理插件时回 404 `not_installed`。
+    #[serde(default)]
+    pub use_plugin: bool,
 }
 
 /// `PUT /_wonton/api/plugins/{id}/lan-webui` 的请求体，响应是 `PluginDetail`。
@@ -187,6 +204,10 @@ mod tests {
         EgressProxySettings {
             url: Some("http://user:***@172.17.0.1:7899".into()),
             source: EgressProxySource::Settings,
+            provider: Some(EgressProxyProvider {
+                id: "app.example.proxy".into(),
+                title: "代理".into(),
+            }),
             plugin_path: Some(EgressProbe {
                 probed_at_ms: 1_793_000_000_000,
                 problem: Some(EgressProblem {
@@ -216,13 +237,20 @@ mod tests {
             url: Some("socks5://172.17.0.1:7898".into()),
             direct_cidrs: vec!["100.64.0.0/10".into()],
             restarts: vec!["app.hermes".into()],
+            use_plugin: false,
         };
         assert_eq!(round_trip(&update), update);
+        let plugin = EgressProxyUpdate {
+            url: None,
+            use_plugin: true,
+            ..update
+        };
+        assert_eq!(round_trip(&plugin), plugin);
         let toggle = LanWebuiUpdate { enabled: true };
         assert_eq!(round_trip(&toggle), toggle);
     }
 
-    /// 契约：核心和客户端核心之间的 JSON 写法。ADR-0023 写明了 `none`、`env`、`settings`、`detected` 和各个原因的名字。
+    /// 契约：核心和客户端核心之间的 JSON 写法。ADR-0023 和 ADR-0039 写明了来源和各个原因的名字。
     #[test]
     fn egress_wire_format_is_stable() {
         for (source, text) in [
@@ -230,6 +258,7 @@ mod tests {
             (EgressProxySource::Env, "env"),
             (EgressProxySource::Settings, "settings"),
             (EgressProxySource::Detected, "detected"),
+            (EgressProxySource::Plugin, "plugin"),
         ] {
             assert_eq!(serde_json::to_value(source).unwrap(), json!(text));
         }
@@ -248,6 +277,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(cancel.url, None);
+        assert!(!cancel.use_plugin, "不写 use_plugin 就是不用代理插件");
         let toggle: LanWebuiUpdate = serde_json::from_value(json!({"enabled": true})).unwrap();
         assert!(toggle.enabled);
     }

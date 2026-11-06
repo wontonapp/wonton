@@ -34,6 +34,7 @@ fn unset() -> EgressProxySettings {
     EgressProxySettings {
         url: None,
         source: EgressProxySource::Unset,
+        provider: None,
         plugin_path: None,
         core_path: None,
         host_cidrs: vec!["192.168.0.0/24".to_owned()],
@@ -50,6 +51,7 @@ fn configured() -> EgressProxySettings {
     EgressProxySettings {
         url: Some("http://user:***@172.17.0.1:7899".to_owned()),
         source: EgressProxySource::Settings,
+        provider: None,
         plugin_path: probed(None),
         core_path: probed(None),
         ..unset()
@@ -111,6 +113,7 @@ async fn the_first_proxy_restarts_plugins_only_after_the_owner_confirms() {
             url: Some("http://172.17.0.1:7899".to_owned()),
             direct_cidrs: vec!["100.64.0.0/10".to_owned(), "10.1.0.0/16".to_owned()],
             restarts: vec!["app.hermes".to_owned()],
+            use_plugin: false,
         }
     );
     let view = rig
