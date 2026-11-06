@@ -4,6 +4,7 @@ import WontonClient
 struct ChatListView: View {
     @Bindable var model: ChatModel
     let plugins: PluginsModel
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -33,9 +34,12 @@ struct ChatListView: View {
             .overlay {
                 if isEmpty { NoChats() }
             }
-            .wontonRootScreen("聊天") {
-                WontonIconLink(icon: .compose, label: "发起私聊", value: ChatRoute.startChat)
+            .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+                newChatButton
+                    .padding(.trailing, WontonTheme.spacing.s16)
+                    .padding(.bottom, WontonTheme.spacing.s12)
             }
+            .wontonRootScreen("聊天", hasActions: false) { EmptyView() }
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case let .room(roomId):
@@ -49,6 +53,19 @@ struct ChatListView: View {
                 }
             }
         }
+    }
+
+    private var newChatButton: some View {
+        NavigationLink(value: ChatRoute.startChat) {
+            WontonIcon.add.view()
+                .foregroundStyle(Color(colors.textPrimary))
+                .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("新会话")
     }
 
     @ViewBuilder private var notices: some View {

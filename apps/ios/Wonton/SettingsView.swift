@@ -18,7 +18,7 @@ struct SettingsTab: View {
         NavigationStack(path: $model.path) {
             SettingsView(model: model, editProfile: { isEditingProfile = true },
                          chooseAgent: { isChoosingAgent = true })
-                .wontonRootScreen(TabText.settings) {
+                .wontonRootScreen(TabText.settings, hasActions: isModal) {
                     if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
                 }
                 .navigationDestination(for: SettingsRoute.self, destination: destination)

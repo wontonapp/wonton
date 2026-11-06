@@ -30,9 +30,9 @@ fun HomeRoute(
     BackHandler(enabled = page != HomePage.LAUNCHER) { onPage(HomePage.LAUNCHER) }
     when {
         viewModel.status is HomeStatus.NotConfigured ->
-            PairingPage("配对", core, viewModel.pairing, onBack = null) {
-                onSettings?.let { SettingsToolbarButton(settingsUpgrade, it) }
-            }
+            PairingPage("配对", core, viewModel.pairing, onBack = null, actions = if (onSettings != null) {
+                { SettingsToolbarButton(settingsUpgrade, onSettings) }
+            } else null)
         else -> PluginPages(plugins, navigation) {
             if (page == HomePage.STORE) {
                 StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
@@ -61,11 +61,14 @@ internal fun PairingPage(
     core: ClientCore,
     pairing: PairingStatus?,
     onBack: (() -> Unit)?,
-    actions: @Composable () -> Unit = {},
+    actions: (@Composable () -> Unit)? = null,
 ) {
     WontonScreen(
         bar = {
-            if (onBack != null) WontonPushedBar(title, onBack) else WontonRootBar(title) { actions() }
+            if (onBack != null) WontonPushedBar(title, onBack) else WontonRootBar(
+                title,
+                actions = if (actions != null) { { actions() } } else null,
+            )
         },
     ) {
         PairingScreen(core, pairing, onPaired = { onBack?.invoke() })

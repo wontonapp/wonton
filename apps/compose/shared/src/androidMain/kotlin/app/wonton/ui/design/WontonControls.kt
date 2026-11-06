@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -48,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
@@ -232,24 +234,33 @@ fun Modifier.accentFill(shape: Shape, border: Boolean = true): Modifier {
         )
 }
 
-/** 根页面的 Material 标题栏：标题靠左，操作在后。 */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 根页面只显示连接状态和操作，页面标题留给读屏。 */
 @Composable
-fun WontonRootBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
+fun WontonRootBar(title: String, actions: (@Composable RowScope.() -> Unit)? = null) {
     val status = LocalWontonBarStatus.current
-    Column(Modifier.fillMaxWidth()) {
-        TopAppBar(
-            title = {
-                Text(
-                    status.title ?: title,
-                    Modifier.semantics { heading() },
-                    style = WontonTheme.typography.screenTitle,
-                    color = WontonTheme.colors.textPrimary.toColor(),
-                )
-            },
-            actions = actions,
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
-        )
+    val statusTitle = status.title?.takeIf { it.isNotBlank() }
+    Column(
+        Modifier.fillMaxWidth().background(WontonTheme.colors.canvas.toColor())
+            .statusBarsPadding().semantics { paneTitle = title },
+    ) {
+        if (statusTitle != null || actions != null) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.topBar)
+                    .padding(horizontal = WontonTheme.spacing.pageInset),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (statusTitle != null) {
+                    Text(
+                        statusTitle,
+                        Modifier.weight(1f),
+                        style = WontonTheme.typography.supporting,
+                        color = WontonTheme.colors.textPrimary.toColor(),
+                    )
+                }
+                actions?.invoke(this)
+            }
+        }
         status.line?.let { line ->
             Box(
                 Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
@@ -259,7 +270,7 @@ fun WontonRootBar(title: String, actions: @Composable RowScope.() -> Unit = {}) 
     }
 }
 
-/** 标题栏要带上的状态：短的替换根页面的标题，也是聊天房间的副标题；长的是标题下面多的一行。 */
+/** 栏里的连接状态：短文本、聊天房间副标题和需要下一步操作的长提示。 */
 class WontonBarStatus(
     val title: String? = null,
     val subtitle: String? = null,

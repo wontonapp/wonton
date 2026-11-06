@@ -226,7 +226,7 @@ struct NoiseTile: View {
     }
 }
 
-/// 标题栏要带上的状态：短的替换根页面的标题，也是聊天房间的副标题；长的是标题下面多的一行。
+/// 标题栏要带上的状态：短的用于根页面和聊天房间副标题；长的是标题下面多的一行。
 struct WontonBarStatus {
     var title: String?
     var subtitle: String?
@@ -237,29 +237,41 @@ extension EnvironmentValues {
     @Entry var wontonBarStatus = WontonBarStatus()
 }
 
-/// 根页面的标题栏：大标题在前，操作在后。
+/// 根页面只显示连接状态和操作，页面名交给导航语义。
 struct WontonRootBar<Trailing: View>: View {
     let title: String
+    let hasActions: Bool
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: WontonTheme.spacing.s8) {
-                Text(status.title ?? title)
-                    .wontonText(WontonTheme.typography.screenTitle)
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
-                trailing
+            if hasActions || status.title?.isEmpty == false {
+                ZStack {
+                    if let title = status.title, !title.isEmpty {
+                        Text(title)
+                            .wontonText(WontonTheme.typography.supporting)
+                            .foregroundStyle(Color(colors.textPrimary))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, hasActions ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
+                            .padding(.vertical, WontonTheme.spacing.s8)
+                    }
+                    if hasActions {
+                        HStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            trailing
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: hasActions ? WontonTheme.size.topBar : 0)
             }
-            .frame(minHeight: WontonTheme.size.topBar)
             if let line = status.line {
                 line.padding(.bottom, WontonTheme.spacing.s8)
             }
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .frame(maxWidth: .infinity)
         // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
         .background(.ultraThinMaterial)
     }
@@ -351,11 +363,24 @@ extension View {
             .modifier(WontonCanvas())
     }
 
-    /// 根页面：大标题和操作。
-    func wontonRootScreen<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
-        let bar = WontonRootBar(title: title, trailing: trailing)
+    /// 根页面：连接状态和操作，底栏保留在根导航层。
+    func wontonRootScreen<Trailing: View>(
+        _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
         return safeAreaInset(edge: .top, spacing: 0) { bar }
             .modifier(WontonTabBarSlot())
+            .overlay(alignment: .top) {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: geometry.safeAreaInsets.top)
+                        .offset(y: -geometry.safeAreaInsets.top)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+            .navigationTitle(bar.title)
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
     }

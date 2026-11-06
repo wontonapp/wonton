@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +47,6 @@ import app.wonton.protocol.RoomRow
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
-import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
@@ -57,7 +57,7 @@ import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Compose
+import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.WontonIcon
@@ -135,36 +135,49 @@ private fun ChatListScreen(
     onStartChat: () -> Unit,
 ) {
     WontonScreen(
-        bar = {
-            WontonRootBar("聊天") {
-                WontonIconButton(WontonIcon.Compose, "发起私聊", onStartChat)
-            }
-        },
+        bar = { WontonRootBar("聊天") },
     ) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WontonTheme.spacing.s8)) {
-            item(key = "notices") { Notices(viewModel, onOpenBackup) }
-            itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
-                if (index > 0) {
-                    Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
-                        WontonSeparator()
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    bottom = WontonTheme.size.floatingActionButton + WontonTheme.spacing.pageInset * 2,
+                ),
+            ) {
+                item(key = "notices") { Notices(viewModel, onOpenBackup) }
+                itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
+                    if (index > 0) {
+                        Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
+                            WontonSeparator()
+                        }
+                    }
+                    if (row.membership == RoomMembership.INVITED) {
+                        InviteItem(row, onAction)
+                    } else {
+                        RoomItem(row, plugins, onClick = { onOpenRoom(row.roomId) })
                     }
                 }
-                if (row.membership == RoomMembership.INVITED) {
-                    InviteItem(row, onAction)
-                } else {
-                    RoomItem(row, plugins, onClick = { onOpenRoom(row.roomId) })
+            }
+            // 同步好之前列表是空的不代表没有聊天。
+            val synced = viewModel.account is ChatAccount.SignedIn && viewModel.sync == ChatSync.Running
+            if (viewModel.rooms.isEmpty() && synced) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "还没有聊天",
+                        style = WontonTheme.typography.itemTitle,
+                        color = WontonTheme.colors.textPrimary.toColor(),
+                    )
                 }
             }
-        }
-        // 同步好之前列表是空的不代表没有聊天。
-        val synced = viewModel.account is ChatAccount.SignedIn && viewModel.sync == ChatSync.Running
-        if (viewModel.rooms.isEmpty() && synced) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "还没有聊天",
-                    style = WontonTheme.typography.itemTitle,
-                    color = WontonTheme.colors.textPrimary.toColor(),
-                )
+            FloatingActionButton(
+                onClick = onStartChat,
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(end = WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.pageInset)
+                    .size(WontonTheme.size.floatingActionButton),
+                containerColor = WontonTheme.colors.accentFill.toColor(),
+                contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
+            ) {
+                Icon(WontonIcon.Add, "新会话", Modifier.size(WontonTheme.size.icon))
             }
         }
     }

@@ -59,6 +59,8 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code
 
 设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、重点色、字号和字体收在“外观”二级页，“关于”只显示 App 版本和构建号（ADR-0028）。
 
+“应用”页的商店入口独立放在已装插件网格上方，有更新时显示数量，未安装插件时保留“去应用商店”空状态按钮。底栏根页不显示大标题，连接状态仍在顶栏显示，状态栏后是不透明的 `canvas`。
+
 ## 新用户引导
 
 配对后的五步引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：资料、Agent、模型、应用、确认。
@@ -107,6 +109,8 @@ Android 按 WebView 能力检测配置默认 Profile 的精确来源允许列表
 
 Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将近 1 GB，装进模拟器很慢，编译产物也很占磁盘；只看
 界面时用 `-Pwonton.rustProfile=release`。
+
+聊天列表右下角的 Material 3 加号按钮进入“发起私聊”，位于底栏上方；列表底部留出按钮空间，最后一行可以滚动到按钮上方。
 
 ## 检查
 

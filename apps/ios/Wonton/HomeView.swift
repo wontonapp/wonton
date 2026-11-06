@@ -29,14 +29,14 @@ struct HomeView: View {
             Group {
                 if case .notConfigured = model.viewModel.status {
                     PairingView(model: model)
-                        .wontonRootScreen("配对") {
+                        .wontonRootScreen("配对", hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
                                 settingsLink
                             }
                         }
                 } else {
                     launcher
-                        .wontonRootScreen("应用") {
+                        .wontonRootScreen("应用", hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
                                 settingsLink
                             }
@@ -66,20 +66,18 @@ struct HomeView: View {
     private var launcher: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s24) {
+                storeEntry
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
                     HomeStatusPanel(
                         home: model.viewModel, plugins: plugins.viewModel, cards: pendingCards,
                         showConnection: showServer, openCardRoom: openCardRoom
                     )
+                } else {
+                    placeholder.frame(maxWidth: .infinity)
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
-            // 内容为空时 ScrollView 的宽度随内容缩成零，盖在上面的占位也跟着变窄。
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .overlay {
-            if plugins.viewModel.installed == nil { placeholder }
         }
         .refreshable { plugins.send(.refreshPlugins) }
         .task { plugins.refresh(.refreshPlugins) }
@@ -115,10 +113,35 @@ struct HomeView: View {
                         .accessibilityAction { tap(plugin) }
                         .accessibilityAction(named: "菜单") { menuPlugin = plugin }
                 }
-                NavigationLink(value: AppsRoute.store) { StoreTile() }
-                    .buttonStyle(.plain)
             }
         }
+    }
+
+    private var storeEntry: some View {
+        NavigationLink(value: AppsRoute.store) {
+            HStack(spacing: WontonTheme.spacing.s12) {
+                WontonIcon.store.view()
+                    .foregroundStyle(Color(colors.accentInkOnFill))
+                Text("应用商店")
+                    .wontonText(WontonTheme.typography.body)
+                Spacer(minLength: 0)
+                if let installed = plugins.viewModel.installed {
+                    let updates = installed.plugins.reduce(0) { $0 + ($1.upgrade != nil ? 1 : 0) }
+                    if updates > 0 {
+                        Text("\(updates) 个可更新")
+                            .wontonText(WontonTheme.typography.supporting)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            .foregroundStyle(Color(colors.textOnAccentFill))
+            .padding(.horizontal, WontonTheme.spacing.s16)
+            .padding(.vertical, WontonTheme.spacing.s12)
+            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
+            .accentFill(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
+            .contentShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
+        }
+        .buttonStyle(.plain)
     }
 
     /// 还没取到已安装的插件：取不到的原因和下一步，或者正在取。
@@ -228,28 +251,6 @@ private struct NoPlugins: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, WontonTheme.spacing.s48)
-    }
-}
-
-/// 图标网格的最后一格。
-private struct StoreTile: View {
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        let size = WontonTheme.size.launcherIcon
-        VStack(spacing: WontonTheme.spacing.s4) {
-            RoundedRectangle(cornerRadius: size * WontonTheme.ratio.pluginIconRadius, style: .continuous)
-                .fill(Color(colors.surfaceSubtle))
-                .frame(width: size, height: size)
-                .overlay { WontonIcon.store.view(size: WontonTheme.size.icon) }
-                .foregroundStyle(Color(colors.textPrimary))
-            Text("应用商店")
-                .wontonText(WontonTheme.typography.caption)
-                .foregroundStyle(Color(colors.textPrimary))
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
     }
 }
 

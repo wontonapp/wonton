@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -48,6 +51,7 @@ import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
@@ -57,7 +61,7 @@ import app.wonton.ui.icons.WarningCircleFill
 import app.wonton.ui.icons.Web
 import app.wonton.ui.icons.WontonIcon
 
-/** 配上以后的“应用”：按图标和名字列出已装的插件，最后一格进应用商店。 */
+/** 配上以后的“应用”：独立的应用商店入口和已装插件网格。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherScreen(
@@ -74,46 +78,46 @@ fun LauncherScreen(
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
     WontonScreen(
         bar = {
-            WontonRootBar("应用") {
-                onSettings?.let { SettingsToolbarButton(settingsUpgrade, it) }
-            }
+            WontonRootBar("应用", actions = if (onSettings != null) {
+                { SettingsToolbarButton(settingsUpgrade, onSettings) }
+            } else null)
         },
     ) {
-        PullToRefreshBox(
-            isRefreshing = plugins.viewModel.refreshing,
-            onRefresh = { plugins.send(Action.RefreshPlugins) },
-            modifier = Modifier.fillMaxSize(),
-        ) {
+        Column(Modifier.fillMaxSize()) {
             val installed = plugins.viewModel.installed
-            if (installed == null) {
-                LauncherPlaceholder(plugins)
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(WontonTheme.size.launcherCell),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(WontonTheme.spacing.pageInset),
-                    verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s24),
-                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-                ) {
-                    plugins.viewModel.problem?.let { problem ->
-                        item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(problem.problem) { plugins.send(Action.RefreshPlugins) }
+            StoreEntry(installed?.plugins?.count { it.upgrade != null }, onShowStore)
+            PullToRefreshBox(
+                isRefreshing = plugins.viewModel.refreshing,
+                onRefresh = { plugins.send(Action.RefreshPlugins) },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            ) {
+                if (installed == null) {
+                    LauncherPlaceholder(plugins)
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(WontonTheme.size.launcherCell),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(WontonTheme.spacing.pageInset),
+                        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s24),
+                        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+                    ) {
+                        plugins.viewModel.problem?.let { problem ->
+                            item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
+                                ProblemRow(problem.problem) { plugins.send(Action.RefreshPlugins) }
+                            }
                         }
-                    }
-                    installed.upgradeCheck?.let { check ->
-                        item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(check.problem) { plugins.send(Action.RefreshPlugins) }
+                        installed.upgradeCheck?.let { check ->
+                            item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
+                                ProblemRow(check.problem) { plugins.send(Action.RefreshPlugins) }
+                            }
                         }
-                    }
-                    if (installed.plugins.isEmpty()) {
-                        item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }
-                    }
-                    items(installed.plugins, key = { it.id }) { LauncherIcon(it, plugins, navigation) }
-                    if (installed.plugins.isNotEmpty()) {
-                        item(key = "store") { StoreTile(onShowStore) }
-                    }
-                    item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
-                        HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
+                        if (installed.plugins.isEmpty()) {
+                            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }
+                        }
+                        items(installed.plugins, key = { it.id }) { LauncherIcon(it, plugins, navigation) }
+                        item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
+                            HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
+                        }
                     }
                 }
             }
@@ -150,23 +154,33 @@ private fun LauncherPlaceholder(plugins: PluginsState) {
     }
 }
 
-/** 图标网格的最后一格。 */
 @Composable
-private fun StoreTile(onClick: () -> Unit) {
-    val size = WontonTheme.size.launcherIcon
-    val ink = WontonTheme.colors.textPrimary.toColor()
-    Column(
-        Modifier.clickable(role = Role.Button, onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
-        horizontalAlignment = Alignment.CenterHorizontally,
+private fun StoreEntry(upgradeCount: Int?, onClick: () -> Unit) {
+    val colors = WontonTheme.colors
+    val shape = RoundedCornerShape(WontonTheme.radii.control)
+    Row(
+        Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
+            .padding(top = WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.s8).fillMaxWidth()
+            .accentFill(shape).clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = WontonTheme.size.target)
+            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        Box(
-            Modifier.size(size).background(WontonTheme.colors.surfaceSubtle.toColor(), pluginIconShape(size)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(WontonIcon.Store, contentDescription = null, Modifier.size(WontonTheme.size.icon), tint = ink)
+        Icon(
+            WontonIcon.Store, contentDescription = null,
+            modifier = Modifier.size(WontonTheme.size.icon), tint = colors.accentInkOnFill.toColor(),
+        )
+        Text(
+            "应用商店", Modifier.weight(1f), style = WontonTheme.typography.body,
+            color = colors.textOnAccentFill.toColor(),
+        )
+        if (upgradeCount != null && upgradeCount > 0) {
+            Text(
+                "$upgradeCount 个可更新", style = WontonTheme.typography.supporting,
+                color = colors.textOnAccentFill.toColor(),
+            )
         }
-        Text("应用商店", style = WontonTheme.typography.caption, color = ink, maxLines = 1)
     }
 }
 

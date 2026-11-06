@@ -43,6 +43,7 @@ enum WontonSize {
     static let launcherCell: CGFloat = 76
     static let storeIcon: CGFloat = 56
     static let taskIcon: CGFloat = 40
+    static let floatingActionButton: CGFloat = 56
     static let previewIcon: CGFloat = 64
     static let detailIcon: CGFloat = 112
     static let screenshot: CGFloat = 380
