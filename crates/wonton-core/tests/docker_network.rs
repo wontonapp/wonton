@@ -275,26 +275,24 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
     }
 }
 
-/// 主机上已经有网络占着 Docker 下一个要分配的网段：Docker 跳过它，核心照常建好插件网络，不用自己避开。
+/// 主机上已经有网络占着 Docker 下一个要分配的网段，别的程序也在建网络：Docker 跳过它，核心照常建好插件网络，
+/// 不用自己避开。
+///
+/// 占着的网络让 Docker 分配后一直留着。读出网段、删掉、再固定这个网段重建会留一个空当，同一台 Docker 上别的
+/// 任务这时建网络就拿走这个网段（CI 实测，Docker 29.7.2 从低往高找第一个空网段）。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_network_already_on_the_next_subnet_is_skipped() {
-    use bollard::models::{Ipam, IpamConfig, NetworkCreateRequest};
+    use bollard::models::NetworkCreateRequest;
     let _serial = SERIAL.lock().await;
     let engine = Engine::connect().unwrap();
-    let (taken, plugin) = (prefix("taken"), prefix("plugin"));
-    engine.remove_network(&plugin).await.unwrap();
-    engine.remove_network(&taken).await.unwrap();
-    let create = |name: &str, subnet: Option<String>| NetworkCreateRequest {
+    let (taken, other, plugin) = (prefix("taken"), prefix("other"), prefix("plugin"));
+    for name in [&plugin, &other, &taken] {
+        engine.remove_network(name).await.unwrap();
+    }
+    let create = |name: &str| NetworkCreateRequest {
         name: name.to_owned(),
         internal: Some(true),
-        ipam: subnet.map(|subnet| Ipam {
-            config: Some(vec![IpamConfig {
-                subnet: Some(subnet),
-                ..Default::default()
-            }]),
-            ..Default::default()
-        }),
         ..Default::default()
     };
     let subnet_of = async |name: &str| {
@@ -303,13 +301,9 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
             .clone()
             .unwrap()
     };
-    docker().create_network(create(&taken, None)).await.unwrap();
+    docker().create_network(create(&taken)).await.unwrap();
     let next = subnet_of(&taken).await;
-    docker().remove_network(&taken).await.unwrap();
-    docker()
-        .create_network(create(&taken, Some(next.clone())))
-        .await
-        .unwrap();
+    docker().create_network(create(&other)).await.unwrap();
 
     let created = engine
         .create_network(&plugin, &HashMap::new(), NetworkReach::Internal)
@@ -319,8 +313,9 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
         Err(_) => None,
     };
     let address = engine.core_address(&plugin).await;
-    engine.remove_network(&plugin).await.unwrap();
-    engine.remove_network(&taken).await.unwrap();
+    for name in [&plugin, &other, &taken] {
+        engine.remove_network(name).await.unwrap();
+    }
 
     created.unwrap();
     assert_ne!(got.as_deref(), Some(next.as_str()));
