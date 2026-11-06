@@ -61,7 +61,7 @@ jobs:
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: 测试（不含依赖 Docker 的集成测试）
-        run: cargo test --workspace --locked
+        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked
         env:
           # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
           DOCKER_HOST: unix:///nonexistent/docker.sock
@@ -88,7 +88,7 @@ jobs:
       - name: 清理被中断的 Docker 测试遗留
         run: bash scripts/clean-docker-test-leftovers.sh
       - name: Docker 集成测试（标了 #[ignore] 的都是）
-        run: cargo test --workspace --locked -- --ignored
+        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored
       - name: 官方索引里的清单这份核心都读得懂
         run: |
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
