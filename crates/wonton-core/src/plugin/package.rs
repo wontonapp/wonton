@@ -6,9 +6,13 @@
 //! 再按 Compose 子集解析每个服务。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::os::fd::AsFd;
 use std::path::Path;
 
+use serde::Deserialize;
+// `serde_saphyr::Error::custom` 是 serde 的 trait 方法，路径经它带出反序列化器闭包。
+use serde::de::Error as _;
 use serde_json::{Map, Value};
 
 use super::compose::{
@@ -182,8 +186,17 @@ impl PluginPackage {
             .remove("x-wonton")
             .ok_or(PackageError::MissingManifest)?;
         super::store_info::check_spec(&manifest_value)?;
-        let manifest: Manifest = serde_json::from_value(manifest_value)
-            .map_err(|e| ManifestError::Invalid(e.to_string()))?;
+        let manifest: Manifest = match serde_json::from_value(manifest_value) {
+            Ok(manifest) => manifest,
+            Err(e) => {
+                // 两种解析对个别标量的松紧不同（`version: 1.0` 直接反序列化能当成字符串），成功与否仍以
+                // serde_json 的结果为准；重解析失败才借它的报错写清字段和行号。
+                return Err(manifest_from_yaml(source)
+                    .err()
+                    .unwrap_or_else(|| ManifestError::Invalid(e.to_string()))
+                    .into());
+            }
+        };
         manifest.validate()?;
 
         let services = match top.remove("services") {
@@ -323,11 +336,15 @@ impl PluginPackage {
             .map(|(name, service)| {
                 let dependencies = service
                     .get("depends_on")
-                    .map(|value| serde_json::from_value::<super::compose::DependsOn>(value.clone()))
+                    .map(|value| {
+                        serde_path_to_error::deserialize::<_, super::compose::DependsOn>(
+                            value.clone(),
+                        )
+                    })
                     .transpose()
-                    .map_err(|error| PackageError::Service {
+                    .map_err(|e| PackageError::Service {
                         service: name.clone(),
-                        message: error.to_string(),
+                        message: pathed(&e),
                     })?;
                 Ok((
                     name.as_str(),
@@ -418,9 +435,9 @@ impl PluginPackage {
                     }
                 })?;
                 let service: Service =
-                    serde_json::from_value(value).map_err(|e| PackageError::Service {
+                    serde_path_to_error::deserialize(value).map_err(|e| PackageError::Service {
                         service: name.clone(),
-                        message: e.to_string(),
+                        message: pathed(&e),
                     })?;
                 if !variables.is_empty() {
                     used.insert(name.clone(), variables);
@@ -517,6 +534,33 @@ impl PluginPackage {
         }
         Ok(())
     }
+}
+
+/// serde 报错带字段路径（如 `webui.port`）：路径在根上时没有可写的段，原样返回信息。
+fn pathed<E: fmt::Display>(error: &serde_path_to_error::Error<E>) -> String {
+    let path = error.path().to_string();
+    if path.is_empty() {
+        error.inner().to_string()
+    } else {
+        format!("`{path}`：{}", error.inner())
+    }
+}
+
+/// 从 YAML 文本直接反序列化清单：`serde_json::from_value` 丢掉了位置，失败时用它把报错写到
+/// 字段和行号（如 `x-wonton.description.Y`，加 serde-saphyr 给的 at line N, column M）。
+fn manifest_from_yaml(source: &str) -> Result<Manifest, ManifestError> {
+    #[derive(Deserialize)]
+    struct ManifestDocument {
+        #[serde(rename = "x-wonton")]
+        manifest: Manifest,
+    }
+    serde_saphyr::with_deserializer_from_str(source, |de| {
+        // serde-saphyr 只在闭包里出借反序列化器，错误类型固定是它自己的，路径经 custom 带出去。
+        serde_path_to_error::deserialize::<_, ManifestDocument>(de)
+            .map_err(|e| serde_saphyr::Error::custom(pathed(&e)))
+    })
+    .map(|document| document.manifest)
+    .map_err(|e| ManifestError::Invalid(e.to_string()))
 }
 
 fn check_top_level_keys(top: &Map<String, Value>) -> Result<(), PackageError> {

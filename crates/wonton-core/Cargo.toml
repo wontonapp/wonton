@@ -57,6 +57,8 @@ jiff-tzdb = "0.1"
 serde = { workspace = true }
 # MIT OR Apache-2.0。读 compose，写出口容器 gost 的配置（ADR-0023）。
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize", "serialize"] }
+# MIT OR Apache-2.0。插件清单和服务反序列化失败时，报错带上字段路径。
+serde_path_to_error = "0.1.20"
 serde_json = { workspace = true }
 shlex = "2.0.1"
 # Apache-2.0 OR MIT。检查 SVG 图标的样式表：和 usvg 用同一个解析器（Cargo.lock 里只有一份）。

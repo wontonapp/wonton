@@ -33,6 +33,7 @@ mod lan_webui;
 mod leftovers;
 mod limits;
 mod manager;
+mod manifest_errors;
 mod model_providers;
 mod models;
 mod owner;
