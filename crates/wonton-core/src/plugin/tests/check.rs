@@ -292,3 +292,17 @@ async fn apps_that_trust_more_than_the_core_are_flagged_by_how_they_can_be_reach
     let good = report("network.egress", "", "${WONTON_CORE_ADDRESS}/32", true).await;
     assert!(!flagged(&good.warnings) && !flagged(&good.problems));
 }
+
+/// 插值出错时，检查结果里带字段路径（和安装时报的是同一条错误）。
+#[tokio::test]
+async fn interpolation_errors_name_the_field() {
+    let dir = repo(&compose(
+        "  web:\n    image: nginx\n    entrypoint: [sh, -c, \"echo $@\"]",
+        "",
+    ));
+    let report = run(dir.path(), false).await.unwrap();
+    assert!(
+        report.problems.iter().any(|p| p.contains("entrypoint[2]")),
+        "{report:?}"
+    );
+}
