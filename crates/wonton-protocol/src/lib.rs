@@ -117,13 +117,13 @@ pub use plugin::StoreUnreadable;
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BotSwitch, InstallPreview,
     InstallRequest, InstallSource, InstalledPlugin, InstalledPlugins, LanWebuiOffer,
-    MAX_PLUGIN_ARCHIVE_BYTES, OpenWindow, PermissionLine, PermissionRisk, PluginAuthor,
-    PluginDetail, PluginDevice, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
-    PluginLimits, PluginOperation, PluginProblem, PluginState, PluginTakeover, PluginTask,
-    PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
-    RequirementStatus, SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing,
-    StoreProblem, StoreSection, TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView,
-    UpgradeOffer, UpgradeRequest, UpgradeResult,
+    MAX_PLUGIN_ARCHIVE_BYTES, OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue,
+    OwnerPluginSecrets, PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice,
+    PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
+    PluginOperation, PluginProblem, PluginState, PluginTakeover, PluginTask, PluginTaskState,
+    PluginTrust, PluginWriter, PluginsViewModel, RequirementLine, RequirementStatus, SourceKind,
+    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, UpgradeOffer, UpgradeRequest, UpgradeResult,
 };
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use push::{
