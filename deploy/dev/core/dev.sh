@@ -27,7 +27,9 @@
 # WONTON_DEV_BUILD_JOBS（构建镜像时编译的并发数，和别的任务共用一台主机时用）、
 # WONTON_DEV_DEFAULT_PLUGINS（设成空时核心不装默认 Agent Hermes，省得拉它 4 GB 的镜像）、
 # WONTON_DEV_OWNER_PROFILE（设成 off 时不替你填资料，测还没填的情形用）、
-# WONTON_DEV_LAN_ADDRESSES（插件的局域网端口只开在这些地址上，即核心的 WONTON_LAN_ADDRESSES；默认核心自动选）。
+# WONTON_DEV_LAN_ADDRESSES（插件的局域网端口只开在这些地址上，即核心的 WONTON_LAN_ADDRESSES；默认核心自动选）、
+# WONTON_DEV_CORE_SUBNET（核心网络用这个子网，如 10.214.1.0/24；不设由 Docker 从默认地址池分。默认池只有约 30 个网络，
+# 几套开发栈共用一台 Docker 时会用光；设了就要在这套栈的整个生命里一直设着，换了值 compose 会要求重建网络）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
 set -euo pipefail
 
@@ -100,7 +102,13 @@ ensure_matrix_secrets() {
 compose() {
   ensure_secret
   ensure_matrix_secrets
-  docker compose -f "$here/compose.yaml" "$@"
+  local files=(-f "$here/compose.yaml")
+  if [[ -n ${WONTON_DEV_CORE_SUBNET:-} ]]; then
+    local override="$secrets/$WONTON_DEV_PROJECT.subnet.yaml"
+    printf 'networks:\n  core:\n    ipam:\n      config:\n        - subnet: %s\n' "$WONTON_DEV_CORE_SUBNET" >"$override"
+    files+=(-f "$override")
+  fi
+  docker compose "${files[@]}" "$@"
 }
 
 # docker build，加上 WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS 要的参数。代理只监听 Docker 主机的回环地址，
