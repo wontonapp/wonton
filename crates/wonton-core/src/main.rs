@@ -35,6 +35,7 @@ use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
 use wonton_core::oidc::Hydra;
 use wonton_core::owner::OwnerStore;
+use wonton_core::peers;
 use wonton_core::plugin::PluginManager;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::egress::check;
@@ -54,6 +55,112 @@ use wonton_core::upgrade::docker_host::DockerHost;
 use wonton_core::upgrade::service::{UpgradeConfig, Upgrades};
 use wonton_core::upgrade::state::Layout;
 use wonton_core::upgrade::{compose_images, manual, updater};
+use wonton_tunnel::federation::{FEDERATION_ALPN, FederationForwarder, FederationProtocol};
+use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerPairProtocol};
+
+/// 联邦转发组件对每台对方服务器的探活周期和超时。Tuwunel 的联邦请求是并发的，断了的连接靠下一次
+/// 使用或探活重连（ADR-0050）。
+const FEDERATION_PING_INTERVAL: Duration = Duration::from_secs(30);
+const FEDERATION_PING_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心返回三个空。
+///
+/// 返回的转发器由调用方持有到核心退出：`FederationForwarder` 一停，出站转发和探活就全停了。
+#[allow(clippy::type_complexity)]
+async fn open_peers_and_federation(
+    cfg: &Config,
+    owner: &OwnerStore,
+    tunnel: &Tunnel,
+    confirmations: &Arc<mcp::Confirmations>,
+    manager: &Arc<PluginManager>,
+) -> anyhow::Result<(
+    Option<Arc<peers::Peers>>,
+    Option<FederationProtocol>,
+    Option<FederationForwarder>,
+)> {
+    let Some(matrix) = &cfg.matrix else {
+        return Ok((None, None, None));
+    };
+    let peers = peers::Peers::open(
+        cfg.core_state_dir().join("peers.json"),
+        peers::OwnIdentity {
+            server_name: matrix.server_name.clone(),
+            owner_user_id: format!("@{}:{}", cfg.username, matrix.server_name),
+            owner_display_name: owner.owner().display_name,
+        },
+        tunnel.clone(),
+        confirmations.clone(),
+        {
+            let manager = manager.clone();
+            Arc::new(move || manager.owner_languages())
+        },
+    )
+    .context("读取服务器配对记录")?;
+    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站转发器在 Tuwunel 的网络上监听。
+    let upstream = resolve_federation_upstream(cfg).await?;
+    let protocol = FederationProtocol::new(peers.server_allowlist().clone(), upstream);
+    let lookup = peers.clone();
+    let listen: SocketAddr = cfg.federation_listen.parse().with_context(|| {
+        format!(
+            "WONTON_FEDERATION_LISTEN 不是地址：{}",
+            cfg.federation_listen
+        )
+    })?;
+    let forwarder = FederationForwarder::bind(
+        tunnel.endpoint.clone(),
+        listen,
+        Arc::new(move |name: &str| lookup.lookup(name)),
+        FEDERATION_PING_INTERVAL,
+        FEDERATION_PING_TIMEOUT,
+    )
+    .await
+    .with_context(|| format!("联邦转发组件监听 {}", cfg.federation_listen))?;
+    tracing::info!(
+        listen = %forwarder.listen_addr(),
+        upstream = %upstream,
+        "联邦转发已启动"
+    );
+    peers.attach_forwarder(forwarder.watch_status());
+    Ok((Some(peers), Some(protocol), Some(forwarder)))
+}
+
+/// 隧道 endpoint 上除隧道和设备配对外的协议：联邦入站和服务器配对（ADR-0050）。
+fn extra_protocols(
+    peers: Option<Arc<peers::Peers>>,
+    federation: Option<FederationProtocol>,
+) -> Vec<(&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)> {
+    let mut extra: Vec<(&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)> = Vec::new();
+    if let (Some(protocol), Some(peers)) = (federation, peers) {
+        extra.push((FEDERATION_ALPN, Box::new(protocol) as _));
+        extra.push((
+            PEER_PAIR_ALPN,
+            Box::new(PeerPairProtocol::new(Arc::new(
+                peers::pairing::PeerPairing(peers),
+            ))) as _,
+        ));
+    }
+    extra
+}
+
+/// 解析 Tuwunel 的联邦地址（主机名用时解析，这里一次）：容器刚起来时名字可能还没注册，重试一阵再失败。
+async fn resolve_federation_upstream(cfg: &Config) -> anyhow::Result<SocketAddr> {
+    let addr = cfg.matrix_federation_addr.as_str();
+    const TRIES: u32 = 30;
+    for attempt in 1..=TRIES {
+        match tokio::net::lookup_host(addr).await {
+            Ok(mut resolved) => match resolved.next() {
+                Some(upstream) => return Ok(upstream),
+                None => tracing::warn!(attempt, "联邦地址 {addr} 没有解析出任何地址"),
+            },
+            Err(e) if attempt < TRIES => {
+                tracing::debug!(attempt, error = %e, "联邦地址 {addr} 还解析不了");
+            }
+            Err(e) => return Err(anyhow::anyhow!("解析联邦地址 {addr} 失败：{e}")),
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    bail!("联邦地址 {addr} 一直解析不了：{TRIES} 次重试都失败")
+}
 
 mod pair_command;
 mod plugin_command;
@@ -182,7 +289,8 @@ async fn serve() -> anyhow::Result<()> {
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     let notices = notice_room(&cfg, matrix.as_ref());
-    let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    // 服务器配对的同意卡片（ADR-0050）和 Bot 调用确认用同一套 Confirmations。
+    let (bus, confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
@@ -193,6 +301,9 @@ async fn serve() -> anyhow::Result<()> {
     bus.attach_files(files.clone());
     files.spawn_sweeper();
     let tunnel = bind_tunnel(&cfg, &manager).await?;
+    // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
+    let (peers, federation, _forwarder) =
+        open_peers_and_federation(&cfg, &owner, &tunnel, &confirmations, &manager).await?;
     let push = open_push(&cfg, &tunnel, &manager)?;
     let gateway = Arc::new(
         Gateway::new(
@@ -212,13 +323,15 @@ async fn serve() -> anyhow::Result<()> {
         .with_notices(notices)
         .with_files(Some(files))
         .with_tusd(cfg.tusd.clone())
-        .with_upgrades(Some(upgrades)),
+        .with_upgrades(Some(upgrades))
+        .with_peers(peers.clone()),
     );
     let app = gateway::router(gateway);
     let listener = TcpListener::bind(cfg.listen)
         .await
         .with_context(|| format!("监听 {}", cfg.listen))?;
-    let entry = TunnelEntry::spawn(&tunnel, app.clone());
+    let entry =
+        TunnelEntry::spawn_with_protocols(&tunnel, app.clone(), extra_protocols(peers, federation));
     tracing::info!(
         listen = %cfg.listen,
         url = %cfg.public.origin(cfg.public.core_host()),
@@ -408,12 +521,13 @@ fn plugin_manager(
 }
 
 /// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。
+/// 返回卡片集合本身，供服务器配对（ADR-0050）复用同一套确认流程。
 fn mcp_bus(
     cfg: &Config,
     manager: Arc<PluginManager>,
     notices: Option<Arc<NoticeRoom>>,
     audit: Arc<Audit>,
-) -> Arc<mcp::Bus> {
+) -> (Arc<mcp::Bus>, Arc<mcp::Confirmations>) {
     let notifier: Arc<dyn mcp::Notifier> = match notices {
         Some(notices) => notices,
         None => Arc::new(mcp::NoMatrix),
@@ -424,7 +538,8 @@ fn mcp_bus(
             cfg.core_state_dir().join("confirmation-windows.json"),
         ),
     );
-    mcp::Bus::new(manager, confirmations, audit)
+    let bus = mcp::Bus::new(manager, confirmations.clone(), audit);
+    (bus, confirmations)
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {

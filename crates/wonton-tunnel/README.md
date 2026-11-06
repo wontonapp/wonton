@@ -96,6 +96,23 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
   403 关闭（对方名单里没有本机），对方的名单恢复后自动回到 `Connected`。Tuwunel 分不清“对方离线”和
   “对方拒绝”，嵌入方按这里的状态给 App 出不同的提示（ADR-0050 的“状态”）。
 
+## 服务器配对（ALPN `wonton/peer/0`）
+
+两台服务器的主人在 App 里配对服务器（ADR-0050）：一方出一张一次性码（`wonton://peer?…`，带 endpoint ID、
+直连和中继地址、Matrix 服务器名、密钥），另一方扫码后经这条 ALPN 连过来交换身份，出码方的主人在
+“Wonton”私聊里点同意，两边才记成已配对。和设备配对（[`pair`]）、联邦挂在同一个 endpoint 上。
+
+- **码**：`PeerPairingCode`，格式和取地址方式照设备配对码；一次性，过期作废。
+- **消息**：一条双向流一个 JSON 消息加一条回应（`PeerMessage` / `PeerReply`）。扫码方发 `scan`
+  （密钥、自己的服务器名、主人的用户 ID 和显示名、能被回连的地址），出码方回“等主人同意”附自己的
+  身份，或按原因拒绝（`PeerRejectReason`）。
+- **结果**：主人点了同意或拒绝后，出码方用扫码请求里的地址连回扫码方发 `decision`。扫码方只接受
+  自己扫过的那个 endpoint ID（[`PeerPairHandler::expecting_decision`] 说了算），别的来源一律回错。
+- **删除通知**：`removed` 消息，尽力而为；对方离线时，它以后在联邦握手被拒时知道。
+- **嵌入方**：实现 [`PeerPairHandler`]（验码、记配对、等主人回答），用
+  [`spawn_embedded_with_pairing_and`](crate::TunnelServer::spawn_embedded_with_pairing_and) 把这条 ALPN
+  和其他协议一起挂上。行为测试在 `tests/tunnel/peer_pair.rs`。
+
 ## 示例与实地测试
 
 ```bash

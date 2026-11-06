@@ -351,6 +351,7 @@ async fn an_answer_has_to_match_a_button_on_the_card() {
         ],
         scope: None,
         plugin_id: None,
+        peer_request: None,
     };
     let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
     let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });

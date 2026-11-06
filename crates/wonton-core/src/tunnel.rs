@@ -190,10 +190,21 @@ impl TunnelEntry {
     /// 在隧道的 endpoint 上接受已配对设备的隧道连接，用 `app`（网关的完整路由）服务每条流；还没登记的设备
     /// 可以来配对。
     pub fn spawn(tunnel: &Tunnel, app: Router) -> Self {
-        let (server, listener) = TunnelServer::spawn_embedded_with_pairing(
+        Self::spawn_with_protocols(tunnel, app, [])
+    }
+
+    /// 同 [`Self::spawn`]，同一个 endpoint 上再多挂几个协议的处理器（联邦转发和服务器配对，ADR-0050），
+    /// 每项是它的 ALPN 加处理器。
+    pub fn spawn_with_protocols(
+        tunnel: &Tunnel,
+        app: Router,
+        extra: impl IntoIterator<Item = (&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)>,
+    ) -> Self {
+        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and(
             tunnel.endpoint.clone(),
             tunnel.devices.allowlist().clone(),
             PairProtocol::new(tunnel.pairing.clone()),
+            extra,
         );
         let task = tokio::spawn(serve(listener, app));
         Self { server, task }

@@ -14,6 +14,7 @@ use std::{
 use iroh::{
     EndpointAddr, EndpointId, SecretKey,
     endpoint::{Connection, ConnectionError, VarInt},
+    protocol::DynProtocolHandler,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -169,8 +170,10 @@ impl TestPeer {
             endpoint,
             device_allowlist.clone(),
             PairProtocol::new(Arc::new(NoPairing)),
-            FEDERATION_ALPN,
-            federation,
+            [(
+                FEDERATION_ALPN,
+                Box::new(federation) as Box<dyn DynProtocolHandler>,
+            )],
         );
         let states = forwarder.watch_status();
         Self {
@@ -220,8 +223,10 @@ impl TestPeer {
             endpoint,
             self.device_allowlist.clone(),
             PairProtocol::new(Arc::new(NoPairing)),
-            FEDERATION_ALPN,
-            federation,
+            [(
+                FEDERATION_ALPN,
+                Box::new(federation) as Box<dyn DynProtocolHandler>,
+            )],
         );
         self.states = forwarder.watch_status();
         self.server = Some(server);

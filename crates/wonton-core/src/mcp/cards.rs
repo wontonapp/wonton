@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow, PermissionRisk,
+    ConfirmationState, ConfirmationWindow, PeerRequest, PermissionRisk,
 };
 
 use super::file_results::human_size;
@@ -28,6 +28,8 @@ pub struct Draft {
     pub scope: Option<String>,
     /// 卡片关于哪个插件：壳用它画“打开”和“放到底栏”。
     pub plugin_id: Option<String>,
+    /// 这张卡片是服务器配对请求时才有（ADR-0050）。
+    pub peer_request: Option<PeerRequest>,
 }
 
 impl Draft {
@@ -209,6 +211,7 @@ pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft
         lines,
         choices: choices("安装", "不装"),
         scope: None,
+        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -248,6 +251,7 @@ pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages
         lines,
         choices: choices("安装", "不装"),
         scope: None,
+        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -281,6 +285,7 @@ pub fn agent_update(
         lines,
         choices: choices("更新", "不更新"),
         scope: None,
+        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -331,6 +336,7 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         lines: vec![emphasized(notice), emphasized("代码会以本机 root 身份运行")],
         choices: choices("我知道这个插件能控制整台主机", "不装"),
         scope: None,
+        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -347,6 +353,7 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool) -> Draft {
         lines: vec![data],
         choices: choices("卸载", "取消"),
         scope: None,
+        peer_request: None,
         plugin_id: None,
     }
 }
@@ -369,6 +376,7 @@ pub fn tool_call(
         lines,
         choices: choices("允许", "拒绝"),
         scope: None,
+        peer_request: None,
         plugin_id: None,
     }
 }
@@ -412,6 +420,7 @@ pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Dr
         lines,
         choices: buttons,
         scope: None,
+        peer_request: None,
         plugin_id: None,
     }
 }
@@ -455,6 +464,7 @@ pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> 
         lines,
         choices: buttons,
         scope: None,
+        peer_request: None,
         plugin_id: None,
     }
 }

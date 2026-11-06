@@ -13,6 +13,7 @@
 //!   （[`ProxyCredential`]）的 HTTP 正向代理，同机的其他 App 借用不了本设备的配对身份。
 //! - 线协议见 `wire` 模块：一条 QUIC 连接上每条双向流对应一条 TCP 连接，做法参考 dumbpipe。
 //! - 扫码配对：二维码里的配对码和配对的 ALPN 见 [`pair`] 模块。
+//! - 服务器配对：两台服务器的主人互相配对服务器（ADR-0050），码和 ALPN 见 [`peer_pair`] 模块。
 
 mod allowlist;
 mod client;
@@ -24,6 +25,7 @@ mod forward;
 mod http_front;
 mod pacing;
 pub mod pair;
+pub mod peer_pair;
 mod proxy;
 mod server;
 mod wire;

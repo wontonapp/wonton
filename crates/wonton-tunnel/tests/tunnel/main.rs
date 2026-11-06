@@ -8,6 +8,7 @@ mod lifecycle;
 mod local_proxy;
 mod pacing;
 mod pairing;
+mod peer_pair;
 mod relay;
 mod resume;
 mod stale_addrs;

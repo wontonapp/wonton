@@ -163,6 +163,15 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
 - 两台真实主机（titan 上两个验证栈，或 npchy 加 titan）各装一套：配对、两边的人互发消息、拉跨机群、Bot 在群里回复；
   对方离线、对方删配对、没配对三种情况在 App 上各显示对的原因；取消配对后再配对，缺的消息补齐。
 
+核心层实测（进程内两个 endpoint / 两个核心，提交 `624d314`）：
+- 服务器配对协议（`wonton/peer/0`，`crates/wonton-tunnel/tests/tunnel/peer_pair.rs`）：扫码、等同意、同意后两边绑定
+  服务器名和 endpoint ID；拒绝、码过期、码被改、扫自己、已配对再扫、结果只认扫过的 endpoint ID、删配对通知到对方。
+- 核心流程（`crates/wonton-core/src/peers/peers_tests.rs`、`crates/wonton-core/src/gateway/peers_api_tests.rs`）：
+  出码、扫码、卡片同意后 `GET /_wonton/api/peers` 两边都是已配对；拒绝和卡片过期把两边的记录清掉；核心重启丢未回答的
+  请求、保留已配对；一个服务器名只解析到配对时绑定的 endpoint ID；非主人设备的请求一律 401，错误类别和
+  `X-Wonton-Error` 一致。
+- 回归：`wonton-tunnel` 既有测试 47 条全过。真实两机端到端（配对、互发、跨机群）待 Tuwunel 配置任务就绪后验证。
+
 ## 关联
 
 ADR-0003、ADR-0004、ADR-0007、ADR-0009（“补充：Matrix 的服务器名”）、ADR-0016、ADR-0017、ADR-0043、ADR-0045、ADR-0048。

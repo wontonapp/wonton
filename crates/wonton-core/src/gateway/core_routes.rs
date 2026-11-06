@@ -14,8 +14,8 @@ use serde::Deserialize;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, files, isolation, matrix,
-    model_providers, onboarding, owner_profile, pages, push, same_origin_path, sso, tool_policy,
-    with_cookie,
+    model_providers, onboarding, owner_profile, pages, peers, push, same_origin_path, sso,
+    tool_policy, with_cookie,
 };
 
 /// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
@@ -182,6 +182,15 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             post(core_upgrade::check),
         )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
+        .route(
+            wonton_protocol::PEERS_PATH,
+            get(peers::list).post(peers::scan),
+        )
+        .route(&wonton_protocol::peer_code_path(), post(peers::code))
+        .route(
+            &wonton_protocol::peer_path("{server_name}"),
+            delete(peers::remove),
+        )
         .route(
             "/_wonton/api/devices",
             get(devices::list).post(devices::add),

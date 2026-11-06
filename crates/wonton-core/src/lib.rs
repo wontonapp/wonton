@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod oidc;
 pub mod owner;
 pub mod pairing;
+pub mod peers;
 pub mod plugin;
 pub mod push;
 pub mod secret;

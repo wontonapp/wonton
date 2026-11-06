@@ -237,6 +237,10 @@ pub struct Config {
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
+    /// 联邦转发组件监听的地址（`WONTON_FEDERATION_LISTEN`，ADR-0050）。
+    pub federation_listen: String,
+    /// Tuwunel 的联邦端口（`WONTON_MATRIX_FEDERATION_ADDR`，ADR-0050），主机名用时解析。
+    pub matrix_federation_addr: String,
     /// 升级时看的渠道（`WONTON_CORE_SOURCE`）：`仓库:tag`。正式安装才有（ADR-0025）。
     pub core_source: Option<String>,
     /// compose 文件和 `.env` 所在的目录（`WONTON_INSTALL_DIR`）。正式安装才有。
@@ -348,6 +352,10 @@ impl Config {
                 DEFAULT_INSTALL_TIMEOUT.as_secs(),
             )?,
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
+            federation_listen: get("WONTON_FEDERATION_LISTEN")
+                .unwrap_or_else(|| "0.0.0.0:8448".into()),
+            matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")
+                .unwrap_or_else(|| "tuwunel.wonton.internal:8448".into()),
             core_source: get("WONTON_CORE_SOURCE"),
             install_dir: get("WONTON_INSTALL_DIR").map(PathBuf::from),
         })

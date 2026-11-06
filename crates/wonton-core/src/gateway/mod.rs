@@ -39,6 +39,7 @@ mod notify_limit;
 mod onboarding;
 mod owner_profile;
 mod pages;
+mod peers;
 mod plugin_start;
 mod proxy;
 mod proxy_sso;
@@ -111,6 +112,8 @@ pub struct Gateway {
     pub tusd: Option<String>,
     /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
+    /// 服务器配对（ADR-0050）；没接 Matrix 的核心没有它，接口如实报不可用。
+    pub peers: Option<Arc<crate::peers::Peers>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
     /// `plugins.health` 的限频表（[`health`]）。
     health_limits: health::RateLimits,
@@ -159,6 +162,7 @@ impl Gateway {
             files: None,
             tusd: None,
             upgrades: None,
+            peers: None,
             onboarding,
             health_limits: health::RateLimits::new(),
             sessions: session::SessionStore::default(),
@@ -226,6 +230,13 @@ impl Gateway {
         upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     ) -> Self {
         self.upgrades = upgrades;
+        self
+    }
+
+    /// 接上服务器配对：`/_wonton/api/peers` 和联邦转发这才可用（ADR-0050）。没接 Matrix 的核心没有它。
+    #[must_use]
+    pub fn with_peers(mut self, peers: Option<Arc<crate::peers::Peers>>) -> Self {
+        self.peers = peers;
         self
     }
 
@@ -510,6 +521,8 @@ mod onboarding_tests;
 mod owner_profile_tests;
 #[cfg(test)]
 mod pairing_tests;
+#[cfg(test)]
+mod peers_api_tests;
 #[cfg(test)]
 mod plugin_start_tests;
 #[cfg(test)]

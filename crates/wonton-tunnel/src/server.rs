@@ -5,7 +5,7 @@ use std::{collections::HashSet, net::SocketAddr};
 use iroh::{
     Endpoint, EndpointId,
     endpoint::{Connection, RecvStream, SendStream, VarInt},
-    protocol::{AcceptError, ProtocolHandler, Router},
+    protocol::{AcceptError, DynProtocolHandler, ProtocolHandler, Router},
 };
 use tokio::{
     net::TcpStream,
@@ -234,22 +234,28 @@ impl TunnelServer {
         (Self { router, allowlist }, listener)
     }
 
-    /// 同 [`spawn_embedded_with_pairing`](Self::spawn_embedded_with_pairing)，同一个 endpoint 上再多挂一个
-    /// 协议的处理器（如联邦转发），`extra_alpn` 是它的 ALPN。
+    /// 同 [`spawn_embedded_with_pairing`](Self::spawn_embedded_with_pairing)，同一个 endpoint 上再多挂几个
+    /// 协议的处理器（如联邦转发和服务器配对），每项是它的 ALPN 加处理器。
     pub fn spawn_embedded_with_pairing_and<H: PairHandler>(
         endpoint: Endpoint,
         allowlist: Allowlist,
         pairing: PairProtocol<H>,
-        extra_alpn: &'static [u8],
-        extra: impl ProtocolHandler,
+        extra: impl IntoIterator<Item = (&'static [u8], Box<dyn DynProtocolHandler>)>,
     ) -> (Self, TunnelListener) {
         let (protocol, listener) = TunnelProtocol::embedded(allowlist.clone());
-        let router = Router::builder(endpoint)
+        let mut builder = Router::builder(endpoint)
             .accept(ALPN, protocol)
-            .accept(PAIR_ALPN, pairing)
-            .accept(extra_alpn, extra)
-            .spawn();
-        (Self { router, allowlist }, listener)
+            .accept(PAIR_ALPN, pairing);
+        for (alpn, handler) in extra {
+            builder = builder.accept(alpn, handler);
+        }
+        (
+            Self {
+                router: builder.spawn(),
+                allowlist,
+            },
+            listener,
+        )
     }
 
     fn with_protocol(endpoint: Endpoint, allowlist: Allowlist, protocol: TunnelProtocol) -> Self {
