@@ -14,6 +14,7 @@ mod recovery;
 mod resume;
 mod send;
 mod server_switch;
+mod stale_join;
 mod support;
 mod upload_progress;
 

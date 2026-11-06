@@ -24,6 +24,8 @@ use wonton_matrix::MatrixSession;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::{Allowlist, TunnelServer};
 
+use super::stale_join::{StaleJoin, forward_one};
+
 pub const WAIT: Duration = Duration::from_secs(60);
 const BASE_DOMAIN: &str = "wonton.localhost";
 /// 和 deploy/dev/matrix/tuwunel.toml 的 server_name 一致。
@@ -65,6 +67,9 @@ struct Core {
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
     reject_backup_creation: AtomicBool,
+    /// 有值时下一个带着这个房间加入事件的同步应答被改写成“受邀”，见 [`super::stale_join`]。
+    stale_join: watch::Sender<Option<StaleJoin>>,
+    join_reported_as_invited: AtomicBool,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
@@ -92,6 +97,8 @@ impl Home {
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
             reject_backup_creation: AtomicBool::new(false),
+            stale_join: watch::Sender::new(None),
+            join_reported_as_invited: AtomicBool::new(false),
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
@@ -149,6 +156,16 @@ impl Home {
     /// 取房间成员的请求断开或恢复。
     pub fn set_members_down(&self, down: bool) {
         self.core.members_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 下一个带着 `stale` 房间加入事件的同步应答，把本人报成还是受邀。正在转发的请求断开重发，保证经过改写。
+    pub fn report_join_as_invited(&self, stale: StaleJoin) {
+        self.core.stale_join.send_replace(Some(stale));
+    }
+
+    /// [`Self::report_join_as_invited`] 有没有改写到应答。
+    pub fn join_was_reported_as_invited(&self) -> bool {
+        self.core.join_reported_as_invited.load(Ordering::SeqCst)
     }
 
     /// 被 [`Self::set_members_down`] 断开过多少次取房间成员的请求。
@@ -320,11 +337,21 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
             core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
             return;
         }
+        let mut stale = core.stale_join.subscribe();
+        let armed = stale.borrow().clone();
+        if let Some(armed) = armed {
+            if forward_one(tcp, &core.tuwunel, &head, &armed).await {
+                core.stale_join.send_replace(None);
+                core.join_reported_as_invited.store(true, Ordering::SeqCst);
+            }
+            return;
+        }
         let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();
         upstream.write_all(&head).await.unwrap();
         tokio::select! {
             _ = tokio::io::copy_bidirectional(&mut tcp, &mut upstream) => {}
             _ = down.wait_for(|down| *down) => {}
+            _ = stale.wait_for(Option::is_some) => {}
         }
         return;
     }

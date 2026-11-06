@@ -13,7 +13,10 @@ use matrix_sdk::{
     ruma::{
         MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
         api::{
-            client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+            client::{
+                membership::join_room_by_id,
+                room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+            },
             error::ErrorKind,
         },
         events::{
@@ -35,6 +38,11 @@ use crate::{ChatRoom, Error, MatrixSession, MessageBody, Result, message::body};
 const PAGE_SIZE: usize = 500;
 /// 加入房间时等邀请事件落库的上限。邀请事件和房间在同一批同步里，等的只是这批写完。
 const INVITE_WAIT: Duration = Duration::from_secs(10);
+/// 加入后等同步把房间标成已加入的上限。加入事件会唤醒在等的同步，平时一秒内就到；超过这个时间按下面
+/// [`MatrixSession::until_joined`] 说的 Tuwunel 的问题处理。
+const JOIN_ECHO_WAIT: Duration = Duration::from_secs(3);
+/// 重新订阅后等服务器发来完整状态的上限。
+const RESUBSCRIBED_WAIT: Duration = Duration::from_secs(30);
 
 /// 本账号在房间里的成员状态。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +78,8 @@ pub(crate) struct RoomSubscriptions {
     opened: Option<OwnedRoomId>,
     /// 一直跟着的房间。
     watched: BTreeSet<OwnedRoomId>,
+    /// 加入后同步还标着“受邀”、临时订阅的房间，见 [`MatrixSession::until_joined`]。
+    joining: BTreeSet<OwnedRoomId>,
 }
 
 /// 房间列表里的一项。
@@ -136,22 +146,69 @@ impl MatrixSession {
             .map(|room| room.room_id().to_owned())
     }
 
-    /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。
+    /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成已加入才返回，
+    /// 调用方接着就能往里发消息。
     pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {
-        // 私聊标记要在加入前从邀请里读。SDK 也会记 `m.direct`，但它在加入请求返回后才检查房间是否还是
-        // “受邀”，同步抢先处理了加入时就漏记了（同步一直在跑，实测负载高时常发生）。
-        let was_direct = match self.client.get_room(room_id) {
-            Some(room) if room.state() == RoomState::Invited => invited_as_direct(&room).await,
-            _ => false,
+        // 私聊标记和邀请人要在加入前从邀请里读。不用 SDK 的 `join_room_by_id`：它加入后用 `set_is_direct`
+        // 记私聊，拿本机存的 `m.direct` 改完整份写回，而本机这份要等写入同步回来才更新。一次同步之内先后接受
+        // 两个私聊邀请时，后一次写的没有前一个房间，前一个就不再是私聊（通知房间因此能发消息，负载高时实测）。
+        // `mark_as_dm` 先从服务器取最新的再改，同一会话里的写入有锁串着。代价是不导入邀请人随邀请分享的历史
+        // 密钥：SDK 只在单独邀请时分享，建房时一起发的私聊邀请本来就没有。
+        let invited = self
+            .client
+            .get_room(room_id)
+            .filter(|room| room.state() == RoomState::Invited);
+        let inviter = match &invited {
+            Some(room) if invited_as_direct(room).await => {
+                Some(room.invite_details().await?.inviter_id)
+            }
+            _ => None,
         };
-        let room = self.client.join_room_by_id(room_id).await?;
-        if was_direct && room.direct_targets_length() == 0 {
-            room.set_is_direct(true).await?;
+        self.client
+            .send(join_room_by_id::v3::Request::new(room_id.to_owned()))
+            .await?;
+        if let Some(inviter) = inviter {
+            self.client
+                .account()
+                .mark_as_dm(room_id, &[inviter])
+                .await?;
         }
-        Ok(())
+        match invited {
+            Some(room) => self.until_joined(&room).await,
+            None => Ok(()),
+        }
     }
 
-    /// 拒绝邀请，或者离开已加入的房间。
+    /// 等同步把刚加入的房间标成已加入。
+    ///
+    /// 绕过 Tuwunel 的问题（v1.9.4，TODO 上游 issue 链接）：它先让新事件对同步可见，再更新房间的当前状态。
+    /// 这中间的一次 Sliding Sync，时间线里有加入事件，`required_state` 里本人却还是邀请；SDK 只按
+    /// `required_state` 定状态，房间就一直是“受邀”，直到房间里来新事件。这时单独订阅这个房间，服务器按
+    /// 当前状态重发。上游修好、镜像升级后删掉订阅这一步，只留等待。
+    async fn until_joined(&self, room: &Room) -> Result<()> {
+        if joined(room, JOIN_ECHO_WAIT).await {
+            return Ok(());
+        }
+        tracing::warn!(room = %room.room_id(), "加入后同步仍标着受邀，重新订阅这个房间");
+        let room_id = room.room_id().to_owned();
+        let mut subscriptions = self.subscriptions.lock().await;
+        subscriptions.joining.insert(room_id.clone());
+        self.subscribe(&subscriptions).await;
+        drop(subscriptions);
+        let done = joined(room, RESUBSCRIBED_WAIT).await;
+        let mut subscriptions = self.subscriptions.lock().await;
+        subscriptions.joining.remove(&room_id);
+        self.subscribe(&subscriptions).await;
+        drop(subscriptions);
+        if done {
+            Ok(())
+        } else {
+            Err(Error::NotReady(
+                "已经加入，但服务器一直没把这个聊天同步过来".to_owned(),
+            ))
+        }
+    }
+
     pub async fn leave_room(&self, room_id: &RoomId) -> Result<()> {
         self.room(room_id)?.leave().await?;
         Ok(())
@@ -240,6 +297,7 @@ impl MatrixSession {
             .opened
             .iter()
             .chain(&subscriptions.watched)
+            .chain(&subscriptions.joining)
             .map(|room| &**room)
             .collect();
         self.sync
@@ -287,6 +345,20 @@ fn snapshots<T: Clone + Send + Sync + 'static>(
             receiver.changed().await.ok()?;
         }
     })
+}
+
+/// 在 `wait` 之内房间有没有变成已加入。
+async fn joined(room: &Room, wait: Duration) -> bool {
+    let mut updates = room.subscribe_info();
+    let joined = async {
+        while room.state() != RoomState::Joined {
+            if updates.next().await.is_none() {
+                return false;
+            }
+        }
+        true
+    };
+    tokio::time::timeout(wait, joined).await.unwrap_or(false)
 }
 
 /// 邀请里有没有私聊标记。SDK 处理到一个新房间就把它放进列表、标成“受邀”，这批同步写完才读得到邀请事件；这之前

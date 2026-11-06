@@ -33,7 +33,7 @@ async fn room_list_shows_names_previews_and_unread_counts() {
     .await;
     alice_room.send_text("第二条").await.expect("发第二条");
 
-    // Bob 的列表里，私聊以对方的名字出现，带着最新一条的预览和两条未读。加入邀请时 SDK 把房间记进
+    // Bob 的列表里，私聊以对方的名字出现，带着最新一条的预览和两条未读。加入邀请时把房间记进
     // `m.direct`，经同步回来后才标为私聊。
     let row = wait_for_room(&bob, "Bob 看到两条未读", &room_id, |row| {
         row.unread_count == 2
@@ -254,6 +254,47 @@ async fn a_chat_with_someone_who_does_not_exist_is_refused() {
     assert!(alice.direct_chat_with(&nobody).is_none());
 }
 
+/// 同时接受两个私聊邀请，两个都要记成私聊。`m.direct` 是整份写回的，后一次加入若按本机还没同步回来的
+/// 旧值写，就把前一个冲掉（通知房间因此不再只读）。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn direct_invites_accepted_back_to_back_both_stay_direct() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let carol = server.login(&unique("carol"), "Carol 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    bob.start_sync().await.expect("Bob 开始同步");
+    let mut invites = Vec::new();
+    for inviter in [&alice, &carol] {
+        let room_id = inviter
+            .create_direct_chat(bob.user_id(), false)
+            .await
+            .expect("建私聊");
+        wait_for_room(&bob, "收到私聊邀请", &room_id, |row| {
+            row.membership == Membership::Invited && row.is_direct
+        })
+        .await;
+        invites.push((room_id, inviter.user_id()));
+    }
+
+    // 同时加入：两次写 `m.direct` 之间没有同步，后写的看不到先写的那一份。
+    let (first, second) = tokio::join!(bob.join_room(&invites[0].0), bob.join_room(&invites[1].0));
+    first.expect("加入第一个私聊");
+    second.expect("加入第二个私聊");
+    for (room_id, inviter) in &invites {
+        wait_for_room(
+            &bob,
+            "加入后仍是和邀请人的私聊",
+            room_id,
+            |row| {
+                row.membership == Membership::Joined
+                    && row.direct_user_id.as_deref() == Some(*inviter)
+            },
+        )
+        .await;
+    }
+}
+
 /// `alice` 建私聊邀请 `bob`，`bob` 看到邀请后加入。
 pub async fn direct_chat(
     alice: &MatrixSession,
@@ -264,7 +305,7 @@ pub async fn direct_chat(
         .create_direct_chat(bob.user_id(), encrypted)
         .await
         .expect("建私聊");
-    // 邀请先出现在列表里，邀请事件里的私聊标记可能稍后才到；SDK 在加入时按这个标记把房间记进
+    // 邀请先出现在列表里，邀请事件里的私聊标记可能稍后才到；加入时按这个标记把房间记进
     // `m.direct`，所以等标记到了再加入。
     let invited = wait_for_room(bob, "收到私聊邀请", &room_id, |row| {
         row.membership == Membership::Invited && row.is_direct
