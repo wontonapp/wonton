@@ -131,8 +131,9 @@ build_commit() {
 }
 
 # 在与核心共享网络命名空间的容器里运行 curl：*.localhost 由 curl 解析到 127.0.0.1，即核心网关。
+# Docker CLI 会注入客户端代理配置；这些内部请求必须直连，不能依赖客户端的 NO_PROXY 名单。
 client() {
-  docker run --rm -i --network "container:$core" "$curl_image" "$@"
+  docker run --rm -i --network "container:$core" "$curl_image" --noproxy '*' "$@"
 }
 
 token() {

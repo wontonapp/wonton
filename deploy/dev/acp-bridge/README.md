@@ -30,6 +30,9 @@ deploy/dev/core/dev.sh uninstall dev.wonton.acp-bridge --purge
 
 自己准备 Bot 数据目录，填入真实的 Wonton 变量；Compose 会建自己的网络：
 
+样例里四个空代理变量用于阻止 Docker CLI 注入客户端的代理配置；核心经 Engine API 安装插件不继承这份配置，见
+[核心开发环境的代理说明](../core/README.md)。
+
 ```bash
 export WONTON_BOT_DATA="$PWD/deploy/dev/acp-bridge/.data"
 mkdir -p "$WONTON_BOT_DATA"
@@ -77,6 +80,8 @@ rm -rf "$WONTON_BOT_DATA"
 
 ## 验证边界
 
-真实验收需要可访问的模型网关。改成直连宿主 magpie 时，样例另需声明 `network.egress`，并将 host-gateway 对应的地址或主机名加入 `NO_PROXY` 和 `no_proxy`；否则插件隔离网络没有出站路由，或请求误入 Docker 注入的代理。核心的 Compose 子集不接收 `extra_hosts`，安装包不能依赖这个字段。无法直连时如实报告，不使用端口转发绕过。
+真实验收需要可访问的模型网关。改成直连宿主 magpie 时，样例另需声明 `network.egress`，否则插件隔离网络没有出站路由。
+自行给服务配置代理时，还要把目标宿主地址或主机名加入 `NO_PROXY` 和 `no_proxy`。核心的 Compose 子集不接收
+`extra_hosts`，安装包不能依赖这个字段。无法直连时如实报告，不使用端口转发绕过。
 
 加密消息的房间密钥可能晚于事件到达；桥在正文解密后才记入消息去重，避免把同一条普通文字误报为不支持并永久跳过。

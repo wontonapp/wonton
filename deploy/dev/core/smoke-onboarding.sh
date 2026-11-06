@@ -106,7 +106,7 @@ api() {
   local method="$1" path="$2" body="${3:-}" out
   local args=(-sS -X "$method" -H "Authorization: Bearer $token" -w '\n%{http_code}')
   [[ -n "$body" ]] && args+=(-H 'Content-Type: application/json' -d "$body")
-  out="$(docker run --rm --network "container:$core" "$curl_image" "${args[@]}" "$core_url$path")"
+  out="$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' "${args[@]}" "$core_url$path")"
   CODE="${out##*$'\n'}"
   REPLY="${out%$'\n'*}"
 }

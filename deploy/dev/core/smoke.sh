@@ -73,15 +73,16 @@ for key in sys.argv[1].split("."):
 print(json.dumps(value) if isinstance(value, (bool, dict, list)) else value)' "$1"
 }
 # 浏览器：同一个 Cookie 罐，跨请求保持会话。它共享核心容器的网络命名空间，核心重启后要重建。
+# 直连探针忽略 Docker CLI 注入的代理；隧道探针则清空 NO_PROXY，避免 *.localhost 绕过显式的本地代理。
 start_browser() {
   docker rm -f "$browser" >/dev/null 2>&1 || true
   docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 1800 >/dev/null
 }
-b() { docker exec "$browser" curl -sS -c /tmp/jar -b /tmp/jar "$@"; }
+b() { docker exec "$browser" curl --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
 # 经手机的本地代理访问，和 App 一样带会话凭据（$credential）。t 像 Android WebView：http 地址直接发绝对形式的
 # 请求行；tc 像 iOS WKWebView：每条连接先 CONNECT。两者各用一个 Cookie 罐，与上面的浏览器分开。
-t() { docker exec "$browser" curl -sS -c /tmp/phone-jar -b /tmp/phone-jar -x http://127.0.0.1:18008 -U "$credential" "$@"; }
-tc() { docker exec "$browser" curl -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x http://127.0.0.1:18008 -U "$credential" "$@"; }
+t() { docker exec "$browser" curl --noproxy '' -sS -c /tmp/phone-jar -b /tmp/phone-jar -x http://127.0.0.1:18008 -U "$credential" "$@"; }
+tc() { docker exec "$browser" curl --noproxy '' -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x http://127.0.0.1:18008 -U "$credential" "$@"; }
 
 labeled() {
   local id="$1"
@@ -215,7 +216,7 @@ gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { p
 expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
 expect "卸载时在网关里吊销凭据" "$(gateway_keys | grep -cx app.model-client)" 0
-expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" -sS -o /dev/null -w '%{http_code}' \
+expect "吊销后旧凭据无效" "$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $model_key" "http://$magpie:3425/v1/models")" 401
 
 step "已配对设备经隧道打开插件：不用登录，直接是主人"
@@ -247,12 +248,12 @@ device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
 expect "家里服务器以外的地址不进隧道" \
   "$(t -o /dev/null -w '%{http_code}' http://cdn.example.com/app.js)" 403
 expect "同机其他程序不带会话凭据，被本地代理拒绝" \
-  "$(docker exec "$browser" curl -sS -o /dev/null -w '%{http_code}' -x http://127.0.0.1:18008 "$grafana_url/api/user")" 407
+  "$(docker exec "$browser" curl --noproxy '' -sS -o /dev/null -w '%{http_code}' -x http://127.0.0.1:18008 "$grafana_url/api/user")" 407
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "未登记的设备被隧道拒绝" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
 grep -qi '^x-wonton-tunnel-error: unauthorized' <<<"$reply" || fail "缺少 unauthorized 原因：$reply"
 # 局域网里的浏览器用 IP 打开状态页，上面有首次配对码；手机拿它经 wonton/pair/0 成为主人的设备。
-lan_page() { docker exec "$browser" curl -sS "http://127.0.0.1:$WONTON_DEV_PORT/"; }
+lan_page() { docker exec "$browser" curl --noproxy '*' -sS "http://127.0.0.1:$WONTON_DEV_PORT/"; }
 pairing_code="$(lan_page | sed -n 's/.*<code class="pairing-code">\([^<]*\)<\/code>.*/\1/p' | sed 's/\&amp;/\&/g')"
 [[ "$pairing_code" == wonton://pair\?* ]] || fail "状态页上没有首次配对码：$(lan_page)"
 ok "局域网状态页上有首次配对码"
@@ -492,7 +493,7 @@ ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没�
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
 expect "Hermes 的插件网络里来的请求答不了确认" "$(answer docker run --rm --network "$hermes_network" \
-  "$curl_image" -H "Host: $WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT/_wonton/confirmations/$card_id")" 401
+  "$curl_image" --noproxy '*' -H "Host: $WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT/_wonton/confirmations/$card_id")" 401
 expect "局域网浏览器（有核心会话）答不了确认" "$(answer b "$confirm_url")" 401
 expect "主人的手机经隧道确认" "$(answer t "$confirm_url")" 200
 for _ in $(seq 180); do [[ "$(plugin_state app.wonton.files)" == running ]] && break; sleep 1; done
@@ -613,7 +614,7 @@ web_key="$(docker inspect "$magpie" --format '{{range .Config.Env}}{{println .}}
 [[ "$web_key" =~ ^[0-9a-f]{64}$ ]] || fail "magpie 没有拿到核心生成的网页密钥"
 upstream_off() { [[ "$(docker exec "$magpie" magpie providers)" == *'switched off'* ]]; }
 # 没有任何 Cookie 的浏览器。
-anon() { docker exec "$browser" curl -sS "$@"; }
+anon() { docker exec "$browser" curl --noproxy '*' -sS "$@"; }
 reply="$(anon -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Accept: text/html' "$magpie_url/")"
 expect "没登录：打开页面跳到核心登录" "${reply%% *}" 303
 [[ "${reply#* }" == "$core_url/_wonton/sso?to="* ]] || fail "跳转地址不对：${reply#* }"
@@ -668,7 +669,7 @@ grep -qi "^X-Forwarded-Host: app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" <<<
 ok "插件收到转发头，收不到网关 Cookie 和伪造的转发头"
 # 从 whoami 的插件网络里冒充 Bot 和模型网关的使用方：网关按来源地址认出插件，它两项权限都没申请。
 from_whoami() {
-  docker run --rm --network "$whoami_network" "$curl_image" -sS -o /dev/null -D - \
+  docker run --rm --network "$whoami_network" "$curl_image" --noproxy '*' -sS -o /dev/null -D - \
     -H "Host: $1:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT$2"
 }
 for internal in "matrix.wonton.internal /_matrix/client/versions" "models.wonton.internal /v1/models" "mcp.wonton.internal /mcp"; do
