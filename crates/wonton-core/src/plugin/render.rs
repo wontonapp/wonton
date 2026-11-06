@@ -15,7 +15,7 @@ use super::compose::{
     DependCondition, Healthcheck, NetworkMode, PullPolicy, Service, StringOrList, parse_bytes,
     parse_duration,
 };
-use super::configs::{self, ConfigError, ConfigFile};
+use super::configs::{self, ConfigFile};
 use super::core_address;
 use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
@@ -25,7 +25,7 @@ use super::interpolate::UsedVars;
 use super::lan::{self, LanGrant};
 use super::limits;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
-use super::mounts::{Mounts, check_not_nested, dir_owners, mount_targets};
+use super::mounts::{Mounts, check_not_nested, dir_owners};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
 use super::requirements::Requirements;
@@ -154,6 +154,8 @@ pub struct InstallContext {
     pub instance: Instance,
     /// 插件私有数据目录（宿主路径）。
     pub app_data: PathBuf,
+    /// 核心管理的配置文件目录（宿主路径），`read_only` 服务的 `configs` 从这里挂进容器。
+    pub config_store: PathBuf,
     /// 已授权的共享文件夹：名称 → 宿主路径。
     pub shares: BTreeMap<String, PathBuf>,
     /// 插件网页的公开地址（不带末尾斜杠）。
@@ -197,6 +199,7 @@ impl std::fmt::Debug for InstallContext {
             .field("slug", &self.slug)
             .field("instance", &self.instance)
             .field("app_data", &self.app_data)
+            .field("config_store", &self.config_store)
             .field("shares", &self.shares)
             .field("app_url", &self.app_url)
             .field("oidc", &self.oidc)
@@ -230,6 +233,9 @@ pub struct ContainerPlan {
     pub body: ContainerCreateBody,
     /// 创建之后、启动之前写进容器的配置文件。
     pub files: Vec<ConfigFile>,
+    /// `read_only` 服务的配置文件在核心数据目录里的目录（[`super::configs_store`]）：文件已按只读
+    /// 绑定挂载配好，`files` 交给一次性容器经归档接口写进这里，而不是写进容器根。
+    pub store_dir: Option<PathBuf>,
     /// 一次性服务：以 0 退出是它的正常状态，安装时不等它健康。
     pub one_shot: bool,
     pub variables: UsedVars,
@@ -289,6 +295,7 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
     let url = format!("http://{slug}.wonton.invalid");
     InstallContext {
         app_data: root.join("apps").join(&slug),
+        config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
         oidc: webui.filter(|w| w.sso == Sso::Oidc).map(|_| OidcVars {
@@ -386,12 +393,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
     }
     let network = ctx.instance.network(&ctx.slug);
     let labels = ctx.instance.labels(&manifest.id);
-    let read_only_shares: Vec<PathBuf> = ctx
-        .shares
-        .iter()
-        .filter(|(name, _)| !share_writable(manifest, name))
-        .map(|(_, path)| path.clone())
-        .collect();
+    let read_only_shares = read_only_share_paths(manifest, &ctx.shares);
     let one_shot = package.one_shot_services();
     let gpu_services: &[String] = manifest.gpu.as_ref().map_or(&[], |g| &g.services);
     let mut binds = Vec::new();
@@ -409,7 +411,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
                  否则 Docker 会在它退出后反复重启它",
             ));
         }
-        let mounts = Mounts {
+        let mut mounts = Mounts {
             ctx,
             read_only_shares: &read_only_shares,
             named: package.named_volumes(),
@@ -417,12 +419,15 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             allow_docker_socket: manifest.permissions.contains(&Permission::DockerSocket),
         }
         .build(&service.volumes, &mut binds)?;
-        let targets = mount_targets(service, &mounts);
-        let files = configs::resolve(package, service, vars.get(&name), &targets, &mut variables)
-            .map_err(|e| match e {
-            ConfigError::Package(e) => e.into(),
-            ConfigError::Rule(m) => service_err(&name, m),
-        })?;
+        let (files, store_dir) = configs::resolve_service(
+            package,
+            service,
+            ctx,
+            &name,
+            &vars,
+            &mut mounts,
+            &mut variables,
+        )?;
         let options = ContainerOptions {
             requirements,
             network: network.as_str(),
@@ -441,6 +446,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             egress::healthcheck::apply(&mut plan.body);
         }
         plan.files = files;
+        plan.store_dir = store_dir;
         plan.one_shot = one_shot;
         plan.variables = variables;
         containers.push(plan);
@@ -526,6 +532,15 @@ fn check_network_mode(
         )),
         None => Ok(()),
     }
+}
+
+/// 已授权共享文件夹里服务不可写的那些路径。
+fn read_only_share_paths(manifest: &Manifest, shares: &BTreeMap<String, PathBuf>) -> Vec<PathBuf> {
+    shares
+        .iter()
+        .filter(|(name, _)| !share_writable(manifest, name))
+        .map(|(_, path)| path.clone())
+        .collect()
 }
 
 fn share_writable(manifest: &Manifest, share: &str) -> bool {
@@ -663,6 +678,7 @@ fn container_plan(
         depends_on,
         body,
         files: Vec::new(),
+        store_dir: None,
         one_shot: false,
         variables: UsedVars::new(),
     })

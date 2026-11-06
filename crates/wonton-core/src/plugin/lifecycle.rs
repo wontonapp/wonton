@@ -10,6 +10,7 @@ use tokio::time::Instant;
 
 use super::compose::DependCondition;
 use super::configs;
+use super::configs_store;
 use super::core_address;
 use super::docker::{LabeledResources, NetworkReach};
 use super::gpu::GpuGrant;
@@ -336,6 +337,7 @@ impl PluginManager {
         }
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
+            config_store: self.cfg.data_dir.join("core").join("configs"),
             slug,
             instance: self.cfg.instance.clone(),
             shares,
@@ -447,11 +449,27 @@ impl PluginManager {
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
             health::wait_for_all(&self.engine, &container.depends_on, deadline).await?;
+            // 只读根的服务先经一次性容器把配置文件写进核心数据目录：单文件绑定挂载的源在创建容器
+            // 时就必须存在，归档接口写不进只读根（见 configs_store 的模块注释）。
+            if let Some(dir) = &container.store_dir {
+                let archive = configs_store::archive(&container.files).map_err(|e| {
+                    InstallError::Invalid(format!("打包 {} 的配置文件失败：{e}", container.name))
+                })?;
+                configs_store::seed(
+                    &self.engine,
+                    &container.name,
+                    &container.image,
+                    dir,
+                    archive,
+                    &plan.labels,
+                )
+                .await?;
+            }
             self.engine
                 .create_container(&container.name, container.body.clone())
                 .await?;
             undo.containers.push(container.name.clone());
-            if !container.files.is_empty() {
+            if !container.files.is_empty() && container.store_dir.is_none() {
                 let archive = configs::archive(&container.files).map_err(|e| {
                     InstallError::Invalid(format!("打包 {} 的配置文件失败：{e}", container.name))
                 })?;
@@ -601,6 +619,12 @@ impl PluginManager {
         let bot = self.remove_bot(id, purge).await?;
         self.revoke_models(id).await?;
         self.remove_networks(&found.networks).await?;
+        // 核心为只读根服务写的配置文件（configs_store）跟着插件删，不占数据目录的清理（purge）。
+        let store_root = self.cfg.data_dir.join("core").join("configs");
+        let store_dir = configs_store::plugin_dir(&store_root, &self.cfg.instance, &id.slug());
+        configs_store::remove_tree(&store_root, &self.cfg.instance, &id.slug()).map_err(|e| {
+            InstallError::Storage(format!("删除 {} 失败：{e}", store_dir.display()))
+        })?;
         self.sources.remove(id);
         let mut report = UninstallReport {
             containers: found.containers.clone(),

@@ -8,6 +8,7 @@ mod by_source;
 pub mod check;
 pub mod compose;
 pub mod configs;
+pub(super) mod configs_store;
 pub mod core_address;
 pub mod docker;
 pub mod docker_exec;

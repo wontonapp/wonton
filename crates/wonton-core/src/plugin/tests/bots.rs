@@ -180,6 +180,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         slug: "app-test".into(),
         instance: Default::default(),
         app_data: "/apps/app-test".into(),
+        config_store: "/data/core/configs".into(),
         shares: Default::default(),
         app_url: None,
         oidc: Some(OidcVars {

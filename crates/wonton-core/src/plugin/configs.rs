@@ -1,13 +1,23 @@
-//! compose 的 `configs`：核心在创建容器之后、启动之前，用 Docker 的归档接口把文件写进容器。
+//! compose 的 `configs`：核心把内容打成 tar，交给 Docker 的归档接口写进容器。
 //!
-//! 不用绑定挂载：插件包存在核心自己的数据目录里，插件的容器访问不到它。所以 `uid`、`gid`、`mode`
-//! 对 `file` 和 `content` 都生效，文件每次创建容器都重新写入。
+//! `read_only` 的服务根文件系统只读，归档接口写不进去（Docker 直接拒绝，见
+//! [`super::configs_store`]）：它们的核心管理文件改为只读单文件绑定挂载交付。`resolve` 两种做法共用：
+//! `read_only` 服务的文件由 [`super::configs_store`] 落在核心数据目录，其余的沿用归档接口，每次创建
+//! 容器都重新写入。
+//!
+//! 不用绑定挂载交付普通服务：插件包存在核心自己的数据目录里，插件的容器访问不到它。所以 `uid`、
+//! `gid`、`mode` 对 `file` 和 `content` 都生效。
 
 use std::path::{Component, Path, PathBuf};
 
+use bollard::models::Mount;
+
+use super::bot_services::ServiceVars;
 use super::compose::{Scalar, Service, UserSpec};
 use super::interpolate::{UsedVars, Vars};
+use super::mounts::mount_targets;
 use super::package::{PackageError, PluginPackage};
+use super::render::{InstallContext, RenderError, service_err};
 
 /// 默认权限：所有用户可读，和 compose 一致。
 const DEFAULT_MODE: u32 = 0o444;
@@ -56,19 +66,38 @@ pub fn resolve(
         .collect()
 }
 
+/// 服务的 `configs` 交付：解析内容，算好交付方式。`read_only` 的服务（归档接口写不进只读根）改为从
+/// 核心数据目录只读挂载：配置文件以只读绑定挂载加进 `mounts`，返回 store 目录
+/// （[`super::configs_store`]）；其余服务返回 `None`，创建容器后、启动前把归档写进容器根。
+pub(super) fn resolve_service(
+    package: &PluginPackage,
+    service: &Service,
+    ctx: &InstallContext,
+    name: &str,
+    vars: &ServiceVars,
+    mounts: &mut Vec<Mount>,
+    used: &mut UsedVars,
+) -> Result<(Vec<ConfigFile>, Option<PathBuf>), RenderError> {
+    let targets = mount_targets(service, mounts);
+    let files = resolve(package, service, vars.get(name), &targets, used).map_err(|e| match e {
+        ConfigError::Package(e) => e.into(),
+        ConfigError::Rule(m) => service_err(name, m),
+    })?;
+    let store_dir = (service.read_only == Some(true) && !files.is_empty()).then(|| {
+        super::configs_store::service_dir(&ctx.config_store, &ctx.instance, &ctx.slug, name)
+    });
+    if let Some(dir) = &store_dir {
+        mounts.extend(super::configs_store::bind_mounts(dir, &files));
+    }
+    Ok((files, store_dir))
+}
+
 /// 检查服务的每个配置引用，定下目标、属主和权限：（配置名，还没有内容的文件）。
 fn place(
     package: &PluginPackage,
     service: &Service,
     mounts: &[PathBuf],
 ) -> Result<Vec<(String, ConfigFile)>, String> {
-    if !service.configs.is_empty() && service.read_only == Some(true) {
-        return Err(
-            "read_only 的服务不能用 configs：Docker 不往只读的根文件系统写文件；\
-                    可以由一次性服务把它复制进数据目录"
-                .to_owned(),
-        );
-    }
     let (default_uid, default_gid) = default_owner(service.user.as_ref());
     let mut placed: Vec<(String, ConfigFile)> = Vec::new();
     for entry in &service.configs {

@@ -167,6 +167,7 @@ pub fn plan(
             ..Default::default()
         },
         files: Vec::new(),
+        store_dir: None,
         one_shot: false,
         variables: Default::default(),
     }

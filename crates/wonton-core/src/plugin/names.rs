@@ -56,6 +56,11 @@ impl Instance {
         Ok(Self(Some(name.to_owned())))
     }
 
+    /// 实例名；正式安装时没有。
+    pub fn name(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+
     /// 插件网络 `wonton-<slug>`，有实例名时 `wonton-<实例名>--<slug>`；也是插件容器和命名卷的名字前缀。
     pub fn network(&self, slug: &str) -> String {
         match &self.0 {

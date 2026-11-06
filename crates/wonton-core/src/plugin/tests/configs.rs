@@ -4,6 +4,8 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
+use bollard::models::MountType;
+
 use super::super::configs::ConfigFile;
 use super::super::package::{PackageError, PluginPackage};
 use super::super::package_files::{FileError, MAX_FILE_BYTES, PackageFiles};
@@ -183,8 +185,6 @@ fn configs_are_written_only_into_the_containers_own_filesystem() {
             "{source: app, target: /run/app}",
         ),
         ("    volumes: ['/cache']\n", "{source: app, target: /cache}"),
-        // Docker 不往只读的根文件系统写文件。
-        ("    read_only: true\n", "app"),
     ];
     for (service_extra, config_ref) in cases {
         let pkg = PluginPackage::parse(&with_config(service_extra, config_ref)).unwrap();
@@ -199,6 +199,45 @@ fn configs_are_written_only_into_the_containers_own_filesystem() {
         "{source: app, target: /database}",
     );
     dry_run(&PluginPackage::parse(&fine).unwrap()).unwrap();
+}
+
+/// `read_only` 的服务：配置文件改为只读单文件绑定挂载，源是核心数据目录里的 store 文件（编号）。
+#[test]
+fn read_only_services_get_configs_from_the_core_store() {
+    let compose = with_config(
+        "    read_only: true\n",
+        "{source: app, target: /etc/app.yaml}",
+    );
+    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let container = &plan.containers[0];
+    assert_eq!(
+        container.store_dir.as_deref(),
+        Some(Path::new("/wonton-dry-run/core/configs/app-test/web"))
+    );
+    let host = container.body.host_config.as_ref().unwrap();
+    let mount = &host.mounts.as_ref().unwrap()[0];
+    assert_eq!(mount.typ, Some(MountType::BIND));
+    assert_eq!(
+        mount.source.as_deref(),
+        Some("/wonton-dry-run/core/configs/app-test/web/0")
+    );
+    assert_eq!(mount.target.as_deref(), Some("/etc/app.yaml"));
+    assert_eq!(mount.read_only, Some(true));
+    // 内容在 files 里，创建容器前由一次性容器经归档接口写进 store 目录。
+    assert_eq!(container.files.len(), 1);
+    assert_eq!(container.files[0].target, Path::new("/etc/app.yaml"));
+}
+
+/// 没有 `read_only` 的服务维持原来的交付：启动前把归档写进容器根，不走 store。
+#[test]
+fn writable_services_keep_the_archive_delivery() {
+    let compose = with_config("", "app");
+    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let container = &plan.containers[0];
+    assert_eq!(container.store_dir, None);
+    let host = container.body.host_config.as_ref().unwrap();
+    assert!(host.mounts.as_ref().is_none_or(|m| m.is_empty()));
+    assert_eq!(container.files.len(), 1);
 }
 
 #[test]
