@@ -3,29 +3,15 @@ import WontonClient
 
 struct OnboardingAppsStep: View {
     let needs: [OnboardingNeedRow]
-    let agents: [OnboardingAgentRow]
     let catalogProblem: StoreProblem?
     let plugins: PluginsModel
     let send: (Action) -> Void
-    let install: (PluginConfirmation) -> Void
-    @State private var reviewProblem: Problem?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
             if let catalogProblem {
                 ProblemNotice(problem: catalogProblem.onboardingProblem)
-            }
-            if let reviewProblem { ProblemNotice(problem: reviewProblem) }
-            ForEach(plugins.viewModel.tasks, id: \.id) { task in
-                TaskRow(model: plugins, task: task) {
-                    if let confirmation = plugins.reconfirmation(for: task, source: source(for: task.id)) {
-                        reviewProblem = nil
-                        install(confirmation)
-                    } else {
-                        reviewProblem = Problem(title: "找不到这个应用的安装来源", nextStep: "刷新引导后再试。")
-                    }
-                }
             }
             ForEach(needs, id: \.id) { need in
                 StepOptionRow(title: need.title, isSelected: need.selected) {
@@ -38,11 +24,6 @@ struct OnboardingAppsStep: View {
                 }
             }
         }
-    }
-
-    private func source(for id: String) -> String? {
-        needs.lazy.flatMap(\.plugins).first { $0.id == id }?.source
-            ?? agents.first { $0.id == id }?.source
     }
 
     private func plugin(_ item: StoreItem) -> some View {
@@ -59,16 +40,10 @@ struct OnboardingAppsStep: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if plugins.isWorking(on: item.id) {
-                ProgressView().accessibilityLabel("正在安装")
-            } else if item.installedVersion != nil {
+            if item.installedVersion != nil {
                 Text("已安装")
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.success))
-            } else {
-                Button("安装") { install(.install(source: item.source)) }
-                    .buttonStyle(WontonSmallButtonStyle())
-                    .disabled(item.blocked != nil)
             }
         }
         .padding(.leading, WontonTheme.spacing.s16)

@@ -6,6 +6,7 @@ import WontonClient
 final class OnboardingModel {
     private(set) var viewModel: OnboardingViewModel
     var rejection: Problem?
+    var skipsUnavailableGate = false
     let core: ClientCore
 
     init(core: ClientCore) {
@@ -23,6 +24,7 @@ final class OnboardingModel {
         do {
             try core.dispatch(action: action)
             rejection = nil
+            if case .restartOnboarding = action { skipsUnavailableGate = false }
         } catch {
             rejection = error.problem
         }

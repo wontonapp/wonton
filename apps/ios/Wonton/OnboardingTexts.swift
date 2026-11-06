@@ -10,7 +10,7 @@ extension ModelProviderProblem {
             nextStep = "key 没有保存，改好后再试。"
         case .providerUnreachable:
             title = "连不上服务商"
-            nextStep = "key 已保存，可以继续，稍后再测试。"
+            nextStep = "检查服务商地址和网络后再试。"
         case .gatewayNotReady:
             title = "模型网关还没准备好"
             nextStep = "稍后重试，也可以先跳过。"

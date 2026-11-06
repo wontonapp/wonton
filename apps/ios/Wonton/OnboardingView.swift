@@ -5,22 +5,28 @@ struct OnboardingView: View {
     let model: OnboardingModel
     let plugins: PluginsModel
     let nav: StepNav
-    // 安装完成与取消由现有确认页区分；Agent 确认后立即继续，不等镜像下载。
-    let confirmInstall: (PluginConfirmation, (() -> Void)?) -> Void
     let openGateway: (URL) -> Void
-    @State private var profile = OwnerProfileFormState()
+    @State private var modelForm = OnboardingModelForm()
     @State private var isKeyboardVisible = false
-    @State private var profileSave: Task<Void, Never>?
     @Environment(\.wontonColors) private var colors
 
     private var view: OnboardingViewModel { model.viewModel }
 
+    private var frameNav: StepNav {
+        var result = nav
+        // key 在测试前不进核心，只有这个按钮需要合并输入框状态。
+        if view.step == .model, modelForm.hasCompleteInput, !view.model.testing {
+            result.canNext = true
+        }
+        return result
+    }
+
     var body: some View {
         StepCardFrame(
-            nav: nav, title: view.title, primaryTitle: primaryTitle,
-            isWorking: view.loading || profile.isSaving,
-            back: { navigate(.backOnboardingStep) },
-            skip: { navigate(.skipOnboardingStep) }, next: advance,
+            nav: frameNav, title: view.title, primaryTitle: primaryTitle,
+            isWorking: view.loading || view.model.testing || view.review.commit == .running,
+            back: { model.send(.backOnboardingStep) },
+            skip: { model.send(.skipOnboardingStep) }, next: advance,
             content: {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -30,6 +36,7 @@ struct OnboardingView: View {
                             .padding(.bottom, WontonTheme.spacing.s16)
                     }
                     .scrollDismissesKeyboard(isKeyboardVisible ? .interactively : .never)
+                    .id(view.step)
                 }
             }
         )
@@ -40,16 +47,9 @@ struct OnboardingView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
         }
-        .task {
-            if view.step == .profile { await profile.load(core: model.core) }
+        .onChange(of: view.step, initial: true) { _, step in
+            modelForm = OnboardingModelForm(choice: step == .model ? view.model.choice : nil)
         }
-        .onChange(of: view.step) { _, step in
-            profileSave?.cancel()
-            if step == .profile {
-                Task { await profile.load(core: model.core) }
-            }
-        }
-        .onDisappear { profileSave?.cancel() }
     }
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
@@ -62,18 +62,23 @@ struct OnboardingView: View {
                 }
                 switch view.step {
                 case .profile:
-                    OwnerProfileForm(state: profile) { Task { await profile.load(core: model.core) } }
+                    if view.loading {
+                        LoadingView().frame(maxWidth: .infinity)
+                    } else {
+                        OnboardingProfileStepView(profile: view.profile, send: model.send)
+                    }
                 case .agent:
                     OnboardingAgentStep(agents: view.agents) { model.send(.chooseOnboardingAgent(id: $0)) }
                 case .model:
-                    OnboardingModelStepView(step: view.model, nav: nav, send: model.send, openGateway: openGateway,
+                    OnboardingModelStepView(step: view.model, form: $modelForm, send: model.send,
+                                            openGateway: openGateway,
                                             revealForm: { proxy.scrollTo($0, anchor: .top) })
                 case .apps:
-                    OnboardingAppsStep(needs: view.needs, agents: view.agents, catalogProblem: view.catalogProblem,
-                                       plugins: plugins, send: model.send) { confirmation in
-                        confirmInstall(confirmation, nil)
-                    }
-                case .review, .finished, .other, nil:
+                    OnboardingAppsStep(needs: view.needs, catalogProblem: view.catalogProblem,
+                                       plugins: plugins, send: model.send)
+                case .review:
+                    OnboardingReviewStep(review: view.review, plugins: plugins, send: model.send)
+                case .finished, .other, nil:
                     EmptyView()
                 }
             }
@@ -81,38 +86,19 @@ struct OnboardingView: View {
     }
 
     private var primaryTitle: String {
-        switch view.step {
-        case .profile: "保存"
-        case .apps: "完成"
-        default: "下一步"
+        guard view.step == .review else { return "下一步" }
+        switch view.review.commit {
+        case .notStarted: return "完成"
+        case .running: return "进行中"
+        case .done: return "进入聊天"
         }
     }
 
     private func advance() {
-        switch view.step {
-        case .profile:
-            guard profileSave == nil else { return }
-            profileSave = Task {
-                defer { profileSave = nil }
-                if await profile.save(core: model.core), !Task.isCancelled, model.viewModel.step == .profile {
-                    model.send(.continueOnboarding)
-                }
-            }
-        case .agent:
-            if let source = view.agents.first(where: \.selected)?.source {
-                confirmInstall(.install(source: source)) { model.send(.continueOnboarding) }
-            } else {
-                model.send(.continueOnboarding)
-            }
-        case .model, .apps:
+        if view.step == .model {
+            modelForm.submit(thenContinue: true, send: model.send)
+        } else {
             model.send(.continueOnboarding)
-        case .review, .finished, .other, nil:
-            break
         }
-    }
-
-    private func navigate(_ action: Action) {
-        profileSave?.cancel()
-        model.send(action)
     }
 }

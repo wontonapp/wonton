@@ -15,7 +15,6 @@ final class OwnerProfileFormState {
     var canSave: Bool {
         profile != nil && !isSaving
             && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func load(core: ClientCore) async {
@@ -56,21 +55,7 @@ struct OwnerProfileForm: View {
     var body: some View {
         if let profile = state.profile {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                DetailSection(title: "名字") {
-                    TextField("名字", text: $state.name)
-                        .textContentType(.name)
-                        .textFieldStyle(.plain)
-                        .wontonField()
-                }
-                DetailSection(title: "邮箱") {
-                    TextField("邮箱", text: $state.email, prompt: Text(verbatim: "me@example.com"))
-                        .keyboardType(.emailAddress)
-                        .textContentType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .textFieldStyle(.plain)
-                        .wontonField()
-                }
+                OwnerProfileFields(name: $state.name, email: $state.email)
                 if let problem = state.saveProblem {
                     ProblemNotice(problem: problem)
                 }
@@ -83,5 +68,41 @@ struct OwnerProfileForm: View {
         } else {
             LoadingView().frame(maxWidth: .infinity)
         }
+    }
+}
+
+struct OwnerProfileFields: View {
+    @Binding var name: String
+    @Binding var email: String
+    var nameProblem: String?
+    var emailProblem: String?
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        DetailSection(title: "名字") {
+            TextField("必填", text: $name)
+                .accessibilityLabel("名字")
+                .textContentType(.name)
+                .textFieldStyle(.plain)
+                .wontonField()
+            if let nameProblem { fieldProblem(nameProblem) }
+        }
+        DetailSection(title: "邮箱") {
+            TextField("选填", text: $email)
+                .accessibilityLabel("邮箱")
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.plain)
+                .wontonField()
+            if let emailProblem { fieldProblem(emailProblem) }
+        }
+    }
+
+    private func fieldProblem(_ message: String) -> some View {
+        Text(verbatim: message)
+            .wontonText(WontonTheme.typography.supporting)
+            .foregroundStyle(Color(colors.danger))
     }
 }

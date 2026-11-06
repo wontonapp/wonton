@@ -5,7 +5,6 @@ import WontonClient
 struct InstallConfirmView: View {
     let model: PluginsModel
     let confirmation: PluginConfirmation
-    var confirmed: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var loaded: Result<InstallPreview, Error>?
     @State private var rejection: Problem?
@@ -105,9 +104,7 @@ struct InstallConfirmView: View {
         let action: Action = isUpgrade ? .upgradePlugin(preview: preview) : .installPlugin(preview: preview)
         do {
             try model.core.dispatch(action: action)
-            if let confirmed {
-                confirmed()
-            } else if isUpgrade {
+            if isUpgrade {
                 dismiss()
             } else {
                 submittedId = preview.id
@@ -138,14 +135,7 @@ private struct PreviewContent: View {
                             .buttonStyle(WontonButtonStyle())
                     }
                 }
-                if !preview.notices.isEmpty {
-                    NoticeLines(lines: preview.notices)
-                }
-                if !preview.permissions.isEmpty {
-                    DetailSection(title: "权限") {
-                        ForEach(preview.permissions, id: \.permission) { PermissionRow(line: $0) }
-                    }
-                }
+                InstallPermissions(permissions: preview.permissions, notices: preview.notices)
                 AlwaysAllowedSection(model: model, preview: preview)
                 if let offer = preview.lanWebui {
                     LanWebuiToggle(offer: offer, isOn: $lanWebui)
