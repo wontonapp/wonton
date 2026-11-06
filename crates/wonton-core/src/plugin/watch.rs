@@ -89,10 +89,12 @@ impl PluginManager {
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if entry.status != PluginStatus::Running
-            || !self.follows_containers(id, entry)
-            || entry.health == Some(health)
-        {
+        if entry.status != PluginStatus::Running || !self.follows_containers(id, entry) {
+            return;
+        }
+        // 这次核对到了状态，没变也算核对过。
+        entry.checked_at = super::manager::now_secs();
+        if entry.health == Some(health) {
             return;
         }
         entry.health = Some(health);
@@ -106,7 +108,12 @@ impl PluginManager {
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if !self.follows_containers(id, entry) || entry.status == status {
+        if !self.follows_containers(id, entry) {
+            return;
+        }
+        // 这次核对到了状态，没变也算核对过。
+        entry.checked_at = super::manager::now_secs();
+        if entry.status == status {
             return;
         }
         tracing::info!(plugin = %id, ?status, "插件的容器状态变化");

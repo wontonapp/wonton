@@ -39,6 +39,8 @@ pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
 /// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。
 pub const PLUGIN_MCP_HOST: &str = "mcp.wonton.internal";
+/// 申请了 `plugins.health` 的插件经核心在插件网络里的这个别名读所有插件的健康状态（规范“插件健康探测”）。
+pub const PLUGIN_HEALTH_HOST: &str = "health.wonton.internal";
 /// tusd 经核心在私有网络里的这个别名调文件钩子（ADR-0020）。
 pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
 
@@ -62,6 +64,8 @@ pub enum HostKind {
     Lan(std::net::IpAddr),
     /// 插件网络里的 Agent 访问 MCP 总线（[`PLUGIN_MCP_HOST`]）。
     PluginMcp,
+    /// 插件网络里的插件读健康状态（[`PLUGIN_HEALTH_HOST`]）。
+    PluginHealth,
     /// tusd 调文件钩子（[`FILE_HOOKS_HOST`]）。
     FileHooks,
     Unknown,
@@ -121,6 +125,9 @@ impl PublicUrls {
         }
         if host == PLUGIN_MCP_HOST {
             return HostKind::PluginMcp;
+        }
+        if host == PLUGIN_HEALTH_HOST {
+            return HostKind::PluginHealth;
         }
         if host == FILE_HOOKS_HOST {
             return HostKind::FileHooks;

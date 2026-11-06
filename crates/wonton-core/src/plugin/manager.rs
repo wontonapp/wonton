@@ -140,6 +140,7 @@ pub(super) fn supported(permission: &Permission) -> bool {
             | Permission::MatrixBot
             | Permission::Models
             | Permission::Tools
+            | Permission::PluginsHealth
             | Permission::OwnerIdentity
             | Permission::DevicesGpu
             | Permission::NetworkLan
@@ -423,6 +424,7 @@ impl PluginManager {
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = status;
             entry.health = None;
+            entry.checked_at = now_secs();
             entry.follows_containers = false;
             if let Some(upstream) = upstream {
                 entry.upstream = upstream;
@@ -632,6 +634,7 @@ impl PluginManager {
                 return Err(InstallError::Conflict(reason));
             }
             entry.status = PluginStatus::Uninstalling;
+            entry.checked_at = now_secs();
         }
         drop(_changing);
         tracing::info!(plugin = %id, purge, "开始卸载插件");

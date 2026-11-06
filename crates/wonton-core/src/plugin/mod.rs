@@ -19,6 +19,7 @@ pub mod github;
 pub mod github_source;
 pub mod gpu;
 pub mod health;
+pub mod health_probe;
 pub mod host_check;
 pub mod host_facts;
 pub mod host_relay;

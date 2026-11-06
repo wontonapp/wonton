@@ -26,6 +26,7 @@ mod core_routes;
 mod core_upgrade;
 mod devices;
 mod files;
+mod health;
 mod isolation;
 mod lan;
 pub mod matrix;
@@ -104,6 +105,8 @@ pub struct Gateway {
     /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
+    /// `plugins.health` 的限频表（[`health`]）。
+    health_limits: health::RateLimits,
     sessions: session::SessionStore,
 }
 
@@ -148,6 +151,7 @@ impl Gateway {
             tusd: None,
             upgrades: None,
             onboarding,
+            health_limits: health::RateLimits::new(),
             sessions: session::SessionStore::default(),
         }
     }
@@ -277,6 +281,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::Push => push::gateway_request(&gateway, req).await,
         HostKind::PluginMcp => mcp::request(&gateway, req).await,
+        HostKind::PluginHealth => health::request(&gateway, req).await,
         HostKind::FileHooks => files::hook_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
@@ -460,6 +465,8 @@ mod files_upload_failure_tests;
 mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
+#[cfg(test)]
+mod health_tests;
 #[cfg(test)]
 mod isolation_policy_tests;
 #[cfg(test)]

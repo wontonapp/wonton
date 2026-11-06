@@ -312,6 +312,8 @@ pub enum Permission {
     StorageHome { access: Access },
     Models,
     Tools,
+    // 只读，只给状态，不算高权限（规范“插件健康探测”）。
+    PluginsHealth,
     MatrixBot,
     Notify,
     OwnerIdentity,
@@ -365,6 +367,7 @@ impl FromStr for Permission {
         let simple = match value {
             "models" => Some(Self::Models),
             "tools" => Some(Self::Tools),
+            "plugins.health" => Some(Self::PluginsHealth),
             "matrix.bot" => Some(Self::MatrixBot),
             "notify" => Some(Self::Notify),
             "owner.identity" => Some(Self::OwnerIdentity),
@@ -433,6 +436,7 @@ impl fmt::Display for Permission {
             Self::StorageHome { access: a } => write!(f, "storage.home:{}", access(a)),
             Self::Models => f.write_str("models"),
             Self::Tools => f.write_str("tools"),
+            Self::PluginsHealth => f.write_str("plugins.health"),
             Self::MatrixBot => f.write_str("matrix.bot"),
             Self::Notify => f.write_str("notify"),
             Self::OwnerIdentity => f.write_str("owner.identity"),

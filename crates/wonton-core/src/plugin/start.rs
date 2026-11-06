@@ -8,6 +8,7 @@ use super::compose::DependCondition;
 use super::health::{self, Target};
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
+    now_secs,
 };
 use super::manifest::PluginId;
 use super::names::LABEL_PLUGIN;
@@ -45,6 +46,7 @@ impl PluginManager {
                 } else {
                     entry.status = PluginStatus::Running;
                     entry.health = Some(health);
+                    entry.checked_at = now_secs();
                 }
                 Ok(self.view(id, entry))
             }
@@ -54,6 +56,7 @@ impl PluginManager {
                 };
                 entry.health = None;
                 entry.follows_containers = true;
+                entry.checked_at = now_secs();
                 Err(error)
             }
         };

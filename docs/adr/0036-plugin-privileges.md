@@ -45,6 +45,7 @@
 | `pid: host`、`ipc: host`、`security_opt` | `host.pid`、`host.ipc`、`security.opt` | 最高 |
 | `privileged: true` | `privileged` | 最高 |
 | 卷 `/var/run/docker.sock:/var/run/docker.sock` | `docker.socket` | 最高 |
+| 无（只声明权限：核心在插件网络里给一个只读的健康接口，别的插件用它监控大家的健康状态） | `plugins.health` | — |
 
 - 这些都按服务生效，只给写了字段的服务。需要组播的插件可以只让一个小的发现服务用宿主网络，网页服务留在插件网络里。
 - `ports`、`networks`、`container_name`、`build` 这些和核心管理冲突的字段照旧拒绝。`ports` 的理由见 ADR-0019。

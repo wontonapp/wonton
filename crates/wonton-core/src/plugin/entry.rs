@@ -35,6 +35,20 @@ pub enum Health {
     Unknown,
 }
 
+impl PluginStatus {
+    /// 状态的名字，和本类型序列化出来的 `"state"` 取值一致，由测试锁住。
+    pub fn state_name(&self) -> &'static str {
+        match self {
+            Self::Installing => "installing",
+            Self::Running => "running",
+            Self::Stopped => "stopped",
+            Self::Degraded { .. } => "degraded",
+            Self::Uninstalling => "uninstalling",
+            Self::Upgrading => "upgrading",
+        }
+    }
+}
+
 impl Health {
     /// 所有长期运行的服务都健康才算健康。
     pub fn of(healthy: impl IntoIterator<Item = bool>) -> Self {
@@ -54,6 +68,8 @@ pub(super) struct Entry {
     pub(super) has_webui: bool,
     pub(super) status: PluginStatus,
     pub(super) health: Option<Health>,
+    /// 最近一次核对状态的时间（Unix 秒）：构造、看容器（[`super::watch`]）或状态变更时更新。
+    pub(super) checked_at: u64,
     /// 列表和详情页显示的信息；记录读不出来的插件为空。
     pub(super) listed: Option<Arc<Listed>>,
     pub(super) upstream: Option<Endpoint>,
@@ -95,6 +111,7 @@ impl Entry {
             has_webui: manifest.webui.is_some(),
             status,
             health: None,
+            checked_at: super::manager::now_secs(),
             upstream,
             provides_models: manifest
                 .provides
@@ -148,6 +165,7 @@ impl Entry {
             has_webui: false,
             status: PluginStatus::Degraded { reason },
             health: None,
+            checked_at: super::manager::now_secs(),
             upstream: None,
             provides_models: false,
             provides_egress_proxy: false,
@@ -161,5 +179,32 @@ impl Entry {
 
     pub(super) fn failed_with(&self, reason: &str) -> bool {
         matches!(&self.status, PluginStatus::Degraded { reason: r } if r == reason)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_name_matches_the_serialized_state_tag() {
+        let cases = [
+            (PluginStatus::Installing, "installing"),
+            (PluginStatus::Running, "running"),
+            (PluginStatus::Stopped, "stopped"),
+            (
+                PluginStatus::Degraded {
+                    reason: "坏了".into(),
+                },
+                "degraded",
+            ),
+            (PluginStatus::Uninstalling, "uninstalling"),
+            (PluginStatus::Upgrading, "upgrading"),
+        ];
+        for (status, name) in cases {
+            let json = serde_json::to_value(&status).unwrap();
+            assert_eq!(json["state"].as_str().unwrap(), name);
+            assert_eq!(status.state_name(), name);
+        }
     }
 }
