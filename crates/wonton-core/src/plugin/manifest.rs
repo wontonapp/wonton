@@ -164,6 +164,9 @@ pub struct WebUi {
     pub oidc: Option<OidcClient>,
     #[serde(default)]
     pub proxy: Option<ProxyCredentials>,
+    /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
+    #[serde(default)]
+    pub cross_origin_isolated: bool,
 }
 
 /// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。

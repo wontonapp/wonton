@@ -46,6 +46,7 @@ fn plugin() -> InstalledPlugin {
         },
         web_url: None,
         web_display: TabDisplay::default(),
+        cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,

@@ -173,6 +173,9 @@ pub struct InstalledPlugin {
     /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
     #[serde(default)]
     pub web_display: TabDisplay,
+    /// 清单 `webui` 声明了页面要跨源隔离：Android 壳只对这些插件的网页放宽 WebView 的隔离限制。
+    #[serde(default)]
+    pub cross_origin_isolated: bool,
     /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
     #[serde(default)]
     pub declares_tools: bool,

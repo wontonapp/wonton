@@ -48,6 +48,7 @@ fn installed() -> InstalledPlugin {
         },
         web_url: Some("http://app-immich-photos.wonton.localhost:8480".into()),
         web_display: TabDisplay::Fullscreen,
+        cross_origin_isolated: false,
         declares_tools: true,
         tabs: vec![PluginTab {
             id: "photos".into(),
@@ -520,9 +521,11 @@ fn a_core_without_tabs_lists_plugins_without_pages() {
     let fields = plugin.as_object_mut().unwrap();
     fields.remove("tabs");
     fields.remove("web_display");
+    fields.remove("cross_origin_isolated");
     let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
     assert!(plugin.tabs.is_empty());
     assert_eq!(plugin.web_display, TabDisplay::Standard);
+    assert!(!plugin.cross_origin_isolated);
 }
 
 #[test]
