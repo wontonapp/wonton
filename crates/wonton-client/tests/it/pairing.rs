@@ -22,7 +22,9 @@ use wonton_tunnel::pair::{
 };
 use wonton_tunnel::{Allowlist, PeerStream, TunnelListener, TunnelServer};
 
-const WAIT: Duration = Duration::from_secs(15);
+/// 兜底预算，不是节奏：配对要另开 endpoint、建连再交换，繁忙时建连实测 16s+；取 60s，
+/// 超过就是真的配不上。
+const WAIT: Duration = Duration::from_secs(60);
 
 /// 服务端发过的码：密钥对应配对时要回的结果，`None` 表示配对成功。
 #[derive(Debug)]

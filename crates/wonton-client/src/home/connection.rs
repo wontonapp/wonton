@@ -99,8 +99,13 @@ impl Tracker {
         self.trigger = Some("network change");
     }
 
-    pub(super) fn set_catching_up(&mut self, catching_up: bool) {
+    /// 返回有没有真的变化：追赶指示流同值也发，没变就不用重算。
+    pub(super) fn set_catching_up(&mut self, catching_up: bool) -> bool {
+        if self.catching_up == catching_up {
+            return false;
+        }
         self.catching_up = catching_up;
+        true
     }
 
     /// 回到前台：断开的时长从现在重新算。挂起期间的时间不算数，这时重连才刚开始。

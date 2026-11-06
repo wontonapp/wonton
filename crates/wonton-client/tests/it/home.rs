@@ -83,6 +83,63 @@ async fn a_paired_device_connects_and_only_this_app_can_use_its_proxy() {
 }
 
 #[tokio::test]
+async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    phone.stop_periodic_checks();
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone
+        .dispatch(Action::NetworkChanged {
+            network: DeviceNetwork::Wifi,
+        })
+        .unwrap();
+    let before = phone
+        .wait_for(|view| {
+            view.status == HomeStatus::Connected
+                && view.proxy.is_some()
+                && view.path.is_some()
+                && view.details.network == Some(DeviceNetwork::Wifi)
+        })
+        .await;
+    let proxy = before.proxy.unwrap();
+    let updates = phone.subscribe_home();
+    updates.next().await.unwrap();
+    let started = Instant::now();
+    let traffic = async {
+        for _ in 0..300 {
+            let (status, body) = get(&proxy, WEB_URL, "/traffic", true).await;
+            assert_eq!((status, body.as_str()), (200, "/traffic"));
+            // 同一网络的重复通知要求重算，但状态、路径类型和提示都没有变。
+            phone
+                .dispatch(Action::NetworkChanged {
+                    network: DeviceNetwork::Wifi,
+                })
+                .unwrap();
+        }
+    };
+    tokio::pin!(traffic);
+    let mut publications = 0;
+    loop {
+        tokio::select! {
+            () = &mut traffic => break,
+            view = updates.next() => {
+                let view = view.expect("连接订阅提前结束");
+                assert_eq!(view.status, HomeStatus::Connected);
+                publications += 1;
+            }
+        }
+    }
+    let elapsed = started.elapsed();
+    let limit = elapsed.as_secs() + 3;
+    eprintln!("300 requests: {publications} home publications in {elapsed:?}, limit {limit}");
+    assert!(publications <= limit, "{publications} > {limit}");
+    phone
+        .wait_for(|view| view.details.sent_packets > before.details.sent_packets)
+        .await;
+}
+
+#[tokio::test]
 async fn an_unregistered_device_is_told_it_needs_pairing() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());

@@ -59,6 +59,10 @@ const NETWORK_CHANGE_SETTLE: Duration = Duration::from_millis(300);
 /// 无回，之后的重传都白费，只有新握手才可能换路径（Android 模拟器上实测：`10.0.2.2` 的回包源地址是 127.0.0.1，到不了
 /// iroh，这次握手挂满 12 秒，下一次 9 毫秒连上）。只换这两次，之后留给最后一次走完建连时限：中继冷启动的握手本来就慢。
 const NETWORK_CHANGE_REDIALS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(3)];
+/// 发包数、丢包数、上次确认连上的时间和路径延迟每个包都在变：这些最多每秒进一次主 ViewModel，
+/// 状态、路径类型和提示照常立刻推。没有这个间隔，隧道上每走一个包，主 ViewModel 都会整份重推
+/// 一遍（iOS 模拟器实测约每秒 300 次）。
+const STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) struct HomeLink {
     runtime: Handle,
@@ -75,6 +79,8 @@ pub(crate) struct HomeLink {
     tracker: std::sync::Mutex<Tracker>,
     /// 提示要重新算了。
     recount: watch::Sender<()>,
+    /// 上次把每包变化的计数写进主 ViewModel 的时间。
+    stats_at: std::sync::Mutex<Option<Instant>>,
     /// App 在后台：不探测、不自动重连。
     background: watch::Sender<bool>,
     /// 定时检查开着。只有测试会关：要证明重连是某个动作促成的，不是碰巧赶上下一次检查。
@@ -126,6 +132,7 @@ impl HomeLink {
             link: Mutex::new(None),
             tracker: std::sync::Mutex::default(),
             recount: watch::Sender::new(()),
+            stats_at: std::sync::Mutex::new(None),
             background: watch::Sender::new(false),
             periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
@@ -254,10 +261,11 @@ impl HomeLink {
         }
     }
 
-    /// 聊天正在补上断开期间的消息。
+    /// 聊天正在补上断开期间的消息。追赶指示流同值也算一次变化，没变就不重算。
     pub(crate) fn set_catching_up(&self, catching_up: bool) {
-        self.lock_tracker().set_catching_up(catching_up);
-        self.recount();
+        if self.lock_tracker().set_catching_up(catching_up) {
+            self.recount();
+        }
     }
 
     async fn current_link(&self) -> Option<(Endpoint, TunnelClient)> {
@@ -279,6 +287,12 @@ impl HomeLink {
 
     fn lock_ticket(&self) -> std::sync::MutexGuard<'_, Option<String>> {
         self.ticket
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_stats_at(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
+        self.stats_at
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -457,7 +471,24 @@ impl HomeLink {
         };
         let tick = tracker.next_tick();
         drop(tracker);
-        self.view.send_if_modified(|view| {
+        let connected = status == HomeStatus::Connected;
+        let stats_due = connected && self.stats_due(now);
+        let mut withheld = false;
+        let changed = self.view.send_if_modified(|view| {
+            let mut details = details;
+            let mut path = path;
+            if connected && !stats_due {
+                withheld |= details.sent_packets != view.details.sent_packets
+                    || details.lost_packets != view.details.lost_packets
+                    || details.last_connected_at_ms != view.details.last_connected_at_ms;
+                details.sent_packets = view.details.sent_packets;
+                details.lost_packets = view.details.lost_packets;
+                details.last_connected_at_ms = view.details.last_connected_at_ms;
+                if let (Some(new), Some(old)) = (&mut path, &view.path) {
+                    withheld |= new.rtt_ms != old.rtt_ms;
+                    new.rtt_ms = old.rtt_ms;
+                }
+            }
             let changed = view.status != status
                 || view.path != path
                 || view.notice != notice
@@ -468,7 +499,26 @@ impl HomeLink {
             view.details = details;
             changed
         });
-        tick
+        if changed && stats_due {
+            *self.lock_stats_at() = Some(now);
+        }
+        // 有被压住的样本就到点再算一次，连接页每秒最多拿到一次新数字。
+        let stats_tick = withheld.then(|| match *self.lock_stats_at() {
+            Some(at) => STATS_INTERVAL.saturating_sub(now.duration_since(at)),
+            None => STATS_INTERVAL,
+        });
+        match (tick, stats_tick) {
+            (Some(tick), Some(stats)) => Some(tick.min(stats)),
+            (tick, stats) => tick.or(stats),
+        }
+    }
+
+    /// 距上次把每包变化的计数写进主 ViewModel 过了多久；还没推过就是到期。
+    fn stats_due(&self, now: Instant) -> bool {
+        match *self.lock_stats_at() {
+            Some(at) => now.duration_since(at) >= STATS_INTERVAL,
+            None => true,
+        }
     }
 }
 

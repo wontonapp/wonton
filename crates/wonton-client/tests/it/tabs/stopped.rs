@@ -19,7 +19,8 @@ fn running() -> InstalledPlugin {
 }
 
 async fn stopped_rig() -> (Rig, TabRef) {
-    let rig = Rig::new().await;
+    // 定时探测在繁忙时会误杀健康连接、触发整轮重连和额外取列表，这里测的不是隧道恢复。
+    let rig = Rig::new().await.without_periodic_checks();
     rig.core.set_lists(vec![vec![plugin(PluginState::Stopped)]]);
     rig.connected().await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)

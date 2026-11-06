@@ -23,6 +23,9 @@ use wonton_client::{
 use wonton_tunnel::{Allowlist, TunnelServer};
 
 pub const WAIT: Duration = Duration::from_secs(20);
+/// 兜底预算，不是节奏：繁忙时建连实测 16s+（登录令牌两次超时重连），单次建连限时 12s，
+/// 失败后按退避重试；取 60s，超过就是真的连不上。
+pub const CONNECT_BACKSTOP: Duration = Duration::from_secs(60);
 pub const IMAGE: &str = "/_wonton/api/images/abc/icon-192.png";
 
 /// 核心对一个请求的预设回应，排在队列里，用完后回默认的。
@@ -55,8 +58,8 @@ pub struct CoreState {
     providers: Mutex<Option<serde_json::Value>>,
     /// 假核心保存的资料；为空时是还没填的。
     owner: Mutex<Option<serde_json::Value>>,
-    /// 某个方法和路径下一次的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
-    canned: Mutex<HashMap<(Method, String), Canned>>,
+    /// 某个方法和路径依次给出的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
+    canned: Mutex<HashMap<(Method, String), VecDeque<Canned>>>,
     /// 用完预设的回应后，某个方法和路径一直用的回应。
     standing: Mutex<HashMap<(Method, String), Canned>>,
     /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
@@ -78,7 +81,9 @@ impl CoreState {
         self.canned
             .lock()
             .unwrap()
-            .insert((method, path.to_owned()), canned);
+            .entry((method, path.to_owned()))
+            .or_default()
+            .push_back(canned);
     }
 
     pub fn answer_always(&self, method: Method, path: &str, canned: Canned) {
@@ -175,7 +180,8 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
         .canned
         .lock()
         .unwrap()
-        .remove(&(parts.method.clone(), parts.uri.path().to_owned()))
+        .get_mut(&(parts.method.clone(), parts.uri.path().to_owned()))
+        .and_then(|queue| queue.pop_front())
         .or_else(|| {
             core.standing
                 .lock()
@@ -499,6 +505,13 @@ impl Rig {
         }
     }
 
+    /// 关掉隧道的定时探测：繁忙时一次卡满时限的探测会断开健康连接、触发整轮重连，
+    /// 插件测试的对象不是隧道恢复。初始建连不受影响。
+    pub fn without_periodic_checks(self) -> Self {
+        self.app.stop_periodic_checks();
+        self
+    }
+
     /// 关掉 App 再打开。
     pub fn reopen(&mut self) {
         self.app =
@@ -545,27 +558,46 @@ impl Rig {
     }
 
     pub async fn connected(&self) {
+        self.connected_within(WAIT).await;
+    }
+
+    /// 同 [`Self::connected`]，兜底预算由调用方按被测路径推导。
+    pub async fn connected_within(&self, budget: Duration) {
         self.connect();
-        let deadline = Instant::now() + WAIT;
-        while self.app.home().status != HomeStatus::Connected || self.app.home().proxy.is_none() {
-            assert!(Instant::now() < deadline, "{:?}", self.app.home());
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        let home = self.app.subscribe_home();
+        let waiting = async {
+            while let Some(view) = home.next().await {
+                if view.status == HomeStatus::Connected && view.proxy.is_some() {
+                    return;
+                }
+            }
+            panic!("连接订阅提前结束");
+        };
+        // 等事件，不每 20ms 轮询：忙起来轮询自己也抢 CPU；超时只兜底，报出当时的状态。
+        tokio::time::timeout(budget, waiting)
+            .await
+            .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.app.home()));
     }
 
     pub async fn wait_for(
         &self,
         mut done: impl FnMut(&PluginsViewModel) -> bool,
     ) -> PluginsViewModel {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            let view = self.app.plugins();
-            if done(&view) {
-                return view;
+        let plugins = self.app.subscribe_plugins();
+        let waiting = async {
+            while let Some(view) = plugins.next().await {
+                if done(&view) {
+                    return view;
+                }
             }
-            assert!(Instant::now() < deadline, "{view:?}");
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+            panic!("订阅提前结束");
+        };
+        // 等事件，不每 20ms 轮询整份 ViewModel；超时只兜底，报出当时的状态。
+        // 闭包只许读这份 ViewModel：读外部状态的只有等 DELETE 落到核心那一条，
+        // 而 DELETE 一定先于随后的任务状态发布，事件等得到。
+        tokio::time::timeout(WAIT, waiting)
+            .await
+            .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.app.plugins()))
     }
 
     pub async fn task(
@@ -575,6 +607,48 @@ impl Rig {
     ) -> PluginTaskState {
         let view = self
             .wait_for(|view| {
+                view.tasks
+                    .iter()
+                    .any(|task| task.id == id && done(&task.state))
+            })
+            .await;
+        view.tasks
+            .into_iter()
+            .find(|task| task.id == id)
+            .unwrap()
+            .state
+    }
+
+    /// 同 [`Self::wait_for`]，兜底预算由调用方按被测路径推导：繁忙时一次请求实测会停滞数秒，
+    /// 固定的 20 秒会成为绑定约束而不是兜底。
+    pub async fn wait_for_within(
+        &self,
+        budget: Duration,
+        mut done: impl FnMut(&PluginsViewModel) -> bool,
+    ) -> PluginsViewModel {
+        let plugins = self.app.subscribe_plugins();
+        let waiting = async {
+            while let Some(view) = plugins.next().await {
+                if done(&view) {
+                    return view;
+                }
+            }
+            panic!("订阅提前结束");
+        };
+        tokio::time::timeout(budget, waiting)
+            .await
+            .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.app.plugins()))
+    }
+
+    /// 同 [`Self::task`]，兜底预算见 [`Self::wait_for_within`]。
+    pub async fn task_within(
+        &self,
+        id: &str,
+        budget: Duration,
+        mut done: impl FnMut(&PluginTaskState) -> bool,
+    ) -> PluginTaskState {
+        let view = self
+            .wait_for_within(budget, |view| {
                 view.tasks
                     .iter()
                     .any(|task| task.id == id && done(&task.state))
