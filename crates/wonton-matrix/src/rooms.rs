@@ -181,7 +181,8 @@ impl MatrixSession {
 
     /// 等同步把刚加入的房间标成已加入。
     ///
-    /// 绕过 Tuwunel 的问题（v1.9.4，TODO 上游 issue 链接）：它先让新事件对同步可见，再更新房间的当前状态。
+    /// 绕过 Tuwunel 的问题（v1.9.4，<https://github.com/matrix-construct/tuwunel/issues/685>）：
+    /// 它先让新事件对同步可见，再更新房间的当前状态。
     /// 这中间的一次 Sliding Sync，时间线里有加入事件，`required_state` 里本人却还是邀请；SDK 只按
     /// `required_state` 定状态，房间就一直是“受邀”，直到房间里来新事件。这时单独订阅这个房间，服务器按
     /// 当前状态重发。上游修好、镜像升级后删掉订阅这一步，只留等待。

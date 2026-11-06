@@ -261,7 +261,8 @@ Android 收新消息有两种方式，存在本机、每台设备各选各的（
   - Tuwunel v1.9.4 先让新事件对同步可见，再更新房间的当前状态。这中间的一次 Sliding Sync，时间线里有本人的加入
     事件，`required_state` 里本人还是邀请；SDK 只按 `required_state` 定状态，房间一直显示“受邀”，直到房间里来新
     事件（CI 上偶发，抓同步应答确认）。客户端加入后等同步标成已加入，3 秒还没有就单独订阅这个房间，服务器按当前
-    状态重发。上游修好、升级镜像后去掉订阅这一步。
+    状态重发。上游问题 [tuwunel#685](https://github.com/matrix-construct/tuwunel/issues/685)，修复
+    [tuwunel#686](https://github.com/matrix-construct/tuwunel/pull/686)；上游修好、升级镜像后去掉订阅这一步。
   - SDK 处理 `m.direct` 时不算房间的显著变化，房间列表不会因此更新；客户端另外观察 `m.direct`。
 
 ## 验证结果（M0-3，自动化测试）
