@@ -71,6 +71,7 @@ mod tests {
                 sent_packets: 900,
                 lost_packets: 3,
                 last_failure: Some("timed out".into()),
+                addresses_stale: true,
             },
             proxy: Some(ProxySettings {
                 host: "127.0.0.1".into(),

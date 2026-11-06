@@ -468,6 +468,7 @@ impl HomeLink {
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
+            addresses_stale: false,
         };
         let tick = tracker.next_tick();
         drop(tracker);

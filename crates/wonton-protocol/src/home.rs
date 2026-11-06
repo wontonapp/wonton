@@ -182,6 +182,8 @@ pub struct ConnectionDetails {
     pub lost_packets: u64,
     /// 最近一次失败的原文，只在“详情”里显示；连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<String>,
+    /// 连上之后一直没取到服务器现在的地址：存着的地址可能已经过时，下次建连可能要先绕中继。取到就清掉。
+    pub addresses_stale: bool,
 }
 
 /// 连接当前走的路径。
