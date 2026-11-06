@@ -1,0 +1,149 @@
+# Syncthing 文件同步。同步的文件放共享文件夹 sync（别的插件也能读），配置和数据库放 ${WONTON_APP_DATA}。
+services:
+  # 首次启动前放一份配置（已有不动），并用核心生成的用户名、密码给 Syncthing 自己的 GUI 认证设好凭据；
+  # syncthing generate 负责生成证书和 bcrypt 密码。种子关掉上报、本地发现和 NAT；路由器映射不由插件管理。
+  init:
+    image: &image syncthing/syncthing:2.1.7@sha256:2b71da7c0d0a91a6ae5285ad079226fecc0a365d08b27720e1f7037b018f7546
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        test -f /data/config.xml || cp /seed/config.xml /data/config.xml
+        printf '%s' "$$WONTON_SECRET_GUI_PASSWORD" | /bin/syncthing generate --gui-user "$$WONTON_SECRET_GUI_USER" --gui-password=-
+    # 以 PUID:PGID 写配置和证书，否则 root 属主的文件应用改不动。
+    user: "${PUID}:${PGID}"
+    environment:
+      # generate 按 STHOMEDIR 找配置文件，init 里挂的是 /data，不改就写到容器自己的临时目录。
+      STHOMEDIR: /data
+      WONTON_SECRET_GUI_USER: ${WONTON_SECRET_GUI_USER}
+      WONTON_SECRET_GUI_PASSWORD: ${WONTON_SECRET_GUI_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/data
+    configs:
+      - source: config
+        target: /seed/config.xml
+    network_mode: none
+    restart: "no"
+
+  syncthing:
+    # 上游官方镜像，按清单列表（index）的摘要固定。Syncthing 2.1.7，MPL-2.0。
+    image: *image
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    # 以 PUID:PGID 运行（镜像的 entrypoint 以 root 起再降权），宿主上同步下来的文件归用户的用户。
+    environment:
+      # GUI 认证保留（用户名、密码由 init 从核心 secrets 写进配置）。8384 不发布，但出网桥接网络上
+      # 宿主进程仍能直连容器，所以不能免密。
+      # 用户经网关打开时由网关加 X-API-Key（同样来自 secrets，Syncthing 认这个头），照样不用登录；
+      # 网关对 sso: proxy 的插件也先要求用户会话，认不出就跳核心登录。
+      STGUIADDRESS: 0.0.0.0:8384
+      STNOUPGRADE: "true"
+      # 镜像以 root 起、按 PUID/PGID 降权（entrypoint 里 su-exec）：不传就一直用镜像默认的 1000。
+      PUID: ${PUID}
+      PGID: ${PGID}
+      # 网关给每个请求加的 X-API-Key 就是这把核心生成的 key，用户经网关不用再登录。
+      # 环境变量覆盖 config.xml 里的 apikey：在网页设置里重新生成 key 也不会把网关锁在外面。
+      # 注意 Syncthing 会把 key 显示在 /rest/config 和设置页里，网关不改响应体，所以 key 会到浏览器上。
+      # 它等同于用户本来就有的管理权限，这个例外在规范的“凭据不进页面”之外（见 PR 的底座的问题）。
+      STGUIAPIKEY: ${WONTON_SECRET_API_KEY}
+      # 网页覆盖目录（只读）；不写的话 Syncthing 用配置目录下的 gui/，那就是持久副本。
+      STGUIASSETS: /wonton/gui
+    # 网页覆盖经只读的 configs 放进容器，STGUIASSETS 指过去，持久目录里不留副本；
+    # 每次创建容器重写，升级去掉了覆盖也不会用旧的页面。
+    configs:
+      - source: gui-langs
+        target: /wonton/gui/default/assets/lang/valid-langs.js
+      - source: gui-lan-json
+        target: /wonton/gui/default/wonton-lan.json
+    hostname: syncthing-wonton
+    volumes:
+      - ${WONTON_APP_DATA}/config:/var/syncthing/config
+      - ${WONTON_SHARE_SYNC}:/var/syncthing/Sync
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - 'curl -fsS -H "X-API-Key: $$STGUIAPIKEY" http://127.0.0.1:8384/rest/system/version | grep -q "\"version\""'
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 5s
+
+configs:
+  config:
+    file: config/config.xml
+  # 占位页面上本来就会加载的小脚本（上游 2.1.7 的语言表），尾部附上地址提示的代码；
+  # 升级镜像时重新取 gui/valid-langs.js 再加一遍尾部（见文件头）。
+  gui-langs:
+    file: gui/valid-langs.js
+  # 地址由核心注入，逗号分隔；容器重建时随之更新。
+  gui-lan-json:
+    content: '{"addresses":"${WONTON_LAN_ADDRESSES}"}'
+
+x-wonton:
+  spec: "0.4"
+  id: net.syncthing.syncthing
+  version: 0.1.1
+  kind: app
+  title: { en: Syncthing }
+  description: { zh: "在你的电脑、手机和家里的主机之间同步文件", en: "Sync files between your computers, phones and your home server" }
+  icon: icon.png
+  notices: [NOTICE]
+  screenshots:
+    - screenshots/folders.png
+    - screenshots/add-folder.png
+    - screenshots/add-device.png
+  author: { name: geraldpeng6 }
+  homepage: https://syncthing.net
+  license: MPL-2.0
+  tags:
+    zh: [同步, 文件]
+    en: [Sync, Files]
+  about:
+    zh: |
+      在电脑、手机和家里的主机之间同步文件。在网页上添加设备和文件夹，一处改动，其他设备跟着变。
+
+      同步的文件放在共享文件夹 sync 里，其他应用也能用。
+    en: |
+      Sync files between your computers, phones and the server at home. Add devices and folders in the web page; a change in one place arrives everywhere.
+
+      Synced files live in the sync shared folder, available to other apps too.
+  release_notes: { zh: 名字和说明更新。, en: Product name and description update. }
+  webui:
+    service: syncthing
+    port: 8384
+    # Syncthing 不支持 OIDC，也不认代理传来的用户；GUI 自己的认证开着，网关用 API key 头代登录
+    # （见 environment 的注释）。
+    sso: proxy
+    proxy:
+      headers:
+        # Syncthing 接受 API key 认证，浏览器所有请求都带这个头，不用再登录。
+        X-API-Key: "{secret:api_key}"
+  lan:
+    ports:
+      # BEP 同步流量，对端按网页显示的地址连。21027/udp 的本地发现是组播，核心不转发，不声明。
+      - { service: syncthing, port: 22000 }
+      - { service: syncthing, port: 22000, protocol: udp }
+  secrets:
+    api_key:
+      generate: { bytes: 32 }
+    gui_user:
+      generate: { bytes: 16 }
+    gui_password:
+      generate: { bytes: 32 }
+  permissions:
+    # 同步的文件放共享文件夹 sync，其他插件也能读；写入是同步本身要做的。
+    # Synced files live in the sync share, readable by other plugins; writing is what syncing needs.
+    - storage.share.sync:write
+    # 全局发现和中继：设备不在家里时也要能同步，不能只靠对端拨进来。
+    # Global discovery and relays so devices also sync away from home, not only by dialing in.
+    - network.egress
+    # 高权限：局域网设备直接连 22000 同步，不经核心网关。身份由 Syncthing 自己的设备证书验证。
+    # High privilege: LAN devices sync straight to port 22000 without the core gateway. Syncthing's own device certificates authenticate them.
+    - network.lan
+  # 上游没写最低内存；本机空闲实测约 31M，取 64M。镜像支持 amd64 和 arm64（docker manifest inspect）。
+  requirements:
+    arch: [amd64, arm64]
+    memory: 64M

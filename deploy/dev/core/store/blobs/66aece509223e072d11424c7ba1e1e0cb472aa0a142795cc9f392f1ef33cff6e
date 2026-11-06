@@ -1,0 +1,17 @@
+<configuration version="52">
+    <folder id="sync" label="同步" path="/var/syncthing/Sync/sync" paused="false"></folder>
+    <gui enabled="true" tls="false" sendBasicAuthPrompt="true">
+        <address>0.0.0.0:8384</address>
+    </gui>
+    <options>
+        <urAccepted>-1</urAccepted>
+        <crashReportingEnabled>false</crashReportingEnabled>
+        <globalAnnounceEnabled>true</globalAnnounceEnabled>
+        <localAnnounceEnabled>false</localAnnounceEnabled>
+        <relaysEnabled>true</relaysEnabled>
+        <natEnabled>false</natEnabled>
+    </options>
+    <defaults>
+        <folder path="/var/syncthing/Sync"></folder>
+    </defaults>
+</configuration>

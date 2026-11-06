@@ -1,0 +1,151 @@
+name: memos
+
+services:
+  # 以非 root 跑 Memos，数据目录归用户。旧版本或外部改过的数据可能是别的属主，先统一成运行用户；
+  # 每次创建容器都跑一遍，幂等。
+  chown:
+    image: neosmemo/memos:26.11.0@sha256:087e7dc6b76b31fcd1107a5767398b2a310ced209adb791efd8760c745dc8034
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown -R ${PUID}:${PGID} /var/opt/memos"]
+    volumes:
+      - ${WONTON_APP_DATA}/data:/var/opt/memos
+    network_mode: none
+    restart: "no"
+
+  memos:
+    user: "${PUID}:${PGID}"
+    depends_on:
+      chown:
+        condition: service_completed_successfully
+    image: neosmemo/memos:26.11.0@sha256:087e7dc6b76b31fcd1107a5767398b2a310ced209adb791efd8760c745dc8034
+    environment:
+      MEMOS_INSTANCE_URL: ${WONTON_APP_URL}
+      MEMOS_PORT: "5230"
+      # 声明式配置只引用变量名，值由核心注入。
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME}
+      # 声明式配置里的 ${env:…} 必须占满整个值，资源名这类拼起来的串在这里拼好。
+      MEMOS_CONFIG_USER_NAME: "users/${WONTON_OWNER_NAME}"
+      MEMOS_CONFIG_LINKED_NAME: "users/${WONTON_OWNER_NAME}/linkedIdentities/wonton"
+      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL}
+      WONTON_OIDC_CLIENT_ID: ${WONTON_OIDC_CLIENT_ID}
+      WONTON_OIDC_CLIENT_SECRET: ${WONTON_OIDC_CLIENT_SECRET}
+      WONTON_OIDC_AUTH_URL: ${WONTON_OIDC_AUTH_URL}
+      WONTON_OIDC_TOKEN_URL: ${WONTON_OIDC_TOKEN_URL}
+      WONTON_OIDC_USERINFO_URL: ${WONTON_OIDC_USERINFO_URL}
+      WONTON_SECRET_OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/data:/var/opt/memos
+    configs:
+      - source: config
+        target: /etc/memos/config/wonton.json
+    healthcheck:
+      # 数据库在 /healthz 里被探活；配置应用失败时进程起不来，这里也失败。
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5230/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      start_interval: 1s
+
+  # 一次性服务：用户账号和 MCP 令牌都来自 Memos 自己的接口，MCP 需要带令牌才能调工具。
+  init:
+    image: curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+    entrypoint: ["/bin/sh", "/init.sh"]
+    user: "${PUID}:${PGID}"
+    environment:
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME}
+      WONTON_SECRET_OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/bridge:/bridge
+    configs:
+      - source: init
+        target: /init.sh
+    depends_on:
+      memos:
+        condition: service_healthy
+    restart: "no"
+
+  # MCP 的入口：核心的 MCP 总线不带凭据，这里替它加上用户账号的令牌。
+  mcp:
+    image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
+    user: "${PUID}:${PGID}"
+    read_only: true
+    # 只读根文件系统下还要有地方写 pid 和请求体临时文件：run 目录归运行用户，临时文件放 /dev/shm（1777 的 tmpfs，
+    # 容量给到和请求体上限一样）。
+    shm_size: 256m
+    volumes:
+      - ${WONTON_APP_DATA}/bridge:/etc/nginx/conf.d:ro
+      - ${WONTON_APP_DATA}/run:/run
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      start_interval: 1s
+
+configs:
+  config:
+    file: config/wonton.json
+  init:
+    file: config/init.sh
+
+x-wonton:
+  spec: "0.4"
+  id: com.usememos.memos
+  version: 0.1.2
+  kind: app
+  title: { en: Memos }
+  description:
+    zh: 随手记笔记、写日记、列待办，都能全文搜索
+    en: Jot down notes, journal and todos, all searchable
+  icon: icon.png
+  notices: [NOTICE]
+  screenshots:
+    - screenshots/memos.png
+    - screenshots/search.png
+    - screenshots/tags.png
+    - screenshots/todo.png
+  author: { name: geraldpeng6, url: https://github.com/geraldpeng6 }
+  homepage: https://usememos.com
+  license: MIT
+  tags:
+    zh: [笔记]
+    en: [Notes]
+  about:
+    zh: |
+      随手记笔记、写日记、列待办，打上标签，之后全文搜索。默认只有你看得到，也可以逐条公开或按链接分享。
+
+      Bot 也能搜、能新建和追加笔记，看到的就是你自己看得到的。
+
+      需要访问外网：Webhook 推送、链接预览和 AI 语音转写都得出网才能用，笔记本身不受影响。
+    en: |
+      Jot down notes, keep a journal, list todos, tag them and search everything later. Notes stay private by default; you can make one public or share it by link.
+
+      The bot can search, create and append notes, and sees exactly what you see.
+
+      Needs internet access: webhooks, link previews and AI speech-to-text all reach the network; notes work offline.
+  release_notes: { zh: "加了出网权限：Webhook 推送、链接预览和 AI 语音转写都要访问外网。", en: "Added network access permission: webhooks, link previews and AI speech-to-text need it." }
+  webui:
+    service: memos
+    port: 5230
+    sso: oidc
+    oidc:
+      redirect_paths: [/auth/callback]
+  mcp:
+    service: mcp
+    port: 8080
+    transport: streamable-http
+  secrets:
+    owner_password:
+      generate: { bytes: 32 }
+  permissions:
+    - owner.identity
+    # Webhook 推送、链接预览、AI 语音转写都要从容器里访问外网；插件内部互访核心已放进 NO_PROXY。
+    - network.egress
+  # 上游没写最低内存；本机空闲实测约 49M，取 128M。镜像支持 amd64 和 arm64（docker manifest inspect）。
+  requirements:
+    arch: [amd64, arm64]
+    memory: 128M

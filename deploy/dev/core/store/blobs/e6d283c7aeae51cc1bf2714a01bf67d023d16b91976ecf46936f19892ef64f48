@@ -1,0 +1,245 @@
+# Miniflux：极简 RSS 阅读器。用户订阅、过滤和阅读自己的订阅源；Bot 经 MCP 列出未读、搜索、标记已读。
+#
+# 网页走网关代登录：Miniflux 认 AUTH_PROXY_HEADER，网关认出用户后带上 Remote-User，进去就是用户，没有第二个登录页。
+# DISABLE_LOCAL_AUTH 关掉本地密码登录，剩下的密码只用来在首次启动时建好用户这个管理员账号。
+# 只信任核心在这个网络里的地址：核心注入 WONTON_CORE_ADDRESS，来源不是它就忽略 Remote-User。
+# 宿主进程、其他出网插件经代理连进来都冒充不了（ADR-0023）。
+#
+# 数据库放在插件里，数据在 WONTON_APP_DATA 下；抓取 RSS、图标和全文需要插件级出网权限。
+name: miniflux
+
+x-miniflux: &miniflux miniflux/miniflux:2.3.5@sha256:8fd6c3c434ecc3d4083306f83e03c0bb74c632e0f8378da5ead7e1773b0b89c9
+x-postgres: &postgres postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+x-mcp: &mcp jwonder/miniflux-mcp:0.8.0@sha256:bfe785ba2918f2f12073e8fde1ef1a72c0e5d61c3655e228a3b041312d24d836
+
+services:
+  db:
+    image: *postgres
+    # Alpine 官方镜像的 postgres 用户是 70:70，核心按此准备数据库目录属主。
+    user: "70:70"
+    read_only: true
+    tmpfs: ["/tmp", "/var/run/postgresql"]
+    environment:
+      POSTGRES_USER: miniflux
+      POSTGRES_PASSWORD: ${WONTON_SECRET_DB_PASSWORD:?核心没有注入数据库密码}
+      POSTGRES_DB: miniflux
+      TZ: ${TZ}
+    volumes:
+      - ${WONTON_APP_DATA:?核心没有注入插件数据目录}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "miniflux", "-d", "miniflux"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+  miniflux:
+    image: *miniflux
+    # 无需写本地文件；数据库以外的运行状态只在内存中。
+    user: "${PUID}:${PGID}"
+    read_only: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://miniflux:${WONTON_SECRET_DB_PASSWORD:?核心没有注入数据库密码}@db:5432/miniflux?sslmode=disable
+      BASE_URL: ${WONTON_APP_URL:?核心没有注入插件网页地址}
+      CREATE_ADMIN: "1"
+      ADMIN_USERNAME: ${WONTON_OWNER_NAME:?核心没有注入用户名}
+      ADMIN_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD:?核心没有注入用户密码}
+      RUN_MIGRATIONS: "1"
+      DISABLE_LOCAL_AUTH: "true"
+      AUTH_PROXY_HEADER: Remote-User
+      TRUSTED_REVERSE_PROXY_NETWORKS: ${WONTON_CORE_ADDRESS}/32
+      TZ: ${TZ}
+    healthcheck:
+      # readyz 会查一次数据库，不只是进程还在。
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
+  # MCP 服务的 HTTP 模式必须给 Bearer 令牌，而核心连插件的 MCP 只按地址连、不带请求头。
+  # mcp-proxy 补上 Authorization，同时按名单只放出读文章、搜索和标记已读用得到的工具。
+  proxy:
+    image: ghcr.io/tbxark/mcp-proxy:v1.1.0@sha256:934ac7f6edf4eb139da1aa358c3bdaed07a6641a52787afaa13a63f4c4fa4354
+    # configs 需要核心在启动前写入根文件系统，不能同时设 read_only；服务不需要 root。
+    user: "${PUID}:${PGID}"
+    depends_on:
+      mcp:
+        condition: service_healthy
+    configs:
+      - source: mcp_proxy
+        target: /config/config.json
+    healthcheck:
+      # /_readyz 在下游没接上或断线时返回 503。
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/_readyz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
+  # 等管理员建好后把 MCP 用的 API key 写进数据库。key 由核心生成并保留，重装沿用。
+  bootstrap:
+    image: *postgres
+    depends_on:
+      miniflux:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://miniflux:${WONTON_SECRET_DB_PASSWORD:?核心没有注入数据库密码}@db:5432/miniflux?sslmode=disable
+      OWNER: ${WONTON_OWNER_NAME:?核心没有注入用户名}
+      TOKEN: ${WONTON_SECRET_API_KEY:?核心没有注入 API key}
+    configs:
+      - source: bootstrap_ensure
+        target: /sql/ensure.sql
+    command:
+      - sh
+      - -ec
+      - psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v owner="$$OWNER" -v token="$$TOKEN" -f /sql/ensure.sql
+    restart: "no"
+
+  mcp:
+    image: *mcp
+    # 二进制在 /root 下、/root 是 0700，镜像也没有 USER，只能以 root 跑；文件系统只读。
+    read_only: true
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_AUTH_TOKEN: ${WONTON_SECRET_MCP_TOKEN:?核心没有注入 MCP 令牌}
+      MINIFLUX_URL: http://miniflux:8080
+      MINIFLUX_API_KEY: ${WONTON_SECRET_API_KEY:?核心没有注入 API key}
+    healthcheck:
+      # 进程活着之外，再用 key 调一次 Miniflux 的只读接口，证明上游和 key 都能用。
+      test:
+        - CMD
+        - sh
+        - -c
+        - >-
+          wget -q -O /dev/null http://127.0.0.1:8080/healthz &&
+          wget -q -O /dev/null --header "X-Auth-Token: $$MINIFLUX_API_KEY" http://miniflux:8080/v1/me
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      start_interval: 2s
+
+configs:
+  mcp_proxy:
+    content: |
+      {
+        "mcpProxy": {
+          "baseURL": "http://proxy:8080",
+          "addr": ":8080",
+          "name": "Miniflux",
+          "version": "1.0.0",
+          "type": "streamable-http",
+          "startupGracePeriod": "10s",
+          "options": { "panicIfInvalid": true, "logEnabled": true }
+        },
+        "mcpServers": {
+          "mcp": {
+            "transportType": "streamable-http",
+            "url": "http://mcp:8080/mcp",
+            "headers": { "Authorization": "Bearer ${WONTON_SECRET_MCP_TOKEN:?核心没有注入 MCP 令牌}" },
+            "timeout": "30s",
+            "options": {
+              "autoReconnect": true,
+              "reconnectInterval": "5s",
+              "pingInterval": "10s",
+              "toolFilter": {
+                "mode": "allow",
+                "list": [
+                  "get_feeds",
+                  "get_feed_entries",
+                  "get_entries",
+                  "get_categories",
+                  "get_category_entries",
+                  "update_entry_status",
+                  "toggle_starred",
+                  "mark_feed_as_read",
+                  "mark_category_as_read",
+                  "refresh_feed",
+                  "refresh_all_feeds",
+                  "get_me",
+                  "get_version",
+                  "healthcheck",
+                  "fetch_counters"
+                ]
+              }
+            }
+          }
+        }
+      }
+  bootstrap_ensure:
+    content: |
+      INSERT INTO api_keys (user_id, token, description)
+      SELECT id, :'token', 'MCP' FROM users WHERE lower(username) = lower(:'owner')
+      ON CONFLICT (user_id, description) DO UPDATE SET token = excluded.token;
+      -- 只在主人还没打开过网页时设成中文：代理认证第一次进网页就记 last_login_at，
+      -- 之后这条不再生效，不覆盖主人在设置里自己选的语言。
+      UPDATE users SET language = 'zh_CN'
+      WHERE lower(username) = lower(:'owner') AND last_login_at IS NULL;
+      -- 账号不存在时报错（除零），不假装成功。
+      SELECT 1 / count(*) FROM users WHERE lower(username) = lower(:'owner');
+
+x-wonton:
+  spec: "0.4"
+  id: app.miniflux.miniflux
+  version: 0.1.2
+  kind: app
+  title: { en: Miniflux }
+  description:
+    zh: 订阅网站和博客，在一个地方读完更新
+    en: Follow sites and blogs and read every update in one place
+  icon: icon.png
+  notices: [NOTICE]
+  screenshots:
+    - screenshots/unread.png
+    - screenshots/entry.png
+    - screenshots/settings.png
+  author: { name: geraldpeng6, url: https://github.com/geraldpeng6 }
+  homepage: https://miniflux.app
+  license: Apache-2.0
+  tags:
+    zh: [阅读]
+    en: [Reading]
+  about:
+    zh: |
+      在一个地方订阅网站和博客，读完更新。可以按规则过滤，也可以标已读、未读。
+
+      Bot 能列出未读、搜索文章和标记已读；工具没有标只读，每次调用都要你确认。
+    en: |
+      Follow sites and blogs in one place and read their updates. Filter by rules, and mark entries read or unread.
+
+      The bot can list unread entries, search and mark them read; the tools carry no read-only hints, so each call waits for your confirmation.
+  release_notes: { zh: 新安装的用户界面默认中文。, en: New installs now start with a Chinese interface. }
+  webui:
+    service: miniflux
+    port: 8080
+    sso: proxy
+    proxy:
+      headers:
+        Remote-User: "{user}"
+  mcp:
+    service: proxy
+    port: 8080
+    path: /mcp/
+    transport: streamable-http
+  permissions:
+    - network.egress
+    - owner.identity
+  secrets:
+    db_password:
+      generate: { bytes: 32 }
+    owner_password:
+      generate: { bytes: 32 }
+    api_key:
+      generate: { bytes: 32 }
+    mcp_token:
+      generate: { bytes: 32 }
+  # 上游没写最低内存；本机空闲实测约 82M，取 128M。miniflux-mcp 只发布 amd64 镜像（docker manifest inspect）。
+  requirements:
+    arch: [amd64]
+    memory: 128M
