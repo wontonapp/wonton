@@ -5,7 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{PluginProblem, PluginState, SecretString, StoreItem, StoreProblem};
+use crate::{
+    CardLine, PermissionLine, PluginIcon, PluginProblem, PluginState, SecretString, StoreItem,
+    StoreProblem,
+};
 
 /// 读写引导状态的接口：`GET` 和 `PUT` 都返回 [`Onboarding`]，`PUT` 的请求体是 [`OnboardingUpdate`]。
 pub const ONBOARDING_PATH: &str = "/_wonton/api/onboarding";
@@ -20,7 +23,21 @@ pub fn model_provider_path(id: &str) -> String {
     format!("{MODEL_PROVIDERS_PATH}/{id}")
 }
 
-/// 引导接下来要做的一步。记在核心上，第二台设备不重复。
+/// 只测试一个服务商的 key、不保存的接口：`POST`，请求体是 [`ModelProviderKey`]，成功时没有响应体。错误类别同
+/// [`model_provider_path`]，只是什么都不保存：`upstream_unavailable` 时 key 也没有保存。
+pub fn model_provider_test_path(id: &str) -> String {
+    format!("{MODEL_PROVIDERS_PATH}/{id}/test")
+}
+
+/// 保存一个 OpenAI 兼容的自定义服务商的接口：`PUT`，请求体是 [`CustomModelProvider`]。成功和错误同
+/// [`model_provider_path`]。模型网关不支持自定义时是 `models_unavailable`，[`ModelProviders::custom`] 为假。
+pub const CUSTOM_MODEL_PROVIDER_PATH: &str = "/_wonton/api/models/custom-provider";
+
+/// 只测试自定义服务商、不保存的接口：`POST`，请求体是 [`CustomModelProvider`]，错误同 [`model_provider_test_path`]。
+pub const CUSTOM_MODEL_PROVIDER_TEST_PATH: &str = "/_wonton/api/models/custom-provider/test";
+
+/// 引导的一步。家里的服务器上只记 `Profile`（还没走完）和 `Finished`：每一步只记下选择，到 `Review` 点完成才一起
+/// 生效（ADR-0038），所以中间的步骤只在客户端核心里。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -29,6 +46,8 @@ pub enum OnboardingStep {
     Agent,
     Model,
     Apps,
+    /// 列出所有选择和应用要的权限，点完成才执行。
+    Review,
     Finished,
     /// 比这个 App 新的核心给的步骤。
     #[serde(other)]
@@ -114,6 +133,21 @@ pub struct ModelProviders {
     pub any_configured: bool,
     /// 模型网关的网页；网关没有网页时为空。
     pub web_url: Option<String>,
+    /// 模型网关里已经接好的服务商，包括不在 `providers` 里的（如自定义的）。重进引导时接模型这一步显示它们。
+    #[serde(default)]
+    pub configured: Vec<ConfiguredModelProvider>,
+    /// 模型网关能接 OpenAI 兼容的自定义服务商（[`CUSTOM_MODEL_PROVIDER_PATH`]）。
+    #[serde(default)]
+    pub custom: bool,
+}
+
+/// 模型网关里已经接好的一个服务商。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ConfiguredModelProvider {
+    pub id: String,
+    /// 网关给的名字；取不到时是 `id`。
+    pub title: String,
 }
 
 /// 模型网关能接的一个服务商。
@@ -131,10 +165,33 @@ pub struct ModelProvider {
     pub configured: bool,
 }
 
-/// `PUT /_wonton/api/models/providers/{id}` 的请求体。
+/// `PUT /_wonton/api/models/providers/{id}` 和它的测试接口的请求体。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelProviderKey {
     pub key: SecretString,
+}
+
+/// 自定义服务商：OpenAI 兼容接口的地址、key 和模型名。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomModelProvider {
+    /// 如 `https://api.example.com/v1`。
+    pub base_url: String,
+    pub model: String,
+    pub key: SecretString,
+}
+
+/// 接模型这一步填的东西，交给 [`Action::TestModelProvider`](crate::Action::TestModelProvider)。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ModelProviderInput {
+    /// 列表里的服务商（[`ModelProvider::id`]）。
+    Preset { id: String, key: SecretString },
+    Custom {
+        base_url: String,
+        model: String,
+        key: SecretString,
+    },
 }
 
 /// 引导的 ViewModel。步骤的判断都在客户端核心，壳只渲染，操作发回核心。
@@ -153,9 +210,11 @@ pub struct OnboardingViewModel {
     pub problem: Option<PluginProblem>,
     /// 官方索引的推荐清单取不到或者可能不是最新的原因：这一页说明它，可以跳过。
     pub catalog_problem: Option<StoreProblem>,
+    pub profile: OnboardingProfileStep,
     pub agents: Vec<OnboardingAgentRow>,
     pub model: OnboardingModelStep,
     pub needs: Vec<OnboardingNeedRow>,
+    pub review: OnboardingReview,
     /// 默认 Agent 的 Bot：引导走完后进入和它的私聊，[`Self::chat_prompts`] 也只在这个私聊里显示。
     pub primary_bot_user_id: Option<String>,
     /// 输入框上方可点的问题，点了放进输入框当草稿；发过第一条消息后为空。
@@ -176,6 +235,19 @@ pub struct StepNav {
     pub can_back: bool,
     pub can_skip: bool,
     pub can_next: bool,
+}
+
+/// 你的资料这一步。名字必填，邮箱选填。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OnboardingProfileStep {
+    /// 先是家里的服务器上记着的，主人改了以后是改后的（[`Action::EditOnboardingProfile`](crate::Action::EditOnboardingProfile)）。
+    pub display_name: String,
+    pub email: String,
+    /// 点下一步时名字不合规则的原因。
+    pub display_name_problem: Option<String>,
+    /// 点下一步时邮箱不合规则的原因；没填不算。
+    pub email_problem: Option<String>,
 }
 
 /// 选 Agent 这一步的一行。
@@ -204,7 +276,34 @@ pub struct OnboardingModelStep {
     pub logins: Vec<AgentLogin>,
     /// 正在保存和测试 key 的服务商。
     pub saving: Option<String>,
+    /// 这一步记下的选择，点完成时才保存；为空时不动模型。
+    pub choice: Option<OnboardingModelChoice>,
+    /// 正在测试填的 key，什么都不保存。
+    pub testing: bool,
     pub problem: Option<ModelProviderProblem>,
+}
+
+/// 接模型这一步记下的选择。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OnboardingModelChoice {
+    /// 用模型网关里已经接好的（[`ModelProviders::configured`]），点完成时不动。
+    Current,
+    /// 列表里的服务商，key 测过了。`reachable` 为假是连不上服务商：key 没被拒，点完成时照样保存。
+    Provider {
+        id: String,
+        title: String,
+        reachable: bool,
+    },
+    /// 自定义服务商，测过了。`reachable` 同上。
+    Custom {
+        base_url: String,
+        model: String,
+        reachable: bool,
+    },
+    /// 用 Agent 官方程序的账号登录（[`AgentLogin`]），登录链接由 Agent 发进聊天。
+    Login { id: String, title: String },
 }
 
 /// 保存 key 或者取服务商列表失败了。
@@ -245,6 +344,94 @@ pub struct OnboardingNeedRow {
     pub title: String,
     pub selected: bool,
     pub plugins: Vec<StoreItem>,
+}
+
+/// 最后一页：列出所有选择和应用要的权限。点完成（[`Action::ContinueOnboarding`](crate::Action::ContinueOnboarding)）
+/// 算主人确认了这些权限，资料、模型和默认 Agent 依次保存，Agent 和应用在后台安装，每一项的进展都在这里。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OnboardingReview {
+    pub items: Vec<OnboardingReviewItem>,
+    pub commit: OnboardingCommit,
+}
+
+/// 点完成之后到了哪里。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingCommit {
+    /// 还没点完成，什么都没有执行。
+    #[default]
+    NotStarted,
+    /// 在保存资料、模型和引导状态。
+    Running,
+    /// 都保存好了，安装在后台接着做；可以离开引导（再发一次 `ContinueOnboarding`）。
+    Done,
+}
+
+/// 最后一页的一项。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OnboardingReviewItem {
+    /// 重试时带回（[`Action::RetryOnboardingItem`](crate::Action::RetryOnboardingItem)）。Agent 和应用是插件 ID。
+    pub id: String,
+    pub kind: OnboardingReviewKind,
+    /// 资料是填的名字，Agent 和应用是插件名，模型是服务商名或自定义的地址。
+    pub title: String,
+    /// 第二行，核心写好的：资料是邮箱，模型是“用现在的”、模型名或测试结果，Agent 是“设为默认”；没有时为空。
+    pub detail: Option<String>,
+    /// 要装的 Agent 和应用的图标。
+    pub icon: Option<PluginIcon>,
+    /// 要装的 Agent 和应用申请的权限，点完成就是授予它们。
+    pub permissions: Vec<PermissionLine>,
+    /// 确认前要看到的其他说明（未审核、镜像来源等），同安装确认页。
+    pub notices: Vec<CardLine>,
+    pub state: OnboardingItemState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingReviewKind {
+    Profile,
+    /// 默认 Agent；没装时点完成会装上。
+    Agent,
+    Model,
+    App,
+}
+
+/// 一项的进展。点完成之前只有 `Preparing`、`Ready`、`Blocked` 和 `Failed`；有一项不是 `Ready` 时完成不能点。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OnboardingItemState {
+    /// 在取安装预览。
+    Preparing,
+    /// 点完成就做。
+    Ready,
+    /// 这台主机装不了，或者要先填资料（如邮箱）：回到那一步改，或者不选它。
+    Blocked {
+        message: String,
+    },
+    /// 点了完成，排在前面的做完才轮到它。
+    Waiting,
+    Running,
+    Done,
+    /// 失败了，可以重试；别的项照常做。
+    Failed {
+        problem: OnboardingItemProblem,
+    },
+}
+
+/// 一项失败的原因，类别由核心给，壳按类别写文字（AGENTS.md“界面设计”）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OnboardingItemProblem {
+    /// 资料、引导状态、安装预览和安装。
+    Plugin { problem: PluginProblem },
+    /// 保存模型。
+    Model { problem: ModelProviderProblem },
 }
 
 /// 可以卸掉的 Agent。

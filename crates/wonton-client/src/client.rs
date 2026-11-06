@@ -107,6 +107,11 @@ impl ClientCore {
             | Action::BackOnboardingStep
             | Action::ToggleOnboardingNeed { .. }
             | Action::SaveModelProviderKey { .. }
+            | Action::EditOnboardingProfile { .. }
+            | Action::TestModelProvider { .. }
+            | Action::UseCurrentModel
+            | Action::ChooseModelLogin { .. }
+            | Action::RetryOnboardingItem { .. }
             | Action::DismissModelProviderProblem
             | Action::SetPrimaryAgent { .. }
             | Action::DismissReplacedAgentOffer

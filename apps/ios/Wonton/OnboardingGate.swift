@@ -35,7 +35,7 @@ struct OnboardingGate<Content: View>: View {
             switch previous {
             case .profile, .agent, .model, .apps:
                 finished(model.viewModel.primaryBotUserId)
-            case .finished, .other, nil:
+            case .review, .finished, .other, nil:
                 break
             }
         }
@@ -50,7 +50,7 @@ struct OnboardingGate<Content: View>: View {
             }, openGateway: openGateway)
         case nil where model.viewModel.loading:
             LoadingView().frame(maxWidth: .infinity, maxHeight: .infinity)
-        case nil, .other, .finished:
+        case nil, .review, .other, .finished:
             content
                 .modifier(ReplacedAgentOffer(model: model, plugins: plugins))
         }

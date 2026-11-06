@@ -73,7 +73,7 @@ struct OnboardingView: View {
                                        plugins: plugins, send: model.send) { confirmation in
                         confirmInstall(confirmation, nil)
                     }
-                case .finished, .other, nil:
+                case .review, .finished, .other, nil:
                     EmptyView()
                 }
             }
@@ -106,7 +106,7 @@ struct OnboardingView: View {
             }
         case .model, .apps:
             model.send(.continueOnboarding)
-        case .finished, .other, nil:
+        case .review, .finished, .other, nil:
             break
         }
     }

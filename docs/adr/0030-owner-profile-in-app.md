@@ -11,7 +11,8 @@ ADR-0022 让主人改 `.env` 再执行 `install.sh` 来配显示名和邮箱。�
 
 - **资料存在核心里。** 显示名和邮箱和用户名一起记在 `<数据目录>/core/owner.json`，原子写入，随数据目录备份和恢复。`WONTON_OWNER_EMAIL`、`WONTON_OWNER_DISPLAY_NAME` 不再存在。用户名仍按 ADR-0022 固定，App 里只读。
 - **接口。** `GET`、`PUT /_wonton/api/owner-profile`（`wonton-protocol` 的 `OwnerProfile`、`OwnerProfileUpdate`），鉴权同插件管理接口：主人令牌，或者经隧道的已配对设备，且不是别的网页发起的。规则只在核心写一处，不合规则回 400 `invalid_input`，原因由 App 原样显示。
-- **两项都要写。** 填过以后只能改，不能改回没有：邮箱清掉后，要邮箱的插件重建时会失败，这个状态没有用处。
+- **名字必填，邮箱选填。** 邮箱留空不报错，填了才查格式（主人 2026-11-06 定：不装要邮箱的应用的人用不着它）。填过以后只能改，不能清空：邮箱清掉后，要邮箱的插件重建时会失败，这个状态没有用处。
+- **显示名也是聊天里的名字。** App 保存资料后，把主人 Matrix 账号的显示名设成同一个，Agent 和聊天里看到的就是它，不是用户名。
 - **没填时。** 没有邮箱（ADR-0022 不兜底的规则不变）；OIDC 的 `name` 和代登录的 `{name}` 用用户名，不再是写死的 `Owner`。
 - **改了就生效。** OIDC 声明和代登录的请求头每次都从记录里取，下一次登录就是新值。容器里的 `WONTON_OWNER_EMAIL` 仍是建容器时的快照，核心不因此重建插件。
 - **缺资料不算“装不了”。** 预览放在 `InstallPreview.missing_profile`，不放 `blocked`：`blocked` 是这台主机上装不了，这里填了就能装。App 在安装页显示这句话和“填写资料”按钮，填完重新预览。真的走到安装时是错误类别 `owner_profile_incomplete`（409），和 `unsupported` 分开。

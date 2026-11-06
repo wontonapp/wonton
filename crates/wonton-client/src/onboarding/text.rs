@@ -25,6 +25,7 @@ pub(crate) fn title(step: OnboardingStep, language: Language) -> String {
         OnboardingStep::Agent => ("选 Agent", "Choose an agent"),
         OnboardingStep::Model => ("接模型", "Connect a model"),
         OnboardingStep::Apps => ("选应用", "Choose apps"),
+        OnboardingStep::Review => ("确认", "Review"),
         OnboardingStep::Finished => ("完成", "Finished"),
         OnboardingStep::Other => ("引导", "Onboarding"),
     };

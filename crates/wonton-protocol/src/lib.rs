@@ -75,13 +75,20 @@ pub use lan::{
     LanProblem, LanProtocol, LanSettings,
 };
 pub use onboarding::{
-    AgentLogin, MODEL_PROVIDERS_PATH, ModelProvider, ModelProviderFailure, ModelProviderKey,
-    ModelProviderProblem, ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent,
-    OnboardingAgentRow, OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingStep,
-    OnboardingTip, OnboardingTips, OnboardingUpdate, OnboardingViewModel, ReplacedAgent, StepNav,
-    model_provider_path,
+    AgentLogin, CUSTOM_MODEL_PROVIDER_PATH, CUSTOM_MODEL_PROVIDER_TEST_PATH,
+    ConfiguredModelProvider, CustomModelProvider, MODEL_PROVIDERS_PATH, ModelProvider,
+    ModelProviderFailure, ModelProviderInput, ModelProviderKey, ModelProviderProblem,
+    ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
+    OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
+    OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
+    OnboardingReview, OnboardingReviewItem, OnboardingReviewKind, OnboardingStep, OnboardingTip,
+    OnboardingTips, OnboardingUpdate, OnboardingViewModel, ReplacedAgent, StepNav,
+    model_provider_path, model_provider_test_path,
 };
-pub use owner::{OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate};
+pub use owner::{
+    OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate, check_display_name, check_email,
+    normalized_email,
+};
 pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;
 pub use plugin::{

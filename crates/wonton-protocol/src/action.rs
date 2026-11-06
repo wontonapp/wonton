@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, OnboardingTip,
-    PushEndpoint, Rgb, SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
+    Answer, DeviceNetwork, FileId, FontStyle, ImageUpload, InstallPreview, ModelProviderInput,
+    OnboardingTip, PushEndpoint, Rgb, SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode,
+    UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -145,20 +146,33 @@ pub enum Action {
     // 新用户引导（ADR-0034）。网络操作都在后台执行，进展和结果在 `OnboardingViewModel` 里。
     /// 取引导的状态、推荐清单和服务商列表。
     RefreshOnboarding,
-    /// 主人在设置里选了重看：从头走一遍，已经做过的不会撤销。
+    /// 主人在设置里选了重看：从头走一遍，每一步显示现在的设置，点完成之前什么都不改。
     RestartOnboarding,
-    /// 选中一个 Agent（[`OnboardingAgentRow::id`](crate::OnboardingAgentRow::id)）。要安装时壳接着走现有的确认页。
+    /// 选中一个 Agent（[`OnboardingAgentRow::id`](crate::OnboardingAgentRow::id)）。没装的点完成时安装。
     ChooseOnboardingAgent { id: String },
-    /// 做完这一步，到下一步。选 Agent 这一步同时把选中的记成默认 Agent。
+    /// 记下这一步的选择，到下一步。最后一页上是“完成”：一起执行所有选择；执行完了再发一次是离开引导。
     ContinueOnboarding,
     /// 跳过这一步，不算做完：没接模型时 Agent 的私聊照常说明要接模型。
     SkipOnboardingStep,
-    /// 回到上一步。已经生效的不撤销（选的默认 Agent、保存的 key、发起的安装）。
+    /// 回到上一步，记下的选择还在。
     BackOnboardingStep,
-    /// 选中或者取消一项需求。
+    /// 选中或者取消一项需求。选中的需求推荐的插件，点完成时安装。
     ToggleOnboardingNeed { id: String },
     /// 保存一个服务商的 key 并测试。
     SaveModelProviderKey { id: String, key: SecretString },
+    /// 你的资料这一步改了名字或邮箱。只记下来，点完成时才保存。
+    EditOnboardingProfile { display_name: String, email: String },
+    /// 测试填的服务商，什么都不保存。测过了（包括连不上服务商）就记成这一步的选择；`then_continue` 为真时接着到下一步。
+    TestModelProvider {
+        input: ModelProviderInput,
+        then_continue: bool,
+    },
+    /// 选用模型网关里已经接好的模型（[`OnboardingModelChoice::Current`](crate::OnboardingModelChoice::Current)）。
+    UseCurrentModel,
+    /// 选用 Agent 官方程序的账号登录（[`AgentLogin::id`](crate::AgentLogin::id)）。
+    ChooseModelLogin { id: String },
+    /// 最后一页上重试失败的一项（[`OnboardingReviewItem::id`](crate::OnboardingReviewItem::id)）。
+    RetryOnboardingItem { id: String },
     /// 清掉 [`OnboardingModelStep::problem`](crate::OnboardingModelStep::problem)。
     DismissModelProviderProblem,
     /// 在设置里改默认 Agent。

@@ -28,11 +28,12 @@
 
 ### 流程
 
-配对之后依次是：你的资料（ADR-0030 的页面）、选 Agent、接模型、选需求和应用，然后进入和这个 Agent 的聊天。
+配对之后依次是：你的资料（ADR-0030 的页面）、选 Agent、接模型、选需求和应用、确认，然后进入和这个 Agent 的聊天。
 
-- 每一步都能跳过。跳过不伪装成完成：没接模型时，Agent 的私聊和“模型设置”照常说明要接模型（ADR-0008）。
-- 引导不等下载。Hermes 的镜像还在拉时可以照常往下走；走完时它还没好，聊天列表如实显示“安装中”（ADR-0007）。
-- 进度记在核心的 `core/onboarding.json`：第二台设备不重复，换一台服务器重新走。设置里能重看。
+- 每一步只记下选择，最后一页列出全部选择和应用要的权限，点完成才一起执行（ADR-0038 的“新用户引导”）。
+- 每一步都能跳过，跳过的那一步什么都不改。跳过不伪装成完成：没接模型时，Agent 的私聊和“模型设置”照常说明要接模型（ADR-0008）。
+- 引导不等下载。点完成后资料、模型和默认 Agent 先保存好，Agent 和应用在后台装，最后一页显示每一项的进展，可以直接进入聊天；Agent 还没好时，聊天列表如实显示“安装中”（ADR-0007）。
+- 走没走完记在核心的 `core/onboarding.json`：第二台设备不重复，换一台服务器重新走。设置里能重看，重看时每一步显示现在的设置，已经配好的不跳过。
 - 接口是 `GET`、`PUT /_wonton/api/onboarding`，鉴权同 `owner-profile`：主人令牌，或者经隧道的已配对设备，且不是别的网页发起的。Bot 不能调。
 - 状态和判断都在客户端核心：`OnboardingViewModel` 给出当前步骤、列表和状态，壳只渲染，操作发回核心。行为测试覆盖步骤的顺序、跳过和各种失败。
 
@@ -40,10 +41,10 @@
 
 一页列表，每行是纯文字的名字和接模型的方式，如“Codex：ChatGPT 账号或 key”。默认选中第一项。
 
-- **名单来自官方索引的 `onboarding.agents`**（见“推荐清单”），加上已经装着的 Agent，不用发 App。第一批 Hermes、OpenClaw；ACP 桥做好后 Codex、Claude Code、omp；再后面 Kimi Code、Qwen Code、Gemini CLI、OpenCode。这里只列官方的，社区的 Agent 在商店里。
+- **名单来自官方索引的 `onboarding.agents`**（见“推荐清单”），加上已经装着的 Agent，不用发 App。只列在真实主机上冒烟通过的 Agent 插件。第一批 Hermes、OpenClaw；ACP 桥做好后 Codex、Claude Code、omp；再后面 Kimi Code、Qwen Code、Gemini CLI、OpenCode。这里只列官方的，社区的 Agent 在商店里。
 - **名字用文字，图标不用官方标志。** 标志由各家的商标规则约束，Claude Code 的条款只允许用纯文字说“运行 Claude Code”。新的 Agent 插件统一用首字母图标。
 - **“默认 Agent”只决定聊天列表里排第一的是谁。** 核心记下 `primary_agent`，不按它路由，也不特殊处理（ADR-0015）。设置里能改。
-- **Hermes 照旧预装（ADR-0007）。** 选了别的就再装一个，走 App 的安装确认页；新 Agent 能聊之后问一次要不要卸掉 Hermes，能省约 4 GB。卸载走原有流程。
+- **Hermes 照旧预装（ADR-0007）。** 选了别的，最后一页列出它的权限，点完成后在后台装上；新 Agent 能聊之后问一次要不要卸掉 Hermes，能省约 4 GB。卸载走原有流程。
 
 清单新增 `agent.login`，声明官方程序自己的账号登录。没写就是只能接模型网关：
 
@@ -73,7 +74,7 @@ x-wonton:
 
 Claude Code 的程序不打进我们发布的镜像：插件在第一次启动时下载官方原版，不修改。
 
-**填 key 是一页原生页面：** 选服务商、贴 key、保存时测试。服务商列表和保存由模型网关提供，核心不认识 magpie（ADR-0015），约定和 `credentials` 相同：命令在网关容器里执行，秘密走标准输入，看退出码。
+**填 key 是一页原生页面：** 选服务商、贴 key、测试。测试只测不存，key 留在客户端核心的内存里，点完成时才保存。服务商列表旁边并排一项“自定义”：填 OpenAI 兼容接口的 Base URL、key 和模型名，测试和保存同其他服务商。服务商列表、测试和保存由模型网关提供，核心不认识 magpie（ADR-0015），约定和 `credentials` 相同：命令在网关容器里执行，秘密走标准输入，看退出码。
 
 ```yaml
 x-wonton:
@@ -82,30 +83,38 @@ x-wonton:
       providers:
         list: [sh, /wonton/providers.sh, list]
         save: [sh, /wonton/providers.sh, save, "{id}"]
+        test: [sh, /wonton/providers.sh, test, "{id}"]
+        custom:
+          save: [sh, /wonton/providers.sh, custom-save]
+          test: [sh, /wonton/providers.sh, custom-test]
 ```
 
 | 命令 | 约定 |
 | --- | --- |
-| `list` | 标准输出一个 JSON：`{"presets":[{"id":"deepseek","title":"DeepSeek"}],"configured":["deepseek"]}`。`title` 是厂商的名字，不分语言 |
+| `list` | 标准输出一个 JSON：`{"presets":[{"id":"deepseek","title":"DeepSeek"}],"configured":["deepseek"]}`。`title` 是厂商的名字，不分语言；`configured` 里的每一项都在 `presets` 里，自定义的也是 |
 | `save` | 标准输入是 key。已有这个服务商时换 key，没有时新建，然后测试。退出码 0 成功；3 表示服务商拒绝了 key，这时不保留它；4 表示连不上服务商，key 已保存；其他表示网关自己出错 |
+| `test` | 标准输入是 key。只测试，网关里什么都不留下。退出码同 `save`，4 时也什么都没保存 |
+| `custom.save`、`custom.test` | 标准输入是一行 JSON：`{"base_url":…,"model":…,"key":…}`。退出码同 `save`、`test`；2 表示地址或模型名不合法。名字由网关定，之后出现在 `list` 的 `configured` 里。`custom` 可以不声明，这时 App 不显示“自定义” |
 
 | 核心接口 | 说明 |
 | --- | --- |
-| `GET /_wonton/api/models/providers` | 按“推荐清单”的白名单规则返回服务商及拿 key 的地址，另带网关里是否已接模型的 `any_configured` |
+| `GET /_wonton/api/models/providers` | 按“推荐清单”的白名单规则返回服务商及拿 key 的地址，另带网关里已经接好的 `configured`（包括白名单外的和自定义的）和支不支持自定义的 `custom` |
 | `PUT /_wonton/api/models/providers/{id}` | 请求体 `{"key":…}`，转给 `save`。核心不存 key，也不写进日志和审计 |
+| `POST /_wonton/api/models/providers/{id}/test` | 同上，转给 `test` |
+| `PUT`、`POST /_wonton/api/models/custom-provider[/test]` | 请求体 `{"base_url":…,"model":…,"key":…}`，转给 `custom.save`、`custom.test`。核心先查 `base_url` 是 http 或 https 的地址，模型名不为空 |
 
-错误分开：key 被拒是 `invalid_input`，连不上服务商是 `upstream_unavailable`（页面说明 key 已保存，仍能下一步），网关没就绪是 `models_unavailable`。鉴权同上。
+错误分开：key 被拒是 `invalid_input`，连不上服务商是 `upstream_unavailable`（保存时 key 已保存；测试时什么都没存，这个选择照样记下，点完成时保存），网关没就绪或不支持自定义是 `models_unavailable`。鉴权同上。
 
 默认只显示推荐项；其余主流服务商收进“更多服务商”，点开就在原生页面展开，不打开网关网页。只有没有可显示的服务商（`providers` 为 `None` 或空列表）时才用 `web_url` 打开网关网页。过滤和推荐标记在 Rust 核心，两端壳只渲染。
 
-是否已接模型看 `any_configured`，不看可见列表项；清单外的服务商已配置也自动跳过这一步，从应用页返回时同样跳过。
+网关里已经接了模型（`configured` 不为空）时，这一步默认选“用现在的”，列出已接的服务商，可以换一个，也可以直接下一步；不再自动跳过这一步。
 
 ### 按需求推荐应用
 
-只问需求，可以多选：备份照片、听音乐、整理文档这些直接对应应用。选中的需求下面列出推荐的插件，每个有“安装”按钮。
+只问需求，可以多选：备份照片、听音乐、整理文档这些直接对应应用。选中的需求下面列出推荐的插件，点完成时装上，不用一个个点安装。
 
-- 安装走 App 现有的确认页，高权限醒目，确认后在后台进行，引导接着往下走。装好后的完成页有“放到底栏”（ADR-0033）。
-- 要邮箱的插件走 ADR-0030 的 `missing_profile`。
+- 最后一页列出每个要装的应用的权限和说明，内容同安装确认页（安装预览），高权限醒目。点完成就是确认，然后在后台装，每个应用显示排队、安装中、装好或失败；失败的写明类别、可以重试，别的照常装。
+- 要邮箱的插件在最后一页显示 ADR-0030 的 `missing_profile`，完成不能点：回资料页填邮箱，或者不选它。
 - 已经装的、这台主机装不了的（`blocked`）不列或者如实标出，不藏原因。
 - 官方索引取不到时，这一步说明原因，可以跳过。没有内置的后备清单：推荐的插件也要靠索引才能装，后备清单只能列出装不了的东西。
 - Bot 发起的安装不变：一律走确认卡片，主人点了才装，高权限也一样（ADR-0033）。

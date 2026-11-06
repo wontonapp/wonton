@@ -313,7 +313,7 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
 
     let update = OwnerProfileUpdate {
         display_name: "云吞".to_owned(),
-        email: "bad".to_owned(),
+        email: Some("bad".to_owned()),
     };
     let refused = core_error(400, "invalid_input", "不像邮箱");
     rig.core.answer(Method::PUT, PROFILE, refused);
@@ -332,7 +332,7 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     let saved = profile(Some("云吞"), Some("me@example.com"));
     rig.core.answer(Method::PUT, PROFILE, saved);
     let good = OwnerProfileUpdate {
-        email: "me@example.com".to_owned(),
+        email: Some("me@example.com".to_owned()),
         ..update
     };
     let profile = rig.app.save_owner_profile(good).await.unwrap();

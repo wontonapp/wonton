@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{OwnerProfile, OwnerProfileUpdate};
+use wonton_protocol::{
+    OwnerProfile, OwnerProfileUpdate, check_display_name, check_email, normalized_email,
+};
 
 /// 没配 `WONTON_OWNER_NAME`、数据目录里也没有记录时的用户名。
 pub const DEFAULT_USERNAME: &str = "owner";
@@ -70,8 +72,6 @@ pub const NO_EMAIL: &str = "你还没填邮箱：在 App 的设置里填好再�
 /// 安装页上的说明，旁边就是去填的按钮。
 pub const EMAIL_NEEDED: &str = "这个应用要用你的邮箱，填好才能装";
 
-const MAX_DISPLAY_NAME_CHARS: usize = 64;
-
 /// 可移植的 POSIX 用户名（`^[a-z][a-z0-9_-]{0,31}$`），同时是合法的 Matrix localpart。
 pub fn check_username(name: &str) -> Result<(), String> {
     let mut bytes = name.bytes();
@@ -96,32 +96,6 @@ pub fn check_not_reserved(name: &str) -> Result<(), String> {
         return Err(format!(
             "{name} 是 Matrix 服务器自用的账号，登录会进到那个账号：换一个名字"
         ));
-    }
-    Ok(())
-}
-
-/// 不验证能不能收信，只挡住明显不是邮箱的值：它会原样进 OIDC 声明和请求头。
-pub fn check_email(email: &str) -> Result<(), String> {
-    let valid = email.split_once('@').is_some_and(|(local, domain)| {
-        !local.is_empty() && !domain.is_empty() && !domain.contains('@')
-    }) && !email.chars().any(|c| c.is_whitespace() || c.is_control());
-    if valid {
-        Ok(())
-    } else {
-        Err("不像邮箱：写成 me@example.com 这样，没有空白和控制字符".to_owned())
-    }
-}
-
-/// 显示名会原样进 OIDC 声明和代登录的请求头，有控制字符时写不进 HTTP。
-pub fn check_display_name(name: &str) -> Result<(), String> {
-    if name.is_empty() {
-        return Err("名字不能为空".to_owned());
-    }
-    if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
-        return Err(format!("名字太长：最多 {MAX_DISPLAY_NAME_CHARS} 个字"));
-    }
-    if name.chars().any(char::is_control) {
-        return Err("名字里不能有换行和控制字符".to_owned());
     }
     Ok(())
 }
@@ -243,14 +217,21 @@ impl OwnerStore {
     /// 校验、写盘、再换内存里的值：写不进去时还是原来的身份。
     pub fn update(&self, update: &OwnerProfileUpdate) -> Result<OwnerProfile, ProfileError> {
         let display_name = update.display_name.trim();
-        let email = update.email.trim();
+        let email = normalized_email(update.email.as_deref());
         check_display_name(display_name).map_err(ProfileError::Invalid)?;
-        check_email(email).map_err(ProfileError::Invalid)?;
+        if let Some(email) = email {
+            check_email(email).map_err(ProfileError::Invalid)?;
+        }
         let mut profile = self.profile.write().expect("身份记录锁中毒");
+        if email.is_none() && profile.1.is_some() {
+            return Err(ProfileError::Invalid(
+                "邮箱填过以后只能改，不能清空：要邮箱的应用重建时会用到它".to_owned(),
+            ));
+        }
         let record = Record {
             username: self.username.clone(),
             display_name: Some(display_name.to_owned()),
-            email: Some(email.to_owned()),
+            email: email.map(str::to_owned),
         };
         write_record(&self.state_dir, &record).map_err(|source| ProfileError::Write {
             path: self.state_dir.join(RECORD),
@@ -396,7 +377,7 @@ mod tests {
     ) -> Result<OwnerProfile, ProfileError> {
         store.update(&OwnerProfileUpdate {
             display_name: name.to_owned(),
-            email: email.to_owned(),
+            email: Some(email.to_owned()),
         })
     }
 
@@ -432,7 +413,6 @@ mod tests {
             ("  ", "new@example.com"),
             (too_long.as_str(), "new@example.com"),
             ("a\nb", "new@example.com"),
-            ("新", ""),
             ("新", "not-an-email"),
         ] {
             assert!(matches!(
@@ -441,6 +421,23 @@ mod tests {
             ));
         }
         assert_eq!(store.owner().display_name, "你");
+        assert_eq!(store.email().as_deref(), Some("me@example.com"));
+    }
+
+    #[test]
+    fn the_email_is_optional_until_it_is_filled_in() {
+        let dir = tempfile::tempdir().unwrap();
+        lock_username(dir.path(), None).unwrap();
+        let store = OwnerStore::open(dir.path()).unwrap();
+        let saved = filled_in(&store, "你", "  ").unwrap();
+        assert_eq!(saved.display_name.as_deref(), Some("你"));
+        assert_eq!(saved.email, None);
+
+        filled_in(&store, "你", "me@example.com").unwrap();
+        assert!(matches!(
+            filled_in(&store, "你", ""),
+            Err(ProfileError::Invalid(_))
+        ));
         assert_eq!(store.email().as_deref(), Some("me@example.com"));
     }
 
@@ -499,15 +496,6 @@ mod tests {
             "", "Alice", "a/b", "a+b", "a=b", "a.b", "a b", "1a", "_a", "-a", "张三", &too_long,
         ] {
             assert!(check_username(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn emails_are_checked_for_shape_only() {
-        assert_eq!(check_email("me@example.com"), Ok(()));
-        assert_eq!(check_email("me@localhost"), Ok(()));
-        for bad in ["", "me", "@example.com", "me@", "a@b@c", "a b@c", "a@b\n"] {
-            assert!(check_email(bad).is_err(), "{bad:?}");
         }
     }
 

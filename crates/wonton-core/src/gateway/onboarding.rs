@@ -75,8 +75,8 @@ impl OnboardingState {
         let _guard = self.lock.lock().await;
         let mut state = self.load_locked()?;
         if let Some(step) = update.step {
-            if step == OnboardingStep::Other {
-                return Err(InstallError::Invalid("step 不支持 other".to_owned()));
+            if matches!(step, OnboardingStep::Review | OnboardingStep::Other) {
+                return Err(InstallError::Invalid(format!("step 不支持 {step:?}")));
             }
             state.step = step;
         }

@@ -141,6 +141,13 @@ impl OnboardingLink {
             Action::SetPrimaryAgent { id } => self.set_primary(&id),
             Action::DismissReplacedAgentOffer => self.dismiss_replaced(),
             Action::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
+            Action::EditOnboardingProfile { .. }
+            | Action::TestModelProvider { .. }
+            | Action::UseCurrentModel
+            | Action::ChooseModelLogin { .. }
+            | Action::RetryOnboardingItem { .. } => {
+                Err(invalid("这个版本的客户端核心不支持这个引导操作"))
+            }
             _ => Err(invalid("不是新用户引导操作")),
         }
     }

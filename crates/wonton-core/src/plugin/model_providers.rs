@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use serde::Deserialize;
-use wonton_protocol::{ModelProvider, ModelProviders};
+use wonton_protocol::{ConfiguredModelProvider, ModelProvider, ModelProviders};
 
 use super::PluginId;
 use super::languages::Languages;
@@ -48,16 +48,21 @@ impl PluginManager {
                 providers: None,
                 any_configured: false,
                 web_url: self.model_web_url(&route.id),
+                configured: Vec::new(),
+                custom: false,
             });
         };
         let listed = self.list_providers(&route, commands).await?;
         let (index, _) = self.official_index().await;
         let any_configured = !listed.configured.is_empty();
+        let configured = configured_providers(&listed);
         let providers = merge_providers(listed, index.onboarding.as_ref(), langs);
         Ok(ModelProviders {
             providers: Some(providers),
             any_configured,
             web_url: self.model_web_url(&route.id),
+            configured,
+            custom: false,
         })
     }
 
@@ -168,6 +173,22 @@ fn validate_key(key: &str) -> Result<(), InstallError> {
 fn replace(args: &[String], placeholder: &str, value: &str) -> Vec<String> {
     args.iter()
         .map(|arg| arg.replace(placeholder, value))
+        .collect()
+}
+
+/// 网关里已经接好的，按网关的顺序；名字取 `presets` 里的，没有时用 ID。
+fn configured_providers(listed: &ProviderList) -> Vec<ConfiguredModelProvider> {
+    listed
+        .configured
+        .iter()
+        .map(|id| ConfiguredModelProvider {
+            id: id.clone(),
+            title: listed
+                .presets
+                .iter()
+                .find(|preset| preset.id == *id)
+                .map_or_else(|| id.clone(), |preset| preset.title.clone()),
+        })
         .collect()
 }
 

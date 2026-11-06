@@ -4,8 +4,8 @@ use std::collections::HashSet;
 
 use wonton_protocol::{
     ChatViewModel, Onboarding, OnboardingAgent, OnboardingAgentRow, OnboardingModelStep,
-    OnboardingNeedRow, OnboardingStep, OnboardingTip, OnboardingViewModel, PluginState,
-    ReplacedAgent, StepNav,
+    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingStep, OnboardingTip,
+    OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
 };
 
 use super::{LocalState, storage, text};
@@ -69,6 +69,8 @@ pub(super) fn render(
         providers: state.providers.clone(),
         logins: selected_agent_data.map_or_else(Vec::new, |agent| agent.logins.clone()),
         saving: state.saving.clone(),
+        choice: None,
+        testing: false,
         problem: state.model_problem.clone(),
     };
     let needs = onboarding
@@ -88,9 +90,11 @@ pub(super) fn render(
         loading: state.loading,
         problem: state.problem.clone(),
         catalog_problem: onboarding.catalog_problem.clone(),
+        profile: OnboardingProfileStep::default(),
         agents,
         model,
         needs,
+        review: OnboardingReview::default(),
         primary_bot_user_id: primary_bot.clone(),
         chat_prompts,
         replaced_agent: replaced_agent(onboarding),
@@ -115,7 +119,7 @@ fn navigation(
                 .is_some_and(|providers| providers.any_configured),
         ),
         OnboardingStep::Apps => (4, true),
-        OnboardingStep::Finished | OnboardingStep::Other => return None,
+        OnboardingStep::Review | OnboardingStep::Finished | OnboardingStep::Other => return None,
     };
     let ready = !state.loading && state.saving.is_none();
     Some(StepNav {
@@ -185,7 +189,9 @@ pub(super) fn next_step(
         OnboardingStep::Agent => Ok(OnboardingStep::Model),
         OnboardingStep::Model => Ok(OnboardingStep::Apps),
         OnboardingStep::Apps => Ok(OnboardingStep::Finished),
-        OnboardingStep::Finished | OnboardingStep::Other => Err(super::invalid("这一步不能继续")),
+        OnboardingStep::Review | OnboardingStep::Finished | OnboardingStep::Other => {
+            Err(super::invalid("这一步不能继续"))
+        }
     }
 }
 

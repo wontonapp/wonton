@@ -196,7 +196,7 @@ async fn filling_in_the_email_lets_the_plugin_install_with_it() {
         .profile
         .update(&OwnerProfileUpdate {
             display_name: "云吞".into(),
-            email: "filled@example.com".into(),
+            email: Some("filled@example.com".into()),
         })
         .unwrap();
     let preview = m
