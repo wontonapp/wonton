@@ -8,10 +8,12 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../../.." && pwd)"
 # 引导清单跟着 wonton-store 的这个提交，不跟 main。要换引导时改这里。
-store_commit=e811f86057e7add1be0d93bcaa46144362fb865e
+store_commit=d2531495e490cc7e9f8845676ecb853d8c214785
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2
   geraldpeng6/wonton-plugin-hermes@v0.5.4
+  geraldpeng6/wonton-plugin-openclaw@v0.1.0
+  geraldpeng6/wonton-plugin-omp@v0.1.0
   geraldpeng6/wonton-plugin-immich@v0.2.0
   geraldpeng6/wonton-plugin-navidrome@v0.1.1
   geraldpeng6/wonton-plugin-paperless-ngx@v0.1.2
