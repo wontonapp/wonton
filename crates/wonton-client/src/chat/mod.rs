@@ -44,13 +44,13 @@ use wonton_protocol::{
 };
 
 pub use bots::bot_current_avatar;
-pub(crate) use confirmation::{PushedCard, pushed_card};
+pub(crate) use confirmation::{PushedCard, core_account, pushed_card};
 pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
-use confirmation::{Answers, Cards, core_account};
+use confirmation::{Answers, Cards};
 use storage::ChatStorage;
 use view::{core_error, room_row, sort_rooms};
 

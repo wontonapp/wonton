@@ -85,7 +85,7 @@ impl Answers {
 }
 
 /// 核心账号：和登录的账号 `own_user` 在同一台服务器上。
-pub(super) fn core_account(own_user: &UserId) -> OwnedUserId {
+pub(crate) fn core_account(own_user: &UserId) -> OwnedUserId {
     format!("@{CORE_LOCALPART}:{}", own_user.server_name())
         .parse()
         .expect("the account's server name with the fixed core localpart is still a valid user ID")

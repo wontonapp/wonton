@@ -16,7 +16,9 @@ use super::package::PluginPackage;
 use super::proxy_auth::McpHeaders;
 use super::secrets::Secrets;
 use super::store::StoreError;
-use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PublicUrls};
+use crate::config::{
+    PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PublicUrls,
+};
 use crate::http::HttpError;
 
 /// MCP 服务没写 `path` 时的路径。
@@ -157,6 +159,9 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
     }
     if granted(Permission::PluginsHealth) {
         aliases.push(crate::config::PLUGIN_HEALTH_HOST.to_owned());
+    }
+    if granted(Permission::Notify) {
+        aliases.push(PLUGIN_NOTIFY_HOST.to_owned());
     }
     aliases
 }

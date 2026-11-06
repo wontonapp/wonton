@@ -353,6 +353,13 @@ impl PluginManager {
                 let port = self.cfg.gateway_port;
                 format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)
             }),
+            notify_url: manifest.permissions.contains(&Permission::Notify).then(|| {
+                let port = self.cfg.gateway_port;
+                format!(
+                    "http://{}:{port}/notices",
+                    crate::config::PLUGIN_NOTIFY_HOST
+                )
+            }),
             secrets: generated,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,

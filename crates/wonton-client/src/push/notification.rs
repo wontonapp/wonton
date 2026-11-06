@@ -6,14 +6,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
-use wonton_matrix::{MatrixSession, MessageBody, OwnedEventId, OwnedRoomId};
+use serde_json::{Map, Value};
+use wonton_matrix::{MatrixSession, MessageBody, OwnedEventId, OwnedRoomId, UserId};
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, MessageSummary, NotificationCategory,
-    PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, MessageSummary, NOTICE_FIELD,
+    NotificationCategory, PluginNotice, PushContent, PushNotification,
 };
 
 use super::PushLink;
-use crate::chat::{PushedCard, failure, pushed_card, summary};
+use crate::chat::{PushedCard, core_account, failure, pushed_card, summary};
 
 /// 等 Matrix 会话就绪最多这么久：推送唤醒的进程要先建好本地代理、从本机恢复会话。
 const SESSION_WAIT: Duration = Duration::from_secs(12);
@@ -97,6 +98,7 @@ impl PushLink {
             PushedCard::Waiting(card) => Some(card),
             PushedCard::Expired => return Ok(None),
         };
+        let notice = plugin_notice(session.user_id(), &message.sender, &message.custom);
         let content = match message.body {
             MessageBody::Undecryptable => PushContent::Unavailable {
                 reason: ChatFailure::NotReady,
@@ -114,6 +116,8 @@ impl PushLink {
             room_name: message.room_name,
             category: if confirmation.is_some() {
                 NotificationCategory::Confirmation
+            } else if notice.is_some() {
+                NotificationCategory::PluginNotice
             } else {
                 NotificationCategory::Message
             },
@@ -172,5 +176,56 @@ fn push_text(summary: MessageSummary) -> String {
 fn invalid(reason: &str) -> CoreError {
     CoreError::InvalidInput {
         reason: reason.to_owned(),
+    }
+}
+
+/// 核心账号发的、带插件通知字段且读得懂的消息（ADR-0047）。别人发的同样结构的内容当普通消息；比这个 App 新的核心
+/// 写的、读不懂的也是：`body` 是写给其他客户端看的纯文本，主人看得到。
+fn plugin_notice(
+    own_user: &UserId,
+    sender: &UserId,
+    custom: &Map<String, Value>,
+) -> Option<PluginNotice> {
+    if sender != core_account(own_user) {
+        return None;
+    }
+    serde_json::from_value(custom.get(NOTICE_FIELD)?.clone()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use wonton_matrix::OwnedUserId;
+
+    use super::*;
+
+    fn custom(field: Value) -> Map<String, Value> {
+        [(NOTICE_FIELD.to_owned(), field)].into_iter().collect()
+    }
+
+    fn field() -> Value {
+        json!({
+            "plugin_id": "app.example.monitor",
+            "plugin_name": "Monitor",
+            "level": "warning",
+            "title": "磁盘快满了",
+        })
+    }
+
+    #[test]
+    fn only_the_core_accounts_structured_messages_are_plugin_notices() {
+        let owner: OwnedUserId = "@owner:test".parse().unwrap();
+        let core: OwnedUserId = "@wonton-core:test".parse().unwrap();
+        let stranger: OwnedUserId = "@stranger:test".parse().unwrap();
+        assert!(plugin_notice(&owner, &core, &custom(field())).is_some());
+        // 别人发的同样结构当普通消息。
+        assert!(plugin_notice(&owner, &stranger, &custom(field())).is_none());
+        // 别的服务器上同名账号发的也不是。
+        let other_server: OwnedUserId = "@wonton-core:other.example".parse().unwrap();
+        assert!(plugin_notice(&owner, &other_server, &custom(field())).is_none());
+        // 核心发的、读不懂的当普通消息。
+        assert!(plugin_notice(&owner, &core, &custom(json!({"level": "warning"}))).is_none());
+        // 没有这个字段的是普通消息。
+        assert!(plugin_notice(&owner, &core, &Map::new()).is_none());
     }
 }

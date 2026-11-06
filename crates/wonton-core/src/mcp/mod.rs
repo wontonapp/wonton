@@ -44,6 +44,7 @@ pub use agent_permission::AgentPermissionError;
 use audit::{Audit, AuditedFile, Basis, Decision, Grounds, Record};
 use cards::Draft;
 pub use cards::content as card_content;
+pub use cards::text as card_text;
 pub use confirm::{AnswerError, Confirmations, Notifier};
 pub use notifier::NoMatrix;
 pub use server::Caller;

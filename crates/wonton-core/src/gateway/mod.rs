@@ -6,6 +6,7 @@
 //! | `auth.<base>` | 身份提供方（Ory Hydra）的公开端点 |
 //! | `matrix.<base>` | Matrix 客户端接口，只给经隧道的已配对设备（`matrix`） |
 //! | `push.wonton.internal` | 推送代理，只给 Tuwunel（`push`） |
+//! | `notify.wonton.internal` | 插件发通知进"Wonton"私聊，只放行申请了 `notify` 的插件（`notify`） |
 //! | `<slug>.<base>` | 插件网页，需要插件会话 |
 //!
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
@@ -33,6 +34,8 @@ pub mod matrix;
 mod mcp;
 mod model_providers;
 mod models;
+mod notify;
+mod notify_limit;
 mod onboarding;
 mod owner_profile;
 mod pages;
@@ -98,6 +101,10 @@ pub struct Gateway {
     pub push: Option<Arc<Push>>,
     /// MCP 总线；没启用时 `mcp.wonton.internal` 如实报不可用。
     pub mcp: Option<crate::mcp::Endpoint>,
+    /// 通知房间；没接 Matrix 时插件发通知如实报不可用。
+    pub notices: Option<Arc<crate::matrix::NoticeRoom>>,
+    /// 插件通知的频率限制（ADR-0047），计数只在内存里。
+    notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
     /// tusd 的 `host:port`；没配置时上传如实报不可用。
@@ -147,6 +154,8 @@ impl Gateway {
             )),
             push: None,
             mcp: None,
+            notices: None,
+            notify_limiter: notify_limit::Limiter::default(),
             files: None,
             tusd: None,
             upgrades: None,
@@ -187,6 +196,13 @@ impl Gateway {
     #[must_use]
     pub fn with_mcp(mut self, mcp: Option<crate::mcp::Endpoint>) -> Self {
         self.mcp = mcp;
+        self
+    }
+
+    /// 接上通知房间：`notify.wonton.internal` 这才可用（ADR-0047）。
+    #[must_use]
+    pub fn with_notices(mut self, notices: Option<Arc<crate::matrix::NoticeRoom>>) -> Self {
+        self.notices = notices;
         self
     }
 
@@ -282,6 +298,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::Push => push::gateway_request(&gateway, req).await,
         HostKind::PluginMcp => mcp::request(&gateway, req).await,
         HostKind::PluginHealth => health::request(&gateway, req).await,
+        HostKind::PluginNotify => notify::request(&gateway, req).await,
         HostKind::FileHooks => files::hook_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
@@ -483,6 +500,8 @@ mod mcp_tests;
 mod model_providers_tests;
 #[cfg(test)]
 mod models_tests;
+#[cfg(test)]
+mod notify_tests;
 #[cfg(test)]
 mod oidc_consent_tests;
 #[cfg(test)]

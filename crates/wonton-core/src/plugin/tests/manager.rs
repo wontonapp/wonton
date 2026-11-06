@@ -384,13 +384,13 @@ async fn every_declared_permission_must_be_confirmed() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager(&dir);
     let share = package(
-        "  web:\n    image: nginx",
+        "  web:\n    image: nginx\n    environment:\n      NOTIFY: ${WONTON_NOTIFY_URL}",
         "  permissions: ['storage.share.photos:read', 'notify']",
     );
     let photos = vec!["storage.share.photos:read".parse().unwrap()];
     let err = m.install(&share, &photos).await.unwrap_err();
     assert!(
-        matches!(err, InstallError::PermissionNotGranted(ref p) if p == &["notify"]),
+        matches!(&err, InstallError::PermissionNotGranted(p) if p == &["notify"]),
         "{err}"
     );
     let extra = vec!["models".parse().unwrap()];
@@ -398,17 +398,21 @@ async fn every_declared_permission_must_be_confirmed() {
         m.install_package(example("whoami"), &extra).await,
         Err(InstallError::Invalid(_))
     ));
+    // notify 核心能兑现（ADR-0047）：授权后能装，环境里有发通知的地址。
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
     let all = vec![
         "storage.share.photos:read".parse().unwrap(),
         "notify".parse().unwrap(),
     ];
-    let err = m.install(&share, &all).await.unwrap_err();
+    m.install(&share, &all).await.unwrap();
+    assert_eq!(m.list().len(), 1);
+    let env = env_of_container(&docker, &container_name("app-test", "web"));
     assert_eq!(
-        err.kind(),
-        "unsupported",
-        "M0 不能兑现 notify，必须如实拒绝：{err}"
+        env["NOTIFY"],
+        format!("http://{}:8080/notices", crate::config::PLUGIN_NOTIFY_HOST)
     );
-    assert!(m.list().is_empty(), "被拒的安装不能留下记录");
 }
 
 #[tokio::test]

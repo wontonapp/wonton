@@ -208,6 +208,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
             default_model: "group/default".into(),
         }),
         mcp_url: None,
+        notify_url: None,
         secrets: [("web_key".to_owned(), "generated-secret-value".to_owned())].into(),
         tz: "UTC".into(),
         puid: 1000,

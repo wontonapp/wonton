@@ -30,6 +30,7 @@ use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
 use super::requirements::Requirements;
 use super::vars::injected_vars;
+pub use super::vars::{MatrixVars, ModelVars, OidcVars, OwnerVars};
 
 /// 容器是插件的哪个服务。
 pub const LABEL_SERVICE: &str = "wonton.service";
@@ -74,78 +75,6 @@ pub(super) fn service_err(service: &str, message: impl Into<String>) -> RenderEr
     }
 }
 
-/// 注入给 OIDC 客户端的配置。`Debug` 不打印客户端密钥。
-#[derive(Clone, PartialEq, Eq)]
-pub struct OidcVars {
-    pub issuer: String,
-    pub client_id: String,
-    pub client_secret: String,
-    pub auth_url: String,
-    pub token_url: String,
-    pub userinfo_url: String,
-}
-
-impl std::fmt::Debug for OidcVars {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OidcVars")
-            .field("issuer", &self.issuer)
-            .field("client_id", &self.client_id)
-            .finish_non_exhaustive()
-    }
-}
-
-/// 注入给插件的主人身份（[`Manifest::gets_owner_identity`]），和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OwnerVars {
-    pub name: String,
-    pub email: Option<String>,
-}
-
-/// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
-#[derive(Clone, PartialEq, Eq)]
-pub struct MatrixVars {
-    pub homeserver: String,
-    pub user_id: String,
-    pub access_token: String,
-    pub owner: String,
-    pub home_room: String,
-}
-
-impl std::fmt::Debug for MatrixVars {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MatrixVars")
-            .field("homeserver", &self.homeserver)
-            .field("user_id", &self.user_id)
-            .field("owner", &self.owner)
-            .field("home_room", &self.home_room)
-            .finish_non_exhaustive()
-    }
-}
-
-/// 注入给使用方的模型网关配置（`models`）。`Debug` 不打印凭据。
-#[derive(Clone, PartialEq, Eq)]
-pub struct ModelVars {
-    pub base_url: String,
-    pub anthropic_url: Option<String>,
-    pub gemini_url: Option<String>,
-    /// 插件级的凭据（凭据名是插件 `id`），全插件一份的服务用。
-    pub plugin_key: Option<String>,
-    /// 默认 Bot 的凭据（`<id>/default`），声明了 `bots` 时 Bot 服务用。
-    pub bot_key: Option<String>,
-    pub default_model: String,
-}
-
-impl std::fmt::Debug for ModelVars {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ModelVars")
-            .field("base_url", &self.base_url)
-            .field("anthropic_url", &self.anthropic_url)
-            .field("gemini_url", &self.gemini_url)
-            .field("default_model", &self.default_model)
-            .finish_non_exhaustive()
-    }
-}
-
 /// 安装环境：由核心配置和本次安装分配的资源决定。`Debug` 不打印其中的令牌和密钥。
 #[derive(Clone)]
 pub struct InstallContext {
@@ -170,6 +99,8 @@ pub struct InstallContext {
     pub models: Option<ModelVars>,
     /// 声明了 `tools` 时：MCP 总线的地址。
     pub mcp_url: Option<String>,
+    /// 声明了 `notify` 时：发通知的地址（ADR-0047）。
+    pub notify_url: Option<String>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
     pub tz: String,
@@ -207,6 +138,7 @@ impl std::fmt::Debug for InstallContext {
             .field("matrix", &self.matrix)
             .field("models", &self.models)
             .field("mcp_url", &self.mcp_url)
+            .field("notify_url", &self.notify_url)
             .field("secrets", &self.secrets.keys().collect::<Vec<_>>())
             .field("tz", &self.tz)
             .field("puid", &self.puid)
@@ -335,6 +267,10 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
             .permissions
             .contains(&Permission::Tools)
             .then(|| "http://mcp.wonton.internal/mcp".into()),
+        notify_url: manifest
+            .permissions
+            .contains(&Permission::Notify)
+            .then(|| "http://notify.wonton.internal/notices".into()),
         secrets: manifest
             .secrets
             .iter()

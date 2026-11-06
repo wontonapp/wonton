@@ -7,6 +7,78 @@ use super::names;
 use super::render::InstallContext;
 use super::secrets::secret_var;
 
+/// 注入给 OIDC 客户端的配置。`Debug` 不打印客户端密钥。
+#[derive(Clone, PartialEq, Eq)]
+pub struct OidcVars {
+    pub issuer: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub auth_url: String,
+    pub token_url: String,
+    pub userinfo_url: String,
+}
+
+impl std::fmt::Debug for OidcVars {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OidcVars")
+            .field("issuer", &self.issuer)
+            .field("client_id", &self.client_id)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 注入给插件的主人身份（[`Manifest::gets_owner_identity`]），和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnerVars {
+    pub name: String,
+    pub email: Option<String>,
+}
+
+/// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
+#[derive(Clone, PartialEq, Eq)]
+pub struct MatrixVars {
+    pub homeserver: String,
+    pub user_id: String,
+    pub access_token: String,
+    pub owner: String,
+    pub home_room: String,
+}
+
+impl std::fmt::Debug for MatrixVars {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MatrixVars")
+            .field("homeserver", &self.homeserver)
+            .field("user_id", &self.user_id)
+            .field("owner", &self.owner)
+            .field("home_room", &self.home_room)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 注入给使用方的模型网关配置（`models`）。`Debug` 不打印凭据。
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModelVars {
+    pub base_url: String,
+    pub anthropic_url: Option<String>,
+    pub gemini_url: Option<String>,
+    /// 插件级的凭据（凭据名是插件 `id`），全插件一份的服务用。
+    pub plugin_key: Option<String>,
+    /// 默认 Bot 的凭据（`<id>/default`），声明了 `bots` 时 Bot 服务用。
+    pub bot_key: Option<String>,
+    pub default_model: String,
+}
+
+impl std::fmt::Debug for ModelVars {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelVars")
+            .field("base_url", &self.base_url)
+            .field("anthropic_url", &self.anthropic_url)
+            .field("gemini_url", &self.gemini_url)
+            .field("default_model", &self.default_model)
+            .finish_non_exhaustive()
+    }
+}
+
 pub fn share_var(name: &str) -> String {
     format!(
         "WONTON_SHARE_{}",
@@ -64,6 +136,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(url) = &ctx.mcp_url {
         set("WONTON_MCP_URL", url.clone());
+    }
+    if let Some(url) = &ctx.notify_url {
+        set("WONTON_NOTIFY_URL", url.clone());
     }
     if let Some(grant) = &ctx.lan {
         set(lan::ADDRESSES_VAR, grant.var());

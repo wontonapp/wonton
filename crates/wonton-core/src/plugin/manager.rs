@@ -141,6 +141,7 @@ pub(super) fn supported(permission: &Permission) -> bool {
             | Permission::Models
             | Permission::Tools
             | Permission::PluginsHealth
+            | Permission::Notify
             | Permission::OwnerIdentity
             | Permission::DevicesGpu
             | Permission::NetworkLan
@@ -356,6 +357,15 @@ impl PluginManager {
     pub fn title(&self, id: &PluginId) -> Option<LocalizedText> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins.get(id).map(|entry| entry.title.clone())
+    }
+
+    /// 插件有没有网页：通知里带 `path` 的前提。
+    pub fn has_webui(&self, id: &PluginId) -> bool {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .is_some_and(|entry| entry.has_webui)
     }
 
     /// 是安装器预装的系统插件。

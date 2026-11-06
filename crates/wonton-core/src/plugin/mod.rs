@@ -90,6 +90,7 @@ mod tests;
 
 pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
 pub use manifest::{Manifest, Permission, PluginId};
+pub(crate) use manifest_tabs::validate_path;
 pub use mcp_server::{McpServer, ToolLimits};
 pub use package::PluginPackage;
 pub use proxy_auth::McpHeaders;

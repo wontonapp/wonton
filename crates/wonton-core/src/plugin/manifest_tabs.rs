@@ -106,7 +106,7 @@ pub(super) fn validate(
 /// 入口路径（`webui.path` 和 `tabs[].path` 共用）的规则：以 / 开头的绝对路径，可以带 `?query`；
 /// 不能有 `#`、空白、控制字符；URL 里不允许原样出现的字符（含非 ASCII）必须已经百分号编码——
 /// 核心原样拼接、不再编码。规则写在规范（wonton-docs）里，两边保持一致。
-pub(super) fn validate_path(field: &str, path: &str) -> Option<String> {
+pub(crate) fn validate_path(field: &str, path: &str) -> Option<String> {
     if !path.starts_with('/') {
         return Some(format!("{field} 必须以 / 开头"));
     }

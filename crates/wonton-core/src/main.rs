@@ -152,24 +152,16 @@ async fn serve() -> anyhow::Result<()> {
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
     let images =
         Arc::new(ImageWorker::current().context("找不到核心自己的可执行文件（处理图片要用）")?);
-    let manager = Arc::new(
-        PluginManager::new(
-            engine,
-            store,
-            http.clone(),
-            hydra.as_ref().map(|(h, _)| h.clone()),
-            lifecycle_config(&cfg, owner.clone()),
-            images.clone(),
-        )
-        .with_matrix(matrix.clone())
-        .with_host(HostPaths::new(cfg.host_dev.clone()))
-        .with_lan(lan_state(&cfg))
-        .with_egress(Egress::new(
-            cfg.egress_proxy.clone(),
-            cfg.egress_proxy_detected.clone(),
-        ))
-        .with_store(cfg.store.clone())
-        .with_upgrade_freeze(upgrades.frozen()),
+    let manager = plugin_manager(
+        &cfg,
+        engine,
+        store,
+        images.clone(),
+        http.clone(),
+        hydra.as_ref().map(|(h, _)| h.clone()),
+        matrix.clone(),
+        owner.clone(),
+        upgrades.frozen(),
     );
     manager.spawn_registry_mirror_probe();
     manager.restore().await.context("恢复已安装的插件")?;
@@ -178,13 +170,14 @@ async fn serve() -> anyhow::Result<()> {
     preinstall(&cfg, manager.clone(), upgrades.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
-    let notices = matrix.clone().map(|matrix| {
-        let saved = cfg.core_state_dir().join("matrix-notice-room");
-        Arc::new(NoticeRoom::new(matrix, &cfg.username, saved))
-    });
+    let notices = notice_room(&cfg, matrix.as_ref());
     let bus = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
-    let host = Arc::new(CoreHost::new(manager.clone(), bus.upstreams(), notices));
+    let host = Arc::new(CoreHost::new(
+        manager.clone(),
+        bus.upstreams(),
+        notices.clone(),
+    ));
     let files = open_files(&cfg, host, http.clone(), audit, images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
@@ -205,6 +198,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
+        .with_notices(notices)
         .with_files(Some(files))
         .with_tusd(cfg.tusd.clone())
         .with_upgrades(Some(upgrades)),
@@ -358,6 +352,48 @@ fn preinstall(
         }
     });
     Ok(())
+}
+
+/// 和主人的通知房间（ADR-0016）：插件通知、确认卡片都发进这里。没接 Matrix 时插件通知如实报不可用。
+fn notice_room(cfg: &Config, matrix: Option<&Arc<Matrix>>) -> Option<Arc<NoticeRoom>> {
+    matrix.map(|matrix| {
+        let saved = cfg.core_state_dir().join("matrix-notice-room");
+        Arc::new(NoticeRoom::new(matrix.clone(), &cfg.username, saved))
+    })
+}
+
+/// 核心的插件管理器，接上它在用的其余部件。
+#[allow(clippy::too_many_arguments)]
+fn plugin_manager(
+    cfg: &Config,
+    engine: Engine,
+    store: Store,
+    images: Arc<ImageWorker>,
+    http: HttpClient,
+    hydra: Option<Hydra>,
+    matrix: Option<Arc<Matrix>>,
+    owner: Arc<OwnerStore>,
+    upgrade_freeze: tokio::sync::watch::Receiver<bool>,
+) -> Arc<PluginManager> {
+    Arc::new(
+        PluginManager::new(
+            engine,
+            store,
+            http,
+            hydra,
+            lifecycle_config(cfg, owner),
+            images,
+        )
+        .with_matrix(matrix)
+        .with_host(HostPaths::new(cfg.host_dev.clone()))
+        .with_lan(lan_state(cfg))
+        .with_egress(Egress::new(
+            cfg.egress_proxy.clone(),
+            cfg.egress_proxy_detected.clone(),
+        ))
+        .with_store(cfg.store.clone())
+        .with_upgrade_freeze(upgrade_freeze),
+    )
 }
 
 /// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。
