@@ -1,4 +1,7 @@
 //! 底栏页面、页面状态和本机配置（ADR-0033）。
+//!
+//! 插件页面的重载计数只属于一台服务器，换机后从零开始。读取 home 身份期间固定其快照，
+//! 避免把新列表与旧身份组合；页面操作先消费输入，再修改底栏，不能把刚固定的页面当作旧缓存刷新。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -21,6 +24,9 @@ use config::*;
 
 mod view;
 use view::*;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone)]
 struct Fullscreen {
@@ -50,8 +56,9 @@ struct TabsState {
 
 pub(crate) struct TabsLink {
     runtime: Handle,
-    home: Arc<HomeLink>,
+    home: watch::Receiver<HomeViewModel>,
     plugins: Arc<PluginsLink>,
+    plugins_view: watch::Receiver<PluginsViewModel>,
     path: PathBuf,
     view: watch::Sender<TabsViewModel>,
     state: Mutex<TabsState>,
@@ -101,7 +108,8 @@ impl TabsLink {
         };
         let link = Arc::new(Self {
             runtime: runtime.clone(),
-            home,
+            home: home.subscribe(),
+            plugins_view: plugins.subscribe(),
             plugins,
             path,
             view: watch::Sender::new(empty_view()),
@@ -382,8 +390,8 @@ impl TabsLink {
     }
 
     fn spawn_watchers(self: &Arc<Self>) {
-        let mut plugins = self.plugins.subscribe();
-        let mut home = self.home.subscribe();
+        let mut plugins = self.plugins_view.clone();
+        let mut home = self.home.clone();
         let weak = Arc::downgrade(self);
         self.runtime.spawn(async move {
             loop {
@@ -397,10 +405,15 @@ impl TabsLink {
         });
     }
 
+    fn inputs(&self) -> (PluginsViewModel, HomeViewModel) {
+        // 新服务器的列表只能在 home 发布身份后到达；读完列表前不让身份切换。
+        let home = self.home.borrow();
+        (self.plugins_view.borrow().clone(), home.clone())
+    }
+
     fn recompute(&self) {
         let _writing = lock(&self.writing);
-        let plugins = self.plugins.view();
-        let home = self.home.view();
+        let (plugins, home) = self.inputs();
         let mut state = lock(&self.state).clone();
         let config_changed = refresh_state(&mut state, &plugins, &home);
         if config_changed {
@@ -419,12 +432,12 @@ impl TabsLink {
         F: FnOnce(&mut TabsState, &PluginsViewModel) -> Result<(), CoreError>,
     {
         let _writing = lock(&self.writing);
-        let plugins = self.plugins.view();
-        let home = self.home.view();
+        let (plugins, home) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
-        change(&mut state, &plugins)?;
         refresh_state(&mut state, &plugins, &home);
+        change(&mut state, &plugins)?;
+        ensure_selection(&mut state, &plugins);
         if let Err(error) = persist(&self.path, &state.config) {
             let mut failed = previous;
             failed.problem = Some(storage_problem(&error));
@@ -445,11 +458,11 @@ impl TabsLink {
         F: FnOnce(&mut TabsState, &PluginsViewModel) -> Result<(), CoreError>,
     {
         let _writing = lock(&self.writing);
-        let plugins = self.plugins.view();
-        let home = self.home.view();
+        let (plugins, home) = self.inputs();
         let mut state = lock(&self.state).clone();
-        change(&mut state, &plugins)?;
         let config_changed = refresh_state(&mut state, &plugins, &home);
+        change(&mut state, &plugins)?;
+        ensure_selection(&mut state, &plugins);
         if config_changed {
             match persist(&self.path, &state.config) {
                 Ok(()) => state.problem = None,
@@ -498,19 +511,15 @@ fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeV
         config_changed = true;
         state.previous_plugins.clear();
         state.failures.clear();
+        state.reloads.clear();
         state.connected = matches!(home.status, HomeStatus::Connected);
     }
     update_reload_counters(state, plugins, home, server_changed);
-    if let Some(fullscreen) = &state.fullscreen
-        && !page_available(&fullscreen.tab, plugins)
-    {
-        state.fullscreen = None;
-    }
     if let Some(installed) = &plugins.installed {
         config_changed |= remove_uninstalled(state, installed);
         config_changed |= update_metadata(state, installed);
     }
-    ensure_selection(state);
+    ensure_selection(state, plugins);
     config_changed
 }
 
@@ -547,6 +556,8 @@ fn update_reload_counters(
                 )
             })
             .collect();
+    } else {
+        state.previous_plugins.clear();
     }
     let connected = matches!(home.status, HomeStatus::Connected);
     if connected && !state.connected && !server_changed {
@@ -641,7 +652,7 @@ fn update_metadata(state: &mut TabsState, installed: &wonton_protocol::Installed
     changed
 }
 
-fn ensure_selection(state: &mut TabsState) {
+fn ensure_selection(state: &mut TabsState, plugins: &PluginsViewModel) {
     if !state
         .config
         .items
@@ -662,7 +673,7 @@ fn ensure_selection(state: &mut TabsState) {
                 .overlay
                 .as_ref()
                 .is_some_and(|item| item.tab == fullscreen.tab);
-        if !known {
+        if !known || !page_available(&fullscreen.tab, plugins) {
             state.fullscreen = None;
         }
     }
