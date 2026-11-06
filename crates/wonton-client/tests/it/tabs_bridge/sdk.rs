@@ -3,6 +3,7 @@ use wonton_client::{Action, Rgb, TabBridgeAction, TabDisplay, TabPlatform, accen
 
 use super::driver::Driver;
 use super::support::{environment, open_page, selected_page};
+use crate::plugins::rig::Rig;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "需要 Docker，官方 node:22 运行 MCP Apps SDK 2.0.4 的真实桥握手"]
@@ -49,6 +50,7 @@ async fn official_sdk_roundtrip() {
             .unwrap();
         driver.environment.dark = true;
         driver.environment.inset_bottom = 34.0;
+        driver.environment.safe_area.left = 59.0;
         driver.update_context();
         let dark = driver.command("inspect", Value::Null);
         assert_eq!(dark["context"]["theme"], "dark");
@@ -63,6 +65,8 @@ async fn official_sdk_roundtrip() {
             accent_hex(rig.app.appearance().dark.accent_fill)
         );
         assert_eq!(dark["css"]["--wonton-inset-bottom"], "34px");
+        assert_eq!(dark["css"]["--wonton-inset-left"], "59px");
+        assert_eq!(dark["css"]["--wonton-inset-right"], "0px");
         assert_eq!(dark["css"]["color-scheme"], "dark");
         assert!(
             dark["context"]["styles"]["variables"]
@@ -78,33 +82,38 @@ async fn official_sdk_roundtrip() {
             driver.command("inspect", Value::Null)["context"]["theme"],
             "light"
         );
-        driver.command("openLink", json!({"url":"https://example.org/"}));
-        driver.command(
-            "sendMessage",
-            json!({"role":"user","content":[{"type":"text","text":"讨论文章"}]}),
-        );
-        driver.command("sendSizeChanged", json!({"height":500}));
-        assert_eq!(
-            driver.actions,
-            vec![
-                TabBridgeAction::OpenLink {
-                    url: "https://example.org/".to_owned()
-                },
-                TabBridgeAction::DraftMessage {
-                    text: "讨论文章".to_owned()
-                },
-            ]
-        );
-        driver.send(json!({"script":rig.app.tab_reselected_script()}));
-        driver.send(json!({"script":rig.app.tab_connection_script()}));
-        let events = driver.command("inspect", Value::Null);
-        assert_eq!(
-            events["events"],
-            json!([
-                {"type":"wonton:tab-reselected","detail":null},
-                {"type":"wonton:connection","detail":{"connected":true}},
-            ])
-        );
+        assert_page_actions(&mut driver, &rig);
         driver.finish();
     }
+}
+
+/// 页面发起的动作交给壳，壳发来的事件页面收得到。
+fn assert_page_actions(driver: &mut Driver, rig: &Rig) {
+    driver.command("openLink", json!({"url":"https://example.org/"}));
+    driver.command(
+        "sendMessage",
+        json!({"role":"user","content":[{"type":"text","text":"讨论文章"}]}),
+    );
+    driver.command("sendSizeChanged", json!({"height":500}));
+    assert_eq!(
+        driver.actions,
+        vec![
+            TabBridgeAction::OpenLink {
+                url: "https://example.org/".to_owned()
+            },
+            TabBridgeAction::DraftMessage {
+                text: "讨论文章".to_owned()
+            },
+        ]
+    );
+    driver.send(json!({"script":rig.app.tab_reselected_script()}));
+    driver.send(json!({"script":rig.app.tab_connection_script()}));
+    let events = driver.command("inspect", Value::Null);
+    assert_eq!(
+        events["events"],
+        json!([
+            {"type":"wonton:tab-reselected","detail":null},
+            {"type":"wonton:connection","detail":{"connected":true}},
+        ])
+    );
 }

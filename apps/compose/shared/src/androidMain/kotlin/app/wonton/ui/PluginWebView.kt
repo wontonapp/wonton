@@ -53,8 +53,6 @@ class PluginWebViewController {
     internal var view: WebView? = null
     var canGoBack by mutableStateOf(false)
         private set
-    var themeColor: Int? by mutableStateOf(null)
-        private set
     var customView: View? by mutableStateOf(null)
         private set
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
@@ -79,15 +77,11 @@ class PluginWebViewController {
         customView = custom
     }
 
-    internal fun updateThemeColor(color: Int?) {
-        themeColor = color
-    }
 
     internal fun release(owner: WebView) {
         if (view !== owner) return
         view = null
         canGoBack = false
-        themeColor = null
         closeCustomView()
     }
 
@@ -202,7 +196,6 @@ fun PluginWebView(
                 view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
                     bridge(origin, main, message)
                 }
-                view.pageAppearance.updateOrigins(allowedOrigins)
                 configureBackground(view, canvas)
                 view.updateTheme(darkTheme, canvas)
                 view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.INVISIBLE
@@ -237,12 +230,10 @@ private class ThemedPluginWebView(
     private var bridgeOrigins: Set<String>? = null
     private var startScript: String? = null
     private var scriptHandler: androidx.webkit.ScriptHandler? = null
-    val pageAppearance = PluginPageAppearance(this, controller)
 
     fun disposePage() {
         if (disposed) return
         disposed = true
-        pageAppearance.dispose()
         scriptHandler?.remove()
         scriptHandler = null
         if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")
@@ -400,7 +391,6 @@ private class ProxyAuthClient(
     }
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-        (view as ThemedPluginWebView).pageAppearance.reset()
         controller.closeCustomView()
         if (url == failedUrl) {
             // HTTP 错误回调已到达并标记本轮失败：保持失败和隐藏，不当作新加载开始。
@@ -413,9 +403,6 @@ private class ProxyAuthClient(
         onLoadStarted()
     }
 
-    override fun onPageCommitVisible(view: WebView, url: String) {
-        if (!failedThisLoad && url == currentUrl) (view as ThemedPluginWebView).pageAppearance.activate()
-    }
 
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
         if (request.isForMainFrame) {
@@ -437,7 +424,6 @@ private class ProxyAuthClient(
 
     private fun failed(view: WebView, status: Int? = null) {
         view.visibility = android.view.View.INVISIBLE
-        (view as ThemedPluginWebView).pageAppearance.reset()
         controller.closeCustomView()
         failedThisLoad = true
         onFailed(status)
@@ -459,7 +445,6 @@ private class ProxyAuthClient(
         controller.updateHistory()
         // 出错的加载也会走到这里。
         if (!failedThisLoad) {
-            if (url == currentUrl) (view as ThemedPluginWebView).pageAppearance.activate()
             onLoaded()
         }
     }

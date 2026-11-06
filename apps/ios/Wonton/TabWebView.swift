@@ -42,7 +42,6 @@ final class TabWebSession: NSObject {
     private(set) var webView: WKWebView?
     var ready = false
     var canGoBack = false
-    private(set) var themeColor: UIColor?
     var problem: Problem?
     @ObservationIgnored var input: TabWebInputs?
     @ObservationIgnored var action: ((TabBridgeAction) -> Void)?
@@ -58,7 +57,6 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var documentScript: String?
     @ObservationIgnored private var lastTextScale: CGFloat?
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
-    @ObservationIgnored private var themeObservation: NSKeyValueObservation?
 
     init(tab: TabRef, core: ClientCore) {
         self.tab = tab
@@ -97,6 +95,9 @@ final class TabWebSession: NSObject {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.userContentController.add(WeakTabMessageHandler(self), name: "wontonBridge")
+        // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
+        // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
+        configuration.ignoresViewportScaleLimits = true
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.isOpaque = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
@@ -109,9 +110,6 @@ final class TabWebSession: NSObject {
         webView = view
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
-        }
-        themeObservation = view.observe(\.themeColor, options: [.initial, .new]) { [weak self] _, _ in
-            Task { @MainActor in self?.themeColor = self?.webView?.themeColor }
         }
     }
 
@@ -142,6 +140,9 @@ final class TabWebSession: NSObject {
             controller.addUserScript(WKUserScript(
                 source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true
             ))
+            controller.addUserScript(WKUserScript(
+                source: Self.focusZoomScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true
+            ))
             documentScript = script
         }
     }
@@ -171,6 +172,18 @@ final class TabWebSession: NSObject {
             self.problem = error.problem
         }
     }
+
+    /// WebKit 在输入框字号小于 16px 时聚焦会放大页面，失焦不缩回（#442）。聚焦放大的上限
+    /// 取 viewport 的 maximum-scale，不受 ignoresViewportScaleLimits 影响，所以补上
+    /// maximum-scale=1 只拦它。页面自己写了 maximum-scale 的照它的；没有 viewport 的
+    /// 是桌面宽度的页面，聚焦放大对它有用，不动。
+    private static let focusZoomScript = """
+        (() => {
+          const meta = document.querySelector('meta[name="viewport"]');
+          if (!meta || /maximum-scale/i.test(meta.content)) return;
+          meta.content = meta.content + ', maximum-scale=1';
+        })();
+        """
 
     private func textSizeScript(_ scale: CGFloat) -> String {
         """
@@ -225,8 +238,6 @@ final class TabWebSession: NSObject {
 
     func dispose() {
         backObservation = nil
-        themeObservation = nil
-        themeColor = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "wontonBridge")

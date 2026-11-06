@@ -3,15 +3,14 @@ package app.wonton.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.padding
@@ -25,9 +24,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -45,7 +43,6 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabItem
-import app.wonton.protocol.TabLayout
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
@@ -136,42 +133,55 @@ private fun PluginTabContainer(
     val page = item.page ?: return
     val state = remember { WebPageState(item.tab, tabs) }
     var top by remember { mutableStateOf(0.dp) }
-    val edge = page.layout == TabLayout.EDGE_TO_EDGE
-    val safe = tabSafeInsets()
-    val direction = LocalLayoutDirection.current
-    var retainedBottom by remember { mutableStateOf(bottom) }
-    SideEffect { if (active) retainedBottom = if (page.fullscreen) safe.calculateBottomPadding() else bottom }
-    val environment = tabEnvironment(top, retainedBottom, edge, safe)
+    val viewport = tabViewport(page, overlay, active, top, bottom)
+    val edges = remember { TabPageEdges() }
+    val environment = viewport.environment
     val script = remember(page.url, page.fullscreen, page.display, appearance, environment) {
         state.script(environment, document = true)
     }
     val openLink = externalLinkOpener { state.problem = it }
-    val supported = remember { webViewSupportsTabs() }
+    val supported = remember {
+        listOf(WebViewFeature.WEB_MESSAGE_LISTENER, WebViewFeature.DOCUMENT_START_SCRIPT,
+            WebViewFeature.PROXY_OVERRIDE, WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS)
+            .all(WebViewFeature::isFeatureSupported)
+    }
     val crossOriginBlocked = isCrossOriginIsolationBlocked(plugin)
     PageEffects(state, page, home, active, appearance, environment)
     ReselectedEffect(state, reselected, onReselected)
     val back = { state.back(page.fullscreen, overlay) }
     TabBackHandler(state, active, page.fullscreen, overlay, back)
     val cover = state.covers(page)
-    val inset = if (edge) PaddingValues(0.dp) else PaddingValues(
-        start = safe.calculateStartPadding(direction), end = safe.calculateEndPadding(direction),
-        top = top, bottom = retainedBottom,
-    )
     val takeover = pageTakeover(item.tab, tabs, active)
-    Box(Modifier.fillMaxSize().imePadding()) {
+    PageEdgeEffects(state, page, viewport, edges, active, bannerTop)
+    Box(
+        Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding(),
+    ) {
+        if (active) TabPageBackdrop(edges, viewport.gaps)
         if (state.started && supported && script != null) {
-            PageWebView(state, page, plugin, home, environment, script, inset, active && !cover, openLink, onDraft)
+            PageWebView(state, page, plugin, home, environment, script, viewport.inset, active && !cover, openLink,
+                onDraft)
         }
         if (active && page.fullscreen) state.controller.customView?.let { video ->
-            AndroidView(factory = { video }, modifier = Modifier.padding(inset).fillMaxSize())
+            AndroidView(factory = { video }, modifier = Modifier.padding(viewport.inset).fillMaxSize())
         }
         if (active) {
             PageStatusOverlay(state, page, item.tab, supported, crossOriginBlocked,
-                PaddingValues(top = top, bottom = retainedBottom), onDetails)
-            PageChrome(state, item, page, safe, edge, bannerTop, overlay, back, takeover,
+                PaddingValues(top = top, bottom = viewport.bottom), onDetails)
+            PageChrome(state, item, page, viewport.safe, bannerTop, overlay, back, takeover,
                 onDetails, onTop = { top = it })
         }
     }
+}
+
+@Composable
+private fun PageEdgeEffects(
+    state: WebPageState, page: TabPage, viewport: TabViewport, edges: TabPageEdges,
+    active: Boolean, bannerTop: Dp,
+) {
+    val visible = active && !state.covers(page) && state.problem == null && state.controller.customView == null
+    SampleTabEdges(edges, state.controller, LocalActivity.current?.window, visible,
+        viewport.gaps, page.fullscreen, viewport.webBottom, bannerTop)
+    if (active) PageSystemBarIcons(edges, page.fullscreen, viewport.webBottom && !viewport.keyboard)
 }
 
 @Composable
@@ -185,21 +195,16 @@ private fun PageStatusOverlay(
             PluginTabStatus(page, tab, state.tabs, state.problem, supported, crossOriginBlocked, onDetails)
         }
     }
-    if (page.fullscreen && page.layout != TabLayout.EDGE_TO_EDGE) Box(Modifier.fillMaxSize()) {
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(inset.calculateBottomPadding())
-            .background(WontonTheme.colors.canvas.toColor()))
-    }
 }
 
 @Composable
 private fun PageChrome(
-    state: WebPageState, item: TabItem, page: TabPage, safe: PaddingValues, edge: Boolean,
+    state: WebPageState, item: TabItem, page: TabPage, safe: PaddingValues,
     bannerTop: Dp, overlay: Boolean, back: () -> Unit, takeover: PageTakeover?,
     onDetails: (String) -> Unit, onTop: (Dp) -> Unit,
 ) {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
-    val canvas = WontonTheme.colors.canvas.toColor()
     Column(Modifier.onSizeChanged { onTop(with(density) { it.height.toDp() }) }
         .padding(top = if (page.fullscreen) bannerTop else 0.dp)) {
         val reload = { state.problem = null; state.tabs.send(Action.ReloadTab(item.tab)) }
@@ -208,7 +213,6 @@ private fun PageChrome(
                 PaddingValues(start = safe.calculateStartPadding(direction),
                     top = if (bannerTop > 0.dp) 0.dp else safe.calculateTopPadding(),
                     end = safe.calculateEndPadding(direction)),
-                if (edge) null else state.controller.themeColor?.let { Color(it) } ?: canvas,
                 onClose = { state.controller.closeCustomView(); state.tabs.send(Action.ExitFullscreen(item.tab)) },
                 onReload = reload, onDetails = onDetails)
         } else {
@@ -298,13 +302,6 @@ private fun pageTakeover(tab: TabRef, tabs: TabsState, active: Boolean): PageTak
     DisposableEffect(pluginId, active) { onDispose { if (active) takeover?.end() } }
     return takeover
 }
-
-
-
-private fun webViewSupportsTabs(): Boolean = listOf(
-    WebViewFeature.WEB_MESSAGE_LISTENER, WebViewFeature.DOCUMENT_START_SCRIPT,
-    WebViewFeature.PROXY_OVERRIDE, WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS,
-).all(WebViewFeature::isFeatureSupported)
 
 @Composable
 internal fun externalLinkOpener(onFailure: (Problem) -> Unit): (String) -> Unit {

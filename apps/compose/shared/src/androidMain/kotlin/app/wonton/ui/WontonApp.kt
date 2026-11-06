@@ -151,7 +151,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
     val shown = view.overlay?.tab ?: view.selected
     val native = shown !is TabRef.Plugin || nav.settingsOverlay
     val fullscreen = !native && isFullscreen(tabs, shown)
-    FullscreenSystemBars(fullscreen)
+    FullscreenSystemBars(fullscreen, !native)
     val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible)
     var reselected by remember { mutableStateOf<TabRef?>(null) }
     var tabMenu by remember { mutableStateOf<TabRef?>(null) }

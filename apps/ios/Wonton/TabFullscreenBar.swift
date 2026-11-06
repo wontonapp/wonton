@@ -28,8 +28,6 @@ struct TabFullscreenBar: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WontonTheme.radii.control))
             }
         }
-        .padding(.horizontal, WontonTheme.spacing.s8)
-        .padding(.vertical, WontonTheme.spacing.s4)
     }
 
     private var capsule: some View {
@@ -53,6 +51,8 @@ struct TabFullscreenBar: View {
                 .frame(width: WontonTheme.size.hairline, height: WontonTheme.size.iconSmall)
             WontonIconButton(icon: .close, label: TabText.close) { tabs.send(.exitFullscreen(tab: tab)) }
         }
+        // 看得见的胶囊比按钮矮，好放进灵动岛旁边；按钮的点按范围照旧，伸出胶囊上下。
+        .frame(height: WontonTheme.size.smallButton)
         .background(.regularMaterial, in: Capsule())
         .overlay { Capsule().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
     }

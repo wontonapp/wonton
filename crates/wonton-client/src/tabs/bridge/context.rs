@@ -40,16 +40,22 @@ pub(super) fn payload(
         .filter(|(name, _)| !name.starts_with("--wonton-"))
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    let (top, bottom) = if page.layout == TabLayout::EdgeToEdge {
-        (environment.inset_top, environment.inset_bottom)
+    let insets = if page.layout == TabLayout::EdgeToEdge {
+        [
+            ("top", environment.inset_top),
+            ("right", environment.safe_area.right),
+            ("bottom", environment.inset_bottom),
+            ("left", environment.safe_area.left),
+        ]
     } else {
-        (0.0, 0.0)
+        [("top", 0.0), ("right", 0.0), ("bottom", 0.0), ("left", 0.0)]
     };
-    variables.insert("--wonton-inset-top".to_owned(), format!("{top}px").into());
-    variables.insert(
-        "--wonton-inset-bottom".to_owned(),
-        format!("{bottom}px").into(),
-    );
+    for (side, value) in insets {
+        variables.insert(
+            format!("--wonton-inset-{side}"),
+            format!("{value}px").into(),
+        );
+    }
     Ok(json!({
         "variables": variables,
         "context": {

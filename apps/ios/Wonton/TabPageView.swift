@@ -19,6 +19,7 @@ struct TabPageView: View {
     @State private var isVisible = false
     @State private var topHeight: CGFloat = WontonTheme.size.topBar
     @State private var bottomHeight: CGFloat = 0
+    @State private var edges = TabPageEdges()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonTabBar) private var bottomBar
@@ -51,14 +52,14 @@ struct TabPageView: View {
     var body: some View {
         GeometryReader { geometry in
             let safe = geometry.safeAreaInsets
+            let frame = webFrame(safe: safe)
             let inputs = inputs(safe: safe)
             ZStack {
                 if let webView = session.webView {
                     TabWebView(webView: webView)
                     .id(ObjectIdentifier(webView))
-                    .padding(.top, edgeToEdge ? 0 : topHeight)
-                    .padding(.bottom, edgeToEdge ? 0 : contentBottom)
-                    .ignoresSafeArea(.container, edges: edgeToEdge ? .all : [])
+                    .padding(frame)
+                    .ignoresSafeArea(.container)
                 }
                 TabPageStateView(
                     page: page, session: session, connected: connected,
@@ -67,23 +68,14 @@ struct TabPageView: View {
                         if let close { close() } else { tabs.send(isOverlay ? .closeTabOverlay : .unpinTab(tab: tab)) }
                     }
                 )
-                .padding(.top, topHeight)
-                .padding(.bottom, contentBottom)
-                VStack(spacing: 0) {
-                    header
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
-                    if page.fullscreen, !pendingCards.isEmpty {
-                        PendingCardBanner(cards: pendingCards, open: openCardRoom)
-                    }
-                    if let takeover { TakeoverNotice(takeover: takeover) }
-                    Spacer(minLength: 0)
-                    if !page.fullscreen, !isOverlay, let bottomBar {
-                        bottomBar
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
-                    }
-                }
+                .padding(insetFrame(safe: safe))
+                .ignoresSafeArea(.container)
+                chrome(safe: safe)
             }
-            .background(Color(colors.canvas).ignoresSafeArea())
+            .background {
+                TabPageBackdrop(edges: edges, gaps: backdropGaps(frame), fallback: backdropFallback)
+                    .ignoresSafeArea(.container)
+            }
             .background {
                 FullscreenExitGesture(
                     enabled: page.fullscreen && isVisible && !showsDetails, webView: session.webView,
@@ -91,6 +83,10 @@ struct TabPageView: View {
                 )
             }
             .task(id: inputs) { updateSession(inputs) }
+            .task(id: EdgeSampling(edges: backdropGaps(frame).sampledEdges, visible: isVisible,
+                                   webView: session.webView.map(ObjectIdentifier.init))) {
+                await sampleEdges(backdropGaps(frame).sampledEdges)
+            }
         }
         .onChange(of: bottomBar == nil) { _, absent in if absent { bottomHeight = 0 } }
         .onAppear { isVisible = true }
@@ -105,6 +101,79 @@ struct TabPageView: View {
                 }
             }
         }
+    }
+
+    /// 全屏时是网页框到屏幕四边的距离（顶栏、胶囊和系统安全区都算在内）；带栏时是网页框在安全区里的留白。
+    private func webFrame(safe: EdgeInsets) -> EdgeInsets {
+        edgeToEdge ? EdgeInsets() : insetFrame(safe: safe)
+    }
+
+    private func insetFrame(safe: EdgeInsets) -> EdgeInsets {
+        if page.fullscreen {
+            return EdgeInsets(top: max(safe.top, topHeight), leading: safe.leading,
+                              bottom: safe.bottom, trailing: safe.trailing)
+        }
+        return EdgeInsets(top: safe.top + topHeight, leading: safe.leading,
+                          bottom: safe.bottom + contentBottom, trailing: safe.trailing)
+    }
+
+    /// 带栏时顶部是 App 自己的栏，不画；底部浮着的底栏下面、没有底栏时 Home 条那一条，都画网页的底边。
+    private func backdropGaps(_ frame: EdgeInsets) -> EdgeInsets {
+        if page.fullscreen { return frame }
+        return EdgeInsets(top: 0, leading: 0, bottom: frame.bottom, trailing: 0)
+    }
+
+    private var backdropFallback: Color {
+        if page.fullscreen, session.ready, let base = edges.base { return Color(uiColor: base) }
+        return Color(colors.canvas)
+    }
+
+    /// 页面里的固定顶栏、底栏随时会变（换页、换主题），没有通知，所以看得见时每秒取一次。
+    private func sampleEdges(_ sides: Set<Edge>) async {
+        guard isVisible, !sides.isEmpty else { return }
+        while !Task.isCancelled {
+            if let webView = session.webView { edges.sample(webView, edges: sides) }
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    @ViewBuilder private func chrome(safe: EdgeInsets) -> some View {
+        if page.fullscreen {
+            let band = capsuleFitsBesideCamera(safe: safe)
+            VStack(spacing: 0) {
+                TabFullscreenBar(page: page, tab: tab, tabs: tabs, details: { showsDetails = true })
+                    .padding(.top, band ? (safe.top - WontonTheme.size.smallButton) / 2
+                             : safe.top + WontonTheme.spacing.s8)
+                    .padding(.leading, safe.leading + WontonTheme.spacing.s8)
+                    .padding(.trailing, band ? WontonTheme.spacing.s24 : safe.trailing + WontonTheme.spacing.s8)
+                    .padding(.bottom, WontonTheme.spacing.s8)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
+                if !pendingCards.isEmpty {
+                    PendingCardBanner(cards: pendingCards, open: openCardRoom)
+                }
+                if let takeover { TakeoverNotice(takeover: takeover) }
+                Spacer(minLength: 0)
+            }
+            .ignoresSafeArea(.container)
+        } else {
+            VStack(spacing: 0) {
+                topBar
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
+                if let takeover { TakeoverNotice(takeover: takeover) }
+                Spacer(minLength: 0)
+                if !isOverlay, let bottomBar {
+                    bottomBar
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
+                }
+            }
+        }
+    }
+
+    /// 灵动岛的机型隐藏状态栏后，顶部安全区（59pt 以上）在岛两边空着，胶囊放进右边那块，不压页面。
+    /// 刘海屏（44–50pt）的刘海宽度各代不同、系统不给，放进去可能压到刘海；没有刘海的机型和横屏，顶部安全区是 0。
+    /// 这些情况放在安全区下面，页面让出这一条。短状态要占左边，也放到下面。
+    private func capsuleFitsBesideCamera(safe: EdgeInsets) -> Bool {
+        safe.top >= WontonTheme.size.target + WontonTheme.spacing.s8 && status.title == nil && status.line == nil
     }
 
     private var edgeToEdge: Bool { page.layout == .edgeToEdge && (!isOverlay || page.fullscreen) }
@@ -129,7 +198,7 @@ struct TabPageView: View {
             environment: TabEnvironment(
                 locale: Locale.preferredLanguages.first ?? Locale.current.identifier,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: edgeToEdge ? Double(topHeight + safe.top) : 0,
+                insetTop: edgeToEdge ? Double(page.fullscreen ? max(safe.top, topHeight) : topHeight + safe.top) : 0,
                 insetBottom: edgeToEdge ? Double(bottom + safe.bottom) : 0,
                 safeArea: TabSafeArea(
                     top: edgeToEdge ? Double(safe.top) : 0, right: edgeToEdge ? Double(safe.trailing) : 0,
@@ -137,18 +206,6 @@ struct TabPageView: View {
                 )
             ), textScale: textScale
         )
-    }
-
-    @ViewBuilder private var header: some View {
-        if page.fullscreen {
-            TabFullscreenBar(page: page, tab: tab, tabs: tabs, details: { showsDetails = true })
-                .background {
-                    if !edgeToEdge {
-                        Color(uiColor: session.themeColor ?? UIColor(Color(colors.canvas)))
-                            .ignoresSafeArea(.container, edges: .top)
-                    }
-                }
-        } else { topBar }
     }
 
     private var topBar: some View {
@@ -202,4 +259,10 @@ struct TabPageView: View {
             }
         }
     }
+}
+
+private struct EdgeSampling: Equatable {
+    let edges: Set<Edge>
+    let visible: Bool
+    let webView: ObjectIdentifier?
 }

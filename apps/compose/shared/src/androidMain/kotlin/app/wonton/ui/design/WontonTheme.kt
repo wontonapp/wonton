@@ -40,9 +40,8 @@ private val LocalWontonFontScale = compositionLocalOf<Float?> { null }
 private val LocalWontonDark = compositionLocalOf { false }
 
 /** `enableEdgeToEdge` 默认的导航栏底色：三键导航时要有底才看得清按钮。 */
-private val LIGHT_NAVIGATION_SCRIM = AndroidColor.argb(0xE6, 0xFF, 0xFF, 0xFF)
-private val DARK_NAVIGATION_SCRIM = AndroidColor.argb(0x80, 0x1B, 0x1B, 0x1B)
-
+internal val LIGHT_NAVIGATION_SCRIM = AndroidColor.argb(0xE6, 0xFF, 0xFF, 0xFF)
+internal val DARK_NAVIGATION_SCRIM = AndroidColor.argb(0x80, 0x1B, 0x1B, 0x1B)
 /** ADR-0026 的令牌，和 SwiftUI 的 `WontonTheme` 同名。 */
 object WontonTheme {
     val spacing = WontonSpacing
@@ -117,7 +116,6 @@ private fun SystemBarsFollow(dark: Boolean) {
         onDispose {}
     }
 }
-
 /** 除了跟随系统，每一档都盖过系统的字号。取值是 iOS 对应档位的正文放大比例（ADR-0028）。 */
 private val TextSize.fontScale: Float?
     get() = when (this) {

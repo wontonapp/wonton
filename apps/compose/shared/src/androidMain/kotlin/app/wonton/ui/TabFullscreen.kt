@@ -1,8 +1,6 @@
 package app.wonton.ui
 
-import android.os.Build
-import android.view.WindowManager
-import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,30 +9,32 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.core.view.ViewCompat
 import app.wonton.protocol.Action
 import app.wonton.protocol.TabDisplayChoice
 import app.wonton.protocol.TabItem
@@ -49,52 +49,28 @@ import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Back
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Expand
 import app.wonton.ui.icons.More
-import app.wonton.ui.icons.Back
 import app.wonton.ui.icons.Refresh
 import app.wonton.ui.icons.WontonIcon
 
-@Composable
-internal fun FullscreenSystemBars(fullscreen: Boolean) {
-    val window = LocalActivity.current?.window ?: return
-    val dark = WontonTheme.isDark
-    DisposableEffect(window, fullscreen, dark) {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        val previousBehavior = controller.systemBarsBehavior
-        val previousCutout = window.attributes.layoutInDisplayCutoutMode
-        if (fullscreen) {
-            window.attributes = window.attributes.apply {
-                layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-                } else {
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            }
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.statusBars())
-        } else {
-            controller.show(WindowInsetsCompat.Type.statusBars())
-        }
-        onDispose {
-            controller.systemBarsBehavior = previousBehavior
-            window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = previousCutout }
-            controller.show(WindowInsetsCompat.Type.statusBars())
-        }
-    }
-}
 
 @Composable
 internal fun FullscreenTabBar(
-    tab: TabRef, page: TabPage, tabs: TabsState, safe: PaddingValues, background: Color?,
+    tab: TabRef, page: TabPage, tabs: TabsState, safe: PaddingValues,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
 ) {
     val status = LocalWontonBarStatus.current
     val colors = WontonTheme.colors
     val shortStatus = status.title ?: if (page.state is TabState.Upgrading) tabText("正在升级…", "Updating…") else null
-    Column(Modifier.fillMaxWidth().then(if (background != null) Modifier.background(background) else Modifier)
-        .padding(safe).padding(horizontal = WontonTheme.spacing.s8, vertical = WontonTheme.spacing.s4)) {
+    val top = fullscreenCapsuleTop(safe, shortStatus != null || status.line != null)
+    Column(Modifier.fillMaxWidth().padding(
+        start = safe.calculateLeftPadding(LayoutDirection.Ltr) + WontonTheme.spacing.s8,
+        end = safe.calculateRightPadding(LayoutDirection.Ltr) + WontonTheme.spacing.s8,
+        top = top - (WontonTheme.size.target - WontonTheme.size.smallButton) / 2,
+    )) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             if (shortStatus != null) {
@@ -116,13 +92,31 @@ internal fun FullscreenTabBar(
 }
 
 @Composable
+private fun fullscreenCapsuleTop(safe: PaddingValues, shortStatus: Boolean): Dp {
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val safeTop = safe.calculateTopPadding()
+    val cutout = ViewCompat.getRootWindowInsets(view)?.displayCutout
+    val right = view.width - with(density) {
+        (safe.calculateRightPadding(LayoutDirection.Ltr) + WontonTheme.spacing.s8).roundToPx()
+    }
+    val left = right - with(density) { (WontonTheme.size.target * 2).roundToPx() }
+    val fits = safeTop >= WontonTheme.size.target + WontonTheme.spacing.s8 && !shortStatus &&
+        cutout != null && cutout.boundingRects.none { it.left < right && it.right > left }
+    return if (fits) (safeTop - WontonTheme.size.smallButton) / 2 else safeTop + WontonTheme.spacing.s8
+}
+
+@Composable
 private fun FullscreenCapsule(
     tab: TabRef, page: TabPage, tabs: TabsState,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(WontonTheme.radii.pill), color = WontonTheme.colors.surface.toColor()) {
-        Row {
+    Box(contentAlignment = Alignment.Center) {
+        Surface(Modifier.size(WontonTheme.size.target * 2, WontonTheme.size.smallButton),
+            shape = RoundedCornerShape(WontonTheme.radii.pill), color = WontonTheme.colors.surface.toColor(),
+            border = BorderStroke(WontonTheme.size.hairline, WontonTheme.colors.separator.toColor())) {}
+        Row(Modifier.height(WontonTheme.size.target)) {
             Box {
                 WontonIconButton(WontonIcon.More, tabText("页面菜单", "Page menu"), { menu = true })
                 DropdownMenu(menu, { menu = false }, containerColor = WontonTheme.colors.surface.toColor()) {
