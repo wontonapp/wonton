@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +57,7 @@ fun WontonBottomBar(
     ) {
         tabs.items.forEach { item ->
             val selected = item.tab == tabs.selected
+            val title = item.tabTitle()
             val ink = (if (selected) colors.accentInkOnFill else colors.textSecondary).toColor()
             NavigationBarItem(
                 selected = selected,
@@ -75,6 +77,7 @@ fun WontonBottomBar(
                         }
                     }
                 }.semantics {
+                    contentDescription = title
                     customActions = listOf(CustomAccessibilityAction(menuLabel) { onMenu(item.tab); true })
                 },
                 icon = {
@@ -86,7 +89,10 @@ fun WontonBottomBar(
                         }
                     }
                 },
-                label = { Text(item.tabTitle(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                label = if (tabs.labels) {
+                    { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                } else null,
+                alwaysShowLabel = tabs.labels,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.accentInkOnFill.toColor(),
                     selectedTextColor = colors.textPrimary.toColor(),
@@ -100,7 +106,7 @@ fun WontonBottomBar(
 }
 
 @Composable
-private fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: PluginsState) {
+internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: PluginsState) {
     val size = WontonTheme.size.icon
     val builtIn = when (item.tab) {
         TabRef.Chat -> if (selected) WontonIcon.ChatFill else WontonIcon.Chat

@@ -143,24 +143,6 @@ struct MainView: View {
         .id(tab)
     }
 
-    private var bottomBar: some View {
-        WontonBottomBar(
-            items: tabs.viewModel.items.map { item in
-                .init(
-                    tab: item.tab, label: item.title,
-                    icon: AnyView(TabIconView(item: item, selected: false, plugins: plugins)),
-                    selectedIcon: AnyView(TabIconView(item: item, selected: true, plugins: plugins)),
-                    badge: item.badge, isDimmed: item.page?.dimmed == true,
-                    opensFullscreen: item.page?.opensFullscreen
-                )
-            },
-            selection: Binding(get: { tabs.viewModel.selected }, set: { tabs.select($0) }),
-            reselect: { tabs.select($0) }, longPress: { _ in showsTabSettings = true },
-            enterFullscreen: { tabs.send(.enterFullscreen(tab: $0)) },
-            setAlwaysFullscreen: { tabs.send(.setTabDisplay(tab: $0, display: $1 ? .fullscreen : .standard)) }
-        )
-    }
-
     private var selectedFullscreen: Bool {
         tabs.viewModel.items.first { $0.tab == tabs.viewModel.selected }?.page?.fullscreen == true
     }
@@ -272,5 +254,27 @@ struct MainView: View {
             if chat.openDirectChat(with: botUserId, from: origin) { tabs.select(.chat) }
         case let .web(tab): tabs.select(tab)
         }
+    }
+}
+
+// 拆出来是为了让 MainView 的正文不超过 SwiftLint 的 type_body_length；同一文件里的扩展能读 private 状态。
+extension MainView {
+    private var bottomBar: some View {
+        WontonBottomBar(
+            items: tabs.viewModel.items.map { item in
+                .init(
+                    tab: item.tab, label: item.title,
+                    icon: AnyView(TabIconView(item: item, selected: false, plugins: plugins)),
+                    selectedIcon: AnyView(TabIconView(item: item, selected: true, plugins: plugins)),
+                    badge: item.badge, isDimmed: item.page?.dimmed == true,
+                    opensFullscreen: item.page?.opensFullscreen
+                )
+            },
+            labels: tabs.viewModel.labels,
+            selection: Binding(get: { tabs.viewModel.selected }, set: { tabs.select($0) }),
+            reselect: { tabs.select($0) }, longPress: { _ in showsTabSettings = true },
+            enterFullscreen: { tabs.send(.enterFullscreen(tab: $0)) },
+            setAlwaysFullscreen: { tabs.send(.setTabDisplay(tab: $0, display: $1 ? .fullscreen : .standard)) }
+        )
     }
 }

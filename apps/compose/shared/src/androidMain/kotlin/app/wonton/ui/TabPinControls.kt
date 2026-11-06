@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,12 +17,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabsViewModel
+import app.wonton.ui.design.TabBarIcon
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonRow
@@ -107,13 +111,29 @@ fun TabPinSheet(viewModel: TabsViewModel, request: PinRequest, onDismiss: () -> 
                 style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor())
             WontonGroup {
                 viewModel.items.filter { it.removable && it.tab != request.tab }.forEach { item ->
-                    WontonRow(item.tabTitle(), onClick = {
+                    TabReplacementRow(item) {
                         rejection = tabs.core.send(Action.PinTab(request.tab, item.tab))
                         if (rejection == null) close {}
-                    })
+                    }
                 }
             }
             WontonRow(tabText("取消", "Cancel"), onClick = { close {} })
         }
+    }
+}
+
+@Composable
+private fun TabReplacementRow(item: TabItem, onClick: () -> Unit) {
+    val tabs = LocalTabs.current
+    val colors = WontonTheme.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+    ) {
+        TabBarIcon(item, false, colors.textPrimary.toColor(), tabs.plugins)
+        Text(item.tabTitle(), style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
     }
 }

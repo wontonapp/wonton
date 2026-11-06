@@ -10,6 +10,9 @@ enum TabText {
     static var apps: String { choose("应用", "Apps") }
     static var settings: String { choose("设置", "Settings") }
     static var bottomBar: String { choose("底栏", "Tab bar") }
+    static var showLabels: String { choose("显示文字", "Show labels") }
+    static var addMore: String { choose("添加更多", "Add more") }
+    static var addToBar: String { choose("添加到底栏", "Add to tab bar") }
     static var pin: String { choose("固定到底栏", "Pin to tab bar") }
     static var unpin: String { choose("从底栏移除", "Remove from tab bar") }
     static var replace: String { choose("底栏已满，换掉哪一项？", "Tab bar full. Replace which tab?") }

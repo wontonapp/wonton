@@ -27,6 +27,7 @@ struct WontonBottomBar<Tab: Hashable>: View {
     }
 
     let items: [Item]
+    let labels: Bool
     @Binding var selection: Tab
     let reselect: (Tab) -> Void
     let longPress: (Tab) -> Void
@@ -67,12 +68,14 @@ struct WontonBottomBar<Tab: Hashable>: View {
                             .offset(x: 5, y: -2)
                     }
                 }
-                Text(item.label).wontonText(WontonTheme.typography.caption).lineLimit(1)
+                if labels {
+                    Text(item.label).wontonText(WontonTheme.typography.caption).lineLimit(1)
+                }
             }
             .foregroundStyle(color)
             .opacity(item.isDimmed ? 0.45 : 1)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
-            .padding(.vertical, WontonTheme.spacing.s4)
+            .padding(.vertical, labels ? WontonTheme.spacing.s4 : 0)
             .background {
                 if isSelected {
                     Color.clear.accentFill(RoundedRectangle(cornerRadius: WontonTheme.radii.barItem), border: false)

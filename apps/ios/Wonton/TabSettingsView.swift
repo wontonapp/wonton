@@ -5,50 +5,56 @@ struct TabSettingsView: View {
     let plugins: PluginsModel
     @Environment(TabsModel.self) private var tabs
     @Environment(\.wontonColors) private var colors
-    @State private var pin: TabRef?
+    @State private var showsCandidates = false
 
     var body: some View {
         List {
             if let problem = tabs.viewModel.problem {
                 ProblemNotice(problem: Problem(title: TabText.configurationFailed, detail: problem.message))
             }
-            ForEach(tabs.viewModel.items, id: \.tab) { item in
-                Toggle(isOn: Binding(
-                    get: { tabs.isPinned(item.tab) },
-                    set: { if !$0 { tabs.send(.unpinTab(tab: item.tab)) } }
-                )) {
+            Section {
+                Toggle(TabText.showLabels, isOn: Binding(
+                    get: { tabs.viewModel.labels },
+                    set: { tabs.send(.setTabLabels(visible: $0)) }
+                ))
+                .toggleStyle(WontonToggleStyle())
+                .listRowBackground(Color(colors.canvas))
+            }
+            Section {
+                ForEach(tabs.viewModel.items, id: \.tab) { item in
                     HStack(spacing: WontonTheme.spacing.s12) {
                         TabIconView(item: item, selected: false, plugins: plugins)
                         Text(item.title).wontonText(WontonTheme.typography.body)
                     }
+                    .frame(minHeight: WontonTheme.size.target)
+                    .deleteDisabled(!item.removable)
+                    .listRowBackground(Color(colors.canvas))
                 }
-                .toggleStyle(WontonToggleStyle())
-                .disabled(!item.removable)
-                .listRowBackground(Color(colors.canvas))
+                .onMove(perform: move)
+                .onDelete(perform: remove)
             }
-            .onMove(perform: move)
-            if !available.isEmpty {
+            if !tabs.viewModel.candidates.isEmpty {
                 Section {
-                    ForEach(available) { choice in
-                        Toggle(choice.title, isOn: Binding(
-                            get: { tabs.isPinned(choice.tab) }, set: { if $0 { pin = choice.tab } }
-                        ))
-                        .toggleStyle(WontonToggleStyle())
-                        .listRowBackground(Color(colors.canvas))
+                    Button { showsCandidates = true } label: {
+                        WontonRow(title: TabText.addMore, showsForward: true)
                     }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color(colors.canvas))
                 }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.editMode, .constant(.active))
-        .tabPinRequests($pin)
+        .navigationDestination(isPresented: $showsCandidates) {
+            AddTabView(plugins: plugins).wontonPushedScreen(TabText.addToBar)
+        }
+        .environment(plugins)
     }
 
-    private var available: [TabChoice] {
-        var choices = [TabChoice(tab: .settings, title: TabText.settings)]
-        choices += plugins.viewModel.installed?.plugins.flatMap(\.tabChoices) ?? []
-        return choices.filter { !tabs.isPinned($0.tab) }
+    private func remove(at offsets: IndexSet) {
+        let items = offsets.map { tabs.viewModel.items[$0] }.filter(\.removable)
+        for item in items { tabs.send(.unpinTab(tab: item.tab)) }
     }
 
     private func move(from source: IndexSet, to destination: Int) {
@@ -57,6 +63,48 @@ struct TabSettingsView: View {
         for (index, tab) in order.enumerated() where tabs.viewModel.items[index].tab != tab {
             if !tabs.send(.moveTab(tab: tab, index: UInt32(index))) { return }
         }
+    }
+}
+
+private struct AddTabView: View {
+    let plugins: PluginsModel
+    @Environment(TabsModel.self) private var tabs
+    @Environment(\.wontonColors) private var colors
+    @State private var pin: TabRef?
+
+    var body: some View {
+        List {
+            ForEach(tabs.viewModel.candidates, id: \.tab) { candidate in
+                Button { pin = candidate.tab } label: {
+                    HStack(spacing: WontonTheme.spacing.s12) {
+                        if let plugin = candidate.plugin {
+                            PluginIconView(icon: plugin.icon, size: WontonTheme.size.icon, model: plugins)
+                                .accessibilityHidden(true)
+                        } else {
+                            WontonIcon.settings.view().accessibilityHidden(true)
+                        }
+                        Text(title(candidate)).wontonText(WontonTheme.typography.body)
+                        Spacer(minLength: 0)
+                        WontonIcon.add.view().accessibilityHidden(true)
+                    }
+                    .frame(minHeight: WontonTheme.size.target)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color(colors.canvas))
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.editMode, .constant(.inactive))
+        .tabPinRequests($pin)
+        .environment(plugins)
+    }
+
+    private func title(_ candidate: TabCandidate) -> String {
+        guard let plugin = candidate.plugin else { return TabText.settings }
+        guard let pageTitle = plugin.pageTitle else { return plugin.title }
+        return "\(plugin.title) · \(pageTitle)"
     }
 }
 
@@ -105,6 +153,7 @@ extension View {
 private struct TabPinRequests: ViewModifier {
     @Binding var request: TabRef?
     @Environment(TabsModel.self) private var tabs
+    @Environment(PluginsModel.self) private var plugins
 
     func body(content: Content) -> some View {
         content
@@ -122,7 +171,15 @@ private struct TabPinRequests: ViewModifier {
                             guard let tab = request else { return }
                             close { tabs.send(.pinTab(tab: tab, replacing: item.tab)) }
                         } label: {
-                            WontonRow(title: item.title)
+                            HStack(spacing: WontonTheme.spacing.s12) {
+                                TabIconView(item: item, selected: false, plugins: plugins)
+                                Text(item.title).wontonText(WontonTheme.typography.body)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, WontonTheme.spacing.s16)
+                            .padding(.vertical, WontonTheme.spacing.s12)
+                            .frame(minHeight: WontonTheme.size.target)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
