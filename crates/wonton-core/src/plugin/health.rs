@@ -14,19 +14,28 @@ const POLL: Duration = Duration::from_millis(500);
 /// 没有健康检查的容器至少要稳定运行这么久才算就绪，避免把“启动即崩溃”当成成功。
 const STABLE_FOR: Duration = Duration::from_secs(3);
 const LOG_LINES: usize = 40;
+/// 失败时带上最近几次探针的结果：Docker 至多存 5 条，3 次足够看出趋势。
+const PROBES_KEPT: usize = 3;
+/// 每条探针输出截到 1 KiB，防止刷屏。
+const PROBE_OUTPUT_LIMIT: usize = 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum HealthError {
     #[error(transparent)]
     Engine(#[from] EngineError),
-    #[error("容器 {container} 在期限内没有就绪（最后状态：{state}）\n最近日志：\n{logs}")]
+    #[error("容器 {container} 在期限内没有就绪（最后状态：{state}）\n{probes}最近日志：\n{logs}")]
     Timeout {
         container: String,
         state: String,
+        probes: String,
         logs: String,
     },
-    #[error("容器 {container} 健康检查失败\n最近日志：\n{logs}")]
-    Unhealthy { container: String, logs: String },
+    #[error("容器 {container} 健康检查失败\n{probes}最近日志：\n{logs}")]
+    Unhealthy {
+        container: String,
+        probes: String,
+        logs: String,
+    },
     #[error("容器 {container} 已退出（退出码 {code}）\n最近日志：\n{logs}")]
     Exited {
         container: String,
@@ -59,7 +68,11 @@ pub enum Readiness {
 
 enum Observation {
     Done(Readiness),
-    Waiting(String),
+    /// 还没到目标：状态描述和最近几次探针的结果（超时报告用）。
+    Waiting {
+        state: String,
+        probes: Vec<Probe>,
+    },
 }
 
 pub async fn wait_for(
@@ -70,13 +83,14 @@ pub async fn wait_for(
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
-        let state = match observe(engine, container, target, &mut running_since).await {
+        let (state, probes) = match observe(engine, container, target, &mut running_since).await {
             Ok(Observation::Done(readiness)) => return Ok(readiness),
-            Ok(Observation::Waiting(state)) => state,
-            Err(Failure::Unhealthy) => {
+            Ok(Observation::Waiting { state, probes }) => (state, probes),
+            Err(Failure::Unhealthy(probes)) => {
                 let logs = engine.logs_tail(container, LOG_LINES).await;
                 return Err(HealthError::Unhealthy {
                     container: container.to_owned(),
+                    probes: probe_block(&probes),
                     logs,
                 });
             }
@@ -95,6 +109,7 @@ pub async fn wait_for(
             return Err(HealthError::Timeout {
                 container: container.to_owned(),
                 state,
+                probes: probe_block(&probes),
                 logs,
             });
         }
@@ -103,9 +118,74 @@ pub async fn wait_for(
 }
 
 enum Failure {
-    Unhealthy,
+    Unhealthy(Vec<Probe>),
     Exited(i64),
     Other(HealthError),
+}
+
+/// 一次健康检查探针：退出码和输出在 Docker 的 `State.Health.Log[]` 里，是失败原因的出处。
+struct Probe {
+    exit_code: Option<i64>,
+    output: String,
+}
+
+/// 探针结果排成一段，和日志尾巴并列。没有 `Health.Log` 的旧 Docker 返回空段，错误和以前一样。
+fn probe_block(probes: &[Probe]) -> String {
+    if probes.is_empty() {
+        return String::new();
+    }
+    let mut block = String::from("最近探针：\n");
+    for probe in probes {
+        // Docker 的探针输出常以换行结尾：trim_end 再拼，每条一行。
+        let output = probe.output.trim_end();
+        match probe.exit_code {
+            Some(code) => block.push_str(&format!("[退出码 {code}] {output}\n")),
+            None => block.push_str(&format!("[退出码 ?] {output}\n")),
+        }
+    }
+    block
+}
+
+/// 探针输出常带终端控制字符：先去掉完整的 CSI 转义序列（`\x1b[参数 中间字节 结尾字节`，如
+/// `\x1b[31m`），只滤 ESC 会留下 `[31m` 这样的残渣；再滤掉其余控制字符（保留换行和制表），按字符
+/// 边界截到 1 KiB。日志尾巴没有脱敏，这里同样只截断、不新写脱敏规则。
+fn clean_output(raw: &str) -> String {
+    let cleaned: String = strip_csi(raw)
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect();
+    let mut end = cleaned.len().min(PROBE_OUTPUT_LIMIT);
+    while !cleaned.is_char_boundary(end) {
+        end -= 1;
+    }
+    cleaned[..end].to_owned()
+}
+
+/// 去掉 CSI 序列：ESC 后跟 `[`，参数字节（0x30–0x3F）和中间字节（0x20–0x2F），0x40–0x7E 结束。
+/// 输出被截断在序列中间时同样整段去掉。
+fn strip_csi(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            while chars
+                .peek()
+                .is_some_and(|b| ('\u{20}'..='\u{3f}').contains(b))
+            {
+                chars.next();
+            }
+            if chars
+                .peek()
+                .is_some_and(|b| ('\u{40}'..='\u{7e}').contains(b))
+            {
+                chars.next();
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 async fn observe(
@@ -121,6 +201,22 @@ async fn observe(
         .ok_or_else(|| Failure::Other(EngineError::NotFound(format!("容器 {container}")).into()))?;
     let state = info.state.unwrap_or_default();
     let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
+    let probes: Vec<Probe> = state
+        .health
+        .as_ref()
+        .and_then(|h| h.log.as_ref())
+        .map(|log| {
+            log.iter()
+                .rev()
+                .take(PROBES_KEPT)
+                .rev()
+                .map(|entry| Probe {
+                    exit_code: entry.exit_code,
+                    output: clean_output(entry.output.as_deref().unwrap_or_default()),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let health = state.health.and_then(|h| h.status);
     let has_check = matches!(
         health,
@@ -140,7 +236,10 @@ async fn observe(
             ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD => {
                 Err(Failure::Exited(exit_code))
             }
-            _ => Ok(Observation::Waiting(label)),
+            _ => Ok(Observation::Waiting {
+                state: label,
+                probes,
+            }),
         };
     }
     if matches!(
@@ -150,7 +249,7 @@ async fn observe(
         return Err(Failure::Exited(exit_code));
     }
     if health == Some(HealthStatusEnum::UNHEALTHY) {
-        return Err(Failure::Unhealthy);
+        return Err(Failure::Unhealthy(probes));
     }
     let running = status == ContainerStateStatusEnum::RUNNING;
     match target {
@@ -164,7 +263,10 @@ async fn observe(
             if health == Some(HealthStatusEnum::HEALTHY) {
                 Ok(Observation::Done(Readiness::Healthy))
             } else {
-                Ok(Observation::Waiting(label))
+                Ok(Observation::Waiting {
+                    state: label,
+                    probes,
+                })
             }
         }
         Target::Ready if running => {
@@ -172,12 +274,18 @@ async fn observe(
             if since.elapsed() >= STABLE_FOR {
                 Ok(Observation::Done(Readiness::Running))
             } else {
-                Ok(Observation::Waiting(label))
+                Ok(Observation::Waiting {
+                    state: label,
+                    probes,
+                })
             }
         }
         _ => {
             *running_since = None;
-            Ok(Observation::Waiting(label))
+            Ok(Observation::Waiting {
+                state: label,
+                probes,
+            })
         }
     }
 }

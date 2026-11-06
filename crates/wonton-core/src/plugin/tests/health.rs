@@ -3,10 +3,12 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
 use super::super::fake_docker::FakeDocker;
+use super::super::health::{Target, wait_for};
 use super::super::names::container_name;
 use super::super::render::{RenderError, dry_run};
 use super::super::{Health, PluginPackage, PluginStatus, PluginView};
@@ -148,6 +150,143 @@ async fn a_one_shot_service_nobody_depends_on_still_has_to_finish() {
     docker.set_state(&provision, exited(0));
     let view = m.install(&compose, &[]).await.unwrap();
     assert_eq!(view.status, PluginStatus::Running);
+}
+
+// 健康检查失败时，错误里要有探针自己的输出（存储探针、curl -f 的原因在 Docker 的 `State.Health.Log`
+// 里，作者不该再去 `docker inspect`），和日志尾巴并列。
+#[tokio::test]
+async fn install_failure_names_the_failing_probes() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    docker.set_state(&container_name("app-test", "init"), exited(0));
+    let app = container_name("app-test", "app");
+    docker.set_state(
+        &app,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy", "FailingStreak": 4, "Log": [
+                {"ExitCode": 2, "Output": "最早的一次，不该出现在错误里"},
+                {"ExitCode": 1, "Output": "curl: (7) Failed to connect to 127.0.0.1 port 1"},
+                {"ExitCode": 7, "Output": "curl: (7) Couldn't connect to server"},
+                {"ExitCode": 1, "Output": "存储卷不可写"},
+            ]},
+        }),
+    );
+    docker.set_output(&app, 0, "插件日志：数据库迁移失败", "");
+    let m = manager_with(engine, &dir);
+    let error = m
+        .install(&with_init(""), &[])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("curl: (7) Failed to connect to 127.0.0.1 port 1"),
+        "{error}"
+    );
+    assert!(error.contains("存储卷不可写"), "{error}");
+    assert!(error.contains("插件日志：数据库迁移失败"), "{error}");
+    assert!(!error.contains("最早的一次"), "{error}");
+}
+
+// 超时同样带探针输出，和日志尾巴并列。
+#[tokio::test]
+async fn timeout_also_names_the_failing_probes() {
+    let (docker, engine) = FakeDocker::start().await;
+    let app = container_name("app-test", "app");
+    docker.add_container(&app, "app.probe-fail");
+    docker.set_state(
+        &app,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "starting", "Log": [{"ExitCode": 1, "Output": "探针一直失败"}]},
+        }),
+    );
+    docker.set_output(&app, 0, "插件日志：还在初始化", "");
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+    let error = wait_for(&engine, &app, Target::Ready, deadline)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("探针一直失败"), "{error}");
+    assert!(error.contains("插件日志：还在初始化"), "{error}");
+}
+
+// 探针输出去掉控制字符（终端转义、回车），超过 1 KiB 的按字符边界截掉。
+#[tokio::test]
+async fn probe_output_is_trimmed_and_truncated() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    docker.set_state(&container_name("app-test", "init"), exited(0));
+    let app = container_name("app-test", "app");
+    let output = format!("HEAD\u{1b}[31m红\u{7}\r\n{}END-MARKER", "前".repeat(600));
+    docker.set_state(
+        &app,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy", "Log": [{"ExitCode": 1, "Output": output}]},
+        }),
+    );
+    let m = manager_with(engine, &dir);
+    let error = m
+        .install(&with_init(""), &[])
+        .await
+        .unwrap_err()
+        .to_string();
+    // 颜色序列整个去掉，不留 [31m 这样的残渣；控制字符去掉（回车），换行和制表保留。
+    assert!(error.contains("HEAD红\n"), "{error}");
+    assert!(!error.contains("[31m"), "{error}");
+    assert!(!error.contains('\u{1b}'), "{error}");
+    assert!(!error.contains('\r'), "{error}");
+    assert!(error.contains(&"前".repeat(300)), "{error}");
+    assert!(!error.contains("END-MARKER"), "{error}");
+}
+
+// ANSI 转义序列整个去掉：`\x1b[31mred\x1b[0m` 只剩 red，结尾的复位序列也不留残渣。
+#[tokio::test]
+async fn ansi_sequences_are_stripped_entirely() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    docker.set_state(&container_name("app-test", "init"), exited(0));
+    let app = container_name("app-test", "app");
+    docker.set_state(
+        &app,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy",
+                       "Log": [{"ExitCode": 1, "Output": "\u{1b}[31mred\u{1b}[0m"}]},
+        }),
+    );
+    let m = manager_with(engine, &dir);
+    let error = m
+        .install(&with_init(""), &[])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("] red\n"), "{error}");
+    assert!(!error.contains("[31m") && !error.contains("[0m"), "{error}");
+    assert!(!error.contains('\u{1b}'), "{error}");
+}
+
+// 没有 Health.Log 的旧 Docker：错误和以前一样，只有日志尾巴。
+#[tokio::test]
+async fn failures_without_probe_log_read_as_before() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    docker.set_state(&container_name("app-test", "init"), exited(0));
+    let app = container_name("app-test", "app");
+    docker.set_state(
+        &app,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
+    );
+    docker.set_output(&app, 0, "插件日志：只写了一半", "");
+    let m = manager_with(engine, &dir);
+    let error = m
+        .install(&with_init(""), &[])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("插件日志：只写了一半"), "{error}");
+    assert!(!error.contains("最近探针"), "{error}");
 }
 
 /// 规范：长期运行的服务都要有健康检查，官方目录的插件缺了不收录。`plugins/examples/` 不进官方目录，
