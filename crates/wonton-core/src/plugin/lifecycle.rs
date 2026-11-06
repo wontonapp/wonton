@@ -244,29 +244,6 @@ impl PluginManager {
         })
     }
 
-    /// 重建容器时迁移旧网段：网络不在这套核心的地址段里（旧版核心让 Docker 从默认地址池分的），就
-    /// 删掉在段内重建（[`super::upgrade`],卷和数据不动），核心接回新网络的保留地址。必须在大渲染之前
-    /// 调用：核心地址、网关这些变量要按迁好后的网络算；迁移删掉插件的全部容器（都挂在插件网络上）。
-    /// 返回有没有迁移。
-    pub(in crate::plugin) async fn migrate_network_into_pool(
-        &self,
-        manifest: &Manifest,
-    ) -> Result<bool, InstallError> {
-        let network = self.cfg.instance.network(&manifest.id.slug());
-        if !self.engine.network_outside_pool(&network).await? {
-            return Ok(false);
-        }
-        let found = self.own_resources(&manifest.id).await?;
-        for container in &found.containers {
-            self.engine.remove_container(container).await?;
-        }
-        self.rebuild_network(manifest, &network).await?;
-        if let Some(core) = &self.cfg.core_container {
-            self.attach_core(&network, core, manifest).await?;
-        }
-        Ok(true)
-    }
-
     /// 建插件网络，以及局域网端口要用的网络（见 [`super::lan`]）。
     async fn create_networks(
         &self,

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use bollard::models::{
     ContainerCreateBody, HostConfig, NetworkCreateRequest, RestartPolicy, RestartPolicyNameEnum,
 };
+use ipnet::Ipv4Net;
 use rustix::process::{getegid, geteuid};
 use serde::Serialize;
 
@@ -341,13 +342,28 @@ impl Engine {
         name: &str,
         labels: &HashMap<String, String>,
     ) -> Result<(), EngineError> {
-        self.create_reserved(NetworkCreateRequest {
+        self.create_reserved(Self::relay_request(name, labels))
+            .await
+    }
+
+    /// 同 [`Self::create_relay_network`]，但在迁移预留的网段上建。
+    pub async fn create_relay_network_at(
+        &self,
+        name: &str,
+        labels: &HashMap<String, String>,
+        subnet: Ipv4Net,
+    ) -> Result<(), EngineError> {
+        self.create_network_at_reserved(Self::relay_request(name, labels), subnet)
+            .await
+    }
+
+    fn relay_request(name: &str, labels: &HashMap<String, String>) -> NetworkCreateRequest {
+        NetworkCreateRequest {
             name: name.to_owned(),
             driver: Some("bridge".to_owned()),
             labels: Some(labels.clone()),
             ..Default::default()
-        })
-        .await
+        }
     }
 
     /// 重建出口容器，约 0.6 秒（实测）。

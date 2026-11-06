@@ -52,6 +52,7 @@ pub(crate) mod model_providers;
 pub mod models;
 pub mod mounts;
 pub mod names;
+mod network_migration;
 pub mod network_pool;
 pub mod network_pool_command;
 #[cfg(test)]

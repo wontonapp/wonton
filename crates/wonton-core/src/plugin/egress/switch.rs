@@ -166,11 +166,25 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
         let lan = self.lan_grant(&package, record.lan_webui).await?;
-        // 要迁网络就在渲染前迁：重建的容器要按迁好后的网络拿变量（核心地址、网关）。
-        self.migrate_network_into_pool(&package.manifest).await?;
-        let mut ctx = self.rebuild_context(&package, &record, lan).await?;
+        // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动。
+        let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
+            Some((pending, reservation)) => (Some(pending), Some(reservation)),
+            None => (None, None),
+        };
+        let mut ctx = self
+            .rebuild_context(&package, &record, lan, pending.as_ref())
+            .await?;
         ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
         let plan = render(&package, &ctx)?;
+        if let (Some(pending), Some(reservation)) = (&pending, reservation) {
+            self.apply_migration(
+                &package.manifest,
+                pending,
+                reservation,
+                ctx.egress.is_some(),
+            )
+            .await?;
+        }
         self.replace_containers(&ctx, plan).await?;
         record.proxied = ctx.egress.is_some();
         self.store.save(&record)?;

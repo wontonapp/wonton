@@ -199,6 +199,13 @@ impl FakeDocker {
         docker.networks.insert(name.to_owned(), Labels::new());
         docker.network_bodies.insert(name.to_owned(), json!({}));
     }
+    /// 模拟主人手动删掉一个网络（或上一代核心清掉过）。
+    pub fn remove_network(&self, name: &str) {
+        let mut docker = self.lock();
+        docker.endpoints.remove(name);
+        docker.network_bodies.remove(name);
+        docker.networks.remove(name);
+    }
 
     /// 放进一个已有的卷，比如别的插件的。
     pub fn add_volume(&self, name: &str, plugin: &str) {

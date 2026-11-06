@@ -120,3 +120,147 @@ async fn rebuilding_migrates_an_old_network_into_the_pool_and_keeps_data() {
         view.status
     );
 }
+
+/// 旧版核心留下的三种网络——主网络、局域网端口的网络、出口容器和它的网络（整套核心共用）——
+/// 在同一次重建里全部迁进地址段，卷和数据不动，插件回到运行。
+#[tokio::test]
+async fn rebuilding_migrates_main_lan_and_egress_networks_together() {
+    let (docker, m, detected, _dir) = on(office()).await;
+    let compose = super::package(
+        "  samba:\n    image: example/samba\n    \
+             environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}\n    \
+             volumes: [data:/var/lib/samba]\n  web:\n    image: nginx\n\
+             volumes:\n  data: {}",
+        "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
+             permissions: [network.lan, network.egress]",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let id = package.manifest.id.clone();
+    let network = Instance::default().network(&id.slug());
+    let lan_network = Instance::default().lan_network(&id.slug());
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    // 旧版核心留下的三个网络：Docker 从默认池分的 /16。出口网络整套核心只有一个。
+    let old = |subnet: &str, gateway: &str| json!({"IPAM": {"Config": [{"Subnet": subnet, "Gateway": gateway}]}});
+    docker.add_network(&network, id.as_str(), old("172.18.0.0/16", "172.18.0.1"));
+    docker.add_network(
+        &lan_network,
+        id.as_str(),
+        old("172.19.0.0/16", "172.19.0.1"),
+    );
+    docker.add_network("wonton-egress", "", old("172.20.0.0/16", "172.20.0.1"));
+
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
+    m.lan_pass().await.unwrap();
+
+    let pool = NetworkPool::default();
+    let mut subnets = Vec::new();
+    for name in [&network, &lan_network, &"wonton-egress".to_owned()] {
+        let body = docker
+            .network(name)
+            .unwrap_or_else(|| panic!("网络 {name} 不存在"));
+        let subnet: Ipv4Net = body["IPAM"]["Config"][0]["Subnet"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(subnet.prefix_len(), 26, "{name}");
+        assert!(pool.covers(subnet), "{name}: {subnet} 不在地址段里");
+        subnets.push(subnet);
+    }
+    for (i, left) in subnets.iter().enumerate() {
+        for right in &subnets[i + 1..] {
+            assert!(
+                !left.contains(&right.network()) && !right.contains(&left.network()),
+                "{left} 和 {right} 重叠"
+            );
+        }
+    }
+    let volume = Instance::default().volume(&id.slug(), "data");
+    assert!(
+        docker.volumes().iter().any(|name| name == &volume),
+        "数据卷 {volume} 应该还在"
+    );
+    let view = m
+        .list()
+        .into_iter()
+        .find(|view| view.id == id)
+        .expect("插件已装");
+    assert!(
+        matches!(view.status, PluginStatus::Running),
+        "{:?}",
+        view.status
+    );
+}
+
+/// 渲染阶段失败：预留放掉，旧网络和旧容器一个不动、插件照原样跑；放掉的网段下一个插件能用上。
+#[tokio::test]
+async fn a_failed_render_releases_the_reservation_and_keeps_the_old_setup_running() {
+    let (docker, m, detected, _dir) = on(office()).await;
+    let compose = super::package(
+        "  samba:\n    image: example/samba\n    \
+             environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}\n    \
+             volumes: [data:/var/lib/samba]\n  web:\n    image: nginx\n\
+             volumes:\n  data: {}",
+        "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
+             permissions: [network.lan]",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let id = package.manifest.id.clone();
+    let network = Instance::default().network(&id.slug());
+    let lan_network = Instance::default().lan_network(&id.slug());
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    docker.add_network(
+        &network,
+        id.as_str(),
+        json!({"Internal": true, "IPAM": {"Config": [{"Subnet": "172.18.0.0/16", "Gateway": "172.18.0.1"}]}}),
+    );
+    // 局域网网络弄丢：重建时要在渲染阶段重建它，注入的失败正好炸在那里。
+    docker.remove_network(&lan_network);
+    docker.reject_pinned_networks(1, "注入的建网失败");
+
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
+    m.lan_pass().await.unwrap();
+
+    // 旧网络没动，容器还挂在上面跑着（假 Docker 的网络查询只列在跑的容器）。
+    let body = docker.network(&network).unwrap();
+    let subnet: Ipv4Net = body["IPAM"]["Config"][0]["Subnet"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(subnet.to_string(), "172.18.0.0/16");
+    let containers = docker.containers();
+    assert!(
+        containers
+            .iter()
+            .any(|name| name == "wonton-app-test--samba")
+            && containers.iter().any(|name| name == "wonton-app-test--web"),
+        "旧容器应该一个没删：{containers:?}"
+    );
+    let view = m
+        .list()
+        .into_iter()
+        .find(|view| view.id == id)
+        .expect("插件已装");
+    let PluginStatus::Degraded { reason } = &view.status else {
+        panic!("重建失败的插件应标为异常：{:?}", view.status)
+    };
+    assert!(reason.contains("注入的建网失败"), "{reason}");
+    let volume = Instance::default().volume(&id.slug(), "data");
+    assert!(docker.volumes().iter().any(|name| name == &volume));
+
+    // 预留放掉了：再装一个插件，落在刚才预留出来的第一个空闲段上。
+    let next = "services:\n  web:\n    image: example/web\nx-wonton:\n  spec: '0.5'\n  \
+        id: app.other\n  version: 1.0.0\n  kind: app\n  title: {zh: 另一个, en: Other}\n  \
+        description: {zh: 测试, en: Test}\n  permissions: []";
+    m.install(next, &[]).await.unwrap();
+    let other = docker
+        .network(&Instance::default().network("app-other"))
+        .unwrap();
+    let other_subnet: Ipv4Net = other["IPAM"]["Config"][0]["Subnet"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(other_subnet, "10.213.0.0/26".parse().unwrap());
+}

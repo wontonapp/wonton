@@ -22,6 +22,7 @@ use futures_util::StreamExt;
 use super::lan::Detector;
 use super::network_pool::NetworkPool;
 use super::sources::Subnet;
+use ipnet::Ipv4Net;
 
 /// 核心要求的 Docker Engine 最低主版本：28 起局域网里的其他主机不能再经路由直接访问容器里没发布的端口
 /// （moby#48724），内部网络也才有 `isolated` 网关模式。
@@ -138,10 +139,12 @@ pub struct Engine {
     pub(crate) docker: Docker,
     /// 一次性容器一个跑完再跑下一个：局域网检测和出口容器的探测都可能同时要跑，容器名是固定的。
     pub(super) one_shot: Arc<tokio::sync::Mutex<()>>,
-    /// 选网段加建网络全程串行：本进程的并发建网络各自现查空闲网段会挑到同一段，Docker 对
+    /// 选网段加建网络全程串行：本进程的并发建网络各自现查会挑到同一段，Docker 对
     /// 重叠的并发建网全部拒绝，重试也是一起撞（20 个并发网络实测 10 次重试都撞不出一个）。
     /// 锁只管本进程；外部程序同时建的仍靠重试。
     pub(super) reserved_creation: Arc<tokio::sync::Mutex<()>>,
+    /// 渲染前预留的网段（见 [`Self::reserve_subnets`]）：别的建网络跳过它们，渲染失败放掉。
+    pub(super) held_subnets: Arc<std::sync::Mutex<Vec<Ipv4Net>>>,
     pub(super) network_pool: NetworkPool,
     pub(super) network_detector: Detector,
 }
@@ -161,6 +164,7 @@ impl Engine {
             docker,
             one_shot: Arc::default(),
             reserved_creation: Arc::default(),
+            held_subnets: Arc::default(),
             network_pool: NetworkPool::default(),
             network_detector: Detector::Here,
         }

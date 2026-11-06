@@ -251,7 +251,7 @@ impl PluginManager {
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         let package = installed_package(&record)?;
         let lan = self.lan_grant(&package, record.lan_webui).await?;
-        let mut ctx = self.rebuild_context(&package, &record, lan).await?;
+        let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
         ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
         let plan = render(&package, &ctx)?;
         let mut images = HashMap::new();
@@ -450,6 +450,32 @@ impl PluginManager {
         if reach_changed || self.engine.network_outside_pool(network).await? {
             progress.network_rebuilt = true;
             self.rebuild_network(manifest, network).await?;
+        }
+        // 局域网和出口的网络也一样：段外的删掉在段内重建（容器已经删了）。出口网络整套核心共用，
+        // 重建后出口容器跟着重建，所有出网插件重新接上。
+        let lan_network = self.cfg.instance.lan_network(&manifest.id.slug());
+        if self.engine.network_outside_pool(&lan_network).await? {
+            self.engine.remove_network(&lan_network).await?;
+            self.engine
+                .create_lan_network(&lan_network, &self.cfg.instance.labels(&manifest.id))
+                .await?;
+        }
+        let egress_network = self.cfg.instance.egress();
+        if self.engine.network_outside_pool(&egress_network).await? {
+            self.engine
+                .remove_container(&self.cfg.instance.egress())
+                .await?;
+            self.engine.remove_network(&egress_network).await?;
+            self.engine
+                .create_relay_network(&egress_network, &self.cfg.instance.component_labels())
+                .await?;
+            let config = self.egress_config()?;
+            if let Some(proxy) = &config.url {
+                self.sync_relay(proxy, &config, None).await?;
+            }
+        } else if manifest.permissions.contains(&Permission::NetworkEgress) {
+            // 出口网络没动而这个插件要出网：出口容器跟着旧网络一起被删过的话，重新接上。
+            self.attach_relay(network).await?;
         }
         self.reattach_core(&old.package.manifest, manifest, network)
             .await?;

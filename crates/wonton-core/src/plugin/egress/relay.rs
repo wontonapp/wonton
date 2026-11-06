@@ -125,7 +125,7 @@ impl PluginManager {
         }
     }
 
-    async fn sync_relay(
+    pub(in crate::plugin) async fn sync_relay(
         &self,
         proxy: &ProxyAddress,
         config: &EgressConfig,

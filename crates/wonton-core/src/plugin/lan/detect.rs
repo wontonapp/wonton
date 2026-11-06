@@ -13,6 +13,7 @@ use bollard::errors::Error as BollardError;
 use bollard::models::{ContainerCreateBody, HostConfig, NetworkCreateRequest};
 use bollard::query_parameters::LogsOptionsBuilder;
 use futures_util::StreamExt;
+use ipnet::Ipv4Net;
 
 use super::probe::{self, HostNetwork};
 use super::select::DockerBridges;
@@ -201,15 +202,29 @@ impl Engine {
         name: &str,
         labels: &HashMap<String, String>,
     ) -> Result<(), EngineError> {
-        let request = NetworkCreateRequest {
+        self.create_reserved(Self::lan_request(name, labels)).await
+    }
+
+    /// 同 [`Self::create_lan_network`]，但在迁移预留的网段上建。
+    pub async fn create_lan_network_at(
+        &self,
+        name: &str,
+        labels: &HashMap<String, String>,
+        subnet: Ipv4Net,
+    ) -> Result<(), EngineError> {
+        self.create_network_at_reserved(Self::lan_request(name, labels), subnet)
+            .await
+    }
+
+    fn lan_request(name: &str, labels: &HashMap<String, String>) -> NetworkCreateRequest {
+        NetworkCreateRequest {
             name: name.to_owned(),
             driver: Some("bridge".to_owned()),
             labels: Some(labels.clone()),
             internal: Some(false),
             options: Some(HashMap::from([(MASQUERADE.to_owned(), "false".to_owned())])),
             ..Default::default()
-        };
-        self.create_reserved(request).await
+        }
     }
 }
 

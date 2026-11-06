@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bollard::models::{
@@ -119,6 +120,35 @@ fn kept_taken(error: EngineError) -> EngineError {
     }
 }
 
+/// 渲染前预留的网段：同进程其他建网络会跳过它们。丢弃 [`Reservation`] 就放掉（渲染失败时旧
+/// 网络和容器一个没动）；网络建好后也丢弃（Docker 的网络列表里已经看得见）。
+#[derive(Debug)]
+pub(in crate::plugin) struct Reservation {
+    /// 还没发给调用方的网段。
+    pending: Vec<Ipv4Net>,
+    /// 预留的全量：Drop 按它放掉，`next` 取走的不影响释放。
+    reserved: Vec<Ipv4Net>,
+    held: Arc<std::sync::Mutex<Vec<Ipv4Net>>>,
+}
+
+impl Reservation {
+    /// 按预留顺序取网段：第一个给主网络，往后依次是局域网、出口。
+    pub(in crate::plugin) fn next(&mut self) -> Option<Ipv4Net> {
+        if self.pending.is_empty() {
+            None
+        } else {
+            Some(self.pending.remove(0))
+        }
+    }
+}
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        let mut held = self.held.lock().unwrap_or_else(|e| e.into_inner());
+        held.retain(|subnet| !self.reserved.contains(subnet));
+    }
+}
+
 impl Engine {
     /// 建插件网络，给核心留出最后一个可用地址。
     pub async fn create_network(
@@ -127,16 +157,36 @@ impl Engine {
         labels: &HashMap<String, String>,
         reach: NetworkReach,
     ) -> Result<(), EngineError> {
+        self.create_reserved(Self::reserved_request(name, labels, reach))
+            .await
+    }
+
+    /// 同 [`Self::create_network`]，但在迁移预留的网段上建。
+    pub(super) async fn create_network_at(
+        &self,
+        name: &str,
+        labels: &HashMap<String, String>,
+        reach: NetworkReach,
+        subnet: Ipv4Net,
+    ) -> Result<(), EngineError> {
+        self.create_network_at_reserved(Self::reserved_request(name, labels, reach), subnet)
+            .await
+    }
+
+    fn reserved_request(
+        name: &str,
+        labels: &HashMap<String, String>,
+        reach: NetworkReach,
+    ) -> NetworkCreateRequest {
         let isolated = GATEWAY_MODES.map(|mode| (mode.to_owned(), "isolated".to_owned()));
-        let request = NetworkCreateRequest {
+        NetworkCreateRequest {
             name: name.to_owned(),
             driver: Some("bridge".to_owned()),
             labels: Some(labels.clone()),
             internal: Some(reach != NetworkReach::Egress),
             options: (reach == NetworkReach::Isolated).then(|| isolated.into()),
             ..Default::default()
-        };
-        self.create_reserved(request).await
+        }
     }
 
     /// 宿主路由只查一次（一次建网络的过程里不会变），Docker 网段每轮重查；Docker 报重叠时换下一段，
@@ -153,6 +203,13 @@ impl Engine {
             let mut used = self.docker_subnets(&request.name).await?;
             used.extend(host.iter().copied());
             used.extend_from_slice(&taken);
+            used.extend(
+                self.held_subnets
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .iter()
+                    .copied(),
+            );
             let subnet = self
                 .network_pool
                 .available(&used)
@@ -198,6 +255,79 @@ impl Engine {
             .filter_map(|config| config.subnet.as_deref().and_then(|text| text.parse().ok()))
             .collect();
         Ok(!subnets.is_empty() && !subnets.iter().all(|s| self.network_pool.covers(*s)))
+    }
+
+    /// 给 `count` 个网络各挑一个空闲网段并预留：同进程并发的 [`Self::create_reserved`] 会跳过
+    /// 这些段，外部程序同时建的仍可能在创建时撞上（那时按失败即停报错）。渲染失败丢弃返回的
+    /// [`Reservation`] 就放掉了，什么都没动。
+    pub(in crate::plugin) async fn reserve_subnets(
+        &self,
+        count: usize,
+        name: &str,
+    ) -> Result<Reservation, EngineError> {
+        let _serial = self.reserved_creation.lock().await;
+        let mut used = self.docker_subnets(name).await?;
+        used.extend(self.host_subnets(name).await?.iter().copied());
+        used.extend(
+            self.held_subnets
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .copied(),
+        );
+        let mut pending = Vec::with_capacity(count);
+        for _ in 0..count {
+            let subnet = self
+                .network_pool
+                .available(&used)
+                .ok_or_else(|| pool_exhausted_error(name, self.network_pool))?;
+            pending.push(subnet);
+            used.push(subnet);
+        }
+        self.held_subnets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(pending.iter().copied());
+        let reserved = pending.clone();
+        Ok(Reservation {
+            pending,
+            reserved,
+            held: Arc::clone(&self.held_subnets),
+        })
+    }
+
+    /// 在预留的网段上建网络。别的程序刚好同时占了这一段时按失败即停报错：变量已经按这段算了，
+    /// 不能悄悄换段（换段要重新渲染）。调用方负责丢弃预留。
+    pub(super) async fn create_network_at_reserved(
+        &self,
+        request: NetworkCreateRequest,
+        subnet: Ipv4Net,
+    ) -> Result<(), EngineError> {
+        let isolated = request
+            .options
+            .as_ref()
+            .and_then(|options| options.get(GATEWAY_MODES[0]))
+            .is_some_and(|mode| mode == "isolated");
+        let gateway =
+            (!isolated).then(|| Ipv4Addr::from(subnet.network().to_bits() + 1).to_string());
+        let ipam = reserved_ipam(subnet, gateway).expect("/26 能给核心留地址");
+        let name = request.name.clone();
+        match self
+            .create_raw(NetworkCreateRequest {
+                ipam: Some(ipam),
+                ..request
+            })
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) if subnet_taken(&error) => Err(EngineError::Rejected {
+                context: format!("创建网络 {name}"),
+                message: format!(
+                    "预留的网段 {subnet} 被别的程序刚好占了：重试这次重建，会另挑网段"
+                ),
+            }),
+            Err(error) => Err(error),
+        }
     }
 
     pub(super) async fn create_raw(

@@ -286,23 +286,40 @@ impl PluginManager {
         record: &InstalledRecord,
         addresses: &[IpAddr],
     ) -> Result<(), InstallError> {
-        // 要迁网络就在渲染前迁：核心地址等变量得按迁好后的网络算。迁移删掉插件的全部容器
-        // （每个都挂在插件网络上），迁移后全部重建。
-        let migrating = self.migrate_network_into_pool(&package.manifest).await?;
+        // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动，插件照原样跑。
+        let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
+            Some((pending, reservation)) => (Some(pending), Some(reservation)),
+            None => (None, None),
+        };
         let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
-        let ctx = self.rebuild_context(package, record, Some(grant)).await?;
+        let ctx = self
+            .rebuild_context(package, record, Some(grant), pending.as_ref())
+            .await?;
         let mut plan = render(package, &ctx)?;
-        if !migrating {
-            let services: BTreeSet<&str> = package
-                .manifest
-                .lan
-                .iter()
-                .flat_map(|lan| &lan.ports)
-                .map(|port| port.service.as_str())
-                .collect();
-            plan.containers.retain(|c| {
-                services.contains(c.service.as_str()) || c.variables.contains(super::ADDRESSES_VAR)
-            });
+        match (&pending, reservation) {
+            (Some(pending), Some(reservation)) => {
+                self.apply_migration(
+                    &package.manifest,
+                    pending,
+                    reservation,
+                    ctx.egress.is_some(),
+                )
+                .await?;
+            }
+            (None, None) => {
+                let services: BTreeSet<&str> = package
+                    .manifest
+                    .lan
+                    .iter()
+                    .flat_map(|lan| &lan.ports)
+                    .map(|port| port.service.as_str())
+                    .collect();
+                plan.containers.retain(|c| {
+                    services.contains(c.service.as_str())
+                        || c.variables.contains(super::ADDRESSES_VAR)
+                });
+            }
+            _ => unreachable!("迁移标记和预留成对出现"),
         }
         self.replace_containers(&ctx, plan).await
     }
@@ -313,6 +330,7 @@ impl PluginManager {
         package: &PluginPackage,
         record: &InstalledRecord,
         lan: Option<LanGrant>,
+        migration: Option<&super::super::network_migration::PendingMigration>,
     ) -> Result<InstallContext, InstallError> {
         let manifest = &package.manifest;
         let secrets = self.check_secrets(manifest).await?;
@@ -327,12 +345,28 @@ impl PluginManager {
             && self.engine.network_reach(network).await?.is_none()
         {
             let labels = self.cfg.instance.labels(&manifest.id);
-            self.engine.create_lan_network(network, &labels).await?;
+            match migration.and_then(|m| m.lan) {
+                Some(subnet) => {
+                    self.engine
+                        .create_lan_network_at(network, &labels, subnet)
+                        .await?
+                }
+                None => self.engine.create_lan_network(network, &labels).await?,
+            }
         }
         ctx.lan = lan;
         let network = self.cfg.instance.network(&ctx.slug);
-        ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
-        ctx.core_address = self.core_address_var(manifest, &network).await?;
+        match migration.and_then(|m| m.main) {
+            // 主网络要迁：变量按预留的新网段算（渲染成功才动旧网络）。
+            Some(_) => {
+                ctx.extra_hosts = migration.unwrap().extra_hosts.clone();
+                ctx.core_address = migration.unwrap().core_address.clone();
+            }
+            None => {
+                ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
+                ctx.core_address = self.core_address_var(manifest, &network).await?;
+            }
+        }
         Ok(ctx)
     }
 
