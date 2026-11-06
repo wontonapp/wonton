@@ -204,8 +204,7 @@ async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
             if !encrypted {
                 bail!("第 {round} 轮：回复没有加密");
             }
-            let shown: String = body.chars().take(80).collect();
-            println!("第 {round} 轮：收到加密的回复：{shown}");
+            println!("第 {round} 轮：收到加密的回复：{body}");
             if let Some(settle) = options.settle {
                 while let Ok(Some((body, encrypted))) =
                     tokio::time::timeout(settle, replies.recv()).await
@@ -213,8 +212,7 @@ async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
                     if !encrypted {
                         bail!("第 {round} 轮：回复没有加密");
                     }
-                    let shown: String = body.chars().take(80).collect();
-                    println!("第 {round} 轮：又收到加密的回复：{shown}");
+                    println!("第 {round} 轮：又收到加密的回复：{body}");
                 }
             }
         }

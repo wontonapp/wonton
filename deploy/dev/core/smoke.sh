@@ -52,7 +52,11 @@ hermes="$hermes_network--gateway"
 plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # 构建镜像经 dev.sh：远端主机上经它自己的代理、限制并发（WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS）。
-build() { "$dev" build -q "$@" >/dev/null; }
+build_failed() {
+  docker buildx version >/dev/null 2>&1 || fail "构建镜像需要 Docker buildx，请安装 Docker buildx 插件后重试"
+  fail "$1（详情见上面的输出）"
+}
+build() { "$dev" build -q "$@" >/dev/null || build_failed "镜像构建失败"; }
 # 真实模型：冒烟的 magpie 容器直连宿主上的 magpie（地址见模型段的按 Docker 种类区分），凭据见文件头。
 model="${WONTON_SMOKE_MODEL:-auto/glm-5.3-flashx}"
 
@@ -132,7 +136,7 @@ hermes_events="$(mktemp)"
 docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
   >"$hermes_events" 2>/dev/null &
 events_pid=$!
-"$dev" up >/dev/null
+"$dev" up >/dev/null || build_failed "核心启动失败"
 start_browser
 ok "核心健康：$core_url"
 
@@ -393,16 +397,39 @@ hermes_models() {
     python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
 }
 expect "还没有 provider：网关里一个模型也没有" "$(hermes_models)" ""
-# 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，其余是话。
+# 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，$2 话。
 talk_to_hermes() {
-  local out="$1" jwt
-  shift
+  local jwt
   jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
-  local texts=()
-  for text in "$@"; do texts+=(--text "$text"); done
   docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
     --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
-    --reply any --wait 180 "${texts[@]}" >"$out" 2>&1
+    --reply any --wait 180 --text "$2" >"$1" 2>&1
+}
+hermes_reply() {
+  python3 -c 'import sys
+print(sys.stdin.read().partition("第 1 轮：收到加密的回复：")[2].strip())' <"$1"
+}
+model_usage() { docker exec "$magpie" magpie usage --last 15m --csv; }
+expect_model_reply() {
+  local usage
+  usage="$(model_usage)" || fail "读取 magpie 用量失败"
+  # 同一轮可调模型多次；逐轮取增量，不能拿第一轮的成功记录替第二轮作证。
+  python3 -c 'import csv, io, sys
+def hermes_rows(raw):
+    return [r for r in csv.DictReader(io.StringIO(raw))
+            if r["caller_key_name"] == "com.nousresearch.hermes/default"]
+before = {r["request_id"] for r in hermes_rows(sys.argv[1]) if r["request_id"]}
+rows = [r for r in hermes_rows(sys.stdin.read()) if r["request_id"] not in before]
+valid = any(r["request_id"] and 200 <= int(r["status"]) < 300
+            and r["error"] == "false" and int(r["output_tokens"]) > 0 for r in rows)
+sys.exit(not valid)' "$2" <<<"$usage" || fail "模型没有正常回答：$(hermes_reply "$1")"
+  ok "第 $3 轮模型调用成功且有输出 token，用量记在 Hermes 的凭据名下"
+}
+expect_hermes_memory() {
+  local reply
+  reply="$(hermes_reply "$1")"
+  [[ "$reply" == *介绍* || "$reply" == *自己* ]] || fail "第二轮没有记住第一轮的请求：$reply"
+  ok "第二轮记得第一轮让它介绍自己"
 }
 said="$(mktemp)"
 talk_to_hermes "$said" "你好" || fail "Hermes 没有回答：$(cat "$said")"
@@ -435,16 +462,18 @@ docker exec -e no_proxy="$model_no_proxy" -e NO_PROXY="$model_no_proxy" "$magpie
 [[ " $(hermes_models) " == *" group/wonton-default "* ]] ||
   fail "加了 provider，默认路由组应当可用：$(hermes_models)"
 ok "加了 provider，默认路由组自动有了它的模型，不用手动建组"
-talk_to_hermes "$said" "你好，用一句话介绍你自己。" "我刚才让你做什么？用一句话回答。" ||
-  fail "和 Hermes 的对话失败：$(cat "$said")"
-grep '^第' "$said" | sed 's/^/   · /'
-! grep -q '模型设置' "$said" || fail "有模型了，Hermes 不该再提示去“模型设置”：$(cat "$said")"
-! grep -Eq "AI model service|didn't answer after" "$said" || fail "模型调用失败（开发机的 magpie 能用 $model 吗？）：$(cat "$said")"
+round=0
+for text in "你好，用一句话介绍你自己。" "我刚才让你做什么？"; do
+  round=$((round + 1))
+  usage_before="$(model_usage)" || fail "读取 magpie 用量失败"
+  talk_to_hermes "$said" "$text" || fail "和 Hermes 的对话失败：$(cat "$said")"
+  grep '^第' "$said" | sed "s/^第 1 轮/第 $round 轮/; s/^/   · /"
+  expect_model_reply "$said" "$usage_before" "$round"
+  ! grep -q '模型设置' "$said" || fail "有模型了，Hermes 不该再提示去“模型设置”：$(cat "$said")"
+done
+expect_hermes_memory "$said"
 ok "经隧道和 Hermes 加密对话两轮"
 rm -f "$said"
-docker exec "$magpie" magpie usage --last 15m --csv | grep -q ',com.nousresearch.hermes/default,' ||
-  fail "用量没记在 com.nousresearch.hermes/default 名下"
-ok "用量记在 Hermes 的凭据名下"
 
 step "让 Agent 动手（MCP 总线）：Hermes 请主人确认后装上文件搜索，再用它在授权的文件夹里找文件"
 expect "Hermes 拿到 MCP 总线的地址" "$(hermes_env WONTON_MCP_URL)" "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp"
