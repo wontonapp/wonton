@@ -267,6 +267,13 @@ impl TabsLink {
         })
     }
 
+    pub(crate) fn set_labels(&self, visible: bool) -> Result<(), CoreError> {
+        self.config_change(|state, _| {
+            state.config.labels = visible;
+            Ok(())
+        })
+    }
+
     pub(crate) fn set_display(
         &self,
         tab: TabRef,
@@ -497,6 +504,8 @@ fn empty_view() -> TabsViewModel {
         full: false,
         uninstalled: Vec::new(),
         problem: None,
+        labels: true,
+        candidates: Vec::new(),
     }
 }
 

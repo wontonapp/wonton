@@ -26,6 +26,7 @@ mod push;
 mod registry_mirror;
 mod secret;
 mod session;
+mod settings;
 mod tabs;
 mod timeline;
 
@@ -110,9 +111,10 @@ pub use registry_mirror::{
 };
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
+pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
 pub use tabs::{
-    PluginTab, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabPage,
-    TabRef, TabState, TabsProblem, TabsViewModel,
+    CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
+    TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 pub use timeline::{
     BackPagination, ImageContent, MediaHandle, MessageAction, MessageContent, RichBlock,

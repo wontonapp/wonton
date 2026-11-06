@@ -92,6 +92,10 @@ pub struct TabsViewModel {
     pub uninstalled: Vec<String>,
     /// 配置文件读不了，底栏退回默认三项。改任何一项后，文件重写，这里变空。
     pub problem: Option<TabsProblem>,
+    /// 底栏上显示文字；关掉时只显示图标，见 [`Action::SetTabLabels`](crate::Action::SetTabLabels)。
+    pub labels: bool,
+    /// 还没放到底栏上、可以加上去的页面：设置在前，然后按已装插件的顺序。
+    pub candidates: Vec<TabCandidate>,
 }
 
 /// 底栏上的一项。
@@ -101,8 +105,30 @@ pub struct TabItem {
     pub tab: TabRef,
     /// 能从栏上拿掉；聊天和应用不能。
     pub removable: bool,
+    /// 图标上要不要画角标：插件页出了问题，或者设置里有要处理的事（核心有新版本）。
+    pub badge: bool,
     /// 插件页才有；聊天、应用和设置的标题和图标在壳里。
     pub page: Option<TabPage>,
+}
+
+/// 一个可以加到底栏上的页面。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TabCandidate {
+    pub tab: TabRef,
+    /// 插件页才有；设置的标题和图标在壳里。
+    pub plugin: Option<CandidatePlugin>,
+}
+
+/// 可以加到底栏上的插件页，按插件显示：列表里每一项都用插件自己的图标，和“应用”页一样。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct CandidatePlugin {
+    pub title: String,
+    /// 页面的名字；插件声明了不止一个页面时才有。
+    pub page_title: Option<String>,
+    /// 没有时壳画占位。
+    pub icon: Option<PluginIcon>,
 }
 
 /// 一个插件页，壳按它显示栏上的图标、顶栏和页面容器。
@@ -118,8 +144,6 @@ pub struct TabPage {
     /// 停止时底栏图标变淡。
     #[serde(default)]
     pub dimmed: bool,
-    /// 底栏图标上要不要画角标。
-    pub badge: bool,
     pub display: TabDisplayChoice,
     /// 算上用户的选择和清单，这个页面打开就是全屏。“总是全屏”的开关显示它。
     pub opens_fullscreen: bool,
@@ -225,7 +249,6 @@ mod tests {
             layout: TabLayout::EdgeToEdge,
             state,
             dimmed: true,
-            badge: false,
             display: TabDisplayChoice::Fullscreen,
             opens_fullscreen: true,
             fullscreen: true,
@@ -252,6 +275,7 @@ mod tests {
         let mut items = vec![TabItem {
             tab: TabRef::Chat,
             removable: false,
+            badge: false,
             page: None,
         }];
         for state in [
@@ -274,6 +298,7 @@ mod tests {
             items.push(TabItem {
                 tab: page(),
                 removable: true,
+                badge: true,
                 page: Some(plugin_page(state, monochrome.clone())),
             });
         }
@@ -286,6 +311,7 @@ mod tests {
                     page: None,
                 },
                 removable: true,
+                badge: false,
                 page: Some(plugin_page(TabState::Ready, colored)),
             }),
             full: true,
@@ -293,6 +319,21 @@ mod tests {
             problem: Some(TabsProblem {
                 message: "读不了 tabs.json".into(),
             }),
+            labels: false,
+            candidates: vec![
+                TabCandidate {
+                    tab: TabRef::Settings,
+                    plugin: None,
+                },
+                TabCandidate {
+                    tab: page(),
+                    plugin: Some(CandidatePlugin {
+                        title: "RSS".into(),
+                        page_title: Some("订阅".into()),
+                        icon: None,
+                    }),
+                },
+            ],
         });
     }
 
@@ -312,6 +353,7 @@ mod tests {
                 tab: TabRef::Apps,
                 index: 2,
             },
+            Action::SetTabLabels { visible: false },
             Action::SetTabDisplay {
                 tab: page(),
                 display: TabDisplayChoice::Standard,

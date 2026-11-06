@@ -1,5 +1,6 @@
 //! 底栏行为测试：只经由 ClientCore 和 Action 驱动，插件管理接口由本机假核心提供。
 
+mod bar_settings;
 mod polling;
 mod revision;
 mod state;
@@ -412,7 +413,8 @@ async fn plugin_states_and_page_removal_map_to_tabs() {
         .await;
         let tab_page = item(&view, &page_tab).page.as_ref().unwrap();
         assert_eq!(tab_page.state, expected);
-        assert_eq!(tab_page.badge, matches!(expected, TabState::Failed { .. }));
+        let badge = item(&view, &page_tab).badge;
+        assert_eq!(badge, matches!(expected, TabState::Failed { .. }));
     }
 
     rig.core.set_lists(vec![vec![web_plugin(
@@ -427,7 +429,7 @@ async fn plugin_states_and_page_removal_map_to_tabs() {
         item(view, &page_tab).page.as_ref().unwrap().state == TabState::PageRemoved
     })
     .await;
-    assert!(item(&removed, &page_tab).page.as_ref().unwrap().badge);
+    assert!(item(&removed, &page_tab).badge);
 
     rig.core.set_lists(vec![vec![plugin]]);
     rig.app.dispatch(Action::RefreshPlugins).unwrap();

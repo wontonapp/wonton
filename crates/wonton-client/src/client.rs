@@ -9,8 +9,8 @@ use wonton_protocol::{
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
     OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel,
-    PushNotification, RoomTransfers, SessionListViewModel, StoreItem, TabRef, TabsViewModel,
-    ToolPolicyView, TransfersViewModel,
+    PushNotification, RoomTransfers, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
+    TabsViewModel, ToolPolicyView, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -22,9 +22,11 @@ use crate::plugins::PluginsLink;
 use crate::plugins::cards::follow_card_success;
 use crate::push::PushLink;
 use crate::session_store::SessionStore;
+use crate::settings::SettingsLink;
 use crate::subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PluginsSubscription, SessionListSubscription, TabsSubscription, TransfersSubscription,
+    PluginsSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
+    TransfersSubscription,
 };
 use crate::tabs::TabsLink;
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
@@ -44,6 +46,7 @@ pub struct ClientCore {
     files: Arc<FilesLink>,
     appearance: AppearanceLink,
     onboarding: Arc<OnboardingLink>,
+    settings: SettingsLink,
     /// 网络操作用的运行时，随核心释放。
     runtime: Option<Runtime>,
 }
@@ -137,6 +140,7 @@ impl ClientCore {
             Action::PinTab { tab, replacing } => self.tabs.pin(tab, replacing),
             Action::UnpinTab { tab } => self.tabs.unpin(tab),
             Action::MoveTab { tab, index } => self.tabs.move_tab(tab, index),
+            Action::SetTabLabels { visible } => self.tabs.set_labels(visible),
             Action::SetTabDisplay { tab, display } => self.tabs.set_display(tab, display),
             Action::EnterFullscreen { tab } => self.tabs.enter_fullscreen(tab),
             Action::ExitFullscreen { tab } => self.tabs.exit_fullscreen(tab),
@@ -213,6 +217,16 @@ impl ClientCore {
     /// 订阅外观，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_appearance(&self) -> Arc<AppearanceSubscription> {
         Arc::new(AppearanceSubscription::new(self.appearance.subscribe()))
+    }
+
+    /// 当前的设置首页，用于首帧渲染。
+    pub fn settings(&self) -> SettingsViewModel {
+        self.settings.view()
+    }
+
+    /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
+        Arc::new(SettingsSubscription::new(self.settings.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -645,6 +659,12 @@ impl ClientCore {
             plugins.clone(),
             Path::new(data_dir),
         );
+        let settings = SettingsLink::new(
+            runtime.handle(),
+            home.subscribe(),
+            chat.subscribe(),
+            plugins.subscribe(),
+        );
         Ok(Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             home,
@@ -655,6 +675,7 @@ impl ClientCore {
             files,
             appearance,
             onboarding,
+            settings,
             runtime: Some(runtime),
         }))
     }

@@ -11,6 +11,13 @@ pub(super) struct TabsFile {
     pub(super) server_id: Option<String>,
     pub(super) items: Vec<StoredItem>,
     pub(super) displays: Vec<StoredDisplay>,
+    /// 底栏显示文字。旧文件里没有这一项，按默认的显示。
+    #[serde(default = "shows_labels")]
+    pub(super) labels: bool,
+}
+
+fn shows_labels() -> bool {
+    true
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -88,6 +95,7 @@ pub(super) fn default_file(server_id: Option<String>) -> TabsFile {
             },
         ],
         displays: Vec::new(),
+        labels: true,
     }
 }
 

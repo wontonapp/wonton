@@ -35,6 +35,7 @@ mod onboarding;
 mod plugins;
 mod push;
 mod session_store;
+mod settings;
 mod subscription;
 mod tabs;
 
@@ -46,7 +47,8 @@ pub use home::Network;
 pub use logging::init_logging;
 pub use subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PluginsSubscription, SessionListSubscription, TabsSubscription, TransfersSubscription,
+    PluginsSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
+    TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
@@ -55,35 +57,37 @@ pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
     Action, AddedSource, AddedTools, AgentLogin, Answer, AppearanceProblem, AppearanceViewModel,
-    BackPagination, BackupReminder, BotSwitch, CardChoice, CardLine, ChatAccount, ChatFailure,
-    ChatProblem, ChatSync, ChatViewModel, ConfirmationCard, ConfirmationState, ConfirmationView,
-    ConnectionNotice, CoreError, CoreUpgradeCheck, CoreUpgradeFailure, CoreUpgradeOffer,
-    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeProgress, CoreUpgradeRun, CoreUpgradeRunState,
-    CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
-    DeviceInvite, DeviceNetwork, DeviceVerification, EgressConfirmation, EgressCurrent,
-    EgressFailure, EgressPathState, EgressProbe, EgressProblem, EgressProxySettings,
-    EgressProxySource, EgressProxyUpdate, EgressRestart, EgressViewModel, EncryptionStatus,
-    FileCard, FileCardAction, FileCardActions, FileFailure, FileId, FileInfo, FileOperation,
-    FileProblem, FileSource, FontOption, FontStyle, HomeFailure, HomePath, HomeStatus,
-    HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin,
-    InstalledPlugins, LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin,
-    LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer, LanWebuiUpdate, MediaHandle,
-    MessageContent, ModelProvider, ModelProviderFailure, ModelProviderInput, ModelProviderProblem,
-    ModelProviders, OnboardingAgentRow, OnboardingCommit, OnboardingItemProblem,
-    OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeedRow,
-    OnboardingProfileStep, OnboardingReview, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel, OpenWindow, OwnerProfile,
-    OwnerProfileUpdate, PairingFailure, PairingStatus, PendingConfirmation, PermissionLine,
-    PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure, PluginHealth,
-    PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState, PluginTab,
-    PluginTakeover, PluginTask, PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings,
-    PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus, RecoveryStatus,
-    ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
-    RoomTransfers, SecretString, SendState, SessionListViewModel, SessionRow, SourceKind, StepNav,
-    StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TabDisplay,
-    TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
-    TabsProblem, TabsViewModel, TakeoverState, TextSize, TextSizeOption, ThemeColors, ThemeMode,
-    ThemeModeOption, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction, TransferDirection,
-    TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource, WindowView,
+    BackPagination, BackupReminder, BotSwitch, CandidatePlugin, CardChoice, CardLine, ChatAccount,
+    ChatFailure, ChatProblem, ChatSync, ChatViewModel, ConfirmationCard, ConfirmationState,
+    ConfirmationView, ConnectionNotice, CoreError, CoreUpgradeCheck, CoreUpgradeFailure,
+    CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeProgress, CoreUpgradeRun,
+    CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget,
+    CoreUpgradeViewModel, CoreVersion, DeviceInvite, DeviceNetwork, DeviceVerification,
+    EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
+    EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart, EgressViewModel,
+    EncryptionStatus, FileCard, FileCardAction, FileCardActions, FileFailure, FileId, FileInfo,
+    FileOperation, FileProblem, FileSource, FontOption, FontStyle, HomeFailure, HomePath,
+    HomeStatus, HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview,
+    InstalledPlugin, InstalledPlugins, LanAddress, LanChoice, LanFailure, LanInterface,
+    LanInterfaceKind, LanPlugin, LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer,
+    LanWebuiUpdate, MediaHandle, MessageContent, ModelProvider, ModelProviderFailure,
+    ModelProviderInput, ModelProviderProblem, ModelProviders, OnboardingAgentRow, OnboardingCommit,
+    OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice, OnboardingModelStep,
+    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingReviewItem,
+    OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel,
+    OpenWindow, OwnerProfile, OwnerProfileUpdate, PairingFailure, PairingStatus,
+    PendingConfirmation, PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice,
+    PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation,
+    PluginProblem, PluginState, PluginTab, PluginTakeover, PluginTask, PluginTaskState,
+    PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation, PushContent, PushEndpoint,
+    PushNotification, PushStatus, RecoveryStatus, ReplacedAgent, RequirementLine,
+    RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString,
+    SendState, SessionListViewModel, SessionRow, SettingsEntry, SettingsSection, SettingsViewModel,
+    SourceKind, StepNav, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure,
+    TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, TextSizeOption,
+    ThemeColors, ThemeMode, ThemeModeOption, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer,
+    TransferAction, TransferDirection, TransferElsewhere, TransferState, TransfersViewModel,
+    UpgradeOffer, UploadSource, WindowView,
 };

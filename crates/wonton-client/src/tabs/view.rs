@@ -2,8 +2,9 @@
 
 use url::Url;
 use wonton_protocol::{
-    CoreError, InstalledPlugin, PluginState, PluginsViewModel, TabDisplay, TabDisplayChoice,
-    TabIcon, TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
+    CandidatePlugin, CoreError, InstalledPlugin, PluginState, PluginsViewModel, TabCandidate,
+    TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabPage, TabRef, TabState,
+    TabsViewModel,
 };
 
 use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
@@ -26,7 +27,53 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         full: state.config.items.len() >= super::MAX_ITEMS,
         uninstalled: state.uninstalled.clone(),
         problem: state.problem.clone(),
+        labels: state.config.labels,
+        candidates: candidates(state, plugins),
     }
+}
+
+/// 设置在前，然后按已装插件的顺序列出每个能打开的页面，去掉已经在栏上的。没有网页的插件没有页面可放。
+fn candidates(state: &TabsState, plugins: &PluginsViewModel) -> Vec<TabCandidate> {
+    let installed = plugins.installed.iter().flat_map(|list| &list.plugins);
+    let pages = installed
+        .filter(|plugin| plugin.web_url.is_some())
+        .flat_map(|plugin| {
+            let candidate = |page: Option<&wonton_protocol::PluginTab>| TabCandidate {
+                tab: TabRef::Plugin {
+                    plugin_id: plugin.id.clone(),
+                    page: page.map(|page| page.id.clone()),
+                },
+                plugin: Some(CandidatePlugin {
+                    title: plugin.title.clone(),
+                    page_title: page
+                        .filter(|_| plugin.tabs.len() > 1)
+                        .map(|page| page.title.clone()),
+                    icon: plugin.icon.clone(),
+                }),
+            };
+            if plugin.tabs.is_empty() {
+                vec![candidate(None)]
+            } else {
+                plugin
+                    .tabs
+                    .iter()
+                    .map(|page| candidate(Some(page)))
+                    .collect()
+            }
+        });
+    std::iter::once(TabCandidate {
+        tab: TabRef::Settings,
+        plugin: None,
+    })
+    .chain(pages)
+    .filter(|candidate| {
+        !state
+            .config
+            .items
+            .iter()
+            .any(|item| item.tab == candidate.tab)
+    })
+    .collect()
 }
 
 fn build_item(
@@ -45,9 +92,15 @@ fn build_item(
             Some(build_page(state, stored, plugin, page.as_deref(), plugins))
         }
     };
+    let badge = match (&stored.tab, &page) {
+        (TabRef::Settings, _) => plugins.core_upgrade.is_prompting(),
+        (_, Some(page)) => matches!(page.state, TabState::Failed { .. } | TabState::PageRemoved),
+        _ => false,
+    };
     TabItem {
         tab: stored.tab.clone(),
         removable: fixed && is_removable(&stored.tab),
+        badge,
         page,
     }
 }
@@ -100,7 +153,6 @@ fn page_from_metadata(
     choice: TabDisplayChoice,
     plugins: &PluginsViewModel,
 ) -> TabPage {
-    let badge = matches!(state_value, TabState::Failed { .. } | TabState::PageRemoved);
     let dimmed = matches!(state_value, TabState::Stopped);
     TabPage {
         title: metadata.title,
@@ -109,7 +161,6 @@ fn page_from_metadata(
         layout: normalize_layout(metadata.layout),
         state: state_value,
         dimmed,
-        badge,
         display: choice,
         opens_fullscreen: opens_fullscreen(&stored.tab, choice, plugins),
         fullscreen: state

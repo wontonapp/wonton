@@ -76,7 +76,7 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
     let stopped_page = item(&stopped, &page_tab).page.as_ref().unwrap();
     assert_eq!(stopped_page.state, TabState::Stopped);
     assert!(stopped_page.dimmed);
-    assert!(!stopped_page.badge);
+    assert!(!item(&stopped, &page_tab).badge);
     let reload = stopped_page.reload;
     rig.app
         .dispatch(Action::SetLanguages {
@@ -421,9 +421,8 @@ async fn stopped_implicit_web_page_is_dimmed_and_removed_pages_keep_precedence()
         item(view, &page_tab).page.as_ref().unwrap().state == TabState::PageRemoved
     })
     .await;
-    let page = item(&view, &page_tab).page.as_ref().unwrap();
-    assert!(page.badge);
-    assert!(!page.dimmed);
+    assert!(item(&view, &page_tab).badge);
+    assert!(!item(&view, &page_tab).page.as_ref().unwrap().dimmed);
 }
 
 #[tokio::test]

@@ -150,7 +150,7 @@ struct MainView: View {
                     tab: item.tab, label: item.title,
                     icon: AnyView(TabIconView(item: item, selected: false, plugins: plugins)),
                     selectedIcon: AnyView(TabIconView(item: item, selected: true, plugins: plugins)),
-                    badge: item.page?.badge == true, isDimmed: item.page?.dimmed == true,
+                    badge: item.badge, isDimmed: item.page?.dimmed == true,
                     opensFullscreen: item.page?.opensFullscreen
                 )
             },

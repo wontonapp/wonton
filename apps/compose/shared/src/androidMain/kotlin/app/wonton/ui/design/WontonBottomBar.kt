@@ -79,7 +79,7 @@ fun WontonBottomBar(
                 },
                 icon = {
                     BadgedBox(badge = {
-                        if (item.page?.badge == true) Badge(containerColor = colors.danger.toColor())
+                        if (item.badge) Badge(containerColor = colors.danger.toColor())
                     }) {
                         Box(Modifier.alpha(if (item.page?.dimmed == true) DIMMED_ALPHA else 1f)) {
                             TabBarIcon(item, selected, ink, plugins)

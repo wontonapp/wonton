@@ -245,6 +245,8 @@ pub enum Action {
     UnpinTab { tab: TabRef },
     /// 把一项移到 `index`（移动后的下标，从 0 开始）。
     MoveTab { tab: TabRef, index: u32 },
+    /// 底栏上显示文字还是只显示图标。
+    SetTabLabels { visible: bool },
     /// 给插件页选打开方式，不是插件页时返回 `InvalidInput`。
     SetTabDisplay {
         tab: TabRef,

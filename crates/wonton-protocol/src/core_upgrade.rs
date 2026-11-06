@@ -237,6 +237,13 @@ pub struct CoreUpgradeViewModel {
     pub problem: Option<CoreUpgradeProblem>,
 }
 
+impl CoreUpgradeViewModel {
+    /// 有新版本，主人在这台设备上没跳过：设置和底栏上画角标。
+    pub fn is_prompting(&self) -> bool {
+        self.offer.is_some() && !self.offer_skipped
+    }
+}
+
 /// 升级走到哪了，ADR-0025 的“App 显示”。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

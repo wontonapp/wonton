@@ -5,7 +5,7 @@ use axum::http::Method;
 use wonton_client::{
     Action, CoreUpgradeCheck, CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase,
     CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus,
-    CoreUpgradeTarget, CoreVersion, PluginsViewModel,
+    CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry, TabRef,
 };
 
 use super::rig::{Canned, Rig, WAIT, core_error};
@@ -486,4 +486,46 @@ async fn a_skipped_version_stays_skipped_until_the_channel_moves_on() {
         .await
         .core_upgrade;
     assert!(!view.offer_skipped);
+}
+
+#[tokio::test]
+async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipped() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+    let marked = |rig: &Rig| {
+        let server = rig
+            .app
+            .settings()
+            .sections
+            .iter()
+            .flat_map(|s| s.entries.clone())
+            .find_map(|entry| match entry {
+                SettingsEntry::Server { status, upgrade } => Some((status, upgrade)),
+                _ => None,
+            });
+        let tab = rig
+            .app
+            .tabs()
+            .items
+            .into_iter()
+            .find(|item| item.tab == TabRef::Settings);
+        (server, tab.map(|item| item.badge))
+    };
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while marked(&rig) != (Some((HomeStatus::Connected, true)), Some(true)) {
+        assert!(tokio::time::Instant::now() < deadline, "{:?}", marked(&rig));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    rig.app
+        .dispatch(Action::SkipCoreUpgrade {
+            digest: NEW.to_owned(),
+        })
+        .unwrap();
+    while marked(&rig) != (Some((HomeStatus::Connected, false)), Some(false)) {
+        assert!(tokio::time::Instant::now() < deadline, "{:?}", marked(&rig));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }
