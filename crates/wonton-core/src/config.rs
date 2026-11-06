@@ -149,7 +149,8 @@ pub struct OidcProviderConfig {
 pub struct MatrixConfig {
     /// 客户端接口的内部地址，已规范化成 `http://主机:端口`。
     pub url: String,
-    /// Tuwunel 的 `server_name`，默认是基础域名。
+    /// Tuwunel 的 `server_name`。正式安装从 `wonton-core init` 记下的文件读（`WONTON_MATRIX_SERVER_NAME_FILE`）；
+    /// 都没设时是基础域名，只给开发环境用。
     pub server_name: String,
     /// 签发登录 JWT 的 Ed25519 私钥（PEM）。Tuwunel 只配对应的公钥。
     pub jwt_key: String,
@@ -417,6 +418,7 @@ fn matrix_config(
             "WONTON_MATRIX_JWT_KEY_FILE",
             "WONTON_MATRIX_REGISTRATION_SECRET",
             "WONTON_MATRIX_REGISTRATION_SECRET_FILE",
+            "WONTON_MATRIX_SERVER_NAME_FILE",
         ]
         .into_iter()
         .find(|name| get(name).is_some());
@@ -430,7 +432,12 @@ fn matrix_config(
     };
     Ok(Some(MatrixConfig {
         url: provider_url("WONTON_MATRIX_URL", &url)?,
-        server_name: get("WONTON_MATRIX_SERVER_NAME").unwrap_or_else(|| base_domain.to_owned()),
+        server_name: secret_value(
+            get,
+            "WONTON_MATRIX_SERVER_NAME",
+            "WONTON_MATRIX_SERVER_NAME_FILE",
+        )?
+        .unwrap_or_else(|| base_domain.to_owned()),
         jwt_key: required("WONTON_MATRIX_JWT_KEY", "WONTON_MATRIX_JWT_KEY_FILE")?,
         registration_secret: required(
             "WONTON_MATRIX_REGISTRATION_SECRET",
@@ -713,6 +720,17 @@ mod tests {
         ];
         let matrix = config(&files).unwrap().matrix.unwrap();
         assert_eq!(matrix.registration_secret, "s3cret");
+        assert_eq!(
+            matrix.server_name, "wonton.localhost",
+            "没记下名字时是基础域名"
+        );
+
+        let name = dir.path().join("matrix-server-name");
+        std::fs::write(&name, "abc.wonton.internal\n").unwrap();
+        let mut named = files.to_vec();
+        named.push(("WONTON_MATRIX_SERVER_NAME_FILE", name.to_str().unwrap()));
+        let matrix = config(&named).unwrap().matrix.unwrap();
+        assert_eq!(matrix.server_name, "abc.wonton.internal");
         assert!(matrix.jwt_key.starts_with("-----BEGIN PRIVATE KEY-----"));
 
         let mut both = files.to_vec();

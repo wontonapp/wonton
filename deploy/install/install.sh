@@ -8,7 +8,9 @@
 #   WONTON_DATA_DIR     核心和插件的数据（默认 /var/lib/wonton）
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
 #   WONTON_TUNNEL_PORT  隧道的 UDP 端口（默认 8482）
-#   WONTON_BASE_DOMAIN  基础域名，同时是 Matrix 的服务器名，装好后不能改（默认 wonton.localhost）
+#   WONTON_BASE_DOMAIN  基础域名：App 经隧道访问核心和插件网页用的主机名，装好后不能改（默认 wonton.localhost）
+#   WONTON_MATRIX_SERVER_NAME  Matrix 的服务器名，只在第一次安装时有用，装好后不能改。默认随机生成一个每台不同的
+#                       名字；以后要和公网的 Matrix 联邦才写成自己的域名（ADR-0009）
 #   WONTON_OWNER_NAME   用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
 #                       最长 32 个字符，装好后不能改（默认 owner）
 #   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
@@ -373,6 +375,7 @@ write_config() {
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
   docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
     -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e TZ="$tz" \
+    -e WONTON_MATRIX_SERVER_NAME="${WONTON_MATRIX_SERVER_NAME:-}" \
     "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
   settle_proxy

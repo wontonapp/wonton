@@ -59,6 +59,8 @@ services:
       WONTON_TUSD_URL: http://tusd.wonton.internal:8080
       WONTON_MATRIX_JWT_KEY_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-jwt.pem
       WONTON_MATRIX_REGISTRATION_SECRET_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-registration-secret
+      # 第一次安装时由 init 定下，之后不变（ADR-0009 的“Matrix 的服务器名”）。
+      WONTON_MATRIX_SERVER_NAME_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-server-name
       WONTON_PUID: ${WONTON_PUID:-1000}
       WONTON_PGID: ${WONTON_PGID:-1000}
       TZ: ${TZ:-UTC}

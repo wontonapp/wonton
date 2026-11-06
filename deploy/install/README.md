@@ -27,7 +27,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 | `/opt/wonton/compose.yaml`、`/opt/wonton/wonton` | 由当前的核心镜像写出，每次 `init` 重写 |
 | `/usr/local/bin/wonton` | 链接到 `/opt/wonton/wonton` |
 | `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、用户名、时区、数据目录，由 `install.sh` 写 |
-| `/opt/wonton/secrets/` | Matrix 签发私钥、Tuwunel 配置（含公钥和注册共享密钥）、Hydra 的系统密钥；0700 |
+| `/opt/wonton/secrets/` | Matrix 签发私钥、Matrix 服务器名（`matrix-server-name`）、Tuwunel 配置（含公钥和注册共享密钥）、Hydra 的系统密钥；0700 |
 | `/etc/systemd/system/wonton_plugins.slice` | systemd + cgroup v2 主机上由安装脚本生成的插件总量限制；删除时先删 `.env` 里的 `WONTON_PLUGIN_SLICE` 行，再删这个文件并执行 `systemctl daemon-reload` |
 | `/var/lib/wonton/`（`WONTON_DATA_DIR`） | 核心和插件的数据，容器内外路径相同 |
 | Docker 卷 `wonton_hydra`、`wonton_tuwunel` | Hydra 的 SQLite、Tuwunel 的数据库 |
@@ -38,7 +38,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 ## 升级
 
 再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（1.0 之前默认 `beta` 渠道）的最新版本，已有的密钥、
-数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，Matrix 的服务器名（基础域名）和主人的用户名不能改。App 里的一键升级由一次性的 `wonton-updater` 容器执行，步骤和回滚见 ADR-0025。
+数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，基础域名、Matrix 的服务器名和主人的用户名不能改。App 里的一键升级由一次性的 `wonton-updater` 容器执行，步骤和回滚见 ADR-0025。
 
 退回旧版本时带上它的 digest，之后照样跟渠道。有当时升级留下的备份就恢复核心数据和安装目录，备份之后写的数据会丢，要在终端里确认一次：
 

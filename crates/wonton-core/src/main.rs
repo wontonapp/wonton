@@ -2,7 +2,8 @@
 //!
 //! - `wonton-core serve`（默认）：启动插件管理器、网关和隧道入口。
 //! - `wonton-core healthcheck`：请求本机网关的健康端点，供容器健康检查使用。
-//! - `wonton-core init <安装目录> <基础域名>`：正式安装时生成密钥、Tuwunel 配置和 compose 文件（`wonton_core::install`）。
+//! - `wonton-core init <安装目录> <基础域名>`：正式安装时生成密钥、Matrix 服务器名、Tuwunel 配置和 compose 文件
+//!   （`wonton_core::install`）。
 //! - `wonton-core pair [--first] [IP:端口…]`：向运行中的核心要配对码，在终端里显示二维码（见 `pair_command`）。
 //! - `wonton-core plugin check|pack <插件包目录>`：插件作者用的检查和打包（见 `plugin_command`）。
 //! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
@@ -493,12 +494,17 @@ async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
     rollback.run(&DockerHost::new(Engine::connect()?)).await
 }
 
+/// 第二个参数是基础域名：旧版本的升级器照这个格式调新镜像的 `init`，所以留着，`init` 不再用它。Matrix 服务器名只在
+/// 第一次安装时由 `WONTON_MATRIX_SERVER_NAME` 指定。
 fn init(args: &[String]) -> anyhow::Result<()> {
-    let [dir, server_name] = args else {
+    let [dir, _base_domain] = args else {
         bail!("用法：wonton-core init <安装目录> <基础域名>");
     };
     check_owner_before_install()?;
-    let report = wonton_core::install::init(std::path::Path::new(dir), server_name)?;
+    let requested = std::env::var("WONTON_MATRIX_SERVER_NAME")
+        .ok()
+        .filter(|v| !v.is_empty());
+    let report = wonton_core::install::init(std::path::Path::new(dir), requested.as_deref())?;
     for path in &report.created {
         println!("已生成 {}", path.display());
     }
