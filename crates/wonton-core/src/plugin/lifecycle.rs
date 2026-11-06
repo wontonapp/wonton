@@ -446,15 +446,7 @@ impl PluginManager {
         deadline: Instant,
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
-            for (dependency, condition) in &container.depends_on {
-                health::wait_for(
-                    &self.engine,
-                    dependency,
-                    Target::Depend(*condition),
-                    deadline,
-                )
-                .await?;
-            }
+            health::wait_for_all(&self.engine, &container.depends_on, deadline).await?;
             self.engine
                 .create_container(&container.name, container.body.clone())
                 .await?;

@@ -86,23 +86,7 @@ pub async fn wait_for(
         let (state, probes) = match observe(engine, container, target, &mut running_since).await {
             Ok(Observation::Done(readiness)) => return Ok(readiness),
             Ok(Observation::Waiting { state, probes }) => (state, probes),
-            Err(Failure::Unhealthy(probes)) => {
-                let logs = engine.logs_tail(container, LOG_LINES).await;
-                return Err(HealthError::Unhealthy {
-                    container: container.to_owned(),
-                    probes: probe_block(&probes),
-                    logs,
-                });
-            }
-            Err(Failure::Exited(code)) => {
-                let logs = engine.logs_tail(container, LOG_LINES).await;
-                return Err(HealthError::Exited {
-                    container: container.to_owned(),
-                    code,
-                    logs,
-                });
-            }
-            Err(Failure::Other(e)) => return Err(e),
+            Err(failure) => return Err(failure_error(engine, container, failure).await),
         };
         if Instant::now() >= deadline {
             let logs = engine.logs_tail(container, LOG_LINES).await;
@@ -114,6 +98,83 @@ pub async fn wait_for(
             });
         }
         sleep(POLL).await;
+    }
+}
+
+/// 一起等一组 `depends_on`：每一轮把还没满足的都看一遍，任何一个失败就立即报它（容器名、退出码、日志），
+/// 不再等其余依赖到超时。超时报第一个还没满足的。
+pub(super) async fn wait_for_all(
+    engine: &Engine,
+    deps: &[(String, DependCondition)],
+    deadline: Instant,
+) -> Result<(), HealthError> {
+    let mut pending: Vec<Pending> = deps
+        .iter()
+        .map(|(name, condition)| Pending {
+            name,
+            condition: *condition,
+            state: String::new(),
+            probes: Vec::new(),
+        })
+        .collect();
+    while !pending.is_empty() {
+        let mut index = 0;
+        while index < pending.len() {
+            let dep = &mut pending[index];
+            let mut running_since = None;
+            let target = Target::Depend(dep.condition);
+            match observe(engine, dep.name, target, &mut running_since).await {
+                Ok(Observation::Done(_)) => {
+                    pending.remove(index);
+                }
+                Ok(Observation::Waiting { state, probes }) => {
+                    dep.state = state;
+                    dep.probes = probes;
+                    index += 1;
+                }
+                Err(failure) => return Err(failure_error(engine, dep.name, failure).await),
+            }
+        }
+        if pending.is_empty() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            let dep = pending.swap_remove(0);
+            let logs = engine.logs_tail(dep.name, LOG_LINES).await;
+            return Err(HealthError::Timeout {
+                container: dep.name.to_owned(),
+                state: dep.state,
+                probes: probe_block(&dep.probes),
+                logs,
+            });
+        }
+        sleep(POLL).await;
+    }
+    Ok(())
+}
+
+/// 还没满足的依赖和它最近一次看到的状态、探针结果（超时报告用）。
+struct Pending<'a> {
+    name: &'a str,
+    condition: DependCondition,
+    state: String,
+    probes: Vec<Probe>,
+}
+
+/// 失败变成报错：附上容器最近的日志，让人不用去查 Docker 就能看出原因。
+async fn failure_error(engine: &Engine, container: &str, failure: Failure) -> HealthError {
+    match failure {
+        Failure::Unhealthy(probes) => HealthError::Unhealthy {
+            container: container.to_owned(),
+            probes: probe_block(&probes),
+            logs: engine.logs_tail(container, LOG_LINES).await,
+        },
+        Failure::Exited(code) => HealthError::Exited {
+            container: container.to_owned(),
+            code,
+            logs: engine.logs_tail(container, LOG_LINES).await,
+        },
+        Failure::Other(e) => e,
     }
 }
 

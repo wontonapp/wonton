@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tokio::time::Instant;
 
+use super::compose::DependCondition;
 use super::health::{self, Target};
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
@@ -182,15 +183,19 @@ impl PluginManager {
             .iter()
             .filter(|name| !one_shot.contains(name.as_str()))
         {
-            for (dependency, condition) in &dependencies[service.as_str()] {
-                let name = self.cfg.instance.container(&slug, dependency);
-                let target = if one_shot.contains(dependency.as_str()) {
-                    Target::Depend(super::compose::DependCondition::ServiceCompletedSuccessfully)
-                } else {
-                    Target::Depend(*condition)
-                };
-                health::wait_for(&self.engine, &name, target, deadline).await?;
-            }
+            // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
+            let deps: Vec<(String, DependCondition)> = dependencies[service.as_str()]
+                .iter()
+                .map(|(dependency, condition)| {
+                    let condition = if one_shot.contains(dependency.as_str()) {
+                        DependCondition::ServiceCompletedSuccessfully
+                    } else {
+                        *condition
+                    };
+                    (self.cfg.instance.container(&slug, dependency), condition)
+                })
+                .collect();
+            health::wait_for_all(&self.engine, &deps, deadline).await?;
             let name = self.cfg.instance.container(&slug, service);
             self.engine.start_container(&name).await?;
         }

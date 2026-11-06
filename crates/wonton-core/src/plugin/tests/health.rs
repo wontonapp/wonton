@@ -6,6 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tokio::sync::oneshot;
+use tokio::time::sleep;
 
 use super::super::fake_docker::FakeDocker;
 use super::super::health::{Target, wait_for};
@@ -287,6 +289,93 @@ async fn failures_without_probe_log_read_as_before() {
         .to_string();
     assert!(error.contains("插件日志：只写了一半"), "{error}");
     assert!(!error.contains("最近探针"), "{error}");
+}
+
+/// 依赖里既有迟迟不健康的长期服务、又有已经失败的一次性服务时，不等长期服务到超时：
+/// 安装立即失败，报的是失败的那个（名字、退出码、日志）。
+#[tokio::test]
+async fn a_failed_one_shot_dependency_fails_the_install_immediately() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = container_name("app-test", "app");
+    let bootstrap = container_name("app-test", "bootstrap");
+    docker.set_state(
+        &app,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+    );
+    docker.set_state(&bootstrap, exited(1));
+    docker.set_output(&bootstrap, 1, "", "初始化失败");
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::from_secs(300);
+    let compose = package(
+        "  app:\n    image: nginx\n    healthcheck: {test: ['CMD', 'true']}\n  \
+         bootstrap:\n    image: busybox\n    network_mode: none\n    restart: 'no'\n  \
+         web:\n    image: nginx\n    depends_on:\n      app: {condition: service_healthy}\n      \
+         bootstrap: {condition: service_completed_successfully}",
+        "  permissions: []",
+    );
+    let started = std::time::Instant::now();
+    let err = m.install(&compose, &[]).await.unwrap_err();
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "一次性依赖失败要立即报错，不能等满超时：{err}"
+    );
+    let message = err.to_string();
+    assert!(message.contains(&bootstrap), "{message}");
+    assert!(message.contains("退出码 1"), "{message}");
+    assert!(message.contains("初始化失败"), "{message}");
+    assert!(
+        !message.contains(&app),
+        "报的应该是失败的一次性服务，不是还没就绪的长期服务：{message}"
+    );
+}
+
+/// 一次性服务可以依赖长期服务的 `service_healthy`：应用健康之后才轮到它启动。
+#[tokio::test]
+async fn a_one_shot_service_starts_only_after_the_long_running_service_is_healthy() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = container_name("app-test", "app");
+    let init = container_name("app-test", "init");
+    docker.set_state(
+        &app,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+    );
+    docker.set_state(&init, exited(0));
+    let compose = package(
+        "  app:\n    image: nginx\n    healthcheck: {test: ['CMD', 'true']}\n  \
+         init:\n    image: busybox\n    network_mode: none\n    restart: 'no'\n    \
+         depends_on: {app: {condition: service_healthy}}",
+        "  permissions: []",
+    );
+    let m = manager_with(engine, &dir);
+    let hold = docker.hold(&format!("POST /containers/{init}/start"));
+    // 应用 1 秒后才健康：init 的启动请求必须在那之后才到。
+    let (flipped_tx, mut flipped_rx) = oneshot::channel();
+    let flip = tokio::spawn({
+        let docker = docker.clone();
+        async move {
+            sleep(Duration::from_secs(1)).await;
+            docker.set_state(
+                &app,
+                json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+            );
+            flipped_tx.send(()).unwrap();
+        }
+    });
+    let started_too_early = tokio::spawn(async move {
+        hold.reached().await;
+        let early = flipped_rx.try_recv().is_err();
+        hold.release();
+        early
+    });
+    let view = m.install(&compose, &[]).await.unwrap();
+    assert_eq!(view.status, PluginStatus::Running);
+    flip.await.unwrap();
+    assert!(
+        !started_too_early.await.unwrap(),
+        "init 在应用健康之前就被启动了"
+    );
 }
 
 /// 规范：长期运行的服务都要有健康检查，官方目录的插件缺了不收录。`plugins/examples/` 不进官方目录，
