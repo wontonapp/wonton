@@ -285,9 +285,20 @@ async fn unix_send(
     request: Request<Body>,
     limit: Option<Duration>,
 ) -> Result<hyper::Response<hyper::body::Incoming>, HttpError> {
-    let stream = UnixStream::connect(socket)
-        .await
-        .map_err(|e| HttpError::Connect(format!("连不上 {}：{e}", socket.display())))?;
+    let stream = UnixStream::connect(socket).await.map_err(|e| {
+        // 路径超过 sun_path 上限时 std 在连接前就报 InvalidInput；内核侧的 ENAMETOOLONG（Linux errno 36）一并认。
+        let too_long = e.kind() == std::io::ErrorKind::InvalidInput || e.raw_os_error() == Some(36);
+        HttpError::Connect(if too_long {
+            format!(
+                "unix 套接字的路径太长放不下（{}：{} 字节，上限 {} 字节）：把核心的数据目录换到短一点的路径",
+                socket.display(),
+                socket.as_os_str().len(),
+                crate::plugin::host_relay::MAX_SOCKET_PATH
+            )
+        } else {
+            format!("连不上 {}：{e}", socket.display())
+        })
+    })?;
     let io = FlushIo::new(TokioIo::new(stream));
     let (request, deadline) = match limit {
         Some(limit) => {
@@ -482,5 +493,21 @@ mod tests {
         strip_hop_by_hop(&mut ws, true);
         assert_eq!(ws.get(header::CONNECTION).unwrap(), "upgrade");
         assert_eq!(ws.get(header::UPGRADE).unwrap(), "websocket");
+    }
+
+    #[tokio::test]
+    async fn connecting_to_an_over_long_socket_path_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        // 120 字符的一段保证路径超过 sun_path 上限，与临时目录本身的长短无关。
+        let socket = dir.path().join("d".repeat(120)).join("relay/webui.sock");
+        let request = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let error = unix_send(&socket, request, None).await.unwrap_err();
+        let message = match error {
+            HttpError::Connect(message) => message,
+            other => panic!("{other:?}"),
+        };
+        assert!(message.contains("路径太长"), "{message}");
+        assert!(message.contains("107"), "{message}");
+        assert!(message.contains(&socket.display().to_string()), "{message}");
     }
 }

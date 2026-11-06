@@ -11,7 +11,7 @@ use super::super::languages::Languages;
 use super::super::manifest::PluginId;
 use super::super::package::PluginPackage;
 use super::super::package_files::{PackageFiles, sha256_hex};
-use super::manager::manager_with;
+use super::manager::{manager_with, manager_with_apps_dir};
 use super::package;
 
 pub(super) const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#22aa66"/></svg>"##;
@@ -275,6 +275,38 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
         Some(wonton_protocol::PermissionRisk::VeryHigh)
     );
     assert!(preview.permissions[0].supported);
+}
+
+#[tokio::test]
+async fn a_too_long_relay_socket_path_is_blocked_in_the_preview() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    // 中继套接字加上网页地址那段（/app-test/relay/webui.sock）才超上限：只算 apps 目录本身放得下，
+    // 防止预检漏掉网页地址。join 的段之间还有一个分隔符字节，apps 目录取 89 字节。
+    let base = dir.path().as_os_str().len();
+    let apps = dir.path().join("d".repeat(89 - base - 1));
+    std::fs::create_dir_all(&apps).unwrap();
+    assert_eq!(apps.as_os_str().len(), 89);
+    assert_eq!(apps.join("relay/webui.sock").as_os_str().len(), 106);
+    assert_eq!(
+        apps.join("app-test/relay/webui.sock").as_os_str().len(),
+        115
+    );
+    let m = manager_with_apps_dir(engine, &dir, &apps);
+    let host = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
+        "  webui: {service: web, port: 8123, sso: none}\n  permissions: [network.host]",
+    );
+    let host = PluginPackage::parse(&host).unwrap();
+    let preview = m.preview_install(&host, &english()).await.unwrap();
+    let blocked = preview.blocked.unwrap();
+    assert!(blocked.contains("路径太长"), "{blocked}");
+    // 中继镜像是核心自己的，已按摘要固定，不再提示未固定。
+    let notices: Vec<&str> = preview.notices.iter().map(|n| n.text.as_str()).collect();
+    assert!(
+        !notices.iter().any(|n| n.contains("relay-webui")),
+        "{notices:?}"
+    );
 }
 
 #[tokio::test]

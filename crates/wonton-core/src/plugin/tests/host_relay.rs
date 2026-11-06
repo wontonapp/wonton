@@ -8,7 +8,7 @@ use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
 use super::super::manifest::{Permission, PluginId};
 use super::super::package::{PackageError, PluginPackage};
-use super::manager::{manager_in_container, manager_with};
+use super::manager::{manager_in_container, manager_with, manager_with_apps_dir};
 use super::package;
 
 const HOST_WEBUI: &str =
@@ -385,6 +385,57 @@ async fn uninstalling_takes_the_relay_with_it() {
         .await
         .unwrap();
     assert!(!docker.containers().contains(&relay));
+}
+
+#[test]
+fn relay_socket_paths_up_to_the_limit_fit_and_over_it_do_not() {
+    use super::super::host_relay::{
+        HostRelay, MAX_SOCKET_PATH, Purpose, path_too_long, socket_path,
+    };
+    let relays = [HostRelay {
+        purpose: Purpose::Webui,
+        service: "web".to_owned(),
+        port: 8123,
+    }];
+    // `<app_data>/relay/webui.sock` 的总长：末段 17 字节，前面补足到目标的字节数。
+    let app_data_of = |total: usize| {
+        let rest = total - "/relay/webui.sock".len();
+        std::path::PathBuf::from(format!("/{}", "d".repeat(rest - 1)))
+    };
+    let fit = app_data_of(MAX_SOCKET_PATH);
+    assert_eq!(
+        socket_path(&fit, &relays[0]).as_os_str().len(),
+        MAX_SOCKET_PATH
+    );
+    assert_eq!(path_too_long(&fit, &relays), None);
+    let over = app_data_of(MAX_SOCKET_PATH + 1);
+    assert_eq!(
+        socket_path(&over, &relays[0]).as_os_str().len(),
+        MAX_SOCKET_PATH + 1
+    );
+    let problem = path_too_long(&over, &relays).unwrap();
+    assert!(problem.contains("路径太长"), "{problem}");
+    assert!(problem.contains(&over.display().to_string()), "{problem}");
+    assert!(problem.contains("107"), "{problem}");
+}
+
+#[tokio::test]
+async fn an_over_long_socket_path_fails_the_install_before_any_container() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    // 120 字符的一段保证套接字路径超过上限，与临时目录本身的长短无关。
+    let apps = dir.path().join("d".repeat(120));
+    std::fs::create_dir_all(&apps).unwrap();
+    let m = manager_with_apps_dir(engine, &dir, &apps);
+    let error = m
+        .install(&host_webui(8123), &[Permission::NetworkHost])
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "unsupported");
+    let message = error.to_string();
+    assert!(message.contains("路径太长"), "{message}");
+    assert!(message.contains("107"), "{message}");
+    assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }
 
 #[tokio::test]

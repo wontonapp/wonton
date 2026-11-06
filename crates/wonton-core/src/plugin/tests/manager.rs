@@ -31,6 +31,7 @@ pub(super) fn manager_in_container(engine: Engine, dir: &tempfile::TempDir) -> P
     manager_for(
         engine,
         dir,
+        &dir.path().join("apps"),
         Some("wonton-core".to_owned()),
         None,
         Instance::default(),
@@ -50,7 +51,15 @@ pub(super) fn manager_with_images(
     dir: &tempfile::TempDir,
     images: ImageWorker,
 ) -> PluginManager {
-    manager_for(engine, dir, None, None, Instance::default(), images)
+    manager_for(
+        engine,
+        dir,
+        &dir.path().join("apps"),
+        None,
+        None,
+        Instance::default(),
+        images,
+    )
 }
 
 /// 实例名是 `instance` 的核心（`WONTON_INSTANCE`）的管理器，其余同 [`manager_with`]。
@@ -60,7 +69,15 @@ pub(super) fn manager_in_instance(
     instance: &str,
 ) -> PluginManager {
     let instance = Instance::parse(Some(instance)).unwrap();
-    manager_for(engine, dir, None, None, instance, ImageWorker::in_process())
+    manager_for(
+        engine,
+        dir,
+        &dir.path().join("apps"),
+        None,
+        None,
+        instance,
+        ImageWorker::in_process(),
+    )
 }
 
 /// 核心直接跑在宿主上、配了身份提供方的管理器。
@@ -70,12 +87,38 @@ pub(super) fn manager_with_oidc(
     oidc: Hydra,
 ) -> PluginManager {
     let images = ImageWorker::in_process();
-    manager_for(engine, dir, None, Some(oidc), Instance::default(), images)
+    manager_for(
+        engine,
+        dir,
+        &dir.path().join("apps"),
+        None,
+        Some(oidc),
+        Instance::default(),
+        images,
+    )
+}
+
+/// 应用数据目录在 `apps_dir` 的管理器，其余同 [`manager_with`]：模拟数据目录在很深的路径下。
+pub(super) fn manager_with_apps_dir(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    apps_dir: &std::path::Path,
+) -> PluginManager {
+    manager_for(
+        engine,
+        dir,
+        apps_dir,
+        None,
+        None,
+        Instance::default(),
+        ImageWorker::in_process(),
+    )
 }
 
 fn manager_for(
     engine: Engine,
     dir: &tempfile::TempDir,
+    apps_dir: &std::path::Path,
     core_container: Option<String>,
     oidc: Option<Hydra>,
     instance: Instance,
@@ -89,7 +132,7 @@ fn manager_for(
             port: 8080,
         },
         data_dir: dir.path().to_owned(),
-        apps_dir: dir.path().join("apps"),
+        apps_dir: apps_dir.to_owned(),
         shares_dir: dir.path().join("shares"),
         core_container,
         tz: "UTC".into(),

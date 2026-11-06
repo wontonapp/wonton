@@ -20,8 +20,13 @@ use super::names::Instance;
 use super::render::{ContainerPlan, LABEL_SERVICE};
 use super::store::InstalledRecord;
 
-/// `alpine/socat`，ADR-0036 的验证结果用它实测过。GPL-2.0，作为独立容器运行。
-pub const IMAGE: &str = "alpine/socat:1.8.0.3";
+/// `alpine/socat`，ADR-0036 的验证结果用它实测过。GPL-2.0，作为独立容器运行。摘要是多架构 manifest
+/// list 的（registry API 取，`mediaType` 是 manifest list，覆盖 amd64、arm64 等），Docker 按本机架构挑。
+pub const IMAGE: &str =
+    "alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e";
+
+/// AF_UNIX 套接字路径的上限：Linux 的 `sun_path` 有 108 字节，含结尾 NUL，路径本身最多 107 字节。
+pub const MAX_SOCKET_PATH: usize = 107;
 
 /// 套接字接的是网页还是 MCP。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +73,23 @@ pub fn dir(app_data: &Path) -> PathBuf {
 /// 套接字的绝对路径。
 pub fn socket_path(app_data: &Path, relay: &HostRelay) -> PathBuf {
     dir(app_data).join(relay.socket())
+}
+
+/// 核心一侧第一个放不下的套接字：超长时给人看的说明（路径、字节数、上限），
+/// 用来在装之前报明白；都放得下时为空。
+pub fn path_too_long(app_data: &Path, relays: &[HostRelay]) -> Option<String> {
+    relays
+        .iter()
+        .map(|relay| socket_path(app_data, relay))
+        .find(|path| path.as_os_str().len() > MAX_SOCKET_PATH)
+        .map(|path| {
+            format!(
+                "插件数据目录的路径太长，unix 套接字放不下，把核心的数据目录换到短一点的路径\
+                 （{}：{} 字节，上限 {MAX_SOCKET_PATH} 字节）",
+                path.display(),
+                path.as_os_str().len(),
+            )
+        })
 }
 
 /// 宿主网络的 `webui`、`mcp` 服务各要一个中继。

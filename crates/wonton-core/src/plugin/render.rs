@@ -40,6 +40,9 @@ pub enum RenderError {
     Package(#[from] PackageError),
     #[error("服务 `{service}`：{message}")]
     Service { service: String, message: String },
+    /// 这台主机的目录放不下插件要的资源（如中继套接字路径超长），不是插件包的问题。
+    #[error("{0}")]
+    HostPath(String),
     #[error("插件没申请 owner.identity，不能引用 `{0}`：在清单的 permissions 里加上它")]
     NoOwnerIdentity(String),
     #[error("{}", crate::owner::NO_EMAIL)]
@@ -444,8 +447,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
     }
     check_not_nested(&binds)?;
     let mut dirs = dir_owners(&binds, &services, ctx)?;
-    let relays = super::host_relay::needed(manifest, &services);
-    add_relays(manifest, ctx, &relays, &mut containers, &mut dirs);
+    let relays = prepare_relays(manifest, ctx, &services, &mut containers, &mut dirs)?;
     let volumes = package
         .named_volumes()
         .iter()
@@ -459,6 +461,23 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         containers,
         relays,
     })
+}
+
+/// 中继容器和目录：宿主网络的服务各要一个。核心一侧的套接字路径放不下时在这报出来——
+/// 这之后才是拉镜像、起容器，装之前就失败。
+fn prepare_relays(
+    manifest: &Manifest,
+    ctx: &InstallContext,
+    services: &BTreeMap<String, Service>,
+    containers: &mut Vec<ContainerPlan>,
+    dirs: &mut BTreeMap<PathBuf, Owner>,
+) -> Result<Vec<HostRelay>, RenderError> {
+    let relays = super::host_relay::needed(manifest, services);
+    if let Some(problem) = super::host_relay::path_too_long(&ctx.app_data, &relays) {
+        return Err(RenderError::HostPath(problem));
+    }
+    add_relays(manifest, ctx, &relays, containers, dirs);
+    Ok(relays)
 }
 
 fn add_relays(

@@ -164,6 +164,8 @@ impl From<RenderError> for InstallError {
         match e {
             // 插件没写错，是还没填邮箱。
             RenderError::NoOwnerEmail => Self::OwnerProfileIncomplete,
+            // 插件没写错，是这台主机放不下。
+            RenderError::HostPath(message) => Self::Unsupported(message),
             e => Self::Invalid(e.to_string()),
         }
     }

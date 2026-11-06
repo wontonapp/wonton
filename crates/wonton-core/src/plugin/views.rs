@@ -201,7 +201,10 @@ impl PluginManager {
         let blocked = blocked
             .or(gpu.blocked)
             .or(lan.blocked)
-            .or_else(|| egress_block.map(|p| p.message.clone()));
+            .or_else(|| egress_block.map(|p| p.message.clone()))
+            .or_else(|| {
+                super::host_relay::path_too_long(&self.cfg.apps_dir.join(m.id.slug()), &plan.relays)
+            });
         let unpinned: Vec<String> = plan
             .containers
             .iter()
