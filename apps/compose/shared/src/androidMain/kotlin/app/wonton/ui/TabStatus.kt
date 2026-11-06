@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.webkit.WebViewCompat
 import app.wonton.protocol.Action
 import app.wonton.protocol.TabLoadFailure
 import app.wonton.protocol.TabPage
@@ -24,11 +26,13 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
 @Composable
-fun PluginTabStatus(
+internal fun PluginTabStatus(
     page: TabPage, tab: TabRef, tabs: TabsState, problem: Problem?, supported: Boolean,
-    onDetails: (String) -> Unit,
+    crossOriginBlocked: Boolean, onDetails: (String) -> Unit,
 ) {
     val state = page.state
+    val isolationWarning = crossOriginBlocked && supported && problem == null &&
+        (state is TabState.Ready || state is TabState.Upgrading)
     val failure = when {
         !supported -> Problem(tabText("请更新 Android System WebView 后重试", "Update Android System WebView and try again"))
         problem != null -> problem
@@ -41,6 +45,7 @@ fun PluginTabStatus(
         state is TabState.LoadFailed -> Problem(
             loadFailureTitle(state.failure), detail = state.status?.let { "HTTP $it" },
         )
+        isolationWarning -> crossOriginIsolationProblem()
         else -> null
     }
     if (failure == null) {
@@ -60,14 +65,19 @@ fun PluginTabStatus(
             Text(failure.title, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, tabText("详情", "Details")) }
-            TabStatusActions(state, tab, tabs, onDetails)
+            TabStatusActions(state, tab, tabs, isolationWarning, onDetails)
         }
     }
 }
 
 @Composable
-private fun TabStatusActions(state: TabState, tab: TabRef, tabs: TabsState, onDetails: (String) -> Unit) {
-    if (state is TabState.PageRemoved) {
+private fun TabStatusActions(
+    state: TabState, tab: TabRef, tabs: TabsState, crossOriginBlocked: Boolean,
+    onDetails: (String) -> Unit,
+) {
+    if (crossOriginBlocked && tab is TabRef.Plugin) {
+        WontonButton(tabText("仍然打开", "Open anyway"), { allowCrossOriginIsolationAnyway(tab.pluginId) })
+    } else if (state is TabState.PageRemoved) {
         val pinned = tabs.viewModel.items.any { it.tab == tab }
         WontonButton(if (pinned) tabText("从底栏移除", "Remove from tab bar") else tabText("关闭", "Close"), {
             tabs.send(if (pinned) Action.UnpinTab(tab) else Action.CloseTabOverlay)
@@ -80,6 +90,20 @@ private fun TabStatusActions(state: TabState, tab: TabRef, tabs: TabsState, onDe
             WontonButton(tabText("查看详情", "View details"), { onDetails(tab.pluginId) })
         }
     }
+}
+
+@Composable
+private fun crossOriginIsolationProblem(): Problem {
+    val context = LocalContext.current
+    val currentVersion = remember(context) { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }
+    val version = currentVersion ?: tabText("拿不到版本号", "version unavailable")
+    return Problem(
+        tabText("这个应用在 Android App 里暂时打不开", "This app can't open in the Android app yet"),
+        detail = tabText(
+            "当前 Android System WebView：$version；需要 156 或更新。",
+            "Current Android System WebView: $version; requires 156 or newer.",
+        ),
+    )
 }
 
 @Composable

@@ -43,6 +43,7 @@ import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabLayout
 import app.wonton.protocol.TabPage
@@ -131,6 +132,7 @@ private fun PluginTabContainer(
     onReselected: () -> Unit, onDetails: (String) -> Unit, onDraft: (String) -> Unit,
     bannerTop: Dp,
 ) {
+    val plugin = tabs.installedPlugin(item.tab)
     val page = item.page ?: return
     val state = remember { WebPageState(item.tab, tabs) }
     var top by remember { mutableStateOf(0.dp) }
@@ -145,6 +147,7 @@ private fun PluginTabContainer(
     }
     val openLink = externalLinkOpener { state.problem = it }
     val supported = remember { webViewSupportsTabs() }
+    val crossOriginBlocked = isCrossOriginIsolationBlocked(plugin)
     PageEffects(state, page, home, active, appearance, environment)
     ReselectedEffect(state, reselected, onReselected)
     val back = { state.back(page.fullscreen, overlay) }
@@ -157,14 +160,14 @@ private fun PluginTabContainer(
     val takeover = pageTakeover(item.tab, tabs, active)
     Box(Modifier.fillMaxSize().imePadding()) {
         if (state.started && supported && script != null) {
-            PageWebView(state, page, home, environment, script, inset, active && !cover, openLink, onDraft)
+            PageWebView(state, page, plugin, home, environment, script, inset, active && !cover, openLink, onDraft)
         }
         if (active && page.fullscreen) state.controller.customView?.let { video ->
             AndroidView(factory = { video }, modifier = Modifier.padding(inset).fillMaxSize())
         }
         if (active) {
-            PageStatusOverlay(state, page, item.tab, supported, PaddingValues(top = top, bottom = retainedBottom),
-                onDetails)
+            PageStatusOverlay(state, page, item.tab, supported, crossOriginBlocked,
+                PaddingValues(top = top, bottom = retainedBottom), onDetails)
             PageChrome(state, item, page, safe, edge, bannerTop, overlay, back, takeover,
                 onDetails, onTop = { top = it })
         }
@@ -173,12 +176,13 @@ private fun PluginTabContainer(
 
 @Composable
 private fun PageStatusOverlay(
-    state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, inset: PaddingValues,
-    onDetails: (String) -> Unit,
+    state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
+    inset: PaddingValues, onDetails: (String) -> Unit,
 ) {
-    if (state.covers(page) || !supported || state.problem != null) {
+    val platformBlocked = !supported || crossOriginBlocked
+    if (state.covers(page) || platformBlocked || state.problem != null) {
         Box(Modifier.padding(inset).fillMaxSize().background(WontonTheme.colors.canvas.toColor())) {
-            PluginTabStatus(page, tab, state.tabs, state.problem, supported, onDetails)
+            PluginTabStatus(page, tab, state.tabs, state.problem, supported, crossOriginBlocked, onDetails)
         }
     }
     if (page.fullscreen && page.layout != TabLayout.EDGE_TO_EDGE) Box(Modifier.fillMaxSize()) {
@@ -259,10 +263,10 @@ private fun PageEffects(
 
 @Composable
 private fun PageWebView(
-    state: WebPageState, page: TabPage, home: HomeViewModel, environment: TabEnvironment,
+    state: WebPageState, page: TabPage, plugin: InstalledPlugin?, home: HomeViewModel, environment: TabEnvironment,
     script: String, inset: PaddingValues, visible: Boolean, openLink: (String) -> Unit, onDraft: (String) -> Unit,
 ) {
-    val url = page.url ?: return
+    val url = page.url?.takeIf { !isCrossOriginIsolationBlocked(plugin) } ?: return
     val proxy = home.proxy ?: return
     PluginWebView(
         url, proxy, page.reload,

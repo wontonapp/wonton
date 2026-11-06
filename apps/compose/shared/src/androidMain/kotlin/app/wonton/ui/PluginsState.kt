@@ -31,7 +31,9 @@ private const val CACHED_IMAGES = 128
  * 这里不做任何业务判断。
  */
 class PluginsState(val core: ClientCore) {
-    var viewModel by mutableStateOf(core.plugins())
+    var viewModel by mutableStateOf(core.plugins().also {
+        configureCrossOriginIsolatedAllowlist(it.installed?.plugins.orEmpty())
+    })
         private set
 
     /** 核心拒绝主人的操作的原因，由界面弹窗展示。 */
@@ -46,7 +48,12 @@ class PluginsState(val core: ClientCore) {
 
     /** 在主界面里一直收集，切到别的页面时也接着更新。 */
     suspend fun observe() {
-        core.pluginsUpdates().collect { viewModel = it }
+        core.pluginsUpdates().collect { next ->
+            if (next.installed?.plugins != viewModel.installed?.plugins) {
+                configureCrossOriginIsolatedAllowlist(next.installed?.plugins.orEmpty())
+            }
+            viewModel = next
+        }
     }
 
     fun send(action: Action) {

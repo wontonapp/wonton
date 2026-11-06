@@ -80,6 +80,12 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code
 停止页的“启动”只发送核心操作，失败显示核心原因。明暗、字号与 WebView 生命周期的实测边界见
 [ADR-0033 的 Android 验证](../../docs/adr/0033-plugin-tabs.md#android-标签页容器)。
 
+声明跨源隔离的插件遵循 [ADR-0033 的跨源隔离规则](../../docs/adr/0033-plugin-tabs.md#跨源隔离)。
+Android 按 WebView 能力检测配置默认 Profile 的精确来源允许列表；列表在已装插件更新时替换。
+已装列表晚到时不额外阻止已有地址的页面加载，允许列表更新也作用于已加载的页面。
+不支持时，底栏和覆盖层都先显示状态页，折叠详情列出实际 WebView 版本和所需版本。
+“仍然打开”只在本次 App 进程里对该插件生效；不替网页开启降级模式、不持久保存选择。
+
 ## 聊天（开发）
 
 “聊天”页登录主人的 Matrix 账号，家里的核心要接好 Tuwunel（`deploy/dev/core` 自带）；登录、本地存储和恢复密钥见
