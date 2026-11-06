@@ -4,7 +4,7 @@
 //! 与 docker compose 不同，未定义且没有默认值的变量直接报错，而不是替换成空串：
 //! 插件引用了核心不提供的变量，说明清单和权限不匹配，必须在安装前暴露出来。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -31,24 +31,41 @@ impl InterpolateError {
 /// 插值用的变量表。
 pub type Vars = BTreeMap<String, String>;
 
+/// 实际求值的变量；转义和没有求值的分支不计入。
+pub type UsedVars = BTreeSet<String>;
+
+fn record(used: &mut UsedVars, name: &str) {
+    if !used.contains(name) {
+        used.insert(name.to_owned());
+    }
+}
+
 /// 对 JSON 值里的所有字符串做插值（只处理值，不处理键，与 compose 一致）。
-pub fn interpolate_value(value: &mut Value, vars: &Vars) -> Result<(), InterpolateError> {
+pub fn interpolate_value(
+    value: &mut Value,
+    vars: &Vars,
+    used: &mut UsedVars,
+) -> Result<(), InterpolateError> {
     match value {
         Value::String(text) => {
-            *text = interpolate(text, vars)?;
+            *text = interpolate(text, vars, used)?;
             Ok(())
         }
         Value::Array(items) => items
             .iter_mut()
-            .try_for_each(|item| interpolate_value(item, vars)),
+            .try_for_each(|item| interpolate_value(item, vars, used)),
         Value::Object(map) => map
             .values_mut()
-            .try_for_each(|item| interpolate_value(item, vars)),
+            .try_for_each(|item| interpolate_value(item, vars, used)),
         Value::Null | Value::Bool(_) | Value::Number(_) => Ok(()),
     }
 }
 
-pub fn interpolate(input: &str, vars: &Vars) -> Result<String, InterpolateError> {
+pub fn interpolate(
+    input: &str,
+    vars: &Vars,
+    used: &mut UsedVars,
+) -> Result<String, InterpolateError> {
     let mut out = String::with_capacity(input.len());
     let mut rest = input;
     while let Some(pos) = rest.find('$') {
@@ -59,7 +76,7 @@ pub fn interpolate(input: &str, vars: &Vars) -> Result<String, InterpolateError>
             rest = tail;
         } else if let Some(body) = after.strip_prefix('{') {
             let end = matching_brace(body).ok_or_else(|| InterpolateError::Syntax(input.into()))?;
-            out.push_str(&expand_braced(&body[..end], vars, input)?);
+            out.push_str(&expand_braced(&body[..end], vars, used, input)?);
             rest = &body[end + 1..];
         } else {
             let len = name_len(after);
@@ -67,6 +84,7 @@ pub fn interpolate(input: &str, vars: &Vars) -> Result<String, InterpolateError>
                 return Err(InterpolateError::Syntax(input.to_owned()));
             }
             let name = &after[..len];
+            record(used, name);
             let value = vars
                 .get(name)
                 .ok_or_else(|| InterpolateError::Missing(name.to_owned()))?;
@@ -108,15 +126,21 @@ fn name_len(text: &str) -> usize {
         .count()
 }
 
-fn expand_braced(inner: &str, vars: &Vars, input: &str) -> Result<String, InterpolateError> {
+fn expand_braced(
+    inner: &str,
+    vars: &Vars,
+    used: &mut UsedVars,
+    input: &str,
+) -> Result<String, InterpolateError> {
     let len = name_len(inner);
     if len == 0 {
         return Err(InterpolateError::Syntax(input.to_owned()));
     }
     let (name, op) = inner.split_at(len);
+    record(used, name);
     let value = vars.get(name);
     let set_nonempty = value.is_some_and(|v| !v.is_empty());
-    let resolve = |word: &str| interpolate(word, vars);
+    let mut resolve = |word: &str| interpolate(word, vars, used);
     let required = |message: &str| InterpolateError::Required {
         name: name.to_owned(),
         message: message.to_owned(),
@@ -187,7 +211,11 @@ mod tests {
             ("${MISSING:-${MISSING2:-deep}}", "deep"),
         ];
         for (input, expected) in cases {
-            assert_eq!(interpolate(input, &v).unwrap(), expected, "{input}");
+            assert_eq!(
+                interpolate(input, &v, &mut UsedVars::new()).unwrap(),
+                expected,
+                "{input}"
+            );
         }
     }
 
@@ -195,20 +223,23 @@ mod tests {
     fn missing_and_required_variables_fail() {
         let v = vars();
         assert_eq!(
-            interpolate("${NOPE}", &v),
+            interpolate("${NOPE}", &v, &mut UsedVars::new()),
             Err(InterpolateError::Missing("NOPE".into()))
         );
         assert_eq!(
-            interpolate("$NOPE", &v),
+            interpolate("$NOPE", &v, &mut UsedVars::new()),
             Err(InterpolateError::Missing("NOPE".into()))
         );
         assert!(matches!(
-            interpolate("${EMPTY:?必须设置}", &v),
+            interpolate("${EMPTY:?必须设置}", &v, &mut UsedVars::new()),
             Err(InterpolateError::Required { .. })
         ));
         for bad in ["${", "${A", "$-x", "${:-x}", "${A!x}"] {
             assert!(
-                matches!(interpolate(bad, &v), Err(InterpolateError::Syntax(_))),
+                matches!(
+                    interpolate(bad, &v, &mut UsedVars::new()),
+                    Err(InterpolateError::Syntax(_))
+                ),
                 "{bad}"
             );
         }
@@ -217,7 +248,7 @@ mod tests {
     #[test]
     fn walks_nested_json_values_only() {
         let mut doc = serde_json::json!({"${A}": ["$A", {"k": "${A}"}, 3, true, null]});
-        interpolate_value(&mut doc, &vars()).unwrap();
+        interpolate_value(&mut doc, &vars(), &mut UsedVars::new()).unwrap();
         assert_eq!(
             doc,
             serde_json::json!({"${A}": ["1", {"k": "1"}, 3, true, null]})

@@ -1,7 +1,7 @@
 //! 真实 Docker：安装、停止、重启核心读取 Stopped、HTTP 启动、幂等与数据保留。
+//! 这些测试验证行为不验证速度，期限和生产一致；共用 runner 忙时 Docker 起容器会慢。
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use bollard::models::ContainerStateStatusEnum;
 use bollard::query_parameters::StopContainerOptionsBuilder;
@@ -15,6 +15,7 @@ use super::super::names::Instance;
 use super::super::{PluginManager, PluginStatus};
 use super::manager::manager_in_instance;
 use super::package;
+use crate::config::DEFAULT_INSTALL_TIMEOUT;
 use crate::device::Devices;
 use crate::gateway::{Gateway, router};
 use crate::http::HttpClient;
@@ -105,7 +106,7 @@ async fn exercise(
     manager.watch_containers().await;
     assert_eq!(manager.list()[0].status, PluginStatus::Stopped);
     let mut restarted = manager_in_instance(engine.clone(), dir, instance);
-    restarted.cfg.install_timeout = Duration::from_secs(20);
+    restarted.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
     let restarted = Arc::new(restarted);
     restarted.restore().await.unwrap();
     assert_eq!(restarted.list()[0].status, PluginStatus::Stopped);
@@ -149,7 +150,7 @@ async fn stopped_plugin_starts_existing_containers_via_http() {
     let dir = tempfile::tempdir().unwrap();
     let instance = format!("s2{:x}", getrandom::u32().unwrap());
     let mut manager = manager_in_instance(engine.clone(), &dir, &instance);
-    manager.cfg.install_timeout = Duration::from_secs(20);
+    manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
     let manager = Arc::new(manager);
     let result = std::panic::AssertUnwindSafe(exercise(manager.clone(), &engine, &dir, &instance))
         .catch_unwind()

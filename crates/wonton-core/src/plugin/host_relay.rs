@@ -146,6 +146,7 @@ pub fn plan(
         },
         files: Vec::new(),
         one_shot: false,
+        variables: Default::default(),
     }
 }
 

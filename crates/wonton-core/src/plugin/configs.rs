@@ -6,7 +6,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use super::compose::{Scalar, Service, UserSpec};
-use super::interpolate::Vars;
+use super::interpolate::{UsedVars, Vars};
 use super::package::{PackageError, PluginPackage};
 
 /// 默认权限：所有用户可读，和 compose 一致。
@@ -42,13 +42,14 @@ pub fn resolve(
     service: &Service,
     vars: &Vars,
     mounts: &[PathBuf],
+    used: &mut UsedVars,
 ) -> Result<Vec<ConfigFile>, ConfigError> {
     let placed = place(package, service, mounts).map_err(ConfigError::Rule)?;
     placed
         .into_iter()
         .map(|(source, file)| {
             Ok(ConfigFile {
-                data: package.config_data(&source, vars)?,
+                data: package.config_data(&source, vars, used)?,
                 ..file
             })
         })

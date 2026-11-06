@@ -1,11 +1,10 @@
 //! 开关 `lan_webui`（ADR-0023 的“网页的局域网端口”）：有两种局域网端口，开了别人就能冒充主人或者抢先注册，默认不开，
-//! 主人看过风险后打开。开关存在插件的记录里，改开关时重建开端口的容器（同地址变化），数据不动。
+//! 主人看过风险后打开。开关存在插件的记录里，改开关时重建开端口或插值用到地址的容器，数据不动。
 //!
 //! 哪些端口要开关，只看插件包：写了 `lan.client` 时，全部局域网端口；`sso: proxy` 用请求头认用户而 `webui.service`
 //! 不是只信任核心时，这个服务的局域网端口；`sso: none` 把网页的端口列进 `lan.ports` 时，这个端口。其余的局域网端口身份
 //! 由插件自己验证（ADR-0019），装好就开。
 
-use std::collections::BTreeSet;
 use std::net::IpAddr;
 use std::sync::Arc;
 
@@ -204,7 +203,7 @@ impl PluginManager {
         Ok(bound.iter().map(|b| b.ip).collect())
     }
 
-    /// 存下开关，重建 `lan.ports` 里所有的服务：开着的多发布端口，关了的连 `--lan` 网络也不接。
+    /// 存下开关，重建 `lan.ports` 和插值用到地址的服务：开着的多发布端口，关了的连 `--lan` 网络也不接。
     async fn apply_lan_webui(
         &self,
         id: &PluginId,
@@ -219,10 +218,7 @@ impl PluginManager {
         self.store.save(&record)?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
-        let ports = package.manifest.lan.iter().flat_map(|lan| &lan.ports);
-        let services: BTreeSet<&str> = ports.map(|p| p.service.as_str()).collect();
-        self.rebuild_lan(&package, &record, addresses, &services)
-            .await?;
+        self.rebuild_lan(&package, &record, addresses).await?;
         self.reconcile_running(&package, &record).await
     }
 

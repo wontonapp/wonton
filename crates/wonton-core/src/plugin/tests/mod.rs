@@ -28,6 +28,7 @@ mod host_facts;
 mod host_relay;
 mod instances;
 mod lan;
+mod lan_docker;
 mod lan_webui;
 mod leftovers;
 mod limits;

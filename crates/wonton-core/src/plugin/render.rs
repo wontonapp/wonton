@@ -21,6 +21,7 @@ use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
 use super::host_relay::HostRelay;
 use super::hostdir::Owner;
+use super::interpolate::UsedVars;
 use super::lan::{self, LanGrant};
 use super::limits;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
@@ -228,6 +229,7 @@ pub struct ContainerPlan {
     pub files: Vec<ConfigFile>,
     /// 一次性服务：以 0 退出是它的正常状态，安装时不等它健康。
     pub one_shot: bool,
+    pub variables: UsedVars,
 }
 
 struct ContainerOptions<'a> {
@@ -368,7 +370,8 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         injected_vars(manifest, ctx),
         bot_key,
     );
-    let services = package.services(|name| vars.get(name))?;
+    let mut used = BTreeMap::new();
+    let services = package.services(|name| vars.get(name), &mut used)?;
     if let Err(error) = super::privileges::validate_services(manifest, &services) {
         return Err(service_err(&error.service, error.message));
     }
@@ -392,6 +395,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
     let mut containers = Vec::new();
     for name in start_order(dependencies(&services))? {
         let service = &services[&name];
+        let mut variables = used.remove(&name).unwrap_or_default();
         check_network_mode(manifest, &name, service)?;
         let gpu = ctx.gpu.as_ref().filter(|_| gpu_services.contains(&name));
         let one_shot = one_shot.contains(name.as_str());
@@ -411,11 +415,11 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         }
         .build(&service.volumes, &mut binds)?;
         let targets = mount_targets(service, &mounts);
-        let files =
-            configs::resolve(package, service, vars.get(&name), &targets).map_err(|e| match e {
-                ConfigError::Package(e) => e.into(),
-                ConfigError::Rule(m) => service_err(&name, m),
-            })?;
+        let files = configs::resolve(package, service, vars.get(&name), &targets, &mut variables)
+            .map_err(|e| match e {
+            ConfigError::Package(e) => e.into(),
+            ConfigError::Rule(m) => service_err(&name, m),
+        })?;
         let options = ContainerOptions {
             requirements,
             network: network.as_str(),
@@ -435,6 +439,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         }
         plan.files = files;
         plan.one_shot = one_shot;
+        plan.variables = variables;
         containers.push(plan);
     }
     check_not_nested(&binds)?;
@@ -640,6 +645,7 @@ fn container_plan(
         body,
         files: Vec::new(),
         one_shot: false,
+        variables: UsedVars::new(),
     })
 }
 

@@ -41,6 +41,9 @@ pub const PLUGIN_MCP_HOST: &str = "mcp.wonton.internal";
 /// tusd 经核心在私有网络里的这个别名调文件钩子（ADR-0020）。
 pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
 
+/// 插件安装等待容器就绪的默认期限。
+pub const DEFAULT_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// 网关按 Host 头区分的目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostKind {
@@ -317,7 +320,11 @@ impl Config {
             pgid: parse(&get, "WONTON_PGID", 1000)?,
             username,
             owner_name,
-            install_timeout: Duration::from_secs(parse(&get, "WONTON_INSTALL_TIMEOUT_SECS", 300)?),
+            install_timeout: secs(
+                &get,
+                "WONTON_INSTALL_TIMEOUT_SECS",
+                DEFAULT_INSTALL_TIMEOUT.as_secs(),
+            )?,
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             core_source: get("WONTON_CORE_SOURCE"),
             install_dir: get("WONTON_INSTALL_DIR").map(PathBuf::from),

@@ -1,5 +1,5 @@
 //! 局域网端口（`network.lan`，ADR-0019）：端口只发布在选出的地址上；不能出网的插件另接一个关掉伪装的网络；
-//! 地址变了只重建开了局域网端口的容器；选不出地址时装不上、已装的标为异常，地址回来后恢复。
+//! 地址变了只重建开端口或插值用到地址的容器；选不出地址时装不上、已装的标为异常，地址回来后恢复。
 
 use std::sync::{Arc, Mutex};
 
@@ -255,34 +255,163 @@ async fn ports_taken_by_another_plugin_are_refused_before_anything_starts() {
 }
 
 #[tokio::test]
-async fn an_address_change_rebuilds_only_the_lan_containers() {
-    let (docker, m, detected, _dir) = on(office()).await;
-    let compose = samba("");
-    m.install(&compose, &granted(&compose)).await.unwrap();
-    // 地址没变时什么也不动。
-    let before = docker.writes().len();
-    m.lan_pass().await.unwrap();
-    assert_eq!(docker.writes().len(), before);
+async fn an_address_change_rebuilds_lan_containers_and_variable_consumers_only() {
+    for usage in [
+        "    environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}",
+        "    command: ['serve', '$WONTON_LAN_ADDRESSES']",
+        "    entrypoint: ['serve', '${MISSING:-${WONTON_LAN_ADDRESSES}}']",
+    ] {
+        let (docker, m, detected, _dir) = on(office()).await;
+        let compose = package(
+            &format!(
+                "  samba:\n    image: example/samba\n  web:\n    image: nginx\n\
+                 {usage}\n    depends_on: [untouched]\n  untouched:\n    image: nginx\n    environment:\n\
+                 \x20     LITERAL: '$${{WONTON_LAN_ADDRESSES}}'\n\
+                 \x20     UNUSED: '${{WONTON_APP_ID:-${{WONTON_LAN_ADDRESSES}}}}'"
+            ),
+            "  lan: {ports: [{service: samba, port: 445}]}\n  permissions: [network.lan]",
+        );
+        m.install(&compose, &granted(&compose)).await.unwrap();
+        let before = docker.writes().len();
+        m.lan_pass().await.unwrap();
+        assert_eq!(docker.writes().len(), before);
 
-    // DHCP 换了地址。
+        *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
+        m.lan_pass().await.unwrap();
+        assert_eq!(
+            created(&docker, "samba")["HostConfig"]["PortBindings"]["445/tcp"],
+            binding("192.168.0.68", "445")
+        );
+        let web = created(&docker, "web");
+        if usage.contains("environment") {
+            assert_eq!(
+                env_of_container(&docker, "wonton-app-test--web")["ADDRESSES"],
+                "192.168.0.68"
+            );
+        } else {
+            let field = if usage.contains("entrypoint") {
+                "Entrypoint"
+            } else {
+                "Cmd"
+            };
+            assert_eq!(web[field], json!(["serve", "192.168.0.68"]));
+        }
+        let writes = docker.writes()[before..].to_vec();
+        let removed: Vec<&str> = writes
+            .iter()
+            .filter(|w| w.starts_with("DELETE /containers/"))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            removed,
+            [
+                "DELETE /containers/wonton-app-test--samba",
+                "DELETE /containers/wonton-app-test--web"
+            ]
+        );
+        assert!(
+            !writes
+                .iter()
+                .any(|w| w.contains("wonton-app-test--untouched")),
+            "无关服务及依赖不动：{writes:?}"
+        );
+        assert!(
+            !writes
+                .iter()
+                .any(|w| w.starts_with("POST /networks/create")),
+            "网络不重建：{writes:?}"
+        );
+        assert_eq!(status(&m), PluginStatus::Running);
+    }
+}
+
+#[tokio::test]
+async fn an_address_change_rebuilds_inline_config_consumers_but_not_literal_files() {
+    use std::io::Read;
+
+    let (docker, m, detected, _dir) = on(office()).await;
+    let compose = format!(
+        "configs:\n  addresses:\n    content: '${{WONTON_LAN_ADDRESSES}}'\n  literal:\n    file: literal.txt\n{}",
+        package(
+            "  samba:\n    image: example/samba\n  web:\n    image: nginx\n    configs: [addresses]\n  untouched:\n    image: nginx\n    configs: [literal]",
+            "  lan: {ports: [{service: samba, port: 445}]}\n  permissions: [network.lan]",
+        )
+    );
+    let files = [(
+        "literal.txt".to_owned(),
+        b"${WONTON_LAN_ADDRESSES}".to_vec(),
+    )]
+    .into();
+    let pkg = PluginPackage::with_files(&compose, files).unwrap();
+    let permissions = pkg.manifest.permissions.clone();
+    m.install_package(pkg, &permissions).await.unwrap();
+    let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     m.lan_pass().await.unwrap();
-    let samba = created(&docker, "samba");
-    let bindings = &samba["HostConfig"]["PortBindings"];
-    assert_eq!(bindings["445/tcp"], binding("192.168.0.68", "445"));
-    let env = env_of_container(&docker, "wonton-app-test--samba");
-    assert_eq!(env["ADDRESSES"], "192.168.0.68");
+    let uploaded = docker.archive("wonton-app-test--web").unwrap();
+    let mut archive = tar::Archive::new(uploaded.as_slice());
+    let mut text = String::new();
+    archive
+        .entries()
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .read_to_string(&mut text)
+        .unwrap();
+    assert_eq!(text, "192.168.0.68");
     let writes = docker.writes()[before..].to_vec();
-    assert!(writes.contains(&"DELETE /containers/wonton-app-test--samba".to_owned()));
+    assert!(writes.contains(&"DELETE /containers/wonton-app-test--web".to_owned()));
     assert!(
-        !writes.iter().any(|w| w.contains("wonton-app-test--web")),
-        "别的容器不动：{writes:?}"
+        !writes
+            .iter()
+            .any(|w| w.contains("wonton-app-test--untouched")),
+        "file 不插值：{writes:?}"
+    );
+    assert_eq!(status(&m), PluginStatus::Running);
+}
+
+#[tokio::test]
+async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
+    let (docker, m, detected, _dir) = on(office()).await;
+    docker.set_start_state(
+        "wonton-app-test--init",
+        json!({"Status": "exited", "ExitCode": 0}),
+    );
+    let compose = package(
+        "  samba:\n    image: example/samba\n    depends_on: [web]\n  init:\n    image: busybox\n    restart: 'no'\n\
+         \x20   command: ['write-address', '${WONTON_LAN_ADDRESSES}']\n    depends_on: [untouched]\n  web:\n    image: nginx\n\
+         \x20   environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}\n\
+         \x20   depends_on: {init: {condition: service_completed_successfully}}\n  untouched:\n    image: nginx",
+        "  lan: {ports: [{service: samba, port: 445}]}\n  permissions: [network.lan]",
+    );
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    let before = docker.writes().len();
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
+    m.lan_pass().await.unwrap();
+    let writes = docker.writes()[before..].to_vec();
+    let starts: Vec<&str> = writes
+        .iter()
+        .filter(|w| w.ends_with("/start"))
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        starts,
+        [
+            "POST /containers/wonton-app-test--init/start",
+            "POST /containers/wonton-app-test--web/start",
+            "POST /containers/wonton-app-test--samba/start",
+        ]
+    );
+    assert_eq!(
+        created(&docker, "init")["Cmd"],
+        json!(["write-address", "192.168.0.68"])
     );
     assert!(
         !writes
             .iter()
-            .any(|w| w.starts_with("POST /networks/create")),
-        "网络不重建：{writes:?}"
+            .any(|w| w.contains("wonton-app-test--untouched")),
+        "依赖不重建：{writes:?}"
     );
     assert_eq!(status(&m), PluginStatus::Running);
 }

@@ -1,4 +1,5 @@
 //! 真实代理提供方、出口容器和出网插件：上游停掉后回 503，不改成直连。
+//! 这些测试验证行为不验证速度，期限和生产一致；共用 runner 忙时 Docker 起容器会慢。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,6 +22,7 @@ use super::super::{PluginId, PluginManager, PluginPackage};
 use super::lan::{Host, office};
 use super::manager::manager_in_instance;
 use super::package;
+use crate::config::DEFAULT_INSTALL_TIMEOUT;
 
 const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
 
@@ -157,7 +159,7 @@ async fn egress_plugin_relay_uses_provider_dns_and_fails_closed() {
     let mut manager = manager_in_instance(engine.clone(), &dir, &instance)
         .with_lan(Lan::new(Detector::Fixed(host), None))
         .with_egress(Egress::default().with_prober(Prober::Fine));
-    manager.cfg.install_timeout = Duration::from_secs(30);
+    manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
     let manager = Arc::new(manager);
     let result = std::panic::AssertUnwindSafe(exercise(&manager, &engine, &names))
         .catch_unwind()

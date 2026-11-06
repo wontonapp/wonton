@@ -1,5 +1,5 @@
-//! 地址变了自动跟上（ADR-0019）：检测一次，开了局域网端口的容器发布的地址和选出的不一样，就照安装时一样重新
-//! 渲染、只重建这些容器（数据不动），再核对整个插件；选不出地址时把插件标为异常，端口不改开到别的地址上。
+//! 地址变了自动跟上（ADR-0019）：检测一次，发布的地址和选出的不一样时，按安装记录重新渲染，重建开端口或插值用到
+//! 地址的容器（数据不动），再核对整个插件；选不出地址时把插件标为异常，端口不改开到别的地址上。
 //!
 //! 重建按记录重新渲染，要的东西都得在核心里存着：生成的密钥、OIDC 客户端密钥、模型网关凭据都在；Bot 的访问令牌
 //! 不在，所以 `network.lan` 不能和 `matrix.bot` 一起申请（[`super::validate`]）。
@@ -208,7 +208,7 @@ impl PluginManager {
         if !self.begin_rebuild(id) {
             return;
         }
-        let result = self.relocate(id, spec, moved).await;
+        let result = self.relocate(id, moved).await;
         self.lan.end(id);
         match result {
             Ok(deployed) => {
@@ -263,7 +263,6 @@ impl PluginManager {
     async fn relocate(
         &self,
         id: &PluginId,
-        spec: &LanSpec,
         addresses: Option<&BTreeSet<IpAddr>>,
     ) -> Result<Deployed, InstallError> {
         let record = self
@@ -274,25 +273,31 @@ impl PluginManager {
         package.origin = record.origin.clone();
         if let Some(addresses) = addresses {
             let addresses: Vec<IpAddr> = addresses.iter().copied().collect();
-            self.rebuild_lan(&package, &record, &addresses, &lan_services(spec))
-                .await?;
+            self.rebuild_lan(&package, &record, &addresses).await?;
         }
         self.reconcile_running(&package, &record).await
     }
 
-    /// 照安装时一样渲染，只删掉、重建 `services` 的容器。
+    /// 照安装时一样渲染，只重建 `lan.ports` 和实际插值用到地址的服务，保留安装时的依赖顺序。
     pub(super) async fn rebuild_lan(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
         addresses: &[IpAddr],
-        services: &BTreeSet<&str>,
     ) -> Result<(), InstallError> {
         let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
         let ctx = self.rebuild_context(package, record, Some(grant)).await?;
         let mut plan = render(package, &ctx)?;
-        plan.containers
-            .retain(|c| services.contains(c.service.as_str()));
+        let services: BTreeSet<&str> = package
+            .manifest
+            .lan
+            .iter()
+            .flat_map(|lan| &lan.ports)
+            .map(|port| port.service.as_str())
+            .collect();
+        plan.containers.retain(|c| {
+            services.contains(c.service.as_str()) || c.variables.contains(super::ADDRESSES_VAR)
+        });
         self.replace_containers(&ctx, plan).await
     }
 

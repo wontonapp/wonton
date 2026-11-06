@@ -268,6 +268,40 @@ async fn switching_rebuilds_the_opening_containers_only() {
 }
 
 #[tokio::test]
+async fn switching_updates_address_consumers_without_lan_ports() {
+    let (docker, m, _detected, _dir) = on(office()).await;
+    let port = web_port().await;
+    let compose = app(port, OWN_LOGIN, "A: b", "").replace(
+        "  smb:\n    image: example/samba",
+        "  smb:\n    image: example/samba\n    environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}\n  untouched:\n    image: nginx",
+    );
+    m.install(&compose, &granted(&compose)).await.unwrap();
+    assert_eq!(
+        env_of_container(&docker, "wonton-app-test--smb")["ADDRESSES"],
+        ""
+    );
+    for (enabled, addresses) in [(true, "192.168.0.193"), (false, "")] {
+        let before = docker.writes().len();
+        m.set_lan_webui(id(), enabled, Languages::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            env_of_container(&docker, "wonton-app-test--smb")["ADDRESSES"],
+            addresses
+        );
+        let writes = docker.writes()[before..].to_vec();
+        assert!(writes.contains(&"DELETE /containers/wonton-app-test--smb".to_owned()));
+        assert!(
+            !writes
+                .iter()
+                .any(|w| w.contains("wonton-app-test--untouched")),
+            "无关服务不动：{writes:?}"
+        );
+        assert_eq!(status(&m), PluginStatus::Running);
+    }
+}
+
+#[tokio::test]
 async fn switching_keeps_the_owners_limits() {
     let (docker, m, _detected, _dir) = on(office()).await;
     let port = web_port().await;

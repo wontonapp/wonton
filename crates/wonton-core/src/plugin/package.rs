@@ -17,7 +17,7 @@ use super::compose::{
 };
 use super::github_source::Origin;
 use super::images::IconFormat;
-use super::interpolate::{InterpolateError, Vars, interpolate, interpolate_value};
+use super::interpolate::{InterpolateError, UsedVars, Vars, interpolate, interpolate_value};
 use super::manifest::{Manifest, ManifestError, SecretSpec};
 use super::package_archive;
 use super::package_files::{
@@ -371,7 +371,12 @@ impl PluginPackage {
     }
 
     /// 配置写进容器的内容：`file` 是包里的文件原样，`content` 按变量表插值。
-    pub fn config_data(&self, name: &str, vars: &Vars) -> Result<Vec<u8>, PackageError> {
+    pub fn config_data(
+        &self,
+        name: &str,
+        vars: &Vars,
+        used: &mut UsedVars,
+    ) -> Result<Vec<u8>, PackageError> {
         let config_err = |message: String| PackageError::Config {
             name: name.to_owned(),
             message,
@@ -383,7 +388,7 @@ impl PluginPackage {
                 .get(path)
                 .cloned()
                 .ok_or_else(|| config_err(format!("插件包里没有 `{path}`"))),
-            Some(ConfigSource::Content(text)) => interpolate(text, vars)
+            Some(ConfigSource::Content(text)) => interpolate(text, vars, used)
                 .map(String::into_bytes)
                 .map_err(|source| PackageError::ConfigInterpolate {
                     name: name.to_owned(),
@@ -397,6 +402,7 @@ impl PluginPackage {
     pub fn services<'v>(
         &self,
         vars: impl Fn(&str) -> &'v Vars,
+        used: &mut BTreeMap<String, UsedVars>,
     ) -> Result<BTreeMap<String, Service>, PackageError> {
         let services: BTreeMap<String, Service> = self
             .services
@@ -404,7 +410,8 @@ impl PluginPackage {
             .map(|(name, raw)| {
                 let mut value = raw.clone();
                 strip_extensions(&mut value);
-                interpolate_value(&mut value, vars(name)).map_err(|source| {
+                let mut variables = UsedVars::new();
+                interpolate_value(&mut value, vars(name), &mut variables).map_err(|source| {
                     PackageError::Interpolate {
                         service: name.clone(),
                         source,
@@ -415,6 +422,9 @@ impl PluginPackage {
                         service: name.clone(),
                         message: e.to_string(),
                     })?;
+                if !variables.is_empty() {
+                    used.insert(name.clone(), variables);
+                }
                 Ok((name.clone(), service))
             })
             .collect::<Result<_, PackageError>>()?;
