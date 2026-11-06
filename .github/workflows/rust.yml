@@ -1,7 +1,7 @@
 name: rust
 
-# 排队最久的是这个工作流：它含 Docker 集成测试，只能在带 docker 标签的机器上跑，所以 PR 只在改到 Rust 或测试读的文件时
-# 才跑：测试会读 deploy/ 和 plugins/ 里的文件。没有分支保护，跳过的检查不挡合并。main 上每次合并都跑，文档除外。
+# 排队最久的是这个工作流，所以 PR 只在改到 Rust 或测试读的文件时才跑：测试会读 deploy/ 和 plugins/ 里的文件。没有分支
+# 保护，跳过的检查不挡合并。main 上每次合并都跑，文档除外。
 on:
   pull_request:
     paths:
@@ -32,11 +32,12 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
+  # 分成两个作业：格式、Clippy 和默认测试不碰 Docker，任何 Linux runner 都能跑；Docker 集成测试只能在带 docker 标签的
+  # 几台上跑。合在一起时每个 PR 都要排那几台，一排七八个（2026-11-06）。分开后两个作业同时跑，Docker 那个要在另一个
+  # target 目录里再编译、链接一遍测试二进制，但 PR 等的总时间不变长。
   rust:
     name: Rust
-    # 一个作业编译一次：默认测试和 Docker 测试用的是同一批测试二进制，分成两个作业时要在两个 target 目录里各编译、链接一遍。
-    runs-on: [self-hosted, Linux, X64, docker]
-    # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -53,10 +54,6 @@ jobs:
           fi
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
-      - name: 确认 Docker 可用
-        run: docker version
-      - name: 清理被中断的 Docker 测试遗留
-        run: bash scripts/clean-docker-test-leftovers.sh
       - name: 格式
         run: cargo fmt --all --check
       - name: Clippy（含函数不超过 100 行）
@@ -64,10 +61,31 @@ jobs:
       - name: 测试（不含依赖 Docker 的集成测试）
         run: cargo test --workspace --locked
         env:
-          # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由下一步运行。
+          # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
           DOCKER_HOST: unix:///nonexistent/docker.sock
+
+  docker:
+    name: Rust Docker 测试
+    runs-on: [self-hosted, Linux, X64, docker]
+    # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      # 下面三步同“Rust”作业。
+      - name: 构建缓存目录
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/rust" >> "$GITHUB_ENV"
+      - name: 构建缓存超过 30 GB 就清掉
+        run: |
+          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt 30720 ]; then
+            rm -rf "$CARGO_TARGET_DIR/debug"
+          fi
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - name: 确认 Docker 可用
+        run: docker version
+      - name: 清理被中断的 Docker 测试遗留
+        run: bash scripts/clean-docker-test-leftovers.sh
       - name: Docker 集成测试（标了 #[ignore] 的都是）
-        # 参数和上一步相同，不再编译。
         run: cargo test --workspace --locked -- --ignored
       - name: 官方索引里的清单这份核心都读得懂
         run: |

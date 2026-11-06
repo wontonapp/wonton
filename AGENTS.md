@@ -60,8 +60,8 @@
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
 - 提交前运行 `bash scripts/check.sh`（行数门禁、冲突标记检查、格式、Clippy、测试），和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
-  命令。跳过不等于通过：PR 说明里写明没跑。CI 的“Rust”作业分两步：默认的测试故意让 Docker 不可用，保证它们不依赖
-  Docker；接着运行这些标了 `#[ignore]` 的，Docker 不可用即失败。
+  命令。跳过不等于通过：PR 说明里写明没跑。CI 分两个作业：“Rust”跑默认的测试，故意让 Docker 不可用，保证它们不依赖
+  Docker；“Rust Docker 测试”运行这些标了 `#[ignore]` 的，Docker 不可用即失败。
 - CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂。改清单写法的 PR 要先让索引
   换成新核心读得懂的写法，否则 CI 失败。
 - 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；

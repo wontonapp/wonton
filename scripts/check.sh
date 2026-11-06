@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 提交前的本地检查，和 CI 的结构门禁、Rust 部分一致：行数门禁、界面文字检查、格式、Clippy（含函数长度）、测试。
 # 依赖 Docker 的集成测试标了 #[ignore]：连得上 Docker 就一起运行；连不上就跳过，并在末尾说明跳过了什么
-# （跳过不等于通过，CI 的 Rust 作业不会跳过）。
+# （跳过不等于通过，CI 的“Rust Docker 测试”作业不会跳过）。
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -39,7 +39,7 @@ if docker_error="$(docker_reachable)"; then
   echo "==> Docker 可用：连同依赖 Docker 的集成测试一起运行"
   cargo test --workspace --locked -- --include-ignored
   if [[ "$(uname -s)" != Linux ]]; then
-    echo "==> 只在 Linux 上编译的 Docker 测试没有运行，CI 的 Rust 作业会运行"
+    echo "==> 只在 Linux 上编译的 Docker 测试没有运行，CI 的“Rust Docker 测试”作业会运行"
   fi
 else
   cargo test --workspace --locked
@@ -50,6 +50,6 @@ else
       $docker_error
     有 Docker 的机器上手动运行：
       cargo test --workspace --locked -- --ignored
-    CI 的 Rust 作业会运行它们，那里 Docker 不可用即失败。
+    CI 的“Rust Docker 测试”作业会运行它们，那里 Docker 不可用即失败。
 EOF
 fi

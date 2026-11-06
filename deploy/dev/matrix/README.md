@@ -20,7 +20,7 @@ cargo test -p wonton-matrix --test tuwunel -- --include-ignored
 ```
 
 每个测试用 Docker 起一台一次性的 Tuwunel，镜像和配置取自本目录。这些测试标了 `#[ignore]`，所以要加
-`--include-ignored`，不加则只列出、不运行；`scripts/check.sh` 在有 Docker 时自动带上，CI 的 Rust 作业
+`--include-ignored`，不加则只列出、不运行；`scripts/check.sh` 在有 Docker 时自动带上，CI 的“Rust Docker 测试”作业
 也会运行。testcontainers 不读 docker context，
 Docker 套接字不在 `/var/run/docker.sock`（如 OrbStack、Colima）时先设置 `DOCKER_HOST`：
 

@@ -254,7 +254,7 @@ App 被杀后收不到任何消息。
 
 ## 验证结果（M0-3，自动化测试）
 
-验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑（后两条要 Docker，CI 的 Rust 作业会跑）：
+验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑（后两条要 Docker，CI 的“Rust Docker 测试”作业会跑）：
 
 - `cargo test -p wonton-core push`
 - `cargo test -p wonton-matrix --test tuwunel -- push egress --include-ignored`
