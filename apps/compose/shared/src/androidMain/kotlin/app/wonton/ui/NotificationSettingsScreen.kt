@@ -34,12 +34,14 @@ val NotificationCategory.notificationChannelId: String
     get() = when (this) {
         NotificationCategory.MESSAGE -> "message"
         NotificationCategory.CONFIRMATION -> "confirmation"
+        NotificationCategory.PLUGIN_NOTICE -> "plugin_notice"
     }
 
 val NotificationCategory.notificationTitle: String
     get() = when (this) {
         NotificationCategory.MESSAGE -> "聊天消息"
         NotificationCategory.CONFIRMATION -> "等你确认"
+        NotificationCategory.PLUGIN_NOTICE -> "应用通知"
     }
 
 internal val PushStatus.notificationValue: String

@@ -71,11 +71,13 @@ pub enum NotificationCategory {
     Message,
     /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。
     Confirmation,
+    /// 插件发来的通知（ADR-0047），只有 `warning`、`critical` 级别的会推送。
+    PluginNotice,
 }
 
 impl NotificationCategory {
     /// 按通知设置页里的显示顺序。
-    pub const ALL: [Self; 2] = [Self::Message, Self::Confirmation];
+    pub const ALL: [Self; 3] = [Self::Message, Self::Confirmation, Self::PluginNotice];
 }
 
 /// 通知对应的确认卡片：每张卡片一条通知，壳按它撤下答完和过期的。

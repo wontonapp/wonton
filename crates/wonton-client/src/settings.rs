@@ -127,7 +127,8 @@ mod tests {
                     push: PushStatus::NoEndpoint,
                     categories: vec![
                         NotificationCategory::Message,
-                        NotificationCategory::Confirmation
+                        NotificationCategory::Confirmation,
+                        NotificationCategory::PluginNotice
                     ],
                 },
                 SettingsEntry::ChatBackup {

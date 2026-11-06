@@ -24,6 +24,7 @@ mod link;
 mod onboarding;
 mod owner;
 mod plugin;
+mod plugin_notice;
 mod push;
 mod registry_mirror;
 mod secret;
@@ -114,6 +115,7 @@ pub use plugin::{
     StoreProblem, StoreSection, TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView,
     UpgradeOffer, UpgradeRequest, UpgradeResult,
 };
+pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use push::{
     NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus,
 };
