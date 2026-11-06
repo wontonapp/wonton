@@ -7,6 +7,7 @@
 
 mod confirmation;
 mod contacts;
+mod display_name;
 mod login;
 mod onboarding;
 mod pending;
@@ -71,6 +72,8 @@ pub(crate) struct ChatLink {
     room_order: Arc<onboarding::RoomOrder>,
     /// 发过消息的房间，引导提示用。
     sent: watch::Sender<Vec<String>>,
+    /// 还没登录 Matrix 时改的显示名，登录后再设。
+    display_name: Mutex<Option<String>>,
 }
 
 struct Active {
@@ -124,6 +127,7 @@ impl ChatLink {
             primary_bot: Arc::new(Mutex::new(None)),
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
+            display_name: Mutex::new(None),
         });
         runtime.spawn(follow_home(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -562,6 +566,7 @@ impl ChatLink {
             }
         };
         *lock(&self.session) = Some(session.clone());
+        self.apply_pending_display_name(&session);
         self.view.send_modify(|view| {
             view.account = ChatAccount::SignedIn {
                 user_id: session.user_id().to_string(),

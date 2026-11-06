@@ -1,27 +1,27 @@
-//! 从状态和记录算出壳要显示的 [`OnboardingViewModel`]：这一步的行、提示和默认 Agent 的房间置顶。
+//! 从状态和记录算出壳要显示的 [`OnboardingViewModel`]：这一步的行、最后一页、提示和默认 Agent 的房间置顶。
 
 use std::collections::HashSet;
 
 use wonton_protocol::{
-    ChatViewModel, Onboarding, OnboardingAgent, OnboardingAgentRow, OnboardingModelStep,
-    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingStep, OnboardingTip,
+    ChatViewModel, Onboarding, OnboardingAgent, OnboardingAgentRow, OnboardingCommit,
+    OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep, OnboardingTip,
     OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
 };
 
-use super::{LocalState, storage, text};
+use super::{LocalState, review, storage, text};
 use text::Language;
 
 pub(super) fn render(
     state: &LocalState,
-    onboarding: Option<&Onboarding>,
     records: &storage::Records,
     chat: &ChatViewModel,
     sent_rooms: &HashSet<String>,
     language: Language,
 ) -> (OnboardingViewModel, Option<String>) {
-    let Some(onboarding) = onboarding else {
+    let Some(onboarding) = state.onboarding.as_ref() else {
         return (
             OnboardingViewModel {
+                loading: state.loading,
                 problem: state.problem.clone(),
                 tips: tips(records, language),
                 ..OnboardingViewModel::default()
@@ -29,7 +29,7 @@ pub(super) fn render(
             None,
         );
     };
-    let selected = selected_agent(state, onboarding);
+    let selected = state.draft.agent(onboarding);
     let agents = onboarding
         .agents
         .iter()
@@ -46,7 +46,7 @@ pub(super) fn render(
             blocked: agent.blocked.clone(),
         })
         .collect();
-    let selected_agent_data = selected
+    let selected_agent = selected
         .as_deref()
         .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id));
     let primary_bot = onboarding
@@ -67,34 +67,41 @@ pub(super) fn render(
     };
     let model = OnboardingModelStep {
         providers: state.providers.clone(),
-        logins: selected_agent_data.map_or_else(Vec::new, |agent| agent.logins.clone()),
-        saving: state.saving.clone(),
-        choice: None,
-        testing: false,
+        logins: selected_agent.map_or_else(Vec::new, |agent| agent.logins.clone()),
+        choice: state
+            .draft
+            .model(state.providers.as_ref())
+            .and_then(|model| model.choice()),
+        testing: state.testing,
         problem: state.model_problem.clone(),
     };
+    let selected_needs = state.draft.needs(onboarding);
     let needs = onboarding
         .needs
         .iter()
         .map(|need| OnboardingNeedRow {
             id: need.id.clone(),
             title: need.title.clone(),
-            selected: state.selected_needs.contains(&need.id),
+            selected: selected_needs.contains(&need.id),
             plugins: need.plugins.clone(),
         })
         .collect();
+    let step = state.step.unwrap_or(onboarding.step);
     let view = OnboardingViewModel {
-        step: Some(onboarding.step),
-        title: text::title(onboarding.step, language),
-        nav: navigation(state, onboarding.step, selected_agent_data),
+        step: Some(step),
+        title: text::title(step, language),
+        nav: navigation(state, step, selected_agent),
         loading: state.loading,
         problem: state.problem.clone(),
         catalog_problem: onboarding.catalog_problem.clone(),
-        profile: OnboardingProfileStep::default(),
+        profile: state.draft.profile_step(state.owner.as_ref()),
         agents,
         model,
         needs,
-        review: OnboardingReview::default(),
+        review: OnboardingReview {
+            items: state.review.iter().map(review::ReviewEntry::item).collect(),
+            commit: state.commit,
+        },
         primary_bot_user_id: primary_bot.clone(),
         chat_prompts,
         replaced_agent: replaced_agent(onboarding),
@@ -108,25 +115,31 @@ fn navigation(
     step: OnboardingStep,
     selected: Option<&OnboardingAgent>,
 ) -> Option<StepNav> {
+    let not_started = state.commit == OnboardingCommit::NotStarted;
     let (position, can_next) = match step {
         OnboardingStep::Profile => (1, true),
         OnboardingStep::Agent => (2, selected.is_some_and(installable)),
         OnboardingStep::Model => (
             3,
-            state
-                .providers
-                .as_ref()
-                .is_some_and(|providers| providers.any_configured),
+            !state.testing && state.draft.model(state.providers.as_ref()).is_some(),
         ),
         OnboardingStep::Apps => (4, true),
-        OnboardingStep::Review | OnboardingStep::Finished | OnboardingStep::Other => return None,
+        OnboardingStep::Review => (
+            5,
+            match state.commit {
+                OnboardingCommit::NotStarted => review::can_commit(&state.review),
+                OnboardingCommit::Running => false,
+                OnboardingCommit::Done => true,
+            },
+        ),
+        OnboardingStep::Finished | OnboardingStep::Other => return None,
     };
-    let ready = !state.loading && state.saving.is_none();
+    let ready = !state.loading;
     Some(StepNav {
         position,
-        total: 4,
-        can_back: ready && position > 1,
-        can_skip: ready,
+        total: 5,
+        can_back: ready && not_started && position > 1,
+        can_skip: ready && not_started && step != OnboardingStep::Review,
         can_next: ready && can_next,
     })
 }
@@ -165,34 +178,6 @@ fn replaced_agent(onboarding: &Onboarding) -> Option<ReplacedAgent> {
         id: first.id.clone(),
         title: first.title.clone(),
     })
-}
-
-pub(super) fn selected_agent(state: &LocalState, onboarding: &Onboarding) -> Option<String> {
-    state
-        .selected_agent
-        .clone()
-        .or_else(|| onboarding.primary_agent.clone())
-        .or_else(|| {
-            onboarding
-                .agents
-                .iter()
-                .find(|agent| installable(agent))
-                .map(|agent| agent.id.clone())
-        })
-}
-
-pub(super) fn next_step(
-    step: OnboardingStep,
-) -> Result<OnboardingStep, wonton_protocol::CoreError> {
-    match step {
-        OnboardingStep::Profile => Ok(OnboardingStep::Agent),
-        OnboardingStep::Agent => Ok(OnboardingStep::Model),
-        OnboardingStep::Model => Ok(OnboardingStep::Apps),
-        OnboardingStep::Apps => Ok(OnboardingStep::Finished),
-        OnboardingStep::Review | OnboardingStep::Finished | OnboardingStep::Other => {
-            Err(super::invalid("这一步不能继续"))
-        }
-    }
 }
 
 #[cfg(test)]
@@ -261,15 +246,11 @@ mod tests {
         chat: &ChatViewModel,
         sent_rooms: &HashSet<String>,
     ) -> OnboardingViewModel {
-        render(
-            &LocalState::default(),
-            Some(&onboarding()),
-            records,
-            chat,
-            sent_rooms,
-            Language::Chinese,
-        )
-        .0
+        let state = LocalState {
+            onboarding: Some(onboarding()),
+            ..LocalState::default()
+        };
+        render(&state, records, chat, sent_rooms, Language::Chinese).0
     }
 
     #[test]

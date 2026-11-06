@@ -106,7 +106,6 @@ impl ClientCore {
             | Action::SkipOnboardingStep
             | Action::BackOnboardingStep
             | Action::ToggleOnboardingNeed { .. }
-            | Action::SaveModelProviderKey { .. }
             | Action::EditOnboardingProfile { .. }
             | Action::TestModelProvider { .. }
             | Action::UseCurrentModel
@@ -325,14 +324,19 @@ impl ClientCore {
         self.run(async move { plugins.owner_profile().await }).await
     }
 
-    /// 保存资料。不合规则时返回 `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
+    /// 保存资料，名字同步成 Matrix 上的显示名。不合规则时返回 `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
     pub async fn save_owner_profile(
         &self,
         update: OwnerProfileUpdate,
     ) -> Result<OwnerProfile, CoreError> {
         let plugins = self.plugins.clone();
-        self.run(async move { plugins.save_owner_profile(update).await })
-            .await
+        let saved = self
+            .run(async move { plugins.save_owner_profile(update).await })
+            .await?;
+        if let Some(name) = saved.display_name.clone() {
+            self.chat.set_owner_display_name(name);
+        }
+        Ok(saved)
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。

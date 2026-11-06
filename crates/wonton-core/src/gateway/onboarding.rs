@@ -75,8 +75,11 @@ impl OnboardingState {
         let _guard = self.lock.lock().await;
         let mut state = self.load_locked()?;
         if let Some(step) = update.step {
-            if matches!(step, OnboardingStep::Review | OnboardingStep::Other) {
-                return Err(InstallError::Invalid(format!("step 不支持 {step:?}")));
+            // 中间的步骤只在 App 上（ADR-0038），这里只记从头开始和走完了。
+            if !matches!(step, OnboardingStep::Profile | OnboardingStep::Finished) {
+                return Err(InstallError::Invalid(format!(
+                    "step 只能是 profile 或 finished，不是 {step:?}"
+                )));
             }
             state.step = step;
         }
@@ -359,7 +362,7 @@ mod tests {
         assert!(!initial.replaced_agent_asked);
 
         let update = OnboardingUpdate {
-            step: Some(OnboardingStep::Apps),
+            step: Some(OnboardingStep::Finished),
             primary_agent: Some("com.example.agent".to_owned()),
             replaced_agent_asked: Some(true),
         };
@@ -370,7 +373,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(saved.step, OnboardingStep::Apps);
+        assert_eq!(saved.step, OnboardingStep::Finished);
         assert_eq!(state.load().await.unwrap(), saved);
     }
 

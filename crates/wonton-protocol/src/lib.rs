@@ -87,7 +87,7 @@ pub use onboarding::{
 };
 pub use owner::{
     OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate, check_display_name, check_email,
-    normalized_email,
+    check_email_change, normalized_email,
 };
 pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;

@@ -53,6 +53,8 @@ pub struct CoreState {
     /// 假核心保存的引导状态和服务商列表。
     onboarding: Mutex<Option<serde_json::Value>>,
     providers: Mutex<Option<serde_json::Value>>,
+    /// 假核心保存的资料；为空时是还没填的。
+    owner: Mutex<Option<serde_json::Value>>,
     /// 某个方法和路径下一次的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
     canned: Mutex<HashMap<(Method, String), Canned>>,
     /// 用完预设的回应后，某个方法和路径一直用的回应。
@@ -86,6 +88,13 @@ impl CoreState {
             .insert((method, path.to_owned()), canned);
     }
 
+    pub fn stop_answering(&self, method: Method, path: &str) {
+        self.standing
+            .lock()
+            .unwrap()
+            .remove(&(method, path.to_owned()));
+    }
+
     /// 让这个请求一直等，直到 [`Self::release`]。
     pub fn hold(&self, method: Method, path: &str) {
         self.holds
@@ -106,6 +115,10 @@ impl CoreState {
 
     pub fn set_onboarding(&self, onboarding: serde_json::Value) {
         *self.onboarding.lock().unwrap() = Some(onboarding);
+    }
+
+    pub fn set_owner(&self, name: Option<&str>, email: Option<&str>) {
+        *self.owner.lock().unwrap() = Some(owner_json(name, email));
     }
 
     pub fn set_providers(&self, providers: serde_json::Value) {
@@ -198,7 +211,13 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
         }
         (&Method::GET, "/_wonton/api/store") => json(serde_json::to_string(&listing()).unwrap()),
         (&Method::POST, "/_wonton/api/plugins/preview") => {
-            json(serde_json::to_string(&preview("app.photos")).unwrap())
+            // 来源 github:owner/<id> 预览出来就是 <id>。
+            let id = serde_json::from_slice::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|body| body["source"].as_str().map(str::to_owned))
+                .and_then(|source| source.strip_prefix("github:owner/").map(str::to_owned))
+                .unwrap_or_else(|| "app.photos".to_owned());
+            json(serde_json::to_string(&preview(&id)).unwrap())
         }
         (&Method::POST, "/_wonton/api/plugins") => json(
             serde_json::to_string(&installed(
@@ -261,6 +280,24 @@ async fn onboarding_routes(
             _ => core_error_response(405),
         });
     }
+    if path == "/_wonton/api/owner-profile" {
+        let mut owner = core.owner.lock().unwrap();
+        let value = owner.get_or_insert_with(|| owner_json(None, None));
+        if *method == Method::PUT
+            && let Ok(update) = serde_json::from_slice::<serde_json::Value>(body)
+        {
+            value["display_name"] = update["display_name"].clone();
+            value["email"] = update.get("email").cloned().unwrap_or_default();
+        }
+        return Some(json_value(value.clone()));
+    }
+    // 只测不存。
+    if path.starts_with("/_wonton/api/models/") && path.ends_with("/test") {
+        return Some(StatusCode::OK.into_response());
+    }
+    if path == "/_wonton/api/models/custom-provider" && method == Method::PUT {
+        return Some(StatusCode::OK.into_response());
+    }
     if path.starts_with("/_wonton/api/models/providers/") && method == Method::PUT {
         if let Some(providers) = core.providers.lock().unwrap().as_mut() {
             providers["any_configured"] = serde_json::Value::Bool(true);
@@ -276,6 +313,10 @@ async fn onboarding_routes(
         return Some(StatusCode::OK.into_response());
     }
     None
+}
+
+fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
+    serde_json::json!({"username": "owner", "display_name": name, "email": email})
 }
 
 pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {

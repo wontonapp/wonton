@@ -57,6 +57,34 @@ pub(crate) fn tip(tip: OnboardingTip, language: Language) -> String {
     choose(language, zh, en)
 }
 
+/// 最后一页上已经装着的 Agent：点完成后把它设成默认的。
+pub(crate) fn set_default(language: Language) -> String {
+    choose(language, "设为默认", "Set as default")
+}
+
+/// 最后一页上的模型：用模型网关里已经接好的，不动。
+pub(crate) fn keep_current(language: Language) -> String {
+    choose(language, "用现在的", "Keep current")
+}
+
+/// 测试时连不上服务商：key 没被拒，点完成时照样保存。
+pub(crate) fn unreachable(model: Option<&str>, language: Language) -> String {
+    let note = choose(language, "测试时没连上", "Unreachable when tested");
+    match model {
+        Some(model) => format!("{model} · {note}"),
+        None => note,
+    }
+}
+
+/// 选了 Agent 的账号登录：装好后 Agent 把登录链接发进聊天。
+pub(crate) fn login_after(language: Language) -> String {
+    choose(
+        language,
+        "装好后在聊天里登录",
+        "Sign in from chat after setup",
+    )
+}
+
 fn choose(language: Language, zh: &str, en: &str) -> String {
     match language {
         Language::Chinese => zh.to_owned(),

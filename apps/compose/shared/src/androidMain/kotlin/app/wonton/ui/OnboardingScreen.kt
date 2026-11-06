@@ -50,7 +50,7 @@ internal fun OnboardingScreen(
         nav = nav,
         title = view.title,
         primaryText = if (view.step == OnboardingStep.APPS) "完成" else "下一步",
-        primaryBusy = view.loading || view.model.saving != null,
+        primaryBusy = view.loading || view.model.testing,
         onBack = { send(Action.BackOnboardingStep) },
         onSkip = { send(Action.SkipOnboardingStep) },
         onPrimary = {

@@ -55,6 +55,17 @@ pub fn check_email(email: &str) -> Result<(), String> {
     }
 }
 
+/// 填过的邮箱只能改，不能清空：邮箱清掉后，要邮箱的插件重建时会失败（ADR-0030）。`next` 已经过 [`normalized_email`]。
+pub fn check_email_change(previous: Option<&str>, next: Option<&str>) -> Result<(), String> {
+    match (previous, next) {
+        (Some(_), None) => {
+            Err("邮箱填过以后只能改，不能清空：要邮箱的应用重建时会用到它".to_owned())
+        }
+        (_, Some(email)) => check_email(email),
+        (None, None) => Ok(()),
+    }
+}
+
 /// 去掉首尾空白；空的邮箱算没填。
 pub fn normalized_email(email: Option<&str>) -> Option<&str> {
     email.map(str::trim).filter(|email| !email.is_empty())

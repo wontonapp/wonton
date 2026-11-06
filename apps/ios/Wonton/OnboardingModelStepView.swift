@@ -90,7 +90,7 @@ struct OnboardingModelStepView: View {
         // reveal 的滚动目标：钉住行，下面的表单跟着完整可见。
         .id(provider.id)
         if expandedProvider == provider.id {
-            ProviderKeyForm(provider: provider, isSaving: step.saving == provider.id,
+            ProviderKeyForm(provider: provider, isSaving: step.testing,
                             isBusy: !nav.canSkip, send: send, reveal: { revealForm(provider.id) })
         }
     }
@@ -156,7 +156,7 @@ private struct ProviderKeyForm: View {
     }
 
     private func save() {
-        send(.saveModelProviderKey(id: provider.id, key: key))
+        send(.testModelProvider(input: .preset(id: provider.id, key: key), thenContinue: true))
         key = ""
     }
 }

@@ -271,11 +271,9 @@ pub struct OnboardingAgentRow {
 pub struct OnboardingModelStep {
     /// 还没取到时为空。
     pub providers: Option<ModelProviders>,
-    /// 选中的 Agent 的账号登录。选了就发 [`Action::ContinueOnboarding`](crate::Action::ContinueOnboarding)，登录链接由
-    /// Agent 发进聊天。
+    /// 选中的 Agent 的账号登录。选了发 [`Action::ChooseModelLogin`](crate::Action::ChooseModelLogin)，登录链接由 Agent
+    /// 发进聊天。
     pub logins: Vec<AgentLogin>,
-    /// 正在保存和测试 key 的服务商。
-    pub saving: Option<String>,
     /// 这一步记下的选择，点完成时才保存；为空时不动模型。
     pub choice: Option<OnboardingModelChoice>,
     /// 正在测试填的 key，什么都不保存。
@@ -417,6 +415,10 @@ pub enum OnboardingItemState {
     Waiting,
     Running,
     Done,
+    /// 连接断了，等不到家里服务器的结果：它可能已经装好了，看已安装列表。
+    Uncertain {
+        message: String,
+    },
     /// 失败了，可以重试；别的项照常做。
     Failed {
         problem: OnboardingItemProblem,

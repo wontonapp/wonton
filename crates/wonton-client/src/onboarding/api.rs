@@ -1,12 +1,14 @@
-//! 引导的接口调用：状态和步骤经 `onboarding`，服务商列表和 key 经 `models/providers`。这几个接口在核心里都可能
-//! 去来源取官方索引和图标，超时按取来源算（[`SOURCE_TIMEOUT`]）；错误统一映射成 [`ModelProviderProblem`]。
+//! 引导的接口调用：状态经 `onboarding`，资料经 `owner-profile`，服务商经 `models/`，要装的插件经安装预览。这几个接口在
+//! 核心里都可能去来源取官方索引和图标，超时按取来源算（[`SOURCE_TIMEOUT`]）；模型的错误统一映射成
+//! [`ModelProviderProblem`]。
 
 use wonton_protocol::{
-    ModelProviderFailure, ModelProviderKey, ModelProviderProblem, ModelProviders, Onboarding,
-    OnboardingUpdate, PluginProblem,
+    CustomModelProvider, InstallPreview, InstallSource, ModelProviderFailure, ModelProviderInput,
+    ModelProviderKey, ModelProviderProblem, ModelProviders, Onboarding, OnboardingUpdate,
+    OwnerProfile, OwnerProfileUpdate, PluginProblem,
 };
 
-use crate::plugins::api::{CoreApi, CoreApiError, SOURCE_TIMEOUT};
+use crate::plugins::api::{CoreApi, CoreApiError, READ_TIMEOUT, SOURCE_TIMEOUT};
 
 pub(crate) async fn get(api: &CoreApi) -> Result<Onboarding, PluginProblem> {
     api.get(&["onboarding"], &[], SOURCE_TIMEOUT).await
@@ -25,14 +27,82 @@ pub(crate) async fn providers(api: &CoreApi) -> Result<ModelProviders, ModelProv
         .map_err(map_error)
 }
 
+pub(crate) async fn owner_profile(api: &CoreApi) -> Result<OwnerProfile, PluginProblem> {
+    api.get(&["owner-profile"], &[], READ_TIMEOUT).await
+}
+
+pub(crate) async fn save_owner_profile(
+    api: &CoreApi,
+    update: &OwnerProfileUpdate,
+) -> Result<OwnerProfile, PluginProblem> {
+    api.put(&["owner-profile"], update, READ_TIMEOUT).await
+}
+
+pub(crate) async fn preview(api: &CoreApi, source: &str) -> Result<InstallPreview, PluginProblem> {
+    let source = InstallSource {
+        source: source.to_owned(),
+    };
+    api.post(&["plugins", "preview"], &source, SOURCE_TIMEOUT)
+        .await
+}
+
+/// 只测试，什么都不保存。
+pub(crate) async fn test_provider(
+    api: &CoreApi,
+    input: ModelProviderInput,
+) -> Result<(), ModelProviderProblem> {
+    match input {
+        ModelProviderInput::Preset { id, key } => {
+            let path = ["models", "providers", id.as_str(), "test"];
+            api.post_unit_detailed(&path, &ModelProviderKey { key }, SOURCE_TIMEOUT)
+                .await
+        }
+        ModelProviderInput::Custom {
+            base_url,
+            model,
+            key,
+        } => {
+            let body = CustomModelProvider {
+                base_url,
+                model,
+                key,
+            };
+            api.post_unit_detailed(
+                &["models", "custom-provider", "test"],
+                &body,
+                SOURCE_TIMEOUT,
+            )
+            .await
+        }
+    }
+    .map_err(map_error)
+}
+
 pub(crate) async fn save_provider(
     api: &CoreApi,
-    id: &str,
-    key: ModelProviderKey,
+    input: ModelProviderInput,
 ) -> Result<(), ModelProviderProblem> {
-    api.put_unit_detailed(&["models", "providers", id], &key, SOURCE_TIMEOUT)
-        .await
-        .map_err(map_error)
+    match input {
+        ModelProviderInput::Preset { id, key } => {
+            let path = ["models", "providers", id.as_str()];
+            api.put_unit_detailed(&path, &ModelProviderKey { key }, SOURCE_TIMEOUT)
+                .await
+        }
+        ModelProviderInput::Custom {
+            base_url,
+            model,
+            key,
+        } => {
+            let body = CustomModelProvider {
+                base_url,
+                model,
+                key,
+            };
+            api.put_unit_detailed(&["models", "custom-provider"], &body, SOURCE_TIMEOUT)
+                .await
+        }
+    }
+    .map_err(map_error)
 }
 
 /// 保存 key 和取服务商列表共用一张映射：核心给的两个接口用同一批错误类别。

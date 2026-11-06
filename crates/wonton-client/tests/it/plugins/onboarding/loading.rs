@@ -4,17 +4,10 @@ use std::task::{Context, Wake};
 
 use axum::http::Method;
 use tokio::sync::oneshot;
-use wonton_client::{
-    Action, ChatAccount, ModelProviderFailure, OnboardingStep, OnboardingSubscription,
-    OnboardingViewModel, SecretString,
-};
+use wonton_client::{Action, ChatAccount, OnboardingSubscription, OnboardingViewModel};
 
-use super::super::rig::{Rig, WAIT, core_error, running};
-use super::{model_rig, onboarding, providers};
-
-const ONBOARDING: &str = "/_wonton/api/onboarding";
-const PROVIDERS: &str = "/_wonton/api/models/providers";
-const KEY: &str = "/_wonton/api/models/providers/openai";
+use super::super::rig::{Rig, WAIT, running};
+use super::{ONBOARDING, PROVIDERS, onboarding, providers};
 
 struct PausedWake {
     entered: Mutex<Option<oneshot::Sender<()>>>,
@@ -86,9 +79,13 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("model"));
     rig.core.set_providers(providers(false));
-    rig.core.hold(Method::GET, PROVIDERS);
     rig.connected().await;
-    wait_requests(&rig, Method::GET, PROVIDERS, 1).await;
+    rig.wait_onboarding(|view| view.step.is_some() && !view.loading)
+        .await;
+    // 第二次取状态卡在服务商上：onboarding 已经有了，loading 还没结束。
+    rig.core.hold(Method::GET, PROVIDERS);
+    rig.app.dispatch(Action::RefreshOnboarding).unwrap();
+    wait_requests(&rig, Method::GET, PROVIDERS, 2).await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
     let chat = rig.app.subscribe_chat();
@@ -158,65 +155,4 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     assert!(!finished.loading, "{finished:?}");
     assert!(finished.model.providers.is_some());
     assert!(finished.nav.unwrap().can_skip);
-}
-
-#[tokio::test]
-async fn a_rejected_key_superseding_loading_reenables_navigation() {
-    for (method, action) in [
-        (Method::GET, Action::RefreshOnboarding),
-        (Method::PUT, Action::SkipOnboardingStep),
-    ] {
-        let rig = model_rig().await;
-        rig.core.hold(method.clone(), ONBOARDING);
-        rig.app.dispatch(action).unwrap();
-        assert!(rig.app.onboarding().loading);
-        rig.core.answer(
-            Method::PUT,
-            KEY,
-            core_error(422, "invalid_input", "bad key"),
-        );
-        rig.app
-            .dispatch(Action::SaveModelProviderKey {
-                id: "openai".to_owned(),
-                key: SecretString::new("rejected"),
-            })
-            .unwrap();
-        let failed = rig
-            .wait_onboarding(|view| view.model.problem.is_some() && view.model.saving.is_none())
-            .await;
-        rig.core.release(method, ONBOARDING);
-        assert_eq!(failed.step, Some(OnboardingStep::Model));
-        assert_eq!(
-            failed.model.problem.unwrap().reason,
-            ModelProviderFailure::KeyRejected
-        );
-        assert!(!failed.loading);
-        assert!(failed.nav.unwrap().can_skip);
-    }
-}
-
-#[tokio::test]
-async fn a_failed_step_superseding_a_key_save_reenables_navigation() {
-    let rig = model_rig().await;
-    rig.core.hold(Method::PUT, KEY);
-    rig.app
-        .dispatch(Action::SaveModelProviderKey {
-            id: "openai".to_owned(),
-            key: SecretString::new("secret"),
-        })
-        .unwrap();
-    wait_requests(&rig, Method::PUT, KEY, 1).await;
-    rig.core.answer(
-        Method::PUT,
-        ONBOARDING,
-        core_error(503, "upstream_unavailable", "step unavailable"),
-    );
-    rig.app.dispatch(Action::SkipOnboardingStep).unwrap();
-    let failed = rig
-        .wait_onboarding(|view| view.problem.is_some() && !view.loading)
-        .await;
-    rig.core.release(Method::PUT, KEY);
-    assert_eq!(failed.step, Some(OnboardingStep::Model));
-    assert!(failed.model.saving.is_none());
-    assert!(failed.nav.unwrap().can_skip);
 }

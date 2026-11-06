@@ -157,7 +157,7 @@ async fn onboarding_get_put_persists_and_validates_requests() {
             &headers,
             Body::from(
                 json!({
-                    "step": "apps",
+                    "step": "finished",
                     "primary_agent": "com.example.agent",
                     "replaced_agent_asked": true
                 })
@@ -167,7 +167,7 @@ async fn onboarding_get_put_persists_and_validates_requests() {
         .await;
     assert_eq!(updated.status, StatusCode::OK, "{}", updated.text());
     let updated = updated.json();
-    assert_eq!(updated["step"], "apps");
+    assert_eq!(updated["step"], "finished");
     assert_eq!(updated["primary_agent"], "com.example.agent");
     assert_eq!(updated["replaced_agent_asked"], true);
 
@@ -191,6 +191,7 @@ async fn onboarding_get_put_persists_and_validates_requests() {
 async fn assert_invalid_updates(h: &Harness, headers: &[(&str, &str); 2]) {
     for body in [
         r#"{"step":"other"}"#,
+        r#"{"step":"apps"}"#,
         r#"{"primary_agent":"com.example.missing"}"#,
         r#"not-json"#,
     ] {
@@ -237,7 +238,7 @@ async fn onboarding_keeps_state_when_the_catalog_becomes_unavailable() {
             CORE,
             ONBOARDING_PATH,
             &headers,
-            Body::from(r#"{"step":"apps","primary_agent":"com.example.agent"}"#),
+            Body::from(r#"{"step":"finished","primary_agent":"com.example.agent"}"#),
         )
         .await;
     assert_eq!(update.status, StatusCode::OK, "{}", update.text());
@@ -252,7 +253,7 @@ async fn onboarding_keeps_state_when_the_catalog_becomes_unavailable() {
         .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.text());
     let view = response.json();
-    assert_eq!(view["step"], "apps");
+    assert_eq!(view["step"], "finished");
     assert_eq!(view["primary_agent"], "com.example.agent");
     assert_eq!(view["catalog_problem"]["reason"], "upstream");
     assert_eq!(view["needs"], json!([]));
@@ -273,7 +274,7 @@ async fn onboarding_state_survives_gateway_rebuild_and_corruption_is_reported() 
             CORE,
             path,
             &auth,
-            Body::from(r#"{"step":"apps"}"#),
+            Body::from(r#"{"step":"finished"}"#),
         )
         .await;
     assert_eq!(updated.status, StatusCode::OK, "{}", updated.text());
@@ -281,7 +282,7 @@ async fn onboarding_state_survives_gateway_rebuild_and_corruption_is_reported() 
     let state_path = h.data_dir().join("core/onboarding.json");
     let response = h.get_after_restart(CORE, path, &auth[..1]).await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.text());
-    assert_eq!(response.json()["step"], "apps");
+    assert_eq!(response.json()["step"], "finished");
 
     fs::write(&state_path, b"not json").unwrap();
     let response = h.get_after_restart(CORE, path, &auth[..1]).await;

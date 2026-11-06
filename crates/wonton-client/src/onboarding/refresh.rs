@@ -1,11 +1,13 @@
 use std::collections::HashMap;
-use std::sync::Weak;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 
 use tokio::sync::watch::Receiver;
-use wonton_protocol::{InstalledPlugins, PluginOperation, PluginTaskState, PluginsViewModel};
+use wonton_protocol::{
+    HomeStatus, InstalledPlugins, PluginOperation, PluginTaskState, PluginsViewModel,
+};
 
-use super::{OnboardingLink, api, lock};
+use super::{OnboardingLink, api, lock, review};
 
 #[derive(Default)]
 struct PluginChanges {
@@ -47,18 +49,29 @@ pub(super) async fn follow_plugins(
     let mut changes = PluginChanges::default();
     changes.observe(&plugins.borrow_and_update());
     while plugins.changed().await.is_ok() {
-        let changed = changes.observe(&plugins.borrow_and_update());
+        let view = plugins.borrow_and_update().clone();
+        let changed = changes.observe(&view);
         let Some(link) = link.upgrade() else { return };
+        // 点完成以后的安装进展落到最后一页的项上。
+        if review::follow_tasks(&mut lock(&link.state).review, &view.tasks) {
+            link.publish();
+        }
         if changed {
             refresh(&link).await;
         }
     }
 }
 
-async fn refresh(link: &OnboardingLink) {
+async fn refresh(link: &Arc<OnboardingLink>) {
     let (generation, operation, revision) = {
         let state = lock(&link.state);
         if state.onboarding.is_none() {
+            // 第一次取状态失败（配对后家里的服务器还没就绪）时不能就此停住：插件那头能连上了就再取一次（#434）。
+            let retry = !state.loading && link.home.view().status == HomeStatus::Connected;
+            drop(state);
+            if retry {
+                link.refresh();
+            }
             return;
         };
         (

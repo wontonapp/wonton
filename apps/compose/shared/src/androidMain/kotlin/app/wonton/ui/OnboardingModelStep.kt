@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.wonton.protocol.Action
 import app.wonton.protocol.ModelProvider
 import app.wonton.protocol.ModelProviderFailure
+import app.wonton.protocol.ModelProviderInput
 import app.wonton.protocol.ModelProviderProblem
 import app.wonton.ui.design.StepOptionRow
 import app.wonton.ui.design.WontonButton
@@ -74,7 +75,7 @@ fun OnboardingModelStep(
                         ModelProviderRow(
                             provider = provider,
                             expanded = expandedProvider == provider.id,
-                            saving = model.saving,
+                            saving = model.testing,
                             onExpand = {
                                 expandedProvider = if (expandedProvider == provider.id) null else provider.id
                             },
@@ -114,7 +115,7 @@ fun OnboardingModelStep(
 private fun ModelProviderRow(
     provider: ModelProvider,
     expanded: Boolean,
-    saving: String?,
+    saving: Boolean,
     onExpand: () -> Unit,
     send: (Action) -> Unit,
     openKeyUrl: (String) -> Unit,
@@ -125,11 +126,11 @@ private fun ModelProviderRow(
             selected = provider.configured,
             onSelect = onExpand,
             trailing = {
-                if (saving == provider.id) ModelSpinner()
+                if (saving && expanded) ModelSpinner()
             },
         )
         if (expanded) {
-            ModelKeyInput(provider.id, saving != null, send)
+            ModelKeyInput(provider.id, saving, send)
             provider.keyUrl?.let { url ->
                 WontonButton(
                     "获取 API key",
@@ -195,7 +196,7 @@ private fun ModelKeyInput(id: String, saving: Boolean, send: (Action) -> Unit) {
         WontonButton(
             "保存 key",
             {
-                val action = Action.SaveModelProviderKey(id, apiKey)
+                val action = Action.TestModelProvider(ModelProviderInput.Preset(id, apiKey), true)
                 apiKey = ""
                 autofill?.cancel()
                 send(action)

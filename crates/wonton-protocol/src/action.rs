@@ -158,8 +158,6 @@ pub enum Action {
     BackOnboardingStep,
     /// 选中或者取消一项需求。选中的需求推荐的插件，点完成时安装。
     ToggleOnboardingNeed { id: String },
-    /// 保存一个服务商的 key 并测试。
-    SaveModelProviderKey { id: String, key: SecretString },
     /// 你的资料这一步改了名字或邮箱。只记下来，点完成时才保存。
     EditOnboardingProfile { display_name: String, email: String },
     /// 测试填的服务商，什么都不保存。测过了（包括连不上服务商）就记成这一步的选择；`then_continue` 为真时接着到下一步。

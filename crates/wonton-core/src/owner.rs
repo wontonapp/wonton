@@ -8,7 +8,8 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    OwnerProfile, OwnerProfileUpdate, check_display_name, check_email, normalized_email,
+    OwnerProfile, OwnerProfileUpdate, check_display_name, check_email, check_email_change,
+    normalized_email,
 };
 
 /// 没配 `WONTON_OWNER_NAME`、数据目录里也没有记录时的用户名。
@@ -219,15 +220,8 @@ impl OwnerStore {
         let display_name = update.display_name.trim();
         let email = normalized_email(update.email.as_deref());
         check_display_name(display_name).map_err(ProfileError::Invalid)?;
-        if let Some(email) = email {
-            check_email(email).map_err(ProfileError::Invalid)?;
-        }
         let mut profile = self.profile.write().expect("身份记录锁中毒");
-        if email.is_none() && profile.1.is_some() {
-            return Err(ProfileError::Invalid(
-                "邮箱填过以后只能改，不能清空：要邮箱的应用重建时会用到它".to_owned(),
-            ));
-        }
+        check_email_change(profile.1.as_deref(), email).map_err(ProfileError::Invalid)?;
         let record = Record {
             username: self.username.clone(),
             display_name: Some(display_name.to_owned()),
