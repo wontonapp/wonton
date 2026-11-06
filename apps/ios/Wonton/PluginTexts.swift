@@ -4,9 +4,9 @@ import WontonClient
 extension PluginTrust {
     var label: String {
         switch self {
-        case .official: return "已审核"
-        case .community, .local, .unknown: return "未审核"
-        case .system: return "系统"
+        case .official: return String(localized: .pluginTrustOfficial)
+        case .community, .local, .unknown: return String(localized: .pluginTrustUnreviewed)
+        case .system: return String(localized: .pluginTrustSystem)
         }
     }
 
@@ -22,25 +22,17 @@ extension PluginTrust {
 extension PluginOperation {
     var runningText: String {
         switch self {
-        case .install: return "正在安装"
-        case .upgrade: return "正在升级"
-        case .uninstall: return "正在卸载"
+        case .install: return String(localized: .pluginTaskInstallRunning)
+        case .upgrade: return String(localized: .pluginTaskUpgradeRunning)
+        case .uninstall: return String(localized: .pluginTaskUninstallRunning)
         }
     }
 
     var doneText: String {
         switch self {
-        case .install: return "已安装"
-        case .upgrade: return "已升级"
-        case .uninstall: return "已卸载"
-        }
-    }
-
-    var failedText: String {
-        switch self {
-        case .install: return "安装失败"
-        case .upgrade: return "升级失败"
-        case .uninstall: return "卸载失败"
+        case .install: return String(localized: .pluginTaskInstallDone)
+        case .upgrade: return String(localized: .pluginTaskUpgradeDone)
+        case .uninstall: return String(localized: .pluginTaskUninstallDone)
         }
     }
 }
@@ -92,8 +84,8 @@ struct PermissionRow: View {
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(risky ? colors.warning : colors.textPrimary))
             Spacer(minLength: 0)
-            if line.added { Tag(text: "新增", tint: colors.primary) }
-            if !line.supported { Tag(text: "不支持", tint: colors.danger) }
+            if line.added { Tag(text: String(localized: .pluginPermissionAdded), tint: colors.primary) }
+            if !line.supported { Tag(text: String(localized: .pluginPermissionUnsupported), tint: colors.danger) }
         }
     }
 }

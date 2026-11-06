@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.protocol.BotSwitch
@@ -92,26 +93,32 @@ fun ToolPolicySection(plugins: PluginsState, id: String, version: String) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = WontonTheme.size.hairline)
         current == null -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             problem?.let { ProblemNotice(it) }
-            WontonButton("重试", { attempt++ }, kind = WontonButtonKind.SECONDARY)
+            WontonButton(stringResource(R.string.common_retry), { attempt++ }, kind = WontonButtonKind.SECONDARY)
         }
         !current.isEmpty || problem != null -> Column(
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             current.problem?.let {
-                ProblemNotice(Problem("放宽的设置读不出来", "现在每次调用都会问你，这里也改不了。", it))
+                ProblemNotice(
+                    Problem(
+                        stringResource(R.string.tool_policy_unreadable_title),
+                        stringResource(R.string.tool_policy_unreadable_next),
+                        it,
+                    ),
+                )
             }
             problem?.let { ProblemNotice(it) }
             val enabled = !busy && current.problem == null
             OpenWindows(current.windows, !busy) { card -> change { plugins.core.stopToolWindow(id, card) } }
             BotSwitches(
-                "始终允许",
-                "这个 Bot 用这个插件的工具不再问，包括会改数据的",
+                stringResource(R.string.tool_policy_always_title),
+                stringResource(R.string.tool_policy_always_risk),
                 current.always,
                 enabled,
             ) { caller, on -> change { plugins.core.setToolAlways(id, caller, on) } }
             BotSwitches(
-                "一律允许",
-                "这个 Bot 用所有插件的工具都不再问，以后装的也算。提示注入能让它不经确认改数据、删东西、往外发内容",
+                stringResource(R.string.tool_policy_allow_all_title),
+                stringResource(R.string.tool_policy_allow_all_risk),
                 current.allowAll,
                 enabled,
             ) { caller, on -> change { plugins.core.setToolAllowAll(id, caller, on) } }
@@ -126,7 +133,7 @@ fun ToolPolicySection(plugins: PluginsState, id: String, version: String) {
 private fun OpenWindows(windows: List<OpenWindow>, enabled: Boolean, onStop: (String) -> Unit) {
     if (windows.isEmpty()) return
     val colors = WontonTheme.colors
-    DetailSection("放行中") {
+    DetailSection(stringResource(R.string.tool_policy_windows_title)) {
         windows.forEach { window ->
             val until = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(window.expiresAtMs.toLong()))
             Row(
@@ -134,12 +141,17 @@ private fun OpenWindows(windows: List<OpenWindow>, enabled: Boolean, onStop: (St
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${window.name} 放行到 $until",
+                    stringResource(R.string.tool_policy_window_until, window.name, until),
                     Modifier.weight(1f),
                     style = WontonTheme.typography.body,
                     color = colors.textPrimary.toColor(),
                 )
-                WontonButton("停止", { onStop(window.card) }, kind = WontonButtonKind.SECONDARY, enabled = enabled)
+                WontonButton(
+                    stringResource(R.string.tool_policy_stop),
+                    { onStop(window.card) },
+                    kind = WontonButtonKind.SECONDARY,
+                    enabled = enabled,
+                )
             }
         }
     }
@@ -179,7 +191,11 @@ private fun Tools(
     onChange: (String, Boolean) -> Unit,
 ) {
     if (tools.isEmpty()) {
-        if (error != null) DetailSection("工具") { WontonNotice(WontonIcon.Warning, error) }
+        if (error != null) {
+            DetailSection(stringResource(R.string.tool_policy_tools_title)) {
+                WontonNotice(WontonIcon.Warning, error)
+            }
+        }
         return
     }
     val colors = WontonTheme.colors
@@ -192,7 +208,11 @@ private fun Tools(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("工具", style = WontonTheme.typography.sectionTitle, color = colors.textPrimary.toColor())
+            Text(
+                stringResource(R.string.tool_policy_tools_title),
+                style = WontonTheme.typography.sectionTitle,
+                color = colors.textPrimary.toColor(),
+            )
             Icon(
                 WontonIcon.Forward,
                 contentDescription = null,
@@ -202,7 +222,7 @@ private fun Tools(
         }
         if (expanded) {
             Text(
-                "打开的工具算只读，所有 Bot 调它都不再问",
+                stringResource(R.string.tool_policy_read_only_hint),
                 style = WontonTheme.typography.supporting,
                 color = colors.warning.toColor(),
             )
@@ -233,7 +253,11 @@ private fun ToolRow(tool: ToolPolicyEntry, enabled: Boolean, onChange: (String, 
             }
         }
         if (tool.access == ToolAccess.PLUGIN_READ_ONLY) {
-            Text("只读", style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
+            Text(
+                stringResource(R.string.tool_policy_read_only_tag),
+                style = WontonTheme.typography.supporting,
+                color = colors.textSecondary.toColor(),
+            )
         } else {
             WontonSwitch(tool.access == ToolAccess.OWNER_READ_ONLY, { onChange(tool.name, it) }, enabled)
         }

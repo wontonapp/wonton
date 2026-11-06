@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -36,10 +37,11 @@ private val LINE_ICON_OFFSET = 1.dp
 
 /** 失败以后主人下一步该做什么，跟在核心写的原因后面。 */
 val PluginTrust.label: String
-    get() = when (this) {
-        PluginTrust.OFFICIAL -> "已审核"
-        PluginTrust.COMMUNITY, PluginTrust.LOCAL, PluginTrust.UNKNOWN -> "未审核"
-        PluginTrust.SYSTEM -> "系统"
+    @Composable get() = when (this) {
+        PluginTrust.OFFICIAL -> stringResource(R.string.plugin_trust_official)
+        PluginTrust.COMMUNITY, PluginTrust.LOCAL, PluginTrust.UNKNOWN ->
+            stringResource(R.string.plugin_trust_unreviewed)
+        PluginTrust.SYSTEM -> stringResource(R.string.plugin_trust_system)
     }
 
 val PluginTrust.tint: Rgb
@@ -50,24 +52,17 @@ val PluginTrust.tint: Rgb
     }
 
 val PluginOperation.runningText: String
-    get() = when (this) {
-        PluginOperation.INSTALL -> "正在安装"
-        PluginOperation.UPGRADE -> "正在升级"
-        PluginOperation.UNINSTALL -> "正在卸载"
+    @Composable get() = when (this) {
+        PluginOperation.INSTALL -> stringResource(R.string.plugin_task_install_running)
+        PluginOperation.UPGRADE -> stringResource(R.string.plugin_task_upgrade_running)
+        PluginOperation.UNINSTALL -> stringResource(R.string.plugin_task_uninstall_running)
     }
 
 val PluginOperation.doneText: String
-    get() = when (this) {
-        PluginOperation.INSTALL -> "已安装"
-        PluginOperation.UPGRADE -> "已升级"
-        PluginOperation.UNINSTALL -> "已卸载"
-    }
-
-val PluginOperation.failedText: String
-    get() = when (this) {
-        PluginOperation.INSTALL -> "安装失败"
-        PluginOperation.UPGRADE -> "升级失败"
-        PluginOperation.UNINSTALL -> "卸载失败"
+    @Composable get() = when (this) {
+        PluginOperation.INSTALL -> stringResource(R.string.plugin_task_install_done)
+        PluginOperation.UPGRADE -> stringResource(R.string.plugin_task_upgrade_done)
+        PluginOperation.UNINSTALL -> stringResource(R.string.plugin_task_uninstall_done)
     }
 
 /** 来源、高权限、新增的权限这类小标签。 */
@@ -113,8 +108,8 @@ fun PermissionRow(line: PermissionLine) {
             style = WontonTheme.typography.body,
             color = (if (risky) colors.warning else colors.textPrimary).toColor(),
         )
-        if (line.added) Tag("新增", colors.primary)
-        if (!line.supported) Tag("不支持", colors.danger)
+        if (line.added) Tag(stringResource(R.string.plugin_permission_added), colors.primary)
+        if (!line.supported) Tag(stringResource(R.string.plugin_permission_unsupported), colors.danger)
     }
 }
 
@@ -122,7 +117,7 @@ fun PermissionRow(line: PermissionLine) {
 internal fun InstallAccessDetails(notices: List<CardLine>, permissions: List<PermissionLine>) {
     if (notices.isNotEmpty()) NoticeLines(notices)
     if (permissions.isNotEmpty()) {
-        DetailSection("权限") { permissions.forEach { PermissionRow(it) } }
+        DetailSection(stringResource(R.string.install_permissions)) { permissions.forEach { PermissionRow(it) } }
     }
 }
 

@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,8 +72,12 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
     WontonScreen(
         bar = {
-            WontonPushedBar("应用商店", onBack, showsStatusLine = true) {
-                WontonIconButton(WontonIcon.Add, "添加来源", { navigation.addingSource = true })
+            WontonPushedBar(stringResource(R.string.store_title), onBack, showsStatusLine = true) {
+                WontonIconButton(
+                    WontonIcon.Add,
+                    stringResource(R.string.store_add_source),
+                    { navigation.addingSource = true },
+                )
             }
         },
     ) {
@@ -80,7 +85,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
             WontonSearchField(
                 query,
                 { query = it },
-                "搜索",
+                stringResource(R.string.store_search_prompt),
                 Modifier.padding(
                     start = WontonTheme.spacing.pageInset,
                     end = WontonTheme.spacing.pageInset,
@@ -155,9 +160,9 @@ private fun LazyListScope.listing(
     if (present.size > 1) {
         item(key = "tags") { TagChips(present, tag, onTag) }
     }
-    section("已审核", store.official, tag, onRetry, row)
+    section(R.string.store_section_reviewed, store.official, tag, onRetry, row)
     added(store.added, tag, onRetry, row)
-    section("社区", store.community, tag, onRetry, row)
+    section(R.string.store_section_community, store.community, tag, onRetry, row)
 }
 
 /** 主人添加的来源合成一段，取不到的来源写明是哪一个。 */
@@ -168,7 +173,7 @@ private fun LazyListScope.added(
     row: @Composable (StoreItem) -> Unit,
 ) {
     if (sources.isEmpty()) return
-    item(key = "header:added") { StoreSectionTitle("我添加的") }
+    item(key = "header:added") { StoreSectionTitle(stringResource(R.string.plugin_sources_mine)) }
     sources.forEach { source ->
         val shown = source.section.plugins.filter { tag == null || tag in it.tags }
         items(shown, key = { "added:${source.address}:${it.source}" }) { row(it) }
@@ -180,13 +185,19 @@ private fun LazyListScope.added(
                     if (problem != null) {
                         val shownProblem = problem.problem
                         ProblemRow(
-                            shownProblem.copy(title = "${source.provider}：${shownProblem.title}"),
+                            shownProblem.copy(
+                                title = stringResource(
+                                    R.string.store_problem_from_source,
+                                    source.provider,
+                                    shownProblem.title,
+                                ),
+                            ),
                             onRetry.takeIf { problem.canRetry },
                         )
                     } else {
                         // 核心重启后还没读过：不显示成空。
                         Text(
-                            "${source.provider}：正在读",
+                            stringResource(R.string.store_reading, source.provider),
                             style = WontonTheme.typography.supporting,
                             color = WontonTheme.colors.textSecondary.toColor(),
                         )
@@ -198,7 +209,7 @@ private fun LazyListScope.added(
 }
 
 private fun LazyListScope.section(
-    title: String,
+    titleRes: Int,
     content: StoreSection,
     tag: String?,
     onRetry: () -> Unit,
@@ -206,23 +217,23 @@ private fun LazyListScope.section(
 ) {
     val shown = content.plugins.filter { tag == null || tag in it.tags }
     if (shown.isEmpty() && content.problem == null && content.unreadable.isEmpty()) return
-    item(key = "header:$title") { StoreSectionTitle(title) }
-    items(shown, key = { "$title:${it.source}" }) { row(it) }
+    item(key = "header:$titleRes") { StoreSectionTitle(stringResource(titleRes)) }
+    items(shown, key = { "$titleRes:${it.source}" }) { row(it) }
     content.problem?.let { problem ->
-        item(key = "problem:$title") {
+        item(key = "problem:$titleRes") {
             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
                 ProblemRow(problem.problem, onRetry.takeIf { problem.canRetry })
             }
         }
     }
-    unreadable(title, content.unreadable)
+    unreadable("section:$titleRes", content.unreadable)
 }
 
 private fun LazyListScope.results(found: List<StoreItem>, row: @Composable (StoreItem) -> Unit) {
     if (found.isEmpty()) {
         item(key = "nothing") {
             Text(
-                "没有找到",
+                stringResource(R.string.store_no_results),
                 Modifier.fillMaxWidth().padding(WontonTheme.spacing.s32),
                 style = WontonTheme.typography.body.copy(textAlign = TextAlign.Center),
                 color = WontonTheme.colors.textSecondary.toColor(),
@@ -242,7 +253,7 @@ private fun TagChips(
         contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        item { WontonChip("全部", selected == null) { onSelect(null) } }
+        item { WontonChip(stringResource(R.string.store_tag_all), selected == null) { onSelect(null) } }
         items(tags) { tag ->
             WontonChip(tag, selected == tag) { onSelect(tag) }
         }
@@ -293,7 +304,7 @@ private fun ItemTags(item: StoreItem) {
     val colors = WontonTheme.colors
     val showsTrust = item.trust != PluginTrust.OFFICIAL
     val stars = item.stars
-    val provider = item.viaIndex?.let { "经 $it" } ?: item.provider
+    val provider = item.viaIndex?.let { stringResource(R.string.store_via_index, it) } ?: item.provider
     val hasSource = showsTrust || provider != null
     if (hasSource || item.highPermissions || stars != null) {
         Row(
@@ -310,7 +321,7 @@ private fun ItemTags(item: StoreItem) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (item.highPermissions) Tag("高权限", colors.danger)
+            if (item.highPermissions) Tag(stringResource(R.string.store_high_permissions), colors.danger)
             stars?.let {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
@@ -345,19 +356,20 @@ private sealed interface StoreButton {
 }
 
 /** 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载时转圈。 */
+@Composable
 private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation): StoreButton {
     val viewModel = plugins.viewModel
     val installed = item.installedVersion
     val entry = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.entries?.firstOrNull()
     return when {
         viewModel.hasRunningTask(item.id) -> StoreButton.Busy
-        installed == null -> StoreButton.Get("获取", item.blocked == null) {
+        installed == null -> StoreButton.Get(stringResource(R.string.store_get), item.blocked == null) {
             navigation.confirmation = PluginConfirmation.Install(item.source)
         }
-        installed != item.version -> StoreButton.Get("更新", enabled = true) {
+        installed != item.version -> StoreButton.Get(stringResource(R.string.store_update), enabled = true) {
             navigation.confirmation = PluginConfirmation.Upgrade(item.id)
         }
-        entry != null -> StoreButton.Get("打开", enabled = true) { navigation.open(entry) }
+        entry != null -> StoreButton.Get(stringResource(R.string.store_open), enabled = true) { navigation.open(entry) }
         else -> StoreButton.Hidden
     }
 }

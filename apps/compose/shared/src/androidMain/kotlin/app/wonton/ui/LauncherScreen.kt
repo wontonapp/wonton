@@ -36,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,7 +80,7 @@ fun LauncherScreen(
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
     WontonScreen(
         bar = {
-            WontonRootBar("应用", actions = if (onSettings != null) {
+            WontonRootBar(stringResource(R.string.launcher_title), actions = if (onSettings != null) {
                 { SettingsToolbarButton(settingsUpgrade, onSettings) }
             } else null)
         },
@@ -133,11 +135,11 @@ private fun NoPlugins(onShowStore: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "还没有装应用",
+            stringResource(R.string.launcher_empty),
             style = WontonTheme.typography.itemTitle,
             color = WontonTheme.colors.textPrimary.toColor(),
         )
-        WontonButton("去应用商店", onShowStore, kind = WontonButtonKind.SECONDARY)
+        WontonButton(stringResource(R.string.launcher_go_to_store), onShowStore, kind = WontonButtonKind.SECONDARY)
     }
 }
 
@@ -172,12 +174,13 @@ private fun StoreEntry(upgradeCount: Int?, onClick: () -> Unit) {
             modifier = Modifier.size(WontonTheme.size.icon), tint = colors.accentInkOnFill.toColor(),
         )
         Text(
-            "应用商店", Modifier.weight(1f), style = WontonTheme.typography.body,
+            stringResource(R.string.store_title), Modifier.weight(1f), style = WontonTheme.typography.body,
             color = colors.textOnAccentFill.toColor(),
         )
         if (upgradeCount != null && upgradeCount > 0) {
             Text(
-                "$upgradeCount 个可更新", style = WontonTheme.typography.supporting,
+                pluralStringResource(R.plurals.launcher_updates_available, upgradeCount, upgradeCount),
+                style = WontonTheme.typography.supporting,
                 color = colors.textOnAccentFill.toColor(),
             )
         }
@@ -263,26 +266,28 @@ private fun LauncherMenu(
     onPin: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val pinLabel = tabText("固定到底栏", "Pin to tab bar")
+    val pinLabel = stringResource(R.string.launcher_pin_to_bar)
     val tabs = LocalTabs.current
     val canPin = plugin.tabChoices.any { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
     val actions = buildList {
         if (canPin) add(WontonSheetAction(pinLabel, WontonIcon.Web, onClick = onPin))
-        add(WontonSheetAction("详情", WontonIcon.Info) { navigation.detail = PluginRoute.Installed(plugin.id) })
+        add(WontonSheetAction(stringResource(R.string.common_details), WontonIcon.Info) {
+            navigation.detail = PluginRoute.Installed(plugin.id)
+        })
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         plugin.entries.takeIf { it.size > 1 }?.last()?.let { web ->
-            add(WontonSheetAction("打开网页", WontonIcon.Web) { navigation.open(web) })
+            add(WontonSheetAction(stringResource(R.string.launcher_open_web), WontonIcon.Web) { navigation.open(web) })
         }
         plugin.upgrade?.let { upgrade ->
             add(
-                WontonSheetAction("升级到 ${upgrade.version}", WontonIcon.Download) {
+                WontonSheetAction(stringResource(R.string.launcher_upgrade_to, upgrade.version), WontonIcon.Download) {
                     navigation.confirmation = PluginConfirmation.Upgrade(plugin.id)
                 },
             )
         }
         if (plugin.removable) {
             add(
-                WontonSheetAction("卸载", WontonIcon.Trash, isDanger = true) {
+                WontonSheetAction(stringResource(R.string.plugin_uninstall_action), WontonIcon.Trash, isDanger = true) {
                     navigation.uninstalling = UninstallTarget(plugin.id, plugin.title)
                 },
             )

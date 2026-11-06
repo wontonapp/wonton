@@ -7,6 +7,8 @@
     <string name="common_cancel">Cancel</string>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
     <string name="common_close">Close</string>
+    <!-- Trash button that removes the item after you confirm. -->
+    <string name="common_delete">Delete</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">Details</string>
     <!-- Button that closes the video player after watching. -->
@@ -101,6 +103,32 @@
     <string name="file_system_no_file">The system didn\'t provide this file</string>
     <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
     <string name="file_unnamed">File</string>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">Install</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">Update</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">These bots can use this app\'s tools without asking, including tools added in newer versions.</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">Change version</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">Installed</string>
+    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
+    <string name="install_completion_failed">Installation failed</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">Installing…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">Install app</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">Installation result is uncertain</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">Done</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">Complete profile</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">Permissions</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">What\'s new</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">Address</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -114,6 +142,25 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">Open on local network</string>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">Default agent</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">No apps yet</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">Open the Store</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">Open web page</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">Pin to navigation bar</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">Apps</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="one">%1$d update available</item>
+        <item quantity="other">%1$d updates available</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">Update to %1$s</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">Message</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
@@ -293,6 +340,68 @@
     <string name="photo_unencodable">Can\'t convert this photo</string>
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">Can\'t read this photo</string>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_permission_added">New</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">Unsupported</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">Add</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">Continue</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">File is too large. The limit is %1$s.</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">Can\'t open this file</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">Install from file</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">My sources</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">Add source</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">Apps and files added here aren\'t reviewed. Install only what you trust.</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">New tools: %1$s</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">Can\'t tell which tools were added this time</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">Installed</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">Install failed: %1$s</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">Installing</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">Review again</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">Uninstalled</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">Uninstall failed: %1$s</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">Uninstalling</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">Updated</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">Update failed: %1$s</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">Updating</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">Reviewed</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">System</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">Unreviewed</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">Uninstall</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">Uninstall and delete data</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts. This can\'t be undone.</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">Uninstall %1$s?</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">Custom</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
@@ -321,10 +430,64 @@
     <string name="registry_mirror_test">Test speed</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">Download mirror</string>
+    <!-- Toolbar button that opens the Add Source page. -->
+    <string name="store_add_source">Add source</string>
+    <!-- Button on a store row to install an app you don't have. -->
+    <string name="store_get">Get</string>
+    <!-- Small tag on a store row for an app that asks for risky permissions. -->
+    <string name="store_high_permissions">High permissions</string>
+    <!-- Shown when a store search found nothing. -->
+    <string name="store_no_results">No results</string>
+    <!-- Button on a store row to open an installed app. -->
+    <string name="store_open">Open</string>
+    <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
+    <string name="store_problem_from_source">%1$s: %2$s</string>
+    <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
+    <string name="store_reading">Loading %1$s…</string>
+    <!-- Placeholder of the search field on the Store screen. -->
+    <string name="store_search_prompt">Search</string>
+    <!-- Section title above community apps in the store. -->
+    <string name="store_section_community">Community</string>
+    <!-- Section title above reviewed apps in the store. -->
+    <string name="store_section_reviewed">Reviewed</string>
+    <!-- Chip that clears the tag filter in the store. -->
+    <string name="store_tag_all">All</string>
+    <!-- Title of the Store screen and of the row that opens it. -->
+    <string name="store_title">Store</string>
+    <!-- Notice for an app in a source whose manifest can't be read. Arguments: the source address, the reason from the core. -->
+    <string name="store_unreadable">Can\'t read %1$s: %2$s</string>
+    <!-- Button on a store row to update an installed app. -->
+    <string name="store_update">Update</string>
+    <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
+    <string name="store_via_index">via %1$s</string>
     <!-- Small button on an approval request card: open the app that was just installed. -->
     <string name="tab_open">Open</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">Pin to tab bar</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">This bot can use every app\'s tools without asking, including apps installed later. A prompt injection could make it change data, delete things, or send content out without your approval.</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">Always allow (all apps)</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">This bot can use this app\'s tools without asking, including tools that change data.</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">Always allow</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">Tools switched on here count as read-only. Every bot can call them without asking.</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">Read-only</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">Stop</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">Tools</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">Every tool call will ask you, and these settings can\'t be changed here.</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">Can\'t load these settings</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$s allowed until %2$s</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">Allowed for now</string>
     <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
     <string name="transfer_clean_up">Remove</string>
     <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->

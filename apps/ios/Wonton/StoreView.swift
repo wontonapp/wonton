@@ -15,7 +15,7 @@ struct StoreView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WontonSearchField(text: $query, prompt: "搜索")
+            WontonSearchField(text: $query, prompt: String(localized: .storeSearchPrompt))
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.bottom, WontonTheme.spacing.s8)
             ScrollView {
@@ -46,8 +46,8 @@ struct StoreView: View {
             }
             .refreshable { model.send(.refreshStore(force: true)) }
         }
-        .wontonPushedScreen("应用商店", showsStatusLine: true) {
-            WontonIconButton(icon: .add, label: "添加来源") { isAddingSource = true }
+        .wontonPushedScreen(String(localized: .storeTitle), showsStatusLine: true) {
+            WontonIconButton(icon: .add, label: String(localized: .storeAddSource)) { isAddingSource = true }
         }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
         .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
@@ -75,15 +75,15 @@ struct StoreView: View {
         if present.count > 1 {
             TagChips(tags: present, selected: $filter)
         }
-        section("已审核", store.official)
+        section(String(localized: .storeSectionReviewed), store.official)
         added(store.added)
-        section("社区", store.community)
+        section(String(localized: .storeSectionCommunity), store.community)
     }
 
     /// 主人添加的来源合成一段，取不到的来源写明是哪一个。
     @ViewBuilder private func added(_ sources: [AddedSource]) -> some View {
         if !sources.isEmpty {
-            sectionTitle("我添加的")
+            sectionTitle(String(localized: .pluginSourcesMine))
             ForEach(sources, id: \.address) { source in
                 ForEach(source.section.plugins.filter(matchesTag), id: \.source) { row($0) }
                 unreadable(source.section.unreadable)
@@ -96,7 +96,7 @@ struct StoreView: View {
                     .padding(.vertical, WontonTheme.spacing.s8)
                 } else if source.section.fetchedAtMs == nil {
                     // 核心重启后还没读过：不显示成空。
-                    Text("\(source.provider)：正在读")
+                    Text(.storeReading(source.provider))
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                         .padding(.horizontal, WontonTheme.spacing.pageInset)
@@ -139,7 +139,7 @@ struct StoreView: View {
 
     private func unreadable(_ plugins: [StoreUnreadable]) -> some View {
         ForEach(plugins, id: \.source) { plugin in
-            WontonNotice(icon: .warning, title: "\(plugin.source) 读不懂：\(plugin.reason)")
+            WontonNotice(icon: .warning, title: String(localized: .storeUnreadable(plugin.source, plugin.reason)))
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s8)
         }
@@ -148,7 +148,7 @@ struct StoreView: View {
     @ViewBuilder private var results: some View {
         let items = model.core.searchStore(query: query)
         if items.isEmpty {
-            Text("没有找到")
+            Text(.storeNoResults)
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textSecondary))
                 .frame(maxWidth: .infinity)
@@ -171,11 +171,11 @@ struct StoreView: View {
             return .get(enabled: item.blocked == nil) { confirmation = .install(source: item.source) }
         }
         if version != item.version {
-            return .get(title: "更新") { confirmation = .upgrade(id: item.id) }
+            return .get(title: String(localized: .storeUpdate)) { confirmation = .upgrade(id: item.id) }
         }
         let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
-        return .get(title: "打开") { open(entry) }
+        return .get(title: String(localized: .storeOpen)) { open(entry) }
     }
 
     /// 列表里出现过的标签，按第一次出现的顺序。
@@ -191,7 +191,7 @@ struct StoreView: View {
 private extension Problem {
     /// 添加了好几个来源时，要写明是哪一个出了问题。
     func titled(from provider: String) -> Problem {
-        Problem(title: "\(provider)：\(title)", nextStep: nextStep, detail: detail)
+        Problem(title: String(localized: .storeProblemFromSource(provider, title)), nextStep: nextStep, detail: detail)
     }
 }
 
@@ -202,7 +202,7 @@ private struct TagChips: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: WontonTheme.spacing.s8) {
-                WontonChip(title: "全部", isSelected: selected == nil) { selected = nil }
+                WontonChip(title: String(localized: .storeTagAll), isSelected: selected == nil) { selected = nil }
                 ForEach(tags, id: \.self) { tag in
                     WontonChip(title: tag, isSelected: selected == tag) { selected = tag }
                 }
@@ -213,7 +213,7 @@ private struct TagChips: View {
 }
 
 enum StoreButton {
-    case get(title: String = "获取", enabled: Bool = true, perform: () -> Void)
+    case get(title: String = String(localized: .storeGet), enabled: Bool = true, perform: () -> Void)
     case busy
     case hidden
 }
@@ -268,13 +268,13 @@ private struct StoreItemRow: View {
         if showsTrust || item.provider != nil || item.highPermissions || item.stars != nil {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint(colors)) }
-                if let provider = item.viaIndex.map({ "经 \($0)" }) ?? item.provider {
+                if let provider = item.viaIndex.map({ String(localized: .storeViaIndex($0)) }) ?? item.provider {
                     Text(provider)
                         .wontonText(WontonTheme.typography.caption)
                         .foregroundStyle(Color(colors.textSecondary))
                         .lineLimit(1)
                 }
-                if item.highPermissions { Tag(text: "高权限", tint: colors.danger) }
+                if item.highPermissions { Tag(text: String(localized: .storeHighPermissions), tint: colors.danger) }
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)
@@ -308,7 +308,9 @@ struct TaskRow: View {
             if task.state == .running {
                 ProgressView()
             } else if showsDismiss {
-                WontonIconButton(icon: .close, label: "关闭") { model.send(.dismissPluginTask(id: task.id)) }
+                WontonIconButton(icon: .close, label: String(localized: .commonClose)) {
+                    model.send(.dismissPluginTask(id: task.id))
+                }
             }
         }
     }
@@ -327,19 +329,24 @@ struct TaskRow: View {
         case let .failed(reason, message):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 let problem = reason.problem(detail: message)
-                Text("\(task.operation.failedText)：\(problem.title)").foregroundStyle(Color(colors.danger))
+                let failed = switch task.operation {
+                case .install: String(localized: .pluginTaskInstallFailed(problem.title))
+                case .upgrade: String(localized: .pluginTaskUpgradeFailed(problem.title))
+                case .uninstall: String(localized: .pluginTaskUninstallFailed(problem.title))
+                }
+                Text(failed).foregroundStyle(Color(colors.danger))
                 if let nextStep = problem.nextStep {
                     Text(nextStep).foregroundStyle(Color(colors.textSecondary))
                 }
                 ProblemDetail(text: message)
                 if reason == .changed {
-                    Button("重新查看", action: review).buttonStyle(WontonSmallButtonStyle())
+                    Button(String(localized: .pluginTaskReview), action: review).buttonStyle(WontonSmallButtonStyle())
                 }
             }
         case let .uncertain(message):
             HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
                 WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
-                Text("结果不确定：\(message)")
+                Text(.pluginTaskUncertain(message))
             }
             .foregroundStyle(Color(colors.warning))
         }
@@ -348,10 +355,10 @@ struct TaskRow: View {
     @ViewBuilder private var addedTools: some View {
         switch task.addedTools {
         case let .compared(names) where !names.isEmpty:
-            Text("新增的工具：\(names.joined(separator: "、"))")
+            Text(.pluginTaskAddedTools(names.formatted(.list(type: .and))))
                 .foregroundStyle(Color(colors.textSecondary))
         case let .notCompared(reason):
-            Text("不知道这次多了哪些工具").foregroundStyle(Color(colors.warning))
+            Text(.pluginTaskAddedToolsUnknown).foregroundStyle(Color(colors.warning))
             ProblemDetail(text: reason)
         default:
             EmptyView()

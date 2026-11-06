@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.icu.text.ListFormatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedTools
@@ -91,13 +94,15 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
         plugins.send(Action.UninstallPlugin(target.id, deleteData))
     }
     WontonDialog(
-        "卸载“${target.title}”？",
-        "删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。",
+        stringResource(R.string.plugin_uninstall_title, target.title),
+        stringResource(R.string.plugin_uninstall_delete_data_warning),
         onDismiss,
         listOf(
-            WontonDialogAction("卸载，保留数据") { uninstall(false) },
-            WontonDialogAction("卸载并删除数据", WontonButtonKind.DANGER) { uninstall(true) },
-            WontonDialogAction("取消", onClick = onDismiss),
+            WontonDialogAction(stringResource(R.string.plugin_uninstall_keep_data)) { uninstall(false) },
+            WontonDialogAction(stringResource(R.string.plugin_uninstall_delete_data), WontonButtonKind.DANGER) {
+                uninstall(true)
+            },
+            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
         ),
     )
 }
@@ -119,7 +124,11 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         if (task.state is PluginTaskState.Running) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
         } else {
-            WontonIconButton(WontonIcon.Close, "关闭", { plugins.send(Action.DismissPluginTask(task.id)) })
+            WontonIconButton(
+                WontonIcon.Close,
+                stringResource(R.string.common_close),
+                { plugins.send(Action.DismissPluginTask(task.id)) },
+            )
         }
     }
 }
@@ -133,12 +142,23 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
         is PluginTaskState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, operation.doneText, colors.success)
         is PluginTaskState.Failed -> {
             val problem = state.reason.problem(state.message)
-            Text("${operation.failedText}：${problem.title}", style = style, color = colors.danger.toColor())
+            Text(
+                when (operation) {
+                    PluginOperation.INSTALL -> stringResource(R.string.plugin_task_install_failed, problem.title)
+                    PluginOperation.UPGRADE -> stringResource(R.string.plugin_task_upgrade_failed, problem.title)
+                    PluginOperation.UNINSTALL -> stringResource(R.string.plugin_task_uninstall_failed, problem.title)
+                },
+                style = style,
+                color = colors.danger.toColor(),
+            )
             problem.nextStep?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
             ProblemDetail(state.message)
-            if (state.reason == PluginFailure.CHANGED) WontonSmallButton("重新查看", onReview)
+            if (state.reason == PluginFailure.CHANGED) {
+                WontonSmallButton(stringResource(R.string.plugin_task_review), onReview)
+            }
         }
-        is PluginTaskState.Uncertain -> StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)
+        is PluginTaskState.Uncertain ->
+            StateLine(WontonIcon.Help, stringResource(R.string.plugin_task_uncertain, state.message), colors.warning)
     }
 }
 
@@ -146,12 +166,21 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
 private fun AddedToolsLine(added: AddedTools) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.supporting
+    val listFormat = ListFormatter.getInstance(LocalConfiguration.current.locales[0])
     when (added) {
         is AddedTools.Compared -> if (added.names.isNotEmpty()) {
-            Text("新增的工具：${added.names.joinToString("、")}", style = style, color = colors.textSecondary.toColor())
+            Text(
+                stringResource(R.string.plugin_task_added_tools, listFormat.format(added.names)),
+                style = style,
+                color = colors.textSecondary.toColor(),
+            )
         }
         is AddedTools.NotCompared -> {
-            Text("不知道这次多了哪些工具", style = style, color = colors.warning.toColor())
+            Text(
+                stringResource(R.string.plugin_task_added_tools_unknown),
+                style = style,
+                color = colors.warning.toColor(),
+            )
             ProblemDetail(added.reason)
         }
     }

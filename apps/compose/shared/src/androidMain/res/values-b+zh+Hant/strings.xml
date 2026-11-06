@@ -7,6 +7,8 @@
     <string name="common_cancel">取消</string>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
     <string name="common_close">關閉</string>
+    <!-- Trash button that removes the item after you confirm. -->
+    <string name="common_delete">刪除</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">詳細資訊</string>
     <!-- Button that closes the video player after watching. -->
@@ -101,6 +103,32 @@
     <string name="file_system_no_file">系統沒有給出這個檔案</string>
     <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
     <string name="file_unnamed">檔案</string>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">安裝</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">更新</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">這些 Bot 用這個應用程式的工具不再問，新版本多出來的工具也算在內</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">換版本</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">安裝完成</string>
+    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
+    <string name="install_completion_failed">安裝失敗</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">正在安裝…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">安裝應用程式</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">安裝結果不確定</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">完成</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">填寫資料</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">權限</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">更新說明</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">位址</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -113,6 +141,24 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">在區域網路開放</string>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">預設 Agent</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">還沒有安裝應用程式</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">前往商店</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">開啟網頁</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">固定到底部導覽列</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">應用程式</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="other">%1$d 個可更新</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">升級到 %1$s</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">訊息</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
@@ -291,6 +337,68 @@
     <string name="photo_unencodable">照片轉換失敗</string>
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">讀不出這張照片</string>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_permission_added">新增</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">不支援</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">新增</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">繼續</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">檔案太大了，最多 %1$s</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">打不開這個檔案</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">從檔案安裝</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">我新增的</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">新增來源</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">這裡新增的應用程式和檔案都沒有經過審核，只裝你信任的。</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">新增的工具：%1$s</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">不知道這次多了哪些工具</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">已安裝</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">安裝失敗：%1$s</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">正在安裝</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">重新查看</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">結果不確定：%1$s</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">已解除安裝</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">解除安裝失敗：%1$s</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">正在解除安裝</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">已升級</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">升級失敗：%1$s</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">正在升級</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">已審核</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">系統</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">未審核</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">解除安裝</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">解除安裝並刪除資料</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">解除安裝「%1$s」？</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">自訂</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
@@ -319,10 +427,64 @@
     <string name="registry_mirror_test">測速</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">下載鏡像站</string>
+    <!-- Toolbar button that opens the Add Source page. -->
+    <string name="store_add_source">新增來源</string>
+    <!-- Button on a store row to install an app you don't have. -->
+    <string name="store_get">取得</string>
+    <!-- Small tag on a store row for an app that asks for risky permissions. -->
+    <string name="store_high_permissions">高權限</string>
+    <!-- Shown when a store search found nothing. -->
+    <string name="store_no_results">沒有找到</string>
+    <!-- Button on a store row to open an installed app. -->
+    <string name="store_open">開啟</string>
+    <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
+    <string name="store_problem_from_source">%1$s：%2$s</string>
+    <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
+    <string name="store_reading">正在載入 %1$s</string>
+    <!-- Placeholder of the search field on the Store screen. -->
+    <string name="store_search_prompt">搜尋</string>
+    <!-- Section title above community apps in the store. -->
+    <string name="store_section_community">社區</string>
+    <!-- Section title above reviewed apps in the store. -->
+    <string name="store_section_reviewed">已審核</string>
+    <!-- Chip that clears the tag filter in the store. -->
+    <string name="store_tag_all">全部</string>
+    <!-- Title of the Store screen and of the row that opens it. -->
+    <string name="store_title">商店</string>
+    <!-- Notice for an app in a source whose manifest can't be read. Arguments: the source address, the reason from the core. -->
+    <string name="store_unreadable">讀不懂 %1$s：%2$s</string>
+    <!-- Button on a store row to update an installed app. -->
+    <string name="store_update">更新</string>
+    <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
+    <string name="store_via_index">經 %1$s</string>
     <!-- Small button on an approval request card: open the app that was just installed. -->
     <string name="tab_open">開啟</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">放到標籤列</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">這個 Bot 用所有應用程式的工具都不再問，以後裝的也算。提示注入能讓它不經確認改資料、刪東西、往外發內容</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">一律允許</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">這個 Bot 用這個應用程式的工具不再問，包括會改資料的</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">始終允許</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">開啟的工具算唯讀，所有 Bot 呼叫它都不再問</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">唯讀</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">停止</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">工具</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">現在每次呼叫都會問你，這裡也改不了。</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">放寬的設定讀不出來</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$s 允許至 %2$s</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">暫時允許</string>
     <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
     <string name="transfer_clean_up">清理</string>
     <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->

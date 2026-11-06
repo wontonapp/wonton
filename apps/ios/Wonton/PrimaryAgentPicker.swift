@@ -17,7 +17,7 @@ struct PrimaryAgentPicker: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonModalScreen("默认 Agent")
+        .wontonModalScreen(String(localized: .launcherDefaultAgent))
         .task { model.send(.refreshOnboarding) }
     }
 }

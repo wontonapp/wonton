@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
@@ -82,7 +83,7 @@ fun InstallConfirmScreen(
         return
     }
     val title = confirmation.actionTitle
-    WontonScreen(bar = { WontonPushedBar(title, onClose, WontonIcon.Close, "关闭") }) {
+    WontonScreen(bar = { WontonPushedBar(title, onClose, WontonIcon.Close, stringResource(R.string.common_close)) }) {
         val result = loaded
         val preview = result?.getOrNull()
         Column(Modifier.fillMaxSize()) {
@@ -150,7 +151,7 @@ private fun InstallCompletion(
     val task = plugins.viewModel.tasks.firstOrNull { it.id == id }?.takeUnless { it == previousTask }
     val installed = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
     val succeeded = task?.state is PluginTaskState.Succeeded
-    WontonScreen(bar = { WontonPushedBar(tabText("安装应用", "Install app"), onClose) }) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.install_completion_title), onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
@@ -158,22 +159,22 @@ private fun InstallCompletion(
             when (val state = task?.state) {
                 null, is PluginTaskState.Running -> {
                     CircularProgressIndicator()
-                    Text(tabText("正在安装…", "Installing…"), style = WontonTheme.typography.body,
+                    Text(stringResource(R.string.install_completion_installing), style = WontonTheme.typography.body,
                         color = WontonTheme.colors.textPrimary.toColor())
                 }
-                is PluginTaskState.Succeeded -> Text(tabText("安装完成", "Installed"),
+                is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
                 is PluginTaskState.Failed -> {
-                    ProblemNotice(Problem(tabText("安装失败", "Installation failed"), null, state.message))
-                    WontonButton(tabText("重新查看", "Review again"), onReview)
+                    ProblemNotice(Problem(stringResource(R.string.install_completion_failed), null, state.message))
+                    WontonButton(stringResource(R.string.plugin_task_review), onReview)
                 }
                 is PluginTaskState.Uncertain -> ProblemNotice(Problem(
-                    tabText("安装结果不确定", "Installation result is uncertain"), null, state.message))
+                    stringResource(R.string.install_completion_uncertain), null, state.message))
             }
             plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
             if (succeeded && installed != null) PluginTabPinButton(installed)
             if (succeeded) OnboardingTipNotice(app.wonton.protocol.OnboardingTip.APP_INSTALLED)
-            WontonButton(tabText("完成", "Done"), onClose)
+            WontonButton(stringResource(R.string.install_done), onClose)
         }
     }
 }
@@ -214,13 +215,15 @@ private fun PreviewContent(
         }
         preview.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
         preview.missingProfile?.let {
-            WontonNotice(WontonIcon.Info, it, isError = false) { WontonButton("填写资料", onFillProfile) }
+            WontonNotice(WontonIcon.Info, it, isError = false) {
+                WontonButton(stringResource(R.string.install_fill_profile), onFillProfile)
+            }
         }
         InstallAccessDetails(preview.notices, preview.permissions)
         AlwaysAllowed(preview, plugins)
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->
-            DetailSection("更新说明") {
+            DetailSection(stringResource(R.string.install_release_notes)) {
                 Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
             }
         }
@@ -235,8 +238,8 @@ private fun AlwaysAllowed(preview: InstallPreview, plugins: PluginsState) {
     val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         BotSwitches(
-            "始终允许",
-            "这些 Bot 用这个插件的工具不再问，新版本多出来的工具也算在内",
+            stringResource(R.string.tool_policy_always_title),
+            stringResource(R.string.install_always_allowed_risk),
             bots,
             enabled = true,
         ) { caller, isOn ->

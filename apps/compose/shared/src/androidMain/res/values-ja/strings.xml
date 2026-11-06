@@ -7,6 +7,8 @@
     <string name="common_cancel">キャンセル</string>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
     <string name="common_close">閉じる</string>
+    <!-- Trash button that removes the item after you confirm. -->
+    <string name="common_delete">削除</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">詳細</string>
     <!-- Button that closes the video player after watching. -->
@@ -101,6 +103,32 @@
     <string name="file_system_no_file">システムがこのファイルを提供しませんでした</string>
     <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
     <string name="file_unnamed">ファイル</string>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">インストール</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">アップデート</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">これらのボットは、このアプリのツールを確認なしで使えます。新しいバージョンで追加されたツールも含まれます。</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">バージョンを変更</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">インストール完了</string>
+    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
+    <string name="install_completion_failed">インストールに失敗しました</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">インストール中…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">アプリをインストール</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">インストール結果が不確定です</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">完了</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">プロフィールを入力</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">権限</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">更新内容</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">アドレス</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -113,6 +141,24 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">ローカルネットワークに公開</string>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">デフォルトのエージェント</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">アプリはまだインストールされていません</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">ストアを開く</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">Webページを開く</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">ナビゲーションバーに追加</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">アプリ</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="other">アップデート%1$d件あり</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">%1$sにアップデート</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">メッセージ</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
@@ -291,6 +337,68 @@
     <string name="photo_unencodable">写真を変換できません</string>
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">この写真を読み込めません</string>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_permission_added">追加</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">非対応</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">追加</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">続ける</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">ファイルが大きすぎます。最大 %1$s です。</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">このファイルを開けません</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">ファイルからインストール</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">追加した提供元</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">提供元を追加</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">ここに追加したアプリとファイルは審査されていません。信頼できるものだけをインストールしてください。</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">追加されたツール：%1$s</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">今回追加されたツールは確認できません</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">インストールしました</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">インストールに失敗しました：%1$s</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">インストール中</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">再確認</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">結果が不確定です：%1$s</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">アンインストールしました</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">アンインストールに失敗しました：%1$s</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">アンインストール中</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">アップデートしました</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">アップデートに失敗しました：%1$s</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">アップデート中</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">審査済み</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">システム</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">未審査</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">アンインストール</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">アンインストール（データも削除）</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、元に戻せません。</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">カスタム</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
@@ -319,10 +427,64 @@
     <string name="registry_mirror_test">速度をテスト</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">ダウンロードミラー</string>
+    <!-- Toolbar button that opens the Add Source page. -->
+    <string name="store_add_source">提供元を追加</string>
+    <!-- Button on a store row to install an app you don't have. -->
+    <string name="store_get">入手</string>
+    <!-- Small tag on a store row for an app that asks for risky permissions. -->
+    <string name="store_high_permissions">高い権限</string>
+    <!-- Shown when a store search found nothing. -->
+    <string name="store_no_results">見つかりません</string>
+    <!-- Button on a store row to open an installed app. -->
+    <string name="store_open">開く</string>
+    <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
+    <string name="store_problem_from_source">%1$s：%2$s</string>
+    <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
+    <string name="store_reading">%1$sを読み込み中…</string>
+    <!-- Placeholder of the search field on the Store screen. -->
+    <string name="store_search_prompt">検索</string>
+    <!-- Section title above community apps in the store. -->
+    <string name="store_section_community">コミュニティ</string>
+    <!-- Section title above reviewed apps in the store. -->
+    <string name="store_section_reviewed">審査済み</string>
+    <!-- Chip that clears the tag filter in the store. -->
+    <string name="store_tag_all">すべて</string>
+    <!-- Title of the Store screen and of the row that opens it. -->
+    <string name="store_title">ストア</string>
+    <!-- Notice for an app in a source whose manifest can't be read. Arguments: the source address, the reason from the core. -->
+    <string name="store_unreadable">%1$sを読み込めません：%2$s</string>
+    <!-- Button on a store row to update an installed app. -->
+    <string name="store_update">アップデート</string>
+    <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
+    <string name="store_via_index">%1$s経由</string>
     <!-- Small button on an approval request card: open the app that was just installed. -->
     <string name="tab_open">開く</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">タブバーに追加</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">このボットは、すべてのアプリのツールを確認なしで使えます。あとからインストールしたアプリも含まれます。プロンプトインジェクションによって、確認なしでデータの変更や削除、外部への送信が行われるおそれがあります。</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">常に許可（すべてのアプリ）</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">このボットは、このアプリのツールを確認なしで使えます。データを変更するツールも含まれます。</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">常に許可</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">オンにしたツールは読み取り専用として扱われ、すべてのボットが確認なしで呼び出せます</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">読み取り専用</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">停止</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">ツール</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">現在は毎回確認を求められ、ここでは変更できません。</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">設定を読み込めません</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$sは%2$sまで許可</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">一時的に許可</string>
     <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
     <string name="transfer_clean_up">削除</string>
     <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->

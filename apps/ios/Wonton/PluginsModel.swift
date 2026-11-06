@@ -150,9 +150,9 @@ enum PluginConfirmation: Identifiable {
     /// 主人选的版本可能比装着的旧，不叫升级。
     var actionTitle: String {
         switch self {
-        case .install, .upload: return "安装"
-        case .upgrade: return "升级"
-        case .upgradeFrom, .upgradeUpload: return "换版本"
+        case .install, .upload: return String(localized: .installActionInstall)
+        case .upgrade: return String(localized: .installActionUpgrade)
+        case .upgradeFrom, .upgradeUpload: return String(localized: .installChangeVersion)
         }
     }
 }

@@ -131,7 +131,7 @@ private struct PreviewContent: View {
                 }
                 if let missing = preview.missingProfile {
                     WontonNotice(icon: .info, title: missing, isError: false) {
-                        Button("填写资料", action: fillProfile)
+                        Button(String(localized: .installFillProfile), action: fillProfile)
                             .buttonStyle(WontonButtonStyle())
                     }
                 }
@@ -141,7 +141,7 @@ private struct PreviewContent: View {
                     LanWebuiToggle(offer: offer, isOn: $lanWebui)
                 }
                 if let notes = preview.releaseNotes {
-                    DetailSection(title: "更新说明") {
+                    DetailSection(title: String(localized: .installReleaseNotes)) {
                         Text(notes)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
@@ -198,8 +198,8 @@ private struct AlwaysAllowedSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             BotSwitches(
-                title: "始终允许",
-                risk: "这些 Bot 用这个插件的工具不再问，新版本多出来的工具也算在内",
+                title: String(localized: .toolPolicyAlwaysTitle),
+                risk: String(localized: .installAlwaysAllowedRisk),
                 bots: bots,
                 enabled: true,
                 change: change

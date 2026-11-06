@@ -2,11 +2,13 @@ package app.wonton.ui
 
 import android.graphics.ImageDecoder
 import android.util.LruCache
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
@@ -141,10 +143,10 @@ sealed interface PluginConfirmation {
 
     /** 主人选的版本可能比装着的旧，不叫升级。 */
     val actionTitle: String
-        get() = when (this) {
-            is Install, is Upload -> "安装"
-            is Upgrade -> "升级"
-            is UpgradeFrom, is UpgradeUpload -> "换版本"
+        @Composable get() = when (this) {
+            is Install, is Upload -> stringResource(R.string.install_action_install)
+            is Upgrade -> stringResource(R.string.install_action_upgrade)
+            is UpgradeFrom, is UpgradeUpload -> stringResource(R.string.install_change_version)
         }
 }
 
