@@ -40,6 +40,7 @@ async fn gateway(
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
         endpoint,
         0,
+        manager.lan_addresses(),
     );
     let app = router(Arc::new(Gateway::new(
         manager.cfg.public.clone(),

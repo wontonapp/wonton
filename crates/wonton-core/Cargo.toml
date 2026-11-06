@@ -28,7 +28,7 @@ hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # 算插件网络里留给核心的地址和出口容器的名单。
 ipnet = { version = "2.12.2", features = ["serde"] }
-iroh = { workspace = true }
+iroh = { workspace = true, features = ["unstable-net-report"] }
 # MIT。签发 Tuwunel 登录用的 JWT（EdDSA）。
 jsonwebtoken = { workspace = true }
 # Apache-2.0 OR MIT。挑插件文字的语言（ADR-0017、ADR-0043）：协商语言，cldr 特性带 CLDR 的可能子标签（zh-TW → zh-Hant）。

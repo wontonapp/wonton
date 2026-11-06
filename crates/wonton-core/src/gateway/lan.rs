@@ -46,7 +46,7 @@ fn pairing_code(gateway: &Gateway, host_ip: IpAddr, issued: IssuedCode) -> (Pair
     (code, issued.expires_in.as_secs())
 }
 
-/// 码里的服务端地址：endpoint ID、隧道当前的中继地址，加上给定的直连地址。
+/// 码里的服务端地址：endpoint ID、全部中继地址（家中继在前，`Tunnel::relay_urls`），加上给定的直连地址。
 pub(super) fn code_for(
     gateway: &Gateway,
     direct_addrs: Vec<SocketAddr>,
@@ -54,13 +54,7 @@ pub(super) fn code_for(
 ) -> PairingCode {
     PairingCode {
         server_id: gateway.tunnel.endpoint.id(),
-        relay_urls: gateway
-            .tunnel
-            .endpoint
-            .addr()
-            .relay_urls()
-            .cloned()
-            .collect(),
+        relay_urls: gateway.tunnel.relay_urls(),
         direct_addrs,
         base_domain: gateway.public.base_domain.clone(),
         core_url: core_url(gateway),

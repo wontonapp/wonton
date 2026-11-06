@@ -35,11 +35,10 @@ pub async fn tunnel(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let addr = gateway.tunnel.endpoint.addr();
-    let relay_urls: Vec<String> = addr.relay_urls().map(ToString::to_string).collect();
-    let direct_addrs: Vec<String> = addr.ip_addrs().map(ToString::to_string).collect();
+    let relay_urls = gateway.tunnel.relay_urls();
+    let direct_addrs = gateway.tunnel.direct_addrs();
     Json(json!({
-        "endpoint_id": addr.id,
+        "endpoint_id": gateway.tunnel.endpoint.id(),
         "relay_urls": relay_urls,
         "direct_addrs": direct_addrs,
         // 客户端的本地代理只转发这个域名和它的子域名（ADR-0004）。

@@ -180,6 +180,46 @@ async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
 }
 
 #[tokio::test]
+async fn reported_lan_and_public_addresses_precede_seven_old_addresses() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    let lan: SocketAddr = "192.168.1.2:18482".parse().unwrap();
+    let public: SocketAddr = "203.0.113.2:18482".parse().unwrap();
+    *home.tunnel_info.lock().unwrap() = Some(
+        serde_json::json!({
+            "endpoint_id": home.key.public(),
+            "relay_urls": [],
+            "direct_addrs": [lan, public],
+        })
+        .to_string(),
+    );
+    let mut old = vec![home.server().endpoint().bound_sockets()[0]];
+    old.extend((20..26).map(|subnet| SocketAddr::from(([172, subnet, 255, 254], 18482))));
+    let mut ticket: serde_json::Value = serde_json::from_str(&home.ticket()).unwrap();
+    ticket["server"]["direct_addrs"] = serde_json::to_value(&old).unwrap();
+    phone
+        .dispatch(Action::ConnectHome {
+            ticket: ticket.to_string(),
+        })
+        .unwrap();
+
+    wait_until_ticket_has(dir.path(), public).await;
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("home-ticket.json")).unwrap())
+            .unwrap();
+    let expected: Vec<_> = [lan, public]
+        .into_iter()
+        .chain(old.into_iter().take(6))
+        .collect();
+    assert_eq!(saved["server"]["direct_addrs"], serde_json::json!(expected));
+    assert_eq!(
+        saved["server"]["endpoint_id"],
+        ticket["server"]["endpoint_id"]
+    );
+}
+
+#[tokio::test]
 async fn coming_back_to_the_foreground_reconnects() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());

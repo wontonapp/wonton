@@ -62,6 +62,10 @@ pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
         loopback_endpoint(SecretKey::generate()).await,
         0,
+        tokio::sync::watch::channel(std::collections::BTreeSet::from(["192.168.1.2"
+            .parse()
+            .unwrap()]))
+        .1,
     )
 }
 
@@ -539,6 +543,8 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
 #[tokio::test]
 async fn tunnel_api_reports_the_server_address_to_the_owner() {
     let home = Home::start(None).await;
+    let announced = SocketAddr::new("192.168.1.2".parse().unwrap(), home.tunnel.port);
+    home.tunnel.endpoint.add_external_addr(announced).await;
     let request = hyper::Request::builder()
         .uri("/_wonton/api/tunnel")
         .header(header::HOST, format!("{CORE}:{PORT}"))
@@ -551,9 +557,10 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
     let info: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(info["endpoint_id"], home.tunnel.endpoint.id().to_string());
     assert_eq!(info["base_domain"], CORE);
+    assert_eq!(info["direct_addrs"][0], announced.to_string(), "{info}");
     let bound = home.tunnel.endpoint.bound_sockets()[0].to_string();
     assert!(
-        info["direct_addrs"]
+        !info["direct_addrs"]
             .as_array()
             .unwrap()
             .contains(&Value::String(bound)),

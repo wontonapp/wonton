@@ -424,12 +424,14 @@ async fn bind_tunnel(cfg: &Config, manager: &PluginManager) -> anyhow::Result<Tu
         devices = devices.list().len(),
         "隧道入口已启动"
     );
-    let tunnel = Tunnel::new(Arc::new(devices), endpoint, cfg.tunnel_port);
-    tunnel::spawn_announcing(
-        tunnel.endpoint.clone(),
-        tunnel.port,
-        manager.lan_addresses(),
+    let addresses = manager.lan_addresses();
+    let tunnel = Tunnel::new(
+        Arc::new(devices),
+        endpoint,
+        cfg.tunnel_port,
+        addresses.clone(),
     );
+    tunnel::spawn_announcing(tunnel.endpoint.clone(), tunnel.port, addresses);
     Ok(tunnel)
 }
 

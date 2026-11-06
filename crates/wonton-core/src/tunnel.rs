@@ -5,7 +5,7 @@
 //! 请求里没有它，客户端也没法用请求头伪造。
 
 use std::collections::BTreeSet;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use iroh::endpoint::presets;
-use iroh::{Endpoint, SecretKey};
+use iroh::{Endpoint, RelayUrl, SecretKey, Watcher};
 use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
 use tower::ServiceExt;
@@ -38,11 +38,17 @@ pub struct Tunnel {
     pub endpoint: Endpoint,
     /// 手机连隧道用的 UDP 端口：核心在容器里时是宿主上发布的端口，配对码里的直连地址用它。
     pub port: u16,
+    lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
 }
 
 impl Tunnel {
     /// `port` 为 0 时用 endpoint 实际绑定的端口（直接跑在宿主上、由系统分配端口时）。
-    pub fn new(devices: Arc<Devices>, endpoint: Endpoint, port: u16) -> Self {
+    pub fn new(
+        devices: Arc<Devices>,
+        endpoint: Endpoint,
+        port: u16,
+        lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
+    ) -> Self {
         let port = if port == 0 {
             endpoint
                 .bound_sockets()
@@ -56,8 +62,74 @@ impl Tunnel {
             devices,
             endpoint,
             port,
+            lan_addresses,
         }
     }
+
+    /// 报给 App 的地址选择见 ADR-0032「连接方式」。
+    pub fn direct_addrs(&self) -> Vec<SocketAddr> {
+        let announced = self.lan_addresses.borrow();
+        let report = self.endpoint.net_report().get();
+        let addr = self.endpoint.addr();
+        reachable_direct_addrs(
+            announced.iter().map(|ip| SocketAddr::new(*ip, self.port)),
+            addr.ip_addrs().copied(),
+            report.as_ref().and_then(|report| report.global_v4),
+            report.as_ref().and_then(|report| report.global_v6),
+        )
+    }
+
+    /// 报给 App 的中继地址，`/_wonton/api/tunnel` 和配对码共用：当前家中继在前，再跟 endpoint 配置的其他中继。
+    /// 家中继会换（iroh 只在旧中继这一轮测到延迟时才留在原地），App 拿着全部中继，iroh 没选定路径时把包发给
+    /// 所有已知路径，服务器换到哪个中继第一个包都能到（ADR-0032「连接方式」）。
+    pub fn relay_urls(&self) -> Vec<RelayUrl> {
+        let home = self.endpoint.addr().relay_urls().next().cloned();
+        let statuses = self.endpoint.home_relay_status().get();
+        ordered_relays(home, statuses.iter().map(|relay| relay.url().clone()))
+    }
+}
+
+/// 家中继排第一，其余按给定顺序跟上，去重。
+fn ordered_relays(
+    home: Option<RelayUrl>,
+    relays: impl IntoIterator<Item = RelayUrl>,
+) -> Vec<RelayUrl> {
+    let mut urls = Vec::new();
+    if let Some(home) = home {
+        urls.push(home);
+    }
+    for url in relays {
+        if !urls.contains(&url) {
+            urls.push(url);
+        }
+    }
+    urls
+}
+
+fn reachable_direct_addrs(
+    announced: impl IntoIterator<Item = SocketAddr>,
+    detected: impl IntoIterator<Item = SocketAddr>,
+    global_v4: Option<SocketAddrV4>,
+    global_v6: Option<SocketAddrV6>,
+) -> Vec<SocketAddr> {
+    let globals = [global_v4.map(SocketAddr::V4), global_v6.map(SocketAddr::V6)];
+    let public = detected.into_iter().filter(|addr| {
+        globals
+            .iter()
+            .flatten()
+            .any(|global| global.ip() == addr.ip())
+    });
+    let mut addresses = Vec::new();
+    for addr in announced
+        .into_iter()
+        .chain(globals.into_iter().flatten())
+        .chain(public)
+    {
+        if !addresses.contains(&addr) {
+            addresses.push(addr);
+        }
+    }
+    addresses
 }
 
 /// 读取或生成核心的隧道私钥。私钥决定服务端的 endpoint ID，换了它所有设备都要重新配对，所以要持久化。
@@ -178,6 +250,78 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn reported_addresses_start_with_lan_then_globals_and_their_fixed_ports() {
+        let addr = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let lan = addr("192.168.1.2:18482");
+        let v4 = addr("203.0.113.2:45000");
+        let v6 = addr("[2001:db8::2]:45001");
+        let fixed_v4 = addr("203.0.113.2:18482");
+        let fixed_v6 = addr("[2001:db8::2]:18482");
+        let detected = [
+            addr("172.19.0.4:18482"),
+            addr("172.20.255.254:18482"),
+            addr("127.0.0.1:18482"),
+            addr("[fd00::4]:18482"),
+            addr("198.51.100.9:18482"),
+            fixed_v4,
+            lan,
+            v4,
+            fixed_v6,
+            fixed_v4,
+        ];
+        assert_eq!(
+            reachable_direct_addrs(
+                [lan, lan],
+                detected,
+                Some("203.0.113.2:45000".parse().unwrap()),
+                Some("[2001:db8::2]:45001".parse().unwrap()),
+            ),
+            [lan, v4, v6, fixed_v4, fixed_v6],
+        );
+    }
+
+    #[test]
+    fn without_a_net_report_only_announced_addresses_are_reported() {
+        let lan: SocketAddr = "192.168.1.2:18482".parse().unwrap();
+        assert_eq!(
+            reachable_direct_addrs(
+                [lan],
+                ["172.19.0.4:18482".parse().unwrap(), lan],
+                None,
+                None,
+            ),
+            [lan],
+        );
+        assert!(reachable_direct_addrs([], [lan], None, None).is_empty());
+    }
+
+    #[test]
+    fn a_global_address_is_reported_without_lan_or_detected_addresses() {
+        let v6: SocketAddrV6 = "[2001:db8::2]:45001".parse().unwrap();
+        assert_eq!(
+            reachable_direct_addrs([], [], None, Some(v6)),
+            [SocketAddr::V6(v6)],
+        );
+    }
+
+    #[test]
+    fn the_home_relay_is_first_and_others_follow_in_map_order() {
+        let relay = |port: u16| {
+            format!("https://127.0.0.1:{port}/")
+                .parse::<RelayUrl>()
+                .unwrap()
+        };
+        let (eu, ap, us) = (relay(443), relay(8443), relay(3443));
+        // 家中继在中继表里排最后也要排到最前；重复的不再出现；没有家中继时保持表的顺序。
+        assert_eq!(
+            ordered_relays(Some(us.clone()), [eu.clone(), ap.clone(), us.clone()]),
+            [us.clone(), eu, ap.clone()],
+        );
+        assert_eq!(ordered_relays(None, [us.clone(), ap.clone()]), [us, ap]);
+        assert!(ordered_relays(None, []).is_empty());
+    }
 
     #[tokio::test]
     async fn the_announced_addresses_follow_the_lan_detection() {
