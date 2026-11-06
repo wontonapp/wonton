@@ -31,7 +31,7 @@ use wonton_l10n::l10n;
 
 use crate::l10n::{CATALOG, language};
 
-/// 连接信息里最多留这么多直连地址，新的在前。留旧的：核心只知道自己的地址，手机连它用的可能是别的（端口转发、隧道）。
+/// 连接信息里最多存这么多直连地址。服务端报的都换成新的，多了只是握手的初始包多发几份。
 const MAX_DIRECT_ADDRS: usize = 8;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -169,7 +169,11 @@ impl Ticket {
         addr
     }
 
-    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继地址报告为空时留着旧的：中继可能只是暂时没连上。
+    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继地址或直连地址报告为空时留着旧的：中继可能只是暂时没连上，
+    /// 地址也可能只是这一次没测出来。
+    ///
+    /// 直连地址是替换，不和旧的合并：核心报的就是手机到得了的地址（ADR-0032），旧地址只会越积越多，
+    /// 容器网卡地址永远清不掉。
     pub(crate) fn with_reported(
         &self,
         relay_urls: Vec<RelayUrl>,
@@ -179,15 +183,15 @@ impl Ticket {
         if !relay_urls.is_empty() {
             updated.server.relay_urls = relay_urls;
         }
-        let old = &self.server.direct_addrs;
-        let older = old.iter().filter(|addr| !direct_addrs.contains(addr));
-        let merged = direct_addrs.iter().chain(older).copied();
-        updated.server.direct_addrs = merged.take(MAX_DIRECT_ADDRS).collect();
-        let same_addrs = updated.server.direct_addrs.len() == old.len()
-            && old
+        if !direct_addrs.is_empty() {
+            updated.server.direct_addrs = direct_addrs
                 .iter()
-                .all(|addr| updated.server.direct_addrs.contains(addr));
-        let changed = updated.server.relay_urls != self.server.relay_urls || !same_addrs;
+                .copied()
+                .take(MAX_DIRECT_ADDRS)
+                .collect();
+        }
+        let changed = updated.server.relay_urls != self.server.relay_urls
+            || updated.server.direct_addrs != self.server.direct_addrs;
         changed.then_some(updated)
     }
 
@@ -213,7 +217,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reported_addresses_go_first_and_the_old_ones_stay_until_the_list_is_full() {
+    fn reported_addresses_replace_the_old_ones() {
         let id = SecretKey::generate().public();
         let text = format!(
             r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["192.168.1.2:18482"]}},
@@ -227,12 +231,11 @@ mod tests {
                 .with_reported(Vec::new(), &ticket.server.direct_addrs)
                 .is_none()
         );
+        // 报来的为空：留着旧的。
+        assert!(ticket.with_reported(Vec::new(), &[]).is_none());
 
         let moved = ticket.with_reported(Vec::new(), &[addr(1)]).unwrap();
-        assert_eq!(
-            moved.direct_addrs(),
-            [addr(1), "192.168.1.2:18482".parse().unwrap()]
-        );
+        assert_eq!(moved.direct_addrs(), [addr(1)]);
         let saved = serde_json::to_string(&moved).unwrap();
         let again = Ticket::parse(&saved).unwrap();
         assert_eq!(again.direct_addrs(), moved.direct_addrs());

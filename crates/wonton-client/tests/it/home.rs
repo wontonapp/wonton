@@ -180,7 +180,7 @@ async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
 }
 
 #[tokio::test]
-async fn reported_lan_and_public_addresses_precede_seven_old_addresses() {
+async fn reported_lan_and_public_addresses_replace_seven_old_addresses() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
@@ -208,11 +208,11 @@ async fn reported_lan_and_public_addresses_precede_seven_old_addresses() {
     let saved: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.path().join("home-ticket.json")).unwrap())
             .unwrap();
-    let expected: Vec<_> = [lan, public]
-        .into_iter()
-        .chain(old.into_iter().take(6))
-        .collect();
-    assert_eq!(saved["server"]["direct_addrs"], serde_json::json!(expected));
+    // 核心报来的地址是替换：旧的 7 个容器地址一个都不留。
+    assert_eq!(
+        saved["server"]["direct_addrs"],
+        serde_json::json!([lan, public])
+    );
     assert_eq!(
         saved["server"]["endpoint_id"],
         ticket["server"]["endpoint_id"]

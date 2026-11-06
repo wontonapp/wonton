@@ -8335,6 +8335,7 @@ dependencies = [
  "getrandom 0.4.3",
  "httparse",
  "iroh",
+ "iroh-relay",
  "rustls",
  "serde",
  "serde_json",
