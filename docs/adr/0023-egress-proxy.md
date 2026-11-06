@@ -334,7 +334,7 @@ gost -C /etc/gost/gost.yaml
   | Squid | GPL-2.0 | 重；上游不发官方镜像；上级代理只支持 HTTP，不支持 SOCKS5。 |
   | Tinyproxy | GPL-2.0 | 上游仓库没有 Dockerfile，AGENTS 要求只拉上游官方镜像。 |
   | 3proxy | 多个许可证混合 | 配置语法自成一套；许可证要逐项核对。 |
-  | mihomo、sing-box | MIT、GPL-3.0 加附加条款 | 完整的规则引擎，只为转发太重，也容易和主人自己的代理混淆。 |
+  | mihomo、sing-box | GPL-3.0、GPL-3.0 加附加条款 | 完整的规则引擎，只为转发太重，也容易和主人自己的代理混淆。 |
   | HAProxy、nginx stream、socat | GPL-2.0、BSD、GPL-2.0 | 四层转发，读不了 HTTP 请求，拒绝不了目标，也回不了 403、503。 |
   | Envoy | Apache-2.0 | 重；动态转发加上级代理的配置复杂。 |
   | Smokescreen | MIT | 专门防 SSRF，但它自己解析 DNS，国内的解析结果被污染；转发到上级代理也要客户端带专门的请求头。 |

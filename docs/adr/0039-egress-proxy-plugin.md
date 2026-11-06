@@ -25,7 +25,7 @@ x-wonton:
   kind: app
   provides:
     egress_proxy:
-      service: mihomo
+      service: proxy
       port: 7890
   permissions:
     - network.egress
@@ -74,7 +74,8 @@ x-wonton:
 
 插件仓库的事，这里只记和底座有关的约束，其余写在插件仓库的 README：
 
-- mihomo（MIT，独立容器）加一个网页面板（metacubexd 或 zashboard，都是 MIT）。
+- mihomo（GPL-3.0）加网页面板 zashboard（MIT）。都是独立容器，只拉上游官方镜像，不链接进 Wonton，符合 AGENTS.md 的许可证规则。
+- **插件名不带 mihomo。** mihomo 的 README 要求与 MetaCubeX 无关的下游项目名字里不出现 mihomo，所以插件叫“代理”（`app.wonton.proxy`），上游名字只出现在镜像、来源和说明里。
 - **管理接口要设密钥。** 名单只比对字面写法（ADR-0023 的“它不是安全边界”），别的出网插件可以把目标写成代理插件的容器名，经 gost 和代理本身到达它的管理接口。密钥用 `secrets.generate`。
 - **订阅链接只存在插件的数据目录里，文件权限 0600。** 用户在插件的页面里填。不用 `secrets.collect`：核心保管的那份不会注入回插件，重装时帮不上；保留数据重装时文件本来就在。订阅链接不出现在日志、页面和 MCP 里。
 - **面板不让主人再填一次密钥。** 网关按 `sso: proxy` 用 `{secret:…}` 替面板带上管理接口的密钥，响应里出现的密钥由网关去掉。
