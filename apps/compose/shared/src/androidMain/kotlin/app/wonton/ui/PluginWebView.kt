@@ -48,6 +48,22 @@ private const val TUNNEL_ERROR_HEADER = "x-wonton-tunnel-error"
 /** 只有服务端错误才算加载失败;4xx 是插件自己的内容。 */
 private const val HTTP_SERVER_ERROR = 500
 
+// 和 iOS 一样，页面写了 user-scalable=no 或较小的 maximum-scale 也能双指缩放；Android WebView 聚焦输入框不放大，
+// 去掉上限不会带来聚焦放大。WebView 124 实测：onPageFinished 时再改 viewport 已不生效，要在 DOMContentLoaded 改。
+private val pinchZoomScript = """
+    document.addEventListener('DOMContentLoaded', () => {
+      const meta = document.querySelector('meta[name="viewport"]');
+      if (!meta) return;
+      const directives = meta.content.split(/[,;]/).map(value => value.trim());
+      const scalable = directives.filter(directive => {
+        const [key, value] = directive.split('=').map(part => part.trim().toLowerCase());
+        return !(key === 'user-scalable' && value === 'no') &&
+          !(key === 'maximum-scale' && Number.parseFloat(value) < 5);
+      });
+      if (scalable.length !== directives.length) meta.content = scalable.join(',');
+    }, { once: true });
+""".trimIndent()
+
 /** UI 线程能力引用；脚本仅接收核心返回值，不在 Android 壳中解释桥协议。 */
 class PluginWebViewController {
     internal var view: WebView? = null
@@ -178,6 +194,8 @@ fun PluginWebView(
                     )
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
                     configureAppearance(this, canvas, darkTheme)
                     controller.view = this
                     webChromeClient = PluginChromeClient(this, controller)
@@ -256,8 +274,8 @@ private class ThemedPluginWebView(
         }
         if (originsChanged || startScript != script) {
             scriptHandler?.remove()
-            scriptHandler = if (script.isEmpty()) null else WebViewCompat.addDocumentStartJavaScript(
-                this, "if (window === window.top) {\n$script\n}", origins,
+            scriptHandler = WebViewCompat.addDocumentStartJavaScript(
+                this, "if (window === window.top) {\n$script\n$pinchZoomScript\n}", origins,
             )
             startScript = script
         }
