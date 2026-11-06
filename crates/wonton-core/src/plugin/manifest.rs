@@ -144,6 +144,9 @@ impl TokenAuthMethod {
 pub struct OidcClient {
     /// 应用登录回调的路径（相对插件网页地址），核心据此登记 OIDC 客户端的回调地址。
     pub redirect_paths: Vec<String>,
+    /// 额外的登出回跳路径，核心始终登记插件根地址和网页入口。
+    #[serde(default)]
+    pub post_logout_paths: Vec<String>,
     /// 应用在令牌端点出示客户端密钥的方式，默认 `client_secret_basic`。
     #[serde(default)]
     pub token_endpoint_auth_method: TokenAuthMethod,
@@ -629,6 +632,9 @@ fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
             {
                 return invalid("webui.oidc.redirect_paths 至少一项，且每项以 / 开头");
             }
+            if client.post_logout_paths.iter().any(|p| !p.starts_with('/')) {
+                return invalid("webui.oidc.post_logout_paths 每项以 / 开头");
+            }
             Ok(())
         }
         (Sso::Oidc, None, _) => invalid("webui.sso 为 oidc 时必须提供 webui.oidc.redirect_paths"),
@@ -664,76 +670,6 @@ fn is_semver(version: &str) -> bool {
                 && (n.len() == 1 || !n.starts_with('0'))
         })
         && suffix_ok
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn plugin_id_must_be_reverse_dns() {
-        assert_eq!(
-            PluginId::parse("app.immich.photos").unwrap().slug(),
-            "app-immich-photos"
-        );
-        for bad in [
-            "immich",
-            "App.immich",
-            "app..x",
-            "app.-x",
-            "app.x-",
-            "app_x.y",
-        ] {
-            assert!(PluginId::parse(bad).is_err(), "{bad} 应被拒绝");
-        }
-        let long = format!("app.{}", "a".repeat(60));
-        assert!(PluginId::parse(&long).is_err());
-    }
-
-    #[test]
-    fn permissions_round_trip_and_unknown_is_rejected() {
-        for text in [
-            "storage.share.photos:read",
-            "storage.home:write",
-            "models",
-            "matrix.bot",
-            "notify",
-            "network.egress",
-            "network.lan",
-            "network.host",
-            "cap.NET_ADMIN",
-            "host.pid",
-            "host.ipc",
-            "security.opt",
-            "privileged",
-            "devices.gpu",
-            "devices./dev/net/tun",
-            "docker.socket",
-        ] {
-            let permission: Permission = text.parse().unwrap();
-            assert_eq!(permission.to_string(), text);
-        }
-        for bad in [
-            "storage.share.photos",
-            "storage.share.Photos:read",
-            "root",
-            "devices.usb",
-        ] {
-            assert!(bad.parse::<Permission>().is_err(), "{bad} 应被拒绝");
-        }
-        assert!(Permission::DockerSocket.is_high());
-        assert!(!Permission::Models.is_high());
-    }
-
-    #[test]
-    fn semver_is_checked() {
-        for good in ["0.1.0", "2.0.0", "1.2.3-beta.1", "1.2.3+build.5"] {
-            assert!(is_semver(good), "{good}");
-        }
-        for bad in ["1.2", "v1.2.3", "01.2.3", "1.2.x", "1.2.3-é"] {
-            assert!(!is_semver(bad), "{bad}");
-        }
-    }
 }
 
 #[cfg(test)]

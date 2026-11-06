@@ -36,6 +36,7 @@ mod manager;
 mod manifest_errors;
 mod model_providers;
 mod models;
+mod oidc;
 mod owner;
 mod preinstall;
 mod resources;

@@ -163,6 +163,7 @@ services:
       # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
       URLS_LOGIN: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/login
       URLS_CONSENT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/consent
+      URLS_POST_LOGOUT_REDIRECT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/
       SECRETS_SYSTEM: ${WONTON_DEV_HYDRA_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
     volumes:
       - hydra:/home/nonroot

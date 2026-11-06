@@ -163,6 +163,7 @@ services:
       # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
       URLS_LOGIN: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/oidc/login
       URLS_CONSENT: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/oidc/consent
+      URLS_POST_LOGOUT_REDIRECT: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/
     volumes:
       - hydra:/home/nonroot
     # 只在核心的私有网络里：插件访问不到管理端口（4445），公开端口也只经核心网关访问。

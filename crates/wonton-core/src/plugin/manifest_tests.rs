@@ -59,3 +59,68 @@ fn agent_login_ids_are_valid_and_unique() {
             .is_ok()
     );
 }
+
+#[test]
+fn plugin_id_must_be_reverse_dns() {
+    assert_eq!(
+        PluginId::parse("app.immich.photos").unwrap().slug(),
+        "app-immich-photos"
+    );
+    for bad in [
+        "immich",
+        "App.immich",
+        "app..x",
+        "app.-x",
+        "app.x-",
+        "app_x.y",
+    ] {
+        assert!(PluginId::parse(bad).is_err(), "{bad} 应被拒绝");
+    }
+    let long = format!("app.{}", "a".repeat(60));
+    assert!(PluginId::parse(&long).is_err());
+}
+
+#[test]
+fn permissions_round_trip_and_unknown_is_rejected() {
+    for text in [
+        "storage.share.photos:read",
+        "storage.home:write",
+        "models",
+        "matrix.bot",
+        "notify",
+        "network.egress",
+        "network.lan",
+        "network.host",
+        "cap.NET_ADMIN",
+        "host.pid",
+        "host.ipc",
+        "security.opt",
+        "privileged",
+        "devices.gpu",
+        "devices./dev/net/tun",
+        "docker.socket",
+    ] {
+        let permission: Permission = text.parse().unwrap();
+        assert_eq!(permission.to_string(), text);
+    }
+    for bad in [
+        "storage.share.photos",
+        "storage.share.Photos:read",
+        "root",
+        "devices.usb",
+    ] {
+        assert!(bad.parse::<Permission>().is_err(), "{bad} 应被拒绝");
+    }
+    assert!(Permission::DockerSocket.is_high());
+    assert!(!Permission::Models.is_high());
+}
+
+#[test]
+fn semver_is_checked() {
+    for good in ["0.1.0", "2.0.0", "1.2.3-beta.1", "1.2.3+build.5"] {
+        assert!(is_semver(good), "{good}");
+    }
+    for bad in ["1.2", "v1.2.3", "01.2.3", "1.2.x", "1.2.3-é"] {
+        assert!(!is_semver(bad), "{bad}");
+    }
+}

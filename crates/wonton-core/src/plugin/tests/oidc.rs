@@ -1,0 +1,156 @@
+use std::sync::{Arc, Mutex};
+
+use axum::routing::{get, post, put};
+use axum::{Json, Router};
+use hyper::{Method, StatusCode};
+use serde_json::{Value, json};
+
+use super::super::fake_docker::FakeDocker;
+use super::super::{PluginPackage, PluginStatus};
+use super::egress::serve;
+use super::manager::manager_with_oidc;
+use super::package;
+use crate::config::OidcProviderConfig;
+use crate::http::HttpClient;
+use crate::oidc::Hydra;
+
+#[derive(Default)]
+struct Client {
+    registered: Option<Value>,
+    requests: Vec<(Method, Value)>,
+}
+
+type Provider = Arc<Mutex<Client>>;
+
+async fn fake_hydra(client: Provider) -> Hydra {
+    let endpoint = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
+    let discovery = json!({
+        "issuer": endpoint(""),
+        "authorization_endpoint": endpoint("/oauth2/auth"),
+        "token_endpoint": endpoint("/oauth2/token"),
+        "userinfo_endpoint": endpoint("/userinfo"),
+    });
+    let update = client.clone();
+    let app = Router::new()
+        .route(
+            "/.well-known/openid-configuration",
+            get(move || async move { Json(discovery) }),
+        )
+        .route(
+            "/admin/clients/{id}",
+            put(move |Json(body): Json<Value>| async move {
+                let mut client = update.lock().unwrap();
+                client.requests.push((Method::PUT, body.clone()));
+                if client.registered.is_none() {
+                    return StatusCode::NOT_FOUND;
+                }
+                client.registered = Some(body);
+                StatusCode::OK
+            }),
+        )
+        .route(
+            "/admin/clients",
+            post(move |Json(body): Json<Value>| async move {
+                let mut client = client.lock().unwrap();
+                client.requests.push((Method::POST, body.clone()));
+                client.registered = Some(body.clone());
+                (StatusCode::CREATED, Json(body))
+            }),
+        );
+    let addr = serve(app).await;
+    Hydra::new(
+        HttpClient::new(),
+        &OidcProviderConfig {
+            admin_url: format!("http://{addr}"),
+            public_url: format!("http://{addr}"),
+        },
+    )
+}
+
+fn app(port: u16, logout: &str) -> String {
+    package(
+        "  web:\n    image: nginx",
+        &format!(
+            "  permissions: []\n  webui:\n    service: web\n    port: {port}\n    \
+             path: /oidc/login?provider=wonton\n    sso: oidc\n    oidc:\n      \
+             redirect_paths: [/oidc/callback]\n{logout}"
+        ),
+    )
+}
+
+#[tokio::test]
+async fn oidc_logout_defaults_are_registered_on_create_and_restored_without_reinstall() {
+    let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let client = Provider::default();
+    let hydra = fake_hydra(client.clone()).await;
+    let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
+    manager.install(&app(web.port(), ""), &[]).await.unwrap();
+    let base = "http://app-test.wonton.localhost:8080";
+    let expected = json!([
+        base,
+        format!("{base}/"),
+        format!("{base}/oidc/login?provider=wonton")
+    ]);
+    let original = {
+        let mut client = client.lock().unwrap();
+        assert_eq!(client.requests[0].0, Method::PUT);
+        assert_eq!(client.requests[1].0, Method::POST);
+        let body = client.registered.as_mut().unwrap();
+        assert_eq!(body["post_logout_redirect_uris"], expected);
+        assert_eq!(
+            body["redirect_uris"],
+            json!([format!("{base}/oidc/callback")])
+        );
+        body.as_object_mut()
+            .unwrap()
+            .remove("post_logout_redirect_uris");
+        body.clone()
+    };
+    drop(manager);
+    let restarted = manager_with_oidc(engine, &dir, hydra);
+    restarted.restore().await.unwrap();
+    assert_eq!(restarted.list()[0].status, PluginStatus::Running);
+    let client = client.lock().unwrap();
+    let (method, body) = client.requests.last().unwrap();
+    assert_eq!(*method, Method::PUT);
+    assert_eq!(body["post_logout_redirect_uris"], expected);
+    assert_eq!(body["client_secret"], original["client_secret"]);
+}
+
+#[tokio::test]
+async fn oidc_logout_declared_paths_extend_defaults_without_duplicates() {
+    let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let client = Provider::default();
+    let hydra = fake_hydra(client.clone()).await;
+    let manager = manager_with_oidc(engine, &dir, hydra);
+    let paths = "      post_logout_paths: [/, /auth, /auth, '/auth?logged_out=1']\n";
+    manager.install(&app(web.port(), paths), &[]).await.unwrap();
+    let client = client.lock().unwrap();
+    let body = client.registered.as_ref().unwrap();
+    let base = "http://app-test.wonton.localhost:8080";
+    assert_eq!(
+        body["post_logout_redirect_uris"],
+        json!([
+            base,
+            format!("{base}/"),
+            format!("{base}/auth"),
+            format!("{base}/auth?logged_out=1"),
+            format!("{base}/oidc/login?provider=wonton")
+        ])
+    );
+}
+
+#[test]
+fn oidc_logout_paths_require_a_leading_slash_like_login_redirects() {
+    for path in ["", "auth", "https://example.com/auth"] {
+        let compose = app(80, &format!("      post_logout_paths: [{path:?}]\n"));
+        assert!(PluginPackage::parse(&compose).is_err(), "{path:?}");
+    }
+    for paths in ["[]", "[/auth]", "['/auth?state=logout']"] {
+        PluginPackage::parse(&app(80, &format!("      post_logout_paths: {paths}\n"))).unwrap();
+    }
+}

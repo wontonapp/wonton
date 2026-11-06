@@ -49,6 +49,7 @@ pub struct ClientSpec {
     pub secret: String,
     pub name: String,
     pub redirect_uris: Vec<String>,
+    pub post_logout_redirect_uris: Vec<String>,
     pub token_endpoint_auth_method: &'static str,
 }
 
@@ -129,6 +130,7 @@ impl Hydra {
             "client_secret": spec.secret,
             "client_name": spec.name,
             "redirect_uris": spec.redirect_uris,
+            "post_logout_redirect_uris": spec.post_logout_redirect_uris,
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
             "scope": CLIENT_SCOPES.join(" "),
