@@ -247,7 +247,7 @@ scripts/             CI 与开发脚本
 | 图标 | Phosphor（白名单加生成，无运行时依赖） | MIT | 已定（ADR-0026） |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
 | 文档 | Paperless-ngx（插件） | GPL-3.0，独立容器 | 已定 |
-| 音乐 | Navidrome（插件）+ Subsonic 原生页（M2） | GPL-3.0，独立容器 | 已定 |
+| 音乐 | Navidrome（插件） | GPL-3.0，独立容器 | 已定 |
 | 实时通话（M2） | LiveKit、MatrixRTC | Apache-2.0 | 预留 |
 
 不使用：Element X、FluffyChat、Dart 版 Matrix SDK（AGPL）；Umbrel 应用商店（无开源许可证）。
@@ -256,7 +256,7 @@ scripts/             CI 与开发脚本
 
 - **实时通话与屏幕共享（M2）**：通话是一通 MatrixRTC 通话，Agent 作为参与方加入。默认用云端实时
   模型直连（家里服务器签发临时令牌，工具调用回家执行）；隐私模式在家里跑 LiveKit 插件。客户端核心
-  把音频会话和后台模式抽象一次，供音乐和通话共用。见 [ADR-0014](adr/0014-reserved-capabilities.md)。
+  把音频会话和后台模式抽象一次，供通话和插件网页里的音频共用。见 [ADR-0014](adr/0014-reserved-capabilities.md)。
 - **第三方 IM 渠道（M2）**：渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
 - **Web 端（M3）**：核心接口保持可序列化（操作进、ViewModel 出），为浏览器远程使用留路。
 - **跨机 Bot 通信（M3）**：插件实现，Matrix 联邦走 iroh 或 A2A。

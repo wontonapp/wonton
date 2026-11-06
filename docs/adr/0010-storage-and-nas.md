@@ -16,7 +16,7 @@ U 盘同步（Go）。新方案原则是不造轮子：预置插件的同类功�
 - **App 内的文件**：在 App 里看共享文件夹做成文件插件，可以固定到底栏（ADR-0033），核心不做原生浏览页（主人 2026-11-04 定）。Bot 和 App 按编号共用文件见 ADR-0020。
 - **相册**：Immich 插件，加一个 MCP 适配器让 Agent 能按内容搜照片。
 - **文件检索**：MVP 用文件搜索插件（`geraldpeng6/wonton-plugin-files`，限定在已授权的文件夹，实现见 ADR-0020）加 Paperless-ngx（文档的 OCR 与全文检索）；专门的语义索引插件在 M2 选型。
-- **音乐**：Navidrome 插件，加 Subsonic 原生音乐页（M2）。
+- **音乐**：Navidrome 插件，在 App 里用它的网页放（GOAL 的 M2 第 2 项）。
 - **不搬旧代码**：旧 asset-indexer、usb-sync 不迁移；U 盘自动导入在 M2 选型现成方案。
 
 ## 理由
