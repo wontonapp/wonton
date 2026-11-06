@@ -126,12 +126,14 @@ struct ConnectionView: View {
     let model: HomeModel
     let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
+    @State private var removing: ServerRow?
 
     private var view: HomeViewModel { model.viewModel }
 
     var body: some View {
         ScrollView {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
+                ServersSection(model: model, removing: $removing)
                 WontonGroup {
                     WontonRow(title: "手机网络", value: view.details.network.check.text)
                     WontonSeparator()
@@ -181,6 +183,7 @@ struct ConnectionView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
+        .removeServerDialog($removing, model: model)
         .wontonPushedScreen("家里的服务器")
     }
 }

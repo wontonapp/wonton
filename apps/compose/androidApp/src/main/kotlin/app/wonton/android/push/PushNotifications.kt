@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.util.Log
 import app.wonton.android.MainActivity
 import app.wonton.protocol.NotificationCategory
@@ -46,12 +47,14 @@ object PushNotifications {
             is PushContent.Unavailable -> "新消息（内容暂时取不到：${content.message}）"
         }
         val card = notification.confirmation
-        val tag = card?.id ?: notification.roomId
+        val tag = tag(notification.serverId, notification.roomId, card?.id)
         val open = PendingIntent.getActivity(
             context,
-            // 每条通知一个请求码：否则系统把它们当成同一个 PendingIntent，点哪条都进同一个房间。
+            // Intent data 包含完整目标，哈希碰撞也不会把两台服务器的通知合并。
             tag.hashCode(),
             Intent(context, MainActivity::class.java)
+                .setData(Uri.parse("wonton://notification$tag"))
+                .putExtra(MainActivity.EXTRA_SERVER, notification.serverId)
                 .putExtra(MainActivity.EXTRA_ROOM, notification.roomId)
                 .addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -66,6 +69,10 @@ object PushNotifications {
             .setContentText("新消息")
             .build()
         val shown = Notification.Builder(context, channel)
+            .setExtras(android.os.Bundle().apply {
+                putString(MainActivity.EXTRA_SERVER, notification.serverId)
+                putString("wonton_card", card?.id)
+            })
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
             .setContentText(text)
@@ -85,8 +92,16 @@ object PushNotifications {
             .notify(tag, NOTIFICATION_ID, shown.build())
     }
 
-    fun cancelCards(context: Context, cards: List<String>) {
+    fun cancelCards(context: Context, serverId: String, cards: List<String>) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        cards.forEach { manager.cancel(it, NOTIFICATION_ID) }
+        val settled = cards.toSet()
+        manager.activeNotifications.filter { notification ->
+            notification.notification.extras.getString(MainActivity.EXTRA_SERVER) == serverId &&
+                notification.notification.extras.getString("wonton_card") in settled
+        }.forEach { manager.cancel(it.tag, NOTIFICATION_ID) }
     }
+
+    private fun tag(serverId: String?, roomId: String, cardId: String?): String =
+        Uri.Builder().appendPath(roomId).appendPath(cardId.orEmpty())
+            .appendQueryParameter("server", serverId).build().toString()
 }

@@ -11,6 +11,7 @@ struct ChatRoomView: View {
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
     @Environment(OnboardingModel.self) private var onboarding
+    @Environment(TabsModel.self) private var tabs
 
     init(model: ChatModel, roomId: String, title: String) {
         self.model = model
@@ -46,7 +47,13 @@ struct ChatRoomView: View {
         .wontonPushedScreen(title, showsStatus: true) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
-        .task(id: timeline.attempt) { await timeline.observe() }
+        .task(id: timeline.attempt) {
+            if await timeline.observe() {
+                model.path = []
+                model.visiting = nil
+                tabs.select(.chat)
+            }
+        }
     }
 
     private var messages: some View {

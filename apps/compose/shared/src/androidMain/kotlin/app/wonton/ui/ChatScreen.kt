@@ -111,7 +111,7 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
                 isReadOnly = row?.isReadOnly == true,
                 onAction = onAction,
                 onReject = { rejection = it },
-                onClose = { navigation.closeRoom() },
+                onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
             )
         }
         else -> ChatListScreen(

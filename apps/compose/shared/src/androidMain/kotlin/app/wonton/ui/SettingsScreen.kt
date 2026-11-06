@@ -103,7 +103,7 @@ private fun SettingsEntryRow(
     when (entry) {
         SettingsEntry.Profile -> WontonRow("你的资料", showsForward = true) { onSubpage(SettingsSubpage.PROFILE) }
         is SettingsEntry.Server -> WontonRow(
-            (entry.name as? ServerName.Named)?.name ?: "家里的服务器", entry.status.connectionText,
+            (entry.name ?: ServerName.Default(1u)).displayName(), entry.status.connectionText,
             showsForward = true, badge = entry.upgrade,
             onClick = { onSubpage(SettingsSubpage.SERVER) },
         )

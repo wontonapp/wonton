@@ -67,13 +67,31 @@ struct PairingView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
+        .background(Color(colors.canvas))
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if model.servers.adding {
+                HStack {
+                    Button(.commonCancel) { model.send(.cancelAddServer) }
+                        .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+                    Spacer()
+                    Text(.serversAddTitle)
+                        .wontonText(WontonTheme.typography.itemTitle)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    Color.clear.frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                }
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+                .frame(minHeight: WontonTheme.size.topBar)
+                .background(.ultraThinMaterial)
+            }
+        }
         .task { await askForCamera() }
         .onChange(of: scenePhase) { _, phase in
             // 可能刚从系统设置里改了相机权限回来。
             if phase == .active { camera = .current }
         }
         .onChange(of: model.viewModel.pairing) { old, new in
-            if old == .inProgress, new == nil { onPaired() }
+            if !model.servers.adding, old == .inProgress, new == nil { onPaired() }
         }
     }
 

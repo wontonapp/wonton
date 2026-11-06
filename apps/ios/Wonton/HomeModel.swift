@@ -6,6 +6,7 @@ import WontonClient
 @Observable
 final class HomeModel {
     private(set) var viewModel: HomeViewModel
+    private(set) var servers: ServersViewModel
     /// 核心拒绝上一个操作的原因，由界面弹窗展示。
     var rejection: Problem?
 
@@ -14,12 +15,19 @@ final class HomeModel {
     init(core: ClientCore) {
         self.core = core
         viewModel = core.home()
+        servers = core.servers()
     }
 
     /// 在视图的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
         for await viewModel in core.subscribeHome().updates() {
             self.viewModel = viewModel
+        }
+    }
+
+    func observeServers() async {
+        for await servers in core.subscribeServers().updates() {
+            self.servers = servers
         }
     }
 

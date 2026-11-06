@@ -19,6 +19,7 @@ struct MainView: View {
     @State var pendingSettingsPresentation = false
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
+    @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
          navigation: AppNavigation, devWebURL: URL?) {
@@ -32,16 +33,7 @@ struct MainView: View {
     }
 
     var body: some View {
-        OnboardingGate(model: onboarding, plugins: plugins, isPaired: isPaired,
-                       finished: finishOnboarding, openGateway: openOnboardingGateway, content: {
-            VStack(spacing: 0) {
-                if !selectedFullscreen, !pendingElsewhere.isEmpty {
-                    PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
-                }
-                notices
-                pages
-            }
-        })
+        rootContent
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
@@ -79,6 +71,7 @@ struct MainView: View {
         }
         .task { await tabs.observe() }
         .task { await home.observe() }
+        .task { await home.observeServers() }
         .task { await plugins.observe() }
         .task { await chat.observe() }
         .task { await chat.files.observe() }
@@ -99,6 +92,7 @@ struct MainView: View {
         .onChange(of: tabs.viewModel.items, initial: true) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: tabs.viewModel.candidates) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
+        .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         .environment(plugins)
         .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
@@ -218,6 +212,60 @@ struct MainView: View {
 }
 
 extension MainView {
+    private func updatePairingPresentation(from old: ServersViewModel, to new: ServersViewModel) {
+        if old.servers.first(where: { $0.current })?.id != new.servers.first(where: { $0.current })?.id {
+            chat.path = []
+            chat.visiting = nil
+        }
+        if new.adding && !old.adding {
+            addingReturn = (old.servers.first(where: { $0.current })?.id, showsSettings)
+            showsSettings = false
+            showsTabSettings = false
+            onboardingGateway = nil
+            pendingSettingsPresentation = false
+            tabs.send(.closeTabOverlay)
+        } else if old.adding && !new.adding {
+            if let target = addingReturn,
+               new.servers.first(where: { $0.current })?.id == target.serverID {
+                // 添加服务器只在设置里，取消后回到设置。切回原来那台时核心重开了它的作用域，选中的底栏页回到了默认。
+                if !target.settingsModal, tabs.isPinned(.settings) {
+                    tabs.select(.settings)
+                } else {
+                    showsSettings = true
+                }
+            }
+            addingReturn = nil
+        }
+        if !new.adding, new.servers.isEmpty, !old.servers.isEmpty {
+            showsSettings = false
+            showsTabSettings = false
+            settings.path = []
+            tabs.select(.apps)
+        }
+    }
+
+    @ViewBuilder private var rootContent: some View {
+        if home.servers.adding {
+            NavigationStack {
+                PairingView(model: home)
+                    .toolbar(.hidden, for: .navigationBar)
+            }
+            .wontonDialog(problem: home.rejection, isPresented: Binding(
+                get: { home.rejection != nil }, set: { if !$0 { home.rejection = nil } }
+            ))
+        } else {
+            OnboardingGate(model: onboarding, plugins: plugins, isPaired: isPaired,
+                           finished: finishOnboarding, openGateway: openOnboardingGateway, content: {
+                VStack(spacing: 0) {
+                    if !selectedFullscreen, !pendingElsewhere.isEmpty {
+                        PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
+                    }
+                    notices
+                    pages
+                }
+            })
+        }
+    }
 
     private var bottomBar: some View {
         WontonBottomBar(

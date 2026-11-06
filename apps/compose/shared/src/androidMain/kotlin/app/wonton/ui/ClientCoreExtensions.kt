@@ -8,6 +8,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.SettingsViewModel
+import app.wonton.protocol.ServersViewModel
 import app.wonton.protocol.TimelineUpdate
 import app.wonton.protocol.TransfersViewModel
 import kotlinx.coroutines.flow.Flow
@@ -88,5 +89,11 @@ fun ClientCore.pluginsUpdates(): Flow<PluginsViewModel> = flow {
         while (true) {
             emit(subscription.next() ?: break)
         }
+    }
+}
+
+fun ClientCore.serversUpdates(): Flow<ServersViewModel> = flow {
+    subscribeServers().use { subscription ->
+        while (true) emit(subscription.next() ?: break)
     }
 }

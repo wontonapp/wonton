@@ -86,7 +86,7 @@ struct SettingsView: View {
         case let .server(name, status, upgrade):
             NavigationLink(value: SettingsRoute.server) {
                 WontonRow(
-                    title: { if case let .named(named)? = name { named } else { "家里的服务器" } }(),
+                    title: name?.localizedDisplayName ?? String(localized: .serversDefaultFirst),
                     value: status.connectionText, badge: upgrade, showsForward: true
                 )
             }

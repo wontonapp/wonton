@@ -45,6 +45,8 @@ import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
 
 private class TimelineState {
@@ -98,6 +100,8 @@ fun RoomRoute(
                 timeline.backPagination = update.backPagination
                 timeline.loaded = true
             }
+            currentCoroutineContext().ensureActive()
+            onClose()
         } catch (failure: CoreException) {
             timeline.failure = failure.problem
         }

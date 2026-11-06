@@ -72,6 +72,8 @@ kotlin {
                 implementation(libs.compose.runtime)
                 implementation(libs.compose.foundation)
                 implementation(libs.compose.material3)
+                // Apache-2.0。服务器行使用 Material 的加号和勾选图标。
+                implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
                 implementation(libs.kotlinx.coroutines.core)
                 // Apache-2.0。桌面快捷方式（ShortcutManagerCompat）和插件图标（IconCompat）。
                 implementation(libs.androidx.core)

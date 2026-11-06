@@ -16,6 +16,7 @@ import app.wonton.client.parseAppLink
 import app.wonton.protocol.Action
 import app.wonton.ui.AppLinkRequest
 import app.wonton.ui.StartupFailure
+import app.wonton.ui.RoomRequest
 import app.wonton.ui.WontonApp
 import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.send
@@ -23,7 +24,7 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
     /** 点通知要打开的房间。 */
-    private var requestedRoom by mutableStateOf<String?>(null)
+    private var requestedRoom by mutableStateOf<RoomRequest?>(null)
     private var requestedLink by mutableStateOf<AppLinkRequest?>(null)
     private var networkWatcher: NetworkWatcher? = null
 
@@ -61,7 +62,7 @@ class MainActivity : AppCompatActivity() {
                 requestedRoom = requestedRoom,
                 onRoomRequestHandled = { requestedRoom = null },
                 requestedLink = requestedLink,
-                onCardsSettled = { cards -> PushNotifications.cancelCards(this, cards) },
+                onCardsSettled = { server, cards -> PushNotifications.cancelCards(this, server, cards) },
             )
         }
     }
@@ -75,11 +76,14 @@ class MainActivity : AppCompatActivity() {
 
     /** 取走就删：屏幕旋转重建 Activity 时拿到的还是这个 Intent，不能再跳一次。 */
     private fun requestRoom(intent: Intent) {
-        intent.getStringExtra(EXTRA_ROOM)?.let {
+        val room = intent.getStringExtra(EXTRA_ROOM)
+        val server = intent.getStringExtra(EXTRA_SERVER)
+        if (room != null && server != null) {
             requestedLink = null
-            requestedRoom = it
+            requestedRoom = RoomRequest(server, room)
         }
         intent.removeExtra(EXTRA_ROOM)
+        intent.removeExtra(EXTRA_SERVER)
     }
 
     private fun requestLink(intent: Intent) {
@@ -112,5 +116,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_ROOM = "wonton_open_room"
+        const val EXTRA_SERVER = "wonton_open_server"
     }
 }

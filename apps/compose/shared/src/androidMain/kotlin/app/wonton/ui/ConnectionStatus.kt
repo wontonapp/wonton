@@ -132,6 +132,7 @@ fun ConnectionPage(
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
+            ServersGroup(plugins)
             WontonGroup {
                 WontonRow("手机网络", details.network.check.text)
                 WontonSeparator()

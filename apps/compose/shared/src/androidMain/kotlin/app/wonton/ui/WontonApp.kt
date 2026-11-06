@@ -50,12 +50,12 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
 @Composable
-fun WontonApp(
+internal fun ServerApp(
     core: ClientCore,
-    devWebUrl: String? = null,
-    requestedRoom: String? = null,
-    onRoomRequestHandled: () -> Unit = {},
-    onCardsSettled: (List<String>) -> Unit = {},
+    devWebUrl: String?,
+    requestedRoom: RoomRequest?,
+    onRoomRequestHandled: () -> Unit,
+    onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
@@ -71,7 +71,7 @@ fun WontonApp(
     LaunchedEffect(chatView) { chat.onUpdate(chatView) }
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
     LaunchedEffect(requestedRoom) {
-        requestedRoom?.let { navigation.openRoom(it); onRoomRequestHandled() }
+        requestedRoom?.let { navigation.openRoom(it.roomId); onRoomRequestHandled() }
     }
     AppLinkEffect(requestedLink, navigation)
     AppShortcutsEffect(tabs)
@@ -79,7 +79,9 @@ fun WontonApp(
         CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft) {
             PluginsEffects(plugins)
             OpenDevWebEffect(devWebUrl, plugins, tabs)
-            OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
+            if (LocalServers.current.adding) {
+                AddServerPairing(plugins, home)
+            } else OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
                 AppContent(navigation, home, settings, appearance, chatView)
                 tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
             }

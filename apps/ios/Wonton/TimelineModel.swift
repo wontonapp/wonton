@@ -21,14 +21,14 @@ final class TimelineModel {
     }
 
     /// 在视图的 `.task` 里调用：订阅时间线，视图消失时订阅随之结束。
-    func observe() async {
+    func observe() async -> Bool {
         failure = nil
         let subscription: TimelineSubscription
         do {
             subscription = try await core.subscribeTimeline(roomId: roomId)
         } catch {
             failure = error.problem
-            return
+            return false
         }
         for await update in subscription.updates() {
             for diff in update.diffs {
@@ -37,6 +37,7 @@ final class TimelineModel {
             backPagination = update.backPagination
             isLoaded = true
         }
+        return !Task.isCancelled
     }
 
     private func apply(_ diff: TimelineDiff) {
