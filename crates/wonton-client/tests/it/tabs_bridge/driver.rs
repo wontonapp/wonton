@@ -45,7 +45,6 @@ impl<'a> Driver<'a> {
             let mut command = Command::new("docker");
             command.args([
                 "run",
-                "--rm",
                 "-i",
                 "--network=none",
                 "--name",
@@ -56,8 +55,9 @@ impl<'a> Driver<'a> {
                     fixtures.display()
                 ),
                 NODE_IMAGE,
-                "node",
-                "/fixture/sdk.mjs",
+                "sh",
+                "-c",
+                "node /fixture/sdk.mjs; status=$?; printf '{\"sdkExitCode\":%d}\\n' \"$status\"; exit \"$status\"",
             ]);
             command
         };
@@ -147,24 +147,43 @@ impl<'a> Driver<'a> {
 
     pub fn finish(mut self) {
         assert_eq!(self.command("exit", Value::Null)["closed"], true);
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
-                assert!(status.success());
-                break;
+        if self.container.is_some() {
+            let exit = self
+                .output
+                .recv_timeout(Duration::from_secs(10))
+                .expect("SDK did not exit");
+            assert_eq!(
+                serde_json::from_str::<Value>(&exit).unwrap(),
+                json!({"sdkExitCode": 0})
+            );
+        } else {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while self.child.try_wait().unwrap().is_none() {
+                assert!(Instant::now() < deadline, "SDK did not exit");
+                std::thread::sleep(Duration::from_millis(10));
             }
-            assert!(Instant::now() < deadline, "SDK did not exit");
-            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(self.child.wait().unwrap().success());
+        if let Some(name) = &self.container {
+            assert!(
+                Command::new("docker")
+                    .args(["rm", name])
+                    .status()
+                    .unwrap()
+                    .success(),
+                "SDK container cleanup failed"
+            );
+            self.container = None;
         }
     }
 }
 
 impl Drop for Driver<'_> {
     fn drop(&mut self) {
+        if let Some(name) = &self.container {
+            let _ = Command::new("docker").args(["rm", "-f", name]).status();
+        }
         if self.child.try_wait().ok().flatten().is_none() {
-            if let Some(name) = &self.container {
-                let _ = Command::new("docker").args(["rm", "-f", name]).status();
-            }
             let _ = self.child.kill();
         }
         let _ = self.child.wait();
