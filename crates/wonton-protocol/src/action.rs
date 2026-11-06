@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, DeviceNetwork, FileId, FontStyle, ImageUpload,
-    InstallPreview, ModelProviderInput, OnboardingTip, PushEndpoint, Rgb, SecretString,
+    InstallPreview, ModelProviderInput, OnboardingTip, PushEndpoint, PushMethod, Rgb, SecretString,
     TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
@@ -147,6 +147,9 @@ pub enum Action {
     /// 平台收不了推送了：没有装分发器，分发器拒绝了登记或者注销了本 App。核心删掉家里的登记和 pusher，
     /// 把 `message` 照实放进 `ChatViewModel::push`。
     PushUnavailable { message: String },
+    /// 换收新消息的方式，存在本机，写不了时返回 `Storage`。换成 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)
+    /// 时核心删掉家里的推送登记和 pusher，同一条消息不会既推送又本地通知；壳不再给推送地址。
+    SetPushMethod { method: PushMethod },
 
     // 插件（ADR-0017）。网络操作都在后台执行，进展和结果在 `PluginsViewModel` 里。
     /// App 使用的语言在第一项，后接系统语言偏好（BCP 47）；壳在启动和语言改变时发送。客户端详情用第一项，服务器按列表挑插件文字。

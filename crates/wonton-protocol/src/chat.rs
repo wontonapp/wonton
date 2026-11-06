@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotView, PushStatus, SecretString, VerificationFlow};
+use crate::{BotView, PushNotification, PushStatus, SecretString, VerificationFlow};
 
 /// 聊天页的 ViewModel。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +25,10 @@ pub struct ChatViewModel {
     pub pending_confirmations: Vec<PendingConfirmation>,
     /// 这台设备知道已经不用回答的卡片 ID：壳撤下它们的通知。
     pub settled_confirmations: Vec<String>,
+    /// 收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive) 且 App 在后台时，同步到的、按 Matrix
+    /// 推送规则该通知的消息，先到的在前。壳逐条弹出系统通知，同一个 `event_id` 用同一个通知标签，重复给不会重复弹；
+    /// 回到前台时核心清空。
+    pub background_notifications: Vec<PushNotification>,
     /// 已装插件的 Bot：名字、头像、状态头像和此刻的状态（ADR-0044）。壳按 [`RoomRow::direct_user_id`] 找私聊对方是哪个 Bot。
     pub bots: Vec<BotView>,
 }
@@ -309,7 +313,7 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::{Action, CoreError, PushStatus, SecretString};
+    use crate::{Action, CoreError, NotificationCategory, PushContent, PushStatus, SecretString};
 
     /// 测试用的恢复密钥原文。
     const KEY: &str = "EsTc 1234 abcd";
@@ -359,6 +363,18 @@ mod tests {
                 title: "Hermes 想安装 文件搜索".into(),
             }],
             settled_confirmations: vec!["older-card".into()],
+            background_notifications: vec![PushNotification {
+                server_id: Some("a1".into()),
+                room_id: "!bot:home.example".into(),
+                event_id: "$reply".into(),
+                sender: "Hermes".into(),
+                room_name: None,
+                content: PushContent::Message {
+                    body: "好了".into(),
+                },
+                category: NotificationCategory::Message,
+                confirmation: None,
+            }],
             bots: Vec::new(),
         }
     }

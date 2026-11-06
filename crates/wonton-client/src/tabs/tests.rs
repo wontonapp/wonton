@@ -79,6 +79,7 @@ fn home(server: &str) -> HomeViewModel {
         web_url: None,
         pairing: None,
         invite: None,
+        keep_connection: false,
     }
 }
 

@@ -25,6 +25,8 @@ pub struct HomeViewModel {
     pub pairing: Option<PairingStatus>,
     /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
     pub invite: Option<DeviceInvite>,
+    /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
+    pub keep_connection: bool,
 }
 
 /// 给新设备扫的配对码。

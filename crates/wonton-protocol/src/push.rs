@@ -22,6 +22,18 @@ pub struct PushEndpoint {
     pub auth: SecretString,
 }
 
+/// 这台设备怎么收新消息（ADR-0003）。存在本机，换设备要重新选。只有 Android 的壳显示这个选项：iOS 只有系统推送。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PushMethod {
+    /// 前台服务让进程和隧道在后台一直连着，同步到的新消息由 App 自己弹通知（[`ChatViewModel::background_notifications`](crate::ChatViewModel::background_notifications)）。
+    #[default]
+    Keepalive,
+    /// 经 UnifiedPush 分发器收推送（[`Action::SetPushEndpoint`](crate::Action::SetPushEndpoint)），App 被杀也能收到。
+    UnifiedPush,
+}
+
 /// 推送的状态。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -128,6 +140,9 @@ mod tests {
             },
             Action::PushUnavailable {
                 message: "没有装 UnifiedPush 分发器".into(),
+            },
+            Action::SetPushMethod {
+                method: PushMethod::UnifiedPush,
             },
         ];
         for action in &actions {

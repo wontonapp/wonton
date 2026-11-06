@@ -3,8 +3,8 @@
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PluginsViewModel, PushStatus,
-    RecoveryStatus, SettingsEntry, SettingsSection, SettingsViewModel,
+    ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PluginsViewModel, PushMethod,
+    PushStatus, RecoveryStatus, SettingsEntry, SettingsSection, SettingsViewModel,
 };
 
 pub(crate) struct SettingsLink {
@@ -72,6 +72,7 @@ fn settings_view(
         SettingsEntry::Appearance,
         SettingsEntry::BottomBar,
         SettingsEntry::Notifications {
+            method: PushMethod::default(),
             push: push.clone(),
             categories: NotificationCategory::ALL.to_vec(),
         },
@@ -124,6 +125,7 @@ mod tests {
                 SettingsEntry::Appearance,
                 SettingsEntry::BottomBar,
                 SettingsEntry::Notifications {
+                    method: PushMethod::Keepalive,
                     push: PushStatus::NoEndpoint,
                     categories: vec![
                         NotificationCategory::Message,
@@ -173,6 +175,7 @@ mod tests {
             web_url: None,
             pairing: None,
             invite: None,
+            keep_connection: false,
         };
         let chat = ChatViewModel {
             account: wonton_protocol::ChatAccount::SignedOut,
@@ -190,6 +193,7 @@ mod tests {
             push: PushStatus::NoEndpoint,
             pending_confirmations: Vec::new(),
             settled_confirmations: Vec::new(),
+            background_notifications: Vec::new(),
             bots: Vec::new(),
         };
         let (home_tx, home_rx) = watch::channel(home(HomeStatus::NotConfigured));

@@ -151,6 +151,18 @@ App 被杀后收不到任何消息。
 - App 用 CryptoKit 生成 P-256 密钥对和认证密钥，放进和通知扩展共享的钥匙串；推送地址由中继为 APNs 令牌开。
 - 通知扩展也要经隧道取回消息、解密 Megolm。扩展的内存上限很低，在里面跑 iroh 和 matrix-sdk 是那一批的主要风险。
 
+## 设计：保持连接（Android）
+
+Android 收新消息有两种方式，存在本机、每台设备各选各的（`PushMethod`，默认保持连接）。iOS 只有系统推送，壳不显示这个选项。
+
+- **保持连接**：已配对、选了保持连接时（`HomeViewModel::keep_connection`），壳开一个前台服务，进程和隧道在后台不被挂起，
+  Matrix 同步照常。App 在后台时，核心按 Matrix 推送规则挑出同步到的、该通知的消息，用和推送同样的方式解出通知
+  （`ChatViewModel::background_notifications`），壳照着弹系统通知；回到前台时清空。家里的推送登记和 pusher 删掉，
+  同一条消息不会既推送又本地通知。
+- **UnifiedPush**：照上面的“加密推送”，App 被杀也能收到，但要装分发器。
+
+推送规则由客户端评估，结果和 Tuwunel 给 pusher 的判断一致：两边读的是同一份账号的推送规则。
+
 ## 验证结果（M0-2）
 
 验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑：

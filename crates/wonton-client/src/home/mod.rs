@@ -113,6 +113,7 @@ impl HomeLink {
             web_url: None,
             pairing: None,
             invite: None,
+            keep_connection: false,
         });
         let home = Arc::new(Self {
             runtime,

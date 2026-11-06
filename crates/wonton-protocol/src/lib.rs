@@ -127,7 +127,8 @@ pub use plugin::{
 };
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use push::{
-    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus,
+    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
+    PushNotification, PushStatus,
 };
 pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
