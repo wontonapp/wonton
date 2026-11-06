@@ -32,12 +32,14 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  # 分成两个作业：格式、Clippy 和默认测试不碰 Docker，任何 Linux runner 都能跑；Docker 集成测试只能在带 docker 标签的
+  # 分成两个作业：格式、Clippy 和默认测试不碰 Docker，跑在带 rust 标签的机器上；Docker 集成测试只能在带 docker 标签的
   # 几台上跑。合在一起时每个 PR 都要排那几台，一排七八个（2026-11-06）。分开后两个作业同时跑，Docker 那个要在另一个
   # target 目录里再编译、链接一遍测试二进制，但 PR 等的总时间不变长。
   rust:
     name: Rust
-    runs-on: [self-hosted, Linux, X64]
+    # 不用任意 Linux runner：带 docker 标签的那台主机同时跑 omp 编译和验证栈，常年满载，Rust 作业落上去会慢到超时。
+    # 只写 rust：只给 Rust 作业用的机器注册时去掉了默认标签（--no-default-labels），不会接到 Android 这类要别的环境的作业。
+    runs-on: [rust]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
