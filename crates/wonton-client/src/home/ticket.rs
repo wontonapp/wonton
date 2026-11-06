@@ -27,6 +27,9 @@ use std::net::SocketAddr;
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use serde::{Deserialize, Serialize};
 use url::Url;
+use wonton_l10n::l10n;
+
+use crate::l10n::{CATALOG, language};
 
 /// 连接信息里最多留这么多直连地址，新的在前。留旧的：核心只知道自己的地址，手机连它用的可能是别的（端口转发、隧道）。
 const MAX_DIRECT_ADDRS: usize = 8;
@@ -53,10 +56,16 @@ struct Server {
 impl Ticket {
     /// 解析连接信息。至少要有一个中继地址或直连地址：只给 endpoint ID 时要靠地址发现，国内靠不住。
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let ticket: Self =
-            serde_json::from_str(text).map_err(|e| format!("连接信息不是合法的 JSON：{e}"))?;
+        let ticket: Self = serde_json::from_str(text).map_err(|e| {
+            l10n!(
+                CATALOG,
+                language(),
+                "home-ticket-invalid-json",
+                error = e.to_string()
+            )
+        })?;
         if ticket.server.relay_urls.is_empty() && ticket.server.direct_addrs.is_empty() {
-            return Err("连接信息里没有服务端的中继地址或直连地址".to_owned());
+            return Err(l10n!(CATALOG, language(), "home-ticket-no-addresses"));
         }
         let domain = ticket
             .base_domain
@@ -69,23 +78,52 @@ impl Ticket {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-')
         };
         if !domain.split('.').all(valid_label) {
-            return Err(format!("基础域名不合法：{}", ticket.base_domain));
+            return Err(l10n!(
+                CATALOG,
+                language(),
+                "home-ticket-invalid-domain",
+                domain = ticket.base_domain.as_str()
+            ));
         }
         if let Some(text) = &ticket.web_url {
-            let url = Url::parse(text).map_err(|e| format!("插件网页地址不合法：{e}"))?;
+            let url = Url::parse(text).map_err(|e| {
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "home-ticket-invalid-web-url",
+                    error = e.to_string()
+                )
+            })?;
             let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
             let in_domain = host == domain || host.ends_with(&format!(".{domain}"));
             if !matches!(url.scheme(), "http" | "https") || !in_domain {
-                return Err(format!(
-                    "插件网页地址要是 {domain} 下的 http(s) 地址：{text}"
+                return Err(l10n!(
+                    CATALOG,
+                    language(),
+                    "home-ticket-web-url-under-domain",
+                    domain = domain.as_str(),
+                    url = text.as_str()
                 ));
             }
         }
         if let Some(text) = &ticket.core_url {
-            let url = Url::parse(text).map_err(|e| format!("核心地址不合法：{e}"))?;
+            let url = Url::parse(text).map_err(|e| {
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "home-ticket-invalid-core-url",
+                    error = e.to_string()
+                )
+            })?;
             let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
             if !matches!(url.scheme(), "http" | "https") || host != domain {
-                return Err(format!("核心地址要是 {domain} 的 http(s) 地址：{text}"));
+                return Err(l10n!(
+                    CATALOG,
+                    language(),
+                    "home-ticket-core-url-under-domain",
+                    domain = domain.as_str(),
+                    url = text.as_str()
+                ));
             }
         }
         Ok(Self {
@@ -104,7 +142,7 @@ impl Ticket {
             return url;
         }
         let mut url = Url::parse(&format!("http://{}/", self.base_domain))
-            .expect("校验过的基础域名总能组成地址");
+            .expect("validated base domain always forms a URL");
         if let Some(web) = self
             .web_url
             .as_deref()

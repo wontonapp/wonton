@@ -50,7 +50,7 @@ impl Tracker {
                 None
             }
             HomeStatus::Connected => {
-                let trigger = self.trigger.take().unwrap_or("定时");
+                let trigger = self.trigger.take().unwrap_or("timer");
                 self.outage_since.take().map(|since| Recovery {
                     outage: now - since,
                     trigger,
@@ -96,7 +96,7 @@ impl Tracker {
             self.outage_since = Some(now);
         }
         self.network = Some(network);
-        self.trigger = Some("网络变化");
+        self.trigger = Some("network change");
     }
 
     pub(super) fn set_catching_up(&mut self, catching_up: bool) {
@@ -105,14 +105,14 @@ impl Tracker {
 
     /// 回到前台：断开的时长从现在重新算。挂起期间的时间不算数，这时重连才刚开始。
     pub(super) fn foregrounded(&mut self, now: Instant) {
-        self.trigger = Some("回前台");
+        self.trigger = Some("foreground");
         if self.outage_since.is_some() {
             self.outage_since = Some(now);
         }
     }
 
     pub(super) fn retry_started(&mut self, now: Instant) {
-        self.trigger = Some("重试");
+        self.trigger = Some("retry");
         self.retry_started = Some(now);
         self.retry_running = true;
     }
@@ -364,7 +364,7 @@ mod tests {
             tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, recovered),
             Some(Recovery {
                 outage: Duration::from_secs(5),
-                trigger: "回前台",
+                trigger: "foreground",
             })
         );
     }

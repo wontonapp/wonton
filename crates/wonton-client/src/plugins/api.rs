@@ -8,12 +8,14 @@ use reqwest::{Client, Method};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use url::Url;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
     PluginImage, PluginProblem, window_path,
 };
 
 use crate::chat::proxy_url;
+use crate::l10n::{CATALOG, language};
 
 /// 列表、详情、图片：只读家里服务器上已有的东西。隧道卡住时按“连不上”失败，不一直转圈。
 pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -61,19 +63,31 @@ pub(crate) struct CoreApi {
 pub(super) fn proxied_client(
     proxy: &wonton_protocol::ProxySettings,
 ) -> Result<Client, PluginProblem> {
-    let protocol = |what: &str, e: reqwest::Error| PluginProblem {
-        reason: PluginFailure::Protocol,
-        message: format!("{what}：{e}"),
-    };
     Client::builder()
         // 不复用连接：本地代理到回环地址，建连几乎没有代价；空闲的连接可能刚好被对面关掉，POST 不能自动重试，
         // 安装就会因此按“连接断了”处理。
         .pool_max_idle_per_host(0)
         .proxy(
-            reqwest::Proxy::all(proxy_url(proxy)).map_err(|e| protocol("本地代理地址不合法", e))?,
+            reqwest::Proxy::all(proxy_url(proxy)).map_err(|e| PluginProblem {
+                reason: PluginFailure::Protocol,
+                message: l10n!(
+                    CATALOG,
+                    language(),
+                    "plugins-api-invalid-proxy",
+                    reason = e.to_string()
+                ),
+            })?,
         )
         .build()
-        .map_err(|e| protocol("建 HTTP 客户端失败", e))
+        .map_err(|e| PluginProblem {
+            reason: PluginFailure::Protocol,
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-http-client",
+                reason = e.to_string()
+            ),
+        })
 }
 
 impl CoreApi {
@@ -81,7 +95,7 @@ impl CoreApi {
     fn url(&self, segments: &[&str], query: &[(&str, &str)]) -> Url {
         let mut url = self.base.clone();
         url.path_segments_mut()
-            .expect("核心的地址是 http")
+            .expect("home server URL is http")
             .clear()
             .extend(["_wonton", "api"])
             .extend(segments);
@@ -166,7 +180,12 @@ impl CoreApi {
         }
         serde_json::from_slice(&bytes).map_err(|e| CoreUpgradeProblem {
             reason: CoreUpgradeFailure::Protocol,
-            message: format!("家里的服务器给的内容格式不对：{e}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-invalid-response",
+                reason = e.to_string()
+            ),
         })
     }
 
@@ -191,7 +210,12 @@ impl CoreApi {
     ) -> Result<T, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
-            message: format!("请求体写不出来：{e}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-invalid-request",
+                reason = e.to_string()
+            ),
         })?;
         let bytes = self
             .send(Method::POST, self.url(segments, &[]), Some(body), timeout)
@@ -227,7 +251,12 @@ impl CoreApi {
     ) -> Result<T, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
-            message: format!("请求体写不出来：{e}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-invalid-request",
+                reason = e.to_string()
+            ),
         })?;
         let bytes = self
             .send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
@@ -262,8 +291,14 @@ impl CoreApi {
         body: &impl serde::Serialize,
         timeout: Duration,
     ) -> Result<(), CoreApiError> {
-        let body = serde_json::to_vec(body)
-            .map_err(|error| CoreApiError::Protocol(format!("请求体写不出来：{error}")))?;
+        let body = serde_json::to_vec(body).map_err(|error| {
+            CoreApiError::Protocol(l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-invalid-request",
+                reason = error.to_string()
+            ))
+        })?;
         let (status, bytes) = self
             .exchange(
                 method,
@@ -324,7 +359,12 @@ impl CoreApi {
             .map_err(CoreApiError::Transport)?;
         if status < 400 {
             return serde_json::from_slice(&bytes).map_err(|error| {
-                CoreApiError::Protocol(format!("家里的服务器给的内容格式不对：{error}"))
+                CoreApiError::Protocol(l10n!(
+                    CATALOG,
+                    language(),
+                    "plugins-api-invalid-response",
+                    reason = error.to_string()
+                ))
             });
         }
         Err(http_error(status, &bytes))
@@ -378,7 +418,12 @@ impl CoreApi {
     ) -> Result<Vec<u8>, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
-            message: format!("请求体写不出来：{e}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-invalid-request",
+                reason = e.to_string()
+            ),
         })?;
         self.send(Method::POST, self.url(segments, &[]), Some(body), timeout)
             .await
@@ -411,18 +456,33 @@ impl CoreApi {
         if !image.path.starts_with(IMAGE_PREFIX) {
             return Err(PluginProblem {
                 reason: PluginFailure::Invalid,
-                message: format!("不是插件图片的地址：{}", image.path),
+                message: l10n!(
+                    CATALOG,
+                    language(),
+                    "plugins-api-not-image-url",
+                    reason = image.path.as_str()
+                ),
             });
         }
         let url = self.base.join(&image.path).map_err(|e| PluginProblem {
             reason: PluginFailure::Invalid,
-            message: format!("不是插件图片的地址：{e}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-not-image-url",
+                reason = e.to_string()
+            ),
         })?;
         // 上面看的是规范化之前的写法，`images/../devices` 也能通过。
         if !url.path().starts_with(IMAGE_PREFIX) {
             return Err(PluginProblem {
                 reason: PluginFailure::Invalid,
-                message: format!("不是插件图片的地址：{}", image.path),
+                message: l10n!(
+                    CATALOG,
+                    language(),
+                    "plugins-api-not-image-url",
+                    reason = image.path.as_str()
+                ),
             });
         }
         self.send(Method::GET, url, None, READ_TIMEOUT).await
@@ -440,7 +500,16 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
             message,
             problem,
         }) => (Some(kind), message, problem),
-        None => (None, format!("Core returned HTTP {status}"), None),
+        None => (
+            None,
+            l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-server-status",
+                status = status
+            ),
+            None,
+        ),
     };
     CoreApiError::Http {
         status,
@@ -453,16 +522,21 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
 fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, PluginProblem> {
     serde_json::from_slice(bytes).map_err(|e| PluginProblem {
         reason: PluginFailure::Protocol,
-        message: format!("家里的服务器给的内容格式不对：{e}"),
+        message: l10n!(
+            CATALOG,
+            language(),
+            "plugins-api-invalid-response",
+            reason = e.to_string()
+        ),
     })
 }
 
 /// 原文只进日志：主人看到的是下一步怎么办，连接的情况由 `HomeViewModel` 说（ADR-0032）。
 fn transport(error: &reqwest::Error, timeout: Duration) -> PluginProblem {
     if error.is_timeout() {
-        tracing::info!("请求 {} 秒内没有回应", timeout.as_secs());
+        tracing::info!("no response within {} seconds", timeout.as_secs());
     } else {
-        tracing::info!("请求失败：{error}");
+        tracing::info!("request failed: {error}");
     }
     not_connected()
 }
@@ -470,7 +544,7 @@ fn transport(error: &reqwest::Error, timeout: Duration) -> PluginProblem {
 pub(super) fn not_connected() -> PluginProblem {
     PluginProblem {
         reason: PluginFailure::TransportUnavailable,
-        message: "连上家里的服务器后再试".to_owned(),
+        message: l10n!(CATALOG, language(), "plugins-api-not-connected"),
     }
 }
 
@@ -508,7 +582,14 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         return not_connected();
     }
     let message = detail.map_or_else(
-        || format!("家里的服务器回了 {status}"),
+        || {
+            l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-server-status",
+                status = status
+            )
+        },
         |detail| detail.message,
     );
     PluginProblem { reason, message }
@@ -534,7 +615,14 @@ fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
         },
     };
     let message = detail.map_or_else(
-        || format!("家里的服务器回了 {status}"),
+        || {
+            l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-server-status",
+                status = status
+            )
+        },
         |detail| detail.message,
     );
     CoreUpgradeProblem { reason, message }

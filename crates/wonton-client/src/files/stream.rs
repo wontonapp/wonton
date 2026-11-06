@@ -17,11 +17,13 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, FileId};
 use wonton_tunnel::ERROR_HEADER;
 
 use super::api::Api;
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 
 type Body = BoxBody<Bytes, std::io::Error>;
 
@@ -53,7 +55,7 @@ struct Running {
 impl StreamServer {
     pub(super) fn new() -> Self {
         let mut bytes = [0u8; 16];
-        getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
+        getrandom::fill(&mut bytes).expect("OS random source is unavailable");
         Self {
             token: bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
             running: tokio::sync::Mutex::new(None),
@@ -82,10 +84,20 @@ impl StreamServer {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(|e| CoreError::Storage {
-                reason: format!("开不了播放用的本地地址：{e}"),
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "files-stream-local-address",
+                    reason = e.to_string()
+                ),
             })?;
         let addr = listener.local_addr().map_err(|e| CoreError::Storage {
-            reason: format!("开不了播放用的本地地址：{e}"),
+            reason: l10n!(
+                CATALOG,
+                language(),
+                "files-stream-local-address",
+                reason = e.to_string()
+            ),
         })?;
         let shared = Shared {
             home: home.clone(),
@@ -139,12 +151,12 @@ async fn accept(listener: TcpListener, shared: Arc<Shared>) {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
             Err(e) if transient(&e) => {
-                tracing::info!(error = %e, "播放用的本地地址这次没接上");
+                tracing::info!(error = %e, "could not accept this connection on the playback address");
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
             Err(e) => {
-                tracing::info!(error = %e, "播放用的本地地址失效了，下次要地址时重开");
+                tracing::info!(error = %e, "playback address is no longer usable, reopening on the next request");
                 return;
             }
         };
@@ -157,7 +169,7 @@ async fn accept(listener: TcpListener, shared: Arc<Shared>) {
             let connection = hyper::server::conn::http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service);
             if let Err(e) = connection.await {
-                tracing::debug!(error = %e, "播放器的连接结束");
+                tracing::debug!(error = %e, "player connection ended");
             }
         });
     }
@@ -198,7 +210,10 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
         return status(StatusCode::METHOD_NOT_ALLOWED);
     }
     let Ok(api) = Api::connect(&shared.home) else {
-        shared.interrupted(&file, "隧道没连上".to_owned());
+        shared.interrupted(
+            &file,
+            l10n!(CATALOG, language(), "files-stream-not-connected"),
+        );
         return status(StatusCode::SERVICE_UNAVAILABLE);
     };
     let mut forwarded = api.stream(method.clone(), &Api::content_path(&file));
@@ -210,7 +225,7 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
     let upstream = match forwarded.send().await {
         Ok(upstream) => upstream,
         Err(e) => {
-            tracing::info!(file = %file, error = %e, "播放时连不上家里的服务器");
+            tracing::info!(file = %file, error = %e, "cannot reach the home server during playback");
             shared.interrupted(&file, e.to_string());
             return status(StatusCode::BAD_GATEWAY);
         }
@@ -218,7 +233,15 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
     let code = upstream.status();
     let headers = upstream.headers().clone();
     if let Some(code) = headers.get(ERROR_HEADER) {
-        shared.interrupted(&file, format!("隧道不可用（{code:?}）"));
+        shared.interrupted(
+            &file,
+            l10n!(
+                CATALOG,
+                language(),
+                "files-stream-tunnel-unavailable",
+                code = format!("{code:?}")
+            ),
+        );
     }
     let mut response = if method == Method::HEAD {
         status(code)

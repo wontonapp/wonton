@@ -58,7 +58,7 @@ async fn uninstall_persist_error_is_visible_and_recovers() {
             && view.problem.is_some()
     })
     .await;
-    assert!(removed.problem.unwrap().message.contains("存不下"));
+    assert!(!removed.problem.unwrap().message.is_empty());
 
     std::fs::remove_dir(rig.data_dir().join("tabs.json")).unwrap();
     rig.app

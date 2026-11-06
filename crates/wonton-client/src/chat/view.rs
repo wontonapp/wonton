@@ -307,7 +307,7 @@ mod tests {
                 &ReadMark::default(),
             );
             let TimelineContent::Message { message } = item.content else {
-                panic!("消息必须保留在时间线里");
+                panic!("the message must stay in the timeline");
             };
             assert_eq!(
                 message.send_state,

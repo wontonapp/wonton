@@ -27,3 +27,268 @@ invite-invalid-response = 自宅サーバーから返されたペアリングコ
 invite-server-status = 自宅サーバーからHTTP { $status }が返されました
 # $message と $kind はサーバーの元のエラーメッセージとエラーコードです。
 invite-server-error = { $message }（{ $kind }）
+
+# セットアップの各ステップ。操作が違うステップで行われたり、状態を取得できていないときの理由です。
+onboarding-steps-not-in-flow = セットアップが進行中ではありません
+onboarding-steps-already-committed = すでに完了しています
+onboarding-steps-not-profile-step = セットアップはプロフィールのステップではありません
+onboarding-steps-not-agent-step = セットアップはエージェントのステップではありません
+onboarding-steps-state-missing = セットアップの状態をまだ取得していません
+onboarding-steps-agent-not-listed = そのエージェントは選択肢の一覧にありません
+onboarding-steps-agent-not-installable = そのエージェントはインストールできません
+onboarding-steps-not-apps-step = セットアップはアプリのステップではありません
+onboarding-steps-need-not-listed = その項目はおすすめの一覧にありません
+onboarding-steps-committing = 送信中です
+onboarding-steps-no-installable-agent = インストールできるエージェントが選ばれていません
+onboarding-steps-testing = テストが実行中です
+onboarding-steps-model-not-chosen = モデルがまだ選ばれていません
+onboarding-steps-cannot-skip = このステップはスキップできません
+onboarding-steps-cannot-go-back = このステップからは戻れません
+
+# モデルプロバイダーの接続です。
+onboarding-model-key-required = APIキーが空です
+onboarding-model-not-model-step = セットアップはモデルのステップではありません
+onboarding-model-testing = すでにテストが実行中です
+onboarding-model-providers-missing = プロバイダーの一覧をまだ取得していません
+onboarding-model-provider-not-listed = そのプロバイダーは一覧にありません
+onboarding-model-custom-unsupported = モデルゲートウェイはカスタムプロバイダーに対応していません
+onboarding-model-name-required = モデル名が空です
+onboarding-model-base-url-invalid = Base URLはhttps://…の形式のアドレスである必要があります
+onboarding-model-step-or-testing = セットアップはモデルのステップではないか、テストが実行中です
+onboarding-model-none-configured = モデルゲートウェイに接続済みのモデルがありません
+onboarding-model-state-missing = セットアップの状態をまだ取得していません
+onboarding-model-login-missing = 選択したエージェントにそのログイン方式がありません
+
+# 最後のページです。ブロックされた項目はプレビューが更新されるまでこの説明を表示します。
+onboarding-review-permissions-changed = 要求された権限が確認時と変わりました。アプリのページから再インストールしてください
+# $installed と $listed はインストール元と一覧のアプリのIDで、翻訳しません。
+onboarding-review-source-mismatch = インストール元のアプリは{ $installed }で、一覧の{ $listed }と一致しません
+onboarding-review-items-not-ready = 準備ができていない項目があります
+onboarding-review-item-missing = 最後のページにその項目はありません
+onboarding-review-no-failure = その項目は失敗していません
+
+## chat-a フラグメント：crates/wonton-client/src/chat/{login,sign_in,recovery}.rs。
+## チャットの問題・エラーの折りたたまれた「詳細」です。CoreError の理由と ChatProblem の message です。
+
+# サインイン関連。$reason は Matrix SDK の元のエラーの詳細です。
+chat-sign-in-restore-failed = Matrixセッションを復元できません：{ $reason }
+chat-sign-in-no-connection-info = 自宅サーバーの接続情報がまだありません
+chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
+chat-sign-in-no-saved-session = ログイン後にログイン状態を取得できません
+
+# ログイントークンの取得リクエスト。$reason は上流の原文、または翻訳されたタイムアウトの詳細です。
+# $reason はプロキシURLパーサーの元のエラーです。
+chat-login-invalid-proxy = ローカルプロキシのアドレスが無効です：{ $reason }
+# $reason はHTTPクライアントの元のエラーです。
+chat-login-http-client = HTTPクライアントを作成できません：{ $reason }
+# $seconds はリクエストのタイムアウト秒数です。
+chat-login-timeout = { $seconds }秒以内に応答がありませんでした
+chat-login-request-failed = 自宅サーバーからMatrixログイントークンを取得できません：{ $reason }
+# $reason はHTTPレスポンスの読み取りの元のエラーです。
+chat-login-response-failed = 自宅サーバーからの応答を読み取れません：{ $reason }
+# $reason はJSONパーサーの元のエラーです。
+chat-login-invalid-token = 自宅サーバーから返されたログイントークンの形式が正しくありません：{ $reason }
+# $login_type は自宅サーバーが返したログイン方式、$expected は要求されたログイン方式です。
+chat-login-wrong-type = 自宅サーバーが返したログイン方式{ $login_type }は{ $expected }ではありません
+# $status は元のHTTPステータスコードです。
+chat-login-server-status = 自宅サーバーからHTTP { $status }が返されました
+# $message と $kind はサーバーの元のエラーメッセージとエラーコードです。
+chat-login-server-error = { $message }（{ $kind }）
+
+# 復旧関連。
+chat-recovery-not-connected = 自宅サーバーにまだ接続していません
+chat-recovery-reset-no-response = 自宅サーバーが応答しません。バックアップは変更していません。後でもう一度お試しください。
+chat-recovery-empty-key = 復旧キーが空です
+# $reason はストレージの元のエラーの詳細です。
+chat-recovery-key-not-saved = 復旧キーをこのデバイスに保存できませんでした。今書き写してください：{ $reason }
+# 回答や時間枠の停止が失敗したときに、確認カードの下の問題の詳細に表示される文章です。
+# $message は自宅サーバーの元のエラーメッセージ、または翻訳された詳細です。
+chat-confirmation-answer-failed = 回答できませんでした：{ $message }
+# $error はHTTPクライアントの元のエラーです。
+chat-confirmation-answer-lost = 自宅サーバーからの応答がなく、回答が届いたかはっきりしません。もう一度試せます（{ $error }）
+# $message は自宅サーバーの元のエラーメッセージ、または翻訳された詳細です。
+chat-confirmation-stop-failed = 停止できませんでした：{ $message }
+# $error はHTTPクライアントの元のエラーです。
+chat-confirmation-stop-lost = 自宅サーバーからの応答がありませんでした。もう一度試せます（{ $error }）
+# $error はJSONパーサーの元のエラーです。
+chat-confirmation-response-unreadable = 自宅サーバーの応答を読み取れません（{ $error }）
+# $status は元のHTTPステータスコードです。
+chat-confirmation-core-status = 自宅サーバーがHTTP { $status }を返しました
+# 個人チャットを始めるとき、ユーザー名が空の場合に表示します。
+chat-contacts-empty-username = ユーザー名を入力してください。
+# $reason はMatrix IDパーサーの元のエラーです。
+chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
+
+# Siriやショートカットでメッセージを送るとき、本文が空の場合に表示します。
+chat-ask-empty-message = メッセージを入力してください。
+# Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
+chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
+# 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
+chat-ask-invalid-room-id = ダイレクトチャットのルームIDが無効です。
+
+# Matrixがこのデバイスを取り消し、アカウントが失敗扱いになったときに表示します。
+chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
+## ファイル転送と再生の詳細情報。転送リストの項目、ファイルカード、再生失敗の説明に表示されます。
+
+# 転送や再生を始める前に接続がないとわかったときに表示されます。
+files-api-not-connected = まだ自宅サーバーに接続していません
+# $reason はプロキシアドレスのパーサーの元のエラーです。
+files-api-invalid-proxy = ローカルプロキシのアドレスが無効です：{ $reason }
+# $reason はHTTPクライアントの元のエラーです。
+files-api-http-client = HTTPクライアントを作成できません：{ $reason }
+# $reason はJSONパーサーの元のエラーです。
+files-api-invalid-response = 自宅サーバーの応答を読み取れません：{ $reason }
+# 自宅サーバーがこのデバイスを認証しなくなったときに表示されます。
+files-api-unauthenticated = 自宅サーバーがこのデバイスを認識しなくなりました
+# $code はトンネルの元のエラーコードです。
+files-api-tunnel-unavailable = トンネルを利用できません（{ $code }）
+# $status は元のHTTPステータスコードです。
+files-api-status = 自宅サーバーからHTTP { $status }が返されました
+
+# 元のファイルが選択時と変わっていたときに表示されます。
+files-upload-source-changed = 元のファイルが変更されています。選び直してください。
+# 進行状況の照会（HEAD）への自宅サーバーの応答にUpload-Offsetヘッダーがないときに表示されます。
+files-upload-head-no-offset = 自宅サーバーの進行状況の応答にUpload-Offsetがありません
+# シェルがこの種類のソースを開けないときに表示されます。
+files-upload-no-opener = シェルがFileOpenerを設定していないため、このソースを開けません
+# ソースがシークできる通常のファイルではないときに表示されます。
+files-upload-source-not-file = このソースはシークできる通常のファイルではないため、中断した位置から再開できません
+# $reason は元のファイルを開くタスクの異常終了の情報です。
+files-upload-open-task-failed = 元のファイルを開くタスクが異常終了しました：{ $reason }
+# $reason は元のioエラーです。
+files-upload-source-denied = システムが元のファイルの読み取りを許可していません：{ $reason }
+# $reason は元のioエラーです。
+files-upload-source-missing = 元のファイルが見つかりません：{ $reason }
+# $reason は元のioエラーです。
+files-upload-source-read = 元のファイルを読み取れません：{ $reason }
+# アップロード作成への自宅サーバーの応答に有効なLocationヘッダーがないときに表示されます。
+files-upload-create-no-location = 自宅サーバーのアップロード作成の応答に有効なLocationがありません
+# 進行状況の照会（HEAD）への自宅サーバーの応答にUpload-Lengthヘッダーがないときに表示されます。
+files-upload-head-no-length = 自宅サーバーの進行状況の応答にUpload-Lengthがありません
+# 停滞の制限時間を過ぎてもデータが動いていないときに表示されます。
+files-upload-stalled = アップロードが進まず、トンネルが停止している可能性があります
+# 最後のPATCHに自宅サーバーが応答しないときに表示されます。
+files-upload-no-response = 自宅サーバーから応答がありません
+# 元のファイルが記録より短くなっていたときに表示されます。
+files-upload-source-shrank = 元のファイルが短くなりました
+
+# $reason は元のioエラーです。
+files-download-write = ダウンロードしたファイルを書き込めません：{ $reason }
+# ダウンロードの要求に自宅サーバーが応答しないときに表示されます。
+files-download-no-response = 自宅サーバーから応答がありません
+# 部分ファイルが自宅サーバーのファイルより長いときに表示されます。
+files-download-shrunk = ファイルが短くなったため、最初からダウンロードし直します
+# 再開の範囲がダウンロード済みの内容と一致しないときに表示されます。
+files-download-range-mismatch = 自宅サーバーから返された範囲が一致しないため、最初からダウンロードし直します
+# 接続が切断され、すべてのデータを受信できなかったときに表示されます。
+files-download-incomplete = 接続が切断され、最後まで受信できませんでした
+# 停滞の制限時間を過ぎてもデータが届かないときに表示されます。
+files-download-stalled = データを受信できず、トンネルが停止している可能性があります
+
+# 接続の切断によって再生が失敗したときに表示されます。
+files-playback-transport = 自宅サーバーに接続できません。ダウンロードしてから他のアプリで開けます。
+# この端末でこの形式を再生できないときに表示されます。
+files-playback-unsupported = この端末ではこの形式を再生できません。ダウンロードしてから他のアプリで開けます。
+# $detail は自宅サーバーまたは接続の元の理由です。
+files-playback-unavailable = 自宅サーバーがこのファイルを提供できません：{ $detail }
+# $detail は自宅サーバーまたは接続の元の理由です。
+files-playback-error = 自宅サーバーでエラーが発生しました：{ $detail }。ダウンロードしてから他のアプリで開けます。
+# 再生の確認がタイムアウトしたときに表示されます。
+files-playback-no-response = 自宅サーバーから応答がありません
+
+# $reason は元のioエラーです。
+files-stream-local-address = 再生用のローカルアドレスを開けません：{ $reason }
+# トンネル未接続時の再生失敗の診断詳細です。
+files-stream-not-connected = トンネルに接続していません
+# $code はトンネルの元のエラーコードです。
+files-stream-tunnel-unavailable = トンネルを利用できません（{ $code }）
+# $error はJSONパーサーの元のエラーです。
+home-ticket-invalid-json = 接続情報が有効なJSONではありません：{ $error }
+# 引数なし。スキャンした接続情報にサーバーへ到達できるアドレスがありません。
+home-ticket-no-addresses = 接続情報にサーバーのリレーアドレスも直接接続アドレスもありません
+# $domain は接続情報に書かれた元のベースドメインです。
+home-ticket-invalid-domain = ベースドメインが無効です：{ $domain }
+# $error はURLパーサーの元のエラーです。
+home-ticket-invalid-web-url = アプリのウェブアドレスが無効です：{ $error }
+# $domain は接続情報のベースドメイン、$url は接続情報に書かれた元のアドレスです。
+home-ticket-web-url-under-domain = アプリのウェブアドレスは{ $domain }の下のhttp(s)アドレスである必要があります：{ $url }
+# $error はURLパーサーの元のエラーです。
+home-ticket-invalid-core-url = 自宅サーバーのアドレスが無効です：{ $error }
+# $domain は接続情報のベースドメイン、$url は接続情報に書かれた元のアドレスです。
+home-ticket-core-url-under-domain = 自宅サーバーのアドレスは{ $domain }のhttp(s)アドレスである必要があります：{ $url }
+# $error はネットワーク設定の元のエラーです。
+home-pairing-bind-failed = ネットワーク接続を確立できません：{ $error }
+# タブバー（tabs/view.rs、tabs/config.rs）と外観（appearance/mod.rs）の画面の「詳細」。
+# コアの文字は両シェルで共通のため Android の書き方に合わせ、ナビゲーションバーと書きます。プラグインはユーザーには「アプリ」です。
+
+# ナビゲーションバー ViewModel のエラー。CoreError の理由、またはナビゲーションバーの問題表示として出ます。
+# 引数はありません。
+tabs-view-always-pinned = チャットとアプリはすでにナビゲーションバーに固定されています。
+tabs-view-plugin-list-not-ready = アプリの一覧をまだ読み込んでいないため、今はアプリのページを操作できません。
+tabs-view-unknown-plugin = このアプリが見つかりません。
+tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
+
+# ナビゲーションバーの設定ファイル（tabs.json）のエラー。CoreError の理由として出ます。
+# $path は設定ファイルのパス、$reason は元のパースまたは入出力エラーです。
+tabs-config-read-failed = ナビゲーションバーの設定ファイル { $path } を読み込めません：{ $reason }
+tabs-config-corrupt = ナビゲーションバーの設定ファイル { $path } が破損しています：{ $reason }
+# $count はナビゲーションバーに置ける項目の上限（MAX_ITEMS）です。
+tabs-config-too-many-items = ナビゲーションバーには最大 { $count } 個までしか項目を追加できません。
+tabs-config-duplicate-page = ナビゲーションバーに重複したページがあります。
+tabs-config-plugin-page-incomplete = アプリのページにタイトルとアイコンがありません。
+tabs-config-missing-fixed = ナビゲーションバーにチャットかアプリがありません。
+# $path は設定ファイルのパス、$reason は元の書き込みエラーです。
+tabs-config-write-failed = ナビゲーションバーの設定ファイル { $path } に書き込めません：{ $reason }
+
+# 外観の設定のエラー。appearance-settings-unreadable は外観ページの問題表示（AppearanceProblem.message）として出て、ほかはその中の理由または CoreError::Storage の理由です。
+# $path は設定ファイルのパス、$reason は元のパースまたは入出力エラーです。
+appearance-settings-unreadable = 外観の設定を読み込めないため、デフォルト値を使用しています：{ $reason }
+appearance-settings-read-failed = 外観の設定ファイル { $path } を読み込めません：{ $reason }
+appearance-settings-corrupt = 外観の設定ファイル { $path } が破損しています：{ $reason }
+# $value は設定ファイルにあった元の色の文字列で、変更しません。
+appearance-settings-invalid-accent = 外観の設定ファイル { $path } の色が無効です：{ $value }
+# $path は設定ファイルのパス、$reason は元の書き込みエラーです。
+appearance-settings-write-failed = 外観の設定ファイル { $path } に書き込めません：{ $reason }
+
+## プラグインモジュールの技術的な詳細です。エラー、アプリのタスク、プロキシ・ダウンロードミラー設定ページの「詳細」に折りたたまれて表示されます。
+## 長さの制限はありません。引数は診断データで、翻訳キーではありません。
+
+# プラグイン管理API（crates/wonton-client/src/plugins/api.rs）。
+# $reason は元のエラーの詳細です。
+plugins-api-invalid-proxy = ローカルプロキシのアドレスが無効です：{ $reason }
+plugins-api-http-client = HTTPクライアントを作成できません：{ $reason }
+# $reason はJSONパーサーの元のエラーです。
+plugins-api-invalid-response = 自宅サーバーから返された内容の形式が正しくありません：{ $reason }
+# $reason はJSONシリアライザーの元のエラーです。
+plugins-api-invalid-request = リクエストボディを書き出せません：{ $reason }
+# $reason は拒否された画像のアドレス、またはURLパーサーの元のエラーです。
+plugins-api-not-image-url = アプリ画像のアドレスではありません：{ $reason }
+# $status は元のHTTPステータスコードです。
+plugins-api-server-status = 自宅サーバーからHTTP { $status }が返されました
+plugins-api-not-connected = 自宅サーバーに接続してからもう一度お試しください。
+
+# インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks.rs）。
+plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーでの結果は不明です。インストール済みリストを確認してください。
+plugins-tasks-server-changed = 自宅サーバーが変わったため、以前のサーバーでの結果は不明です。
+plugins-tasks-preview-no-source = このプレビューには提供元がないため、インストールできません。
+# $id はそのままのタスクIDです。
+plugins-tasks-no-such-task = そのようなタスクはありません：{ $id }
+plugins-tasks-task-not-done = タスクがまだ完了していません。
+# $title はアプリのタイトルです。ストアの表記のまま表示されます。
+plugins-tasks-task-running = { $title }はすでにインストール・アップデート・アンインストールの途中です。
+
+# プロキシ設定（crates/wonton-client/src/plugins/egress.rs）。
+plugins-egress-save-in-progress = 前回の変更がまだ保存中です。
+plugins-egress-not-loaded = プロキシの設定がまだ取得できていません。
+plugins-egress-no-confirmation = 確認待ちの変更はありません。
+plugins-egress-env-locked = プロキシはWONTON_EGRESS_PROXYで指定されているため、ここでは変更できません。
+plugins-egress-plugin-and-address = プロキシアプリを使う場合、プロキシのアドレスは同時に入力できません。
+plugins-egress-plugin-not-installed = プロキシアプリがまだインストールされていません。
+# $reason は接続問題の元の詳細です。
+plugins-egress-save-uncertain = 変更が保存できたかはっきりしません。接続後に確認してください：{ $reason }
+
+# ダウンロードミラーの設定（crates/wonton-client/src/plugins/registry_mirror.rs）。
+plugins-registry-save-in-progress = 前回のダウンロードミラーの変更がまだ保存中です。
+plugins-registry-not-loaded = ダウンロードミラーの設定がまだ取得できていません。
+# $reason は接続問題の元の詳細です。
+plugins-registry-save-uncertain = 変更が保存できたかはっきりしません。接続後に設定をもう一度読み込んでください：{ $reason }

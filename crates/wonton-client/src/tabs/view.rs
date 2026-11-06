@@ -8,6 +8,8 @@ use wonton_protocol::{
 };
 
 use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
+use crate::l10n::{CATALOG, language};
+use wonton_l10n::l10n;
 
 pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsViewModel {
     let items = state
@@ -114,7 +116,10 @@ fn build_page(
 ) -> TabPage {
     let choice = display_for(state, &stored.tab);
     let Some(plugin) = plugin else {
-        let metadata = stored.page.clone().expect("插件底栏项必须保存页面元数据");
+        let metadata = stored
+            .page
+            .clone()
+            .expect("plugin tab item must keep its page metadata");
         return page_from_metadata(
             state,
             stored,
@@ -126,7 +131,10 @@ fn build_page(
         );
     };
     let Some(metadata) = metadata_for_plugin(plugin, page_id) else {
-        let metadata = stored.page.clone().expect("插件底栏项必须保存页面元数据");
+        let metadata = stored
+            .page
+            .clone()
+            .expect("plugin tab item must keep its page metadata");
         return page_from_metadata(
             state,
             stored,
@@ -245,11 +253,15 @@ pub(super) fn stored_item_for_tab(
             tab: tab.clone(),
             page: None,
         }),
-        TabRef::Chat | TabRef::Apps => Err(invalid("聊天和应用已经固定到底栏")),
+        TabRef::Chat | TabRef::Apps => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-always-pinned"
+        ))),
         TabRef::Plugin { plugin_id, page } => {
             let Some(installed) = plugins.installed.as_ref() else {
                 return Err(CoreError::NotReady {
-                    reason: "插件列表还没读到，暂时不能操作插件页面".to_owned(),
+                    reason: l10n!(CATALOG, language(), "tabs-view-plugin-list-not-ready"),
                 });
             };
             let Some(plugin) = installed
@@ -257,10 +269,18 @@ pub(super) fn stored_item_for_tab(
                 .iter()
                 .find(|plugin| plugin.id == *plugin_id)
             else {
-                return Err(invalid("没有这个插件"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-view-unknown-plugin"
+                )));
             };
             let Some(metadata) = metadata_for_plugin(plugin, page.as_deref()) else {
-                return Err(invalid("插件没有可打开的网页"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-view-plugin-no-page"
+                )));
             };
             Ok(StoredItem {
                 tab: tab.clone(),
@@ -390,7 +410,7 @@ pub(super) fn increment_reload(state: &mut TabsState, tab: &TabRef) {
 pub(super) fn item_title(item: &StoredItem) -> String {
     item.page
         .as_ref()
-        .expect("插件底栏项必须保存页面元数据")
+        .expect("plugin tab item must keep its page metadata")
         .plugin_title
         .clone()
 }

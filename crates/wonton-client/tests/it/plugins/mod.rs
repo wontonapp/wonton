@@ -218,7 +218,7 @@ async fn an_added_source_shows_up_in_the_store_and_a_refused_one_says_why() {
         .add_store_source("o/r".to_owned())
         .await
         .unwrap_err();
-    assert!(refused.to_string().contains("已经添加过"), "{refused}");
+    assert!(matches!(refused, CoreError::NotReady { .. }), "{refused}");
 
     let added = AddedSource {
         address: "github:o/r".to_owned(),

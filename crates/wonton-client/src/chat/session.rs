@@ -3,9 +3,11 @@
 use std::sync::{Arc, Weak};
 
 use futures_util::StreamExt;
+use wonton_l10n::l10n;
 use wonton_matrix::{MatrixSession, SessionEvent};
 
 use super::ChatLink;
+use crate::l10n::{CATALOG, language};
 
 pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
     let mut events = std::pin::pin!(session.session_events());
@@ -18,22 +20,25 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
                     None => Ok(()),
                 });
                 if let Err(error) = saved {
-                    tracing::warn!("刷新后的 Matrix 令牌没能存下：{error}");
+                    tracing::warn!("could not save the refreshed Matrix tokens: {error}");
                 }
             }
             SessionEvent::TokenRejected { soft_logout } => {
-                tracing::warn!(soft_logout, "Matrix 服务器不再接受本设备的令牌");
+                tracing::warn!(
+                    soft_logout,
+                    "the Matrix server no longer accepts this device's tokens"
+                );
                 chat.bots.set_session(None);
                 if !soft_logout {
                     session.stop_sync().await;
                     if let Err(error) = chat.storage.forget_session() {
-                        tracing::warn!("删除失效的 Matrix 登录状态失败：{error}");
+                        tracing::warn!("could not delete the invalid Matrix login state: {error}");
                     }
                 }
                 chat.view.send_modify(|view| {
                     view.account = wonton_protocol::ChatAccount::Failed {
                         reason: wonton_protocol::ChatFailure::Unauthorized,
-                        message: "这台设备在 Matrix 上已被吊销，需要主人重新配对".to_owned(),
+                        message: l10n!(CATALOG, language(), "chat-session-device-revoked"),
                     };
                     view.sync = wonton_protocol::ChatSync::Idle;
                 });

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, PluginFailure, PluginProblem, RegistryMirrorSettings, RegistryMirrorTestRequest,
     RegistryMirrorTests, RegistryMirrorUpdate,
@@ -10,6 +11,7 @@ use wonton_protocol::{
 
 use super::api::{CoreApi, READ_TIMEOUT};
 use super::{PluginsLink, lock};
+use crate::l10n::{CATALOG, language};
 
 const PATH: [&str; 1] = ["registry-mirror"];
 const TEST_PATH: [&str; 2] = ["registry-mirror", "test"];
@@ -82,7 +84,7 @@ impl PluginsLink {
             let mut local = lock(&self.registry);
             if self.view.borrow().registry_mirror.saving {
                 return Err(CoreError::NotReady {
-                    reason: "上一次镜像加速改动还没做完".to_owned(),
+                    reason: l10n!(CATALOG, language(), "plugins-registry-save-in-progress"),
                 });
             }
             local.settings_epoch += 1;
@@ -120,9 +122,11 @@ impl PluginsLink {
                     }
                     Err(mut problem) => {
                         if problem.reason == PluginFailure::TransportUnavailable {
-                            problem.message = format!(
-                                "不确定改好了没有，连上后重新读取设置：{}",
-                                problem.message
+                            problem.message = l10n!(
+                                CATALOG,
+                                language(),
+                                "plugins-registry-save-uncertain",
+                                reason = problem.message
                             );
                         }
                         vm.save_problem = Some(problem);
@@ -140,7 +144,7 @@ impl PluginsLink {
                 let view = self.view.borrow();
                 let Some(settings) = &view.registry_mirror.settings else {
                     return Err(CoreError::NotReady {
-                        reason: "还没取到镜像加速设置".to_owned(),
+                        reason: l10n!(CATALOG, language(), "plugins-registry-not-loaded"),
                     });
                 };
                 let mut mirrors = Vec::new();

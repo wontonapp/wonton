@@ -4,11 +4,13 @@
 use std::sync::Arc;
 
 use serde_json::json;
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, PairingFailure, PairingStatus};
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
 
 use super::HomeLink;
+use crate::l10n::{CATALOG, language};
 
 impl HomeLink {
     pub(crate) fn pair(self: &Arc<Self>, text: &str, device_name: &str) -> Result<(), CoreError> {
@@ -33,18 +35,18 @@ impl HomeLink {
     async fn pair_with(self: Arc<Self>, code: PairingCode, device_name: String) {
         let status = match self.exchange(&code, &device_name).await {
             Ok(PairResponse::Paired) => {
-                tracing::info!(server = %code.server_id.fmt_short(), "扫码配对成功");
+                tracing::info!(server = %code.server_id.fmt_short(), "paired with the home server");
                 match self.connect(&ticket(&code)) {
                     Ok(()) => None,
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
                 }
             }
             Ok(PairResponse::Rejected { reason, message }) => {
-                tracing::info!(?reason, "服务端拒绝了配对：{message}");
+                tracing::info!(?reason, "the home server rejected pairing: {message}");
                 Some(failed(rejected(reason), message))
             }
             Err(e) => {
-                tracing::info!("配对失败：{e}");
+                tracing::info!("pairing failed: {e}");
                 Some(failed(transport(&e), e.to_string()))
             }
         };
@@ -59,7 +61,12 @@ impl HomeLink {
     ) -> Result<PairResponse, TunnelError> {
         let endpoint = self.endpoint_builder().bind().await.map_err(|e| {
             TunnelError::TransportUnavailable {
-                reason: format!("绑定网络失败：{e}"),
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "home-pairing-bind-failed",
+                    error = e.to_string()
+                ),
             }
         })?;
         let outcome = pair::pair(&endpoint, code, device_name).await;

@@ -6,11 +6,13 @@ use reqwest::header::HeaderMap;
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use url::Url;
+use wonton_l10n::l10n;
 use wonton_protocol::{FILE_ERROR_HEADER, FILES_HEADER, FileErrorBody, FileFailure, FileId};
 use wonton_tunnel::ERROR_HEADER;
 
 use crate::chat::proxy_url;
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 
 /// 取信息、授权、问进度这类小请求的期限：隧道卡住时按“连不上”处理，不一直转圈。
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(60);
@@ -56,27 +58,44 @@ pub(super) struct Api {
 
 impl Api {
     pub(super) fn connect(home: &HomeLink) -> Result<Self, Problem> {
-        let not_connected = || Problem::Interrupted("还没连上家里的服务器".to_owned());
+        let not_connected =
+            || Problem::Interrupted(l10n!(CATALOG, language(), "files-api-not-connected"));
         let base = home.core_url().ok_or_else(not_connected)?;
         let proxy = home.view().proxy.ok_or_else(not_connected)?;
-        let protocol = |what: &str, e: reqwest::Error| {
-            Problem::Failed(FileFailure::Protocol, format!("{what}：{e}"))
-        };
         let client = Client::builder()
             // 不复用连接：本地代理到回环地址，建连几乎没有代价；空闲的连接可能刚好被对面关掉，POST、PATCH 不能自动重试。
             .pool_max_idle_per_host(0)
             .connect_timeout(CONNECT_TIMEOUT)
-            .proxy(
-                reqwest::Proxy::all(proxy_url(&proxy))
-                    .map_err(|e| protocol("本地代理地址不合法", e))?,
-            )
+            .proxy(reqwest::Proxy::all(proxy_url(&proxy)).map_err(|e| {
+                Problem::Failed(
+                    FileFailure::Protocol,
+                    l10n!(
+                        CATALOG,
+                        language(),
+                        "files-api-invalid-proxy",
+                        reason = e.to_string()
+                    ),
+                )
+            })?)
             .build()
-            .map_err(|e| protocol("建 HTTP 客户端失败", e))?;
+            .map_err(|e| {
+                Problem::Failed(
+                    FileFailure::Protocol,
+                    l10n!(
+                        CATALOG,
+                        language(),
+                        "files-api-http-client",
+                        reason = e.to_string()
+                    ),
+                )
+            })?;
         Ok(Self { base, client })
     }
 
     fn url(&self, path: &str) -> Url {
-        self.base.join(path).expect("固定的路径和编号总能拼上")
+        self.base
+            .join(path)
+            .expect("fixed path and file id always join")
     }
 
     /// 带文件接口要的请求头，没有总期限：传字节的请求用。
@@ -116,8 +135,17 @@ impl Api {
             .map_err(interrupted)?;
         let response = checked(response).await?;
         let body = response.bytes().await.map_err(interrupted)?;
-        serde_json::from_slice(&body)
-            .map_err(|e| Problem::Failed(FileFailure::Protocol, format!("读不懂核心的响应：{e}")))
+        serde_json::from_slice(&body).map_err(|e| {
+            Problem::Failed(
+                FileFailure::Protocol,
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "files-api-invalid-response",
+                    reason = e.to_string()
+                ),
+            )
+        })
     }
 
     pub(super) async fn thumbnail(&self, id: &FileId) -> Result<Vec<u8>, Problem> {
@@ -152,7 +180,7 @@ impl Api {
         let request = self
             .control(Method::POST, &path)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(serde_json::to_vec(&body).expect("请求体总能序列化"));
+            .body(serde_json::to_vec(&body).expect("request body always serializes"));
         self.finish(request).await
     }
 
@@ -178,10 +206,15 @@ async fn problem(response: Response) -> Problem {
         return if code == "unauthorized" {
             Problem::Failed(
                 FileFailure::Unauthenticated,
-                "家里的服务器不再认这台设备".to_owned(),
+                l10n!(CATALOG, language(), "files-api-unauthenticated"),
             )
         } else {
-            Problem::Interrupted(format!("隧道不可用（{code}）"))
+            Problem::Interrupted(l10n!(
+                CATALOG,
+                language(),
+                "files-api-tunnel-unavailable",
+                code = code
+            ))
         };
     }
     let body = response.bytes().await.unwrap_or_default();
@@ -191,7 +224,15 @@ async fn problem(response: Response) -> Problem {
     let named = header(&headers, FILE_ERROR_HEADER)
         .and_then(|kind| serde_json::from_value(serde_json::json!(kind)).ok());
     if let Some(kind) = named {
-        return Problem::Failed(kind, format!("核心回了 {status}"));
+        return Problem::Failed(
+            kind,
+            l10n!(
+                CATALOG,
+                language(),
+                "files-api-status",
+                status = status.as_u16()
+            ),
+        );
     }
     unnamed(status)
 }
@@ -207,7 +248,12 @@ pub(super) fn pausable(problem: Problem) -> Problem {
 
 /// 没写类别的响应：tusd 转发过来的，或者路上的代理给的。
 fn unnamed(status: StatusCode) -> Problem {
-    let message = format!("核心回了 {status}");
+    let message = l10n!(
+        CATALOG,
+        language(),
+        "files-api-status",
+        status = status.as_u16()
+    );
     match status {
         StatusCode::NOT_FOUND | StatusCode::GONE => {
             Problem::Failed(FileFailure::FileUnknown, message)

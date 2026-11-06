@@ -6,7 +6,10 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use url::Url;
+use wonton_l10n::{Lang, l10n};
 use wonton_protocol::{ChatFailure, ProxySettings};
+
+use crate::l10n::{CATALOG, language};
 
 /// 核心签发的登录令牌，字段同核心的 `LoginToken`（核心有契约测试锁住字段名）。
 #[derive(Clone, Deserialize)]
@@ -49,66 +52,106 @@ pub(crate) async fn login_token(
     proxy: &ProxySettings,
     timeout: Duration,
 ) -> Result<LoginToken, (ChatFailure, String)> {
+    let lang = language();
     let url = core_url
         .join("/_wonton/matrix/login-token")
-        .expect("固定的路径总能拼上");
+        .expect("fixed login-token path always joins");
     let client = reqwest::Client::builder()
         .proxy(reqwest::Proxy::all(proxy_url(proxy)).map_err(|e| {
             (
                 ChatFailure::InvalidInput,
-                format!("本地代理地址不合法：{e}"),
+                l10n!(
+                    CATALOG,
+                    lang,
+                    "chat-login-invalid-proxy",
+                    reason = e.to_string()
+                ),
             )
         })?)
         .timeout(timeout)
         .build()
-        .map_err(|e| (ChatFailure::Upstream, format!("建 HTTP 客户端失败：{e}")))?;
-    let transport = |what: &str, e: reqwest::Error| {
+        .map_err(|e| {
+            (
+                ChatFailure::Upstream,
+                l10n!(
+                    CATALOG,
+                    lang,
+                    "chat-login-http-client",
+                    reason = e.to_string()
+                ),
+            )
+        })?;
+    let transport = |id: &str, e: reqwest::Error| {
         let reason = if e.is_timeout() {
-            format!("{} 秒内没有回应", timeout.as_secs_f32())
+            l10n!(
+                CATALOG,
+                lang,
+                "chat-login-timeout",
+                seconds = timeout.as_secs_f32().to_string()
+            )
         } else {
             e.to_string()
         };
         (
             ChatFailure::TransportUnavailable,
-            format!("{what}：{reason}"),
+            l10n!(CATALOG, lang, id, reason = reason),
         )
     };
     let response = client
         .post(url)
         .send()
         .await
-        .map_err(|e| transport("向核心要 Matrix 登录令牌失败", e))?;
+        .map_err(|e| transport("chat-login-request-failed", e))?;
     let status = response.status();
     let body = response
         .bytes()
         .await
-        .map_err(|e| transport("读核心的回应失败", e))?;
+        .map_err(|e| transport("chat-login-response-failed", e))?;
     if !status.is_success() {
-        return Err(core_error(status.as_u16(), &body));
+        return Err(core_error(status.as_u16(), &body, lang));
     }
     let token: LoginToken = serde_json::from_slice(&body).map_err(|e| {
         (
             ChatFailure::Upstream,
-            format!("核心给的登录令牌格式不对：{e}"),
+            l10n!(
+                CATALOG,
+                lang,
+                "chat-login-invalid-token",
+                reason = e.to_string()
+            ),
         )
     })?;
     if token.login_type != JWT_LOGIN {
         return Err((
             ChatFailure::Upstream,
-            format!("核心给的登录方式 {} 不是 {JWT_LOGIN}", token.login_type),
+            l10n!(
+                CATALOG,
+                lang,
+                "chat-login-wrong-type",
+                login_type = token.login_type.as_str(),
+                expected = JWT_LOGIN
+            ),
         ));
     }
     Ok(token)
 }
 
 /// 按核心的错误码区分原因。
-fn core_error(status: u16, body: &[u8]) -> (ChatFailure, String) {
+fn core_error(status: u16, body: &[u8], lang: Lang) -> (ChatFailure, String) {
     let detail = serde_json::from_slice::<ErrorBody>(body)
         .ok()
         .map(|body| body.error);
     let message = detail.as_ref().map_or_else(
-        || format!("核心回了 {status}"),
-        |detail| format!("{}（{}）", detail.message, detail.kind),
+        || l10n!(CATALOG, lang, "chat-login-server-status", status = status),
+        |detail| {
+            l10n!(
+                CATALOG,
+                lang,
+                "chat-login-server-error",
+                message = detail.message.as_str(),
+                kind = detail.kind.as_str()
+            )
+        },
     );
     let reason = match (status, detail.as_ref().map(|detail| detail.kind.as_str())) {
         (_, Some("matrix_unavailable")) => ChatFailure::NotReady,
@@ -118,7 +161,10 @@ fn core_error(status: u16, body: &[u8]) -> (ChatFailure, String) {
         (502, _) => ChatFailure::TransportUnavailable,
         _ => ChatFailure::Upstream,
     };
-    (reason, format!("向核心要 Matrix 登录令牌失败：{message}"))
+    (
+        reason,
+        l10n!(CATALOG, lang, "chat-login-request-failed", reason = message),
+    )
 }
 
 #[cfg(test)]
@@ -155,8 +201,8 @@ mod tests {
             login_token(&core, &proxy, Duration::from_millis(300)),
         )
         .await
-        .expect("应在超时后失败，而不是一直等下去");
-        let (reason, _) = outcome.err().expect("代理不回时应失败");
+        .expect("should fail after the timeout instead of waiting forever");
+        let (reason, _) = outcome.err().expect("should fail when the proxy is silent");
         assert_eq!(reason, ChatFailure::TransportUnavailable);
         silent.abort();
     }

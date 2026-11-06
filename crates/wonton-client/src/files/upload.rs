@@ -13,6 +13,7 @@ use base64::engine::general_purpose::STANDARD;
 use futures_util::stream;
 use reqwest::{Body, Method};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, FileFailure, FileId, HomeStatus, UploadSource};
 
 use super::FilesLink;
@@ -21,6 +22,7 @@ use super::api::{
 };
 use super::opener::FileOpenError;
 use super::store::{Job, Record, SourceStamp};
+use crate::l10n::{CATALOG, language};
 
 const CHUNK: usize = 256 * 1024;
 /// 这么久读不走一块就算卡住了：本地代理的缓冲满了说明隧道不动了。
@@ -37,7 +39,7 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
         uploaded,
     } = record.job
     else {
-        unreachable!("上传的记录才走这里");
+        unreachable!("record job is not an upload");
     };
     let api = Api::connect(&link.home)?;
     let id = record.id;
@@ -48,13 +50,13 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
         None => false,
     };
     let file = if finished {
-        record.file.expect("传完的上传有编号")
+        record.file.expect("finished upload has a file id")
     } else {
         let (source, now) = open(link, &source).await?;
         if stamp.is_some_and(|stamp| stamp != now) {
             return Err(Problem::Failed(
                 FileFailure::LocalSourceUnavailable,
-                "原文件改过了，要重新选择".to_owned(),
+                l10n!(CATALOG, language(), "files-upload-source-changed"),
             ));
         }
         let file = match record.file {
@@ -104,7 +106,7 @@ impl Offset {
         let offset = number("upload-offset").ok_or_else(|| {
             Problem::Failed(
                 FileFailure::Protocol,
-                "核心问进度的响应没有 Upload-Offset".to_owned(),
+                l10n!(CATALOG, language(), "files-upload-head-no-offset"),
             )
         })?;
         Ok(Self {
@@ -132,7 +134,7 @@ async fn open(
                 let opener = opener.ok_or_else(|| {
                     Problem::Failed(
                         FileFailure::LocalSourceUnavailable,
-                        "壳没有设置 FileOpener，打不开这个来源".to_owned(),
+                        l10n!(CATALOG, language(), "files-upload-no-opener"),
                     )
                 })?;
                 let fd = opener.open_source(handle).map_err(opener_error)?;
@@ -144,7 +146,7 @@ async fn open(
         if !meta.is_file() {
             return Err(Problem::Failed(
                 FileFailure::LocalSourceUnavailable,
-                "这个来源不是能定位的普通文件，接不上断点".to_owned(),
+                l10n!(CATALOG, language(), "files-upload-source-not-file"),
             ));
         }
         let modified_ns = meta
@@ -164,7 +166,12 @@ async fn open(
     .map_err(|e| {
         Problem::Failed(
             FileFailure::LocalIo,
-            format!("打开原文件的任务异常结束：{e}"),
+            l10n!(
+                CATALOG,
+                language(),
+                "files-upload-open-task-failed",
+                reason = e.to_string()
+            ),
         )
     })?
 }
@@ -173,13 +180,31 @@ fn source_error(error: &io::Error) -> Problem {
     match error.kind() {
         io::ErrorKind::PermissionDenied => Problem::Failed(
             FileFailure::LocalPermissionDenied,
-            format!("系统不让读原文件：{error}"),
+            l10n!(
+                CATALOG,
+                language(),
+                "files-upload-source-denied",
+                reason = error.to_string()
+            ),
         ),
         io::ErrorKind::NotFound => Problem::Failed(
             FileFailure::LocalSourceUnavailable,
-            format!("原文件没了：{error}"),
+            l10n!(
+                CATALOG,
+                language(),
+                "files-upload-source-missing",
+                reason = error.to_string()
+            ),
         ),
-        _ => Problem::Failed(FileFailure::LocalIo, format!("读不了原文件：{error}")),
+        _ => Problem::Failed(
+            FileFailure::LocalIo,
+            l10n!(
+                CATALOG,
+                language(),
+                "files-upload-source-read",
+                reason = error.to_string()
+            ),
+        ),
     }
 }
 
@@ -217,7 +242,7 @@ async fn create(
         .ok_or_else(|| {
             Problem::Failed(
                 FileFailure::Protocol,
-                "核心创建上传的响应没有合法的 Location".to_owned(),
+                l10n!(CATALOG, language(), "files-upload-create-no-location"),
             )
         })?;
     Ok(file)
@@ -280,7 +305,7 @@ async fn send(
     let total = at.length.ok_or_else(|| {
         Problem::Failed(
             FileFailure::Protocol,
-            "核心问进度的响应没有 Upload-Length".to_owned(),
+            l10n!(CATALOG, language(), "files-upload-head-no-length"),
         )
     })?;
     let mut source = tokio::fs::File::from_std(source);
@@ -311,7 +336,11 @@ async fn send(
     let sent = tokio::select! {
         sent = request.send() => sent,
         () = activity.stalled() => {
-            return Err(Problem::Interrupted("传不动了，隧道可能卡住了".to_owned()));
+            return Err(Problem::Interrupted(l10n!(
+                CATALOG,
+                language(),
+                "files-upload-stalled"
+            )));
         }
     };
     let failed = activity
@@ -325,7 +354,11 @@ async fn send(
     let response = tokio::select! {
         checked = checked(sent.map_err(interrupted)?) => checked.map_err(pausable)?,
         () = activity.stalled() => {
-            return Err(Problem::Interrupted("核心一直没有回答".to_owned()));
+            return Err(Problem::Interrupted(l10n!(
+                CATALOG,
+                language(),
+                "files-upload-no-response"
+            )));
         }
     };
     drop(response);
@@ -364,10 +397,12 @@ fn body(
                         Some((Ok(chunk), (source, remaining, sent)))
                     }
                     Ok(_) => {
-                        let short = io::Error::new(io::ErrorKind::UnexpectedEof, "原文件变短了");
-                        *activity.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(
-                            Problem::Failed(FileFailure::LocalSourceUnavailable, short.to_string()),
-                        );
+                        let short = io::Error::new(io::ErrorKind::UnexpectedEof, "source shrank");
+                        *activity.failed.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(Problem::Failed(
+                                FileFailure::LocalSourceUnavailable,
+                                l10n!(CATALOG, language(), "files-upload-source-shrank"),
+                            ));
                         Some((Err(short), (source, 0, sent)))
                     }
                     Err(e) => {
@@ -427,6 +462,6 @@ pub(super) async fn abort(api: Api, file: FileId) {
         Err(e) => Err(interrupted(e)),
     };
     if let Err(problem) = done {
-        tracing::info!(file = %file, ?problem, "取消上传时没删掉核心那边的内容");
+        tracing::info!(file = %file, ?problem, "could not delete the partial upload on the home server");
     }
 }

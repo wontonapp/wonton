@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, InstallPreview, ModelProviderFailure, OnboardingCommit, OnboardingItemProblem,
     OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
@@ -13,10 +14,10 @@ use wonton_protocol::{
 
 use super::draft::ModelDraft;
 use super::{LocalState, OnboardingLink, api, invalid, lock};
+use crate::l10n::{CATALOG, language};
 
 pub(super) const PROFILE: &str = "profile";
 pub(super) const MODEL: &str = "model";
-const PERMISSIONS_CHANGED: &str = "要的权限和确认时的不一样了，到应用页重新装";
 
 pub(super) struct ReviewEntry {
     pub id: String,
@@ -189,9 +190,12 @@ pub(super) fn apply_preview(entry: &mut ReviewEntry, preview: InstallPreview, em
     entry.state = match (&preview.blocked, &preview.missing_profile) {
         // 安装进展按插件 ID 对到这一项上，对不上就看不到进展。
         _ if preview.id != entry.id => OnboardingItemState::Blocked {
-            message: Some(format!(
-                "安装来源里的插件是 {}，不是列表里的 {}",
-                preview.id, entry.id
+            message: Some(l10n!(
+                CATALOG,
+                language(),
+                "onboarding-review-source-mismatch",
+                installed = preview.id.as_str(),
+                listed = entry.id.as_str()
             )),
         },
         (Some(message), _) => OnboardingItemState::Blocked {
@@ -330,7 +334,11 @@ impl OnboardingLink {
                         if install && changed {
                             // 点完成确认的是列出的那些权限，变了就不能替主人装。
                             entry.state = OnboardingItemState::Blocked {
-                                message: Some(PERMISSIONS_CHANGED.to_owned()),
+                                message: Some(l10n!(
+                                    CATALOG,
+                                    language(),
+                                    "onboarding-review-permissions-changed"
+                                )),
                             };
                             None
                         } else if install && entry.state == OnboardingItemState::Ready {
@@ -367,7 +375,11 @@ impl OnboardingLink {
         {
             let mut state = lock(&self.state);
             if state.commit != OnboardingCommit::NotStarted || !can_commit(&state.review) {
-                return Err(invalid("还有没准备好的项"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-review-items-not-ready"
+                )));
             }
             state.commit = OnboardingCommit::Running;
             state.problem = None;
@@ -570,7 +582,13 @@ impl OnboardingLink {
                 .review
                 .iter()
                 .find(|entry| entry.id == id)
-                .ok_or_else(|| invalid("最后一页上没有这一项"))?;
+                .ok_or_else(|| {
+                    invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "onboarding-review-item-missing"
+                    ))
+                })?;
             (
                 state.commit,
                 entry.source.clone(),
@@ -578,7 +596,11 @@ impl OnboardingLink {
             )
         };
         if !failed || commit == OnboardingCommit::Running {
-            return Err(invalid("这一项没有失败"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-review-no-failure"
+            )));
         }
         let Some(source) = source else {
             // 资料和模型：点完成之后停在它们上，从它们接着做。

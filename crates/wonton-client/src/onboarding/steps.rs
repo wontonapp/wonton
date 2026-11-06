@@ -2,19 +2,27 @@
 
 use std::sync::Arc;
 
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, OnboardingCommit, OnboardingStep};
 
 use super::draft::{AgentChoice, ModelDraft};
 use super::{OnboardingLink, invalid, lock, view};
+use crate::l10n::{CATALOG, language};
 
 impl OnboardingLink {
     /// 正在走引导的一步；走完了、还没取到状态或者已经点了完成时为错。
     fn flow_step(state: &super::LocalState) -> Result<OnboardingStep, CoreError> {
         match state.step {
-            Some(OnboardingStep::Finished | OnboardingStep::Other) | None => {
-                Err(invalid("不在引导里"))
-            }
-            Some(_) if state.commit != OnboardingCommit::NotStarted => Err(invalid("已经点了完成")),
+            Some(OnboardingStep::Finished | OnboardingStep::Other) | None => Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-not-in-flow"
+            ))),
+            Some(_) if state.commit != OnboardingCommit::NotStarted => Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-already-committed"
+            ))),
             Some(step) => Ok(step),
         }
     }
@@ -26,7 +34,11 @@ impl OnboardingLink {
     ) -> Result<(), CoreError> {
         let mut state = lock(&self.state);
         if Self::flow_step(&state)? != OnboardingStep::Profile {
-            return Err(invalid("不在填资料这一步"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-not-profile-step"
+            )));
         }
         state.draft.profile = Some((display_name, email));
         // 已经提示过不合规则的，改的时候跟着查，改对了提示就消失。
@@ -42,19 +54,36 @@ impl OnboardingLink {
     pub(super) fn choose_agent(&self, id: &str) -> Result<(), CoreError> {
         let mut state = lock(&self.state);
         if Self::flow_step(&state)? != OnboardingStep::Agent {
-            return Err(invalid("不在选 Agent 这一步"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-not-agent-step"
+            )));
         }
-        let onboarding = state
-            .onboarding
-            .as_ref()
-            .ok_or_else(|| invalid("还没有取到引导状态"))?;
+        let onboarding = state.onboarding.as_ref().ok_or_else(|| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-state-missing"
+            ))
+        })?;
         let agent = onboarding
             .agents
             .iter()
             .find(|agent| agent.id == id)
-            .ok_or_else(|| invalid("这个 Agent 不在可选列表里"))?;
+            .ok_or_else(|| {
+                invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-agent-not-listed"
+                ))
+            })?;
         if !view::installable(agent) {
-            return Err(invalid("这个 Agent 不能安装"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-agent-not-installable"
+            )));
         }
         state.draft.agent = AgentChoice::Chosen(id.to_owned());
         drop(state);
@@ -65,14 +94,25 @@ impl OnboardingLink {
     pub(super) fn toggle_need(&self, id: &str) -> Result<(), CoreError> {
         let mut state = lock(&self.state);
         if Self::flow_step(&state)? != OnboardingStep::Apps {
-            return Err(invalid("不在选应用这一步"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-not-apps-step"
+            )));
         }
-        let onboarding = state
-            .onboarding
-            .as_ref()
-            .ok_or_else(|| invalid("还没有取到引导状态"))?;
+        let onboarding = state.onboarding.as_ref().ok_or_else(|| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-state-missing"
+            ))
+        })?;
         if !onboarding.needs.iter().any(|need| need.id == id) {
-            return Err(invalid("这个需求不在推荐列表里"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-need-not-listed"
+            )));
         }
         let mut needs = state.draft.needs(onboarding);
         if !needs.insert(id.to_owned()) {
@@ -92,7 +132,11 @@ impl OnboardingLink {
                     drop(state);
                     self.commit()
                 }
-                OnboardingCommit::Running => Err(invalid("正在提交")),
+                OnboardingCommit::Running => Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-committing"
+                ))),
                 OnboardingCommit::Done => {
                     state.step = Some(OnboardingStep::Finished);
                     drop(state);
@@ -113,10 +157,13 @@ impl OnboardingLink {
                 OnboardingStep::Agent
             }
             OnboardingStep::Agent => {
-                let onboarding = state
-                    .onboarding
-                    .as_ref()
-                    .ok_or_else(|| invalid("还没有取到引导状态"))?;
+                let onboarding = state.onboarding.as_ref().ok_or_else(|| {
+                    invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "onboarding-steps-state-missing"
+                    ))
+                })?;
                 let installable = state.draft.agent(onboarding).is_some_and(|id| {
                     onboarding
                         .agents
@@ -124,16 +171,28 @@ impl OnboardingLink {
                         .any(|agent| agent.id == id && view::installable(agent))
                 });
                 if !installable {
-                    return Err(invalid("没有选能装的 Agent"));
+                    return Err(invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "onboarding-steps-no-installable-agent"
+                    )));
                 }
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
                 if state.testing {
-                    return Err(invalid("正在测试"));
+                    return Err(invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "onboarding-steps-testing"
+                    )));
                 }
                 if state.draft.model(state.providers.as_ref()).is_none() {
-                    return Err(invalid("还没有选模型"));
+                    return Err(invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "onboarding-steps-model-not-chosen"
+                    )));
                 }
                 OnboardingStep::Apps
             }
@@ -143,7 +202,11 @@ impl OnboardingLink {
                 return Ok(());
             }
             OnboardingStep::Review | OnboardingStep::Finished | OnboardingStep::Other => {
-                return Err(invalid("不在引导里"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-not-in-flow"
+                )));
             }
         };
         state.step = Some(next);
@@ -181,7 +244,11 @@ impl OnboardingLink {
                 return Ok(());
             }
             OnboardingStep::Review | OnboardingStep::Finished | OnboardingStep::Other => {
-                return Err(invalid("这一步不能跳过"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-cannot-skip"
+                )));
             }
         };
         state.step = Some(next);
@@ -207,7 +274,11 @@ impl OnboardingLink {
                 OnboardingStep::Apps
             }
             OnboardingStep::Profile | OnboardingStep::Finished | OnboardingStep::Other => {
-                return Err(invalid("这一步不能返回"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-cannot-go-back"
+                )));
             }
         });
         drop(state);
@@ -220,10 +291,18 @@ impl OnboardingLink {
         {
             let mut state = lock(&self.state);
             if state.onboarding.is_none() {
-                return Err(invalid("还没有取到引导状态"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-state-missing"
+                )));
             }
             if state.commit == OnboardingCommit::Running {
-                return Err(invalid("正在提交"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-committing"
+                )));
             }
             state.draft = Default::default();
             state.review.clear();

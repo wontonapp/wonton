@@ -4,6 +4,7 @@ use std::path::Path;
 
 use reqwest::Method;
 use reqwest::header::RANGE;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     FileCardAction, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     TransferDirection, TransferState,
@@ -12,6 +13,7 @@ use wonton_protocol::{
 use super::FilesLink;
 use super::api::{Api, Problem, checked, interrupted};
 use super::download::relative_path;
+use crate::l10n::{CATALOG, language};
 
 /// 问核心的期限：播放器已经放不了了，不能让主人再等很久。
 const PROBE: std::time::Duration = std::time::Duration::from_secs(30);
@@ -142,23 +144,34 @@ impl FilesLink {
         match tokio::time::timeout(PROBE, asked).await {
             Ok(Ok(_)) => (FileFailure::UnsupportedFormat, String::new()),
             Ok(Err(problem)) => problem.into_parts(),
-            Err(_) => Problem::Interrupted("核心一直没有回答".to_owned()).into_parts(),
+            Err(_) => {
+                Problem::Interrupted(l10n!(CATALOG, language(), "files-playback-no-response"))
+                    .into_parts()
+            }
         }
     }
 }
 
 fn explain(reason: FileFailure, detail: &str) -> String {
-    const ELSEWHERE: &str = "可以下载后用其他 App 打开。";
     match reason {
         // 断在哪一步对主人没用，连接状态由标题栏说。
-        FileFailure::TransportUnavailable => format!("连不上家里的服务器。{ELSEWHERE}"),
-        FileFailure::UnsupportedFormat => format!("这台手机放不了这个格式。{ELSEWHERE}"),
+        FileFailure::TransportUnavailable => {
+            l10n!(CATALOG, language(), "files-playback-transport")
+        }
+        FileFailure::UnsupportedFormat => {
+            l10n!(CATALOG, language(), "files-playback-unsupported")
+        }
         // 文件拿不到，下载也一样，不提示。
         FileFailure::Unauthenticated
         | FileFailure::NotShared
         | FileFailure::FileUnknown
-        | FileFailure::FileGone => format!("家里的服务器给不了这个文件：{detail}"),
-        _ => format!("家里的服务器报错：{detail}。{ELSEWHERE}"),
+        | FileFailure::FileGone => l10n!(
+            CATALOG,
+            language(),
+            "files-playback-unavailable",
+            detail = detail
+        ),
+        _ => l10n!(CATALOG, language(), "files-playback-error", detail = detail),
     }
 }
 

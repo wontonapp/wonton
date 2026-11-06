@@ -2,10 +2,12 @@
 
 use std::collections::HashSet;
 
+use wonton_l10n::l10n;
 use wonton_matrix::{OwnedUserId, UserId};
 use wonton_protocol::{ChatContact, CoreError, InstalledPlugin, RoomMembership, RoomRow};
 
 use super::{ChatLink, invalid};
+use crate::l10n::{CATALOG, language};
 
 impl ChatLink {
     pub(crate) fn resolve_user_id(&self, input: &str) -> Result<String, CoreError> {
@@ -59,15 +61,25 @@ pub(crate) fn resolve_user(input: &str, own: &UserId) -> Result<OwnedUserId, Cor
     let input = input.trim();
     let name = input.strip_prefix('@').unwrap_or(input);
     if name.is_empty() {
-        return Err(invalid("用户名不能为空"));
+        return Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "chat-contacts-empty-username"
+        )));
     }
     let full = if name.contains(':') {
         format!("@{name}")
     } else {
         format!("@{}:{}", name.to_lowercase(), own.server_name())
     };
-    full.parse()
-        .map_err(|error| invalid(&format!("用户 ID 不合法：{error}")))
+    full.parse::<OwnedUserId>().map_err(|error| {
+        invalid(&l10n!(
+            CATALOG,
+            language(),
+            "chat-contacts-invalid-user-id",
+            reason = error.to_string()
+        ))
+    })
 }
 
 #[cfg(test)]

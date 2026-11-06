@@ -3,6 +3,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{CoreError, TabDisplayChoice, TabIcon, TabLayout, TabRef};
 
+use crate::l10n::{CATALOG, language};
+use wonton_l10n::l10n;
+
 pub(super) const TABS_FILE: &str = "tabs.json";
 pub(super) const MAX_ITEMS: usize = 5;
 
@@ -47,32 +50,56 @@ pub(super) fn read_file(path: &Path) -> Result<TabsFile, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(default_file(None));
         }
-        Err(error) => return Err(format!("{}：{error}", path.display())),
+        Err(error) => {
+            return Err(l10n!(
+                CATALOG,
+                language(),
+                "tabs-config-read-failed",
+                path = path.display().to_string(),
+                reason = error.to_string()
+            ));
+        }
     };
-    let file: TabsFile = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("{} 已损坏：{error}", path.display()))?;
+    let file: TabsFile = serde_json::from_slice(&bytes).map_err(|error| {
+        l10n!(
+            CATALOG,
+            language(),
+            "tabs-config-corrupt",
+            path = path.display().to_string(),
+            reason = error.to_string()
+        )
+    })?;
     validate_file(&file)?;
     Ok(file)
 }
 
 fn validate_file(file: &TabsFile) -> Result<(), String> {
     if file.items.len() > MAX_ITEMS {
-        return Err(format!("底栏最多只能有 {MAX_ITEMS} 项"));
+        return Err(l10n!(
+            CATALOG,
+            language(),
+            "tabs-config-too-many-items",
+            count = MAX_ITEMS
+        ));
     }
     let mut seen = Vec::new();
     for item in &file.items {
         if seen.contains(&item.tab) {
-            return Err("底栏里有重复页面".to_owned());
+            return Err(l10n!(CATALOG, language(), "tabs-config-duplicate-page"));
         }
         seen.push(item.tab.clone());
         if is_plugin(&item.tab) && item.page.is_none() {
-            return Err("插件页面缺少标题和图标".to_owned());
+            return Err(l10n!(
+                CATALOG,
+                language(),
+                "tabs-config-plugin-page-incomplete"
+            ));
         }
     }
     if !file.items.iter().any(|item| item.tab == TabRef::Chat)
         || !file.items.iter().any(|item| item.tab == TabRef::Apps)
     {
-        return Err("底栏缺少聊天或应用".to_owned());
+        return Err(l10n!(CATALOG, language(), "tabs-config-missing-fixed"));
     }
     Ok(())
 }
@@ -109,9 +136,16 @@ pub(super) fn normalize_for_server(file: &mut TabsFile, server_id: Option<String
 }
 
 pub(super) fn persist(path: &Path, file: &TabsFile) -> Result<(), CoreError> {
-    let bytes = serde_json::to_vec(file).expect("底栏设置只有可序列化字段");
+    let bytes =
+        serde_json::to_vec(file).expect("navigation bar settings only have serializable fields");
     crate::home::write_private(path, &bytes).map_err(|error| CoreError::Storage {
-        reason: format!("{}：{error}", path.display()),
+        reason: l10n!(
+            CATALOG,
+            language(),
+            "tabs-config-write-failed",
+            path = path.display().to_string(),
+            reason = error.to_string()
+        ),
     })
 }
 

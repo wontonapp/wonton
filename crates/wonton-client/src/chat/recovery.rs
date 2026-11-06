@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
 use futures_util::StreamExt;
+use wonton_l10n::l10n;
 use wonton_matrix::{Error, MatrixSession};
 use wonton_protocol::{
     BackupReminder, ChatFailure, ChatProblem, CoreError, DeviceVerification, EncryptionStatus,
@@ -12,6 +13,7 @@ use wonton_protocol::{
 
 use super::view::{failure, recovery, verification};
 use super::{ChatLink, invalid, login};
+use crate::l10n::{CATALOG, language};
 
 pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
     let mut states = std::pin::pin!(session.encryption_states());
@@ -67,9 +69,10 @@ impl ChatLink {
     /// 重置恢复。先要登录令牌：要不到就还什么都没动，账号保持原样。之后 SDK 一上来就删备份，中途失败时账号可能
     /// 停在“没有备份”，所以失败后显示实际状态，不放回原来的。
     pub(super) fn reset_recovery(self: &Arc<Self>) -> Result<(), CoreError> {
+        let lang = language();
         let session = self.current()?;
         let not_connected = || CoreError::NotReady {
-            reason: "还没连上家里的服务器".to_owned(),
+            reason: l10n!(CATALOG, lang, "chat-recovery-not-connected"),
         };
         let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
         let core_url = self.home.core_url().ok_or_else(not_connected)?;
@@ -81,12 +84,12 @@ impl ChatLink {
                 match login::login_token(&core_url, &proxy, login::LOGIN_TOKEN_TIMEOUT).await {
                     Ok(token) => token,
                     Err((reason, message)) => {
-                        tracing::info!("重置恢复要不到登录令牌：{message}");
+                        tracing::info!("could not get a login token to reset recovery: {message}");
                         chat.resetting_recovery.store(false, Ordering::Relaxed);
                         // 这时账号还没动，主人只需要知道这个，原文留在日志里。
                         let message = match reason {
                             ChatFailure::Unauthorized => message,
-                            _ => "家里的服务器没有回应，备份没有动，稍后再试".to_owned(),
+                            _ => l10n!(CATALOG, lang, "chat-recovery-reset-no-response"),
                         };
                         chat.show_recovery_failure(before, reason, message);
                         return;
@@ -112,7 +115,11 @@ impl ChatLink {
     pub(super) fn recover(self: &Arc<Self>, recovery_key: &SecretString) -> Result<(), CoreError> {
         let key = recovery_key.expose().trim().to_owned();
         if key.is_empty() {
-            return Err(invalid("恢复密钥不能为空"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "chat-recovery-empty-key"
+            )));
         }
         let session = self.current()?;
         let chat = self.clone();
@@ -135,7 +142,12 @@ impl ChatLink {
             if let Err(error) = saved {
                 view.problem = Some(ChatProblem {
                     reason: ChatFailure::Upstream,
-                    message: format!("恢复密钥没能存到本机，请现在就抄下来：{error}"),
+                    message: l10n!(
+                        CATALOG,
+                        language(),
+                        "chat-recovery-key-not-saved",
+                        reason = error.to_string()
+                    ),
                 });
             }
         });
@@ -149,7 +161,7 @@ impl ChatLink {
 
     /// 失败时恢复状态流不一定有新状态，要放回原来的，否则界面一直转圈。
     fn fail_recovery(&self, before: RecoveryStatus, error: &Error) {
-        tracing::info!("恢复失败：{error}");
+        tracing::info!("recovery failed: {error}");
         let message = match error {
             Error::InvalidInput(reason) | Error::NotReady(reason) => reason.clone(),
             other => other.to_string(),

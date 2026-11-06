@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, InstallPreview, InstallRequest, PluginFailure, PluginIcon, PluginOperation,
     PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest, UpgradeResult,
@@ -13,6 +14,7 @@ use wonton_protocol::{
 
 use super::api::{CoreApi, INSTALL_TIMEOUT};
 use super::{POLL_INTERVAL, PluginsLink};
+use crate::l10n::{CATALOG, language};
 
 /// 连接断了以后，最多再等家里的服务器这么久：和安装请求自己的上限一样。
 const SETTLE_TIMEOUT: Duration = INSTALL_TIMEOUT;
@@ -20,9 +22,6 @@ const SETTLE_TIMEOUT: Duration = INSTALL_TIMEOUT;
 const UNREACHABLE_LIMIT: Duration = Duration::from_secs(120);
 /// 连续这么多次在已安装列表里看不到插件，才算请求没到家里的服务器。发起之后它可能还没出现在列表里。
 const MISSING_LIMIT: u32 = 3;
-/// 等不到结果的说明。
-const UNCERTAIN: &str = "连接断了，等不到家里服务器的结果，看一下已安装列表";
-const SERVER_CHANGED: &str = "换了家里的服务器，等不到原来那台的结果";
 
 /// 任务做完后已安装列表应该是什么样。
 enum Outcome {
@@ -40,7 +39,7 @@ impl PluginsLink {
         let lan_webui = lan_webui_chosen(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
-                reason: "这份预览没有来源，装不了".to_owned(),
+                reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
             });
         };
         self.begin_task(
@@ -151,13 +150,13 @@ impl PluginsLink {
         self.view.send_if_modified(|view| {
             let Some(index) = view.tasks.iter().position(|task| task.id == id) else {
                 outcome = Err(CoreError::InvalidInput {
-                    reason: format!("没有这个任务：{id}"),
+                    reason: l10n!(CATALOG, language(), "plugins-tasks-no-such-task", id = id),
                 });
                 return false;
             };
             if view.tasks[index].state == PluginTaskState::Running {
                 outcome = Err(CoreError::NotReady {
-                    reason: "任务还没做完".to_owned(),
+                    reason: l10n!(CATALOG, language(), "plugins-tasks-task-not-done"),
                 });
                 return false;
             }
@@ -182,7 +181,12 @@ impl PluginsLink {
                 .any(|task| task.id == id && task.state == PluginTaskState::Running)
             {
                 outcome = Err(CoreError::NotReady {
-                    reason: format!("{title} 正在安装、升级或卸载"),
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "plugins-tasks-task-running",
+                        title = title
+                    ),
                 });
                 return false;
             }
@@ -233,7 +237,7 @@ impl PluginsLink {
         let added = match serde_json::from_slice::<UpgradeResult>(response) {
             Ok(result) => result.added_tools,
             Err(error) => {
-                tracing::warn!("升级的响应读不出来：{error}");
+                tracing::warn!("could not read the upgrade response: {error}");
                 return;
             }
         };
@@ -353,13 +357,13 @@ impl PluginsLink {
 
 fn uncertain() -> PluginTaskState {
     PluginTaskState::Uncertain {
-        message: UNCERTAIN.to_owned(),
+        message: l10n!(CATALOG, language(), "plugins-tasks-uncertain"),
     }
 }
 
 pub(super) fn server_changed() -> PluginTaskState {
     PluginTaskState::Uncertain {
-        message: SERVER_CHANGED.to_owned(),
+        message: l10n!(CATALOG, language(), "plugins-tasks-server-changed"),
     }
 }
 

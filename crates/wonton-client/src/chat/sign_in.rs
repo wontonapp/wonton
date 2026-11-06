@@ -1,10 +1,12 @@
 //! 登录或恢复 Matrix 会话，以及存下的登录状态属于哪台服务器。
 
+use wonton_l10n::l10n;
 use wonton_matrix::{MatrixSession, SessionConfig, StoreConfig};
 use wonton_protocol::{ChatFailure, CoreError, DeviceVerification, ProxySettings, RecoveryStatus};
 
 use super::storage::StoredSession;
 use super::{ChatLink, failure, login};
+use crate::l10n::{CATALOG, language};
 
 /// 本设备在 Matrix 服务器上的显示名。
 const DEVICE_NAME: &str = "Wonton App";
@@ -15,6 +17,7 @@ impl ChatLink {
         proxy: &ProxySettings,
         server_id: String,
     ) -> Result<MatrixSession, (ChatFailure, String)> {
+        let lang = language();
         let config = |homeserver_url: String| SessionConfig {
             homeserver_url,
             device_name: DEVICE_NAME.to_owned(),
@@ -31,11 +34,21 @@ impl ChatLink {
         if let Some(stored) = stored.filter(|_| self.storage.has_store()) {
             return MatrixSession::restore(&config(stored.homeserver_url), stored.session)
                 .await
-                .map_err(|e| (failure(&e), format!("恢复 Matrix 会话失败：{e}")));
+                .map_err(|e| {
+                    (
+                        failure(&e),
+                        l10n!(
+                            CATALOG,
+                            lang,
+                            "chat-sign-in-restore-failed",
+                            reason = e.to_string()
+                        ),
+                    )
+                });
         }
         let core_url = self.home.core_url().ok_or((
             ChatFailure::NotReady,
-            "还没有家里服务器的连接信息".to_owned(),
+            l10n!(CATALOG, lang, "chat-sign-in-no-connection-info"),
         ))?;
         let token = login::login_token(&core_url, proxy, login::LOGIN_TOKEN_TIMEOUT).await?;
         // 没有登录状态时，本地存储里的旧设备密钥属于别的设备，新登录用不上。
@@ -43,9 +56,23 @@ impl ChatLink {
         let session =
             MatrixSession::login_with_jwt(&config(token.homeserver_url.clone()), &token.token)
                 .await
-                .map_err(|e| (failure(&e), format!("登录 Matrix 失败：{e}")))?;
+                .map_err(|e| {
+                    (
+                        failure(&e),
+                        l10n!(
+                            CATALOG,
+                            lang,
+                            "chat-sign-in-login-failed",
+                            reason = e.to_string()
+                        ),
+                    )
+                })?;
         if session.user_id().as_str() != token.user_id {
-            tracing::warn!(expected = %token.user_id, actual = %session.user_id(), "登录得到的用户和核心说的不一样");
+            tracing::warn!(
+                expected = %token.user_id,
+                actual = %session.user_id(),
+                "signed-in user does not match the one the core reported"
+            );
         }
         self.save(&session, token.homeserver_url, server_id)
             .map_err(storage_failure)?;
@@ -63,7 +90,7 @@ impl ChatLink {
         }
         tracing::info!(
             server = server_id,
-            "换了服务器，丢掉旧的 Matrix 会话和本地存储"
+            "switched servers, dropping the old Matrix session and local store"
         );
         self.storage.forget_session()?;
         self.view.send_modify(|view| {
@@ -82,9 +109,10 @@ impl ChatLink {
         homeserver_url: String,
         server_id: String,
     ) -> Result<(), CoreError> {
+        let lang = language();
         let Some(saved) = session.saved() else {
             return Err(CoreError::Storage {
-                reason: "登录后取不到登录状态".to_owned(),
+                reason: l10n!(CATALOG, lang, "chat-sign-in-no-saved-session"),
             });
         };
         self.storage.save_session(&StoredSession {

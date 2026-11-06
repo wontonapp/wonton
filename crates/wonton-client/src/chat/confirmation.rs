@@ -11,6 +11,7 @@ use reqwest::header::CONTENT_TYPE;
 use serde_json::{Map, Value};
 use tokio::sync::watch;
 use url::Url;
+use wonton_l10n::l10n;
 use wonton_matrix::{EntryKind, Message, OwnedUserId, TimelineEntry, UserId, Vector};
 use wonton_protocol::{
     Answer, CARD_FIELD, CORE_LOCALPART, ChatFailure, ChatProblem, ConfirmationAnswer,
@@ -20,6 +21,7 @@ use wonton_protocol::{
 };
 
 use super::login::{ErrorBody, proxy_url};
+use crate::l10n::{CATALOG, language};
 
 /// 回答的整个请求最多等这么久。核心收到回答马上返回，不等执行。
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
@@ -86,7 +88,7 @@ impl Answers {
 pub(super) fn core_account(own_user: &UserId) -> OwnedUserId {
     format!("@{CORE_LOCALPART}:{}", own_user.server_name())
         .parse()
-        .expect("合法用户 ID 的服务器名拼上固定的用户名还是合法用户 ID")
+        .expect("the account's server name with the fixed core localpart is still a valid user ID")
 }
 
 /// 消息是不是一张卡片：核心账号发的，内容读得懂。别人发的同样结构的内容是普通消息。比这个 App 新的核心写的、读不懂的卡片也当
@@ -103,7 +105,7 @@ fn parse_card(
     match serde_json::from_value(field.clone()) {
         Ok(card) => Some(card),
         Err(error) => {
-            tracing::warn!("核心发的确认卡片读不懂：{error}");
+            tracing::warn!("could not parse the confirmation card sent by the core: {error}");
             None
         }
     }
@@ -379,7 +381,12 @@ pub(super) async fn send_answer(
     let failed = |reason, message: String| {
         AnswerProgress::Failed(ChatProblem {
             reason,
-            message: format!("回答没有成功：{message}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "chat-confirmation-answer-failed",
+                message = message
+            ),
         })
     };
     let url = match core_url.join(&answer_path(id)) {
@@ -390,7 +397,7 @@ pub(super) async fn send_answer(
         Ok(client) => client,
         Err(error) => return failed(ChatFailure::Upstream, error.to_string()),
     };
-    let body = serde_json::to_vec(&answer).expect("回答总能写成 JSON");
+    let body = serde_json::to_vec(&answer).expect("the answer always serializes to JSON");
     let response = client
         .post(url)
         .header(CONTENT_TYPE, "application/json")
@@ -401,7 +408,12 @@ pub(super) async fn send_answer(
     let lost = |error: reqwest::Error| {
         failed(
             ChatFailure::TransportUnavailable,
-            format!("没等到家里服务器的回应，不确定答上了没有，可以再点一次（{error}）"),
+            l10n!(
+                CATALOG,
+                language(),
+                "chat-confirmation-answer-lost",
+                error = error.to_string()
+            ),
         )
     };
     let response = match response {
@@ -420,7 +432,12 @@ pub(super) async fn send_stop(core_url: &Url, proxy: &ProxySettings, id: &str) -
     let failed = |reason, message: String| {
         StopProgress::Failed(ChatProblem {
             reason,
-            message: format!("没有停下来：{message}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "chat-confirmation-stop-failed",
+                message = message
+            ),
         })
     };
     let url = match core_url.join(&window_path(id)) {
@@ -437,7 +454,12 @@ pub(super) async fn send_stop(core_url: &Url, proxy: &ProxySettings, id: &str) -
         Err(error) => {
             return failed(
                 ChatFailure::TransportUnavailable,
-                format!("没等到家里服务器的回应，可以再点一次（{error}）"),
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "chat-confirmation-stop-lost",
+                    error = error.to_string()
+                ),
             );
         }
     };
@@ -454,8 +476,17 @@ pub(super) async fn send_stop(core_url: &Url, proxy: &ProxySettings, id: &str) -
 
 /// 核心的错误响应里的原话。
 fn error_message(status: u16, body: &[u8]) -> String {
-    serde_json::from_slice::<ErrorBody>(body)
-        .map_or_else(|_| format!("核心回了 {status}"), |body| body.error.message)
+    serde_json::from_slice::<ErrorBody>(body).map_or_else(
+        |_| {
+            l10n!(
+                CATALOG,
+                language(),
+                "chat-confirmation-core-status",
+                status = status
+            )
+        },
+        |body| body.error.message,
+    )
 }
 
 fn failure_reason(status: u16) -> ChatFailure {
@@ -476,7 +507,17 @@ fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
             Ok(reply) => AnswerProgress::Settled(reply.state),
             Err(error) => AnswerProgress::Failed(ChatProblem {
                 reason: ChatFailure::Upstream,
-                message: format!("回答没有成功：核心的回应读不懂（{error}）"),
+                message: l10n!(
+                    CATALOG,
+                    language(),
+                    "chat-confirmation-answer-failed",
+                    message = l10n!(
+                        CATALOG,
+                        language(),
+                        "chat-confirmation-response-unreadable",
+                        error = error.to_string()
+                    )
+                ),
             }),
         };
     }
@@ -495,7 +536,12 @@ fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
         }),
         _ => AnswerProgress::Failed(ChatProblem {
             reason: failure_reason(status),
-            message: format!("回答没有成功：{message}"),
+            message: l10n!(
+                CATALOG,
+                language(),
+                "chat-confirmation-answer-failed",
+                message = message
+            ),
         }),
     }
 }

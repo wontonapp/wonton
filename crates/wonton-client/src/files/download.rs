@@ -9,11 +9,13 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use reqwest::{Method, StatusCode};
 use tokio::io::AsyncWriteExt;
+use wonton_l10n::l10n;
 use wonton_protocol::{FileFailure, FileId, FileInfo};
 
 use super::FilesLink;
 use super::api::{Api, Problem, checked, header, interrupted, pausable};
 use super::store::{Job, Record};
+use crate::l10n::{CATALOG, language};
 
 /// 这么久收不到一块就算卡住了。
 const STALL: Duration = Duration::from_secs(60);
@@ -68,14 +70,22 @@ fn local(error: &io::Error) -> Problem {
         }
         _ => FileFailure::LocalIo,
     };
-    Problem::Failed(reason, format!("写不了下载的文件：{error}"))
+    Problem::Failed(
+        reason,
+        l10n!(
+            CATALOG,
+            language(),
+            "files-download-write",
+            reason = error.to_string()
+        ),
+    )
 }
 
 pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Problem> {
     let Job::Download { path, etag } = record.job else {
-        unreachable!("下载的记录才走这里");
+        unreachable!("record job is not a download");
     };
-    let file = record.file.expect("下载的记录一开始就有编号");
+    let file = record.file.expect("download record always has a file id");
     let api = Api::connect(&link.home)?;
     let path = match path {
         Some(path) => path,
@@ -95,12 +105,18 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
     }
     let response = tokio::time::timeout(STALL, request.send())
         .await
-        .map_err(|_| Problem::Interrupted("核心一直没有回答".to_owned()))?
+        .map_err(|_| {
+            Problem::Interrupted(l10n!(CATALOG, language(), "files-download-no-response"))
+        })?
         .map_err(interrupted)?;
     if response.status() == StatusCode::RANGE_NOT_SATISFIABLE {
         // 半截文件比核心那边的文件还长：文件变了。
         reset(&part).await?;
-        return Err(Problem::Interrupted("文件变短了，从头下".to_owned()));
+        return Err(Problem::Interrupted(l10n!(
+            CATALOG,
+            language(),
+            "files-download-shrunk"
+        )));
     }
     let response = checked(response).await.map_err(pausable)?;
     let resumed = response.status() == StatusCode::PARTIAL_CONTENT;
@@ -109,9 +125,11 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
             Some((start, _)) if start == offset => start,
             _ => {
                 reset(&part).await?;
-                return Err(Problem::Interrupted(
-                    "核心给的范围对不上，从头下".to_owned(),
-                ));
+                return Err(Problem::Interrupted(l10n!(
+                    CATALOG,
+                    language(),
+                    "files-download-range-mismatch"
+                )));
             }
         }
     } else {
@@ -133,7 +151,11 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
     });
     let received = receive(link, &record.id, &part, start, response).await?;
     if total.is_some_and(|total| total != received) {
-        return Err(Problem::Interrupted("连接断了，没收全".to_owned()));
+        return Err(Problem::Interrupted(l10n!(
+            CATALOG,
+            language(),
+            "files-download-incomplete"
+        )));
     }
     tokio::fs::rename(&part, &destination)
         .await
@@ -209,7 +231,9 @@ async fn receive(
     loop {
         let chunk = tokio::time::timeout(STALL, body.next())
             .await
-            .map_err(|_| Problem::Interrupted("收不到数据，隧道可能卡住了".to_owned()))?;
+            .map_err(|_| {
+                Problem::Interrupted(l10n!(CATALOG, language(), "files-download-stalled"))
+            })?;
         let Some(chunk) = chunk else {
             break;
         };

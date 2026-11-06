@@ -40,9 +40,9 @@ impl HomeLink {
             }
             Ok(reported) => tracing::warn!(
                 reported = %reported.endpoint_id.fmt_short(),
-                "核心报告的身份和连接信息不一样，不更新地址"
+                "reported identity doesn't match the saved connection info; keeping the old addresses"
             ),
-            Err(message) => tracing::info!("取服务器的地址失败：{message}"),
+            Err(message) => tracing::info!("could not fetch the server's addresses: {message}"),
         }
     }
 
@@ -54,7 +54,7 @@ impl HomeLink {
         let new_text = match serde_json::to_string(&updated) {
             Ok(new_text) => new_text,
             Err(e) => {
-                tracing::warn!("连接信息写不成 JSON：{e}");
+                tracing::warn!("could not serialize the connection info: {e}");
                 return;
             }
         };
@@ -65,12 +65,12 @@ impl HomeLink {
                 return;
             }
             if let Err(e) = self.storage.save_ticket(&new_text) {
-                tracing::warn!("保存服务器的新地址失败：{e:?}");
+                tracing::warn!("could not save the server's new addresses: {e:?}");
                 return;
             }
             *current = Some(new_text);
         }
-        tracing::info!(direct_addrs = ?updated.direct_addrs(), "记下服务器的新地址");
+        tracing::info!(direct_addrs = ?updated.direct_addrs(), "saved the server's new addresses");
         if let Some((_, client)) = self.current_link().await {
             client.set_server_addr(updated.server_addr());
         }
@@ -80,7 +80,7 @@ impl HomeLink {
 async fn fetch(core_url: &Url, proxy: &ProxySettings) -> Result<Reported, String> {
     let url = core_url
         .join("/_wonton/api/tunnel")
-        .expect("固定的路径总能拼上");
+        .expect("fixed tunnel path always joins");
     let client = reqwest::Client::builder()
         .proxy(reqwest::Proxy::all(proxy_url(proxy)).map_err(|e| e.to_string())?)
         .timeout(TIMEOUT)
@@ -89,7 +89,7 @@ async fn fetch(core_url: &Url, proxy: &ProxySettings) -> Result<Reported, String
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("核心回了 {status}"));
+        return Err(format!("home server returned {status}"));
     }
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
