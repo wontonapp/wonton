@@ -97,6 +97,25 @@ impl Matrix {
         Session::new(&self.api, &login.user_id, &login.access_token)
     }
 
+    /// 访问令牌是谁的（`GET /_matrix/client/v3/account/whoami`）：网关认出插件网络里是哪个 Bot 在发请求时用
+    /// （ADR-0045），调用方按令牌哈希缓存。
+    pub async fn whoami(&self, token: &str) -> Result<String, MatrixError> {
+        let value = self
+            .api
+            .json(
+                Method::GET,
+                "/_matrix/client/v3/account/whoami",
+                Some(token),
+                None,
+                "辨认访问令牌",
+            )
+            .await?;
+        value["user_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid("whoami 没有返回 user_id".to_owned()))
+    }
+
     /// 以核心的管理账号调客户端接口。
     pub(crate) fn core_session(&self) -> Session<'_> {
         Session::new(&self.api, &self.admin_user_id(), &self.admin_token)

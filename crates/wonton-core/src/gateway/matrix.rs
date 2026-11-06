@@ -15,14 +15,16 @@ use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::StatusCode;
-use hyper::header::HeaderValue;
+use hyper::header::{HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
+use super::{room_rules, send_limits};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
 use crate::plugin::Permission;
+use wonton_protocol::{GATEWAY_REFUSAL_HEADER, GatewayRefusal};
 
 /// 登录令牌接口的响应。客户端在 `expires_in` 秒内用它调一次 `POST {homeserver_url}/_matrix/client/v3/login`
 /// （`{"type": login_type, "token": token}`）；设备自己登录，设备 ID 和刷新令牌都归设备。
@@ -91,6 +93,14 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "Matrix 只对经隧道接入的已配对设备开放",
         );
     }
+    let req = match room_rules::check(req).await {
+        Ok(req) => req,
+        Err(refused) => return *refused,
+    };
+    // 人在这个房间说了话：跳数清零（ADR-0045）。
+    if let Some(room) = send_limits::counted_room(req.method(), req.uri().path()) {
+        gateway.send_limits.device_sent(&room);
+    }
     forward_client_api(gateway, req).await
 }
 
@@ -108,6 +118,18 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
                 }
             } else {
                 req
+            };
+            let req = match room_rules::check(req).await {
+                Ok(req) => req,
+                Err(refused) => return *refused,
+            };
+            let req = match gateway
+                .send_limits
+                .check_bot_send(req, gateway.matrix.as_deref())
+                .await
+            {
+                Ok(req) => req,
+                Err(refused) => return *refused,
             };
             forward_client_api(gateway, req).await
         }
@@ -212,7 +234,7 @@ fn is_ambiguous(path: &str) -> bool {
 }
 
 /// 百分号解码一段路径：`%XX` 换成字节，不成对的 `%` 原样保留。
-fn percent_decode(segment: &str) -> Vec<u8> {
+pub(super) fn percent_decode(segment: &str) -> Vec<u8> {
     let hex = |b: u8| (b as char).to_digit(16).and_then(|d| u8::try_from(d).ok());
     let mut out = Vec::with_capacity(segment.len());
     let mut rest = segment.as_bytes();
@@ -242,6 +264,21 @@ pub(super) fn matrix_error(
     response
         .headers_mut()
         .insert(pages::ERROR_HEADER, HeaderValue::from_static(kind));
+    response
+}
+
+/// 网关拒绝的响应（ADR-0045 的“网关管房间规则”）：403 `M_FORBIDDEN`，[`GATEWAY_REFUSAL_HEADER`] 写明原因，
+/// SDK 拿到 403 不会重试。
+pub(super) fn refusal(refusal: GatewayRefusal, message: &str) -> Response {
+    let mut response = (
+        StatusCode::FORBIDDEN,
+        Json(json!({"errcode": "M_FORBIDDEN", "error": message})),
+    )
+        .into_response();
+    response.headers_mut().insert(
+        HeaderName::from_static(GATEWAY_REFUSAL_HEADER),
+        HeaderValue::from_static(refusal.as_str()),
+    );
     response
 }
 

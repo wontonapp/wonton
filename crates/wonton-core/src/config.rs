@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::gateway::send_limits::SendLimits;
 use crate::owner;
 use crate::plugin::egress::address::ProxyAddress;
 use crate::plugin::names::Instance;
@@ -208,6 +209,8 @@ pub struct Config {
     pub confirmation_ttl: Duration,
     /// 卡片上放行时段的长度（`WONTON_CONFIRMATION_WINDOW_SECS`，ADR-0024）。
     pub confirmation_window: Duration,
+    /// 网关管 Bot 发消息的数字（ADR-0045），由 `WONTON_BOT_MSG_*` 环境变量改，见 [`SendLimits`] 的字段。
+    pub send_limits: SendLimits,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -310,6 +313,7 @@ impl Config {
             store: store_config(&get)?,
             confirmation_ttl: secs(&get, "WONTON_CONFIRMATION_TTL_SECS", 600)?,
             confirmation_window: secs(&get, "WONTON_CONFIRMATION_WINDOW_SECS", 1800)?,
+            send_limits: send_limits(&get)?,
             oidc,
             matrix,
             tusd: get("WONTON_TUSD_URL")
@@ -364,6 +368,26 @@ fn secs(
     default: u64,
 ) -> Result<Duration, ConfigError> {
     Ok(Duration::from_secs(parse(get, name, default)?))
+}
+
+/// 网关管 Bot 发消息的数字（ADR-0045）。0 没有意义：要么限要么不限，要不限就把数字放大，不设开关。
+fn send_limits(get: &impl Fn(&str) -> Option<String>) -> Result<SendLimits, ConfigError> {
+    let limits = SendLimits {
+        per_minute: parse(get, "WONTON_BOT_MSG_PER_MINUTE", 20)?,
+        burst: parse(get, "WONTON_BOT_MSG_BURST", 10)?,
+        hop_limit: parse(get, "WONTON_BOT_MSG_HOP_LIMIT", 20)?,
+        idle_reset: secs(get, "WONTON_BOT_MSG_IDLE_RESET_SECS", 60 * 60)?,
+    };
+    for (name, value) in [
+        ("WONTON_BOT_MSG_PER_MINUTE", limits.per_minute),
+        ("WONTON_BOT_MSG_BURST", limits.burst),
+        ("WONTON_BOT_MSG_HOP_LIMIT", limits.hop_limit),
+    ] {
+        (value > 0)
+            .then_some(())
+            .ok_or_else(|| invalid(name, "必须是正整数"))?;
+    }
+    Ok(limits)
 }
 
 fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {

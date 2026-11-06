@@ -40,6 +40,10 @@ mod proxy_sso;
 mod push;
 mod pushers;
 mod registry_mirror;
+mod room_rules;
+pub(crate) mod send_limits;
+
+pub use send_limits::{SendLimiter, SendLimits};
 mod session;
 mod sso;
 mod tool_policy;
@@ -86,6 +90,8 @@ pub struct Gateway {
     pub tunnel: Tunnel,
     /// Matrix 服务器；没接时 App 的 Matrix 入口如实报不可用。
     pub matrix: Option<Arc<Matrix>>,
+    /// Bot 发消息的频率和跳数（ADR-0045）。计数在内存里，核心重启从头算。
+    pub(crate) send_limits: Arc<send_limits::SendLimiter>,
     /// 推送代理；没启用时登记和推送都如实报不可用。
     pub push: Option<Arc<Push>>,
     /// MCP 总线；没启用时 `mcp.wonton.internal` 如实报不可用。
@@ -132,6 +138,9 @@ impl Gateway {
             system_http: HttpClient::system_loopback(),
             tunnel,
             matrix: None,
+            send_limits: Arc::new(send_limits::SendLimiter::new(
+                send_limits::SendLimits::default(),
+            )),
             push: None,
             mcp: None,
             files: None,
@@ -152,6 +161,13 @@ impl Gateway {
     #[must_use]
     pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
         self.matrix = matrix;
+        self
+    }
+
+    /// 换上配置里的 Bot 发消息限制（[`crate::config::Config`] 的环境变量改数字）；测试可以带自己的时钟。
+    #[must_use]
+    pub fn with_send_limiter(mut self, send_limits: Arc<send_limits::SendLimiter>) -> Self {
+        self.send_limits = send_limits;
         self
     }
 
@@ -427,6 +443,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 mod core_upgrade_tests;
 #[cfg(test)]
 mod egress_api_tests;
+#[cfg(test)]
+mod family_rules_tests;
 #[cfg(test)]
 mod files_plugin_tests;
 #[cfg(test)]

@@ -142,10 +142,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("读取主人令牌 {}", token_path.display()))?;
     tracing::info!(path = %token_path.display(), "主人令牌已就绪");
 
-    let upgrades = Arc::new(Upgrades::new(
-        upgrade_config(&cfg),
-        Arc::new(DockerHost::new(engine.clone())),
-    ));
+    let upgrades = open_upgrades(&cfg, &engine);
     let http = HttpClient::new();
     let system_http =
         HttpClient::for_system_services(&engine, cfg.core_container.as_deref()).await?;
@@ -205,6 +202,7 @@ async fn serve() -> anyhow::Result<()> {
         )
         .with_system_http(system_http)
         .with_matrix(matrix)
+        .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
         .with_files(Some(files))
@@ -267,6 +265,14 @@ fn upgrade_config(cfg: &Config) -> UpgradeConfig {
         core_container: cfg.core_container.clone(),
         has_instance: cfg.instance != Instance::default(),
     }
+}
+
+/// 核心的一键升级（ADR-0025）：渠道来自环境变量，升级动作落到宿主上的 Docker。
+fn open_upgrades(cfg: &Config, engine: &Engine) -> Arc<Upgrades> {
+    Arc::new(Upgrades::new(
+        upgrade_config(cfg),
+        Arc::new(DockerHost::new(engine.clone())),
+    ))
 }
 
 fn lan_state(cfg: &Config) -> Lan {
