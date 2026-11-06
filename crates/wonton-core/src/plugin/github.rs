@@ -10,6 +10,8 @@ use super::egress::core_proxy::CoreProxy;
 
 /// 一次请求最多等这么久：GitHub 在国内时常很慢，但不能让预览一直挂着。
 const TIMEOUT: Duration = Duration::from_secs(30);
+// hyper-util 按地址分摊连接时限；不设时，首个不通的 IPv4 会耗尽整个请求期限，后续地址没有机会。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// `ls-refs` 的响应最多这么大：一个 tag 一行，几万个 tag 也用不到。
 const MAX_REFS_BYTES: u64 = 4 << 20;
 
@@ -65,12 +67,7 @@ pub struct GitHub {
 
 impl GitHub {
     pub fn new(proxy: &CoreProxy) -> Self {
-        let client = reqwest::Client::builder()
-            .proxy(proxy.for_client())
-            .timeout(TIMEOUT)
-            .user_agent(concat!("wonton-core/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("GitHub 客户端的配置是固定的");
+        let client = client(proxy).build().expect("GitHub 客户端的配置是固定的");
         Self {
             client,
             git: "https://github.com".to_owned(),
@@ -82,7 +79,7 @@ impl GitHub {
     /// 连到测试替身：两个地址都是它，不走代理。
     #[cfg(test)]
     pub fn for_test(base: &str) -> Self {
-        let client = reqwest::Client::builder()
+        let client = client(&CoreProxy::default())
             .timeout(Duration::from_secs(5))
             .no_proxy()
             .build()
@@ -137,20 +134,30 @@ impl GitHub {
         max: u64,
     ) -> Result<Vec<u8>, GitHubError> {
         let url = format!("{}/{repo}/{commit}/{path}", self.raw);
-        let what = format!("{repo} 在提交 {commit} 里的 {path}");
+        let what = format!("取 {repo} 在提交 {commit} 里的 {path}");
+        let result = self.file_once(&url, &what, max).await;
+        // 直连会偶发卡在首字节或正文。只有内容不变的提交可以整文件重取；丢弃半个响应，仍核对大小和摘要。
+        if is_commit_id(commit) && matches!(&result, Err(GitHubError::Timeout(_))) {
+            tracing::info!(%repo, %commit, %path, "取文件超时，重取一次");
+            return self.file_once(&url, &what, max).await;
+        }
+        result
+    }
+
+    async fn file_once(&self, url: &str, what: &str, max: u64) -> Result<Vec<u8>, GitHubError> {
         let response = self
             .client
-            .get(&url)
+            .get(url)
             .send()
             .await
-            .map_err(|e| unavailable(&format!("取 {what}"), &e))?;
+            .map_err(|e| unavailable(what, &e))?;
         match response.status() {
             StatusCode::OK => read_limited(response, max)
                 .await
-                .map_err(|e| e.context(&format!("取 {what}"))),
+                .map_err(|e| e.context(what)),
             StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {what}"))),
             status => Err(GitHubError::Unavailable(format!(
-                "取 {what} 时 GitHub 回了 {status}"
+                "{what} 时 GitHub 回了 {status}"
             ))),
         }
     }
@@ -317,9 +324,17 @@ impl GitHubError {
     }
 }
 
+fn client(proxy: &CoreProxy) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .proxy(proxy.for_client())
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(TIMEOUT)
+        .user_agent(concat!("wonton-core/", env!("CARGO_PKG_VERSION")))
+}
+
 fn unavailable(what: &str, e: &reqwest::Error) -> GitHubError {
     if e.is_timeout() {
-        GitHubError::Timeout(format!("{what}：{} 秒内没有答完", TIMEOUT.as_secs()))
+        GitHubError::Timeout(format!("{what}：请求超时，没有在时限内答完"))
     } else {
         GitHubError::Unavailable(format!("{what}：连不上 GitHub（{e}）"))
     }
@@ -402,6 +417,10 @@ fn parse_ref(line: &str) -> Option<Tag> {
 pub fn is_commit_id(text: &str) -> bool {
     text.len() == 40 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
+
+#[cfg(test)]
+#[path = "github_http_tests.rs"]
+mod http_tests;
 
 #[cfg(test)]
 mod tests {
