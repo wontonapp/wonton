@@ -62,3 +62,4 @@
 | [0050](0050-cross-server-chat.md) | 跨服务器聊天：配对过的两台服务器经 iroh 互相联邦 |
 | [0051](0051-friends-and-plugin-sharing.md) | 好友和插件共享：把自己服务器上的插件临时开放给好友 |
 | [0053](0053-plugin-dependencies.md) | 插件之间按能力依赖：只写直接依赖，装时一起装，卸时拦下 |
+| [0054](0054-bot-command-menu.md) | Bot 的斜杠命令菜单：房间状态事件，整表替换 |

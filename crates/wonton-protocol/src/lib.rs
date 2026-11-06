@@ -11,6 +11,7 @@ uniffi::setup_scaffolding!();
 mod action;
 mod agent_permission;
 mod appearance;
+mod bot_commands;
 mod bot_profile;
 mod chat;
 mod confirmation;
@@ -44,6 +45,10 @@ pub use agent_permission::{
 };
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
+};
+pub use bot_commands::{
+    BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
+    MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
 };
 pub use bot_profile::{
     AVATARS_FIELD, AvatarChange, AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem,
