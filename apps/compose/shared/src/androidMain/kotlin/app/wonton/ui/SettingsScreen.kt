@@ -54,6 +54,7 @@ fun SettingsPage(
         SettingsSubpage.APPEARANCE -> WontonScreen(bar = { WontonPushedBar("外观", back) }) {
             AppearanceScreen(core, appearance)
         }
+        SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(settings, back)
         SettingsSubpage.ABOUT -> AboutPage(version, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = tabText("设置", "Settings")
@@ -106,6 +107,10 @@ private fun SettingsEntryRow(
         SettingsEntry.BottomBar -> WontonRow(tabText("底栏", "Tab bar"), showsForward = true) {
             onSubpage(SettingsSubpage.TABS)
         }
+        is SettingsEntry.Notifications -> WontonRow(
+            "通知", if (notificationsEnabled()) entry.push.notificationValue else "已关闭", showsForward = true,
+            onClick = { onSubpage(SettingsSubpage.NOTIFICATIONS) },
+        )
         SettingsEntry.DefaultAgent -> WontonRow(
             "默认 Agent", onboarding.view.agents.firstOrNull { it.selected }?.title,
             showsForward = true, onClick = onChooseAgent,

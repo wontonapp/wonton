@@ -19,6 +19,7 @@ mod error;
 mod file;
 mod home;
 mod lan;
+mod link;
 mod onboarding;
 mod owner;
 mod plugin;
@@ -76,6 +77,7 @@ pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
     LanProblem, LanProtocol, LanSettings,
 };
+pub use link::AppLink;
 pub use onboarding::{
     AgentLogin, CUSTOM_MODEL_PROVIDER_PATH, CUSTOM_MODEL_PROVIDER_TEST_PATH,
     ConfiguredModelProvider, CustomModelProvider, MODEL_PROVIDERS_PATH, ModelProvider,
@@ -104,7 +106,9 @@ pub use plugin::{
     StoreProblem, StoreSection, TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView,
     UpgradeOffer, UpgradeRequest, UpgradeResult,
 };
-pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
+pub use push::{
+    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus,
+};
 pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,

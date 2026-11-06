@@ -44,5 +44,6 @@ enum SettingsRoute: Hashable {
     case appearance
     case chatBackup
     case bottomBar
+    case notifications
     case about
 }

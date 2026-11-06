@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{HomeStatus, RecoveryStatus};
+use crate::{HomeStatus, NotificationCategory, PushStatus, RecoveryStatus};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -34,6 +34,11 @@ pub enum SettingsEntry {
     Appearance,
     /// 底栏的项、顺序和是否显示文字。
     BottomBar,
+    /// 通知：推送收不收得到，以及按类别的开关（开关在系统设置里，Android 是每个类别的通知渠道）。
+    Notifications {
+        push: PushStatus,
+        categories: Vec<NotificationCategory>,
+    },
     /// 默认 Agent。配对以后才有。
     DefaultAgent,
     ChatBackup {

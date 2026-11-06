@@ -5,6 +5,7 @@
 //! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
 
+mod ask;
 mod confirmation;
 mod contacts;
 mod display_name;

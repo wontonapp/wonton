@@ -54,8 +54,25 @@ pub struct PushNotification {
     /// 房间名；私聊时为空，标题用发送者。
     pub room_name: Option<String>,
     pub content: PushContent,
+    pub category: NotificationCategory,
     /// 这条消息是确认卡片时才有。
     pub confirmation: Option<PushConfirmation>,
+}
+
+/// 通知的类别。Android 每个类别一个通知渠道，主人在系统设置里分别开关；iOS 当作通知的分类。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationCategory {
+    /// 聊天消息。
+    Message,
+    /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。
+    Confirmation,
+}
+
+impl NotificationCategory {
+    /// 按通知设置页里的显示顺序。
+    pub const ALL: [Self; 2] = [Self::Message, Self::Confirmation];
 }
 
 /// 通知对应的确认卡片：每张卡片一条通知，壳按它撤下答完和过期的。
@@ -134,6 +151,7 @@ mod tests {
                 reason: ChatFailure::NotReady,
                 message: "还没收到这条消息的房间密钥".into(),
             },
+            category: NotificationCategory::Confirmation,
             confirmation: Some(PushConfirmation {
                 id: "card".into(),
                 expires_at_ms: 1_793_000_000_000,

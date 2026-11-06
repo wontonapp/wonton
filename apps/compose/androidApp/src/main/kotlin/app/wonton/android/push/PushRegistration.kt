@@ -26,7 +26,7 @@ class PushRegistration(private val activity: ComponentActivity, private val core
         }
 
     fun start() {
-        PushNotifications.createChannel(activity)
+        PushNotifications.createChannels(activity)
         val granted = activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (granted) register() else permission.launch(Manifest.permission.POST_NOTIFICATIONS)

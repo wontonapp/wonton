@@ -10,21 +10,26 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
 import app.wonton.android.MainActivity
+import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushContent
 import app.wonton.protocol.PushNotification
+import app.wonton.ui.notificationChannelId
+import app.wonton.ui.notificationTitle
 
 /** 新消息的系统通知：同一个房间的通知合并成一条，显示最新的一条消息。确认卡片每张一条，答完或过期就撤下。 */
 object PushNotifications {
     private const val TAG = "WontonPush"
-    private const val CHANNEL = "messages"
     private const val NOTIFICATION_ID = 1
 
     /** 渠道要在发第一条通知前建好；建过再建不会改掉用户在系统设置里改过的选项。 */
-    fun createChannel(context: Context) {
-        val channel = NotificationChannel(CHANNEL, "新消息", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Bot 和家人发来的消息"
-        }
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    fun createChannels(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.deleteNotificationChannel("messages")
+        manager.createNotificationChannels(NotificationCategory.entries.map { category ->
+            NotificationChannel(
+                category.notificationChannelId, category.notificationTitle, NotificationManager.IMPORTANCE_HIGH,
+            )
+        })
     }
 
     fun show(context: Context, notification: PushNotification) {
@@ -32,7 +37,8 @@ object PushNotifications {
             Log.w(TAG, "没有通知权限，这条推送弹不出来")
             return
         }
-        createChannel(context)
+        createChannels(context)
+        val channel = notification.category.notificationChannelId
         val title = notification.roomName ?: notification.sender
         val text = when (val content = notification.content) {
             is PushContent.Message ->
@@ -54,12 +60,12 @@ object PushNotifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // 锁屏上隐藏敏感内容时显示这一版：不带发送者和正文。
-        val hidden = Notification.Builder(context, CHANNEL)
+        val hidden = Notification.Builder(context, channel)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle("Wonton")
             .setContentText("新消息")
             .build()
-        val shown = Notification.Builder(context, CHANNEL)
+        val shown = Notification.Builder(context, channel)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
             .setContentText(text)

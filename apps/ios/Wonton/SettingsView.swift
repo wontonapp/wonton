@@ -46,6 +46,7 @@ struct SettingsTab: View {
         case .appearance: AppearanceView(model: appearance).wontonPushedScreen("外观")
         case .chatBackup: ChatBackupView(model: chat)
         case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
+        case .notifications: NotificationSettingsView()
         case .about: AboutView()
         }
     }
@@ -89,6 +90,8 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }
         case .bottomBar:
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
+        case .notifications:
+            NavigationLink(value: SettingsRoute.notifications) { WontonRow(title: "通知", showsForward: true) }
         case .defaultAgent:
             Button(action: chooseAgent) { WontonRow(title: "默认 Agent", showsForward: true) }
         case let .chatBackup(recovery):

@@ -746,6 +746,14 @@ impl ClientCore {
                 self.plugins.dismiss_egress_confirmation();
                 Ok(())
             }
+            Action::AskAgent { text } => {
+                let bot = self.onboarding.view().primary_bot_user_id.ok_or_else(|| {
+                    CoreError::NotReady {
+                        reason: "还没有默认 Agent：先在设置里选一个".to_owned(),
+                    }
+                })?;
+                self.chat.ask(&bot, &text)
+            }
             chat => self.chat.dispatch(chat),
         }
     }

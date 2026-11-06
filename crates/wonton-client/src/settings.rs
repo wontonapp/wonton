@@ -3,8 +3,8 @@
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, HomeStatus, HomeViewModel, PluginsViewModel, RecoveryStatus, SettingsEntry,
-    SettingsSection, SettingsViewModel,
+    ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PluginsViewModel, PushStatus,
+    RecoveryStatus, SettingsEntry, SettingsSection, SettingsViewModel,
 };
 
 pub(crate) struct SettingsLink {
@@ -21,9 +21,11 @@ impl SettingsLink {
         let compute = |home: &watch::Receiver<HomeViewModel>,
                        chat: &watch::Receiver<ChatViewModel>,
                        plugins: &watch::Receiver<PluginsViewModel>| {
+            let chat = chat.borrow();
             settings_view(
                 &home.borrow().status,
-                chat.borrow().encryption.recovery,
+                chat.encryption.recovery,
+                &chat.push,
                 plugins.borrow().core_upgrade.is_prompting(),
             )
         };
@@ -56,15 +58,24 @@ impl SettingsLink {
     }
 }
 
-/// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观和底栏，再是聊天相关的，最后是很少点的。
+/// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观、底栏和通知，再是聊天相关的，最后是很少点的。
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
 fn settings_view(
     status: &HomeStatus,
     recovery: RecoveryStatus,
+    push: &PushStatus,
     upgrade: bool,
 ) -> SettingsViewModel {
     let paired = !matches!(status, HomeStatus::NotConfigured);
     let backup = SettingsEntry::ChatBackup { recovery };
+    let phone = vec![
+        SettingsEntry::Appearance,
+        SettingsEntry::BottomBar,
+        SettingsEntry::Notifications {
+            push: push.clone(),
+            categories: NotificationCategory::ALL.to_vec(),
+        },
+    ];
     let groups = if paired {
         vec![
             vec![SettingsEntry::Profile],
@@ -72,16 +83,12 @@ fn settings_view(
                 status: status.clone(),
                 upgrade,
             }],
-            vec![SettingsEntry::Appearance, SettingsEntry::BottomBar],
+            phone,
             vec![SettingsEntry::DefaultAgent, backup],
             vec![SettingsEntry::RestartOnboarding, SettingsEntry::About],
         ]
     } else {
-        vec![
-            vec![SettingsEntry::Appearance, SettingsEntry::BottomBar],
-            vec![backup],
-            vec![SettingsEntry::About],
-        ]
+        vec![phone, vec![backup], vec![SettingsEntry::About]]
     };
     SettingsViewModel {
         sections: groups
@@ -104,12 +111,24 @@ mod tests {
 
     #[test]
     fn before_pairing_only_this_phones_settings_show() {
-        let view = settings_view(&HomeStatus::NotConfigured, RecoveryStatus::Unknown, false);
+        let view = settings_view(
+            &HomeStatus::NotConfigured,
+            RecoveryStatus::Unknown,
+            &PushStatus::NoEndpoint,
+            false,
+        );
         assert_eq!(
             entries(&view),
             [
                 SettingsEntry::Appearance,
                 SettingsEntry::BottomBar,
+                SettingsEntry::Notifications {
+                    push: PushStatus::NoEndpoint,
+                    categories: vec![
+                        NotificationCategory::Message,
+                        NotificationCategory::Confirmation
+                    ],
+                },
                 SettingsEntry::ChatBackup {
                     recovery: RecoveryStatus::Unknown
                 },
@@ -120,7 +139,12 @@ mod tests {
 
     #[test]
     fn after_pairing_profile_and_server_come_first() {
-        let view = settings_view(&HomeStatus::Connected, RecoveryStatus::Enabled, true);
+        let view = settings_view(
+            &HomeStatus::Connected,
+            RecoveryStatus::Enabled,
+            &PushStatus::Registered,
+            true,
+        );
         assert_eq!(view.sections[0].entries, [SettingsEntry::Profile]);
         assert_eq!(
             view.sections[1].entries,
@@ -134,7 +158,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn follows_the_connection_and_core_upgrades() {
+    async fn follows_the_connection_push_and_core_upgrades() {
         let home = |status| HomeViewModel {
             device_id: "device".into(),
             server_id: Some("server".into()),
@@ -158,12 +182,12 @@ mod tests {
             },
             rooms: Vec::new(),
             problem: None,
-            push: wonton_protocol::PushStatus::NoEndpoint,
+            push: PushStatus::NoEndpoint,
             pending_confirmations: Vec::new(),
             settled_confirmations: Vec::new(),
         };
         let (home_tx, home_rx) = watch::channel(home(HomeStatus::NotConfigured));
-        let (_chat_tx, chat_rx) = watch::channel(chat);
+        let (chat_tx, chat_rx) = watch::channel(chat);
         let (plugins_tx, plugins_rx) = watch::channel(PluginsViewModel::default());
         let link = SettingsLink::new(&Handle::current(), home_rx, chat_rx, plugins_rx);
         let mut updates = link.subscribe();
@@ -172,6 +196,16 @@ mod tests {
         home_tx.send_replace(home(HomeStatus::Connected));
         updates.changed().await.unwrap();
         assert!(entries(&link.view()).contains(&SettingsEntry::Profile));
+
+        chat_tx.send_modify(|chat| chat.push = PushStatus::Registered);
+        updates.changed().await.unwrap();
+        assert!(entries(&link.view()).iter().any(|entry| matches!(
+            entry,
+            SettingsEntry::Notifications {
+                push: PushStatus::Registered,
+                ..
+            }
+        )));
 
         // 跳过的版本不提示，和升级页的“跳过”一致。
         plugins_tx.send_modify(|plugins| {

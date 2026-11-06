@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use wonton_matrix::{MatrixSession, MessageBody, OwnedEventId, OwnedRoomId};
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, NotificationCategory, PushContent,
+    PushNotification,
 };
 
 use super::PushLink;
@@ -58,6 +59,7 @@ impl PushLink {
                 .unwrap_or_else(|| "未知的发送者".to_owned()),
             room_name: payload.room_name.clone(),
             content,
+            category: NotificationCategory::Message,
             confirmation: None,
         };
         let unavailable =
@@ -108,6 +110,11 @@ impl PushLink {
         Ok(Some(PushNotification {
             sender: message.sender_name,
             room_name: message.room_name,
+            category: if confirmation.is_some() {
+                NotificationCategory::Confirmation
+            } else {
+                NotificationCategory::Message
+            },
             confirmation,
             ..notification(content)
         }))

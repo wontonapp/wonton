@@ -55,6 +55,9 @@ pub enum Action {
     /// 和另一个用户（比如 Bot）发起私聊；已经有和他的私聊时什么都不做，对方不存在时失败。`user_id` 是完整的 ID，
     /// 主人输入的先用客户端核心的 `resolve_user_id` 补全。
     StartDirectChat { user_id: String },
+    /// 把一句话发给默认 Agent（Siri、快捷指令的“问 Bot”）：和它的私聊还没有就先建。壳随后按
+    /// [`OnboardingViewModel::primary_bot_user_id`](crate::OnboardingViewModel::primary_bot_user_id) 打开这个私聊。
+    AskAgent { text: String },
     /// 发送文字。正文去掉首尾空白后不能为空。消息先以本地回显出现在时间线里。
     SendText { room_id: String, body: String },
     /// 发送图片。上传和发送的进展同 [`Action::SendText`]。
