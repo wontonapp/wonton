@@ -15,7 +15,12 @@ mod terminal;
 /// 登录过程中的聊天输出；实现是 Matrix 房间，测试用内存替身。
 pub trait LoginSink {
     fn send_login_text(&self, text: &str) -> impl Future<Output = Result<()>> + Send;
+    /// 撤回聊天里的一条消息；权限不够或网络失败时返回错误。
+    fn redact(&self, event_id: &str, reason: &str) -> impl Future<Output = Result<()>> + Send;
 }
+
+/// 撤回已转交 Agent 的密钥消息时写的理由，房间里的人都能看到。
+const REDACT_REASON: &str = "已转交 Agent 登录";
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -74,6 +79,7 @@ impl LoginFlow {
     pub async fn receive(
         &mut self,
         text: &str,
+        event_id: &str,
         sink: &impl LoginSink,
         acp: &Arc<AcpClient>,
         socket: &Path,
@@ -144,7 +150,9 @@ impl LoginFlow {
             if text.len() > 16 * 1024 || text.contains(['\n', '\r', '\0']) {
                 sink.send_login_text("授权码必须是单行文字，且不能超过 16 KiB。")
                     .await?;
-            } else if active.input.send(text.to_owned()).await.is_err() {
+            } else if active.input.send(text.to_owned()).await.is_ok() {
+                Self::redact_forwarded_message(event_id, sink).await?;
+            } else {
                 sink.send_login_text("登录已结束，这条消息没有发送给 Agent。")
                     .await?;
             }
@@ -155,6 +163,16 @@ impl LoginFlow {
             .await?;
         }
         Ok(true)
+    }
+
+    /// 密钥已转交 Agent，原文不能留在聊天记录里：撤回；撤不动就明说，让用户自己删。
+    async fn redact_forwarded_message(event_id: &str, sink: &impl LoginSink) -> Result<()> {
+        if let Err(error) = sink.redact(event_id, REDACT_REASON).await {
+            tracing::warn!(event_id, error = %error, "撤回登录密钥消息失败");
+            sink.send_login_text("这条消息里有登录用的密钥，请自己删掉它。")
+                .await?;
+        }
+        Ok(())
     }
 
     async fn start(

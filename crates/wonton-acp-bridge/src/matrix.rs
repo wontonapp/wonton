@@ -5,6 +5,8 @@ use wonton_matrix::{Message, MessageBody, UserId};
 #[derive(Clone, Debug)]
 pub struct IncomingText {
     pub text: String,
+    /// 这条消息的事件 ID；撤回（如转交登录密钥后）要用它。
+    pub event_id: String,
 }
 
 pub fn new_owner_messages(
@@ -21,15 +23,19 @@ pub fn new_owner_messages(
                 return None;
             }
             let event_id = message.event_id.as_ref()?.to_string();
-            if !seen.insert(event_id) {
+            if !seen.insert(event_id.clone()) {
                 return None;
             }
             let MessageBody::Text(text) = &message.body else {
                 return Some(IncomingText {
                     text: String::new(),
+                    event_id,
                 });
             };
-            Some(IncomingText { text: text.clone() })
+            Some(IncomingText {
+                text: text.clone(),
+                event_id,
+            })
         })
         .collect()
 }
@@ -60,6 +66,7 @@ mod tests {
         message.body = MessageBody::Text("hello".into());
         let incoming = new_owner_messages(&[message.clone()], &owner, &mut seen);
         assert_eq!(incoming[0].text, "hello");
+        assert_eq!(incoming[0].event_id, "$delayed:example.org");
         assert_eq!(incoming.len(), 1);
         assert!(new_owner_messages(&[message], &owner, &mut seen).is_empty());
     }

@@ -8,7 +8,7 @@ use matrix_sdk::{
     attachment::{AttachmentInfo, BaseImageInfo, Thumbnail},
     event_cache::PaginationStatus,
     ruma::{
-        RoomId, UInt, api::client::receipt::create_receipt::v3::ReceiptType,
+        OwnedEventId, RoomId, UInt, api::client::receipt::create_receipt::v3::ReceiptType,
         events::room::message::RoomMessageEventContent,
     },
     send_queue::SendHandle,
@@ -140,6 +140,15 @@ impl ChatRoom {
         self.timeline
             .send(RoomMessageEventContent::text_plain(body).into())
             .await?;
+        Ok(())
+    }
+
+    /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
+    pub async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
+        let event_id: OwnedEventId = event_id
+            .parse()
+            .map_err(|_| Error::InvalidInput(format!("不是事件 ID：{event_id}")))?;
+        self.room.redact(&event_id, Some(reason), None).await?;
         Ok(())
     }
 

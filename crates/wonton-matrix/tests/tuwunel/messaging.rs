@@ -125,6 +125,55 @@ async fn wait_for_text(room: &ChatRoom, what: &str, sender: &UserId, text: &str)
     .await
 }
 
+/// 发出的消息被撤回后，双方看到的都是"已撤回"，理由随撤回事件广播。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn redacted_message_shows_as_redacted_to_both_sides() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("Alice 建私聊");
+    bob.join_room(&room_id).await.expect("Bob 加入私聊");
+    let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
+    let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
+
+    alice_room
+        .send_text("授权码 code-42")
+        .await
+        .expect("Alice 发文字");
+    let sent = wait_for_text(
+        &alice_room,
+        "Alice 的消息已送达",
+        alice.user_id(),
+        "授权码 code-42",
+    )
+    .await;
+    wait_for_text(&bob_room, "Bob 收到文字", alice.user_id(), "授权码 code-42").await;
+    let event_id = sent.event_id.expect("已送达的消息有事件 ID");
+
+    alice_room
+        .redact(event_id.as_str(), "已转交 Agent 登录")
+        .await
+        .expect("Alice 撤回");
+    for (room, what) in [(&alice_room, "Alice 看到撤回"), (&bob_room, "Bob 看到撤回")] {
+        eventually(what, room.message_updates().await, |messages| {
+            messages
+                .iter()
+                .find(|message| {
+                    message.event_id.as_ref() == Some(&event_id)
+                        && matches!(message.body, MessageBody::Redacted)
+                })
+                .cloned()
+        })
+        .await;
+    }
+}
+
 /// 发图后，对方收到的图片带着原来的元数据，凭句柄下载到的字节与原图一致。
 async fn send_and_receive_image(
     from: &ChatRoom,

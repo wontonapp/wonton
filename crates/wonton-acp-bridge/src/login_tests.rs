@@ -4,17 +4,43 @@ use crate::login::LoginSink;
 use serde_json::json;
 
 #[derive(Clone, Default)]
-struct MemorySink(Arc<std::sync::Mutex<Vec<String>>>);
+struct MemorySink {
+    texts: Arc<std::sync::Mutex<Vec<String>>>,
+    redactions: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    fail_redact: bool,
+}
 
 impl MemorySink {
     fn texts(&self) -> Vec<String> {
-        self.0.lock().unwrap().clone()
+        self.texts.lock().unwrap().clone()
+    }
+
+    fn redactions(&self) -> Vec<(String, String)> {
+        self.redactions.lock().unwrap().clone()
+    }
+
+    fn failing_redact() -> Self {
+        Self {
+            fail_redact: true,
+            ..Default::default()
+        }
     }
 }
 
 impl LoginSink for MemorySink {
     async fn send_login_text(&self, text: &str) -> crate::error::Result<()> {
-        self.0.lock().unwrap().push(text.to_owned());
+        self.texts.lock().unwrap().push(text.to_owned());
+        Ok(())
+    }
+
+    async fn redact(&self, event_id: &str, reason: &str) -> crate::error::Result<()> {
+        if self.fail_redact {
+            return Err(Error::Matrix("没有权限撤回这条消息".into()));
+        }
+        self.redactions
+            .lock()
+            .unwrap()
+            .push((event_id.to_owned(), reason.to_owned()));
         Ok(())
     }
 }
@@ -36,7 +62,14 @@ async fn broken_login_method_is_skipped_without_failing_connect() {
     let (mut login, mut events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
-        login.receive("/wonton login", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "list methods",
     )
     .await
@@ -69,7 +102,14 @@ async fn url_login_completes_through_chat_commands() {
     let (mut login, mut events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
-        login.receive("/wonton login", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "list methods",
     )
     .await
@@ -83,6 +123,7 @@ async fn url_login_completes_through_chat_commands() {
     bounded(
         login.receive(
             "/wonton login url-method",
+            "$msg:example.org",
             &sink,
             &client,
             &agent.socket,
@@ -109,7 +150,14 @@ async fn url_login_completes_through_chat_commands() {
     );
 
     bounded(
-        login.receive("/wonton login accept", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login accept",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "accept",
     )
     .await
@@ -149,7 +197,14 @@ async fn terminal_login_forwards_code_and_reconnects() {
     let (mut login, mut events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
-        login.receive("/wonton login term", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login term",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "start terminal login",
     )
     .await
@@ -164,7 +219,14 @@ async fn terminal_login_forwards_code_and_reconnects() {
         .unwrap();
 
     bounded(
-        login.receive("code-42", &sink, &client, &agent.socket, false),
+        login.receive(
+            "code-42",
+            "$key:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "send code",
     )
     .await
@@ -198,6 +260,115 @@ async fn terminal_login_forwards_code_and_reconnects() {
 }
 
 #[tokio::test]
+async fn terminal_login_redacts_the_forwarded_key_message() {
+    use crate::login::{LoginEvent, LoginFlow};
+    let agent = FakeAgent::start(Scenario::LoginTerminal).await;
+    let client = Arc::new(
+        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+            .await
+            .unwrap(),
+    );
+    let (mut login, mut events) = LoginFlow::new();
+    let sink = MemorySink::default();
+    bounded(
+        login.receive(
+            "/wonton login term",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "start terminal login",
+    )
+    .await
+    .unwrap();
+    let event = bounded(events.recv(), "terminal output").await.unwrap();
+    let LoginEvent::Output(_) = &event else {
+        panic!("期待终端登录输出链接");
+    };
+    bounded(login.event(event, &sink), "deliver link")
+        .await
+        .unwrap();
+    // 开始登录不撤回任何消息。
+    assert!(sink.redactions().is_empty());
+    bounded(
+        login.receive(
+            "code-42",
+            "$key:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "send code",
+    )
+    .await
+    .unwrap();
+    // 只有转交给 Agent 的那一条被撤回。
+    assert_eq!(
+        sink.redactions(),
+        vec![("$key:example.org".to_owned(), REDACT_REASON.to_owned())]
+    );
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
+async fn failed_redaction_tells_the_user_to_delete_the_key() {
+    use crate::login::{LoginEvent, LoginFlow};
+    let agent = FakeAgent::start(Scenario::LoginTerminal).await;
+    let client = Arc::new(
+        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+            .await
+            .unwrap(),
+    );
+    let (mut login, mut events) = LoginFlow::new();
+    let sink = MemorySink::failing_redact();
+    bounded(
+        login.receive(
+            "/wonton login term",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "start terminal login",
+    )
+    .await
+    .unwrap();
+    let event = bounded(events.recv(), "terminal output").await.unwrap();
+    let LoginEvent::Output(_) = &event else {
+        panic!("期待终端登录输出链接");
+    };
+    bounded(login.event(event, &sink), "deliver link")
+        .await
+        .unwrap();
+    bounded(
+        login.receive(
+            "code-42",
+            "$key:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "send code",
+    )
+    .await
+    .unwrap();
+    // 撤回失败不能静默：告诉用户消息里还有密钥。
+    assert!(
+        sink.texts()
+            .iter()
+            .any(|text| text.contains("这条消息里有登录用的密钥，请自己删掉它。"))
+    );
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
 async fn idle_url_elicitation_is_cancelled_immediately() {
     use crate::login::LoginFlow;
     let agent = FakeAgent::start(Scenario::IdleElicit).await;
@@ -223,7 +394,14 @@ async fn idle_url_elicitation_is_cancelled_immediately() {
     let (mut login, _events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
-        login.receive("/wonton login", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "list methods",
     )
     .await
@@ -245,7 +423,14 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
     let (mut login, _events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
-        login.receive("/wonton login", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "list methods",
     )
     .await
@@ -257,6 +442,7 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
     bounded(
         login.receive(
             "/wonton login env-method",
+            "$msg:example.org",
             &sink,
             &client,
             &agent.socket,
@@ -270,7 +456,14 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
     assert!(!login.active());
     // 再选一个不存在的 ID，同样只是提示。
     bounded(
-        login.receive("/wonton login nope", &sink, &client, &agent.socket, false),
+        login.receive(
+            "/wonton login nope",
+            "$msg:example.org",
+            &sink,
+            &client,
+            &agent.socket,
+            false,
+        ),
         "unknown method",
     )
     .await

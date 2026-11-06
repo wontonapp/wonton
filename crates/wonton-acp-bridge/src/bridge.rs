@@ -52,6 +52,9 @@ impl LoginSink for RoomSink<'_> {
     async fn send_login_text(&self, text: &str) -> BridgeResult<()> {
         Ok(self.room.send_text(text).await?)
     }
+    async fn redact(&self, event_id: &str, reason: &str) -> BridgeResult<()> {
+        Ok(self.room.redact(event_id, reason).await?)
+    }
 }
 
 struct RoomState {
@@ -219,6 +222,7 @@ async fn receive_job(
         .login
         .receive(
             &incoming.text,
+            &incoming.event_id,
             &RoomSink {
                 room: room.as_ref(),
             },

@@ -22,7 +22,9 @@ use crate::{
 };
 
 pub mod auth;
+mod rpc_error;
 use auth::{AuthMethod, AuthRequests, parse_auth_methods};
+use rpc_error::RpcError;
 #[cfg(test)]
 #[path = "acp_test_support.rs"]
 pub(crate) mod test_support;
@@ -54,12 +56,6 @@ pub struct PromptResult {
     pub permissions_cancelled: usize,
     pub permission_error: Option<String>,
     pub output_limited: bool,
-}
-
-#[derive(Debug)]
-struct RpcError {
-    code: i64,
-    message: String,
 }
 
 struct PendingGuard {
@@ -512,13 +508,7 @@ async fn settle_response(inner: &Arc<Inner>, id: u64, message: &Value) {
     let sender = inner.pending.lock().await.remove(&id);
     let Some(sender) = sender else { return };
     let result = if let Some(error) = message.get("error") {
-        Err(RpcError {
-            code: error["code"].as_i64().unwrap_or(-32603),
-            message: error["message"]
-                .as_str()
-                .unwrap_or("ACP 请求失败")
-                .to_owned(),
-        })
+        Err(RpcError::from_wire(error))
     } else {
         Ok(message.get("result").cloned().unwrap_or(Value::Null))
     };

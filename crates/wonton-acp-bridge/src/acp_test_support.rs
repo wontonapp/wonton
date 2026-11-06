@@ -32,6 +32,7 @@ pub(crate) enum Scenario {
     IdleElicit,
     PromptTransportError,
     PromptUpstreamError,
+    PromptErrorData,
 }
 
 pub(crate) struct FakeAgent {
@@ -357,6 +358,30 @@ async fn handle_prompt(
     }
     if matches!(scenario, Scenario::PromptUpstreamError) {
         rpc_error(writer, &message["id"], -32603, "上游炸了").await;
+        return;
+    }
+    if matches!(scenario, Scenario::PromptErrorData) {
+        let long_detail = "细节。".repeat(800);
+        let error = match count {
+            1 => {
+                json!({"code": -32603, "message": "Internal error", "data": {"details": "No model selected. Use /login 选择模型。"}})
+            }
+            2 => {
+                json!({"code": -32603, "message": "Internal error", "data": "后台正在编译，请稍后再试"})
+            }
+            3 => {
+                json!({"code": -32603, "message": "同一个原因", "data": {"message": "同一个原因"}})
+            }
+            4 => json!({"code": -32603, "message": "Internal error", "data": {"details": 42}}),
+            _ => {
+                json!({"code": -32603, "message": "Internal error", "data": {"details": long_detail}})
+            }
+        };
+        send(
+            writer,
+            json!({"jsonrpc": "2.0", "id": message["id"], "error": error}),
+        )
+        .await;
         return;
     }
     if matches!(scenario, Scenario::CancelLateUpdate) && count == 1 {

@@ -149,3 +149,53 @@ async fn prompt_errors_keep_their_categories() {
         agent.finish().await;
     }
 }
+
+#[tokio::test]
+async fn prompt_errors_show_the_reason_from_data() {
+    let agent = FakeAgent::start(Scenario::PromptErrorData).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    let prompt_error = || {
+        bounded(
+            client.prompt("session-1", "hi", 1024, Duration::from_secs(2)),
+            "prompt",
+        )
+    };
+    // data.details 接在笼统的 message 后面，用户能看到要做什么。
+    let shown = prompt_error().await.unwrap_err().to_string();
+    assert!(
+        shown.contains("Internal error")
+            && shown.contains("No model selected. Use /login 选择模型。"),
+        "用户看到的：{shown}"
+    );
+    // data 本身是字符串。
+    let shown = prompt_error().await.unwrap_err().to_string();
+    assert!(
+        shown.contains("后台正在编译，请稍后再试"),
+        "用户看到的：{shown}"
+    );
+    // detail 和 message 相同时不重复。
+    assert_eq!(
+        prompt_error().await.unwrap_err().to_string(),
+        "ACP 上游出错：同一个原因"
+    );
+    // 其余形状照旧：不认识的 data 不往上接。
+    assert_eq!(
+        prompt_error().await.unwrap_err().to_string(),
+        "ACP 上游出错：Internal error"
+    );
+    // 整段截到 2 KiB，不切开多字节字符。
+    if let Error::Upstream(text) = prompt_error().await.unwrap_err() {
+        assert!(
+            text.len() > 2000 && text.len() <= 2048,
+            "截断后 {} 字节",
+            text.len()
+        );
+        assert!(text.starts_with("Internal error\n"));
+    } else {
+        panic!("期待 Upstream 错误");
+    }
+    drop(client);
+    agent.finish().await;
+}
