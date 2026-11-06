@@ -23,6 +23,7 @@ mod onboarding;
 mod owner;
 mod plugin;
 mod push;
+mod registry_mirror;
 mod secret;
 mod session;
 mod tabs;
@@ -103,6 +104,10 @@ pub use plugin::{
     UpgradeOffer, UpgradeRequest, UpgradeResult,
 };
 pub use push::{PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus};
+pub use registry_mirror::{
+    RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
+    RegistryMirrorTests, RegistryMirrorUpdate, RegistryProbe, RegistryProblem,
+};
 pub use secret::SecretString;
 pub use session::{SessionListViewModel, SessionRow};
 pub use tabs::{
