@@ -16,8 +16,7 @@ use palette::OklabHue;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use wonton_protocol::{
-    AppearanceProblem, AppearanceViewModel, CoreError, FontOption, FontStyle, Rgb, TextSize,
-    TextSizeOption, ThemeMode, ThemeModeOption,
+    AppearanceProblem, AppearanceViewModel, CoreError, FontStyle, Rgb, TextSize, ThemeMode,
 };
 
 use crate::home::write_private;
@@ -212,49 +211,28 @@ fn more_colors() -> Vec<Rgb> {
         .collect()
 }
 
-fn theme_modes() -> Vec<ThemeModeOption> {
-    [
-        (ThemeMode::System, "跟随系统"),
-        (ThemeMode::Light, "浅色"),
-        (ThemeMode::Dark, "深色"),
-    ]
-    .map(|(value, label)| ThemeModeOption {
-        value,
-        label: label.to_owned(),
-    })
-    .to_vec()
+fn theme_modes() -> Vec<ThemeMode> {
+    vec![ThemeMode::System, ThemeMode::Light, ThemeMode::Dark]
 }
 
-fn text_sizes() -> Vec<TextSizeOption> {
-    [
-        (TextSize::System, "跟随系统"),
-        (TextSize::Small, "小"),
-        (TextSize::Standard, "标准"),
-        (TextSize::Large, "大"),
-        (TextSize::ExtraLarge, "特大"),
+fn text_sizes() -> Vec<TextSize> {
+    vec![
+        TextSize::System,
+        TextSize::Small,
+        TextSize::Standard,
+        TextSize::Large,
+        TextSize::ExtraLarge,
     ]
-    .map(|(value, label)| TextSizeOption {
-        value,
-        label: label.to_owned(),
-    })
-    .to_vec()
 }
 
-fn fonts() -> Vec<FontOption> {
-    let mut fonts = vec![(FontStyle::Default, "默认")];
+fn fonts() -> Vec<FontStyle> {
+    let mut fonts = vec![FontStyle::Default];
     // 只有 Apple 的系统字体里有圆体。
     if cfg!(any(target_os = "ios", target_os = "macos")) {
-        fonts.push((FontStyle::Rounded, "圆体"));
+        fonts.push(FontStyle::Rounded);
     }
-    fonts.push((FontStyle::Serif, "衬线"));
-    fonts.push((FontStyle::Monospaced, "等宽"));
+    fonts.extend([FontStyle::Serif, FontStyle::Monospaced]);
     fonts
-        .into_iter()
-        .map(|(value, label)| FontOption {
-            value,
-            label: label.to_owned(),
-        })
-        .collect()
 }
 
 /// 默认外观。核心起不来时启动失败页也要有颜色，所以不依赖 [`ClientCore`](crate::ClientCore)。

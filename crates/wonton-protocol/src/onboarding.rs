@@ -200,8 +200,6 @@ pub enum ModelProviderInput {
 pub struct OnboardingViewModel {
     /// 还没从家里的服务器取到时为空，这时不知道引导走完了没有。
     pub step: Option<OnboardingStep>,
-    /// 当前步骤的标题。
-    pub title: String,
     /// 第几步和哪些按钮能点；走完了或者还没取到时为空。
     pub nav: Option<StepNav>,
     /// 正在从家里的服务器取状态。
@@ -256,8 +254,8 @@ pub struct OnboardingProfileStep {
 pub struct OnboardingAgentRow {
     pub id: String,
     pub title: String,
-    /// 接模型的方式，如“ChatGPT 账号或 key”。
-    pub connection: String,
+    /// 能用来接模型的账号登录的名字，如“ChatGPT 账号”，服务器给的、已按语言挑好。空表表示只能用 key。
+    pub logins: Vec<String>,
     pub selected: bool,
     /// 要装时的安装来源，走现有的确认页；已经装着时为空。
     pub source: Option<String>,
@@ -374,10 +372,10 @@ pub struct OnboardingReviewItem {
     /// 重试时带回（[`Action::RetryOnboardingItem`](crate::Action::RetryOnboardingItem)）。Agent 和应用是插件 ID。
     pub id: String,
     pub kind: OnboardingReviewKind,
-    /// 资料是填的名字，Agent 和应用是插件名，模型是服务商名或自定义的地址。
-    pub title: String,
-    /// 第二行，核心写好的：资料是邮箱，模型是“用现在的”、模型名或测试结果，Agent 是“设为默认”；没有时为空。
-    pub detail: Option<String>,
+    /// 资料是填的名字，Agent 和应用是插件名，模型是服务商名（“用现在的”可能有几个）。壳用列表格式连起来。
+    pub titles: Vec<String>,
+    /// 第二行的内容，壳按类别写文字；没有时为空。
+    pub detail: Option<OnboardingReviewDetail>,
     /// 要装的 Agent 和应用的图标。
     pub icon: Option<PluginIcon>,
     /// 要装的 Agent 和应用申请的权限，点完成就是授予它们。
@@ -385,6 +383,25 @@ pub struct OnboardingReviewItem {
     /// 确认前要看到的其他说明（未审核、镜像来源等），同安装确认页。
     pub notices: Vec<CardLine>,
     pub state: OnboardingItemState,
+}
+
+/// 最后一页一项的第二行。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OnboardingReviewDetail {
+    /// 资料的邮箱。
+    Email { email: String },
+    /// 已经装着的 Agent，完成后设成默认。
+    SetAsDefault,
+    /// 模型用模型网关里已经接好的。
+    KeepCurrent,
+    /// 自定义服务商测试通过时的模型名。
+    Model { model: String },
+    /// 测试时没连上服务商，照样保存。`model` 是自定义服务商的模型名，列表里的服务商为空。
+    Unreachable { model: Option<String> },
+    /// 选了 Agent 的账号登录，装好后在聊天里登录。
+    SignInAfterSetup,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -407,9 +424,10 @@ pub enum OnboardingItemState {
     Preparing,
     /// 点完成就做。
     Ready,
-    /// 这台主机装不了，或者要先填资料（如邮箱）：回到那一步改，或者不选它。
+    /// 这台主机装不了，或者要先填资料（如邮箱）：回到那一步改，或者不选它。`message` 是原因：服务器给的原样放，
+    /// 核心自己判断的（如权限变了）也放在这里；没有原因（没有安装来源）时为空，壳写“装不了”。
     Blocked {
-        message: String,
+        message: Option<String>,
     },
     /// 点了完成，排在前面的做完才轮到它。
     Waiting,
@@ -444,14 +462,14 @@ pub struct ReplacedAgent {
     pub title: String,
 }
 
-/// 在用的时候教的提示，每台设备一次。有文字时壳在对应的地方显示。
+/// 在用的时候教的提示，每台设备一次。为真时壳在对应的地方显示。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingTips {
     /// 第一次出现确认卡片的提示条时。
-    pub confirmation_card: Option<String>,
+    pub confirmation_card: bool,
     /// 第一次走到应用的完成页时。
-    pub app_installed: Option<String>,
+    pub app_installed: bool,
 }
 
 /// 哪一条提示。

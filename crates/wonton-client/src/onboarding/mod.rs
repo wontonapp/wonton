@@ -8,7 +8,6 @@ mod refresh;
 mod review;
 mod steps;
 mod storage;
-mod text;
 mod view;
 
 use std::collections::HashSet;
@@ -60,6 +59,7 @@ pub(crate) struct OnboardingLink {
     view: watch::Sender<OnboardingViewModel>,
     state: Mutex<LocalState>,
     storage: OnboardingStorage,
+    /// 上次告诉核心的语言，变了才重新取：家里的服务器按 `Accept-Language` 挑引导里的名字、问题和服务商。
     languages: Mutex<Vec<String>>,
     /// 换服务器时加一，之前发起的请求的结果都作废。
     generation: AtomicU64,
@@ -165,10 +165,6 @@ impl OnboardingLink {
 
     fn generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
-    }
-
-    fn language(&self) -> text::Language {
-        text::language(&lock(&self.languages))
     }
 
     fn begin_operation(&self) -> (u64, u64) {
@@ -361,11 +357,10 @@ impl OnboardingLink {
 
     fn publish(&self) {
         let state = lock(&self.state);
-        let language = self.language();
         let records = self.storage.snapshot();
         let chat = self.chat.view();
         let sent_rooms = lock(&self.sent_rooms).clone();
-        let (view, primary_bot) = render(&state, &records, &chat, &sent_rooms, language);
+        let (view, primary_bot) = render(&state, &records, &chat, &sent_rooms);
         // 快照必须在持锁时发布，不能让较早渲染的 loading 覆盖完成状态。
         self.view.send_replace(view);
         drop(state);

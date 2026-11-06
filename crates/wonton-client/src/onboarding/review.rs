@@ -6,13 +6,12 @@ use std::sync::Arc;
 
 use wonton_protocol::{
     CoreError, InstallPreview, ModelProviderFailure, OnboardingCommit, OnboardingItemProblem,
-    OnboardingItemState, OnboardingReviewItem, OnboardingReviewKind, OnboardingStep,
-    OnboardingUpdate, PluginFailure, PluginIcon, PluginProblem, PluginTask, PluginTaskState,
-    normalized_email,
+    OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
+    OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon, PluginProblem, PluginTask,
+    PluginTaskState, normalized_email,
 };
 
 use super::draft::ModelDraft;
-use super::text::{self, Language};
 use super::{LocalState, OnboardingLink, api, invalid, lock};
 
 pub(super) const PROFILE: &str = "profile";
@@ -22,8 +21,8 @@ const PERMISSIONS_CHANGED: &str = "要的权限和确认时的不一样了，到
 pub(super) struct ReviewEntry {
     pub id: String,
     pub kind: OnboardingReviewKind,
-    pub title: String,
-    pub detail: Option<String>,
+    pub titles: Vec<String>,
+    pub detail: Option<OnboardingReviewDetail>,
     pub icon: Option<PluginIcon>,
     /// 要装时的安装来源。
     pub source: Option<String>,
@@ -32,11 +31,11 @@ pub(super) struct ReviewEntry {
 }
 
 impl ReviewEntry {
-    fn new(id: &str, kind: OnboardingReviewKind, title: String) -> Self {
+    fn new(id: &str, kind: OnboardingReviewKind, titles: Vec<String>) -> Self {
         Self {
             id: id.to_owned(),
             kind,
-            title,
+            titles,
             detail: None,
             icon: None,
             source: None,
@@ -49,7 +48,7 @@ impl ReviewEntry {
         OnboardingReviewItem {
             id: self.id.clone(),
             kind: self.kind,
-            title: self.title.clone(),
+            titles: self.titles.clone(),
             detail: self.detail.clone(),
             icon: self.icon.clone(),
             permissions: self
@@ -70,7 +69,7 @@ impl ReviewEntry {
 }
 
 /// 按记下的选择列出这一页的项。要装的插件先是 `Preparing`，取到预览后再定。
-pub(super) fn entries(state: &LocalState, language: Language) -> Vec<ReviewEntry> {
+pub(super) fn entries(state: &LocalState) -> Vec<ReviewEntry> {
     let Some(onboarding) = state.onboarding.as_ref() else {
         return Vec::new();
     };
@@ -80,9 +79,11 @@ pub(super) fn entries(state: &LocalState, language: Language) -> Vec<ReviewEntry
         let mut entry = ReviewEntry::new(
             PROFILE,
             OnboardingReviewKind::Profile,
-            name.trim().to_owned(),
+            vec![name.trim().to_owned()],
         );
-        entry.detail = normalized_email(Some(&email)).map(str::to_owned);
+        entry.detail = normalized_email(Some(&email)).map(|email| OnboardingReviewDetail::Email {
+            email: email.to_owned(),
+        });
         entries.push(entry);
     }
     let agent_id = state.draft.agent(onboarding);
@@ -90,18 +91,21 @@ pub(super) fn entries(state: &LocalState, language: Language) -> Vec<ReviewEntry
         .as_deref()
         .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
     {
-        let mut entry =
-            ReviewEntry::new(&agent.id, OnboardingReviewKind::Agent, agent.title.clone());
+        let mut entry = ReviewEntry::new(
+            &agent.id,
+            OnboardingReviewKind::Agent,
+            vec![agent.title.clone()],
+        );
         if agent.status.is_some() {
             entry.detail = (onboarding.primary_agent.as_deref() != Some(agent.id.as_str()))
-                .then(|| text::set_default(language));
+                .then_some(OnboardingReviewDetail::SetAsDefault);
         } else {
             prepare(&mut entry, agent.source.clone(), agent.blocked.clone());
         }
         entries.push(entry);
     }
     if let Some(model) = state.draft.model(state.providers.as_ref()) {
-        entries.push(model_entry(model, state, language));
+        entries.push(model_entry(model, state));
     }
     let mut seen: HashSet<&str> = agent_id.iter().map(String::as_str).collect();
     let needs = state.draft.needs(onboarding);
@@ -114,8 +118,11 @@ pub(super) fn entries(state: &LocalState, language: Language) -> Vec<ReviewEntry
         if plugin.installed_version.is_some() || !seen.insert(&plugin.id) {
             continue;
         }
-        let mut entry =
-            ReviewEntry::new(&plugin.id, OnboardingReviewKind::App, plugin.title.clone());
+        let mut entry = ReviewEntry::new(
+            &plugin.id,
+            OnboardingReviewKind::App,
+            vec![plugin.title.clone()],
+        );
         entry.icon = plugin.icon.clone();
         prepare(
             &mut entry,
@@ -129,25 +136,25 @@ pub(super) fn entries(state: &LocalState, language: Language) -> Vec<ReviewEntry
 
 fn prepare(entry: &mut ReviewEntry, source: Option<String>, blocked: Option<String>) {
     entry.state = match (&source, blocked) {
-        (_, Some(message)) => OnboardingItemState::Blocked { message },
-        (Some(_), None) => OnboardingItemState::Preparing,
-        (None, None) => OnboardingItemState::Blocked {
-            message: "没有安装来源，装不了".to_owned(),
+        (_, Some(message)) => OnboardingItemState::Blocked {
+            message: Some(message),
         },
+        (Some(_), None) => OnboardingItemState::Preparing,
+        (None, None) => OnboardingItemState::Blocked { message: None },
     };
     entry.source = source;
 }
 
-fn model_entry(model: &ModelDraft, state: &LocalState, language: Language) -> ReviewEntry {
-    let (title, detail) = match model {
+fn model_entry(model: &ModelDraft, state: &LocalState) -> ReviewEntry {
+    let (titles, detail) = match model {
         ModelDraft::Current => {
-            let titles: Vec<&str> = state
+            let titles = state
                 .providers
                 .iter()
                 .flat_map(|providers| &providers.configured)
-                .map(|provider| provider.title.as_str())
+                .map(|provider| provider.title.clone())
                 .collect();
-            (titles.join("、"), Some(text::keep_current(language)))
+            (titles, Some(OnboardingReviewDetail::KeepCurrent))
         }
         ModelDraft::Tested {
             input,
@@ -159,16 +166,19 @@ fn model_entry(model: &ModelDraft, state: &LocalState, language: Language) -> Re
                 wonton_protocol::ModelProviderInput::Preset { .. } => None,
             };
             let detail = if *reachable {
-                model
+                model.map(|model| OnboardingReviewDetail::Model { model })
             } else {
-                Some(text::unreachable(model.as_deref(), language))
+                Some(OnboardingReviewDetail::Unreachable { model })
             };
-            (title.clone(), detail)
+            (vec![title.clone()], detail)
         }
-        ModelDraft::Login { title, .. } => (title.clone(), Some(text::login_after(language))),
-        ModelDraft::Skipped => (String::new(), None),
+        ModelDraft::Login { title, .. } => (
+            vec![title.clone()],
+            Some(OnboardingReviewDetail::SignInAfterSetup),
+        ),
+        ModelDraft::Skipped => (Vec::new(), None),
     };
-    let mut entry = ReviewEntry::new(MODEL, OnboardingReviewKind::Model, title);
+    let mut entry = ReviewEntry::new(MODEL, OnboardingReviewKind::Model, titles);
     entry.detail = detail;
     entry
 }
@@ -179,16 +189,16 @@ pub(super) fn apply_preview(entry: &mut ReviewEntry, preview: InstallPreview, em
     entry.state = match (&preview.blocked, &preview.missing_profile) {
         // 安装进展按插件 ID 对到这一项上，对不上就看不到进展。
         _ if preview.id != entry.id => OnboardingItemState::Blocked {
-            message: format!(
+            message: Some(format!(
                 "安装来源里的插件是 {}，不是列表里的 {}",
                 preview.id, entry.id
-            ),
+            )),
         },
         (Some(message), _) => OnboardingItemState::Blocked {
-            message: message.clone(),
+            message: Some(message.clone()),
         },
         (None, Some(message)) if !email_filled => OnboardingItemState::Blocked {
-            message: message.clone(),
+            message: Some(message.clone()),
         },
         _ => OnboardingItemState::Ready,
     };
@@ -264,10 +274,9 @@ fn core_problem(error: &CoreError) -> PluginProblem {
 impl OnboardingLink {
     /// 进最后一页：列出项，给要装的取预览。
     pub(super) fn enter_review(self: &Arc<Self>) {
-        let language = self.language();
         let (generation, review, sources) = {
             let mut state = lock(&self.state);
-            state.review = entries(&state, language);
+            state.review = entries(&state);
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
             state.step = Some(OnboardingStep::Review);
@@ -321,7 +330,7 @@ impl OnboardingLink {
                         if install && changed {
                             // 点完成确认的是列出的那些权限，变了就不能替主人装。
                             entry.state = OnboardingItemState::Blocked {
-                                message: PERMISSIONS_CHANGED.to_owned(),
+                                message: Some(PERMISSIONS_CHANGED.to_owned()),
                             };
                             None
                         } else if install && entry.state == OnboardingItemState::Ready {

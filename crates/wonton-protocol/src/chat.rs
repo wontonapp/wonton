@@ -214,10 +214,31 @@ pub struct RoomPreview {
     pub sender_name: String,
     /// 是否由本账号发出（包括本账号的其他设备）。
     pub is_own: bool,
-    /// 一行文字摘要：文字消息是正文，图片是“[图片]”这样的占位，由核心给出。
-    pub text: String,
+    /// 消息的类别和正文，壳按类别写占位的文字。
+    pub body: MessageSummary,
     /// 发送时间，Unix 毫秒。
     pub timestamp_ms: u64,
+}
+
+/// 一行预览用的消息内容。核心只给类别和原文，不拼出要显示的文字。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MessageSummary {
+    /// 正文。别人的消息是 Markdown 摊平后的纯文本，自己的是原文。
+    Text {
+        text: String,
+    },
+    /// 只有文件链接，没有正文。
+    Files,
+    Image,
+    /// 本机还没有房间密钥，解不开。
+    Undecryptable,
+    Redacted,
+    /// 其他类型的事件，`kind` 是事件类型原文，如 `m.sticker`。
+    Other {
+        kind: String,
+    },
 }
 
 /// 要发送的图片。壳从相册或相机取到原图后交给核心，核心负责上传和发送。
@@ -314,7 +335,7 @@ mod tests {
                 preview: Some(RoomPreview {
                     sender_name: "Hermes".into(),
                     is_own: false,
-                    text: "[图片]".into(),
+                    body: MessageSummary::Image,
                     timestamp_ms: 1_793_000_000_000,
                 }),
                 unread_count: 2,

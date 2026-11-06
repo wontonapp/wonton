@@ -4,26 +4,24 @@ use std::collections::HashSet;
 
 use wonton_protocol::{
     ChatViewModel, Onboarding, OnboardingAgent, OnboardingAgentRow, OnboardingCommit,
-    OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep, OnboardingTip,
-    OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
+    OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep, OnboardingViewModel,
+    PluginState, ReplacedAgent, StepNav,
 };
 
-use super::{LocalState, review, storage, text};
-use text::Language;
+use super::{LocalState, review, storage};
 
 pub(super) fn render(
     state: &LocalState,
     records: &storage::Records,
     chat: &ChatViewModel,
     sent_rooms: &HashSet<String>,
-    language: Language,
 ) -> (OnboardingViewModel, Option<String>) {
     let Some(onboarding) = state.onboarding.as_ref() else {
         return (
             OnboardingViewModel {
                 loading: state.loading,
                 problem: state.problem.clone(),
-                tips: tips(records, language),
+                tips: tips(records),
                 ..OnboardingViewModel::default()
             },
             None,
@@ -36,7 +34,11 @@ pub(super) fn render(
         .map(|agent| OnboardingAgentRow {
             id: agent.id.clone(),
             title: agent.title.clone(),
-            connection: text::connection(&agent.logins, language),
+            logins: agent
+                .logins
+                .iter()
+                .map(|login| login.title.clone())
+                .collect(),
             selected: selected.as_deref() == Some(agent.id.as_str()),
             source: agent
                 .status
@@ -89,7 +91,6 @@ pub(super) fn render(
     let step = state.step.unwrap_or(onboarding.step);
     let view = OnboardingViewModel {
         step: Some(step),
-        title: text::title(step, language),
         nav: navigation(state, step, selected_agent),
         loading: state.loading,
         problem: state.problem.clone(),
@@ -105,7 +106,7 @@ pub(super) fn render(
         primary_bot_user_id: primary_bot.clone(),
         chat_prompts,
         replaced_agent: replaced_agent(onboarding),
-        tips: tips(records, language),
+        tips: tips(records),
     };
     (view, primary_bot)
 }
@@ -144,12 +145,10 @@ fn navigation(
     })
 }
 
-fn tips(records: &storage::Records, language: Language) -> wonton_protocol::OnboardingTips {
+fn tips(records: &storage::Records) -> wonton_protocol::OnboardingTips {
     wonton_protocol::OnboardingTips {
-        confirmation_card: (!records.confirmation_card)
-            .then(|| text::tip(OnboardingTip::ConfirmationCard, language)),
-        app_installed: (!records.app_installed)
-            .then(|| text::tip(OnboardingTip::AppInstalled, language)),
+        confirmation_card: !records.confirmation_card,
+        app_installed: !records.app_installed,
     }
 }
 
@@ -250,7 +249,7 @@ mod tests {
             onboarding: Some(onboarding()),
             ..LocalState::default()
         };
-        render(&state, records, chat, sent_rooms, Language::Chinese).0
+        render(&state, records, chat, sent_rooms).0
     }
 
     #[test]

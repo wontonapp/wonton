@@ -76,6 +76,22 @@ fn choices_survive_a_restart_and_changing_one_keeps_the_others() {
     );
 }
 
+/// 选项只是枚举，顺序由核心定，名字由壳写。只有 Apple 的系统字体里有圆体。
+#[test]
+fn option_lists_are_enums_in_display_order() {
+    let view = default_appearance();
+    assert_eq!(
+        view.theme_modes,
+        [ThemeMode::System, ThemeMode::Light, ThemeMode::Dark]
+    );
+    assert_eq!(view.text_sizes.first(), Some(&TextSize::System));
+    assert_eq!(view.fonts.first(), Some(&FontStyle::Default));
+    assert_eq!(
+        view.fonts.contains(&FontStyle::Rounded),
+        cfg!(any(target_os = "ios", target_os = "macos"))
+    );
+}
+
 /// 新版本要读得了旧文件。
 #[test]
 fn settings_file_format_is_stable() {

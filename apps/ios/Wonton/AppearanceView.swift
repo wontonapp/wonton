@@ -26,13 +26,13 @@ struct AppearanceView: View {
                 }
                 SettingsPreview()
                 section("明暗") {
-                    choices(appearance.themeModes, title: \.label, value: \.value, selected: appearance.themeMode) {
+                    choices(appearance.themeModes, title: \.label, selected: appearance.themeMode) {
                         model.send(.setThemeMode(mode: $0))
                     }
                 }
                 section("重点色") { accent }
                 section("字号") {
-                    choices(appearance.textSizes, title: \.label, value: \.value, selected: appearance.textSize) {
+                    choices(appearance.textSizes, title: \.label, selected: appearance.textSize) {
                         model.send(.setTextSize(size: $0))
                     }
                 }
@@ -58,18 +58,17 @@ struct AppearanceView: View {
         }
     }
 
-    private func choices<Option, Value: Equatable>(
-        _ options: [Option],
-        title: KeyPath<Option, String>,
-        value: KeyPath<Option, Value>,
+    private func choices<Value: Equatable>(
+        _ options: [Value],
+        title: KeyPath<Value, String>,
         selected: Value,
         select: @escaping (Value) -> Void
     ) -> some View {
         WontonGroup {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                 if index > 0 { WontonSeparator() }
-                ChoiceRow(title: option[keyPath: title], isSelected: option[keyPath: value] == selected) {
-                    select(option[keyPath: value])
+                ChoiceRow(title: option[keyPath: title], isSelected: option == selected) {
+                    select(option)
                 }
             }
         }
@@ -80,10 +79,10 @@ struct AppearanceView: View {
         WontonGroup {
             ForEach(Array(appearance.fonts.enumerated()), id: \.offset) { index, option in
                 if index > 0 { WontonSeparator() }
-                ChoiceRow(title: option.label, sample: "Aa", isSelected: option.value == appearance.font) {
-                    model.send(.setFont(font: option.value))
+                ChoiceRow(title: option.label, sample: "Aa", isSelected: option == appearance.font) {
+                    model.send(.setFont(font: option))
                 }
-                .fontDesign(option.value.design)
+                .fontDesign(option.design)
             }
         }
     }
@@ -157,6 +156,40 @@ struct AppearanceView: View {
             model.send(.setAccentColor(color: color))
         } else {
             isHexInvalid = true
+        }
+    }
+}
+
+/// 设置里各个选项的名字，顺序和核心给的列表一致。
+private extension ThemeMode {
+    var label: String {
+        switch self {
+        case .system: "跟随系统"
+        case .light: "浅色"
+        case .dark: "深色"
+        }
+    }
+}
+
+private extension TextSize {
+    var label: String {
+        switch self {
+        case .system: "跟随系统"
+        case .small: "小"
+        case .standard: "标准"
+        case .large: "大"
+        case .extraLarge: "特大"
+        }
+    }
+}
+
+private extension FontStyle {
+    var label: String {
+        switch self {
+        case .default: "默认"
+        case .rounded: "圆体"
+        case .serif: "衬线"
+        case .monospaced: "等宽"
         }
     }
 }

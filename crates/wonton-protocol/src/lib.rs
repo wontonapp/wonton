@@ -38,13 +38,12 @@ pub use agent_permission::{
     AgentPermissionOutcome, AgentPermissionRequest,
 };
 pub use appearance::{
-    AppearanceProblem, AppearanceViewModel, FontOption, FontStyle, Rgb, TextSize, TextSizeOption,
-    ThemeColors, ThemeMode, ThemeModeOption,
+    AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
 pub use chat::{
     BackupReminder, ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
-    DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, PendingConfirmation,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
+    DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, MessageSummary,
+    PendingConfirmation, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
@@ -86,9 +85,9 @@ pub use onboarding::{
     ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
     OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
     OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
-    OnboardingReview, OnboardingReviewItem, OnboardingReviewKind, OnboardingStep, OnboardingTip,
-    OnboardingTips, OnboardingUpdate, OnboardingViewModel, ReplacedAgent, StepNav,
-    model_provider_path, model_provider_test_path,
+    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
+    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingUpdate, OnboardingViewModel,
+    ReplacedAgent, StepNav, model_provider_path, model_provider_test_path,
 };
 pub use owner::{
     OWNER_PROFILE_PATH, OwnerProfile, OwnerProfileUpdate, check_display_name, check_email,

@@ -22,7 +22,7 @@ internal fun DefaultAgentSelection(onDismiss: () -> Unit) {
                 context.view.agents.forEach { agent ->
                     StepOptionRow(
                         title = agent.title,
-                        description = agent.connection,
+                        description = agent.connection(),
                         selected = agent.selected,
                         blocked = agent.blocked,
                         onSelect = { context.send(Action.SetPrimaryAgent(agent.id)) },

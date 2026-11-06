@@ -9,8 +9,9 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
-    MessageAction, MessageContent, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState,
-    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
+    MessageAction, MessageContent, MessageSummary, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    extract_file_links,
 };
 
 /// `core`：核心账号，和它的私聊是通知房间。
@@ -46,37 +47,39 @@ pub(crate) fn room_row(room: RoomInfo, core: &UserId) -> RoomRow {
     }
 }
 
-/// 预览的一行文字。不是消息的事件（成员变化等）不做预览。
+/// 预览。不是消息的事件（成员变化等）不做预览。
 fn preview(latest: LatestMessage) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
         return None;
     }
-    let text = summary(latest.body, latest.is_own);
+    let body = summary(latest.body, latest.is_own);
     Some(RoomPreview {
         sender_name: latest.sender_name,
         is_own: latest.is_own,
-        text,
+        body,
         timestamp_ms: latest.timestamp_ms,
     })
 }
 
-/// 消息的一行文字：房间列表的预览和通知的正文都用它。
-pub(crate) fn summary(body: MessageBody, is_own: bool) -> String {
+/// 消息的摘要：房间列表的预览用它。推送的正文是字符串，由 `push::notification` 转换。
+pub(crate) fn summary(body: MessageBody, is_own: bool) -> MessageSummary {
     match body {
         MessageBody::Text(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
             if body.is_empty() && !files.is_empty() {
-                "[文件]".to_owned()
+                MessageSummary::Files
             } else if is_own {
-                body
+                MessageSummary::Text { text: body }
             } else {
-                rich::flatten(&rich::markdown(&body))
+                MessageSummary::Text {
+                    text: rich::flatten(&rich::markdown(&body)),
+                }
             }
         }
-        MessageBody::Image(_) => "[图片]".to_owned(),
-        MessageBody::Undecryptable => "[加密消息]".to_owned(),
-        MessageBody::Redacted => "[已撤回]".to_owned(),
-        MessageBody::Other { kind } => format!("[{kind}]"),
+        MessageBody::Image(_) => MessageSummary::Image,
+        MessageBody::Undecryptable => MessageSummary::Undecryptable,
+        MessageBody::Redacted => MessageSummary::Redacted,
+        MessageBody::Other { kind } => MessageSummary::Other { kind },
     }
 }
 
@@ -331,9 +334,13 @@ mod tests {
     fn previews_do_not_show_file_links() {
         let link = FileId::from_bytes([1; 16]).link();
         let with_text = summary(MessageBody::Text(format!("给你 {link}")), false);
-        assert_eq!(with_text, "给你");
+        assert_eq!(
+            with_text,
+            MessageSummary::Text {
+                text: "给你".to_owned()
+            }
+        );
         let only_link = summary(MessageBody::Text(link), false);
-        assert!(!only_link.contains("wonton://"), "{only_link}");
-        assert!(!only_link.is_empty());
+        assert_eq!(only_link, MessageSummary::Files);
     }
 }

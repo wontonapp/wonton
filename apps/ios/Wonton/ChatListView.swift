@@ -240,7 +240,7 @@ private struct RoomRowView: View {
                 }
                 HStack(spacing: WontonTheme.spacing.s8) {
                     if let preview = row.preview {
-                        Text(preview.isOwn ? "我：\(preview.text)" : preview.text)
+                        Text(preview.isOwn ? "我：\(preview.body.line)" : preview.body.line)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                             .lineLimit(1)
@@ -373,5 +373,19 @@ private struct StartChatView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen("发起私聊")
+    }
+}
+
+/// 房间列表预览的一行：正文原样，图片、文件等占位在这里写。
+private extension MessageSummary {
+    var line: String {
+        switch self {
+        case let .text(text): text
+        case .files: "[文件]"
+        case .image: "[图片]"
+        case .undecryptable: "[加密消息]"
+        case .redacted: "[已撤回]"
+        case let .other(kind): "[\(kind)]"
+        }
     }
 }

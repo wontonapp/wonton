@@ -26,12 +26,14 @@ pub struct AppearanceViewModel {
     /// 两组色板每行的个数。
     pub swatch_columns: u32,
     pub theme_mode: ThemeMode,
-    pub theme_modes: Vec<ThemeModeOption>,
+    /// 设置页能选的明暗，按显示的顺序排；名字由壳按枚举写。
+    pub theme_modes: Vec<ThemeMode>,
     pub text_size: TextSize,
-    pub text_sizes: Vec<TextSizeOption>,
+    /// 设置页能选的字号，按显示的顺序排。
+    pub text_sizes: Vec<TextSize>,
     pub font: FontStyle,
-    /// 这台设备能选的字体：只列系统自带的，所以两端不一样。
-    pub fonts: Vec<FontOption>,
+    /// 这台设备能选的字体，按显示的顺序排：只列系统自带的，所以两端不一样。
+    pub fonts: Vec<FontStyle>,
     /// 明暗是浅色时用的一套。
     pub light: ThemeColors,
     /// 明暗是深色时用的一套。
@@ -74,27 +76,6 @@ pub enum FontStyle {
     Rounded,
     Serif,
     Monospaced,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ThemeModeOption {
-    pub value: ThemeMode,
-    pub label: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct TextSizeOption {
-    pub value: TextSize,
-    pub label: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct FontOption {
-    pub value: FontStyle,
-    pub label: String,
 }
 
 /// 一种明暗下的全部颜色令牌。

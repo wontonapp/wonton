@@ -1,6 +1,6 @@
 //! 同一台手机换服务器：每台服务器的 homeserver 地址和用户都一样，只有隧道的身份不同。
 
-use wonton_client::{ChatAccount, ChatFailure, ChatSync};
+use wonton_client::{ChatAccount, ChatFailure, ChatSync, MessageSummary};
 
 use super::support::{Home, Phone};
 use super::{accept_the_bots_invite, chat_with_the_bot};
@@ -88,10 +88,12 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
                 .iter()
                 .any(|row| {
                     row.room_id == room_id.as_str()
-                        && row
-                            .preview
-                            .as_ref()
-                            .is_some_and(|preview| preview.text == "换了地址之后发的")
+                        && row.preview.as_ref().is_some_and(|preview| {
+                            preview.body
+                                == MessageSummary::Text {
+                                    text: "换了地址之后发的".to_owned(),
+                                }
+                        })
                 })
                 .then_some(())
         })

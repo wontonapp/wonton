@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use wonton_matrix::{MatrixSession, MessageBody, OwnedEventId, OwnedRoomId};
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, NotificationCategory, PushContent,
-    PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, MessageSummary, NotificationCategory,
+    PushContent, PushNotification,
 };
 
 use super::PushLink;
@@ -106,7 +106,7 @@ impl PushLink {
                 body: "邀请你加入".to_owned(),
             },
             body => PushContent::Message {
-                body: summary(body, false),
+                body: push_text(summary(body, false)),
             },
         };
         Ok(Some(PushNotification {
@@ -154,6 +154,18 @@ impl PushLink {
                 ),
             }),
         }
+    }
+}
+
+/// 推送的正文是字符串：这里把摘要转成占位文字，图片、文件等的占位写在这里。
+fn push_text(summary: MessageSummary) -> String {
+    match summary {
+        MessageSummary::Text { text } => text,
+        MessageSummary::Files => "[文件]".to_owned(),
+        MessageSummary::Image => "[图片]".to_owned(),
+        MessageSummary::Undecryptable => "[加密消息]".to_owned(),
+        MessageSummary::Redacted => "[已撤回]".to_owned(),
+        MessageSummary::Other { kind } => format!("[{kind}]"),
     }
 }
 

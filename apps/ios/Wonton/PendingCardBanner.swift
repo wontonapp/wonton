@@ -34,8 +34,10 @@ struct PendingCardBanner: View {
             }
         }
         .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)
-        if let tip = onboarding.viewModel.tips.confirmationCard {
-            OnboardingTipView(text: tip) { onboarding.send(.dismissOnboardingTip(tip: .confirmationCard)) }
+        if onboarding.viewModel.tips.confirmationCard {
+            OnboardingTipView(text: "需要确认时，在聊天里的卡片上点确认。") {
+                onboarding.send(.dismissOnboardingTip(tip: .confirmationCard))
+            }
         }
     }
 

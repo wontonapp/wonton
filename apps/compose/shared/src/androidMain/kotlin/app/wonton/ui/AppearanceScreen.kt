@@ -49,7 +49,10 @@ import app.wonton.client.accentHex
 import app.wonton.client.parseAccent
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.FontStyle
 import app.wonton.protocol.Rgb
+import app.wonton.protocol.TextSize
+import app.wonton.protocol.ThemeMode
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
@@ -77,8 +80,8 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
             WontonGroup {
                 appearance.themeModes.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
-                    ChoiceRow(option.label, option.value == appearance.themeMode) {
-                        send(Action.SetThemeMode(option.value))
+                    ChoiceRow(option.label, option == appearance.themeMode) {
+                        send(Action.SetThemeMode(option))
                     }
                 }
             }
@@ -88,8 +91,8 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
             WontonGroup {
                 appearance.textSizes.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
-                    ChoiceRow(option.label, option.value == appearance.textSize) {
-                        send(Action.SetTextSize(option.value))
+                    ChoiceRow(option.label, option == appearance.textSize) {
+                        send(Action.SetTextSize(option))
                     }
                 }
             }
@@ -98,8 +101,8 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
             WontonGroup {
                 appearance.fonts.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
-                    ChoiceRow(option.label, option.value == appearance.font, FontSample(option.value.family)) {
-                        send(Action.SetFont(option.value))
+                    ChoiceRow(option.label, option == appearance.font, FontSample(option.family)) {
+                        send(Action.SetFont(option))
                     }
                 }
             }
@@ -129,6 +132,31 @@ private fun SettingsSeparator() {
             .background(WontonTheme.colors.separator.toColor()),
     )
 }
+
+/** 设置里各个选项的名字，顺序由核心给。 */
+private val ThemeMode.label: String
+    get() = when (this) {
+        ThemeMode.SYSTEM -> "跟随系统"
+        ThemeMode.LIGHT -> "浅色"
+        ThemeMode.DARK -> "深色"
+    }
+
+private val TextSize.label: String
+    get() = when (this) {
+        TextSize.SYSTEM -> "跟随系统"
+        TextSize.SMALL -> "小"
+        TextSize.STANDARD -> "标准"
+        TextSize.LARGE -> "大"
+        TextSize.EXTRA_LARGE -> "特大"
+    }
+
+private val FontStyle.label: String
+    get() = when (this) {
+        FontStyle.DEFAULT -> "默认"
+        FontStyle.ROUNDED -> "圆体"
+        FontStyle.SERIF -> "衬线"
+        FontStyle.MONOSPACED -> "等宽"
+    }
 
 /** 每一行用自己的字体写，选之前就看得出差别。系统字体的中文不一定跟着变，所以要有拉丁字母的样例。 */
 private class FontSample(val family: FontFamily?)

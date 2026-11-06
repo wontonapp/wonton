@@ -30,11 +30,11 @@ private struct OnboardingReviewRow: View {
                     PluginIconView(icon: icon, size: WontonTheme.size.taskIcon, model: plugins)
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                    Text(verbatim: item.title)
+                    Text(verbatim: item.titles.joined(separator: "、"))
                         .wontonText(WontonTheme.typography.itemTitle)
                         .foregroundStyle(Color(colors.textPrimary))
-                    if let detail = item.detail, !detail.isEmpty {
-                        Text(verbatim: detail)
+                    if let detail = item.detail {
+                        Text(verbatim: detail.line)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                     }
@@ -45,7 +45,7 @@ private struct OnboardingReviewRow: View {
             InstallPermissions(permissions: item.permissions, notices: item.notices)
             switch item.state {
             case let .blocked(message):
-                Text(verbatim: message)
+                Text(verbatim: message ?? "装不了")
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.danger))
             case let .uncertain(message):
@@ -82,6 +82,20 @@ private struct OnboardingReviewRow: View {
                 .accessibilityLabel("已完成")
         case .ready, .blocked, .uncertain, .failed:
             EmptyView()
+        }
+    }
+}
+
+/// 第二行的文字，按类别写在这里。
+private extension OnboardingReviewDetail {
+    var line: String {
+        switch self {
+        case let .email(email): email
+        case .setAsDefault: "设为默认"
+        case .keepCurrent: "用现在的"
+        case let .model(model): model
+        case let .unreachable(model): model.map { "\($0) · 测试时没连上" } ?? "测试时没连上"
+        case .signInAfterSetup: "装好后在聊天里登录"
         }
     }
 }

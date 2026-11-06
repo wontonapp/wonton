@@ -46,10 +46,15 @@ internal fun OnboardingChatPrompts(roomId: String) {
 @Composable
 internal fun OnboardingTipNotice(tip: OnboardingTip) {
     val context = LocalOnboarding.current
-    val text = when (tip) {
+    val shown = when (tip) {
         OnboardingTip.CONFIRMATION_CARD -> context.view.tips.confirmationCard
         OnboardingTip.APP_INSTALLED -> context.view.tips.appInstalled
-    } ?: return
+    }
+    if (!shown) return
+    val text = when (tip) {
+        OnboardingTip.CONFIRMATION_CARD -> "需要确认时，在聊天里的卡片上点确认。"
+        OnboardingTip.APP_INSTALLED -> "应用装好后，可以把它放到底栏。"
+    }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = WontonTheme.spacing.pageInset),
         verticalAlignment = Alignment.CenterVertically,

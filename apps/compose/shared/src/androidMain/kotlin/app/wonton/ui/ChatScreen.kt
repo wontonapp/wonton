@@ -42,6 +42,7 @@ import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
+import app.wonton.protocol.MessageSummary
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.ui.design.WontonButton
@@ -271,7 +272,7 @@ private fun RoomPreviewLine(row: RoomRow) {
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         Text(
-            row.preview?.let { if (it.isOwn) "我：${it.text}" else it.text }.orEmpty(),
+            row.preview?.let { if (it.isOwn) "我：${it.body.line()}" else it.body.line() }.orEmpty(),
             Modifier.weight(1f),
             style = WontonTheme.typography.supporting,
             color = colors.textSecondary.toColor(),
@@ -293,6 +294,16 @@ private fun RoomPreviewLine(row: RoomRow) {
 }
 
 /** Bot 用它的应用的图标，其他人用名字的第一个字。 */
+/** 房间列表预览的一行：正文原样，图片、文件等占位在这里写。 */
+private fun MessageSummary.line(): String = when (this) {
+    is MessageSummary.Text -> text
+    is MessageSummary.Files -> "[文件]"
+    is MessageSummary.Image -> "[图片]"
+    is MessageSummary.Undecryptable -> "[加密消息]"
+    is MessageSummary.Redacted -> "[已撤回]"
+    is MessageSummary.Other -> "[$kind]"
+}
+
 @Composable
 private fun RoomAvatar(row: RoomRow, plugins: PluginsState) {
     val size = WontonTheme.size.avatar

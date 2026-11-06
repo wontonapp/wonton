@@ -17,6 +17,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingItemProblem
 import app.wonton.protocol.OnboardingItemState
 import app.wonton.protocol.OnboardingReview
+import app.wonton.protocol.OnboardingReviewDetail
 import app.wonton.protocol.OnboardingReviewItem
 import app.wonton.protocol.OnboardingReviewKind
 import app.wonton.ui.design.WontonGroup
@@ -53,9 +54,17 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
             PluginIconImage(item.icon, WontonTheme.size.taskIcon, plugins)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            Text(item.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-            item.detail?.takeIf { it.isNotEmpty() }?.let {
-                Text(it, style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
+            Text(
+                item.titles.joinToString("、"),
+                style = WontonTheme.typography.itemTitle,
+                color = WontonTheme.colors.textPrimary.toColor(),
+            )
+            item.detail?.let {
+                Text(
+                    it.line(),
+                    style = WontonTheme.typography.supporting,
+                    color = WontonTheme.colors.textSecondary.toColor(),
+                )
             }
         }
     }
@@ -67,7 +76,9 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
         is OnboardingItemState.Preparing -> ReviewProgress("正在准备")
         is OnboardingItemState.Ready -> Unit
         is OnboardingItemState.Blocked -> Text(
-            state.message, style = WontonTheme.typography.body, color = WontonTheme.colors.danger.toColor(),
+            state.message ?: "装不了",
+            style = WontonTheme.typography.body,
+            color = WontonTheme.colors.danger.toColor(),
         )
         is OnboardingItemState.Waiting -> Text(
             "排队", style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor(),
@@ -91,6 +102,16 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
             }
         }
     }
+}
+
+/** 第二行的文字，按类别写在这里。 */
+private fun OnboardingReviewDetail.line(): String = when (this) {
+    is OnboardingReviewDetail.Email -> email
+    is OnboardingReviewDetail.SetAsDefault -> "设为默认"
+    is OnboardingReviewDetail.KeepCurrent -> "用现在的"
+    is OnboardingReviewDetail.Model -> model
+    is OnboardingReviewDetail.Unreachable -> model?.let { "$it · 测试时没连上" } ?: "测试时没连上"
+    is OnboardingReviewDetail.SignInAfterSetup -> "装好后在聊天里登录"
 }
 
 @Composable

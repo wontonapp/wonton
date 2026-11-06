@@ -23,7 +23,7 @@ struct OnboardingView: View {
 
     var body: some View {
         StepCardFrame(
-            nav: frameNav, title: view.title, primaryTitle: primaryTitle,
+            nav: frameNav, title: view.step?.title ?? "", primaryTitle: primaryTitle,
             isWorking: view.loading || view.model.testing || view.review.commit == .running,
             back: { model.send(.backOnboardingStep) },
             skip: { model.send(.skipOnboardingStep) }, next: advance,
@@ -99,6 +99,21 @@ struct OnboardingView: View {
             modelForm.submit(thenContinue: true, send: model.send)
         } else {
             model.send(.continueOnboarding)
+        }
+    }
+}
+
+/// 每一步卡片顶上的标题。
+private extension OnboardingStep {
+    var title: String {
+        switch self {
+        case .profile: "你的资料"
+        case .agent: "选 Agent"
+        case .model: "接模型"
+        case .apps: "选应用"
+        case .review: "确认"
+        case .finished: "完成"
+        case .other: "引导"
         }
     }
 }
