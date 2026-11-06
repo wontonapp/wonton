@@ -79,7 +79,13 @@ jobs:
           rustup toolchain install
           rustup target add aarch64-linux-android
       - name: 安装 cargo-ndk
-        run: cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+        # 同一台主机上的几个 runner 共用 ~/.cargo。版本对了就不装：不是 cargo install 装进来的同版本二进制，
+        # cargo install 会报 already exists 失败（titan 实测）。要装时加锁，免得升级版本时几个作业同时写同一处；
+        # 等到锁时别的作业已经装好，cargo install 认得出已装的同版本，直接成功。
+        run: |
+          if [ "$(cargo ndk --version 2>/dev/null)" = "cargo-ndk $CARGO_NDK_VERSION" ]; then exit 0; fi
+          flock "${CARGO_HOME:-$HOME/.cargo}/.cargo-ndk-install.lock" \
+            cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
       - name: 设计生成结果和 design/ 一致
         run: python3 scripts/generate-design.py --check
       - uses: gradle/actions/setup-gradle@v5
