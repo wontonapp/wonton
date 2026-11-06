@@ -27,7 +27,7 @@ Bot 能在已授权的文件夹里查找文件，并通过 MCP 在 Immich 里按
 - **插件声明工具**（插件规范的 `mcp` 字段：`service`、`port`、`path`、`transport: streamable-http`）。核心经插件
   网络连这个服务（同网页入口），插件的 MCP 服务只对核心可见。工具在总线上叫 `<slug>__<工具名>`，比如
   `app-wonton-files__search_files`：slug 里没有下划线，按第一个 `__` 拆开就能找回插件。只说 stdio 的 MCP 服务器在插件
-  镜像里自带一个转成 Streamable HTTP 的桥（文件搜索插件就这样做）。核心连插件用 `initialize` 握手（MCP 2025-11-25）：
+  镜像里自带一个转成 Streamable HTTP 的桥（如 supergateway）。核心连插件用 `initialize` 握手（MCP 2025-11-25）：
   插件的 MCP 服务大多还不支持 2026-07-28 的无会话请求，supergateway 4.2.1 收到 `server/discover` 就断开、不回应
   （实测）。Agent 连总线时两种都行。
 - **核心自己的工具**，前缀 `wonton__`（插件 ID 至少两段，slug 里一定有 `-`，不会和它重名）：
