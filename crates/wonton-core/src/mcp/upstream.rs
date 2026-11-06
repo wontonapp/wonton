@@ -39,7 +39,7 @@ use super::bounded_http::{
     BoundedHttp, HttpError, MAX_TOOLS_BYTES, RESPONSE_TOO_LARGE, TooLargeDetail, too_large_detail,
 };
 use super::file_results::human_size;
-use crate::plugin::{McpServer, PluginId};
+use crate::plugin::{McpHeaders, McpServer, PluginId};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// 插件接受了连接却不回握手：不能一直等。
@@ -173,6 +173,8 @@ impl Drop for Calling<'_> {
 /// 一个插件的连接。
 struct Slot {
     url: String,
+    /// 建这条连接时用的请求头：密钥换了头就变，连接要跟着换。
+    headers: McpHeaders,
     /// 握手只持有这一个插件的锁：卡住的插件挡不住别的插件。
     handshake: Arc<tokio::sync::Mutex<()>>,
     current: Option<Arc<Connection>>,
@@ -185,9 +187,10 @@ struct Slot {
 }
 
 impl Slot {
-    fn new(url: String) -> Self {
+    fn new(url: String, headers: McpHeaders) -> Self {
         Self {
             url,
+            headers,
             handshake: Arc::default(),
             current: None,
             timeouts: 0,
@@ -276,14 +279,14 @@ impl Upstreams {
         self.tools_timeout = tools_timeout;
     }
 
-    /// 还能用的连接；没有时给出握手要持有的锁。
+    /// 还能用的连接；没有时给出握手要持有的锁。地址或者请求头（密钥换过了）和现在的不一样就换新槽。
     fn live(&self, server: &McpServer) -> Result<Arc<Connection>, Arc<tokio::sync::Mutex<()>>> {
         let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
         let slot = clients
             .entry(server.id.clone())
-            .or_insert_with(|| Slot::new(server.url.clone()));
-        if slot.url != server.url {
-            *slot = Slot::new(server.url.clone());
+            .or_insert_with(|| Slot::new(server.url.clone(), server.headers.clone()));
+        if slot.url != server.url || slot.headers != server.headers {
+            *slot = Slot::new(server.url.clone(), server.headers.clone());
         }
         match &slot.current {
             Some(connection) if !connection.service.is_closed() => Ok(connection.clone()),
@@ -309,12 +312,15 @@ impl Upstreams {
                 .map_err(|e| format!("连不上插件 {} 的 MCP 套接字：{e}", server.id))?,
             None => self.http.clone(),
         };
+        // 清单 `mcp.headers` 的头（密钥已解析）加在发往上游的每个请求上，包括 initialize 握手。
+        let mut config = StreamableHttpClientTransportConfig::with_uri(server.url.clone());
+        config.custom_headers = server.headers.custom_headers();
         let transport = StreamableHttpClientTransport::with_client(
             BoundedHttp {
                 http,
                 limit: self.message_limit,
             },
-            StreamableHttpClientTransportConfig::with_uri(server.url.clone()),
+            config,
         );
         // 用 initialize 握手（2025-11-25），不用 2026-07-28 的 server/discover：插件的 MCP 服务大多还不支持新协议，
         // supergateway 4.2.1 转 stdio 时收到 server/discover 就断开、不回应（实测），客户端会一直等下去。
@@ -655,10 +661,14 @@ impl Upstreams {
         Ok(bytes)
     }
 
-    /// 只留下还在运行的插件的客户端。
+    /// 只留下还在运行的插件、地址和请求头都没变的客户端：头变了（密钥换了）就丢掉，下次重连。
     pub fn retain(&self, servers: &[McpServer]) {
         let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
-        clients.retain(|id, slot| servers.iter().any(|s| &s.id == id && s.url == slot.url));
+        clients.retain(|id, slot| {
+            servers
+                .iter()
+                .any(|s| &s.id == id && s.url == slot.url && s.headers == slot.headers)
+        });
     }
 }
 

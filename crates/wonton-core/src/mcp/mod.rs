@@ -667,6 +667,8 @@ mod tests;
 #[cfg(test)]
 mod tool_policy_tests;
 #[cfg(test)]
+mod upstream_headers_tests;
+#[cfg(test)]
 mod upstream_support;
 #[cfg(test)]
 mod upstream_tests;

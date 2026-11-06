@@ -1,6 +1,5 @@
 //! 核心重启或巡检时核对已装的插件：容器、网络、OIDC 客户端和密钥是否还和记录一致。
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::docker::NetworkReach;
@@ -10,7 +9,7 @@ use super::manager::{Deployed, Health, InstallError, PluginManager};
 use super::manifest::Manifest;
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
-use super::secrets;
+use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +48,9 @@ impl PluginManager {
         };
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
-        let generated = self.check_secrets(manifest).await?;
+        let secrets = self.check_secrets(manifest).await?;
+        let generated =
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
         let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
             let ctx = self
@@ -63,7 +64,7 @@ impl PluginManager {
             upstream: self.webui_upstream(manifest, &network).await?,
             health,
             models: self.models_upstream(manifest, &network).await?,
-            mcp: self.mcp_upstream(manifest, &network).await?,
+            mcp: self.mcp_upstream(manifest, &network, &secrets).await?,
             proxy: proxy.map(Arc::new),
             firewalled: record.firewalled,
         }))
@@ -121,22 +122,19 @@ impl PluginManager {
         }))
     }
 
-    /// 核对插件密钥：生成的都还在（返回它们），插件写下的重新收存一次，变了就更新。
-    pub(super) async fn check_secrets(
-        &self,
-        manifest: &Manifest,
-    ) -> Result<BTreeMap<String, String>, InstallError> {
+    /// 核对插件密钥：生成的都还在，插件写下的重新收存一次，变了就更新。返回全量密钥（generate 和
+    /// collect）：generate 项的文本值经 [`secrets::generated_values`] 取，MCP 头要引用 collect 项。
+    pub(super) async fn check_secrets(&self, manifest: &Manifest) -> Result<Secrets, InstallError> {
         if manifest.secrets.is_empty() {
-            return Ok(BTreeMap::new());
+            return Ok(Secrets::new());
         }
         let store = self.store.secrets();
         let mut secrets = store.load(&manifest.id)?.unwrap_or_default();
-        let generated =
-            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
         if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
             store.save(&manifest.id, &secrets)?;
         }
-        Ok(generated)
+        Ok(secrets)
     }
 }
 

@@ -19,6 +19,7 @@ use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, Plugi
 use crate::plugin::manifest::PluginId;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::render::{Deployment, InstallContext, render};
+use crate::plugin::secrets;
 use crate::plugin::store::InstalledRecord;
 
 /// 多久检测一次。地址很少变，DHCP 换了地址最多这么久跟上。
@@ -309,7 +310,9 @@ impl PluginManager {
         lan: Option<LanGrant>,
     ) -> Result<InstallContext, InstallError> {
         let manifest = &package.manifest;
-        let generated = self.check_secrets(manifest).await?;
+        let secrets = self.check_secrets(manifest).await?;
+        let generated =
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
         let secret = record.oidc_client_secret.as_deref();
         let mut ctx = self.install_context(manifest, secret, generated).await?;
         ctx.limits = record.limits;

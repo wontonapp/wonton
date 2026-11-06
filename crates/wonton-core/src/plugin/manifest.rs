@@ -206,6 +206,9 @@ pub struct McpEndpoint {
     #[serde(default)]
     pub path: Option<String>,
     pub transport: McpTransport,
+    /// 加在核心发往 MCP 上游的每个请求上的头：名字 → 值模板，见 [`super::proxy_auth`]。
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
     /// 工具调用多少秒没有进度就算没有结果；不写时用默认值（[`super::ToolLimits`]）。
     #[serde(default)]
     pub tool_idle_seconds: Option<u64>,
@@ -570,6 +573,7 @@ impl Manifest {
         super::lan::validate(self)?;
         super::provides::validate(self)?;
         super::proxy_auth::validate(self)?;
+        super::proxy_auth::validate_mcp_headers(self)?;
         if let Some(webui) = &self.webui {
             validate_webui(webui)?;
         }

@@ -306,6 +306,7 @@ pub(super) fn server_at(url: String) -> McpServer {
         title: Default::default(),
         url,
         socket: None,
+        headers: Default::default(),
         tool_limits: Default::default(),
     }
 }

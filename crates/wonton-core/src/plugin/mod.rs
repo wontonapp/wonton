@@ -86,4 +86,5 @@ pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView}
 pub use manifest::{Manifest, Permission, PluginId};
 pub use mcp_server::{McpServer, ToolLimits};
 pub use package::PluginPackage;
+pub use proxy_auth::McpHeaders;
 pub use upgrade::UpgradeTo;

@@ -675,3 +675,41 @@ fn manifest_rules_are_enforced() {
     assert!(PluginPackage::parse(&with_title("{en: Test}")).is_ok());
     assert!(PluginPackage::parse(&with_title("{}")).is_err());
 }
+
+/// `mcp.headers`：引用不存在的密钥、禁止的头名、身份占位符都报错；generate 和 collect 的密钥都能引用。
+#[test]
+fn mcp_header_rules_are_enforced() {
+    let mcp = |header: &str| {
+        package(
+            "  mcp:\n    image: nginx",
+            &format!(
+                "  permissions: []\n  secrets:\n    pat:\n      generate: {{bytes: 32}}\n    \
+                 app_token:\n      collect: {{service: mcp, path: /run/token}}\n  mcp:\n    service: mcp\n    \
+                 port: 8080\n    transport: streamable-http\n    headers:\n      {header}"
+            ),
+        )
+    };
+    let err = |header: &str| PluginPackage::parse(&mcp(header)).unwrap_err().to_string();
+    assert!(
+        err("Authorization: Bearer {secret:missing}").contains("missing"),
+        "{}",
+        err("Authorization: Bearer {secret:missing}")
+    );
+    assert!(
+        err("Host: '{secret:pat}'").contains("不能给 MCP 上游加请求头"),
+        "{}",
+        err("Host: '{secret:pat}'")
+    );
+    assert!(
+        err("Mcp-Session-Id: '{secret:pat}'").contains("不能给 MCP 上游加请求头"),
+        "{}",
+        err("Mcp-Session-Id: '{secret:pat}'")
+    );
+    assert!(
+        err("X-Wonton-User: '{user}'").contains("身份占位符"),
+        "{}",
+        err("X-Wonton-User: '{user}'")
+    );
+    assert!(PluginPackage::parse(&mcp("Authorization: Bearer {secret:app_token}")).is_ok());
+    assert!(PluginPackage::parse(&mcp("X-Api-Key: '{secret:pat}'")).is_ok());
+}

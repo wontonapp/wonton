@@ -489,6 +489,7 @@ async fn a_stuck_plugin_holds_up_nobody_and_times_out() {
         title: Default::default(),
         url: stuck_plugin().await,
         socket: None,
+        headers: Default::default(),
         tool_limits: Default::default(),
     };
     let fine = server_at(serve_notes(Notes::default()).await);

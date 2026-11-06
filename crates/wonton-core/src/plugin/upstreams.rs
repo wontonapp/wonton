@@ -11,6 +11,8 @@ use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
 use super::package::PluginPackage;
+use super::proxy_auth::McpHeaders;
+use super::secrets::Secrets;
 use super::store::StoreError;
 use crate::config::{PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PublicUrls};
 use crate::http::HttpError;
@@ -49,11 +51,12 @@ impl Endpoint {
     }
 }
 
-/// 总线连一个插件的 MCP 服务要的东西：地址，宿主网络里还有套接字。
+/// 总线连一个插件的 MCP 服务要的东西：地址、解析好的请求头，宿主网络里还有套接字。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpTarget {
     pub url: String,
     pub socket: Option<PathBuf>,
+    pub headers: McpHeaders,
 }
 
 /// 请求一次网页入口，返回状态码。unix 套接字走 reqwest，普通网络走共享的 HTTP 客户端。
@@ -180,15 +183,21 @@ impl PluginManager {
         }))
     }
 
-    /// 声明了 `mcp` 时：MCP 总线连插件 MCP 服务的地址（`http://主机:端口/路径`）。
+    /// 声明了 `mcp` 时：MCP 总线连插件 MCP 服务的地址（`http://主机:端口/路径`），和按插件密钥解析好的
+    /// 请求头。密钥还没有值、不是文本或者填不出合法的头值时安装失败：总线的头填不出来，宁可不上线。
     pub(super) async fn mcp_upstream(
         &self,
         manifest: &Manifest,
         network: &str,
+        secrets: &Secrets,
     ) -> Result<Option<McpTarget>, InstallError> {
         let Some(mcp) = &manifest.mcp else {
             return Ok(None);
         };
+        // 插件交的东西不对（密钥没写下、不是文本、填不出合法头值）：不是核心存储的错，按输入错误报。
+        let headers = super::proxy_auth::resolve_mcp_headers(manifest, secrets).map_err(|e| {
+            InstallError::Invalid(format!("插件 {} 的 MCP 请求头解析不了：{e}", manifest.id))
+        })?;
         let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
         if let Some(endpoint) = self
             .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service)
@@ -197,6 +206,7 @@ impl PluginManager {
             return Ok(Some(McpTarget {
                 url: endpoint.url(path),
                 socket: endpoint.socket().map(Path::to_path_buf),
+                headers,
             }));
         }
         let name = self
@@ -207,6 +217,7 @@ impl PluginManager {
         Ok(Some(McpTarget {
             url: format!("http://{upstream}{path}"),
             socket: None,
+            headers,
         }))
     }
 

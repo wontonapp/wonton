@@ -30,8 +30,11 @@ impl PluginManager {
     #[cfg(test)]
     pub(crate) fn mcp_for_test(&self, id: &PluginId, url: String) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
-        plugins.get_mut(id).expect("先 register_for_test").mcp =
-            Some(McpTarget { url, socket: None });
+        plugins.get_mut(id).expect("先 register_for_test").mcp = Some(McpTarget {
+            url,
+            socket: None,
+            headers: Default::default(),
+        });
         drop(plugins);
         self.changed();
     }

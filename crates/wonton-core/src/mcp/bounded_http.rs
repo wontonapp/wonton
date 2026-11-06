@@ -181,7 +181,15 @@ impl BoundedHttp {
         {
             return Ok(StreamableHttpPostResponse::Json(error, session));
         }
-        not_mcp(message, session, format!("HTTP {status}：{}", words(&body)))
+        let mut why = format!("HTTP {status}：{}", words(&body));
+        if matches!(
+            status,
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+        ) {
+            // 不自动重试、也不重新取密钥：凭据不对是清单和插件的事，如实报出来。
+            why.push_str("：插件的 MCP 服务拒绝了核心的凭据");
+        }
+        not_mcp(message, session, why)
     }
 
     /// SSE 响应超限：不再读下去，流的最后是一条超限的回答。没读完的事件解析器不会交出来。

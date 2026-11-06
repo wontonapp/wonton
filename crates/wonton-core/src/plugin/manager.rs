@@ -245,6 +245,7 @@ impl PluginManager {
                     title,
                     url: target.url,
                     socket: target.socket,
+                    headers: target.headers,
                     tool_limits,
                 })
             })

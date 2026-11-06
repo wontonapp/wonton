@@ -205,7 +205,7 @@ impl PluginManager {
         }
         let upstream = self.webui_upstream(manifest, &plan.network).await?;
         let models = self.models_upstream(manifest, &plan.network).await?;
-        let mcp = self.mcp_upstream(manifest, &plan.network).await?;
+        let mcp = self.mcp_upstream(manifest, &plan.network, &secrets).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             health::wait_webui(&self.http, upstream, &webui.path, deadline).await?;
         }

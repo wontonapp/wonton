@@ -4,11 +4,12 @@
 //! 值模板里可以用 `{user}`、`{name}`、`{email}`（主人的用户名、显示名和邮箱），以及 `{secret:<名字>}`（插件自己的
 //! `secrets` 里由核心生成的一项），其余文字原样保留。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use hyper::header::{HeaderName, HeaderValue};
 
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
+use super::secrets::Secrets;
 use crate::owner::Owner;
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
@@ -324,4 +325,143 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
         check_template(template, true)?;
     }
     Ok(())
+}
+
+/// MCP 上游自己的协议头：rmcp 按会话和协商的版本设置它们，清单声明了也带不上去。
+const MCP_PROTOCOL_HEADERS: &[&str] = &["mcp-session-id", "mcp-protocol-version"];
+
+/// MCP 上游（`mcp.headers`）的请求头：名字和按插件密钥解析好的值。`Debug` 只打印名字，值不进日志。
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct McpHeaders(Vec<(HeaderName, HeaderValue)>);
+
+impl std::fmt::Debug for McpHeaders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names: Vec<&str> = self.0.iter().map(|(name, _)| name.as_str()).collect();
+        f.debug_tuple("McpHeaders").field(&names).finish()
+    }
+}
+
+impl McpHeaders {
+    /// rmcp 传输层的 `custom_headers`：发往上游的每个请求都带上。
+    pub fn custom_headers(&self) -> HashMap<HeaderName, HeaderValue> {
+        self.0.iter().cloned().collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_pairs(pairs: impl IntoIterator<Item = (&'static str, String)>) -> Self {
+        Self(
+            pairs
+                .into_iter()
+                .map(|(name, value)| {
+                    (
+                        HeaderName::from_static(name),
+                        HeaderValue::from_str(&value).expect("测试里的头值要合法"),
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+fn mcp_invalid(message: String) -> ManifestError {
+    ManifestError::Invalid(format!("mcp.headers：{message}"))
+}
+
+/// 清单校验：`mcp.headers` 的头名合法且不在禁止名单里（MCP 的协议头也算）；模板写法对，`{secret:…}` 引用
+/// 插件 `secrets` 里声明的项（generate 或 collect 都行，这里没有网关按值去密钥的需求，不限长度）；`{user}`
+/// 这类身份占位符不能用——MCP 调用不是主人的浏览器请求，上游认的是应用签发给核心的凭据。
+pub fn validate_mcp_headers(manifest: &Manifest) -> Result<(), ManifestError> {
+    let Some(mcp) = &manifest.mcp else {
+        return Ok(());
+    };
+    for (name, template) in &mcp.headers {
+        let lower = name.to_ascii_lowercase();
+        if HeaderName::from_bytes(name.as_bytes()).is_err()
+            || FORBIDDEN_HEADERS.contains(&lower.as_str())
+            || lower.starts_with("x-forwarded-")
+            || MCP_PROTOCOL_HEADERS.contains(&lower.as_str())
+        {
+            return Err(mcp_invalid(format!("不能给 MCP 上游加请求头 {name}")));
+        }
+        for part in parse(template).map_err(mcp_invalid)? {
+            match part {
+                Part::Secret(secret) if !manifest.secrets.contains_key(&secret) => {
+                    return Err(mcp_invalid(format!(
+                        "{{secret:{secret}}} 要引用 secrets 里声明的一项"
+                    )));
+                }
+                Part::User | Part::Name | Part::Email => {
+                    return Err(mcp_invalid(format!(
+                        "MCP 头不能用 {{{}}} 这类身份占位符：`{template}`",
+                        part_name(&part)
+                    )));
+                }
+                Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
+                    return Err(mcp_invalid(format!(
+                        "请求头的值里不能有控制字符：`{template}`"
+                    )));
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+fn part_name(part: &Part) -> &'static str {
+    match part {
+        Part::User => "user",
+        Part::Name => "name",
+        Part::Email => "email",
+        Part::Text(_) | Part::Secret(_) => "",
+    }
+}
+
+/// 按插件密钥把 `mcp.headers` 的模板填好。`collect` 的值是文件原样：不是文本、含换行或控制字符（结尾的
+/// 换行也算，`echo` 写的文件就带）、或者密钥还没有值，都报出到头和密钥，不带值本身。
+pub fn resolve_mcp_headers(manifest: &Manifest, secrets: &Secrets) -> Result<McpHeaders, String> {
+    let Some(mcp) = &manifest.mcp else {
+        return Ok(McpHeaders::default());
+    };
+    let mut headers = Vec::new();
+    for (name, template) in &mcp.headers {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| format!("mcp.headers 的 {name} 不是合法的头名：{e}"))?;
+        let mut value = String::new();
+        for part in parse(template)? {
+            match part {
+                Part::Text(text) => value.push_str(&text),
+                Part::Secret(secret) => match secrets.get(&secret) {
+                    Some(bytes) => {
+                        let text = String::from_utf8(bytes.clone()).map_err(|_| {
+                            format!(
+                                "mcp.headers 的 {name} 里，密钥 {secret} 不是文本，放不进请求头"
+                            )
+                        })?;
+                        if HeaderValue::from_str(&text).is_err() {
+                            return Err(format!(
+                                "mcp.headers 的 {name} 里，密钥 {secret} 的内容含换行或控制字符（结尾的换行也算）"
+                            ));
+                        }
+                        value.push_str(&text);
+                    }
+                    None => {
+                        return Err(format!(
+                            "插件密钥 {secret} 还没有值，mcp.headers 的 {name} 引用了它"
+                        ));
+                    }
+                },
+                // validate_mcp_headers 已经拒绝了身份占位符，到不了这里。
+                Part::User | Part::Name | Part::Email => {
+                    return Err(format!("mcp.headers 的 {name} 不能用身份占位符"));
+                }
+            }
+        }
+        // 值不进错误消息：它可能是密钥。标记 sensitive，传输层的调试输出不打印它。
+        let mut value = HeaderValue::from_str(&value)
+            .map_err(|_| format!("mcp.headers 的 {name} 填出来不是合法的头值"))?;
+        value.set_sensitive(true);
+        headers.push((name, value));
+    }
+    Ok(McpHeaders(headers))
 }
