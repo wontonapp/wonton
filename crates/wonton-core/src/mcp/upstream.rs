@@ -236,6 +236,9 @@ impl Upstreams {
             .tls_certs_only(std::iter::empty())
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
+            // 不留空闲连接：插件停了以后，往池子里那条还开着的连接上发的请求分不清发没发出，
+            // 会把“没发出”报成“不确定”。不复用就一定是新建连接，停了就连不上（NotSent）。
+            .pool_max_idle_per_host(0)
             .build()
             .expect("构造 MCP 客户端的 HTTP 客户端");
         Self {
@@ -308,6 +311,8 @@ impl Upstreams {
             Some(path) => reqwest::Client::builder()
                 .unix_socket(path.clone())
                 .no_proxy()
+                // 同 `Upstreams::new()`：会话跨调用缓存，留着空闲连接，插件停了以后的调用会被报成“不确定”。
+                .pool_max_idle_per_host(0)
                 .build()
                 .map_err(|e| format!("连不上插件 {} 的 MCP 套接字：{e}", server.id))?,
             None => self.http.clone(),

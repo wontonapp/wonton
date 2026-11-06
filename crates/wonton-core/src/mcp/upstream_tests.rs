@@ -77,7 +77,7 @@ async fn a_result_that_declares_too_much_is_reported_before_reading() {
     assert!(!message.contains("读了"), "{message}");
 }
 
-/// 核心和 Bot 共用连接：超限只算在超限的那个请求头上，另一个照常拿到结果，连接也不用重建。
+/// 核心和 Bot 共用一个客户端：超限只算在超限的那个请求头上，另一个照常拿到结果。
 #[tokio::test(flavor = "multi_thread")]
 async fn an_oversized_response_is_charged_to_its_own_request_only() {
     for content_type in ["application/json", "text/event-stream"] {
