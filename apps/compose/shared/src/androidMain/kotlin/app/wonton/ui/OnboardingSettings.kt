@@ -3,6 +3,7 @@ package app.wonton.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
 import app.wonton.ui.design.StepOptionRow
@@ -14,9 +15,9 @@ import app.wonton.ui.design.WontonTheme
 internal fun DefaultAgentSelection(onDismiss: () -> Unit) {
     val context = LocalOnboarding.current
     WontonDialog(
-        "默认 Agent",
+        stringResource(R.string.onboarding_default_agent_title),
         onDismiss = onDismiss,
-        actions = listOf(WontonDialogAction("关闭", onClick = onDismiss)),
+        actions = listOf(WontonDialogAction(stringResource(R.string.common_close), onClick = onDismiss)),
         detail = {
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 context.view.agents.forEach { agent ->
@@ -29,7 +30,7 @@ internal fun DefaultAgentSelection(onDismiss: () -> Unit) {
                     )
                 }
                 if (context.view.agents.isEmpty()) {
-                    OnboardingProblem("没有可选的 Agent，可以刷新重试。", null) {
+                    OnboardingProblem(stringResource(R.string.onboarding_agent_empty), null) {
                         context.send(Action.RefreshOnboarding)
                     }
                 }

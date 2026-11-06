@@ -5,6 +5,8 @@
     <string name="language_tag">zh-Hant</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">取消</string>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <string name="common_close">關閉</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">詳細資訊</string>
     <!-- Button that loads the page's data again after it failed. -->
@@ -65,6 +67,168 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">在區域網路開放</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">API 金鑰</string>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s或 API 金鑰</string>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">沒有可選的 Agent，可以重新整理再試。</string>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">已安裝</string>
+    <!-- Dialog title for choosing the default agent. -->
+    <string name="onboarding_default_agent_title">預設 Agent</string>
+    <!-- Primary button that finishes setup. -->
+    <string name="onboarding_done">完成</string>
+    <!-- Primary button after setup finished: leave setup and open chat. -->
+    <string name="onboarding_enter_chat">進入聊天</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">模型設定</string>
+    <!-- Button that keeps the agent that a new one replaces. -->
+    <string name="onboarding_keep">保留</string>
+    <!-- Loading spinner shown while setup data loads. -->
+    <string name="onboarding_loading">正在載入</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">自訂</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">API 金鑰</string>
+    <!-- Label of the field for the provider's API base URL (like https://api.example.com/v1). -->
+    <string name="onboarding_model_form_base_url">Base URL</string>
+    <!-- Label of the field for the model's name (like gpt-4o). -->
+    <string name="onboarding_model_form_model_name">模型名稱</string>
+    <!-- Button that opens the provider's website to get an API key. -->
+    <string name="onboarding_model_get_key">取得 API 金鑰</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">收起供應商</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">更多供應商</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">沒有瀏覽器能開啟這個連結，請安裝或啟用瀏覽器後再試。</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">開啟模型設定</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">測試</string>
+    <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
+    <string name="onboarding_model_unreachable">連不上供應商，完成時照樣儲存。</string>
+    <!-- Row title: keep the models already configured in the model gateway. -->
+    <string name="onboarding_model_use_current">使用目前的</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">用%1$s</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">下一步</string>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="other">%1$d 張卡片等你確認</item>
+    </plurals>
+    <!-- Banner when one approval card is waiting. Argument: the card's title. -->
+    <string name="onboarding_pending_card_one">%1$s，等你確認</string>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">模型閘道還沒就緒，請重試或跳過這一步。</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">供應商拒絕了這個 API 金鑰，請修改後重新測試。</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">應用程式和家用伺服器的版本不相容，請更新後重試。</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">連不上供應商，請檢查位址或網路後重試。</string>
+    <!-- Problem title in setup: the home server can't be reached. -->
+    <string name="onboarding_problem_model_transport_unavailable">連不上家用伺服器，請檢查網路後重試。</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">家用伺服器未授權這部裝置，請檢查存取權限後重試。</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">家用伺服器未能完成請求，請稍後重試。</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">應用程式在確認之後變了，請重新查看、確認。</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">這個應用程式已經裝了或正在忙，等目前工作結束後重新整理。</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">家用伺服器正在更新，結束後再試。</string>
+    <!-- Problem title while installing: the device the app needs is unavailable. -->
+    <string name="onboarding_problem_plugin_device_unavailable">選擇的裝置不可用，請重新選擇。</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">伺服器的代理伺服器連不上，請檢查後重試。</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">這個操作沒被接受，查看詳細資訊後修改重試。</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">沒有可用的區域網路位址，請檢查伺服器的網路設定。</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">沒有找到這個應用程式，重新整理清單後再試。</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">你的個人資料還沒填好，填好後再試。</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">應用程式和家用伺服器的版本對不上，請更新應用程式或伺服器。</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">取不到應用程式的資訊，來源恢復後再試。</string>
+    <!-- Problem title while installing: the home server can't be reached. -->
+    <string name="onboarding_problem_plugin_transport_unavailable">連不上家用伺服器，檢查網路後重試。</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">家用伺服器不認得這部裝置，請重新掃描 QR 碼配對。</string>
+    <!-- Problem title while installing: the home server doesn't support this app. -->
+    <string name="onboarding_problem_plugin_unsupported">家用伺服器不支援這個應用程式，請先升級伺服器。</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">家用伺服器出錯了，稍後再試。</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">推薦清單的來源已關閉，可以跳過。</string>
+    <!-- Problem title in setup: some recommendations didn't load. -->
+    <string name="onboarding_problem_store_incomplete">部分推薦清單沒有載入出來，可以重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">推薦清單需要更新的伺服器，可以升級或跳過。</string>
+    <!-- Problem title in setup: the recommendation list can't be read. -->
+    <string name="onboarding_problem_store_invalid_index">讀不懂推薦清單，可以重試或跳過。</string>
+    <!-- Problem title in setup: recommendations are unavailable for another reason. -->
+    <string name="onboarding_problem_store_other">取不到推薦清單，可以重試或跳過。</string>
+    <!-- Problem title in setup: too many requests to the recommendation source. -->
+    <string name="onboarding_problem_store_rate_limited">推薦清單的請求太頻繁，可以稍後重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation source responds too slowly. -->
+    <string name="onboarding_problem_store_timeout">推薦清單的來源回應太慢，可以重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation source can't be reached. -->
+    <string name="onboarding_problem_store_unreachable">連不上推薦清單的來源，可以重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">推薦清單的來源出錯了，可以重試或跳過。</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">要解除安裝「%1$s」嗎？</string>
+    <!-- Fallback when the core gives no reason why an app can't be installed. -->
+    <string name="onboarding_review_blocked">無法安裝</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">完成</string>
+    <!-- Row description in the review step: the already-configured models are kept. -->
+    <string name="onboarding_review_keep_current">使用目前的</string>
+    <!-- Label next to a spinner while an install task is being prepared. -->
+    <string name="onboarding_review_preparing">正在準備</string>
+    <!-- Row description in the review step: the item is set as the default agent. -->
+    <string name="onboarding_review_set_default">設為預設</string>
+    <!-- Row description in the review step: the agent signs in from chat after setup. -->
+    <string name="onboarding_review_sign_in_after_setup">裝好後在聊天裡登入</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">不確定裝好沒有，請到應用程式頁查看。</string>
+    <!-- Row description in the review step: the model couldn't be reached during the test. -->
+    <string name="onboarding_review_unreachable">測試時沒連上</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · 測試時沒連上</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">排隊中</string>
+    <!-- Busy label while a setup step or an install task is running. -->
+    <string name="onboarding_running">進行中</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">先跳過</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">選擇 Agent</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">選擇應用程式</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">完成</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">連接模型</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">初始設定</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">個人資料</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">確認</string>
+    <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
+    <string name="onboarding_tip_app_installed">應用程式裝好後，可以把它加到底部導覽列。</string>
+    <!-- Dismissable tip above the chat input: confirm approval requests on the card in chat. -->
+    <string name="onboarding_tip_confirmation_card">需要確認時，在聊天裡的卡片上點確認。</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">解除安裝</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">自訂</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->

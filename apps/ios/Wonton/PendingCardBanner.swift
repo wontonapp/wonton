@@ -35,7 +35,7 @@ struct PendingCardBanner: View {
         }
         .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)
         if onboarding.viewModel.tips.confirmationCard {
-            OnboardingTipView(text: "需要确认时，在聊天里的卡片上点确认。") {
+            OnboardingTipView(text: String(localized: .onboardingTipConfirmationCard)) {
                 onboarding.send(.dismissOnboardingTip(tip: .confirmationCard))
             }
         }
@@ -43,6 +43,9 @@ struct PendingCardBanner: View {
 
     /// 只有一张卡片时说是什么事。
     private var title: String {
-        cards.count == 1 ? "\(cards[0].title)，等你确认" : "\(cards.count) 张卡片等你确认"
+        if cards.count == 1 {
+            return String(localized: .onboardingPendingCardOne(cards[0].title))
+        }
+        return String(localized: .onboardingPendingCardMany(cards: cards.count))
     }
 }

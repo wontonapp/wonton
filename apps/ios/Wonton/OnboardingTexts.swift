@@ -6,26 +6,26 @@ extension ModelProviderProblem {
         let nextStep: String
         switch reason {
         case .keyRejected:
-            title = "服务商不接受这个 key"
-            nextStep = "key 没有保存，改好后再试。"
+            title = String(localized: .onboardingProblemModelKeyRejected)
+            nextStep = String(localized: .onboardingProblemModelKeyRejectedNext)
         case .providerUnreachable:
-            title = "连不上服务商"
-            nextStep = "检查服务商地址和网络后再试。"
+            title = String(localized: .onboardingProblemModelProviderUnreachable)
+            nextStep = String(localized: .onboardingProblemModelProviderUnreachableNext)
         case .gatewayNotReady:
-            title = "模型网关还没准备好"
-            nextStep = "稍后重试，也可以先跳过。"
+            title = String(localized: .onboardingProblemModelGatewayNotReady)
+            nextStep = String(localized: .onboardingProblemModelGatewayNotReadyNext)
         case .transportUnavailable:
-            title = "连不上家里的服务器"
-            nextStep = "检查网络，连上后再试。"
+            title = String(localized: .onboardingProblemModelTransportUnavailable)
+            nextStep = String(localized: .onboardingProblemModelTransportUnavailableNext)
         case .unauthorized:
-            title = "家里的服务器不认这台设备"
-            nextStep = "请重新扫码配对。"
+            title = String(localized: .onboardingProblemModelUnauthorized)
+            nextStep = String(localized: .onboardingProblemModelUnauthorizedNext)
         case .upstream:
-            title = "家里的服务器出错了"
-            nextStep = "稍后再试。"
+            title = String(localized: .onboardingProblemModelUpstream)
+            nextStep = String(localized: .onboardingProblemModelUpstreamNext)
         case .protocol:
-            title = "App 和家里的服务器版本对不上"
-            nextStep = "请更新 App 或家里的服务器。"
+            title = String(localized: .onboardingProblemModelProtocol)
+            nextStep = String(localized: .onboardingProblemModelProtocolNext)
         }
         return Problem(title: title, nextStep: nextStep, detail: message)
     }
@@ -36,24 +36,24 @@ extension StoreProblem {
         let title: String
         switch reason {
         case .unreachable:
-            title = "取不到推荐清单"
+            title = String(localized: .onboardingProblemStoreUnreachable)
         case .timeout:
-            title = "推荐清单加载太慢了"
+            title = String(localized: .onboardingProblemStoreTimeout)
         case .rateLimited:
-            title = "请求太频繁了"
+            title = String(localized: .onboardingProblemStoreRateLimited)
         case .invalidIndex:
-            title = "读不懂推荐清单"
+            title = String(localized: .onboardingProblemStoreInvalidIndex)
         case .indexTooNew:
-            title = "推荐清单需要更新的服务器"
+            title = String(localized: .onboardingProblemStoreIndexTooNew)
         case .upstream:
-            title = "推荐清单的来源出错了"
+            title = String(localized: .onboardingProblemStoreUpstream)
         case .incomplete:
-            title = "部分推荐应用没加载出来"
+            title = String(localized: .onboardingProblemStoreIncomplete)
         case .disabled:
-            title = "推荐来源已关闭"
+            title = String(localized: .onboardingProblemStoreDisabled)
         case .other:
-            title = "推荐清单不可用"
+            title = String(localized: .onboardingProblemStoreOther)
         }
-        return Problem(title: title, nextStep: "可以跳过，之后在应用商店安装。", detail: details)
+        return Problem(title: title, nextStep: String(localized: .onboardingProblemStoreNext), detail: details)
     }
 }

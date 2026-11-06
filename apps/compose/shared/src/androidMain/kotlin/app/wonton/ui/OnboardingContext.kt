@@ -22,6 +22,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeStatus
@@ -110,7 +111,7 @@ private fun OnboardingGateProblem(view: OnboardingViewModel, send: (Action) -> U
         view.problem?.let { problem ->
             OnboardingProblem(problem.onboardingTitle(), problem.message) { send(Action.RefreshOnboarding) }
         }
-        WontonButton("先跳过", skip, kind = WontonButtonKind.SECONDARY)
+        WontonButton(stringResource(R.string.onboarding_skip_anyway), skip, kind = WontonButtonKind.SECONDARY)
     }
 }
 

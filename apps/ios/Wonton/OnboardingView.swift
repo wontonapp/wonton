@@ -86,11 +86,11 @@ struct OnboardingView: View {
     }
 
     private var primaryTitle: String {
-        guard view.step == .review else { return "下一步" }
+        guard view.step == .review else { return String(localized: .onboardingNext) }
         switch view.review.commit {
-        case .notStarted: return "完成"
-        case .running: return "进行中"
-        case .done: return "进入聊天"
+        case .notStarted: return String(localized: .onboardingDone)
+        case .running: return String(localized: .onboardingRunning)
+        case .done: return String(localized: .onboardingEnterChat)
         }
     }
 
@@ -107,13 +107,13 @@ struct OnboardingView: View {
 private extension OnboardingStep {
     var title: String {
         switch self {
-        case .profile: "你的资料"
-        case .agent: "选 Agent"
-        case .model: "接模型"
-        case .apps: "选应用"
-        case .review: "确认"
-        case .finished: "完成"
-        case .other: "引导"
+        case .profile: String(localized: .onboardingStepProfile)
+        case .agent: String(localized: .onboardingStepAgent)
+        case .model: String(localized: .onboardingStepModel)
+        case .apps: String(localized: .onboardingStepApps)
+        case .review: String(localized: .onboardingStepReview)
+        case .finished: String(localized: .onboardingStepFinished)
+        case .other: String(localized: .onboardingStepOther)
         }
     }
 }

@@ -30,7 +30,7 @@ private struct OnboardingReviewRow: View {
                     PluginIconView(icon: icon, size: WontonTheme.size.taskIcon, model: plugins)
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                    Text(verbatim: item.titles.joined(separator: "、"))
+                    Text(item.titles.formatted(.list(type: .and)))
                         .wontonText(WontonTheme.typography.itemTitle)
                         .foregroundStyle(Color(colors.textPrimary))
                     if let detail = item.detail {
@@ -45,16 +45,17 @@ private struct OnboardingReviewRow: View {
             InstallPermissions(permissions: item.permissions, notices: item.notices)
             switch item.state {
             case let .blocked(message):
-                Text(verbatim: message ?? "装不了")
+                Text(verbatim: message ?? String(localized: .onboardingReviewBlocked))
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.danger))
             case let .uncertain(message):
-                WontonNotice(icon: .warning, title: "不确定装好没有", isError: false, lines: ["到应用页查看安装结果。"]) {
+                WontonNotice(icon: .warning, title: String(localized: .onboardingReviewUncertain),
+                             isError: false, lines: [String(localized: .onboardingReviewUncertainNext)]) {
                     ProblemDetail(text: message)
                 }
             case let .failed(problem):
                 ProblemNotice(problem: problem.onboardingProblem)
-                Button("重试", action: retry).buttonStyle(WontonSmallButtonStyle())
+                Button(String(localized: .commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
             default:
                 EmptyView()
             }
@@ -66,20 +67,20 @@ private struct OnboardingReviewRow: View {
     @ViewBuilder private var progress: some View {
         switch item.state {
         case .preparing:
-            ProgressView().accessibilityLabel("正在准备")
+            ProgressView().accessibilityLabel(String(localized: .onboardingReviewPreparing))
         case .waiting:
-            Text("排队")
+            Text(.onboardingReviewWaiting)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         case .running:
             HStack(spacing: WontonTheme.spacing.s8) {
                 ProgressView()
-                Text("进行中").wontonText(WontonTheme.typography.supporting)
+                Text(.onboardingRunning).wontonText(WontonTheme.typography.supporting)
             }
             .foregroundStyle(Color(colors.textSecondary))
         case .done:
             WontonIcon.check.view().foregroundStyle(Color(colors.success))
-                .accessibilityLabel("已完成")
+                .accessibilityLabel(String(localized: .onboardingReviewDone))
         case .ready, .blocked, .uncertain, .failed:
             EmptyView()
         }
@@ -91,11 +92,13 @@ private extension OnboardingReviewDetail {
     var line: String {
         switch self {
         case let .email(email): email
-        case .setAsDefault: "设为默认"
-        case .keepCurrent: "用现在的"
+        case .setAsDefault: String(localized: .onboardingReviewSetDefault)
+        case .keepCurrent: String(localized: .onboardingReviewKeepCurrent)
         case let .model(model): model
-        case let .unreachable(model): model.map { "\($0) · 测试时没连上" } ?? "测试时没连上"
-        case .signInAfterSetup: "装好后在聊天里登录"
+        case let .unreachable(model):
+            model.map { String(localized: .onboardingReviewUnreachableModel($0)) }
+                ?? String(localized: .onboardingReviewUnreachable)
+        case .signInAfterSetup: String(localized: .onboardingReviewSignInAfterSetup)
         }
     }
 }

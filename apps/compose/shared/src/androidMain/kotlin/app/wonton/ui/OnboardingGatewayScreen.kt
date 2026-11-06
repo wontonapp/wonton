@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.HomeViewModel
 import app.wonton.ui.design.WontonPushedBar
@@ -29,7 +30,7 @@ internal fun OnboardingGatewayScreen(url: String, home: HomeViewModel, onClose: 
     val controller = rememberPluginWebViewController()
     BackHandler { if (!controller.goBack()) onClose() }
     val openLink = externalLinkOpener { rejection = it }
-    WontonScreen(bar = { WontonPushedBar("模型设置", onClose) }) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.onboarding_gateway_title), onClose) }) {
         Box(Modifier.fillMaxSize().navigationBarsPadding()) {
             home.proxy?.let { proxy ->
                 PluginWebView(
@@ -48,7 +49,10 @@ internal fun OnboardingGatewayScreen(url: String, home: HomeViewModel, onClose: 
                 ) {
                     if (failed || home.proxy == null) {
                         OnboardingProblem(
-                            if (home.proxy == null) "连不上家里的服务器，检查网络后重试。" else "家里的服务器出错了，稍后再试。",
+                            stringResource(
+                                if (home.proxy == null) R.string.onboarding_problem_plugin_transport_unavailable
+                                else R.string.onboarding_problem_plugin_upstream,
+                            ),
                             null,
                         ) { reload++ }
                     } else {

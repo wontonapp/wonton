@@ -16,7 +16,7 @@ struct OnboardingModelStepView: View {
                 ProblemNotice(problem: problem.onboardingProblem)
                     .id("onboarding-model-problem")
                 if problem.reason != .keyRejected {
-                    Button("重试") { send(.refreshOnboarding) }
+                    Button(String(localized: .commonRetry)) { send(.refreshOnboarding) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
@@ -26,7 +26,8 @@ struct OnboardingModelStepView: View {
                 LoadingView().frame(maxWidth: .infinity)
             }
             ForEach(step.logins, id: \.id) { login in
-                StepOptionRow(title: "用\(login.title)", isSelected: isLoginSelected(login.id)) {
+                StepOptionRow(title: String(localized: .onboardingModelUseLogin(login.title)),
+                              isSelected: isLoginSelected(login.id)) {
                     form.expand(nil)
                     send(.chooseModelLogin(id: login.id))
                 }
@@ -46,7 +47,8 @@ struct OnboardingModelStepView: View {
 
     @ViewBuilder private func providerList(_ list: ModelProviders) -> some View {
         if !list.configured.isEmpty {
-            StepOptionRow(title: "用现在的", description: list.configured.map(\.title).joined(separator: "、"),
+            StepOptionRow(title: String(localized: .onboardingModelUseCurrent),
+                          description: list.configured.map(\.title).formatted(.list(type: .and)),
                           isSelected: step.choice == .current) {
                 form.expand(nil)
                 send(.useCurrentModel)
@@ -64,13 +66,15 @@ struct OnboardingModelStepView: View {
                     }
                 } label: {
                     HStack {
-                        Text("更多服务商")
+                        Text(.onboardingModelMore)
                         WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
                             .rotationEffect(showsMoreProviders ? .degrees(90) : .zero)
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
-                .accessibilityValue(showsMoreProviders ? "已展开" : "已收起")
+                .accessibilityValue(showsMoreProviders
+                    ? String(localized: .onboardingModelExpanded)
+                    : String(localized: .onboardingModelCollapsed))
                 .disabled(step.testing)
                 if showsMoreProviders {
                     ForEach(providers.filter { !$0.recommended }, id: \.id) { providerRow($0) }
@@ -78,7 +82,7 @@ struct OnboardingModelStepView: View {
             }
             if list.custom { customRow }
         } else if let url = list.webUrl.flatMap(URL.init(string:)) {
-            Button("打开模型设置") { openGateway(url) }
+            Button(String(localized: .onboardingModelOpenSettings)) { openGateway(url) }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
     }
@@ -100,7 +104,7 @@ struct OnboardingModelStepView: View {
     }
 
     @ViewBuilder private var customRow: some View {
-        StepOptionRow(title: "自定义", isSelected: isCustomSelected, select: {
+        StepOptionRow(title: String(localized: .onboardingModelCustom), isSelected: isCustomSelected, select: {
             form.expand(.custom)
         }, trailing: { disclosure(isExpanded: form.expanded == .custom) })
         .disabled(step.testing)
@@ -113,7 +117,7 @@ struct OnboardingModelStepView: View {
     }
 
     private var unreachable: some View {
-        Text("连不上服务商，完成时照样保存。")
+        Text(String(localized: .onboardingModelUnreachable))
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.warning))
     }

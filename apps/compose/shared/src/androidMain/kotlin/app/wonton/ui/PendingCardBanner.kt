@@ -19,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.protocol.PendingConfirmation
@@ -29,8 +31,13 @@ import app.wonton.ui.icons.Notify
 import app.wonton.ui.icons.WontonIcon
 
 /** 文字：只有一张卡片时说是什么事。 */
-fun pendingCardsText(cards: List<PendingConfirmation>): String =
-    if (cards.size == 1) "${cards[0].title}，等你确认" else "${cards.size} 张卡片等你确认"
+@Composable
+internal fun pendingCardsText(cards: List<PendingConfirmation>): String =
+    if (cards.size == 1) {
+        stringResource(R.string.onboarding_pending_card_one, cards[0].title)
+    } else {
+        pluralStringResource(R.plurals.onboarding_pending_card_many, cards.size, cards.size)
+    }
 
 /** 有卡片等主人回答时顶在页面最上面，点了去卡片所在的房间。多张时去最早到期的那张。 */
 @Composable

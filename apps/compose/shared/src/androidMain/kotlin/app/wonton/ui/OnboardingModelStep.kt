@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.icu.text.ListFormatter
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,7 +15,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -51,15 +54,18 @@ internal fun OnboardingModelStep(
         if (model.providers == null && model.problem == null) OnboardingLoading()
         model.providers?.let { providers ->
             if (providers.configured.isNotEmpty()) {
+                val current = ListFormatter.getInstance(LocalConfiguration.current.locales[0])
+                    .format(providers.configured.map { it.title })
                 StepOptionRow(
-                    title = "用现在的",
-                    description = providers.configured.joinToString("、") { it.title },
+                    title = stringResource(R.string.onboarding_model_use_current),
+                    description = current,
                     selected = model.choice is OnboardingModelChoice.Current,
                     onSelect = { form.collapse(); send(Action.UseCurrentModel) },
                 )
             }
             if (providers.providers.isNullOrEmpty() && providers.webUrl != null) {
-                WontonButton("打开模型设置", { openGateway(requireNotNull(providers.webUrl)) },
+                WontonButton(stringResource(R.string.onboarding_model_open_settings),
+                    { openGateway(requireNotNull(providers.webUrl)) },
                     kind = WontonButtonKind.SECONDARY)
             } else {
                 ModelProviderList(providers, model, form, send, openKeyUrl)
@@ -68,7 +74,7 @@ internal fun OnboardingModelStep(
         model.logins.forEach { login ->
             key(login.id) {
                 StepOptionRow(
-                    title = "用${login.title}",
+                    title = stringResource(R.string.onboarding_model_use_login, login.title),
                     selected = (model.choice as? OnboardingModelChoice.Login)?.id == login.id,
                     onSelect = { form.collapse(); send(Action.ChooseModelLogin(login.id)) },
                 )
@@ -94,7 +100,7 @@ private fun ModelProviderList(
     }
     if (items.any { !it.recommended }) {
         WontonButton(
-            if (showsMore) "收起服务商" else "更多服务商",
+            stringResource(if (showsMore) R.string.onboarding_model_less else R.string.onboarding_model_more),
             {
                 showsMore = !showsMore
                 if (!showsMore && items.any { !it.recommended && it.id == form.expandedProvider }) form.collapse()
@@ -109,7 +115,11 @@ private fun ModelProviderList(
     }
     if (providers.custom) {
         val choice = model.choice as? OnboardingModelChoice.Custom
-        StepOptionRow(title = "自定义", selected = choice != null, onSelect = form::expandCustom)
+        StepOptionRow(
+            title = stringResource(R.string.onboarding_model_custom),
+            selected = choice != null,
+            onSelect = form::expandCustom,
+        )
         if (choice?.reachable == false) UnreachableModelNotice()
         if (form.customExpanded) ModelProviderForm(form, model.testing, send)
     }
@@ -134,7 +144,8 @@ private fun ModelProviderRow(
         if (form.expandedProvider == provider.id) {
             ModelProviderForm(form, model.testing, send) {
                 provider.keyUrl?.let { url ->
-                    WontonButton("拿 key", { openKeyUrl(url) }, kind = WontonButtonKind.SECONDARY)
+                    WontonButton(stringResource(R.string.onboarding_model_get_key), { openKeyUrl(url) },
+                        kind = WontonButtonKind.SECONDARY)
                 }
             }
         }
@@ -143,7 +154,7 @@ private fun ModelProviderRow(
 
 @Composable
 private fun UnreachableModelNotice() {
-    Text("连不上服务商，完成时照样保存。", style = WontonTheme.typography.supporting,
+    Text(stringResource(R.string.onboarding_model_unreachable), style = WontonTheme.typography.supporting,
         color = WontonTheme.colors.warning.toColor())
 }
 
@@ -168,7 +179,7 @@ private fun rememberKeyBrowser(send: (Action) -> Unit): (String) -> Unit {
         onDispose { lifecycle.removeObserver(observer) }
     }
     if (browserUnavailable) {
-        WontonNotice(WontonIcon.Warning, "没有浏览器能打开这个链接，请安装或启用浏览器后重试。")
+        WontonNotice(WontonIcon.Warning, stringResource(R.string.onboarding_model_no_browser))
     }
     return { url ->
         try {

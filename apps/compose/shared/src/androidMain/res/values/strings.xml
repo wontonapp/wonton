@@ -5,6 +5,8 @@
     <string name="language_tag">en</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">Cancel</string>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <string name="common_close">Close</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">Details</string>
     <!-- Button that loads the page's data again after it failed. -->
@@ -66,6 +68,169 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">Open on local network</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">API key</string>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s or an API key</string>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">No agents to choose from. Try refreshing.</string>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">Installed</string>
+    <!-- Dialog title for choosing the default agent. -->
+    <string name="onboarding_default_agent_title">Default agent</string>
+    <!-- Primary button that finishes setup. -->
+    <string name="onboarding_done">Done</string>
+    <!-- Primary button after setup finished: leave setup and open chat. -->
+    <string name="onboarding_enter_chat">Go to chat</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">Model settings</string>
+    <!-- Button that keeps the agent that a new one replaces. -->
+    <string name="onboarding_keep">Keep</string>
+    <!-- Loading spinner shown while setup data loads. -->
+    <string name="onboarding_loading">Loading</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">Custom</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">API key</string>
+    <!-- Label of the field for the provider's API base URL (like https://api.example.com/v1). -->
+    <string name="onboarding_model_form_base_url">Base URL</string>
+    <!-- Label of the field for the model's name (like gpt-4o). -->
+    <string name="onboarding_model_form_model_name">Model name</string>
+    <!-- Button that opens the provider's website to get an API key. -->
+    <string name="onboarding_model_get_key">Get API key</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">Fewer providers</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">More providers</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">No browser can open this link. Install or enable a browser and try again.</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">Open model settings</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">Test</string>
+    <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
+    <string name="onboarding_model_unreachable">Can\'t reach the provider. It will still be saved when you finish.</string>
+    <!-- Row title: keep the models already configured in the model gateway. -->
+    <string name="onboarding_model_use_current">Use current</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">Use %1$s</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">Next</string>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="one">%1$d card needs your approval</item>
+        <item quantity="other">%1$d cards need your approval</item>
+    </plurals>
+    <!-- Banner when one approval card is waiting. Argument: the card's title. -->
+    <string name="onboarding_pending_card_one">%1$s needs your approval</string>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">The model gateway isn\'t ready. Try again or skip this step.</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">The provider rejected this API key. Fix it and test again.</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">Wonton and your home server versions are incompatible. Update them and try again.</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">Can\'t reach the provider. Check its address or your network and try again.</string>
+    <!-- Problem title in setup: the home server can't be reached. -->
+    <string name="onboarding_problem_model_transport_unavailable">Can\'t reach your home server. Check your network and try again.</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">Your home server doesn\'t recognize this device. Check its access settings and try again.</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">Your home server couldn\'t finish the request. Try again later.</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">The app changed after you confirmed it. Review and confirm it again.</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">This app is already installed or busy. Refresh when the current task finishes.</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">Your home server is updating. Try again when it finishes.</string>
+    <!-- Problem title while installing: the device the app needs is unavailable. -->
+    <string name="onboarding_problem_plugin_device_unavailable">The device you picked is unavailable. Pick another one.</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">The server\'s proxy can\'t be reached. Check it and try again.</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">This action wasn\'t accepted. Check the details, then change it and try again.</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">No local network address is available. Check the server\'s network settings.</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">This app wasn\'t found. Refresh the list and try again.</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">Your profile isn\'t complete. Fill it in and try again.</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">Wonton and your home server versions don\'t match. Update Wonton or the server.</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">Can\'t get the app\'s info. Try again once its source is back.</string>
+    <!-- Problem title while installing: the home server can't be reached. -->
+    <string name="onboarding_problem_plugin_transport_unavailable">Can\'t reach your home server. Check your network and try again.</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">Your home server doesn\'t recognize this device. Scan the QR code to pair again.</string>
+    <!-- Problem title while installing: the home server doesn't support this app. -->
+    <string name="onboarding_problem_plugin_unsupported">Your home server doesn\'t support this app. Update the server first.</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">Your home server hit an error. Try again later.</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">The recommendation source is off. You can skip.</string>
+    <!-- Problem title in setup: some recommendations didn't load. -->
+    <string name="onboarding_problem_store_incomplete">Some recommendations didn\'t load. Try again or skip.</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">The recommendations need a newer home server. Update it or skip.</string>
+    <!-- Problem title in setup: the recommendation list can't be read. -->
+    <string name="onboarding_problem_store_invalid_index">The recommendations can\'t be read. Try again or skip.</string>
+    <!-- Problem title in setup: recommendations are unavailable for another reason. -->
+    <string name="onboarding_problem_store_other">Can\'t load the recommendations. Try again or skip.</string>
+    <!-- Problem title in setup: too many requests to the recommendation source. -->
+    <string name="onboarding_problem_store_rate_limited">Too many requests to the recommendation source. Try again later or skip.</string>
+    <!-- Problem title in setup: the recommendation source responds too slowly. -->
+    <string name="onboarding_problem_store_timeout">The recommendation source is responding too slowly. Try again or skip.</string>
+    <!-- Problem title in setup: the recommendation source can't be reached. -->
+    <string name="onboarding_problem_store_unreachable">Can\'t reach the recommendation source. Try again or skip.</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">The recommendation source hit an error. Try again or skip.</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">Uninstall “%1$s”?</string>
+    <!-- Fallback when the core gives no reason why an app can't be installed. -->
+    <string name="onboarding_review_blocked">Can\'t install</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">Done</string>
+    <!-- Row description in the review step: the already-configured models are kept. -->
+    <string name="onboarding_review_keep_current">Keep current</string>
+    <!-- Label next to a spinner while an install task is being prepared. -->
+    <string name="onboarding_review_preparing">Preparing</string>
+    <!-- Row description in the review step: the item is set as the default agent. -->
+    <string name="onboarding_review_set_default">Set as default</string>
+    <!-- Row description in the review step: the agent signs in from chat after setup. -->
+    <string name="onboarding_review_sign_in_after_setup">Sign in from chat after setup</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">Install result unknown. Check the app\'s page.</string>
+    <!-- Row description in the review step: the model couldn't be reached during the test. -->
+    <string name="onboarding_review_unreachable">Unreachable when tested</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · Unreachable when tested</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">Queued</string>
+    <!-- Busy label while a setup step or an install task is running. -->
+    <string name="onboarding_running">In progress</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">Skip for now</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">Choose an agent</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">Choose apps</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">Finished</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">Connect a model</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">Setup</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">Your profile</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">Review</string>
+    <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
+    <string name="onboarding_tip_app_installed">You can pin an installed app to the navigation bar.</string>
+    <!-- Dismissable tip above the chat input: confirm approval requests on the card in chat. -->
+    <string name="onboarding_tip_confirmation_card">Approve requests from the card in chat.</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">Uninstall</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">Custom</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->

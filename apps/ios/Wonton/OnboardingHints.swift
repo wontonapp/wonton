@@ -12,7 +12,7 @@ struct OnboardingTipView: View {
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            WontonIconButton(icon: .close, label: "关闭", action: dismiss)
+            WontonIconButton(icon: .close, label: String(localized: .commonClose), action: dismiss)
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
     }
@@ -46,11 +46,15 @@ struct ReplacedAgentOffer: ViewModifier {
         let agent = offered
         content
             .wontonDialog(
-                "要卸掉“\(offered?.title ?? "")”吗？",
+                String(localized: .onboardingReplacedAgentTitle(offered?.title ?? "")),
                 isPresented: Binding(get: { offered != nil }, set: { if !$0 { offered = nil } }),
                 actions: [
-                    WontonDialogAction(title: "卸载") { answer(agent, uninstall: true) },
-                    WontonDialogAction(title: "保留") { answer(agent, uninstall: false) }
+                    WontonDialogAction(title: String(localized: .onboardingUninstall)) {
+                        answer(agent, uninstall: true)
+                    },
+                    WontonDialogAction(title: String(localized: .onboardingKeep)) {
+                        answer(agent, uninstall: false)
+                    }
                 ],
                 onDismiss: { answer(agent, uninstall: false) }
             )

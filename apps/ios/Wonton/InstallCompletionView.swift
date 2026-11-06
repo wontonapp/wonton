@@ -14,7 +14,7 @@ struct InstallCompletionView: View {
                 TaskRow(model: model, task: task, review: review, showsDismiss: false)
                 if task.state == .succeeded {
                     if onboarding.viewModel.tips.appInstalled {
-                        OnboardingTipView(text: "应用装好后，可以把它放到底栏。") {
+                        OnboardingTipView(text: String(localized: .onboardingTipAppInstalled)) {
                             onboarding.send(.dismissOnboardingTip(tip: .appInstalled))
                         }
                     }

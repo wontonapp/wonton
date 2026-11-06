@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.icu.text.ListFormatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingItemProblem
 import app.wonton.protocol.OnboardingItemState
@@ -55,7 +58,7 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(
-                item.titles.joinToString("、"),
+                ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(item.titles),
                 style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor(),
             )
@@ -73,23 +76,25 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
 @Composable
 private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
     when (state) {
-        is OnboardingItemState.Preparing -> ReviewProgress("正在准备")
+        is OnboardingItemState.Preparing -> ReviewProgress(stringResource(R.string.onboarding_review_preparing))
         is OnboardingItemState.Ready -> Unit
         is OnboardingItemState.Blocked -> Text(
-            state.message ?: "装不了",
+            state.message ?: stringResource(R.string.onboarding_review_blocked),
             style = WontonTheme.typography.body,
             color = WontonTheme.colors.danger.toColor(),
         )
         is OnboardingItemState.Waiting -> Text(
-            "排队", style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor(),
+            stringResource(R.string.onboarding_review_waiting),
+            style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor(),
         )
-        is OnboardingItemState.Running -> ReviewProgress("进行中")
+        is OnboardingItemState.Running -> ReviewProgress(stringResource(R.string.onboarding_running))
         is OnboardingItemState.Done -> Icon(
-            WontonIcon.Check, contentDescription = "完成", modifier = Modifier.size(WontonTheme.size.icon),
+            WontonIcon.Check, contentDescription = stringResource(R.string.onboarding_review_done),
+            modifier = Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.success.toColor(),
         )
         is OnboardingItemState.Uncertain -> key(state.message) {
-            OnboardingProblem("不确定装好没有，请到应用页查看。", state.message)
+            OnboardingProblem(stringResource(R.string.onboarding_review_uncertain), state.message)
         }
         is OnboardingItemState.Failed -> key(state.problem) {
             when (val problem = state.problem) {
@@ -105,13 +110,16 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
 }
 
 /** 第二行的文字，按类别写在这里。 */
+@Composable
 private fun OnboardingReviewDetail.line(): String = when (this) {
     is OnboardingReviewDetail.Email -> email
-    is OnboardingReviewDetail.SetAsDefault -> "设为默认"
-    is OnboardingReviewDetail.KeepCurrent -> "用现在的"
+    is OnboardingReviewDetail.SetAsDefault -> stringResource(R.string.onboarding_review_set_default)
+    is OnboardingReviewDetail.KeepCurrent -> stringResource(R.string.onboarding_review_keep_current)
     is OnboardingReviewDetail.Model -> model
-    is OnboardingReviewDetail.Unreachable -> model?.let { "$it · 测试时没连上" } ?: "测试时没连上"
-    is OnboardingReviewDetail.SignInAfterSetup -> "装好后在聊天里登录"
+    is OnboardingReviewDetail.Unreachable -> model
+        ?.let { stringResource(R.string.onboarding_review_unreachable_model, it) }
+        ?: stringResource(R.string.onboarding_review_unreachable)
+    is OnboardingReviewDetail.SignInAfterSetup -> stringResource(R.string.onboarding_review_sign_in_after_setup)
 }
 
 @Composable

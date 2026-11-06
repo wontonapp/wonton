@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingTip
@@ -51,10 +52,12 @@ internal fun OnboardingTipNotice(tip: OnboardingTip) {
         OnboardingTip.APP_INSTALLED -> context.view.tips.appInstalled
     }
     if (!shown) return
-    val text = when (tip) {
-        OnboardingTip.CONFIRMATION_CARD -> "需要确认时，在聊天里的卡片上点确认。"
-        OnboardingTip.APP_INSTALLED -> "应用装好后，可以把它放到底栏。"
-    }
+    val text = stringResource(
+        when (tip) {
+            OnboardingTip.CONFIRMATION_CARD -> R.string.onboarding_tip_confirmation_card
+            OnboardingTip.APP_INSTALLED -> R.string.onboarding_tip_app_installed
+        },
+    )
     Row(
         Modifier.fillMaxWidth().padding(horizontal = WontonTheme.spacing.pageInset),
         verticalAlignment = Alignment.CenterVertically,
@@ -66,7 +69,7 @@ internal fun OnboardingTipNotice(tip: OnboardingTip) {
             style = WontonTheme.typography.supporting,
             color = WontonTheme.colors.textSecondary.toColor(),
         )
-        WontonIconButton(WontonIcon.Close, "关闭", {
+        WontonIconButton(WontonIcon.Close, stringResource(R.string.common_close), {
             context.send(Action.DismissOnboardingTip(tip))
         })
     }
@@ -84,14 +87,14 @@ internal fun ReplacedAgentOffer(plugins: PluginsState) {
             context.send(Action.DismissReplacedAgentOffer)
         }
         WontonDialog(
-            "要卸掉“${offer.title}”吗？",
+            stringResource(R.string.onboarding_replaced_agent_title, offer.title),
             onDismiss = dismiss,
             actions = listOf(
-                WontonDialogAction("卸载") {
+                WontonDialogAction(stringResource(R.string.onboarding_uninstall)) {
                     uninstall = UninstallTarget(offer.id, offer.title)
                     dismiss()
                 },
-                WontonDialogAction("保留", onClick = dismiss),
+                WontonDialogAction(stringResource(R.string.onboarding_keep), onClick = dismiss),
             ),
         )
     }

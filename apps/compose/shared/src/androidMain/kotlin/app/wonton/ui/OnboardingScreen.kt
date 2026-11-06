@@ -1,5 +1,7 @@
 package app.wonton.ui
 
+import android.icu.text.ListFormatter
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingAgentRow
 import app.wonton.protocol.OnboardingCommit
@@ -52,7 +56,7 @@ internal fun OnboardingScreen(
         nav = if (view.step == OnboardingStep.MODEL) {
             nav.copy(canNext = nav.canNext || (!view.model.testing && modelForm.canTest))
         } else nav,
-        title = view.title,
+        title = view.title(),
         primaryText = view.primaryText(),
         primaryBusy = view.loading || view.model.testing || view.review.commit == OnboardingCommit.RUNNING,
         onBack = { send(Action.BackOnboardingStep) },
@@ -89,36 +93,47 @@ internal fun OnboardingScreen(
 }
 
 /** 每一步卡片顶上的标题。 */
-internal val OnboardingViewModel.title: String
-    get() = when (step) {
-        null -> ""
-        OnboardingStep.PROFILE -> "你的资料"
-        OnboardingStep.AGENT -> "选 Agent"
-        OnboardingStep.MODEL -> "接模型"
-        OnboardingStep.APPS -> "选应用"
-        OnboardingStep.REVIEW -> "确认"
-        OnboardingStep.FINISHED -> "完成"
-        OnboardingStep.OTHER -> "引导"
-    }
+@Composable
+internal fun OnboardingViewModel.title(): String = when (step) {
+    null -> ""
+    OnboardingStep.PROFILE -> stringResource(R.string.onboarding_step_profile)
+    OnboardingStep.AGENT -> stringResource(R.string.onboarding_step_agent)
+    OnboardingStep.MODEL -> stringResource(R.string.onboarding_step_model)
+    OnboardingStep.APPS -> stringResource(R.string.onboarding_step_apps)
+    OnboardingStep.REVIEW -> stringResource(R.string.onboarding_step_review)
+    OnboardingStep.FINISHED -> stringResource(R.string.onboarding_step_finished)
+    OnboardingStep.OTHER -> stringResource(R.string.onboarding_step_other)
+}
 
 /** 接模型的方式，如“ChatGPT 账号或 key”；没有账号登录时只有 key。 */
-internal fun OnboardingAgentRow.connection(): String =
-    if (logins.isEmpty()) "key" else logins.joinToString("、") + "或 key"
+@Composable
+internal fun OnboardingAgentRow.connection(): String {
+    if (logins.isEmpty()) return stringResource(R.string.onboarding_agent_connection_key)
+    val locale = LocalConfiguration.current.locales[0]
+    // ListFormatter 的“或”型从 API 33 才有；更早的系统退回默认（“和”）型，只有登录名多到两个以上才有差别。
+    val formatted = if (Build.VERSION.SDK_INT >= 33) {
+        ListFormatter.getInstance(locale, ListFormatter.Type.OR, ListFormatter.Width.WIDE).format(logins)
+    } else {
+        ListFormatter.getInstance(locale).format(logins)
+    }
+    return stringResource(R.string.onboarding_agent_connection_logins, formatted)
+}
 
+@Composable
 private fun OnboardingViewModel.primaryText(): String = if (step == OnboardingStep.REVIEW) {
     when (review.commit) {
-        OnboardingCommit.NOT_STARTED -> "完成"
-        OnboardingCommit.RUNNING -> "进行中"
-        OnboardingCommit.DONE -> "进入聊天"
+        OnboardingCommit.NOT_STARTED -> stringResource(R.string.onboarding_done)
+        OnboardingCommit.RUNNING -> stringResource(R.string.onboarding_running)
+        OnboardingCommit.DONE -> stringResource(R.string.onboarding_enter_chat)
     }
 } else {
-    "下一步"
+    stringResource(R.string.onboarding_next)
 }
 
 @Composable
 private fun OnboardingAgentStep(agents: List<OnboardingAgentRow>, send: (Action) -> Unit) {
     if (agents.isEmpty()) {
-        OnboardingProblem("没有可选的 Agent，可以刷新重试。", null) { send(Action.RefreshOnboarding) }
+        OnboardingProblem(stringResource(R.string.onboarding_agent_empty), null) { send(Action.RefreshOnboarding) }
     }
     agents.forEach { agent ->
         key(agent.id) {

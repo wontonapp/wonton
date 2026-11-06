@@ -5,6 +5,8 @@
     <string name="language_tag">ja</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">キャンセル</string>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <string name="common_close">閉じる</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">詳細</string>
     <!-- Button that loads the page's data again after it failed. -->
@@ -65,6 +67,168 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">ローカルネットワークに公開</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">APIキー</string>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s、またはAPIキー</string>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">選べるエージェントがありません。再読み込みして再試行できます。</string>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">インストール済み</string>
+    <!-- Dialog title for choosing the default agent. -->
+    <string name="onboarding_default_agent_title">デフォルトのエージェント</string>
+    <!-- Primary button that finishes setup. -->
+    <string name="onboarding_done">完了</string>
+    <!-- Primary button after setup finished: leave setup and open chat. -->
+    <string name="onboarding_enter_chat">チャットへ</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">モデル設定</string>
+    <!-- Button that keeps the agent that a new one replaces. -->
+    <string name="onboarding_keep">残す</string>
+    <!-- Loading spinner shown while setup data loads. -->
+    <string name="onboarding_loading">読み込み中</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">カスタム</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">APIキー</string>
+    <!-- Label of the field for the provider's API base URL (like https://api.example.com/v1). -->
+    <string name="onboarding_model_form_base_url">Base URL</string>
+    <!-- Label of the field for the model's name (like gpt-4o). -->
+    <string name="onboarding_model_form_model_name">モデル名</string>
+    <!-- Button that opens the provider's website to get an API key. -->
+    <string name="onboarding_model_get_key">APIキーを取得</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">プロバイダーを折りたたむ</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">その他のプロバイダー</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">このリンクを開けるブラウザがありません。ブラウザをインストールまたは有効にしてから再試行してください。</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">モデル設定を開く</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">テスト</string>
+    <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
+    <string name="onboarding_model_unreachable">プロバイダーに接続できませんが、完了時に保存されます。</string>
+    <!-- Row title: keep the models already configured in the model gateway. -->
+    <string name="onboarding_model_use_current">現在のモデルを使用</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">%1$sを使用</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">次へ</string>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="other">確認待ちのカードが%1$d枚あります</item>
+    </plurals>
+    <!-- Banner when one approval card is waiting. Argument: the card's title. -->
+    <string name="onboarding_pending_card_one">%1$sの確認待ちです</string>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">モデルゲートウェイの準備ができていません。再試行するか、このステップをスキップしてください。</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">プロバイダーがこのAPIキーを拒否しました。修正して再テストしてください。</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">Wontonと自宅サーバーのバージョンに互換性がありません。更新して再試行してください。</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">プロバイダーに接続できません。アドレスかネットワークを確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server can't be reached. -->
+    <string name="onboarding_problem_model_transport_unavailable">自宅サーバーに接続できません。ネットワークを確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">自宅サーバーがこのデバイスを未認証です。アクセス権限を確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">自宅サーバーがリクエストを完了できませんでした。しばらくしてから再試行してください。</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">アプリが確認後に変更されました。もう一度確認してください。</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">このアプリはインストール済みか使用中です。現在の処理が終わったら更新してください。</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">自宅サーバーをアップデート中です。終わってから再試行してください。</string>
+    <!-- Problem title while installing: the device the app needs is unavailable. -->
+    <string name="onboarding_problem_plugin_device_unavailable">選択したデバイスが利用できません。選び直してください。</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">サーバーのプロキシに接続できません。確認してから再試行してください。</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">この操作は受け付けられませんでした。詳細を確認して修正し、再試行してください。</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">利用できるローカルネットワークのアドレスがありません。サーバーのネットワーク設定を確認してください。</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">このアプリが見つかりません。一覧を更新してから再試行してください。</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">プロフィールが未入力です。入力してから再試行してください。</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">Wontonと自宅サーバーのバージョンが一致していません。Wontonかサーバーを更新してください。</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">アプリの情報を取得できません。提供元が復旧してから再試行してください。</string>
+    <!-- Problem title while installing: the home server can't be reached. -->
+    <string name="onboarding_problem_plugin_transport_unavailable">自宅サーバーに接続できません。ネットワークを確認して再試行してください。</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">自宅サーバーがこのデバイスを認識していません。QRコードをスキャンしてもう一度ペアリングしてください。</string>
+    <!-- Problem title while installing: the home server doesn't support this app. -->
+    <string name="onboarding_problem_plugin_unsupported">自宅サーバーがこのアプリに対応していません。先にサーバーをアップデートしてください。</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">自宅サーバーでエラーが発生しました。しばらくしてから再試行してください。</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">おすすめの提供元が無効になっています。スキップできます。</string>
+    <!-- Problem title in setup: some recommendations didn't load. -->
+    <string name="onboarding_problem_store_incomplete">一部のおすすめを読み込めませんでした。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">おすすめの表示には新しい自宅サーバーが必要です。アップデートするか、スキップしてください。</string>
+    <!-- Problem title in setup: the recommendation list can't be read. -->
+    <string name="onboarding_problem_store_invalid_index">おすすめを読み取れません。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: recommendations are unavailable for another reason. -->
+    <string name="onboarding_problem_store_other">おすすめを読み込めません。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: too many requests to the recommendation source. -->
+    <string name="onboarding_problem_store_rate_limited">おすすめへのリクエストが多すぎます。後で再試行するかスキップできます。</string>
+    <!-- Problem title in setup: the recommendation source responds too slowly. -->
+    <string name="onboarding_problem_store_timeout">おすすめの提供元の応答に時間がかかっています。再試行するか、スキップしてください。</string>
+    <!-- Problem title in setup: the recommendation source can't be reached. -->
+    <string name="onboarding_problem_store_unreachable">おすすめの提供元に接続できません。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">おすすめの提供元でエラーが発生しました。再試行するかスキップできます。</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">「%1$s」をアンインストールしますか？</string>
+    <!-- Fallback when the core gives no reason why an app can't be installed. -->
+    <string name="onboarding_review_blocked">インストールできません</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">完了</string>
+    <!-- Row description in the review step: the already-configured models are kept. -->
+    <string name="onboarding_review_keep_current">現在のものを使用</string>
+    <!-- Label next to a spinner while an install task is being prepared. -->
+    <string name="onboarding_review_preparing">準備中</string>
+    <!-- Row description in the review step: the item is set as the default agent. -->
+    <string name="onboarding_review_set_default">デフォルトに設定</string>
+    <!-- Row description in the review step: the agent signs in from chat after setup. -->
+    <string name="onboarding_review_sign_in_after_setup">セットアップ後にチャットでログイン</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">インストールされたか確認できません。アプリのページを確認してください。</string>
+    <!-- Row description in the review step: the model couldn't be reached during the test. -->
+    <string name="onboarding_review_unreachable">テスト時に接続できませんでした</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · テスト時に接続できませんでした</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">待機中</string>
+    <!-- Busy label while a setup step or an install task is running. -->
+    <string name="onboarding_running">処理中</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">スキップ</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">エージェントの選択</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">アプリの選択</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">完了</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">モデルの接続</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">セットアップ</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">プロフィール</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">確認</string>
+    <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
+    <string name="onboarding_tip_app_installed">アプリをインストールしたら、ナビゲーションバーに追加できます。</string>
+    <!-- Dismissable tip above the chat input: confirm approval requests on the card in chat. -->
+    <string name="onboarding_tip_confirmation_card">確認が必要なときは、チャットのカードで確認してください。</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">アンインストール</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">カスタム</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->

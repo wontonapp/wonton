@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -99,7 +100,7 @@ internal fun ModelProviderForm(
                 { form.baseUrl = it; send(Action.DismissModelProviderProblem) },
                 Modifier.fillMaxWidth(),
                 placeholder = "https://api.example.com/v1",
-                label = "Base URL",
+                label = stringResource(R.string.onboarding_model_form_base_url),
                 enabled = !testing,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             )
@@ -107,8 +108,8 @@ internal fun ModelProviderForm(
                 form.modelName,
                 { form.modelName = it; send(Action.DismissModelProviderProblem) },
                 Modifier.fillMaxWidth(),
-                placeholder = "模型名",
-                label = "模型名",
+                placeholder = stringResource(R.string.onboarding_model_form_model_name),
+                label = stringResource(R.string.onboarding_model_form_model_name),
                 enabled = !testing,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             )
@@ -117,7 +118,7 @@ internal fun ModelProviderForm(
         keyLink()
         if (testing) OnboardingLoading()
         WontonButton(
-            "测试", { form.submit(send, thenContinue = false) },
+            stringResource(R.string.onboarding_model_test), { form.submit(send, thenContinue = false) },
             enabled = !testing && form.apiKey.isNotEmpty(),
             kind = WontonButtonKind.SECONDARY,
         )
@@ -153,8 +154,8 @@ private fun ModelKeyField(value: String, onValueChange: (String) -> Unit, enable
             WontonTextField(
                 value, onValueChange,
                 Modifier.fillMaxWidth().bringIntoViewRequester(visible).onFocusChanged { focused = it.isFocused },
-                label = "API key",
-                placeholder = "API key",
+                label = stringResource(R.string.onboarding_model_form_api_key),
+                placeholder = stringResource(R.string.onboarding_model_form_api_key),
                 enabled = enabled,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(

@@ -65,18 +65,19 @@ struct OnboardingProviderForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             if form.expanded == .custom {
-                TextField("Base URL", text: input(\.baseURL), prompt: Text("https://"))
+                TextField(String(localized: .onboardingModelFormBaseUrl), text: input(\.baseURL),
+                          prompt: Text("https://"))
                     .keyboardType(.URL)
                     .focused($focusedField, equals: "onboarding-model-url")
                     .id("onboarding-model-url")
                     .wontonField()
-                TextField("模型名", text: input(\.model))
+                TextField(String(localized: .onboardingModelFormModelName), text: input(\.model))
                     .focused($focusedField, equals: "onboarding-model-name")
                     .id("onboarding-model-name")
                     .wontonField()
             }
-            SecureField("API key", text: input(\.key))
-                .accessibilityLabel("API key")
+            SecureField(String(localized: .onboardingModelFormApiKey), text: input(\.key))
+                .accessibilityLabel(String(localized: .onboardingModelFormApiKey))
                 .accessibilityIdentifier("onboarding-provider-key")
                 .textContentType(.none)
                 .submitLabel(.done)
@@ -85,7 +86,7 @@ struct OnboardingProviderForm: View {
                 .wontonField()
             HStack(spacing: WontonTheme.spacing.s12) {
                 if let url = keyURL.flatMap(URL.init(string:)) {
-                    Button("拿 key") { openURL(url) }
+                    Button(String(localized: .onboardingModelGetKey)) { openURL(url) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
                 Spacer(minLength: 0)
@@ -94,7 +95,7 @@ struct OnboardingProviderForm: View {
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if testing { ProgressView() }
-                        Text("测试")
+                        Text(.onboardingModelTest)
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))

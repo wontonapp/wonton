@@ -7,6 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingViewModel
@@ -57,7 +58,7 @@ private fun OnboardingAppRow(item: StoreItem, plugins: PluginsState) {
         trailing = {
             if (item.installedVersion != null) {
                 Text(
-                    "已安装",
+                    stringResource(R.string.onboarding_app_installed),
                     Modifier.padding(WontonTheme.spacing.s12),
                     style = WontonTheme.typography.supporting,
                     color = WontonTheme.colors.textSecondary.toColor(),

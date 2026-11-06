@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingViewModel
@@ -30,8 +31,8 @@ internal fun OnboardingProfileStep(
     var email by remember { mutableStateOf(view.profile.email) }
     StepCardFrame(
         nav = nav,
-        title = view.title,
-        primaryText = "下一步",
+        title = view.title(),
+        primaryText = stringResource(R.string.onboarding_next),
         primaryBusy = view.loading,
         onBack = { send(Action.BackOnboardingStep) },
         onSkip = { send(Action.SkipOnboardingStep) },
