@@ -27,7 +27,8 @@
 //! | GET | `/_wonton/api/lan` | 局域网设置（`LanSettings`），当场检测一次（ADR-0019） |
 //! | PUT | `/_wonton/api/lan` | 请求体是 `LanChoice`，改选端口开在哪些地址上，重建完返回新的 `LanSettings` |
 //! | GET | `/_wonton/api/models/providers` | 模型服务商列表（`ModelProviders`） |
-//! | PUT | `/_wonton/api/models/providers/{id}` | 保存并测试模型服务商 key |
+//! | PUT/POST | `/_wonton/api/models/providers/{id}[/test]` | 保存或只测试模型服务商 key |
+//! | PUT/POST | `/_wonton/api/models/custom-provider[/test]` | 保存或只测试自定义服务商 |
 //!
 //! 插件包是 compose 文本，或者 tar、tar.gz、zip 压缩包（按内容认）。JSON 请求体（`Content-Type: application/json`）是按来源
 //! 预览和安装。

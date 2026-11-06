@@ -1,4 +1,4 @@
-//! 模型网关服务商 API：列出预设和保存服务商 key。
+//! 模型网关服务商 API：列出、测试和保存预设或自定义服务商。
 
 use std::sync::Arc;
 
@@ -7,10 +7,13 @@ use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
-use wonton_protocol::ModelProviderKey;
+use serde::de::DeserializeOwned;
+use wonton_protocol::{CustomModelProvider, ModelProviderKey};
 
-use super::api::{error_response, install_error, languages, plugin_denied};
+use super::api::{install_error, languages, plugin_denied};
 use super::{Gateway, TunnelPeer};
+use crate::plugin::manager::InstallError;
+use crate::plugin::model_providers::ProviderAction;
 
 pub async fn list(
     State(gateway): State<Arc<Gateway>>,
@@ -33,24 +36,90 @@ pub async fn save(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+    preset(&gateway, peer, &headers, &id, &body, ProviderAction::Save).await
+}
+
+pub async fn test(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    preset(&gateway, peer, &headers, &id, &body, ProviderAction::Test).await
+}
+
+async fn preset(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    id: &str,
+    body: &[u8],
+    action: ProviderAction,
+) -> Response {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return denied;
     }
-    let request = match serde_json::from_slice::<ModelProviderKey>(&body) {
+    let request: ModelProviderKey = match parse(body) {
         Ok(request) => request,
-        Err(error) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_input",
-                &format!("请求体不是模型服务商 key：{error}"),
-            );
-        }
+        Err(error) => return install_error(&error),
     };
-    match gateway
-        .plugins
-        .save_model_provider(&id, request.key.expose())
-        .await
-    {
+    result(
+        gateway
+            .plugins
+            .model_provider_key(id, request.key.expose(), action)
+            .await,
+    )
+}
+
+pub async fn custom_save(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    custom(&gateway, peer, &headers, &body, ProviderAction::Save).await
+}
+
+pub async fn custom_test(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    custom(&gateway, peer, &headers, &body, ProviderAction::Test).await
+}
+
+async fn custom(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    body: &[u8],
+    action: ProviderAction,
+) -> Response {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
+        return denied;
+    }
+    let request: CustomModelProvider = match parse(body) {
+        Ok(request) => request,
+        Err(error) => return install_error(&error),
+    };
+    result(
+        gateway
+            .plugins
+            .custom_model_provider(&request, action)
+            .await,
+    )
+}
+
+fn parse<T: DeserializeOwned>(body: &[u8]) -> Result<T, InstallError> {
+    // serde 的类型错误可能包含输入值，不能把含 key 的请求片段带回客户端。
+    serde_json::from_slice(body)
+        .map_err(|_| InstallError::Invalid("模型服务商请求格式不正确".into()))
+}
+
+fn result(result: Result<(), InstallError>) -> Response {
+    match result {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => install_error(&error),
     }

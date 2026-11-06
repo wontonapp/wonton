@@ -110,6 +110,10 @@ x-wonton:
       providers:
         list: [sh, /wonton/providers.sh, list]
         save: [sh, /wonton/providers.sh, save, "{id}"]
+        test: [sh, /wonton/providers.sh, test, "{id}"]
+        custom:
+          save: [sh, /wonton/providers.sh, custom-save]
+          test: [sh, /wonton/providers.sh, custom-test]
   secrets:
     web_key:
       generate: { bytes: 32 }

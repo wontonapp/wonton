@@ -49,7 +49,7 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
         )
 }
 
-/// 模型网关的服务商接口（ADR-0034"接模型"）：列出预设和保存 key。save 的请求体很小，显式限 8 KiB。
+/// 密钥请求显式限 8 KiB，鉴权和同源限制与插件管理接口相同。
 fn model_provider_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
@@ -58,8 +58,21 @@ fn model_provider_routes() -> Router<Arc<Gateway>> {
         )
         .route(
             "/_wonton/api/models/providers/{id}",
-            put(model_providers::save).layer(DefaultBodyLimit::max(8 << 10)),
+            put(model_providers::save),
         )
+        .route(
+            "/_wonton/api/models/providers/{id}/test",
+            post(model_providers::test),
+        )
+        .route(
+            wonton_protocol::CUSTOM_MODEL_PROVIDER_PATH,
+            put(model_providers::custom_save),
+        )
+        .route(
+            wonton_protocol::CUSTOM_MODEL_PROVIDER_TEST_PATH,
+            post(model_providers::custom_test),
+        )
+        .layer(DefaultBodyLimit::max(8 << 10))
 }
 
 /// 插件管理这一组路由：装、看、升级、开关，都挂在 `/_wonton/api/plugins` 下。

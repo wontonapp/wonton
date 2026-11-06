@@ -34,6 +34,16 @@ block() {
 # 模型目录由 magpie 的服务进程下载，CLI 不下载。没有目录时模板照样挑，但不看价格（magpie 0.1.1327 实测：OpenAI 预设下
 # 挑出 gpt-3.5-turbo → gpt-4-0613），所以当作挑不出来。
 wanted() {
+  # 自定义接入显式指定的模型优先；reconcile 仍先检查主人是否改过组。
+  if [ -s "$state/custom-model" ]; then
+    custom=$(cat "$state/custom-model") || return 1
+    custom_id=${custom%%/*}
+    if magpie provider "$custom_id" >/dev/null 2>&1; then
+      # 自定义 provider 只暴露所填的一个模型；按 provider 匹配，避免模型名的逗号和 :effort 被组语法解释。
+      printf '%s/*\n' "$custom_id"
+      return 0
+    fi
+  fi
   [ -s "$catalog" ] || { echo '*'; return 0; }
   templates=$(magpie group template) || return 1
   pair=$(printf '%s\n' "$templates" | sed -n '/^thrifty /{n;p;q;}')
@@ -81,7 +91,7 @@ reconcile() {
 
 # provider、模型列表和模型目录的缓存变了才重新算：magpie 每次都要读几 MB 的模型目录。
 signature() {
-  stat -c '%n %Y %s' "$providers" "$catalog" /config/cache/magpie/models \
+  stat -c '%n %Y %s' "$providers" "$catalog" "$state/custom-model" /config/cache/magpie/models \
     /config/cache/magpie/models/* 2>/dev/null | cksum
 }
 

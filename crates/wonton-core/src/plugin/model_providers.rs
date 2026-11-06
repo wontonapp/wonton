@@ -1,10 +1,12 @@
-//! 模型网关的服务商列表和 key 保存命令。
+//! 模型网关的服务商列表、key 测试和保存命令。
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
 use serde::Deserialize;
-use wonton_protocol::{ConfiguredModelProvider, ModelProvider, ModelProviders};
+use wonton_protocol::{
+    ConfiguredModelProvider, CustomModelProvider, ModelProvider, ModelProviders,
+};
 
 use super::PluginId;
 use super::languages::Languages;
@@ -13,8 +15,30 @@ use super::models::{COMMAND_TIMEOUT, ModelsRoute, ProviderState};
 use super::provides::{ID_PLACEHOLDER, ProviderCommands};
 use super::storefront::onboarding::OnboardingCatalog;
 
-const SAVE_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+const PROVIDER_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_KEY_BYTES: usize = 4 << 10;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ProviderAction {
+    Save,
+    Test,
+}
+
+impl ProviderAction {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Save => "保存",
+            Self::Test => "测试",
+        }
+    }
+
+    fn disconnected(self) -> &'static str {
+        match self {
+            Self::Save => "服务商连接失败，key 已保存",
+            Self::Test => "服务商连接失败，什么都没保存",
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct ProviderList {
@@ -62,16 +86,17 @@ impl PluginManager {
             any_configured,
             web_url: self.model_web_url(&route.id),
             configured,
-            custom: false,
+            custom: commands.custom.is_some(),
         })
     }
 
-    /// 验证并保存一个服务商 key。key 只经标准输入传给网关命令。
-    pub(crate) async fn save_model_provider(
+    pub(crate) async fn model_provider_key(
         &self,
         id: &str,
         key: &str,
+        action: ProviderAction,
     ) -> Result<(), InstallError> {
+        validate_key(key)?;
         let route = self.provider_route()?;
         let commands = route
             .spec
@@ -84,35 +109,76 @@ impl PluginManager {
         if !listed.presets.iter().any(|preset| preset.id == id) {
             return Err(InstallError::Invalid(format!("模型网关不支持服务商 {id}")));
         }
-        validate_key(key)?;
-        let argv = replace(commands.save.as_slice(), ID_PLACEHOLDER, id);
+        let argv = match action {
+            ProviderAction::Save => &commands.save,
+            ProviderAction::Test => &commands.test,
+        };
+        let argv = replace(argv, ID_PLACEHOLDER, id);
         let stdin = format!("{key}\n");
+        self.run_provider_command(&route, &argv, stdin.as_bytes(), action, false)
+            .await
+    }
+
+    pub(crate) async fn custom_model_provider(
+        &self,
+        provider: &CustomModelProvider,
+        action: ProviderAction,
+    ) -> Result<(), InstallError> {
+        validate_custom(provider)?;
+        let route = self.provider_route()?;
+        let custom = route
+            .spec
+            .providers
+            .as_ref()
+            .and_then(|commands| commands.custom.as_ref())
+            .ok_or_else(|| unavailable("模型网关不支持自定义服务商"))?;
+        let argv = match action {
+            ProviderAction::Save => &custom.save,
+            ProviderAction::Test => &custom.test,
+        };
+        let mut stdin =
+            serde_json::to_vec(provider).map_err(|_| unavailable("自定义服务商请求编码失败"))?;
+        stdin.push(b'\n');
+        self.run_provider_command(&route, argv, &stdin, action, true)
+            .await
+    }
+
+    async fn run_provider_command(
+        &self,
+        route: &ModelsRoute,
+        argv: &[String],
+        stdin: &[u8],
+        action: ProviderAction,
+        custom: bool,
+    ) -> Result<(), InstallError> {
         let output = self
             .engine
             .exec(
                 &route.credentials_container,
-                &argv,
-                Some(stdin.as_bytes()),
-                SAVE_COMMAND_TIMEOUT,
+                argv,
+                Some(stdin),
+                PROVIDER_COMMAND_TIMEOUT,
             )
             .await
-            .map_err(|e| unavailable(format!("模型网关 {} 未就绪：{e}", route.id)))?;
+            .map_err(|_| unavailable(format!("模型网关 {} 命令执行失败或超时", route.id)))?;
         tracing::info!(
-            provider = id,
+            action = action.name(),
             exit_code = output.exit_code,
-            "模型服务商保存命令结束"
+            "模型服务商命令结束"
         );
         match output.exit_code {
             0 => Ok(()),
-            3 => Err(InstallError::Invalid(format!(
-                "服务商 {id} 拒绝了 key，key 没有保存"
-            ))),
-            4 => Err(InstallError::UpstreamUnavailable(format!(
-                "服务商 {id} 连接失败，key 已保存"
-            ))),
+            2 if custom => Err(InstallError::Invalid("服务商地址或模型名不合法".into())),
+            3 => Err(InstallError::Invalid(
+                "服务商拒绝了 key，key 没有保存".into(),
+            )),
+            4 => Err(InstallError::UpstreamUnavailable(
+                action.disconnected().into(),
+            )),
             code => Err(unavailable(format!(
-                "模型网关 {} 保存服务商 {id} 失败，退出码 {code}",
-                route.id
+                "模型网关 {} {}服务商失败，退出码 {code}",
+                route.id,
+                action.name()
             ))),
         }
     }
@@ -144,16 +210,12 @@ impl PluginManager {
             .map_err(|e| unavailable(format!("模型网关 {} 列出服务商失败：{e}", route.id)))?;
         if output.exit_code != 0 {
             return Err(unavailable(format!(
-                "模型网关 {} 列出服务商失败，退出码 {}：{}",
-                route.id, output.exit_code, output.stderr
+                "模型网关 {} 列出服务商失败，退出码 {}",
+                route.id, output.exit_code
             )));
         }
-        serde_json::from_str(&output.stdout).map_err(|e| {
-            unavailable(format!(
-                "模型网关 {} 的服务商列表不是合法 JSON：{e}",
-                route.id
-            ))
-        })
+        serde_json::from_str(&output.stdout)
+            .map_err(|_| unavailable(format!("模型网关 {} 的服务商列表不是合法 JSON", route.id)))
     }
 }
 
@@ -165,6 +227,31 @@ fn validate_key(key: &str) -> Result<(), InstallError> {
     if key.is_empty() || key.contains('\n') || key.contains('\r') || key.len() > MAX_KEY_BYTES {
         return Err(InstallError::Invalid(
             "key 不能为空、不能有换行，且不能超过 4 KiB".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_custom(provider: &CustomModelProvider) -> Result<(), InstallError> {
+    validate_key(provider.key.expose())?;
+    if provider.base_url.len() > 2 << 10
+        || provider.base_url.chars().any(char::is_whitespace)
+        || !url::Url::parse(&provider.base_url)
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+    {
+        return Err(InstallError::Invalid(
+            "服务商地址必须是 http 或 https URL、不能有空白，且不能超过 2 KiB".into(),
+        ));
+    }
+    if provider.model.is_empty()
+        || provider.model.len() > 200
+        || provider
+            .model
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(InstallError::Invalid(
+            "模型名不能为空、不能有空白或控制字符，且不能超过 200 字节".into(),
         ));
     }
     Ok(())

@@ -1,5 +1,20 @@
 # magpie
 
+## 服务商命令验证
+
+`test-providers.sh` 需要 Docker，使用清单锁定的 magpie 镜像与仅存在于测试中的 OpenAI 兼容桩。
+测试容器只接入内部网络，不使用真实厂商或真实 key；退出时删除自己创建的容器、网络、卷和镜像标签。
+
+```sh
+~/wonton-dev/stack-slot.sh acquire v2-core
+WONTON_STACK_SLOT_HELD=v2-core nice -n 19 sh plugins/magpie/test-providers.sh
+~/wonton-dev/stack-slot.sh release v2-core
+```
+
+覆盖只测试不保存、自定义保存、拒绝 key、断连和超时，以及从另一容器用插件网关凭据请求
+`group/wonton-default`，验证请求实际使用所填的服务商和模型。默认组被主人修改后不覆盖，规则见
+[默认模型设计](../../docs/adr/0008-model-gateway-magpie.md#补充默认模型2026-10-30)。
+
 ## 图标
 
 `icon.png` 来自与 `ghcr.io/yetone/magpie` 对应的上游仓库 [yetone/magpie 的 `build/icon/magpie.svg`](https://github.com/yetone/magpie/blob/50265256ba56ac164a680da0689e1c6d90dac471/build/icon/magpie.svg)，

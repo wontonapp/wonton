@@ -1,5 +1,6 @@
 #!/bin/sh
-# 列出 magpie 的模型服务商预设、保存服务商 key。秘密只从标准输入进来、只交给 magpie，
+# 列出、保存和隔离测试模型服务商；自定义输入为 {base_url,model,key} 单行 JSON。
+# 秘密只从标准输入进来、只交给 magpie，
 # 命令输出都留在 shell 变量里，不进 stdout 和 stderr。
 # 实测行为基于 magpie 0.1.1327（ghcr.io/yetone/magpie@sha256:85e5b25a…）：
 # - presets 和 providers 是给人看的表格，没有 JSON 输出：行首有缩进，标题可含空格。
@@ -9,12 +10,20 @@
 # - provider test 发真实请求：被拒时输出 "✗ chat  401 · …"，退出 1；断网时 add 拉不到模型
 #   列表，test 输出 "✗ chat  no model to try: …"，或连接错误，也退出 1。
 # - provider set <id> id=<新id> 改名；目标名已存在时退出 1，所以换 key 要先删旧的再改名。
+# - 自定义 add 的 url/key/models 字段可用；断连时 add 仍为 0，models 保留显式模型；
+#   provider test <id> <model> 发该模型请求并报 connection refused。
+# - add 拒绝已经存在的同 URL+key，即使 id 不同；不改旧配置、不伪装成保存成功。
+#   models= 把逗号拆成列表，provider models <id> <model> 则把一个 argv 当一个模型。
+# - 独立 HOME/XDG 下的命令只改隔离目录；200、401、断连、20 秒超时和配置错误后，
+#   在线 providers.json 与 providers 输出不变。真实网关凭据请求默认组可到达自定义模型。
+# 自定义保存使用唯一 id，成功/断连保留，拒绝/内部错误删除；custom-model 提示默认组优先
+# 使用精确模型，但 default-model.sh 仍尊重主人手改的组。test 两种模式不碰在线配置。
 set -eu
 
 PROVIDER_TIMEOUT=20
 
 usage() {
-  echo "用法:$0 list | save <预设ID>" >&2
+  echo "用法:$0 list | save <预设ID> | test <ID> | custom-save | custom-test" >&2
   exit 2
 }
 
@@ -155,8 +164,7 @@ list() {
 # 数字；断网时 add 拉不到模型列表，test 输出 "✗ chat  no model to try: …"，或
 # "network is unreachable" 一类连接错误。
 test_provider() {
-  provider=$1
-  output=$(timeout "${PROVIDER_TIMEOUT}s" magpie provider test "$provider" 2>&1) && return 0
+  output=$(timeout "${PROVIDER_TIMEOUT}s" magpie provider test "$@" 2>&1) && return 0
   status=$?
   [ "$status" -eq 124 ] && return 4
   case "$output" in
@@ -180,11 +188,11 @@ save() {
   if [ -n "$old_id" ]; then
     ids=$(provider_ids) || exit 1
     # before/after 是换行分隔，转成空格分隔，下面的 case 才能按 " <id> " 匹配。
-    before=$(printf '%s ' $ids)
+    before=$(printf '%s\n' "$ids" | tr '\n' ' ')
     # 同名 add 会新建 deepseek-2 且永远退出 0，成败只能看 test：从前后差集找新建的 id。
     magpie provider add "$id" "$key" >/dev/null 2>&1 || exit 1
     ids=$(provider_ids) || exit 1
-    after=$(printf '%s ' $ids)
+    after=$(printf '%s\n' "$ids" | tr '\n' ' ')
     candidate=""
     for candidate_id in $after; do
       case " $before " in
@@ -241,6 +249,157 @@ save() {
   return "$status"
 }
 
+# 测试在独立配置树内运行，后台默认组维护器看不到候选项；所有退出路径删除整个树。
+# XDG 只在子 shell 隔离，custom_save 必须使用父进程原值。
+# shellcheck disable=SC2030
+isolated() (
+  umask 077
+  scratch=$(mktemp -d /tmp/wonton-provider.XXXXXXXXXX) || exit 1
+  trap 'rm -rf "$scratch"' EXIT
+  trap 'exit 1' HUP INT TERM
+  original=${XDG_CONFIG_HOME:-/config}/magpie/providers.json
+  export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config"
+  export XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data"
+  export XDG_STATE_HOME="$scratch/state" MAGPIE_NO_ACCOUNTS=1
+  mkdir -p "$XDG_CONFIG_HOME/magpie" "$HOME"
+  probe="wonton-probe-$(basename "$scratch" | tr '[:upper:]' '[:lower:]' | tr '.' '-')"
+  if [ "$1" = test ]; then
+    [ ! -f "$original" ] || cp "$original" "$XDG_CONFIG_HOME/magpie/providers.json"
+    known=$(provider_id "$2") || exit 1
+    if [ -n "$known" ]; then
+      magpie provider set "$2" "id=$probe" "key=$key" >/dev/null 2>&1 || exit 1
+    else
+      preset_exists "$2" || exit 2
+      status=0
+      timeout "${PROVIDER_TIMEOUT}s" magpie provider add "$2" "$key" "id=$probe" >/dev/null 2>&1 || status=$?
+      case "$status" in 0) ;; 124) exit 4 ;; *) exit 1 ;; esac
+    fi
+  else
+    create_custom "$probe" || exit $?
+  fi
+  if [ "$1" = test ]; then test_provider "$probe"; else test_provider "$probe" "$model"; fi
+)
+
+# 镜像没有 jq：严格解码三个字符串字段，不 eval、不按引号切 JSON。
+custom_input() {
+  parsed=$(LC_ALL=C awk '
+    function fail() { bad=1; exit 2 }
+    function ws() { while(p<=length(s) && substr(s,p,1) ~ /[ \t\r\n]/) p++ }
+    function hex(  i,c,n) {
+      n=0
+      for(i=0;i<4;i++) {
+        if(p>length(s)) fail()
+        c=index("0123456789abcdef",tolower(substr(s,p++,1)))-1
+        if(c<0) fail()
+        n=n*16+c
+      }
+      return n
+    }
+    function utf(n) {
+      if(n==0 || n==10 || n==13) fail()
+      if(n<128) return sprintf("%c",n)
+      if(n<2048) return sprintf("%c%c",192+int(n/64),128+n%64)
+      if(n<65536) return sprintf("%c%c%c",224+int(n/4096),128+int(n/64)%64,128+n%64)
+      return sprintf("%c%c%c%c",240+int(n/262144),128+int(n/4096)%64,128+int(n/64)%64,128+n%64)
+    }
+    function str(  c,e,n,lo,v) {
+      if(substr(s,p++,1)!="\"") fail()
+      v=""
+      while(p<=length(s)) {
+        c=substr(s,p++,1)
+        if(c=="\"") return v
+        if(c ~ /[[:cntrl:]]/) fail()
+        if(c=="\\") {
+          e=substr(s,p++,1)
+          if(e=="\"" || e=="\\" || e=="/") c=e
+          else if(e=="t") c=sprintf("%c",9)
+          else if(e=="b") c=sprintf("%c",8)
+          else if(e=="f") c=sprintf("%c",12)
+          else if(e=="u") {
+            n=hex()
+            if(n>=55296 && n<=56319) {
+              if(substr(s,p,2)!="\\u") fail()
+              p+=2; lo=hex()
+              if(lo<56320 || lo>57343) fail()
+              n=65536+(n-55296)*1024+lo-56320
+            } else if(n>=56320 && n<=57343) fail()
+            c=utf(n)
+          } else fail()
+        }
+        v=v c
+      }
+      fail()
+    }
+    { if(NR>1) fail(); s=$0 }
+    END {
+      if(bad) exit 2
+      p=1; ws(); if(substr(s,p++,1)!="{") fail()
+      for(i=1;i<=3;i++) {
+        ws(); k=str(); ws(); if(substr(s,p++,1)!=":") fail()
+        if(k!="base_url" && k!="model" && k!="key") fail()
+        if(k in a) fail()
+        ws(); a[k]=str(); ws()
+        if(substr(s,p++,1)!=(i==3 ? "}" : ",")) fail()
+      }
+      ws(); if(p<=length(s)) fail()
+      if(a["base_url"]!~/^https?:\/\/[^\/[:space:]]+/ || a["base_url"] ~ /[[:space:][:cntrl:]]/) fail()
+      if(a["model"]=="" || a["model"] ~ /[[:space:][:cntrl:]]/ || a["key"]=="") fail()
+      print a["base_url"]; print a["model"]; print a["key"]
+    }
+  ') || return 2
+  base_url=$(printf '%s\n' "$parsed" | sed -n '1p')
+  model=$(printf '%s\n' "$parsed" | sed -n '2p')
+  key=$(printf '%s\n' "$parsed" | sed -n '3p')
+}
+
+create_custom() {
+  status=0
+  timeout "${PROVIDER_TIMEOUT}s" magpie provider add "$1" "id=$1" \
+    "url=$base_url" "models=$model" "key=$key" >/dev/null 2>&1 || status=$?
+  case "$status" in 0) ;; 124) return 4 ;; *) return 1 ;; esac
+  # models= 用逗号分隔；models 子命令把每个 argv 当一个完整模型名。
+  case "$model" in
+    *,*) magpie provider models "$1" "$model" >/dev/null 2>&1 || return 1 ;;
+  esac
+}
+
+# shellcheck disable=SC2031
+custom_save() (
+  umask 077
+  state=${XDG_CONFIG_HOME:-/config}/wonton
+  mkdir -p "$state" || exit 1
+  reservation=$(mktemp -d "$state/custom.XXXXXXXXXX") || exit 1
+  candidate="wonton-custom-$(basename "$reservation" | tr '[:upper:]' '[:lower:]' | tr '.' '-')"
+  keep=0
+  # EXIT trap 间接调用。
+  # shellcheck disable=SC2317
+  cleanup_custom() {
+    result=$?
+    if [ "$keep" = 0 ]; then
+      magpie provider rm "$candidate" >/dev/null 2>&1 || result=1
+    fi
+    rm -rf "$reservation" || result=1
+    exit "$result"
+  }
+  trap cleanup_custom EXIT
+  trap 'exit 1' HUP INT TERM
+  existing=$(provider_id "$candidate") || { keep=1; exit 1; }
+  [ -z "$existing" ] || { keep=1; exit 1; }
+  status=0
+  create_custom "$candidate" || status=$?
+  [ "$status" -ne 0 ] || test_provider "$candidate" "$model" || status=$?
+  case "$status" in
+    0|4)
+      # 连不上仍保存，和 save 合同一致；精确模型提示不含 key。
+      [ -n "$(provider_id "$candidate")" ] || exit 1
+      printf '%s/%s\n' "$candidate" "$model" >"$reservation/model"
+      mv "$reservation/model" "$state/custom-model" || exit 1
+      keep=1
+      ;;
+  esac
+  exit "$status"
+)
+
 case "${1:-}" in
 list)
   [ "$#" -eq 1 ] || usage
@@ -249,6 +408,18 @@ list)
 save)
   [ "$#" -eq 2 ] || usage
   save "$2"
+  ;;
+test)
+  [ "$#" -eq 2 ] || usage
+  key=
+  IFS= read -r key || true
+  [ -n "$key" ] || exit 2
+  isolated test "$2"
+  ;;
+custom-test|custom-save)
+  [ "$#" -eq 1 ] || usage
+  custom_input || exit 2
+  if [ "$1" = custom-test ]; then isolated custom; else custom_save; fi
   ;;
 *) usage ;;
 esac
