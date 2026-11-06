@@ -35,6 +35,7 @@ fn detail(ask: bool) -> Canned {
         installed: None,
         blocked: None,
         notices: Vec::new(),
+        hints: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         limits: None,

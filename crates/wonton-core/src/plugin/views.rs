@@ -137,6 +137,7 @@ impl PluginManager {
                     ])))
                 }))
                 .collect(),
+            hints: Vec::new(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
@@ -750,6 +751,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         installed: Some(installed),
         blocked: None,
         notices: Vec::new(),
+        hints: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         ask_every_update: None,

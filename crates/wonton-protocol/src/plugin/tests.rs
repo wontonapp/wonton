@@ -242,6 +242,10 @@ fn detail() -> PluginDetail {
         installed: Some(installed()),
         blocked: None,
         notices: Vec::new(),
+        hints: vec![PluginHint {
+            category: PluginHintCategory::ModelsNotConnected,
+            detail: Some("模型网关没在运行".into()),
+        }],
         lan_webui: None,
         save_grants: Vec::new(),
         ask_every_update: Some(false),
@@ -504,6 +508,69 @@ fn the_ask_every_update_switch_keeps_its_wire_format() {
     assert_eq!(round_trip(&switch), switch);
 }
 
+/// 契约：模型网关没接上的轻提示。类别落在字段上，壳按类别写文字（ADR-0043）；核心写的只有 `detail`。
+#[test]
+fn the_models_not_connected_hint_keeps_its_wire_format() {
+    let hint = PluginHint {
+        category: PluginHintCategory::ModelsNotConnected,
+        detail: Some("网关拒绝了凭据命令（issue，退出码 1）".into()),
+    };
+    assert_eq!(
+        json!(hint),
+        json!({
+            "category": "models_not_connected",
+            "detail": "网关拒绝了凭据命令（issue，退出码 1）",
+        })
+    );
+    assert_eq!(round_trip(&hint), hint);
+
+    let quiet = PluginHint {
+        category: PluginHintCategory::ModelsNotConnected,
+        detail: None,
+    };
+    assert_eq!(
+        json!(quiet),
+        json!({"category": "models_not_connected", "detail": null})
+    );
+
+    let mut shown = serde_json::to_value(detail()).unwrap();
+    shown["hints"] = json!([{"category": "models_not_connected"}]);
+    let shown: PluginDetail = serde_json::from_value(shown).unwrap();
+    assert_eq!(
+        shown.hints,
+        vec![PluginHint {
+            category: PluginHintCategory::ModelsNotConnected,
+            detail: None,
+        }]
+    );
+
+    // 网关接上了、但默认路由里没有模型；服务商出错时 detail 带核心写的出错原因。
+    let no_default = PluginHint {
+        category: PluginHintCategory::ModelsNoDefaultModel,
+        detail: None,
+    };
+    let provider_error = PluginHint {
+        category: PluginHintCategory::ModelsProviderError,
+        detail: Some("服务商 DeepSeek 拒绝了 key（401）".into()),
+    };
+    assert_eq!(
+        json!(no_default),
+        json!({"category": "models_no_default_model", "detail": null})
+    );
+    assert_eq!(
+        json!(provider_error),
+        json!({
+            "category": "models_provider_error",
+            "detail": "服务商 DeepSeek 拒绝了 key（401）",
+        })
+    );
+    assert_eq!(round_trip(&no_default), no_default);
+    assert_eq!(round_trip(&provider_error), provider_error);
+
+    let newer: PluginHintCategory = serde_json::from_value(json!("model_pool_drained")).unwrap();
+    assert_eq!(newer, PluginHintCategory::Other);
+}
+
 #[test]
 fn a_core_without_writers_lists_plugins_without_them() {
     let mut item = serde_json::to_value(installed()).unwrap();
@@ -513,8 +580,10 @@ fn a_core_without_writers_lists_plugins_without_them() {
 
     let mut shown = serde_json::to_value(detail()).unwrap();
     shown.as_object_mut().unwrap().remove("ask_every_update");
+    shown.as_object_mut().unwrap().remove("hints");
     let shown: PluginDetail = serde_json::from_value(shown).unwrap();
     assert_eq!(shown.ask_every_update, None);
+    assert!(shown.hints.is_empty(), "旧核心没有这个字段，轻提示为空");
 }
 
 #[test]
@@ -562,6 +631,17 @@ fn values_from_a_newer_core_still_parse() {
     assert_eq!(plugin.web_display, TabDisplay::Other);
     assert_eq!(plugin.tabs[0].layout, TabLayout::Other);
     assert_eq!(plugin.tabs[0].display, TabDisplay::Other);
+
+    let mut shown = serde_json::to_value(detail()).unwrap();
+    shown["hints"] = json!([{"category": "model_pool_drained", "detail": "x"}]);
+    let shown: PluginDetail = serde_json::from_value(shown).unwrap();
+    assert_eq!(
+        shown.hints,
+        vec![PluginHint {
+            category: PluginHintCategory::Other,
+            detail: Some("x".into()),
+        }]
+    );
 }
 
 fn round_trip<T>(value: &T) -> T

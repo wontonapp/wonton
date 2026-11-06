@@ -5,9 +5,11 @@
 //!
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other` 或 `Unknown`，不让整份列表解析失败。
 
+mod hint;
 mod owner_secrets;
 mod tool_policy;
 
+pub use hint::{PluginHint, PluginHintCategory};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
@@ -471,6 +473,11 @@ pub struct PluginDetail {
     /// 要主人知道的情况，如本机防火墙可能挡住了局域网设备；按顺序显示，`emphasis` 的醒目显示。
     #[serde(default)]
     pub notices: Vec<CardLine>,
+    /// 装着的插件缺了某个平台能力、在用它自己的设置时的轻提示（如没接模型网关），类别见
+    /// [`PluginHintCategory`]；不是错误，状态照常，一页可以有多条。没有可提示的情况（没装、
+    /// 能力都接上了）时是空列表。
+    #[serde(default)]
+    pub hints: Vec<PluginHint>,
     /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
     pub lan_webui: Option<LanWebuiOffer>,
     /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。

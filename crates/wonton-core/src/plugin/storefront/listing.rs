@@ -211,6 +211,7 @@ impl PluginManager {
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
                 .collect(),
+            hints: Vec::new(),
             // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
             lan_webui: self
                 .with_lan_client(
