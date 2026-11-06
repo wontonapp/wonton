@@ -28,6 +28,9 @@ const REGISTER_BUDGET: Duration = Duration::from_secs(30);
 /// 只有核心读的 `_meta`，交给 Agent 前去掉。
 const CORE_META_PREFIX: &str = "app.wonton/";
 const INTERNAL_URL_META: &str = "app.wonton/internal_url";
+/// 单个二进制块（image、audio、嵌入资源的 blob）解码后最多这么多：超过的整块换成说明（插件规范的“工具结果里的文件”）。
+/// 整个响应的上限是另一回事，在 upstream.rs。
+const MAX_BLOCK_BYTES: usize = 1 << 20;
 
 /// 排好顺序的输出：普通的内容块，或者登记好的文件。
 enum Part {
@@ -59,7 +62,7 @@ pub(super) async fn rewrite(
             }
             mut other => {
                 strip_block_meta(&mut other);
-                parts.push(Part::Block(other));
+                parts.push(Part::Block(checked_block(other)));
                 continue;
             }
         };
@@ -245,6 +248,46 @@ pub(super) fn human_size(bytes: u64) -> String {
         unit += 1;
     }
     format!("{value:.1} {}", UNITS[unit])
+}
+
+/// 二进制块（image、audio、嵌入资源的 blob）超过单块上限或 base64 不合法时，整块换成说明；其余原样过（插件规范的
+/// “工具结果里的文件”）。不截断，同一结果里的别的块不受影响。
+fn checked_block(block: ContentBlock) -> ContentBlock {
+    let (kind, data) = match &block {
+        ContentBlock::Image(image) => ("image 块", image.data.as_str()),
+        ContentBlock::Audio(audio) => ("audio 块", audio.data.as_str()),
+        ContentBlock::Resource(embedded) => match &embedded.resource {
+            ResourceContents::BlobResourceContents { blob, .. } => {
+                ("resource 块里的 blob", blob.as_str())
+            }
+            _ => return block,
+        },
+        _ => return block,
+    };
+    let invalid = || {
+        ContentBlock::text(format!(
+            "插件返回的 {kind}不是合法的 base64，内容没有带来。"
+        ))
+    };
+    // STANDARD 的合法 base64 长度必是 4 的倍数，不用解码就能先排除一段。大小按 base64 长度估，不为判断大小把几十
+    // MiB 解码一遍再丢；上限以内的才解码核对，顺便查出长度对得上但内容不合规矩的。
+    if data.len() % 4 != 0 {
+        return invalid();
+    }
+    let estimated =
+        (data.len() / 4 * 3).saturating_sub(data.len() - data.trim_end_matches('=').len());
+    if estimated > MAX_BLOCK_BYTES {
+        return ContentBlock::text(format!(
+            "插件返回的 {kind}解码后有 {}，超过单块上限 {}，内容没有带来。要交大文件，插件要返回 resource_link 引用\
+             （插件规范“工具结果里的文件”），Agent 才能查看、分享。",
+            human_size(estimated as u64),
+            human_size(MAX_BLOCK_BYTES as u64),
+        ));
+    }
+    if STANDARD.decode(data).is_err() {
+        return invalid();
+    }
+    block
 }
 
 fn strip_block_meta(block: &mut ContentBlock) {

@@ -35,7 +35,10 @@ use rmcp::{ClientLifecycleMode, ClientServiceExt};
 
 use tokio::time::Instant;
 
-use super::bounded_http::{BoundedHttp, HttpError, MAX_TOOLS_BYTES, RESPONSE_TOO_LARGE};
+use super::bounded_http::{
+    BoundedHttp, HttpError, MAX_TOOLS_BYTES, RESPONSE_TOO_LARGE, TooLargeDetail, too_large_detail,
+};
+use super::file_results::human_size;
 use crate::plugin::{McpServer, PluginId};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -196,8 +199,8 @@ impl Slot {
 
 /// 一次调用失败的原因。
 enum CallFailure {
-    /// 这个响应超过上限。连接本身没事。
-    TooLarge,
+    /// 这个响应超过上限。连接本身没事，带上传输层知道的多少（bounded_http 写在错误 `data` 里）。
+    TooLarge(TooLargeDetail),
     /// 这条会话不回应，已被换掉。
     Replaced,
     /// 连接出了问题，已经丢掉。
@@ -402,7 +405,7 @@ impl Upstreams {
             }
             ServiceError::McpError(data) if data.code == RESPONSE_TOO_LARGE => {
                 self.answered(id, used);
-                CallFailure::TooLarge
+                CallFailure::TooLarge(too_large_detail(data.data.as_ref()))
             }
             other => {
                 self.answered(id, used);
@@ -442,7 +445,7 @@ impl Upstreams {
                 Ok(tools)
             }
             Ok(Err(ListFailure::Service(e))) => Err(match self.failure(id, &connection, e) {
-                CallFailure::TooLarge => format!("插件 {id} 的工具列表超过上限"),
+                CallFailure::TooLarge(_) => format!("插件 {id} 的工具列表超过上限"),
                 CallFailure::Replaced => format!("插件 {id} 的会话不回应，已被换掉"),
                 CallFailure::Transport(e) | CallFailure::Plugin(e) => {
                     format!("插件 {id} 的 MCP 服务列不出工具：{e}")
@@ -549,10 +552,22 @@ impl Upstreams {
         }
         let uncertain = |kind, message| CallError::Uncertain { kind, message };
         match self.failure(id, used, error) {
-            CallFailure::TooLarge => uncertain(
-                UncertainKind::ResultTooLarge,
-                format!("插件 {id} 的工具 {tool} 的结果超过上限，读不到它做了什么"),
-            ),
+            // 上限以传输层执行到的为准（tools/list 的更小）；传输层不知道读到了多少时（插件自己回这个码）不编。
+            CallFailure::TooLarge(detail) => {
+                let limit = detail.limit.unwrap_or(self.message_limit as u64);
+                let how_much = match (detail.declared, detail.read) {
+                    (Some(declared), _) => format!("，插件声明有 {}", human_size(declared)),
+                    (_, Some(read)) => format!("，至少读了 {}", human_size(read)),
+                    (None, None) => String::new(),
+                };
+                uncertain(
+                    UncertainKind::ResultTooLarge,
+                    format!(
+                        "插件 {id} 的工具 {tool} 的结果超过上限 {}{how_much}，读不到它做了什么",
+                        human_size(limit)
+                    ),
+                )
+            }
             CallFailure::Replaced => uncertain(
                 UncertainKind::SessionReplaced,
                 format!("插件 {id} 的会话不回应，已被换掉，工具 {tool} 是否已执行不确定"),
@@ -591,7 +606,7 @@ impl Upstreams {
             }
             Ok(Err(e)) => {
                 return Err(match self.failure(id, &connection, e) {
-                    CallFailure::TooLarge => ReadError::TooLarge,
+                    CallFailure::TooLarge(_) => ReadError::TooLarge,
                     CallFailure::Replaced => {
                         ReadError::Unreachable(format!("插件 {id} 的会话不回应，已被换掉"))
                     }

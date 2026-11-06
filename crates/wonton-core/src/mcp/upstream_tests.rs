@@ -1,18 +1,14 @@
 //! 总线连插件的连接：超限和失败按请求归属，插件的错误不拆共享的连接，只丢出错的那条连接，卡死的会话会被换掉。
+//! 假插件在 [`super::upstream_support`]。
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-
-use axum::response::{IntoResponse, Response};
-use rmcp::model::JsonObject;
-use serde_json::{Value, json};
 
 use super::test_support::{Notes, serve_notes};
 use super::upstream::{CallError, ReadError, UncertainKind, Upstreams};
+use super::upstream_support::*;
 use crate::plugin::{McpServer, PluginId, ToolLimits};
 
-const SLOW: Duration = Duration::from_millis(200);
 /// 回归时测试要失败，不能卡住。
 const WITHIN: Duration = Duration::from_secs(20);
 
@@ -21,303 +17,6 @@ async fn within<T>(future: impl Future<Output = T>) -> T {
         .await
         .expect("到期了还没有结果")
 }
-
-fn result(id: &Value, result: Value) -> Response {
-    axum::Json(json!({"jsonrpc": "2.0", "id": id, "result": result})).into_response()
-}
-
-fn endless(content_type: &'static str) -> Response {
-    let chunks = futures_util::stream::repeat_with(|| {
-        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![b'x'; 1 << 16]))
-    });
-    let body = axum::body::Body::from_stream(chunks);
-    ([(hyper::header::CONTENT_TYPE, content_type)], body).into_response()
-}
-
-/// 响应体写到一半连接断了。
-fn cut(content_type: &'static str) -> Response {
-    let chunks = futures_util::stream::iter([
-        Ok(axum::body::Bytes::from_static(b"data: {\"jsonrpc")),
-        Err(std::io::Error::other("断了")),
-    ]);
-    let body = axum::body::Body::from_stream(chunks);
-    ([(hyper::header::CONTENT_TYPE, content_type)], body).into_response()
-}
-
-fn text(uri: &str) -> Value {
-    json!({"contents": [{"uri": uri, "text": "好"}]})
-}
-
-fn tool_text() -> Value {
-    json!({"content": [{"type": "text", "text": "好"}]})
-}
-
-async fn read(
-    id: &Value,
-    uri: &str,
-    content_type: &'static str,
-    held: &tokio::sync::Notify,
-) -> Response {
-    match uri {
-        "x://big" => endless(content_type),
-        "x://refused" => axum::Json(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {"code": -32002, "message": "没有这个资源"},
-        }))
-        .into_response(),
-        "x://http500" => hyper::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        "x://wordy500" => (
-            hyper::StatusCode::INTERNAL_SERVER_ERROR,
-            "磁盘坏了".repeat(1 << 16),
-        )
-            .into_response(),
-        "x://huge500" => {
-            let mut response = endless("text/plain");
-            *response.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
-            response
-        }
-        // supergateway 换会话后这样回。
-        "x://null-id" => (
-            hyper::StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32000, "message": "会话没了"}})),
-        )
-            .into_response(),
-        "x://wrong-error" => axum::Json(json!({
-            "jsonrpc": "2.0",
-            "id": 987654,
-            "error": {"code": -32000, "message": "不是你的"},
-        }))
-        .into_response(),
-        "x://wrong-result" => result(&json!(987654), text(uri)),
-        "x://html" => ([(hyper::header::CONTENT_TYPE, "text/html")], "<p>登录</p>").into_response(),
-        "x://garbled" => (
-            [(hyper::header::CONTENT_TYPE, "application/json")],
-            "{ 不是",
-        )
-            .into_response(),
-        "x://slowcut" => {
-            tokio::time::sleep(SLOW).await;
-            cut(content_type)
-        }
-        "x://cut" => cut(content_type),
-        "x://slow" => {
-            tokio::time::sleep(SLOW).await;
-            result(id, text(uri))
-        }
-        "x://held" => {
-            held.notified().await;
-            result(id, text(uri))
-        }
-        _ => result(id, text(uri)),
-    }
-}
-
-/// `tools/list` 怎么回。
-#[derive(Clone, Copy, Default)]
-enum Lists {
-    #[default]
-    Empty,
-    /// 每一页都不大，加起来超过上限。
-    Heavy,
-    /// 一直有下一页。
-    Endless,
-    /// 下一页的 cursor 总是同一个。
-    SameCursor,
-    /// 一页就有太多工具。
-    TooMany,
-}
-
-fn tool_named(name: String) -> Value {
-    json!({"name": name, "inputSchema": {"type": "object"}})
-}
-
-fn list(id: &Value, lists: Lists, cursor: &Value) -> Response {
-    let tools = || vec![tool_named("a".to_owned())];
-    match lists {
-        Lists::Empty => result(id, json!({"tools": []})),
-        Lists::Endless => {
-            let next = cursor.as_str().unwrap_or_default().len() + 1;
-            result(
-                id,
-                json!({"tools": tools(), "nextCursor": "x".repeat(next)}),
-            )
-        }
-        Lists::SameCursor => result(id, json!({"tools": tools(), "nextCursor": "again"})),
-        Lists::Heavy => {
-            let next = cursor.as_str().unwrap_or_default().len() + 1;
-            let mut heavy = tool_named("heavy".to_owned());
-            heavy["description"] = json!("x".repeat(1 << 20));
-            result(
-                id,
-                json!({"tools": [heavy], "nextCursor": "x".repeat(next)}),
-            )
-        }
-        Lists::TooMany => {
-            let tools: Vec<_> = (0..3_000).map(|n| tool_named(n.to_string())).collect();
-            result(id, json!({"tools": tools}))
-        }
-    }
-}
-
-/// 进度事件，最后是结果。`steps` 为空时一直发进度。
-fn with_progress(id: &Value, token: Value, steps: Option<usize>) -> Response {
-    let event = |message: Value| {
-        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(format!("data: {message}\n\n")))
-    };
-    let progress = {
-        let token = token.clone();
-        move |step: usize| {
-            json!({
-                "jsonrpc": "2.0",
-                "method": "notifications/progress",
-                "params": {"progressToken": token.clone(), "progress": step},
-            })
-        }
-    };
-    let id = id.clone();
-    let chunks = futures_util::stream::unfold(0usize, move |step| {
-        let (progress, id) = (progress.clone(), id.clone());
-        async move {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            if steps.is_some_and(|steps| step > steps) {
-                return None;
-            }
-            let message = if steps == Some(step) {
-                json!({"jsonrpc": "2.0", "id": id, "result": tool_text()})
-            } else {
-                progress(step)
-            };
-            Some((event(message), step + 1))
-        }
-    });
-    let body = axum::body::Body::from_stream(chunks);
-    ([(hyper::header::CONTENT_TYPE, "text/event-stream")], body).into_response()
-}
-
-async fn answer(state: Scripted, content_type: &'static str, body: String) -> Response {
-    let message: Value = serde_json::from_str(&body).unwrap();
-    let id = if state.string_ids.load(Ordering::SeqCst) {
-        &json!(message["id"].to_string())
-    } else {
-        &message["id"]
-    };
-    let params = &message["params"];
-    match message["method"].as_str().unwrap_or_default() {
-        "initialize" => {
-            state.initializes.fetch_add(1, Ordering::SeqCst);
-            result(
-                id,
-                json!({
-                    "protocolVersion": "2025-11-25",
-                    "capabilities": {"resources": {}, "tools": {}},
-                    "serverInfo": {"name": "scripted", "version": "1"},
-                }),
-            )
-        }
-        "resources/read" => {
-            let uri = params["uri"].as_str().unwrap();
-            read(id, uri, content_type, &state.held_reads).await
-        }
-        "tools/call" if params["name"] == "big" => endless(content_type),
-        "tools/call" if params["name"] == "silent" => std::future::pending().await,
-        "tools/call" if params["name"] == "progress" || params["name"] == "chatty" => {
-            let steps = (params["name"] == "progress").then_some(8);
-            with_progress(id, params["_meta"]["progressToken"].clone(), steps)
-        }
-        "tools/call" => {
-            tokio::time::sleep(SLOW).await;
-            result(id, tool_text())
-        }
-        "tools/list" => {
-            // 还有几次不回答：会话卡死的样子，TCP 没断。
-            let left = state
-                .stuck_lists
-                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
-            if left.is_ok() {
-                std::future::pending::<()>().await;
-            }
-            let lists = *state.lists.lock().unwrap();
-            list(id, lists, &params["cursor"])
-        }
-        "notifications/cancelled" => {
-            state.cancelled.fetch_add(1, Ordering::SeqCst);
-            hyper::StatusCode::ACCEPTED.into_response()
-        }
-        _ => hyper::StatusCode::ACCEPTED.into_response(),
-    }
-}
-
-/// 假插件的状态。
-#[derive(Clone, Default)]
-struct Scripted {
-    initializes: Arc<AtomicUsize>,
-    stuck_lists: Arc<AtomicUsize>,
-    /// 收到了几次 `notifications/cancelled`。
-    cancelled: Arc<AtomicUsize>,
-    lists: Arc<std::sync::Mutex<Lists>>,
-    /// 把数字 id 回成字符串。
-    string_ids: Arc<AtomicBool>,
-    /// `x://held` 等到这里放行才回答。
-    held_reads: Arc<tokio::sync::Notify>,
-}
-
-/// 假插件，按资源的地址或工具的名字决定怎么回。超限和断开的响应用 `content_type`，其余都是普通 JSON。
-struct Plugin {
-    server: McpServer,
-    state: Scripted,
-    initializes: Arc<AtomicUsize>,
-    stuck_lists: Arc<AtomicUsize>,
-    stop: tokio::sync::oneshot::Sender<()>,
-    serving: tokio::task::JoinHandle<()>,
-}
-
-impl Plugin {
-    /// 监听停了，空闲的连接也关了：和容器重启一样。
-    async fn stop(self) -> McpServer {
-        self.stop.send(()).unwrap();
-        self.serving.await.unwrap();
-        self.server
-    }
-}
-
-async fn plugin(content_type: &'static str) -> Plugin {
-    let state = Scripted::default();
-    let served = state.clone();
-    let app = axum::Router::new().route(
-        "/mcp",
-        axum::routing::post(move |body: String| answer(served.clone(), content_type, body)),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let (stop, stopped) = tokio::sync::oneshot::channel();
-    let serving = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async { drop(stopped.await) })
-            .await
-            .unwrap();
-    });
-    Plugin {
-        stop,
-        serving,
-        server: server_at(format!("http://{address}/mcp")),
-        initializes: state.initializes.clone(),
-        stuck_lists: state.stuck_lists.clone(),
-        state,
-    }
-}
-
-fn server_at(url: String) -> McpServer {
-    McpServer {
-        id: PluginId::parse("app.example.notes").unwrap(),
-        title: Default::default(),
-        url,
-        socket: None,
-        tool_limits: Default::default(),
-    }
-}
-
-const NO_ARGUMENTS: Option<JsonObject> = None;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_huge_resource_is_stopped_while_reading_and_reported_as_too_large() {
@@ -333,6 +32,49 @@ async fn a_huge_resource_is_stopped_while_reading_and_reported_as_too_large() {
             "{content_type}: {result:?}"
         );
     }
+}
+
+/// 超过上限的结果，失败说明里带上限和至少读到了多少：Agent 才知道插件做到了哪一步、结果有多大。
+#[tokio::test(flavor = "multi_thread")]
+async fn an_oversized_result_reports_the_limit_and_the_bytes_read() {
+    for content_type in ["application/json", "text/event-stream"] {
+        let upstreams = Upstreams::with_limits(1 << 20, Duration::from_secs(5));
+        let plugin = plugin(content_type).await;
+        let server = &plugin.server;
+        let error = upstreams
+            .call(server, "big", NO_ARGUMENTS, std::future::pending())
+            .await
+            .expect_err("超过上限要报出来");
+        let CallError::Uncertain { kind, message } = error else {
+            panic!("{content_type}: 应该是结果不确定：{error:?}");
+        };
+        assert_eq!(kind, UncertainKind::ResultTooLarge, "{message}");
+        assert!(
+            message.contains("上限 1.0 MiB"),
+            "{content_type}: {message}"
+        );
+        // 读到超过上限才停（传输层按收到的字节数记，块的大小看连接分片），所以总有一条“至少读了”。
+        assert!(message.contains("至少读了"), "{content_type}: {message}");
+        plugin.stop().await;
+    }
+}
+
+/// 插件声明的大小超过上限时，一个字节没读也说清声明了多少，不算成读到了多少。
+#[tokio::test(flavor = "multi_thread")]
+async fn a_result_that_declares_too_much_is_reported_before_reading() {
+    let upstreams = Upstreams::with_limits(1 << 20, Duration::from_secs(5));
+    let server = server_at(declared_plugin().await);
+    let error = upstreams
+        .call(&server, "declared", NO_ARGUMENTS, std::future::pending())
+        .await
+        .expect_err("超过上限要报出来");
+    let CallError::Uncertain { kind, message } = error else {
+        panic!("应该是结果不确定：{error:?}");
+    };
+    assert_eq!(kind, UncertainKind::ResultTooLarge, "{message}");
+    assert!(message.contains("上限 1.0 MiB"), "{message}");
+    assert!(message.contains("插件声明有 100.0 MiB"), "{message}");
+    assert!(!message.contains("读了"), "{message}");
 }
 
 /// 核心和 Bot 共用连接：超限只算在超限的那个请求头上，另一个照常拿到结果，连接也不用重建。

@@ -647,6 +647,8 @@ mod agent_permission_tests;
 #[cfg(test)]
 mod authoring_tests;
 #[cfg(test)]
+mod file_block_tests;
+#[cfg(test)]
 mod file_tests;
 #[cfg(test)]
 mod help_tests;
@@ -664,6 +666,8 @@ pub(crate) mod test_support;
 mod tests;
 #[cfg(test)]
 mod tool_policy_tests;
+#[cfg(test)]
+mod upstream_support;
 #[cfg(test)]
 mod upstream_tests;
 #[cfg(test)]
