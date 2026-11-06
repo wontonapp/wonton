@@ -215,8 +215,12 @@ pub async fn fetch(github: &GitHub, origin: &Origin) -> Result<PluginPackage, In
     let compose = String::from_utf8(compose)
         .map_err(|_| InstallError::Invalid(format!("{COMPOSE_FILE} 不是 UTF-8 文本")))?;
     let mut files = PackageFiles::new();
+    let optional = PluginPackage::optional_files(&compose)?;
     for path in PluginPackage::referenced_files(&compose)? {
-        let data = get(path.clone()).await?;
+        let data = match get(path.clone()).await {
+            Err(InstallError::NotFound(_)) if optional.contains(&path) => continue,
+            result => result?,
+        };
         files.insert(path, data);
     }
     let mut package = PluginPackage::with_files(&compose, files)?;

@@ -14,6 +14,7 @@ mod file_results;
 mod file_tools;
 mod naming;
 mod notifier;
+mod profile_tools;
 mod save_tools;
 mod server;
 mod takeover;
@@ -654,6 +655,8 @@ mod file_tests;
 mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
+#[cfg(test)]
+mod profile_tests;
 #[cfg(test)]
 mod save_tests;
 #[cfg(test)]

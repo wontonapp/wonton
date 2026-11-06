@@ -224,6 +224,7 @@ impl PluginManager {
             device_id: Some(bot.device_id.clone()),
         };
         store.save(id, &record)?;
+        self.initialize_default_avatars(package, &bot).await?;
         tracing::info!(plugin = %id, user = %bot.account.user_id, room = %bot.account.home_room, "Bot 已就绪");
         Ok(Some(bot))
     }

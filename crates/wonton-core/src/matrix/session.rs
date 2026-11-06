@@ -7,9 +7,9 @@ use super::api::{Api, MatrixError, encode};
 
 /// 一个已登录用户的会话。令牌属于核心刚登录的设备，用完由调用方吊销或退出。
 pub struct Session<'a> {
-    api: &'a Api,
+    pub(super) api: &'a Api,
     user_id: String,
-    token: String,
+    pub(super) token: String,
 }
 
 impl<'a> Session<'a> {
@@ -25,7 +25,7 @@ impl<'a> Session<'a> {
         &self.user_id
     }
 
-    async fn json(
+    pub(super) async fn json(
         &self,
         method: Method,
         path: &str,
@@ -37,7 +37,7 @@ impl<'a> Session<'a> {
             .await
     }
 
-    fn profile_path(&self, field: &str) -> String {
+    pub(super) fn profile_path(&self, field: &str) -> String {
         format!(
             "/_matrix/client/v3/profile/{}/{field}",
             encode(&self.user_id)
@@ -48,7 +48,7 @@ impl<'a> Session<'a> {
     pub async fn display_name(&self) -> Result<Option<String>, MatrixError> {
         let path = self.profile_path("displayname");
         match self.json(Method::GET, &path, None, "读显示名").await {
-            Ok(profile) => Ok(profile["displayname"].as_str().map(str::to_owned)),
+            Ok(profile) => super::bot_profile::profile_string(&profile, "displayname"),
             Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
             Err(e) => Err(e),
         }
@@ -73,19 +73,8 @@ impl<'a> Session<'a> {
         filename: &str,
         data: Vec<u8>,
     ) -> Result<(), MatrixError> {
-        let uri = self
-            .api
-            .upload(&self.token, content_type, filename, data)
-            .await?;
-        let body = json!({"avatar_url": uri});
-        self.json(
-            Method::PUT,
-            &self.profile_path("avatar_url"),
-            Some(&body),
-            "设置头像",
-        )
-        .await
-        .map(|_| ())
+        let uri = self.upload_media(content_type, filename, data).await?;
+        self.set_avatar_url(Some(&uri)).await
     }
 
     /// 建一个给自己和 `peer` 用的加密房间，返回房间 ID。先不邀请对方：Bot 装好了才交给主人（[`Self::invite`]）。

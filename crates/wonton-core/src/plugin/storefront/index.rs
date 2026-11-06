@@ -337,7 +337,11 @@ impl Files {
     pub async fn package(&self, listed: &Listed) -> Result<PluginPackage, InstallError> {
         let compose = &listed.entry.compose;
         let mut files = PackageFiles::new();
+        let optional = PluginPackage::optional_files(compose)?;
         for path in PluginPackage::referenced_files(compose)? {
+            if optional.contains(&path) && !listed.entry.files.contains_key(&path) {
+                continue;
+            }
             let data = self.file(listed, &path).await?;
             files.insert(path, data);
         }

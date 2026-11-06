@@ -153,13 +153,21 @@ impl PluginPackage {
             .map_err(|_| PackageError::Yaml("不是 UTF-8 文本".to_owned()))?;
         let package = Self::structure(&source)?;
         let mut files = PackageFiles::new();
-        for (field, path) in package.references()? {
-            let data = package_files::read_at(dir, &path).map_err(|source| PackageError::File {
-                field,
-                path: path.clone(),
-                source,
-            })?;
-            files.insert(path, data);
+        let optional = package.optional_references()?;
+        let required = package.references()?;
+        for (field, path) in required.iter().chain(&optional) {
+            let data = match package_files::read_at(dir, path) {
+                Ok(data) => data,
+                Err(FileError::Missing) if optional.iter().any(|(_, p)| p == path) => continue,
+                Err(source) => {
+                    return Err(PackageError::File {
+                        field: field.clone(),
+                        path: path.clone(),
+                        source,
+                    });
+                }
+            };
+            files.insert(path.clone(), data);
         }
         package.attach(files)
     }
@@ -169,10 +177,23 @@ impl PluginPackage {
         Ok(Self::structure(source)?.manifest)
     }
 
-    /// compose 文本引用的插件包里的文件（规范化后的路径）：按来源取插件包时，取完 compose 再取它们。
+    /// 包里的引用路径，含可选的状态头像首帧；缺少首帧可以省略，其他引用都必须存在。
     pub fn referenced_files(source: &str) -> Result<Vec<String>, PackageError> {
-        let refs = Self::structure(source)?.references()?;
-        Ok(refs.into_iter().map(|(_, path)| path).collect())
+        let package = Self::structure(source)?;
+        let refs = package.references()?;
+        Ok(refs
+            .into_iter()
+            .chain(package.optional_references()?)
+            .map(|(_, path)| path)
+            .collect())
+    }
+
+    pub fn optional_files(source: &str) -> Result<Vec<String>, PackageError> {
+        Ok(Self::structure(source)?
+            .optional_references()?
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect())
     }
 
     fn structure(source: &str) -> Result<Self, PackageError> {
@@ -269,6 +290,11 @@ impl PluginPackage {
         if let Some(avatar) = manifest.bot.as_ref().and_then(|b| b.avatar.as_ref()) {
             add("bot.avatar", avatar)?;
         }
+        if let Some(avatars) = manifest.bot.as_ref().and_then(|b| b.avatars.as_ref()) {
+            for (state, path) in avatars {
+                add(&format!("bot.avatars.{state}"), path)?;
+            }
+        }
         for notice in &manifest.notices {
             add("notices", notice)?;
         }
@@ -280,10 +306,43 @@ impl PluginPackage {
         Ok(refs)
     }
 
+    fn optional_references(&self) -> Result<Vec<(String, String)>, PackageError> {
+        let required: BTreeSet<_> = self
+            .references()?
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect();
+        let mut optional = BTreeMap::new();
+        if let Some(avatars) = self
+            .manifest
+            .bot
+            .as_ref()
+            .and_then(|bot| bot.avatars.as_ref())
+        {
+            for (state, raw) in avatars {
+                let path =
+                    package_files::normalize(raw).map_err(|message| PackageError::Reference {
+                        field: format!("bot.avatars.{state}"),
+                        message,
+                    })?;
+                let poster = super::bot_avatars::poster_path(&path);
+                if poster != path && !required.contains(&poster) {
+                    optional.insert(poster, format!("bot.avatars.{state}.poster"));
+                }
+            }
+        }
+        Ok(optional
+            .into_iter()
+            .map(|(path, field)| (field, path))
+            .collect())
+    }
+
     /// 配上被引用的文件：每个都要有，且不超过大小上限。
     fn attach(mut self, mut files: PackageFiles) -> Result<Self, PackageError> {
-        for (field, path) in self.references()? {
-            if self.files.contains_key(&path) {
+        let optional = self.optional_references()?;
+        let required = self.references()?;
+        for (field, path) in required.iter().chain(&optional) {
+            if self.files.contains_key(path) {
                 continue;
             }
             let file_err = |source| PackageError::File {
@@ -291,16 +350,19 @@ impl PluginPackage {
                 path: path.clone(),
                 source,
             };
-            let data = files
-                .remove(&path)
-                .ok_or_else(|| file_err(FileError::Missing))?;
+            let Some(data) = files.remove(path) else {
+                if optional.iter().any(|(_, p)| p == path) {
+                    continue;
+                }
+                return Err(file_err(FileError::Missing));
+            };
             if data.len() as u64 > MAX_FILE_BYTES {
                 return Err(file_err(FileError::TooBig));
             }
             if field == "notices" && std::str::from_utf8(&data).is_err() {
                 return Err(file_err(FileError::NotText));
             }
-            self.files.insert(path, data);
+            self.files.insert(path.clone(), data);
         }
         let total = self.source.len() + self.files.values().map(Vec::len).sum::<usize>();
         if total as u64 > MAX_PACKAGE_BYTES {

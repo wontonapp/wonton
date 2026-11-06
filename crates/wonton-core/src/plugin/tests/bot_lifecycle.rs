@@ -115,6 +115,12 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
     let m = bed.manager();
     m.install(&echo(), &granted()).await.unwrap();
     let first = bed.env();
+    bed.matrix
+        .as_bot(&first["USER"], async |session| {
+            session.set_display_name("自选名字").await
+        })
+        .await
+        .unwrap();
 
     let report = m.uninstall(&id(), false).await.unwrap();
     let bot = report.bot.unwrap();
@@ -137,6 +143,14 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
     );
     assert_ne!(second["TOKEN"], first["TOKEN"]);
     assert!(bed.token_valid(&second["TOKEN"]));
+    assert_eq!(
+        bed.tuwunel
+            .state()
+            .user(&second["USER"])
+            .display_name
+            .as_deref(),
+        Some("自选名字")
+    );
 
     // 删除数据：账号停用，不可恢复；再装是一个新账号和新的主房间。
     let report = m.uninstall(&id(), true).await.unwrap();

@@ -145,6 +145,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             put(push::register).delete(push::unregister),
         )
         .merge(plugin_routes())
+        .route(
+            &wonton_protocol::bot_profile_path("{id}"),
+            put(super::bot_profile::save),
+        )
         .route("/_wonton/api/lan", get(api::lan).put(api::set_lan))
         .route("/_wonton/api/storage", get(api::storage))
         .route(

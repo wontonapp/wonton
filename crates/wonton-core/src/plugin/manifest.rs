@@ -200,6 +200,8 @@ pub struct BotProfile {
     pub display_name: Option<LocalizedText>,
     #[serde(default)]
     pub avatar: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatars: Option<BTreeMap<String, String>>,
 }
 
 /// 一个插件多个 Bot：`services` 里的服务每个 Bot 一份，其余服务全插件一份。M1 只有默认 Bot。
@@ -565,6 +567,7 @@ impl Manifest {
 
 /// `bot`、`bots` 和 `agent.protocol: matrix` 都以 Bot 身份收发消息，必须申请 `matrix.bot`。
 fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
+    super::bot_avatars::validate_manifest(manifest)?;
     let wants_bot = [
         ("bot", manifest.bot.is_some()),
         ("bots", manifest.bots.is_some()),

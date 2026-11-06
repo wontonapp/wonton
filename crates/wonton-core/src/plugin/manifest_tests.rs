@@ -61,6 +61,47 @@ fn agent_login_ids_are_valid_and_unique() {
 }
 
 #[test]
+fn bot_avatars_accept_exactly_the_four_activity_keys() {
+    let base = serde_json::json!({
+        "spec": "0.6", "id": "com.example.bot", "version": "1.0.0", "kind": "agent",
+        "title": {"zh": "代理", "en": "Agent"},
+        "description": {"zh": "描述", "en": "Description"},
+        "permissions": ["matrix.bot"],
+        "agent": {"protocol": "matrix"},
+        "bot": {"avatars": {"idle": "idle.mp4", "working": "working.webp",
+            "waiting": "waiting.gif", "offline": "offline.png"}}
+    });
+    let manifest: Manifest = serde_json::from_value(base.clone()).unwrap();
+    manifest.validate().unwrap();
+    assert_eq!(manifest.bot.unwrap().avatars.unwrap().len(), 4);
+    for key in ["busy", "Idle", "", "other"] {
+        let mut invalid = base.clone();
+        invalid["bot"]["avatars"][key] = "extra.mp4".into();
+        assert!(
+            serde_json::from_value::<Manifest>(invalid)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+    }
+    let mut absent = base.clone();
+    absent["bot"] = serde_json::json!({});
+    assert!(
+        serde_json::from_value::<Manifest>(absent)
+            .unwrap()
+            .bot
+            .unwrap()
+            .avatars
+            .is_none()
+    );
+    let mut empty = base;
+    empty["bot"]["avatars"] = serde_json::json!({});
+    let manifest: Manifest = serde_json::from_value(empty).unwrap();
+    manifest.validate().unwrap();
+    assert_eq!(manifest.bot.unwrap().avatars, Some(BTreeMap::new()));
+}
+
+#[test]
 fn plugin_id_must_be_reverse_dns() {
     assert_eq!(
         PluginId::parse("app.immich.photos").unwrap().slug(),

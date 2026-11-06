@@ -123,6 +123,40 @@ impl Outgoing {
             .sum()
     }
 
+    /// 最多读 `limit` 字节；调用方多读上限外的一个字节来识别超限。读期间改过的文件拒绝使用。
+    pub fn read_bounded(&self, limit: u64) -> Result<Vec<(String, Vec<u8>)>, Failure> {
+        self.sources
+            .iter()
+            .map(|source| {
+                let capacity = usize::try_from(source.opened.snapshot.size.min(limit))
+                    .map_err(|_| invalid("文件大小超过地址范围"))?;
+                let mut data = Vec::with_capacity(capacity);
+                (&source.opened.file)
+                    .take(limit)
+                    .read_to_end(&mut data)
+                    .map_err(|e| Failure::from(from_io(&e, &source.name)))?;
+                let (after, _) = Snapshot::of(&source.opened.file)
+                    .map_err(|e| Failure::from(from_io(&e, &source.name)))?;
+                if after != source.opened.snapshot || data.len() as u64 != after.size.min(limit) {
+                    return Err(invalid(format!("读取时文件变了：{}", source.name)));
+                }
+                Ok((source.name.clone(), data))
+            })
+            .collect()
+    }
+
+    /// 只有资料等目标写入成功后才能调用；新写的内容保留，删不了不撤销已经成功的写入。
+    pub fn remove_originals(self) {
+        for source in &self.sources {
+            remove_original(
+                self.outbox.as_fd(),
+                &source.path,
+                &source.name,
+                source.opened.snapshot,
+            );
+        }
+    }
+
     /// 复制进 `root` 下新建的私有目录。
     pub fn stage(self, root: &Path) -> Result<Staged, ShareError> {
         let dir = root.join(random_token());
@@ -269,23 +303,26 @@ impl Drop for Staged {
 impl Staged {
     /// 原文件还是暂存时的样子才删，放好之后 Bot 又写的新内容留给它。删不了不算存失败。
     fn remove_original(&self, file: &StagedFile) {
-        let removed = (|| -> Result<(), ShareError> {
-            let (leaf, dirs) = file
-                .source
-                .split_last()
-                .ok_or_else(|| ShareError::Refused("路径是空的".to_owned()))?;
-            let dir = walk(self.outbox.as_fd(), dirs)?;
-            if open_regular(dir.as_fd(), leaf)?.snapshot == file.snapshot {
-                unlinkat(dir.as_fd(), leaf.as_str(), AtFlags::empty())
-                    .map_err(|e| classify(e, leaf))?;
-            }
-            Ok(())
-        })();
-        if let Err(error) = removed
-            && !matches!(error, ShareError::Gone)
-        {
-            tracing::warn!(file = %file.name, %error, "删除 outbox 里的原文件失败");
+        remove_original(self.outbox.as_fd(), &file.source, &file.name, file.snapshot);
+    }
+}
+
+fn remove_original(outbox: BorrowedFd<'_>, path: &[String], name: &str, snapshot: Snapshot) {
+    let removed = (|| -> Result<(), ShareError> {
+        let (leaf, dirs) = path
+            .split_last()
+            .ok_or_else(|| ShareError::Refused("路径是空的".to_owned()))?;
+        let dir = walk(outbox, dirs)?;
+        if open_regular(dir.as_fd(), leaf)?.snapshot == snapshot {
+            unlinkat(dir.as_fd(), leaf.as_str(), AtFlags::empty())
+                .map_err(|e| classify(e, leaf))?;
         }
+        Ok(())
+    })();
+    if let Err(error) = removed
+        && !matches!(error, ShareError::Gone)
+    {
+        tracing::warn!(file = %name, %error, "删除 outbox 里的原文件失败");
     }
 }
 

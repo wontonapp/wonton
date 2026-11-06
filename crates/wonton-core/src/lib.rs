@@ -2,6 +2,7 @@
 //!
 //! 设计见 `docs/ARCHITECTURE.md` 与 `docs/adr/0006-plugin-system.md`。
 
+pub mod bot_media;
 pub mod config;
 pub mod device;
 pub mod files;

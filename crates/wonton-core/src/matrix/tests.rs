@@ -163,10 +163,21 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
     let revoked = !fake.state().tokens.contains_key(&first.access_token);
     assert!(revoked, "吊销设备后令牌立即失效");
 
+    {
+        let mut state = fake.state();
+        let profile = state.users.get_mut("@echo:test").unwrap();
+        profile.display_name = Some("主人改过的名字".into());
+        profile.avatar_url = Some("mxc://test/owner-avatar".into());
+    }
     let previous = first.account.clone();
     let again = matrix
         .provision_bot(&BotSpec {
             previous: Some(&previous),
+            avatar: Some(Avatar {
+                content_type: "image/png",
+                filename: "replacement.png",
+                data: b"replacement",
+            }),
             ..spec("echo", &taken)
         })
         .await
@@ -174,6 +185,16 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
     assert_eq!(again.account, first.account, "沿用账号和主房间");
     assert_ne!(again.device_id, first.device_id, "每次安装一台新设备");
     assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state().user("@echo:test").display_name.as_deref(),
+        Some("主人改过的名字")
+    );
+    assert_eq!(
+        fake.state().user("@echo:test").avatar_url.as_deref(),
+        Some("mxc://test/owner-avatar")
+    );
+    assert_eq!(fake.state().display_name_writes, 1);
+    assert!(fake.state().media.is_empty());
 
     // 主人退出了主房间：再装时新建一个，不往没人看的房间里发。
     {
@@ -191,6 +212,10 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
         .unwrap();
     assert_eq!(third.account.user_id, first.account.user_id);
     assert_ne!(third.account.home_room, first.account.home_room);
+    assert_eq!(
+        fake.state().user("@echo:test").display_name.as_deref(),
+        Some("主人改过的名字")
+    );
     assert!(matrix.hand_over("owner", &third).await.unwrap());
     assert_eq!(members(&fake, &third.account.home_room).len(), 2);
 }

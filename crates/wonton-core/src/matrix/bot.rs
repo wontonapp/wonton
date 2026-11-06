@@ -120,10 +120,12 @@ impl Matrix {
     /// 设置显示名和头像，返回主房间：上次的主房间还能用（见 [`reusable`]）就沿用，否则新建一个，先只有 Bot 在里面。
     async fn prepare_bot(&self, spec: &BotSpec<'_>, login: &Login) -> Result<String, MatrixError> {
         let bot = self.session(login);
-        bot.set_display_name(spec.display_name).await?;
-        if let Some(avatar) = &spec.avatar {
-            bot.set_avatar(avatar.content_type, avatar.filename, avatar.data.to_vec())
-                .await?;
+        if spec.previous.is_none() {
+            bot.set_display_name(spec.display_name).await?;
+            if let Some(avatar) = &spec.avatar {
+                bot.set_avatar(avatar.content_type, avatar.filename, avatar.data.to_vec())
+                    .await?;
+            }
         }
         let owner = self.user_id(spec.owner);
         if let Some(previous) = spec.previous

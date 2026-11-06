@@ -1,6 +1,6 @@
 //! 核心自己的工具（插件规范的“工具与 MCP 总线”）：列出插件、在官方索引里找插件、安装和卸载、帮助文档，文件工具在
-//! [`file_tools`]，存文件在 [`save_tools`]，Agent 写插件用的只读工具（说明、校验、状态，ADR-0033）在
-//! [`authoring_tools`]。安装和卸载要主人确认，高权限也一样，主人点了就装（ADR-0033）。Bot 经 `id` 只能装官方
+//! [`file_tools`]，存文件在 [`save_tools`]，Bot 自己的资料工具在 [`profile_tools`]（ADR-0044），Agent 写插件用的只读工具
+//! （说明、校验、状态，ADR-0033）在 [`authoring_tools`]。安装和卸载要主人确认，高权限也一样，主人点了就装（ADR-0033）。Bot 经 `id` 只能装官方
 //! 索引里的插件。
 
 use std::sync::Arc;
@@ -10,7 +10,8 @@ use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
 use super::{
-    Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, save_tools,
+    Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, profile_tools,
+    save_tools,
 };
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
@@ -96,6 +97,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(file_tools::definitions());
     tools.extend(save_tools::definitions());
     tools.extend(authoring_tools::definitions());
+    tools.extend(profile_tools::definitions());
     tools
 }
 
@@ -120,6 +122,9 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
         }
         save_tools::LIST => save_tools::list(bus).await,
         save_tools::SAVE => return save_tools::save(bus, caller, args).await,
+        profile_tools::GET | profile_tools::SET => {
+            return profile_tools::call(bus, caller, tool, args).await;
+        }
         _ => Err(format!("没有工具 {name}")),
     };
     match read {

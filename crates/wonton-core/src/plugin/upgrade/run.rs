@@ -412,6 +412,9 @@ impl PluginManager {
             if vars.as_ref().is_none_or(|v| v.access_token.is_empty()) {
                 return Err(cannot_read("旧版本没有服务用到令牌".to_owned()));
             }
+            if let Some(vars) = &vars {
+                self.fill_default_avatars(package, &vars.user_id).await?;
+            }
             return Ok(vars);
         }
         let Some(bot) = self.provision_bot(package).await? else {

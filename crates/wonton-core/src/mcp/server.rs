@@ -59,7 +59,7 @@ impl ServerHandler for Handler {
             .with_server_info(Implementation::new("wonton-core", env!("CARGO_PKG_VERSION")))
             .with_instructions(
                 "Wonton 家里服务器的工具：核心自己的（wonton__ 开头，管理插件）和已装插件的（<插件>__<工具>）。\
-                 安装、卸载和会改数据的工具要主人在 Wonton App 里确认，调用会一直等到主人回答。\
+                 安装、卸载等工具要主人在 Wonton App 里确认，调用会一直等到主人回答；wonton__set_profile 只改自己的资料，不用确认。\
                  工具结果里的文件写成编号：发给主人用 wonton__share_file，把返回的链接原样放进回复。",
             )
     }

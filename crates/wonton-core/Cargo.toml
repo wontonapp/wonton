@@ -26,6 +26,15 @@ hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# MIT OR Apache-2.0。头像逐行 PNG、流式 GIF、WebP 时长和帧校验；复用 image 已用的解析器。
+png = "0.18.1"
+gif = "0.14.2"
+image-webp = "0.2.4"
+# MIT OR Apache-2.0 OR Zlib。image 的 JPEG 包装会复制全部输入且关闭严格校验，头像直接借用其底层解析器。
+zune-core = "0.5.3"
+zune-jpeg = "0.5.15"
+# MPL-2.0。Mozilla 的 MP4 轨道解析器支持 avc1 和 avc3。
+mp4parse = "0.17.0"
 # 算插件网络里留给核心的地址和出口容器的名单。
 ipnet = { version = "2.12.2", features = ["serde"] }
 iroh = { workspace = true, features = ["unstable-net-report"] }

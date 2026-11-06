@@ -6,6 +6,7 @@
 mod admin;
 mod api;
 mod bot;
+mod bot_profile;
 pub(crate) mod issuer;
 mod notices;
 mod session;
@@ -198,5 +199,9 @@ impl Matrix {
 
 #[cfg(test)]
 pub(crate) mod fake;
+#[cfg(test)]
+mod profile_tests;
+#[cfg(test)]
+mod profile_tuwunel_tests;
 #[cfg(test)]
 mod tests;
