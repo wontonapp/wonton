@@ -19,8 +19,11 @@ struct TabPageView: View {
     @State private var isVisible = false
     @State private var topHeight: CGFloat = WontonTheme.size.topBar
     @State private var bottomHeight: CGFloat = 0
-    @State private var edges = TabPageEdges()
+    /// 全屏胶囊看不看得见。进来、加载完、转屏、手指往下拖时出现，几秒没碰就藏起来。
+    @State private var capsuleShown = true
+    @State private var capsuleShowings = 0
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonTabBar) private var bottomBar
     @Environment(\.wontonBarStatus) private var status
@@ -56,7 +59,7 @@ struct TabPageView: View {
             let inputs = inputs(safe: safe)
             ZStack {
                 if let webView = session.webView {
-                    TabWebView(webView: webView)
+                    TabWebView(webView: webView, obscured: obscured(safe: safe))
                     .id(ObjectIdentifier(webView))
                     .padding(frame)
                     .ignoresSafeArea(.container)
@@ -72,21 +75,29 @@ struct TabPageView: View {
                 .ignoresSafeArea(.container)
                 chrome(safe: safe)
             }
-            .background {
-                TabPageBackdrop(edges: edges, gaps: backdropGaps(frame), fallback: backdropFallback)
-                    .ignoresSafeArea(.container)
-            }
+            .background { Color(colors.canvas).ignoresSafeArea(.container) }
             .background {
                 FullscreenExitGesture(
                     enabled: page.fullscreen && isVisible && !showsDetails, webView: session.webView,
                     exit: { tabs.send(.exitFullscreen(tab: tab)) }
                 )
             }
-            .task(id: inputs) { updateSession(inputs) }
-            .task(id: EdgeSampling(edges: backdropGaps(frame).sampledEdges, visible: isVisible,
-                                   webView: session.webView.map(ObjectIdentifier.init))) {
-                await sampleEdges(backdropGaps(frame).sampledEdges)
+            .background {
+                FullscreenCapsuleReveal(enabled: page.fullscreen && isVisible, webView: session.webView) { show in
+                    if show { showCapsule() } else { capsuleShown = false }
+                }
             }
+            .task(id: inputs) { updateSession(inputs) }
+            .onChange(of: geometry.size) { showCapsule() }
+        }
+        // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
+        // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
+        .ignoresSafeArea(.keyboard)
+        .onChange(of: page.fullscreen, initial: true) { showCapsule() }
+        .onChange(of: session.ready) { showCapsule() }
+        .task(id: capsuleShowings) {
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { capsuleShown = false }
         }
         .onChange(of: bottomBar == nil) { _, absent in if absent { bottomHeight = 0 } }
         .onAppear { isVisible = true }
@@ -103,51 +114,45 @@ struct TabPageView: View {
         }
     }
 
-    /// 全屏时是网页框到屏幕四边的距离（顶栏、胶囊和系统安全区都算在内）；带栏时是网页框在安全区里的留白。
+    /// 带栏时没适配的页面限在标题栏和底栏之间，不铺到底栏后面：页面自己的底部按钮栏会和底栏叠在一起。
+    /// 全屏时从状态栏下面开始，底边铺到屏幕底，iOS 26 起由 WebKit 的 `obscuredContentInsets` 让出 Home 条那块
+    /// （固定定位的元素和滚动的终点停在它上面），更早的系统停在 Home 条上面。顶边不用这个接口：iOS 26.5 上
+    /// 切换全屏时它会把顶边弄丢，页面钻到状态栏后面。
     private func webFrame(safe: EdgeInsets) -> EdgeInsets {
-        edgeToEdge ? EdgeInsets() : insetFrame(safe: safe)
+        if edgeToEdge { return EdgeInsets() }
+        let frame = insetFrame(safe: safe)
+        if #available(iOS 26, *), page.fullscreen {
+            return EdgeInsets(top: frame.top, leading: frame.leading, bottom: 0, trailing: frame.trailing)
+        }
+        return frame
+    }
+
+    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
+        guard !edgeToEdge else { return .zero }
+        let frame = webFrame(safe: safe)
+        return UIEdgeInsets(top: 0, left: 0, bottom: insetFrame(safe: safe).bottom - frame.bottom, right: 0)
     }
 
     private func insetFrame(safe: EdgeInsets) -> EdgeInsets {
-        if page.fullscreen {
-            return EdgeInsets(top: max(safe.top, topHeight), leading: safe.leading,
-                              bottom: safe.bottom, trailing: safe.trailing)
-        }
-        return EdgeInsets(top: safe.top + topHeight, leading: safe.leading,
-                          bottom: safe.bottom + contentBottom, trailing: safe.trailing)
+        EdgeInsets(top: safe.top + (page.fullscreen ? 0 : topHeight), leading: safe.leading,
+                   bottom: safe.bottom + contentBottom, trailing: safe.trailing)
     }
 
-    /// 带栏时顶部是 App 自己的栏，不画；底部浮着的底栏下面、没有底栏时 Home 条那一条，都画网页的底边。
-    private func backdropGaps(_ frame: EdgeInsets) -> EdgeInsets {
-        if page.fullscreen { return frame }
-        return EdgeInsets(top: 0, leading: 0, bottom: frame.bottom, trailing: 0)
-    }
-
-    private var backdropFallback: Color {
-        if page.fullscreen, session.ready, let base = edges.base { return Color(uiColor: base) }
-        return Color(colors.canvas)
-    }
-
-    /// 页面里的固定顶栏、底栏随时会变（换页、换主题），没有通知，所以看得见时每秒取一次。
-    private func sampleEdges(_ sides: Set<Edge>) async {
-        guard isVisible, !sides.isEmpty else { return }
-        while !Task.isCancelled {
-            if let webView = session.webView { edges.sample(webView, edges: sides) }
-            try? await Task.sleep(for: .seconds(1))
-        }
+    private func showCapsule() {
+        capsuleShown = true
+        capsuleShowings += 1
     }
 
     @ViewBuilder private func chrome(safe: EdgeInsets) -> some View {
         if page.fullscreen {
-            let band = capsuleFitsBesideCamera(safe: safe)
             VStack(spacing: 0) {
-                TabFullscreenBar(page: page, tab: tab, tabs: tabs, details: { showsDetails = true })
-                    .padding(.top, band ? (safe.top - WontonTheme.size.smallButton) / 2
-                             : safe.top + WontonTheme.spacing.s8)
-                    .padding(.leading, safe.leading + WontonTheme.spacing.s8)
-                    .padding(.trailing, band ? WontonTheme.spacing.s24 : safe.trailing + WontonTheme.spacing.s8)
-                    .padding(.bottom, WontonTheme.spacing.s8)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
+                TabPageCapsule(
+                    page: page, tab: tab, tabs: tabs, session: session, takeover: takeover,
+                    details: { showsDetails = true }, shown: capsuleShown || voiceOver, touched: showCapsule
+                )
+                .padding(.top, safe.top)
+                .padding(.leading, safe.leading + WontonTheme.spacing.s8)
+                .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
                 if !pendingCards.isEmpty {
                     PendingCardBanner(cards: pendingCards, open: openCardRoom)
                 }
@@ -157,8 +162,11 @@ struct TabPageView: View {
             .ignoresSafeArea(.container)
         } else {
             VStack(spacing: 0) {
-                topBar
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
+                TabPageTitleBar(
+                    page: page, session: session, takeover: takeover, isOverlay: isOverlay, material: edgeToEdge,
+                    enterFullscreen: { tabs.send(.enterFullscreen(tab: tab)) }, close: closeOverlay
+                )
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
                 if let takeover { TakeoverNotice(takeover: takeover) }
                 Spacer(minLength: 0)
                 if !isOverlay, let bottomBar {
@@ -169,11 +177,8 @@ struct TabPageView: View {
         }
     }
 
-    /// 灵动岛的机型隐藏状态栏后，顶部安全区（59pt 以上）在岛两边空着，胶囊放进右边那块，不压页面。
-    /// 刘海屏（44–50pt）的刘海宽度各代不同、系统不给，放进去可能压到刘海；没有刘海的机型和横屏，顶部安全区是 0。
-    /// 这些情况放在安全区下面，页面让出这一条。短状态要占左边，也放到下面。
-    private func capsuleFitsBesideCamera(safe: EdgeInsets) -> Bool {
-        safe.top >= WontonTheme.size.target + WontonTheme.spacing.s8 && status.title == nil && status.line == nil
+    private func closeOverlay() {
+        if let close { close() } else { tabs.send(.closeTabOverlay) }
     }
 
     private var edgeToEdge: Bool { page.layout == .edgeToEdge && (!isOverlay || page.fullscreen) }
@@ -198,7 +203,7 @@ struct TabPageView: View {
             environment: TabEnvironment(
                 locale: AppLanguage.current,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: edgeToEdge ? Double(page.fullscreen ? max(safe.top, topHeight) : topHeight + safe.top) : 0,
+                insetTop: edgeToEdge ? Double(safe.top + (page.fullscreen ? 0 : topHeight)) : 0,
                 insetBottom: edgeToEdge ? Double(bottom + safe.bottom) : 0,
                 safeArea: TabSafeArea(
                     top: edgeToEdge ? Double(safe.top) : 0, right: edgeToEdge ? Double(safe.trailing) : 0,
@@ -206,41 +211,6 @@ struct TabPageView: View {
                 )
             ), textScale: textScale
         )
-    }
-
-    private var topBar: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Text(status.title ?? page.title)
-                    .wontonText(WontonTheme.typography.itemTitle)
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .lineLimit(1)
-                    .padding(.horizontal, WontonTheme.size.target * 2)
-                    .accessibilityAddTraits(.isHeader)
-                HStack(spacing: 0) {
-                    if session.canGoBack {
-                        WontonIconButton(icon: .back, label: TabText.back) { session.webView?.goBack() }
-                    }
-                    Spacer(minLength: 0)
-                    if let takeover { TakeoverButton(takeover: takeover) }
-                    WontonIconButton(icon: .expand, label: TabText.fullscreen) {
-                        tabs.send(.enterFullscreen(tab: tab))
-                    }
-                    if isOverlay {
-                        WontonIconButton(icon: .close, label: TabText.close) {
-                            if let close { close() } else { tabs.send(.closeTabOverlay) }
-                        }
-                    }
-                }
-                .padding(.horizontal, WontonTheme.spacing.s4)
-            }
-            .frame(minHeight: WontonTheme.size.topBar)
-            if let line = status.line {
-                line.padding(.horizontal, WontonTheme.spacing.pageInset)
-                    .padding(.bottom, WontonTheme.spacing.s8)
-            }
-        }
-        .background(.ultraThinMaterial)
     }
 
     private func updateSession(_ inputs: TabWebInputs) {
@@ -259,10 +229,4 @@ struct TabPageView: View {
             }
         }
     }
-}
-
-private struct EdgeSampling: Equatable {
-    let edges: Set<Edge>
-    let visible: Bool
-    let webView: ObjectIdentifier?
 }

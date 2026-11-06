@@ -36,6 +36,7 @@ home = { phosphor = "house", fill = true }
 image = { phosphor = "image", fill = true }
 imageBroken = { phosphor = "image-broken" }
 info = { phosphor = "info" }
+leave = { phosphor = "record" }
 lock = { phosphor = "lock", fill = true }
 lockKey = { phosphor = "lock-key" }
 more = { phosphor = "dots-three" }

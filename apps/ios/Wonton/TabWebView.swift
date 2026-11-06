@@ -99,6 +99,7 @@ final class TabWebSession: NSObject {
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
         configuration.ignoresViewportScaleLimits = true
         let view = WKWebView(frame: .zero, configuration: configuration)
+        // 加载出来之前透明，露出 App 底色，不闪白；加载完改成不透明（见 didFinish）。
         view.isOpaque = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.allowsBackForwardNavigationGestures = true
@@ -129,8 +130,6 @@ final class TabWebSession: NSObject {
         let colors = input.environment.dark ? input.appearance.dark : input.appearance.light
         let background = UIColor(Color(colors.canvas))
         view.backgroundColor = background
-        view.scrollView.backgroundColor = background
-        view.underPageBackgroundColor = background
         view.pageZoom = 1
         let script = try core.tabDocumentScript(tab: tab, environment: input.environment)
             + "\n" + textSizeScript(input.textScale)
@@ -248,9 +247,18 @@ final class TabWebSession: NSObject {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
+    /// 被底栏、Home 条挡住的底边：页面照样画在后面，但固定定位的元素和滚动的终点让开这块。顶边不用它，见 TabPageView.webFrame。
+    let obscured: UIEdgeInsets
 
-    func makeUIView(context: Context) -> WKWebView { webView }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func makeUIView(context: Context) -> WKWebView {
+        updateUIView(webView, context: context)
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        guard #available(iOS 26, *), uiView.obscuredContentInsets != obscured else { return }
+        uiView.obscuredContentInsets = obscured
+    }
 }
 
 @MainActor

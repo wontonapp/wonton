@@ -43,7 +43,6 @@ struct MainView: View {
             }
         })
         .overlay { if chat.isOpeningChat { ProgressView() } }
-        .statusBarHidden(selectedFullscreen && tabs.viewModel.overlay == nil)
         .modifier(ChatDialogs(model: chat))
         .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
         .fullScreenCover(
@@ -147,7 +146,6 @@ struct MainView: View {
                 }
                 pluginPage(item.tab, page: page, overlay: true)
             }
-            .statusBarHidden(page.fullscreen)
         }
     }
 

@@ -272,8 +272,6 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity)
-        // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
-        .background(.ultraThinMaterial)
     }
 }
 
@@ -325,8 +323,6 @@ struct WontonPushedBar<Trailing: View>: View {
                     .padding(.bottom, WontonTheme.spacing.s8)
             }
         }
-        // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
-        .background(.ultraThinMaterial)
     }
 }
 
@@ -351,7 +347,7 @@ extension View {
         let bar = WontonPushedBar(
             title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine, trailing: trailing
         )
-        return safeAreaInset(edge: .top, spacing: 0) { bar }
+        return wontonTopBar { bar }
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
     }
@@ -359,7 +355,7 @@ extension View {
     /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
     func wontonModalScreen(_ title: String) -> some View {
         let bar = WontonPushedBar(title: title, icon: .close, iconLabel: "关闭") { EmptyView() }
-        return safeAreaInset(edge: .top, spacing: 0) { bar }
+        return wontonTopBar { bar }
             .modifier(WontonCanvas())
     }
 
@@ -368,21 +364,33 @@ extension View {
         _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
-        return safeAreaInset(edge: .top, spacing: 0) { bar }
+        return wontonTopBar { bar }
             .modifier(WontonTabBarSlot())
-            .overlay(alignment: .top) {
-                GeometryReader { geometry in
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .frame(height: geometry.safeAreaInsets.top)
-                        .offset(y: -geometry.safeAreaInsets.top)
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
             .navigationTitle(bar.title)
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
+    }
+}
+
+extension View {
+    /// 顶栏、底栏没有实底，内容从后面滚过去（ADR-0029）。iOS 26 起交给系统的滚动边缘效果：栏后面的内容渐隐模糊，
+    /// 状态栏那一块也是；更早的系统没有这个效果，栏和状态栏垫一层系统材质，不然字压在内容上读不清。
+    @ViewBuilder func wontonTopBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        if #available(iOS 26, *) {
+            safeAreaBar(edge: .top, spacing: 0, content: bar)
+        } else {
+            safeAreaInset(edge: .top, spacing: 0) {
+                bar().background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)
+            }
+        }
+    }
+
+    @ViewBuilder fileprivate func wontonBottomBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        if #available(iOS 26, *) {
+            safeAreaBar(edge: .bottom, spacing: 0, content: bar)
+        } else {
+            safeAreaInset(edge: .bottom, spacing: 0, content: bar)
+        }
     }
 }
 
@@ -390,7 +398,7 @@ private struct WontonTabBarSlot: ViewModifier {
     @Environment(\.wontonTabBar) private var tabBar
 
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .bottom, spacing: 0) { tabBar }
+        content.wontonBottomBar { tabBar }
     }
 }
 

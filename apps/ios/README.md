@@ -23,8 +23,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 停止页的启动操作直接交给核心，失败留在页面上；加载失败的 HTTP 状态放在收起的详情里，不显示上游错误页。
 历史页恢复成功时通知核心清掉加载失败，不触发重载；被取消的错误响应不算加载成功。
 WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期间显示骨架。
-全屏仍使用同一个 WebView；关闭目标由核心决定。安全区和胶囊的位置见 ADR-0033 的“全屏”：`inset` 页的留白由
-`TabPageEdges` 截网页贴边的像素铺满，`edge-to-edge` 页读取栏高变量；不注入 `viewport-fit=cover`。
+全屏仍使用同一个 WebView；关闭目标由核心决定。网页框、安全区和胶囊见 ADR-0033 的“带栏”“全屏”：留白处是 App 底色，
+不取网页的像素；`edge-to-edge` 页读取栏高变量；不注入 `viewport-fit=cover`。
 
 新用户引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：`OnboardingGate` 在配对后按核心步骤接管页面；首次获取失败时显示重试和本次运行的跳过入口。
 `Design/StepCardFrame` 和 `StepOptionRow` 只渲染导航与选项，不推算步骤。资料和选择只发草稿操作，模型测试不保存；key 只留在密文输入框，发出操作后清空。
