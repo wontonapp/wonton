@@ -185,8 +185,11 @@ pub struct InstalledPlugin {
     /// 插件声明的底栏页面。
     #[serde(default)]
     pub tabs: Vec<PluginTab>,
-    /// 插件的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
+    /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
+    /// 主人开放给家人了（ADR-0045）。家人的设备只拿到开放了的插件。
+    #[serde(default)]
+    pub family: bool,
     /// 能升级到的版本；没有新版本时为空。
     pub upgrade: Option<UpgradeOffer>,
     /// 主人能卸载它；系统插件不能。

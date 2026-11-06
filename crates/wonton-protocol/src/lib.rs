@@ -17,6 +17,7 @@ mod confirmation;
 mod core_upgrade;
 mod egress;
 mod error;
+mod family;
 mod file;
 mod home;
 mod lan;
@@ -71,6 +72,14 @@ pub use egress::{
     EgressViewModel, LanWebuiUpdate,
 };
 pub use error::CoreError;
+pub use family::{
+    BotContact, BotContacts, BotKeeper, BotRef, ContactRequest, ContactState, FAMILY_ROOM_EVENT,
+    FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS,
+    MEMBERS_PATH, Me, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval,
+    MemberSettings, MemberStatus, NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META,
+    bot_contact_path, bot_contacts_path, member_pairing_code_path, member_path,
+    member_removal_path, plugin_family_path,
+};
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
     FileErrorBody, FileFailure, FileGrantRequest, FileId, FileInfo, FileLinks, FileOperation,

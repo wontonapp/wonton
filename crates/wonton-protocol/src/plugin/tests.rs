@@ -62,6 +62,7 @@ fn installed() -> InstalledPlugin {
             display: TabDisplay::Standard,
         }],
         bot_user_id: None,
+        family: false,
         upgrade: Some(UpgradeOffer {
             version: "2.1.0".into(),
             release_notes: Some("支持视频转码".into()),

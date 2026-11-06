@@ -107,6 +107,7 @@ fn plugins(revision: &str) -> PluginsViewModel {
                 declares_tools: false,
                 tabs: Vec::new(),
                 bot_user_id: None,
+                family: false,
                 upgrade: None,
                 removable: true,
                 notices: Vec::new(),
