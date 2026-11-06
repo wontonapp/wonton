@@ -1,5 +1,8 @@
 package app.wonton.ui
 
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +13,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import app.wonton.protocol.RegistryFailure
 import app.wonton.protocol.RegistryProbe
@@ -65,7 +70,7 @@ private fun ProbeDetail(probe: RegistryProbe?) {
     probe?.problem?.let {
         Column(Modifier.padding(horizontal = WontonTheme.spacing.s12)) {
             ProblemDetail(
-                it.message, tabText("详情", "Details"),
+                it.message, stringResource(R.string.common_details),
                 Modifier.heightIn(min = WontonTheme.size.target),
             )
         }
@@ -74,12 +79,18 @@ private fun ProbeDetail(probe: RegistryProbe?) {
 
 @Composable
 private fun RegistryProbe?.registryLabel(): String {
-    if (this == null) return tabText("不确定", "Unknown")
+    if (this == null) return stringResource(R.string.registry_mirror_probe_unknown)
+    val latency = latencyMs
     return when (problem?.reason) {
-        RegistryFailure.UNREACHABLE -> tabText("连不上", "Unreachable")
-        RegistryFailure.REJECTED -> tabText("被拒绝", "Rejected")
-        RegistryFailure.DIGEST_MISMATCH -> tabText("摘要不符", "Digest mismatch")
-        RegistryFailure.OTHER -> tabText("其他错误", "Other failure")
-        null -> latencyMs?.let { "$it ms" } ?: tabText("可用", "Usable")
+        RegistryFailure.UNREACHABLE -> stringResource(R.string.registry_mirror_probe_unreachable)
+        RegistryFailure.REJECTED -> stringResource(R.string.registry_mirror_probe_rejected)
+        RegistryFailure.DIGEST_MISMATCH -> stringResource(R.string.registry_mirror_probe_digest_mismatch)
+        RegistryFailure.OTHER -> stringResource(R.string.registry_mirror_probe_other)
+        null -> if (latency != null) {
+            MeasureFormat.getInstance(LocalConfiguration.current.locales[0], MeasureFormat.FormatWidth.SHORT)
+                .format(Measure(latency.toLong(), MeasureUnit.MILLISECOND))
+        } else {
+            stringResource(R.string.registry_mirror_probe_available)
+        }
     }
 }

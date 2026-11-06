@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionNotice
@@ -141,9 +142,13 @@ fun ConnectionPage(
                 WontonRow("详情", showsForward = true, onClick = { onNavigate(SettingsSubpage.CONNECTION_DETAILS) })
             }
             WontonGroup {
-                WontonRow("出网代理", showsForward = true, onClick = { onNavigate(SettingsSubpage.EGRESS) })
+                WontonRow(
+                    stringResource(R.string.egress_title),
+                    showsForward = true,
+                    onClick = { onNavigate(SettingsSubpage.EGRESS) },
+                )
                 WontonSeparator()
-                WontonRow(tabText("镜像加速", "Image mirrors"), showsForward = true) {
+                WontonRow(stringResource(R.string.registry_mirror_title), showsForward = true) {
                     onNavigate(SettingsSubpage.REGISTRY_MIRROR)
                 }
                 WontonSeparator()

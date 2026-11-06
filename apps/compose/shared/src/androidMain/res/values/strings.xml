@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dialog button that closes the dialog without doing anything. -->
+    <string name="common_cancel">Cancel</string>
+    <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
+    <string name="common_details">Details</string>
+    <!-- Button that loads the page's data again after it failed. -->
+    <string name="common_retry">Try again</string>
+    <!-- Toolbar button that saves the page's settings. Short, fits a small pill button. -->
+    <string name="common_save">Save</string>
+    <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
+    <string name="egress_address">Proxy address</string>
+    <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
+    <string name="egress_address_enter">Enter proxy address</string>
+    <!-- Radio option: use the proxy that an installed app provides. Argument: that app's name. -->
+    <string name="egress_address_use_provider">Use %1$s</string>
+    <!-- Row title on the Internet proxy page: whether apps on the home server can reach the internet through the proxy. The value on the right is a reachability status. -->
+    <string name="egress_path_apps">Apps</string>
+    <!-- Status value: the internet can't be reached through the proxy. A reason is shown below the row. -->
+    <string name="egress_path_failed">Unreachable</string>
+    <!-- Row title on the Internet proxy page: whether the home server itself can reach the internet through the proxy. -->
+    <string name="egress_path_home_server">Home server</string>
+    <!-- Status value next to Apps / Home Server while the proxy is being checked. -->
+    <string name="egress_path_probing">Checking…</string>
+    <!-- Status value: the internet can be reached through the proxy. -->
+    <string name="egress_path_reachable">Reachable</string>
+    <!-- Status value: the check couldn't tell whether the proxy works. A reason is shown below the row. -->
+    <string name="egress_path_uncertain">Unknown</string>
+    <!-- Section title and text field label for network ranges (CIDR, like 100.64.0.0/10) that skip the proxy and are reached directly. -->
+    <string name="egress_ranges">Bypass ranges</string>
+    <!-- Note under the bypass ranges field. Argument: the computer's own network ranges (CIDR), comma-separated. -->
+    <string name="egress_ranges_host">Server\'s network: %1$s</string>
+    <!-- Explanation under the bypass ranges field. -->
+    <string name="egress_ranges_note">These ranges skip the proxy. Every app with internet access can reach them.</string>
+    <!-- Confirmation dialog title before turning off the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_cancel_title">Turning off the proxy restarts these apps</string>
+    <!-- Primary button in the proxy confirmation dialog: restart the listed apps. -->
+    <string name="egress_restart_confirm">Restart</string>
+    <!-- Body of the proxy restart confirmation. Argument: the names of the apps that restart, already formatted as a list. The second line says their data is kept. -->
+    <string name="egress_restart_message">%1$s\nYour data stays as it is.</string>
+    <!-- Confirmation dialog title before turning on the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_set_title">Using the proxy restarts these apps</string>
+    <!-- Note under the proxy address when the installer detected it on the computer. -->
+    <string name="egress_source_detected">Detected during installation.</string>
+    <!-- Note under the proxy address when it was set by an environment variable at install time. Keep WONTON_EGRESS_PROXY as is. -->
+    <string name="egress_source_env">Set by WONTON_EGRESS_PROXY. To change it, edit the settings in the install folder and run the install script again.</string>
+    <!-- Note under the proxy address when the proxy comes from an installed app. Argument: that app's name. -->
+    <string name="egress_source_provider">From %1$s</string>
+    <!-- Title of the Internet proxy settings page and its row in Settings > Home Server. The proxy is what apps on the home server use to reach the internet. -->
+    <string name="egress_title">Internet proxy</string>
+    <!-- Destructive full-width button that stops using the Internet proxy. -->
+    <string name="egress_turn_off">Turn off proxy</string>
+    <!-- Label before an address that a third-party client uses to connect to the app. -->
+    <string name="lan_client_address">Address</string>
+    <!-- Label before the password a third-party client uses to sign in to the app. -->
+    <string name="lan_client_password">Password</string>
+    <!-- Label before the username a third-party client uses to sign in to the app. -->
+    <string name="lan_client_username">Username</string>
+    <!-- Note under the Open on Local Network switch. First argument: number of ports; second: the port numbers, comma-separated. -->
+    <plurals name="lan_webui_ports">
+        <item quantity="one">Port %1$s</item>
+        <item quantity="other">Ports %1$s</item>
+    </plurals>
+    <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
+    <string name="lan_webui_toggle">Open on local network</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">Custom</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">Custom mirror address</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub (direct)</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">Available</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">Digest mismatch</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">Other error</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">Rejected</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">Unknown</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">Unreachable</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">Can\'t reach Docker Hub. Try turning on a download mirror.</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">These are free third-party services. They can see which images you download, but they can\'t change them: every image\'s digest is checked.</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">Mirror address wasn\'t saved</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">Test speed</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">Download mirror</string>
+</resources>

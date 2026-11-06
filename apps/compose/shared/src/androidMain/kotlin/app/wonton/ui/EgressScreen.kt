@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.icu.text.ListFormatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -71,7 +75,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
         plugins.send(Action.SaveEgressProxy(address = target, directCidrs = directCidrs, usePlugin = plugin))
     }
     val bar = @Composable {
-        WontonPushedBar("出网代理", onBack) {
+        WontonPushedBar(stringResource(R.string.egress_title), onBack) {
             if (egress.saving) {
                 CircularProgressIndicator(
                     Modifier.padding(end = WontonTheme.spacing.s12).size(WontonTheme.size.icon),
@@ -80,7 +84,9 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
             } else {
                 Box(Modifier.padding(end = WontonTheme.spacing.s12)) {
                     WontonSmallButton(
-                        "保存", { save(if (selectedPlugin) "" else address, selectedPlugin) }, current != null,
+                        stringResource(R.string.common_save),
+                        { save(if (selectedPlugin) "" else address, selectedPlugin) },
+                        current != null,
                     )
                 }
             }
@@ -101,9 +107,9 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                     val core = current.corePath
                     if (plugin != null && core != null) {
                         WontonGroup {
-                            EgressPathRow("应用", plugin)
+                            EgressPathRow(stringResource(R.string.egress_path_apps), plugin)
                             WontonSeparator()
-                            EgressPathRow("家里的服务器", core)
+                            EgressPathRow(stringResource(R.string.egress_path_home_server), core)
                         }
                     }
                     RangesField(current, directCidrs, !egress.saving) { directCidrs = it }
@@ -111,7 +117,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                         (current.settings.url != null || current.settings.source == EgressProxySource.PLUGIN)
                     ) {
                         WontonButton(
-                            "取消代理",
+                            stringResource(R.string.egress_turn_off),
                             { save("", false) },
                             Modifier.fillMaxWidth(),
                             WontonButtonKind.DANGER,
@@ -130,13 +136,19 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
 @Composable
 private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsState) {
     val dismiss = { plugins.send(Action.DismissEgressConfirmation) }
+    val apps = ListFormatter.getInstance(LocalConfiguration.current.locales[0])
+        .format(confirmation.restarts.map { it.title })
     WontonDialog(
-        if (confirmation.cancelling) "取消代理要重启这些应用" else "配上代理要重启这些应用",
-        confirmation.restarts.joinToString("、") { it.title } + "\n数据不动。",
+        stringResource(
+            if (confirmation.cancelling) R.string.egress_restart_cancel_title else R.string.egress_restart_set_title,
+        ),
+        stringResource(R.string.egress_restart_message, apps),
         dismiss,
         listOf(
-            WontonDialogAction("取消", onClick = dismiss),
-            WontonDialogAction("重启", WontonButtonKind.PRIMARY) { plugins.send(Action.ConfirmEgressProxy) },
+            WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
+            WontonDialogAction(stringResource(R.string.egress_restart_confirm), WontonButtonKind.PRIMARY) {
+                plugins.send(Action.ConfirmEgressProxy)
+            },
         ),
     )
 }
@@ -150,7 +162,7 @@ private fun AddressField(
     onModeChange: (Boolean) -> Unit,
     onChange: (String) -> Unit,
 ) {
-    DetailSection("代理地址") {
+    DetailSection(stringResource(R.string.egress_address)) {
         current.settings.provider?.let { provider ->
             Column(
                 Modifier.selectableGroup(),
@@ -158,11 +170,11 @@ private fun AddressField(
             ) {
                 val canSelect = enabled && !current.addressLocked
                 WontonRadioRow(
-                    tabText("使用 ${provider.title}", "Use ${provider.title}"), usePlugin, canSelect,
+                    stringResource(R.string.egress_address_use_provider, provider.title), usePlugin, canSelect,
                     { onModeChange(true) },
                 )
                 WontonRadioRow(
-                    tabText("填写代理地址", "Enter proxy address"), !usePlugin, canSelect,
+                    stringResource(R.string.egress_address_enter), !usePlugin, canSelect,
                     { onModeChange(false) },
                 )
             }
@@ -170,16 +182,16 @@ private fun AddressField(
         if (!usePlugin) {
             WontonTextField(
                 value, onChange, Modifier.fillMaxWidth(),
-                placeholder = "http://192.0.2.10:7890", label = "代理地址",
+                placeholder = "http://192.0.2.10:7890", label = stringResource(R.string.egress_address),
                 enabled = enabled && !current.addressLocked,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             )
         }
         when (current.settings.source) {
-            EgressProxySource.ENV -> Secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
-            EgressProxySource.DETECTED -> Secondary("安装时检测到的。")
+            EgressProxySource.ENV -> Secondary(stringResource(R.string.egress_source_env))
+            EgressProxySource.DETECTED -> Secondary(stringResource(R.string.egress_source_detected))
             EgressProxySource.PLUGIN -> current.settings.provider?.let {
-                Secondary(tabText("来自 ${it.title}", "From ${it.title}"))
+                Secondary(stringResource(R.string.egress_source_provider, it.title))
             }
             EgressProxySource.UNSET,
             EgressProxySource.SETTINGS,
@@ -191,20 +203,20 @@ private fun AddressField(
 
 @Composable
 private fun RangesField(current: EgressCurrent, value: String, enabled: Boolean, onChange: (String) -> Unit) {
-    DetailSection("直连网段") {
+    DetailSection(stringResource(R.string.egress_ranges)) {
         WontonTextField(
             value,
             onChange,
             Modifier.fillMaxWidth(),
             placeholder = "100.64.0.0/10",
-            label = "直连网段",
+            label = stringResource(R.string.egress_ranges),
             enabled = enabled,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
         )
         if (current.settings.hostCidrs.isNotEmpty()) {
-            Secondary("主机所在网段：" + current.settings.hostCidrs.joinToString(", "))
+            Secondary(stringResource(R.string.egress_ranges_host, current.settings.hostCidrs.joinToString(", ")))
         }
-        Secondary("这些网段不经代理，出网应用都能连。")
+        Secondary(stringResource(R.string.egress_ranges_note))
         current.settings.notices.forEach { Secondary(it, WontonTheme.colors.warning) }
     }
 }
@@ -214,13 +226,13 @@ private fun RangesField(current: EgressCurrent, value: String, enabled: Boolean,
 private fun EgressPathRow(title: String, state: EgressPathState) {
     val colors = WontonTheme.colors
     val (label, tint, message) = when (state) {
-        is EgressPathState.Probing -> Triple("探测中", colors.textSecondary, null)
-        is EgressPathState.Reachable -> Triple("通", colors.success, null)
-        is EgressPathState.Uncertain -> Triple("不确定", colors.warning, state.message)
-        is EgressPathState.Failed -> Triple("不通", colors.danger, state.message)
+        is EgressPathState.Probing -> Triple(R.string.egress_path_probing, colors.textSecondary, null)
+        is EgressPathState.Reachable -> Triple(R.string.egress_path_reachable, colors.success, null)
+        is EgressPathState.Uncertain -> Triple(R.string.egress_path_uncertain, colors.warning, state.message)
+        is EgressPathState.Failed -> Triple(R.string.egress_path_failed, colors.danger, state.message)
     }
     Column {
-        WontonRow(title, label, tint)
+        WontonRow(title, stringResource(label), tint)
         message?.let {
             Box(
                 Modifier.padding(
@@ -247,8 +259,17 @@ fun LanWebuiToggle(offer: LanWebuiOffer, checked: Boolean, enabled: Boolean, onC
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("在局域网开放", style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
-                Secondary("端口 " + offer.ports.joinToString(", ") { it.port.toString() })
+                Text(
+                    stringResource(R.string.lan_webui_toggle),
+                    style = WontonTheme.typography.body,
+                    color = colors.textPrimary.toColor(),
+                )
+                Secondary(
+                    pluralStringResource(
+                        R.plurals.lan_webui_ports, offer.ports.size,
+                        offer.ports.joinToString(", ") { it.port.toString() },
+                    ),
+                )
             }
             WontonSwitch(checked, onChange, enabled)
         }
@@ -288,9 +309,9 @@ fun InstalledLanWebui(plugins: PluginsState, id: String, offer: LanWebuiOffer, o
 private fun LanClientAccount(client: LanClient) {
     SelectionContainer {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            client.addresses.forEach { LanClientRow("地址", it) }
-            LanClientRow("账号", client.username)
-            LanClientRow("密码", client.password)
+            client.addresses.forEach { LanClientRow(stringResource(R.string.lan_client_address), it) }
+            LanClientRow(stringResource(R.string.lan_client_username), client.username)
+            LanClientRow(stringResource(R.string.lan_client_password), client.password)
         }
     }
 }

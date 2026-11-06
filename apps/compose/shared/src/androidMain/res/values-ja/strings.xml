@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dialog button that closes the dialog without doing anything. -->
+    <string name="common_cancel">キャンセル</string>
+    <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
+    <string name="common_details">詳細</string>
+    <!-- Button that loads the page's data again after it failed. -->
+    <string name="common_retry">再試行</string>
+    <!-- Toolbar button that saves the page's settings. Short, fits a small pill button. -->
+    <string name="common_save">保存</string>
+    <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
+    <string name="egress_address">プロキシのアドレス</string>
+    <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
+    <string name="egress_address_enter">プロキシのアドレスを入力</string>
+    <!-- Radio option: use the proxy that an installed app provides. Argument: that app's name. -->
+    <string name="egress_address_use_provider">%1$sを使用</string>
+    <!-- Row title on the Internet proxy page: whether apps on the home server can reach the internet through the proxy. The value on the right is a reachability status. -->
+    <string name="egress_path_apps">アプリ</string>
+    <!-- Status value: the internet can't be reached through the proxy. A reason is shown below the row. -->
+    <string name="egress_path_failed">接続不可</string>
+    <!-- Row title on the Internet proxy page: whether the home server itself can reach the internet through the proxy. -->
+    <string name="egress_path_home_server">自宅サーバー</string>
+    <!-- Status value next to Apps / Home Server while the proxy is being checked. -->
+    <string name="egress_path_probing">確認中…</string>
+    <!-- Status value: the internet can be reached through the proxy. -->
+    <string name="egress_path_reachable">接続可能</string>
+    <!-- Status value: the check couldn't tell whether the proxy works. A reason is shown below the row. -->
+    <string name="egress_path_uncertain">不明</string>
+    <!-- Section title and text field label for network ranges (CIDR, like 100.64.0.0/10) that skip the proxy and are reached directly. -->
+    <string name="egress_ranges">プロキシを経由しないネットワーク</string>
+    <!-- Note under the bypass ranges field. Argument: the computer's own network ranges (CIDR), comma-separated. -->
+    <string name="egress_ranges_host">サーバーのネットワーク：%1$s</string>
+    <!-- Explanation under the bypass ranges field. -->
+    <string name="egress_ranges_note">これらのネットワークにはプロキシを経由せずに接続します。インターネットに接続できるアプリはすべてアクセスできます。</string>
+    <!-- Confirmation dialog title before turning off the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_cancel_title">プロキシを解除すると、次のアプリが再起動します</string>
+    <!-- Primary button in the proxy confirmation dialog: restart the listed apps. -->
+    <string name="egress_restart_confirm">再起動</string>
+    <!-- Body of the proxy restart confirmation. Argument: the names of the apps that restart, already formatted as a list. The second line says their data is kept. -->
+    <string name="egress_restart_message">%1$s\nデータはそのまま残ります。</string>
+    <!-- Confirmation dialog title before turning on the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_set_title">プロキシを設定すると、次のアプリが再起動します</string>
+    <!-- Note under the proxy address when the installer detected it on the computer. -->
+    <string name="egress_source_detected">インストール時に検出されました。</string>
+    <!-- Note under the proxy address when it was set by an environment variable at install time. Keep WONTON_EGRESS_PROXY as is. -->
+    <string name="egress_source_env">アドレスはWONTON_EGRESS_PROXYで指定されています。変更するには、インストール先の設定を変更してから、インストールスクリプトをもう一度実行してください。</string>
+    <!-- Note under the proxy address when the proxy comes from an installed app. Argument: that app's name. -->
+    <string name="egress_source_provider">提供元：%1$s</string>
+    <!-- Title of the Internet proxy settings page and its row in Settings > Home Server. The proxy is what apps on the home server use to reach the internet. -->
+    <string name="egress_title">プロキシ</string>
+    <!-- Destructive full-width button that stops using the Internet proxy. -->
+    <string name="egress_turn_off">プロキシを解除</string>
+    <!-- Label before an address that a third-party client uses to connect to the app. -->
+    <string name="lan_client_address">アドレス</string>
+    <!-- Label before the password a third-party client uses to sign in to the app. -->
+    <string name="lan_client_password">パスワード</string>
+    <!-- Label before the username a third-party client uses to sign in to the app. -->
+    <string name="lan_client_username">ユーザー名</string>
+    <!-- Note under the Open on Local Network switch. First argument: number of ports; second: the port numbers, comma-separated. -->
+    <plurals name="lan_webui_ports">
+        <item quantity="other">ポート：%1$s</item>
+    </plurals>
+    <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
+    <string name="lan_webui_toggle">ローカルネットワークに公開</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">カスタム</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">カスタムミラーのアドレス</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub（直接接続）</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">利用可能</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">ダイジェスト不一致</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">その他のエラー</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">拒否されました</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">不明</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">接続できません</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">Docker Hubに接続できません。ダウンロードミラーをオンにすることをおすすめします。</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">これらは第三者が無料で提供しているサービスです。どのイメージをダウンロードしたかは見えますが、ダイジェストを1つずつ照合するため、内容を書き換えることはできません。</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">ミラーのアドレスは保存されていません</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">速度をテスト</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">ダウンロードミラー</string>
+</resources>

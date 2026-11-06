@@ -150,11 +150,11 @@ struct ConnectionView: View {
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.egress) {
-                        WontonRow(title: "出网代理", showsForward: true)
+                        WontonRow(title: String(localized: .egressTitle), showsForward: true)
                     }
                     WontonSeparator()
                     NavigationLink(value: SettingsRoute.registryMirror) {
-                        WontonRow(title: RegistryMirrorText.title, showsForward: true)
+                        WontonRow(title: String(localized: .registryMirrorTitle), showsForward: true)
                     }
                     WontonSeparator()
                     NavigationLink(value: SettingsRoute.coreUpgrade) {

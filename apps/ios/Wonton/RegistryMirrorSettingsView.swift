@@ -20,11 +20,11 @@ struct RegistryMirrorSettingsView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen(RegistryMirrorText.title) {
+            .wontonPushedScreen(String(localized: .registryMirrorTitle)) {
                 if mirror.saving {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
-                    Button(TabText.choose("保存", "Save")) {
+                    Button(String(localized: .commonSave)) {
                         model.send(.saveRegistryMirror(mirror: enabled ? draft : ""))
                     }
                     .buttonStyle(WontonSmallButtonStyle())
@@ -53,27 +53,27 @@ struct RegistryMirrorSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if settings.recommended && !enabled {
-                    Text(RegistryMirrorText.recommended)
+                    Text(.registryMirrorRecommended)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.warning))
                 }
                 if let problem = mirror.loadProblem {
                     ProblemNotice(problem: problem.problem)
-                    Button(TabText.retry) { model.send(.refreshRegistryMirror) }
+                    Button(String(localized: .commonRetry)) { model.send(.refreshRegistryMirror) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                         .disabled(mirror.loading)
                 }
                 if let problem = mirror.saveProblem {
                     ProblemNotice(problem: problem.reason == .invalid
-                                  ? Problem(title: TabText.choose("镜像地址没有保存", "Mirror address wasn't saved"),
+                                  ? Problem(title: String(localized: .registryMirrorSaveFailed),
                                             detail: problem.message)
                                   : problem.saveProblem)
                 }
                 if let problem = mirror.testProblem { ProblemNotice(problem: problem.problem) }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                    Toggle(RegistryMirrorText.title, isOn: $enabled)
+                    Toggle(String(localized: .registryMirrorTitle), isOn: $enabled)
                         .toggleStyle(WontonToggleStyle())
-                    Text(RegistryMirrorText.risk)
+                    Text(.registryMirrorRisk)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                 }
@@ -98,12 +98,12 @@ struct RegistryMirrorSettingsView: View {
                     RegistryProbeLabel(probe: probe(address))
                 })
             }
-            StepOptionRow(title: RegistryMirrorText.custom, isSelected: custom || removedChoice) {
+            StepOptionRow(title: String(localized: .registryMirrorCustom), isSelected: custom || removedChoice) {
                 if removedChoice { customAddress = customValue }
                 custom = true
             }
             if custom || removedChoice {
-                TextField(RegistryMirrorText.custom, text: Binding(
+                TextField(String(localized: .registryMirrorCustom), text: Binding(
                     get: { customValue },
                     set: {
                         customAddress = $0
@@ -125,7 +125,7 @@ struct RegistryMirrorSettingsView: View {
         Button { model.send(.testRegistryMirrors) } label: {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if mirror.testing { ProgressView().controlSize(.small) }
-                Text(TabText.choose("测速", "Test speed"))
+                Text(.registryMirrorTest)
             }
         }
         .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -143,7 +143,7 @@ struct RegistryMirrorSettingsView: View {
                     }
                 }
             }
-            RegistryProbeRow(title: TabText.choose("Docker Hub 直连", "Docker Hub direct"),
+            RegistryProbeRow(title: String(localized: .registryMirrorDockerHubDirect),
                              probe: mirror.tests == nil ? settings.dockerHub : mirror.tests?.dockerHub)
         }
     }
@@ -181,17 +181,20 @@ private struct RegistryProbeLabel: View {
     }
 
     private var label: String {
-        guard let probe else { return TabText.choose("不确定", "Unknown") }
+        guard let probe else { return String(localized: .registryMirrorProbeUnknown) }
         if let problem = probe.problem {
             switch problem.reason {
-            case .unreachable: return TabText.choose("连不上", "Unreachable")
-            case .rejected: return TabText.choose("被拒绝", "Rejected")
-            case .digestMismatch: return TabText.choose("摘要不符", "Digest mismatch")
-            case .other: return TabText.choose("其他错误", "Other failure")
+            case .unreachable: return String(localized: .registryMirrorProbeUnreachable)
+            case .rejected: return String(localized: .registryMirrorProbeRejected)
+            case .digestMismatch: return String(localized: .registryMirrorProbeDigestMismatch)
+            case .other: return String(localized: .registryMirrorProbeOther)
             }
         }
-        if let latency = probe.latencyMs { return "\(latency) ms" }
-        return TabText.choose("可用", "Usable")
+        if let latency = probe.latencyMs {
+            return Measurement(value: Double(latency), unit: UnitDuration.milliseconds)
+                .formatted(.measurement(width: .abbreviated))
+        }
+        return String(localized: .registryMirrorProbeAvailable)
     }
 }
 
@@ -210,19 +213,5 @@ private struct RegistryProbeRow: View {
         }
         .padding(WontonTheme.spacing.s12)
         .frame(minHeight: WontonTheme.size.target)
-    }
-}
-
-enum RegistryMirrorText {
-    static var title: String { TabText.choose("镜像加速", "Image mirrors") }
-    static var custom: String { TabText.choose("自定义", "Custom") }
-    static var recommended: String {
-        TabText.choose("Docker Hub 连不上，建议打开镜像加速。",
-                       "Docker Hub is unreachable. Consider enabling image mirrors.")
-    }
-    static var risk: String {
-        TabText.choose("这些是第三方公益服务，能看到拉了哪些镜像，但改不了镜像内容，因为摘要会逐一核对。",
-                       "These are free third-party services. They can see which images you pull, " +
-                       "but they can't change them: every image's digest is checked.")
     }
 }

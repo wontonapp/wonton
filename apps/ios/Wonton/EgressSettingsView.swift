@@ -15,11 +15,13 @@ struct EgressSettingsView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen("出网代理") {
+            .wontonPushedScreen(String(localized: .egressTitle)) {
                 if egress.saving {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
-                    Button("保存") { save(address: selectedPlugin ? "" : address, usePlugin: selectedPlugin) }
+                    Button(String(localized: .commonSave)) {
+                        save(address: selectedPlugin ? "" : address, usePlugin: selectedPlugin)
+                    }
                         .buttonStyle(WontonSmallButtonStyle())
                         .disabled(egress.current == nil)
                         .padding(.trailing, WontonTheme.spacing.s12)
@@ -31,13 +33,20 @@ struct EgressSettingsView: View {
             .onChange(of: egress.current?.directCidrs, initial: true) { _, value in directCidrs = value ?? "" }
             .onChange(of: egress.current?.usePlugin, initial: true) { _, value in usePlugin = value ?? false }
             .wontonDialog(
-                egress.confirmation?.cancelling == true ? "取消代理要重启这些应用" : "配上代理要重启这些应用",
-                message: egress.confirmation.map { $0.restarts.map(\.title).joined(separator: "、") + "\n数据不动。" },
+                String(localized: egress.confirmation?.cancelling == true
+                       ? .egressRestartCancelTitle : .egressRestartSetTitle),
+                message: egress.confirmation.map {
+                    String(localized: .egressRestartMessage($0.restarts.map(\.title).formatted(.list(type: .and))))
+                },
                 // 关掉弹窗由按钮发给核心，这里不用再发一次。
                 isPresented: .constant(egress.confirmation != nil),
                 actions: [
-                    WontonDialogAction(title: "取消") { model.send(.dismissEgressConfirmation) },
-                    WontonDialogAction(title: "重启", kind: .primary) { model.send(.confirmEgressProxy) }
+                    WontonDialogAction(title: String(localized: .commonCancel)) {
+                        model.send(.dismissEgressConfirmation)
+                    },
+                    WontonDialogAction(title: String(localized: .egressRestartConfirm), kind: .primary) {
+                        model.send(.confirmEgressProxy)
+                    }
                 ],
                 onDismiss: { model.send(.dismissEgressConfirmation) }
             )
@@ -61,9 +70,9 @@ struct EgressSettingsView: View {
                 addressSection(current)
                 if let plugin = current.pluginPath, let core = current.corePath {
                     WontonGroup {
-                        EgressPathRow(title: "应用", state: plugin)
+                        EgressPathRow(title: String(localized: .egressPathApps), state: plugin)
                         WontonSeparator()
-                        EgressPathRow(title: "家里的服务器", state: core)
+                        EgressPathRow(title: String(localized: .egressPathHomeServer), state: core)
                     }
                 }
                 rangesSection(current)
@@ -71,7 +80,7 @@ struct EgressSettingsView: View {
                     Button(role: .destructive) {
                         save(address: "", usePlugin: false)
                     } label: {
-                        Text("取消代理").frame(maxWidth: .infinity)
+                        Text(.egressTurnOff).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .danger))
                 }
@@ -83,18 +92,19 @@ struct EgressSettingsView: View {
     }
 
     private func addressSection(_ current: EgressCurrent) -> some View {
-        DetailSection(title: "代理地址") {
+        DetailSection(title: String(localized: .egressAddress)) {
             if let provider = current.settings.provider {
-                StepOptionRow(title: TabText.choose("使用 \(provider.title)", "Use \(provider.title)"),
+                StepOptionRow(title: String(localized: .egressAddressUseProvider(provider.title)),
                               isSelected: usePlugin) { usePlugin = true }
                     .disabled(current.addressLocked)
-                StepOptionRow(title: TabText.choose("填写代理地址", "Enter proxy address"),
+                StepOptionRow(title: String(localized: .egressAddressEnter),
                               isSelected: !usePlugin) { usePlugin = false }
                     .disabled(current.addressLocked)
             }
             if !usePlugin || current.settings.provider == nil {
                 // verbatim：占位地址不是链接，也不是已经填好的内容。
-                TextField("代理地址", text: $address, prompt: Text(verbatim: "http://192.0.2.10:7890"))
+                TextField(String(localized: .egressAddress), text: $address,
+                          prompt: Text(verbatim: "http://192.0.2.10:7890"))
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -103,12 +113,12 @@ struct EgressSettingsView: View {
             }
             switch current.settings.source {
             case .env:
-                secondary("地址由 WONTON_EGRESS_PROXY 指定。要改的话，改安装目录的设置，再运行一次安装脚本。")
+                secondary(String(localized: .egressSourceEnv))
             case .detected:
-                secondary("安装时检测到的。")
+                secondary(String(localized: .egressSourceDetected))
             case .plugin:
                 if let provider = current.settings.provider {
-                    secondary(TabText.choose("来自 \(provider.title)", "From \(provider.title)"))
+                    secondary(String(localized: .egressSourceProvider(provider.title)))
                 }
             case .unset, .settings, .unknown:
                 EmptyView()
@@ -117,16 +127,16 @@ struct EgressSettingsView: View {
     }
 
     private func rangesSection(_ current: EgressCurrent) -> some View {
-        DetailSection(title: "直连网段") {
-            TextField("直连网段", text: $directCidrs, prompt: Text(verbatim: "100.64.0.0/10"))
+        DetailSection(title: String(localized: .egressRanges)) {
+            TextField(String(localized: .egressRanges), text: $directCidrs, prompt: Text(verbatim: "100.64.0.0/10"))
                 .keyboardType(.numbersAndPunctuation)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .wontonField()
             if !current.settings.hostCidrs.isEmpty {
-                secondary("主机所在网段：" + current.settings.hostCidrs.joined(separator: ", "))
+                secondary(String(localized: .egressRangesHost(current.settings.hostCidrs.joined(separator: ", "))))
             }
-            secondary("这些网段不经代理，出网应用都能连。")
+            secondary(String(localized: .egressRangesNote))
             ForEach(current.settings.notices, id: \.self) { secondary($0, tint: colors.warning) }
         }
     }
@@ -163,10 +173,10 @@ private struct EgressPathRow: View {
 
     private var label: String {
         switch state {
-        case .probing: return "探测中"
-        case .reachable: return "通"
-        case .uncertain: return "不确定"
-        case .failed: return "不通"
+        case .probing: return String(localized: .egressPathProbing)
+        case .reachable: return String(localized: .egressPathReachable)
+        case .uncertain: return String(localized: .egressPathUncertain)
+        case .failed: return String(localized: .egressPathFailed)
         }
     }
 
@@ -197,10 +207,11 @@ struct LanWebuiToggle: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             Toggle(isOn: $isOn) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("在局域网开放")
+                    Text(.lanWebuiToggle)
                         .wontonText(WontonTheme.typography.body)
                         .foregroundStyle(Color(colors.textPrimary))
-                    Text("端口 " + offer.ports.map { String($0.port) }.joined(separator: ", "))
+                    let ports = offer.ports.map { String($0.port) }.joined(separator: ", ")
+                    Text(.lanWebuiPorts(ports: offer.ports.count, ports))
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                 }

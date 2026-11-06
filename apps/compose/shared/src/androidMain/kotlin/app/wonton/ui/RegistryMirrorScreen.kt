@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -63,11 +64,11 @@ fun RegistryMirrorPage(plugins: PluginsState, onBack: () -> Unit) {
     // Probe, recommendation and choice-list updates must not replace an unfinished draft.
     val draft = remember(settings?.mirror, settings != null) { settings?.let { MirrorDraft(it) } }
     WontonScreen(bar = {
-        WontonPushedBar(tabText("镜像加速", "Image mirrors"), onBack) {
+        WontonPushedBar(stringResource(R.string.registry_mirror_title), onBack) {
             Box(Modifier.padding(end = WontonTheme.spacing.s12)) {
                 if (mirror.saving) MirrorSpinner()
                 else WontonSmallButton(
-                    tabText("保存", "Save"),
+                    stringResource(R.string.common_save),
                     { draft?.let { plugins.send(Action.SaveRegistryMirror(it.target)) } },
                     enabled = draft?.canSave == true,
                 )
@@ -97,11 +98,13 @@ private fun MirrorForm(
     ) {
         mirror.loadProblem?.let {
             ProblemNotice(it.problem)
-            WontonSmallButton(tabText("重试", "Retry"), { plugins.send(Action.RefreshRegistryMirror) }, !mirror.loading)
+            WontonSmallButton(
+                stringResource(R.string.common_retry), { plugins.send(Action.RefreshRegistryMirror) }, !mirror.loading,
+            )
         }
         mirror.saveProblem?.let {
             val problem = if (it.reason == PluginFailure.INVALID) {
-                Problem(tabText("镜像地址没有保存", "Mirror address wasn't saved"), detail = it.message)
+                Problem(stringResource(R.string.registry_mirror_save_failed), detail = it.message)
             } else it.saveProblem
             ProblemNotice(problem)
         }
@@ -109,7 +112,7 @@ private fun MirrorForm(
         if (settings.recommended && !draft.enabled) {
             WontonNotice(
                 WontonIcon.Warning,
-                tabText("Docker Hub 连不上，建议打开镜像加速。", "Docker Hub is unreachable. Consider enabling image mirrors."),
+                stringResource(R.string.registry_mirror_recommended),
                 isError = false,
             )
         }
@@ -120,7 +123,7 @@ private fun MirrorForm(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
             WontonButton(
-                tabText("测速", "Test speeds"),
+                stringResource(R.string.registry_mirror_test),
                 { plugins.send(Action.TestRegistryMirrors) },
                 kind = WontonButtonKind.SECONDARY,
                 enabled = !mirror.testing && !mirror.saving,
@@ -150,12 +153,12 @@ private fun MirrorResults(
         }
     }
     val direct = if (tests != null) tests.dockerHub else settings.dockerHub
-    RegistryProbeRow(tabText("Docker Hub 直连", "Docker Hub direct"), direct)
+    RegistryProbeRow(stringResource(R.string.registry_mirror_docker_hub_direct), direct)
 }
 
 @Composable
 private fun MirrorToggle(draft: MirrorDraft, enabled: Boolean) {
-    val title = tabText("镜像加速", "Image mirrors")
+    val title = stringResource(R.string.registry_mirror_title)
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -168,11 +171,7 @@ private fun MirrorToggle(draft: MirrorDraft, enabled: Boolean) {
             )
         }
         Text(
-            tabText(
-                "这些是第三方公益服务，能看到拉了哪些镜像，但改不了镜像内容，因为摘要会逐一核对。",
-                "These are free third-party services. They can see which images you pull, " +
-                    "but they can't change them: every image's digest is checked.",
-            ),
+            stringResource(R.string.registry_mirror_risk),
             style = WontonTheme.typography.supporting,
             color = WontonTheme.colors.textSecondary.toColor(),
         )
@@ -197,7 +196,9 @@ private fun MirrorChoices(settings: RegistryMirrorSettings, mirror: RegistryMirr
             }
         }
         RegistryChoiceRow(
-            tabText("自定义", "Custom"), selected = draft.custom || removedChoice, enabled = !mirror.saving,
+            stringResource(R.string.registry_mirror_custom),
+            selected = draft.custom || removedChoice,
+            enabled = !mirror.saving,
             probe = mirror.tests?.mirrors?.firstOrNull { it.mirror == customAddress }?.probe,
         ) {
             if (removedChoice) draft.address = customAddress
@@ -211,7 +212,7 @@ private fun MirrorChoices(settings: RegistryMirrorSettings, mirror: RegistryMirr
                     draft.custom = true
                 },
                 Modifier.fillMaxWidth(),
-                label = tabText("自定义镜像地址", "Custom mirror address"),
+                label = stringResource(R.string.registry_mirror_custom_address),
                 placeholder = "mirror.example.com:5000", enabled = !mirror.saving,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             )

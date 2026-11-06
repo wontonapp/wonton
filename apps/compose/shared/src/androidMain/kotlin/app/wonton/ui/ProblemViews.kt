@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -153,7 +154,11 @@ val CoreException.problem: Problem
 
 /** 收起的技术细节。排查时才看，能选中复制。 */
 @Composable
-fun ProblemDetail(text: String, label: String = "详情", modifier: Modifier = Modifier) {
+fun ProblemDetail(
+    text: String,
+    label: String = stringResource(R.string.common_details),
+    modifier: Modifier = Modifier,
+) {
     var expanded by remember { mutableStateOf(false) }
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
