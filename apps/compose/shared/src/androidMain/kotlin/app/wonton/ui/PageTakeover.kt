@@ -37,26 +37,26 @@ fun TakeoverButton(takeover: PageTakeover) {
 /** 没开始成或者中途断了：Bot 的调用已经不停住了，要让主人知道。 */
 @Composable
 fun TakeoverNotice(takeover: PageTakeover) {
-    val problem = takeover.state?.notice ?: return
+    val problem = takeover.state?.notice() ?: return
     Box(Modifier.padding(WontonTheme.spacing.s8)) {
-        WontonNotice(WontonIcon.Warning, problem.title, lines = listOfNotNull(problem.nextStep)) {
+        WontonNotice(WontonIcon.Warning, problem.titleText, lines = listOfNotNull(problem.nextStepText)) {
             problem.detail?.let { ProblemDetail(it) }
             WontonSmallButton("知道了", takeover::end)
         }
     }
 }
 
-private val TakeoverState.notice: Problem?
-    get() = when (this) {
-        is TakeoverState.Starting, is TakeoverState.Operating -> null
-        is TakeoverState.NotStarted -> {
-            val plain = problem.reason.problem(problem.message)
-            Problem("没有开始操作：${plain.title}", plain.nextStep, plain.detail)
-        }
-        is TakeoverState.Lost -> if (problem.reason == PluginFailure.TRANSPORT_UNAVAILABLE) {
-            Problem("已交还，连接断了", detail = problem.message)
-        } else {
-            val plain = problem.reason.problem(problem.message)
-            Problem("已交还：${plain.title}", plain.nextStep, plain.detail)
-        }
+@Composable
+private fun TakeoverState.notice(): Problem? = when (this) {
+    is TakeoverState.Starting, is TakeoverState.Operating -> null
+    is TakeoverState.NotStarted -> {
+        val plain = problem.reason.problem(problem.message)
+        Problem("没有开始操作：${plain.titleText}", plain.nextStepText, plain.detail)
     }
+    is TakeoverState.Lost -> if (problem.reason == PluginFailure.TRANSPORT_UNAVAILABLE) {
+        Problem("已交还，连接断了", detail = problem.message)
+    } else {
+        val plain = problem.reason.problem(problem.message)
+        Problem("已交还：${plain.titleText}", plain.nextStepText, plain.detail)
+    }
+}

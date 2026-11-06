@@ -99,7 +99,8 @@ private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
         state.isSuccess ->
             Image(state.getOrThrow(), contentDescription = null, Modifier.fillMaxSize(), contentScale = scale)
         else -> Text(
-            state.exceptionOrNull()?.message ?: unavailable,
+            (state.exceptionOrNull() as? CoreException)?.problem?.titleText
+                ?: state.exceptionOrNull()?.message ?: unavailable,
             Modifier.padding(WontonTheme.spacing.s8),
             style = WontonTheme.typography.supporting,
         )
@@ -119,7 +120,7 @@ private fun loadedImage(core: ClientCore, media: MediaHandle) =
                     Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
                 }
             } catch (failure: CoreException) {
-                Result.failure(IllegalStateException(failure.problem.title, failure))
+                Result.failure(failure)
             } catch (failure: IOException) {
                 Result.failure(IllegalStateException(formatUnsupported, failure))
             }

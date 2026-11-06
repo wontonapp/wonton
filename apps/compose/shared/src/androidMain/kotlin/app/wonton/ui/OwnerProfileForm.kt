@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,7 +31,7 @@ internal fun OwnerProfileForm(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         OwnerProfileFields(name, onName, email, onEmail)
         problem?.let { ProblemNotice(it) }
-        WontonGroup { WontonRow("用户名", profile.username) }
+        WontonGroup { WontonRow(stringResource(R.string.owner_profile_username), profile.username) }
     }
 }
 
@@ -43,16 +44,20 @@ internal fun OwnerProfileFields(
     nameProblem: String? = null,
     emailProblem: String? = null,
 ) {
-    DetailSection("名字") {
+    DetailSection(stringResource(R.string.owner_profile_name)) {
         WontonTextField(
-            name, onName, Modifier.fillMaxWidth(), placeholder = "必填", label = "名字",
+            name, onName, Modifier.fillMaxWidth(),
+            placeholder = stringResource(R.string.owner_profile_name_required),
+            label = stringResource(R.string.owner_profile_name),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
         )
         nameProblem?.let { ProfileFieldProblem(it) }
     }
-    DetailSection("邮箱") {
+    DetailSection(stringResource(R.string.owner_profile_email)) {
         WontonTextField(
-            email, onEmail, Modifier.fillMaxWidth(), placeholder = "选填", label = "邮箱",
+            email, onEmail, Modifier.fillMaxWidth(),
+            placeholder = stringResource(R.string.owner_profile_email_optional),
+            label = stringResource(R.string.owner_profile_email),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrectEnabled = false,

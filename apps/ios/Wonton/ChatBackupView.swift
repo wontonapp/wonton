@@ -30,7 +30,7 @@ struct ChatBackupView: View {
                     Button {
                         isConfirmingReset = true
                     } label: {
-                        Text("重置备份").frame(maxWidth: .infinity)
+                        Text(.chatBackupReset).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
@@ -39,14 +39,16 @@ struct ChatBackupView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
-        .wontonPushedScreen("聊天记录备份")
+        .wontonPushedScreen(String(localized: .chatBackupTitle))
         .wontonDialog(
-            "重置聊天记录备份？",
-            message: "会换一把新的恢复密钥，旧的作废。重置后旧消息可能读不了，其他设备要输入新密钥。",
+            String(localized: .chatBackupResetTitle),
+            message: String(localized: .chatBackupResetMessage),
             isPresented: $isConfirmingReset,
             actions: [
-                WontonDialogAction(title: "取消", kind: .secondary) {},
-                WontonDialogAction(title: "重置", kind: .danger) { model.send(.resetRecovery) }
+                WontonDialogAction(title: String(localized: .commonCancel), kind: .secondary) {},
+                WontonDialogAction(title: String(localized: .chatBackupResetConfirm), kind: .danger) {
+                    model.send(.resetRecovery)
+                }
             ]
         )
     }
@@ -55,7 +57,7 @@ struct ChatBackupView: View {
         switch encryption.recovery {
         case .incomplete:
             VStack(spacing: WontonTheme.spacing.s12) {
-                SecureField("恢复密钥", text: $key)
+                SecureField(String(localized: .chatBackupRecoveryKey), text: $key)
                     .textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -64,7 +66,7 @@ struct ChatBackupView: View {
                     model.send(.recoverEncryption(recoveryKey: key))
                     key = ""
                 } label: {
-                    Text("取回以前的消息").frame(maxWidth: .infinity)
+                    Text(.chatBackupRecover).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
                 .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -82,21 +84,21 @@ struct ChatBackupView: View {
 extension RecoveryStatus {
     var backupTitle: String {
         switch self {
-        case .enabled: return "聊天记录已备份"
-        case .disabled: return "还没有备份聊天记录"
-        case .incomplete: return "这台设备还看不到以前的消息"
-        case .inProgress: return "正在处理…"
-        case .unknown: return "还不知道备份的情况"
+        case .enabled: return String(localized: .chatBackupStatusEnabled)
+        case .disabled: return String(localized: .chatBackupStatusDisabled)
+        case .incomplete: return String(localized: .chatBackupStatusIncomplete)
+        case .inProgress: return String(localized: .chatBackupStatusInProgress)
+        case .unknown: return String(localized: .chatBackupStatusUnknown)
         }
     }
 
     var backupValue: String {
         switch self {
-        case .enabled: return "已开启"
-        case .disabled: return "未开启"
-        case .incomplete: return "需要恢复密钥"
-        case .inProgress: return "处理中"
-        case .unknown: return "不确定"
+        case .enabled: return String(localized: .chatBackupValueEnabled)
+        case .disabled: return String(localized: .chatBackupValueDisabled)
+        case .incomplete: return String(localized: .chatBackupValueIncomplete)
+        case .inProgress: return String(localized: .chatBackupValueInProgress)
+        case .unknown: return String(localized: .chatBackupValueUnknown)
         }
     }
 }
@@ -114,15 +116,15 @@ extension EncryptionStatus {
 
     var backupDetail: String? {
         switch recovery {
-        case .enabled: return "换手机或新设备时，输入恢复密钥就能看到以前的消息。"
+        case .enabled: return String(localized: .chatBackupDetailEnabled)
         case .disabled:
             // 未验证的设备开启不了，核心会拒绝。
             return verification == .unverified
-                ? "请打开最早配对的那台设备，备份会自动开启。那台设备不在手边，就重置备份。"
-                : "设备验证后会自动开启备份。"
-        case .incomplete: return "输入开启备份时保存的恢复密钥。密钥丢了，就重置备份。"
+                ? String(localized: .chatBackupDetailUnverified)
+                : String(localized: .chatBackupDetailVerified)
+        case .incomplete: return String(localized: .chatBackupDetailIncomplete)
         case .inProgress: return nil
-        case .unknown: return "连上家里的服务器后才能确认。"
+        case .unknown: return String(localized: .chatBackupDetailUnknown)
         }
     }
 }
@@ -130,8 +132,8 @@ extension EncryptionStatus {
 extension BackupReminder {
     var text: String? {
         switch self {
-        case .saveRecoveryKey: return "保存恢复密钥，换手机时要用"
-        case .enterRecoveryKey: return "输入恢复密钥，取回以前的消息"
+        case .saveRecoveryKey: return String(localized: .chatBackupReminderSaveKey)
+        case .enterRecoveryKey: return String(localized: .chatBackupReminderEnterKey)
         case .other: return nil
         }
     }
@@ -144,7 +146,7 @@ private struct RecoveryKeySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text("保存恢复密钥")
+            Text(.chatBackupSaveKeyTitle)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             // 不能长按选中：系统的拷贝不带下面的保护，复制只走“复制”按钮。
@@ -154,7 +156,7 @@ private struct RecoveryKeySection: View {
                 .padding(WontonTheme.spacing.s12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
-            Text("换手机时要用它。只显示这一次，点“已保存”后本机不再留着它。")
+            Text(.chatBackupSaveKeyNote)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             HStack(spacing: WontonTheme.spacing.s8) {
@@ -165,11 +167,11 @@ private struct RecoveryKeySection: View {
                         options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)]
                     )
                 } label: {
-                    Text("复制").frame(maxWidth: .infinity)
+                    Text(.chatBackupCopy).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 Button(action: confirm) {
-                    Text("已保存").frame(maxWidth: .infinity)
+                    Text(.chatBackupSaved).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             }

@@ -34,8 +34,12 @@ import app.wonton.ui.design.generated.WontonTypography
 
 fun Rgb.toColor(): Color = Color(red.toInt(), green.toInt(), blue.toInt())
 
-private val LocalWontonColors = compositionLocalOf<ThemeColors> { error("WontonTheme 之外没有颜色令牌") }
-private val LocalWontonTypography = compositionLocalOf<WontonTypography> { error("WontonTheme 之外没有字号令牌") }
+private val LocalWontonColors = compositionLocalOf<ThemeColors> {
+    error("No color tokens: WontonTheme provider is missing")
+}
+private val LocalWontonTypography = compositionLocalOf<WontonTypography> {
+    error("No typography tokens: WontonTheme provider is missing")
+}
 private val LocalWontonFontScale = compositionLocalOf<Float?> { null }
 private val LocalWontonDark = compositionLocalOf { false }
 

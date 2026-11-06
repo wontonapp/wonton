@@ -192,8 +192,9 @@ private fun LazyListScope.added(
                                 title = stringResource(
                                     R.string.store_problem_from_source,
                                     source.provider,
-                                    shownProblem.title,
+                                    shownProblem.titleText,
                                 ),
+                                titleRes = null,
                             ),
                             onRetry.takeIf { problem.canRetry },
                         )

@@ -16,11 +16,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import app.wonton.ui.R
 
 /** 键盘开着时弹窗口，窗口的高度算不对；关掉之后焦点回到输入框，键盘又会自己弹出来。所以先收起键盘。 */
 @Composable
@@ -35,7 +37,8 @@ fun WontonDialog(
     title: String,
     message: String? = null,
     onDismiss: () -> Unit,
-    actions: List<WontonDialogAction> = listOf(WontonDialogAction("好", onClick = onDismiss)),
+    actions: List<WontonDialogAction> =
+        listOf(WontonDialogAction(stringResource(R.string.design_ok), onClick = onDismiss)),
     detail: (@Composable () -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors

@@ -62,7 +62,7 @@ internal fun PluginTabStatus(
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(failure.title, style = WontonTheme.typography.itemTitle,
+            Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, tabText("详情", "Details")) }
             TabStatusActions(state, tab, tabs, isolationWarning, onDetails)

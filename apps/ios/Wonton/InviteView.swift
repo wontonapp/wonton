@@ -15,7 +15,7 @@ struct InviteView: View {
                 case nil, .requesting:
                     HStack(spacing: WontonTheme.spacing.s12) {
                         ProgressView()
-                        Text("正在向家里的服务器要配对码…")
+                        Text(.inviteRequesting)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
@@ -24,15 +24,15 @@ struct InviteView: View {
                         model.send(.inviteDevice)
                     }
                 case let .failed(_, message):
-                    WontonNotice(icon: .warning, title: "没要到配对码", lines: [message]) {
-                        Button("再试一次") { model.send(.inviteDevice) }
+                    WontonNotice(icon: .warning, title: String(localized: .inviteFailedTitle), lines: [message]) {
+                        Button(String(localized: .inviteTryAgain)) { model.send(.inviteDevice) }
                             .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen("添加设备")
+        .wontonPushedScreen(String(localized: .inviteTitle))
         .task { model.send(.inviteDevice) }
     }
 }
@@ -56,25 +56,28 @@ private struct InviteCode: View {
                             .scaledToFit()
                             .frame(maxWidth: 260)
                             .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
+                            .accessibilityLabel(String(localized: .inviteQrLabel))
                     }
-                    Text("还有 \(remaining / 60):\(String(format: "%02d", remaining % 60)) 过期")
+                    Text(.inviteExpiresIn(
+                        Duration.seconds(TimeInterval(remaining)).formatted(.time(pattern: .minuteSecond))
+                    ))
                         .wontonText(WontonTheme.typography.supporting)
                         .monospacedDigit()
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                WontonNotice(icon: .warning, title: "这个码过期了。") {
-                    Button("换一个码", action: renew)
+                WontonNotice(icon: .warning, title: String(localized: .inviteExpired)) {
+                    Button(String(localized: .inviteRenew), action: renew)
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
         }
-        Text("在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。")
+        Text(.inviteInstructions)
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text("不能扫码时粘贴这段文字")
+            Text(.invitePasteFallback)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             Text(code)

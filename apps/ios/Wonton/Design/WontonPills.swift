@@ -25,7 +25,7 @@ struct WontonSearchField: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("清除")
+                .accessibilityLabel(String(localized: .designClear))
                 .padding(.trailing, -WontonTheme.spacing.s12)
             }
         }
@@ -103,7 +103,7 @@ struct WontonToggleStyle: ToggleStyle {
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.4)
         .accessibilityAddTraits(.isToggle)
-        .accessibilityValue(configuration.isOn ? "开" : "关")
+        .accessibilityValue(configuration.isOn ? Text(.designSwitchOn) : Text(.designSwitchOff))
     }
 
     private func track(isOn: Bool) -> some View {

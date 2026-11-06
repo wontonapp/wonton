@@ -143,15 +143,18 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
         is PluginTaskState.Failed -> {
             val problem = state.reason.problem(state.message)
             Text(
-                when (operation) {
-                    PluginOperation.INSTALL -> stringResource(R.string.plugin_task_install_failed, problem.title)
-                    PluginOperation.UPGRADE -> stringResource(R.string.plugin_task_upgrade_failed, problem.title)
-                    PluginOperation.UNINSTALL -> stringResource(R.string.plugin_task_uninstall_failed, problem.title)
-                },
+                stringResource(
+                    when (operation) {
+                        PluginOperation.INSTALL -> R.string.plugin_task_install_failed
+                        PluginOperation.UPGRADE -> R.string.plugin_task_upgrade_failed
+                        PluginOperation.UNINSTALL -> R.string.plugin_task_uninstall_failed
+                    },
+                    problem.titleText,
+                ),
                 style = style,
                 color = colors.danger.toColor(),
             )
-            problem.nextStep?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
+            problem.nextStepText?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
             ProblemDetail(state.message)
             if (state.reason == PluginFailure.CHANGED) {
                 WontonSmallButton(stringResource(R.string.plugin_task_review), onReview)

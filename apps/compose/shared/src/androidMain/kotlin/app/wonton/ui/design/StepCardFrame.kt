@@ -1,5 +1,4 @@
 package app.wonton.ui.design
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -12,12 +11,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.StepNav
-
+import app.wonton.ui.R
 @Composable
 fun StepCardFrame(
     nav: StepNav,
@@ -46,10 +46,9 @@ fun StepCardFrame(
         StepCardFooter(nav, primaryText, primaryBusy, onPrimary, reject)
     }
 }
-
 @Composable
 private fun StepCardHeader(nav: StepNav, onBack: () -> Unit, onSkip: () -> Unit) {
-    val stepDescription = "第 ${nav.position} 步，共 ${nav.total} 步"
+    val stepDescription = stringResource(R.string.design_step_progress, nav.position, nav.total)
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -62,14 +61,14 @@ private fun StepCardHeader(nav: StepNav, onBack: () -> Unit, onSkip: () -> Unit)
             color = WontonTheme.colors.textSecondary.toColor(),
         )
         WontonButton(
-            "上一步",
+            stringResource(R.string.design_step_back),
             onBack,
             modifier = Modifier.weight(1f),
             kind = WontonButtonKind.SECONDARY,
             enabled = nav.canBack,
         )
         WontonButton(
-            "跳过",
+            stringResource(R.string.design_skip),
             onSkip,
             modifier = Modifier.weight(1f),
             kind = WontonButtonKind.SECONDARY,
@@ -77,7 +76,6 @@ private fun StepCardHeader(nav: StepNav, onBack: () -> Unit, onSkip: () -> Unit)
         )
     }
 }
-
 @Composable
 private fun StepCardFooter(
     nav: StepNav,
@@ -93,7 +91,7 @@ private fun StepCardFooter(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (primaryBusy) {
-                val busyDescription = "正在处理"
+                val busyDescription = stringResource(R.string.design_busy)
                 CircularProgressIndicator(
                     modifier = Modifier.size(WontonTheme.size.iconSmall)
                         .semantics { contentDescription = busyDescription },

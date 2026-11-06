@@ -12,7 +12,7 @@ struct CoreUpgradeView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen("升级服务器")
+            .wontonPushedScreen(String(localized: .coreUpgradeTitle))
             .onAppear { model.refresh(.refreshCoreUpgrade(manual: false)) }
             .onChange(of: upgrade.offer?.digest) { isConfirming = false }
     }
@@ -22,7 +22,7 @@ struct CoreUpgradeView: View {
             page(status)
         } else if let problem = upgrade.problem {
             ProblemView(
-                problem: Problem(title: coreUpgradeFailureSummary(reason: problem.reason), detail: problem.message)
+                problem: Problem(title: failureSummary(problem.reason), detail: problem.message)
             ) {
                 model.send(.refreshCoreUpgrade(manual: true))
             }
@@ -39,7 +39,7 @@ struct CoreUpgradeView: View {
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.danger))
                 }
-                DetailRow(title: "当前版本", value: status.current.label)
+                DetailRow(title: String(localized: .coreUpgradeCurrentVersion), value: status.current.label)
                 CoreUpgradeStageCard(model: model, stage: upgrade.stage, target: status.run?.to)
                 if upgrade.stage.isSettled {
                     checkSection(status.check)
@@ -63,7 +63,10 @@ struct CoreUpgradeView: View {
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if upgrade.refreshing { ProgressView() }
-                        Text("检查更新")
+                        Text(
+                            upgrade.refreshing ? String(localized: .coreUpgradeChecking)
+                                : String(localized: .coreUpgradeCheckForUpdate)
+                        )
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -76,16 +79,19 @@ struct CoreUpgradeView: View {
     private func offerCard(_ offer: CoreUpgradeOffer) -> some View {
         let name = offer.label
         return VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            Text(isConfirming ? "升级到 \(name)？" : "新版本 \(name)")
+            Text(
+                isConfirming ? String(localized: .coreUpgradeConfirmVersion(name))
+                    : String(localized: .coreUpgradeNewVersion(name))
+            )
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             if isConfirming, !offer.migrates.isEmpty {
-                Text("这个版本会迁移数据，升级后退不回去。")
+                Text(.coreUpgradeMigratesWarning)
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.danger))
             }
             if !isConfirming, upgrade.offerSkipped {
-                Text("已跳过")
+                Text(.coreUpgradeSkipped)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
@@ -99,27 +105,27 @@ struct CoreUpgradeView: View {
             Button {
                 model.send(.startCoreUpgrade(digest: offer.digest))
             } label: {
-                Text("确认升级").frame(maxWidth: .infinity)
+                Text(.coreUpgradeConfirmUpgrade).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             Button {
                 isConfirming = false
             } label: {
-                Text("不升级").frame(maxWidth: .infinity)
+                Text(.coreUpgradeDeclineUpgrade).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: .secondary))
         } else {
             Button {
                 isConfirming = true
             } label: {
-                Text("升级").frame(maxWidth: .infinity)
+                Text(.coreUpgradeUpgrade).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             if !upgrade.offerSkipped {
                 Button {
                     model.send(.skipCoreUpgrade(digest: offer.digest))
                 } label: {
-                    Text("跳过这个版本").frame(maxWidth: .infinity)
+                    Text(.coreUpgradeSkipVersion).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
@@ -133,7 +139,7 @@ struct CoreUpgradeView: View {
                 showsDetails.toggle()
             } label: {
                 HStack {
-                    Text("详情")
+                    Text(.commonDetails)
                     Spacer(minLength: 0)
                     WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
                         .rotationEffect(.degrees(showsDetails ? 90 : 0))
@@ -200,14 +206,14 @@ private struct CoreUpgradeStageCard: View {
             Button {
                 model.send(.cancelCoreUpgrade)
             } label: {
-                Text("取消升级").frame(maxWidth: .infinity)
+                Text(.coreUpgradeCancelUpgrade).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: .danger))
         case .uncertain:
             Button {
                 model.send(.refreshCoreUpgrade(manual: false))
             } label: {
-                Text("再查一次").frame(maxWidth: .infinity)
+                Text(.coreUpgradeCheckAgain).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: .secondary))
         default:
@@ -216,41 +222,46 @@ private struct CoreUpgradeStageCard: View {
     }
 
     private var line: StageLine? {
-        let upgrading = target.map { "正在升级到 \($0.label)" } ?? "正在升级"
+        let upgrading = target.map { String(localized: .coreUpgradeUpgradingTo($0.label)) }
+            ?? String(localized: .coreUpgradeUpgrading)
         switch stage {
         case .idle:
             return nil
         case .requesting:
-            return StageLine(title: "正在发起升级")
+            return StageLine(title: String(localized: .coreUpgradeRequestingUpgrade))
         case let .inProgress(phase, _):
-            return StageLine(title: upgrading, detail: coreUpgradePhaseTitle(phase: phase))
+            return StageLine(title: upgrading, detail: phaseTitle(phase))
         case .reconnecting:
-            return StageLine(title: upgrading, detail: "暂时连不上")
+            return StageLine(title: upgrading, detail: String(localized: .coreUpgradeReconnecting))
         case let .uncertain(problem):
             return StageLine(
-                title: "结果不确定",
-                detail: coreUpgradeFailureSummary(reason: problem.reason),
+                title: String(localized: .coreUpgradeUncertain),
+                detail: failureSummary(problem.reason),
                 icon: .warningFill,
                 tint: \.warning
             )
         case let .completed(target):
-            return StageLine(title: "已升级到 \(target.label)", icon: .checkCircleFill, tint: \.success)
+            return StageLine(
+                title: String(localized: .coreUpgradeCompletedTo(target.label)),
+                icon: .checkCircleFill,
+                tint: \.success
+            )
         case let .rolledBack(version, problem):
             return StageLine(
-                title: "已退回 \(version.label)",
-                detail: coreUpgradeFailureSummary(reason: problem.reason),
+                title: String(localized: .coreUpgradeRolledBackTo(version.label)),
+                detail: failureSummary(problem.reason),
                 icon: .warningFill,
                 tint: \.warning
             )
         case let .failed(problem):
             return StageLine(
-                title: "没升级成，什么都没动",
-                detail: coreUpgradeFailureSummary(reason: problem.reason),
+                title: String(localized: .coreUpgradeFailedNoChanges),
+                detail: failureSummary(problem.reason),
                 icon: .errorFill,
                 tint: \.danger
             )
         case .canceled:
-            return StageLine(title: "已取消升级", icon: .info, tint: \.textSecondary)
+            return StageLine(title: String(localized: .coreUpgradeCanceled), icon: .info, tint: \.textSecondary)
         }
     }
 }
@@ -273,16 +284,16 @@ private struct CoreUpgradeCheckRow: View {
     var body: some View {
         switch check {
         case .notInstalled:
-            label("这台服务器不是用安装脚本装的，不能一键升级")
+            label(String(localized: .coreUpgradeCheckNotInstalled))
         case .pinned:
-            label("这次安装固定在一个版本上，不跟渠道")
+            label(String(localized: .coreUpgradeCheckPinned))
         case .notChecked, .checking:
-            label("正在检查新版本")
+            label(String(localized: .coreUpgradeCheckChecking))
         case .upToDate:
-            label("已经是最新版")
+            label(String(localized: .coreUpgradeCheckUpToDate))
         case let .downloading(_, progress):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                label("正在下载新版本")
+                label(String(localized: .coreUpgradeCheckDownloading))
                 if let progress, progress.totalBytes > 0 {
                     ProgressView(value: Double(progress.doneBytes), total: Double(progress.totalBytes))
                     Text(progress.label)
@@ -291,13 +302,13 @@ private struct CoreUpgradeCheckRow: View {
                 }
             }
         case let .downloadFailed(_, problem), let .failed(problem):
-            Text(coreUpgradeFailureSummary(reason: problem.reason))
+            Text(failureSummary(problem.reason))
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.danger))
         case .ready:
             EmptyView()
         case .other:
-            label("家里的服务器给了这个 App 不认识的状态，更新 App 后再看")
+            label(String(localized: .coreUpgradeCheckOther))
         }
     }
 
@@ -364,18 +375,21 @@ extension CoreUpgradeCheck {
 extension CoreUpgradeStatus {
     fileprivate func detailRows(offer: CoreUpgradeOffer?, stage: CoreUpgradeStage) -> [CoreUpgradeDetail] {
         let values: [(String, String?)] = [
-            ("原因", stage.problem?.message ?? check.problem?.message),
-            ("渠道", channel),
-            ("当前版本", current.digest),
-            ("新版本", offer?.digest ?? run?.to.digest),
-            ("会迁移的数据", offer.flatMap { $0.migrates.isEmpty ? nil : $0.migrates.joined(separator: "、") })
+            (String(localized: .coreUpgradeDetailReason), stage.problem?.message ?? check.problem?.message),
+            (String(localized: .coreUpgradeDetailChannel), channel),
+            (String(localized: .coreUpgradeCurrentVersion), current.digest),
+            (String(localized: .coreUpgradeDetailNewVersion), offer?.digest ?? run?.to.digest),
+            (
+                String(localized: .coreUpgradeDetailMigrates),
+                offer.flatMap { $0.migrates.isEmpty ? nil : $0.migrates.formatted(.list(type: .and)) }
+            )
         ]
         return values.compactMap { title, value in value.map { CoreUpgradeDetail(title: title, value: $0) } }
     }
 }
 
 extension CoreVersion {
-    fileprivate var label: String { version ?? digest.map(shortDigest) ?? "开发版" }
+    fileprivate var label: String { version ?? digest.map(shortDigest) ?? String(localized: .coreUpgradeDevVersion) }
 }
 
 extension CoreUpgradeTarget {
@@ -388,8 +402,41 @@ extension CoreUpgradeOffer {
 
 extension CoreUpgradeProgress {
     fileprivate var label: String {
-        let format = { (bytes: UInt64) in ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
-        return "\(format(doneBytes)) / \(format(totalBytes))"
+        "\(doneBytes.formatted(.byteCount(style: .file))) / \(totalBytes.formatted(.byteCount(style: .file)))"
+    }
+}
+
+/// 失败原因的一句话，显示在升级页上。核心写的详细原因放详情。
+private func failureSummary(_ reason: CoreUpgradeFailure) -> String {
+    switch reason {
+    case .transportUnavailable: String(localized: .problemTransportUnavailableTitle)
+    case .unauthorized: String(localized: .problemUnauthorizedTitle)
+    case .changed: String(localized: .coreUpgradeFailureChanged)
+    case .notReady: String(localized: .coreUpgradeFailureNotReady)
+    case .busy: String(localized: .coreUpgradeFailureBusy)
+    case .tooLate: String(localized: .coreUpgradeFailureTooLate)
+    case .registryUnavailable: String(localized: .coreUpgradeFailureRegistryUnavailable)
+    case .noSpace: String(localized: .coreUpgradeFailureNoSpace)
+    case .initFailed: String(localized: .coreUpgradeFailureInitFailed)
+    case .unhealthy: String(localized: .coreUpgradeFailureUnhealthy)
+    case .crashed: String(localized: .coreUpgradeFailureCrashed)
+    case .timedOut: String(localized: .coreUpgradeFailureTimedOut)
+    case .updaterFailed: String(localized: .coreUpgradeFailureUpdaterFailed)
+    case .upstream: String(localized: .coreUpgradeFailureUpstream)
+    case .protocol, .other: String(localized: .coreUpgradeFailureProtocol)
+    }
+}
+
+/// 升级进行到的阶段，显示在正在升级的那一行下面。
+private func phaseTitle(_ phase: CoreUpgradePhase) -> String {
+    switch phase {
+    case .pulling: String(localized: .coreUpgradePhasePulling)
+    case .backingUp: String(localized: .coreUpgradePhaseBackingUp)
+    case .switching: String(localized: .coreUpgradePhaseSwitching)
+    case .starting: String(localized: .coreUpgradePhaseStarting)
+    case .observing: String(localized: .coreUpgradePhaseObserving)
+    case .rollingBack: String(localized: .coreUpgradePhaseRollingBack)
+    case .other: String(localized: .coreUpgradePhaseOther)
     }
 }
 

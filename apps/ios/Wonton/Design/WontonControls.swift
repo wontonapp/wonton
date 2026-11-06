@@ -105,7 +105,7 @@ struct WontonRow: View {
             }
             if badge {
                 Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
-                    .accessibilityLabel("有新版本")
+                    .accessibilityLabel(String(localized: .designUpdateBadge))
             }
             if showsForward {
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
@@ -282,7 +282,7 @@ struct WontonRootBar<Trailing: View>: View {
 struct WontonPushedBar<Trailing: View>: View {
     let title: String
     var icon: WontonIcon = .back
-    var iconLabel = "返回"
+    var iconLabel = String(localized: .designBack)
     var showsStatus = false
     var showsStatusLine = false
     @ViewBuilder let trailing: Trailing
@@ -354,7 +354,9 @@ extension View {
 
     /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
     func wontonModalScreen(_ title: String) -> some View {
-        let bar = WontonPushedBar(title: title, icon: .close, iconLabel: "关闭") { EmptyView() }
+        let bar = WontonPushedBar(
+            title: title, icon: .close, iconLabel: String(localized: .designClose)
+        ) { EmptyView() }
         return wontonTopBar { bar }
             .modifier(WontonCanvas())
     }

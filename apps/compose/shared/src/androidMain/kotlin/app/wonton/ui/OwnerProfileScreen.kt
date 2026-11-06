@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.OwnerProfile
 import app.wonton.protocol.OwnerProfileUpdate
@@ -54,7 +55,14 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
             Result.failure(failure)
         }
     }
-    WontonScreen(bar = { WontonPushedBar("你的资料", onClose, WontonIcon.Close, "关闭") }) {
+    WontonScreen(
+        bar = {
+            WontonPushedBar(
+                stringResource(R.string.owner_profile_title), onClose, WontonIcon.Close,
+                stringResource(R.string.design_close),
+            )
+        },
+    ) {
         val result = loaded
         val profile = result?.getOrNull()
         // 保存按钮顶在键盘上面，不然填完要先收起键盘才点得到。
@@ -72,7 +80,7 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
             }
             if (profile != null) {
                 WontonButton(
-                    "保存",
+                    stringResource(R.string.common_save),
                     {
                         problem = null
                         saving = true

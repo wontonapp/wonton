@@ -60,7 +60,7 @@ struct OwnerProfileForm: View {
                     ProblemNotice(problem: problem)
                 }
                 WontonGroup {
-                    WontonRow(title: "用户名", value: profile.username)
+                    WontonRow(title: String(localized: .ownerProfileUsername), value: profile.username)
                 }
             }
         } else if let problem = state.loadProblem {
@@ -79,17 +79,17 @@ struct OwnerProfileFields: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        DetailSection(title: "名字") {
-            TextField("必填", text: $name)
-                .accessibilityLabel("名字")
+        DetailSection(title: String(localized: .ownerProfileName)) {
+            TextField(String(localized: .ownerProfileNameRequired), text: $name)
+                .accessibilityLabel(String(localized: .ownerProfileName))
                 .textContentType(.name)
                 .textFieldStyle(.plain)
                 .wontonField()
             if let nameProblem { fieldProblem(nameProblem) }
         }
-        DetailSection(title: "邮箱") {
-            TextField("选填", text: $email)
-                .accessibilityLabel("邮箱")
+        DetailSection(title: String(localized: .ownerProfileEmail)) {
+            TextField(String(localized: .ownerProfileEmailOptional), text: $email)
+                .accessibilityLabel(String(localized: .ownerProfileEmail))
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)

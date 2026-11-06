@@ -234,44 +234,6 @@ fn now_ms() -> u64 {
         .map_or(0, |since| u64::try_from(since.as_millis()).unwrap_or(0))
 }
 
-/// 失败原因的一句话，壳显示在升级页上。核心写的详细原因放详情。
-#[uniffi::export]
-pub fn core_upgrade_failure_summary(reason: CoreUpgradeFailure) -> String {
-    match reason {
-        CoreUpgradeFailure::TransportUnavailable => "连不上家里的服务器",
-        CoreUpgradeFailure::Unauthorized => "家里的服务器不认这台设备",
-        CoreUpgradeFailure::Changed => "渠道上的版本变了，要重新确认",
-        CoreUpgradeFailure::NotReady => "新版本还没下载好",
-        CoreUpgradeFailure::Busy => "已经在升级了",
-        CoreUpgradeFailure::TooLate => "已经开始动东西了，不能取消",
-        CoreUpgradeFailure::RegistryUnavailable => "连不上镜像仓库",
-        CoreUpgradeFailure::NoSpace => "磁盘不够",
-        CoreUpgradeFailure::InitFailed => "新版本拒绝了这次升级",
-        CoreUpgradeFailure::Unhealthy => "新版本没通过健康检查",
-        CoreUpgradeFailure::Crashed => "新版本启动后崩了",
-        CoreUpgradeFailure::TimedOut => "超过了时限",
-        CoreUpgradeFailure::UpdaterFailed => "升级器出了问题",
-        CoreUpgradeFailure::Upstream => "Docker 出错了",
-        CoreUpgradeFailure::Protocol | CoreUpgradeFailure::Other => "App 和家里的服务器版本对不上",
-    }
-    .to_owned()
-}
-
-/// 升级的阶段，给壳显示。
-#[uniffi::export]
-pub fn core_upgrade_phase_title(phase: CoreUpgradePhase) -> String {
-    match phase {
-        CoreUpgradePhase::Pulling => "下载新版本",
-        CoreUpgradePhase::BackingUp => "备份数据",
-        CoreUpgradePhase::Switching => "切换到新版本",
-        CoreUpgradePhase::Starting => "等新版本启动",
-        CoreUpgradePhase::Observing => "观察新版本是否稳定",
-        CoreUpgradePhase::RollingBack => "退回旧版本",
-        CoreUpgradePhase::Other => "处理中",
-    }
-    .to_owned()
-}
-
 impl PluginsLink {
     fn upgrade_file(&self) -> PathBuf {
         self.data_dir.join(SAVED_FILE)

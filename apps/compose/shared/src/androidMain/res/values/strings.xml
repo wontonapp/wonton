@@ -3,6 +3,108 @@
     <!-- 资源实际落到的语言标签，App 靠它知道界面用的是哪种语言，再告诉核心（见 AppLanguage.kt）。
          每种语言的这一条都保留原值，不要翻译。 -->
     <string name="language_tag">en</string>
+    <!-- Section title for the accent color, and accessibility label prefix of the accent color swatches. -->
+    <string name="appearance_accent">Accent color</string>
+    <!-- Accessibility state of the More row while the extra colors are hidden. -->
+    <string name="appearance_collapsed">Collapsed</string>
+    <!-- Label of the color input field for a hex value like #RRGGBB. -->
+    <string name="appearance_color_value">Color value</string>
+    <!-- Accessibility state of the More row while the extra colors are shown. -->
+    <string name="appearance_expanded">Expanded</string>
+    <!-- Section title for the font. -->
+    <string name="appearance_font">Font</string>
+    <!-- Choice row: the system default font. -->
+    <string name="appearance_font_default">Default</string>
+    <!-- Choice row: the monospaced system font design. -->
+    <string name="appearance_font_monospaced">Monospaced</string>
+    <!-- Choice row: the rounded system font design. -->
+    <string name="appearance_font_rounded">Rounded</string>
+    <!-- Choice row: the serif system font design. -->
+    <string name="appearance_font_serif">Serif</string>
+    <!-- Error under the color input field when the text isn't a valid #RRGGBB value. -->
+    <string name="appearance_hex_invalid">Enter the color as #RRGGBB</string>
+    <!-- Row that expands the extra color swatches and the color input field. -->
+    <string name="appearance_more">More</string>
+    <!-- Accessibility label prefix of the extra color swatches behind the More row. -->
+    <string name="appearance_more_colors">More colors</string>
+    <!-- Sample chat bubble on the appearance page, hidden from accessibility; it shows how the theme looks. -->
+    <string name="appearance_preview_message">What\'s for dinner tonight?</string>
+    <!-- Sender name in the sample chat bubble on the appearance page: the app's own name. -->
+    <string name="appearance_preview_name">Wonton</string>
+    <!-- Choice row: extra large text size. -->
+    <string name="appearance_size_extra_large">Extra large</string>
+    <!-- Choice row: large text size. -->
+    <string name="appearance_size_large">Large</string>
+    <!-- Choice row: small text size. -->
+    <string name="appearance_size_small">Small</string>
+    <!-- Choice row: standard text size. -->
+    <string name="appearance_size_standard">Standard</string>
+    <!-- Choice row for theme mode and text size: follow the system setting. -->
+    <string name="appearance_system">System</string>
+    <!-- Section title for the text size. -->
+    <string name="appearance_text_size">Text size</string>
+    <!-- Section title on the appearance page for light and dark mode. -->
+    <string name="appearance_theme">Theme</string>
+    <!-- Choice row: dark mode. -->
+    <string name="appearance_theme_dark">Dark</string>
+    <!-- Choice row: light mode. -->
+    <string name="appearance_theme_light">Light</string>
+    <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_backup_copy">Copy</string>
+    <!-- Explanation under the heading when backup is on. -->
+    <string name="chat_backup_detail_enabled">When you switch to a new phone, enter your recovery key to see your past messages.</string>
+    <!-- Explanation when the recovery key is missing on this device. -->
+    <string name="chat_backup_detail_incomplete">Enter the recovery key you saved when you turned on backup. If you lost it, reset the backup.</string>
+    <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
+    <string name="chat_backup_detail_unknown">Connect to your home server to confirm.</string>
+    <!-- Explanation when backup is off because this device isn't verified; the earliest paired device turns it on. -->
+    <string name="chat_backup_detail_unverified">Open the device that was paired first; backup turns on by itself. If it isn\'t at hand, reset the backup.</string>
+    <!-- Explanation when this device is verified: backup turns on by itself. -->
+    <string name="chat_backup_detail_verified">Backup turns on by itself after the device is verified.</string>
+    <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
+    <string name="chat_backup_recover">Restore past messages</string>
+    <!-- Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages. -->
+    <string name="chat_backup_recovery_key">Recovery key</string>
+    <!-- Banner in the chat list asking for the recovery key to restore past messages. -->
+    <string name="chat_backup_reminder_enter_key">Enter your recovery key to restore past messages</string>
+    <!-- Banner in the chat list asking the owner to save their recovery key. -->
+    <string name="chat_backup_reminder_save_key">Save your recovery key — you\'ll need it when you switch phones</string>
+    <!-- Button that opens the reset confirmation; it replaces the recovery key with a new one. -->
+    <string name="chat_backup_reset">Reset backup</string>
+    <!-- Danger button that confirms the reset in the dialog. -->
+    <string name="chat_backup_reset_confirm">Reset</string>
+    <!-- Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working. -->
+    <string name="chat_backup_reset_message">You\'ll get a new recovery key and the old one stops working. Old messages may become unreadable, and your other devices will need the new key.</string>
+    <!-- Title of the reset confirmation dialog. -->
+    <string name="chat_backup_reset_title">Reset chat backup?</string>
+    <!-- Note under the freshly issued recovery key: it is only shown once. -->
+    <string name="chat_backup_save_key_note">You\'ll need it when you switch phones. It\'s only shown once; after \"Saved\" this device keeps no copy.</string>
+    <!-- Heading above the freshly issued recovery key. -->
+    <string name="chat_backup_save_key_title">Save your recovery key</string>
+    <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
+    <string name="chat_backup_saved">Saved</string>
+    <!-- Page heading when chat backup hasn't been set up. -->
+    <string name="chat_backup_status_disabled">Chat backup isn\'t set up yet</string>
+    <!-- Page heading when chat backup is on and verified. -->
+    <string name="chat_backup_status_enabled">Chat backup is on</string>
+    <!-- Page heading while backup or recovery runs. -->
+    <string name="chat_backup_status_in_progress">Working…</string>
+    <!-- Page heading when the recovery key is missing on this device, so past messages can't be shown. -->
+    <string name="chat_backup_status_incomplete">This device can\'t see past messages yet</string>
+    <!-- Page heading when the backup status isn't known (offline). -->
+    <string name="chat_backup_status_unknown">Backup status isn\'t known yet</string>
+    <!-- Title of the chat backup page. -->
+    <string name="chat_backup_title">Chat backup</string>
+    <!-- Value on the Settings row: backup is off. -->
+    <string name="chat_backup_value_disabled">Off</string>
+    <!-- Value on the Settings row for chat backup: backup is on. -->
+    <string name="chat_backup_value_enabled">On</string>
+    <!-- Value on the Settings row: backup or recovery is running. -->
+    <string name="chat_backup_value_in_progress">Working</string>
+    <!-- Value on the Settings row: backup needs the recovery key on this device. -->
+    <string name="chat_backup_value_incomplete">Recovery key needed</string>
+    <!-- Value on the Settings row: the status can't be determined. -->
+    <string name="chat_backup_value_unknown">Unknown</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">Cancel</string>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
@@ -43,6 +145,134 @@
     <string name="confirmation_card_uncertain_result">It\'s unclear whether it worked: %1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">Approved until %1$s</string>
+    <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
+    <string name="core_upgrade_cancel_upgrade">Cancel update</string>
+    <!-- Stage line after the owner cancelled the update. -->
+    <string name="core_upgrade_canceled">Update canceled</string>
+    <!-- Secondary button when the update's outcome is unknown: ask the home server again. -->
+    <string name="core_upgrade_check_again">Check again</string>
+    <!-- Channel state while the check is running. -->
+    <string name="core_upgrade_check_checking">Checking for a new version</string>
+    <!-- Channel state while the new version downloads; a progress bar with sizes is shown below. -->
+    <string name="core_upgrade_check_downloading">Downloading the new version</string>
+    <!-- Button on the update page that checks the channel for a new version. -->
+    <string name="core_upgrade_check_for_update">Check for updates</string>
+    <!-- Channel state on the update page: the server wasn't installed with the install script, so one-tap updates aren't available. -->
+    <string name="core_upgrade_check_not_installed">This server wasn\'t installed with the install script, so it can\'t update itself</string>
+    <!-- Channel state: the home server reported something this app doesn't understand. -->
+    <string name="core_upgrade_check_other">Your home server reported a status Wonton doesn\'t recognize. Update Wonton and check again.</string>
+    <!-- Channel state: this installation is pinned to one version and doesn't follow the channel. -->
+    <string name="core_upgrade_check_pinned">This installation is pinned to one version and doesn\'t follow the channel</string>
+    <!-- Channel state: the server already runs the newest version. -->
+    <string name="core_upgrade_check_up_to_date">Up to date</string>
+    <!-- Button on the update page while the channel check is running. -->
+    <string name="core_upgrade_checking">Checking…</string>
+    <!-- Stage line after the update finished. Argument: the version now running. -->
+    <string name="core_upgrade_completed_to">Updated to %1$s</string>
+    <!-- Primary button in the confirm step: start the update. -->
+    <string name="core_upgrade_confirm_upgrade">Update</string>
+    <!-- Heading of the offer card in the confirm step. Argument: the new version. -->
+    <string name="core_upgrade_confirm_version">Update to %1$s?</string>
+    <!-- Row label in the update page and in the collapsed details: the core version currently running. -->
+    <string name="core_upgrade_current_version">Current version</string>
+    <!-- Secondary button in the confirm step: don't update now. -->
+    <string name="core_upgrade_decline_upgrade">Not now</string>
+    <!-- Collapsed details row: the update channel's name. -->
+    <string name="core_upgrade_detail_channel">Channel</string>
+    <!-- Collapsed details row: the data kinds this version migrates, as a localized list. -->
+    <string name="core_upgrade_detail_migrates">Migrated data</string>
+    <!-- Collapsed details row: the new version's full digest. -->
+    <string name="core_upgrade_detail_new_version">New version</string>
+    <!-- Collapsed details row on the update page: the core's own reason for the failed update, shown verbatim. -->
+    <string name="core_upgrade_detail_reason">Reason</string>
+    <!-- Version label when the core reports no version and no digest: a development build. -->
+    <string name="core_upgrade_dev_version">Development build</string>
+    <!-- Stage line after the update failed early, before anything was changed. -->
+    <string name="core_upgrade_failed_no_changes">The update didn\'t finish. Nothing was changed.</string>
+    <!-- Update failure summary: an update is already running. -->
+    <string name="core_upgrade_failure_busy">An update is already running</string>
+    <!-- Update failure summary: the version on the channel changed since the owner approved it. -->
+    <string name="core_upgrade_failure_changed">The version on the channel changed. Review it again</string>
+    <!-- Update failure summary: the new version crashed after it started. -->
+    <string name="core_upgrade_failure_crashed">The new version crashed after starting</string>
+    <!-- Update failure summary: the new version rejected the update, for example because it needs an older core first. -->
+    <string name="core_upgrade_failure_init_failed">The new version rejected this update</string>
+    <!-- Update failure summary: the computer is out of disk space. -->
+    <string name="core_upgrade_failure_no_space">Not enough disk space</string>
+    <!-- Update failure summary: the new version hasn't finished downloading. -->
+    <string name="core_upgrade_failure_not_ready">The new version isn\'t downloaded yet</string>
+    <!-- Update failure summary for the protocol and unknown reasons: the app and the home server version don't match. -->
+    <string name="core_upgrade_failure_protocol">Wonton and your home server aren\'t compatible</string>
+    <!-- Update failure summary: the image registry can't be reached. -->
+    <string name="core_upgrade_failure_registry_unavailable">Can\'t reach the image registry</string>
+    <!-- Update failure summary: a step of the update exceeded its time limit. -->
+    <string name="core_upgrade_failure_timed_out">The update timed out</string>
+    <!-- Update failure summary: cancelling came too late, the update already started changing things. -->
+    <string name="core_upgrade_failure_too_late">The update already started and can\'t be cancelled</string>
+    <!-- Update failure summary: the new version didn't pass the health check. -->
+    <string name="core_upgrade_failure_unhealthy">The new version didn\'t pass the health check</string>
+    <!-- Update failure summary: the updater itself stopped working. -->
+    <string name="core_upgrade_failure_updater_failed">The updater ran into a problem</string>
+    <!-- Update failure summary: Docker reported an error. -->
+    <string name="core_upgrade_failure_upstream">Docker reported an error</string>
+    <!-- Warning in the confirm step of the update: this version migrates data and the update can't be undone. -->
+    <string name="core_upgrade_migrates_warning">This version migrates data. You can\'t go back after updating.</string>
+    <!-- Heading of the offer card while the new version is shown for review. Argument: the new version, like 1.2.3 or a short digest. -->
+    <string name="core_upgrade_new_version">New version %1$s</string>
+    <!-- Update phase: backing up data before switching. -->
+    <string name="core_upgrade_phase_backing_up">Backing up data</string>
+    <!-- Update phase: watching the new version for a few minutes to make sure it is healthy. -->
+    <string name="core_upgrade_phase_observing">Checking that the new version is stable</string>
+    <!-- Update phase for a step this app doesn't know. -->
+    <string name="core_upgrade_phase_other">Working</string>
+    <!-- Update phase shown under the stage line: pulling the new image. Nothing was touched yet. -->
+    <string name="core_upgrade_phase_pulling">Downloading the new version</string>
+    <!-- Update phase: restoring the old version after a failure. -->
+    <string name="core_upgrade_phase_rolling_back">Rolling back to the old version</string>
+    <!-- Update phase: waiting for the new core to start. -->
+    <string name="core_upgrade_phase_starting">Waiting for the new version to start</string>
+    <!-- Update phase: switching the services to the new version. -->
+    <string name="core_upgrade_phase_switching">Switching to the new version</string>
+    <!-- Detail under the updating stage line: the app lost its connection and is reconnecting. -->
+    <string name="core_upgrade_reconnecting">Can\'t reach your home server right now</string>
+    <!-- Stage line right after the owner confirmed: the request is on its way. -->
+    <string name="core_upgrade_requesting_upgrade">Starting the update…</string>
+    <!-- Stage line after the update failed and the old version was restored. Argument: the version now running. -->
+    <string name="core_upgrade_rolled_back_to">Rolled back to %1$s</string>
+    <!-- Secondary button on the offer card: skip this version and don't ask again until the channel changes. -->
+    <string name="core_upgrade_skip_version">Skip this version</string>
+    <!-- Note on the offer card after the owner skipped this version. -->
+    <string name="core_upgrade_skipped">Skipped</string>
+    <!-- Title of the home server update page, shown in the top bar while it is pushed. -->
+    <string name="core_upgrade_title">Update home server</string>
+    <!-- Stage line when the connection dropped mid-update and the outcome is not known yet. -->
+    <string name="core_upgrade_uncertain">Outcome unknown</string>
+    <!-- Primary button on the offer card: open the confirm step. -->
+    <string name="core_upgrade_upgrade">Update</string>
+    <!-- Stage line while the update runs and the target version is unknown. -->
+    <string name="core_upgrade_upgrading">Updating…</string>
+    <!-- Stage line while the update runs. Argument: the target version. -->
+    <string name="core_upgrade_upgrading_to">Updating to %1$s…</string>
+    <!-- Label of the back button in pushed pages' top bars. -->
+    <string name="design_back">Back</string>
+    <!-- Accessibility label of the small spinner shown while a step's action runs. Android only. -->
+    <string name="design_busy">Working</string>
+    <!-- Label of the button that empties the search field. -->
+    <string name="design_clear">Clear</string>
+    <!-- Label of the close button in modal pages' top bars. -->
+    <string name="design_close">Close</string>
+    <!-- Default single button of the app's dialog, which just closes it. -->
+    <string name="design_ok">OK</string>
+    <!-- Button on setup steps: skip this step. -->
+    <string name="design_skip">Skip</string>
+    <!-- Button on setup steps: go back to the previous step. -->
+    <string name="design_step_back">Previous step</string>
+    <!-- Accessibility label of the step counter on setup steps, shown as 2/4. Arguments: the current step and the total. -->
+    <string name="design_step_progress">Step %1$d of %2$d</string>
+    <!-- Name of the custom accessibility action that opens a tab's menu. Android only. -->
+    <string name="design_tab_menu">Tab menu</string>
+    <!-- Accessibility state of a list row with the update badge dot. -->
+    <string name="design_update_badge">Update available</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">Proxy address</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -129,6 +359,24 @@
     <string name="install_permissions">Permissions</string>
     <!-- Section title above the release notes in the install preview. -->
     <string name="install_release_notes">What\'s new</string>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">This code has expired.</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">Expires in %1$s</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">Couldn\'t get a pairing code</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">Open Wonton on the new device and scan this code to add it. The code works only once.</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">If you can\'t scan, paste this text</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">Pairing QR code</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">Get a new code</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">Asking your home server for a pairing code…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">Try again</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">Address</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -332,6 +580,18 @@
     <string name="onboarding_tip_confirmation_card">Approve requests from the card in chat.</string>
     <!-- Button that uninstalls the agent that a new one replaces. -->
     <string name="onboarding_uninstall">Uninstall</string>
+    <!-- Section title, field label and accessibility label for the owner's email address. -->
+    <string name="owner_profile_email">Email</string>
+    <!-- Placeholder in the empty email field. -->
+    <string name="owner_profile_email_optional">Optional</string>
+    <!-- Section title, field label and accessibility label for the owner's display name. -->
+    <string name="owner_profile_name">Name</string>
+    <!-- Placeholder in the empty name field. -->
+    <string name="owner_profile_name_required">Required</string>
+    <!-- Title of the owner profile page (name and email) and its entry point in Settings. -->
+    <string name="owner_profile_title">Your profile</string>
+    <!-- Row label for the account name the home server assigned; shown under the form. -->
+    <string name="owner_profile_username">Username</string>
     <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
     <string name="photo_gif_unreadable">Can\'t read this GIF</string>
     <!-- Next step under a photo problem: pick a different photo. -->
@@ -402,6 +662,118 @@
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">Uninstall %1$s?</string>
+    <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
+    <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
+    <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <string name="problem_invalid_input_title">This can\'t be done</string>
+    <!-- Accessibility label of the skeleton list placeholder while content loads. -->
+    <string name="problem_loading">Loading</string>
+    <!-- Problem title when the core says the action can't run yet; the core's own reason is shown as the next step. -->
+    <string name="problem_not_ready_title">Not available right now</string>
+    <!-- Next step: look at the app again and approve it again. -->
+    <string name="problem_plugin_changed_next_step">Review and approve it again.</string>
+    <!-- Problem title: the app changed after the owner approved the install. -->
+    <string name="problem_plugin_changed_title">The app changed after you approved it</string>
+    <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
+    <string name="problem_plugin_conflict_next_step">It\'s already installed, or installing, updating or uninstalling. Wait for that to finish.</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">This app is busy</string>
+    <!-- Next step: try after the update finishes. -->
+    <string name="problem_plugin_core_upgrading_next_step">Try again after the update finishes.</string>
+    <!-- Problem title: the home server is updating itself right now. -->
+    <string name="problem_plugin_core_upgrading_title">Your home server is updating</string>
+    <!-- Next step: look at the devices again and choose one that's available. -->
+    <string name="problem_plugin_device_unavailable_next_step">Check your devices and try again.</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">The device you chose isn\'t available</string>
+    <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">Check the proxy on your home server, or change the address in the Internet proxy settings.</string>
+    <!-- Problem title: the app can't reach the internet through the internet proxy. -->
+    <string name="problem_plugin_egress_proxy_unavailable_title">Can\'t reach the proxy</string>
+    <!-- Next step: contact the app's author. -->
+    <string name="problem_plugin_invalid_next_step">Contact the app\'s author.</string>
+    <!-- Problem title: the app's package is broken. -->
+    <string name="problem_plugin_invalid_title">This app\'s package has a problem</string>
+    <!-- Next step: choose an interface or address in the local network settings, then try again. -->
+    <string name="problem_plugin_lan_unavailable_next_step">Pick an interface or address in the local network settings, then try again.</string>
+    <!-- Problem title: no local network address could be picked for the app. -->
+    <string name="problem_plugin_lan_unavailable_title">No local network address available</string>
+    <!-- Next step: refresh the store and try again. -->
+    <string name="problem_plugin_not_found_next_step">Refresh the store and try again.</string>
+    <!-- Problem title: the app is gone from its source. -->
+    <string name="problem_plugin_not_found_title">This app wasn\'t found</string>
+    <!-- Next step: fill it in in Settings, then try again. -->
+    <string name="problem_plugin_owner_profile_incomplete_next_step">Fill it in in Settings, then try again.</string>
+    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
+    <string name="problem_plugin_owner_profile_incomplete_title">Your profile isn\'t filled in yet</string>
+    <!-- Next step: update the app or the home server. -->
+    <string name="problem_plugin_protocol_next_step">Update Wonton or your home server.</string>
+    <!-- Problem title: the app and the home server versions don't match. -->
+    <string name="problem_plugin_protocol_title">Wonton and your home server aren\'t compatible</string>
+    <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
+    <string name="problem_plugin_save_invalid_title">This doesn\'t look right</string>
+    <!-- Next step: look at the proxy settings again once the server is reachable. -->
+    <string name="problem_plugin_save_uncertain_next_step">Check it again once your home server is reachable.</string>
+    <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
+    <string name="problem_plugin_save_uncertain_title">Couldn\'t confirm it was saved</string>
+    <!-- Next step: the home server can't reach the app's source, try later. -->
+    <string name="problem_plugin_source_unavailable_next_step">Your home server can\'t reach the app\'s source. Try again later.</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">Can\'t fetch the app\'s details right now</string>
+    <!-- Problem title: the home server is too old for this app. -->
+    <string name="problem_plugin_unsupported_title">Your home server doesn\'t support this app</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">Still loading — this can take a while on a slow network</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">Check your storage and try again.</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">This device couldn\'t read or write its data</string>
+    <!-- Problem title: the community source is switched off, so its apps are missing. -->
+    <string name="problem_store_disabled_title">The community source is turned off</string>
+    <!-- Problem title: some apps couldn't be loaded into the list. -->
+    <string name="problem_store_incomplete_title">Some apps didn\'t load</string>
+    <!-- Problem title: the store's index is newer than the home server understands. -->
+    <string name="problem_store_index_too_new_title">The app list is newer than your home server</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">The app list can\'t be read</string>
+    <!-- Problem title: the app list may be incomplete for an unknown reason. -->
+    <string name="problem_store_other_title">The app list may be incomplete</string>
+    <!-- Next step: wait a few minutes and try again. -->
+    <string name="problem_store_rate_limited_next_step">Wait a few minutes and try again.</string>
+    <!-- Problem title: the source is answering too many requests. -->
+    <string name="problem_store_rate_limited_title">Too many requests</string>
+    <!-- Problem title: the app's source answered too slowly, the list may be stale. -->
+    <string name="problem_store_timeout_title">The app\'s source is too slow. The list may be out of date</string>
+    <!-- Problem title shown above the store list: the app's source can't be reached, the list may be stale. -->
+    <string name="problem_store_unreachable_title">Can\'t reach the app\'s source. The list may be out of date</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">The app\'s source ran into a problem</string>
+    <!-- Next step under the can't-reach-the-server problem. -->
+    <string name="problem_transport_unavailable_next_step">Check your network and try again once you\'re connected.</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server can't be reached. -->
+    <string name="problem_transport_unavailable_title">Can\'t reach your home server</string>
+    <!-- Next step under the not-recognized problem: pair again by scanning the code. -->
+    <string name="problem_unauthorized_next_step">Scan the pairing code again.</string>
+    <!-- Problem title: the home server no longer accepts this device. -->
+    <string name="problem_unauthorized_title">Your home server doesn\'t recognize this device</string>
+    <!-- Next step: update the home server first. Used when the server is too old. -->
+    <string name="problem_upgrade_server_next_step">Update your home server first.</string>
+    <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
+    <string name="problem_upstream_next_step">Try again later.</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
+    <string name="problem_upstream_title">Your home server ran into a problem</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">The camera is disabled by system policy</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">Camera error (CameraX code %1$d)</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">The camera can\'t open. Paste the pairing code instead</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">The camera is in use by another app</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">The camera can\'t open in Do Not Disturb</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">This device has no rear camera</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">Custom</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->

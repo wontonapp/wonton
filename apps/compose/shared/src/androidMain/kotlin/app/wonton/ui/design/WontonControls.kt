@@ -38,14 +38,15 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageShader
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -291,7 +292,7 @@ fun WontonPushedBar(
     title: String,
     onBack: () -> Unit,
     icon: ImageVector = WontonIcon.Back,
-    iconLabel: String = "返回",
+    iconLabel: String = stringResource(R.string.design_back),
     showsStatus: Boolean = false,
     showsStatusLine: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},

@@ -27,9 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import app.wonton.ui.R
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Search
 import app.wonton.ui.icons.WontonIcon
@@ -69,7 +71,10 @@ fun WontonSearchField(value: String, onValueChange: (String) -> Unit, prompt: St
                     field()
                 }
                 if (value.isNotEmpty()) {
-                    WontonIconButton(WontonIcon.Close, "清除", { onValueChange("") }, colors.textSecondary.toColor())
+                    WontonIconButton(
+                        WontonIcon.Close, stringResource(R.string.design_clear), { onValueChange("") },
+                        colors.textSecondary.toColor(),
+                    )
                 }
             }
         },

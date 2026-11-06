@@ -23,8 +23,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -37,9 +38,7 @@ import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabsViewModel
 import app.wonton.ui.PluginIconImage
 import app.wonton.ui.PluginsState
-import app.wonton.ui.rememberPluginImage
-import app.wonton.ui.tabText
-import app.wonton.ui.tabTitle
+import app.wonton.ui.R
 import app.wonton.ui.icons.Apps
 import app.wonton.ui.icons.AppsFill
 import app.wonton.ui.icons.Chat
@@ -47,6 +46,8 @@ import app.wonton.ui.icons.ChatFill
 import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.SettingsFill
 import app.wonton.ui.icons.WontonIcon
+import app.wonton.ui.rememberPluginImage
+import app.wonton.ui.tabTitle
 
 private const val DIMMED_ALPHA = 0.4f
 
@@ -55,7 +56,7 @@ fun WontonBottomBar(
     tabs: TabsViewModel, plugins: PluginsState, onSelect: (TabRef) -> Unit, onMenu: (TabRef) -> Unit,
 ) {
     val colors = WontonTheme.colors
-    val menuLabel = tabText("标签菜单", "Tab menu")
+    val menuLabel = stringResource(R.string.design_tab_menu)
     NavigationBar(
         modifier = Modifier.navigationBarsPadding()
             .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
