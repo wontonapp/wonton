@@ -15,9 +15,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingAgentRow
+import app.wonton.protocol.OnboardingCommit
 import app.wonton.protocol.OnboardingStep
 import app.wonton.protocol.OnboardingViewModel
 import app.wonton.ui.design.StepCardFrame
@@ -29,7 +31,6 @@ import app.wonton.ui.design.toColor
 internal fun OnboardingScreen(
     view: OnboardingViewModel,
     plugins: PluginsState,
-    onConfirm: (PluginConfirmation, () -> Unit) -> Unit,
     openGateway: (String) -> Unit,
 ) {
     val nav = requireNotNull(view.nav)
@@ -38,25 +39,27 @@ internal fun OnboardingScreen(
     val modifier = Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor())
         .statusBarsPadding().navigationBarsPadding().imePadding()
     if (view.step == OnboardingStep.PROFILE) {
-        OnboardingProfileStep(view, nav, plugins.core, send, modifier)
+        OnboardingProfileStep(view, nav, send, modifier)
         return
     }
     val scroll = rememberScrollState()
+    val modelForm = remember(view.step) { OnboardingModelForm(view.model.choice) }
     LaunchedEffect(view.step) { scroll.scrollTo(0) }
     LaunchedEffect(view.problem, view.model.problem) {
         if (view.problem != null || view.model.problem != null) scroll.scrollTo(0)
     }
     StepCardFrame(
-        nav = nav,
+        nav = if (view.step == OnboardingStep.MODEL) {
+            nav.copy(canNext = nav.canNext || (!view.model.testing && modelForm.canTest))
+        } else nav,
         title = view.title,
-        primaryText = if (view.step == OnboardingStep.APPS) "完成" else "下一步",
-        primaryBusy = view.loading || view.model.testing,
+        primaryText = view.primaryText(),
+        primaryBusy = view.loading || view.model.testing || view.review.commit == OnboardingCommit.RUNNING,
         onBack = { send(Action.BackOnboardingStep) },
         onSkip = { send(Action.SkipOnboardingStep) },
         onPrimary = {
-            val source = view.agents.firstOrNull { it.selected }?.source
-            if (view.step == OnboardingStep.AGENT && source != null) {
-                onConfirm(PluginConfirmation.Install(source)) { send(Action.ContinueOnboarding) }
+            if (view.step == OnboardingStep.MODEL) {
+                modelForm.submit(send, thenContinue = true)
             } else {
                 send(Action.ContinueOnboarding)
             }
@@ -74,14 +77,25 @@ internal fun OnboardingScreen(
                 } else {
                     when (view.step) {
                         OnboardingStep.AGENT -> OnboardingAgentStep(view.agents, send)
-                        OnboardingStep.MODEL -> OnboardingModelStep(view.model, send, openGateway)
-                        OnboardingStep.APPS -> OnboardingAppsStep(view, plugins, send) { onConfirm(it) {} }
+                        OnboardingStep.MODEL -> OnboardingModelStep(view.model, modelForm, send, openGateway)
+                        OnboardingStep.APPS -> OnboardingAppsStep(view, plugins, send)
+                        OnboardingStep.REVIEW -> OnboardingReviewStep(view.review, plugins, send)
                         else -> Unit
                     }
                 }
             }
         }
     }
+}
+
+private fun OnboardingViewModel.primaryText(): String = if (step == OnboardingStep.REVIEW) {
+    when (review.commit) {
+        OnboardingCommit.NOT_STARTED -> "完成"
+        OnboardingCommit.RUNNING -> "进行中"
+        OnboardingCommit.DONE -> "进入聊天"
+    }
+} else {
+    "下一步"
 }
 
 @Composable

@@ -87,7 +87,7 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
                         }
                     },
                     Modifier.padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
-                    enabled = !saving && name.isNotBlank() && email.isNotBlank(),
+                    enabled = !saving && name.isNotBlank(),
                 )
             }
         }

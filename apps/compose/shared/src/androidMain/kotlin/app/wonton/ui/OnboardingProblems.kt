@@ -9,9 +9,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
+import app.wonton.protocol.ModelProviderFailure
+import app.wonton.protocol.ModelProviderProblem
 import app.wonton.protocol.StoreFailure
 import app.wonton.protocol.StoreProblem
 import app.wonton.ui.design.WontonButton
@@ -72,11 +73,12 @@ internal fun StoreProblem.onboardingTitle(): String = when (reason) {
     StoreFailure.OTHER -> "取不到推荐清单，可以重试或跳过。"
 }
 
-internal fun CoreException.onboardingTitle(): String = when (this) {
-    is CoreException.TransportUnavailable -> "连不上家里的服务器，检查网络后重试。"
-    is CoreException.Unauthorized -> "家里的服务器不认这台设备，请重新扫码配对。"
-    is CoreException.Upstream -> "家里的服务器出错了，稍后再试。"
-    is CoreException.NotReady -> "这个操作还没就绪，刷新后再试。"
-    is CoreException.Storage -> "这台设备读写数据出错了，请检查存储空间。"
-    is CoreException.InvalidInput -> "这个操作没被接受，查看详情后修改重试。"
+internal fun ModelProviderProblem.onboardingTitle(): String = when (reason) {
+    ModelProviderFailure.KEY_REJECTED -> "服务商拒绝了这个 key，请修改后重新测试。"
+    ModelProviderFailure.PROVIDER_UNREACHABLE -> "连不上服务商，请检查地址或网络后重试。"
+    ModelProviderFailure.GATEWAY_NOT_READY -> "模型网关还没就绪，请重试或跳过这一步。"
+    ModelProviderFailure.TRANSPORT_UNAVAILABLE -> "连不上家里的服务器，请检查网络后重试。"
+    ModelProviderFailure.UNAUTHORIZED -> "家里的服务器没有授权这台设备，请检查访问权限后重试。"
+    ModelProviderFailure.UPSTREAM -> "家里的服务器没能完成请求，请稍后重试。"
+    ModelProviderFailure.PROTOCOL -> "App 和家里服务器的版本不兼容，请更新后重试。"
 }

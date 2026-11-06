@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.dp
 import app.wonton.protocol.CardLine
 import app.wonton.protocol.PermissionLine
 import app.wonton.protocol.PluginOperation
@@ -116,6 +115,14 @@ fun PermissionRow(line: PermissionLine) {
         )
         if (line.added) Tag("新增", colors.primary)
         if (!line.supported) Tag("不支持", colors.danger)
+    }
+}
+
+@Composable
+internal fun InstallAccessDetails(notices: List<CardLine>, permissions: List<PermissionLine>) {
+    if (notices.isNotEmpty()) NoticeLines(notices)
+    if (permissions.isNotEmpty()) {
+        DetailSection("权限") { permissions.forEach { PermissionRow(it) } }
     }
 }
 

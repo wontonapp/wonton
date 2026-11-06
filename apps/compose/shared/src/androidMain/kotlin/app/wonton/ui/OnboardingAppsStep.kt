@@ -10,11 +10,8 @@ import androidx.compose.ui.Modifier
 
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingViewModel
-import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.StoreItem
 import app.wonton.ui.design.StepOptionRow
-import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -23,7 +20,6 @@ internal fun OnboardingAppsStep(
     view: OnboardingViewModel,
     plugins: PluginsState,
     send: (Action) -> Unit,
-    onConfirm: (PluginConfirmation) -> Unit,
 ) {
     view.catalogProblem?.let {
         OnboardingProblem(it.onboardingTitle(), it.details) { send(Action.RefreshOnboarding) }
@@ -42,28 +38,16 @@ internal fun OnboardingAppsStep(
                     verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
                 ) {
                     need.plugins.forEach { item ->
-                        key(item.id) { OnboardingAppRow(item, plugins, onConfirm) }
+                        key(item.id) { OnboardingAppRow(item, plugins) }
                     }
                 }
             }
         }
     }
-    // Failed work stays visible even when its need is no longer selected.
-    plugins.viewModel.tasks.filter { it.state is PluginTaskState.Failed || it.state is PluginTaskState.Uncertain }
-        .forEach { task ->
-            key(task.id) {
-                TaskRow(task, plugins) {
-                    val confirmation = view.needs.asSequence().flatMap { it.plugins.asSequence() }
-                        .firstOrNull { it.id == task.id }?.let { PluginConfirmation.Install(it.source) }
-                        ?: reconfirmation(task, plugins)
-                    confirmation?.let(onConfirm)
-                }
-            }
-        }
 }
 
 @Composable
-private fun OnboardingAppRow(item: StoreItem, plugins: PluginsState, onConfirm: (PluginConfirmation) -> Unit) {
+private fun OnboardingAppRow(item: StoreItem, plugins: PluginsState) {
     StepOptionRow(
         title = item.title,
         selected = false,
@@ -71,20 +55,12 @@ private fun OnboardingAppRow(item: StoreItem, plugins: PluginsState, onConfirm: 
         blocked = item.blocked,
         leading = { PluginIconImage(item.icon, WontonTheme.size.taskIcon, plugins) },
         trailing = {
-            val busy = plugins.viewModel.hasRunningTask(item.id)
-            when {
-                busy || item.installedVersion != null -> Text(
-                    if (busy) "安装中" else "已安装",
+            if (item.installedVersion != null) {
+                Text(
+                    "已安装",
                     Modifier.padding(WontonTheme.spacing.s12),
                     style = WontonTheme.typography.supporting,
                     color = WontonTheme.colors.textSecondary.toColor(),
-                )
-                else -> WontonButton(
-                    "安装",
-                    { onConfirm(PluginConfirmation.Install(item.source)) },
-                    Modifier.padding(end = WontonTheme.spacing.s8),
-                    kind = WontonButtonKind.SECONDARY,
-                    enabled = item.blocked == null,
                 )
             }
         },

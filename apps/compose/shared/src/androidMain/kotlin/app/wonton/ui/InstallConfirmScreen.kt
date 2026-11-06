@@ -216,10 +216,7 @@ private fun PreviewContent(
         preview.missingProfile?.let {
             WontonNotice(WontonIcon.Info, it, isError = false) { WontonButton("填写资料", onFillProfile) }
         }
-        if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
-        if (preview.permissions.isNotEmpty()) {
-            DetailSection("权限") { preview.permissions.forEach { PermissionRow(it) } }
-        }
+        InstallAccessDetails(preview.notices, preview.permissions)
         AlwaysAllowed(preview, plugins)
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->

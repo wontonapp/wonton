@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
@@ -14,6 +15,7 @@ import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 
 @Composable
 internal fun OwnerProfileForm(
@@ -26,32 +28,42 @@ internal fun OwnerProfileForm(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
-        val nameLabel = "名字"
-        DetailSection(nameLabel) {
-            WontonTextField(
-                name,
-                onName,
-                Modifier.fillMaxWidth(),
-                label = nameLabel,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-            )
-        }
-        val emailLabel = "邮箱"
-        DetailSection(emailLabel) {
-            WontonTextField(
-                email,
-                onEmail,
-                Modifier.fillMaxWidth(),
-                placeholder = "me@example.com",
-                label = emailLabel,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Email,
-                ),
-            )
-        }
+        OwnerProfileFields(name, onName, email, onEmail)
         problem?.let { ProblemNotice(it) }
         WontonGroup { WontonRow("用户名", profile.username) }
     }
+}
+
+@Composable
+internal fun OwnerProfileFields(
+    name: String,
+    onName: (String) -> Unit,
+    email: String,
+    onEmail: (String) -> Unit,
+    nameProblem: String? = null,
+    emailProblem: String? = null,
+) {
+    DetailSection("名字") {
+        WontonTextField(
+            name, onName, Modifier.fillMaxWidth(), placeholder = "必填", label = "名字",
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+        )
+        nameProblem?.let { ProfileFieldProblem(it) }
+    }
+    DetailSection("邮箱") {
+        WontonTextField(
+            email, onEmail, Modifier.fillMaxWidth(), placeholder = "选填", label = "邮箱",
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Email,
+            ),
+        )
+        emailProblem?.let { ProfileFieldProblem(it) }
+    }
+}
+
+@Composable
+private fun ProfileFieldProblem(message: String) {
+    Text(message, style = WontonTheme.typography.supporting, color = WontonTheme.colors.danger.toColor())
 }
