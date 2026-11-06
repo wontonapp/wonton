@@ -56,3 +56,4 @@
 | [0044](0044-bot-profile-and-status-avatars.md) | Bot 的名字、头像和状态头像：资料放在 Matrix，4 个状态由核心和 typing 给出，App 按状态播放 |
 | [0045](0045-family-members.md) | 家人和多人：每人一个账号，Bot 有归属人，同机 Bot 经联系人互发消息 |
 | [0047](0047-plugin-notices.md) | 插件通知：插件经核心发进“Wonton”私聊，按级别决定推不推送 |
+| [0050](0050-cross-server-chat.md) | 跨服务器聊天：配对过的两台服务器经 iroh 互相联邦 |
