@@ -8,14 +8,14 @@ enum PhotoUpload {
     static let maxSide = 4096
     static let thumbnailSize = 800
 
-    enum Failure: Error, CustomStringConvertible {
+    enum Failure: Error {
         case unreadable
         case unencodable
 
-        var description: String {
+        var text: LocalizedStringResource {
             switch self {
-            case .unreadable: return "读不出这张照片"
-            case .unencodable: return "照片转码失败"
+            case .unreadable: .photoUnreadable
+            case .unencodable: .photoUnencodable
             }
         }
     }

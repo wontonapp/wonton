@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
@@ -72,7 +73,12 @@ fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 LoadedImage(original, ContentScale.Fit)
                 Box(Modifier.align(Alignment.TopEnd).padding(WontonTheme.spacing.s8)) {
-                    WontonIconButton(WontonIcon.Close, "关闭", { showingOriginal = false }, Color.White)
+                    WontonIconButton(
+                        WontonIcon.Close,
+                        stringResource(R.string.common_close),
+                        { showingOriginal = false },
+                        Color.White,
+                    )
                 }
             }
         }
@@ -87,12 +93,13 @@ private fun ImageContent.ratio(): Float {
 
 @Composable
 private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
+    val unavailable = stringResource(R.string.message_image_unavailable)
     when {
         state == null -> CircularProgressIndicator()
         state.isSuccess ->
             Image(state.getOrThrow(), contentDescription = null, Modifier.fillMaxSize(), contentScale = scale)
         else -> Text(
-            state.exceptionOrNull()?.message ?: "取不到图片",
+            state.exceptionOrNull()?.message ?: unavailable,
             Modifier.padding(WontonTheme.spacing.s8),
             style = WontonTheme.typography.supporting,
         )
@@ -103,6 +110,7 @@ private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
 @Composable
 private fun loadedImage(core: ClientCore, media: MediaHandle) =
     remember(media) { mutableStateOf<Result<ImageBitmap>?>(null) }.also { state ->
+        val formatUnsupported = stringResource(R.string.message_image_format_unsupported)
         LaunchedEffect(media) {
             state.value = try {
                 val bytes = core.loadMedia(media)
@@ -113,7 +121,7 @@ private fun loadedImage(core: ClientCore, media: MediaHandle) =
             } catch (failure: CoreException) {
                 Result.failure(IllegalStateException(failure.problem.title, failure))
             } catch (failure: IOException) {
-                Result.failure(IllegalStateException("图片格式不支持", failure))
+                Result.failure(IllegalStateException(formatUnsupported, failure))
             }
         }
     }

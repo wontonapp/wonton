@@ -19,7 +19,7 @@ struct ComposerView: View {
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(alignment: .bottom, spacing: 0) {
-            WontonIconButton(icon: .attach, label: "附件") { isChoosingAttachment = true }
+            WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) { isChoosingAttachment = true }
             ComposerField(text: draft)
                 .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
                 .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
@@ -36,8 +36,8 @@ struct ComposerView: View {
         .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
         .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
-            WontonSheetAction(title: "照片", icon: .image) { isPickingPhoto = true },
-            WontonSheetAction(title: "文件", icon: .attach) { isPickingFiles = true }
+            WontonSheetAction(title: String(localized: .composerPhoto), icon: .image) { isPickingPhoto = true },
+            WontonSheetAction(title: String(localized: .composerFile), icon: .attach) { isPickingFiles = true }
         ])
         .photosPicker(isPresented: $isPickingPhoto, selection: $photo, matching: .images)
         .onChange(of: photo) { _, item in
@@ -51,7 +51,9 @@ struct ComposerView: View {
                 pin.pin()
                 for url in urls { model.files.upload(url, room: roomId) }
             case let .failure(error):
-                model.rejection = Problem(title: "选不了这个文件", detail: error.localizedDescription)
+                model.rejection = Problem(
+                    title: String(localized: .composerChooseFailed), detail: error.localizedDescription
+                )
             }
         }
     }
@@ -59,7 +61,9 @@ struct ComposerView: View {
     /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
     private func send(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else {
-            model.rejection = Problem(title: PhotoUpload.Failure.unreadable.description, nextStep: "换一张试试。")
+            model.rejection = Problem(
+                title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
+            )
             return
         }
         let type = item.supportedContentTypes.first
@@ -69,8 +73,12 @@ struct ComposerView: View {
             }.value
             pin.pin()
             model.send(.sendImage(roomId: roomId, image: upload))
+        } catch let failure as PhotoUpload.Failure {
+            model.rejection = Problem(
+                title: String(localized: failure.text), nextStep: String(localized: .photoTryAnother)
+            )
         } catch {
-            model.rejection = Problem(title: String(describing: error), nextStep: "换一张试试。")
+            model.rejection = Problem(title: String(describing: error), nextStep: String(localized: .photoTryAnother))
         }
     }
 }
@@ -81,7 +89,10 @@ private struct ComposerField: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        TextField("", text: $text, prompt: Text("消息").foregroundStyle(Color(colors.textSecondary)), axis: .vertical)
+        TextField(
+            "", text: $text,
+            prompt: Text(.composerMessage).foregroundStyle(Color(colors.textSecondary)), axis: .vertical
+        )
             .lineLimit(1...6)
             .textFieldStyle(.plain)
             .focused($isFocused)
@@ -113,6 +124,6 @@ private struct SendButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("发送")
+        .accessibilityLabel(Text(.composerSend))
     }
 }

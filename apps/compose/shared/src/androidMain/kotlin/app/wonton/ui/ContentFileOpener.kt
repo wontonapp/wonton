@@ -15,12 +15,13 @@ import java.io.FileNotFoundException
 
 /** 按内容 URI 打开要上传的文件。文件描述符交给核心，App 重启后接着传时再打开一次。 */
 class ContentFileOpener(context: Context) : FileOpener {
-    private val resolver = context.applicationContext.contentResolver
+    private val appContext = context.applicationContext
+    private val resolver = appContext.contentResolver
 
     override fun openSource(handle: String): Int =
         try {
             resolver.openFileDescriptor(Uri.parse(handle), "r")?.detachFd()
-                ?: throw FileOpenException.Unavailable("系统没有给出这个文件")
+                ?: throw FileOpenException.Unavailable(appContext.getString(R.string.file_system_no_file))
         } catch (failure: SecurityException) {
             throw FileOpenException.PermissionDenied(reason(failure))
         } catch (failure: FileNotFoundException) {
@@ -43,7 +44,7 @@ fun uploadAction(context: Context, uri: Uri, roomId: String): Action {
     }
     return Action.UploadFile(
         source = UploadSource.Opaque(uri.toString()),
-        name = name ?: uri.lastPathSegment ?: "文件",
+        name = name ?: uri.lastPathSegment ?: context.getString(R.string.file_unnamed),
         mimeType = resolver.getType(uri),
         room = roomId,
     )
@@ -65,7 +66,7 @@ fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? 
         context.startActivity(intent)
         null
     } catch (_: ActivityNotFoundException) {
-        Problem("这台手机上没有能打开这个文件的 App")
+        Problem(context.getString(R.string.file_no_app_opens_it))
     }
 }
 

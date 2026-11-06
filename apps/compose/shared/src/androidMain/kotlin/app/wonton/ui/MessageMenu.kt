@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
@@ -116,6 +117,9 @@ fun MessageMenu(message: TimelineMessage, bubble: Rect, core: ClientCore, onDism
 private fun MenuSurface(actions: List<MessageAction>, onDismiss: () -> Unit) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val copyLabel = stringResource(R.string.message_copy)
+    // 剪贴板条目的标签：别的 App 粘贴时可能显示。
+    val clipLabel = stringResource(R.string.message_clip_label)
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = WontonTheme.colors.surface.toColor(),
@@ -125,13 +129,13 @@ private fun MenuSurface(actions: List<MessageAction>, onDismiss: () -> Unit) {
             actions.forEach { action ->
                 when (action) {
                     is MessageAction.Copy -> DropdownMenuItem(
-                        text = { Text("复制") },
+                        text = { Text(copyLabel) },
                         leadingIcon = {
                             Icon(WontonIcon.Copy, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall))
                         },
                         onClick = {
                             scope.launch {
-                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("消息", action.text)))
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, action.text)))
                             }
                             onDismiss()
                         },

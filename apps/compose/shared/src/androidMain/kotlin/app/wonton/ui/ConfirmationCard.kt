@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -91,9 +92,9 @@ private fun CardInstalledActions(installed: InstalledPlugin, tabs: TabsState, on
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        WontonButton(tabText("打开", "Open"), { onAction(Action.SelectTab(choices[0].tab)) })
+        WontonButton(stringResource(R.string.tab_open), { onAction(Action.SelectTab(choices[0].tab)) })
         if (!pinned) {
-            WontonButton(tabText("放到底栏", "Pin to tab bar"), {
+            WontonButton(stringResource(R.string.tab_pin_to_bar), {
                 if (choices.size > 1) {
                     showsPages = true
                 } else {
@@ -116,14 +117,29 @@ private fun CardState(state: ConfirmationState) {
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
-            Text("正在执行", style = style)
+            Text(stringResource(R.string.confirmation_card_running), style = style)
         }
         is ConfirmationState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, state.message, colors.success)
-        is ConfirmationState.Failed -> StateLine(WontonIcon.Error, "没有成功：${state.message}", colors.danger)
-        is ConfirmationState.Uncertain ->
-            StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)
-        ConfirmationState.Rejected -> Text("已拒绝，没有执行", style = style, color = colors.textSecondary.toColor())
-        ConfirmationState.Expired -> Text("已过期，没有执行", style = style, color = colors.textSecondary.toColor())
+        is ConfirmationState.Failed -> StateLine(
+            WontonIcon.Error,
+            stringResource(R.string.confirmation_card_failed_result, state.message),
+            colors.danger,
+        )
+        is ConfirmationState.Uncertain -> StateLine(
+            WontonIcon.Help,
+            stringResource(R.string.confirmation_card_uncertain_result, state.message),
+            colors.warning,
+        )
+        ConfirmationState.Rejected -> Text(
+            stringResource(R.string.confirmation_card_rejected),
+            style = style,
+            color = colors.textSecondary.toColor(),
+        )
+        ConfirmationState.Expired -> Text(
+            stringResource(R.string.confirmation_card_expired),
+            style = style,
+            color = colors.textSecondary.toColor(),
+        )
     }
 }
 
@@ -139,11 +155,16 @@ private fun CardWindow(window: WindowView, onStop: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
-                Text("放行到 $until", style = style)
+                Text(stringResource(R.string.confirmation_card_window_until, until), style = style)
                 if (window.stopping) {
                     CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
                 }
-                WontonButton("停止", onStop, kind = WontonButtonKind.SECONDARY, enabled = !window.stopping)
+                WontonButton(
+                    stringResource(R.string.confirmation_card_stop_window),
+                    onStop,
+                    kind = WontonButtonKind.SECONDARY,
+                    enabled = !window.stopping,
+                )
             }
             window.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
         }

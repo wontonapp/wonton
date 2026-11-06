@@ -9,10 +9,38 @@
     <string name="common_close">閉じる</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">詳細</string>
+    <!-- Button that closes the video player after watching. -->
+    <string name="common_done">完了</string>
     <!-- Button that loads the page's data again after it failed. -->
     <string name="common_retry">再試行</string>
     <!-- Toolbar button that saves the page's settings. Short, fits a small pill button. -->
     <string name="common_save">保存</string>
+    <!-- Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label. -->
+    <string name="composer_attach">添付</string>
+    <!-- Title of the problem shown when the file picker fails. The detail is the system's reason. -->
+    <string name="composer_choose_failed">このファイルを選択できません</string>
+    <!-- Item in the composer's attachment menu: pick files to send. -->
+    <string name="composer_file">ファイル</string>
+    <!-- Placeholder in the chat composer's empty text field. -->
+    <string name="composer_message">メッセージ</string>
+    <!-- Item in the composer's attachment menu: pick a photo to send. -->
+    <string name="composer_photo">写真</string>
+    <!-- Screen-reader label of the round send button at the right of the chat composer. -->
+    <string name="composer_send">送信</string>
+    <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
+    <string name="confirmation_card_expired">期限切れのため実行されていません</string>
+    <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_failed_result">実行できませんでした：%1$s</string>
+    <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
+    <string name="confirmation_card_rejected">拒否したため実行されていません</string>
+    <!-- Status line on an approval request card while the action is being carried out, next to a spinner. -->
+    <string name="confirmation_card_running">実行中</string>
+    <!-- Button on an approval request card: stop the approval window during which further actions run without asking. -->
+    <string name="confirmation_card_stop_window">停止</string>
+    <!-- Status line on an approval request card: the action ran, but whether it worked is unknown. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_uncertain_result">結果を確認できません：%1$s</string>
+    <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
+    <string name="confirmation_card_window_until">%1$sまで許可</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">プロキシのアドレス</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -55,6 +83,24 @@
     <string name="egress_title">プロキシ</string>
     <!-- Destructive full-width button that stops using the Internet proxy. -->
     <string name="egress_turn_off">プロキシを解除</string>
+    <!-- Button in the video player's failure view: download the file, then open it in another app. -->
+    <string name="file_download_and_open">ダウンロードしてほかのアプリで開く</string>
+    <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
+    <string name="file_no_app_opens_it">このファイルを開けるアプリがありません</string>
+    <!-- Link under a file card: open the downloaded file with another app. -->
+    <string name="file_open_elsewhere">ほかのアプリで開く</string>
+    <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
+    <string name="file_paused">一時停止：%1$s</string>
+    <!-- Line under a file card while its download is paused without a reason: it resumes when the connection recovers. -->
+    <string name="file_paused_waiting">接続の回復後にダウンロードを再開</string>
+    <!-- Caption under a file card: which bot sent the file. First argument: the bot's name; second: the plugin's name. -->
+    <string name="file_source_bot">%1$s（%2$s）から</string>
+    <!-- Caption under a file card: the sender is unknown. -->
+    <string name="file_source_unknown">提供元不明</string>
+    <!-- Reason in the collapsed details of an upload problem: the system didn't provide the picked file. Android only. -->
+    <string name="file_system_no_file">システムがこのファイルを提供しませんでした</string>
+    <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
+    <string name="file_unnamed">ファイル</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">アドレス</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -67,6 +113,14 @@
     </plurals>
     <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
     <string name="lan_webui_toggle">ローカルネットワークに公開</string>
+    <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
+    <string name="message_clip_label">メッセージ</string>
+    <!-- Item in the message menu: copy the message text. Android only. -->
+    <string name="message_copy">コピー</string>
+    <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
+    <string name="message_image_format_unsupported">この画像形式はサポートされていません</string>
+    <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
+    <string name="message_image_unavailable">画像を読み込めません</string>
     <!-- Description of an agent row in setup when it has no account login. -->
     <string name="onboarding_agent_connection_key">APIキー</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
@@ -229,6 +283,14 @@
     <string name="onboarding_tip_confirmation_card">確認が必要なときは、チャットのカードで確認してください。</string>
     <!-- Button that uninstalls the agent that a new one replaces. -->
     <string name="onboarding_uninstall">アンインストール</string>
+    <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
+    <string name="photo_gif_unreadable">このGIFを読み込めません</string>
+    <!-- Next step under a photo problem: pick a different photo. -->
+    <string name="photo_try_another">別の写真でお試しください。</string>
+    <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
+    <string name="photo_unencodable">写真を変換できません</string>
+    <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
+    <string name="photo_unreadable">この写真を読み込めません</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">カスタム</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
@@ -257,4 +319,42 @@
     <string name="registry_mirror_test">速度をテスト</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">ダウンロードミラー</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">開く</string>
+    <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
+    <string name="tab_pin_to_bar">タブバーに追加</string>
+    <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
+    <string name="transfer_clean_up">削除</string>
+    <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->
+    <string name="transfer_cleanup_delete_file">このデバイス上のファイルも削除</string>
+    <!-- Action in the cleanup dialog: remove the transfer record, keep the downloaded file. -->
+    <string name="transfer_cleanup_record_only">記録だけ削除</string>
+    <!-- Title of the cleanup dialog for a downloaded transfer. Argument: the file's name. -->
+    <string name="transfer_cleanup_title">「%1$s」を削除</string>
+    <!-- Icon button on a transfer: remove it from the strip without deleting anything. -->
+    <string name="transfer_clear">クリア</string>
+    <!-- Title of the sheet listing downloaded transfers. -->
+    <string name="transfer_downloaded">ダウンロード済み</string>
+    <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
+    <plurals name="transfer_downloaded_count">
+        <item quantity="other">%1$d件ダウンロード済み</item>
+    </plurals>
+    <!-- Line under an upload: it finished, but the link never reached the room. Argument: the home server's reason, shown as is. -->
+    <string name="transfer_link_not_sent">アップロードは完了しましたが、リンクを送信できませんでした：%1$s</string>
+    <!-- Icon button on a downloaded transfer: open the file. -->
+    <string name="transfer_open">開く</string>
+    <!-- Line under a paused transfer. First argument: the transferred size, already formatted as a byte count; second: the home server's reason, shown as is. -->
+    <string name="transfer_paused_progress">一時停止、%1$s転送済み：%2$s</string>
+    <!-- Line under a paused transfer without a reason. Argument: the transferred size, already formatted as a byte count. -->
+    <string name="transfer_paused_waiting">接続の回復後に転送を再開、%1$s転送済み</string>
+    <!-- Text button on a finished upload whose link wasn't sent: send the link again. -->
+    <string name="transfer_resend_link">リンクを再送</string>
+    <!-- Line under a transfer that lives in another room: that room isn't in the home server's room list. -->
+    <string name="transfer_room_missing">送信先のルームが自宅サーバーのリストにありません</string>
+    <!-- Caption under a transfer that was sent to another room. Argument: that room's name. -->
+    <string name="transfer_sent_to">%1$sに送信</string>
+    <!-- Icon button on a downloaded transfer: share the file. -->
+    <string name="transfer_share">共有</string>
+    <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
+    <string name="transfer_stop_sending">送信を中止</string>
 </resources>

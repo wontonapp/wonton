@@ -26,7 +26,7 @@ internal fun configureCrossOriginIsolatedAllowlist(plugins: List<InstalledPlugin
             val url = plugin.webUrl
             if (plugin.crossOriginIsolated && url != null) {
                 val origin = pluginOrigin(url)
-                require('*' !in origin) { "跨源隔离只允许精确来源" }
+                require('*' !in origin) { "cross-origin isolation only allows exact origins" }
                 add(origin)
             }
         }

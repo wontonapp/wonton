@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import app.wonton.client.ClientCore
@@ -66,7 +68,7 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
         listed.elsewhere.forEach { TransferRow(it.transfer, Destination(it.roomName)) }
         if (view.downloaded.isNotEmpty()) {
             Text(
-                "已下载 ${view.downloaded.size} 个",
+                pluralStringResource(R.plurals.transfer_downloaded_count, view.downloaded.size, view.downloaded.size),
                 Modifier.align(Alignment.End).clickable(role = Role.Button) { showingDownloaded = true },
                 style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
                 color = colors.textPrimary.toColor(),
@@ -74,7 +76,7 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
         }
     }
     if (showingDownloaded && view.downloaded.isNotEmpty()) {
-        WontonSheet({ showingDownloaded = false }, "已下载") {
+        WontonSheet({ showingDownloaded = false }, stringResource(R.string.transfer_downloaded)) {
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -121,9 +123,9 @@ private fun TransferRow(transfer: Transfer, destination: Destination? = null) {
 private fun DestinationText(destination: Destination) {
     val room = destination.roomName
     if (room != null) {
-        SmallText("发到 $room")
+        SmallText(stringResource(R.string.transfer_sent_to, room))
     } else {
-        ProblemText("目标房间不在这台服务器的列表里")
+        ProblemText(stringResource(R.string.transfer_room_missing))
     }
 }
 
@@ -139,18 +141,19 @@ private fun ProblemText(text: String) {
 
 @Composable
 private fun TransferDetail(transfer: Transfer) {
+    val context = LocalContext.current
     when (val state = transfer.state) {
         TransferState.Running -> TransferBar(transfer)
         TransferState.Paused -> {
-            val done = sizeText(transfer.transferredBytes)
+            val done = sizeText(context, transfer.transferredBytes)
             val because = transfer.pausedBecause
             if (because != null) {
-                ProblemText("暂停，已传 $done：$because")
+                ProblemText(stringResource(R.string.transfer_paused_progress, done, because))
             } else {
-                SmallText("等连接恢复后接着传，已传 $done")
+                SmallText(stringResource(R.string.transfer_paused_waiting, done))
             }
         }
-        is TransferState.LinkNotSent -> ProblemText("已传完，链接没发出：${state.message}")
+        is TransferState.LinkNotSent -> ProblemText(stringResource(R.string.transfer_link_not_sent, state.message))
         is TransferState.Failed -> ProblemText(state.message)
         TransferState.Done -> Unit
     }
@@ -164,17 +167,32 @@ private fun TransferButton(transfer: Transfer, action: TransferAction) {
     var confirming by remember { mutableStateOf(false) }
     val path = transfer.destination
     when (action) {
-        TransferAction.CANCEL ->
-            WontonIconButton(WontonIcon.Close, "取消", { files.onAction(Action.CancelTransfer(transfer.id)) })
-        TransferAction.DISMISS ->
-            WontonIconButton(WontonIcon.Close, "清除", { files.onAction(Action.DismissTransfer(transfer.id, false)) })
-        TransferAction.DISMISS_DOWNLOADED -> WontonIconButton(WontonIcon.Trash, "清理", { confirming = true })
-        TransferAction.RESEND_LINK -> TextAction("重发链接") { files.onAction(Action.ResendFileLink(transfer.id)) }
-        TransferAction.STOP_SENDING -> TextAction("不发了") { files.onAction(Action.CancelTransfer(transfer.id)) }
-        TransferAction.OPEN -> WontonIconButton(WontonIcon.Eye, "打开", {
+        TransferAction.CANCEL -> WontonIconButton(
+            WontonIcon.Close,
+            stringResource(R.string.common_cancel),
+            { files.onAction(Action.CancelTransfer(transfer.id)) },
+        )
+        TransferAction.DISMISS -> WontonIconButton(
+            WontonIcon.Close,
+            stringResource(R.string.transfer_clear),
+            { files.onAction(Action.DismissTransfer(transfer.id, false)) },
+        )
+        TransferAction.DISMISS_DOWNLOADED ->
+            WontonIconButton(WontonIcon.Trash, stringResource(R.string.transfer_clean_up), { confirming = true })
+        TransferAction.RESEND_LINK -> TextAction(
+            stringResource(R.string.transfer_resend_link),
+        ) { files.onAction(Action.ResendFileLink(transfer.id)) }
+        TransferAction.STOP_SENDING -> TextAction(
+            stringResource(R.string.transfer_stop_sending),
+        ) { files.onAction(Action.CancelTransfer(transfer.id)) }
+        TransferAction.OPEN -> WontonIconButton(WontonIcon.Eye, stringResource(R.string.transfer_open), {
             path?.let { openWithSystem(context, it, null)?.let(files.onReject) }
         })
-        TransferAction.SHARE -> WontonIconButton(WontonIcon.Share, "分享", { path?.let { shareWithSystem(context, it) } })
+        TransferAction.SHARE -> WontonIconButton(
+            WontonIcon.Share,
+            stringResource(R.string.transfer_share),
+            { path?.let { shareWithSystem(context, it) } },
+        )
     }
     if (confirming) DismissDownloadedDialog(transfer, onClose = { confirming = false })
 }
@@ -203,12 +221,15 @@ private fun DismissDownloadedDialog(transfer: Transfer, onClose: () -> Unit) {
         files.onAction(Action.DismissTransfer(transfer.id, deleteLocalFile))
     }
     WontonDialog(
-        "清理 ${transfer.name}",
+        stringResource(R.string.transfer_cleanup_title, transfer.name),
         onDismiss = onClose,
         actions = listOf(
-            WontonDialogAction("只清记录") { dismiss(false) },
-            WontonDialogAction("连手机上的文件一起删", WontonButtonKind.DANGER) { dismiss(true) },
-            WontonDialogAction("取消", onClick = onClose),
+            WontonDialogAction(stringResource(R.string.transfer_cleanup_record_only)) { dismiss(false) },
+            WontonDialogAction(
+                stringResource(R.string.transfer_cleanup_delete_file),
+                WontonButtonKind.DANGER,
+            ) { dismiss(true) },
+            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onClose),
         ),
     )
 }

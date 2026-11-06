@@ -19,7 +19,7 @@ struct FilePlayer: View {
             content
                 .navigationTitle(info.name)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { Button("完成") { dismiss() } }
+                .toolbar { Button(.commonDone) { dismiss() } }
         }
         .task { await start() }
         .onDisappear { player?.pause() }
@@ -28,11 +28,11 @@ struct FilePlayer: View {
     @ViewBuilder private var content: some View {
         if let problem {
             ContentUnavailableView {
-                Label("放不了", systemImage: "exclamationmark.triangle")
+                Label(.filePlaybackUnsupported, systemImage: "exclamationmark.triangle")
             } description: {
                 Text(problem.message)
             } actions: {
-                Button("下载后用其他 App 打开", action: onOpenElsewhere)
+                Button(.fileDownloadAndOpen, action: onOpenElsewhere)
             }
         } else {
             VideoPlayer(player: player)

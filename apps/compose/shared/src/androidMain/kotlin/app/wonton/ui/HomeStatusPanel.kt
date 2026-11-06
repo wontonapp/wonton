@@ -1,10 +1,12 @@
 package app.wonton.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import app.wonton.protocol.ConnectionNotice
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
@@ -26,6 +28,7 @@ fun HomeStatusPanel(
     onOpenCardRoom: (String) -> Unit,
 ) {
     val colors = WontonTheme.colors
+    val context = LocalContext.current
     WontonGroup {
         WontonRow(
             "连接",
@@ -42,7 +45,7 @@ fun HomeStatusPanel(
             WontonRow("等确认", "没有")
         }
         WontonSeparator()
-        WontonRow("存储", storageText(plugins))
+        WontonRow("存储", storageText(context, plugins))
         plugins.storageProblem?.let { problem ->
             Text(
                 problem.message,
@@ -68,5 +71,5 @@ private fun connectionText(home: HomeViewModel): String =
 private fun needsTheOwner(home: HomeViewModel): Boolean =
     home.notice is ConnectionNotice.DeviceRejected || home.notice is ConnectionNotice.VersionMismatch
 
-private fun storageText(plugins: PluginsViewModel): String =
-    plugins.storage?.let { "${sizeText(it.freeBytes)} 可用，共 ${sizeText(it.totalBytes)}" } ?: "不确定"
+private fun storageText(context: Context, plugins: PluginsViewModel): String =
+    plugins.storage?.let { "${sizeText(context, it.freeBytes)} 可用，共 ${sizeText(context, it.totalBytes)}" } ?: "不确定"

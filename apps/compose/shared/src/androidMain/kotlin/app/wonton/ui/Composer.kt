@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -66,12 +67,15 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> 
     var isChoosingAttachment by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // 字符串资源在协程里取不到，弹窗前先取好。
+    val photoUnreadable = stringResource(R.string.photo_unreadable)
+    val photoTryAnother = stringResource(R.string.photo_try_another)
     val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch {
                 PhotoUpload.make(context, uri).fold(
                     onSuccess = { upload -> onAction(Action.SendImage(roomId, upload)) },
-                    onFailure = { failure -> onReject(Problem("读不出这张照片", "换一张试试。", failure.message)) },
+                    onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
                 )
             }
         }
@@ -84,7 +88,7 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> 
     val isEmpty = draft.isBlank()
     OnboardingChatPrompts(roomId)
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
-        WontonIconButton(WontonIcon.Attach, "附件", { isChoosingAttachment = true })
+        WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), { isChoosingAttachment = true })
         ComposerField(
             value = draft,
             onValueChange = { draft = it },
@@ -107,10 +111,12 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> 
     if (isChoosingAttachment) {
         WontonActionSheet(
             actions = listOf(
-                WontonSheetAction("照片", WontonIcon.Image) {
+                WontonSheetAction(stringResource(R.string.composer_photo), WontonIcon.Image) {
                     pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
                 },
-                WontonSheetAction("文件", WontonIcon.Attach) { pickFiles.launch(arrayOf("*/*")) },
+                WontonSheetAction(stringResource(R.string.composer_file), WontonIcon.Attach) {
+                    pickFiles.launch(arrayOf("*/*"))
+                },
             ),
             onDismiss = { isChoosingAttachment = false },
         )
@@ -136,7 +142,13 @@ private fun ComposerField(value: String, onValueChange: (String) -> Unit, modifi
                     .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                if (value.isEmpty()) Text("消息", style = typography.body, color = colors.textSecondary.toColor())
+                if (value.isEmpty()) {
+                    Text(
+                        stringResource(R.string.composer_message),
+                        style = typography.body,
+                        color = colors.textSecondary.toColor(),
+                    )
+                }
                 field()
             }
         },
@@ -146,10 +158,11 @@ private fun ComposerField(value: String, onValueChange: (String) -> Unit, modifi
 @Composable
 private fun SendButton(onClick: () -> Unit) {
     val colors = WontonTheme.colors
+    val sendLabel = stringResource(R.string.composer_send)
     Box(
         Modifier.size(WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "发送" },
+            .semantics { contentDescription = sendLabel },
         contentAlignment = Alignment.Center,
     ) {
         Box(

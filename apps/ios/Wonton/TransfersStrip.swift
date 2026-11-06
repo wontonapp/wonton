@@ -21,7 +21,7 @@ struct TransfersStrip: View {
                         TransferRow(transfer: $0.transfer, elsewhere: $0)
                     }
                     if !view.downloaded.isEmpty {
-                        Button("已下载 \(view.downloaded.count) 个") { isShowingDownloaded = true }
+                        Button(.transferDownloadedCount(files: view.downloaded.count)) { isShowingDownloaded = true }
                             .wontonText(WontonTheme.typography.caption)
                             .foregroundStyle(Color(colors.textPrimary))
                             .underline()
@@ -34,7 +34,7 @@ struct TransfersStrip: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
                 }
-                .wontonSheet(isPresented: $isShowingDownloaded, title: "已下载") { _ in
+                .wontonSheet(isPresented: $isShowingDownloaded, title: String(localized: .transferDownloaded)) { _ in
                     DownloadedList().environment(files)
                 }
             }
@@ -73,9 +73,9 @@ private struct TransferRow: View {
                     .lineLimit(1)
                 if let elsewhere {
                     if let room = elsewhere.roomName {
-                        small("发到 \(room)")
+                        small(String(localized: .transferSentTo(room)))
                     } else {
-                        problem("目标房间不在这台服务器的列表里")
+                        problem(String(localized: .transferRoomMissing))
                     }
                 }
                 detail
@@ -91,12 +91,12 @@ private struct TransferRow: View {
             ProgressView(value: FileSizes.fraction(transfer))
         case .paused:
             if let because = transfer.pausedBecause {
-                problem("暂停，已传 \(FileSizes.text(transfer.transferredBytes))：\(because)")
+                problem(String(localized: .transferPausedProgress(FileSizes.text(transfer.transferredBytes), because)))
             } else {
-                small("等连接恢复后接着传，已传 \(FileSizes.text(transfer.transferredBytes))")
+                small(String(localized: .transferPausedWaiting(FileSizes.text(transfer.transferredBytes))))
             }
         case let .linkNotSent(_, message):
-            problem("已传完，链接没发出：\(message)")
+            problem(String(localized: .transferLinkNotSent(message)))
         case let .failed(_, message):
             problem(message)
         case .done:
@@ -129,16 +129,16 @@ private struct TransferButtons: View {
         .quickLookPreview($opened)
         .sheet(item: $sharing) { ShareSheet(url: $0.url) }
         .wontonDialog(
-            "清理 \(transfer.name)",
+            String(localized: .transferCleanupTitle(transfer.name)),
             isPresented: $isConfirmingDismiss,
             actions: [
-                WontonDialogAction(title: "只清记录") {
+                WontonDialogAction(title: String(localized: .transferCleanupRecordOnly)) {
                     files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
                 },
-                WontonDialogAction(title: "连手机上的文件一起删", kind: .danger) {
+                WontonDialogAction(title: String(localized: .transferCleanupDeleteFile), kind: .danger) {
                     files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: true))
                 },
-                WontonDialogAction(title: "取消")
+                WontonDialogAction(title: String(localized: .commonCancel))
             ]
         )
     }
@@ -146,21 +146,25 @@ private struct TransferButtons: View {
     @ViewBuilder private func button(_ action: TransferAction) -> some View {
         switch action {
         case .cancel:
-            WontonIconButton(icon: .close, label: "取消") { files.send(.cancelTransfer(id: transfer.id)) }
+            WontonIconButton(icon: .close, label: String(localized: .commonCancel)) {
+                files.send(.cancelTransfer(id: transfer.id))
+            }
         case .dismiss:
-            WontonIconButton(icon: .close, label: "清除") {
+            WontonIconButton(icon: .close, label: String(localized: .transferClear)) {
                 files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
             }
         case .dismissDownloaded:
-            WontonIconButton(icon: .trash, label: "清理") { isConfirmingDismiss = true }
+            WontonIconButton(icon: .trash, label: String(localized: .transferCleanUp)) { isConfirmingDismiss = true }
         case .resendLink:
-            textButton("重发链接") { files.send(.resendFileLink(id: transfer.id)) }
+            textButton(String(localized: .transferResendLink)) { files.send(.resendFileLink(id: transfer.id)) }
         case .stopSending:
-            textButton("不发了") { files.send(.cancelTransfer(id: transfer.id)) }
+            textButton(String(localized: .transferStopSending)) { files.send(.cancelTransfer(id: transfer.id)) }
         case .open:
-            WontonIconButton(icon: .eye, label: "打开") { opened = localFile }
+            WontonIconButton(icon: .eye, label: String(localized: .transferOpen)) { opened = localFile }
         case .share:
-            WontonIconButton(icon: .share, label: "分享") { sharing = localFile.map(SharedFile.init) }
+            WontonIconButton(icon: .share, label: String(localized: .transferShare)) {
+                sharing = localFile.map(SharedFile.init)
+            }
         }
     }
 

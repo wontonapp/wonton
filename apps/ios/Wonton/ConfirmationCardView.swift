@@ -66,20 +66,20 @@ struct ConfirmationCardView: View {
         case .running:
             HStack(spacing: WontonTheme.spacing.s8) {
                 ProgressView()
-                Text("正在执行").wontonText(WontonTheme.typography.supporting)
+                Text(.confirmationCardRunning).wontonText(WontonTheme.typography.supporting)
             }
         case let .succeeded(message):
             note(message, icon: .checkCircleFill, color: colors.success)
         case let .failed(message):
-            note("没有成功：\(message)", icon: .error, color: colors.danger)
+            note(String(localized: .confirmationCardFailedResult(message)), icon: .error, color: colors.danger)
         case let .uncertain(message):
-            note("结果不确定：\(message)", icon: .help, color: colors.warning)
+            note(String(localized: .confirmationCardUncertainResult(message)), icon: .help, color: colors.warning)
         case .rejected:
-            Text("已拒绝，没有执行")
+            Text(.confirmationCardRejected)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         case .expired:
-            Text("已过期，没有执行")
+            Text(.confirmationCardExpired)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         }
@@ -95,13 +95,13 @@ struct ConfirmationCardView: View {
             let until = Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)
                 .formatted(date: .omitted, time: .shortened)
             HStack(spacing: WontonTheme.spacing.s8) {
-                Text("放行到 \(until)").wontonText(WontonTheme.typography.supporting)
+                Text(.confirmationCardWindowUntil(until)).wontonText(WontonTheme.typography.supporting)
                 Button {
                     stopWindow()
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if stopping { ProgressView() }
-                        Text("停止")
+                        Text(.confirmationCardStopWindow)
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))

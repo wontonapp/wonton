@@ -26,20 +26,28 @@ object PhotoUpload {
     suspend fun make(context: Context, uri: Uri): Result<ImageUpload> = withContext(Dispatchers.Default) {
         try {
             val resolver = context.contentResolver
-            val data = resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IOException("读不出这张照片")
+            val data = resolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: throw IOException(context.getString(R.string.photo_unreadable))
             val type = resolver.getType(uri)
-            Result.success(if (type == "image/gif") gif(data) else reencode(data, png = type == "image/png"))
+            val upload = if (type == "image/gif") {
+                gif(context, data)
+            } else {
+                reencode(context, data, png = type == "image/png")
+            }
+            Result.success(upload)
         } catch (failure: IOException) {
             Result.failure(failure)
         }
     }
 
     /** 原样发，保留动画；尺寸取自文件头，不解码。 */
-    private fun gif(data: ByteArray): ImageUpload {
+    private fun gif(context: Context, data: ByteArray): ImageUpload {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("认不出这张 GIF")
-        val thumbnail = thumbnail(data, longerSide = maxOf(bounds.outWidth, bounds.outHeight))
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IOException(context.getString(R.string.photo_gif_unreadable))
+        }
+        val thumbnail = thumbnail(context, data, longerSide = maxOf(bounds.outWidth, bounds.outHeight))
         return ImageUpload(
             "photo.gif",
             "image/gif",
@@ -50,13 +58,13 @@ object PhotoUpload {
         )
     }
 
-    private fun reencode(data: ByteArray, png: Boolean): ImageUpload {
+    private fun reencode(context: Context, data: ByteArray, png: Boolean): ImageUpload {
         val image = decode(data) { width, height -> setTargetSampleSize(sampleSize(maxOf(width, height))) }
-        val thumbnail = thumbnail(data, longerSide = maxOf(image.width, image.height))
+        val thumbnail = thumbnail(context, data, longerSide = maxOf(image.width, image.height))
         val encoded = if (png) {
-            encode(image, Bitmap.CompressFormat.PNG, LOSSLESS)
+            encode(context, image, Bitmap.CompressFormat.PNG, LOSSLESS)
         } else {
-            encode(image, Bitmap.CompressFormat.JPEG, PHOTO_QUALITY)
+            encode(context, image, Bitmap.CompressFormat.JPEG, PHOTO_QUALITY)
         }
         val upload = ImageUpload(
             if (png) "photo.png" else "photo.jpg",
@@ -70,7 +78,7 @@ object PhotoUpload {
         return upload
     }
 
-    private fun thumbnail(data: ByteArray, longerSide: Int): ImageThumbnail? {
+    private fun thumbnail(context: Context, data: ByteArray, longerSide: Int): ImageThumbnail? {
         if (longerSide <= THUMBNAIL_SIZE) return null
         // 缩略图直接给目标尺寸：Skia 先解出的那一档长边不到 1600，用不着按 1/2ⁿ 缩。
         val small = decode(data) { width, height ->
@@ -79,7 +87,7 @@ object PhotoUpload {
         }
         val thumbnail = ImageThumbnail(
             "image/jpeg",
-            encode(small, Bitmap.CompressFormat.JPEG, THUMBNAIL_QUALITY),
+            encode(context, small, Bitmap.CompressFormat.JPEG, THUMBNAIL_QUALITY),
             small.width.toUInt(),
             small.height.toUInt(),
         )
@@ -107,9 +115,9 @@ object PhotoUpload {
     }
 
     /** 只写像素：原图的 EXIF、GPS、XMP、IPTC 都不会写进去。 */
-    private fun encode(bitmap: Bitmap, format: Bitmap.CompressFormat, quality: Int): ByteArray =
+    private fun encode(context: Context, bitmap: Bitmap, format: Bitmap.CompressFormat, quality: Int): ByteArray =
         ByteArrayOutputStream().use { out ->
-            if (!bitmap.compress(format, quality, out)) throw IOException("照片转码失败")
+            if (!bitmap.compress(format, quality, out)) throw IOException(context.getString(R.string.photo_unencodable))
             out.toByteArray()
         }
 }
