@@ -91,6 +91,8 @@ struct SettingsView: View {
             }
         case .appearance:
             NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }
+        case .language:
+            LanguageSettingsRow()
         case .peers:
             // 这一版先不显示这一行；页面在 #552 的 App PR 里做。
             EmptyView()

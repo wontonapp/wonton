@@ -11211,6 +11211,36 @@
         }
       }
     },
+    "settings.language": {
+      "comment": "Row title on the Settings home page. Tapping opens this app's page in the system settings, where the app language is changed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "語言"
+          }
+        }
+      }
+    },
     "store.addSource": {
       "comment": "Toolbar button that opens the Add Source page.",
       "extractionState": "manual",

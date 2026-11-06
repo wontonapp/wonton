@@ -802,6 +802,10 @@
     <string name="registry_mirror_test">Test speed</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">Download mirror</string>
+    <!-- Row title on the Settings home page: the app's display language. The value on the right is the current choice. -->
+    <string name="settings_language">Language</string>
+    <!-- Value of the language row when the app follows the system language. -->
+    <string name="settings_language_system">System default</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">Add source</string>
     <!-- Button on a store row to install an app you don't have. -->

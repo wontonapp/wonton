@@ -106,6 +106,7 @@ private fun SettingsEntryRow(
             onClick = { onSubpage(SettingsSubpage.SERVER) },
         )
         SettingsEntry.Appearance -> WontonRow("外观", showsForward = true) { onSubpage(SettingsSubpage.APPEARANCE) }
+        SettingsEntry.Language -> LanguageSettingsRow()
         // 这一版先不显示这一行；页面在 #552 的 App PR 里做。
         is SettingsEntry.Peers -> Unit
         SettingsEntry.BottomBar -> WontonRow(tabText("底栏", "Tab bar"), showsForward = true) {

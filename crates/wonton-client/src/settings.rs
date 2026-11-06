@@ -58,7 +58,7 @@ impl SettingsLink {
     }
 }
 
-/// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观、底栏和通知，再是聊天相关的，最后是很少点的。
+/// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观、语言、底栏和通知，再是聊天相关的，最后是很少点的。
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
 fn settings_view(
     status: &HomeStatus,
@@ -70,6 +70,7 @@ fn settings_view(
     let backup = SettingsEntry::ChatBackup { recovery };
     let phone = vec![
         SettingsEntry::Appearance,
+        SettingsEntry::Language,
         SettingsEntry::BottomBar,
         SettingsEntry::Notifications {
             method: PushMethod::default(),
@@ -112,6 +113,24 @@ mod tests {
     }
 
     #[test]
+    fn language_comes_right_after_appearance_before_and_after_pairing() {
+        for status in [HomeStatus::NotConfigured, HomeStatus::Connected] {
+            let view = settings_view(
+                &status,
+                RecoveryStatus::Unknown,
+                &PushStatus::NoEndpoint,
+                false,
+            );
+            let all = entries(&view);
+            let appearance = all
+                .iter()
+                .position(|entry| entry == &SettingsEntry::Appearance)
+                .expect("设置首页有外观一项");
+            assert_eq!(all.get(appearance + 1), Some(&SettingsEntry::Language));
+        }
+    }
+
+    #[test]
     fn before_pairing_only_this_phones_settings_show() {
         let view = settings_view(
             &HomeStatus::NotConfigured,
@@ -123,6 +142,7 @@ mod tests {
             entries(&view),
             [
                 SettingsEntry::Appearance,
+                SettingsEntry::Language,
                 SettingsEntry::BottomBar,
                 SettingsEntry::Notifications {
                     method: PushMethod::Keepalive,

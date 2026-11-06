@@ -61,11 +61,11 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 
 ### 语言设置
 
-设置首页在“外观”“底栏”那一组加一行“语言”（`SettingsViewModel` 里的一项），右边显示 App 当前用的语言，名字和点了以后做什么由壳决定。
+设置首页在“外观”“底栏”那一组加一行“语言”（`SettingsViewModel` 里的一项），右边显示当前的选择，名字和点了以后做什么由壳决定：iOS 是 App 在用的语言的自称；Android 是“跟随系统”或那种语言的自称。
 
 - **iOS：** 点了打开 `UIApplication.openSettingsURLString`，也就是系统设置里本 App 的页面，系统在那里给“语言”。App 里不做选择器。系统改语言后会重启 App，这是系统的行为。
-- **Android：** 点了打开 App 里的选择器：第一项“跟随系统”，下面四种语言各用自己的语言写名字（English、简体中文、繁體中文、日本語），选中即生效。选择器调 `AppCompatDelegate.setApplicationLocales`：Android 13 起它交给系统的 `LocaleManager`，和系统设置里的“应用语言”是同一个值；更早的系统由 AppCompat 存下、启动时套用。Android 12 及以前要 `AppCompatActivity` 才套用得上，所以 `MainActivity` 改成 `AppCompatActivity`，主题的父主题换成 AppCompat 的，清单里加 `AppLocalesMetadataHolderService`（`autoStoreLocales`）。
-- 系统设置里的“应用语言”要 `locales_config`：由 App 模块的 `generateLocaleConfig` 按资源目录生成，`res/resources.properties` 写明 `values/` 是英文。AGP 读不到 KMP 库模块的资源时，照 Mihon 的做法用一个 Gradle 任务生成。App 里的选择器也从它读语言列表。
+- **Android：** 点了打开 App 里的选择器：第一项“跟随系统”，下面是支持的语言，各用它自己的语言写名字（English、简体中文、繁體中文、日本語），选中即生效。选择器调 `AppCompatDelegate.setApplicationLocales`：Android 13 起它交给系统的 `LocaleManager`，和系统设置里的“应用语言”是同一个值；更早的系统由 AppCompat 存下、启动时套用。Android 12 及以前要 `AppCompatActivity` 才套用得上，所以 `MainActivity` 改成 `AppCompatActivity`，主题的父主题换成 AppCompat 的，清单里加 `AppLocalesMetadataHolderService`（`autoStoreLocales`）。
+- 系统设置里的“应用语言”要 `locales_config`：AGP 的 `generateLocaleConfig` 只读 App 模块自己的资源，shared 库里的语言会漏掉，所以照 Mihon 的做法由 `androidApp/build.gradle.kts` 里的 `generateLocalesConfig` 任务生成，列出 App 和 shared 里每个带 `strings.xml` 的 `values-*` 目录（`values/` 是英文）。App 里的选择器也从它读语言列表。
 
 ### 语言怎么传给核心和插件页
 

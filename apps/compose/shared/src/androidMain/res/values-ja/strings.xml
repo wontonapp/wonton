@@ -799,6 +799,8 @@
     <string name="registry_mirror_test">速度をテスト</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">ダウンロードミラー</string>
+    <string name="settings_language">言語</string>
+    <string name="settings_language_system">システムのデフォルト</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">提供元を追加</string>
     <!-- Button on a store row to install an app you don't have. -->

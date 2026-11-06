@@ -799,6 +799,8 @@
     <string name="registry_mirror_test">測速</string>
     <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
     <string name="registry_mirror_title">下載鏡像站</string>
+    <string name="settings_language">語言</string>
+    <string name="settings_language_system">跟隨系統</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">新增來源</string>
     <!-- Button on a store row to install an app you don't have. -->
