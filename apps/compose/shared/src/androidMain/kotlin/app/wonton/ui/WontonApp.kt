@@ -40,9 +40,9 @@ import app.wonton.client.defaultAppearance
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
-import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.TabRef
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonBottomBar
@@ -58,6 +58,7 @@ fun WontonApp(
     onCardsSettled: (List<String>) -> Unit = {},
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
+    val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
     val home by remember(core) { core.homeUpdates() }.collectAsState(remember(core) { core.home() })
     val chatView by remember(core) { core.chatUpdates() }.collectAsState(remember(core) { core.chat() })
     val plugins = remember(core) { PluginsState(core) }
@@ -76,7 +77,7 @@ fun WontonApp(
             PluginsEffects(plugins)
             OpenDevWebEffect(devWebUrl, plugins, tabs)
             OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
-                AppContent(navigation, home, appearance, chatView)
+                AppContent(navigation, home, settings, appearance, chatView)
                 tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
             }
             plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
@@ -116,16 +117,10 @@ private class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
         settingsPage = page
         if (tabs.viewModel.items.any { it.tab == TabRef.Settings }) {
             tabs.send(Action.SelectTab(TabRef.Settings))
+            settingsOverlay = false
         } else {
             settingsOverlay = true
         }
-    }
-
-    fun connection(page: HomePage) {
-        tabs.send(Action.SelectTab(TabRef.Apps))
-        appsPage = page
-        plugins.detail = null
-        plugins.confirmation = null
     }
 
     fun detail(id: String) {
@@ -144,7 +139,10 @@ private class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel, chat: ChatViewModel) {
+private fun AppContent(
+    nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel,
+    appearance: AppearanceViewModel, chat: ChatViewModel,
+) {
     val tabs = nav.tabs
     val view = tabs.viewModel
     val draft = LocalTabDraft.current
@@ -157,7 +155,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
     var tabMenu by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::connection)
+    val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
         shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
     }
@@ -182,7 +180,7 @@ private fun AppContent(nav: AppNavigation, home: HomeViewModel, appearance: Appe
                         bannerTop = bannerTop,
                     )
                     if (native) Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
-                        NativeContent(nav, home, appearance, chat, nativeState)
+                        NativeContent(nav, home, settings, appearance, chat, nativeState)
                     }
                     OpeningChat(nav.chat)
                 }
@@ -210,30 +208,34 @@ private fun OpeningChat(chat: ChatNavigation) {
 
 @Composable
 private fun NativeContent(
-    nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel,
+    nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel, appearance: AppearanceViewModel,
     chat: ChatViewModel, holder: SaveableStateHolder,
 ) {
     holder.SaveableStateProvider(nav.tabs.viewModel.selected.toString()) {
-        NativeTab(nav, home, appearance, chat)
+        NativeTab(nav, home, settings, appearance, chat)
     }
 }
 
 @Composable
-private fun NativeTab(nav: AppNavigation, home: HomeViewModel, appearance: AppearanceViewModel, chat: ChatViewModel) {
+private fun NativeTab(
+    nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel,
+    appearance: AppearanceViewModel, chat: ChatViewModel,
+) {
     val tabs = nav.tabs
     if (nav.settingsOverlay) BackHandler {
         if (nav.settingsPage == SettingsSubpage.MAIN) nav.settingsOverlay = false
-        else nav.settingsPage = SettingsSubpage.MAIN
+        else nav.settingsPage = nav.settingsPage.parent()
     }
     when (if (nav.settingsOverlay) TabRef.Settings else tabs.viewModel.selected) {
         TabRef.Chat -> ChatRoute(tabs.core, nav.chat, tabs.plugins)
         TabRef.Apps -> HomeRoute(
             tabs.core, home, tabs.plugins, nav.plugins, nav.appsPage, { nav.appsPage = it },
             chat.pendingConfirmations, nav::openRoom,
+            onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() }.takeIf { tabs.viewModel.items.none { it.tab == TabRef.Settings } },
         )
         TabRef.Settings -> SettingsPage(
-            tabs.plugins, appearance, chat, home.status !is HomeStatus.NotConfigured, nav.settingsPage,
+            tabs.plugins, settings, home, appearance, chat, nav.settingsPage,
             onClose = { nav.settingsOverlay = false }.takeIf { nav.settingsOverlay },
         ) { nav.settingsPage = it }
         is TabRef.Plugin -> Unit

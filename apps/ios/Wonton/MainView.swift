@@ -9,10 +9,12 @@ struct MainView: View {
     let devWebURL: URL?
     @State private var tabs: TabsModel
     @State private var onboarding: OnboardingModel
+    @State private var settings: SettingsModel
     @State private var visited: Set<TabRef> = []
     @State private var isKeyboardVisible = false
     @State private var showsTabSettings = false
     @State private var showsSettings = false
+    @State private var pendingSettingsPresentation = false
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State private var onboardingGateway: TabChoice?
 
@@ -24,6 +26,7 @@ struct MainView: View {
         self.devWebURL = devWebURL
         _tabs = State(initialValue: TabsModel(core: chat.core))
         _onboarding = State(initialValue: OnboardingModel(core: chat.core))
+        _settings = State(initialValue: SettingsModel(core: chat.core))
     }
 
     var body: some View {
@@ -40,9 +43,12 @@ struct MainView: View {
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .statusBarHidden(selectedFullscreen && tabs.viewModel.overlay == nil)
         .modifier(ChatDialogs(model: chat))
-        .fullScreenCover(isPresented: overlayPresented) { overlay }
+        .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
         .fullScreenCover(
-            item: $onboardingGateway, onDismiss: { onboarding.send(.refreshOnboarding) }, content: { choice in
+            item: $onboardingGateway, onDismiss: {
+                onboarding.send(.refreshOnboarding)
+                presentPendingSettings()
+            }, content: { choice in
                 if let page = onboardingGatewayPage {
                     TabPageView(tabs: tabs, home: home, plugins: plugins, appearance: appearance,
                                 tab: choice.tab, page: page, isOverlay: true, draft: receiveDraft, open: open,
@@ -54,9 +60,10 @@ struct MainView: View {
             }
         )
         .fullScreenCover(isPresented: $showsSettings) {
-            SettingsTab(appearance: appearance, chat: chat, plugins: plugins, isPaired: isPaired, isModal: true)
+            SettingsTab(model: settings, appearance: appearance, chat: chat,
+                        home: home, plugins: plugins, isModal: true)
         }
-        .fullScreenCover(isPresented: $showsTabSettings) {
+        .fullScreenCover(isPresented: $showsTabSettings, onDismiss: presentPendingSettings) {
             NavigationStack { TabSettingsView(plugins: plugins).wontonModalScreen(TabText.bottomBar) }
         }
         .wontonDialog(problem: tabs.rejection, isPresented: Binding(
@@ -74,6 +81,7 @@ struct MainView: View {
         .task { await plugins.observe() }
         .task { await chat.observe() }
         .task { await chat.files.observe() }
+        .task { await settings.observe() }
         .task {
             for await network in DeviceNetwork.changes() { home.send(.networkChanged(network: network)) }
         }
@@ -87,7 +95,7 @@ struct MainView: View {
         }
         .environment(plugins)
         .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
-            ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showHomeRoute)
+            ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
         })
     }
 
@@ -111,12 +119,14 @@ struct MainView: View {
         case .chat: ChatListView(model: chat, plugins: plugins)
         case .apps:
             HomeView(
-                model: home, plugins: plugins, chat: chat, open: open,
+                model: home, plugins: plugins, chat: chat, settings: settings, open: open,
                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-                showSettings: { showsSettings = true }, devWebURL: devWebURL
+                showSettings: { settings.path = []; showsSettings = true },
+                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings, devWebURL: devWebURL
             )
         case .settings:
-            SettingsTab(appearance: appearance, chat: chat, plugins: plugins, isPaired: isPaired)
+            SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
+                        isActive: tabs.viewModel.selected == .settings && !showsSettings)
         case .plugin:
             if visited.contains(item.tab), let page = item.page { pluginPage(item.tab, page: page, overlay: false) }
         }
@@ -200,14 +210,6 @@ struct MainView: View {
         return tabs.viewModel.overlay?.page
     }
 
-    private func showHomeRoute(_ route: HomeRoute) {
-        showsSettings = false
-        showsTabSettings = false
-        onboardingGateway = nil
-        tabs.select(.apps)
-        home.requestedRoute = route
-    }
-
     private func openCardRoom(_ roomId: String) {
         showsSettings = false
         showsTabSettings = false
@@ -257,8 +259,30 @@ struct MainView: View {
     }
 }
 
-// 拆出来是为了让 MainView 的正文不超过 SwiftLint 的 type_body_length；同一文件里的扩展能读 private 状态。
+// 底栏和去设置的跳转拆到扩展里，MainView 的正文才不超过 SwiftLint 的 type_body_length；同一文件里的扩展能读 private 状态。
 extension MainView {
+    private func showServerRoute(_ route: SettingsRoute) {
+        let dismissingCover = overlayPresented.wrappedValue || onboardingGateway != nil || showsTabSettings
+        showsTabSettings = false
+        onboardingGateway = nil
+        settings.openServer(route)
+        if tabs.isPinned(.settings) {
+            pendingSettingsPresentation = false
+            showsSettings = false
+            tabs.select(.settings)
+        } else {
+            pendingSettingsPresentation = dismissingCover
+            tabs.send(.closeTabOverlay)
+            if !dismissingCover { showsSettings = true }
+        }
+    }
+
+    private func presentPendingSettings() {
+        guard pendingSettingsPresentation else { return }
+        pendingSettingsPresentation = false
+        showsSettings = true
+    }
+
     private var bottomBar: some View {
         WontonBottomBar(
             items: tabs.viewModel.items.map { item in

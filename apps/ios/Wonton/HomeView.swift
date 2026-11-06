@@ -1,16 +1,18 @@
 import SwiftUI
 import WontonClient
 
-/// “应用”：还没配对时是配对页；配上以后按图标和名字列出已装的插件，最后一格进应用商店，连接和设备在右上角。只渲染
-/// 核心给出的 ViewModel。
+/// “应用”：配对入口、已装插件和应用商店。只渲染核心给出的 ViewModel。
 struct HomeView: View {
     @Bindable var model: HomeModel
     let plugins: PluginsModel
     let chat: ChatModel
+    let settings: SettingsModel
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
     let openCardRoom: (String) -> Void
     let showSettings: () -> Void
+    let showServer: () -> Void
+    var settingsPresented = false
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
@@ -29,44 +31,22 @@ struct HomeView: View {
                     PairingView(model: model)
                         .wontonRootScreen("配对") {
                             if !tabs.isPinned(.settings) {
-                                WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
+                                settingsLink
                             }
                         }
                 } else {
                     launcher
                         .wontonRootScreen("应用") {
                             if !tabs.isPinned(.settings) {
-                                WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
-                            }
-                            connectionLink.overlay(alignment: .topTrailing) {
-                                if plugins.viewModel.coreUpgrade.isPrompting {
-                                    Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
-                                        .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
-                                        .padding(WontonTheme.spacing.s8)
-                                        .allowsHitTesting(false)
-                                }
+                                settingsLink
                             }
                         }
                 }
             }
             .modifier(VisitingRoomModifier(model: chat, tab: .apps, path: $path))
-            .navigationDestination(for: HomeRoute.self) { route in
+            .navigationDestination(for: AppsRoute.self) { route in
                 switch route {
-                case .connection:
-                    ConnectionView(model: model, plugins: plugins)
-                case .connectionDetails:
-                    ConnectionDetailsView(model: model)
-                case .invite:
-                    InviteView(model: model)
-                case .pairing:
-                    PairingView(model: model) { path.removeLast() }
-                        .wontonPushedScreen("重新配对")
-                case .egress:
-                    EgressSettingsView(model: plugins)
-                case .coreUpgrade:
-                    CoreUpgradeView(model: plugins)
-                case .store:
-                    StoreView(model: plugins, open: open)
+                case .store: StoreView(model: plugins, open: open)
                 }
             }
             .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
@@ -76,12 +56,6 @@ struct HomeView: View {
                       let choice = plugin.tabChoices.first else { return }
                 openedDevPage = true
                 tabs.select(choice.tab)
-            }
-            .onChange(of: model.requestedRoute) { _, route in
-                guard let route else { return }
-                model.requestedRoute = nil
-                path = NavigationPath()
-                path.append(route)
             }
             .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
         }
@@ -96,7 +70,7 @@ struct HomeView: View {
                     installedPlugins(installed)
                     HomeStatusPanel(
                         home: model.viewModel, plugins: plugins.viewModel, cards: pendingCards,
-                        showConnection: { path.append(HomeRoute.connection) }, openCardRoom: openCardRoom
+                        showConnection: showServer, openCardRoom: openCardRoom
                     )
                 }
             }
@@ -127,7 +101,7 @@ struct HomeView: View {
             ProblemRow(problem: check.problem) { plugins.send(.refreshPlugins) }
         }
         if installed.plugins.isEmpty {
-            NoPlugins { path.append(HomeRoute.store) }
+            NoPlugins { path.append(AppsRoute.store) }
         } else {
             let cell = GridItem(.adaptive(minimum: WontonTheme.size.launcherCell), spacing: WontonTheme.spacing.s12)
             LazyVGrid(columns: [cell], spacing: WontonTheme.spacing.s24) {
@@ -141,7 +115,7 @@ struct HomeView: View {
                         .accessibilityAction { tap(plugin) }
                         .accessibilityAction(named: "菜单") { menuPlugin = plugin }
                 }
-                NavigationLink(value: HomeRoute.store) { StoreTile() }
+                NavigationLink(value: AppsRoute.store) { StoreTile() }
                     .buttonStyle(.plain)
             }
         }
@@ -205,44 +179,38 @@ struct HomeView: View {
         )
     }
 
-    /// 要主人动手时换成警告；没连上时变浅。
-    @ViewBuilder private var connectionLink: some View {
-        switch model.viewModel.status {
-        case .disconnected(.unauthorized, _), .disconnected(.protocol, _):
-            WontonIconLink(icon: .warning, label: "连接", value: HomeRoute.connection, tint: colors.warning)
-        case .connecting, .disconnected:
-            WontonIconLink(icon: .connection, label: "连接", value: HomeRoute.connection, tint: colors.textSecondary)
-        case .connected, .notConfigured:
-            WontonIconLink(icon: .connection, label: "连接", value: HomeRoute.connection)
-        }
+    private var settingsLink: some View {
+        WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
+            .overlay(alignment: .topTrailing) {
+                if settings.hasServerUpgrade {
+                    Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                        .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
+                        .padding(WontonTheme.spacing.s8)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 
     private var isShowingRejection: Binding<Bool> {
         Binding(
-            get: { model.rejection != nil },
+            get: { tabs.viewModel.selected == .apps && !settingsPresented && model.rejection != nil },
             set: { isShowing in
-                if !isShowing { model.rejection = nil }
+                if !isShowing && tabs.viewModel.selected == .apps && !settingsPresented { model.rejection = nil }
             }
         )
     }
 
     private var isShowingPluginRejection: Binding<Bool> {
         Binding(
-            get: { plugins.rejection != nil },
+            get: { tabs.viewModel.selected == .apps && !settingsPresented && plugins.rejection != nil },
             set: { isShowing in
-                if !isShowing { plugins.rejection = nil }
+                if !isShowing && tabs.viewModel.selected == .apps && !settingsPresented { plugins.rejection = nil }
             }
         )
     }
 }
 
-enum HomeRoute: Hashable {
-    case connection
-    case connectionDetails
-    case invite
-    case pairing
-    case egress
-    case coreUpgrade
+private enum AppsRoute: Hashable {
     case store
 }
 

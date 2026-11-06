@@ -2,6 +2,17 @@ import Network
 import SwiftUI
 import WontonClient
 
+extension HomeStatus {
+    var connectionText: String {
+        switch self {
+        case .notConfigured: "未配对"
+        case .connected: "已连接"
+        case .connecting: ConnectionNotice.connecting.sentence
+        case .disconnected: ConnectionNotice.unreachable(retrying: false).sentence
+        }
+    }
+}
+
 extension ConnectionNotice {
     var sentence: String {
         switch self {
@@ -45,7 +56,7 @@ extension WontonBarStatus {
 struct ConnectionLine: View {
     let notice: ConnectionNotice
     let retry: () -> Void
-    let open: (HomeRoute) -> Void
+    let open: (SettingsRoute) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -59,7 +70,7 @@ struct ConnectionLine: View {
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 } else {
                     if let retrying = notice.retrying { RetryButton(retrying: retrying, retry: retry) }
-                    Button("查看连接") { open(.connection) }
+                    Button("查看连接") { open(.server) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
@@ -110,10 +121,11 @@ extension DeviceNetwork {
     }
 }
 
-/// 和家里服务器的连接：三行诊断，以及添加设备、重新配对。
+/// 和家里服务器的连接、诊断和管理入口。
 struct ConnectionView: View {
     let model: HomeModel
     let plugins: PluginsModel
+    @Environment(\.wontonColors) private var colors
 
     private var view: HomeViewModel { model.viewModel }
 
@@ -131,17 +143,17 @@ struct ConnectionView: View {
                     RetryButton(retrying: retrying) { model.send(.retryConnection) }
                 }
                 WontonGroup {
-                    NavigationLink(value: HomeRoute.connectionDetails) {
+                    NavigationLink(value: SettingsRoute.connectionDetails) {
                         WontonRow(title: "详情", showsForward: true)
                     }
                 }
                 .buttonStyle(.plain)
                 WontonGroup {
-                    NavigationLink(value: HomeRoute.egress) {
+                    NavigationLink(value: SettingsRoute.egress) {
                         WontonRow(title: "出网代理", showsForward: true)
                     }
                     WontonSeparator()
-                    NavigationLink(value: HomeRoute.coreUpgrade) {
+                    NavigationLink(value: SettingsRoute.coreUpgrade) {
                         WontonRow(
                             title: "升级服务器",
                             value: plugins.viewModel.coreUpgrade.isPrompting ? "有新版本" : nil,
@@ -151,19 +163,21 @@ struct ConnectionView: View {
                 }
                 .buttonStyle(.plain)
                 WontonGroup {
-                    NavigationLink(value: HomeRoute.invite) {
+                    NavigationLink(value: SettingsRoute.invite) {
                         WontonRow(title: "添加设备", showsForward: true)
                     }
-                    WontonSeparator()
-                    NavigationLink(value: HomeRoute.pairing) {
-                        WontonRow(title: "重新配对", showsForward: true)
+                }
+                .buttonStyle(.plain)
+                WontonGroup {
+                    NavigationLink(value: SettingsRoute.pairing) {
+                        WontonRow(title: "重新配对", titleTint: colors.danger, showsForward: true)
                     }
                 }
                 .buttonStyle(.plain)
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen("连接")
+        .wontonPushedScreen("家里的服务器")
     }
 }
 

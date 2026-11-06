@@ -2,343 +2,125 @@ import SwiftUI
 import WontonClient
 
 struct SettingsTab: View {
+    @Bindable var model: SettingsModel
     let appearance: AppearanceModel
     let chat: ChatModel
+    let home: HomeModel
     let plugins: PluginsModel
-    let isPaired: Bool
     var isModal = false
+    var isActive = true
     @Environment(\.dismiss) private var dismiss
     @State private var isEditingProfile = false
+    @State private var isChoosingAgent = false
+    @Environment(OnboardingModel.self) private var onboarding
 
     var body: some View {
-        NavigationStack {
-            // 资料存在家里的服务器上，没配对时没有地方存。
-            SettingsView(model: appearance, chat: chat, editProfile: isPaired ? { isEditingProfile = true } : nil)
+        NavigationStack(path: $model.path) {
+            SettingsView(model: model, editProfile: { isEditingProfile = true },
+                         chooseAgent: { isChoosingAgent = true })
                 .wontonRootScreen(TabText.settings) {
                     if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
                 }
-                .navigationDestination(for: SettingsRoute.self) { route in
-                    switch route {
-                    case .chatBackup: ChatBackupView(model: chat)
-                    case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
-                    }
-                }
+                .navigationDestination(for: SettingsRoute.self, destination: destination)
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
+        .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
+        .wontonDialog(problem: home.rejection, isPresented: Binding(
+            get: { isActive && home.rejection != nil }, set: { if !$0 && isActive { home.rejection = nil } }
+        ))
+        .wontonDialog(problem: plugins.rejection, isPresented: Binding(
+            get: { isActive && plugins.rejection != nil }, set: { if !$0 && isActive { plugins.rejection = nil } }
+        ))
+    }
+
+    @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
+        switch route {
+        case .server: ConnectionView(model: home, plugins: plugins)
+        case .connectionDetails: ConnectionDetailsView(model: home)
+        case .invite: InviteView(model: home)
+        case .pairing:
+            PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
+                .wontonPushedScreen("重新配对")
+        case .egress: EgressSettingsView(model: plugins)
+        case .coreUpgrade: CoreUpgradeView(model: plugins)
+        case .appearance: AppearanceView(model: appearance).wontonPushedScreen("外观")
+        case .chatBackup: ChatBackupView(model: chat)
+        case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
+        case .about: AboutView()
+        }
     }
 }
 
-private enum SettingsRoute: Hashable {
-    case chatBackup
-    case bottomBar
-}
-
-/// 设置页：明暗、重点色、字号和字体。设置都在核心，这里只渲染、把选择发回去，改了整个 App 当场跟着变。
 struct SettingsView: View {
-    let model: AppearanceModel
-    let chat: ChatModel
-    let editProfile: (() -> Void)?
-    @Environment(\.wontonColors) private var colors
+    let model: SettingsModel
+    let editProfile: () -> Void
+    let chooseAgent: () -> Void
     @Environment(OnboardingModel.self) private var onboarding
-    @State private var showsMoreColors: Bool
-    @State private var hexText: String
-    @State private var isHexInvalid = false
-
-    init(model: AppearanceModel, chat: ChatModel, editProfile: (() -> Void)?) {
-        self.model = model
-        self.chat = chat
-        self.editProfile = editProfile
-        let appearance = model.viewModel
-        _showsMoreColors = State(initialValue: !appearance.presets.contains(appearance.accent))
-        _hexText = State(initialValue: accentHex(color: appearance.accent))
-    }
-
-    private var appearance: AppearanceViewModel { model.viewModel }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                if let problem = model.rejection ?? appearance.problem?.problem {
-                    ProblemNotice(problem: problem)
+                if let problem = onboarding.rejection ?? onboarding.viewModel.problem?.problem {
+                    ProblemRow(problem: problem) { onboarding.send(.refreshOnboarding) }
                 }
-                if let editProfile {
+                ForEach(Array(model.viewModel.sections.enumerated()), id: \.offset) { _, section in
                     WontonGroup {
-                        Button(action: editProfile) {
-                            WontonRow(title: "你的资料", showsForward: true)
+                        ForEach(Array(section.entries.enumerated()), id: \.offset) { index, entry in
+                            if index > 0 { WontonSeparator() }
+                            row(entry)
                         }
-                        .buttonStyle(.plain)
-                    }
-                    OnboardingSettings(model: onboarding)
-                }
-                WontonGroup {
-                    NavigationLink(value: SettingsRoute.chatBackup) {
-                        WontonRow(
-                            title: "聊天记录备份",
-                            value: chat.viewModel.encryption.recovery.backupValue,
-                            showsForward: true
-                        )
                     }
                     .buttonStyle(.plain)
                 }
-                WontonGroup {
-                    NavigationLink(value: SettingsRoute.bottomBar) {
-                        WontonRow(title: TabText.bottomBar, showsForward: true)
-                    }
-                    .buttonStyle(.plain)
-                }
-                SettingsPreview()
-                section("明暗") {
-                    choices(appearance.themeModes, title: \.label, value: \.value, selected: appearance.themeMode) {
-                        model.send(.setThemeMode(mode: $0))
-                    }
-                }
-                section("重点色") { accent }
-                section("字号") {
-                    choices(appearance.textSizes, title: \.label, value: \.value, selected: appearance.textSize) {
-                        model.send(.setTextSize(size: $0))
-                    }
-                }
-                section("字体") { fonts }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .scrollDismissesKeyboard(.interactively)
-        .onChange(of: appearance.accent) { _, accent in
-            hexText = accentHex(color: accent)
-            isHexInvalid = false
-        }
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(title)
-                .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.textSecondary))
-                .padding(.horizontal, WontonTheme.spacing.s16)
-                .accessibilityAddTraits(.isHeader)
-            content()
-        }
-    }
-
-    private func choices<Option, Value: Equatable>(
-        _ options: [Option],
-        title: KeyPath<Option, String>,
-        value: KeyPath<Option, Value>,
-        selected: Value,
-        select: @escaping (Value) -> Void
-    ) -> some View {
-        WontonGroup {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                if index > 0 { WontonSeparator() }
-                ChoiceRow(title: option[keyPath: title], isSelected: option[keyPath: value] == selected) {
-                    select(option[keyPath: value])
-                }
+    @ViewBuilder private func row(_ entry: SettingsEntry) -> some View {
+        switch entry {
+        case .profile:
+            Button(action: editProfile) { WontonRow(title: "你的资料", showsForward: true) }
+        case let .server(status, upgrade):
+            NavigationLink(value: SettingsRoute.server) {
+                WontonRow(title: "家里的服务器", value: status.connectionText, badge: upgrade, showsForward: true)
             }
-        }
-    }
-
-    /// 每一行用自己的字体写，选之前就看得出差别。系统字体的圆体、衬线和等宽都不带中文字形，所以要有拉丁字母的样例。
-    private var fonts: some View {
-        WontonGroup {
-            ForEach(Array(appearance.fonts.enumerated()), id: \.offset) { index, option in
-                if index > 0 { WontonSeparator() }
-                ChoiceRow(title: option.label, sample: "Aa", isSelected: option.value == appearance.font) {
-                    model.send(.setFont(font: option.value))
-                }
-                .fontDesign(option.value.design)
+        case .appearance:
+            NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }
+        case .bottomBar:
+            NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
+        case .defaultAgent:
+            Button(action: chooseAgent) { WontonRow(title: "默认 Agent", showsForward: true) }
+        case let .chatBackup(recovery):
+            NavigationLink(value: SettingsRoute.chatBackup) {
+                WontonRow(title: "聊天记录备份", value: recovery.backupValue, showsForward: true)
             }
-        }
-    }
-
-    private var accent: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            WontonGroup {
-                swatches(appearance.presets, label: "重点色")
-                    .padding(WontonTheme.spacing.s8)
-                WontonSeparator()
-                Button {
-                    showsMoreColors.toggle()
-                } label: {
-                    MoreColorsRow(
-                        custom: appearance.presets.contains(appearance.accent)
-                            ? nil : accentHex(color: appearance.accent),
-                        isExpanded: showsMoreColors
-                    )
-                }
-                .buttonStyle(.plain)
-                if showsMoreColors {
-                    WontonSeparator()
-                    swatches(appearance.moreColors, label: "更多颜色")
-                        .padding(WontonTheme.spacing.s8)
-                }
+        case .restartOnboarding:
+            Button { onboarding.send(.restartOnboarding) } label: { WontonRow(title: "重看引导") }
+        case .about:
+            NavigationLink(value: SettingsRoute.about) {
+                WontonRow(title: "关于", value: AppVersion.full, showsForward: true)
             }
-            if showsMoreColors {
-                hexField
-            }
-        }
-    }
-
-    /// 放在组外面：输入框的底和组的底同色，放进去就看不见了。
-    @ViewBuilder private var hexField: some View {
-        TextField("#RRGGBB", text: $hexText)
-            .textFieldStyle(.plain)
-            .keyboardType(.asciiCapable)
-            .textInputAutocapitalization(.characters)
-            .autocorrectionDisabled()
-            .submitLabel(.done)
-            .onSubmit(submitHex)
-            .onChange(of: hexText) { isHexInvalid = false }
-            .wontonField()
-            .accessibilityLabel("颜色值")
-        if isHexInvalid {
-            Text("颜色要写成 #RRGGBB")
-                .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.danger))
-        }
-    }
-
-    private func swatches(_ swatches: [Rgb], label: String) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: Int(appearance.swatchColumns))
-        return LazyVGrid(columns: columns, spacing: 0) {
-            ForEach(Array(swatches.enumerated()), id: \.offset) { index, swatch in
-                let isSelected = swatch == appearance.accent
-                Button {
-                    model.send(.setAccentColor(color: swatch))
-                } label: {
-                    Swatch(color: swatch, isSelected: isSelected)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(label) \(index + 1)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-    }
-
-    private func submitHex() {
-        if let color = parseAccent(text: hexText) {
-            model.send(.setAccentColor(color: color))
-        } else {
-            isHexInvalid = true
         }
     }
 }
 
-private struct ChoiceRow: View {
-    let title: String
-    var sample: String?
-    let isSelected: Bool
-    let action: () -> Void
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: WontonTheme.spacing.s12) {
-                Text(title)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textPrimary))
-                if let sample {
-                    Text(sample)
-                        .wontonText(WontonTheme.typography.body)
-                        .foregroundStyle(Color(colors.textSecondary))
-                        .accessibilityHidden(true)
-                }
-                Spacer(minLength: 0)
-                if isSelected {
-                    WontonIcon.check.view(size: WontonTheme.size.iconSmall)
-                        .foregroundStyle(Color(colors.accentInk))
-                }
-            }
-            .padding(.horizontal, WontonTheme.spacing.s16)
-            .padding(.vertical, WontonTheme.spacing.s12)
-            .frame(minHeight: WontonTheme.size.target)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+private enum AppVersion {
+    static var short: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+    }
+    static var full: String {
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
+        return "\(short) (\(build))"
     }
 }
 
-private struct MoreColorsRow: View {
-    /// 选的颜色不在色板里时的色值。
-    let custom: String?
-    let isExpanded: Bool
-    @Environment(\.wontonColors) private var colors
-
+private struct AboutView: View {
     var body: some View {
-        HStack(spacing: WontonTheme.spacing.s12) {
-            Text("更多")
-                .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(colors.textPrimary))
-            Spacer(minLength: 0)
-            if let custom {
-                Text(custom)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
-            WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(colors.textSecondary))
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        ScrollView {
+            WontonGroup { WontonRow(title: "版本", value: AppVersion.full) }
+                .padding(WontonTheme.spacing.pageInset)
         }
-        .padding(.horizontal, WontonTheme.spacing.s16)
-        .padding(.vertical, WontonTheme.spacing.s12)
-        .frame(minHeight: WontonTheme.size.target)
-        .contentShape(Rectangle())
-        .accessibilityValue(isExpanded ? "已展开" : "已收起")
-    }
-}
-
-/// 一段小对话：改的每一项都在这里当场看到。
-private struct SettingsPreview: View {
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        VStack(spacing: WontonTheme.spacing.s8) {
-            HStack {
-                Text("今晚吃什么？")
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .padding(.horizontal, WontonTheme.spacing.s12)
-                    .padding(.vertical, WontonTheme.spacing.s8)
-                    .background {
-                        RoundedRectangle(cornerRadius: WontonTheme.radii.bubble).fill(Color(colors.surfaceSubtle))
-                    }
-                Spacer(minLength: WontonTheme.spacing.s48)
-            }
-            HStack {
-                Spacer(minLength: WontonTheme.spacing.s48)
-                HStack(alignment: .lastTextBaseline, spacing: WontonTheme.spacing.s8) {
-                    Text("云吞").foregroundStyle(Color(colors.textOnAccentFill))
-                    Text("21:08")
-                        .wontonText(WontonTheme.typography.caption)
-                        .foregroundStyle(Color(colors.accentInkOnFill))
-                }
-                .padding(.horizontal, WontonTheme.spacing.s12)
-                .padding(.vertical, WontonTheme.spacing.s8)
-                .accentFill(RoundedRectangle(cornerRadius: WontonTheme.radii.bubble))
-            }
-        }
-        .wontonText(WontonTheme.typography.body)
-        .accessibilityHidden(true)
-    }
-}
-
-/// 选中时外面多一圈：只靠颜色的话，和页面底色接近的色板看不出选没选中。
-private struct Swatch: View {
-    let color: Rgb
-    let isSelected: Bool
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color(color))
-                .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: 1) }
-                .frame(width: 36, height: 36)
-            if isSelected {
-                Circle().strokeBorder(Color(colors.textPrimary), lineWidth: 2).frame(width: 46, height: 46)
-            }
-        }
-        .frame(height: WontonTheme.size.target)
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
+        .wontonPushedScreen("关于")
     }
 }

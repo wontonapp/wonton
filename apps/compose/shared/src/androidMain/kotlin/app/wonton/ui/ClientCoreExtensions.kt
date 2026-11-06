@@ -7,6 +7,7 @@ import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PluginsViewModel
+import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.TimelineUpdate
 import app.wonton.protocol.TransfersViewModel
 import kotlinx.coroutines.flow.Flow
@@ -66,6 +67,15 @@ fun ClientCore.transfersUpdates(): Flow<TransfersViewModel> = flow {
 /** 把外观的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
 fun ClientCore.appearanceUpdates(): Flow<AppearanceViewModel> = flow {
     subscribeAppearance().use { subscription ->
+        while (true) {
+            emit(subscription.next() ?: break)
+        }
+    }
+}
+
+/** 把设置首页的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
+fun ClientCore.settingsUpdates(): Flow<SettingsViewModel> = flow {
+    subscribeSettings().use { subscription ->
         while (true) {
             emit(subscription.next() ?: break)
         }

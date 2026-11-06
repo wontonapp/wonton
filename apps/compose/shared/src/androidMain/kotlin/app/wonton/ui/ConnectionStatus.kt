@@ -19,6 +19,7 @@ import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionNotice
 import app.wonton.protocol.DeviceNetwork
 import app.wonton.protocol.HomePath
+import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.ui.design.WontonBarStatus
 import app.wonton.ui.design.WontonGroup
@@ -31,6 +32,14 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import java.text.DateFormat
 import java.util.Date
+
+internal val HomeStatus.connectionText: String
+    get() = when (this) {
+        is HomeStatus.NotConfigured -> "未配对"
+        is HomeStatus.Connected -> "已连接"
+        is HomeStatus.Connecting -> ConnectionNotice.Connecting.sentence
+        is HomeStatus.Disconnected -> ConnectionNotice.Unreachable(false).sentence
+    }
 
 val ConnectionNotice.sentence: String
     get() = when (this) {
@@ -59,7 +68,7 @@ private val ConnectionNotice.retrying: Boolean?
 fun connectionBarStatus(
     notice: ConnectionNotice?,
     onRetry: () -> Unit,
-    onOpen: (HomePage) -> Unit,
+    onOpen: (SettingsSubpage) -> Unit,
 ): WontonBarStatus {
     return when {
         notice == null -> WontonBarStatus()
@@ -70,7 +79,7 @@ fun connectionBarStatus(
 
 /** 长时间连不上：一句话和下一步。不用红色：还在自动重试，也不是主人做错了什么；要主人动手的用警告色。 */
 @Composable
-private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen: (HomePage) -> Unit) {
+private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen: (SettingsSubpage) -> Unit) {
     val colors = WontonTheme.colors
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(
@@ -80,10 +89,10 @@ private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             if (notice is ConnectionNotice.DeviceRejected) {
-                WontonSmallButton("重新配对", { onOpen(HomePage.PAIRING) })
+                WontonSmallButton("重新配对", { onOpen(SettingsSubpage.PAIRING) })
             } else {
                 notice.retrying?.let { RetryButton(it, onRetry) }
-                WontonSmallButton("查看连接", { onOpen(HomePage.CONNECTION) })
+                WontonSmallButton("查看连接", { onOpen(SettingsSubpage.SERVER) })
             }
         }
     }
@@ -106,16 +115,16 @@ private fun RetryButton(retrying: Boolean, onRetry: () -> Unit) {
     }
 }
 
-/** 和家里服务器的连接：三行诊断，以及添加设备、重新配对。 */
+/** 设置里的家用服务器：连接诊断和服务器管理入口。 */
 @Composable
 fun ConnectionPage(
     viewModel: HomeViewModel,
     plugins: PluginsState,
     onRetry: () -> Unit,
-    onNavigate: (HomePage) -> Unit,
+    onNavigate: (SettingsSubpage) -> Unit,
 ) {
     val details = viewModel.details
-    WontonScreen(bar = { WontonPushedBar("连接", { onNavigate(HomePage.LAUNCHER) }) }) {
+    WontonScreen(bar = { WontonPushedBar("家里的服务器", { onNavigate(SettingsSubpage.MAIN) }) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
@@ -129,22 +138,26 @@ fun ConnectionPage(
             }
             viewModel.notice?.retrying?.let { RetryButton(it, onRetry) }
             WontonGroup {
-                WontonRow("详情", showsForward = true, onClick = { onNavigate(HomePage.CONNECTION_DETAILS) })
+                WontonRow("详情", showsForward = true, onClick = { onNavigate(SettingsSubpage.CONNECTION_DETAILS) })
             }
             WontonGroup {
-                WontonRow("出网代理", showsForward = true, onClick = { onNavigate(HomePage.EGRESS) })
+                WontonRow("出网代理", showsForward = true, onClick = { onNavigate(SettingsSubpage.EGRESS) })
                 WontonSeparator()
                 WontonRow(
                     "升级服务器",
                     value = "有新版本".takeIf { plugins.viewModel.coreUpgrade.isPrompting() },
                     showsForward = true,
-                    onClick = { onNavigate(HomePage.CORE_UPGRADE) },
+                    onClick = { onNavigate(SettingsSubpage.CORE_UPGRADE) },
                 )
             }
             WontonGroup {
-                WontonRow("添加设备", showsForward = true, onClick = { onNavigate(HomePage.INVITE) })
-                WontonSeparator()
-                WontonRow("重新配对", showsForward = true, onClick = { onNavigate(HomePage.PAIRING) })
+                WontonRow("添加设备", showsForward = true, onClick = { onNavigate(SettingsSubpage.INVITE) })
+            }
+            WontonGroup {
+                WontonRow(
+                    "重新配对", titleTint = WontonTheme.colors.danger, showsForward = true,
+                    onClick = { onNavigate(SettingsSubpage.PAIRING) },
+                )
             }
         }
     }

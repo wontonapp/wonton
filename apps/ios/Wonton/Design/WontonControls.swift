@@ -55,13 +55,12 @@ struct WontonIconLink<Value: Hashable>: View {
     let icon: WontonIcon
     let label: String
     let value: Value
-    var tint: Rgb?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         NavigationLink(value: value) {
             icon.view()
-                .foregroundStyle(Color(tint ?? colors.textPrimary))
+                .foregroundStyle(Color(colors.textPrimary))
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 .contentShape(Rectangle())
         }
@@ -84,8 +83,10 @@ struct WontonGroup<Content: View>: View {
 /// 列表行。点按语义由外面的 `Button` 或 `NavigationLink` 给（`.buttonStyle(.plain)`）。
 struct WontonRow: View {
     let title: String
+    var titleTint: Rgb?
     var value: String?
     var valueTint: Rgb?
+    var badge = false
     var showsForward = false
     @Environment(\.wontonColors) private var colors
 
@@ -93,7 +94,7 @@ struct WontonRow: View {
         HStack(spacing: WontonTheme.spacing.s12) {
             Text(title)
                 .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(colors.textPrimary))
+                .foregroundStyle(Color(titleTint ?? colors.textPrimary))
                 .layoutPriority(1)
             Spacer(minLength: 0)
             if let value {
@@ -101,6 +102,10 @@ struct WontonRow: View {
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(valueTint ?? colors.textSecondary))
                     .multilineTextAlignment(.trailing)
+            }
+            if badge {
+                Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                    .accessibilityLabel("有新版本")
             }
             if showsForward {
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)

@@ -1,16 +1,13 @@
 import Observation
 import WontonClient
 
-/// “家”页面和核心之间的桥：持有核心推来的连接 ViewModel，把用户操作转发给核心。
-/// 这里不做任何业务判断。
+/// 持有核心推来的连接 ViewModel，把用户操作转发给核心。
 @MainActor
 @Observable
 final class HomeModel {
     private(set) var viewModel: HomeViewModel
     /// 核心拒绝上一个操作的原因，由界面弹窗展示。
     var rejection: Problem?
-    /// 别的页面上的“查看连接”“重新配对”：切到“家”以后进这一页。
-    var requestedRoute: HomeRoute?
 
     private let core: ClientCore
 

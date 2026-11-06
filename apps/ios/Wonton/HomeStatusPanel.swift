@@ -47,10 +47,10 @@ struct HomeStatusPanel: View {
     private var connection: String {
         switch home.status {
         case .connected:
-            guard let path = home.path else { return "已连接" }
-            return "已连接 · \(path.relay ? "中继" : "直连")"
+            guard let path = home.path else { return home.status.connectionText }
+            return "\(home.status.connectionText) · \(path.relay ? "中继" : "直连")"
         default:
-            return home.notice?.sentence ?? "连接中…"
+            return home.notice?.sentence ?? home.status.connectionText
         }
     }
 

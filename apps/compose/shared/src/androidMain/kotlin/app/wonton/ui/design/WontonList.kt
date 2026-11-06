@@ -1,6 +1,7 @@
 package app.wonton.ui.design
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,7 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Rgb
 import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.WontonIcon
@@ -43,6 +48,8 @@ fun WontonRow(
     value: String? = null,
     valueTint: Rgb? = null,
     showsForward: Boolean = false,
+    titleTint: Rgb? = null,
+    badge: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
@@ -50,11 +57,12 @@ fun WontonRow(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .then(if (badge) Modifier.semantics { stateDescription = "有新版本" } else Modifier)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        Text(title, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+        Text(title, style = WontonTheme.typography.body, color = (titleTint ?: colors.textPrimary).toColor())
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
             value?.let {
                 Text(
@@ -63,6 +71,13 @@ fun WontonRow(
                     color = (valueTint ?: colors.textSecondary).toColor(),
                 )
             }
+        }
+        if (badge) {
+            Box(
+                Modifier.size(12.dp)
+                    .background(colors.primary.toColor(), CircleShape)
+                    .border(2.dp, colors.canvas.toColor(), CircleShape),
+            )
         }
         if (showsForward) {
             Icon(

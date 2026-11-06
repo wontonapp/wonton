@@ -60,8 +60,9 @@ fun HomeStatusPanel(
 
 private fun connectionText(home: HomeViewModel): String =
     when (home.status) {
-        is HomeStatus.Connected -> home.path?.let { "已连接 · ${if (it.relay) "中继" else "直连"}" } ?: "已连接"
-        else -> home.notice?.sentence ?: "连接中…"
+        is HomeStatus.Connected -> home.path?.let { "${home.status.connectionText} · ${if (it.relay) "中继" else "直连"}" }
+            ?: home.status.connectionText
+        else -> home.notice?.sentence ?: home.status.connectionText
     }
 
 private fun needsTheOwner(home: HomeViewModel): Boolean =

@@ -16,13 +16,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -230,30 +232,29 @@ fun Modifier.accentFill(shape: Shape, border: Boolean = true): Modifier {
         )
 }
 
-/** 根页面的标题栏：大标题在前，操作在后。 */
+/** 根页面的 Material 标题栏：标题靠左，操作在后。 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WontonRootBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
     val status = LocalWontonBarStatus.current
-    Column(
-        Modifier.fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = WontonTheme.spacing.pageInset),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.topBar),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-        ) {
-            Text(
-                status.title ?: title,
-                Modifier.weight(1f).semantics { heading() },
-                style = WontonTheme.typography.screenTitle,
-                color = WontonTheme.colors.textPrimary.toColor(),
-            )
-            actions()
-        }
+    Column(Modifier.fillMaxWidth()) {
+        TopAppBar(
+            title = {
+                Text(
+                    status.title ?: title,
+                    Modifier.semantics { heading() },
+                    style = WontonTheme.typography.screenTitle,
+                    color = WontonTheme.colors.textPrimary.toColor(),
+                )
+            },
+            actions = actions,
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
+        )
         status.line?.let { line ->
-            Box(Modifier.padding(bottom = WontonTheme.spacing.s8)) { line() }
+            Box(
+                Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
+                    .padding(bottom = WontonTheme.spacing.s8),
+            ) { line() }
         }
     }
 }
@@ -268,11 +269,12 @@ class WontonBarStatus(
 val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
 
 /**
- * 进入下一层的页面的标题栏：返回在前，标题居中，操作在后。
+ * 进入下一层的 Material 标题栏：返回在前，标题靠左，操作在后。
  *
  * `showsStatus` 把连接状态放进副标题；`showsStatusLine` 给内容全靠连接的页面：长时间连不上时换成标题下面那一行，带下一步，
  * 不然页面只会一直转圈。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WontonPushedBar(
     title: String,
@@ -286,41 +288,33 @@ fun WontonPushedBar(
     val status = LocalWontonBarStatus.current
     val line = status.line.takeIf { showsStatusLine }
     val subtitle = status.subtitle.takeIf { (showsStatus || showsStatusLine) && line == null }
-    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
-        Box(
-            Modifier.fillMaxWidth()
-                .heightIn(min = WontonTheme.size.topBar)
-                .padding(horizontal = WontonTheme.spacing.s4),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                Modifier.padding(horizontal = WontonTheme.size.target + WontonTheme.spacing.s8),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    title,
-                    Modifier.semantics { heading() },
-                    style = WontonTheme.typography.itemTitle,
-                    color = WontonTheme.colors.textPrimary.toColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                subtitle?.let {
+    Column(Modifier.fillMaxWidth()) {
+        TopAppBar(
+            title = {
+                Column {
                     Text(
-                        it,
-                        style = WontonTheme.typography.caption,
-                        color = WontonTheme.colors.textSecondary.toColor(),
+                        title,
+                        Modifier.semantics { heading() },
+                        style = WontonTheme.typography.itemTitle,
+                        color = WontonTheme.colors.textPrimary.toColor(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    subtitle?.let {
+                        Text(
+                            it,
+                            style = WontonTheme.typography.caption,
+                            color = WontonTheme.colors.textSecondary.toColor(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                WontonIconButton(icon, iconLabel, onBack)
-                Box(Modifier.weight(1f))
-                actions()
-            }
-        }
+            },
+            navigationIcon = { WontonIconButton(icon, iconLabel, onBack) },
+            actions = actions,
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
+        )
         line?.let {
             Box(
                 Modifier.padding(horizontal = WontonTheme.spacing.pageInset)

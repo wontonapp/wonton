@@ -41,7 +41,7 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 ## 连家里的服务器（开发）
 
 起本地核心后（`deploy/dev/core/dev.sh up`），还没配对时“应用”页就是配对页：扫局域网状态页上或 `dev.sh pair` 打出的
-二维码（CameraX 取景、ZXing 识别），也可以粘贴码的文字。配上以后“应用”页右上角“连接”里的“添加设备”向核心要一个码，用 ZXing
+二维码（CameraX 取景、ZXing 识别），也可以粘贴码的文字。配上以后设置的“家里的服务器”里的“添加设备”向核心要一个码，用 ZXing
 画成二维码给新设备扫。票据的直连地址必须能从模拟器到达。Linux 的 headless 模拟器可用核心容器的 Docker
 网络地址和隧道端口；`10.0.2.2` 经宿主端口映射时可能改变 UDP 回包源地址，导致握手超时。经 intent 把码传给 Debug 构建：
 
@@ -56,6 +56,8 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code
 - 核心日志写在 App 的 `files/core.log`（`--es wonton_log` 改过滤规则）：
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
+
+设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、重点色、字号和字体收在“外观”二级页，“关于”只显示 App 版本和构建号（ADR-0028）。
 
 ## 新用户引导
 

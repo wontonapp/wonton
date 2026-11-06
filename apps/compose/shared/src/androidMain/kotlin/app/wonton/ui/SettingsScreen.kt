@@ -1,407 +1,131 @@
 package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.hideFromAccessibility
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import app.wonton.client.ClientCore
-import app.wonton.client.accentHex
-import app.wonton.client.parseAccent
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
-import app.wonton.protocol.RecoveryStatus
-import app.wonton.protocol.Rgb
+import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.SettingsEntry
+import app.wonton.protocol.SettingsViewModel
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonScreen
-import app.wonton.ui.design.WontonTextField
+import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.accentFill
-import app.wonton.ui.design.family
-import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Check
-import app.wonton.ui.icons.Forward
-import app.wonton.ui.icons.WontonIcon
-
-private const val EXPANDED_DEGREES = 90f
-
-/** 设置下面的页面，第一层是 [MAIN]。 */
-enum class SettingsSubpage { MAIN, BACKUP, PROFILE, TABS }
 
 @Composable
 fun SettingsPage(
     plugins: PluginsState,
+    settings: SettingsViewModel,
+    home: HomeViewModel,
     appearance: AppearanceViewModel,
     chat: ChatViewModel,
-    paired: Boolean,
     subpage: SettingsSubpage,
     onClose: (() -> Unit)? = null,
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
+    val back = { onSubpage(subpage.parent()) }
+    val version = appVersion()
     var rejection by remember { mutableStateOf<Problem?>(null) }
+    BackHandler(enabled = subpage != SettingsSubpage.MAIN, onBack = back)
     when (subpage) {
-        SettingsSubpage.TABS -> TabsSettingsScreen(LocalTabs.current.viewModel) {
-            onSubpage(SettingsSubpage.MAIN)
+        SettingsSubpage.TABS -> TabsSettingsScreen(LocalTabs.current.viewModel, back)
+        SettingsSubpage.BACKUP -> ChatBackupScreen(
+            chat.encryption,
+            onAction = { action -> rejection = core.send(action) },
+            onClose = back,
+        )
+        SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)
+        SettingsSubpage.APPEARANCE -> WontonScreen(bar = { WontonPushedBar("外观", back) }) {
+            AppearanceScreen(core, appearance)
         }
-        SettingsSubpage.BACKUP -> {
-            BackHandler { onSubpage(SettingsSubpage.MAIN) }
-            ChatBackupScreen(
-                chat.encryption,
-                onAction = { action -> rejection = core.send(action) },
-                onClose = { onSubpage(SettingsSubpage.MAIN) },
-            )
-        }
-        SettingsSubpage.PROFILE -> OwnerProfilePage(plugins) { onSubpage(SettingsSubpage.MAIN) }
+        SettingsSubpage.ABOUT -> AboutPage(version, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = tabText("设置", "Settings")
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
-        }) {
-            SettingsScreen(
-                core,
-                appearance,
-                chat.encryption.recovery,
-                // 资料存在家里的服务器上，没配对时没有地方存。
-                onOpenProfile = { onSubpage(SettingsSubpage.PROFILE) }.takeIf { paired },
-                onOpenBackup = { onSubpage(SettingsSubpage.BACKUP) },
-                onOpenTabs = { onSubpage(SettingsSubpage.TABS) },
-            )
-        }
+        }) { SettingsScreen(settings, version, onSubpage) }
+        else -> ServerSettingsPage(plugins, home, subpage, onSubpage)
     }
     chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.DismissChatProblem) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
-/** 设置页：明暗、重点色、字号和字体。设置都在核心，这里只渲染、把选择发回去，改了整个 App 当场跟着变。 */
 @Composable
-private fun SettingsScreen(
-    core: ClientCore,
-    appearance: AppearanceViewModel,
-    recovery: RecoveryStatus,
-    onOpenProfile: (() -> Unit)?,
-    onOpenBackup: () -> Unit,
-    onOpenTabs: () -> Unit,
-) {
-    var rejection by remember { mutableStateOf<Problem?>(null) }
-    val send = { action: Action -> rejection = core.send(action) }
+private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpage: (SettingsSubpage) -> Unit) {
+    val onboarding = LocalOnboarding.current
+    var choosingAgent by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        (rejection ?: appearance.problem?.problem)?.let { ProblemNotice(it) }
-        WontonGroup {
-            WontonRow(tabText("底栏", "Tab bar"), showsForward = true, onClick = onOpenTabs)
-        }
-        onOpenProfile?.let {
-            WontonGroup { WontonRow("你的资料", showsForward = true, onClick = it) }
-            OnboardingSettingsRows()
-        }
-        WontonGroup {
-            WontonRow("聊天记录备份", recovery.backupValue, showsForward = true, onClick = onOpenBackup)
-        }
-        SettingsPreview()
-        Section("明暗") {
+        settings.sections.forEach { section ->
             WontonGroup {
-                appearance.themeModes.forEachIndexed { index, option ->
-                    if (index > 0) SettingsSeparator()
-                    ChoiceRow(option.label, option.value == appearance.themeMode) {
-                        send(Action.SetThemeMode(option.value))
-                    }
+                section.entries.forEachIndexed { index, entry ->
+                    if (index > 0) WontonSeparator()
+                    SettingsEntryRow(entry, version, onSubpage) { choosingAgent = true }
                 }
             }
         }
-        Section("重点色") { AccentGroup(appearance, send) }
-        Section("字号") {
-            WontonGroup {
-                appearance.textSizes.forEachIndexed { index, option ->
-                    if (index > 0) SettingsSeparator()
-                    ChoiceRow(option.label, option.value == appearance.textSize) {
-                        send(Action.SetTextSize(option.value))
-                    }
-                }
-            }
-        }
-        Section("字体") {
-            WontonGroup {
-                appearance.fonts.forEachIndexed { index, option ->
-                    if (index > 0) SettingsSeparator()
-                    ChoiceRow(option.label, option.value == appearance.font, FontSample(option.value.family)) {
-                        send(Action.SetFont(option.value))
-                    }
-                }
-            }
+        onboarding.view.problem?.let { problem ->
+            OnboardingProblem(problem.onboardingTitle(), problem.message) { onboarding.send(Action.RefreshOnboarding) }
         }
     }
+    if (choosingAgent) DefaultAgentSelection { choosingAgent = false }
 }
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        Text(
-            title,
-            Modifier.padding(horizontal = WontonTheme.spacing.s16).semantics { heading() },
-            style = WontonTheme.typography.supporting,
-            color = WontonTheme.colors.textSecondary.toColor(),
-        )
-        content()
-    }
-}
-
-@Composable
-private fun SettingsSeparator() {
-    Box(
-        Modifier.padding(start = WontonTheme.spacing.s16)
-            .fillMaxWidth()
-            .height(WontonTheme.size.hairline)
-            .background(WontonTheme.colors.separator.toColor()),
-    )
-}
-
-/** 每一行用自己的字体写，选之前就看得出差别。系统字体的中文不一定跟着变，所以要有拉丁字母的样例。 */
-private class FontSample(val family: FontFamily?)
-
-@Composable
-private fun ChoiceRow(title: String, isSelected: Boolean, sample: FontSample? = null, onClick: () -> Unit) {
-    val colors = WontonTheme.colors
-    val body = WontonTheme.typography.body
-    val style = if (sample != null) body.copy(fontFamily = sample.family) else body
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = WontonTheme.size.target)
-            .selectable(selected = isSelected, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-    ) {
-        Text(title, style = style, color = colors.textPrimary.toColor())
-        if (sample != null) {
-            Text(
-                "Aa",
-                Modifier.semantics { hideFromAccessibility() },
-                style = style,
-                color = colors.textSecondary.toColor(),
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        if (isSelected) {
-            Icon(WontonIcon.Check, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.accentInk.toColor())
-        }
-    }
-}
-
-@Composable
-private fun AccentGroup(appearance: AppearanceViewModel, send: (Action) -> Unit) {
-    val isCustom = appearance.accent !in appearance.presets
-    var showsMore by rememberSaveable { mutableStateOf(isCustom) }
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        WontonGroup {
-            Swatches(appearance.presets, appearance, "重点色", send, Modifier.padding(WontonTheme.spacing.s8))
-            SettingsSeparator()
-            MoreColorsRow(if (isCustom) accentHex(appearance.accent) else null, showsMore) { showsMore = !showsMore }
-            if (showsMore) {
-                SettingsSeparator()
-                Swatches(appearance.moreColors, appearance, "更多颜色", send, Modifier.padding(WontonTheme.spacing.s8))
-            }
-        }
-        // 放在组外面：输入框的底和组的底同色，放进去就看不见了。
-        if (showsMore) HexInput(appearance.accent, send)
-    }
-}
-
-/** [custom] 是选的颜色不在色板里时的色值。 */
-@Composable
-private fun MoreColorsRow(custom: String?, isExpanded: Boolean, onClick: () -> Unit) {
-    val colors = WontonTheme.colors
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = WontonTheme.size.target)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { stateDescription = if (isExpanded) "已展开" else "已收起" }
-            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-    ) {
-        Text(
-            "更多",
-            Modifier.weight(1f),
-            style = WontonTheme.typography.body,
-            color = colors.textPrimary.toColor(),
-        )
-        if (custom != null) {
-            Text(custom, style = WontonTheme.typography.body, color = colors.textSecondary.toColor())
-        }
-        Icon(
-            WontonIcon.Forward,
-            null,
-            Modifier.size(WontonTheme.size.iconSmall).rotate(if (isExpanded) EXPANDED_DEGREES else 0f),
-            tint = colors.textSecondary.toColor(),
-        )
-    }
-}
-
-@Composable
-private fun Swatches(
-    swatches: List<Rgb>,
-    appearance: AppearanceViewModel,
-    label: String,
-    send: (Action) -> Unit,
-    modifier: Modifier = Modifier,
+private fun SettingsEntryRow(
+    entry: SettingsEntry,
+    version: String,
+    onSubpage: (SettingsSubpage) -> Unit,
+    onChooseAgent: () -> Unit,
 ) {
-    val columns = appearance.swatchColumns.toInt()
-    Column(modifier) {
-        swatches.chunked(columns).forEachIndexed { row, chunk ->
-            Row(Modifier.fillMaxWidth()) {
-                chunk.forEachIndexed { column, swatch ->
-                    Swatch(
-                        color = swatch,
-                        isSelected = swatch == appearance.accent,
-                        label = "$label ${row * columns + column + 1}",
-                        modifier = Modifier.weight(1f),
-                    ) { send(Action.SetAccentColor(swatch)) }
-                }
-            }
-        }
-    }
-}
-
-/** 选中时外面多一圈：只靠颜色的话，和页面底色接近的色板看不出选没选中。 */
-@Composable
-private fun Swatch(color: Rgb, isSelected: Boolean, label: String, modifier: Modifier, onClick: () -> Unit) {
-    val colors = WontonTheme.colors
-    Box(
-        modifier.height(WontonTheme.size.target)
-            .selectable(selected = isSelected, role = Role.RadioButton, onClick = onClick)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier.size(36.dp)
-                .background(color.toColor(), CircleShape)
-                .border(1.dp, colors.separator.toColor(), CircleShape),
+    val onboarding = LocalOnboarding.current
+    when (entry) {
+        SettingsEntry.Profile -> WontonRow("你的资料", showsForward = true) { onSubpage(SettingsSubpage.PROFILE) }
+        is SettingsEntry.Server -> WontonRow(
+            "家里的服务器", entry.status.connectionText, showsForward = true, badge = entry.upgrade,
+            onClick = { onSubpage(SettingsSubpage.SERVER) },
         )
-        if (isSelected) Box(Modifier.size(46.dp).border(2.dp, colors.textPrimary.toColor(), CircleShape))
-    }
-}
-
-@Composable
-private fun HexInput(accent: Rgb, send: (Action) -> Unit) {
-    var text by remember { mutableStateOf(accentHex(accent)) }
-    var isInvalid by remember { mutableStateOf(false) }
-    LaunchedEffect(accent) {
-        text = accentHex(accent)
-        isInvalid = false
-    }
-    WontonTextField(
-        value = text,
-        onValueChange = {
-            text = it
-            isInvalid = false
-        },
-        modifier = Modifier.fillMaxWidth(),
-        label = "颜色值",
-        keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.Characters,
-            autoCorrectEnabled = false,
-            keyboardType = KeyboardType.Ascii,
-            imeAction = ImeAction.Done,
-        ),
-        keyboardActions = KeyboardActions(
-            onDone = {
-                val color = parseAccent(text)
-                if (color != null) send(Action.SetAccentColor(color)) else isInvalid = true
-            },
-        ),
-    )
-    if (isInvalid) {
-        Text(
-            "颜色要写成 #RRGGBB",
-            style = WontonTheme.typography.supporting,
-            color = WontonTheme.colors.danger.toColor(),
+        SettingsEntry.Appearance -> WontonRow("外观", showsForward = true) { onSubpage(SettingsSubpage.APPEARANCE) }
+        SettingsEntry.BottomBar -> WontonRow(tabText("底栏", "Tab bar"), showsForward = true) {
+            onSubpage(SettingsSubpage.TABS)
+        }
+        SettingsEntry.DefaultAgent -> WontonRow(
+            "默认 Agent", onboarding.view.agents.firstOrNull { it.selected }?.title,
+            showsForward = true, onClick = onChooseAgent,
         )
+        is SettingsEntry.ChatBackup -> WontonRow("聊天记录备份", entry.recovery.backupValue, showsForward = true) {
+            onSubpage(SettingsSubpage.BACKUP)
+        }
+        SettingsEntry.RestartOnboarding -> WontonRow("重看引导") { onboarding.send(Action.RestartOnboarding) }
+        SettingsEntry.About -> WontonRow("关于", version, showsForward = true) { onSubpage(SettingsSubpage.ABOUT) }
     }
 }
 
-/** 一段小对话：改的每一项都在这里当场看到。 */
 @Composable
-private fun SettingsPreview() {
-    val colors = WontonTheme.colors
-    val bubble = RoundedCornerShape(WontonTheme.radii.bubble)
-    val inset = Modifier.padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
-    Column(
-        Modifier.fillMaxWidth().semantics { hideFromAccessibility() },
-        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(end = WontonTheme.spacing.s48)) {
-            Text(
-                "今晚吃什么？",
-                Modifier.background(colors.surfaceSubtle.toColor(), bubble).then(inset),
-                style = WontonTheme.typography.body,
-                color = colors.textPrimary.toColor(),
-            )
-        }
-        Row(Modifier.fillMaxWidth().padding(start = WontonTheme.spacing.s48)) {
-            Spacer(Modifier.weight(1f))
-            Row(
-                Modifier.accentFill(bubble).then(inset),
-                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-            ) {
-                Text(
-                    "云吞",
-                    Modifier.alignByBaseline(),
-                    style = WontonTheme.typography.body,
-                    color = colors.textOnAccentFill.toColor(),
-                )
-                Text(
-                    "21:08",
-                    Modifier.alignByBaseline(),
-                    style = WontonTheme.typography.caption,
-                    color = colors.accentInkOnFill.toColor(),
-                )
-            }
+private fun AboutPage(version: String, onBack: () -> Unit) {
+    WontonScreen(bar = { WontonPushedBar("关于", onBack) }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset)) {
+            WontonGroup { WontonRow("版本", version) }
         }
     }
 }
+
+internal val SettingsViewModel.serverUpgrade: Boolean
+    get() = sections.any { section -> section.entries.any { it is SettingsEntry.Server && it.upgrade } }

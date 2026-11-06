@@ -37,8 +37,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
-import app.wonton.protocol.HomeFailure
-import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.InstalledPlugin
@@ -46,19 +44,15 @@ import app.wonton.protocol.PluginState
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
-import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.Store
-import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Trash
-import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WarningCircleFill
 import app.wonton.ui.icons.Web
 import app.wonton.ui.icons.WontonIcon
@@ -74,35 +68,14 @@ fun LauncherScreen(
     onOpenCardRoom: (String) -> Unit,
     onShowStore: () -> Unit,
     onConnection: () -> Unit,
+    settingsUpgrade: Boolean,
     onSettings: (() -> Unit)? = null,
 ) {
     LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
     WontonScreen(
         bar = {
             WontonRootBar("应用") {
-                onSettings?.let { WontonIconButton(WontonIcon.Settings, tabText("设置", "Settings"), it) }
-                // 要主人动手时换成警告；没连上时变浅。
-                val colors = WontonTheme.colors
-                val status = home.status
-                Box {
-                    when {
-                        status is HomeStatus.Disconnected &&
-                            (status.reason == HomeFailure.UNAUTHORIZED || status.reason == HomeFailure.PROTOCOL) ->
-                            WontonIconButton(WontonIcon.Warning, "连接", onConnection, colors.warning.toColor())
-                        status is HomeStatus.Disconnected || status is HomeStatus.Connecting ->
-                            WontonIconButton(WontonIcon.Connection, "连接", onConnection, colors.textSecondary.toColor())
-                        else -> WontonIconButton(WontonIcon.Connection, "连接", onConnection)
-                    }
-                    if (plugins.viewModel.coreUpgrade.isPrompting()) {
-                        Box(
-                            Modifier.align(Alignment.TopEnd)
-                                .padding(WontonTheme.spacing.s8)
-                                .size(12.dp)
-                                .background(colors.primary.toColor(), CircleShape)
-                                .border(2.dp, colors.canvas.toColor(), CircleShape),
-                        )
-                    }
-                }
+                onSettings?.let { SettingsToolbarButton(settingsUpgrade, it) }
             }
         },
     ) {
