@@ -6,7 +6,10 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use tokio::runtime::{Handle, Runtime};
+use wonton_l10n::l10n;
 use wonton_protocol::CoreError;
+
+use crate::l10n::{CATALOG, language};
 
 /// 停下时最多等旧任务这么久。
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -20,7 +23,7 @@ impl ScopeRuntime {
             .thread_name("wonton-core")
             .enable_all()
             .build()
-            .expect("创建 tokio 运行时失败");
+            .expect("could not create the tokio runtime");
         Self(Mutex::new(Some(runtime)))
     }
 
@@ -40,7 +43,12 @@ impl ScopeRuntime {
                 switched()
             } else {
                 CoreError::Upstream {
-                    reason: format!("核心的后台任务异常结束：{error}"),
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "scope-task-crashed",
+                        error = error.to_string()
+                    ),
                 }
             }
         })?
@@ -57,7 +65,7 @@ impl ScopeRuntime {
         if let Some(stopping) = self.stopping()
             && stopping.join().is_err()
         {
-            tracing::warn!("服务器作用域的运行时没能正常停下");
+            tracing::warn!("the server scope's runtime did not shut down cleanly");
         }
     }
 
@@ -91,6 +99,6 @@ impl Drop for ScopeRuntime {
 
 fn switched() -> CoreError {
     CoreError::NotReady {
-        reason: "已经切到另一台服务器".to_owned(),
+        reason: l10n!(CATALOG, language(), "scope-switched-server"),
     }
 }

@@ -117,7 +117,7 @@ async fn register_on(visits: &Arc<Visits>, slot: &str, endpoint: PushEndpoint) {
         // 已经切到这台了，当前作用域会登记。
         Ok(None) => return,
         Err(error) => {
-            tracing::warn!(%error, slot, "打开另一台服务器失败，没能重新登记推送");
+            tracing::warn!(%error, slot, "could not open another server to re-register push");
             return;
         }
     };
@@ -152,9 +152,13 @@ async fn register_on(visits: &Arc<Visits>, slot: &str, endpoint: PushEndpoint) {
         })
         .await;
     match registered {
-        Ok(PushStatus::Registered) => tracing::info!(slot, "给另一台服务器重新登记了推送"),
-        Ok(status) => tracing::info!(slot, ?status, "给另一台服务器重新登记推送失败"),
-        Err(error) => tracing::info!(slot, %error, "给另一台服务器重新登记推送失败"),
+        Ok(PushStatus::Registered) => tracing::info!(slot, "re-registered push for another server"),
+        Ok(status) => tracing::info!(
+            slot,
+            ?status,
+            "could not re-register push for another server"
+        ),
+        Err(error) => tracing::info!(slot, %error, "could not re-register push for another server"),
     }
 }
 

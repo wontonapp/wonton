@@ -298,3 +298,10 @@ servers-push-from-removed = 发来这条消息的服务器已经从这台手机�
 servers-push-scope-closed = 那台服务器已经关掉了。
 # $seconds 是等待登记的秒数。
 servers-push-register-timeout = { $seconds } 秒内没能登记推送。
+
+chat-avatar-cache-not-file = 头像缓存路径不是文件
+chat-avatar-cache-hash-collision = 头像缓存哈希冲突
+chat-avatar-cache-missing-mxc = 头像缓存缺少 MXC 标识
+chat-avatar-cache-path-not-utf8 = 头像缓存路径不是有效的 UTF-8
+scope-task-crashed = 核心的后台任务异常结束：{ $error }
+scope-switched-server = 已经切到另一台服务器

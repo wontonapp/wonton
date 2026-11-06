@@ -128,5 +128,20 @@ class SwiftRules(unittest.TestCase):
         self.assertEqual(lines(src, "swift"), [1])
 
 
+class RustRules(unittest.TestCase):
+    def test_cjk_in_strings_but_not_char_literals(self):
+        src = (
+            'let reason = "头像缓存哈希冲突";\n'
+            "let parts = text.split(|c: char| c == ',' || c == '，');\n"
+            "const ENDS: [char; 2] = ['。', '\\u{FF0C}'];\n"
+            'tracing::warn!("could not save the servers");\n'
+        )
+        self.assertEqual(lines(src, "rust"), [1])
+
+    def test_test_module_is_ignored(self):
+        src = 'fn f() {}\n#[cfg(test)]\nmod tests {\n    const A: &str = "中文";\n}\n'
+        self.assertEqual(lines(src, "rust"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

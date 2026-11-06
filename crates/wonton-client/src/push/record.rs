@@ -29,14 +29,14 @@ pub(crate) fn save(dir: &Path, endpoint: &PushEndpoint) {
         .map_err(std::io::Error::other)
         .and_then(|json| std::fs::write(dir.join(FILE), json));
     if let Err(error) = saved {
-        tracing::warn!(%error, "记下登记过的推送地址失败");
+        tracing::warn!(%error, "could not save the registered push endpoint");
     }
 }
 
 pub(crate) fn clear(dir: &Path) {
     match std::fs::remove_file(dir.join(FILE)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-            tracing::warn!(%error, "删掉登记过的推送地址失败");
+            tracing::warn!(%error, "could not delete the registered push endpoint");
         }
         _ => {}
     }

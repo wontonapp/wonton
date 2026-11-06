@@ -26,7 +26,7 @@ pub(crate) struct Visit {
 impl Visit {
     fn open(slot: &str, root: &Path, dir: &Path, network: Network) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
-        let handle = runtime.handle().expect("刚建好的运行时");
+        let handle = runtime.handle().expect("the runtime was just built");
         let home = HomeLink::new(handle.clone(), Storage::open(root, dir)?, network, None)?;
         // 聊天部件要插件部件来认 Bot；Bot 的轮询随下面的 backgrounded 停掉，插件部件只在连上时取一次列表。
         let plugins = PluginsLink::new(handle.clone(), home.clone(), dir, None);
@@ -167,7 +167,7 @@ impl Visits {
 
 fn join(stopping: JoinHandle<()>) {
     if stopping.join().is_err() {
-        tracing::warn!("临时作用域的运行时没能正常停下");
+        tracing::warn!("the temporary scope's runtime did not shut down cleanly");
     }
 }
 

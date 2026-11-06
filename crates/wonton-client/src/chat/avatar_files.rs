@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::watch;
+use wonton_l10n::l10n;
 use wonton_matrix::MatrixSession;
 use wonton_protocol::{CoreError, MediaHandle};
 
 use super::view::core_error;
+use crate::l10n::{CATALOG, language};
 
 type Download = watch::Receiver<Option<Result<String, CoreError>>>;
 
@@ -38,7 +40,11 @@ impl AvatarFiles {
         let mxc = plain_mxc(&media.token)?;
         let path = self.inner.directory.join(cache_key(&mxc));
         let mut download = {
-            let mut pending = self.inner.pending.lock().expect("头像下载锁中毒");
+            let mut pending = self
+                .inner
+                .pending
+                .lock()
+                .expect("avatar download lock poisoned");
             if let Some(download) = pending.get(&mxc) {
                 download.clone()
             } else {
@@ -50,7 +56,11 @@ impl AvatarFiles {
                 tokio::spawn(async move {
                     let outcome = download_file(session, media, path, mxc.clone()).await;
                     result.send_replace(Some(outcome));
-                    inner.pending.lock().expect("头像下载锁中毒").remove(&mxc);
+                    inner
+                        .pending
+                        .lock()
+                        .expect("avatar download lock poisoned")
+                        .remove(&mxc);
                 });
                 download
             }
@@ -139,16 +149,28 @@ fn cached_file(path: &Path, mxc: &str) -> Result<Option<String>, CoreError> {
         Ok(stored) if stored == mxc => {
             let media = path.join("media");
             if !std::fs::metadata(&media).map_err(storage_error)?.is_file() {
-                return Err(storage_error("头像缓存路径不是文件"));
+                return Err(storage_error(l10n!(
+                    CATALOG,
+                    language(),
+                    "chat-avatar-cache-not-file"
+                )));
             }
             path_string(&media).map(Some)
         }
-        Ok(_) => Err(storage_error("头像缓存哈希冲突")),
+        Ok(_) => Err(storage_error(l10n!(
+            CATALOG,
+            language(),
+            "chat-avatar-cache-hash-collision"
+        ))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             match std::fs::symlink_metadata(path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
                 Err(error) => Err(storage_error(error)),
-                Ok(_) => Err(storage_error("头像缓存缺少 MXC 标识")),
+                Ok(_) => Err(storage_error(l10n!(
+                    CATALOG,
+                    language(),
+                    "chat-avatar-cache-missing-mxc"
+                ))),
             }
         }
         Err(error) => Err(storage_error(error)),
@@ -156,7 +178,9 @@ fn cached_file(path: &Path, mxc: &str) -> Result<Option<String>, CoreError> {
 }
 
 fn publish(path: &Path, mxc: &str, bytes: &[u8]) -> Result<String, CoreError> {
-    let directory = path.parent().expect("头像缓存始终有父目录");
+    let directory = path
+        .parent()
+        .expect("the avatar cache path always has a parent");
     std::fs::create_dir_all(directory).map_err(storage_error)?;
     let mut random = [0; 16];
     getrandom::fill(&mut random).map_err(storage_error)?;
@@ -194,7 +218,7 @@ fn path_string(path: &Path) -> Result<String, CoreError> {
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| CoreError::Storage {
-            reason: "头像缓存路径不是有效的 UTF-8".to_owned(),
+            reason: l10n!(CATALOG, language(), "chat-avatar-cache-path-not-utf8"),
         })
 }
 

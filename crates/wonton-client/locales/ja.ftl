@@ -296,6 +296,13 @@ plugins-registry-save-uncertain = 変更が保存できたかはっきりしま�
 # 複数のサーバー（crates/wonton-client/src/servers.rs、client/push_route.rs）。
 servers-removed = このサーバーはこのスマートフォンから削除されています。
 servers-push-from-removed = このメッセージを送ったサーバーはこのスマートフォンから削除されています。
-servers-push-scope-closed = そのサーバーはすでに閉じられています。
+servers-push-scope-closed = そのサーバーとの接続はすでに終了しています。
 # $seconds は登録を待った秒数です。
-servers-push-register-timeout = { $seconds } 秒以内に通知を登録できませんでした。
+servers-push-register-timeout = { $seconds }秒以内に通知を登録できませんでした。
+
+chat-avatar-cache-not-file = アバターのキャッシュのパスがファイルではありません
+chat-avatar-cache-hash-collision = アバターのキャッシュでハッシュが衝突しています
+chat-avatar-cache-missing-mxc = アバターのキャッシュにMXCアドレスがありません
+chat-avatar-cache-path-not-utf8 = アバターのキャッシュのパスが有効なUTF-8ではありません
+scope-task-crashed = バックグラウンドのタスクが異常終了しました：{ $error }
+scope-switched-server = 別のサーバーに切り替えました

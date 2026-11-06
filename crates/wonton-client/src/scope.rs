@@ -87,7 +87,7 @@ impl Scope {
         views: Option<&Views>,
     ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
-        let handle = runtime.handle().expect("刚建好的运行时");
+        let handle = runtime.handle().expect("the runtime was just built");
         let storage = Storage::open(root, dir)?;
         let home = HomeLink::new(
             handle.clone(),

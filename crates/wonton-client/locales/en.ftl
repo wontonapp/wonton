@@ -323,4 +323,14 @@ servers-removed = This server has been removed from this phone.
 servers-push-from-removed = The server that sent this message has been removed from this phone.
 servers-push-scope-closed = That server has already been closed.
 # $seconds is how long registration waited.
-servers-push-register-timeout = Couldn't register for notifications within { $seconds } seconds.
+servers-push-register-timeout = { $seconds ->
+    [one] Couldn't register for notifications within { $seconds } second.
+   *[other] Couldn't register for notifications within { $seconds } seconds.
+}
+
+chat-avatar-cache-not-file = The avatar cache path isn't a file.
+chat-avatar-cache-hash-collision = Two avatars in the cache have the same hash.
+chat-avatar-cache-missing-mxc = An avatar in the cache has no MXC address.
+chat-avatar-cache-path-not-utf8 = The avatar cache path isn't valid UTF-8.
+scope-task-crashed = A background task ended unexpectedly: { $error }
+scope-switched-server = You've switched to another server.

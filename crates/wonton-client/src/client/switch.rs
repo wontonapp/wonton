@@ -51,7 +51,7 @@ impl ClientCore {
             match self.open_scope(&slot) {
                 Ok(next) => self.install(next),
                 Err(error) => {
-                    tracing::warn!(%error, slot, "打开另一台服务器失败，回到原来那台");
+                    tracing::warn!(%error, slot, "could not open the other server, staying on the current one");
                     self.install(self.open_scope(&previous.slot)?);
                     return Err(error);
                 }
@@ -126,7 +126,7 @@ impl ClientCore {
                         .paired(&slot, &server_id)
                         .and_then(|change| servers.discard(&change.discard));
                     if let Err(error) = paired {
-                        tracing::warn!(%error, "记下配好的服务器失败");
+                        tracing::warn!(%error, "could not save the configured servers");
                     }
                 }
                 if home.changed().await.is_err() {

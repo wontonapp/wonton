@@ -298,4 +298,11 @@ servers-removed = 這台伺服器已經從這支手機上移除。
 servers-push-from-removed = 傳來這則訊息的伺服器已經從這支手機上移除。
 servers-push-scope-closed = 那台伺服器已經關閉了。
 # $seconds 是等待登記的秒數。
-servers-push-register-timeout = { $seconds } 秒內未能登記推播。
+servers-push-register-timeout = { $seconds } 秒內未能完成推播通知註冊。
+
+chat-avatar-cache-not-file = 頭像快取路徑不是檔案
+chat-avatar-cache-hash-collision = 頭像快取的雜湊值衝突
+chat-avatar-cache-missing-mxc = 頭像快取缺少 MXC 位址
+chat-avatar-cache-path-not-utf8 = 頭像快取路徑不是有效的 UTF-8
+scope-task-crashed = 背景工作異常結束：{ $error }
+scope-switched-server = 已經切換到另一台伺服器
