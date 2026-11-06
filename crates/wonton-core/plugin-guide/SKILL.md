@@ -49,7 +49,8 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 - 颜色和字体用 CSS 变量，带后备值，`assets/` 的例子都这样写。这样跟随 App 的明暗和重点色。按钮用 `--wonton-accent-fill` 和 `--wonton-accent-ink`。
 - 不要自己画顶栏和底栏，App 有。页面内部的分段自己做。
 - `tabs` 声明能放到底栏的页面，图标要单色、背景透明。放不放由主人决定，你改不了底栏。
-- 页面自带底栏时，写 `display: fullscreen`，否则会有两行。全屏时写上 `<meta name="theme-color">`。
+- 页面自带底栏时，写 `display: fullscreen`，否则会有两行。`inset` 页面的顶栏、底栏贴边处用纯色，全屏时 App 把它延伸到屏幕边。
+- 输入框字号不小于 16px。更小的字号在手机浏览器里一点就放大页面，App 里拦住了，浏览器里拦不住。
 - 带“讨论”这类按钮时用 MCP Apps 的 `ui/message`，文字进输入框，主人点发送才发。
 
 ## 常见报错
