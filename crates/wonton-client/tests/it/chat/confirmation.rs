@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use wonton_client::{
     Action, Answer, ChatFailure, ConfirmationState, ConfirmationView, CoreError, MessageContent,
-    PushContent, PushStatus, RoomMembership, TimelineContent, TimelineItem, WindowView,
+    MessageSummary, PushContent, PushStatus, RoomMembership, TimelineContent, TimelineItem,
+    WindowView,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedEventId, OwnedRoomId, OwnedUserId};
 
@@ -312,8 +313,11 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
         .expect("推送内容是对的")
         .expect("卡片要通知");
     assert_eq!(notification.room_id, room_id.as_str());
-    assert_eq!(notification.sender, "Wonton");
-    let PushContent::Message { body } = notification.content else {
+    assert_eq!(notification.sender.as_deref(), Some("Wonton"));
+    let PushContent::Message {
+        summary: MessageSummary::Text { text: body },
+    } = notification.content
+    else {
         panic!("通知要有卡片的文字：{:?}", notification.content);
     };
     assert_eq!(body, content(&waiting)["body"].as_str().unwrap());

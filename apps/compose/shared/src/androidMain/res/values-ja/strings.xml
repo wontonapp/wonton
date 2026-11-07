@@ -943,4 +943,8 @@
     <string name="keepalive_toggle">接続を維持</string>
     <!-- システムで通知が無効のとき、スイッチの下に出る説明：サービスは動き続けるが、新着メッセージは通知されない。 -->
     <string name="keepalive_without_permission">通知権限がないため、新着メッセージは通知として表示されません。接続は維持されます。</string>
+    <string name="message_summary_files">[ファイル]</string>
+    <string name="message_summary_image">[画像]</string>
+    <string name="message_summary_undecryptable">[暗号化されたメッセージ]</string>
+    <string name="message_summary_redacted">[削除されたメッセージ]</string>
 </resources>

@@ -943,4 +943,8 @@
     <string name="keepalive_toggle">保持連線</string>
     <!-- 系統裡關了通知時，開關下面的一行說明：服務照常執行，但新訊息彈不出通知。 -->
     <string name="keepalive_without_permission">沒有通知權限：新訊息彈不出通知，連線照常保持。</string>
+    <string name="message_summary_files">[檔案]</string>
+    <string name="message_summary_image">[圖片]</string>
+    <string name="message_summary_undecryptable">[加密訊息]</string>
+    <string name="message_summary_redacted">[已收回]</string>
 </resources>

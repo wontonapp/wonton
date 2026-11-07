@@ -11,8 +11,8 @@ use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, MessageSummary, NOTICE_FIELD,
-    NotificationCategory, PluginNotice, PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, NOTICE_FIELD, NotificationCategory,
+    PluginNotice, PushContent, PushNotification,
 };
 
 use super::PushLink;
@@ -53,8 +53,7 @@ impl Payload {
             sender: self
                 .sender_display_name
                 .clone()
-                .or_else(|| self.sender.clone())
-                .unwrap_or_else(|| "未知的发送者".to_owned()),
+                .or_else(|| self.sender.clone()),
             room_name: self.room_name.clone(),
             content: PushContent::Unavailable { reason, message },
             category: NotificationCategory::Message,
@@ -169,18 +168,16 @@ pub(crate) fn push_notification(
             reason: ChatFailure::NotReady,
             message: "还没收到这条消息的房间密钥".to_owned(),
         },
-        MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Message {
-            body: "邀请你加入".to_owned(),
-        },
+        MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Invite,
         body => PushContent::Message {
-            body: push_text(summary(body, false)),
+            summary: summary(body, false),
         },
     };
     Some(PushNotification {
         server_id,
         room_id: room_id.to_string(),
         event_id: event_id.to_string(),
-        sender: message.sender_name,
+        sender: Some(message.sender_name),
         room_name: message.room_name,
         content,
         category: if confirmation.is_some() {
@@ -192,18 +189,6 @@ pub(crate) fn push_notification(
         },
         confirmation,
     })
-}
-
-/// 推送的正文是字符串：这里把摘要转成占位文字，图片、文件等的占位写在这里。
-fn push_text(summary: MessageSummary) -> String {
-    match summary {
-        MessageSummary::Text { text } => text,
-        MessageSummary::Files => "[文件]".to_owned(),
-        MessageSummary::Image => "[图片]".to_owned(),
-        MessageSummary::Undecryptable => "[加密消息]".to_owned(),
-        MessageSummary::Redacted => "[已撤回]".to_owned(),
-        MessageSummary::Other { kind } => format!("[{kind}]"),
-    }
 }
 
 fn invalid(reason: &str) -> CoreError {
@@ -243,6 +228,31 @@ mod tests {
             "level": "warning",
             "title": "磁盘快满了",
         })
+    }
+
+    /// 邀请和没带发送者的推送只给类别，通知上的话由壳写。
+    #[test]
+    fn invites_and_unknown_senders_are_left_for_the_shell_to_word() {
+        let owner: OwnedUserId = "@owner:test".parse().unwrap();
+        let room: wonton_matrix::OwnedRoomId = "!room:test".parse().unwrap();
+        let event: OwnedEventId = "$invite".parse().unwrap();
+        let invite = Notification {
+            sender: "@friend:test".parse().unwrap(),
+            sender_name: "Friend".into(),
+            room_name: Some("Family".into()),
+            body: MessageBody::Other {
+                kind: "m.room.member".into(),
+            },
+            custom: Map::new(),
+        };
+        let shown = push_notification(None, &owner, &room, &event, invite).unwrap();
+        assert_eq!(shown.content, PushContent::Invite);
+        assert_eq!(shown.sender.as_deref(), Some("Friend"));
+
+        let payload =
+            Payload::parse(br#"{"server":"s","room_id":"!room:test","event_id":"$e"}"#).unwrap();
+        let unavailable = payload.unavailable(ChatFailure::TransportUnavailable, "offline".into());
+        assert_eq!(unavailable.sender, None);
     }
 
     #[test]

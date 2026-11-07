@@ -5,4 +5,9 @@
     <string name="keepalive_channel_name">接続を維持</string>
     <!-- 「接続を維持」フォアグラウンドサービスの常設通知のタイトル。 -->
     <string name="keepalive_notification_title">ホームサーバーとの接続を維持しています</string>
+    <string name="push_in_room">%1$s：%2$s</string>
+    <string name="push_unknown_sender">だれか</string>
+    <string name="push_invite">あなたを招待しました</string>
+    <string name="push_unavailable">新着メッセージ（今は内容を読み込めません）</string>
+    <string name="push_hidden">新着メッセージ</string>
 </resources>

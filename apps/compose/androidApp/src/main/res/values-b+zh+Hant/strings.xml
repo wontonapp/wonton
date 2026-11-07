@@ -5,4 +5,9 @@
     <string name="keepalive_channel_name">保持連線</string>
     <!-- 「保持連線」前台服務的常駐通知標題。 -->
     <string name="keepalive_notification_title">與家用伺服器保持連線</string>
+    <string name="push_in_room">%1$s：%2$s</string>
+    <string name="push_unknown_sender">有人</string>
+    <string name="push_invite">邀請你加入</string>
+    <string name="push_unavailable">新訊息（暫時無法載入內容）</string>
+    <string name="push_hidden">新訊息</string>
 </resources>

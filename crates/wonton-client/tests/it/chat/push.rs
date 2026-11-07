@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, ChatFailure, CoreError, HomeStatus, PushContent, PushEndpoint, PushStatus,
-    RoomMembership, SecretString,
+    Action, ChatFailure, CoreError, HomeStatus, MessageSummary, PushContent, PushEndpoint,
+    PushStatus, RoomMembership, SecretString,
 };
 use wonton_matrix::testkit::Received;
 
@@ -110,12 +110,14 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
         .expect("推送内容是对的")
         .expect("这条消息要通知");
     assert_eq!(notification.room_id, room_id.as_str());
-    assert_eq!(notification.sender, "Hermes");
+    assert_eq!(notification.sender.as_deref(), Some("Hermes"));
     assert_eq!(notification.room_name, None, "私聊，标题用发送者");
     assert_eq!(
         notification.content,
         PushContent::Message {
-            body: "你的快递到了".to_owned()
+            summary: MessageSummary::Text {
+                text: "你的快递到了".to_owned()
+            }
         }
     );
     assert!(matches!(
@@ -171,7 +173,7 @@ async fn a_push_that_cannot_be_fetched_says_why() {
         .await
         .expect("格式是对的")
         .expect("要告诉主人有推送");
-    assert_eq!(notification.sender, "Hermes");
+    assert_eq!(notification.sender.as_deref(), Some("Hermes"));
     assert!(
         matches!(
             notification.content,
@@ -276,7 +278,9 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     assert_eq!(
         notification.content,
         PushContent::Message {
-            body: "A 上的新消息".to_owned()
+            summary: MessageSummary::Text {
+                text: "A 上的新消息".to_owned()
+            }
         }
     );
     assert_eq!(phone.signed_in().await.1, on_b, "当前还连着 B");

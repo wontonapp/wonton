@@ -950,4 +950,12 @@
     <string name="keepalive_toggle">Keep connection</string>
     <!-- Supporting line under the keep-connection switch when notifications are disabled in the system: the service still runs, but new messages can't pop up. -->
     <string name="keepalive_without_permission">Without the notification permission, new messages won&#8217;t show as notifications. The connection is still kept.</string>
+    <!-- Placeholder for a message that only has file links, in the chat list preview and in notifications. -->
+    <string name="message_summary_files">[File]</string>
+    <!-- Placeholder for a photo message, in the chat list preview and in notifications. -->
+    <string name="message_summary_image">[Photo]</string>
+    <!-- Placeholder for a message this device can't decrypt yet. -->
+    <string name="message_summary_undecryptable">[Encrypted message]</string>
+    <!-- Placeholder for a message the sender deleted. -->
+    <string name="message_summary_redacted">[Message deleted]</string>
 </resources>

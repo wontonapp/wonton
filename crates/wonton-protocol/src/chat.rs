@@ -367,10 +367,12 @@ mod tests {
                 server_id: Some("a1".into()),
                 room_id: "!bot:home.example".into(),
                 event_id: "$reply".into(),
-                sender: "Hermes".into(),
+                sender: Some("Hermes".into()),
                 room_name: None,
                 content: PushContent::Message {
-                    body: "好了".into(),
+                    summary: MessageSummary::Text {
+                        text: "好了".into(),
+                    },
                 },
                 category: NotificationCategory::Message,
                 confirmation: None,

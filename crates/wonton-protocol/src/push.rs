@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ChatFailure, SecretString};
+use crate::{ChatFailure, MessageSummary, SecretString};
 
 /// 平台给的推送地址，即 Web Push 的推送订阅（W3C Push API 的 `PushSubscription`，RFC 8030、RFC 8291）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,8 +64,8 @@ pub struct PushNotification {
     /// 消息所在的房间，点开通知时进入它。同一个房间的通知用它合并，卡片除外：答完要单独撤掉。
     pub room_id: String,
     pub event_id: String,
-    /// 发送者的显示名，没有时是用户 ID。
-    pub sender: String,
+    /// 发送者的显示名，没有时是用户 ID。推送里两样都没带时为空，壳写一句“不知道是谁发的”。
+    pub sender: Option<String>,
     /// 房间名；私聊时为空，标题用发送者。
     pub room_name: Option<String>,
     pub content: PushContent,
@@ -102,14 +102,17 @@ pub struct PushConfirmation {
     pub expires_at_ms: u64,
 }
 
-/// 通知的正文。
+/// 通知的正文。核心只给类别和原文，通知上的文字（图片、文件的占位，邀请，取不到时的说明）由壳按系统语言写。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PushContent {
-    /// 取回了消息并在本机解密：消息的文字，图片等是“[图片]”这样的占位，由核心给出。
-    Message { body: String },
-    /// 取不到正文（隧道连不上、还没收到房间密钥等），照实说明原因，不显示成正常的消息。
+    /// 取回了消息并在本机解密。`Undecryptable` 不会出现在这里，那是 [`PushContent::Unavailable`]。
+    Message { summary: MessageSummary },
+    /// 有人邀请主人加入这个房间。
+    Invite,
+    /// 取不到正文（隧道连不上、还没收到房间密钥等），照实说明，不显示成正常的消息。`message` 是给日志和“详情”
+    /// 的原因，通知上的文字由壳按 `reason` 写。
     Unavailable {
         reason: ChatFailure,
         message: String,
@@ -166,7 +169,7 @@ mod tests {
             server_id: Some("a1".into()),
             room_id: "!bot:home.example".into(),
             event_id: "$reply".into(),
-            sender: "Hermes".into(),
+            sender: Some("Hermes".into()),
             room_name: None,
             content: PushContent::Unavailable {
                 reason: ChatFailure::NotReady,

@@ -11,9 +11,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
 import app.wonton.android.MainActivity
+import app.wonton.android.R
 import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushContent
 import app.wonton.protocol.PushNotification
+import app.wonton.ui.line
 import app.wonton.ui.notificationChannelId
 import app.wonton.ui.notificationTitle
 
@@ -39,16 +41,20 @@ object PushNotifications {
         tag: String = tag(notification.serverId, notification.roomId, notification.confirmation?.id),
     ) {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "没有通知权限，这条推送弹不出来")
+            Log.w(TAG, "no notification permission, dropping this push")
             return
         }
         createChannels(context)
         val channel = notification.category.notificationChannelId
-        val title = notification.roomName ?: notification.sender
+        val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
+        val title = notification.roomName ?: sender
         val text = when (val content = notification.content) {
-            is PushContent.Message ->
-                if (notification.roomName != null) "${notification.sender}：${content.body}" else content.body
-            is PushContent.Unavailable -> "新消息（内容暂时取不到：${content.message}）"
+            is PushContent.Message -> inRoom(context, notification, content.summary.line(context.resources))
+            is PushContent.Invite -> inRoom(context, notification, context.getString(R.string.push_invite))
+            is PushContent.Unavailable -> {
+                Log.i(TAG, "push content unavailable (${content.reason}): ${content.message}")
+                context.getString(R.string.push_unavailable)
+            }
         }
         val card = notification.confirmation
         val open = PendingIntent.getActivity(
@@ -68,8 +74,8 @@ object PushNotifications {
         // 锁屏上隐藏敏感内容时显示这一版：不带发送者和正文。
         val hidden = Notification.Builder(context, channel)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle("Wonton")
-            .setContentText("新消息")
+            .setContentTitle(context.getString(R.string.app_name))
+            .setContentText(context.getString(R.string.push_hidden))
             .build()
         val shown = Notification.Builder(context, channel)
             .setExtras(android.os.Bundle().apply {
@@ -103,6 +109,15 @@ object PushNotifications {
                 notification.notification.extras.getString("wonton_card") in settled
         }.forEach { manager.cancel(it.tag, NOTIFICATION_ID) }
     }
+
+    /** 群里的消息前面带上发送者；私聊的标题已经是发送者。 */
+    private fun inRoom(context: Context, notification: PushNotification, text: String): String =
+        if (notification.roomName == null) {
+            text
+        } else {
+            val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
+            context.getString(R.string.push_in_room, sender, text)
+        }
 
     private fun tag(serverId: String?, roomId: String, cardId: String?): String =
         Uri.Builder().appendPath(roomId).appendPath(cardId.orEmpty())

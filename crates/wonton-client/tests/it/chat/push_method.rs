@@ -2,7 +2,9 @@
 //! `keep_connection` 为真，壳照它启停前台服务；App 在后台时同步到的该通知的消息收集进
 //! `background_notifications`，回到前台清空。
 
-use wonton_client::{Action, CoreError, DeviceNetwork, PushContent, PushMethod, PushStatus};
+use wonton_client::{
+    Action, CoreError, DeviceNetwork, MessageSummary, PushContent, PushMethod, PushStatus,
+};
 use wonton_protocol::SettingsEntry;
 
 use super::accept_the_bots_invite;
@@ -191,11 +193,13 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
                 .map(|notice| (notice.sender.clone(), notice.content.clone()))
         })
         .await;
-    assert_eq!(notice.0, "Hermes");
+    assert_eq!(notice.0.as_deref(), Some("Hermes"));
     assert_eq!(
         notice.1,
         PushContent::Message {
-            body: "在吗".to_owned()
+            summary: MessageSummary::Text {
+                text: "在吗".to_owned()
+            }
         }
     );
 
@@ -214,13 +218,15 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
                 .find(|notice| {
                     notice.content
                         == PushContent::Message {
-                            body: "收到".to_owned(),
+                            summary: MessageSummary::Text {
+                                text: "收到".to_owned(),
+                            },
                         }
                 })
                 .map(|notice| notice.sender.clone())
         })
         .await;
-    assert_eq!(mine, "Hermes");
+    assert_eq!(mine.as_deref(), Some("Hermes"));
     assert!(
         !phone
             .chat()
@@ -228,7 +234,9 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
             .iter()
             .any(|notice| notice.content
                 == PushContent::Message {
-                    body: "这是我自己说的".to_owned()
+                    summary: MessageSummary::Text {
+                        text: "这是我自己说的".to_owned()
+                    }
                 }),
         "自己发的消息不该通知"
     );
@@ -247,7 +255,9 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
                 .find(|notice| {
                     notice.content
                         == PushContent::Message {
-                            body: "还在".to_owned(),
+                            summary: MessageSummary::Text {
+                                text: "还在".to_owned(),
+                            },
                         }
                 })
                 .map(|_| ())

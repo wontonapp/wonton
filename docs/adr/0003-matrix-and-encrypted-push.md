@@ -135,7 +135,8 @@ App 被杀后收不到任何消息。
 
 **4. App 一侧**（`wonton-protocol` 的 `push` 模块）：壳把推送订阅交给核心（`Action::SetPushEndpoint`），平台收不了
 推送时如实告诉核心（`Action::PushUnavailable`），进展看 `ChatViewModel::push`。收到推送、解开后交给
-`ClientCore::resolve_push`，核心取回消息、解密，给出要显示的通知。
+`ClientCore::resolve_push`，核心取回消息、解密，给出要显示的通知。通知里核心只给类别和原文（消息摘要、邀请、
+取不到正文的原因），占位、“有人邀请你”这些话由壳按 App 的语言写（ADR-0043）。
 
 **Android**（`apps/compose/androidApp` 的 `push` 包，UnifiedPush 连接库 3.3）
 

@@ -3,7 +3,6 @@
 # 列出的文件不查界面文字（源码字符串、界面接口的写死文字、字符串目录）；到期后例外失效，CI 重新失败。
 # 文件里的写死文字抽完后，这一行会报错，删掉它。这个列表只减不增：新代码直接写进字符串目录，不要加进来。
 apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/PushNotifications.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/PushRegistration.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/WontonPushService.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppNavigation.kt | 待抽取（ADR-0043） | 2026-12-31
