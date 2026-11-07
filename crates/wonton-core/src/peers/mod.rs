@@ -532,7 +532,7 @@ impl Peers {
                 owner_display_name: request.owner_display_name.clone(),
                 received_at_ms: request.received_at_ms,
                 conflicts_with: conflict(&inner, request),
-                detail: Some(short_endpoint(request.endpoint_id)),
+                detail: Some(endpoint_text(request.endpoint_id, langs)),
             })
             .collect::<Vec<_>>();
         let rejected = inner
@@ -544,7 +544,7 @@ impl Peers {
                 owner_user_id: rejected.owner_user_id.clone(),
                 owner_display_name: rejected.owner_display_name.clone(),
                 rejected_at_ms: rejected.rejected_at_ms,
-                detail: Some(short_endpoint(rejected.endpoint_id)),
+                detail: Some(endpoint_text(rejected.endpoint_id, langs)),
             })
             .collect::<Vec<_>>();
         PeersView {
@@ -562,7 +562,7 @@ impl Peers {
             Phase::Paired => self.forwarded_status(&record.server_name),
         };
         let text = if record.phase == Phase::AwaitingPeer {
-            short_endpoint(record.endpoint_id)
+            endpoint_text(record.endpoint_id, langs)
         } else {
             self.detail(record, langs)
         };
@@ -601,7 +601,7 @@ impl Peers {
                 "peers-endpoint-detail",
                 &[("id", id.into()), ("error", error.into())],
             ),
-            None => crate::l10n::text(langs, "peers-endpoint", &[("id", id.into())]),
+            None => endpoint_text(record.endpoint_id, langs),
         }
     }
 
@@ -663,8 +663,17 @@ fn conflict(inner: &Inner, request: &PeerRequest) -> Option<String> {
     })
 }
 
+/// endpoint ID 前 8 位。“endpoint”这个词由文案加（`peers-endpoint`、`peers-endpoint-detail`），这里不带。
 fn short_endpoint(id: EndpointId) -> String {
-    format!("endpoint {}", &id.to_string()[..8])
+    id.to_string()[..8].to_owned()
+}
+
+fn endpoint_text(id: EndpointId, langs: &Languages) -> String {
+    crate::l10n::text(
+        langs,
+        "peers-endpoint",
+        &[("id", short_endpoint(id).into())],
+    )
 }
 
 /// `core/peers.json` 的形状。

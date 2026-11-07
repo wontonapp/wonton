@@ -198,7 +198,10 @@ pub async fn scan(
     };
     let request: PeerScan = match serde_json::from_slice(&body) {
         Ok(request) => request,
-        Err(_) => return error(&langs, PeerError::CodeInvalid),
+        Err(e) => {
+            tracing::info!(error = %e, "扫码的请求体读不懂");
+            return error(&langs, PeerError::CodeInvalid);
+        }
     };
     match peers.scan(request.code.expose()).await {
         Ok(()) => Json(serde_json::json!({"status": "awaiting_approval"})).into_response(),

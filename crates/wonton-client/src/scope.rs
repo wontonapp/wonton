@@ -199,6 +199,14 @@ impl Scope {
         self.files.foregrounded();
     }
 
+    /// 壳给的语言交给作用域里每个按 App 语言写字或把语言带给家里服务器（Accept-Language）的模块。
+    /// 壳发 `SetLanguages` 和换作用域时重放都走这里，两处不各列一份，漏不掉哪个模块。
+    pub(crate) fn set_languages(&self, languages: &[String]) {
+        self.plugins.set_languages(languages.to_vec());
+        self.onboarding.set_languages(languages.to_vec());
+        self.peers.set_languages(languages.to_vec());
+    }
+
     pub(crate) fn backgrounded(&self) {
         self.home.backgrounded();
         self.chat.backgrounded();

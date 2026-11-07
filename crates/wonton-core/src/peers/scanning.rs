@@ -18,8 +18,11 @@ const OUTCOME_FIRST: Duration = Duration::from_secs(5);
 impl Peers {
     /// 主人的设备扫来一个码：连出码方，记成“等对方同意”，然后自己问结果。
     pub async fn scan(self: &Arc<Self>, code_text: &str) -> Result<(), PeerError> {
-        let code = wonton_tunnel::peer_pair::PeerPairingCode::parse(code_text)
-            .map_err(|_| PeerError::CodeInvalid)?;
+        let code = wonton_tunnel::peer_pair::PeerPairingCode::parse(code_text).map_err(|e| {
+            // 码在发出连接之前就读不懂：不打日志的话，两边的日志里都看不到这次扫码。
+            tracing::info!(error = %e, "扫来的码读不懂");
+            PeerError::CodeInvalid
+        })?;
         let addr = code.server_addr();
         self.scan_to(&code, addr, self.own_identity()).await
     }

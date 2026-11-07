@@ -91,8 +91,7 @@ impl ClientCore {
     fn replay_into(&self, scope: &Scope) {
         let replay = self.replay();
         if let Some(languages) = &replay.languages {
-            scope.plugins.set_languages(languages.clone());
-            scope.onboarding.set_languages(languages.clone());
+            scope.set_languages(languages);
         }
         if let Some(network) = replay.network {
             scope.home.network_changed(network);

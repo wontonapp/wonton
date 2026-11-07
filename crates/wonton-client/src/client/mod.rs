@@ -598,9 +598,7 @@ impl ClientCore {
             }
             Action::SetLanguages { languages } => {
                 crate::l10n::set_languages(&languages);
-                scope.plugins.set_languages(languages.clone());
-                scope.onboarding.set_languages(languages.clone());
-                scope.peers.set_languages(languages.clone());
+                scope.set_languages(&languages);
                 self.replay().languages = Some(languages);
                 Ok(())
             }
