@@ -117,3 +117,71 @@ async fn only_plugins_that_declare_models_reach_the_gateway() {
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(kind(&response).as_deref(), Some("models_unavailable"));
 }
+
+/// 路由缺模型、服务商出错都只进详情页的轻提示（ADR-0055）：走安装 API，状态照常 running。
+#[tokio::test]
+async fn default_route_problems_never_degrade_the_installed_state() {
+    for (listed, upstream) in [
+        (false, StatusCode::OK),
+        (true, StatusCode::UNAUTHORIZED),
+        (true, StatusCode::OK),
+    ] {
+        let app = Router::new()
+            .route(
+                "/v1/models",
+                axum::routing::get(move || async move {
+                    let data = if listed {
+                        serde_json::json!([{"id": "group/default"}])
+                    } else {
+                        serde_json::json!([])
+                    };
+                    (upstream, axum::Json(serde_json::json!({"data": data})))
+                }),
+            )
+            .route(
+                "/v1/chat/completions",
+                post(move || async move {
+                    (
+                        upstream,
+                        axum::Json(serde_json::json!(
+                            {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+                        )),
+                    )
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let h = harness_with_gateway(addr.to_string()).await;
+        // 凭据命令在网关的容器里执行；假 Docker 里放进这个容器，exec 默认成功。
+        h.docker
+            .add_container("wonton-system-models--magpie", "system.models");
+        let consumer = PROVIDER.split("x-wonton:").next().unwrap().to_owned()
+            + "x-wonton:\n  spec: '0.6'\n  id: app.consumer\n  version: 1.0.0\n  kind: app\n  \
+            title: {en: Consumer}\n  description: {en: Consumer}\n  permissions: [models]\n";
+        let bearer = format!("Bearer {}", super::tests::TOKEN);
+        let installed = h
+            .send(
+                Method::POST,
+                super::tests::CORE,
+                "/_wonton/api/plugins?grant=models",
+                &[
+                    ("authorization", &bearer),
+                    ("content-type", "application/yaml"),
+                ],
+                Body::from(consumer),
+            )
+            .await;
+        assert_eq!(
+            installed.status,
+            StatusCode::CREATED,
+            "{}",
+            installed.text()
+        );
+        assert_eq!(
+            installed.json()["status"]["state"],
+            "running",
+            "listed={listed} upstream={upstream}"
+        );
+    }
+}

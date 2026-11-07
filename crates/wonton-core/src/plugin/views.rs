@@ -239,6 +239,10 @@ impl PluginManager {
         // 不挡安装的问题：探测只试了一个网站。
         let uncertain = egress.filter(|p| !blocks(p));
         notices.extend(uncertain.map(|p| line(p.message)));
+        // 缺默认模型的提醒不挡安装：先接模型，Bot 才能回话。只读模型列表，不发计费补全。
+        if let Some(notice) = self.model_route_notice(m, langs).await {
+            notices.push(notice);
+        }
         Ok(InstallPreview {
             source: package.origin.as_ref().map(Origin::source),
             provider: package.origin.as_ref().map(Origin::provider),

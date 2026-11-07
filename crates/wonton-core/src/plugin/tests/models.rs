@@ -168,8 +168,14 @@ async fn consumers_get_their_own_verified_credential_through_the_core() {
     assert_eq!(env["MODEL"], "group/default");
     assert_eq!(bed.keys.lock().unwrap()["app.test"], env["KEY"]);
     assert_eq!(env["KEY"].len(), 64);
-    // 值走标准输入，不进命令行参数。
-    let issue = bed.docker.execs().into_iter().last().unwrap();
+    // 值走标准输入，不进命令行参数。健康探测凭据（<网关>/health）也在这之后签发，按名挑使用方的。
+    let issue = bed
+        .docker
+        .execs()
+        .into_iter()
+        .rev()
+        .find(|exec| exec.cmd.last().is_some_and(|name| name == "app.test"))
+        .unwrap();
     assert_eq!(issue.container, container_name("system-models", "magpie"));
     assert!(!issue.cmd.iter().any(|arg| arg.contains(&env["KEY"])));
     assert_eq!(issue.stdin, format!("{}\n", env["KEY"]).into_bytes());
@@ -224,13 +230,23 @@ async fn uninstall_revokes_the_credential() {
         .uninstall(&id, false, &super::langs())
         .await
         .unwrap();
-    assert!(bed.keys.lock().unwrap().is_empty(), "卸载时在网关里吊销");
+    // 健康探测凭据（<网关>/health）不属于使用方，不算数。
+    let consumer_keys = |keys: &BTreeMap<String, String>| {
+        keys.keys()
+            .filter(|name| !name.ends_with("/health"))
+            .count()
+    };
+    assert_eq!(
+        consumer_keys(&bed.keys.lock().unwrap()),
+        0,
+        "卸载时在网关里吊销"
+    );
     // 重装是一个新值：不删数据卸载也不保留凭据。
     bed.manager
         .install(&consumer(), &models(), super::langs())
         .await
         .unwrap();
-    assert_eq!(bed.keys.lock().unwrap().len(), 1);
+    assert_eq!(consumer_keys(&bed.keys.lock().unwrap()), 1);
 }
 
 #[tokio::test]

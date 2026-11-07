@@ -590,6 +590,7 @@ impl PluginManager {
                     view
                 };
                 self.changed();
+                self.probe_fresh_consumer(&manifest).await;
                 // 装的是模型网关：给没接上的使用方签发凭据、按新变量重建（见 super::models）。
                 if manifest
                     .provides

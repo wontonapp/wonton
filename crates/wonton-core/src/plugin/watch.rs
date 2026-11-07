@@ -45,6 +45,22 @@ impl PluginManager {
                 tracing::warn!(plugin = %id, error = %e, "查看插件的容器失败");
             }
         }
+        // 运行中的模型使用方共用一轮默认路由探测（30 秒一次，只读模型列表；见 model_health）。
+        let consumers: Vec<PluginId> = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            plugins
+                .iter()
+                .filter(|(_, entry)| {
+                    entry.status == PluginStatus::Running
+                        && entry
+                            .listed
+                            .as_ref()
+                            .is_some_and(|l| super::model_health::needs_default_model(&l.manifest))
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        self.watch_models(consumers).await;
     }
 
     fn follows_containers(&self, id: &PluginId, entry: &Entry) -> bool {
@@ -74,7 +90,11 @@ impl PluginManager {
                 }
                 self.saw_running(id, health);
             }
-            Ok(ContainersState::Running(_)) => self.recover(id, &package, &record).await,
+            Ok(ContainersState::Running(_)) => {
+                self.recover(id, &package, &record).await;
+                // 容器刚恢复，和刚启动一样补一轮一次性探测（见 model_health 的计费节奏）。
+                self.check_models_once(vec![id.clone()]).await;
+            }
             Ok(ContainersState::Stopped) => self.saw_unavailable(id, PluginStatus::Stopped),
             Err(InstallError::Unhealthy(reason)) => {
                 self.saw_unavailable(id, PluginStatus::Degraded { reason })

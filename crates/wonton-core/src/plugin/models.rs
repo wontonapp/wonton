@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use hyper::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use super::bot_services::DEFAULT_BOT;
@@ -24,13 +23,10 @@ use super::store::{
 };
 use super::vars::ModelVars;
 use crate::config::PLUGIN_MODELS_HOST;
-use crate::http::RequestBody;
 use crate::secret::random_token;
 
 /// 凭据命令的超时（规范：30 秒）。
 pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-/// 验证凭据的请求超时。
-const VERIFY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 核心转发模型请求的目标：当前的提供方。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,11 +52,18 @@ struct KeyFile {
     /// 最近一次签发或验证失败的原因；接上了就清掉。详情页的轻提示带它（类别 [`wonton_protocol::PluginHintCategory::ModelsNotConnected`]）。
     #[serde(default)]
     problem: Option<String>,
+    /// 默认路由最近一次探测的结论（见 `model_health`）：只在接上之后有意义，接上前的
+    /// “没接上”由网关状态现场推导。恢复可用就清掉。
+    #[serde(default)]
+    route: Option<super::model_health::RouteProbe>,
 }
 
 /// 使用方的凭据，每个插件一个 JSON 文件（0600）。卸载时连同网关里的凭据一起删掉。
 pub struct ModelKeyStore {
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
+    /// 默认路由的探测跨安装、启动与巡检串行（见 `model_health`）：不发并发的计费请求。
+    pub(super) probe_lock: tokio::sync::Mutex<()>,
+    pub(super) probe: tokio::sync::Mutex<super::model_health::ProbeSchedule>,
 }
 
 impl KeyFile {
@@ -72,7 +75,11 @@ impl KeyFile {
 
 impl ModelKeyStore {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+        Self {
+            dir,
+            probe_lock: tokio::sync::Mutex::new(()),
+            probe: tokio::sync::Mutex::default(),
+        }
     }
 
     fn path(&self, id: &PluginId) -> PathBuf {
@@ -120,6 +127,40 @@ impl ModelKeyStore {
         }
         Ok(all)
     }
+
+    /// 详情页轻提示的依据：使用方的凭据是否就绪、记下的签发问题和路由探测结论。
+    /// 组装在 `model_health`；KeyFile 的字段不外泄。
+    pub(super) fn hint_basis(
+        &self,
+        id: &PluginId,
+    ) -> (
+        bool,
+        Option<String>,
+        Option<super::model_health::RouteProbe>,
+    ) {
+        match self.load(id) {
+            Ok(file) => (!file.keys.is_empty(), file.problem, file.route),
+            Err(_) => (false, None, None),
+        }
+    }
+
+    /// 记下默认路由最近一次探测的结论（变了才写盘）；探测结果所有运行中的使用方共享。
+    pub(super) fn update_route(
+        &self,
+        id: &PluginId,
+        route: Option<super::model_health::RouteProbe>,
+    ) {
+        let Ok(mut file) = self.load(id) else {
+            return;
+        };
+        if file.route == route {
+            return;
+        }
+        file.route = route;
+        if let Err(e) = self.save(id, &file) {
+            tracing::warn!(plugin = %id, error = %e, "记下默认路由探测结论失败");
+        }
+    }
 }
 
 /// 使用方要的凭据名：没有 `bots` 时只有插件级的（插件 `id`）；有 `bots` 时 Bot 服务用 `<id>/<Bot 名>`，还有
@@ -139,7 +180,7 @@ fn credential_names(package: &PluginPackage) -> (Option<String>, Option<String>)
     )
 }
 
-fn uses_models(manifest: &Manifest) -> bool {
+pub(super) fn uses_models(manifest: &Manifest) -> bool {
     manifest.permissions.contains(&Permission::Models)
 }
 
@@ -159,7 +200,7 @@ pub enum ProviderState {
     Ready(Box<ModelsRoute>),
 }
 
-fn unavailable(message: impl Into<String>) -> InstallError {
+pub(super) fn unavailable(message: impl Into<String>) -> InstallError {
     InstallError::ModelsUnavailable(message.into())
 }
 
@@ -267,6 +308,8 @@ impl PluginManager {
                 let vars = self.model_vars(route, package, &file.keys);
                 file.vars = Some(vars.clone());
                 file.problem = None;
+                // 凭据重新接上：之前的探测结论是旧状态留下的，下一轮探测重写。
+                file.route = None;
                 store.save(id, &file)?;
                 Ok(vars)
             }
@@ -320,6 +363,7 @@ impl PluginManager {
         let vars = self.model_vars(&route, package, &file.keys);
         file.vars = Some(vars.clone());
         file.problem = None;
+        file.route = None;
         store.save(&manifest.id, &file)?;
         Ok(Some(vars))
     }
@@ -476,6 +520,7 @@ impl PluginManager {
                 let mut file = file;
                 file.vars = Some(vars);
                 file.problem = None;
+                file.route = None;
                 if let Err(e) = self.store.model_keys().save(&id, &file) {
                     tracing::warn!(plugin = %id, error = %e, "记下模型网关变量失败");
                 }
@@ -589,32 +634,6 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 详情页的轻提示（ADR-0043：核心给类别，App 按类别写文字）：声明了 `models` 的插件没接上网关时给。
-    /// 网关不在、没就绪，或凭据还没签发（包括签发失败，原因在 detail 里）都算没接上。
-    pub(in crate::plugin) fn models_hint(
-        &self,
-        id: &PluginId,
-        manifest: &Manifest,
-    ) -> Option<wonton_protocol::PluginHint> {
-        if !uses_models(manifest) {
-            return None;
-        }
-        let detail = match self.models_provider() {
-            ProviderState::Ready(_) => {
-                let file = self.store.model_keys().load(id).ok()?;
-                if file.connected() {
-                    return None;
-                }
-                file.problem
-            }
-            _ => None,
-        };
-        Some(wonton_protocol::PluginHint {
-            category: wonton_protocol::PluginHintCategory::ModelsNotConnected,
-            detail,
-        })
-    }
-
     /// 签发，再用这个凭据请求一次模型列表。返回 401 说明网关里的同名凭据不是这个值：先吊销再签发一次。
     async fn issue_verified(
         &self,
@@ -623,74 +642,13 @@ impl PluginManager {
         value: &str,
         langs: &Languages,
     ) -> Result<(), InstallError> {
-        let issue = &route.spec.credentials.issue;
-        self.run_command(route, issue, name, Some(value), langs)
-            .await?;
-        if self.verify(route, value, langs).await? {
-            return Ok(());
-        }
-        let revoke = &route.spec.credentials.revoke;
-        self.run_command(route, revoke, name, None, langs).await?;
-        self.run_command(route, issue, name, Some(value), langs)
-            .await?;
-        if self.verify(route, value, langs).await? {
-            return Ok(());
-        }
-        Err(unavailable(crate::l10n::text(
-            langs,
-            "plugin-settings-models-credential-rejected",
-            &[
-                ("provider", route.id.as_str().into()),
-                ("name", name.into()),
-            ],
-        )))
-    }
-
-    /// 用凭据请求 `GET <openai>/models`：200 是认，401 是不认，其他算网关出错。
-    async fn verify(
-        &self,
-        route: &ModelsRoute,
-        value: &str,
-        langs: &Languages,
-    ) -> Result<bool, InstallError> {
-        let path = route.spec.apis.openai.trim_end_matches('/');
-        let url = format!("http://{}{path}/models", route.upstream);
-        let (status, _) = self
-            .http
-            .request_json(
-                Method::GET,
-                &url,
-                Some(value),
-                RequestBody::Empty,
-                VERIFY_TIMEOUT,
-            )
+        self.issue_verified_catalog(route, name, value, langs)
             .await
-            .map_err(|e| {
-                unavailable(crate::l10n::text(
-                    langs,
-                    "plugin-settings-models-unreachable",
-                    &[
-                        ("provider", route.id.as_str().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ))
-            })?;
-        match status {
-            StatusCode::OK => Ok(true),
-            StatusCode::UNAUTHORIZED => Ok(false),
-            other => Err(unavailable(crate::l10n::text(
-                langs,
-                "plugin-settings-models-list-error",
-                &[
-                    ("provider", route.id.as_str().into()),
-                    ("status", format!("{other}").into()),
-                ],
-            ))),
-        }
+            .map(|_| ())
     }
 
     /// 在网关的容器里执行凭据命令，`{name}` 逐项替换成凭据名，不经 shell。
-    async fn run_command(
+    pub(super) async fn run_command(
         &self,
         route: &ModelsRoute,
         argv: &[String],

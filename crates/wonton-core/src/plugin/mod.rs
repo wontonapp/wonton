@@ -53,6 +53,7 @@ mod manifest_mcp;
 mod manifest_oidc;
 mod manifest_tabs;
 mod mcp_server;
+pub(crate) mod model_health;
 pub(crate) mod model_providers;
 pub mod models;
 pub mod mounts;

@@ -26,15 +26,22 @@ struct Started {
 
 impl PluginManager {
     /// 请求断开也完成启动；成功前检查容器就绪、网页入口及插件身份配置。
+    /// 返回 `probe`:刚启动了模型使用方时由调用方补一轮一次性探测(见 model_health)。
     pub async fn start_detached(
         self: &Arc<Self>,
         id: PluginId,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
-        detached(async move { this.start(&id).await }).await
+        let started_id = id.clone();
+        let closing = Arc::clone(&this);
+        let (view, probe) = detached(async move { this.start(&started_id).await }).await?;
+        if probe {
+            closing.check_models_once(vec![id]).await;
+        }
+        Ok(view)
     }
 
-    async fn start(&self, id: &PluginId) -> Result<PluginView, InstallError> {
+    async fn start(&self, id: &PluginId) -> Result<(PluginView, bool), InstallError> {
         let langs = self.owner_languages();
         self.check_not_upgrading(&langs)?;
         let before = self.begin_start(id, &langs)?;
@@ -43,6 +50,7 @@ impl PluginManager {
         let entry = plugins.get_mut(id).expect("启动期间其他操作不能删除插件");
         let result = match result {
             Ok(Started { health, deployed }) => {
+                let started = deployed.is_some();
                 if let Some(deployed) = deployed {
                     let listed = entry.listed.clone().expect("启动前检查了插件记录");
                     *entry = Entry::running(listed, deployed);
@@ -51,7 +59,12 @@ impl PluginManager {
                     entry.health = Some(health);
                     entry.checked_at = now_secs();
                 }
-                Ok(self.view(id, entry))
+                let probe = started
+                    && entry
+                        .listed
+                        .as_ref()
+                        .is_some_and(|l| super::model_health::needs_default_model(&l.manifest));
+                Ok((self.view(id, entry), probe))
             }
             Err(error) => {
                 entry.status = PluginStatus::Degraded {
@@ -70,7 +83,8 @@ impl PluginManager {
         drop(plugins);
         self.lan.end(id);
         self.changed();
-        result
+        let (view, probe) = result?;
+        Ok((view, probe))
     }
 
     fn begin_start(&self, id: &PluginId, langs: &Languages) -> Result<PluginStatus, InstallError> {
