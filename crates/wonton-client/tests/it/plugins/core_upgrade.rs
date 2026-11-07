@@ -1,5 +1,6 @@
 //! 核心的一键升级在 App 里怎么显示（ADR-0025 的“App 显示”）。
-//! 阶段等待使用快照订阅；watch 会合并中间值，限时阶段的等待者要先于触发它的请求挂起。
+//! 阶段等待使用快照订阅；watch 会合并中间值，限时阶段的等待者要先于触发它的请求挂起，并一直 poll 到交出阶段：
+//! 快照里有值不代表等待者下一次 poll 就绪。
 
 use axum::http::Method;
 use wonton_client::{
@@ -177,7 +178,7 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
     rig.app
         .dispatch(Action::RefreshCoreUpgrade { manual: false })
         .unwrap();
-    // 读到快照不代表 watch 已经提交通知；独立订阅确认发布完成后才检查等待者。
+    // 发布由独立订阅确认：它先看到重连，才轮到检查等待者。
     let delivered = async {
         loop {
             let view = published.next().await.expect("插件订阅提前结束");
@@ -197,7 +198,18 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
         // 保持测试运行时可运行，Tokio 不会在等网络响应期间自动推进暂停的时钟。
         tokio::task::yield_now().await;
     }
-    let observed = futures_util::poll!(&mut waiting).map(|view| view.core_upgrade.stage);
+    // 等待者像壳一样被持续驱动：快照里有值不等于它下一次 poll 就绪，单次 poll 可能仍是 Pending。
+    let observed = loop {
+        if let std::task::Poll::Ready(view) = futures_util::poll!(&mut waiting) {
+            break view.core_upgrade.stage;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}",
+            rig.app.plugins()
+        );
+        tokio::task::yield_now().await;
+    };
 
     reports(
         &rig,
@@ -224,17 +236,9 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
         assert!(std::time::Instant::now() < deadline);
         tokio::task::yield_now().await;
     };
-    // 后续报告已经替换快照，才放行旧等待者的轮询时钟：这时再取当前值就错过了重连。
-    tokio::time::advance(std::time::Duration::from_millis(20)).await;
-    let observed = match observed {
-        std::task::Poll::Ready(stage) => std::task::Poll::Ready(stage),
-        std::task::Poll::Pending => {
-            futures_util::poll!(&mut waiting).map(|view| view.core_upgrade.stage)
-        }
-    };
     assert_eq!(
         observed,
-        std::task::Poll::Ready(CoreUpgradeStage::Reconnecting),
+        CoreUpgradeStage::Reconnecting,
         "后续报告取代当前值前，等待者必须先收到重连阶段"
     );
     tokio::time::resume();
