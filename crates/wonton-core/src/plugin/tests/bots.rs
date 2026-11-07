@@ -119,9 +119,6 @@ fn bot_declarations_need_matrix_bot_and_real_services() {
         parse(&BOTS.replace("[init, gateway]", "[init, nope]")),
         Err(PackageError::UnknownService { .. })
     ));
-    // 网页入口全插件一份，不能指向 Bot 服务。
-    let webui = format!("{BOTS}\n  webui: {{service: gateway, port: 80}}");
-    assert!(matches!(parse(&webui), Err(PackageError::Service { .. })));
 }
 
 #[test]

@@ -279,7 +279,7 @@ impl PluginManager {
         self.reconcile_running(&package, &record).await
     }
 
-    /// 照安装时一样渲染，只重建 `lan.ports` 和实际插值用到地址的服务，保留安装时的依赖顺序。
+    /// 照安装时一样渲染，重建局域网端口、插值用到地址、以及共用它们网络命名空间的服务。
     pub(super) async fn rebuild_lan(
         &self,
         package: &PluginPackage,
@@ -307,17 +307,20 @@ impl PluginManager {
                 .await?;
             }
             (None, None) => {
-                let services: BTreeSet<&str> = package
+                let mut services: BTreeSet<String> = package
                     .manifest
                     .lan
                     .iter()
                     .flat_map(|lan| &lan.ports)
-                    .map(|port| port.service.as_str())
+                    .map(|port| port.service.clone())
                     .collect();
-                plan.containers.retain(|c| {
-                    services.contains(c.service.as_str())
-                        || c.variables.contains(super::ADDRESSES_VAR)
-                });
+                services.extend(
+                    plan.containers
+                        .iter()
+                        .filter(|c| c.variables.contains(super::ADDRESSES_VAR))
+                        .map(|c| c.service.clone()),
+                );
+                plan.retain_services(&services);
             }
             _ => unreachable!("迁移标记和预留成对出现"),
         }
@@ -377,7 +380,8 @@ impl PluginManager {
         mut plan: Deployment,
     ) -> Result<(), InstallError> {
         self.prepare_images(&mut plan).await?;
-        for container in &plan.containers {
+        // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
+        for container in plan.containers.iter() {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;

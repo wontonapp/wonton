@@ -16,8 +16,8 @@ use serde::de::Error as _;
 use serde_json::{Map, Value};
 
 use super::compose::{
-    FORBIDDEN_CONFIG_KEYS, FORBIDDEN_SERVICE_KEYS, FORBIDDEN_TOP_KEYS, Service,
-    network_mode_refusal, strip_extensions,
+    FORBIDDEN_CONFIG_KEYS, FORBIDDEN_SERVICE_KEYS, FORBIDDEN_TOP_KEYS, NetworkMode, Service,
+    strip_extensions,
 };
 use super::github_source::Origin;
 use super::images::IconFormat;
@@ -408,10 +408,15 @@ impl PluginPackage {
                         service: name.clone(),
                         message: pathed(&e),
                     })?;
-                Ok((
-                    name.as_str(),
-                    dependencies.map(|deps| deps.entries()).unwrap_or_default(),
-                ))
+                let mut dependencies = dependencies.map(|deps| deps.entries()).unwrap_or_default();
+                if let Some(target) = service
+                    .get("network_mode")
+                    .and_then(Value::as_str)
+                    .and_then(|mode| mode.strip_prefix("service:"))
+                {
+                    super::network_mode::add_dependency(&mut dependencies, target);
+                }
+                Ok((name.as_str(), dependencies))
             })
             .collect()
     }
@@ -507,6 +512,7 @@ impl PluginPackage {
                 Ok((name.clone(), service))
             })
             .collect::<Result<_, PackageError>>()?;
+        super::network_mode::validate(&self.manifest, &services)?;
         Ok(services)
     }
 
@@ -572,12 +578,15 @@ impl PluginPackage {
                 });
             }
         }
-        // 全插件一份的入口不能指向每个 Bot 一份的服务。
-        let bot_entry = refs.iter().find_map(|(field, service)| {
-            service
-                .filter(|s| bot_services.clone().any(|b| b == *s))
-                .map(|s| (*field, s))
-        });
+        // 网页入口连默认 Bot；MCP 和 provides 仍是全插件一份的入口。
+        let bot_entry = refs
+            .iter()
+            .filter(|(field, _)| *field != "webui.service")
+            .find_map(|(field, service)| {
+                service
+                    .filter(|s| bot_services.clone().any(|b| b == *s))
+                    .map(|s| (*field, s))
+            });
         if let Some((field, service)) = bot_entry {
             return Err(PackageError::Service {
                 service: service.clone(),
@@ -687,6 +696,7 @@ fn check_service_keys(name: &str, service: &Value) -> Result<(), PackageError> {
     let Value::Object(map) = service else {
         return Err(service_err("服务定义必须是映射".to_owned()));
     };
+    super::network_mode::validate_fields(name, map)?;
     for key in map.keys() {
         if let Some((_, reason)) = FORBIDDEN_SERVICE_KEYS.iter().find(|(k, _)| k == key) {
             return Err(service_err(format!("不支持 `{key}`：{reason}")));
@@ -694,16 +704,12 @@ fn check_service_keys(name: &str, service: &Value) -> Result<(), PackageError> {
     }
     match map.get("network_mode") {
         None => Ok(()),
-        Some(Value::String(mode)) if matches!(mode.as_str(), "none" | "host") => Ok(()),
-        Some(other) => {
-            let mode = other
-                .as_str()
-                .map_or_else(|| other.to_string(), str::to_owned);
-            Err(service_err(format!(
-                "不支持 network_mode `{mode}`：{}",
-                network_mode_refusal(&mode)
-            )))
-        }
+        Some(Value::String(mode)) => NetworkMode::try_from(mode.clone())
+            .map(|_| ())
+            .map_err(|reason| service_err(format!("不支持 network_mode `{mode}`：{reason}"))),
+        Some(other) => Err(service_err(format!(
+            "network_mode 必须是字符串，不能写 `{other}`"
+        ))),
     }
 }
 

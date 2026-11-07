@@ -261,6 +261,33 @@ fn compose_written_no_proxy_is_merged_into_every_networked_service() {
 }
 
 #[test]
+fn network_mode_shared_service_gets_the_same_egress_route_and_local_healthcheck() {
+    let source = package(
+        "  web:\n    image: nginx\n  sidecar:\n    image: busybox\n    network_mode: service:web\n    \
+         healthcheck:\n      test: wget -q http://127.0.0.1/",
+        "  permissions: [network.egress]",
+    );
+    let (_, plan) = with_proxy(&PluginPackage::parse(&source).unwrap());
+    let sidecar = service(&plan, "sidecar");
+    assert!(super::env_of(sidecar).contains(&format!("HTTP_PROXY={PROXY_URL}")));
+    assert!(sidecar.body.networking_config.is_none());
+    assert_eq!(
+        sidecar
+            .body
+            .healthcheck
+            .as_ref()
+            .unwrap()
+            .test
+            .as_ref()
+            .unwrap(),
+        &[
+            "CMD-SHELL",
+            "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; wget -q http://127.0.0.1/"
+        ]
+    );
+}
+
+#[test]
 fn without_a_proxy_only_the_empty_url_variable_is_injected() {
     let compose = package(
         "  web:\n    image: nginx\n    environment:\n      SEARX_PROXY: ${WONTON_PROXY_URL}\n    \

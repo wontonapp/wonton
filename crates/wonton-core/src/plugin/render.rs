@@ -367,7 +367,11 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         let options = ContainerOptions {
             requirements,
             network: network.as_str(),
-            aliases: vars.aliases(&name),
+            aliases: if service.network_mode.is_none() {
+                vars.aliases(&name)
+            } else {
+                Vec::new()
+            },
             labels: &labels,
             gpu,
         };
@@ -376,7 +380,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             lan::publish(&name, service, grant, &mut plan.body)?;
         }
         if let Some(vars) = ctx.egress.as_ref()
-            && service.network_mode.is_none()
+            && matches!(&service.network_mode, None | Some(NetworkMode::Service(_)))
         {
             vars.inject(&mut plan.body, services.keys().map(String::as_str));
             egress::healthcheck::apply(&mut plan.body);
@@ -490,10 +494,10 @@ fn dependencies(services: &BTreeMap<String, Service>) -> BTreeMap<&str, Vec<Stri
         .iter()
         .map(|(name, service)| {
             let deps = service
-                .depends_on
-                .as_ref()
-                .map(|deps| deps.entries().into_iter().map(|(name, _)| name).collect())
-                .unwrap_or_default();
+                .dependencies()
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
             (name.as_str(), deps)
         })
         .collect()
@@ -557,10 +561,7 @@ fn container_plan(
     all_labels.insert(LABEL_SERVICE.to_owned(), name.to_owned());
 
     let depends_on = service
-        .depends_on
-        .as_ref()
-        .map(|d| d.entries())
-        .unwrap_or_default()
+        .dependencies()
         .into_iter()
         .map(|(dep, cond)| (ctx.instance.container(&ctx.slug, &dep), cond))
         .collect();
@@ -638,13 +639,16 @@ fn host_config(
             })
             .collect()
     });
-    let network_mode = match service.network_mode {
-        Some(NetworkMode::None) => "none",
-        Some(NetworkMode::Host) => "host",
-        None => network,
+    let network_mode = match &service.network_mode {
+        Some(NetworkMode::None) => "none".to_owned(),
+        Some(NetworkMode::Host) => "host".to_owned(),
+        Some(NetworkMode::Service(target)) => {
+            format!("container:{}", ctx.instance.container(&ctx.slug, target))
+        }
+        None => network.to_owned(),
     };
     let mut host = HostConfig {
-        network_mode: Some(network_mode.to_owned()),
+        network_mode: Some(network_mode),
         mounts: Some(mounts),
         restart_policy: Some(restart_policy(name, service.restart.as_deref())?),
         init: service.init,

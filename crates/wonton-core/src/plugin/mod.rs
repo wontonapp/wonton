@@ -53,6 +53,7 @@ pub mod models;
 pub mod mounts;
 pub mod names;
 mod network_migration;
+mod network_mode;
 pub mod network_pool;
 pub mod network_pool_command;
 #[cfg(test)]

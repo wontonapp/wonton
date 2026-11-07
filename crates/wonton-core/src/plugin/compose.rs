@@ -1,8 +1,6 @@
 //! 核心接受的 Compose 子集。字段是白名单：不在这里的字段一律报错，而不是悄悄忽略。
 //!
-//! 安全相关的字段（端口、宿主网络、特权、Docker socket 等）一律拒绝，并给出原因；它们对应的高权限随权限确认
-//! 流程逐个开放。开放了的也不收 compose 里的写法：显卡由核心按清单的 `gpu.services` 和宿主实际的显卡交给服务
-//! （[`super::gpu`]），插件写不了设备路径。
+//! 端口和网络由核心管理；宿主能力必须声明对应权限。显卡由核心按 `gpu.services` 和宿主实际设备分配。
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -31,14 +29,6 @@ pub const FORBIDDEN_TOP_KEYS: &[(&str, &str)] = &[
     ("networks", "插件网络由核心创建和管理"),
     ("secrets", "M0 尚不支持 secrets，密钥由核心注入"),
 ];
-
-/// `network_mode` 接受 `none` 或声明权限后的 `host`，其余取值按原因拒绝。
-pub fn network_mode_refusal(value: &str) -> &'static str {
-    match value {
-        "host" => "宿主网络属于高权限（network.host）",
-        _ => "network_mode 只接受 none 或 host；插件网络由核心创建和管理",
-    }
-}
 
 /// 顶层 `configs` 里明确不支持的字段及原因。
 pub const FORBIDDEN_CONFIG_KEYS: &[(&str, &str)] = &[
@@ -267,12 +257,29 @@ pub struct LongConfigRef {
     pub mode: Option<Scalar>,
 }
 
-/// 只接受 `none`，其余取值在 [`super::package`] 里按原因拒绝。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// `service:` 只能借用同插件中不另设网络模式的服务。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub enum NetworkMode {
     None,
     Host,
+    Service(String),
+}
+
+impl TryFrom<String> for NetworkMode {
+    type Error = &'static str;
+
+    fn try_from(mut value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "none" => Ok(Self::None),
+            "host" => Ok(Self::Host),
+            _ if value.starts_with("service:") && value.len() > "service:".len() => {
+                value.drain(.."service:".len());
+                Ok(Self::Service(value))
+            }
+            _ => Err("network_mode 只接受 none、host 或 service:<本插件的服务名>"),
+        }
+    }
 }
 /// Compose 的固定设备映射。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -413,6 +420,20 @@ pub struct Service {
     pub security_opt: Vec<String>,
     #[serde(default)]
     pub privileged: Option<bool>,
+}
+
+impl Service {
+    pub(super) fn dependencies(&self) -> Vec<(String, DependCondition)> {
+        let mut dependencies = self
+            .depends_on
+            .as_ref()
+            .map(DependsOn::entries)
+            .unwrap_or_default();
+        if let Some(NetworkMode::Service(target)) = &self.network_mode {
+            super::network_mode::add_dependency(&mut dependencies, target);
+        }
+        dependencies
+    }
 }
 
 /// 去掉对象里 `x-` 开头的扩展字段（compose 规范允许在任意层级出现）。

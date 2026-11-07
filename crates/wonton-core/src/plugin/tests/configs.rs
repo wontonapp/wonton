@@ -264,7 +264,7 @@ fn services_without_network_join_no_network() {
         Some(plan.network.as_str())
     );
 
-    for mode in ["bridge", "service:web", "container:x"] {
+    for mode in ["bridge", "container:x"] {
         let other = compose.replace("network_mode: none", &format!("network_mode: '{mode}'"));
         assert!(
             matches!(

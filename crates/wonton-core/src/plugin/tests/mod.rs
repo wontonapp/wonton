@@ -39,6 +39,7 @@ mod manager;
 mod manifest_errors;
 mod model_providers;
 mod models;
+mod network_mode;
 mod network_pool;
 mod oidc;
 mod owner;

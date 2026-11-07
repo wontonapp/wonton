@@ -316,3 +316,36 @@ async fn the_echo_bot_example_gets_only_its_matrix_identity() {
         "{user:?}"
     );
 }
+
+#[tokio::test]
+async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_whole_group() {
+    let bed = Bed::start().await;
+    let m = bed.manager();
+    let source = echo()
+        .replace(
+            "x-wonton:",
+            "  proxy:\n    image: busybox\n    network_mode: service:bot\nx-wonton:",
+        )
+        .replace(
+            "  permissions: [matrix.bot]",
+            "  bots: {services: [bot, proxy]}\n  permissions: [matrix.bot]",
+        );
+    m.install(&source, &granted()).await.unwrap();
+    let before = bed.env();
+    let package =
+        super::super::PluginPackage::parse(&source.replace("version: 1.0.0", "version: 1.1.0"))
+            .unwrap();
+    m.upgrade_checked(package, &granted(), false).await.unwrap();
+    assert_eq!(bed.env(), before);
+    assert!(bed.token_valid(&before["TOKEN"]));
+    let target = container_name("app-echo", "bot");
+    let proxy = container_name("app-echo", "proxy");
+    assert_eq!(
+        bed.docker.created(&proxy).unwrap()["HostConfig"]["NetworkMode"],
+        format!("container:{target}")
+    );
+    m.uninstall(&id(), false).await.unwrap();
+    assert!(!bed.docker.containers().contains(&target));
+    assert!(!bed.docker.containers().contains(&proxy));
+    assert!(!bed.token_valid(&before["TOKEN"]));
+}
