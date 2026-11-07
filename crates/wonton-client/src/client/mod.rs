@@ -3,12 +3,12 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, DeviceNetwork,
-    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
-    OwnerProfile, OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel,
-    RoomTransfers, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
-    TabsViewModel, TransfersViewModel,
+    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, FileCard,
+    FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel, OwnerProfile,
+    OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
+    TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -24,8 +24,9 @@ use crate::subscription::{
     SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
-use switch::{PushInput, Replay};
+use switch::Replay;
 
+mod dispatch;
 mod limits;
 mod media;
 mod push_route;
@@ -63,113 +64,6 @@ impl ClientCore {
     #[uniffi::constructor]
     pub fn new(data_dir: String) -> Result<Arc<Self>, CoreError> {
         Self::with_network(&data_dir, Network::Internet)
-    }
-
-    /// 处理一个操作。会话操作成功时状态立即更新并推给所有订阅者；失败时状态不变，返回原因。
-    ///
-    /// 这个调用不阻塞，可以在主线程上直接调用。连接家里服务器这类网络操作在后台执行。
-    pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
-        let scope = self.scope();
-        match action {
-            Action::CreateSession { title } => self.update_sessions(|store| store.create(&title)),
-            Action::SelectSession { session_id } => {
-                self.update_sessions(|store| store.select(session_id))
-            }
-            Action::DeleteSession { session_id } => {
-                self.update_sessions(|store| store.delete(&session_id))
-            }
-            Action::ConnectHome { ticket } => scope.home.connect(&ticket),
-            Action::PairHome { code, device_name } => scope.home.pair(code.expose(), &device_name),
-            Action::InviteDevice => scope.home.invite(),
-            Action::AddServer => self.change_servers(ServerList::add),
-            Action::CancelAddServer => self.change_servers(ServerList::cancel_add),
-            Action::SwitchServer { id } => self.change_servers(|servers| servers.switch(&id)),
-            Action::RenameServer { id, name } => {
-                self.change_servers(|servers| servers.rename(&id, &name))
-            }
-            Action::RemoveServer { id } => self.change_servers(|servers| servers.remove(&id)),
-            Action::RefreshPeers
-            | Action::ShowPeerCode
-            | Action::ScanPeerCode { .. }
-            | Action::RemovePeer { .. } => scope.peers.dispatch(action),
-            Action::AppForegrounded => {
-                scope.foregrounded();
-                Ok(())
-            }
-            Action::AppBackgrounded => {
-                scope.backgrounded();
-                Ok(())
-            }
-            Action::NetworkChanged { network } => {
-                self.replay().network = Some(network);
-                scope.home.network_changed(network);
-                if network != DeviceNetwork::None {
-                    // 连接可能没断、只是迁移了路径：同步和发送队列的退避不用等完。
-                    scope.chat.foregrounded();
-                }
-                Ok(())
-            }
-            Action::RetryConnection => scope.home.retry(),
-            Action::SetPushEndpoint { endpoint } => {
-                scope.push.set_endpoint(endpoint.clone())?;
-                self.register_others(&scope, endpoint.clone());
-                self.replay().push = Some(PushInput::Endpoint(endpoint));
-                Ok(())
-            }
-            Action::PushUnavailable { message } => {
-                scope.push.unavailable(message.clone());
-                self.replay().push = Some(PushInput::Unavailable(message));
-                Ok(())
-            }
-            Action::SetPushMethod { method } => scope.push_method.set(method),
-            action @ (Action::RefreshOnboarding
-            | Action::RestartOnboarding
-            | Action::ChooseOnboardingAgent { .. }
-            | Action::ContinueOnboarding
-            | Action::SkipOnboardingStep
-            | Action::BackOnboardingStep
-            | Action::ToggleOnboardingNeed { .. }
-            | Action::EditOnboardingProfile { .. }
-            | Action::TestModelProvider { .. }
-            | Action::UseCurrentModel
-            | Action::ChooseModelLogin { .. }
-            | Action::RetryOnboardingItem { .. }
-            | Action::DismissModelProviderProblem
-            | Action::SetPrimaryAgent { .. }
-            | Action::DismissReplacedAgentOffer
-            | Action::DismissOnboardingTip { .. }) => scope.onboarding.dispatch(action),
-            action @ (Action::UploadFile { .. }
-            | Action::DownloadFile { .. }
-            | Action::CancelTransfer { .. }
-            | Action::DismissTransfer { .. }
-            | Action::ResendFileLink { .. }
-            | Action::DeleteFile { .. }
-            | Action::SendFileToDevices { .. }
-            | Action::GrantFileToRoom { .. }
-            | Action::DismissFileProblem) => scope.files.dispatch(action),
-            action @ (Action::RefreshCoreUpgrade { .. }
-            | Action::StartCoreUpgrade { .. }
-            | Action::CancelCoreUpgrade
-            | Action::SkipCoreUpgrade { .. }) => scope.plugins.dispatch_core_upgrade(action),
-            Action::SetAccentColor { color } => self.appearance.set_accent(color),
-            Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
-            Action::SetTextSize { size } => self.appearance.set_text_size(size),
-            Action::SetFont { font } => self.appearance.set_font(font),
-            Action::SelectTab { tab } => scope.tabs.select(tab),
-            Action::CloseTabOverlay => scope.tabs.close_overlay(),
-            Action::PinTab { tab, replacing } => scope.tabs.pin(tab, replacing),
-            Action::UnpinTab { tab } => scope.tabs.unpin(tab),
-            Action::MoveTab { tab, index } => scope.tabs.move_tab(tab, index),
-            Action::SetTabLabels { visible } => scope.tabs.set_labels(visible),
-            Action::SetTabDisplay { tab, display } => scope.tabs.set_display(tab, display),
-            Action::EnterFullscreen { tab } => scope.tabs.enter_fullscreen(tab),
-            Action::ExitFullscreen { tab } => scope.tabs.exit_fullscreen(tab),
-            Action::ReloadTab { tab } => scope.tabs.reload(tab),
-            Action::TabLoadFailed { tab, status } => scope.tabs.load_failed(tab, status),
-            Action::TabLoadSucceeded { tab } => scope.tabs.load_succeeded(tab),
-            Action::DismissUninstalledTabs => scope.tabs.dismiss_uninstalled(),
-            other => self.dispatch_plugins_or_chat(&scope, other),
-        }
     }
 
     /// 当前的底栏和插件页面，用于首帧渲染。

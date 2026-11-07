@@ -1,18 +1,22 @@
-//! “其他服务器”页面（ADR-0050）的行为测试：四个操作经隧道打到假核心的 `/_wonton/api/peers`，
-//! 设置首页的“其他服务器”一行跟着列表出现；对面是本机假扮的核心管理接口。
+//! “其他服务器”页面（ADR-0050）的行为测试：新的动作各打各的接口，设置首页的“其他服务器”一行跟着列表出现；
+//! 对面是本机假扮的核心管理接口。
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use axum::http::{Method, StatusCode};
 use wonton_client::{
-    Action, PeerCode, PeerError, PeerRow, PeerStatus, PeersState, PeersViewModel, SecretString,
-    SettingsEntry,
+    Action, PeerCode, PeerError, PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel,
+    RejectedPeerRow, SecretString, SettingsEntry,
 };
 use wonton_protocol::{
-    PEER_ERROR_HEADER, PEERS_PATH, PeerScan, PeersView, peer_code_path, peer_path,
+    PEER_ERROR_HEADER, PEERS_PATH, PeerScan, PeersView, peer_code_path, peer_code_reset_path,
+    peer_path, peer_rejected_path, peer_request_approve_path, peer_request_reject_path,
 };
 
 use crate::plugins::rig::{Canned, Headered, Rig, WAIT};
+
+mod code;
+mod requests;
 
 /// 安静窗：要跨过完整的轮询周期（间隔是客户端核心里的 3 秒常量）。核心跑在自己的运行时里，
 /// 测试的暂停时钟驱动不了它，只能观察真实时间（同 tabs/polling.rs 的 `QUIET`）。
@@ -20,12 +24,24 @@ const QUIET: Duration = Duration::from_secs(8);
 /// 已配对服务器的状态按探活周期（30 秒）取：等一个变化要跨过整整一个周期再加余量。
 const STATUS_WAIT: Duration = Duration::from_secs(45);
 
-fn peers_view(peers: Vec<PeerRow>, code: Option<PeerCode>) -> String {
+fn peers_view(peers: Vec<PeerRow>) -> String {
     serde_json::to_string(&PeersView {
         peers,
         requests: Vec::new(),
         rejected: Vec::new(),
-        code,
+    })
+    .unwrap()
+}
+
+fn view_with(
+    peers: Vec<PeerRow>,
+    requests: Vec<PeerRequestRow>,
+    rejected: Vec<RejectedPeerRow>,
+) -> String {
+    serde_json::to_string(&PeersView {
+        peers,
+        requests,
+        rejected,
     })
     .unwrap()
 }
@@ -41,6 +57,29 @@ fn row(server_name: &str) -> PeerRow {
     }
 }
 
+fn request(id: &str, server_name: &str) -> PeerRequestRow {
+    PeerRequestRow {
+        id: id.to_owned(),
+        server_name: server_name.to_owned(),
+        owner_user_id: format!("@sam:{server_name}"),
+        owner_display_name: "Sam".into(),
+        received_at_ms: 1_799_000_100_000,
+        conflicts_with: None,
+        detail: Some("endpoint 1a2b3c4d".into()),
+    }
+}
+
+fn rejected(id: &str, server_name: &str) -> RejectedPeerRow {
+    RejectedPeerRow {
+        id: id.to_owned(),
+        server_name: server_name.to_owned(),
+        owner_user_id: format!("@sam:{server_name}"),
+        owner_display_name: "Sam".into(),
+        rejected_at_ms: 1_799_000_200_000,
+        detail: None,
+    }
+}
+
 /// 家里的服务器的错误回应：类别在响应头和错误体里（说明按 App 的语言写好，这里用测试里的占位句）。
 fn peer_error_headered(status: u16, kind: &str) -> Headered {
     Headered(
@@ -48,13 +87,6 @@ fn peer_error_headered(status: u16, kind: &str) -> Headered {
         vec![(PEER_ERROR_HEADER.to_owned(), kind.to_owned())],
         serde_json::json!({"error": {"kind": kind, "message": "核心写的说明"}}).to_string(),
     )
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
 }
 
 async fn wait_peers(rig: &Rig, done: impl FnMut(&PeersViewModel) -> bool) -> PeersViewModel {
@@ -66,14 +98,21 @@ async fn wait_peers_within(
     within: Duration,
     mut done: impl FnMut(&PeersViewModel) -> bool,
 ) -> PeersViewModel {
-    let deadline = Instant::now() + within;
-    loop {
-        let view = rig.app.peers();
-        if done(&view) {
-            return view;
+    // 订阅 ViewModel 本身，不按固定间隔去读：状态一变就被叫醒，也不会抢在会话先读到的旧值上。
+    let subscription = rig.app.subscribe_peers();
+    let mut latest = rig.app.peers();
+    let wait = async {
+        while let Some(view) = subscription.next().await {
+            latest = view;
+            if done(&latest) {
+                return true;
+            }
         }
-        assert!(Instant::now() < deadline, "{view:?}");
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        false
+    };
+    match tokio::time::timeout(within, wait).await {
+        Ok(true) => latest,
+        _ => panic!("{:?}", rig.app.peers()),
     }
 }
 
@@ -101,16 +140,19 @@ async fn wait_peers_entry(rig: &Rig, expected: Option<SettingsEntry>) {
 }
 
 async fn wait_peers_entry_within(rig: &Rig, within: Duration, expected: Option<SettingsEntry>) {
-    let deadline = Instant::now() + within;
-    loop {
-        if peers_entry(rig) == expected {
-            return;
+    // 这一行是设置 ViewModel 里算出来的：订阅它，变了再比。
+    let subscription = rig.app.subscribe_settings();
+    let wait = async {
+        while subscription.next().await.is_some() {
+            if peers_entry(rig) == expected {
+                return true;
+            }
         }
-        assert!(
-            Instant::now() < deadline,
-            "设置首页的“其他服务器”一行没有变成 {expected:?}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        false
+    };
+    match tokio::time::timeout(within, wait).await {
+        Ok(true) => {}
+        _ => panic!("设置首页的“其他服务器”一行没有变成 {expected:?}"),
     }
 }
 
@@ -119,7 +161,7 @@ async fn connected_and_listed(rig: &Rig, peers: Vec<PeerRow>) {
     rig.core.answer_always(
         Method::GET,
         PEERS_PATH,
-        Canned(StatusCode::OK.as_u16(), peers_view(peers, None)),
+        Canned(StatusCode::OK.as_u16(), peers_view(peers)),
     );
     rig.connected().await;
     wait_peers(rig, |view| view.state == PeersState::Ready).await;
@@ -136,12 +178,12 @@ async fn refreshing_lists_the_paired_servers_and_the_settings_entry() {
     wait_peers_entry(&rig, Some(SettingsEntry::Peers { count: 2 })).await;
 
     // 下拉刷新：列表换成最新的一份。
-    rig.core.answer(
+    rig.core.answer_always(
         Method::GET,
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(vec![row("abc12345.wonton")], None),
+            peers_view(vec![row("abc12345.wonton")]),
         ),
     );
     rig.app.dispatch(Action::RefreshPeers).unwrap();
@@ -152,56 +194,27 @@ async fn refreshing_lists_the_paired_servers_and_the_settings_entry() {
     wait_peers_entry(&rig, Some(SettingsEntry::Peers { count: 1 })).await;
 }
 
-/// 出码后有码；到过期时间就清掉，壳不再画。
-#[tokio::test]
-async fn the_code_shows_until_it_expires() {
-    let rig = Rig::new().await;
-    connected_and_listed(&rig, Vec::new()).await;
-
-    let code = PeerCode {
-        code: SecretString::new("wonton://peer?k=one-time-secret"),
-        expires_at_ms: now_ms() + 900,
-    };
-    rig.core.answer(
-        Method::POST,
-        &peer_code_path(),
-        Canned(
-            StatusCode::OK.as_u16(),
-            serde_json::to_string(&code).unwrap(),
-        ),
-    );
-    rig.app.dispatch(Action::ShowPeerCode).unwrap();
-    let view = wait_peers(&rig, |view| view.code.is_some()).await;
-    assert_eq!(view.code.unwrap().expires_at_ms, code.expires_at_ms);
-    assert_eq!(rig.core.seen(&Method::POST, &peer_code_path()).len(), 1);
-
-    wait_peers(&rig, |view| view.code.is_none()).await;
-}
-
 /// 扫码成功：码原样交给核心，列表刷新后多出“等对方同意”的一条。
 #[tokio::test]
 async fn scanning_a_code_submits_it_and_refreshes_the_list() {
     let rig = Rig::new().await;
     connected_and_listed(&rig, Vec::new()).await;
 
-    let code = SecretString::new("wonton://peer?k=one-time-secret");
+    let code = SecretString::new("wonton://peer?v=1&token=abc");
     rig.core.answer(
         Method::POST,
         PEERS_PATH,
         Canned(StatusCode::OK.as_u16(), "{}".into()),
     );
-    rig.core.answer(
+    rig.core.answer_always(
         Method::GET,
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(
-                vec![PeerRow {
-                    status: PeerStatus::AwaitingApproval,
-                    ..row("abc12345.wonton")
-                }],
-                None,
-            ),
+            peers_view(vec![PeerRow {
+                status: PeerStatus::AwaitingApproval,
+                ..row("abc12345.wonton")
+            }]),
         ),
     );
     rig.app
@@ -217,7 +230,7 @@ async fn scanning_a_code_submits_it_and_refreshes_the_list() {
     assert_eq!(
         seen[0].body,
         serde_json::to_string(&PeerScan {
-            code: SecretString::new("wonton://peer?k=one-time-secret"),
+            code: SecretString::new("wonton://peer?v=1&token=abc"),
         })
         .unwrap()
     );
@@ -234,12 +247,12 @@ async fn removing_a_peer_refreshes_the_list() {
         &peer_path("abc12345.wonton"),
         Canned(StatusCode::OK.as_u16(), "{}".into()),
     );
-    rig.core.answer(
+    rig.core.answer_always(
         Method::GET,
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(vec![row("def67890.wonton")], None),
+            peers_view(vec![row("def67890.wonton")]),
         ),
     );
     rig.app
@@ -269,7 +282,7 @@ async fn removing_the_last_peer_zeroes_the_settings_count() {
     rig.core.answer_always(
         Method::GET,
         PEERS_PATH,
-        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new(), None)),
+        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new())),
     );
     // 取列表压住：那一行要在删除成功后马上没有，不等下一次取列表。
     rig.core.hold(Method::GET, PEERS_PATH);
@@ -297,13 +310,10 @@ async fn a_status_change_shows_up_within_a_probe_cycle() {
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(
-                vec![PeerRow {
-                    status: PeerStatus::Offline,
-                    ..row("abc12345.wonton")
-                }],
-                None,
-            ),
+            peers_view(vec![PeerRow {
+                status: PeerStatus::Offline,
+                ..row("abc12345.wonton")
+            }]),
         ),
     );
     let view = wait_peers_within(&rig, STATUS_WAIT, |view| {
@@ -319,7 +329,7 @@ async fn a_status_change_shows_up_within_a_probe_cycle() {
     rig.core.answer_always(
         Method::GET,
         PEERS_PATH,
-        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new(), None)),
+        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new())),
     );
     wait_peers_within(&rig, STATUS_WAIT, |view| {
         view.state == PeersState::Ready && view.peers.is_empty()
@@ -332,7 +342,8 @@ async fn a_status_change_shows_up_within_a_probe_cycle() {
 #[tokio::test]
 async fn a_failed_scan_fails_with_the_server_s_category() {
     for (kind, status, expected) in [
-        ("code_expired", 410, PeerError::CodeExpired),
+        ("code_revoked", 410, PeerError::CodeRevoked),
+        ("too_many_requests", 429, PeerError::TooManyRequests),
         ("peer_rejected", 403, PeerError::PeerRejected),
         ("self_pairing", 400, PeerError::SelfPairing),
         ("already_paired", 409, PeerError::AlreadyPaired),
@@ -343,7 +354,7 @@ async fn a_failed_scan_fails_with_the_server_s_category() {
             .answer_headered(Method::POST, PEERS_PATH, peer_error_headered(status, kind));
         rig.app
             .dispatch(Action::ScanPeerCode {
-                code: SecretString::new("wonton://peer?k=one-time-secret"),
+                code: SecretString::new("wonton://peer?v=1&token=abc"),
             })
             .unwrap();
         assert!(
@@ -368,7 +379,7 @@ async fn an_unknown_category_fails_with_other() {
     );
     rig.app
         .dispatch(Action::ScanPeerCode {
-            code: SecretString::new("wonton://peer?k=one-time-secret"),
+            code: SecretString::new("wonton://peer?v=1&token=abc"),
         })
         .unwrap();
     assert!(
@@ -441,19 +452,17 @@ async fn a_device_the_core_does_not_allow_sees_no_peers_entry() {
     assert_eq!(peers_entry(&rig), None);
 }
 
-/// 等待中的轮询：对方扫了码、核心把码作废以后，几秒内 ViewModel 的码也清掉（壳会跟着关弹层）。
-/// 没人可等之后就停：再跨过完整的轮询周期也不发列表请求。
+/// 出码页开着：几秒取一次列表，对方扫了以后请求马上出现；关掉出码页、也没有可等的东西就停。
 #[tokio::test]
-async fn a_voided_code_is_picked_up_by_the_poll_and_polling_then_stops() {
+async fn an_open_code_page_polls_fast_and_hiding_it_stops() {
     let rig = Rig::new().await;
     connected_and_listed(&rig, Vec::new()).await;
 
     let code = PeerCode {
-        code: SecretString::new("wonton://peer?k=one-time-secret"),
-        expires_at_ms: now_ms() + 600_000,
+        code: SecretString::new("wonton://peer?v=1&token=abc"),
     };
     rig.core.answer(
-        Method::POST,
+        Method::GET,
         &peer_code_path(),
         Canned(
             StatusCode::OK.as_u16(),
@@ -463,10 +472,34 @@ async fn a_voided_code_is_picked_up_by_the_poll_and_polling_then_stops() {
     rig.app.dispatch(Action::ShowPeerCode).unwrap();
     wait_peers(&rig, |view| view.code.is_some()).await;
 
-    // 假核心这边码已经作废（对方扫掉了），出码的一方也没有可等的一条：下一次轮询把它清掉。
-    let view = wait_peers(&rig, |view| view.code.is_none()).await;
-    assert_eq!(view.state, PeersState::Ready);
+    // 对方扫了：下一次快取把请求带进来。
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(
+            StatusCode::OK.as_u16(),
+            view_with(
+                Vec::new(),
+                vec![request("r1", "abc12345.wonton")],
+                Vec::new(),
+            ),
+        ),
+    );
+    wait_peers_within(&rig, QUIET, |view| !view.requests.is_empty()).await;
 
+    // 关掉出码页，把请求也处理掉：没有可等的东西就不再取。
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new())),
+    );
+    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    wait_peers(&rig, |view| {
+        view.state == PeersState::Ready && view.requests.is_empty() && view.code.is_some()
+    })
+    .await;
+    rig.app.dispatch(Action::HidePeerCode).unwrap();
+    wait_peers(&rig, |view| view.code.is_none()).await;
     let before = rig.core.seen(&Method::GET, PEERS_PATH).len();
     let deadline = Instant::now() + QUIET;
     while Instant::now() < deadline {
@@ -495,18 +528,15 @@ async fn an_approval_is_picked_up_by_the_poll() {
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(
-                vec![PeerRow {
-                    status: PeerStatus::AwaitingApproval,
-                    ..row("abc12345.wonton")
-                }],
-                None,
-            ),
+            peers_view(vec![PeerRow {
+                status: PeerStatus::AwaitingApproval,
+                ..row("abc12345.wonton")
+            }]),
         ),
     );
     rig.app
         .dispatch(Action::ScanPeerCode {
-            code: SecretString::new("wonton://peer?k=one-time-secret"),
+            code: SecretString::new("wonton://peer?v=1&token=abc"),
         })
         .unwrap();
     wait_peers(&rig, |view| {
@@ -524,7 +554,7 @@ async fn an_approval_is_picked_up_by_the_poll() {
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(vec![row("abc12345.wonton")], None),
+            peers_view(vec![row("abc12345.wonton")]),
         ),
     );
     let view = wait_peers(&rig, |view| {
@@ -550,13 +580,10 @@ async fn a_checking_row_is_followed_until_it_settles_and_polling_then_stops() {
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(
-                vec![PeerRow {
-                    status: PeerStatus::Checking,
-                    ..row("abc12345.wonton")
-                }],
-                None,
-            ),
+            peers_view(vec![PeerRow {
+                status: PeerStatus::Checking,
+                ..row("abc12345.wonton")
+            }]),
         ),
     );
     rig.app.dispatch(Action::RefreshPeers).unwrap();
@@ -575,7 +602,7 @@ async fn a_checking_row_is_followed_until_it_settles_and_polling_then_stops() {
         PEERS_PATH,
         Canned(
             StatusCode::OK.as_u16(),
-            peers_view(vec![row("abc12345.wonton")], None),
+            peers_view(vec![row("abc12345.wonton")]),
         ),
     );
     let view = wait_peers(&rig, |view| {

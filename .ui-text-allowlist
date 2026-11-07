@@ -54,7 +54,8 @@ crates/wonton-client/src/chat/mod.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/chat/pending.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/chat/storage.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/chat/view.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/client.rs | 待抽取（ADR-0043） | 2026-12-31
+crates/wonton-client/src/client/dispatch.rs | 待抽取（ADR-0043） | 2026-12-31
+crates/wonton-client/src/client/mod.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/files/mod.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/files/store.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/home/mod.rs | 待抽取（ADR-0043） | 2026-12-31

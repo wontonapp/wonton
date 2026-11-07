@@ -427,7 +427,6 @@ mod tests {
                     }],
                     expires_at_ms: 1_793_000_600_000,
                     plugin_id: None,
-                    peer_request: None,
                     window: None,
                 },
                 sending,

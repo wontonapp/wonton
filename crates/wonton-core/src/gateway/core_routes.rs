@@ -128,6 +128,36 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
 }
 
+/// 服务器配对的管理接口（ADR-0050）。
+fn peer_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::PEERS_PATH,
+            get(peers::list).post(peers::scan),
+        )
+        .route(&wonton_protocol::peer_code_path(), get(peers::code))
+        .route(
+            &wonton_protocol::peer_code_reset_path(),
+            post(peers::reset_code),
+        )
+        .route(
+            &wonton_protocol::peer_request_approve_path("{id}"),
+            post(peers::approve),
+        )
+        .route(
+            &wonton_protocol::peer_request_reject_path("{id}"),
+            post(peers::reject),
+        )
+        .route(
+            &wonton_protocol::peer_rejected_path("{id}"),
+            delete(peers::unreject),
+        )
+        .route(
+            &wonton_protocol::peer_path("{server_name}"),
+            delete(peers::remove),
+        )
+}
+
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
         .route("/", get(home))
@@ -184,15 +214,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             post(core_upgrade::check),
         )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
-        .route(
-            wonton_protocol::PEERS_PATH,
-            get(peers::list).post(peers::scan),
-        )
-        .route(&wonton_protocol::peer_code_path(), post(peers::code))
-        .route(
-            &wonton_protocol::peer_path("{server_name}"),
-            delete(peers::remove),
-        )
+        .merge(peer_routes())
         .route(
             "/_wonton/api/devices",
             get(devices::list).post(devices::add),

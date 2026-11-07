@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use wonton_l10n::Arg;
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow, PeerRequest, PermissionRisk, WindowEnd,
+    ConfirmationState, ConfirmationWindow, PermissionRisk, WindowEnd,
 };
 
 use super::file_results::human_size;
@@ -30,8 +30,6 @@ pub struct Draft {
     pub scope: Option<String>,
     /// 卡片关于哪个插件：壳用它画“打开”和“放到底栏”。
     pub plugin_id: Option<String>,
-    /// 这张卡片是服务器配对请求时才有（ADR-0050）。
-    pub peer_request: Option<PeerRequest>,
 }
 
 impl Draft {
@@ -239,7 +237,6 @@ pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft
             &l10n::text(langs, "chat-choice-deny-install", &[]),
         ),
         scope: None,
-        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -302,7 +299,6 @@ pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages
             &l10n::text(langs, "chat-choice-deny-install", &[]),
         ),
         scope: None,
-        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -355,7 +351,6 @@ pub fn agent_update(
             &l10n::text(langs, "chat-choice-deny-update", &[]),
         ),
         scope: None,
-        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -416,7 +411,6 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
             &l10n::text(langs, "chat-choice-deny-install", &[]),
         ),
         scope: None,
-        peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
 }
@@ -440,7 +434,6 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Langua
             &l10n::text(langs, "chat-choice-cancel", &[]),
         ),
         scope: None,
-        peer_request: None,
         plugin_id: None,
     }
 }
@@ -475,7 +468,6 @@ pub fn tool_call(
             &l10n::text(langs, "chat-choice-deny", &[]),
         ),
         scope: None,
-        peer_request: None,
         plugin_id: None,
     }
 }
@@ -539,7 +531,6 @@ pub fn agent_permission(
         lines,
         choices: buttons,
         scope: None,
-        peer_request: None,
         plugin_id: None,
     }
 }
@@ -628,7 +619,6 @@ pub fn save_file(
         lines,
         choices: buttons,
         scope: None,
-        peer_request: None,
         plugin_id: None,
     }
 }
@@ -719,7 +709,6 @@ mod tests {
             ),
             expires_at_ms: 1,
             plugin_id: None,
-            peer_request: None,
             window: None,
         };
         assert_eq!(content(&card, &langs)["msgtype"], "m.text");
@@ -736,7 +725,6 @@ mod tests {
             choices: Vec::new(),
             expires_at_ms: 1,
             plugin_id: None,
-            peer_request: None,
             window: Some(ConfirmationWindow {
                 expires_at_ms: 1,
                 allowed: Some(2),

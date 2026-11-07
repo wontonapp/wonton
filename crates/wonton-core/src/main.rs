@@ -73,7 +73,7 @@ async fn open_peers_and_federation(
     cfg: &Config,
     owner: &Arc<OwnerStore>,
     tunnel: &Tunnel,
-    confirmations: &Arc<mcp::Confirmations>,
+    notices: &Option<Arc<NoticeRoom>>,
     manager: &Arc<PluginManager>,
 ) -> anyhow::Result<(
     Option<Arc<peers::Peers>>,
@@ -94,7 +94,9 @@ async fn open_peers_and_federation(
             owner_user_id: format!("@{}:{}", cfg.username, matrix.server_name),
         },
         tunnel.clone(),
-        confirmations.clone(),
+        notices
+            .clone()
+            .map(|notices| notices as Arc<dyn peers::OwnerNotices>),
         owner_display_name,
         {
             let manager = manager.clone();
@@ -319,8 +321,8 @@ async fn serve() -> anyhow::Result<()> {
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
-    // 服务器配对的同意卡片（ADR-0050）和 Bot 调用确认用同一套 Confirmations。
-    let (bus, confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    // Bot 调用的确认卡片（ADR-0016）。
+    let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
@@ -333,7 +335,7 @@ async fn serve() -> anyhow::Result<()> {
     let tunnel = bind_tunnel(&cfg, &manager).await?;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
-        open_peers_and_federation(&cfg, &owner, &tunnel, &confirmations, &manager).await?;
+        open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices);
     let push = open_push(&cfg, &tunnel, &manager)?;

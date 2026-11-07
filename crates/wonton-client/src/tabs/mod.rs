@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    CoreError, HomeStatus, HomeViewModel, PluginState, PluginsViewModel, TabDisplayChoice,
+    Action, CoreError, HomeStatus, HomeViewModel, PluginState, PluginsViewModel, TabDisplayChoice,
     TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
 };
 
@@ -131,6 +131,28 @@ impl TabsLink {
     /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
     pub(crate) fn sender(&self) -> watch::Sender<TabsViewModel> {
         self.view.clone()
+    }
+
+    /// 底栏和插件页面自己的操作。
+    pub(crate) fn dispatch(&self, action: Action) -> Result<(), CoreError> {
+        match action {
+            Action::SelectTab { tab } => self.select(tab),
+            Action::CloseTabOverlay => self.close_overlay(),
+            Action::PinTab { tab, replacing } => self.pin(tab, replacing),
+            Action::UnpinTab { tab } => self.unpin(tab),
+            Action::MoveTab { tab, index } => self.move_tab(tab, index),
+            Action::SetTabLabels { visible } => self.set_labels(visible),
+            Action::SetTabDisplay { tab, display } => self.set_display(tab, display),
+            Action::EnterFullscreen { tab } => self.enter_fullscreen(tab),
+            Action::ExitFullscreen { tab } => self.exit_fullscreen(tab),
+            Action::ReloadTab { tab } => self.reload(tab),
+            Action::TabLoadFailed { tab, status } => self.load_failed(tab, status),
+            Action::TabLoadSucceeded { tab } => self.load_succeeded(tab),
+            Action::DismissUninstalledTabs => self.dismiss_uninstalled(),
+            _ => Err(CoreError::InvalidInput {
+                reason: "不是底栏操作".to_owned(),
+            }),
+        }
     }
 
     pub(crate) fn select(&self, tab: TabRef) -> Result<(), CoreError> {

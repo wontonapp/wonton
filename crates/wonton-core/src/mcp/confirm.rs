@@ -214,7 +214,6 @@ impl Confirmations {
             choices: draft.choices,
             expires_at_ms: now_ms(created + self.ttl),
             plugin_id: draft.plugin_id,
-            peer_request: draft.peer_request,
             window: None,
         };
         let (waiter, answered) = oneshot::channel();

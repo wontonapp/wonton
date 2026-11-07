@@ -1,6 +1,6 @@
 //! 把消息文字排成壳直接画的块和片段：别人发的（多半是 Bot）按 Markdown 解析，自己发的原样显示。
 //!
-//! 为了消息里的内容不能让 App 做额外的事：HTML 原样显示成文字，图片不去下载，只画成链接，链接只认 http、https 和 mailto。
+//! 为了消息里的内容不能让 App 做额外的事：HTML 原样显示成文字，图片不去下载，只画成链接，链接只认 http、https、mailto 和云吞自己的 `wonton://`（核心的通知带 App 链接，ADR-0041）。
 
 use linkify::{LinkFinder, LinkKind};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
@@ -383,7 +383,7 @@ fn without_zero_width(text: &str) -> String {
 
 fn allowed_link(url: &str) -> Option<String> {
     let parsed = Url::parse(&without_zero_width(url)).ok()?;
-    matches!(parsed.scheme(), "http" | "https" | "mailto").then(|| parsed.to_string())
+    matches!(parsed.scheme(), "http" | "https" | "mailto" | "wonton").then(|| parsed.to_string())
 }
 
 /// 复制出去的文字：看到什么复制什么，不带 Markdown 的符号。
@@ -479,20 +479,29 @@ mod tests {
     }
 
     #[test]
-    fn only_web_and_mail_links_can_be_opened() {
+    fn only_web_mail_and_app_links_can_be_opened() {
         let blocks = markdown(
             "[a](javascript:alert(1)) [b](file:///etc/passwd) [c](https://example.com) \
-             [d](mailto:a@example.com) https://example.org/x。 ![e](http://example.com/i.png)",
+             [d](mailto:a@example.com) [e](wonton://settings/peers) https://example.org/x。 \
+             ![f](http://example.com/i.png)",
         );
         assert_eq!(
             links(&blocks),
             [
                 "https://example.com/",
                 "mailto:a@example.com",
+                "wonton://settings/peers",
                 "https://example.org/x",
                 "http://example.com/i.png",
             ]
         );
+    }
+
+    /// 裸写的 App 链接也是链接：核心的提醒里直接贴 `wonton://…`。
+    #[test]
+    fn a_bare_app_link_is_a_link() {
+        let blocks = markdown("其他服务器 wonton://settings/peers 看看");
+        assert_eq!(links(&blocks), ["wonton://settings/peers"]);
     }
 
     #[test]

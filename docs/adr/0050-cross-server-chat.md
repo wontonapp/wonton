@@ -268,6 +268,12 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
   - 转发组件报连上时记下时刻（`last_connected_ms`）：对方删了、对方停掉以后还是那一刻，重启后还在。
   - 同意之后的第一次探活直接 `Connected`，中间不出 `RemovedByPeer` 或 `Offline`；出码方收下扫码方回送的配对结果。
 - 回归：`wonton-tunnel` 既有测试 47 条全过。真实两机端到端（配对、互发、跨机群）待 Tuwunel 配置任务就绪后验证。
+- 配对改成长效码加请求（`wonton/peer/1`，2026-11-07，进程内两个 endpoint / 两个核心）：长效码扫两次、
+  重置后旧码作废并清掉旧请求、请求限频（20 条 / 一小时 10 条）、拒绝和撤销、互相发请求直接成立、
+  重名标 `conflicts_with`、同名不同 endpoint、用户 ID 和服务器名对不上、取消请求、扫码方离线时的问结果、
+  同意后的第一次探活直接 `Connected`、码里没有直连地址（`crates/wonton-tunnel/tests/tunnel/peer_pair.rs`、
+  `crates/wonton-core/src/peers/peers_tests/`、`crates/wonton-core/src/gateway/peers_api_tests.rs`、
+  `crates/wonton-client/tests/it/peers/`）。两台真实主机待实机任务。
 
 实测（2026-11-07，Tuwunel 1.9.4 官方镜像，单机 Docker 上的对照实验）：
 
