@@ -8,12 +8,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, FileId, FileProblem, Transfer, TransferAction, TransferDirection, TransferState,
     TransfersViewModel, UploadSource,
 };
 
 use crate::home::write_private;
+use crate::l10n::{CATALOG, language};
 
 /// 上传完的留多少条：壳不显示，也就没人清。下载完的不自动清：那是主人手机上的文件，主人自己选清不清。
 const KEEP_UPLOADED: usize = 50;
@@ -145,7 +147,7 @@ impl Store {
         change(record);
         let updated = record.clone();
         if let Err(error) = self.write(&records) {
-            tracing::error!(error, "写传输列表失败");
+            tracing::error!(error, "could not write the transfer list");
         }
         self.publish(&records);
         Some(updated)
@@ -165,7 +167,7 @@ impl Store {
         let index = records.iter().position(|record| record.id == id)?;
         let removed = records.remove(index);
         if let Err(error) = self.write(&records) {
-            tracing::error!(error, "写传输列表失败");
+            tracing::error!(error, "could not write the transfer list");
         }
         self.publish(&records);
         Some(removed)
@@ -176,8 +178,16 @@ impl Store {
     }
 
     fn write(&self, records: &[Record]) -> Result<(), String> {
-        let bytes = serde_json::to_vec(records).expect("传输记录总能序列化");
-        write_private(&self.path, &bytes).map_err(|e| format!("{}：{e}", self.path.display()))
+        let bytes = serde_json::to_vec(records).expect("transfer records always serialize");
+        write_private(&self.path, &bytes).map_err(|e| {
+            l10n!(
+                CATALOG,
+                language(),
+                "files-store-write-failed",
+                path = self.path.display().to_string(),
+                reason = e.to_string()
+            )
+        })
     }
 
     fn publish(&self, records: &[Record]) {
@@ -192,14 +202,14 @@ fn read(path: &PathBuf) -> Vec<Record> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
         Err(e) => {
-            tracing::error!(error = %e, "读不了传输列表，从空列表开始");
+            tracing::error!(error = %e, "could not read the transfer list; starting from an empty list");
             return Vec::new();
         }
     };
     serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        tracing::error!(error = %e, "传输列表读不懂，挪到 .bad，从空列表开始");
+        tracing::error!(error = %e, "the transfer list is unreadable; moving it to .bad and starting from an empty list");
         if let Err(e) = fs::rename(path, path.with_extension("bad")) {
-            tracing::error!(error = %e, "挪开读不懂的传输列表失败");
+            tracing::error!(error = %e, "could not move the unreadable transfer list aside");
         }
         Vec::new()
     })

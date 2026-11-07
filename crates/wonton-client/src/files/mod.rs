@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, CoreError, FileCard, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeStatus, HomeViewModel, TransferDirection, TransferState, TransfersViewModel, UploadSource,
@@ -26,6 +27,7 @@ use wonton_protocol::{
 
 use crate::chat::ChatLink;
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 use api::{Api, Problem};
 use store::{Job, Record, Store};
 use stream::StreamServer;
@@ -70,7 +72,7 @@ fn invalid(reason: &str) -> CoreError {
 
 fn local_id() -> String {
     let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
+    getrandom::fill(&mut bytes).expect("the OS random source is unavailable");
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -169,7 +171,7 @@ impl FilesLink {
                 self.store.set_problem(None);
                 Ok(())
             }
-            _ => Err(invalid("不是文件操作")),
+            _ => Err(invalid(&l10n!(CATALOG, language(), "files-invalid-action"))),
         }
     }
 
@@ -178,7 +180,7 @@ impl FilesLink {
             .view()
             .server_id
             .ok_or_else(|| CoreError::NotReady {
-                reason: "还没连接家里的服务器".to_owned(),
+                reason: l10n!(CATALOG, language(), "files-api-not-connected"),
             })
     }
 
@@ -190,7 +192,7 @@ impl FilesLink {
         room: Option<String>,
     ) -> Result<(), CoreError> {
         if name.trim().is_empty() {
-            return Err(invalid("文件名不能为空"));
+            return Err(invalid(&l10n!(CATALOG, language(), "files-name-required")));
         }
         let room = room.filter(|room| !room.is_empty());
         self.start(Record {
@@ -230,7 +232,11 @@ impl FilesLink {
             )
         });
         if writing {
-            return Err(invalid("这个文件已经在下载了"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "files-download-already-running"
+            )));
         }
         let server = self.current_server()?;
         // 重下一次：之前那条做完或失败的说的已经不是这次了，留着的话不知道该看哪条。
@@ -260,10 +266,18 @@ impl FilesLink {
     /// 只重发链接。先改状态再开工：连点两下时第二下就不算了。
     fn resend_link(self: &Arc<Self>, id: &str) -> Result<(), CoreError> {
         let Some(record) = self.store.get(id) else {
-            return Err(invalid("没有这条传输"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "files-transfer-not-found"
+            )));
         };
         if !matches!(record.state, TransferState::LinkNotSent { .. }) {
-            return Err(invalid("这条传输没有等着重发的链接"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "files-resend-not-waiting"
+            )));
         }
         self.store.update(id, |record| {
             record.state = TransferState::Running;
@@ -313,14 +327,14 @@ impl FilesLink {
         } else {
             Err(Problem::Failed(
                 FileFailure::FileUnknown,
-                "换了家里的服务器，这个传输属于之前那一台".to_owned(),
+                l10n!(CATALOG, language(), "files-transfer-server-changed"),
             ))
         };
         let updated = self.store.update(id, |record| {
             record.state = match outcome {
                 Ok(()) => TransferState::Done,
                 Err(Problem::Interrupted(message)) => {
-                    tracing::info!(transfer = %record.id, %message, "传输中断，等连上再接着传");
+                    tracing::info!(transfer = %record.id, %message, "transfer interrupted; it will resume once connected");
                     TransferState::Paused
                 }
                 Err(Problem::ServicesDown(message)) => {
@@ -350,7 +364,11 @@ impl FilesLink {
             Job::Upload { .. } => &self.uploads,
             Job::Download { .. } => &self.downloads,
         };
-        let _turn = queue.clone().acquire_owned().await.expect("信号量不会关闭");
+        let _turn = queue
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("the semaphore is never closed");
         match record.job {
             Job::Upload { .. } => upload::run(self, record).await,
             Job::Download { .. } => download::run(self, record).await,
@@ -367,7 +385,11 @@ impl FilesLink {
     /// （ADR-0020）。
     fn cancel(self: &Arc<Self>, id: &str) -> Result<(), CoreError> {
         let Some(record) = self.store.get(id) else {
-            return Err(invalid("没有这条传输"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "files-transfer-not-found"
+            )));
         };
         if !matches!(
             record.state,
@@ -394,14 +416,26 @@ impl FilesLink {
 
     fn dismiss(&self, id: &str, delete_local_file: bool) -> Result<(), CoreError> {
         let Some(record) = self.store.get(id) else {
-            return Err(invalid("没有这条传输"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "files-transfer-not-found"
+            )));
         };
         if matches!(record.state, TransferState::Running | TransferState::Paused) {
-            return Err(invalid("这条传输还在进行，要先取消"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "files-dismiss-transfer-running"
+            )));
         }
         let path = match &record.job {
             Job::Upload { .. } if delete_local_file => {
-                return Err(invalid("上传的原文件不归 App 管"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "files-dismiss-upload-source-protected"
+                )));
             }
             Job::Upload { .. } => None,
             Job::Download { path, .. } => path.as_deref(),
@@ -422,14 +456,19 @@ impl FilesLink {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 return Err(CoreError::Storage {
-                    reason: format!("删不掉手机上的文件：{e}"),
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "files-delete-local-failed",
+                        reason = e.to_string()
+                    ),
                 });
             }
         }
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::remove_dir(parent)
         {
-            tracing::debug!(error = %e, "下载目录没有清掉");
+            tracing::debug!(error = %e, "could not remove the download folder");
         }
         Ok(())
     }
@@ -443,7 +482,7 @@ impl FilesLink {
             if let Err(e) = tokio::fs::remove_file(&part).await
                 && e.kind() != std::io::ErrorKind::NotFound
             {
-                tracing::info!(error = %e, "删不掉下载的半截文件");
+                tracing::info!(error = %e, "could not remove the partial download file");
             }
         });
     }
@@ -462,17 +501,23 @@ impl FilesLink {
             };
             if let Err(problem) = done {
                 let (reason, message) = problem.into_parts();
-                let what = match operation {
-                    FileOperation::Delete => "删除",
-                    FileOperation::SendToDevices => "发到设备",
-                    FileOperation::GrantToRoom => "授权",
-                    FileOperation::Play => "播放",
+                let failed = match operation {
+                    FileOperation::Delete => "files-delete-failed",
+                    FileOperation::SendToDevices => "files-send-failed",
+                    FileOperation::GrantToRoom => "files-grant-failed",
+                    FileOperation::Play => "files-play-failed",
                 };
                 link.store.set_problem(Some(FileProblem {
                     operation,
                     file: id.clone(),
                     reason,
-                    message: format!("{what}文件 {id} 失败：{message}"),
+                    message: l10n!(
+                        CATALOG,
+                        language(),
+                        failed,
+                        id = id.to_string(),
+                        message = message
+                    ),
                 }));
             }
         });
@@ -509,7 +554,7 @@ impl FilesLink {
     pub(crate) async fn stream_url(&self, id: FileId) -> Result<String, CoreError> {
         if self.home.view().proxy.is_none() {
             return Err(CoreError::TransportUnavailable {
-                reason: "还没连上家里的服务器".to_owned(),
+                reason: l10n!(CATALOG, language(), "files-api-not-connected"),
             });
         }
         self.stream.url(&self.home, &id).await

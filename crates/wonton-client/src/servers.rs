@@ -59,7 +59,13 @@ impl ServerList {
         let path = root.join(FILE);
         let saved = match fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| CoreError::Storage {
-                reason: format!("服务器列表 {} 已损坏：{e}", path.display()),
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "servers-list-corrupt",
+                    path = path.display().to_string(),
+                    reason = e.to_string()
+                ),
             })?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let mut saved = Saved::default();
@@ -124,7 +130,7 @@ impl ServerList {
             }
             if saved.current_slot().server_id.is_none() {
                 return Err(CoreError::InvalidInput {
-                    reason: "先配好这一台，再添加别的服务器".to_owned(),
+                    reason: l10n!(CATALOG, language(), "servers-add-current-unpaired"),
                 });
             }
             let slot = saved.new_slot();
@@ -162,7 +168,7 @@ impl ServerList {
         let name = name.trim();
         if name.is_empty() {
             return Err(CoreError::InvalidInput {
-                reason: "名字不能为空".to_owned(),
+                reason: l10n!(CATALOG, language(), "servers-name-required"),
             });
         }
         self.update(|saved| {
@@ -254,7 +260,7 @@ impl ServerList {
     fn save(&self, saved: &Saved) -> Result<(), CoreError> {
         fs::create_dir_all(&self.root).map_err(|e| storage_error(&self.root, &e))?;
         let path = self.root.join(FILE);
-        let bytes = serde_json::to_vec_pretty(saved).expect("服务器列表总能序列化");
+        let bytes = serde_json::to_vec_pretty(saved).expect("the server list always serializes");
         write_private(&path, &bytes).map_err(|e| storage_error(&path, &e))
     }
 
@@ -290,7 +296,7 @@ impl Saved {
         self.servers
             .iter()
             .find(|slot| slot.slot == self.current)
-            .expect("当前槽位一直在列表里")
+            .expect("the current slot is always in the list")
     }
 
     fn paired_slot(&mut self, id: &str) -> Result<&mut Slot, CoreError> {
@@ -363,6 +369,12 @@ pub(crate) fn current_name(servers: &ServersViewModel) -> Option<ServerName> {
 
 fn storage_error(path: &Path, error: &io::Error) -> CoreError {
     CoreError::Storage {
-        reason: format!("{}：{error}", path.display()),
+        reason: l10n!(
+            CATALOG,
+            language(),
+            "servers-storage-failed",
+            path = path.display().to_string(),
+            reason = error.to_string()
+        ),
     }
 }

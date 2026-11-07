@@ -171,7 +171,7 @@ impl Run {
             && let Err(problem) = self.hand_back(&link).await
         {
             // 主人已经走了，没有地方可说；核心的租约会自己过期。
-            tracing::info!("交还没有送到：{}", problem.message);
+            tracing::info!("the handback didn't go through: {}", problem.message);
         }
     }
 

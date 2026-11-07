@@ -14,10 +14,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use wonton_l10n::l10n;
 use wonton_matrix::SavedSession;
 use wonton_protocol::{CoreError, SecretString};
 
 use crate::home::write_private;
+use crate::l10n::{CATALOG, language};
 
 const DIR: &str = "matrix";
 const SESSION: &str = "session.json";
@@ -62,7 +64,13 @@ impl ChatStorage {
             Ok(text) => serde_json::from_str(&text)
                 .map(Some)
                 .map_err(|e| CoreError::Storage {
-                    reason: format!("聊天的登录状态 {} 已损坏：{e}", path.display()),
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "chat-storage-session-corrupt",
+                        path = path.display().to_string(),
+                        reason = e.to_string()
+                    ),
                 }),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(storage_error(&path, &e)),
@@ -71,7 +79,7 @@ impl ChatStorage {
 
     pub(crate) fn save_session(&self, session: &StoredSession) -> Result<(), CoreError> {
         let path = self.dir.join(SESSION);
-        let text = serde_json::to_string(session).expect("登录状态总能编成 JSON");
+        let text = serde_json::to_string(session).expect("the sign-in state always serializes");
         write_private(&path, text.as_bytes()).map_err(|e| storage_error(&path, &e))
     }
 
@@ -120,6 +128,12 @@ impl ChatStorage {
 
 fn storage_error(path: &Path, error: &io::Error) -> CoreError {
     CoreError::Storage {
-        reason: format!("{}：{error}", path.display()),
+        reason: l10n!(
+            CATALOG,
+            language(),
+            "chat-storage-io-failed",
+            path = path.display().to_string(),
+            reason = error.to_string()
+        ),
     }
 }

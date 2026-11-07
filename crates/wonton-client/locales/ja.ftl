@@ -326,3 +326,124 @@ chat-avatar-cache-missing-mxc = アバターのキャッシュにMXCアドレス
 chat-avatar-cache-path-not-utf8 = アバターのキャッシュのパスが有効なUTF-8ではありません
 scope-task-crashed = バックグラウンドのタスクが異常終了しました：{ $error }
 scope-switched-server = 別のサーバーに切り替えました
+
+## クライアントコアの残りの部分（ADR-0043）：C1とC2が対象外だったモジュールの「詳細」で、既定では折りたたまれます。同じファイルのログは英語で書かれ、ここには含まれません。
+## プッシュ通知の本文とプレースホルダー（不明な送信者、招待、[ファイル]など）はまだ未定のため、今回の範囲外です。
+
+# ファイル転送（crates/wonton-client/src/files/mod.rs）：拒否された操作、失敗した操作、ローカルファイルの削除の詳細情報。
+files-invalid-action = ファイルの操作ではありません
+files-name-required = ファイル名を入力してください
+files-download-already-running = このファイルはすでにダウンロード中です
+files-transfer-not-found = この転送が見つかりません
+# リンク再送の待機状態にない転送に対してリンクの再送を要求した場合に表示します。
+files-resend-not-waiting = この転送には再送を待っているリンクがありません
+files-transfer-server-changed = 自宅サーバーが変わったため、この転送は前のサーバーのものです
+files-dismiss-transfer-running = この転送は実行中です。先にキャンセルしてください
+# アップロードを削除してローカルファイルも削除しようとした場合に表示します。元のファイルはシステムから提供されたもので、Wontonでは削除できません。
+files-dismiss-upload-source-protected = アップロードの元ファイルはWontonでは管理していません
+# $reason は元のioエラーです。
+files-delete-local-failed = スマートフォン上のファイルを削除できません：{ $reason }
+# バックグラウンドのファイル操作の失敗結果。$id はそのままのファイルID、$message は元の失敗の詳細です。
+files-delete-failed = ファイル{ $id }を削除できません：{ $message }
+files-send-failed = ファイル{ $id }をデバイスに送れません：{ $message }
+files-grant-failed = ファイル{ $id }をチャットに許可できません：{ $message }
+files-play-failed = ファイル{ $id }を再生できません：{ $message }
+# $path は転送リストのパス、$reason は元の入出力エラーです。
+files-store-write-failed = 転送リスト{ $path }に書き込めません：{ $reason }
+
+# 接続のローカルストレージ（crates/wonton-client/src/home/storage.rs）。
+# $path はファイルのパス、$reason は元のパースまたは入出力エラーです。
+home-storage-device-key-corrupt = デバイスキーのファイル{ $path }が破損しています：{ $reason }
+home-storage-io-failed = { $path }を読み書きできません：{ $reason }
+
+# チャットのローカルストレージ（crates/wonton-client/src/chat/storage.rs）。
+# $path はファイルのパス、$reason は元のパースまたは入出力エラーです。
+chat-storage-session-corrupt = チャットのログイン状態のファイル{ $path }が破損しています：{ $reason }
+chat-storage-io-failed = { $path }を読み書きできません：{ $reason }
+
+# 登録済みサーバーのリスト（crates/wonton-client/src/servers.rs）。
+# $path はサーバーリストファイルのパス、$reason は元のパースまたは入出力エラーです。
+servers-list-corrupt = サーバーリストのファイル{ $path }が破損しています：{ $reason }
+servers-add-current-unpaired = このサーバーを設定してから、別のサーバーを追加してください
+servers-name-required = 名前を入力してください
+# $path は読み書きまたは削除の対象のパス、$reason は元の入出力エラーです。
+servers-storage-failed = { $path }を読み書きできません：{ $reason }
+
+# セッションリスト（crates/wonton-client/src/session_store.rs）。
+sessions-title-required = セッションのタイトルを入力してください
+# $id はそのままのセッションIDです。
+sessions-not-found = そのセッションはありません：{ $id }
+
+# 通知方式の設定（crates/wonton-client/src/push_method.rs）。
+# $path は設定ファイルのパス、$reason は元の入出力エラーです。
+push-method-write-failed = 通知方式の設定ファイル{ $path }に書き込めません：{ $reason }
+
+# プッシュ通知（crates/wonton-client/src/push/{mod,registration,notification}.rs）：拒否されたエンドポイント、失敗した登録、メッセージを取得できなかった場合の詳細情報。
+# 通知の本文とプレースホルダー（不明な送信者、招待、[ファイル]など）はまだここにはありません。
+# $reason は元のエラーの詳細です。
+push-matrix-pusher-failed = Matrixにpusherを登録できません：{ $reason }
+# $reason はURLパーサーの元のエラーです。
+push-endpoint-invalid-url = プッシュ通知のエンドポイントが有効なURLではありません：{ $reason }
+push-endpoint-scheme = プッシュ通知のエンドポイントはhttpまたはhttpsのアドレスである必要があります
+push-endpoint-p256dh = p256dhは65バイトの非圧縮P-256公開鍵（base64url）である必要があります
+push-endpoint-auth = authは16バイト（base64url）である必要があります
+# $reason は上流の原文、または翻訳されたタイムアウトの詳細です。
+push-register-failed = 自宅サーバーにプッシュ通知を登録できません：{ $reason }
+push-unregister-failed = 自宅サーバーのプッシュ通知の登録を解除できません：{ $reason }
+# $reason はJSONパーサーの元のエラーです。
+push-register-invalid-response = 自宅サーバーが返した登録結果の形式が正しくありません：{ $reason }
+# $reason はローカルプロキシまたはHTTPクライアントの元のエラーです。
+push-invalid-proxy = ローカルプロキシのアドレスが無効です：{ $reason }
+push-http-client = HTTPクライアントを作成できません：{ $reason }
+# $seconds はリクエストのタイムアウト秒数です。
+push-timeout = { $seconds }秒以内に応答がありません
+# $status はそのままのHTTPステータスコードです。
+push-server-status = 自宅サーバーからHTTP { $status }が返されました
+# $message と $kind はサーバーの元のエラーテキストとエラーコードです。
+push-server-error = { $message }（{ $kind }）
+# $reason はJSONパーサーの元のエラーです。
+push-payload-invalid = プッシュ通知の内容の形式が正しくありません：{ $reason }
+# $reason はIDパーサーの元のエラーです。
+push-invalid-room-id = プッシュ通知内のルームIDが無効です：{ $reason }
+push-invalid-event-id = プッシュ通知内のイベントIDが無効です：{ $reason }
+# $seconds はメッセージの取得で待った秒数です。
+push-fetch-timeout = { $seconds }秒以内にこのメッセージを取得できませんでした
+# $reason はMatrix SDKの元のエラーです。
+push-fetch-failed = このメッセージを取得できません：{ $reason }
+push-core-closed = クライアントコアが終了しました
+push-not-paired = まだ自宅サーバーに接続したことがありません
+push-home-unreachable = 自宅サーバーに接続できません：{ $reason }
+# $seconds はログインで待った秒数です。
+push-session-timeout = { $seconds }秒以内にMatrixにログインできませんでした
+push-room-key-missing = このメッセージのルームキーがまだ届いていません
+
+# 自宅サーバー上のアプリの起動（crates/wonton-client/src/plugins/start.rs）。
+# $id はそのままのアプリIDです。
+plugins-start-busy = { $id }はすでに起動、インストール、更新、またはアンインストールの実行中です
+
+# アプリページのブリッジ（crates/wonton-client/src/tabs/bridge/）。
+tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
+tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
+
+# チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
+chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
+
+# セットアップのローカル記録（crates/wonton-client/src/onboarding/storage.rs）。
+# $path はファイルのパス、$reason は元の入出力エラーです。
+onboarding-storage-io-failed = { $path }を読み書きできません：{ $reason }
+
+# 自宅サーバーのワンクリックアップデート（crates/wonton-client/src/plugins/core_upgrade.rs）：不確定な段階の説明と拒否された操作で、アップデートページやエラーの「詳細」に表示されます。
+# 引数なし。自宅サーバーがこのアプリでは理解できない結果を返しました。
+plugins-core-upgrade-unrecognized = 自宅サーバーが、このバージョンのWontonでは理解できない結果を返しました。Wontonを更新してからもう一度確認してください
+# 実行中のダイジェストが欠けている場合の代わりの語。文ではありません。
+plugins-core-upgrade-unknown-digest = 不明
+# 自宅サーバーはアップデート完了を報告していますが、実行中のバージョンが目標と一致しません。$running は実行中のダイジェストか「不明」、$target はそのままの目標ダイジェストです。
+plugins-core-upgrade-completed-mismatch = 自宅サーバーはアップデートが完了したと報告していますが、実行中のバージョンが目標と異なります：実行中 { $running }、目標 { $target }
+# 制限時間内に接続できず、結果は不明です。$digest は旧バージョンに戻すときに固定するそのままのダイジェストです。
+plugins-core-upgrade-timed-out = 制限時間を過ぎても自宅サーバーに接続できず、アップデートの結果は不明です。接続するとここが更新されます
+plugins-core-upgrade-timed-out-rollback = 制限時間を過ぎても自宅サーバーに接続できず、アップデートの結果は不明です。接続するとここが更新されます。旧バージョンに戻すには、ホストでインストールコマンドをもう一度実行し、WONTON_CORE_PIN={ $digest } を付けてください
+plugins-core-upgrade-invalid-action = 自宅サーバーのアップデートの操作ではありません
+plugins-core-upgrade-already-running = すでにアップデートを実行中です
+plugins-core-upgrade-not-cancellable = 今はキャンセルできません
+# $reason は接続問題の元の詳細です。
+plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }

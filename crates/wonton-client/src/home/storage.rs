@@ -11,7 +11,10 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use iroh::SecretKey;
+use wonton_l10n::l10n;
 use wonton_protocol::CoreError;
+
+use crate::l10n::{CATALOG, language};
 
 const DEVICE_KEY: &str = "device-key";
 const TICKET: &str = "home-ticket.json";
@@ -38,7 +41,13 @@ impl Storage {
         let path = self.root.join(DEVICE_KEY);
         match fs::read_to_string(&path) {
             Ok(text) => SecretKey::from_str(text.trim()).map_err(|e| CoreError::Storage {
-                reason: format!("设备密钥 {} 已损坏：{e}", path.display()),
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "home-storage-device-key-corrupt",
+                    path = path.display().to_string(),
+                    reason = e.to_string()
+                ),
             }),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let key = SecretKey::generate();
@@ -115,7 +124,13 @@ impl Drop for Staged {
 
 fn storage_error(path: &Path, error: &io::Error) -> CoreError {
     CoreError::Storage {
-        reason: format!("{}：{error}", path.display()),
+        reason: l10n!(
+            CATALOG,
+            language(),
+            "home-storage-io-failed",
+            path = path.display().to_string(),
+            reason = error.to_string()
+        ),
     }
 }
 

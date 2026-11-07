@@ -1,4 +1,7 @@
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, SessionListViewModel, SessionRow};
+
+use crate::l10n::{CATALOG, language};
 
 /// 会话状态和处理操作的规则。纯同步逻辑，不知道 UniFFI 和订阅的存在。
 #[derive(Debug, Default)]
@@ -33,7 +36,11 @@ impl SessionStore {
     pub(crate) fn create(&mut self, title: &str) -> Result<(), CoreError> {
         let title = title.trim();
         if title.is_empty() {
-            return Err(invalid_input("会话标题不能为空"));
+            return Err(invalid_input(&l10n!(
+                CATALOG,
+                language(),
+                "sessions-title-required"
+            )));
         }
         self.created_count += 1;
         let id = format!("session-{}", self.created_count);
@@ -67,7 +74,14 @@ impl SessionStore {
         self.sessions
             .iter()
             .position(|session| session.id == session_id)
-            .ok_or_else(|| invalid_input(&format!("会话不存在：{session_id}")))
+            .ok_or_else(|| {
+                invalid_input(&l10n!(
+                    CATALOG,
+                    language(),
+                    "sessions-not-found",
+                    id = session_id
+                ))
+            })
     }
 }
 

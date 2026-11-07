@@ -357,3 +357,144 @@ chat-avatar-cache-missing-mxc = An avatar in the cache has no MXC address.
 chat-avatar-cache-path-not-utf8 = The avatar cache path isn't valid UTF-8.
 scope-task-crashed = A background task ended unexpectedly: { $error }
 scope-switched-server = You've switched to another server.
+
+## The rest of the client core (ADR-0043): collapsed technical details for the
+## modules that C1 and C2 didn't cover. Logs in the same files are English and
+## not here. Push notification bodies and placeholders stay in code for now.
+
+# File transfers (crates/wonton-client/src/files/mod.rs): details of refused
+# actions, failed operations and local-file cleanup.
+files-invalid-action = Not a file action.
+files-name-required = The file name can't be empty.
+files-download-already-running = This file is already downloading.
+files-transfer-not-found = Can't find this transfer.
+# Shown when resending the link of a transfer that isn't in the link-not-sent state.
+files-resend-not-waiting = This transfer has no link waiting to be sent.
+files-transfer-server-changed = Your home server has changed, so this transfer belongs to the previous one.
+files-dismiss-transfer-running = This transfer is still running. Cancel it first.
+# Shown when dismissing an upload and asking to delete its local file: the
+# original file was provided by the system, so Wonton can't delete it.
+files-dismiss-upload-source-protected = Wonton doesn't manage the original file of an upload.
+# $reason is the original io error.
+files-delete-local-failed = Can't delete the file on this phone: { $reason }
+# The outcome of a background file operation. $id is the unchanged file ID,
+# $message is the original failure detail.
+files-delete-failed = Can't delete file { $id }: { $message }
+files-send-failed = Can't send file { $id } to your devices: { $message }
+files-grant-failed = Can't grant file { $id } to the chat: { $message }
+files-play-failed = Can't play file { $id }: { $message }
+# $path is the transfer list's path, $reason is the original I/O error.
+files-store-write-failed = Can't write the transfer list { $path }: { $reason }
+
+# Local storage of the connection (crates/wonton-client/src/home/storage.rs).
+# $path is the file's path, $reason is the original parser or I/O error.
+home-storage-device-key-corrupt = The device key file { $path } is damaged: { $reason }
+home-storage-io-failed = Can't read or write { $path }: { $reason }
+
+# Chat local storage (crates/wonton-client/src/chat/storage.rs).
+# $path is the file's path, $reason is the original parser or I/O error.
+chat-storage-session-corrupt = The chat sign-in state file { $path } is damaged: { $reason }
+chat-storage-io-failed = Can't read or write { $path }: { $reason }
+
+# The list of paired servers (crates/wonton-client/src/servers.rs).
+# $path is the server list file's path, $reason is the original parser or I/O error.
+servers-list-corrupt = The server list file { $path } is damaged: { $reason }
+servers-add-current-unpaired = Set up this server before adding another one.
+servers-name-required = The name can't be empty.
+# $path is the path being read, written or deleted, $reason is the original I/O error.
+servers-storage-failed = Can't read or write { $path }: { $reason }
+
+# The session list (crates/wonton-client/src/session_store.rs).
+sessions-title-required = The session title can't be empty.
+# $id is the unchanged session ID.
+sessions-not-found = There's no such session: { $id }
+
+# The push method setting (crates/wonton-client/src/push_method.rs).
+# $path is the settings file's path, $reason is the original I/O error.
+push-method-write-failed = Can't write the push method settings file { $path }: { $reason }
+
+# Push registration (crates/wonton-client/src/push/{mod,registration,notification}.rs):
+# details of refused endpoints, failed registrations and notifications that
+# couldn't show the message. The notification bodies and placeholders
+# (unknown sender, invitation, [file]…) are not here yet.
+# $reason is the original error detail.
+push-matrix-pusher-failed = Can't register the pusher on Matrix: { $reason }
+# $reason is the URL parser's original error.
+push-endpoint-invalid-url = The push endpoint isn't a valid URL: { $reason }
+push-endpoint-scheme = The push endpoint must be an http or https address.
+push-endpoint-p256dh = The p256dh key must be a 65-byte uncompressed P-256 public key (base64url).
+push-endpoint-auth = The auth secret must be 16 bytes (base64url).
+# $reason is an unchanged upstream error or a localized timeout detail.
+push-register-failed = Can't register for notifications with your home server: { $reason }
+push-unregister-failed = Can't unregister notifications with your home server: { $reason }
+# $reason is the JSON parser's original error.
+push-register-invalid-response = Your home server returned the registration result in an unexpected format: { $reason }
+# $reason is the local proxy's or HTTP client's original error.
+push-invalid-proxy = The local proxy address isn't valid: { $reason }
+push-http-client = Can't create an HTTP client: { $reason }
+# $seconds is the request timeout in seconds.
+push-timeout = { $seconds ->
+    [one] No response within { $seconds } second
+   *[other] No response within { $seconds } seconds
+}
+# $status is the unchanged HTTP status code.
+push-server-status = Your home server returned HTTP { $status }
+# $message and $kind are the server's original error text and error code.
+push-server-error = { $message } ({ $kind })
+# $reason is the JSON parser's original error.
+push-payload-invalid = The push payload isn't in the expected format: { $reason }
+# $reason is the ID parser's original error.
+push-invalid-room-id = The room ID in the push isn't valid: { $reason }
+push-invalid-event-id = The event ID in the push isn't valid: { $reason }
+# $seconds is how long fetching waited.
+push-fetch-timeout = { $seconds ->
+    [one] Couldn't fetch this message within { $seconds } second.
+   *[other] Couldn't fetch this message within { $seconds } seconds.
+}
+# $reason is the Matrix SDK's original error.
+push-fetch-failed = Can't get this message: { $reason }
+push-core-closed = The client core has shut down.
+push-not-paired = You haven't connected to your home server yet.
+push-home-unreachable = Can't reach your home server: { $reason }
+# $seconds is how long signing in waited.
+push-session-timeout = { $seconds ->
+    [one] Couldn't sign in to Matrix within { $seconds } second.
+   *[other] Couldn't sign in to Matrix within { $seconds } seconds.
+}
+push-room-key-missing = The room key for this message hasn't arrived yet.
+
+# Starting an app on the home server (crates/wonton-client/src/plugins/start.rs).
+# $id is the unchanged app ID.
+plugins-start-busy = { $id } is already starting, installing, updating, or uninstalling.
+
+# The bridge of app pages (crates/wonton-client/src/tabs/bridge/).
+tabs-bridge-page-not-open = This app page isn't open or pinned.
+tabs-bridge-invalid-environment = The page insets and safe area must be finite, non-negative numbers.
+
+# Chat transport problems (crates/wonton-client/src/chat/view.rs): the reason
+# of a CoreError::TransportUnavailable and the message of a failed chat action.
+chat-not-connected = Try again once you're connected to your home server.
+
+# Onboarding records (crates/wonton-client/src/onboarding/storage.rs).
+# $path is the file's path, $reason is the original I/O error.
+onboarding-storage-io-failed = Can't read or write { $path }: { $reason }
+
+# The home server's one-click update (crates/wonton-client/src/plugins/core_upgrade.rs):
+# messages of uncertain stages and refused actions, shown on the update page and
+# in the Details of errors.
+# No parameters. The home server reported a result this version of Wonton can't read.
+plugins-core-upgrade-unrecognized = Your home server returned something this version of Wonton doesn't understand. Update Wonton and check again.
+# Shown in place of a missing running digest. Not a sentence.
+plugins-core-upgrade-unknown-digest = unknown
+# The home server reports the update as finished, but the running version doesn't match.
+# $running is the running digest, or the unknown-digest word; $target is the unchanged target digest.
+plugins-core-upgrade-completed-mismatch = Your home server says the update finished, but what's running isn't the target version: running { $running }, target { $target }.
+# The deadline passed without a connection, so the outcome is unknown. $digest is the unchanged
+# digest to pin for going back to the old version.
+plugins-core-upgrade-timed-out = Your home server didn't respond within the time limit, so the update result is unknown. The result will show here once you're connected.
+plugins-core-upgrade-timed-out-rollback = Your home server didn't respond within the time limit, so the update result is unknown. The result will show here once you're connected. To go back to the old version, run the install command on your computer again with WONTON_CORE_PIN={ $digest }.
+plugins-core-upgrade-invalid-action = Not a home server update action.
+plugins-core-upgrade-already-running = An update is already in progress.
+plugins-core-upgrade-not-cancellable = The update can't be cancelled right now.
+# $reason is the connection problem's original detail.
+plugins-core-upgrade-start-uncertain = It isn't certain that the update was started. Check again once you're connected: { $reason }

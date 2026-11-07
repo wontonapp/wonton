@@ -164,7 +164,7 @@ mod tests {
             let appearance = all
                 .iter()
                 .position(|entry| entry == &SettingsEntry::Appearance)
-                .expect("设置首页有外观一项");
+                .expect("the settings home has an appearance entry");
             assert_eq!(all.get(appearance + 1), Some(&SettingsEntry::Language));
         }
     }

@@ -3,6 +3,7 @@
 use super::confirmation::CardsView;
 use super::read_mark::ReadMark;
 use super::rich;
+use wonton_l10n::l10n;
 use wonton_matrix::{
     EntryKind, Error, LatestMessage, Membership, Message, MessageBody, Recovery, RoomInfo,
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
@@ -13,6 +14,8 @@ use wonton_protocol::{
     RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
     extract_file_links,
 };
+
+use crate::l10n::{CATALOG, language};
 
 /// `core`：核心账号，和它的私聊是通知房间。
 /// 邀请在最前面，其余按最新消息排。还没有消息的放最后，按名字排：SDK 给的顺序在设备之间不一样，同一个账号两台设备要排得一样。
@@ -249,7 +252,9 @@ pub(crate) fn recovery(recovery: Recovery) -> RecoveryStatus {
 }
 
 /// 连不上时主人看到的话。连接的情况由 `HomeViewModel` 说，原文只进日志（ADR-0032）。
-pub(crate) const NOT_CONNECTED: &str = "连上家里的服务器后再试";
+pub(crate) fn not_connected() -> String {
+    l10n!(CATALOG, language(), "chat-not-connected")
+}
 
 /// Matrix 错误的原因。
 pub(crate) fn failure(error: &Error) -> ChatFailure {
@@ -267,7 +272,7 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
     let reason = error.to_string();
     match failure(error) {
         ChatFailure::TransportUnavailable => CoreError::TransportUnavailable {
-            reason: NOT_CONNECTED.to_owned(),
+            reason: not_connected(),
         },
         ChatFailure::Unauthorized => CoreError::Unauthorized { reason },
         ChatFailure::NotReady => CoreError::NotReady { reason },

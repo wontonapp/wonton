@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, OnboardingTip};
 
 use crate::home::write_private;
+use crate::l10n::{CATALOG, language};
 
 const FILE: &str = "onboarding.json";
 
@@ -124,16 +126,28 @@ impl OnboardingStorage {
     }
 
     fn write(&self, records: &Records) -> Result<(), CoreError> {
-        let bytes = serde_json::to_vec(records).expect("引导本机记录只有可序列化字段");
+        let bytes = serde_json::to_vec(records).expect("onboarding records always serialize");
         write_private(&self.path, &bytes).map_err(|error| CoreError::Storage {
-            reason: format!("{}：{error}", self.path.display()),
+            reason: l10n!(
+                CATALOG,
+                language(),
+                "onboarding-storage-io-failed",
+                path = self.path.display().to_string(),
+                reason = error.to_string()
+            ),
         })
     }
 }
 
 fn storage_error<T: std::fmt::Display>(path: &Path, error: T) -> CoreError {
     CoreError::Storage {
-        reason: format!("{}：{error}", path.display()),
+        reason: l10n!(
+            CATALOG,
+            language(),
+            "onboarding-storage-io-failed",
+            path = path.display().to_string(),
+            reason = error.to_string()
+        ),
     }
 }
 

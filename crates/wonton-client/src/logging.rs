@@ -15,7 +15,7 @@ pub fn init_logging(filter: String, file: Option<String>) {
     match opened {
         Some(Ok(file)) => builder.with_writer(Mutex::new(file)).try_init().ok(),
         Some(Err(error)) => {
-            eprintln!("打不开日志文件，改写标准错误：{error}");
+            eprintln!("could not open the log file; writing to stderr instead: {error}");
             builder.with_writer(std::io::stderr).try_init().ok()
         }
         None => builder.with_writer(std::io::stderr).try_init().ok(),

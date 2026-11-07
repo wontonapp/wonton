@@ -326,3 +326,124 @@ chat-avatar-cache-missing-mxc = 頭像快取缺少 MXC 位址
 chat-avatar-cache-path-not-utf8 = 頭像快取路徑不是有效的 UTF-8
 scope-task-crashed = 背景工作異常結束：{ $error }
 scope-switched-server = 已經切換到另一台伺服器
+
+## 用戶端核心剩下的部分（ADR-0043）：C1、C2 沒涵蓋的模組的「詳細資訊」，預設收合。同一批檔案裡的記錄檔寫英文，不在這裡。
+## 推播通知裡給人看的內文和佔位（未知的傳送者、邀請你加入、[檔案]……）還沒定，不在這次範圍。
+
+# 檔案傳輸（crates/wonton-client/src/files/mod.rs）：被拒絕的操作、失敗的操作和本機檔案清理的詳細資訊。
+files-invalid-action = 不是檔案操作
+files-name-required = 檔案名稱不能為空
+files-download-already-running = 這個檔案已經在下載了
+files-transfer-not-found = 找不到這筆傳輸
+# 這筆傳輸不在「等著傳送連結」的狀態時要重新傳送連結。
+files-resend-not-waiting = 這筆傳輸沒有等著重新傳送的連結
+files-transfer-server-changed = 換了家用伺服器，這筆傳輸屬於之前那一台
+files-dismiss-transfer-running = 這筆傳輸還在進行，要先取消
+# 移除上傳並要求刪除本機檔案時：原檔案是系統給的，App 刪不了它。
+files-dismiss-upload-source-protected = 上傳的原始檔案不由雲吞管理
+# $reason 是原始的 io 錯誤。
+files-delete-local-failed = 無法刪除手機上的檔案：{ $reason }
+# 背景檔案操作失敗的結果。$id 是原樣的檔案編號，$message 是原始的失敗詳細資訊。
+files-delete-failed = 無法刪除檔案 { $id }：{ $message }
+files-send-failed = 無法把檔案 { $id } 傳到裝置：{ $message }
+files-grant-failed = 無法授權檔案 { $id }：{ $message }
+files-play-failed = 無法播放檔案 { $id }：{ $message }
+# $path 是傳輸清單的路徑，$reason 是原始的讀寫錯誤。
+files-store-write-failed = 無法寫入傳輸清單 { $path }：{ $reason }
+
+# 連線的本機儲存空間（crates/wonton-client/src/home/storage.rs）。
+# $path 是檔案的路徑，$reason 是原始的剖析或讀寫錯誤。
+home-storage-device-key-corrupt = 裝置金鑰檔案 { $path } 已損毀：{ $reason }
+home-storage-io-failed = 無法讀寫 { $path }：{ $reason }
+
+# 聊天的本機儲存空間（crates/wonton-client/src/chat/storage.rs）。
+# $path 是檔案的路徑，$reason 是原始的剖析或讀寫錯誤。
+chat-storage-session-corrupt = 聊天登入狀態檔案 { $path } 已損毀：{ $reason }
+chat-storage-io-failed = 無法讀寫 { $path }：{ $reason }
+
+# 配過的伺服器清單（crates/wonton-client/src/servers.rs）。
+# $path 是伺服器清單檔案的路徑，$reason 是原始的剖析或讀寫錯誤。
+servers-list-corrupt = 伺服器清單檔案 { $path } 已損毀：{ $reason }
+servers-add-current-unpaired = 先配好這一台，再新增別的伺服器
+servers-name-required = 名稱不能為空
+# $path 是要讀取、寫入或刪除的路徑，$reason 是原始的讀寫錯誤。
+servers-storage-failed = 無法讀寫 { $path }：{ $reason }
+
+# 工作階段清單（crates/wonton-client/src/session_store.rs）。
+sessions-title-required = 工作階段標題不能為空
+# $id 是原樣的工作階段編號。
+sessions-not-found = 沒有這個工作階段：{ $id }
+
+# 推播方式設定（crates/wonton-client/src/push_method.rs）。
+# $path 是設定檔的路徑，$reason 是原始的讀寫錯誤。
+push-method-write-failed = 無法寫入推播方式設定檔 { $path }：{ $reason }
+
+# 推播（crates/wonton-client/src/push/{mod,registration,notification}.rs）：被拒絕的位址、失敗的註冊和取不回訊息的詳細資訊。
+# 通知的內文和佔位（未知的傳送者、邀請你加入、[檔案]……）還不在這裡。
+# $reason 是原始錯誤詳細資訊。
+push-matrix-pusher-failed = 無法在 Matrix 上註冊 pusher：{ $reason }
+# $reason 是 URL 剖析器的原始錯誤。
+push-endpoint-invalid-url = 推播位址不是合法的 URL：{ $reason }
+push-endpoint-scheme = 推播位址必須是 http 或 https 位址
+push-endpoint-p256dh = p256dh 應為 65 位元組的未壓縮 P-256 公鑰（base64url）
+push-endpoint-auth = auth 應為 16 位元組（base64url）
+# $reason 是上游原文，或翻譯後的逾時詳細資訊。
+push-register-failed = 無法向家用伺服器註冊推播：{ $reason }
+push-unregister-failed = 無法向家用伺服器取消註冊推播：{ $reason }
+# $reason 是 JSON 剖析器的原始錯誤。
+push-register-invalid-response = 家用伺服器傳回的推播註冊結果格式有誤：{ $reason }
+# $reason 是本機代理伺服器或 HTTP 用戶端的原始錯誤。
+push-invalid-proxy = 本機代理伺服器位址無效：{ $reason }
+push-http-client = 無法建立 HTTP 用戶端：{ $reason }
+# $seconds 是請求的逾時秒數。
+push-timeout = { $seconds } 秒內沒有回應
+# $status 是原始 HTTP 狀態碼。
+push-server-status = 家用伺服器傳回 HTTP { $status }
+# $message 和 $kind 是伺服器的原始錯誤文字和錯誤碼。
+push-server-error = { $message }（{ $kind }）
+# $reason 是 JSON 剖析器的原始錯誤。
+push-payload-invalid = 推播內容的格式有誤：{ $reason }
+# $reason 是 ID 剖析器的原始錯誤。
+push-invalid-room-id = 推播裡的聊天室 ID 無效：{ $reason }
+push-invalid-event-id = 推播裡的事件 ID 無效：{ $reason }
+# $seconds 是取得訊息時等了的秒數。
+push-fetch-timeout = { $seconds } 秒內無法取回這則訊息
+# $reason 是 Matrix SDK 的原始錯誤。
+push-fetch-failed = 無法取得這則訊息：{ $reason }
+push-core-closed = 用戶端核心已關閉
+push-not-paired = 還沒有連上過家用伺服器
+push-home-unreachable = 連不上家用伺服器：{ $reason }
+# $seconds 是登入時等了的秒數。
+push-session-timeout = { $seconds } 秒內無法登入 Matrix
+push-room-key-missing = 還沒收到這則訊息的聊天室金鑰
+
+# 啟動家裡的應用程式（crates/wonton-client/src/plugins/start.rs）。
+# $id 是原樣的應用程式編號。
+plugins-start-busy = { $id } 正在啟動、安裝、更新或解除安裝
+
+# 應用程式頁面的橋接（crates/wonton-client/src/tabs/bridge/）。
+tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟或固定
+tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非負數
+
+# 聊天的連線問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失敗操作的訊息。
+chat-not-connected = 連上家用伺服器後再試
+
+# 引導的本機記錄（crates/wonton-client/src/onboarding/storage.rs）。
+# $path 是檔案的路徑，$reason 是原始的讀寫錯誤。
+onboarding-storage-io-failed = 無法讀寫 { $path }：{ $reason }
+
+# 家用伺服器的一鍵更新（crates/wonton-client/src/plugins/core_upgrade.rs）：不確定階段的說明和被拒絕的操作，顯示在更新頁和錯誤的「詳細資訊」裡。
+# 無參數。家用伺服器給了這個 App 不認得的結果。
+plugins-core-upgrade-unrecognized = 家用伺服器回傳了這個版本的雲吞看不懂的結果，更新雲吞後再查看
+# 代替缺少的執行中摘要。不是一句話。
+plugins-core-upgrade-unknown-digest = 未知
+# 家用伺服器回報更新完成，但正在執行的和目標對不上。$running 是執行中的摘要或「未知」，$target 是原樣的目標摘要。
+plugins-core-upgrade-completed-mismatch = 家用伺服器說更新完成了，但正在執行的不是目標版本：執行中的是 { $running }，目標是 { $target }
+# 超過時限沒連上，結果未知。$digest 是退回舊版本要固定的原樣摘要。
+plugins-core-upgrade-timed-out = 超過時限仍連不上家用伺服器，不知道更新的結果。連上後這裡會更新
+plugins-core-upgrade-timed-out-rollback = 超過時限仍連不上家用伺服器，不知道更新的結果。連上後這裡會更新。要退回舊版本，在主機上再執行一次安裝指令，加上 WONTON_CORE_PIN={ $digest }
+plugins-core-upgrade-invalid-action = 不是更新伺服器的操作
+plugins-core-upgrade-already-running = 已經在更新了
+plugins-core-upgrade-not-cancellable = 現在無法取消
+# $reason 是連線問題的原始詳細資訊。
+plugins-core-upgrade-start-uncertain = 不確定發起了沒有，連上後再看一下：{ $reason }

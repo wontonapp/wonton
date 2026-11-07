@@ -506,7 +506,7 @@ impl ChatLink {
                     tracing::info!("{what}失败：{error}");
                     let reason = failure(&error);
                     let message = if reason == ChatFailure::TransportUnavailable {
-                        view::NOT_CONNECTED.to_owned()
+                        view::not_connected()
                     } else {
                         format!("{what}失败：{error}")
                     };

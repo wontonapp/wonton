@@ -7,9 +7,11 @@ mod tokens;
 mod types;
 
 use serde_json::{Value, json};
+use wonton_l10n::l10n;
 use wonton_protocol::{AppearanceViewModel, CoreError, HomeStatus, TabPage, TabRef};
 
 use super::TabsLink;
+use crate::l10n::{CATALOG, language};
 pub(crate) use rpc::handle_message;
 pub use types::{TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea};
 
@@ -56,6 +58,6 @@ fn page(tabs: &TabsLink, tab: &TabRef) -> Result<TabPage, CoreError> {
         .find(|item| item.tab == *tab)
         .and_then(|item| item.page)
         .ok_or_else(|| CoreError::InvalidInput {
-            reason: "这个插件页面没有打开或固定".to_owned(),
+            reason: l10n!(CATALOG, language(), "tabs-bridge-page-not-open"),
         })
 }

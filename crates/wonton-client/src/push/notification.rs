@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
+use wonton_l10n::l10n;
 use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
@@ -17,6 +18,7 @@ use wonton_protocol::{
 
 use super::PushLink;
 use crate::chat::{PushedCard, core_account, failure, pushed_card, summary};
+use crate::l10n::{CATALOG, language};
 
 /// 等 Matrix 会话就绪最多这么久：推送唤醒的进程要先建好本地代理、从本机恢复会话。
 const SESSION_WAIT: Duration = Duration::from_secs(12);
@@ -40,7 +42,14 @@ pub(crate) struct Payload {
 impl Payload {
     /// 不是家里推送代理发的格式时返回 `InvalidInput`。
     pub(crate) fn parse(payload: &[u8]) -> Result<Self, CoreError> {
-        serde_json::from_slice(payload).map_err(|e| invalid(&format!("推送内容的格式不对：{e}")))
+        serde_json::from_slice(payload).map_err(|e| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "push-payload-invalid",
+                reason = e.to_string()
+            ))
+        })
     }
 
     /// 取不到正文时的通知：只有推送里带的发送者和房间，原因照实写。
@@ -69,36 +78,54 @@ impl PushLink {
         payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
         let started = Instant::now();
-        let room_id: OwnedRoomId = payload
-            .room_id
-            .parse()
-            .map_err(|e| invalid(&format!("推送里的房间 ID 不合法：{e}")))?;
-        let event_id: OwnedEventId = payload
-            .event_id
-            .parse()
-            .map_err(|e| invalid(&format!("推送里的事件 ID 不合法：{e}")))?;
+        let room_id = payload.room_id.parse::<OwnedRoomId>().map_err(|e| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "push-invalid-room-id",
+                reason = e.to_string()
+            ))
+        })?;
+        let event_id = payload.event_id.parse::<OwnedEventId>().map_err(|e| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "push-invalid-event-id",
+                reason = e.to_string()
+            ))
+        })?;
         let unavailable = |reason, message| payload.unavailable(reason, message);
         let session = match self.wait_session().await {
             Ok(session) => session,
             Err((reason, message)) => {
-                tracing::info!(elapsed = ?started.elapsed(), %message, "推送：会话没就绪");
+                tracing::info!(elapsed = ?started.elapsed(), %message, "push: the session isn't ready");
                 return Ok(Some(unavailable(reason, message)));
             }
         };
         let session_ready = started.elapsed();
         let fetched =
             tokio::time::timeout(FETCH_WAIT, session.notification(&room_id, &event_id)).await;
-        tracing::info!(?session_ready, elapsed = ?started.elapsed(), "推送：取消息结束");
+        tracing::info!(?session_ready, elapsed = ?started.elapsed(), "push: finished fetching the message");
         let message = match fetched {
             Err(_) => {
-                let message = format!("{} 秒内没能取回这条消息", FETCH_WAIT.as_secs());
+                let message = l10n!(
+                    CATALOG,
+                    language(),
+                    "push-fetch-timeout",
+                    seconds = FETCH_WAIT.as_secs()
+                );
                 return Ok(Some(unavailable(
                     ChatFailure::TransportUnavailable,
                     message,
                 )));
             }
             Ok(Err(error)) => {
-                let message = format!("取不到这条消息：{error}");
+                let message = l10n!(
+                    CATALOG,
+                    language(),
+                    "push-fetch-failed",
+                    reason = error.to_string()
+                );
                 return Ok(Some(unavailable(failure(&error), message)));
             }
             Ok(Ok(None)) => return Ok(None),
@@ -125,23 +152,37 @@ impl PushLink {
                     return Err((*reason, message.clone()));
                 }
                 if chat.changed().await.is_err() {
-                    return Err((ChatFailure::Upstream, "客户端核心已关闭".to_owned()));
+                    return Err((
+                        ChatFailure::Upstream,
+                        l10n!(CATALOG, language(), "push-core-closed"),
+                    ));
                 }
             }
         };
         match tokio::time::timeout(SESSION_WAIT, waiting).await {
             Ok(result) => result,
             Err(_) => Err(match self.home.view().status {
-                HomeStatus::NotConfigured => {
-                    (ChatFailure::NotReady, "还没有连过家里的服务器".to_owned())
-                }
+                HomeStatus::NotConfigured => (
+                    ChatFailure::NotReady,
+                    l10n!(CATALOG, language(), "push-not-paired"),
+                ),
                 HomeStatus::Disconnected { message, .. } => (
                     ChatFailure::TransportUnavailable,
-                    format!("连不上家里的服务器：{message}"),
+                    l10n!(
+                        CATALOG,
+                        language(),
+                        "push-home-unreachable",
+                        reason = message
+                    ),
                 ),
                 HomeStatus::Connecting | HomeStatus::Connected => (
                     ChatFailure::TransportUnavailable,
-                    format!("{} 秒内没能登录 Matrix", SESSION_WAIT.as_secs()),
+                    l10n!(
+                        CATALOG,
+                        language(),
+                        "push-session-timeout",
+                        seconds = SESSION_WAIT.as_secs()
+                    ),
                 ),
             }),
         }
@@ -166,7 +207,7 @@ pub(crate) fn push_notification(
     let content = match message.body {
         MessageBody::Undecryptable => PushContent::Unavailable {
             reason: ChatFailure::NotReady,
-            message: "还没收到这条消息的房间密钥".to_owned(),
+            message: l10n!(CATALOG, language(), "push-room-key-missing"),
         },
         MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Invite,
         body => PushContent::Message {
