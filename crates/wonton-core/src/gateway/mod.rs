@@ -95,6 +95,8 @@ pub struct Gateway {
     pub hydra_public: Option<String>,
     pub http: HttpClient,
     system_http: HttpClient,
+    /// 转发插件流量的池，空闲期比上游的 keep-alive 短（[`crate::http::FORWARD_POOL_IDLE`]）。
+    upstream_http: HttpClient,
     pub tunnel: Tunnel,
     /// Matrix 服务器；没接时 App 的 Matrix 入口如实报不可用。
     pub matrix: Option<Arc<Matrix>>,
@@ -152,6 +154,7 @@ impl Gateway {
             hydra_public,
             http,
             system_http: HttpClient::system_loopback(),
+            upstream_http: HttpClient::for_forwarding(),
             tunnel,
             matrix: None,
             send_limits: Arc::new(send_limits::SendLimiter::new(
@@ -455,10 +458,11 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         endpoint: &upstream,
         name: route.id.as_str(),
     };
-    let mut response = match proxy::forward_or(&gateway.http, target, req, fwd, &langs).await {
-        Ok(response) => response,
-        Err(error) => return error.response(route.id.as_str(), &langs),
-    };
+    let mut response =
+        match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
+            Ok(response) => response,
+            Err(error) => return error.response(route.id.as_str(), &langs),
+        };
     isolation::sanitize_set_cookies(response.headers_mut());
     if let Some(auth) = &route.proxy {
         proxy_sso::scrub(response.headers_mut(), auth);

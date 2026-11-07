@@ -58,7 +58,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         endpoint: &endpoint,
         name: &name,
     };
-    match proxy::forward_or(&gateway.http, target, req, fwd, &langs).await {
+    match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
         Ok(response) => response,
         Err(e) => forward_error(&langs, e),
     }

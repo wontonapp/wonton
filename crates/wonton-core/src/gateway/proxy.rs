@@ -278,10 +278,10 @@ async fn send_upstream(
     request: Request,
     limit: Option<Duration>,
 ) -> Result<hyper::Response<hyper::body::Incoming>, HttpError> {
-    match (endpoint, limit) {
-        (Endpoint::Tcp(_), Some(limit)) => http.send_with_header_deadline(request, limit).await,
-        (Endpoint::Tcp(_), None) => http.send(request).await,
-        (Endpoint::Unix(socket), _) => unix_send(socket, request, limit).await,
+    match endpoint {
+        Endpoint::Tcp(_) => http.send_forwarded(request, limit).await,
+        // unix 套接字每条请求一条连接，没有复用的连接可死。
+        Endpoint::Unix(socket) => unix_send(socket, request, limit).await,
     }
 }
 
@@ -316,7 +316,7 @@ async fn unix_send(
     let (request, deadline) = match limit {
         Some(limit) => {
             let (request, deadline) = ResponseDeadline::unix(request, io.flushed.clone(), limit);
-            (request, Some(deadline))
+            (request, Some((deadline, limit)))
         }
         None => (request, None),
     };
@@ -336,7 +336,11 @@ async fn unix_send(
             .map_err(|e| HttpError::Connect(e.to_string()))
     };
     let mut response = match deadline {
-        Some(deadline) => deadline.wait(sending).await?,
+        Some((deadline, limit)) => {
+            deadline
+                .wait(sending, HttpError::ResponseHeadersTimeout(limit))
+                .await?
+        }
         None => sending.await?,
     };
     response
@@ -350,6 +354,10 @@ async fn unix_send(
 #[cfg(test)]
 #[path = "proxy_deadline_tests.rs"]
 mod deadline_tests;
+
+#[cfg(test)]
+#[path = "proxy_stale_tests.rs"]
+mod stale_tests;
 
 #[cfg(test)]
 mod tests {
