@@ -45,6 +45,35 @@ pub fn capability_risk(name: &str) -> CapabilityRisk {
     }
 }
 
+/// `security_opt` 的一条写法。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecurityOpt {
+    /// `no-new-privileges`：`true` 等于核心默认的加固，`false` 退回 Docker 默认。
+    NoNewPrivileges(bool),
+    /// 其他写法，要 `security.opt` 权限并原样交给 Docker。
+    Other,
+}
+
+/// 按 Docker 的解析规则分类：名字大小写敏感，`:` 和 `=` 都是分隔符，值按 ParseBool 收。
+pub fn parse_security_opt(opt: &str, langs: &Languages) -> Result<SecurityOpt, String> {
+    let (name, value) = match opt.split_once([':', '=']) {
+        Some((name, value)) => (name, Some(value)),
+        None => (opt, None),
+    };
+    if name != "no-new-privileges" {
+        return Ok(SecurityOpt::Other);
+    }
+    match value.map(str::to_ascii_lowercase).as_deref() {
+        None | Some("true" | "t" | "1") => Ok(SecurityOpt::NoNewPrivileges(true)),
+        Some("false" | "f" | "0") => Ok(SecurityOpt::NoNewPrivileges(false)),
+        Some(_) => Err(text(
+            langs,
+            "plugin-install-priv-security-opt-invalid",
+            &[("opt", opt.into())],
+        )),
+    }
+}
+
 /// 权限对应的风险级别，供确认页和清单限制共用。
 pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
     match permission {
@@ -153,6 +182,7 @@ fn validate_service(
 ) -> Result<(), ServiceError> {
     validate_host_network(manifest, name, service, used, langs)?;
     validate_capabilities(manifest, name, service, used, langs)?;
+    validate_cap_drop(name, service, langs)?;
     validate_devices(manifest, name, service, used, langs)?;
     validate_namespaces(manifest, name, service, used, langs)?;
     validate_socket(manifest, name, service, used, langs)
@@ -247,6 +277,23 @@ fn validate_capabilities(
     Ok(())
 }
 
+/// `cap_drop` 只减不加，不对应任何权限；值和 `cap_add` 一样规范化，`ALL` 也收。
+fn validate_cap_drop(name: &str, service: &Service, langs: &Languages) -> Result<(), ServiceError> {
+    for cap in &service.cap_drop {
+        if normalize_capability(cap).is_none() {
+            return Err(ServiceError::new(
+                name,
+                text(
+                    langs,
+                    "plugin-install-priv-cap-drop-invalid",
+                    &[("cap", cap.into())],
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_devices(
     manifest: &Manifest,
     name: &str,
@@ -336,7 +383,15 @@ fn validate_namespaces(
         require(manifest, Permission::HostIpc, name, "ipc: host", langs)?;
         used.ipc = true;
     }
-    if !service.security_opt.is_empty() {
+    // no-new-privileges 的写法等于默认加固或退回 Docker 默认，都不是权限；其余写法照 ADR-0036 要 security.opt。
+    let mut gated = false;
+    for opt in &service.security_opt {
+        match parse_security_opt(opt, langs).map_err(|message| ServiceError::new(name, message))? {
+            SecurityOpt::NoNewPrivileges(_) => {}
+            SecurityOpt::Other => gated = true,
+        }
+    }
+    if gated {
         require(
             manifest,
             Permission::SecurityOpt,
@@ -544,22 +599,57 @@ pub fn apply(service: &Service, host: &mut HostConfig, langs: &Languages) -> Res
                 .collect::<Result<Vec<_>, _>>()?,
         );
     }
+    if !service.cap_drop.is_empty() {
+        host.cap_drop = Some(
+            service
+                .cap_drop
+                .iter()
+                .map(|cap| {
+                    normalize_capability(cap).ok_or_else(|| {
+                        text(
+                            langs,
+                            "plugin-install-priv-cap-drop-invalid",
+                            &[("cap", cap.into())],
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
     if service.network_mode == Some(NetworkMode::Host)
         && !service
             .cap_add
             .iter()
             .any(|cap| normalize_capability(cap).as_deref() == Some("NET_RAW"))
     {
-        host.cap_drop = Some(vec!["NET_RAW".to_owned()]);
+        // 宿主网络里的容器带着 Docker 默认的 NET_RAW 能抓别人的包，默认去掉；插件已写 ALL 或 NET_RAW 就不重复。
+        let drops = host.cap_drop.get_or_insert_with(Vec::new);
+        if !drops.iter().any(|cap| cap == "NET_RAW" || cap == "ALL") {
+            drops.push("NET_RAW".to_owned());
+        }
+    }
+    let mut others = Vec::new();
+    let mut no_new_privileges = None;
+    for opt in &service.security_opt {
+        match parse_security_opt(opt, langs)? {
+            SecurityOpt::NoNewPrivileges(value) => no_new_privileges = Some(value),
+            SecurityOpt::Other => others.push(opt.clone()),
+        }
+    }
+    if !others.is_empty() {
+        host.security_opt = Some(others);
+    }
+    // 插件容器默认 no-new-privileges:true；写了 no-new-privileges:false 才退回 Docker 默认。
+    if no_new_privileges != Some(false) {
+        host.security_opt
+            .get_or_insert_with(Vec::new)
+            .push("no-new-privileges:true".to_owned());
     }
     if service.pid.as_deref() == Some("host") {
         host.pid_mode = Some("host".to_owned());
     }
     if service.ipc.as_deref() == Some("host") {
         host.ipc_mode = Some("host".to_owned());
-    }
-    if !service.security_opt.is_empty() {
-        host.security_opt = Some(service.security_opt.clone());
     }
     if service.privileged == Some(true) {
         host.privileged = Some(true);

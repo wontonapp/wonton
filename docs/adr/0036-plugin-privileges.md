@@ -51,6 +51,14 @@
 - `ports`、`networks`、`container_name`、`build` 这些和核心管理冲突的字段照旧拒绝。`ports` 的理由见 ADR-0019。
 - 除 `docker.sock` 外，宿主路径的挂载规则不变。`docker.sock` 的源只能写这一个路径，核心换成这台主机上实际的 socket。
 
+### 默认加固
+
+所有插件容器默认带 `no-new-privileges:true`（核心写进 HostConfig 的 `SecurityOpt`），和核心自己的系统容器一致：插件进程不能再经自己的操作拿到新特权（setuid 位、文件能力）。
+
+- `security_opt` 写 `no-new-privileges:false` 退回 Docker 默认，给依赖 setuid 的镜像（容器里用 sudo 的）。这一项不算权限、不要求声明。
+- 写 `no-new-privileges` 或 `no-new-privileges:true` 等于默认，同样不要求声明。
+- `security_opt` 里的其他写法照上表要 `security.opt` 权限；退回默认和其他写法可以在同一个服务里同用。
+
 **组播和广播不单独设权限，走 `network.host`。** ADR-0019 的实测：桥接网络里组播出不去也进不来，宿主网络里都能通。核心不做组播转发。
 
 ### 能力（`cap_add`）
@@ -63,6 +71,8 @@
 判不准的一律算最高。
 
 **宿主网络里的服务默认去掉 `NET_RAW`。** 带着 Docker 默认给的 `NET_RAW`，宿主网络里的容器能抓别的插件的包（ADR-0019 的实测），去掉就抓不到。要用的插件写 `cap.NET_RAW`，比如 Home Assistant 的 DHCP 发现。
+
+**`cap_drop` 不需要权限：它只能减，不能加。** 值和 `cap_add` 一样规范化，`ALL` 也收；和宿主网络默认去掉 `NET_RAW` 合并去重——写了 `NET_RAW` 或 `ALL` 就不再重复加，写别的值时两者都在。
 
 ### 设备
 

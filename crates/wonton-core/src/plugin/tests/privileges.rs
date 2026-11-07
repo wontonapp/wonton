@@ -89,6 +89,143 @@ fn host_network_drops_net_raw_unless_declared() {
 }
 
 #[test]
+fn plugin_containers_default_to_no_new_privileges() {
+    let host = |services: &str, permissions: &str| {
+        dry_run(
+            &PluginPackage::parse(&package(services, permissions), &langs()).unwrap(),
+            &langs(),
+        )
+        .unwrap()
+        .containers
+        .remove(0)
+        .body
+        .host_config
+        .unwrap()
+    };
+    let hardened = host("  web:\n    image: nginx", "  permissions: []");
+    assert_eq!(
+        hardened.security_opt.as_deref(),
+        Some(["no-new-privileges:true".to_owned()].as_slice())
+    );
+
+    // 写了 no-new-privileges:false 退回 Docker 默认：不要求权限，HostConfig 里没有这项。
+    let opted_out = |opt: &str| {
+        host(
+            &format!("  web:\n    image: nginx\n    security_opt: ['{opt}']"),
+            "  permissions: []",
+        )
+    };
+    assert!(opted_out("no-new-privileges:false").security_opt.is_none());
+    // `no-new-privileges` 和 `no-new-privileges:true` 写了等于默认，同样不要求权限。
+    for same_as_default in ["no-new-privileges", "no-new-privileges:true"] {
+        assert_eq!(
+            opted_out(same_as_default).security_opt.as_deref(),
+            Some(["no-new-privileges:true".to_owned()].as_slice()),
+            "{same_as_default}"
+        );
+    }
+    // 其他写法仍要 security.opt 权限；退回默认可以和其他写法同用，nnp 写法不进 HostConfig。
+    let mixed = host(
+        "  web:\n    image: nginx\n    security_opt: ['no-new-privileges:false', 'seccomp:unconfined']",
+        "  permissions: [security.opt]",
+    );
+    assert_eq!(
+        mixed.security_opt.as_deref(),
+        Some(["seccomp:unconfined".to_owned()].as_slice())
+    );
+    let yaml = package(
+        "  web:\n    image: nginx\n    security_opt: ['seccomp:unconfined']",
+        "  permissions: []",
+    );
+    let err = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs())
+        .unwrap_err()
+        .to_string();
+    let reason = message(
+        "plugin-install-priv-field-requires",
+        &[("field", "security_opt"), ("permission", "security.opt")],
+    );
+    assert!(err.contains(&reason), "{err}");
+
+    let yaml = package(
+        "  web:\n    image: nginx\n    security_opt: ['no-new-privileges:maybe']",
+        "  permissions: []",
+    );
+    let err = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs())
+        .unwrap_err()
+        .to_string();
+    let reason = message(
+        "plugin-install-priv-security-opt-invalid",
+        &[("opt", "no-new-privileges:maybe")],
+    );
+    assert!(err.contains(&reason), "{err}");
+}
+
+#[test]
+fn cap_drop_is_free_and_merged_with_net_raw_default() {
+    let host = |services: &str, permissions: &str| {
+        dry_run(
+            &PluginPackage::parse(&package(services, permissions), &langs()).unwrap(),
+            &langs(),
+        )
+        .unwrap()
+        .containers
+        .remove(0)
+        .body
+        .host_config
+        .unwrap()
+    };
+    // 只减不加：不需要权限，`ALL` 也收，名字照 `cap_add` 规范化。
+    let dropped = host(
+        "  web:\n    image: nginx\n    cap_drop: [ALL]",
+        "  permissions: []",
+    );
+    assert_eq!(
+        dropped.cap_drop.as_deref(),
+        Some(["ALL".to_owned()].as_slice())
+    );
+    let lowered = host(
+        "  web:\n    image: nginx\n    cap_drop: [net_raw]",
+        "  permissions: []",
+    );
+    assert_eq!(
+        lowered.cap_drop.as_deref(),
+        Some(["NET_RAW".to_owned()].as_slice())
+    );
+
+    // 宿主网络默认去掉的 NET_RAW 仍被去掉：和插件的 cap_drop 合并，不互相覆盖也不重复。
+    let merged = host(
+        "  web:\n    image: nginx\n    network_mode: host\n    cap_drop: [SYS_NICE]",
+        "  permissions: [network.host]",
+    );
+    assert_eq!(
+        merged.cap_drop.as_deref(),
+        Some(["SYS_NICE".to_owned(), "NET_RAW".to_owned()].as_slice())
+    );
+    // 插件写了 ALL 时 NET_RAW 已被覆盖，不再追加。
+    let covered = host(
+        "  web:\n    image: nginx\n    network_mode: host\n    cap_drop: [ALL]",
+        "  permissions: [network.host]",
+    );
+    assert_eq!(
+        covered.cap_drop.as_deref(),
+        Some(["ALL".to_owned()].as_slice())
+    );
+
+    let yaml = package(
+        "  web:\n    image: nginx\n    cap_drop: [no-such-cap]",
+        "  permissions: []",
+    );
+    let err = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs())
+        .unwrap_err()
+        .to_string();
+    let reason = message(
+        "plugin-install-priv-cap-drop-invalid",
+        &[("cap", "no-such-cap")],
+    );
+    assert!(err.contains(&reason), "{err}");
+}
+
+#[test]
 fn agent_and_bot_manifests_reject_very_high_and_highest_permissions() {
     for permission in ["cap.NET_ADMIN", "privileged"] {
         let high_risk = message(

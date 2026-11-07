@@ -464,6 +464,8 @@ pub struct Service {
     #[serde(default)]
     pub cap_add: Vec<String>,
     #[serde(default)]
+    pub cap_drop: Vec<String>,
+    #[serde(default)]
     pub devices: Vec<DeviceEntry>,
     #[serde(default)]
     pub pid: Option<String>,
