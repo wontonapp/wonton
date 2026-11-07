@@ -9,6 +9,7 @@ on:
       - "deploy/**"
       - "plugins/**"
       - "Cargo.toml"
+      - "vendor/**"
       - "Cargo.lock"
       - "clippy.toml"
       - "rust-toolchain.toml"

@@ -123,6 +123,11 @@ struct Core {
     expire_room_list: AtomicBool,
     verification_failure: AtomicUsize,
     hold_backup_read: watch::Sender<bool>,
+    /// 有值时，发给这台设备（Matrix 设备号）的 `m.key.verification.done` 等新手机的 `m.secret.request`
+    /// 转发出去、再过三秒才转发，见 [`Home::deliver_key_request_before_done`]。
+    done_after_key_request: Mutex<Option<String>>,
+    /// 转发过的 `m.secret.request` 次数。
+    key_requests_forwarded: watch::Sender<u64>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
@@ -162,6 +167,8 @@ impl Home {
             expire_room_list: AtomicBool::new(false),
             verification_failure: AtomicUsize::new(0),
             hold_backup_read: watch::Sender::new(false),
+            done_after_key_request: Mutex::default(),
+            key_requests_forwarded: watch::Sender::new(0),
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
@@ -225,6 +232,13 @@ impl Home {
 
     pub fn hold_backup_read(&self, hold: bool) {
         self.core.hold_backup_read.send_replace(hold);
+    }
+
+    /// 让新手机要钥匙的请求比它发给 `device_id` 的确认完成消息早一轮同步到那台设备：
+    /// 新手机先确认、旧手机后确认时会自然出现的顺序（ADR-0046）。
+    pub fn deliver_key_request_before_done(&self, device_id: &str) {
+        self.core.key_requests_forwarded.send_replace(0);
+        *self.core.done_after_key_request.lock().unwrap() = Some(device_id.to_owned());
     }
 
     /// 设置假核心的引导状态；没设置时引导接口回 404。
@@ -430,7 +444,7 @@ impl Home {
     }
 }
 
-async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
+pub(super) async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
     let length = head
         .lines()
         .find_map(|line| line.strip_prefix("content-length:"))

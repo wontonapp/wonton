@@ -73,6 +73,19 @@ impl MatrixSession {
         }
     }
 
+    /// 再向自己的其他设备要一次本机还缺的秘密（交叉签名私钥、备份密钥），马上发出；返回这次有没有发新请求。
+    ///
+    /// 自我验证完成时 SDK 已经要过一次，但请求比对方把本机记成“已验证”早到时，对方直接丢掉、不补发
+    /// （matrix-sdk 0.19.1），只能再要。只排队不发的话要等下一次同步，可能是 30 秒的长轮询，所以补丁方法当场发出。
+    /// 同一个秘密还有没发出的请求时不重复要。用的是 `vendor/matrix-sdk` 的补丁方法。
+    pub async fn request_missing_secrets(&self) -> Result<bool> {
+        self.client
+            .encryption()
+            .query_missing_secrets_from_other_sessions()
+            .await
+            .map_err(Error::from)
+    }
+
     /// 加密状态流：第一项是当前状态，之后验证状态或恢复状态变化时给出新状态。
     pub fn encryption_states(&self) -> impl Stream<Item = EncryptionState> + use<> {
         let encryption = self.client.encryption();

@@ -3,6 +3,7 @@
 # 例外写进仓库根目录的 .size-allowlist，每行一条：
 #   <路径> | <原因> | <到期日 YYYY-MM-DD>
 # 到期后例外失效，CI 重新失败。
+# vendor/ 下是原样导入的第三方源码（见 vendor/README.md），不按我们的上限拆。
 set -euo pipefail
 
 limit="${WONTON_MAX_FILE_LINES:-800}"
@@ -47,7 +48,7 @@ while IFS= read -r -d '' file; do
   fi
 done < <(git ls-files -z -- \
   '*.rs' '*.swift' '*.kt' '*.kts' '*.ts' '*.tsx' '*.js' '*.mjs' '*.py' '*.go' '*.sh' \
-  ':(exclude)**/generated/**')
+  ':(exclude)**/generated/**' ':(exclude)vendor/**')
 
 if (( status == 0 )); then
   echo "文件行数检查通过（上限 ${limit} 行）"

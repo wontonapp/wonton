@@ -30,6 +30,7 @@ RUN case "$TARGETARCH" in \
 WORKDIR /src
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
+COPY vendor vendor
 COPY deploy/install/compose.yaml deploy/install/wonton deploy/install/
 # 构建它的提交号（dev.sh 传入），编进核心、打在启动日志里，一眼看出镜像里是哪份代码。
 ARG WONTON_BUILD_COMMIT=unknown

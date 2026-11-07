@@ -168,6 +168,41 @@ async fn sas_recovers_open_history_in_place_and_survives_restart() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn the_new_phone_asks_again_for_keys_the_old_phone_dropped() {
+    let devices = Devices::new(true).await;
+    devices.connect_second().await;
+    let id = compare(&devices.first, &devices.second).await;
+    let (_, old_phone) = devices.first.signed_in().await;
+    devices.home.deliver_key_request_before_done(&old_phone);
+    devices
+        .second
+        .dispatch(Action::ConfirmVerification {
+            flow_id: id.clone(),
+        })
+        .unwrap();
+    flow_at(&devices.second, |stage| {
+        *stage == VerificationStage::WaitingForOther
+    })
+    .await;
+    devices
+        .first
+        .dispatch(Action::ConfirmVerification {
+            flow_id: id.clone(),
+        })
+        .unwrap();
+    let end = flow_at(&devices.second, |stage| {
+        matches!(
+            stage,
+            VerificationStage::Done | VerificationStage::Cancelled { .. }
+        )
+    })
+    .await;
+    assert_eq!(end.stage, VerificationStage::Done);
+    assert_recovered(&devices.second);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn cancellation_and_rejection_report_who_cancelled_and_allow_a_new_request() {
     let devices = Devices::new(true).await;
     devices.connect_second().await;

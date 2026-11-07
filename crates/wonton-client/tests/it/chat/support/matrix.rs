@@ -2,8 +2,9 @@
 //! Tuwunel。`Core` 的字段就是这些开关，见 `support`。
 
 use std::sync::{Arc, atomic::Ordering};
+use std::time::Duration;
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::debug;
 
@@ -68,6 +69,12 @@ pub(super) async fn serve_matrix(
         }
         core.key_uploads_forwarded.send_modify(|count| *count += 1);
     }
+    if hold_done_for_key_request(&mut tcp, &core, text, &mut head)
+        .await
+        .is_none()
+    {
+        return;
+    }
     let mut down = core.matrix_down.subscribe();
     if *down.borrow() {
         return;
@@ -95,11 +102,65 @@ pub(super) async fn serve_matrix(
     let Some(mut upstream) = forward_to(&core, &head).await else {
         return;
     };
+    if text.starts_with(KEY_REQUEST) {
+        core.key_requests_forwarded.send_modify(|count| *count += 1);
+    }
     tokio::select! {
         _ = tokio::io::copy_bidirectional(&mut tcp, &mut upstream) => {}
         _ = down.wait_for(|down| *down) => {}
         _ = stale.wait_for(Option::is_some) => {}
     }
+}
+
+const KEY_REQUEST: &str = "put /_matrix/client/v3/sendtodevice/m.secret.request/";
+const DONE: &str = "put /_matrix/client/v3/sendtodevice/m.key.verification.done/";
+
+/// 开了 `done_after_key_request` 时，要钥匙的请求和确认完成消息先读完请求体、整个转发。发给指定设备的完成消息
+/// 由假核心先回 200、留在手里：新手机的同步不会因为这个请求没回而停下，照常收到对方的完成消息、发出要钥匙的请求；
+/// 等要钥匙的请求转发出去，再过三秒让对方的同步先把它取走，才把完成消息补发给 Tuwunel。
+/// 回 `None` 表示这个请求已经答完（或者读不下去了）。
+async fn hold_done_for_key_request(
+    tcp: &mut TcpStream,
+    core: &Arc<Core>,
+    text: &str,
+    head: &mut Vec<u8>,
+) -> Option<()> {
+    if !text.starts_with(KEY_REQUEST) && !text.starts_with(DONE) {
+        return Some(());
+    }
+    let Some(device_id) = core.done_after_key_request.lock().unwrap().clone() else {
+        return Some(());
+    };
+    let body = read_body(tcp, text).await?;
+    let to_device = String::from_utf8_lossy(&body).contains(&format!("\"{device_id}\""));
+    head.extend_from_slice(&body);
+    if !(text.starts_with(DONE) && to_device) {
+        return Some(());
+    }
+    let reply = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
+    tcp.write_all(reply.as_bytes()).await.ok();
+    tcp.shutdown().await.ok();
+    let (core, request) = (core.clone(), std::mem::take(head));
+    tokio::spawn(async move {
+        let mut forwarded = core.key_requests_forwarded.subscribe();
+        // 等不到（新手机没要钥匙）也照常补发，让测试按原来的结果失败，不在这里挂住。
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            forwarded.wait_for(|count| *count > 0),
+        )
+        .await
+        .ok();
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let Some(mut upstream) = forward_to(&core, &request).await else {
+            return;
+        };
+        // 连接是 keep-alive，读到应答头就够了：读完前断开，Tuwunel 可能放弃处理。
+        let mut response = [0u8; 1024];
+        tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response))
+            .await
+            .ok();
+    });
+    None
 }
 
 /// 连上 Tuwunel 并把请求头转过去；连不上或写不进去就断开这条连接（客户端会重试）。

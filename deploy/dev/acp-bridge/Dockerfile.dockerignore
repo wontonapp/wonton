@@ -4,6 +4,7 @@
 !rust-toolchain.toml
 !crates/
 crates/**/target
+!vendor/
 !deploy/
 !deploy/dev/
 !deploy/dev/acp-bridge/

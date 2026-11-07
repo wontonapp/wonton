@@ -17,6 +17,9 @@ use super::{ChatLink, invalid, lock, view};
 
 // 秘密 gossip 需要多个同步往返；30 秒覆盖正常交换，又不让缺密钥的设备一直显示恢复中。
 const KEYS_TIMEOUT: Duration = Duration::from_secs(30);
+// 取钥匙期间再要几次缺的秘密：开始取后 1、3、7、15 秒（间隔翻倍），都在 KEYS_TIMEOUT 之内。验证完成时 SDK 要的那一次
+// 可能比对方把本机记成“已验证”早到，被对方直接丢掉（ADR-0046）；正常 0.1–0.3 秒就取齐，用不到第一次。
+const FIRST_ASK: Duration = Duration::from_secs(1);
 
 type Changes = Pin<Box<dyn Stream<Item = wonton_matrix::Result<VerificationFlow>> + Send>>;
 
@@ -43,6 +46,8 @@ struct Flow {
     verification: SelfVerification,
     changes: Changes,
     keys_deadline: Option<Instant>,
+    /// 这次取钥匙已经再要过几次缺的秘密，见 [`next_ask`]。
+    asked: u32,
     finished: bool,
 }
 
@@ -174,6 +179,7 @@ async fn run(
     loop {
         let deadline = flow.as_ref().and_then(|flow| flow.keys_deadline);
         let keys_ready = deadline.is_some() && keys_ready(&session);
+        let ask = flow.as_ref().and_then(next_ask).filter(|_| !keys_ready);
         tokio::select! {
             command = commands.recv() => {
                 let Some(command) = command else { return };
@@ -208,6 +214,7 @@ async fn run(
                 let Some(link) = current_link(&chat, &session) else { return };
                 finish_keys(&link, &session, &mut flow, !keys_ready);
             }
+            () = sleep_until(ask) => ask_again(&session, &mut flow).await,
         }
     }
 }
@@ -351,6 +358,7 @@ fn install(link: &ChatLink, flow: &mut Option<Flow>, verification: SelfVerificat
                 verification,
                 changes,
                 keys_deadline: None,
+                asked: 0,
                 finished: false,
             });
             update(link, flow, snapshot);
@@ -368,9 +376,9 @@ fn update(link: &ChatLink, flow: &mut Option<Flow>, snapshot: VerificationFlow) 
         {
             return;
         }
-        if *stage == VerificationStage::FetchingKeys {
-            flow.keys_deadline
-                .get_or_insert_with(|| Instant::now() + KEYS_TIMEOUT);
+        if *stage == VerificationStage::FetchingKeys && flow.keys_deadline.is_none() {
+            flow.keys_deadline = Some(Instant::now() + KEYS_TIMEOUT);
+            flow.asked = 0;
         }
     }
     let terminal = !active(stage);
@@ -431,6 +439,37 @@ async fn key_deadline(deadline: Option<Instant>, ready: bool) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline).await,
         None => std::future::pending().await,
+    }
+}
+
+/// 下一次再要缺的秘密的时间：开始取钥匙后 `FIRST_ASK` × (2ⁿ⁺¹ − 1)，过了取钥匙的期限就不再要。
+fn next_ask(flow: &Flow) -> Option<Instant> {
+    let deadline = flow.keys_deadline?;
+    let started = deadline - KEYS_TIMEOUT;
+    let at = started + FIRST_ASK * ((2u32 << flow.asked.min(16)) - 1);
+    (at < deadline).then_some(at)
+}
+
+async fn sleep_until(at: Option<Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// 缺的秘密再要一次。要不成只记日志：期限到了仍缺，照常以 `KeysMissing` 结束。
+async fn ask_again(session: &MatrixSession, flow: &mut Option<Flow>) {
+    let Some(flow) = flow.as_mut() else { return };
+    flow.asked += 1;
+    match session.request_missing_secrets().await {
+        Ok(requested) => tracing::info!(
+            asked = flow.asked,
+            requested,
+            "asked other devices again for missing secrets"
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "could not ask other devices again for missing secrets")
+        }
     }
 }
 

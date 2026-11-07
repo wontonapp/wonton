@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# 带补丁的第三方 crate 不算我们的成员，见 vendor/README.md。
+exclude = ["vendor/matrix-sdk"]
 
 [workspace.package]
 version = "0.0.0"
@@ -46,3 +48,8 @@ debug = false
 [workspace.lints.clippy]
 # 函数体超过 100 行即失败，阈值见 clippy.toml。
 too_many_lines = "deny"
+
+# matrix-sdk 0.19.1 加一个公开方法，让新设备能补要被对方丢掉的秘密（ADR-0046）。补丁内容、原因和升级时怎么重打见
+# vendor/README.md。
+[patch.crates-io]
+matrix-sdk = { path = "vendor/matrix-sdk" }
