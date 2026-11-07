@@ -19,11 +19,21 @@ use testcontainers::{
 };
 
 pub use self::{
-    admin::Admin,
+    admin::{Admin, diagnose_live_session},
     issuer::{Claims, Issuer, now},
     push::{PushGateway, Received},
     relay::Relay,
 };
+
+/// 本会话当前生效的令牌：（访问令牌，刷新令牌）。刷新令牌登录时申请过才有；停用后旧会话
+/// 还能建房间时，诊断用这对旧令牌裸打 whoami/refresh，看服务器当时认不认。
+impl MatrixSession {
+    pub fn tokens(&self) -> Option<(String, Option<String>)> {
+        self.client
+            .session_tokens()
+            .map(|tokens| (tokens.access_token, tokens.refresh_token))
+    }
+}
 
 /// 本地开发环境的配置和镜像，测试用同一份。
 const COMPOSE: &str = include_str!(concat!(
