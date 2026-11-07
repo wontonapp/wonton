@@ -706,5 +706,5 @@ fn read_store(path: &Path) -> Result<Stored, PeerStoreError> {
     }
 }
 
-/// 后台轮询的间隔（ADR-0050：扫码后先问一次，之后每 10 分钟一次）。
+/// 后台轮询的间隔（ADR-0050：扫码后先问一次，之后每 10 分钟一次；没问到时更快重问，见 `spawn_poll`）。
 pub(crate) const OUTCOME_POLL: Duration = Duration::from_secs(600);
