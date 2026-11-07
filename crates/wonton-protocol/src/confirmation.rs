@@ -62,21 +62,6 @@ pub struct ConfirmationWindow {
     pub ended: Option<WindowEnd>,
 }
 
-impl ConfirmationWindow {
-    /// 结束后的说明。还没结束时是 `None`。
-    pub fn ended_note(&self) -> Option<String> {
-        let allowed = self
-            .allowed
-            .map_or(String::new(), |n| format!("，放行了 {n} 次"));
-        Some(match self.ended? {
-            WindowEnd::Expired => format!("放行时段已到期{allowed}。"),
-            WindowEnd::Stopped => format!("放行时段已停止{allowed}。"),
-            WindowEnd::CoreRestarted => "核心重启，放行时段已结束。".to_owned(),
-            WindowEnd::Unknown => format!("放行时段已结束{allowed}。"),
-        })
-    }
-}
-
 /// 放行时段为什么结束。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

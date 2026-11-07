@@ -296,7 +296,7 @@ impl std::fmt::Debug for ImageUpload {
         f.debug_struct("ImageUpload")
             .field("filename", &self.filename)
             .field("mime_type", &self.mime_type)
-            .field("data", &format_args!("<{} 字节>", self.data.len()))
+            .field("data", &format_args!("<{} bytes>", self.data.len()))
             .field("width", &self.width)
             .field("height", &self.height)
             .field("thumbnail", &self.thumbnail)
@@ -308,7 +308,7 @@ impl std::fmt::Debug for ImageThumbnail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ImageThumbnail")
             .field("mime_type", &self.mime_type)
-            .field("data", &format_args!("<{} 字节>", self.data.len()))
+            .field("data", &format_args!("<{} bytes>", self.data.len()))
             .field("width", &self.width)
             .field("height", &self.height)
             .finish()

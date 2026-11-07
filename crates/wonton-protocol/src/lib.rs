@@ -120,8 +120,8 @@ pub use onboarding::{
     ReplacedAgent, StepNav, model_provider_path, model_provider_test_path,
 };
 pub use owner::{
-    OwnerProfile, OwnerProfileUpdate, check_display_name, check_email, check_email_change,
-    normalized_email,
+    MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
+    check_email, check_email_change, normalized_email,
 };
 pub use peers::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,

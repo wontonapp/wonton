@@ -85,8 +85,12 @@ pub async fn invite(
         );
     };
     let display_name = invite.display_name.trim();
-    if let Err(message) = wonton_protocol::check_display_name(display_name) {
-        return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+    if let Err(problem) = wonton_protocol::check_display_name(display_name) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            &problem.to_string(),
+        );
     }
     let username = match pick_username(&gateway, matrix, &invite, display_name).await {
         Ok(username) => username,

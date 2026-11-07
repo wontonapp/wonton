@@ -19,7 +19,7 @@ pub struct FileId(String);
 
 /// 不是合法的文件编号。
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("不是合法的文件编号")]
+#[error("not a valid file id")]
 pub struct InvalidFileId;
 
 impl FileId {

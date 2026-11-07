@@ -12,16 +12,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wonton_protocol::{
-    MEMBER_PAIRING_CODE_TTL_SECS, MemberStatus, OwnerProfileUpdate, check_display_name,
-    check_email_change, normalized_email,
+    MEMBER_PAIRING_CODE_TTL_SECS, MemberStatus, OwnerProfileUpdate, ProfileProblem,
+    check_display_name, check_email_change, normalized_email,
 };
 
 use wonton_tunnel::pair::{PairingSecret, SECRET_LEN};
 
 use crate::owner;
 
-fn invalid(message: String) -> MembersError {
-    MembersError::Invalid(message)
+fn invalid(problem: ProfileProblem) -> MembersError {
+    MembersError::Invalid(problem.to_string())
 }
 
 /// 码的密钥记成 SHA-256：`members.json` 里的码不能反推出来。

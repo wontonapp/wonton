@@ -449,3 +449,31 @@ plugins-core-upgrade-already-running = 已經在更新了
 plugins-core-upgrade-not-cancellable = 現在無法取消
 # $reason 是連線問題的原始詳細資訊。
 plugins-core-upgrade-start-uncertain = 不確定發起了沒有，連上後再看一下：{ $reason }
+
+# 個人資料這一步：名字或電子郵件為什麼無法儲存。$max 是名字最多幾個字。
+onboarding-profile-name-empty = 名字不能空白
+onboarding-profile-name-too-long = 名字太長：最多 { $max } 個字
+onboarding-profile-name-control = 名字裡不能有換行或控制字元
+onboarding-profile-email-invalid = 這看起來不像電子郵件地址：請寫成 me@example.com 這樣，不含空白和控制字元
+onboarding-profile-email-cleared = 電子郵件填過以後只能修改、不能清除：需要電子郵件的 App 重建時會用到它
+
+# 確認卡片下方放行時段結束後的那一行。$count 是開啟時段那次之外放行了幾次，0 表示不知道或沒有。
+chat-window-ended =
+    { $reason ->
+        [expired]
+            { $count ->
+                [0] 放行時段已到期。
+               *[other] 放行時段已到期，放行了 { $count } 次。
+            }
+        [stopped]
+            { $count ->
+                [0] 放行時段已停止。
+               *[other] 放行時段已停止，放行了 { $count } 次。
+            }
+        [restarted] 伺服器重新啟動過，放行時段已結束。
+       *[other]
+            { $count ->
+                [0] 放行時段已結束。
+               *[other] 放行時段已結束，放行了 { $count } 次。
+            }
+    }

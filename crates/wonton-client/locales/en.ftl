@@ -500,3 +500,41 @@ plugins-core-upgrade-already-running = An update is already in progress.
 plugins-core-upgrade-not-cancellable = The update can't be cancelled right now.
 # $reason is the connection problem's original detail.
 plugins-core-upgrade-start-uncertain = It isn't certain that the update was started. Check again once you're connected: { $reason }
+
+# Profile step: why the name or email can't be saved. $max is the longest name allowed.
+onboarding-profile-name-empty = Enter a name.
+onboarding-profile-name-too-long = The name can be at most { $max } characters.
+onboarding-profile-name-control = The name can't contain line breaks or control characters.
+onboarding-profile-email-invalid = That doesn't look like an email address. Write it like me@example.com, without spaces.
+onboarding-profile-email-cleared = Once set, an email address can be changed but not removed: apps that need it use it when they're rebuilt.
+
+# Line under an approval card about the approval window, when it has ended. $count is how many
+# calls the window let through after the first one; 0 means unknown or none.
+chat-window-ended =
+    { $reason ->
+        [expired]
+            { $count ->
+                [0] The window has expired.
+               *[other] The window has expired; { $count ->
+                    [one] 1 further action was approved.
+                   *[other] { $count } further actions were approved.
+                }
+            }
+        [stopped]
+            { $count ->
+                [0] The window was stopped.
+               *[other] The window was stopped; { $count ->
+                    [one] 1 further action was approved.
+                   *[other] { $count } further actions were approved.
+                }
+            }
+        [restarted] The home server restarted; the window has ended.
+       *[other]
+            { $count ->
+                [0] The window has ended.
+               *[other] The window has ended; { $count ->
+                    [one] 1 further action was approved.
+                   *[other] { $count } further actions were approved.
+                }
+            }
+    }

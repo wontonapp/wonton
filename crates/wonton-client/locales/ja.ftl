@@ -449,3 +449,31 @@ plugins-core-upgrade-already-running = すでにアップデートを実行中�
 plugins-core-upgrade-not-cancellable = 今はキャンセルできません
 # $reason は接続問題の元の詳細です。
 plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }
+
+# プロフィールのステップ：名前やメールアドレスを保存できない理由です。$max は名前の最大文字数です。
+onboarding-profile-name-empty = 名前を入力してください
+onboarding-profile-name-too-long = 名前は{ $max }文字以内にしてください
+onboarding-profile-name-control = 名前に改行や制御文字は使えません
+onboarding-profile-email-invalid = メールアドレスの形式ではありません。me@example.comのように、空白や制御文字を含めずに入力してください
+onboarding-profile-email-cleared = 一度設定したメールアドレスは変更できますが、削除はできません。メールアドレスが必要なアプリの再構築に使われます
+
+# 確認カードの下の、許可期間が終わったあとの行です。$count は期間を開いた1回を除いて許可した回数で、0 は不明またはなしです。
+chat-window-ended =
+    { $reason ->
+        [expired]
+            { $count ->
+                [0] 許可期間が終了しました。
+               *[other] 許可期間が終了しました（{ $count }回許可）。
+            }
+        [stopped]
+            { $count ->
+                [0] 許可期間を停止しました。
+               *[other] 許可期間を停止しました（{ $count }回許可）。
+            }
+        [restarted] サーバーが再起動したため、許可期間は終了しました。
+       *[other]
+            { $count ->
+                [0] 許可期間が終了しました。
+               *[other] 許可期間が終了しました（{ $count }回許可）。
+            }
+    }

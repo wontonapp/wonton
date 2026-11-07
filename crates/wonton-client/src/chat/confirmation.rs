@@ -251,7 +251,7 @@ impl CardsView {
                 _ => (self.now_ms >= window.expires_at_ms).then_some(WindowEnd::Expired),
             };
         }
-        match window.ended_note() {
+        match window.ended.map(|end| ended_note(end, window.allowed)) {
             Some(note) => WindowView::Ended { note },
             None => WindowView::Active {
                 expires_at_ms: window.expires_at_ms,
@@ -544,4 +544,21 @@ fn outcome(status: u16, body: &[u8]) -> AnswerProgress {
             ),
         }),
     }
+}
+
+/// 放行时段结束后的那一行，和核心编辑卡片时写的是同一条消息（`chat-window-ended`）。
+fn ended_note(end: WindowEnd, allowed: Option<u32>) -> String {
+    let reason = match end {
+        WindowEnd::Expired => "expired",
+        WindowEnd::Stopped => "stopped",
+        WindowEnd::CoreRestarted => "restarted",
+        WindowEnd::Unknown => "other",
+    };
+    l10n!(
+        CATALOG,
+        language(),
+        "chat-window-ended",
+        reason = reason,
+        count = allowed.unwrap_or(0)
+    )
 }

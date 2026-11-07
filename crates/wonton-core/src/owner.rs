@@ -8,8 +8,8 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    OwnerProfile, OwnerProfileUpdate, check_display_name, check_email, check_email_change,
-    normalized_email,
+    OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name, check_email,
+    check_email_change, normalized_email,
 };
 
 /// 没配 `WONTON_OWNER_NAME`、数据目录里也没有记录时的用户名。
@@ -150,13 +150,17 @@ impl Record {
     fn check(&self) -> Result<(), String> {
         check_username(&self.username)?;
         if let Some(name) = &self.display_name {
-            check_display_name(name)?;
+            check_display_name(name).map_err(|problem| problem.to_string())?;
         }
         if let Some(email) = &self.email {
-            check_email(email)?;
+            check_email(email).map_err(|problem| problem.to_string())?;
         }
         Ok(())
     }
+}
+
+fn invalid(problem: ProfileProblem) -> ProfileError {
+    ProfileError::Invalid(problem.to_string())
 }
 
 /// 保存资料失败。
@@ -223,9 +227,9 @@ impl OwnerStore {
     pub fn update(&self, update: &OwnerProfileUpdate) -> Result<OwnerProfile, ProfileError> {
         let display_name = update.display_name.trim();
         let email = normalized_email(update.email.as_deref());
-        check_display_name(display_name).map_err(ProfileError::Invalid)?;
+        check_display_name(display_name).map_err(invalid)?;
         let mut profile = self.profile.write().expect("身份记录锁中毒");
-        check_email_change(profile.1.as_deref(), email).map_err(ProfileError::Invalid)?;
+        check_email_change(profile.1.as_deref(), email).map_err(invalid)?;
         let record = Record {
             username: self.username.clone(),
             display_name: Some(display_name.to_owned()),

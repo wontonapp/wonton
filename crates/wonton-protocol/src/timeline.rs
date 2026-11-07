@@ -74,7 +74,7 @@ pub struct TimelineItem {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[expect(
     clippy::large_enum_variant,
-    reason = "跨 FFI 时按值序列化，变体大小差别不影响；UniFFI 的记录字段不支持 Box"
+    reason = "serialized by value across FFI, so variant sizes do not matter; UniFFI record fields do not support Box"
 )]
 pub enum TimelineContent {
     Message {
