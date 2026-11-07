@@ -8,7 +8,8 @@
 #   dev.sh token                       输出主人令牌
 #   dev.sh install <compose 文件或插件包目录> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
 #   dev.sh uninstall <插件 ID> [--purge]   卸载；--purge 同时删除插件数据
-#   dev.sh list                        列出插件
+#   dev.sh list                        列出插件（一行一个：ID、状态、网页地址）
+#   dev.sh open <插件 ID>              以主人身份走完核心登录和插件的会话交接、OIDC，打印网页地址和 Cookie 罐路径
 #   dev.sh tunnel                      隧道入口的 endpoint ID、中继地址和直连地址
 #   dev.sh devices                     已登记的设备
 #   dev.sh revoke <endpoint ID>        吊销设备，立即断开它的隧道连接
@@ -20,6 +21,8 @@
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
+# WONTON_DEV_SECRETS（Hydra 和 Matrix 的密钥目录，默认 ~/.local/state/wonton-dev/<项目名>/secrets；按项目名放在
+# 检出目录外，同项目名的各份检出共用一份；DOCKER_HOST 指向远端时也生成在本机，经环境变量传给容器）、
 # WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）、
 # WONTON_CORE_IMAGE_TAG（核心镜像标签，默认 dev；并行冒烟用它换成自己的名字，别互相覆盖 wonton-core:dev）、
 # WONTON_DEV_INSTANCE（核心的实例名，插件的资源名和标签都带上它；默认按项目名取，默认项目没有实例名，设成空也没有）、
@@ -36,10 +39,13 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
-secrets="$here/.secrets"
 curl_image="curlimages/curl:8.23.0"
 
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-dev-core}"
+# 密钥按项目名放在检出目录外：换个检出（worktree）起同一个项目名的栈，用的还是同一份，Hydra 才读得出库里的
+# 签名密钥，插件的 OIDC 客户端不用重发。检出目录里旧的 .secrets/ 不再读，也不迁移。
+export WONTON_DEV_SECRETS="${WONTON_DEV_SECRETS:-${XDG_STATE_HOME:-$HOME/.local/state}/wonton-dev/$WONTON_DEV_PROJECT/secrets}"
+secrets="$WONTON_DEV_SECRETS"
 # 实例名只能有小写字母和数字，最长 16 个字符（WONTON_INSTANCE）。
 default_instance() {
   [[ "$WONTON_DEV_PROJECT" == wonton-dev-core ]] && return
@@ -145,6 +151,23 @@ client() {
   docker run --rm -i --network "container:$core" "$curl_image" --noproxy '*' "$@"
 }
 
+# open 用的 Cookie 罐：数据目录在 Docker 主机上一定存在（compose 挂着它），curl 容器挂进去写，宿主上直接
+# curl -b 复用；DOCKER_HOST 指向远端时罐在远端的数据目录里。
+cookie_jar() { printf '%s/open/cookies.txt' "$WONTON_DEV_DATA"; }
+
+# -v 会自动建目录，但属主是 root：先建好并交给跑 curl 容器的用户（和 compose 的一致）。
+ensure_jar_dir() {
+  docker run --rm --user 0 --entrypoint sh -v "$WONTON_DEV_DATA/open:/open" "$curl_image" \
+    -c "mkdir -p /open && chown ${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000} /open && chmod 700 /open"
+}
+
+# open 的浏览器替身：与核心共享网络的 curl 容器，同一个 Cookie 罐跨请求保持会话。
+browser_curl() {
+  docker run --rm --network "container:$core" -v "$WONTON_DEV_DATA/open:/jar" \
+    --user "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}" \
+    "$curl_image" --noproxy '*' -sS -c /jar/cookies.txt -b /jar/cookies.txt "$@"
+}
+
 token() {
   docker exec "$core" cat "$WONTON_DEV_DATA/core/owner-token"
 }
@@ -170,6 +193,24 @@ value = json.load(sys.stdin)
 for key in sys.argv[1].split("."):
     value = value[int(key)] if isinstance(value, list) else value[key]
 print(value if not isinstance(value, (dict, list)) else json.dumps(value, ensure_ascii=False))' "$1"
+}
+
+# 插件一行一个：ID、状态、网页地址（核心给的 web_url，不按 id 拼；没有网页的不显示）。degraded 的行尾带核心写的原因。
+plugins_table() {
+  local info
+  info="$(api GET /_wonton/api/plugins)" || return 1
+  python3 -c 'import json, sys
+plugins = json.load(sys.stdin)["plugins"]
+width = max((len(p["id"]) for p in plugins), default=0)
+for p in plugins:
+    line = "%-*s  %s" % (width, p["id"], p["status"]["state"])
+    web = p.get("web_url") or ""
+    if web:
+        line += "  " + web
+    reason = p["status"].get("reason") or ""
+    if reason:
+        line += "  " + reason
+    print(line)' <<<"$info"
 }
 
 # 插件包：compose 文件原样发送；目录打成 tar 归档发送（compose 引用了包里的文件时，如 Hermes 的 config.yaml）。
@@ -208,10 +249,47 @@ for notice in json.load(sys.stdin)["notices"]:
   echo
 }
 
-# 删除数据目录里核心创建的内容。文件可能属于 root 或插件用户，所以在容器里以 root 删除。
+# 以主人身份打开插件网页：核心登录 → 会话交接 → 插件的 OIDC 登录，全程用上面的浏览器替身走完，走到插件页面
+# 返回 200 才算成。罐里的 Cookie 给 curl 和冒烟复用；本机浏览器没有这份罐，第一次打开插件会先跳到核心登录页。
+open_plugin() {
+  local id="${1:?用法：$0 open <插件 ID>}"
+  docker inspect -f '{{.State.Running}}' "$core" >/dev/null 2>&1 || die "核心没在运行：先 $0 up"
+  local list found state web_url landed
+  list="$(api GET /_wonton/api/plugins)" || die "取不到插件列表"
+  found="$(python3 -c 'import json, sys
+p = next((q for q in json.load(sys.stdin)["plugins"] if q["id"] == sys.argv[1]), None)
+if p is None:
+    sys.exit(3)
+print(p["status"]["state"])
+print(p.get("web_url") or "")' "$id" <<<"$list")" || die "插件 $id 不存在（$0 list 看装了哪些）"
+  state="${found%%$'\n'*}"
+  web_url="${found#*$'\n'}"
+  [[ "$state" == running ]] || die "插件 $id 没在运行（状态：$state，$0 list 看原因）"
+  [[ -n "$web_url" ]] || die "插件 $id 没有网页"
+  ensure_jar_dir
+  local code
+  code="$(browser_curl -o /dev/null -w '%{http_code}' -X POST --data-urlencode "token=$(token)" "$base_url/_wonton/login")"
+  [[ "$code" == 303 ]] || die "核心登录失败（HTTP ${code:-见上面的错误}）"
+  landed="$(browser_curl -L -o /dev/null -w '%{http_code} %{url_effective}' -H 'Accept: text/html' "$web_url")"
+  [[ "${landed%% *}" == 200 ]] || die "打开 $web_url 失败（HTTP ${landed%% *}，落在 ${landed#* }）"
+  echo "浏览器打开 $web_url；浏览器还没登录过核心的话，先在跳出的登录页输一次 $0 token 的令牌"
+  echo "Cookie 罐：$(cookie_jar)（curl -b 复用）"
+}
+
+# 删除数据目录里核心和 dev.sh 创建的内容（open 的 Cookie 罐也是会话凭据）。文件可能属于 root 或插件用户，
+# 所以在容器里以 root 删除。
 wipe_data() {
   docker run --rm --user 0 --entrypoint rm -v "$WONTON_DEV_DATA:/wipe" "$curl_image" \
-    -rf /wipe/core /wipe/apps /wipe/shares
+    -rf /wipe/core /wipe/apps /wipe/shares /wipe/open
+}
+
+# 密钥属于这个项目，reset 连它一起删。手滑把家目录、检出目录设成 WONTON_DEV_SECRETS 时拒绝删除。
+reset_secrets() {
+  local dir="${secrets%/}"
+  case "$dir" in
+    / | "$HOME" | "$here" | "$repo") die "secrets 目录是 $dir，不敢删；用 WONTON_DEV_SECRETS 指到专门的目录" ;;
+  esac
+  rm -rf -- "$dir"
 }
 
 case "${1:-}" in
@@ -233,8 +311,14 @@ case "${1:-}" in
   reset)
     compose down --volumes
     wipe_data
+    reset_secrets
     ;;
-  status) compose ps ;;
+  status)
+    compose ps
+    if docker inspect -f '{{.State.Running}}' "$core" >/dev/null 2>&1; then
+      plugins_table || die "取不到插件列表"
+    fi
+    ;;
   logs) compose logs -f core ;;
   token) token ;;
   install) install "${2:?用法：$0 install <compose 文件或插件包目录> [--yes]}" "${3:-}" ;;
@@ -245,10 +329,8 @@ case "${1:-}" in
     api DELETE "/_wonton/api/plugins/$id?purge=$purge"
     echo
     ;;
-  list)
-    api GET /_wonton/api/plugins
-    echo
-    ;;
+  list) plugins_table || die "取不到插件列表"; echo ;;
+  open) open_plugin "${2:?用法：$0 open <插件 ID>}" ;;
   tunnel)
     api GET /_wonton/api/tunnel
     echo
@@ -267,5 +349,5 @@ case "${1:-}" in
     # 用本机的局域网 IP（并设 WONTON_DEV_TUNNEL_BIND=0.0.0.0）。
     docker exec "$core" wonton-core pair "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}"
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
+  *) die "用法：$0 up|down|reset|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
 esac

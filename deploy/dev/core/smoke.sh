@@ -183,8 +183,7 @@ expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" |
 
 step "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"
 plugin_state() {
-  "$dev" list | python3 -c 'import json, sys
-print(next((p["status"]["state"] for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' "$1"
+  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
 }
 for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
 expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
@@ -392,8 +391,7 @@ step "Hermes（默认 Agent）：核心自己装好，就绪后私聊才出现�
 # 本机没有它的镜像时要先拉约 4 GB；装不上时核心会自动重试，插件列表里写着原因。
 for _ in $(seq 900); do [[ "$(plugin_state com.nousresearch.hermes)" == running ]] && break; sleep 1; done
 [[ "$(plugin_state com.nousresearch.hermes)" == running ]] ||
-  fail "核心没有装好 Hermes：$("$dev" list | python3 -c 'import json, sys
-print(next((json.dumps(p["status"], ensure_ascii=False) for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' com.nousresearch.hermes)"
+  fail "核心没有装好 Hermes：$("$dev" list | grep -F com.nousresearch.hermes || echo absent)"
 ok "核心在后台装好了 Hermes，没有手动安装"
 hermes_user="@hermes:$WONTON_DEV_DOMAIN"
 hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
@@ -742,7 +740,7 @@ for _ in $(seq 60); do
   sleep 1
 done
 expect "核心重新健康" "$(docker inspect -f '{{.State.Health.Status}}' "$core")" healthy
-expect "插件状态恢复为运行中" "$("$dev" list | json plugins.0.status.state)" running
+expect "插件状态恢复为运行中" "$("$dev" list | awk 'NR == 1 { print $2 }')" running
 start_browser
 b -o /dev/null -X POST --data-urlencode "token=$("$dev" token)" "$core_url/_wonton/login"
 # 新浏览器没有任何 Cookie：打开首页会重新走一遍会话交接和 OIDC。
