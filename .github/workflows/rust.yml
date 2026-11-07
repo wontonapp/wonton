@@ -68,7 +68,7 @@ jobs:
 
   docker:
     name: Rust Docker 测试
-    # docker-test：能跑这些测试的机器（Docker 可用、镜像由 npchy 推过去）。和发布用的 docker 标签分开，
+    # docker-test：能跑这些测试的机器（Docker 可用、deploy/ci/docker-test-images.txt 里的镜像由 npchy 推过去）。和发布用的 docker 标签分开，
     # 194 这类只跑测试、拉不到 Docker Hub 的机器不会接到发布作业。
     runs-on: [docker-test]
     # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。

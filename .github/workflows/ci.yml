@@ -31,5 +31,7 @@ jobs:
         run: python3 scripts/check-ui-text.py
       - name: 随核心带的插件包改了文件就升版本号
         run: bash scripts/check-bundled-plugin-versions.sh HEAD^1
+      - name: Docker 测试要拉的镜像都列在清单里（没有 Docker Hub 的 CI 机器按清单预先拿镜像）
+        run: bash scripts/check-docker-test-images.sh
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         run: bash scripts/check-uniffi-comments.sh
