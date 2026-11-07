@@ -113,9 +113,10 @@ configs:
   page: {file: index.html}
 ",
         format!(
-            "  spec: '0.5'\n  id: {id}\n  version: {version}\n  kind: app\n  \
+            "  spec: '{spec}'\n  id: {id}\n  version: {version}\n  kind: app\n  \
              title: {{zh: 你好, en: Hello}}\n  description: {{zh: Agent 写的页面, en: A page}}\n  \
-             permissions: [{permissions}]\n"
+             permissions: [{permissions}]\n",
+            spec = crate::plugin::store_info::SPEC_VERSION,
         ),
     )
 }

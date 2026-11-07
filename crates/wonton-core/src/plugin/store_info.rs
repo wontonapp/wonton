@@ -19,6 +19,10 @@ pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 7);
 pub struct SpecVersion(u32, u32);
 
 impl SpecVersion {
+    pub const fn new(major: u32, minor: u32) -> Self {
+        Self(major, minor)
+    }
+
     pub fn parse(text: &str) -> Option<Self> {
         let (major, minor) = text.split_once('.')?;
         let number = |part: &str| {

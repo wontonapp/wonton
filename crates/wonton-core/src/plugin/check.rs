@@ -93,6 +93,7 @@ pub async fn check_package(
         Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
+    check_spec_floor(package, &mut report);
     check_trusts_core(package, official, &mut report);
     check_icon(package, official, images, &mut report).await;
     check_tab_icons(package, images, &mut report).await;
@@ -178,6 +179,16 @@ fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
 
 /// 用请求头认用户的应用，信任的代理地址只写核心的地址（ADR-0023 的“只信任核心的地址”）。出网插件能从宿主连到它，所以官方
 /// 索引不收；不出网的只有开了局域网端口才有人连得到，那些端口有开关。
+/// 用了新版本的字段，`spec` 要跟着写到那一版（[`super::spec_floor`]）。
+fn check_spec_floor(package: &PluginPackage, report: &mut Report) {
+    match serde_saphyr::from_str::<serde_json::Value>(&package.source) {
+        Ok(document) => report
+            .problems
+            .extend(super::spec_floor::problems(&document)),
+        Err(e) => report.problems.push(format!("docker-compose.yml: {e}")),
+    }
+}
+
 fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Report) {
     if !impersonable(package) {
         return;
