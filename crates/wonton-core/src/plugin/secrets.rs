@@ -11,6 +11,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 
 use super::docker::{ContainerFile, Engine, EngineError};
+use super::languages::Languages;
 use super::manifest::{GenerateSecret, Manifest, PluginId, SecretEncoding, SecretSpec};
 use super::names::Instance;
 use super::store::{
@@ -88,17 +89,27 @@ pub fn generate_missing(manifest: &Manifest, secrets: &mut Secrets) -> bool {
 pub fn generated_values(
     manifest: &Manifest,
     secrets: &Secrets,
+    langs: &Languages,
 ) -> Result<BTreeMap<String, String>, String> {
     manifest
         .secrets
         .iter()
         .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_)))
         .map(|(name, _)| {
-            let value = secrets
-                .get(name)
-                .ok_or_else(|| format!("插件密钥 {name} 丢失"))?;
-            let text = String::from_utf8(value.clone())
-                .map_err(|_| format!("插件密钥 {name} 不是文本"))?;
+            let value = secrets.get(name).ok_or_else(|| {
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-missing",
+                    &[("name", name.into())],
+                )
+            })?;
+            let text = String::from_utf8(value.clone()).map_err(|_| {
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-not-text",
+                    &[("name", name.into())],
+                )
+            })?;
             Ok((name.clone(), text))
         })
         .collect()
@@ -108,13 +119,9 @@ pub fn generated_values(
 pub enum CollectError {
     #[error(transparent)]
     Engine(#[from] EngineError),
-    #[error("插件密钥 {name}：容器 {container} 里的 {path} {reason}")]
-    Invalid {
-        name: String,
-        container: String,
-        path: String,
-        reason: String,
-    },
+    /// 给 App 看的整句，构造点按当次语言写好（ADR-0043）。
+    #[error("{0}")]
+    Invalid(String),
 }
 
 /// 从插件的容器里收存 `collect` 项，返回有没有变化。文件还不存在时跳过，下次启动时再收；核心不修改、
@@ -124,6 +131,7 @@ pub async fn collect(
     instance: &Instance,
     manifest: &Manifest,
     secrets: &mut Secrets,
+    langs: &Languages,
 ) -> Result<bool, CollectError> {
     let mut changed = false;
     for (name, spec) in &manifest.secrets {
@@ -131,11 +139,17 @@ pub async fn collect(
             continue;
         };
         let container = instance.container(&manifest.id.slug(), &spec.service);
-        let invalid = |reason: &str| CollectError::Invalid {
-            name: name.clone(),
-            container: container.clone(),
-            path: spec.path.clone(),
-            reason: reason.to_owned(),
+        let invalid = |reason: &str| {
+            CollectError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-secret-invalid",
+                &[
+                    ("name", name.into()),
+                    ("container", container.as_str().into()),
+                    ("path", spec.path.as_str().into()),
+                    ("reason", reason.into()),
+                ],
+            ))
         };
         match engine
             .read_file(&container, &spec.path, MAX_COLLECT_BYTES)
@@ -150,8 +164,20 @@ pub async fn collect(
             ContainerFile::Missing => {
                 tracing::info!(plugin = %manifest.id, secret = %name, "插件还没有写下要收存的密钥，下次启动时再收");
             }
-            ContainerFile::NotRegular => return Err(invalid("不是普通文件")),
-            ContainerFile::TooBig => return Err(invalid("超过 64 KiB")),
+            ContainerFile::NotRegular => {
+                return Err(invalid(&crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-not-regular",
+                    &[],
+                )));
+            }
+            ContainerFile::TooBig => {
+                return Err(invalid(&crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-too-big",
+                    &[],
+                )));
+            }
         }
     }
     Ok(changed)

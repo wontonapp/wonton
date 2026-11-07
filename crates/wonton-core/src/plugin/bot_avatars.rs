@@ -6,6 +6,7 @@ use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, ManifestError};
 use super::package::PluginPackage;
 use super::package_files;
+use crate::l10n;
 use crate::matrix::{ProvisionedBot, Session};
 
 pub(super) fn validate_manifest(manifest: &Manifest) -> Result<(), ManifestError> {
@@ -128,7 +129,17 @@ impl PluginManager {
             return Err(
                 match self.revoke_bot_device(&package.manifest.id, bot).await {
                     Ok(()) => error,
-                    Err(cleanup) => error.with_note(&format!("吊销安装设备失败：{cleanup}")),
+                    Err(cleanup) => {
+                        let langs = self.owner_languages();
+                        error.with_note(
+                            &langs,
+                            &l10n::text(
+                                &langs,
+                                "plugin-settings-note-revoke-device-failed",
+                                &[("error", cleanup.into())],
+                            ),
+                        )
+                    }
                 },
             );
         }

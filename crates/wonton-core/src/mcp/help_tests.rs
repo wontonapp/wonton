@@ -188,7 +188,17 @@ async fn an_interrupted_fetch_keeps_the_old_docs_and_says_why() {
     let owner = CATALOG.negotiate(Languages::from_header(None).requested());
     let failed = CATALOG.format(owner, "chat-help-refresh-failed", &[("details", "".into())]);
     assert!(problem.starts_with(failed.trim_end()), "{problem}");
-    assert!(problem.contains("索引目录里没有"), "{problem}");
+    let blob_prefix = CATALOG
+        .format(
+            owner,
+            "plugin-settings-store-index-blob-missing",
+            &[("path", "".into()), ("error", "".into())],
+        )
+        .split(" has no ")
+        .next()
+        .unwrap_or("")
+        .to_owned();
+    assert!(problem.contains(&blob_prefix), "{problem}");
     let days = body["docs_updated_days_ago"].as_u64().unwrap();
     let age = CATALOG.format(
         owner,

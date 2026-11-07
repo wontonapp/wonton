@@ -8,6 +8,7 @@ use serde_json::json;
 
 use super::super::core_address::last_usable;
 use super::super::fake_docker::FakeDocker;
+use super::super::languages::Languages;
 use super::super::names::Instance;
 use super::super::network_pool::NetworkPool;
 use super::super::{PluginPackage, PluginStatus};
@@ -96,7 +97,7 @@ async fn rebuilding_migrates_an_old_network_into_the_pool_and_keeps_data() {
     );
 
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
 
     let body = docker.network(&network).unwrap();
     let subnet: Ipv4Net = body["IPAM"]["Config"][0]["Subnet"]
@@ -154,7 +155,7 @@ async fn rebuilding_migrates_main_lan_and_egress_networks_together() {
     docker.add_network("wonton-egress", "", old("172.20.0.0/16", "172.20.0.1"));
 
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
 
     let pool = NetworkPool::default();
     let mut subnets = Vec::new();
@@ -225,7 +226,7 @@ async fn a_failed_render_releases_the_reservation_and_keeps_the_old_setup_runnin
     docker.reject_pinned_networks(1, "注入的建网失败");
 
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
 
     // 旧网络没动，容器还挂在上面跑着（假 Docker 的网络查询只列在跑的容器）。
     let body = docker.network(&network).unwrap();

@@ -13,7 +13,9 @@ use wonton_protocol::{
     RegistryMirrorUpdate, RegistryProbe,
 };
 
+use crate::l10n;
 use crate::plugin::docker::EngineError;
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::render::Deployment;
 
@@ -24,9 +26,12 @@ pub(super) struct RegistryMirror {
 }
 
 impl PluginManager {
-    pub async fn registry_mirror_settings(&self) -> Result<RegistryMirrorSettings, InstallError> {
-        let mirror = self.registry_mirror_address()?;
-        let (index, _, _) = self.storefront.official(false).await;
+    pub async fn registry_mirror_settings(
+        &self,
+        langs: &Languages,
+    ) -> Result<RegistryMirrorSettings, InstallError> {
+        let mirror = self.registry_mirror_address(langs)?;
+        let (index, _, _) = self.storefront.official(false, langs).await;
         let docker_hub = self
             .registry_mirror
             .docker_hub
@@ -45,26 +50,34 @@ impl PluginManager {
     pub async fn set_registry_mirror(
         &self,
         update: RegistryMirrorUpdate,
+        langs: &Languages,
     ) -> Result<RegistryMirrorSettings, InstallError> {
         if let Some(address) = &update.mirror {
-            address::validate(address).map_err(InstallError::Invalid)?;
+            address::validate(address, langs).map_err(InstallError::Invalid)?;
         }
         self.store.save_registry_mirror(&update)?;
-        self.registry_mirror_settings().await
+        self.registry_mirror_settings(langs).await
     }
 
     pub async fn test_registry_mirrors(
         &self,
         request: RegistryMirrorTestRequest,
+        langs: &Languages,
     ) -> Result<RegistryMirrorTests, InstallError> {
         for address in &request.mirrors {
-            address::validate(address).map_err(InstallError::Invalid)?;
+            address::validate(address, langs).map_err(InstallError::Invalid)?;
         }
-        let direct = self.probe_registry_hub();
-        let mirrors = join_all(request.mirrors.into_iter().map(|mirror| async move {
-            let probe = probe::probe(&mirror).await;
-            RegistryMirrorTest { mirror, probe }
-        }));
+        let direct = self.probe_registry_hub(langs);
+        let mirrors = {
+            let langs = langs.clone();
+            join_all(request.mirrors.into_iter().map(move |mirror| {
+                let langs = langs.clone();
+                async move {
+                    let probe = probe::probe(&mirror, &langs).await;
+                    RegistryMirrorTest { mirror, probe }
+                }
+            }))
+        };
         let (docker_hub, mirrors) = tokio::join!(direct, mirrors);
         Ok(RegistryMirrorTests {
             docker_hub: docker_hub?,
@@ -72,12 +85,15 @@ impl PluginManager {
         })
     }
 
-    async fn probe_registry_hub(&self) -> Result<Option<RegistryProbe>, InstallError> {
+    async fn probe_registry_hub(
+        &self,
+        langs: &Languages,
+    ) -> Result<Option<RegistryProbe>, InstallError> {
         let _pass = self.registry_mirror.probing.lock().await;
         let probe = if self.engine.registry_proxy_configured().await? {
             None
         } else {
-            Some(probe::probe("registry-1.docker.io").await)
+            Some(probe::probe("registry-1.docker.io", langs).await)
         };
         *self
             .registry_mirror
@@ -90,7 +106,7 @@ impl PluginManager {
     pub fn spawn_registry_mirror_probe(self: &Arc<Self>) {
         let manager = Arc::clone(self);
         tokio::spawn(async move {
-            if let Err(error) = manager.probe_registry_hub().await {
+            if let Err(error) = manager.probe_registry_hub(&manager.owner_languages()).await {
                 tracing::warn!(%error, "Docker Hub 直连测速失败");
             }
         });
@@ -98,13 +114,14 @@ impl PluginManager {
 
     pub(in crate::plugin) fn registry_mirror_address(
         &self,
+        langs: &Languages,
     ) -> Result<Option<String>, InstallError> {
         let mirror = self
             .store
             .registry_mirror()?
             .and_then(|settings| settings.mirror);
         if let Some(address) = &mirror {
-            address::validate(address).map_err(InstallError::Storage)?;
+            address::validate(address, langs).map_err(InstallError::Storage)?;
         }
         Ok(mirror)
     }
@@ -112,15 +129,18 @@ impl PluginManager {
     pub(in crate::plugin) async fn prepare_images(
         &self,
         plan: &mut Deployment,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
-        let mirror = self.registry_mirror_address()?;
+        let mirror = self.registry_mirror_address(langs)?;
         for container in &mut plan.containers {
             let result = self
                 .engine
                 .ensure_image(&container.image, container.pull_policy, mirror.as_deref())
                 .await;
-            let image =
-                result.map_err(|error| self.registry_pull_error(error, mirror.as_deref()))?;
+            let image = result.map_err(|error| {
+                let langs = self.owner_languages();
+                self.registry_pull_error(error, mirror.as_deref(), &langs)
+            })?;
             container.body.image = Some(image.clone());
             container.image = image;
         }
@@ -131,6 +151,7 @@ impl PluginManager {
         &self,
         error: EngineError,
         mirror: Option<&str>,
+        langs: &Languages,
     ) -> InstallError {
         let suggest = mirror.is_none()
             && matches!(&error, EngineError::Pull { image, .. } if reference::docker_hub(image))
@@ -143,7 +164,10 @@ impl PluginManager {
             );
         let error = InstallError::from(error);
         if suggest {
-            error.with_note("可以在设置里打开镜像加速")
+            error.with_note(
+                langs,
+                &l10n::text(langs, "plugin-settings-note-registry-mirror", &[]),
+            )
         } else {
             error
         }

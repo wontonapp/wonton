@@ -240,10 +240,24 @@ async fn previews_show_each_port_and_why_it_cannot_be_installed() {
         .filter(|n| n.emphasis)
         .map(|n| n.text.as_str())
         .collect();
-    assert!(lines.contains(&"局域网端口：samba 的 445/tcp，开在 eno1 的 192.168.0.193 上"));
-    assert!(lines.contains(&"局域网端口：samba 的 137/udp，开在 eno1 的 192.168.0.193 上"));
+    let place = &super::message(
+        "plugin-settings-lan-bound",
+        &[("interface", "eno1"), ("ip", "192.168.0.193")],
+    );
+    let line = |key: &str| {
+        super::message(
+            "plugin-settings-lan-port-line",
+            &[("service", "samba"), ("key", key), ("place", place)],
+        )
+    };
+    let line_445 = line("445/tcp");
+    let line_137 = line("137/udp");
+    assert!(lines.contains(&line_445.as_str()), "{lines:?}");
+    assert!(lines.contains(&line_137.as_str()), "{lines:?}");
     assert!(
-        lines.iter().any(|l| l.contains("不经核心登录")),
+        lines
+            .iter()
+            .any(|l| l.contains(&super::message("plugin-settings-lan-direct-notice", &[],))),
         "{lines:?}"
     );
 
@@ -323,11 +337,11 @@ async fn an_address_change_rebuilds_lan_containers_and_variable_consumers_only()
             .await
             .unwrap();
         let before = docker.writes().len();
-        m.lan_pass().await.unwrap();
+        m.lan_pass(&Languages::default()).await.unwrap();
         assert_eq!(docker.writes().len(), before);
 
         *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-        m.lan_pass().await.unwrap();
+        m.lan_pass(&Languages::default()).await.unwrap();
         assert_eq!(
             created(&docker, "samba")["HostConfig"]["PortBindings"]["445/tcp"],
             binding("192.168.0.68", "445")
@@ -399,7 +413,7 @@ async fn an_address_change_rebuilds_inline_config_consumers_but_not_literal_file
         .unwrap();
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     let uploaded = docker.archive("wonton-app-test--web").unwrap();
     let mut archive = tar::Archive::new(uploaded.as_slice());
     let mut text = String::new();
@@ -442,7 +456,7 @@ async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
         .unwrap();
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     let writes = docker.writes()[before..].to_vec();
     let starts: Vec<&str> = writes
         .iter()
@@ -487,12 +501,15 @@ async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
 
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(docker.writes().len(), before, "旧容器不动");
     let PluginStatus::Degraded { reason } = status(&m) else {
         panic!("应标为异常：{:?}", status(&m));
     };
-    assert!(reason.contains(crate::owner::NO_EMAIL), "{reason}");
+    assert!(
+        reason.contains(&super::message("plugin-settings-email-missing", &[])),
+        "{reason}"
+    );
 }
 
 #[tokio::test]
@@ -505,18 +522,21 @@ async fn a_lost_address_degrades_the_plugin_until_it_comes_back() {
     let mut unplugged = office();
     unplugged.routes.clear();
     *detected.lock().unwrap() = Ok(unplugged);
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     let PluginStatus::Degraded { reason } = status(&m) else {
         panic!("应标为异常：{:?}", status(&m));
     };
-    assert!(reason.contains("默认路由"), "{reason}");
+    assert!(
+        reason.contains(&super::message("plugin-settings-lan-no-default-route", &[],)),
+        "{reason}"
+    );
     let before = docker.writes().len();
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(docker.writes().len(), before, "端口不改开到别的地址上");
 
     // 地址回来了，发布的地址没变：不重建，核对后恢复。
     *detected.lock().unwrap() = Ok(office());
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
     assert!(
         !docker.writes()[before..]
@@ -549,7 +569,7 @@ async fn a_core_restarted_after_a_dhcp_change_moves_the_ports() {
     let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
     m.restore().await.unwrap();
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
     let bindings = &created(&docker, "samba")["HostConfig"]["PortBindings"];
     assert_eq!(bindings["445/tcp"], binding("192.168.0.68", "445"));
@@ -709,7 +729,10 @@ fn manifests_must_declare_ports_and_permission_together() {
     assert!(invalid(&bot).contains("matrix.bot"));
     let twice = "  lan: {ports: [{service: samba, port: 445}, {service: samba, port: 445}]}\n  \
                  permissions: [network.lan]";
-    assert!(invalid(twice).contains("重复"));
+    assert!(invalid(twice).contains(&super::message(
+        "plugin-settings-lan-port-duplicate",
+        &[("port", "445/tcp")],
+    )));
     let zero = "  lan: {ports: [{service: samba, port: 0}]}\n  permissions: [network.lan]";
     assert!(invalid(zero).contains("0"));
     let web = "  mcp: {service: samba, port: 80, transport: streamable-http}\n  lan: {ports: [{service: samba, port: 80}]}\n  \

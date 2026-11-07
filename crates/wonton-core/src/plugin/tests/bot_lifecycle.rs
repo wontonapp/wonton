@@ -299,7 +299,13 @@ async fn a_restart_reports_a_bot_whose_device_was_revoked() {
     let PluginStatus::Degraded { reason } = &restarted.list()[0].status else {
         panic!("设备被吊销的 Bot 插件应标为异常");
     };
-    assert!(reason.contains("吊销"), "{reason}");
+    assert!(
+        reason.contains(&super::message(
+            "plugin-settings-bot-device-revoked",
+            &[("user", "@echo:test")],
+        )),
+        "{reason}"
+    );
     // 状态异常也照样认得出来源：插件恢复正常前也能经核心连 Matrix。
     assert!(restarted.source(bed.source_address()).is_some());
 }

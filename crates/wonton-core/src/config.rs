@@ -136,7 +136,10 @@ fn proxy_address(
     name: &'static str,
 ) -> Result<Option<ProxyAddress>, ConfigError> {
     get(name)
-        .map(|text| ProxyAddress::parse(&text))
+        .map(|text| {
+            // 启动配置不在任何请求里，按默认语言报错（ADR-0043 的回退）。
+            ProxyAddress::parse(&text, &crate::plugin::languages::Languages::default())
+        })
         .transpose()
         .map_err(|e| invalid(name, &e))
 }

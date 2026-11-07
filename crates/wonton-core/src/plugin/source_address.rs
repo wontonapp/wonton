@@ -4,6 +4,7 @@ use url::Url;
 
 use super::github_source::{INDEX_SCHEME, SourceRef};
 use super::install_error::InstallError;
+use super::languages::Languages;
 use super::staged;
 
 const GITHUB_HOSTS: [&str; 2] = ["github.com", "www.github.com"];
@@ -17,57 +18,77 @@ pub enum Address {
 }
 
 impl Address {
-    pub fn parse(text: &str) -> Result<Self, InstallError> {
+    pub fn parse(text: &str, langs: &Languages) -> Result<Self, InstallError> {
         let text = text.trim();
-        let invalid = |why: &str| InstallError::Invalid(format!("地址 `{text}` 不对：{why}"));
+        let invalid = |why: String| {
+            InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-source-address-invalid",
+                &[("text", text.into()), ("why", why.as_str().into())],
+            ))
+        };
         if text.starts_with("github:") {
-            return SourceRef::parse(text).map(Self::Repo);
+            return SourceRef::parse(text, langs).map(Self::Repo);
         }
         if let Some(rest) = text.strip_prefix("http://") {
             let path = GITHUB_HOSTS.iter().find_map(|h| rest.strip_prefix(h));
             return match path {
-                Some(path) => github_page(path).map(Self::Repo),
-                None => Err(invalid(
-                    "只支持 https：未审核的来源要靠 TLS 确认内容没被改过",
-                )),
+                Some(path) => github_page(path, langs).map(Self::Repo),
+                None => Err(invalid(crate::l10n::text(
+                    langs,
+                    "plugin-settings-source-address-tls",
+                    &[],
+                ))),
             };
         }
         if text.starts_with("https://") {
-            let url = Url::parse(text).map_err(|e| invalid(&e.to_string()))?;
+            let url = Url::parse(text).map_err(|e| invalid(e.to_string()))?;
             let host = url.host_str().unwrap_or_default();
             if GITHUB_HOSTS.contains(&host) {
-                return github_page(url.path()).map(Self::Repo);
+                return github_page(url.path(), langs).map(Self::Repo);
             }
             return Ok(Self::Url(url));
         }
         if let Some(path) = GITHUB_HOSTS.iter().find_map(|h| text.strip_prefix(h)) {
-            return github_page(path).map(Self::Repo);
+            return github_page(path, langs).map(Self::Repo);
         }
         if text.contains("://") {
-            return Err(invalid("只支持 https 地址和 GitHub 仓库"));
+            return Err(invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-source-address-https-only",
+                &[],
+            )));
         }
-        SourceRef::parse(&format!("github:{text}"))
+        SourceRef::parse(&format!("github:{text}"), langs)
             .map(Self::Repo)
-            .map_err(|_| invalid("写成仓库地址、owner/repo，或者索引的 https 地址"))
+            .map_err(|_| {
+                invalid(crate::l10n::text(
+                    langs,
+                    "plugin-settings-source-address-formats",
+                    &[],
+                ))
+            })
     }
 }
 
 /// 换版本时主人填的来源：各种仓库写法都认，规范成来源字符串。App 从预览和商店拿到的来源原样过去。
-pub fn chosen_source(text: &str) -> Result<String, InstallError> {
+pub fn chosen_source(text: &str, langs: &Languages) -> Result<String, InstallError> {
     let text = text.trim();
     if text.starts_with(INDEX_SCHEME) || text.starts_with(staged::SCHEME) {
         return Ok(text.to_owned());
     }
-    match Address::parse(text)? {
+    match Address::parse(text, langs)? {
         Address::Repo(source) => Ok(source.text()),
-        Address::Url(_) => Err(InstallError::Invalid(format!(
-            "`{text}` 不是插件仓库。索引要在商店里添加，再从那里装"
+        Address::Url(_) => Err(InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-source-not-a-repo",
+            &[("text", text.into())],
         ))),
     }
 }
 
 /// GitHub 上的页面路径 → 来源：`/o/r`、`/o/r.git`、`/o/r/tree/<tag>`、`/o/r/releases/tag/<tag>`、`/o/r/commit/<提交>`。
-fn github_page(path: &str) -> Result<SourceRef, InstallError> {
+fn github_page(path: &str, langs: &Languages) -> Result<SourceRef, InstallError> {
     let path = path.split(['?', '#']).next().unwrap_or_default();
     let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
     let (owner, name, version) = match parts.as_slice() {
@@ -76,23 +97,26 @@ fn github_page(path: &str) -> Result<SourceRef, InstallError> {
             (*owner, *name, Some(*version))
         }
         _ => {
-            return Err(InstallError::Invalid(format!(
-                "GitHub 地址 `{path}` 不对：写成 https://github.com/<owner>/<repo>，可以带 /tree/<tag> 或 /commit/<提交>"
+            return Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-source-page-invalid",
+                &[("path", path.into())],
             )));
         }
     };
     let name = name.strip_suffix(".git").unwrap_or(name);
     let version = version.map(|v| format!("@{v}")).unwrap_or_default();
-    SourceRef::parse(&format!("github:{owner}/{name}{version}"))
+    SourceRef::parse(&format!("github:{owner}/{name}{version}"), langs)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::github_source::Wanted;
     use super::*;
+    use crate::plugin::languages::Languages;
 
     fn repo(text: &str) -> (String, Wanted) {
-        match Address::parse(text).unwrap() {
+        match Address::parse(text, &Languages::default()).unwrap() {
             Address::Repo(source) => (source.repo.to_string(), source.wanted),
             Address::Url(url) => panic!("{text} 认成了地址 {url}"),
         }
@@ -137,7 +161,7 @@ mod tests {
     fn other_https_addresses_are_indexes_and_the_rest_is_refused() {
         let url = "https://example.com/wonton/index.json";
         assert_eq!(
-            Address::parse(url).unwrap(),
+            Address::parse(url, &Languages::default()).unwrap(),
             Address::Url(Url::parse(url).unwrap())
         );
         for bad in [
@@ -149,7 +173,7 @@ mod tests {
             "not an address",
             "",
         ] {
-            assert!(Address::parse(bad).is_err(), "{bad}");
+            assert!(Address::parse(bad, &Languages::default()).is_err(), "{bad}");
         }
     }
 }

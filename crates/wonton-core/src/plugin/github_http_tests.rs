@@ -11,6 +11,7 @@ use tokio::net::TcpListener;
 
 use super::{CoreProxy, GitHub, GitHubError, Repo, client};
 use crate::plugin::github_source::github_error;
+use crate::plugin::languages::Languages;
 
 const LIMIT: Duration = Duration::from_millis(300);
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -69,7 +70,10 @@ fn repo() -> Repo {
 async fn a_pinned_file_recovers_from_a_stalled_header_or_partial_body() {
     for answer in [Answer::Headers, Answer::Body] {
         let (github, calls) = source(answer, true).await;
-        let data = github.file(&repo(), COMMIT, "icon.png", 100).await.unwrap();
+        let data = github
+            .file(&repo(), COMMIT, "icon.png", 100, &Languages::default())
+            .await
+            .unwrap();
         assert_eq!(data, b"complete");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
@@ -80,7 +84,7 @@ async fn a_source_that_stays_slow_stops_after_two_attempts_with_a_typed_timeout(
     for answer in [Answer::Headers, Answer::Body] {
         let (github, calls) = source(answer, false).await;
         let error = github
-            .file(&repo(), COMMIT, "icon.png", 100)
+            .file(&repo(), COMMIT, "icon.png", 100, &Languages::default())
             .await
             .unwrap_err();
         assert!(matches!(&error, GitHubError::Timeout(_)), "{error}");
@@ -95,7 +99,9 @@ async fn a_mutable_reference_is_not_replayed_after_a_timeout() {
     for reference in ["HEAD", "main", "v1.0.0"] {
         let (github, calls) = source(Answer::Headers, true).await;
         assert!(matches!(
-            github.file(&repo(), reference, "icon.png", 100).await,
+            github
+                .file(&repo(), reference, "icon.png", 100, &Languages::default())
+                .await,
             Err(GitHubError::Timeout(_))
         ));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -111,7 +117,7 @@ async fn rejections_and_invalid_files_are_not_replayed() {
     ] {
         let (github, calls) = source(answer, true).await;
         let error = github
-            .file(&repo(), COMMIT, "icon.png", max)
+            .file(&repo(), COMMIT, "icon.png", max, &Languages::default())
             .await
             .unwrap_err();
         assert!(!matches!(error, GitHubError::Timeout(_)));
@@ -126,7 +132,7 @@ async fn a_refused_connection_is_not_a_response_timeout() {
     drop(listener);
     let github = GitHub::for_test(&base);
     let error = github
-        .file(&repo(), COMMIT, "icon.png", 100)
+        .file(&repo(), COMMIT, "icon.png", 100, &Languages::default())
         .await
         .unwrap_err();
     assert!(matches!(&error, GitHubError::Unavailable(_)), "{error}");
@@ -206,7 +212,7 @@ async fn a_stalled_first_ipv4_does_not_hide_the_next_address() {
         .unwrap();
     let data = tokio::time::timeout(
         Duration::from_secs(10),
-        github.file(&repo(), COMMIT, "icon.png", 100),
+        github.file(&repo(), COMMIT, "icon.png", 100, &Languages::default()),
     )
     .await
     .unwrap()

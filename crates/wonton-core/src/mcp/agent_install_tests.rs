@@ -478,7 +478,13 @@ async fn an_owner_upgrade_takes_the_plugin_back_from_the_agent() {
     .unwrap();
     let granted = package.manifest.permissions.clone();
     b.s.manager
-        .upgrade_upload(&id, package, granted, false)
+        .upgrade_upload(
+            &id,
+            package,
+            granted,
+            false,
+            &Languages::from_header(Some("zh")),
+        )
         .await
         .unwrap();
     b.s.manager.set_writer(&id, None).unwrap();

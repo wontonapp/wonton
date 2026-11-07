@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use crate::l10n::CATALOG;
+
 use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
 use super::super::names::container_name;
@@ -228,7 +230,18 @@ async fn a_failed_one_shot_dependency_fails_the_start_immediately() {
     );
     let message = error.to_string();
     assert!(message.contains(&init), "{message}");
-    assert!(message.contains("exit code 1"), "{message}");
+    assert!(
+        message.contains(&CATALOG.format(
+            CATALOG.negotiate(&["en"]),
+            "plugin-install-one-shot-failed",
+            &[
+                ("container", init.as_str().into()),
+                ("status", "EXITED".into()),
+                ("code", "1".into()),
+            ],
+        )),
+        "{message}"
+    );
     assert!(
         !message.contains(&db),
         "报的应该是失败的一次性服务，不是还没就绪的长期服务：{message}"

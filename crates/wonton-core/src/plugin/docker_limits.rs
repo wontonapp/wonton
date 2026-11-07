@@ -20,7 +20,16 @@ impl Engine {
             .update_container(name, config)
             .await
             .map_err(|e| {
-                super::docker::from_bollard(&self.owner_languages(), &format!("更新容器 {name}"), e)
+                let langs = self.owner_languages();
+                super::docker::from_bollard(
+                    &langs,
+                    &crate::l10n::text(
+                        &langs,
+                        "plugin-settings-limits-update-container",
+                        &[("name", name.into())],
+                    ),
+                    e,
+                )
             })
     }
 

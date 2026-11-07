@@ -5,6 +5,9 @@ use reqwest::{Client, Response, StatusCode};
 use sha2::{Digest, Sha256};
 use wonton_protocol::{RegistryFailure, RegistryProbe, RegistryProblem};
 
+use crate::l10n;
+use crate::plugin::languages::Languages;
+
 #[path = "auth.rs"]
 mod auth;
 
@@ -16,28 +19,41 @@ const ACCEPT_MANIFEST: &str = concat!(
     "application/vnd.oci.image.index.v1+json"
 );
 
-pub(super) async fn probe(mirror: &str) -> RegistryProbe {
+pub(super) async fn probe(mirror: &str, langs: &Languages) -> RegistryProbe {
     let digest = crate::plugin::egress::gost::IMAGE
         .split_once('@')
         .expect("gost 镜像必须按摘要固定")
         .1;
     let url = format!("https://{mirror}/v2/gogost/gost/manifests/{digest}");
-    probe_url(&url, digest, TIMEOUT, true).await
+    probe_url(&url, digest, TIMEOUT, true, langs).await
 }
 
-async fn probe_url(url: &str, digest: &str, timeout: Duration, https_only: bool) -> RegistryProbe {
+async fn probe_url(
+    url: &str,
+    digest: &str,
+    timeout: Duration,
+    https_only: bool,
+    langs: &Languages,
+) -> RegistryProbe {
     let probed_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
         .min(u64::MAX as u128) as u64;
     let started = Instant::now();
-    let result = tokio::time::timeout(timeout, fetch(url, digest, https_only)).await;
+    let result = tokio::time::timeout(timeout, fetch(url, digest, https_only, langs)).await;
     let problem = match result {
         Ok(result) => result.err(),
         Err(error) => Some(problem(
             RegistryFailure::Unreachable,
-            format!("测速总超时（{} 毫秒）：{error}", timeout.as_millis()),
+            l10n::text(
+                langs,
+                "plugin-settings-mirror-probe-timeout",
+                &[
+                    ("ms", timeout.as_millis().to_string().into()),
+                    ("error", error.to_string().into()),
+                ],
+            ),
         )),
     };
     RegistryProbe {
@@ -49,7 +65,12 @@ async fn probe_url(url: &str, digest: &str, timeout: Duration, https_only: bool)
     }
 }
 
-async fn fetch(url: &str, digest: &str, https_only: bool) -> Result<(), RegistryProblem> {
+async fn fetch(
+    url: &str,
+    digest: &str,
+    https_only: bool,
+    langs: &Languages,
+) -> Result<(), RegistryProblem> {
     let client = Client::builder()
         .no_proxy()
         .https_only(https_only)
@@ -59,7 +80,7 @@ async fn fetch(url: &str, digest: &str, https_only: bool) -> Result<(), Registry
         .no_zstd()
         .user_agent("docker/28.0.0 go/go1.23.0 os/linux arch/amd64")
         .build()
-        .map_err(network_problem)?;
+        .map_err(|e| network_problem(&e))?;
     let mut response = manifest(&client, url, None).await?;
     if response.status() == StatusCode::UNAUTHORIZED {
         let challenge = response
@@ -68,25 +89,39 @@ async fn fetch(url: &str, digest: &str, https_only: bool) -> Result<(), Registry
             .iter()
             .filter_map(|value| value.to_str().ok())
             .find_map(auth::Challenge::parse)
-            .ok_or_else(|| rejected(response.status(), "缺少有效的 Bearer WWW-Authenticate"))?;
+            .ok_or_else(|| {
+                rejected(
+                    langs,
+                    response.status(),
+                    l10n::text(langs, "plugin-settings-mirror-no-challenge", &[]).as_str(),
+                )
+            })?;
         // 重试发给实际发出挑战的地址，不能把重定向目标的令牌交给原始主机。
         let retry_url = response.url().clone();
         drop(response);
-        let token = challenge.token(&client).await?;
+        let token = challenge.token(&client, langs).await?;
         response = manifest(&client, retry_url.as_str(), Some(&token)).await?;
     }
     if !response.status().is_success() {
-        return Err(rejected(response.status(), "清单请求被拒绝"));
+        return Err(rejected(
+            langs,
+            response.status(),
+            l10n::text(langs, "plugin-settings-mirror-manifest-rejected", &[]).as_str(),
+        ));
     }
     let mut hash = Sha256::new();
-    while let Some(chunk) = response.chunk().await.map_err(network_problem)? {
+    while let Some(chunk) = response.chunk().await.map_err(|e| network_problem(&e))? {
         hash.update(&chunk);
     }
     let actual = format!("sha256:{:x}", hash.finalize());
     if actual != digest {
         return Err(problem(
             RegistryFailure::DigestMismatch,
-            format!("清单摘要不匹配：期望 {digest}，收到 {actual}"),
+            l10n::text(
+                langs,
+                "plugin-settings-mirror-manifest-digest",
+                &[("digest", digest.into()), ("actual", actual.into())],
+            ),
         ));
     }
     Ok(())
@@ -105,10 +140,10 @@ async fn manifest(
         request = request.bearer_auth(token);
     }
     // reqwest 0.13 在重定向的主机、端口或协议变化时剥离 Authorization。
-    request.send().await.map_err(network_problem)
+    request.send().await.map_err(|e| network_problem(&e))
 }
 
-fn network_problem(error: reqwest::Error) -> RegistryProblem {
+fn network_problem(error: &reqwest::Error) -> RegistryProblem {
     use std::error::Error;
 
     let mut message = error.to_string();
@@ -121,10 +156,17 @@ fn network_problem(error: reqwest::Error) -> RegistryProblem {
     problem(RegistryFailure::Unreachable, message)
 }
 
-fn rejected(status: StatusCode, detail: &str) -> RegistryProblem {
+fn rejected(langs: &Languages, status: StatusCode, detail: &str) -> RegistryProblem {
     problem(
         RegistryFailure::Rejected,
-        format!("HTTP {status}：{detail}"),
+        l10n::text(
+            langs,
+            "plugin-settings-mirror-status",
+            &[
+                ("status", status.as_str().into()),
+                ("detail", detail.into()),
+            ],
+        ),
     )
 }
 

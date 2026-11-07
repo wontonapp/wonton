@@ -10,8 +10,10 @@ use super::egress::settings::Egress;
 use super::github::GitHub;
 use super::gpu::HostPaths;
 use super::lan::Lan;
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::storefront::{StoreConfig, Storefront};
+use crate::l10n;
 use crate::matrix::Matrix;
 
 impl PluginManager {
@@ -83,9 +85,13 @@ impl PluginManager {
         self
     }
 
-    pub(super) fn check_not_upgrading(&self) -> Result<(), InstallError> {
+    pub(super) fn check_not_upgrading(&self, langs: &Languages) -> Result<(), InstallError> {
         match &self.upgrade_frozen {
-            Some(frozen) if *frozen.borrow() => Err(InstallError::CoreUpgrading),
+            Some(frozen) if *frozen.borrow() => Err(InstallError::CoreUpgrading(l10n::text(
+                langs,
+                "plugin-settings-core-upgrading",
+                &[],
+            ))),
             _ => Ok(()),
         }
     }

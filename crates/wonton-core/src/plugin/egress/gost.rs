@@ -137,7 +137,9 @@ fn bypass(name: &'static str, file: &str) -> Bypass {
 }
 
 /// gost 的配置。用 YAML 库生成，不拼字符串：密码可以是任何字符。
-pub fn config_yaml(proxy: &ProxyAddress) -> Result<String, String> {
+use super::super::languages::Languages;
+
+pub fn config_yaml(proxy: &ProxyAddress, langs: &Languages) -> Result<String, String> {
     let auth = proxy.username.is_some() || proxy.password.is_some();
     let auth = auth.then(|| Auth {
         username: proxy.username.clone().unwrap_or_default(),
@@ -190,7 +192,13 @@ pub fn config_yaml(proxy: &ProxyAddress) -> Result<String, String> {
         }],
         bypasses: [bypass("deny", DENY_FILE), bypass("direct", DIRECT_FILE)],
     };
-    serde_saphyr::to_string(&config).map_err(|e| format!("生成 gost 的配置失败：{e}"))
+    serde_saphyr::to_string(&config).map_err(|e| {
+        crate::l10n::text(
+            langs,
+            "plugin-settings-egress-gost-config",
+            &[("error", e.to_string().into())],
+        )
+    })
 }
 
 /// 运行 gost 的用户：核心是 root 时是 nobody；不是 root（开发时）时只能是核心自己，文件才是它的。
@@ -222,8 +230,17 @@ impl RelayFiles {
         &self.dir
     }
 
-    fn prepare(&self) -> Result<(), String> {
-        let context = |e: std::io::Error| format!("准备 {} 失败：{e}", self.dir.display());
+    fn prepare(&self, langs: &Languages) -> Result<(), String> {
+        let context = |e: std::io::Error| {
+            crate::l10n::text(
+                langs,
+                "plugin-settings-egress-prepare-dir",
+                &[
+                    ("dir", self.dir.display().to_string().into()),
+                    ("error", e.to_string().into()),
+                ],
+            )
+        };
         fs::create_dir_all(&self.dir).map_err(context)?;
         fs::set_permissions(
             &self.dir,
@@ -241,12 +258,21 @@ impl RelayFiles {
     }
 
     /// 内容变了才写：写临时文件再改名，gost 读到的总是完整的。
-    fn write(&self, name: &str, data: &str) -> Result<(), String> {
+    fn write(&self, name: &str, data: &str, langs: &Languages) -> Result<(), String> {
         let path = self.dir.join(name);
         if fs::read(&path).is_ok_and(|current| current == data.as_bytes()) {
             return Ok(());
         }
-        let context = |e: std::io::Error| format!("写 {} 失败：{e}", path.display());
+        let context = |e: std::io::Error| {
+            crate::l10n::text(
+                langs,
+                "plugin-settings-egress-write-file",
+                &[
+                    ("path", path.display().to_string().into()),
+                    ("error", e.to_string().into()),
+                ],
+            )
+        };
         let temp = self.dir.join(format!(".{name}.tmp"));
         match fs::remove_file(&temp) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(context(e)),
@@ -269,24 +295,29 @@ impl RelayFiles {
         fs::read(self.dir.join(CONFIG_FILE)).is_ok_and(|current| current == yaml.as_bytes())
     }
 
-    pub fn write_config(&self, yaml: &str) -> Result<(), String> {
-        self.prepare()?;
-        self.write(CONFIG_FILE, yaml)
+    pub fn write_config(&self, yaml: &str, langs: &Languages) -> Result<(), String> {
+        self.prepare(langs)?;
+        self.write(CONFIG_FILE, yaml, langs)
     }
 
     /// 写名单。容器不用重建。
-    pub fn write_lists(&self, lists: &Lists) -> Result<(), String> {
-        self.prepare()?;
-        self.write(DENY_FILE, &lists.deny_file())?;
-        self.write(DIRECT_FILE, &lists.direct_file())
+    pub fn write_lists(&self, lists: &Lists, langs: &Languages) -> Result<(), String> {
+        self.prepare(langs)?;
+        self.write(DENY_FILE, &lists.deny_file(), langs)?;
+        self.write(DIRECT_FILE, &lists.direct_file(), langs)
     }
 
     /// 取消代理时删掉配置：里面有密码。
-    pub fn remove(&self) -> Result<(), String> {
+    pub fn remove(&self, langs: &Languages) -> Result<(), String> {
         match fs::remove_dir_all(&self.dir) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                Err(format!("删除 {} 失败：{e}", self.dir.display()))
-            }
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(crate::l10n::text(
+                langs,
+                "plugin-settings-egress-remove-dir",
+                &[
+                    ("dir", self.dir.display().to_string().into()),
+                    ("error", e.to_string().into()),
+                ],
+            )),
             _ => Ok(()),
         }
     }
@@ -380,7 +411,11 @@ mod tests {
     use serde_json::Value;
 
     fn parsed(text: &str) -> Value {
-        let yaml = config_yaml(&ProxyAddress::parse(text).unwrap()).unwrap();
+        let yaml = config_yaml(
+            &ProxyAddress::parse(text, &Default::default()).unwrap(),
+            &Languages::default(),
+        )
+        .unwrap();
         serde_saphyr::from_str(&yaml).unwrap()
     }
 
@@ -425,9 +460,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let files = RelayFiles::new(dir.path().join("relay"), runner());
         assert!(!files.has_config("a: 1\n"));
-        files.write_config("a: 1\n").unwrap();
+        files.write_config("a: 1\n", &Languages::default()).unwrap();
         assert!(files.has_config("a: 1\n"));
-        files.write_config("a: 2\n").unwrap();
+        files.write_config("a: 2\n", &Languages::default()).unwrap();
         let path = files.dir().join(CONFIG_FILE);
         assert_eq!(fs::read_to_string(&path).unwrap(), "a: 2\n");
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
@@ -437,15 +472,15 @@ mod tests {
             deny: vec!["10.0.0.0/8".to_owned(), "*.x".to_owned()],
             ..Lists::default()
         };
-        files.write_lists(&lists).unwrap();
+        files.write_lists(&lists, &Languages::default()).unwrap();
         let deny = fs::read_to_string(files.dir().join(DENY_FILE)).unwrap();
         assert_eq!(deny, "10.0.0.0/8\n*.x\n");
         assert_eq!(
             fs::read_to_string(files.dir().join(DIRECT_FILE)).unwrap(),
             ""
         );
-        files.remove().unwrap();
+        files.remove(&Languages::default()).unwrap();
         assert!(!files.dir().exists());
-        files.remove().unwrap();
+        files.remove(&Languages::default()).unwrap();
     }
 }

@@ -27,7 +27,7 @@ impl PluginManager {
             .resolve(stored.as_ref())
             .map_err(InstallError::Storage)?;
         if config.source == wonton_protocol::EgressProxySource::Plugin {
-            config.url = Some(self.egress_provider()?.address);
+            config.url = Some(self.egress_provider(&self.owner_languages())?.address);
         }
         Ok(config)
     }
@@ -120,7 +120,9 @@ impl PluginManager {
                 {
                     self.engine.disconnect_network(&name, core).await?;
                 }
-                self.relay_files().remove().map_err(InstallError::Storage)
+                self.relay_files()
+                    .remove(&self.owner_languages())
+                    .map_err(InstallError::Storage)
             }
         }
     }
@@ -152,19 +154,25 @@ impl PluginManager {
         let state = found.as_ref().and_then(|c| c.state.as_ref());
         let running = state.and_then(|s| s.running) == Some(true);
         // 镜像拉不到时什么都不动，正在跑的出口容器继续跑。
-        let mirror = self.registry_mirror_address()?;
+        let mirror = self.registry_mirror_address(&self.owner_languages())?;
         let image = self
             .engine
             .ensure_image(IMAGE, PullPolicy::Missing, mirror.as_deref())
             .await
-            .map_err(|error| self.registry_pull_error(error, mirror.as_deref()))?;
+            .map_err(|error| {
+                let langs = self.owner_languages();
+                self.registry_pull_error(error, mirror.as_deref(), &langs)
+            })?;
         let files = self.relay_files();
-        let yaml = config_yaml(proxy).map_err(InstallError::Storage)?;
+        let langs = self.owner_languages();
+        let yaml = config_yaml(proxy, &langs).map_err(InstallError::Storage)?;
         let same = files.has_config(&yaml);
         if !same {
             // 先删容器再写配置：中途失败时下次还会重建，不会留下配置新、容器旧的状态。
             self.engine.remove_container(&name).await?;
-            files.write_config(&yaml).map_err(InstallError::Storage)?;
+            files
+                .write_config(&yaml, &langs)
+                .map_err(InstallError::Storage)?;
         }
         self.write_relay_lists(config).await?;
         if !same || !current || !running {
@@ -261,12 +269,16 @@ impl PluginManager {
                 .not_allowed
                 .iter()
                 .map(|cidr| {
-                    format!("网段 {cidr} 和出口容器接入的 Docker 网络重叠，没有放行：放行的话它会直接拨到别的插件")
+                    crate::l10n::text(
+                        &self.owner_languages(),
+                        "plugin-settings-egress-relay-cidr-overlap",
+                        &[("cidr", cidr.to_string().into())],
+                    )
                 })
                 .collect(),
         );
         self.relay_files()
-            .write_lists(&lists)
+            .write_lists(&lists, &self.owner_languages())
             .map_err(InstallError::Storage)
     }
 
@@ -301,7 +313,8 @@ impl PluginManager {
     /// [`Egress::pass`]: super::settings::Egress
     async fn ensure_host_cidrs(&self) -> Result<(), InstallError> {
         if self.egress.host_cidrs().is_none() {
-            let detected = self.detect_lan().await?;
+            let langs = self.owner_languages();
+            let detected = self.detect_lan(&langs).await?;
             if detected.failure.is_none() {
                 self.egress.set_host_cidrs(host_cidrs(&detected));
             }

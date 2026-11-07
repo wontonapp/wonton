@@ -35,10 +35,10 @@ struct Shown<'a> {
 impl PluginManager {
     /// 商店：官方插件按索引里的顺序，社区插件按星数。`refresh` 时不等缓存过期，直接去来源取。
     pub async fn store_listing(&self, langs: &Languages, refresh: bool) -> StoreListing {
-        let (index, official_at, official_problem) = self.storefront.official(refresh).await;
+        let (index, official_at, official_problem) = self.storefront.official(refresh, langs).await;
         let (community, community_at, community_problem) =
-            self.storefront.community(&index, refresh).await;
-        self.storefront.added.refresh(refresh).await;
+            self.storefront.community(&index, refresh, langs).await;
+        self.storefront.added.refresh(refresh, langs).await;
         let added = self.storefront.added.views();
         let facts = self.host_facts(langs).await;
         let (official, mut icons) = self.official_items(&index, &facts, langs).await;
@@ -131,7 +131,7 @@ impl PluginManager {
         Option<wonton_protocol::StoreProblem>,
         Vec<StoreItem>,
     ) {
-        let (index, _, problem) = self.storefront.official(false).await;
+        let (index, _, problem) = self.storefront.official(false, langs).await;
         let facts = self.host_facts(langs).await;
         let (items, icons) = self.official_items(&index, &facts, langs).await;
         self.gallery.remember_store(icons);
@@ -147,10 +147,10 @@ impl PluginManager {
         let (package, stars) = if source.starts_with(INDEX_SCHEME) {
             (self.fetch_source(source).await?, None)
         } else {
-            let wanted = SourceRef::parse(source)?;
-            let (index, _, _) = self.storefront.official(false).await;
+            let wanted = SourceRef::parse(source, langs)?;
+            let (index, _, _) = self.storefront.official(false, langs).await;
             let package = match index.find(&wanted).filter(|l| l.matches(&wanted)) {
-                Some(listed) => self.storefront.files().package(listed).await?,
+                Some(listed) => self.storefront.files().package(listed, langs).await?,
                 None => self.fetch_source(source).await?,
             };
             (package, self.storefront.stars(&wanted.repo).await)
@@ -264,7 +264,12 @@ impl PluginManager {
         if let Some(icon) = self.gallery.preview(sha256) {
             return Some(icon);
         }
-        match self.storefront.files().file(listed, &path).await {
+        match self
+            .storefront
+            .files()
+            .file(listed, &path, &self.owner_languages())
+            .await
+        {
             Ok(data) => IconSource::from_file(&path, data),
             Err(e) => {
                 tracing::warn!(source = %listed.entry.source, error = %e, "官方插件的图标取不到");
@@ -303,10 +308,18 @@ impl PluginManager {
 /// 这台主机上装不了的原因：系统插件、核心不支持的权限、不满足的要求。查不出来的要求不拦。
 fn blocked(m: &Manifest, facts: &HostFacts, langs: &Languages) -> Option<String> {
     if m.kind == PluginKind::System {
-        return Some("系统应用只能随核心预装".to_owned());
+        return Some(crate::l10n::text(
+            langs,
+            "plugin-settings-store-system-app",
+            &[],
+        ));
     }
     if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
-        return Some(format!("核心还不支持权限 {p}"));
+        return Some(crate::l10n::text(
+            langs,
+            "plugin-settings-store-permission-unsupported",
+            &[("permission", p.to_string().into())],
+        ));
     }
     host_check::refusal(m, facts, langs).map(|refusal| refusal.to_string())
 }

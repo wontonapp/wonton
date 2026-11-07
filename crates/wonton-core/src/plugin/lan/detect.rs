@@ -81,18 +81,29 @@ impl Detector {
                     ProbeRun::Failed(reason) => Err(reason),
                     ProbeRun::Ran { stdout, replaced } => {
                         serde_json::from_slice(&stdout).map_err(|e| {
-                            with_replaced_note(
-                                &engine.owner_languages(),
-                                replaced,
-                                format!("检测容器的输出不对：{e}"),
-                            )
+                            let langs = engine.owner_languages();
+                            let reason = l10n::text(
+                                &langs,
+                                "plugin-settings-lan-detect-output",
+                                &[("error", e.to_string().into())],
+                            );
+                            with_replaced_note(&langs, replaced, reason)
                         })
                     }
                 },
             ),
-            Self::Here => Ok(tokio::task::spawn_blocking(|| probe::probe(Path::new("/")))
-                .await
-                .unwrap_or_else(|e| Err(format!("检测宿主的网卡时出错：{e}")))),
+            Self::Here => {
+                let langs = engine.owner_languages();
+                Ok(tokio::task::spawn_blocking(|| probe::probe(Path::new("/")))
+                    .await
+                    .unwrap_or_else(|e| {
+                        Err(l10n::text(
+                            &langs,
+                            "plugin-settings-lan-detect-error",
+                            &[("error", e.to_string().into())],
+                        ))
+                    }))
+            }
             #[cfg(test)]
             Self::Fixed(network) => Ok(network.lock().expect("检测结果锁中毒").clone()),
             #[cfg(test)]
@@ -136,18 +147,26 @@ impl Detector {
                     ProbeRun::Ran { stdout, replaced } => (stdout, replaced),
                 };
                 serde_json::from_slice(&stdout.0).map_err(|e| {
-                    with_replaced_note(
-                        &engine.owner_languages(),
-                        stdout.1,
-                        format!("探测容器的输出不对：{e}"),
-                    )
+                    let langs = engine.owner_languages();
+                    let reason = l10n::text(
+                        &langs,
+                        "plugin-settings-lan-detect-output",
+                        &[("error", e.to_string().into())],
+                    );
+                    with_replaced_note(&langs, stdout.1, reason)
                 })
             }
             Self::Here => {
                 let targets = targets.to_vec();
                 tokio::task::spawn_blocking(move || probe::listen(&targets))
                     .await
-                    .map_err(|e| format!("探测时出错：{e}"))
+                    .map_err(|e| {
+                        l10n::text(
+                            &engine.owner_languages(),
+                            "plugin-settings-lan-listen-error",
+                            &[("error", e.to_string().into())],
+                        )
+                    })
             }
             #[cfg(test)]
             Self::Fixed(_) => Ok(Vec::new()),
@@ -231,10 +250,18 @@ impl Engine {
         cmd: Vec<String>,
     ) -> Result<ProbeRun, EngineError> {
         let Some(info) = self.inspect_container(core).await? else {
-            return Ok(ProbeRun::Failed(format!("查不到核心容器 {core} 的镜像")));
+            return Ok(ProbeRun::Failed(l10n::text(
+                &self.owner_languages(),
+                "plugin-settings-lan-detect-core-image",
+                &[("container", core.into())],
+            )));
         };
         let Some(image) = info.image else {
-            return Ok(ProbeRun::Failed(format!("查不到核心容器 {core} 的镜像")));
+            return Ok(ProbeRun::Failed(l10n::text(
+                &self.owner_languages(),
+                "plugin-settings-lan-detect-core-image",
+                &[("container", core.into())],
+            )));
         };
         let reference = info.config.and_then(|c| c.image);
         let langs = self.owner_languages();
@@ -246,10 +273,16 @@ impl Engine {
             Err(failure) => return Ok(ProbeRun::Failed(failure)),
         };
         if once.output.code != 0 {
-            let reason = format!(
-                "检测容器以 {} 退出：{}",
-                once.output.code,
-                String::from_utf8_lossy(&once.output.stderr).trim()
+            let reason = l10n::text(
+                &langs,
+                "plugin-settings-lan-detect-exit",
+                &[
+                    ("code", once.output.code.to_string().into()),
+                    (
+                        "reason",
+                        String::from_utf8_lossy(&once.output.stderr).trim().into(),
+                    ),
+                ],
             );
             return Ok(ProbeRun::Failed(with_replaced_note(
                 &langs,
@@ -323,16 +356,32 @@ impl Engine {
         let code = match tokio::time::timeout(PROBE_TIMEOUT, wait.next()).await {
             Err(_) => {
                 let seconds = PROBE_TIMEOUT.as_secs();
-                return Ok(Err(format!("容器 {name} {seconds} 秒没跑完")));
+                let langs = self.owner_languages();
+                return Ok(Err(crate::l10n::text(
+                    &langs,
+                    "plugin-settings-lan-detect-timeout",
+                    &[
+                        ("container", name.into()),
+                        ("seconds", seconds.to_string().into()),
+                    ],
+                )));
             }
-            Ok(None) => return Ok(Err(format!("Docker 没给出容器 {name} 的退出码"))),
+            Ok(None) => {
+                let langs = self.owner_languages();
+                return Ok(Err(crate::l10n::text(
+                    &langs,
+                    "plugin-settings-lan-detect-no-exit-code",
+                    &[("container", name.into())],
+                )));
+            }
             Ok(Some(Ok(exit))) => exit.status_code,
             // bollard 把非 0 的退出码当成错误交回来。
             Ok(Some(Err(BollardError::DockerContainerWaitError { code, .. }))) => code,
             Ok(Some(Err(e))) => {
+                let langs = self.owner_languages();
                 return Err(crate::plugin::docker::from_bollard(
-                    &self.owner_languages(),
-                    "等一次性容器退出",
+                    &langs,
+                    &crate::l10n::text(&langs, "plugin-settings-lan-detect-wait-exit", &[]),
                     e,
                 ));
             }
@@ -345,9 +394,10 @@ impl Engine {
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         while let Some(chunk) = logs.next().await {
             match chunk.map_err(|e| {
+                let langs = self.owner_languages();
                 crate::plugin::docker::from_bollard(
-                    &self.owner_languages(),
-                    "读一次性容器的输出",
+                    &langs,
+                    &crate::l10n::text(&langs, "plugin-settings-lan-detect-read-output", &[]),
                     e,
                 )
             })? {
@@ -364,8 +414,13 @@ impl Engine {
 
     /// Docker 的网桥：按 Docker 的网络列表认，不按网卡名字的样子猜。
     pub(in crate::plugin) async fn bridges(&self) -> Result<DockerBridges, EngineError> {
+        let langs = self.owner_languages();
         let networks = self.docker.list_networks(None).await.map_err(|e| {
-            crate::plugin::docker::from_bollard(&self.owner_languages(), "列出网络", e)
+            crate::plugin::docker::from_bollard(
+                &langs,
+                &crate::l10n::text(&langs, "plugin-settings-lan-detect-list-networks", &[]),
+                e,
+            )
         })?;
         let mut bridges = DockerBridges::default();
         for network in networks {

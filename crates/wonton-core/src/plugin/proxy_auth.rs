@@ -14,6 +14,7 @@ use crate::owner::Owner;
 
 use super::languages::Languages;
 use crate::l10n::text;
+use crate::owner::no_email;
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
@@ -106,18 +107,26 @@ impl ProxyAuth {
     }
 
     /// 代加的请求头：名字和这次请求的值。
-    pub fn headers(&self, owner: &Owner) -> Result<Vec<(HeaderName, String)>, NoEmail> {
+    pub fn headers(
+        &self,
+        owner: &Owner,
+        langs: &Languages,
+    ) -> Result<Vec<(HeaderName, String)>, NoEmail> {
         self.headers
             .iter()
-            .map(|(name, parts)| Ok((name.clone(), render(parts, owner)?)))
+            .map(|(name, parts)| Ok((name.clone(), render(parts, owner, langs)?)))
             .collect()
     }
 
     /// 代加的 Cookie：名字和这次请求的值。
-    pub fn cookies(&self, owner: &Owner) -> Result<Vec<(&str, String)>, NoEmail> {
+    pub fn cookies(
+        &self,
+        owner: &Owner,
+        langs: &Languages,
+    ) -> Result<Vec<(&str, String)>, NoEmail> {
         self.cookies
             .iter()
-            .map(|(name, parts)| Ok((name.as_str(), render(parts, owner)?)))
+            .map(|(name, parts)| Ok((name.as_str(), render(parts, owner, langs)?)))
             .collect()
     }
 
@@ -141,12 +150,12 @@ impl ProxyAuth {
     }
 }
 
-/// 模板用了 `{email}`，主人却没填邮箱：不代加一个空值。
+/// 模板用了 `{email}`，主人却没填邮箱：不代加一个空值。消息按请求的语言写好（ADR-0043）。
 #[derive(Debug, thiserror::Error)]
-#[error("{}", crate::owner::NO_EMAIL)]
-pub struct NoEmail;
+#[error("{0}")]
+pub struct NoEmail(pub String);
 
-fn render(parts: &[Part], owner: &Owner) -> Result<String, NoEmail> {
+fn render(parts: &[Part], owner: &Owner, langs: &Languages) -> Result<String, NoEmail> {
     parts
         .iter()
         .map(|part| {
@@ -154,7 +163,10 @@ fn render(parts: &[Part], owner: &Owner) -> Result<String, NoEmail> {
                 Part::Text(text) | Part::Secret(text) => text.as_str(),
                 Part::User => owner.username.as_str(),
                 Part::Name => owner.display_name.as_str(),
-                Part::Email => owner.email.as_deref().ok_or(NoEmail)?,
+                Part::Email => owner
+                    .email
+                    .as_deref()
+                    .ok_or_else(|| NoEmail(no_email(langs)))?,
             })
         })
         .collect()
@@ -193,7 +205,7 @@ pub fn fill_template(
             other => Ok(other),
         })
         .collect::<Result<Vec<_>, String>>()?;
-    render(&parts, owner).map_err(|e| e.to_string())
+    render(&parts, owner, langs).map_err(|e| e.to_string())
 }
 
 fn secret_ok(manifest: &Manifest, name: &str) -> bool {

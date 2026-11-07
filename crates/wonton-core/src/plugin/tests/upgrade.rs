@@ -111,7 +111,7 @@ async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
         enabled_permissions: Vec::new(),
         lan_webui: false,
     };
-    m.upgrade_source(&id(), &request).await
+    m.upgrade_source(&id(), &request, &super::langs()).await
 }
 
 fn version(m: &PluginManager) -> String {
@@ -263,7 +263,13 @@ async fn a_new_version_that_will_not_start_rolls_back_to_the_old_containers() {
     );
 
     let err = upgrade(&m).await.unwrap_err();
-    assert!(err.to_string().contains("已退回 1.0.0"), "{err}");
+    assert!(
+        err.to_string().contains(&super::message(
+            "plugin-settings-upgrade-rolled-back",
+            &[("new", "1.1.0"), ("version", "1.0.0")],
+        )),
+        "{err}"
+    );
     assert_eq!(version(&m), "1.0.0");
     assert_eq!(m.status_of(&id()), Some(PluginStatus::Running));
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().revision, revision);
@@ -321,7 +327,10 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
         enabled_permissions: Vec::new(),
         lan_webui: false,
     };
-    let err = m.upgrade_source(&id(), &not_confirmed).await.unwrap_err();
+    let err = m
+        .upgrade_source(&id(), &not_confirmed, &super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "permission_denied", "{err}");
 
     // 确认页开着的时候，作者把 tag 挪到了别的内容上。
@@ -333,7 +342,10 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
         &github,
         &hello("1.1.0", "", "  permissions: [network.egress, models]\n"),
     );
-    let err = m.upgrade_source(&id(), &confirmed).await.unwrap_err();
+    let err = m
+        .upgrade_source(&id(), &confirmed, &super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "changed", "{err}");
     assert_eq!(version(&m), "1.0.0");
 
@@ -384,7 +396,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
 
     let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
     let newer = hello("1.2.0", "", "  permissions: []\n");
-    m.upgrade_upload(&id(), parse(&newer), Vec::new(), false)
+    m.upgrade_upload(&id(), parse(&newer), Vec::new(), false, &super::langs())
         .await
         .unwrap();
     assert_eq!(image(&docker, &web()), "web:1.2.0");
@@ -396,7 +408,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
 
     let other = hello("1.3.0", "", "  permissions: []\n").replace("id: app.hello", "id: app.other");
     let err = m
-        .upgrade_upload(&id(), parse(&other), Vec::new(), false)
+        .upgrade_upload(&id(), parse(&other), Vec::new(), false, &super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
@@ -447,16 +459,28 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     );
     let broken = echo("1.1.0", "  helper:\n    image: helper:1\n");
     let err = m
-        .upgrade_upload(&id, parse(&broken), permissions(&broken), false)
+        .upgrade_upload(
+            &id,
+            parse(&broken),
+            permissions(&broken),
+            false,
+            &super::langs(),
+        )
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("已退回 1.0.0"), "{err}");
+    assert!(
+        err.to_string().contains(&super::message(
+            "plugin-settings-upgrade-rolled-back",
+            &[("new", "1.1.0"), ("version", "1.0.0")],
+        )),
+        "{err}"
+    );
     let env = env_of_container(&docker, &bot);
     assert_eq!(env["TOKEN"], token, "退回旧版本也沿用同一台设备");
     assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
 
     let v2 = echo("1.2.0", "");
-    m.upgrade_upload(&id, parse(&v2), permissions(&v2), false)
+    m.upgrade_upload(&id, parse(&v2), permissions(&v2), false, &super::langs())
         .await
         .unwrap();
     let env = env_of_container(&docker, &bot);
@@ -473,10 +497,28 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     m.engine.remove_container(&bot).await.unwrap();
     let v3 = echo("1.3.0", "");
     let err = m
-        .upgrade_upload(&id, parse(&v3), permissions(&v3), false)
+        .upgrade_upload(&id, parse(&v3), permissions(&v3), false, &super::langs())
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("令牌读不回来"), "{err}");
+    assert!(
+        err.to_string().contains(&super::message(
+            "plugin-settings-egress-token-read-back",
+            &[
+                (
+                    "reason",
+                    &super::message(
+                        "plugin-settings-egress-old-container-gone",
+                        &[("container", "wonton-app-echo--bot")],
+                    )
+                ),
+                (
+                    "reinstall",
+                    &super::message("plugin-settings-egress-token-reinstall", &[]),
+                ),
+            ],
+        )),
+        "{err}"
+    );
     assert_eq!(tuwunel.state().tokens.len(), devices);
     assert_eq!(m.status_of(&id), Some(PluginStatus::Running));
 }
@@ -549,7 +591,18 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
     assert_eq!(plugin.version, "1.0.0");
     assert!(matches!(plugin.status, PluginState::Running { .. }));
     assert!(
-        plugin.notices[0].text.contains("没升成"),
+        {
+            // 原因里有动态的出错详情，钉住前缀就够：版本、还在跑的版本和“下次启动再试”。
+            let prefix = super::message(
+                "plugin-settings-upgrade-bundled-failed",
+                &[("version", "1.1.0"), ("from", "1.0.0"), ("error", "")],
+            );
+            let prefix = prefix
+                .strip_suffix(": ")
+                .or_else(|| prefix.strip_suffix("："))
+                .unwrap_or(&prefix);
+            plugin.notices[0].text.contains(prefix)
+        },
         "{:?}",
         plugin.notices
     );
@@ -613,7 +666,7 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let v2 =
         PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
     let err = m
-        .upgrade_upload(&id(), v2, Vec::new(), false)
+        .upgrade_upload(&id(), v2, Vec::new(), false, &super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "core_upgrading", "{err}");
@@ -650,10 +703,12 @@ async fn ports_that_become_switched_close_and_the_preview_says_so() {
         .await
         .unwrap();
     assert!(!preview.lan_webui.unwrap().enabled);
-    let notice = preview
-        .notices
-        .iter()
-        .find(|n| n.text.contains("升级后会关掉"));
+    let closing = crate::l10n::text(
+        &zh(),
+        "plugin-settings-upgrade-lan-ports-closing",
+        &[("ports", format!("{port}/tcp").into())],
+    );
+    let notice = preview.notices.iter().find(|n| n.text == closing);
     assert!(notice.is_some_and(|n| n.emphasis), "{:?}", preview.notices);
 }
 

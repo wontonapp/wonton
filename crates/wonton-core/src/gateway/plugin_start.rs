@@ -33,6 +33,6 @@ pub async fn start(
     }
     match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
         Some(installed) => Json(installed).into_response(),
-        None => install_error(&InstallError::NotInstalled(id.to_string())),
+        None => install_error(&InstallError::not_installed(&languages(&headers), &id)),
     }
 }

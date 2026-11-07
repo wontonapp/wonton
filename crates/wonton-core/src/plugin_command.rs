@@ -205,7 +205,7 @@ fn pack(dir: &Path) -> ExitCode {
 fn check_index(path: &Path) -> ExitCode {
     let index = std::fs::read(path)
         .map_err(|e| e.to_string())
-        .and_then(|json| Index::parse(&json).map_err(|e| e.to_string()));
+        .and_then(|json| Index::parse(&json, &Default::default()).map_err(|e| e.to_string()));
     let index = match index {
         Ok(index) => index,
         Err(e) => {

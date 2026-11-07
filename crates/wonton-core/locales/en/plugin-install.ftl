@@ -488,3 +488,7 @@ plugin-install-img-worker-memory-limit = Needed more than { $mib } MiB of memory
 plugin-install-img-worker-killed = The image process was killed (SIGKILL), most likely out of memory
 plugin-install-img-worker-signal = The image process was ended by signal { $signal }
 plugin-install-img-worker-malformed = The image process produced output in the wrong format
+
+## 预装（启动时随服务器带的包）失败的原因。
+plugin-install-preinstall-retrying = Preinstall failed (tried { $attempts } time(s), will retry automatically)
+plugin-install-preinstall-failed = Preinstall failed

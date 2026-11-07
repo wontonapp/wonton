@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use serde_json::json;
 
+use crate::l10n::CATALOG;
+
 use super::super::egress::settings::StoredEgress;
 use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
@@ -259,8 +261,19 @@ async fn a_token_in_the_command_cannot_be_read_back_so_the_bot_is_left_as_it_is(
     assert!(!env_of_container(&bed.docker, &web).contains_key("HTTP_PROXY"));
     assert_eq!(bed.devices(), devices);
     let reason = bed.reason();
-    assert!(reason.contains("读不回来"), "{reason}");
-    assert!(reason.contains("重装"), "{reason}");
+    let lang = CATALOG.negotiate(&["en"]);
+    assert!(
+        reason.contains(&CATALOG.format(
+            lang,
+            "plugin-settings-egress-token-unreadable",
+            &[("service", "bot".into())],
+        )),
+        "{reason}"
+    );
+    assert!(
+        reason.contains(&CATALOG.format(lang, "plugin-settings-egress-token-reinstall", &[],)),
+        "{reason}"
+    );
 }
 
 #[tokio::test]
@@ -275,5 +288,15 @@ async fn a_missing_old_container_is_reported_rather_than_signing_a_new_device() 
     assert_eq!(starts(&bed.docker, &web), 1);
     assert_eq!(bed.devices(), devices);
     let reason = bed.reason();
-    assert!(reason.contains("没有令牌"), "{reason}");
+    assert!(
+        reason.contains(&CATALOG.format(
+            CATALOG.negotiate(&["en"]),
+            "plugin-settings-egress-token-not-in-env",
+            &[
+                ("container", "wonton-app-echo--bot".into()),
+                ("variable", "AUTH".into()),
+            ],
+        )),
+        "{reason}"
+    );
 }

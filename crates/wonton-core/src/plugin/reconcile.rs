@@ -93,8 +93,8 @@ impl PluginManager {
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let secrets = self.check_secrets(manifest).await?;
-        let generated =
-            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        let generated = secrets::generated_values(manifest, &secrets, &self.owner_languages())
+            .map_err(InstallError::Storage)?;
         let proxy =
             ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
@@ -213,8 +213,17 @@ impl PluginManager {
         }
         let store = self.store.secrets();
         let mut secrets = store.load(&manifest.id)?.unwrap_or_default();
-        secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
-        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
+        secrets::generated_values(manifest, &secrets, &self.owner_languages())
+            .map_err(InstallError::Storage)?;
+        if secrets::collect(
+            &self.engine,
+            &self.cfg.instance,
+            manifest,
+            &mut secrets,
+            &self.owner_languages(),
+        )
+        .await?
+        {
             store.save(&manifest.id, &secrets)?;
         }
         Ok(secrets)

@@ -130,8 +130,16 @@ async fn a_probe_that_still_fails_on_the_replaced_image_says_so() {
         .create_network("plugin", &HashMap::new(), NetworkReach::Isolated)
         .await
         .unwrap_err();
-    let (prefix, suffix) = replaced_note(&engine.owner_languages());
-    let reason = "检测容器以 127 退出：lan-probe: not found";
+    let langs = engine.owner_languages();
+    let (prefix, suffix) = replaced_note(&langs);
+    let reason = crate::l10n::text(
+        &langs,
+        "plugin-settings-lan-detect-exit",
+        &[
+            ("code", String::from("127").into()),
+            ("reason", String::from("lan-probe: not found").into()),
+        ],
+    );
     let message = err.to_string();
     assert!(
         message.contains(&format!("{prefix}{reason}{suffix}")),
@@ -153,9 +161,18 @@ async fn unreadable_output_from_the_replaced_image_says_the_image_was_replaced()
     .detect(&engine, "core-route-probe", HashMap::new())
     .await
     .unwrap();
-    let (prefix, suffix) = replaced_note(&engine.owner_languages());
+    let langs = engine.owner_languages();
+    let (prefix, suffix) = replaced_note(&langs);
     let reason = detected.unwrap_err();
-    assert!(reason.contains("检测容器的输出不对"), "{reason}");
+    let unreadable = crate::l10n::text(
+        &langs,
+        "plugin-settings-lan-detect-output",
+        &[("error", String::from("«ERROR»").into())],
+    );
+    let (unreadable, _) = unreadable
+        .split_once("«ERROR»")
+        .expect("说明里有 error 参数");
+    assert!(reason.contains(unreadable), "{reason}");
     assert!(
         reason.starts_with(&prefix) && reason.ends_with(&suffix),
         "{reason}"

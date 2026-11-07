@@ -14,6 +14,7 @@ use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::egress::address::ProxyAddress;
 use wonton_core::plugin::egress::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
 use wonton_core::plugin::egress::lists::{self, Lists, Reach};
+use wonton_core::plugin::languages::Languages;
 
 // 共用的真实 Docker 测试辅助：每次运行唯一的实例名和资源回收。
 #[path = "../src/test_docker.rs"]
@@ -143,7 +144,12 @@ async fn connect_relay(engine: &Engine, network: &str, relay: &str, aliases: &[&
 }
 
 async fn start_relay(engine: &Engine, names: &Names, files: &RelayFiles, proxy: &ProxyAddress) {
-    files.write_config(&config_yaml(proxy).unwrap()).unwrap();
+    files
+        .write_config(
+            &config_yaml(proxy, &Languages::default()).unwrap(),
+            &Languages::default(),
+        )
+        .unwrap();
     let labels = HashMap::new();
     let relay = Relay {
         name: &names.relay,
@@ -194,7 +200,11 @@ async fn set_up(engine: &Engine, names: &Names) -> (ProxyAddress, String) {
         .await
         .unwrap()
         .unwrap();
-    let proxy = ProxyAddress::parse(&format!("http://{ENCODED}@{upstream}:8080")).unwrap();
+    let proxy = ProxyAddress::parse(
+        &format!("http://{ENCODED}@{upstream}:8080"),
+        &Default::default(),
+    )
+    .unwrap();
     assert_eq!(proxy.username.as_deref(), Some(USERNAME));
     assert_eq!(proxy.password.as_deref(), Some(PASSWORD));
     (proxy, upstream)
@@ -229,7 +239,7 @@ async fn check_denied(engine: &Engine, names: &Names) {
 async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
     let (proxy, upstream) = set_up(engine, names).await;
     let denied = lists::build("home.example", &Reach::default());
-    files.write_lists(&denied).unwrap();
+    files.write_lists(&denied, &Languages::default()).unwrap();
     start_relay(engine, names, files, &proxy).await;
     let via = format!("http_proxy=http://{ALIAS}:3128");
     start(
@@ -264,7 +274,7 @@ async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
             ..Reach::default()
         },
     );
-    files.write_lists(&allowed).unwrap();
+    files.write_lists(&allowed, &Languages::default()).unwrap();
     wait_for(engine, &names.client, &url, "200").await;
     assert_eq!(relay_id(engine, &names.relay).await, before);
     wait_for(engine, &names.client, "http://far.example.test/", "200").await;
@@ -284,7 +294,11 @@ async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
     );
 
     // 密码错了回 503，立刻返回。
-    let wrong = ProxyAddress::parse(&format!("http://u:wrong@{upstream}:8080")).unwrap();
+    let wrong = ProxyAddress::parse(
+        &format!("http://u:wrong@{upstream}:8080"),
+        &Default::default(),
+    )
+    .unwrap();
     start_relay(engine, names, files, &wrong).await;
     wait_for(engine, &names.client, "http://far.example.test/", "503").await;
 }

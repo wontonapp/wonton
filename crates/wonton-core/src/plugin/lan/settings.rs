@@ -10,6 +10,7 @@ use wonton_protocol::{
 use super::monitor::Detected;
 use super::select::{self, Bound, Kind};
 use super::webui::lan_port;
+use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager, PluginStatus};
 
@@ -36,7 +37,7 @@ fn kind(kind: Kind) -> LanInterfaceKind {
 impl PluginManager {
     /// 当场检测一次（结果的处理同定期检测），返回局域网设置。
     pub async fn lan_settings(&self, langs: &Languages) -> Result<LanSettings, InstallError> {
-        let detected = self.lan_pass().await?;
+        let detected = self.lan_pass(langs).await?;
         self.lan_view(&detected, langs)
     }
 
@@ -49,28 +50,36 @@ impl PluginManager {
     ) -> Result<LanSettings, InstallError> {
         let this = Arc::clone(self);
         crate::plugin::manager::detached(async move {
-            this.check_lan_choice(&choice).await?;
+            this.check_lan_choice(&choice, &langs).await?;
             this.store.save_lan_choice(&choice)?;
             tracing::info!(?choice, "主人改了局域网设置");
-            let detected = this.lan_pass().await?;
+            let detected = this.lan_pass(&langs).await?;
             this.lan_view(&detected, &langs)
         })
         .await
     }
 
-    async fn check_lan_choice(&self, choice: &LanChoice) -> Result<(), InstallError> {
+    async fn check_lan_choice(
+        &self,
+        choice: &LanChoice,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         if self.lan.fixed.is_some() {
-            return Err(InstallError::Conflict(
-                "局域网地址由核心的 WONTON_LAN_ADDRESSES 指定，不能在设置里改".to_owned(),
-            ));
-        }
-        let detected = self.detect_lan().await?;
-        if let Some(failure) = detected.failure {
-            return Err(InstallError::LanUnavailable(format!(
-                "检测宿主的网卡失败：{failure}"
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-settings-lan-fixed-by-env",
+                &[],
             )));
         }
-        match select::check_choice(&detected.host, choice) {
+        let detected = self.detect_lan(langs).await?;
+        if let Some(failure) = detected.failure {
+            return Err(InstallError::LanUnavailable(l10n::text(
+                langs,
+                "plugin-settings-lan-detect-failed",
+                &[("failure", failure.into())],
+            )));
+        }
+        match select::check_choice(&detected.host, choice, langs) {
             Ok(_) => Ok(()),
             Err(Ok(message)) => Err(InstallError::Invalid(message)),
             Err(Err(problem)) => Err(InstallError::LanUnavailable(problem.message)),

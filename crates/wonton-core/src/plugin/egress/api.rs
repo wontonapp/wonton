@@ -10,6 +10,7 @@ use super::address::ProxyAddress;
 use super::lists::overlaps;
 use super::probe::{blocks, fresh};
 use super::settings::{EgressConfig, StoredEgress};
+use crate::l10n;
 use crate::plugin::core_address::layout_of;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager, detached};
@@ -24,8 +25,9 @@ impl PluginManager {
         let stale = !self.egress.plugin_path().is_some_and(|p| fresh(&p));
         if config.url.is_some() && stale && self.egress.begin_probe() {
             let this = Arc::clone(self);
+            let langs = langs.clone();
             tokio::spawn(async move {
-                if let Err(e) = this.probe_egress().await {
+                if let Err(e) = this.probe_egress(&langs).await {
                     tracing::warn!(error = %e, "探测代理失败");
                 }
                 this.egress.end_probe();
@@ -79,32 +81,35 @@ impl PluginManager {
                 .as_ref()
                 .is_some_and(|url| !url.trim().is_empty())
             {
-                return Err(InstallError::Invalid(
-                    "用代理插件时不能同时填代理地址".to_owned(),
-                ));
+                return Err(InstallError::Invalid(l10n::text(
+                    langs,
+                    "plugin-settings-egress-plugin-and-url",
+                    &[],
+                )));
             }
             if current.source == EgressProxySource::Env {
-                return Err(env_locked());
+                return Err(env_locked(langs));
             }
-            Some(self.egress_provider()?.address)
+            Some(self.egress_provider(langs)?.address)
         } else {
-            target_address(&current, update.url.as_deref())?
+            target_address(&current, update.url.as_deref(), langs)?
         };
-        let direct_cidrs = self.checked_cidrs(&update.direct_cidrs).await?;
-        self.check_restarts(target.is_some(), &update.restarts)?;
+        let direct_cidrs = self.checked_cidrs(&update.direct_cidrs, langs).await?;
+        self.check_restarts(target.is_some(), &update.restarts, langs)?;
         if let Some(proxy) = target.as_ref().filter(|t| {
             Some(*t) != current.url.as_ref()
                 || (update.use_plugin && current.source != EgressProxySource::Plugin)
         }) {
             self.ensure_relay_network().await?;
             let problem = if update.use_plugin {
-                let provider = self.egress_provider()?;
-                match self.proxy_provider_problem().await? {
+                let provider = self.egress_provider(langs)?;
+                match self.proxy_provider_problem(langs).await? {
                     Some(problem) => Some(problem),
-                    None => self.diagnose_at(proxy, &provider.network).await?,
+                    None => self.diagnose_at(proxy, &provider.network, langs).await?,
                 }
             } else {
-                self.diagnose_at(proxy, &self.cfg.instance.egress()).await?
+                self.diagnose_at(proxy, &self.cfg.instance.egress(), langs)
+                    .await?
             };
             if let Some(problem) = problem.filter(blocks) {
                 return Err(InstallError::EgressProxyUnavailable {
@@ -136,11 +141,16 @@ impl PluginManager {
         self.follow_core_proxy();
         self.egress.record_probes(None, None);
         self.apply_egress().await?;
-        self.probe_egress().await?;
+        self.probe_egress(langs).await?;
         self.egress_view(&self.egress_config()?, langs)
     }
 
-    fn check_restarts(&self, configured: bool, confirmed: &[String]) -> Result<(), InstallError> {
+    fn check_restarts(
+        &self,
+        configured: bool,
+        confirmed: &[String],
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         let expected: BTreeSet<String> = self
             .egress_pending(configured)?
             .iter()
@@ -148,20 +158,33 @@ impl PluginManager {
             .collect();
         let confirmed: BTreeSet<String> = confirmed.iter().cloned().collect();
         if expected != confirmed {
-            return Err(InstallError::Changed(
-                "要重启的插件和确认时不一样了：重新确认".to_owned(),
-            ));
+            return Err(InstallError::Changed(l10n::text(
+                langs,
+                "plugin-settings-egress-restarts-changed",
+                &[],
+            )));
         }
         Ok(())
     }
 
     /// 主人多放行的网段：和 Docker 网络重叠就放不了行，直接告诉主人，不存下来等它失效。
-    async fn checked_cidrs(&self, cidrs: &[String]) -> Result<Vec<IpNet>, InstallError> {
+    async fn checked_cidrs(
+        &self,
+        cidrs: &[String],
+        langs: &Languages,
+    ) -> Result<Vec<IpNet>, InstallError> {
         let mut parsed = Vec::with_capacity(cidrs.len());
         for text in cidrs {
-            let cidr: IpNet = text
-                .parse()
-                .map_err(|e| InstallError::Invalid(format!("网段 {text} 不合法：{e}")))?;
+            let cidr: IpNet = text.parse::<IpNet>().map_err(|e| {
+                InstallError::Invalid(l10n::text(
+                    langs,
+                    "plugin-settings-egress-cidr-invalid",
+                    &[
+                        ("cidr", text.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
+            })?;
             parsed.push(cidr);
         }
         let mut networks = self.egress_networks();
@@ -173,8 +196,14 @@ impl PluginManager {
             };
             let subnet = IpNet::V4(layout.subnet);
             if let Some(cidr) = parsed.iter().find(|cidr| overlaps(cidr, &subnet)) {
-                return Err(InstallError::Invalid(format!(
-                    "网段 {cidr} 和 Docker 网络 {network}（{subnet}）重叠：放行的话出口容器会直接拨到别的插件"
+                return Err(InstallError::Invalid(l10n::text(
+                    langs,
+                    "plugin-settings-egress-cidr-overlaps-network",
+                    &[
+                        ("cidr", cidr.to_string().into()),
+                        ("network", network.as_str().into()),
+                        ("subnet", subnet.to_string().into()),
+                    ],
                 )));
             }
         }
@@ -182,17 +211,15 @@ impl PluginManager {
     }
 }
 
-fn env_locked() -> InstallError {
-    InstallError::Conflict(
-        "代理地址由 WONTON_EGRESS_PROXY 指定，不能在这里改：改安装目录的设置后再执行一次安装脚本"
-            .to_owned(),
-    )
+fn env_locked(langs: &Languages) -> InstallError {
+    InstallError::Conflict(l10n::text(langs, "plugin-settings-egress-env-locked", &[]))
 }
 
 /// 主人要的地址。和 `GET` 给的打码地址一样时是不改：壳拿不到密码，改网段时带回来的就是它。
 fn target_address(
     current: &EgressConfig,
     url: Option<&str>,
+    langs: &Languages,
 ) -> Result<Option<ProxyAddress>, InstallError> {
     let url = url.map(str::trim).filter(|url| !url.is_empty());
     let unchanged = current.source != EgressProxySource::Plugin
@@ -201,9 +228,9 @@ fn target_address(
         return Ok(current.url.clone());
     }
     if current.source == EgressProxySource::Env {
-        return Err(env_locked());
+        return Err(env_locked(langs));
     }
-    url.map(ProxyAddress::parse)
+    url.map(|url| ProxyAddress::parse(url, langs))
         .transpose()
         .map_err(InstallError::Invalid)
 }

@@ -50,6 +50,7 @@ mod preinstall;
 mod privileges;
 mod resources;
 mod secrets;
+mod settings_l10n;
 mod sources;
 mod stopped;
 mod stopped_docker;

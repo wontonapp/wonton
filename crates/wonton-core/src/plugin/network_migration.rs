@@ -6,9 +6,11 @@ use std::net::Ipv4Addr;
 use ipnet::Ipv4Net;
 
 use super::core_address::{Reservation, last_usable};
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::Manifest;
 use super::upstreams::core_aliases;
+use crate::l10n;
 
 /// 渲染前准备好的迁移。各网络的新网段已经预留（同进程其他建网络跳过），按新主网络算出的
 /// 变量也备好；主网络没迁时它们是 `None`/空，渲染照旧读现有网络。丢弃它就放掉预留：渲染
@@ -100,6 +102,7 @@ impl PluginManager {
         pending: &PendingMigration,
         reservation: Reservation,
         egress_plugin: bool,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         // 网络建好（或失败）后预留都放掉：Docker 的网络列表里已经看得见，held 里不留。
         let result = self
@@ -107,7 +110,10 @@ impl PluginManager {
             .await;
         drop(reservation);
         result.map_err(|e| {
-            e.with_note("迁移网络时旧容器已经删除：重试这次重建，或重装插件（可以不删数据）恢复")
+            e.with_note(
+                langs,
+                &l10n::text(langs, "plugin-settings-note-migration-containers-gone", &[]),
+            )
         })
     }
 

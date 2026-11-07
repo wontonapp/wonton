@@ -138,7 +138,7 @@ impl PluginManager {
             lan_webui: listed
                 .lan_switched
                 .as_ref()
-                .map(|switched| switched.offer(listed.lan_webui)),
+                .map(|switched| switched.offer(listed.lan_webui, langs)),
             save_grants: self.save_grants(id),
             // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
             ask_every_update,
@@ -197,7 +197,7 @@ impl PluginManager {
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m, langs).await?;
         let lan = self.lan_preview(package, langs).await?;
-        let egress = self.egress_problem_for(m).await?;
+        let egress = self.egress_problem_for(m, langs).await?;
         let egress_block = egress.as_ref().filter(|p| blocks(p));
         let blocked = blocked
             .or(gpu.blocked)
@@ -253,9 +253,9 @@ impl PluginManager {
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
-            missing_profile: self.missing_profile(package),
+            missing_profile: self.missing_profile(package, langs),
             devices: None,
-            lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
+            lan_webui: webui::switched(package).map(|switched| switched.offer(false, langs)),
             always_allowed: Vec::new(),
         })
     }
@@ -356,11 +356,15 @@ impl PluginManager {
 
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
     /// 主人还没填邮箱、插件又非要不可时的说明。
-    pub(crate) fn missing_profile(&self, package: &PluginPackage) -> Option<String> {
+    pub(crate) fn missing_profile(
+        &self,
+        package: &PluginPackage,
+        langs: &Languages,
+    ) -> Option<String> {
         let needs_email = super::manifest_oidc::needs_owner_email(&package.manifest)
             || dry_run_with_email(package, None, &Languages::default()).is_err();
         (self.cfg.profile.email().is_none() && needs_email)
-            .then(|| crate::owner::EMAIL_NEEDED.to_owned())
+            .then(|| crate::owner::email_needed(langs))
     }
 
     async fn precheck(&self, m: &Manifest, langs: &Languages) -> Result<(), InstallError> {

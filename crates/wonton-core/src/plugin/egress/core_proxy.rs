@@ -89,7 +89,9 @@ mod tests {
         client.get(target).send().await.unwrap_err();
 
         let address = format!("http://me:s3cret@127.0.0.1:{port}");
-        proxy.set(Some(&ProxyAddress::parse(&address).unwrap()));
+        proxy.set(Some(
+            &ProxyAddress::parse(&address, &Default::default()).unwrap(),
+        ));
         let reply = client.get(target).send().await.unwrap();
         assert_eq!(reply.status().as_u16(), 204);
         let head = seen.await.unwrap().to_ascii_lowercase();
@@ -110,7 +112,7 @@ mod tests {
     #[tokio::test]
     async fn local_targets_skip_the_proxy() {
         let proxy = CoreProxy::default();
-        let unused = ProxyAddress::parse("http://127.0.0.1:1").unwrap();
+        let unused = ProxyAddress::parse("http://127.0.0.1:1", &Default::default()).unwrap();
         proxy.set(Some(&unused));
         let client = reqwest::Client::builder()
             .proxy(proxy.for_client())

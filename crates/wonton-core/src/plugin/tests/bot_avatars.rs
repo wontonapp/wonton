@@ -15,6 +15,7 @@ use super::package;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::matrix::fake::{Fake, start};
+use crate::plugin::languages::Languages;
 
 const PNG: &[u8] = include_bytes!("../../../tests/fixtures/avatars/square.png");
 const JPEG: &[u8] = include_bytes!("../../../tests/fixtures/avatars/square.jpg");
@@ -166,13 +167,14 @@ async fn index_recognizes_defaults_and_loads_only_declared_optional_posters() {
         let entry = IndexEntry::of(&package, "github:example/bot", &"a".repeat(40)).unwrap();
         let index = Index::parse(
             &serde_json::to_vec(&json!({"format": 1, "plugins": [entry.clone()]})).unwrap(),
+            &Languages::default(),
         )
         .unwrap();
         assert!(index.skipped.is_empty());
         let dir = tempfile::tempdir().unwrap();
         entry.write_to(dir.path(), &package).unwrap();
         let loaded = Files::Dir(dir.path().to_owned())
-            .package(&index.plugins[0])
+            .package(&index.plugins[0], &Languages::default())
             .await
             .unwrap();
         assert_eq!(loaded.files(), package.files());
@@ -180,7 +182,7 @@ async fn index_recognizes_defaults_and_loads_only_declared_optional_posters() {
             std::fs::remove_file(dir.path().join("blobs").join(&entry.files["idle.jpg"])).unwrap();
             assert!(
                 Files::Dir(dir.path().to_owned())
-                    .package(&index.plugins[0])
+                    .package(&index.plugins[0], &Languages::default())
                     .await
                     .is_err()
             );
@@ -206,10 +208,14 @@ async fn github_loads_optional_posters_but_does_not_swallow_present_file_errors(
             files.push(("idle.jpg", poster));
         }
         fake.publish("example/bot", "v1.0.0", &files);
-        let origin = resolve(&client, &SourceRef::parse("github:example/bot").unwrap())
-            .await
-            .unwrap();
-        let result = fetch(&client, &origin).await;
+        let origin = resolve(
+            &client,
+            &SourceRef::parse("github:example/bot", &Languages::default()).unwrap(),
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+        let result = fetch(&client, &origin, &Languages::default()).await;
         if poster
             .as_ref()
             .is_some_and(|p| p.len() as u64 > package_files::MAX_FILE_BYTES)
@@ -350,7 +356,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     .unwrap();
     assert!(matches!(
         bed.manager
-            .upgrade_upload(&id(), invalid, grant(), false)
+            .upgrade_upload(&id(), invalid, grant(), false, &super::langs())
             .await,
         Err(InstallError::Invalid(_))
     ));
@@ -365,7 +371,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     )
     .unwrap();
     bed.manager
-        .upgrade_upload(&id(), next, grant(), false)
+        .upgrade_upload(&id(), next, grant(), false, &super::langs())
         .await
         .unwrap();
     assert!(bed.avatars().await.unwrap().states.contains_key("idle"));
@@ -385,7 +391,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     )
     .unwrap();
     bed.manager
-        .upgrade_upload(&id(), next, grant(), false)
+        .upgrade_upload(&id(), next, grant(), false, &super::langs())
         .await
         .unwrap();
     assert_eq!(bed.avatars().await, Some(StateAvatars::default()));
@@ -438,10 +444,16 @@ async fn an_optional_poster_transport_failure_still_fails_package_loading() {
     });
     let addr = super::egress::serve(app).await;
     let client = GitHub::for_test(&format!("http://{addr}"));
-    let source = SourceRef::parse(&format!("github:example/bot@{}", "a".repeat(40))).unwrap();
-    let origin = resolve(&client, &source).await.unwrap();
+    let source = SourceRef::parse(
+        &format!("github:example/bot@{}", "a".repeat(40)),
+        &Languages::default(),
+    )
+    .unwrap();
+    let origin = resolve(&client, &source, &Languages::default())
+        .await
+        .unwrap();
     assert!(matches!(
-        fetch(&client, &origin).await,
+        fetch(&client, &origin, &Languages::default()).await,
         Err(InstallError::SourceUnavailable(_))
     ));
 }

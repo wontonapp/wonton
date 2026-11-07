@@ -49,7 +49,7 @@ impl PluginManager {
         let mut record: InstalledRecord = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
         if record.written_by.is_none() {
             return Err(InstallError::Invalid(l10n::text(
                 langs,

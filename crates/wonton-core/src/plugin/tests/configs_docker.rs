@@ -89,6 +89,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
         PluginPackage::parse(&compose("v2\\n"), &super::langs()).unwrap(),
         vec![],
         false,
+        &super::langs(),
     )
     .await
     .unwrap();

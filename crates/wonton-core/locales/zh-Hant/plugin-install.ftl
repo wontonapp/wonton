@@ -487,3 +487,7 @@ plugin-install-img-worker-memory-limit = 處理時需要的記憶體超過 { $mi
 plugin-install-img-worker-killed = 處理圖片的行程被強制終止（SIGKILL），多半是記憶體不足
 plugin-install-img-worker-signal = 處理圖片的行程被訊號 { $signal } 結束
 plugin-install-img-worker-malformed = 處理圖片的行程輸出的格式不對
+
+## 预装（启动时随服务器带的包）失败的原因。
+plugin-install-preinstall-retrying = 預先安裝失敗（已試 { $attempts } 次，稍後自動重試）
+plugin-install-preinstall-failed = 預先安裝失敗

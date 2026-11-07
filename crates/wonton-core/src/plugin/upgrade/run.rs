@@ -16,6 +16,7 @@ use super::super::gpu::GpuGrant;
 use super::super::health;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
+use super::super::languages::Languages;
 use super::super::lifecycle::{Undo, VolumeAction, client_spec, volume_action};
 use super::super::listed::Listed;
 use super::super::manager::{
@@ -31,6 +32,7 @@ use super::super::store::InstalledRecord;
 use super::super::upstreams::{core_aliases, uses_sso};
 use super::super::vars::MatrixVars;
 use super::{installed_package, newer};
+use crate::l10n;
 use crate::secret::random_token;
 
 fn old_limits(entry: &Entry) -> wonton_protocol::PluginLimits {
@@ -104,20 +106,22 @@ impl PluginManager {
         lan_webui: bool,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        self.check_not_upgrading()?;
+        self.check_not_upgrading(&langs)?;
         dry_run(&package, &langs)?;
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
         check_permissions(manifest, granted, &langs)?;
         self.check_requirements(manifest, &langs).await?;
-        self.check_egress(manifest).await?;
+        self.check_egress(manifest, &langs).await?;
         let gpu = self.gpu_grant(manifest, &langs).await?;
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
-        let outcome = self.upgrade_begun(&package, granted, (gpu, lan)).await;
+        let outcome = self
+            .upgrade_begun(&package, granted, (gpu, lan), &langs)
+            .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
         if result.is_ok()
@@ -137,13 +141,16 @@ impl PluginManager {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins
             .get_mut(id)
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(&langs, id))?;
         if let Some(e) = busy(id, &entry.status, &langs) {
             return Err(e);
         }
         if !self.lan.begin(id) {
-            let reason = format!("插件 {id} 正在按新的局域网地址重建");
-            return Err(InstallError::Conflict(reason));
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-install-conflict-lan-rebuilding",
+                &[("id", id.to_string().into())],
+            )));
         }
         let before = Before {
             status: entry.status.clone(),
@@ -165,7 +172,8 @@ impl PluginManager {
         let id = &package.manifest.id;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
-            return Err(InstallError::NotInstalled(id.to_string()));
+            let langs = self.owner_languages();
+            return Err(InstallError::not_installed(&langs, id));
         };
         match outcome {
             Outcome::Upgraded(deployed) => {
@@ -211,6 +219,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        langs: &Languages,
     ) -> Outcome {
         let old = match self.read_old(&package.manifest.id).await {
             Ok(old) => old,
@@ -222,7 +231,7 @@ impl PluginManager {
             .await
         {
             Ok(deployed) => {
-                self.drop_unused(&old, package).await;
+                self.drop_unused(&old, package, langs).await;
                 return Outcome::Upgraded(deployed);
             }
             Err(e) => e,
@@ -235,12 +244,27 @@ impl PluginManager {
         let listed = Listed::of_record(&old.package, &old.record);
         match self.back_to_old(&old, package, progress).await {
             Ok(deployed) => {
-                let note = format!("升级到 {new} 失败，已退回 {version}");
-                Outcome::RolledBack(listed, deployed, error.with_note(&note))
+                let note = l10n::text(
+                    langs,
+                    "plugin-settings-upgrade-rolled-back",
+                    &[
+                        ("new", new.as_str().into()),
+                        ("version", version.as_str().into()),
+                    ],
+                );
+                Outcome::RolledBack(listed, deployed, error.with_note(langs, &note))
             }
             Err(back) => {
-                let note = format!("升级到 {new} 失败，退回 {version} 也失败：{back}");
-                Outcome::RollbackFailed(listed, error.with_note(&note))
+                let note = l10n::text(
+                    langs,
+                    "plugin-settings-upgrade-rollback-failed",
+                    &[
+                        ("new", new.as_str().into()),
+                        ("version", version.as_str().into()),
+                        ("error", back.to_string().into()),
+                    ],
+                );
+                Outcome::RollbackFailed(listed, error.with_note(langs, &note))
             }
         }
     }
@@ -251,11 +275,11 @@ impl PluginManager {
         let record = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(&langs, id))?;
         let package = installed_package(&record, &langs)?;
         let lan = self.lan_grant(&package, record.lan_webui, &langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
-        ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
+        ctx.matrix = self.bot_vars_read_back(&package, &ctx, &langs).await?;
         let plan = render(&package, &ctx, &langs)?;
         let mut images = HashMap::new();
         for container in &plan.containers {
@@ -305,14 +329,22 @@ impl PluginManager {
         let health = self
             .start_containers(&plan, &mut progress.undo, deadline, &langs)
             .await?;
-        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
+        if secrets::collect(
+            &self.engine,
+            &self.cfg.instance,
+            manifest,
+            &mut secrets,
+            &langs,
+        )
+        .await?
+        {
             self.store.secrets().save(&manifest.id, &secrets)?;
         }
         let upstream = self.webui_upstream(manifest, &network).await?;
         let models = self.models_upstream(manifest, &network).await?;
         let mcp = self.mcp_upstream(manifest, &network, &secrets).await?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline).await?;
+            health::wait_webui(&self.http, upstream, &webui.path, deadline, &langs).await?;
         }
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)
@@ -363,7 +395,7 @@ impl PluginManager {
         let langs = self.owner_languages();
         let secrets = self.prepare_secrets(manifest, &mut progress.undo)?;
         let generated =
-            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+            secrets::generated_values(manifest, &secrets, &langs).map_err(InstallError::Storage)?;
         let proxy =
             ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         let mut ctx = self
@@ -372,12 +404,14 @@ impl PluginManager {
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
-        ctx.matrix = self.upgrade_bot(old, package, &mut progress.undo).await?;
+        ctx.matrix = self
+            .upgrade_bot(old, package, &mut progress.undo, &langs)
+            .await?;
         ctx.models = self
-            .upgrade_model_vars(package, &mut progress.added_models)
+            .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
         let mut plan = render(package, &ctx, &langs)?;
-        self.prepare_images(&mut plan).await?;
+        self.prepare_images(&mut plan, &langs).await?;
         self.prepare_dirs(&ctx, &plan.dirs, &mut progress.undo, &langs)?;
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;
@@ -410,6 +444,7 @@ impl PluginManager {
         old: &Old,
         package: &PluginPackage,
         undo: &mut Undo,
+        langs: &Languages,
     ) -> Result<Option<MatrixVars>, InstallError> {
         let manifest = &package.manifest;
         if !is_bot(manifest) {
@@ -418,7 +453,10 @@ impl PluginManager {
         if is_bot(&old.package.manifest) {
             let vars = old.ctx.matrix.clone();
             if vars.as_ref().is_none_or(|v| v.access_token.is_empty()) {
-                return Err(cannot_read("旧版本没有服务用到令牌".to_owned()));
+                return Err(cannot_read(
+                    langs,
+                    l10n::text(langs, "plugin-settings-egress-token-not-used", &[]),
+                ));
             }
             if let Some(vars) = &vars {
                 self.fill_default_avatars(package, &vars.user_id).await?;
@@ -537,13 +575,27 @@ impl PluginManager {
         let langs = self.owner_languages();
         let id = &old.record.id;
         let mut failures = self.rollback(progress.undo, &langs).await;
-        if let Err(e) = self.revoke_model_names(id, &progress.added_models).await {
-            failures.push(format!("模型网关凭据：{e}"));
+        if let Err(e) = self
+            .revoke_model_names(id, &progress.added_models, &langs)
+            .await
+        {
+            failures.push(l10n::text(
+                &langs,
+                "plugin-settings-upgrade-cleanup-model-credentials",
+                &[("error", e.to_string().into())],
+            ));
         }
         if failures.is_empty() {
             error
         } else {
-            error.with_note(&format!("收拾未完成，可能有残留：{}", failures.join("；")))
+            error.with_note(
+                &langs,
+                &l10n::text(
+                    &langs,
+                    "plugin-settings-upgrade-cleanup-unfinished",
+                    &[("failures", l10n::list(&langs, &failures).into())],
+                ),
+            )
         }
     }
 
@@ -569,7 +621,8 @@ impl PluginManager {
         self.reattach_core(&package.manifest, manifest, &network)
             .await?;
         self.register_source(manifest, &network).await?;
-        self.revoke_model_names(id, &progress.added_models).await?;
+        self.revoke_model_names(id, &progress.added_models, &langs)
+            .await?;
         let mut ctx = old.ctx.clone();
         ctx.core_address = self.core_address_var(manifest, &network).await?;
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
@@ -591,7 +644,7 @@ impl PluginManager {
     }
 
     /// 新版本不要了的：记录已经写好，失败只记日志，主人卸载时一并清掉。
-    async fn drop_unused(&self, old: &Old, package: &PluginPackage) {
+    async fn drop_unused(&self, old: &Old, package: &PluginPackage, langs: &Languages) {
         let manifest = &package.manifest;
         let id = &manifest.id;
         let was = &old.package.manifest;
@@ -601,7 +654,7 @@ impl PluginManager {
             tracing::warn!(plugin = %id, error = %e, "删新版本不用的 OIDC 客户端失败");
         }
         if !manifest.permissions.contains(&Permission::Models)
-            && let Err(e) = self.revoke_models(id).await
+            && let Err(e) = self.revoke_models(id, langs).await
         {
             tracing::warn!(plugin = %id, error = %e, "吊销新版本不用的模型网关凭据失败");
         }
@@ -664,7 +717,15 @@ impl PluginManager {
         {
             let from = installed.version;
             tracing::error!(plugin = %id, error = %e, "系统插件升级失败");
-            let reason = format!("随核心带来的 {version} 没升成，还在跑 {from}，下次启动再试：{e}");
+            let reason = l10n::text(
+                &self.owner_languages(),
+                "plugin-settings-upgrade-bundled-failed",
+                &[
+                    ("version", version.as_str().into()),
+                    ("from", from.as_str().into()),
+                    ("error", e.to_string().into()),
+                ],
+            );
             self.upgrades.bundled_failed(&id, reason);
             self.changed();
         }

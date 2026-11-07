@@ -248,7 +248,7 @@ impl super::manager::PluginManager {
         if record.relays.is_empty() {
             return Ok(());
         }
-        let mirror = self.registry_mirror_address()?;
+        let mirror = self.registry_mirror_address(&self.owner_languages())?;
         let image = self
             .engine
             .ensure_image(

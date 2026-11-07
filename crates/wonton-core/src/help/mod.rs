@@ -188,6 +188,7 @@ impl Help {
             &self.plugins.official_files(),
             &self.cache,
             current.as_deref().map(|c| c.dir.as_path()),
+            &self.plugins.owner_languages(),
         )
         .await
         {

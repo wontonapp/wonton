@@ -271,7 +271,7 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, St
     dry_run(&package, &langs)
         .map_err(InstallError::from)
         .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
-    if bus.plugins.missing_profile(&package).is_some() {
+    if bus.plugins.missing_profile(&package, &langs).is_some() {
         return Err(format!(
             "{id} 要用主人的邮箱，主人还没填：请主人在 App 的设置里填好再装"
         ));

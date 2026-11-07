@@ -25,17 +25,19 @@ pub(crate) enum ProviderAction {
 }
 
 impl ProviderAction {
-    fn name(self) -> &'static str {
+    fn name(self, langs: &Languages) -> String {
         match self {
-            Self::Save => "保存",
-            Self::Test => "测试",
+            Self::Save => crate::l10n::text(langs, "plugin-settings-model-action-save", &[]),
+            Self::Test => crate::l10n::text(langs, "plugin-settings-model-action-test", &[]),
         }
     }
 
-    fn disconnected(self) -> &'static str {
+    fn disconnected(self, langs: &Languages) -> String {
         match self {
-            Self::Save => "服务商连接失败，key 已保存",
-            Self::Test => "服务商连接失败，什么都没保存",
+            Self::Save => crate::l10n::text(langs, "plugin-settings-model-disconnected-saved", &[]),
+            Self::Test => {
+                crate::l10n::text(langs, "plugin-settings-model-disconnected-unsaved", &[])
+            }
         }
     }
 }
@@ -64,7 +66,7 @@ impl PluginManager {
         &self,
         langs: &Languages,
     ) -> Result<ModelProviders, InstallError> {
-        let route = self.provider_route()?;
+        let route = self.provider_route(langs)?;
         let Some(commands) = route.spec.providers.as_ref() else {
             return Ok(ModelProviders {
                 providers: None,
@@ -74,7 +76,7 @@ impl PluginManager {
                 custom: false,
             });
         };
-        let listed = self.list_providers(&route, commands).await?;
+        let listed = self.list_providers(&route, commands, langs).await?;
         let (index, _) = self.official_index().await;
         let any_configured = !listed.configured.is_empty();
         let configured = configured_providers(&listed);
@@ -93,19 +95,26 @@ impl PluginManager {
         id: &str,
         key: &str,
         action: ProviderAction,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
-        validate_key(key)?;
-        let route = self.provider_route()?;
-        let commands = route
-            .spec
-            .providers
-            .as_ref()
-            .ok_or_else(|| unavailable(format!("模型网关 {} 没有声明服务商命令", route.id)))?;
-        let listed = self.list_providers(&route, commands).await?;
+        validate_key(key, langs)?;
+        let route = self.provider_route(langs)?;
+        let commands = route.spec.providers.as_ref().ok_or_else(|| {
+            unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-model-no-provider-commands",
+                &[("provider", route.id.as_str().into())],
+            ))
+        })?;
+        let listed = self.list_providers(&route, commands, langs).await?;
         // 约定是 configured 的每一项都在 presets 里（脚本的 list 负责补齐，核心不认识
         // magpie"已添加的 vendor 从 presets 表消失"的行为，见 ADR-0015）。
         if !listed.presets.iter().any(|preset| preset.id == id) {
-            return Err(InstallError::Invalid(format!("模型网关不支持服务商 {id}")));
+            return Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-model-provider-unsupported",
+                &[("id", id.into())],
+            )));
         }
         let argv = match action {
             ProviderAction::Save => &commands.save,
@@ -113,7 +122,7 @@ impl PluginManager {
         };
         let argv = replace(argv, ID_PLACEHOLDER, id);
         let stdin = format!("{key}\n");
-        self.run_provider_command(&route, &argv, stdin.as_bytes(), action, false)
+        self.run_provider_command(&route, &argv, stdin.as_bytes(), action, false, langs)
             .await
     }
 
@@ -121,23 +130,35 @@ impl PluginManager {
         &self,
         provider: &CustomModelProvider,
         action: ProviderAction,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
-        validate_custom(provider)?;
-        let route = self.provider_route()?;
+        validate_custom(provider, langs)?;
+        let route = self.provider_route(langs)?;
         let custom = route
             .spec
             .providers
             .as_ref()
             .and_then(|commands| commands.custom.as_ref())
-            .ok_or_else(|| unavailable("模型网关不支持自定义服务商"))?;
+            .ok_or_else(|| {
+                unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-model-custom-unsupported",
+                    &[],
+                ))
+            })?;
         let argv = match action {
             ProviderAction::Save => &custom.save,
             ProviderAction::Test => &custom.test,
         };
-        let mut stdin =
-            serde_json::to_vec(provider).map_err(|_| unavailable("自定义服务商请求编码失败"))?;
+        let mut stdin = serde_json::to_vec(provider).map_err(|_| {
+            unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-model-custom-encode-failed",
+                &[],
+            ))
+        })?;
         stdin.push(b'\n');
-        self.run_provider_command(&route, argv, &stdin, action, true)
+        self.run_provider_command(&route, argv, &stdin, action, true, langs)
             .await
     }
 
@@ -148,6 +169,7 @@ impl PluginManager {
         stdin: &[u8],
         action: ProviderAction,
         custom: bool,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let output = self
             .engine
@@ -158,36 +180,49 @@ impl PluginManager {
                 PROVIDER_COMMAND_TIMEOUT,
             )
             .await
-            .map_err(|_| unavailable(format!("模型网关 {} 命令执行失败或超时", route.id)))?;
-        tracing::info!(
-            action = action.name(),
-            exit_code = output.exit_code,
-            "模型服务商命令结束"
-        );
+            .map_err(|_| {
+                unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-model-command-timeout",
+                    &[("provider", route.id.as_str().into())],
+                ))
+            })?;
+        tracing::info!(action = %action.name(langs), exit_code = output.exit_code, "模型服务商命令结束");
         match output.exit_code {
             0 => Ok(()),
-            2 if custom => Err(InstallError::Invalid("服务商地址或模型名不合法".into())),
-            3 => Err(InstallError::Invalid(
-                "服务商拒绝了 key，key 没有保存".into(),
-            )),
+            2 if custom => Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-model-invalid-endpoint",
+                &[],
+            ))),
+            3 => Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-model-key-rejected",
+                &[],
+            ))),
             4 => Err(InstallError::UpstreamUnavailable(
-                action.disconnected().into(),
+                action.disconnected(langs),
             )),
-            code => Err(unavailable(format!(
-                "模型网关 {} {}服务商失败，退出码 {code}",
-                route.id,
-                action.name()
+            code => Err(unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-model-provider-command-failed",
+                &[
+                    ("provider", route.id.as_str().into()),
+                    ("action", action.name(langs).into()),
+                    ("code", code.to_string().into()),
+                ],
             ))),
         }
     }
 
-    fn provider_route(&self) -> Result<ModelsRoute, InstallError> {
+    fn provider_route(&self, langs: &Languages) -> Result<ModelsRoute, InstallError> {
         match self.models_provider() {
             ProviderState::Ready(route) => Ok(*route),
-            ProviderState::NotReady(id) => Err(unavailable(format!("模型网关 {id} 没在运行"))),
-            ProviderState::Absent => Err(unavailable(
-                "没有装模型网关（声明 provides.models 的系统插件）",
-            )),
+            ProviderState::NotReady(id) => Err(unavailable(super::models::gateway_not_running(
+                langs,
+                id.as_str(),
+            ))),
+            ProviderState::Absent => Err(unavailable(super::models::gateway_absent(langs))),
         }
     }
 
@@ -195,6 +230,7 @@ impl PluginManager {
         &self,
         route: &ModelsRoute,
         commands: &ProviderCommands,
+        langs: &Languages,
     ) -> Result<ProviderList, InstallError> {
         let output = self
             .engine
@@ -205,15 +241,33 @@ impl PluginManager {
                 COMMAND_TIMEOUT,
             )
             .await
-            .map_err(|e| unavailable(format!("模型网关 {} 列出服务商失败：{e}", route.id)))?;
+            .map_err(|e| {
+                unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-model-list-failed",
+                    &[
+                        ("provider", route.id.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
+            })?;
         if output.exit_code != 0 {
-            return Err(unavailable(format!(
-                "模型网关 {} 列出服务商失败，退出码 {}",
-                route.id, output.exit_code
+            return Err(unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-model-list-exit",
+                &[
+                    ("provider", route.id.as_str().into()),
+                    ("code", output.exit_code.to_string().into()),
+                ],
             )));
         }
-        serde_json::from_str(&output.stdout)
-            .map_err(|_| unavailable(format!("模型网关 {} 的服务商列表不是合法 JSON", route.id)))
+        serde_json::from_str(&output.stdout).map_err(|_| {
+            unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-model-list-not-json",
+                &[("provider", route.id.as_str().into())],
+            ))
+        })
     }
 }
 
@@ -221,25 +275,29 @@ fn unavailable(message: impl Into<String>) -> InstallError {
     InstallError::ModelsUnavailable(message.into())
 }
 
-fn validate_key(key: &str) -> Result<(), InstallError> {
+fn validate_key(key: &str, langs: &Languages) -> Result<(), InstallError> {
     if key.is_empty() || key.contains('\n') || key.contains('\r') || key.len() > MAX_KEY_BYTES {
-        return Err(InstallError::Invalid(
-            "key 不能为空、不能有换行，且不能超过 4 KiB".to_owned(),
-        ));
+        return Err(InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-model-key-invalid",
+            &[],
+        )));
     }
     Ok(())
 }
 
-fn validate_custom(provider: &CustomModelProvider) -> Result<(), InstallError> {
-    validate_key(provider.key.expose())?;
+fn validate_custom(provider: &CustomModelProvider, langs: &Languages) -> Result<(), InstallError> {
+    validate_key(provider.key.expose(), langs)?;
     if provider.base_url.len() > 2 << 10
         || provider.base_url.chars().any(char::is_whitespace)
         || !url::Url::parse(&provider.base_url)
             .is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
     {
-        return Err(InstallError::Invalid(
-            "服务商地址必须是 http 或 https URL、不能有空白，且不能超过 2 KiB".into(),
-        ));
+        return Err(InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-model-url-invalid",
+            &[],
+        )));
     }
     if provider.model.is_empty()
         || provider.model.len() > 200
@@ -248,9 +306,11 @@ fn validate_custom(provider: &CustomModelProvider) -> Result<(), InstallError> {
             .chars()
             .any(|ch| ch.is_control() || ch.is_whitespace())
     {
-        return Err(InstallError::Invalid(
-            "模型名不能为空、不能有空白或控制字符，且不能超过 200 字节".into(),
-        ));
+        return Err(InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-model-name-invalid",
+            &[],
+        )));
     }
     Ok(())
 }

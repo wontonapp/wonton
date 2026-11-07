@@ -75,7 +75,9 @@ impl PluginManager {
                     "plugin-install-rb-model-credentials",
                     &[("id", id.to_string().into())],
                 ),
-                self.revoke_models(id).await.map_err(|e| e.to_string()),
+                self.revoke_models(id, langs)
+                    .await
+                    .map_err(|e| e.to_string()),
             );
         }
         if let Some(id) = &undo.source {

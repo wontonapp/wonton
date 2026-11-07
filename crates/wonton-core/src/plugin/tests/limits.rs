@@ -490,7 +490,13 @@ async fn a_failing_container_update_names_the_service_and_keeps_the_record() {
     let rejected = super::message(
         "plugin-install-docker-rejected",
         &[
-            ("context", "更新容器 wonton-app-test--web"),
+            (
+                "context",
+                &super::message(
+                    "plugin-settings-limits-update-container",
+                    &[("name", "wonton-app-test--web")],
+                ),
+            ),
             ("error", "boom"),
         ],
     );

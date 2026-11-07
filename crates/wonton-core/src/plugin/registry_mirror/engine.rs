@@ -1,5 +1,7 @@
 //! 镜像由 Docker 按摘要核对内容；拉完还要核对它登记的 RepoDigests。
 
+use crate::l10n;
+
 use bollard::errors::Error as BollardError;
 use bollard::query_parameters::CreateImageOptionsBuilder;
 use futures_util::StreamExt;
@@ -29,8 +31,11 @@ impl Engine {
                 return Ok(reference.clone());
             }
             if policy == PullPolicy::Never {
-                return Err(EngineError::NotFound(format!(
-                    "镜像 {image}（pull_policy: never）"
+                let langs = self.owner_languages();
+                return Err(EngineError::NotFound(l10n::text(
+                    &langs,
+                    "plugin-settings-mirror-policy-never",
+                    &[("image", image.into())],
                 )));
             }
         }
@@ -45,11 +50,16 @@ impl Engine {
         .await;
         if let Err(error) = pulled {
             return Err(if accelerated.is_some() {
+                let langs = self.owner_languages();
                 EngineError::Pull {
                     image: reference.to_owned(),
-                    message: format!(
-                        "加速地址 {}：{error}；请去设置里测速、换一个加速地址",
-                        mirror.expect("改写引用有加速地址")
+                    message: l10n::text(
+                        &langs,
+                        "plugin-settings-mirror-pull-failed",
+                        &[
+                            ("mirror", mirror.expect("改写引用有加速地址").into()),
+                            ("error", error.to_string().into()),
+                        ],
                     ),
                 }
             } else {
@@ -68,23 +78,32 @@ impl Engine {
             Ok(_) => Ok(true),
             // containerd 只有别的架构变体时 Config/RootFS 为空；补拉本机变体后才能读取健康检查。
             Err(BollardError::JsonDataError { .. }) => Ok(false),
-            Err(error) => match crate::plugin::docker::from_bollard(
-                &self.owner_languages(),
-                "检查镜像",
-                error,
-            ) {
-                EngineError::NotFound(_) => Ok(false),
-                other => Err(other),
-            },
+            Err(error) => {
+                let langs = self.owner_languages();
+                let error = crate::plugin::docker::from_bollard(
+                    &langs,
+                    &crate::l10n::text(&langs, "plugin-settings-mirror-inspect", &[]),
+                    error,
+                );
+                match error {
+                    EngineError::NotFound(_) => Ok(false),
+                    other => Err(other),
+                }
+            }
         }
     }
 
     async fn check_digest(&self, image: &str) -> Result<()> {
         let expected = digest(image).expect("调用方已检查摘要");
+        let langs = self.owner_languages();
         let inspect = self.docker.inspect_image(image).await.map_err(|error| {
             crate::plugin::docker::from_bollard(
-                &self.owner_languages(),
-                &format!("检查镜像 {image}"),
+                &langs,
+                &crate::l10n::text(
+                    &langs,
+                    "plugin-settings-mirror-inspect-image",
+                    &[("image", image.into())],
+                ),
                 error,
             )
         })?;
@@ -98,9 +117,14 @@ impl Engine {
                     .is_some_and(|(_, digest)| digest == expected)
             });
         if !found {
+            let langs = self.owner_languages();
             return Err(EngineError::Pull {
                 image: image.to_owned(),
-                message: format!("本地镜像的 RepoDigests 没有要求的摘要 {expected}，拒绝使用"),
+                message: l10n::text(
+                    &langs,
+                    "plugin-settings-mirror-digest-mismatch",
+                    &[("digest", expected.into())],
+                ),
             });
         }
         Ok(())
@@ -123,11 +147,18 @@ impl Engine {
                         &[("image", image.into()), ("error", message.as_str().into())],
                     ),
                 },
-                other => crate::plugin::docker::from_bollard(
-                    &self.owner_languages(),
-                    &format!("拉取镜像 {image}"),
-                    other,
-                ),
+                other => {
+                    let langs = self.owner_languages();
+                    crate::plugin::docker::from_bollard(
+                        &langs,
+                        &crate::l10n::text(
+                            &langs,
+                            "plugin-settings-mirror-pull-image",
+                            &[("image", image.into())],
+                        ),
+                        other,
+                    )
+                }
             })?;
         }
         Ok(())
@@ -135,7 +166,12 @@ impl Engine {
 
     pub(crate) async fn registry_proxy_configured(&self) -> Result<bool> {
         let info = self.docker.info().await.map_err(|error| {
-            crate::plugin::docker::from_bollard(&self.owner_languages(), "查询 Docker 代理", error)
+            let langs = self.owner_languages();
+            crate::plugin::docker::from_bollard(
+                &langs,
+                &crate::l10n::text(&langs, "plugin-settings-mirror-docker-proxy", &[]),
+                error,
+            )
         })?;
         Ok(info
             .https_proxy

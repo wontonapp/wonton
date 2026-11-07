@@ -25,6 +25,8 @@ use std::net::IpAddr;
 use bollard::models::{ContainerCreateBody, EndpointSettings, PortBinding};
 use serde::{Deserialize, Serialize};
 
+use crate::l10n;
+
 pub use detect::Detector;
 pub(in crate::plugin) use monitor::{Detected, INTERVAL};
 pub use state::Lan;
@@ -91,35 +93,45 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     let lan = match (&manifest.lan, permitted) {
         (None, false) => return Ok(()),
         (None, true) => {
-            return invalid("申请了 network.lan 就必须用 lan.ports 写明开放哪些端口".into());
+            return invalid(l10n::text(langs, "plugin-settings-lan-need-ports", &[]));
         }
-        (Some(_), false) => return invalid("声明了 lan 就必须申请 network.lan 权限".into()),
+        (Some(_), false) => {
+            return invalid(l10n::text(
+                langs,
+                "plugin-settings-lan-need-permission",
+                &[],
+            ));
+        }
         (Some(lan), true) => lan,
     };
     // 地址变了要按记录重新渲染、重建容器（见 `monitor`），而 Bot 的访问令牌核心不保存，重建时拿不到。
     if manifest.permissions.contains(&Permission::MatrixBot) {
-        return invalid(
-            "network.lan 不能和 matrix.bot 一起申请：地址变了要重建容器，核心不保存 Bot 的访问令牌"
-                .into(),
-        );
+        return invalid(l10n::text(langs, "plugin-settings-lan-no-matrix-bot", &[]));
     }
     if lan.ports.is_empty() {
-        return invalid("lan.ports 至少一项".into());
+        return invalid(l10n::text(langs, "plugin-settings-lan-ports-empty", &[]));
     }
     let mcp = manifest.mcp.as_ref().map(|m| (&m.service, m.port));
     let mut seen = BTreeSet::new();
     for port in &lan.ports {
         if port.port == 0 {
-            return invalid("lan.ports 的端口不能为 0".into());
+            return invalid(l10n::text(langs, "plugin-settings-lan-port-zero", &[]));
         }
         if !seen.insert((port.port, port.protocol)) {
-            return invalid(format!("lan.ports 里的 {} 重复了", port.key()));
+            return invalid(l10n::text(
+                langs,
+                "plugin-settings-lan-port-duplicate",
+                &[("port", port.key().into())],
+            ));
         }
         if port.protocol == Protocol::Tcp && mcp == Some((&port.service, port.port)) {
-            return invalid(format!(
-                "mcp 的端口只经核心访问，不能列进 lan.ports（{} 的 {}）",
-                port.service,
-                port.key()
+            return invalid(l10n::text(
+                langs,
+                "plugin-settings-lan-port-mcp",
+                &[
+                    ("service", port.service.as_str().into()),
+                    ("port", port.key().into()),
+                ],
             ));
         }
     }
@@ -144,10 +156,12 @@ pub fn is_private(ip: IpAddr) -> bool {
 pub fn parse_addresses(text: &str) -> Result<Vec<IpAddr>, String> {
     let mut addresses: Vec<IpAddr> = Vec::new();
     for item in text.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        let ip: IpAddr = item.parse().map_err(|_| format!("{item} 不是 IP 地址"))?;
+        let ip: IpAddr = item
+            .parse()
+            .map_err(|_| format!("{item} is not an IP address"))?;
         if !is_private(ip) {
             return Err(format!(
-                "{ip} 不是私有地址：只能用 10/8、172.16/12、192.168/16、100.64/10 和 fc00::/7"
+                "{ip} is not a private address: only 10/8, 172.16/12, 192.168/16, 100.64/10 and fc00::/7 are allowed"
             ));
         }
         if !addresses.contains(&ip) {
@@ -155,7 +169,7 @@ pub fn parse_addresses(text: &str) -> Result<Vec<IpAddr>, String> {
         }
     }
     if addresses.is_empty() {
-        return Err("一个地址都没有".to_owned());
+        return Err("no address given".to_owned());
     }
     Ok(addresses)
 }
@@ -197,7 +211,7 @@ pub fn publish(
         return Err(service_err(
             langs,
             name,
-            "lan.ports 里的服务不能写 network_mode: none",
+            l10n::text(langs, "plugin-settings-lan-network-none", &[]),
         ));
     }
     let bindings: HashMap<String, Option<Vec<PortBinding>>> = ports

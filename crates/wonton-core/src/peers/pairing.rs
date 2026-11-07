@@ -18,7 +18,7 @@ use wonton_tunnel::peer_pair::{
     notify_removed, scan,
 };
 
-use super::{PeerRecord, Peers, Phase, code, now_ms, pick_zh_en};
+use super::{PeerRecord, Peers, Phase, code, now_ms};
 use crate::plugin::PluginId;
 
 /// 确认卡片里的调用方：配对不是插件发起的，用一个固定的伪 ID 占住“同时最多几张卡片”的名额。
@@ -562,11 +562,7 @@ impl Peers {
                     .finish(
                         ticket,
                         ConfirmationState::Succeeded {
-                            message: pick_zh_en(
-                                &langs,
-                                "已连接".to_owned(),
-                                "Connected".to_owned(),
-                            ),
+                            message: crate::l10n::text(&langs, "peers-connected", &[]),
                         },
                     )
                     .await;

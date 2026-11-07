@@ -205,7 +205,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
     ] {
         docker.set_state(name, state);
-        m.probe_egress().await.unwrap();
+        m.probe_egress(&Languages::default()).await.unwrap();
         assert_eq!(
             m.egress_problem().unwrap().reason,
             EgressFailure::ProxyUnreachable
@@ -232,7 +232,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         );
     }
     m.engine.remove_container(name).await.unwrap();
-    m.probe_egress().await.unwrap();
+    m.probe_egress(&Languages::default()).await.unwrap();
     assert_eq!(
         m.egress_problem().unwrap().reason,
         EgressFailure::ProxyUnreachable
@@ -252,6 +252,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         upgraded,
         grants,
         false,
+        &super::langs(),
     )
     .await
     .unwrap();
@@ -322,6 +323,7 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
         upgraded,
         grants,
         false,
+        &super::langs(),
     )
     .await
     .unwrap();

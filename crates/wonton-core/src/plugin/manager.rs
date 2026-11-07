@@ -562,13 +562,13 @@ impl PluginManager {
         lan_webui: bool,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
-        self.check_not_upgrading()?;
+        self.check_not_upgrading(langs)?;
         dry_run(&package, langs)?;
         self.check_icon(&package, langs).await?;
         let manifest = package.manifest.clone();
         check_permissions(&manifest, granted, langs)?;
         self.check_requirements(&manifest, langs).await?;
-        self.check_egress(&manifest).await?;
+        self.check_egress(&manifest, langs).await?;
         let gpu = self.gpu_grant(&manifest, langs).await?;
         // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
         let lan_webui = lan_webui && switched(&package).is_some();
@@ -632,7 +632,7 @@ impl PluginManager {
                 }),
             );
         }
-        self.check_proxy_provider(manifest, &plugins)?;
+        self.check_proxy_provider(manifest, &plugins, langs)?;
         let slug = manifest.id.slug();
         if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
             return Err(InstallError::Conflict(l10n::text(
@@ -658,7 +658,7 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         {
             let plugins = self.plugins.read().expect("插件表锁中毒");
-            self.check_proxy_provider(manifest, &plugins)?;
+            self.check_proxy_provider(manifest, &plugins, langs)?;
         }
         let provides_models = manifest
             .provides
@@ -699,10 +699,10 @@ impl PluginManager {
         purge: bool,
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
-        self.check_not_upgrading()?;
+        self.check_not_upgrading(langs)?;
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider()?.id == *id
+            && self.egress_provider(langs)?.id == *id
         {
             return Err(InstallError::Conflict(l10n::text(
                 langs,
@@ -714,7 +714,7 @@ impl PluginManager {
             let mut plugins = self.plugins.write().expect("插件表锁中毒");
             let entry = plugins
                 .get_mut(id)
-                .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+                .ok_or_else(|| InstallError::not_installed(langs, id))?;
             if let Some(e) = busy(id, &entry.status, langs) {
                 return Err(e);
             }
@@ -772,7 +772,11 @@ pub(super) fn check_permissions(
         .map(ToString::to_string)
         .collect();
     if !missing.is_empty() {
-        return Err(InstallError::PermissionNotGranted(missing));
+        return Err(InstallError::PermissionNotGranted(l10n::text(
+            langs,
+            "plugin-settings-permission-not-granted",
+            &[("permissions", l10n::list(langs, &missing).into())],
+        )));
     }
     if let Some(p) = manifest.permissions.iter().find(|p| !supported(p)) {
         return Err(InstallError::Unsupported(l10n::text(

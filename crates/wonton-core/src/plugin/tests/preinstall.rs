@@ -68,7 +68,7 @@ fn degraded(status: &Option<PluginStatus>) -> bool {
 
 /// 异常，而且已经重试过一次。
 fn retried(status: &Option<PluginStatus>) -> bool {
-    matches!(status, Some(PluginStatus::Degraded { reason }) if reason.contains("已试 2 次"))
+    matches!(status, Some(PluginStatus::Degraded { reason }) if reason.contains("tried 2 time(s)"))
 }
 
 fn exited() -> Value {
@@ -196,8 +196,15 @@ async fn a_preinstall_is_retried_while_the_core_cannot_start_its_image_worker() 
     let Some(PluginStatus::Degraded { reason }) = until(&m, retried).await else {
         unreachable!()
     };
-    assert!(reason.contains("处理图片的进程不可用"), "{reason}");
-    assert!(reason.contains("稍后自动重试"), "{reason}");
+    assert!(
+        reason.contains(&super::message(
+            "plugin-install-img-worker-unavailable",
+            &[("error", "")],
+        )),
+        "{reason}"
+    );
+    assert!(reason.contains("tried 2 time(s)"), "{reason}");
+    assert!(reason.contains("will retry automatically"), "{reason}");
     task.abort();
 }
 

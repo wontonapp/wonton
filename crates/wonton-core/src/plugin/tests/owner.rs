@@ -198,7 +198,7 @@ async fn without_an_email_a_plugin_that_requires_it_does_not_install() {
     assert_eq!(preview.blocked, None, "填了就能装，不算装不了");
     assert_eq!(
         preview.missing_profile.as_deref(),
-        Some(crate::owner::EMAIL_NEEDED)
+        Some(super::message("plugin-settings-email-needed", &[]).as_str())
     );
     let error = m
         .install(&compose, &[Permission::OwnerIdentity], super::langs())
@@ -206,7 +206,9 @@ async fn without_an_email_a_plugin_that_requires_it_does_not_install() {
         .unwrap_err();
     assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
-        error.to_string().contains(crate::owner::NO_EMAIL),
+        error
+            .to_string()
+            .contains(&super::message("plugin-settings-email-missing", &[])),
         "{error}"
     );
 }
@@ -276,12 +278,14 @@ async fn without_an_email_a_proxy_template_that_uses_it_does_not_install() {
         .unwrap();
     assert_eq!(
         preview.missing_profile.as_deref(),
-        Some(crate::owner::EMAIL_NEEDED)
+        Some(super::message("plugin-settings-email-needed", &[]).as_str())
     );
     let error = m.install(&compose, &[], super::langs()).await.unwrap_err();
     assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
-        error.to_string().contains(crate::owner::NO_EMAIL),
+        error
+            .to_string()
+            .contains(&super::message("plugin-settings-email-missing", &[])),
         "{error}"
     );
 }
@@ -306,9 +310,15 @@ async fn a_proxy_template_stops_forwarding_when_the_email_is_removed_later() {
         display_name: "云吞".into(),
         email: Some("me@example.com".into()),
     };
-    assert_eq!(auth.headers(&owner).unwrap()[0].1, "me@example.com");
+    assert_eq!(
+        auth.headers(&owner, &super::langs()).unwrap()[0].1,
+        "me@example.com"
+    );
     owner.email = None;
-    assert!(auth.headers(&owner).is_err(), "不代加一个空值");
+    assert!(
+        auth.headers(&owner, &super::langs()).is_err(),
+        "不代加一个空值"
+    );
 }
 
 /// OIDC 登录用 `email` 声明认人的应用声明 `requires_email`：没填邮箱时预览和安装都报，不用等登录。
@@ -332,12 +342,14 @@ async fn an_oidc_plugin_requiring_email_is_stopped_before_install() {
     assert_eq!(preview.blocked, None, "填了就能装，不算装不了");
     assert_eq!(
         preview.missing_profile.as_deref(),
-        Some(crate::owner::EMAIL_NEEDED)
+        Some(super::message("plugin-settings-email-needed", &[]).as_str())
     );
     let error = m.install(&compose, &[], super::langs()).await.unwrap_err();
     assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
-        error.to_string().contains(crate::owner::NO_EMAIL),
+        error
+            .to_string()
+            .contains(&super::message("plugin-settings-email-missing", &[])),
         "{error}"
     );
 }

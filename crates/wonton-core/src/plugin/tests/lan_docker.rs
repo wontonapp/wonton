@@ -13,6 +13,7 @@ use super::super::compose::PullPolicy;
 use super::super::docker::Engine;
 use super::super::lan::probe::HostNetwork;
 use super::super::lan::{Detector, Lan};
+use super::super::languages::Languages;
 use super::super::{PluginId, PluginManager, PluginStatus};
 use super::manager::manager_in_instance;
 use super::package;
@@ -111,7 +112,7 @@ async fn exercise(
         );
     }
     manager.lan = lan(addresses[1]);
-    manager.lan_pass().await.unwrap();
+    manager.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(manager.list()[0].status, PluginStatus::Running);
     assert_eq!(page(manager).await, addresses[1].to_string());
     for (service, id) in ["init", "web", "lan", "untouched"].into_iter().zip(before) {

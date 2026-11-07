@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use super::languages::Languages;
 use super::manager::{BotReport, InstallError, PluginManager};
 use super::manifest::{LocalizedText, Manifest, Permission, PluginId};
 use super::package::PluginPackage;
@@ -134,7 +135,10 @@ fn display_name(manifest: &Manifest) -> String {
 }
 
 /// `bot.avatar` 指向的插件包里的文件，和按扩展名定的类型。
-fn avatar(package: &PluginPackage) -> Result<Option<Avatar<'_>>, InstallError> {
+fn avatar<'a>(
+    package: &'a PluginPackage,
+    langs: &Languages,
+) -> Result<Option<Avatar<'a>>, InstallError> {
     let Some(raw) = package
         .manifest
         .bot
@@ -144,10 +148,13 @@ fn avatar(package: &PluginPackage) -> Result<Option<Avatar<'_>>, InstallError> {
         return Ok(None);
     };
     let path = package_files::normalize(raw).map_err(InstallError::Invalid)?;
-    let (filename, data) = package
-        .files()
-        .get_key_value(&path)
-        .ok_or_else(|| InstallError::Invalid(format!("bot.avatar 指向的 {path} 不在插件包里")))?;
+    let (filename, data) = package.files().get_key_value(&path).ok_or_else(|| {
+        InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-bot-avatar-missing",
+            &[("path", path.as_str().into())],
+        ))
+    })?;
     let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
     let content_type = match extension.as_deref() {
         Some("png") => "image/png",
@@ -155,8 +162,10 @@ fn avatar(package: &PluginPackage) -> Result<Option<Avatar<'_>>, InstallError> {
         Some("gif") => "image/gif",
         Some("webp") => "image/webp",
         _ => {
-            return Err(InstallError::Invalid(format!(
-                "bot.avatar 只支持 png、jpg、gif、webp：{path}"
+            return Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-bot-avatar-type",
+                &[("path", path.as_str().into())],
             )));
         }
     };
@@ -176,10 +185,13 @@ impl From<MatrixError> for InstallError {
 
 impl PluginManager {
     pub(super) fn matrix(&self) -> Result<&Matrix, InstallError> {
+        let langs = self.owner_languages();
         self.matrix.as_deref().ok_or_else(|| {
-            InstallError::MatrixUnavailable(
-                "核心没有接入 Matrix（WONTON_MATRIX_URL），声明 matrix.bot 的插件装不了".into(),
-            )
+            InstallError::MatrixUnavailable(crate::l10n::text(
+                &langs,
+                "plugin-settings-bot-matrix-unavailable",
+                &[],
+            ))
         })
     }
 
@@ -200,20 +212,27 @@ impl PluginManager {
         let previous = store.load(id)?;
         let taken = store.localparts_except(id)?;
         let localpart = id.as_str().rsplit('.').next().unwrap_or(id.as_str());
+        let langs = self.owner_languages();
         let spec = BotSpec {
             localpart,
             taken: &taken,
             previous: previous.as_ref().map(|r| &r.account),
-            device_name: &format!("Wonton 插件 {id}"),
+            device_name: &crate::l10n::text(
+                &langs,
+                "plugin-settings-bot-device-name",
+                &[("id", id.as_str().into())],
+            ),
             display_name: &display_name(manifest),
-            avatar: avatar(package)?,
+            avatar: avatar(package, &langs)?,
             owner: &self.cfg.owner,
         };
         let bot = matrix.provision_bot(&spec).await.map_err(|e| {
             if e.errcode() == "M_USER_DEACTIVATED" {
                 let user = previous.as_ref().map_or("", |r| r.account.user_id.as_str());
-                InstallError::Conflict(format!(
-                    "Bot 账号 {user} 已停用：选择删除数据卸载这个应用后重装，会分配新账号"
+                InstallError::Conflict(crate::l10n::text(
+                    &langs,
+                    "plugin-settings-bot-account-deactivated",
+                    &[("user", user.into())],
                 ))
             } else {
                 e.into()
@@ -339,15 +358,20 @@ impl PluginManager {
             .as_ref()
             .and_then(|r| Some((&r.account.user_id, r.device_id.as_ref()?)))
         else {
-            return Err(InstallError::Unhealthy(
-                "没有这个应用的 Bot 设备记录：重装应用（可以不删数据）".into(),
-            ));
+            let langs = self.owner_languages();
+            return Err(InstallError::Unhealthy(crate::l10n::text(
+                &langs,
+                "plugin-settings-bot-device-record-missing",
+                &[],
+            )));
         };
         if matrix.devices(user).await?.contains(device) {
             Ok(())
         } else {
-            Err(InstallError::Unhealthy(format!(
-                "Bot {user} 的设备已被吊销，应用拿着的 Matrix 令牌失效了：重装应用（可以不删数据）重新签发"
+            Err(InstallError::Unhealthy(crate::l10n::text(
+                &self.owner_languages(),
+                "plugin-settings-bot-device-revoked",
+                &[("user", user.as_str().into())],
             )))
         }
     }

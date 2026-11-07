@@ -56,11 +56,12 @@ pub async fn discover(
     github: &GitHub,
     official: &Index,
     read: &mut Read,
+    langs: &Languages,
 ) -> Result<(Listing, Option<StoreProblem>), GitHubError> {
     let mut found: Vec<Found> = Vec::new();
     let mut missing = Vec::new();
     for page in 1..=MAX_PAGES {
-        match github.search(QUERY, page).await {
+        match github.search(QUERY, page, langs).await {
             Ok(result) => {
                 let full = result.repos.len() == 100;
                 found.extend(result.repos);
@@ -70,7 +71,14 @@ pub async fn discover(
             }
             Err(e) if page == 1 => return Err(e),
             Err(e) => {
-                missing.push(format!("搜索结果的第 {page} 页（{e}）"));
+                missing.push(crate::l10n::text(
+                    langs,
+                    "plugin-settings-store-community-page-failed",
+                    &[
+                        ("page", page.to_string().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ));
                 break;
             }
         }
@@ -94,7 +102,7 @@ pub async fn discover(
         .map(|(f, cached)| async move {
             let result = match cached {
                 Some(plugin) => Ok(plugin),
-                None => read_repo(github, &f).await,
+                None => read_repo(github, &f, langs).await,
             };
             (f, result)
         })
@@ -123,13 +131,21 @@ pub async fn discover(
     }
     let problem = (!missing.is_empty()).then(|| StoreProblem {
         reason: StoreFailure::Incomplete,
-        details: format!("有的没读到：{}", missing.join("、")),
+        details: crate::l10n::text(
+            langs,
+            "plugin-settings-store-community-partial",
+            &[("missing", crate::l10n::list(langs, &missing).into())],
+        ),
     });
     Ok((listing, problem))
 }
 
 /// 读一个仓库最新正式版本的清单和图标。连不上 GitHub 之类的返回错误，下次再读。
-async fn read_repo(github: &GitHub, found: &Found) -> Result<RepoRead, GitHubError> {
+async fn read_repo(
+    github: &GitHub,
+    found: &Found,
+    langs: &Languages,
+) -> Result<RepoRead, GitHubError> {
     let repo = &found.repo;
     let skip = |why: String| {
         tracing::info!(%repo, reason = %why, "社区插件不列出");
@@ -139,35 +155,50 @@ async fn read_repo(github: &GitHub, found: &Found) -> Result<RepoRead, GitHubErr
         tracing::warn!(%repo, reason = %why, "社区插件读不懂，不列出");
         Ok(RepoRead::Unreadable(why))
     };
-    let tags = match github.tags(repo).await {
+    let tags = match github.tags(repo, langs).await {
         Err(GitHubError::NotFound(why)) => return skip(why),
         other => other?,
     };
     let Some(tag) = latest(tags) else {
-        return skip("没有 v<语义化版本> 的正式版本 tag".to_owned());
+        return skip(crate::l10n::text(
+            langs,
+            "plugin-settings-github-no-release-tag",
+            &[],
+        ));
     };
     let compose = match github
-        .file(repo, &tag.commit, COMPOSE_FILE, MAX_FILE_BYTES)
+        .file(repo, &tag.commit, COMPOSE_FILE, MAX_FILE_BYTES, langs)
         .await
     {
         Err(e @ (GitHubError::NotFound(_) | GitHubError::TooBig(_))) => return skip(e.to_string()),
         other => other?,
     };
     let Ok(compose) = String::from_utf8(compose) else {
-        return unreadable(format!("{COMPOSE_FILE} 不是 UTF-8 文本"));
+        return unreadable(crate::l10n::text(
+            langs,
+            "plugin-settings-upgrade-compose-not-utf8",
+            &[("file", COMPOSE_FILE.into())],
+        ));
     };
-    let manifest = match PluginPackage::manifest_of(&compose, &Languages::default()) {
+    let manifest = match PluginPackage::manifest_of(&compose, langs) {
         Ok(manifest) => manifest,
-        Err(e) => return unreadable(format!("清单读不懂：{e}")),
+        Err(e) => return unreadable(format!("{e}")),
     };
     if tag.name.strip_prefix('v') != Some(manifest.version.as_str()) {
-        return skip(format!(
-            "tag {} 和清单的版本 {} 不一致",
-            tag.name, manifest.version
+        return skip(crate::l10n::text(
+            langs,
+            "plugin-settings-github-tag-version-short",
+            &[
+                ("tag", tag.name.as_str().into()),
+                ("version", manifest.version.as_str().into()),
+            ],
         ));
     }
     let icon = match manifest.icon.as_deref().map(normalize) {
-        Some(Ok(path)) => match github.file(repo, &tag.commit, &path, MAX_FILE_BYTES).await {
+        Some(Ok(path)) => match github
+            .file(repo, &tag.commit, &path, MAX_FILE_BYTES, langs)
+            .await
+        {
             Ok(data) => IconSource::from_file(&path, data),
             Err(e @ (GitHubError::NotFound(_) | GitHubError::TooBig(_))) => {
                 tracing::info!(%repo, error = %e, "社区插件的图标取不到，列出时没有图标");

@@ -7,6 +7,7 @@
 use super::provider::provides_proxy;
 use wonton_protocol::EgressRestart;
 
+use crate::l10n;
 use crate::plugin::bots::is_bot;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
@@ -17,8 +18,6 @@ use crate::plugin::vars::MatrixVars;
 
 /// 找哪里引用了令牌时代替它。令牌不会长这样，插件也不会写出这串字。
 const PLACEHOLDER: &str = "wonton-matrix-token-to-read-back";
-
-const REINSTALL: &str = "重装插件（可以不删数据）后会签发新设备，Bot 要重新建加密身份";
 
 /// 容器的一个环境变量里引用了令牌，令牌前后是这些字。
 #[derive(Debug, PartialEq, Eq)]
@@ -44,7 +43,7 @@ impl TokenUse {
 }
 
 /// 用占位值渲染出来的部署计划里，哪些环境变量引用了令牌。写在 `command`、`configs` 这些地方的读不回来。
-fn token_uses(plan: &Deployment) -> Result<Vec<TokenUse>, String> {
+fn token_uses(plan: &Deployment, langs: &Languages) -> Result<Vec<TokenUse>, String> {
     let mut uses = Vec::new();
     for container in &plan.containers {
         let service = &container.service;
@@ -56,8 +55,10 @@ fn token_uses(plan: &Deployment) -> Result<Vec<TokenUse>, String> {
         let env = rest.env.take().unwrap_or_default();
         let elsewhere = serde_json::to_string(&rest).map_err(|e| e.to_string())?;
         if in_files || elsewhere.contains(PLACEHOLDER) {
-            return Err(format!(
-                "服务 {service} 把 Matrix 令牌写在 command 或 configs 里，读不回来"
+            return Err(l10n::text(
+                langs,
+                "plugin-settings-egress-token-unreadable",
+                &[("service", service.as_str().into())],
             ));
         }
         for line in &env {
@@ -136,7 +137,8 @@ impl PluginManager {
         if !self.begin_rebuild(id) {
             return;
         }
-        let result = self.rebuild_for_egress(id).await;
+        let langs = self.owner_languages();
+        let result = self.rebuild_for_egress(id, &langs).await;
         self.lan.end(id);
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id)
@@ -148,7 +150,11 @@ impl PluginManager {
                     Entry::running(listed, deployed)
                 }
                 Err(e) => {
-                    let reason = format!("按新的代理设置重建失败：{e}");
+                    let reason = crate::l10n::text(
+                        &langs,
+                        "plugin-settings-egress-rebuild-failed",
+                        &[("error", e.to_string().into())],
+                    );
                     tracing::warn!(plugin = %id, %reason, "插件异常");
                     Entry::new(listed, PluginStatus::Degraded { reason }, None)
                 }
@@ -158,20 +164,22 @@ impl PluginManager {
         self.changed();
     }
 
-    async fn rebuild_for_egress(&self, id: &PluginId) -> Result<Deployed, InstallError> {
+    async fn rebuild_for_egress(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<Deployed, InstallError> {
         let mut record = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(
             &record.source,
             record.files.clone(),
             &self.owner_languages(),
         )?;
         package.origin = record.origin.clone();
-        let lan = self
-            .lan_grant(&package, record.lan_webui, &self.owner_languages())
-            .await?;
+        let lan = self.lan_grant(&package, record.lan_webui, langs).await?;
         // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动。
         let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
             Some((pending, reservation)) => (Some(pending), Some(reservation)),
@@ -180,7 +188,7 @@ impl PluginManager {
         let mut ctx = self
             .rebuild_context(&package, &record, lan, pending.as_ref())
             .await?;
-        ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
+        ctx.matrix = self.bot_vars_read_back(&package, &ctx, langs).await?;
         let plan = render(&package, &ctx, &self.owner_languages())?;
         if let (Some(pending), Some(reservation)) = (&pending, reservation) {
             self.apply_migration(
@@ -188,6 +196,7 @@ impl PluginManager {
                 pending,
                 reservation,
                 ctx.egress.is_some(),
+                &self.owner_languages(),
             )
             .await?;
         }
@@ -202,26 +211,30 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         ctx: &InstallContext,
+        langs: &Languages,
     ) -> Result<Option<MatrixVars>, InstallError> {
         let manifest = &package.manifest;
         if !is_bot(manifest) {
             return Ok(None);
         }
-        let mut vars = self.bot_vars(manifest)?;
+        let mut vars = self.bot_vars(manifest, langs)?;
         let mut probing = ctx.clone();
         probing.matrix = Some(vars.clone());
-        let plan = render(package, &probing, &self.owner_languages())?;
-        let uses = token_uses(&plan).map_err(cannot_read)?;
-        vars.access_token = self.read_token(&uses).await?;
+        let plan = render(package, &probing, langs)?;
+        let uses = token_uses(&plan, langs).map_err(|reason| cannot_read(langs, reason))?;
+        vars.access_token = self.read_token(&uses, langs).await?;
         Ok(Some(vars))
     }
 
-    fn bot_vars(&self, manifest: &Manifest) -> Result<MatrixVars, InstallError> {
+    fn bot_vars(&self, manifest: &Manifest, langs: &Languages) -> Result<MatrixVars, InstallError> {
         let matrix = self.matrix()?;
         let record = self.store.bots().load(&manifest.id)?;
-        let account = record
-            .map(|record| record.account)
-            .ok_or_else(|| cannot_read("没有这个插件的 Bot 记录".to_owned()))?;
+        let account = record.map(|record| record.account).ok_or_else(|| {
+            cannot_read(
+                langs,
+                l10n::text(langs, "plugin-settings-egress-bot-record-missing", &[]),
+            )
+        })?;
         Ok(self.matrix_vars(&crate::matrix::ProvisionedBot {
             device_id: String::new(),
             access_token: PLACEHOLDER.to_owned(),
@@ -231,19 +244,45 @@ impl PluginManager {
     }
 
     /// 所有引用令牌的变量都读到、而且一样才算数。没有服务引用它时不用读。
-    async fn read_token(&self, uses: &[TokenUse]) -> Result<String, InstallError> {
+    async fn read_token(
+        &self,
+        uses: &[TokenUse],
+        langs: &Languages,
+    ) -> Result<String, InstallError> {
         let mut token: Option<String> = None;
         for found in uses {
             let info = self.engine.inspect_container(&found.container).await?;
             let name = &found.container;
-            let info = info.ok_or_else(|| cannot_read(format!("旧容器 {name} 不在了")))?;
+            let info = info.ok_or_else(|| {
+                cannot_read(
+                    langs,
+                    l10n::text(
+                        langs,
+                        "plugin-settings-egress-old-container-gone",
+                        &[("container", name.as_str().into())],
+                    ),
+                )
+            })?;
             let env = info.config.and_then(|c| c.env).unwrap_or_default();
             let variable = &found.variable;
             let value = found.read(&env).ok_or_else(|| {
-                cannot_read(format!("旧容器 {name} 的环境变量 {variable} 里没有令牌"))
+                cannot_read(
+                    langs,
+                    l10n::text(
+                        langs,
+                        "plugin-settings-egress-token-not-in-env",
+                        &[
+                            ("container", name.as_str().into()),
+                            ("variable", variable.as_str().into()),
+                        ],
+                    ),
+                )
             })?;
             if token.as_ref().is_some_and(|t| *t != value) {
-                return Err(cannot_read("旧容器里的令牌不一致".to_owned()));
+                return Err(cannot_read(
+                    langs,
+                    l10n::text(langs, "plugin-settings-egress-token-mismatch", &[]),
+                ));
             }
             token = Some(value);
         }
@@ -258,8 +297,18 @@ fn goes_out(entry: &Entry) -> bool {
     })
 }
 
-pub(in crate::plugin) fn cannot_read(reason: String) -> InstallError {
-    InstallError::Unhealthy(format!("Bot 的令牌读不回来：{reason}。{REINSTALL}"))
+pub(in crate::plugin) fn cannot_read(langs: &Languages, reason: String) -> InstallError {
+    InstallError::Unhealthy(l10n::text(
+        langs,
+        "plugin-settings-egress-token-read-back",
+        &[
+            ("reason", reason.into()),
+            (
+                "reinstall",
+                l10n::text(langs, "plugin-settings-egress-token-reinstall", &[]).into(),
+            ),
+        ],
+    ))
 }
 
 #[cfg(test)]

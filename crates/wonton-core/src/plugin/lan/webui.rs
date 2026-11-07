@@ -11,6 +11,7 @@ use std::sync::Arc;
 use wonton_protocol::{LanPort, LanProtocol, LanWebuiOffer, PluginDetail};
 
 use super::{LanPortSpec, Protocol};
+use crate::l10n;
 use crate::plugin::core_address;
 use crate::plugin::languages::Languages;
 use crate::plugin::listed::Listed;
@@ -19,24 +20,37 @@ use crate::plugin::manifest::{Manifest, PluginId, Sso};
 use crate::plugin::package::PluginPackage;
 use crate::plugin::proxy_auth;
 
-const IMPERSONATE: &str =
-    "局域网里的设备，以及这台主机上能出网的插件，不用密码就能以你的身份打开它";
-const REGISTER: &str = "管理员注册之前，局域网里的设备和这台主机上能出网的插件可能抢先注册";
-const CLIENT: &str =
-    "局域网里的设备拿到账号和密码就能连上它。在它自己的网页里改了密码，这里不会跟着变";
-
 /// 要开关打开才开的局域网端口。
+/// 网页的局域网端口的风险：决定 [`Switched::offer`] 里给 App 的说明用哪条。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Risk {
+    Impersonate,
+    Register,
+    Client,
+}
+
+impl Risk {
+    fn text(self, langs: &Languages) -> String {
+        let id = match self {
+            Risk::Impersonate => "plugin-settings-lan-webui-risk-impersonate",
+            Risk::Register => "plugin-settings-lan-webui-risk-register",
+            Risk::Client => "plugin-settings-lan-webui-risk-client",
+        };
+        l10n::text(langs, id, &[])
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Switched {
     pub ports: Vec<LanPortSpec>,
-    risk: &'static str,
+    risk: Risk,
 }
 
 impl Switched {
-    pub fn offer(&self, enabled: bool) -> LanWebuiOffer {
+    pub fn offer(&self, enabled: bool, langs: &Languages) -> LanWebuiOffer {
         LanWebuiOffer {
             ports: self.ports.iter().map(lan_port).collect(),
-            risk: self.risk.to_owned(),
+            risk: self.risk.text(langs),
             enabled,
             client: None,
             client_problem: None,
@@ -74,19 +88,19 @@ pub fn switched(package: &PluginPackage) -> Option<Switched> {
     if let Some(lan) = m.lan.as_ref().filter(|lan| lan.client.is_some()) {
         return Some(Switched {
             ports: lan.ports.clone(),
-            risk: CLIENT,
+            risk: Risk::Client,
         });
     }
     let webui = m.webui.as_ref()?;
     let ports = m.lan.iter().flat_map(|lan| &lan.ports);
     let (ports, risk): (Vec<LanPortSpec>, _) = if impersonable(package) {
         let ports = ports.filter(|p| p.service == webui.service);
-        (ports.cloned().collect(), IMPERSONATE)
+        (ports.cloned().collect(), Risk::Impersonate)
     } else if webui.sso == Sso::None {
         let ports = ports.filter(|p| {
             p.service == webui.service && p.port == webui.port && p.protocol == Protocol::Tcp
         });
-        (ports.cloned().collect(), REGISTER)
+        (ports.cloned().collect(), Risk::Register)
     } else {
         return None;
     };
@@ -121,17 +135,22 @@ impl PluginManager {
     ) -> Result<PluginDetail, InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.switch_lan_webui(&id, enabled).await?;
+            this.switch_lan_webui(&id, enabled, &langs).await?;
             this.judged_detail(&id, &langs)
                 .await
-                .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
+                .ok_or_else(|| InstallError::not_installed(&langs, &id))
         })
         .await
     }
 
-    async fn switch_lan_webui(&self, id: &PluginId, enabled: bool) -> Result<(), InstallError> {
+    async fn switch_lan_webui(
+        &self,
+        id: &PluginId,
+        enabled: bool,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         let _pass = self.lan.pass.lock().await;
-        self.change_lan_webui(id, enabled).await
+        self.change_lan_webui(id, enabled, langs).await
     }
 
     /// 调用方拿着 `lan.pass`。
@@ -139,27 +158,32 @@ impl PluginManager {
         &self,
         id: &PluginId,
         enabled: bool,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(id).and_then(|entry| entry.listed.clone())
         };
-        let listed = listed.ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        let listed = listed.ok_or_else(|| InstallError::not_installed(langs, id))?;
         if listed.lan_switched.is_none() {
-            return Err(InstallError::Invalid(format!(
-                "插件 {id} 没有开关 lan_webui：它的局域网端口不用开关"
+            return Err(InstallError::Invalid(l10n::text(
+                langs,
+                "plugin-settings-lan-webui-no-switch",
+                &[("id", id.to_string().into())],
             )));
         }
         if listed.lan_webui == enabled && !self.lan.is_degraded(id) {
             return Ok(());
         }
-        let addresses = self.addresses_for(&listed, enabled).await?;
+        let addresses = self.addresses_for(&listed, enabled, langs).await?;
         if !self.begin_rebuild(id) {
-            return Err(InstallError::Conflict(format!(
-                "插件 {id} 正在安装、卸载或重建，等那边做完"
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-settings-lan-webui-busy",
+                &[("id", id.to_string().into())],
             )));
         }
-        let result = self.apply_lan_webui(id, enabled, &addresses).await;
+        let result = self.apply_lan_webui(id, enabled, &addresses, langs).await;
         let outcome = match result {
             Ok(deployed) => {
                 tracing::info!(plugin = %id, enabled, "主人改了网页的局域网端口开关");
@@ -169,14 +193,31 @@ impl PluginManager {
             // 主人要关的端口不能开回去：别的服务不健康、Docker 出错时保持关，标为异常，定期检测接着关。
             Err(e) if !enabled => {
                 self.set_listed_lan_webui(id, false);
-                self.lan_failed(id, format!("关网页的局域网端口时失败：{e}"));
+                self.lan_failed(
+                    id,
+                    l10n::text(
+                        langs,
+                        "plugin-settings-lan-webui-close-failed",
+                        &[("error", e.to_string().into())],
+                    ),
+                );
                 Err(e)
             }
             Err(e) => {
                 // 比如端口被宿主的服务占着：退回原来的样子，开关不算改成。
-                match self.apply_lan_webui(id, listed.lan_webui, &addresses).await {
+                match self
+                    .apply_lan_webui(id, listed.lan_webui, &addresses, langs)
+                    .await
+                {
                     Ok(deployed) => self.lan_webui_applied(id, listed.lan_webui, deployed),
-                    Err(back) => self.lan_failed(id, format!("改开关失败后退回也失败：{back}")),
+                    Err(back) => self.lan_failed(
+                        id,
+                        l10n::text(
+                            langs,
+                            "plugin-settings-lan-webui-rollback-failed",
+                            &[("error", back.to_string().into())],
+                        ),
+                    ),
                 }
                 Err(e)
             }
@@ -190,16 +231,17 @@ impl PluginManager {
         &self,
         listed: &Listed,
         enabled: bool,
+        langs: &Languages,
     ) -> Result<Vec<IpAddr>, InstallError> {
         let open = listed.open_ports(enabled);
         if open.is_empty() {
             return Ok(Vec::new());
         }
-        if let Some(conflict) = self.lan_conflict(&listed.manifest, &open) {
+        if let Some(conflict) = self.lan_conflict(&listed.manifest, &open, langs) {
             return Err(InstallError::Conflict(conflict));
         }
-        let detected = self.detect_lan().await?;
-        let bound = detected.result.map_err(|p| self.unavailable(p))?;
+        let detected = self.detect_lan(langs).await?;
+        let bound = detected.result.map_err(|p| self.unavailable(p, langs))?;
         Ok(bound.iter().map(|b| b.ip).collect())
     }
 
@@ -209,18 +251,15 @@ impl PluginManager {
         id: &PluginId,
         enabled: bool,
         addresses: &[IpAddr],
+        langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let mut record = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
         record.lan_webui = enabled;
         self.store.save(&record)?;
-        let mut package = PluginPackage::with_files(
-            &record.source,
-            record.files.clone(),
-            &self.owner_languages(),
-        )?;
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         self.rebuild_lan(&package, &record, addresses).await?;
         self.reconcile_running(&package, &record).await

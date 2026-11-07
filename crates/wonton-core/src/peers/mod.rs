@@ -174,14 +174,6 @@ pub(crate) fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
-/// 核心给 App 的简短说明按 App 的语言写（ADR-0043）：中英两句现成的，挑主人语言的那句。
-pub(crate) fn pick_zh_en(langs: &Languages, zh: String, en: String) -> String {
-    langs.pick_owned(&crate::plugin::manifest::LocalizedText::from([
-        ("zh".to_owned(), zh),
-        ("en".to_owned(), en),
-    ]))
-}
-
 impl Peers {
     /// 读取记录；文件不在时从空表开始。重启后还在等我们回答的记录一并删掉：卡片没有留下来，回答永远不会来。
     pub fn open(
@@ -464,12 +456,12 @@ impl Peers {
     fn detail(&self, record: &PeerRecord, langs: &Languages) -> String {
         let id = record.endpoint_id.to_string()[..8].to_owned();
         match self.last_error(&record.server_name) {
-            Some(error) => pick_zh_en(
+            Some(error) => crate::l10n::text(
                 langs,
-                format!("endpoint {id}，上次错误：{error}"),
-                format!("endpoint {id}, last error: {error}"),
+                "peers-endpoint-detail",
+                &[("id", id.into()), ("error", error.into())],
             ),
-            None => pick_zh_en(langs, format!("endpoint {id}"), format!("endpoint {id}")),
+            None => crate::l10n::text(langs, "peers-endpoint", &[("id", id.into())]),
         }
     }
 
@@ -489,26 +481,20 @@ impl Peers {
         pending_expires_at_ms: u64,
     ) -> ConfirmationCard {
         let langs = (self.languages)();
-        let title = pick_zh_en(
+        let title = crate::l10n::text(
             &langs,
-            format!(
-                "{} 的服务器想和你的服务器连接",
-                requester.owner_display_name
-            ),
-            format!(
-                "{}'s server wants to connect to yours",
-                requester.owner_display_name
-            ),
+            "peers-request-title",
+            &[("owner", requester.owner_display_name.as_str().into())],
         );
         ConfirmationCard {
             id: crate::secret::random_token(),
             state: ConfirmationState::Pending,
             title,
             lines: vec![CardLine {
-                text: pick_zh_en(
+                text: crate::l10n::text(
                     &langs,
-                    format!("对方服务器：{}", requester.server_name),
-                    format!("Their server: {}", requester.server_name),
+                    "peers-request-server",
+                    &[("server", requester.server_name.as_str().into())],
                 ),
                 emphasis: false,
             }],
@@ -529,12 +515,12 @@ fn approve_reject(langs: &Languages) -> Vec<CardChoice> {
     vec![
         CardChoice {
             answer: Answer::Approve,
-            label: pick_zh_en(langs, "连接".to_owned(), "Connect".to_owned()),
+            label: crate::l10n::text(langs, "peers-connect", &[]),
             choice_id: None,
         },
         CardChoice {
             answer: Answer::Reject,
-            label: pick_zh_en(langs, "拒绝".to_owned(), "Reject".to_owned()),
+            label: crate::l10n::text(langs, "peers-reject", &[]),
             choice_id: None,
         },
     ]

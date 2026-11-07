@@ -35,8 +35,8 @@ impl PluginManager {
     }
 
     async fn start(&self, id: &PluginId) -> Result<PluginView, InstallError> {
-        self.check_not_upgrading()?;
         let langs = self.owner_languages();
+        self.check_not_upgrading(&langs)?;
         let before = self.begin_start(id, &langs)?;
         let result = self.start_existing(id, &before, &langs).await;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
@@ -77,7 +77,7 @@ impl PluginManager {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins
             .get_mut(id)
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
         if let Some(error) = busy(id, &entry.status, langs) {
             return Err(error);
         }
@@ -120,7 +120,7 @@ impl PluginManager {
         let record = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         match self.check_containers(&package, langs).await?.ready(langs)? {
@@ -146,6 +146,7 @@ impl PluginManager {
                 upstream,
                 &webui.path,
                 Instant::now() + self.cfg.install_timeout,
+                langs,
             )
             .await?;
         }
@@ -222,12 +223,12 @@ impl PluginManager {
                     (self.cfg.instance.container(&slug, dependency), condition)
                 })
                 .collect();
-            health::wait_for_all(&self.engine, &deps, deadline).await?;
+            health::wait_for_all(&self.engine, &deps, deadline, langs).await?;
             let name = self.cfg.instance.container(&slug, service);
             self.engine.start_container(&name).await?;
         }
         for name in &names {
-            health::wait_for(&self.engine, name, Target::Ready, deadline).await?;
+            health::wait_for(&self.engine, name, Target::Ready, deadline, langs).await?;
         }
         self.ensure_relays(&package.manifest, record).await?;
         Ok(())

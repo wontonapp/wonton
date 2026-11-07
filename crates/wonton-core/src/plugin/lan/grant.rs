@@ -36,15 +36,22 @@ pub struct LanPreview {
 }
 
 /// 地址和所在的网卡，如 `eno1 的 192.168.0.193、fd00::10`。
-pub(super) fn describe(bound: &[Bound]) -> String {
+pub(super) fn describe(bound: &[Bound], langs: &Languages) -> String {
     let each: Vec<String> = bound
         .iter()
         .map(|b| match &b.interface {
-            Some(interface) => format!("{interface} 的 {}", b.ip),
+            Some(interface) => l10n::text(
+                langs,
+                "plugin-settings-lan-bound",
+                &[
+                    ("interface", interface.as_str().into()),
+                    ("ip", b.ip.to_string().into()),
+                ],
+            ),
             None => b.ip.to_string(),
         })
         .collect();
-    each.join("、")
+    l10n::list(langs, &each)
 }
 
 fn emphasized(text: String) -> CardLine {
@@ -71,14 +78,14 @@ impl PluginManager {
         if ports.is_empty() {
             return Ok(Some(self.lan_grant_on(package, lan_webui, Vec::new())));
         }
-        if let Some(conflict) = self.lan_conflict(manifest, &ports) {
+        if let Some(conflict) = self.lan_conflict(manifest, &ports, langs) {
             return Err(InstallError::Conflict(conflict));
         }
         let bound = self
-            .detect_lan()
+            .detect_lan(langs)
             .await?
             .result
-            .map_err(|p| self.unavailable(p))?;
+            .map_err(|p| self.unavailable(p, langs))?;
         let addresses: Vec<IpAddr> = bound.iter().map(|b| b.ip).collect();
         // 启动容器那一步 Docker 也会拒绝，但在拉了镜像、建了网络之后；这里先查，装之前就知道。
         let published = self.engine.published_ports().await?;
@@ -90,12 +97,15 @@ impl PluginManager {
     }
 
     /// 装不了的原因。改选网卡能解决的，提示去局域网设置；检测失败或地址由环境变量指定时改选没用，不提示。
-    pub(super) fn unavailable(&self, problem: Problem) -> InstallError {
+    pub(super) fn unavailable(&self, problem: Problem, langs: &Languages) -> InstallError {
         let error = InstallError::LanUnavailable(problem.message);
         if problem.reason == LanFailure::DetectionFailed || self.lan.fixed.is_some() {
             return error;
         }
-        error.with_note("可以在局域网设置里改选网卡或地址")
+        error.with_note(
+            langs,
+            &l10n::text(langs, "plugin-settings-lan-note-reselect", &[]),
+        )
     }
 
     /// 端口开在 `addresses` 上。插件网络不能出网时另用一个网络发布：Docker 不在内部网络上发布端口，也不报错。
@@ -128,28 +138,49 @@ impl PluginManager {
         if ports.is_empty() {
             return Ok(LanPreview::default());
         }
-        let result = self.detect_lan().await?.result;
-        let place = result.as_ref().ok().map(|bound| describe(bound));
+        let result = self.detect_lan(langs).await?.result;
+        let place = result.as_ref().ok().map(|bound| describe(bound, langs));
         let mut notices: Vec<CardLine> = ports
             .iter()
             .map(|p| {
-                let port = format!("局域网端口：{} 的 {}", p.service, p.key());
+                let line = |id: &str| {
+                    l10n::text(
+                        langs,
+                        id,
+                        &[
+                            ("service", p.service.as_str().into()),
+                            ("key", p.key().into()),
+                        ],
+                    )
+                };
                 emphasized(match &place {
-                    Some(place) => format!("{port}，开在 {place} 上"),
-                    None => port,
+                    Some(place) => l10n::text(
+                        langs,
+                        "plugin-settings-lan-port-line",
+                        &[
+                            ("service", p.service.as_str().into()),
+                            ("key", p.key().into()),
+                            ("place", place.as_str().into()),
+                        ],
+                    ),
+                    None => line("plugin-settings-lan-port-line-plain"),
                 })
             })
             .collect();
-        notices.push(emphasized(
-            "局域网里的设备直接连这些端口，不经核心登录，身份由插件自己验证".to_owned(),
-        ));
+        notices.push(emphasized(l10n::text(
+            langs,
+            "plugin-settings-lan-direct-notice",
+            &[],
+        )));
         let Some(bound) = result.as_ref().ok() else {
-            let blocked = self.lan_conflict(&package.manifest, &ports).or_else(|| {
-                result
-                    .as_ref()
-                    .err()
-                    .map(|problem| self.unavailable(problem.clone()).to_string())
-            });
+            let blocked = self
+                .lan_conflict(&package.manifest, &ports, langs)
+                .or_else(|| {
+                    result
+                        .as_ref()
+                        .err()
+                        .map(|problem| self.unavailable(problem.clone(), langs).to_string())
+                });
             return Ok(LanPreview { notices, blocked });
         };
         let addresses: Vec<IpAddr> = bound.iter().map(|b| b.ip).collect();
@@ -162,7 +193,7 @@ impl PluginManager {
             &ports,
         );
         let blocked = self
-            .lan_conflict(&package.manifest, &ports)
+            .lan_conflict(&package.manifest, &ports, langs)
             .or_else(|| taken.first().map(|taken| taken.describe(langs, false)));
         if blocked.is_none() {
             let targets = targets(&addresses, &ports);
@@ -198,6 +229,7 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
         ports: &[LanPortSpec],
+        langs: &Languages,
     ) -> Option<String> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
@@ -211,7 +243,11 @@ impl PluginManager {
                         .iter()
                         .any(|o| o.port == p.port && o.protocol == p.protocol)
                 })?;
-                Some(format!("局域网端口 {} 已被插件 {id} 占用", taken.key()))
+                Some(l10n::text(
+                    langs,
+                    "plugin-settings-lan-conflict-taken",
+                    &[("key", taken.key().into()), ("id", id.to_string().into())],
+                ))
             })
     }
 }

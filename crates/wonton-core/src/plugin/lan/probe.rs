@@ -84,7 +84,7 @@ pub fn command(args: &[String]) -> ExitCode {
                 ExitCode::SUCCESS
             }
             Err(e) => {
-                eprintln!("输出检测结果失败：{e}");
+                eprintln!("cannot print the detection result: {e}");
                 ExitCode::FAILURE
             }
         },
@@ -154,7 +154,7 @@ pub fn listen(targets: &[(IpAddr, u16)]) -> Vec<(IpAddr, u16)> {
 pub fn probe(root: &Path) -> Result<HostNetwork, String> {
     let route = root.join("proc/net/route");
     let text =
-        fs::read_to_string(&route).map_err(|e| format!("读 {} 失败：{e}", route.display()))?;
+        fs::read_to_string(&route).map_err(|e| format!("cannot read {}: {e}", route.display()))?;
     assemble(&text, &root.join("sys/class/net"), addresses()?)
 }
 
@@ -201,10 +201,10 @@ pub fn default_routes(text: &str) -> Vec<DefaultRoute> {
 
 /// `/sys/class/net` 下的网卡和它们的序号，按名字排序。
 fn interfaces(dir: &Path) -> Result<Vec<(u32, HostInterface)>, String> {
-    let entries = fs::read_dir(dir).map_err(|e| format!("读 {} 失败：{e}", dir.display()))?;
+    let entries = fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
     let mut found = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|e| format!("读 {} 失败：{e}", dir.display()))?;
+        let entry = entry.map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
         let path = entry.path();
         // bonding_masters 这类文件不是网卡。
         if !path.is_dir() {
@@ -248,12 +248,12 @@ fn addresses() -> Result<Vec<(u32, HostAddress)>, String> {
     use netlink_sys::protocols::NETLINK_ROUTE;
     use netlink_sys::{Socket, SocketAddr};
 
-    let failed = |what: &str, e: &dyn std::fmt::Display| format!("经 netlink {what}失败：{e}");
-    let mut socket = Socket::new(NETLINK_ROUTE).map_err(|e| failed("打开套接字", &e))?;
-    socket.bind_auto().map_err(|e| failed("绑定", &e))?;
+    let failed = |what: &str, e: &dyn std::fmt::Display| format!("netlink {what} failed: {e}");
+    let mut socket = Socket::new(NETLINK_ROUTE).map_err(|e| failed("open socket", &e))?;
+    socket.bind_auto().map_err(|e| failed("bind", &e))?;
     socket
         .connect(&SocketAddr::new(0, 0))
-        .map_err(|e| failed("连接内核", &e))?;
+        .map_err(|e| failed("connect to the kernel", &e))?;
     let mut header = NetlinkHeader::default();
     header.flags = NLM_F_REQUEST | NLM_F_DUMP;
     let payload = RouteNetlinkMessage::GetAddress(AddressMessage::default());
@@ -261,22 +261,26 @@ fn addresses() -> Result<Vec<(u32, HostAddress)>, String> {
     request.finalize();
     let mut buf = vec![0; request.buffer_len()];
     request.serialize(&mut buf);
-    socket.send(&buf, 0).map_err(|e| failed("请求地址", &e))?;
+    socket
+        .send(&buf, 0)
+        .map_err(|e| failed("request addresses", &e))?;
 
     let mut found = Vec::new();
     let mut received = vec![0; 1 << 16];
     loop {
         let size = socket
             .recv(&mut &mut received[..], 0)
-            .map_err(|e| failed("读地址", &e))?;
+            .map_err(|e| failed("read addresses", &e))?;
         let mut offset = 0;
         while offset < size {
             let message =
                 NetlinkMessage::<RouteNetlinkMessage>::deserialize(&received[offset..size])
-                    .map_err(|e| failed("解析地址", &e))?;
+                    .map_err(|e| failed("parse an address message", &e))?;
             match message.payload {
                 NetlinkPayload::Done(_) => return Ok(found),
-                NetlinkPayload::Error(e) => return Err(failed("列地址", &format!("{e:?}"))),
+                NetlinkPayload::Error(e) => {
+                    return Err(failed("list addresses", &format!("{e:?}")));
+                }
                 NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(address)) => {
                     found.extend(host_address(&address));
                 }
@@ -320,7 +324,7 @@ fn host_address(
 /// 宿主服务端只支持 Linux（ADR-0002）；在别的系统上编译时如实报错，不猜。
 #[cfg(not(target_os = "linux"))]
 fn addresses() -> Result<Vec<(u32, HostAddress)>, String> {
-    Err("只能在 Linux 上检测网卡的地址".to_owned())
+    Err("host network detection only works on Linux".to_owned())
 }
 
 #[cfg(test)]

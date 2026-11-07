@@ -108,7 +108,13 @@ async fn a_running_plugin_follows_its_container_down_and_back() {
     let (PluginStatus::Degraded { reason }, None) = seen(&m) else {
         panic!("{:?}", seen(&m));
     };
-    assert!(reason.contains("failed its health check"), "{reason}");
+    assert!(
+        reason.contains(&super::message(
+            "plugin-install-container-unhealthy-noprobe",
+            &[("container", &container)],
+        )),
+        "{reason}"
+    );
 
     docker.set_state(&container, restarting());
     m.watch_containers().await;
@@ -116,7 +122,10 @@ async fn a_running_plugin_follows_its_container_down_and_back() {
         panic!("{:?}", seen(&m));
     };
     assert!(
-        reason.contains("isn't running"),
+        reason.contains(&super::message(
+            "plugin-install-container-not-running",
+            &[("container", &container), ("status", "RESTARTING")],
+        )),
         "原因也跟着容器走：{reason}"
     );
 

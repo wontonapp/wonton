@@ -9,6 +9,7 @@ use super::super::manager::{PluginManager, busy};
 use super::super::manifest::PluginId;
 use super::super::store::{InstalledRecord, StoreError};
 use super::super::storefront::index::Index;
+use crate::plugin::languages::Languages;
 
 impl PluginManager {
     /// 查新版本前，把能认成官方的记录改过来，`records` 跟着改。
@@ -66,7 +67,7 @@ fn adoptable(index: &Index, record: &InstalledRecord) -> Option<(Origin, Origin)
     if origin.trust != Trust::Community || origin.tag.is_none() || origin.index.is_some() {
         return None;
     }
-    let listed = index.find(&SourceRef::parse(&origin.repo).ok()?)?;
+    let listed = index.find(&SourceRef::parse(&origin.repo, &Languages::default()).ok()?)?;
     let same = listed.entry.commit == origin.commit && listed.manifest.id == record.id;
     same.then(|| (origin.clone(), listed.origin()))
 }

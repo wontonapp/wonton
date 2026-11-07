@@ -7,7 +7,7 @@ pub(super) fn parse(text: &str) -> Result<Vec<Ipv4Net>, String> {
     let mut subnets = Vec::new();
     for line in text.lines().skip(1).filter(|line| !line.trim().is_empty()) {
         let mut fields = line.split_whitespace();
-        let bad = || format!("宿主路由表的行无法解析：{line}");
+        let bad = || format!("cannot parse a line of the host routing table: {line}");
         fields.next().ok_or_else(bad)?;
         let address = fields.next().ok_or_else(bad)?;
         fields.next().ok_or_else(bad)?;

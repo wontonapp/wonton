@@ -278,7 +278,13 @@ async fn quiet_update(
     let version = package.manifest.version.clone();
     let run = bus
         .plugins
-        .upgrade_upload(&id, package, granted, record.lan_webui)
+        .upgrade_upload(
+            &id,
+            package,
+            granted,
+            record.lan_webui,
+            &bus.plugins.owner_languages(),
+        )
         .await;
     bus.audit.record(&Record {
         caller: caller.id.as_str(),
@@ -377,10 +383,8 @@ async fn update(
     );
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
-    let langs = langs.clone();
-    let run = move |bus: Arc<Bus>| {
-        upgrade_ran(bus, langs, id_for_run, version, package, granted, lan_webui)
-    };
+    let run =
+        move |bus: Arc<Bus>| upgrade_ran(bus, id_for_run, version, package, granted, lan_webui);
     bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
         .await
 }
@@ -388,16 +392,16 @@ async fn update(
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
 async fn upgrade_ran(
     bus: Arc<Bus>,
-    langs: Languages,
     id: PluginId,
     version: String,
     package: PluginPackage,
     granted: Vec<Permission>,
     lan_webui: bool,
 ) -> Outcome {
+    let langs = bus.plugins.owner_languages();
     match bus
         .plugins
-        .upgrade_upload(&id, package, granted, lan_webui)
+        .upgrade_upload(&id, package, granted, lan_webui, &langs)
         .await
     {
         Ok(()) => {

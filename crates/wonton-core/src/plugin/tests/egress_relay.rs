@@ -13,6 +13,7 @@ use super::super::fake_docker::FakeDocker;
 use super::super::lan::Lan;
 use super::super::lan::detect::Detector;
 use super::super::lan::probe::HostNetwork;
+use super::super::languages::Languages;
 use super::super::manifest::Permission;
 use super::super::names::{Instance, container_name};
 use super::super::{PluginId, PluginManager, PluginPackage};
@@ -42,7 +43,10 @@ fn granted(compose: &str) -> Vec<Permission> {
 }
 
 fn proxy(text: &str) -> Egress {
-    Egress::new(Some(ProxyAddress::parse(text).unwrap()), None)
+    Egress::new(
+        Some(ProxyAddress::parse(text, &Default::default()).unwrap()),
+        None,
+    )
 }
 
 struct Rig {
@@ -230,7 +234,7 @@ async fn when_the_lan_address_moves_only_the_lists_change() {
         network
     };
     *rig.host.lock().unwrap() = Ok(moved);
-    rig.m.lan_pass().await.unwrap();
+    rig.m.lan_pass(&Languages::default()).await.unwrap();
     let direct = rig.lines("direct.txt");
     assert!(direct.contains("192.168.5.0/24"), "{direct:?}");
     assert!(!direct.contains("192.168.0.0/24"), "{direct:?}");

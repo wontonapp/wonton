@@ -9,6 +9,7 @@ use super::install_error::InstallError;
 use super::languages::Languages;
 use super::package::PluginPackage;
 use super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles};
+use crate::l10n;
 
 const SCHEME: &str = "github:";
 /// 第三方索引里的插件的来源的开头（ADR-0031）。
@@ -31,28 +32,50 @@ pub struct SourceRef {
 }
 
 impl SourceRef {
-    pub fn parse(text: &str) -> Result<Self, InstallError> {
+    pub fn parse(text: &str, langs: &Languages) -> Result<Self, InstallError> {
         let invalid = |why: &str| {
-            InstallError::Invalid(format!(
-                "来源 `{text}` 不对：{why}；写成 github:<owner>/<repo>，可以带 @<tag> 或 @<40 位提交号>"
+            InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-github-source-invalid",
+                &[("text", text.into()), ("why", why.into())],
             ))
         };
-        let rest = text
-            .strip_prefix(SCHEME)
-            .ok_or_else(|| invalid("只支持 github: 开头的来源"))?;
+        let rest = text.strip_prefix(SCHEME).ok_or_else(|| {
+            invalid(&crate::l10n::text(
+                langs,
+                "plugin-settings-github-source-scheme",
+                &[],
+            ))
+        })?;
         let (path, version) = match rest.split_once('@') {
             Some((path, version)) => (path, Some(version)),
             None => (rest, None),
         };
-        let (owner, name) = path.split_once('/').ok_or_else(|| invalid("缺少仓库名"))?;
+        let (owner, name) = path.split_once('/').ok_or_else(|| {
+            invalid(&crate::l10n::text(
+                langs,
+                "plugin-settings-github-source-no-name",
+                &[],
+            ))
+        })?;
         if !is_name(owner) || !is_name(name) {
-            return Err(invalid("owner 和仓库名只能有字母、数字、`-`、`_`、`.`"));
+            return Err(invalid(&crate::l10n::text(
+                langs,
+                "plugin-settings-github-source-name-chars",
+                &[],
+            )));
         }
         let wanted = match version {
             None => Wanted::Latest,
             Some(v) if is_commit_id(v) => Wanted::Commit(v.to_owned()),
             Some(v) if is_tag(v) => Wanted::Tag(v.to_owned()),
-            Some(_) => return Err(invalid("@ 后面的 tag 不合法")),
+            Some(_) => {
+                return Err(invalid(&crate::l10n::text(
+                    langs,
+                    "plugin-settings-github-source-bad-tag",
+                    &[],
+                )));
+            }
         };
         let repo = Repo {
             owner: owner.to_owned(),
@@ -138,7 +161,9 @@ impl Origin {
 
     /// 经第三方索引装的：索引的主机。
     pub fn via_index(&self) -> Option<String> {
-        let (location, _) = IndexLocation::of_item_source(self.index.as_deref()?).ok()?;
+        // 只取主机名，语言无关；读不懂 index 来源时本来就不给。
+        let (location, _) =
+            IndexLocation::of_item_source(self.index.as_deref()?, &Languages::default()).ok()?;
         Some(location.provider())
     }
 
@@ -155,23 +180,41 @@ impl Origin {
 }
 
 /// 把来源解析成提交：tag 经 `ls-refs` 查，提交号原样用。
-pub async fn resolve(github: &GitHub, source: &SourceRef) -> Result<Origin, InstallError> {
+pub async fn resolve(
+    github: &GitHub,
+    source: &SourceRef,
+    langs: &Languages,
+) -> Result<Origin, InstallError> {
     let repo = format!("{SCHEME}{}", source.repo);
     let (tag, commit) = match &source.wanted {
         Wanted::Commit(commit) => (None, commit.clone()),
         Wanted::Tag(name) => {
-            let tags = github.tags(&source.repo).await.map_err(github_error)?;
+            let tags = github
+                .tags(&source.repo, langs)
+                .await
+                .map_err(github_error)?;
             let tag = tags.into_iter().find(|t| &t.name == name).ok_or_else(|| {
-                InstallError::NotFound(format!("{} 没有 tag {name}", source.repo))
+                InstallError::NotFound(l10n::text(
+                    langs,
+                    "plugin-settings-github-no-tag",
+                    &[
+                        ("repo", source.repo.to_string().into()),
+                        ("tag", name.as_str().into()),
+                    ],
+                ))
             })?;
             (Some(tag.name), tag.commit)
         }
         Wanted::Latest => {
-            let tags = github.tags(&source.repo).await.map_err(github_error)?;
+            let tags = github
+                .tags(&source.repo, langs)
+                .await
+                .map_err(github_error)?;
             let tag = latest(tags).ok_or_else(|| {
-                InstallError::NotFound(format!(
-                    "{} 没有正式版本：要有 v<语义化版本> 的 tag，如 v1.0.0",
-                    source.repo
+                InstallError::NotFound(l10n::text(
+                    langs,
+                    "plugin-settings-github-no-release",
+                    &[("repo", source.repo.to_string().into())],
                 ))
             })?;
             (Some(tag.name), tag.commit)
@@ -201,35 +244,49 @@ fn release_version(tag: &str) -> Option<semver::Version> {
 }
 
 /// 按提交取插件包：先取 compose，再取它引用的文件。按 tag 取的，清单的版本要和 tag 一致。
-pub async fn fetch(github: &GitHub, origin: &Origin) -> Result<PluginPackage, InstallError> {
+pub async fn fetch(
+    github: &GitHub,
+    origin: &Origin,
+    langs: &Languages,
+) -> Result<PluginPackage, InstallError> {
     let repo = source_repo(origin)?;
     let get = |path: String| {
         let repo = &repo;
         async move {
             github
-                .file(repo, &origin.commit, &path, MAX_FILE_BYTES)
+                .file(repo, &origin.commit, &path, MAX_FILE_BYTES, langs)
                 .await
                 .map_err(github_error)
         }
     };
     let compose = get(COMPOSE_FILE.to_owned()).await?;
-    let compose = String::from_utf8(compose)
-        .map_err(|_| InstallError::Invalid(format!("{COMPOSE_FILE} 不是 UTF-8 文本")))?;
+    let compose = String::from_utf8(compose).map_err(|_| {
+        InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-upgrade-compose-not-utf8",
+            &[("file", COMPOSE_FILE.into())],
+        ))
+    })?;
     let mut files = PackageFiles::new();
-    let optional = PluginPackage::optional_files(&compose, &Languages::default())?;
-    for path in PluginPackage::referenced_files(&compose, &Languages::default())? {
+    let optional = PluginPackage::optional_files(&compose, langs)?;
+    for path in PluginPackage::referenced_files(&compose, langs)? {
         let data = match get(path.clone()).await {
             Err(InstallError::NotFound(_)) if optional.contains(&path) => continue,
             result => result?,
         };
         files.insert(path, data);
     }
-    let mut package = PluginPackage::with_files(&compose, files, &Languages::default())?;
+    let mut package = PluginPackage::with_files(&compose, files, langs)?;
     if let Some(tag) = &origin.tag {
         let version = &package.manifest.version;
         if tag.strip_prefix('v') != Some(version.as_str()) {
-            return Err(InstallError::Invalid(format!(
-                "tag {tag} 和清单的版本 {version} 不一致：发布时 tag 要是 v<清单的版本>"
+            return Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-github-tag-version-mismatch",
+                &[
+                    ("tag", tag.as_str().into()),
+                    ("version", version.as_str().into()),
+                ],
             )));
         }
     }
@@ -238,7 +295,7 @@ pub async fn fetch(github: &GitHub, origin: &Origin) -> Result<PluginPackage, In
 }
 
 fn source_repo(origin: &Origin) -> Result<Repo, InstallError> {
-    Ok(SourceRef::parse(&origin.repo)?.repo)
+    Ok(SourceRef::parse(&origin.repo, &Languages::default())?.repo)
 }
 
 pub(in crate::plugin) fn github_error(e: GitHubError) -> InstallError {
@@ -254,6 +311,7 @@ pub(in crate::plugin) fn github_error(e: GitHubError) -> InstallError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::languages::Languages;
 
     fn tag(name: &str) -> Tag {
         Tag {
@@ -264,18 +322,20 @@ mod tests {
 
     #[test]
     fn sources_name_a_repo_and_optionally_a_tag_or_commit() {
-        let parsed = SourceRef::parse("github:owner/repo.x@v1.2.0").unwrap();
+        let parsed = SourceRef::parse("github:owner/repo.x@v1.2.0", &Languages::default()).unwrap();
         assert_eq!(parsed.repo.to_string(), "owner/repo.x");
         assert_eq!(parsed.wanted, Wanted::Tag("v1.2.0".into()));
         let commit = "a".repeat(40);
         assert_eq!(
-            SourceRef::parse(&format!("github:o/r@{commit}"))
+            SourceRef::parse(&format!("github:o/r@{commit}"), &Languages::default())
                 .unwrap()
                 .wanted,
             Wanted::Commit(commit)
         );
         assert_eq!(
-            SourceRef::parse("github:o/r").unwrap().wanted,
+            SourceRef::parse("github:o/r", &Languages::default())
+                .unwrap()
+                .wanted,
             Wanted::Latest
         );
         for bad in [
@@ -287,7 +347,10 @@ mod tests {
             "github:o/r@../x",
             "github:o/r@a b",
         ] {
-            assert!(SourceRef::parse(bad).is_err(), "{bad}");
+            assert!(
+                SourceRef::parse(bad, &Languages::default()).is_err(),
+                "{bad}"
+            );
         }
     }
 

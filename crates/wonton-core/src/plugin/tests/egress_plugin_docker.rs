@@ -123,7 +123,7 @@ async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
         .unwrap_or_default();
     assert!(!env.iter().any(|v| v.starts_with("HTTP_PROXY=")));
     engine.remove_container(&provider).await.unwrap();
-    m.probe_egress().await.unwrap();
+    m.probe_egress(&Languages::default()).await.unwrap();
     assert_eq!(
         m.egress_problem().unwrap().reason,
         EgressFailure::ProxyUnreachable

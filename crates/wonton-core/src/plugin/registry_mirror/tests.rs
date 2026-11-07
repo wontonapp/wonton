@@ -1,13 +1,16 @@
 use super::*;
+use crate::plugin::languages::Languages;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::index::Index;
 use wonton_protocol::{RegistryFailure, RegistryProblem};
 
 #[test]
 fn registry_index_bad_choices_do_not_break_other_catalog_data() {
-    let index =
-        Index::parse(br#"{"format":1,"plugins":[],"registry_mirrors":["mirror.example:5000"]}"#)
-            .unwrap();
+    let index = Index::parse(
+        br#"{"format":1,"plugins":[],"registry_mirrors":["mirror.example:5000"]}"#,
+        &Languages::default(),
+    )
+    .unwrap();
     assert_eq!(index.registry_mirrors, ["mirror.example:5000"]);
     for choices in [
         serde_json::json!([1]),
@@ -17,6 +20,7 @@ fn registry_index_bad_choices_do_not_break_other_catalog_data() {
         let index = Index::parse(
             &serde_json::to_vec(&serde_json::json!({"format":1,"registry_mirrors":choices}))
                 .unwrap(),
+            &Languages::default(),
         )
         .unwrap();
         assert!(index.registry_mirrors_problem.is_some());

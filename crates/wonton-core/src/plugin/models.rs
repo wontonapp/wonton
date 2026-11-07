@@ -13,6 +13,7 @@ use hyper::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use super::bot_services::DEFAULT_BOT;
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, PluginId};
 use super::package::PluginPackage;
@@ -162,6 +163,18 @@ fn unavailable(message: impl Into<String>) -> InstallError {
     InstallError::ModelsUnavailable(message.into())
 }
 
+pub(crate) fn gateway_not_running(langs: &Languages, id: &str) -> String {
+    crate::l10n::text(
+        langs,
+        "plugin-settings-models-gateway-not-running",
+        &[("id", id.into())],
+    )
+}
+
+pub(crate) fn gateway_absent(langs: &Languages) -> String {
+    crate::l10n::text(langs, "plugin-settings-models-gateway-absent", &[])
+}
+
 /// 没接上网关时注入的变量：`WONTON_MODEL_*` 全部定义成空字符串，compose 引用它们不会因为变量缺失而失败，
 /// 插件用它自己的登录或 key 设置。
 fn empty_model_vars(package: &PluginPackage) -> ModelVars {
@@ -185,13 +198,13 @@ impl PluginManager {
         }
     }
 
-    fn provider(&self) -> Result<ModelsRoute, InstallError> {
+    fn provider(&self, langs: &Languages) -> Result<ModelsRoute, InstallError> {
         match self.models_provider() {
             ProviderState::Ready(route) => Ok(*route),
-            ProviderState::NotReady(id) => Err(unavailable(format!("模型网关 {id} 没在运行"))),
-            ProviderState::Absent => Err(unavailable(
-                "没有装模型网关（声明 provides.models 的系统插件）",
-            )),
+            ProviderState::NotReady(id) => {
+                Err(unavailable(gateway_not_running(langs, id.as_str())))
+            }
+            ProviderState::Absent => Err(unavailable(gateway_absent(langs))),
         }
     }
 
@@ -201,17 +214,21 @@ impl PluginManager {
     pub(super) async fn provision_models(
         &self,
         package: &PluginPackage,
+        langs: &Languages,
     ) -> Result<Option<ModelVars>, InstallError> {
         let manifest = &package.manifest;
         if !uses_models(manifest) {
             return Ok(None);
         }
-        let vars = match self.provider() {
+        let vars = match self.provider(langs) {
             Err(e) => {
                 tracing::info!(plugin = %manifest.id, error = %e, "模型网关没接上，照样安装，模型变量为空");
                 empty_model_vars(package)
             }
-            Ok(route) => match self.issue_consumer_credentials(&route, package).await {
+            Ok(route) => match self
+                .issue_consumer_credentials(&route, package, langs)
+                .await
+            {
                 Ok(vars) => vars,
                 Err(e) => {
                     tracing::warn!(plugin = %manifest.id, error = %e, "模型网关凭据签发失败，照样安装，模型变量为空");
@@ -228,6 +245,7 @@ impl PluginManager {
         &self,
         route: &ModelsRoute,
         package: &PluginPackage,
+        langs: &Languages,
     ) -> Result<ModelVars, InstallError> {
         let store = self.store.model_keys();
         let id = &package.manifest.id;
@@ -238,7 +256,8 @@ impl PluginManager {
         }
         let issued = async {
             for name in plugin.iter().chain(bot.iter()) {
-                self.issue_verified(route, name, &file.keys[name]).await?;
+                self.issue_verified(route, name, &file.keys[name], langs)
+                    .await?;
             }
             Ok::<_, InstallError>(())
         }
@@ -254,7 +273,7 @@ impl PluginManager {
             Err(e) => {
                 for name in file.keys.keys() {
                     let revoke = &route.spec.credentials.revoke;
-                    if let Err(cleanup) = self.run_command(route, revoke, name, None).await {
+                    if let Err(cleanup) = self.run_command(route, revoke, name, None, langs).await {
                         tracing::error!(plugin = %id, credential = %name, error = %cleanup, "吊销没签发完的模型网关凭据失败");
                     }
                 }
@@ -273,6 +292,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         added: &mut Vec<String>,
+        langs: &Languages,
     ) -> Result<Option<ModelVars>, InstallError> {
         let manifest = &package.manifest;
         if !uses_models(manifest) {
@@ -280,7 +300,7 @@ impl PluginManager {
         }
         let store = self.store.model_keys();
         let mut file = store.load(&manifest.id)?;
-        let Ok(route) = self.provider() else {
+        let Ok(route) = self.provider(langs) else {
             return Ok(Some(
                 file.vars
                     .clone()
@@ -295,7 +315,7 @@ impl PluginManager {
             let key = random_token();
             file.keys.insert(name.clone(), key.clone());
             added.push(name.clone());
-            self.issue_verified(&route, name, &key).await?;
+            self.issue_verified(&route, name, &key, langs).await?;
         }
         let vars = self.model_vars(&route, package, &file.keys);
         file.vars = Some(vars.clone());
@@ -310,6 +330,7 @@ impl PluginManager {
         &self,
         id: &PluginId,
         names: &[String],
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         if names.is_empty() {
             return Ok(());
@@ -319,14 +340,16 @@ impl PluginManager {
         match self.models_provider() {
             ProviderState::Absent => {}
             ProviderState::NotReady(_) => {
-                return Err(unavailable(format!(
-                    "模型网关没在运行，吊销不了 {id} 的凭据"
+                return Err(unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-models-revoke-not-running",
+                    &[("id", id.as_str().into())],
                 )));
             }
             ProviderState::Ready(route) => {
                 for name in names {
                     let revoke = &route.spec.credentials.revoke;
-                    self.run_command(&route, revoke, name, None).await?;
+                    self.run_command(&route, revoke, name, None, langs).await?;
                 }
             }
         }
@@ -375,7 +398,11 @@ impl PluginManager {
 
     /// 卸载使用方或安装失败回滚：在网关里吊销它的凭据，再删掉记下的文件（没有凭据也删——里面可能只记着
     /// 签发失败的原因）。网关已经卸载了就没有可吊销的；网关装着但没在运行时吊销不了，如实报错。
-    pub(super) async fn revoke_models(&self, id: &PluginId) -> Result<(), InstallError> {
+    pub(super) async fn revoke_models(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         let store = self.store.model_keys();
         let keys = store.load(id)?.keys;
         match self.models_provider() {
@@ -385,14 +412,19 @@ impl PluginManager {
                     store.remove(id)?;
                     return Ok(());
                 }
-                return Err(unavailable(format!(
-                    "模型网关 {provider} 没在运行，吊销不了 {id} 的凭据"
+                return Err(unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-models-revoke-provider-not-running",
+                    &[
+                        ("provider", provider.as_str().into()),
+                        ("id", id.as_str().into()),
+                    ],
                 )));
             }
             ProviderState::Ready(route) => {
                 for name in keys.keys() {
                     let revoke = &route.spec.credentials.revoke;
-                    self.run_command(&route, revoke, name, None).await?;
+                    self.run_command(&route, revoke, name, None, langs).await?;
                 }
             }
         }
@@ -403,16 +435,21 @@ impl PluginManager {
     /// 网关启动后（安装、恢复、升级）为使用方对一次账：记着凭据的用原值重新签发并验证，对账失败的标为异常、
     /// 写明原因；没接上的（装它的时候网关不在或签发失败）现在签发，并按新变量重建运行中的容器。
     pub async fn reconcile_models(&self) -> Vec<(PluginId, InstallError)> {
-        let mut failures = self.reconcile_model_keys().await;
+        let langs = self.owner_languages();
+        let mut failures = self.reconcile_model_keys(&langs).await;
         for (id, error) in &failures {
-            let reason = format!("模型网关凭据对账失败：{error}");
+            let reason = crate::l10n::text(
+                &langs,
+                "plugin-settings-models-reconcile-failed",
+                &[("error", error.to_string().into())],
+            );
             self.set(id, PluginStatus::Degraded { reason }, None);
         }
-        failures.extend(self.connect_unconnected_consumers().await);
+        failures.extend(self.connect_unconnected_consumers(&langs).await);
         failures
     }
 
-    async fn reconcile_model_keys(&self) -> Vec<(PluginId, InstallError)> {
+    async fn reconcile_model_keys(&self, langs: &Languages) -> Vec<(PluginId, InstallError)> {
         let Some(route) = self.models_route() else {
             return Vec::new();
         };
@@ -423,7 +460,7 @@ impl PluginManager {
         let mut failures = Vec::new();
         for (id, file) in all {
             for (name, value) in &file.keys {
-                if let Err(e) = self.issue_verified(&route, name, value).await {
+                if let Err(e) = self.issue_verified(&route, name, value, langs).await {
                     tracing::warn!(plugin = %id, credential = %name, error = %e, "模型网关凭据对账失败");
                     failures.push((id.clone(), e));
                 }
@@ -449,7 +486,10 @@ impl PluginManager {
 
     /// 给没接上的使用方签发凭据：装它的时候网关不在或签发失败，变量是空的。签发成功后，运行中的按新变量
     /// 重建容器；没在运行的等下次启动时从记下的变量里拿。还接不上的记下原因，详情页的轻提示带它。
-    async fn connect_unconnected_consumers(&self) -> Vec<(PluginId, InstallError)> {
+    async fn connect_unconnected_consumers(
+        &self,
+        langs: &Languages,
+    ) -> Vec<(PluginId, InstallError)> {
         let Some(route) = self.models_route() else {
             return Vec::new();
         };
@@ -491,7 +531,10 @@ impl PluginManager {
                 continue;
             };
             package.origin = record.origin.clone();
-            match self.issue_consumer_credentials(&route, &package).await {
+            match self
+                .issue_consumer_credentials(&route, &package, langs)
+                .await
+            {
                 Err(e) => {
                     tracing::warn!(plugin = %id, error = %e, "模型网关凭据签发失败，使用方保持没接上");
                     failures.push((id, e));
@@ -527,7 +570,9 @@ impl PluginManager {
         let mut ctx = self
             .rebuild_context(package, record, lan, pending.as_ref())
             .await?;
-        ctx.matrix = self.bot_vars_read_back(package, &ctx).await?;
+        ctx.matrix = self
+            .bot_vars_read_back(package, &ctx, &self.owner_languages())
+            .await?;
         let plan = render::render(package, &ctx, &self.owner_languages())?;
         if let (Some(pending), Some(reservation)) = (&pending, reservation) {
             self.apply_migration(
@@ -535,6 +580,7 @@ impl PluginManager {
                 pending,
                 reservation,
                 ctx.egress.is_some(),
+                &self.owner_languages(),
             )
             .await?;
         }
@@ -575,26 +621,38 @@ impl PluginManager {
         route: &ModelsRoute,
         name: &str,
         value: &str,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let issue = &route.spec.credentials.issue;
-        self.run_command(route, issue, name, Some(value)).await?;
-        if self.verify(route, value).await? {
+        self.run_command(route, issue, name, Some(value), langs)
+            .await?;
+        if self.verify(route, value, langs).await? {
             return Ok(());
         }
         let revoke = &route.spec.credentials.revoke;
-        self.run_command(route, revoke, name, None).await?;
-        self.run_command(route, issue, name, Some(value)).await?;
-        if self.verify(route, value).await? {
+        self.run_command(route, revoke, name, None, langs).await?;
+        self.run_command(route, issue, name, Some(value), langs)
+            .await?;
+        if self.verify(route, value, langs).await? {
             return Ok(());
         }
-        Err(unavailable(format!(
-            "模型网关 {} 不认核心签发的凭据 {name}：签发后请求模型列表仍然 401",
-            route.id
+        Err(unavailable(crate::l10n::text(
+            langs,
+            "plugin-settings-models-credential-rejected",
+            &[
+                ("provider", route.id.as_str().into()),
+                ("name", name.into()),
+            ],
         )))
     }
 
     /// 用凭据请求 `GET <openai>/models`：200 是认，401 是不认，其他算网关出错。
-    async fn verify(&self, route: &ModelsRoute, value: &str) -> Result<bool, InstallError> {
+    async fn verify(
+        &self,
+        route: &ModelsRoute,
+        value: &str,
+        langs: &Languages,
+    ) -> Result<bool, InstallError> {
         let path = route.spec.apis.openai.trim_end_matches('/');
         let url = format!("http://{}{path}/models", route.upstream);
         let (status, _) = self
@@ -607,13 +665,26 @@ impl PluginManager {
                 VERIFY_TIMEOUT,
             )
             .await
-            .map_err(|e| unavailable(format!("模型网关 {} 不可达：{e}", route.id)))?;
+            .map_err(|e| {
+                unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-models-unreachable",
+                    &[
+                        ("provider", route.id.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
+            })?;
         match status {
             StatusCode::OK => Ok(true),
             StatusCode::UNAUTHORIZED => Ok(false),
-            other => Err(unavailable(format!(
-                "模型网关 {} 回答模型列表时出错：HTTP {other}",
-                route.id
+            other => Err(unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-models-list-error",
+                &[
+                    ("provider", route.id.as_str().into()),
+                    ("status", format!("{other}").into()),
+                ],
             ))),
         }
     }
@@ -625,6 +696,7 @@ impl PluginManager {
         argv: &[String],
         name: &str,
         value: Option<&str>,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let argv: Vec<String> = argv
             .iter()
@@ -640,16 +712,28 @@ impl PluginManager {
                 COMMAND_TIMEOUT,
             )
             .await
-            .map_err(|e| unavailable(format!("模型网关 {} 未就绪：{e}", route.id)))?;
+            .map_err(|e| {
+                unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-models-not-ready",
+                    &[
+                        ("provider", route.id.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
+            })?;
         if output.exit_code == 0 {
             return Ok(());
         }
-        Err(unavailable(format!(
-            "模型网关 {} 拒绝了凭据命令（{}，退出码 {}）：{}",
-            route.id,
-            argv.first().map_or("", String::as_str),
-            output.exit_code,
-            output.stderr
+        Err(unavailable(crate::l10n::text(
+            langs,
+            "plugin-settings-models-command-rejected",
+            &[
+                ("provider", route.id.as_str().into()),
+                ("command", argv.first().map_or("", String::as_str).into()),
+                ("code", output.exit_code.to_string().into()),
+                ("stderr", output.stderr.clone().into()),
+            ],
         )))
     }
 }

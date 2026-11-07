@@ -14,8 +14,10 @@ use wonton_protocol::{EgressFailure, EgressProbe, EgressProblem};
 use super::address::ProxyAddress;
 use super::check::{self, TARGET, URL_VAR};
 use super::provider::provides_proxy;
+use crate::l10n;
 use crate::plugin::lan::detect::with_replaced_note;
 use crate::plugin::lan::probe::NOBODY_USER;
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::manifest::{Manifest, Permission};
 
@@ -65,9 +67,9 @@ impl Prober {
         }
     }
 
-    async fn direct(&self, proxy: &ProxyAddress) -> Option<EgressProblem> {
+    async fn direct(&self, proxy: &ProxyAddress, langs: &Languages) -> Option<EgressProblem> {
         match self {
-            Self::Real => check::check(proxy, TARGET).await,
+            Self::Real => check::check(proxy, TARGET, langs).await,
             #[cfg(test)]
             Self::Fixed(script) => script.lock().expect("探测脚本锁中毒").direct.clone(),
             #[cfg(test)]
@@ -101,23 +103,23 @@ pub(in crate::plugin) fn fresh(probe: &EgressProbe) -> bool {
 }
 
 impl PluginManager {
-    /// 探测两条路径，记下结果，结论变了写日志。
-    pub async fn probe_egress(&self) -> Result<(), InstallError> {
+    /// 探测两条路径，记下结果，结论变了写日志。请求带得来语言时按它写，后台按主人的语言写（ADR-0043）。
+    pub async fn probe_egress(&self, langs: &Languages) -> Result<(), InstallError> {
         let config = self.egress_config()?;
         let Some(proxy) = &config.url else {
             self.egress.record_probes(None, None);
             return Ok(());
         };
         let unavailable = if config.source == wonton_protocol::EgressProxySource::Plugin {
-            self.proxy_provider_problem().await?
+            self.proxy_provider_problem(langs).await?
         } else {
             None
         };
         let (plugin, core) = match unavailable {
             Some(problem) => (Some(problem.clone()), Some(problem)),
             None => (
-                self.probe_plugin_path(proxy).await?,
-                self.egress.prober().direct(proxy).await,
+                self.probe_plugin_path(proxy, langs).await?,
+                self.egress.prober().direct(proxy, langs).await,
             ),
         };
         let probed_at_ms = now_ms();
@@ -140,6 +142,7 @@ impl PluginManager {
     async fn probe_plugin_path(
         &self,
         proxy: &ProxyAddress,
+        langs: &Languages,
     ) -> Result<Option<EgressProblem>, InstallError> {
         let name = self.cfg.instance.egress();
         // 每次都核对：出口容器可能被删了，核心换了容器后也要重新接上它的网络。
@@ -150,16 +153,22 @@ impl PluginManager {
             result => result?,
         }
         let Some(address) = self.engine.endpoint_address(&name, &name).await? else {
-            return Ok(Some(relay_failed("出口容器没有在运行".to_owned())));
+            return Ok(Some(relay_failed(l10n::text(
+                langs,
+                "plugin-settings-egress-relay-not-running",
+                &[],
+            ))));
         };
         let relay = format!("http://{address}:3128");
         let Err(detail) = self.egress.prober().via_relay(&relay).await else {
             return Ok(None);
         };
-        let found = self.diagnose(proxy).await?;
+        let found = self.diagnose(proxy, langs).await?;
         Ok(Some(found.unwrap_or_else(|| {
-            relay_failed(format!(
-                "直接连代理是通的，经出口容器不通：{detail}。查看容器 {name} 的日志"
+            relay_failed(l10n::text(
+                langs,
+                "plugin-settings-egress-relay-detail",
+                &[("detail", detail.into()), ("container", name.into())],
             ))
         })))
     }
@@ -168,35 +177,49 @@ impl PluginManager {
     pub(in crate::plugin) async fn diagnose(
         &self,
         proxy: &ProxyAddress,
+        langs: &Languages,
     ) -> Result<Option<EgressProblem>, InstallError> {
         let config = self.egress_config()?;
         let network = if config.source == wonton_protocol::EgressProxySource::Plugin {
-            self.egress_provider()?.network
+            self.egress_provider(langs)?.network
         } else {
             self.cfg.instance.egress()
         };
-        self.diagnose_at(proxy, &network).await
+        self.diagnose_at(proxy, &network, langs).await
     }
 
     pub(super) async fn diagnose_at(
         &self,
         proxy: &ProxyAddress,
         network: &str,
+        langs: &Languages,
     ) -> Result<Option<EgressProblem>, InstallError> {
         let Some(core) = &self.cfg.core_container else {
-            return Ok(self.egress.prober().direct(proxy).await);
+            return Ok(self.egress.prober().direct(proxy, langs).await);
         };
         let Some(info) = self.engine.inspect_container(core).await? else {
-            return Ok(Some(relay_failed(format!("查不到核心容器 {core} 的镜像"))));
+            return Ok(Some(relay_failed(l10n::text(
+                langs,
+                "plugin-settings-lan-detect-core-image",
+                &[("container", core.into())],
+            ))));
         };
         let Some(image) = info.image else {
-            return Ok(Some(relay_failed(format!("查不到核心容器 {core} 的镜像"))));
+            return Ok(Some(relay_failed(l10n::text(
+                langs,
+                "plugin-settings-lan-detect-core-image",
+                &[("container", core.into())],
+            ))));
         };
         let reference = info.config.and_then(|c| c.image);
         let body = ContainerCreateBody {
             image: Some(image),
             cmd: Some(vec![check::COMMAND.to_owned()]),
-            env: Some(vec![format!("{URL_VAR}={}", proxy.text())]),
+            env: Some(vec![
+                format!("{URL_VAR}={}", proxy.text()),
+                // 查原因的容器自己按这个语言报错（ADR-0043）。
+                format!("WONTON_LANG={}", l10n::lang_tag(langs)),
+            ]),
             user: Some(NOBODY_USER.to_owned()),
             labels: Some(self.cfg.instance.core_labels()),
             host_config: Some(HostConfig {
@@ -219,13 +242,19 @@ impl PluginManager {
         match serde_json::from_slice::<Option<EgressProblem>>(&once.output.stdout) {
             Ok(found) => Ok(found),
             Err(_) => {
-                let reason = format!(
-                    "查原因的容器以 {} 退出：{}",
-                    once.output.code,
-                    String::from_utf8_lossy(&once.output.stderr).trim()
+                let reason = l10n::text(
+                    langs,
+                    "plugin-settings-egress-diagnose-exit",
+                    &[
+                        ("code", once.output.code.to_string().into()),
+                        (
+                            "reason",
+                            String::from_utf8_lossy(&once.output.stderr).trim().into(),
+                        ),
+                    ],
                 );
                 Ok(Some(relay_failed(with_replaced_note(
-                    &self.owner_languages(),
+                    langs,
                     once.replaced,
                     reason,
                 ))))
@@ -237,6 +266,7 @@ impl PluginManager {
     pub(in crate::plugin) async fn egress_problem_for(
         &self,
         manifest: &Manifest,
+        langs: &Languages,
     ) -> Result<Option<EgressProblem>, InstallError> {
         if provides_proxy(manifest)
             || !manifest.permissions.contains(&Permission::NetworkEgress)
@@ -245,7 +275,7 @@ impl PluginManager {
             return Ok(None);
         }
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && let Some(problem) = self.proxy_provider_problem().await?
+            && let Some(problem) = self.proxy_provider_problem(langs).await?
         {
             return Ok(Some(problem));
         }
@@ -253,7 +283,7 @@ impl PluginManager {
         let latest = match latest {
             Some(latest) => latest,
             None => {
-                self.probe_egress().await?;
+                self.probe_egress(langs).await?;
                 match self.egress.plugin_path() {
                     Some(latest) => latest,
                     None => return Ok(None),
@@ -267,8 +297,9 @@ impl PluginManager {
     pub(in crate::plugin) async fn check_egress(
         &self,
         manifest: &Manifest,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
-        match self.egress_problem_for(manifest).await? {
+        match self.egress_problem_for(manifest, langs).await? {
             Some(problem) if blocks(&problem) => Err(InstallError::EgressProxyUnavailable {
                 reason: problem.reason,
                 message: problem.message,
@@ -298,7 +329,7 @@ impl PluginManager {
                 }
                 first = false;
                 if manager.egress_configured()
-                    && let Err(e) = manager.probe_egress().await
+                    && let Err(e) = manager.probe_egress(&manager.owner_languages()).await
                 {
                     tracing::warn!(error = %e, "探测代理失败");
                 }

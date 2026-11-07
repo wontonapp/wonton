@@ -47,8 +47,9 @@ fn granted<'a>(
         ))
     })?;
     if gateway.plugins.title(&plugin).is_none() {
-        return Err(Box::new(install_error(&InstallError::NotInstalled(
-            id.to_owned(),
+        let langs = super::api::languages(headers);
+        return Err(Box::new(install_error(&InstallError::not_installed(
+            &langs, &plugin,
         ))));
     }
     Ok(Granted { mcp, plugin, by })

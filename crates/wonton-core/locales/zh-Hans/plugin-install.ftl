@@ -487,3 +487,7 @@ plugin-install-img-worker-memory-limit = 处理时要的内存超过 { $mib } Mi
 plugin-install-img-worker-killed = 处理图片的进程被杀掉了（SIGKILL），多半是内存不够
 plugin-install-img-worker-signal = 处理图片的进程被信号 { $signal } 结束
 plugin-install-img-worker-malformed = 处理图片的进程输出的格式不对
+
+## 预装（启动时随服务器带的包）失败的原因。
+plugin-install-preinstall-retrying = 预装失败（已试 { $attempts } 次，稍后自动重试）
+plugin-install-preinstall-failed = 预装失败

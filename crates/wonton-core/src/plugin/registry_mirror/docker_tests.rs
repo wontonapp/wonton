@@ -7,9 +7,12 @@ use crate::plugin::languages::Languages;
 async fn enable(fixture: &Fixture, mirror: &str) {
     fixture
         .manager
-        .set_registry_mirror(RegistryMirrorUpdate {
-            mirror: Some(mirror.to_owned()),
-        })
+        .set_registry_mirror(
+            RegistryMirrorUpdate {
+                mirror: Some(mirror.to_owned()),
+            },
+            &Default::default(),
+        )
         .await
         .unwrap();
 }

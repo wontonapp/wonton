@@ -67,11 +67,15 @@ pub struct Owner {
     pub email: Option<String>,
 }
 
-/// 还没填邮箱、插件又要用时的错误，写明怎么修。
-pub const NO_EMAIL: &str = "你还没填邮箱：在 App 的设置里填好再试";
+/// 还没填邮箱、插件又要用时的错误，写明怎么修。语言按请求或主人最近的语言写（ADR-0043）。
+pub fn no_email(langs: &crate::plugin::languages::Languages) -> String {
+    crate::l10n::text(langs, "plugin-settings-email-missing", &[])
+}
 
 /// 安装页上的说明，旁边就是去填的按钮。
-pub const EMAIL_NEEDED: &str = "这个应用要用你的邮箱，填好才能装";
+pub fn email_needed(langs: &crate::plugin::languages::Languages) -> String {
+    crate::l10n::text(langs, "plugin-settings-email-needed", &[])
+}
 
 /// 可移植的 POSIX 用户名（`^[a-z][a-z0-9_-]{0,31}$`），同时是合法的 Matrix localpart。
 pub fn check_username(name: &str) -> Result<(), String> {

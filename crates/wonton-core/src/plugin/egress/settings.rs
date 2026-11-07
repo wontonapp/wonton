@@ -141,7 +141,14 @@ impl Egress {
             (Some(env), _, _) => (Some(env.clone()), EgressProxySource::Env),
             (None, Some(stored), _) if stored.use_plugin => (None, EgressProxySource::Plugin),
             (None, Some(stored), _) => {
-                let url = stored.url.as_deref().map(ProxyAddress::parse).transpose()?;
+                let url = stored
+                    .url
+                    .as_deref()
+                    .map(|text| {
+                        // 存过的地址装过时校验过；这里按默认语言报错（ADR-0043 的回退）。
+                        ProxyAddress::parse(text, &crate::plugin::languages::Languages::default())
+                    })
+                    .transpose()?;
                 let source = if url.is_some() {
                     EgressProxySource::Settings
                 } else {
@@ -165,7 +172,7 @@ mod tests {
     use super::*;
 
     fn address(text: &str) -> ProxyAddress {
-        ProxyAddress::parse(text).unwrap()
+        ProxyAddress::parse(text, &Default::default()).unwrap()
     }
 
     fn stored(url: Option<&str>) -> StoredEgress {

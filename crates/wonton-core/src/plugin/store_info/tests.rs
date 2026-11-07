@@ -2,6 +2,20 @@ use super::super::InstallError;
 use super::super::package::{PackageError, PluginPackage};
 use super::super::package_files::{MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles};
 use super::super::storefront::index::IndexEntry;
+use crate::l10n::CATALOG;
+
+/// 校验失败的话按 `langs()`（默认英文）里的词条拼出来，测试不再钉住某一种语言的写法。
+fn message(id: &str, args: &[(&str, &str)]) -> String {
+    let lang = CATALOG.negotiate(&["en"]);
+    CATALOG.format(
+        lang,
+        id,
+        &args
+            .iter()
+            .map(|(k, v)| (*k, (*v).into()))
+            .collect::<Vec<_>>(),
+    )
+}
 
 fn without_spec(extra: &str) -> String {
     format!(
@@ -54,14 +68,27 @@ fn newer_spec_is_reported_before_unknown_fields() {
             .unwrap_err()
             .to_string()
     };
-    assert!(reject(without_spec("  spec: 0.2")).contains("加引号"));
-    assert!(reject(without_spec("  spec: \"v2\"")).contains("不是规范版本"));
+    let version = "0.6";
+    assert!(reject(without_spec("  spec: 0.2")).contains(&message(
+        "plugin-settings-store-info-spec-string",
+        &[("version", version)],
+    )));
+    assert!(reject(without_spec("  spec: \"v2\"")).contains(&message(
+        "plugin-settings-store-info-spec-version",
+        &[("text", "v2"), ("version", version)],
+    )));
 }
 
 #[test]
 fn a_manifest_without_spec_is_rejected() {
     let err = PluginPackage::parse(&without_spec(""), &langs()).unwrap_err();
-    assert!(err.to_string().contains("要写 spec"), "{err}");
+    assert!(
+        err.to_string().contains(&message(
+            "plugin-settings-store-info-spec-missing",
+            &[("version", "0.6")],
+        )),
+        "{err}"
+    );
 }
 
 #[test]
@@ -76,33 +103,90 @@ fn store_fields_are_checked() {
         .map(|i| format!("s{i}.png"))
         .collect::<Vec<_>>()
         .join(", ");
-    let cases = [
-        ("  categories: [ai]".to_owned(), "categories"),
-        ("  license: Apache 2".to_owned(), "SPDX"),
-        ("  homepage: http://example.com".to_owned(), "https://"),
+    let cases: Vec<(String, String)> = vec![
+        ("  categories: [ai]".to_owned(), "categories".to_owned()),
+        ("  license: Apache 2".to_owned(), "SPDX".to_owned()),
+        (
+            "  homepage: http://example.com".to_owned(),
+            "https://".to_owned(),
+        ),
         (
             "  author: {name: x, url: http://example.com}".to_owned(),
-            "https://",
+            "https://".to_owned(),
         ),
-        ("  author: {name: \"  \"}".to_owned(), "author.name"),
-        (format!("  tags: {{zh: [{tags9}]}}"), "最多 8"),
-        (format!("  tags: {{en: [{}]}}", "a".repeat(25)), "1 到 24"),
-        ("  tags: {en: [Photo, photo]}".to_owned(), "重复"),
-        ("  about: {zh: \"\", en: x}".to_owned(), "至少要写一种语言"),
-        (format!("  about: {{zh: {long}, en: x}}"), "超过 4000"),
+        (
+            "  author: {name: \"  \"}".to_owned(),
+            "author.name".to_owned(),
+        ),
+        (
+            format!("  tags: {{zh: [{tags9}]}}"),
+            message("plugin-settings-store-info-tags-count", &[("max", "8")]),
+        ),
+        (
+            format!("  tags: {{en: [{}]}}", "a".repeat(25)),
+            message(
+                "plugin-settings-store-info-tag-length",
+                &[("tag", &"a".repeat(25)), ("max", "24")],
+            ),
+        ),
+        (
+            "  tags: {en: [Photo, photo]}".to_owned(),
+            message(
+                "plugin-settings-store-info-tag-duplicate",
+                &[("tag", "photo")],
+            ),
+        ),
+        (
+            "  about: {zh: \"\", en: x}".to_owned(),
+            "至少要写一种语言".to_owned(),
+        ),
+        (
+            format!("  about: {{zh: {long}, en: x}}"),
+            message(
+                "plugin-settings-store-info-field-length",
+                &[("field", "about"), ("lang", "zh"), ("max", "4000")],
+            ),
+        ),
         (
             format!("  release_notes: {{zh: {notes}, en: x}}"),
-            "超过 2000",
+            message(
+                "plugin-settings-store-info-field-length",
+                &[("field", "release_notes"), ("lang", "zh"), ("max", "2000")],
+            ),
         ),
-        ("  screenshots: []".to_owned(), "1 到 6"),
-        (format!("  screenshots: [{shots7}]"), "1 到 6"),
-        ("  screenshots: [a.gif]".to_owned(), "PNG 或 JPEG"),
-        ("  screenshots: [../a.png]".to_owned(), ".."),
-        ("  screenshots: [a.png, ./a.png]".to_owned(), "重复"),
+        (
+            "  screenshots: []".to_owned(),
+            message(
+                "plugin-settings-store-info-screenshots-count",
+                &[("max", "6")],
+            ),
+        ),
+        (
+            format!("  screenshots: [{shots7}]"),
+            message(
+                "plugin-settings-store-info-screenshots-count",
+                &[("max", "6")],
+            ),
+        ),
+        (
+            "  screenshots: [a.gif]".to_owned(),
+            message(
+                "plugin-settings-store-info-screenshot-format",
+                &[("raw", "a.gif")],
+            ),
+        ),
+        ("  screenshots: [../a.png]".to_owned(), "..".to_owned()),
+        (
+            "  screenshots: [a.png, ./a.png]".to_owned(),
+            message(
+                "plugin-settings-store-info-screenshot-duplicate",
+                &[("raw", "./a.png")],
+            ),
+        ),
     ];
     for (extra, expected) in cases {
         let err = parse_err(&extra);
-        assert!(err.contains(expected), "{extra}：{err}");
+        assert!(err.contains(&expected), "{extra}：{err}");
     }
 }
 

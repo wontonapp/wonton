@@ -19,7 +19,11 @@ pub(super) async fn get(
     if let Some(response) = api::plugin_denied(&gateway, peer, &headers) {
         return response;
     }
-    match gateway.plugins.registry_mirror_settings().await {
+    match gateway
+        .plugins
+        .registry_mirror_settings(&api::languages(&headers))
+        .await
+    {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api::install_error(&error),
     }
@@ -44,7 +48,11 @@ pub(super) async fn put(
             );
         }
     };
-    match gateway.plugins.set_registry_mirror(update).await {
+    match gateway
+        .plugins
+        .set_registry_mirror(update, &api::languages(&headers))
+        .await
+    {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api::install_error(&error),
     }
@@ -69,7 +77,11 @@ pub(super) async fn test(
             );
         }
     };
-    match gateway.plugins.test_registry_mirrors(request).await {
+    match gateway
+        .plugins
+        .test_registry_mirrors(request, &api::languages(&headers))
+        .await
+    {
         Ok(tests) => Json(tests).into_response(),
         Err(error) => api::install_error(&error),
     }

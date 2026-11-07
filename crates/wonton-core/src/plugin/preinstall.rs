@@ -113,7 +113,7 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::NotFound(_)
         | InstallError::Changed(_)
         // 要主人在 App 里填资料。
-        | InstallError::OwnerProfileIncomplete
+        | InstallError::OwnerProfileIncomplete(_)
         // 本机没有可用的显卡：装驱动、插显卡都要主人动手，下次启动再试。
         | InstallError::GpuUnavailable(_)
         // 同名的网络或卷不是本插件的：也要主人动手。
@@ -136,7 +136,7 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::Unhealthy(_)
         | InstallError::Storage(_)
         | InstallError::SourceUnavailable(_)
-        | InstallError::CoreUpgrading => true,
+        | InstallError::CoreUpgrading(_) => true,
     }
 }
 
@@ -230,11 +230,28 @@ impl PluginManager {
             }
             if !retryable(&e) {
                 tracing::error!(plugin = %id, error = %e, "预装失败，重试也没用");
-                self.mark_failed(&manifest, format!("预装失败：{e}"));
+                self.mark_failed(
+                    &manifest,
+                    format!(
+                        "{}：{e}",
+                        crate::l10n::text(
+                            &self.owner_languages(),
+                            "plugin-install-preinstall-failed",
+                            &[],
+                        )
+                    ),
+                );
                 return Outcome::Stopped;
             }
             tracing::warn!(plugin = %id, attempts, retry_in = ?wait, error = %e, "预装失败，稍后重试");
-            let reason = format!("预装失败（已试 {attempts} 次，稍后自动重试）：{e}");
+            let reason = format!(
+                "{}：{e}",
+                crate::l10n::text(
+                    &self.owner_languages(),
+                    "plugin-install-preinstall-retrying",
+                    &[("attempts", attempts.to_string().into())],
+                )
+            );
             // 先订阅再标异常：标完之后主人马上卸掉它，也能收到通知。
             let changes = self.changes();
             self.mark_failed(&manifest, reason.clone());

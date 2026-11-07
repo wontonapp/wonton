@@ -97,9 +97,9 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         InstallError::Conflict(_)
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
-        | InstallError::OwnerProfileIncomplete
+        | InstallError::OwnerProfileIncomplete(_)
         | InstallError::PortTaken(_)
-        | InstallError::CoreUpgrading => StatusCode::CONFLICT,
+        | InstallError::CoreUpgrading(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
         | InstallError::OidcUnavailable(_)
@@ -369,14 +369,14 @@ pub async fn upgrade(
     };
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
-        Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request).await,
+        Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
         None => match granted(&query)
             .and_then(|grant| Ok((grant, package(&languages(&headers), &headers, &body)?)))
         {
             Ok((grant, package)) => {
                 let plugins = &gateway.plugins;
                 plugins
-                    .upgrade_upload(&id, package, grant, query.lan_webui)
+                    .upgrade_upload(&id, package, grant, query.lan_webui, &langs)
                     .await
             }
             Err(e) => return install_error(&e),
@@ -489,7 +489,10 @@ pub async fn remove_store_source(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    match gateway.plugins.remove_store_source(&query.address) {
+    match gateway
+        .plugins
+        .remove_store_source(&query.address, &languages(&headers))
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => install_error(&e),
     }

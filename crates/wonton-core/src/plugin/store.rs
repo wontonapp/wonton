@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use rustix::io::Errno;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
 use wonton_protocol::{LanChoice, PluginLimits, PluginWriter};
 
 use super::bots::BotStore;
@@ -188,7 +189,7 @@ impl Store {
                 tracing::warn!(path = %path.display(), "插件记录目录里有无法识别的文件，已跳过");
                 continue;
             };
-            let record = read_record(&path, &id);
+            let record = read_record(&path, &id, &self.owner_langs());
             files.push(RecordFile { id, record });
         }
         files.sort_by(|a, b| a.id.cmp(&b.id));
@@ -201,7 +202,7 @@ impl Store {
         if !path.exists() {
             return Ok(None);
         }
-        read_record(&path, id).map(Some)
+        read_record(&path, id, &self.owner_langs()).map(Some)
     }
 
     pub fn save(&self, record: &InstalledRecord) -> Result<(), StoreError> {
@@ -412,7 +413,22 @@ pub(super) mod base64_map {
     }
 }
 
-fn read_record(path: &Path, id: &PluginId) -> Result<InstalledRecord, StoreError> {
+impl Store {
+    /// 主人的语言，读失败时按默认语言（存储层没有请求头；ADR-0043 的后台路径）。
+    fn owner_langs(&self) -> Languages {
+        let stored: Option<String> =
+            read_json(&self.dir.join("store").join("owner-languages.json"))
+                .ok()
+                .flatten();
+        Languages::from_header(stored.as_deref())
+    }
+}
+
+fn read_record(
+    path: &Path,
+    id: &PluginId,
+    langs: &Languages,
+) -> Result<InstalledRecord, StoreError> {
     let corrupt = |message: String| StoreError::Corrupt {
         path: path.to_owned(),
         message,
@@ -424,9 +440,13 @@ fn read_record(path: &Path, id: &PluginId) -> Result<InstalledRecord, StoreError
     let record: InstalledRecord =
         serde_json::from_str(&text).map_err(|e| corrupt(e.to_string()))?;
     if &record.id != id {
-        return Err(corrupt(format!(
-            "记录里的 ID 是 {}，与文件名不符",
-            record.id
+        return Err(corrupt(crate::l10n::text(
+            langs,
+            "plugin-settings-store-record-id-mismatch",
+            &[
+                ("record", record.id.to_string().into()),
+                ("file", id.to_string().into()),
+            ],
         )));
     }
     Ok(record)

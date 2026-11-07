@@ -21,13 +21,15 @@ use super::languages::Languages;
 use super::leftovers::name_taken;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
+use super::models::ModelsRoute;
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, render};
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
-use super::upstreams::{core_aliases, uses_sso};
+use super::upstreams::Endpoint;
+use super::upstreams::{McpTarget, core_aliases, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
@@ -147,11 +149,14 @@ impl PluginManager {
                 if failures.is_empty() {
                     Err(error)
                 } else {
-                    Err(error.with_note(&l10n::text(
+                    Err(error.with_note(
                         langs,
-                        "plugin-install-rollback-unfinished",
-                        &[("failures", l10n::list(langs, &failures).into())],
-                    )))
+                        &l10n::text(
+                            langs,
+                            "plugin-install-rollback-unfinished",
+                            &[("failures", l10n::list(langs, &failures).into())],
+                        ),
+                    ))
                 }
             }
         }
@@ -170,7 +175,7 @@ impl PluginManager {
         let secret = uses_sso(manifest).then(random_token);
         let mut secrets = self.prepare_secrets(manifest, undo)?;
         let generated =
-            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
         let proxy =
             ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
         let mut ctx = self
@@ -183,12 +188,12 @@ impl PluginManager {
             ctx.matrix = Some(self.matrix_vars(&bot));
             undo.bot = Some((manifest.id.clone(), bot));
         }
-        if let Some(models) = self.provision_models(package).await? {
+        if let Some(models) = self.provision_models(package, langs).await? {
             ctx.models = Some(models);
             undo.models = Some(manifest.id.clone());
         }
         let mut plan = render(package, &ctx, langs)?;
-        self.prepare_images(&mut plan).await?;
+        self.prepare_images(&mut plan, langs).await?;
         self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
         self.create_networks(manifest, &plan, &ctx, undo).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
@@ -221,21 +226,12 @@ impl PluginManager {
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
         let health = self.start_containers(&plan, undo, deadline, langs).await?;
-        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
-            self.store.secrets().save(&manifest.id, &secrets)?;
-        }
-        let upstream = self.webui_upstream(manifest, &plan.network).await?;
-        let models = self.models_upstream(manifest, &plan.network).await?;
-        let mcp = self.mcp_upstream(manifest, &plan.network, &secrets).await?;
-        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline).await?;
-        }
+        let (upstream, models, mcp) = self
+            .started_upstreams(manifest, &plan, &mut secrets, undo, deadline, langs)
+            .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &plan.network)
             .await;
-        if let Some((_, bot)) = &undo.bot {
-            undo.handed_over = self.hand_over_home_room(bot).await?;
-        }
         self.store.save(&InstalledRecord {
             id: manifest.id.clone(),
             version: manifest.version.clone(),
@@ -261,6 +257,31 @@ impl PluginManager {
             mcp,
             firewalled,
         })
+    }
+
+    /// 容器起来之后的收尾：收存密钥、等网页入口就绪、把 Bot 的房间交给核心。
+    async fn started_upstreams(
+        &self,
+        manifest: &Manifest,
+        plan: &Deployment,
+        secrets: &mut Secrets,
+        undo: &mut Undo,
+        deadline: Instant,
+        langs: &Languages,
+    ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
+        if secrets::collect(&self.engine, &self.cfg.instance, manifest, secrets, langs).await? {
+            self.store.secrets().save(&manifest.id, secrets)?;
+        }
+        let upstream = self.webui_upstream(manifest, &plan.network).await?;
+        let models = self.models_upstream(manifest, &plan.network).await?;
+        let mcp = self.mcp_upstream(manifest, &plan.network, secrets).await?;
+        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
+            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
+        }
+        if let Some((_, bot)) = &undo.bot {
+            undo.handed_over = self.hand_over_home_room(bot).await?;
+        }
+        Ok((upstream, models, mcp))
     }
 
     /// 建插件网络，以及局域网端口要用的网络（见 [`super::lan`]）。
@@ -314,7 +335,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<InstallContext, InstallError> {
         if self.cfg.profile.email().is_none() && super::manifest_oidc::needs_owner_email(manifest) {
-            return Err(InstallError::OwnerProfileIncomplete);
+            return Err(InstallError::OwnerProfileIncomplete(
+                crate::owner::no_email(langs),
+            ));
         }
         let public = &self.cfg.public;
         let slug = manifest.id.slug();
@@ -505,7 +528,7 @@ impl PluginManager {
                     ],
                 ))
             };
-            health::wait_for_all(&self.engine, &container.depends_on, deadline).await?;
+            health::wait_for_all(&self.engine, &container.depends_on, deadline, langs).await?;
             // 只读根的服务先经一次性容器把配置文件写进核心数据目录：单文件绑定挂载的源在创建容器
             // 时就必须存在，归档接口写不进只读根（见 configs_store 的模块注释）。
             if let Some(dir) = &container.store_dir {
@@ -536,13 +559,19 @@ impl PluginManager {
         // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
         for container in plan.containers.iter().filter(|c| c.one_shot) {
             let finished = Target::Depend(DependCondition::ServiceCompletedSuccessfully);
-            health::wait_for(&self.engine, &container.name, finished, deadline).await?;
+            health::wait_for(&self.engine, &container.name, finished, deadline, langs).await?;
         }
         // 其余容器都必须健康或稳定运行。
         let mut healthy = Vec::new();
         for container in plan.containers.iter().filter(|c| !c.one_shot) {
-            let readiness =
-                health::wait_for(&self.engine, &container.name, Target::Ready, deadline).await?;
+            let readiness = health::wait_for(
+                &self.engine,
+                &container.name,
+                Target::Ready,
+                deadline,
+                langs,
+            )
+            .await?;
             healthy.push(readiness == Readiness::Healthy);
         }
         Ok(Health::of(healthy))
@@ -573,7 +602,7 @@ impl PluginManager {
         }
         // 容器都停了再吊销 Bot 的设备和模型网关凭据。
         let bot = self.remove_bot(id, purge).await?;
-        self.revoke_models(id).await?;
+        self.revoke_models(id, langs).await?;
         self.remove_networks(&found.networks).await?;
         // 核心为只读根服务写的配置文件（configs_store）跟着插件删，不占数据目录的清理（purge）。
         let store_root = self.cfg.data_dir.join("core").join("configs");

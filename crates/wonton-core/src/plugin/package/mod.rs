@@ -171,7 +171,7 @@ impl PluginPackage {
         let manifest_value = top.remove("x-wonton").ok_or_else(|| {
             PackageError::MissingManifest(text(langs, "plugin-install-pkg-missing-manifest", &[]))
         })?;
-        super::store_info::check_spec(&manifest_value)?;
+        super::store_info::check_spec(&manifest_value, langs)?;
         let manifest: Manifest = match serde_json::from_value(manifest_value) {
             Ok(manifest) => manifest,
             Err(e) => {

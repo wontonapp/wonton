@@ -25,29 +25,17 @@ const PROBE_OUTPUT_LIMIT: usize = 1024;
 pub enum HealthError {
     #[error(transparent)]
     Engine(#[from] EngineError),
-    #[error("容器 {container} 在期限内没有就绪（最后状态：{state}）\n{probes}最近日志：\n{logs}")]
-    Timeout {
-        container: String,
-        state: String,
-        probes: String,
-        logs: String,
-    },
-    #[error("容器 {container} 健康检查失败\n{probes}最近日志：\n{logs}")]
-    Unhealthy {
-        container: String,
-        probes: String,
-        logs: String,
-    },
-    #[error("容器 {container} 已退出（退出码 {code}）\n最近日志：\n{logs}")]
-    Exited {
-        container: String,
-        code: i64,
-        logs: String,
-    },
-    #[error("容器 {0} 被要求 service_healthy，但没有配置健康检查")]
+    /// 给 App 看的整句，构造点按当次语言写好（ADR-0043）。
+    #[error("{0}")]
+    Timeout(String),
+    #[error("{0}")]
+    Unhealthy(String),
+    #[error("{0}")]
+    Exited(String),
+    #[error("{0}")]
     NoHealthcheck(String),
-    #[error("网页入口 {url} 在期限内没有响应：{last_error}")]
-    WebUi { url: String, last_error: String },
+    #[error("{0}")]
+    WebUi(String),
 }
 
 /// 等待目标状态。
@@ -82,22 +70,28 @@ pub async fn wait_for(
     container: &str,
     target: Target,
     deadline: Instant,
+    langs: &Languages,
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
-        let (state, probes) = match observe(engine, container, target, &mut running_since).await {
-            Ok(Observation::Done(readiness)) => return Ok(readiness),
-            Ok(Observation::Waiting { state, probes }) => (state, probes),
-            Err(failure) => return Err(failure_error(engine, container, failure).await),
-        };
+        let (state, probes) =
+            match observe(engine, container, target, &mut running_since, langs).await {
+                Ok(Observation::Done(readiness)) => return Ok(readiness),
+                Ok(Observation::Waiting { state, probes }) => (state, probes),
+                Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
+            };
         if Instant::now() >= deadline {
             let logs = engine.logs_tail(container, LOG_LINES).await;
-            return Err(HealthError::Timeout {
-                container: container.to_owned(),
-                state,
-                probes: probe_block(&probes),
-                logs,
-            });
+            return Err(HealthError::Timeout(with_log_tail(
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-health-timeout",
+                    &[("container", container.into()), ("state", state.into())],
+                ),
+                probe_block(&probes, langs),
+                &logs,
+                langs,
+            )));
         }
         sleep(POLL).await;
     }
@@ -109,6 +103,7 @@ pub(super) async fn wait_for_all(
     engine: &Engine,
     deps: &[(String, DependCondition)],
     deadline: Instant,
+    langs: &Languages,
 ) -> Result<(), HealthError> {
     let mut pending: Vec<Pending> = deps
         .iter()
@@ -125,7 +120,7 @@ pub(super) async fn wait_for_all(
             let dep = &mut pending[index];
             let mut running_since = None;
             let target = Target::Depend(dep.condition);
-            match observe(engine, dep.name, target, &mut running_since).await {
+            match observe(engine, dep.name, target, &mut running_since, langs).await {
                 Ok(Observation::Done(_)) => {
                     pending.remove(index);
                 }
@@ -134,7 +129,7 @@ pub(super) async fn wait_for_all(
                     dep.probes = probes;
                     index += 1;
                 }
-                Err(failure) => return Err(failure_error(engine, dep.name, failure).await),
+                Err(failure) => return Err(failure_error(engine, dep.name, failure, langs).await),
             }
         }
         if pending.is_empty() {
@@ -143,12 +138,19 @@ pub(super) async fn wait_for_all(
         if Instant::now() >= deadline {
             let dep = pending.swap_remove(0);
             let logs = engine.logs_tail(dep.name, LOG_LINES).await;
-            return Err(HealthError::Timeout {
-                container: dep.name.to_owned(),
-                state: dep.state,
-                probes: probe_block(&dep.probes),
-                logs,
-            });
+            return Err(HealthError::Timeout(with_log_tail(
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-health-timeout",
+                    &[
+                        ("container", dep.name.into()),
+                        ("state", dep.state.clone().into()),
+                    ],
+                ),
+                probe_block(&dep.probes, langs),
+                &logs,
+                langs,
+            )));
         }
         sleep(POLL).await;
     }
@@ -164,19 +166,50 @@ struct Pending<'a> {
 }
 
 /// 失败变成报错：附上容器最近的日志，让人不用去查 Docker 就能看出原因。
-async fn failure_error(engine: &Engine, container: &str, failure: Failure) -> HealthError {
+async fn failure_error(
+    engine: &Engine,
+    container: &str,
+    failure: Failure,
+    langs: &Languages,
+) -> HealthError {
     match failure {
-        Failure::Unhealthy(probes) => HealthError::Unhealthy {
-            container: container.to_owned(),
-            probes: probe_block(&probes),
-            logs: engine.logs_tail(container, LOG_LINES).await,
-        },
-        Failure::Exited(code) => HealthError::Exited {
-            container: container.to_owned(),
-            code,
-            logs: engine.logs_tail(container, LOG_LINES).await,
-        },
+        Failure::Unhealthy(probes) => {
+            let logs = engine.logs_tail(container, LOG_LINES).await;
+            HealthError::Unhealthy(with_log_tail(
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-health-unhealthy",
+                    &[("container", container.into())],
+                ),
+                probe_block(&probes, langs),
+                &logs,
+                langs,
+            ))
+        }
+        Failure::Exited(code) => {
+            let logs = engine.logs_tail(container, LOG_LINES).await;
+            HealthError::Exited(with_log_tail(
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-health-exited",
+                    &[("container", container.into()), ("code", code.into())],
+                ),
+                String::new(),
+                &logs,
+                langs,
+            ))
+        }
         Failure::Other(e) => e,
+    }
+}
+
+/// 错误正文加上日志尾巴一段：没有探针就不留空行，和以前的排版一致。
+fn with_log_tail(head: String, probes: String, logs: &str, langs: &Languages) -> String {
+    let tail = crate::l10n::text(langs, "plugin-settings-health-log-tail", &[]);
+    if probes.is_empty() {
+        format!("{head}\n{tail}\n{logs}")
+    } else {
+        format!("{head}\n{probes}{tail}\n{logs}")
     }
 }
 
@@ -237,18 +270,31 @@ fn unhealthy_reason(container: &str, probe: Option<Probe>, langs: &Languages) ->
 }
 
 /// 探针结果排成一段，和日志尾巴并列。没有 `Health.Log` 的旧 Docker 返回空段，错误和以前一样。
-fn probe_block(probes: &[Probe]) -> String {
+fn probe_block(probes: &[Probe], langs: &Languages) -> String {
     if probes.is_empty() {
         return String::new();
     }
-    let mut block = String::from("最近探针：\n");
+    let mut block = format!(
+        "{}\n",
+        crate::l10n::text(langs, "plugin-settings-health-probes", &[])
+    );
     for probe in probes {
         // Docker 的探针输出常以换行结尾：trim_end 再拼，每条一行。
         let output = probe.output.trim_end();
-        match probe.exit_code {
-            Some(code) => block.push_str(&format!("[退出码 {code}] {output}\n")),
-            None => block.push_str(&format!("[退出码 ?] {output}\n")),
-        }
+        let line = match probe.exit_code {
+            Some(code) => crate::l10n::text(
+                langs,
+                "plugin-settings-health-probe-line",
+                &[("code", code.into()), ("output", output.into())],
+            ),
+            None => crate::l10n::text(
+                langs,
+                "plugin-settings-health-probe-line-unknown",
+                &[("output", output.into())],
+            ),
+        };
+        block.push_str(&line);
+        block.push('\n');
     }
     block
 }
@@ -300,12 +346,22 @@ async fn observe(
     container: &str,
     target: Target,
     running_since: &mut Option<Instant>,
+    langs: &Languages,
 ) -> Result<Observation, Failure> {
     let info = engine
         .inspect_container(container)
         .await
         .map_err(|e| Failure::Other(e.into()))?
-        .ok_or_else(|| Failure::Other(EngineError::NotFound(format!("容器 {container}")).into()))?;
+        .ok_or_else(|| {
+            Failure::Other(
+                EngineError::NotFound(crate::l10n::text(
+                    langs,
+                    "plugin-settings-health-container-missing",
+                    &[("container", container.into())],
+                ))
+                .into(),
+            )
+        })?;
     let state = info.state.unwrap_or_default();
     let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
     let probes = recent_probes(&state, PROBES_KEPT);
@@ -320,6 +376,47 @@ async fn observe(
         health.map(|h| format!(" / {h:?}")).unwrap_or_default()
     );
 
+    verdict(
+        Snapshot {
+            status,
+            health,
+            has_check,
+            exit_code,
+            label,
+            probes,
+        },
+        container,
+        target,
+        running_since,
+        langs,
+    )
+}
+/// 容器这一次读到的快照，够不够 `target` 由 [`verdict`] 判。
+struct Snapshot {
+    status: ContainerStateStatusEnum,
+    health: Option<HealthStatusEnum>,
+    has_check: bool,
+    exit_code: i64,
+    label: String,
+    probes: Vec<Probe>,
+}
+
+/// 读到的状态够不够 `target`：不够就继续等，够不了就给出失败原因。
+fn verdict(
+    snapshot: Snapshot,
+    container: &str,
+    target: Target,
+    running_since: &mut Option<Instant>,
+    langs: &Languages,
+) -> Result<Observation, Failure> {
+    let Snapshot {
+        status,
+        health,
+        has_check,
+        exit_code,
+        label,
+        probes,
+    } = snapshot;
     if target == Target::Depend(DependCondition::ServiceCompletedSuccessfully) {
         return match status {
             ContainerStateStatusEnum::EXITED if exit_code == 0 => {
@@ -346,7 +443,11 @@ async fn observe(
     let running = status == ContainerStateStatusEnum::RUNNING;
     match target {
         Target::Depend(DependCondition::ServiceHealthy) if !has_check => Err(Failure::Other(
-            HealthError::NoHealthcheck(container.to_owned()),
+            HealthError::NoHealthcheck(crate::l10n::text(
+                langs,
+                "plugin-settings-health-no-healthcheck",
+                &[("container", container.into())],
+            )),
         )),
         Target::Depend(DependCondition::ServiceStarted) if running => {
             Ok(Observation::Done(Readiness::Running))
@@ -426,7 +527,7 @@ pub async fn check_now(
     Ok(match (one_shot, status) {
         (true, ContainerStateStatusEnum::EXITED) if exit_code == 0 => Checked::Completed,
         (true, _) if running => Checked::Completed,
-        (true, _) => Checked::Failed(l10n::text(
+        (true, _) => Checked::Failed(crate::l10n::text(
             langs,
             "plugin-install-one-shot-failed",
             &[
@@ -438,7 +539,7 @@ pub async fn check_now(
         (false, ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::CREATED) => {
             Checked::Stopped
         }
-        (false, _) if !running => Checked::Failed(l10n::text(
+        (false, _) if !running => Checked::Failed(crate::l10n::text(
             langs,
             "plugin-install-container-not-running",
             &[
@@ -462,6 +563,7 @@ pub async fn wait_webui(
     endpoint: &super::upstreams::Endpoint,
     path: &str,
     deadline: Instant,
+    langs: &Languages,
 ) -> Result<(), HealthError> {
     let url = endpoint.url(path);
     loop {
@@ -472,7 +574,11 @@ pub async fn wait_webui(
                 Err(e) => e.to_string(),
             };
         if Instant::now() >= deadline {
-            return Err(HealthError::WebUi { url, last_error });
+            return Err(HealthError::WebUi(crate::l10n::text(
+                langs,
+                "plugin-settings-health-webui-timeout",
+                &[("url", url.into()), ("last_error", last_error.into())],
+            )));
         }
         sleep(POLL).await;
     }

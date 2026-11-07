@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{LanClient, LanWebuiOffer};
 
+use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::PluginManager;
 use crate::plugin::manifest::{Manifest, ManifestError, PluginId};
@@ -29,14 +30,28 @@ pub(super) fn validate(
     client: &LanClientSpec,
     langs: &Languages,
 ) -> Result<(), ManifestError> {
-    let invalid = |message: String| ManifestError::Invalid(format!("lan.client：{message}"));
+    let invalid = |message: String| {
+        ManifestError::Invalid(l10n::text(
+            langs,
+            "plugin-settings-lan-client-prefix",
+            &[("message", message.into())],
+        ))
+    };
     if !client.address.contains(HOST) {
-        return Err(invalid(format!("address 要写 {HOST}")));
+        return Err(invalid(l10n::text(
+            langs,
+            "plugin-settings-lan-client-address-host",
+            &[("host", HOST.into())],
+        )));
     }
     for template in [&client.username, &client.password] {
         // 账号不会是显示名，插件管理器也没有它。
         if template.contains("{name}") {
-            return Err(invalid("不能用 {name}".to_owned()));
+            return Err(invalid(l10n::text(
+                langs,
+                "plugin-settings-lan-client-template",
+                &[("name", "{name}".into())],
+            )));
         }
         proxy_auth::check_template(manifest, template, langs).map_err(invalid)?;
     }
@@ -64,6 +79,7 @@ impl PluginManager {
     }
 
     async fn lan_client(&self, id: &PluginId) -> Result<Option<LanClient>, String> {
+        let langs = self.owner_languages();
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(id).and_then(|entry| entry.listed.clone())
@@ -79,17 +95,23 @@ impl PluginManager {
             return Ok(None);
         };
         let stored = self.store.secrets().load(id).map_err(|e| e.to_string())?;
-        let stored = stored.ok_or("密钥库里没有这个插件")?;
-        let generated = secrets::generated_values(manifest, &stored)?;
+        let stored = stored
+            .ok_or_else(|| l10n::text(&langs, "plugin-settings-lan-client-secret-missing", &[]))?;
+        let generated = secrets::generated_values(manifest, &stored, &langs)?;
         let owner = self.cfg.profile.owner();
-        let langs = self.owner_languages();
         let fill = |template| proxy_auth::fill_template(template, &owner, &generated, &langs);
         let mut hosts = BTreeSet::new();
         let slug = id.slug();
         for port in &lan.ports {
             let name = self.cfg.instance.container(&slug, &port.service);
             let info = self.engine.inspect_container(&name).await;
-            let info = info.map_err(|e| format!("查不到容器 {name}：{e}"))?;
+            let info = info.map_err(|e| {
+                l10n::text(
+                    &langs,
+                    "plugin-settings-lan-client-container",
+                    &[("container", name.into()), ("error", e.to_string().into())],
+                )
+            })?;
             let bindings = info
                 .and_then(|info| info.host_config)
                 .and_then(|host| host.port_bindings)
@@ -98,7 +120,11 @@ impl PluginManager {
             hosts.extend(bindings.into_iter().filter_map(|b| b.host_ip));
         }
         if hosts.is_empty() {
-            return Err("端口没有开在任何局域网地址上".to_owned());
+            return Err(l10n::text(
+                &langs,
+                "plugin-settings-lan-client-not-published",
+                &[],
+            ));
         }
         Ok(Some(LanClient {
             addresses: hosts

@@ -2,6 +2,7 @@
 
 use super::super::compose::DependCondition;
 use super::super::fake_docker::FakeDocker;
+use super::super::languages::Languages;
 use super::super::names::{container_name, service_host};
 use super::super::render::{Deployment, dry_run};
 use super::super::upstreams::Endpoint;
@@ -238,7 +239,7 @@ async fn network_mode_rebuilding_a_target_replaces_its_sidecars_but_not_other_se
         .addresses[0]
         .ip = "10.0.0.10".parse().unwrap();
     *detected.lock().unwrap() = Ok(changed);
-    manager.lan_pass().await.unwrap();
+    manager.lan_pass(&Languages::default()).await.unwrap();
     let writes = docker.writes()[before..].to_vec();
     let target = container_name("app-test", "target");
     let sidecar = container_name("app-test", "sidecar");

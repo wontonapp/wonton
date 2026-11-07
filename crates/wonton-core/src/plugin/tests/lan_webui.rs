@@ -148,7 +148,11 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
         "只有主人的接口带密码"
     );
     let secrets = m.store.secrets().load(&id()).unwrap().unwrap();
-    let values = crate::plugin::secrets::generated_values(&parsed(&compose).manifest, &secrets);
+    let values = crate::plugin::secrets::generated_values(
+        &parsed(&compose).manifest,
+        &secrets,
+        &crate::plugin::languages::Languages::default(),
+    );
     assert_eq!(client.password, values.unwrap()["pw"]);
 
     let closed = m.set_lan_webui(id(), false, langs).await.unwrap();
@@ -431,12 +435,12 @@ async fn closing_never_reopens_the_port_when_it_fails() {
     assert!(!enabled(&m));
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     let closed = docker.writes().len();
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(published(&docker, "web"), Value::Null);
     assert!(!enabled(&m));
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     docker.set_state(&smb, health("healthy"));
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
     assert_eq!(published(&docker, "web"), Value::Null);
     assert!(
@@ -454,7 +458,7 @@ async fn closing_never_reopens_the_port_when_it_fails() {
         .unwrap_err();
     assert!(!enabled(&m));
     docker.fail_pulls(None);
-    m.lan_pass().await.unwrap();
+    m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
     assert_eq!(published(&docker, "web"), Value::Null);
 }

@@ -7,6 +7,8 @@ use std::time::Duration;
 use reqwest::StatusCode;
 
 use super::egress::core_proxy::CoreProxy;
+use super::languages::Languages;
+use crate::l10n;
 
 /// 一次请求最多等这么久：GitHub 在国内时常很慢，但不能让预览一直挂着。
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -93,7 +95,12 @@ impl GitHub {
     }
 
     /// 仓库的全部 tag。仓库不存在或不公开时 GitHub 要求登录（401），这里报 [`GitHubError::NotFound`]。
-    pub async fn tags(&self, repo: &Repo) -> Result<Vec<Tag>, GitHubError> {
+    pub async fn tags(&self, repo: &Repo, langs: &Languages) -> Result<Vec<Tag>, GitHubError> {
+        let what = l10n::text(
+            langs,
+            "plugin-settings-github-tags-what",
+            &[("repo", repo.to_string().into())],
+        );
         let url = format!("{}/{repo}.git/git-upload-pack", self.git);
         let response = self
             .client
@@ -104,25 +111,37 @@ impl GitHub {
             .body(ls_refs_request())
             .send()
             .await
-            .map_err(|e| unavailable(&format!("读 {repo} 的 tag"), &e))?;
+            .map_err(|e| unavailable(&what, &e, langs))?;
         match response.status() {
             StatusCode::OK => {}
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => {
-                return Err(GitHubError::NotFound(format!(
-                    "GitHub 上没有公开仓库 {repo}"
+                return Err(GitHubError::NotFound(l10n::text(
+                    langs,
+                    "plugin-settings-github-no-repo",
+                    &[("repo", repo.to_string().into())],
                 )));
             }
             status => {
-                return Err(GitHubError::Unavailable(format!(
-                    "读 {repo} 的 tag 时 GitHub 回了 {status}"
+                return Err(GitHubError::Unavailable(l10n::text(
+                    langs,
+                    "plugin-settings-github-status",
+                    &[
+                        ("what", what.as_str().into()),
+                        ("status", format!("{status}").into()),
+                    ],
                 )));
             }
         }
-        let body = read_limited(response, MAX_REFS_BYTES)
+        let body = read_limited(response, MAX_REFS_BYTES, langs)
             .await
-            .map_err(|e| e.context(&format!("读 {repo} 的 tag")))?;
-        parse_ls_refs(&body)
-            .map_err(|e| GitHubError::Unavailable(format!("GitHub 给的 {repo} 的 tag 读不懂：{e}")))
+            .map_err(|e| e.context(&what, langs))?;
+        parse_ls_refs(&body).map_err(|e| {
+            GitHubError::Unavailable(l10n::text(
+                langs,
+                "plugin-settings-github-tags-parse",
+                &[("repo", repo.to_string().into()), ("error", e.into())],
+            ))
+        })
     }
 
     /// 某个提交里的一个文件，超过 `max` 字节时报错。
@@ -132,32 +151,52 @@ impl GitHub {
         commit: &str,
         path: &str,
         max: u64,
+        langs: &Languages,
     ) -> Result<Vec<u8>, GitHubError> {
         let url = format!("{}/{repo}/{commit}/{path}", self.raw);
-        let what = format!("取 {repo} 在提交 {commit} 里的 {path}");
-        let result = self.file_once(&url, &what, max).await;
+        let what = l10n::text(
+            langs,
+            "plugin-settings-github-file-what",
+            &[
+                ("repo", repo.to_string().into()),
+                ("commit", commit.into()),
+                ("path", path.into()),
+            ],
+        );
+        let result = self.file_once(&url, &what, max, langs).await;
         // 直连会偶发卡在首字节或正文。只有内容不变的提交可以整文件重取；丢弃半个响应，仍核对大小和摘要。
         if is_commit_id(commit) && matches!(&result, Err(GitHubError::Timeout(_))) {
             tracing::info!(%repo, %commit, %path, "取文件超时，重取一次");
-            return self.file_once(&url, &what, max).await;
+            return self.file_once(&url, &what, max, langs).await;
         }
         result
     }
 
-    async fn file_once(&self, url: &str, what: &str, max: u64) -> Result<Vec<u8>, GitHubError> {
+    async fn file_once(
+        &self,
+        url: &str,
+        what: &str,
+        max: u64,
+        langs: &Languages,
+    ) -> Result<Vec<u8>, GitHubError> {
         let response = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| unavailable(what, &e))?;
+            .map_err(|e| unavailable(what, &e, langs))?;
         match response.status() {
-            StatusCode::OK => read_limited(response, max)
+            StatusCode::OK => read_limited(response, max, langs)
                 .await
-                .map_err(|e| e.context(what)),
-            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {what}"))),
-            status => Err(GitHubError::Unavailable(format!(
-                "{what} 时 GitHub 回了 {status}"
+                .map_err(|e| e.context(what, langs)),
+            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(missing(langs, what))),
+            status => Err(GitHubError::Unavailable(l10n::text(
+                langs,
+                "plugin-settings-github-status",
+                &[
+                    ("what", what.into()),
+                    ("status", format!("{status}").into()),
+                ],
             ))),
         }
     }
@@ -165,20 +204,36 @@ impl GitHub {
 
 impl GitHub {
     /// 任意地址的文件，超过 `max` 字节时报错：第三方索引可以放在任何静态托管上。走同一个客户端，代理和超时都一样。
-    pub async fn url(&self, url: &reqwest::Url, max: u64) -> Result<Vec<u8>, GitHubError> {
-        let what = format!("取 {url}");
+    pub async fn url(
+        &self,
+        url: &reqwest::Url,
+        max: u64,
+        langs: &Languages,
+    ) -> Result<Vec<u8>, GitHubError> {
+        let what = l10n::text(
+            langs,
+            "plugin-settings-github-url-what",
+            &[("url", url.as_str().into())],
+        );
         let response = self
             .client
             .get(url.clone())
             .send()
             .await
-            .map_err(|e| unavailable(&what, &e))?;
+            .map_err(|e| unavailable(&what, &e, langs))?;
         match response.status() {
-            StatusCode::OK => read_limited(response, max)
+            StatusCode::OK => read_limited(response, max, langs)
                 .await
-                .map_err(|e| e.context(&what)),
-            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {url}"))),
-            status => Err(GitHubError::Unavailable(format!("{what} 时回了 {status}"))),
+                .map_err(|e| e.context(&what, langs)),
+            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(missing(langs, url.as_str()))),
+            status => Err(GitHubError::Unavailable(l10n::text(
+                langs,
+                "plugin-settings-github-status",
+                &[
+                    ("what", what.as_str().into()),
+                    ("status", format!("{status}").into()),
+                ],
+            ))),
         }
     }
 
@@ -189,8 +244,17 @@ impl GitHub {
         reference: &str,
         path: &str,
         max: u64,
+        langs: &Languages,
     ) -> Result<Vec<u8>, GitHubError> {
-        let what = format!("经 API 取 {repo} 在 {reference} 里的 {path}");
+        let what = l10n::text(
+            langs,
+            "plugin-settings-github-api-what",
+            &[
+                ("repo", repo.to_string().into()),
+                ("reference", reference.into()),
+                ("path", path.into()),
+            ],
+        );
         let response = self
             .client
             .get(format!(
@@ -201,17 +265,26 @@ impl GitHub {
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send()
             .await
-            .map_err(|e| unavailable(&what, &e))?;
+            .map_err(|e| unavailable(&what, &e, langs))?;
         match response.status() {
-            StatusCode::OK => read_limited(response, max)
+            StatusCode::OK => read_limited(response, max, langs)
                 .await
-                .map_err(|e| e.context(&what)),
-            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(format!("没有 {what}"))),
-            StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => Err(GitHubError::RateLimited(
-                format!("{what}：GitHub 限速了，几分钟后再试"),
-            )),
-            status => Err(GitHubError::Unavailable(format!(
-                "{what}：GitHub 回了 {status}"
+                .map_err(|e| e.context(&what, langs)),
+            StatusCode::NOT_FOUND => Err(GitHubError::NotFound(missing(langs, &what))),
+            StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => {
+                Err(GitHubError::RateLimited(l10n::text(
+                    langs,
+                    "plugin-settings-github-rate-limited",
+                    &[("what", what.as_str().into())],
+                )))
+            }
+            status => Err(GitHubError::Unavailable(l10n::text(
+                langs,
+                "plugin-settings-github-api-status",
+                &[
+                    ("what", what.as_str().into()),
+                    ("status", format!("{status}").into()),
+                ],
             ))),
         }
     }
@@ -257,7 +330,12 @@ struct SearchOwner {
 impl GitHub {
     /// 搜索 API 的一页（`page` 从 1 开始，每页 100 个，按星数从多到少）。不带令牌时每个出口 IP 每分钟 10 次，
     /// 超了 GitHub 回 403 或 429，报 [`GitHubError::RateLimited`]。
-    pub async fn search(&self, query: &str, page: u32) -> Result<SearchPage, GitHubError> {
+    pub async fn search(
+        &self,
+        query: &str,
+        page: u32,
+        langs: &Languages,
+    ) -> Result<SearchPage, GitHubError> {
         let page = page.to_string();
         let url = reqwest::Url::parse_with_params(
             &format!("{}/search/repositories", self.api),
@@ -269,7 +347,13 @@ impl GitHub {
                 ("page", page.as_str()),
             ],
         )
-        .map_err(|e| GitHubError::Unavailable(format!("搜索的地址不对：{e}")))?;
+        .map_err(|e| {
+            GitHubError::Unavailable(l10n::text(
+                langs,
+                "plugin-settings-github-search-url",
+                &[("error", e.to_string().into())],
+            ))
+        })?;
         let response = self
             .client
             .get(url)
@@ -277,23 +361,32 @@ impl GitHub {
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send()
             .await
-            .map_err(|e| unavailable("搜索社区插件", &e))?;
+            .map_err(|e| unavailable(&search_what(langs), &e, langs))?;
         match response.status() {
             StatusCode::OK => {}
             StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => {
-                return Err(GitHubError::RateLimited(
-                    "GitHub 限速了，几分钟后再试".to_owned(),
-                ));
+                return Err(GitHubError::RateLimited(l10n::text(
+                    langs,
+                    "plugin-settings-github-rate-limited-plain",
+                    &[],
+                )));
             }
             status => {
-                return Err(GitHubError::Unavailable(format!(
-                    "搜索社区插件时 GitHub 回了 {status}"
+                return Err(GitHubError::Unavailable(l10n::text(
+                    langs,
+                    "plugin-settings-github-search-status",
+                    &[("status", format!("{status}").into())],
                 )));
             }
         }
-        let body = read_limited(response, MAX_REFS_BYTES).await?;
-        let found: SearchResponse = serde_json::from_slice(&body)
-            .map_err(|e| GitHubError::Unavailable(format!("GitHub 给的搜索结果读不懂：{e}")))?;
+        let body = read_limited(response, MAX_REFS_BYTES, langs).await?;
+        let found: SearchResponse = serde_json::from_slice(&body).map_err(|e| {
+            GitHubError::Unavailable(l10n::text(
+                langs,
+                "plugin-settings-github-search-parse",
+                &[("error", e.to_string().into())],
+            ))
+        })?;
         Ok(SearchPage {
             total: found.total_count,
             repos: found
@@ -313,13 +406,20 @@ impl GitHub {
 }
 
 impl GitHubError {
-    fn context(self, what: &str) -> Self {
+    fn context(self, what: &str, langs: &Languages) -> Self {
+        let join = |message: String| {
+            l10n::text(
+                langs,
+                "plugin-settings-github-context",
+                &[("what", what.into()), ("error", message.into())],
+            )
+        };
         match self {
-            Self::Unavailable(m) => Self::Unavailable(format!("{what}：{m}")),
-            Self::Timeout(m) => Self::Timeout(format!("{what}：{m}")),
-            Self::NotFound(m) => Self::NotFound(format!("{what}：{m}")),
-            Self::TooBig(m) => Self::TooBig(format!("{what}：{m}")),
-            Self::RateLimited(m) => Self::RateLimited(format!("{what}：{m}")),
+            Self::Unavailable(m) => Self::Unavailable(join(m)),
+            Self::Timeout(m) => Self::Timeout(join(m)),
+            Self::NotFound(m) => Self::NotFound(join(m)),
+            Self::TooBig(m) => Self::TooBig(join(m)),
+            Self::RateLimited(m) => Self::RateLimited(join(m)),
         }
     }
 }
@@ -332,16 +432,50 @@ fn client(proxy: &CoreProxy) -> reqwest::ClientBuilder {
         .user_agent(concat!("wonton-core/", env!("CARGO_PKG_VERSION")))
 }
 
-fn unavailable(what: &str, e: &reqwest::Error) -> GitHubError {
+fn unavailable(what: &str, e: &reqwest::Error, langs: &Languages) -> GitHubError {
     if e.is_timeout() {
-        GitHubError::Timeout(format!("{what}：请求超时，没有在时限内答完"))
+        GitHubError::Timeout(l10n::text(
+            langs,
+            "plugin-settings-github-timeout",
+            &[("what", what.into())],
+        ))
     } else {
-        GitHubError::Unavailable(format!("{what}：连不上 GitHub（{e}）"))
+        GitHubError::Unavailable(l10n::text(
+            langs,
+            "plugin-settings-github-unreachable",
+            &[("what", what.into()), ("error", e.to_string().into())],
+        ))
     }
 }
 
-async fn read_limited(mut response: reqwest::Response, max: u64) -> Result<Vec<u8>, GitHubError> {
-    let too_big = || GitHubError::TooBig(format!("超过 {} KiB", max.div_ceil(1024)));
+fn missing(langs: &Languages, what: &str) -> String {
+    l10n::text(
+        langs,
+        "plugin-settings-github-missing",
+        &[("what", what.into())],
+    )
+}
+
+fn search_what(langs: &Languages) -> String {
+    l10n::text(langs, "plugin-settings-github-search-what", &[])
+}
+
+fn read_what(langs: &Languages) -> String {
+    l10n::text(langs, "plugin-settings-github-read-what", &[])
+}
+
+async fn read_limited(
+    mut response: reqwest::Response,
+    max: u64,
+    langs: &Languages,
+) -> Result<Vec<u8>, GitHubError> {
+    let too_big = || {
+        GitHubError::TooBig(l10n::text(
+            langs,
+            "plugin-settings-github-too-big",
+            &[("max", format!("{}", max.div_ceil(1024)).into())],
+        ))
+    };
     if response.content_length().is_some_and(|len| len > max) {
         return Err(too_big());
     }
@@ -349,7 +483,7 @@ async fn read_limited(mut response: reqwest::Response, max: u64) -> Result<Vec<u
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|e| unavailable("读响应", &e))?
+        .map_err(|e| unavailable(&read_what(langs), &e, langs))?
     {
         body.extend_from_slice(&chunk);
         if body.len() as u64 > max {

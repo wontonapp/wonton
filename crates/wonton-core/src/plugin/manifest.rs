@@ -555,7 +555,7 @@ impl Manifest {
         }
         require_locales("title", &self.title)?;
         require_locales("description", &self.description)?;
-        super::store_info::validate(self)?;
+        super::store_info::validate(self, langs)?;
         super::manifest_agent::validate(self)?;
         validate_bots(self)?;
         super::privileges::validate_manifest(self, langs)?;

@@ -78,7 +78,7 @@ impl IndexEntry {
                 .collect(),
             compose: package.source.clone(),
         };
-        check(entry.clone(), &[])?;
+        check(entry.clone(), &[], &Languages::default())?;
         Ok(entry)
     }
 
@@ -93,30 +93,32 @@ impl IndexEntry {
     /// 没有 `index.json` 时新建一份。
     pub fn write_to(&self, dir: &Path, package: &PluginPackage) -> Result<(), String> {
         let blobs = dir.join("blobs");
-        std::fs::create_dir_all(&blobs).map_err(|e| format!("建不了 {}：{e}", blobs.display()))?;
+        std::fs::create_dir_all(&blobs)
+            .map_err(|e| format!("cannot create {}: {e}", blobs.display()))?;
         for (_, data) in Self::blobs(package) {
             let path = blobs.join(sha256_hex(data));
-            std::fs::write(&path, data).map_err(|e| format!("写不了 {}：{e}", path.display()))?;
+            std::fs::write(&path, data)
+                .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         }
         let path = dir.join("index.json");
         let mut index = match std::fs::read(&path) {
             Ok(json) => serde_json::from_slice(&json)
-                .map_err(|e| format!("{} 读不懂：{e}", path.display()))?,
+                .map_err(|e| format!("cannot parse {}: {e}", path.display()))?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 serde_json::json!({ "format": FORMAT, "plugins": [] })
             }
-            Err(e) => return Err(format!("读不了 {}：{e}", path.display())),
+            Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
         };
         let plugins = index
             .get_mut("plugins")
             .and_then(serde_json::Value::as_array_mut)
-            .ok_or_else(|| format!("{} 里没有 plugins 列表", path.display()))?;
+            .ok_or_else(|| format!("{} has no plugins list", path.display()))?;
         plugins
             .retain(|p| p.get("source").and_then(serde_json::Value::as_str) != Some(&self.source));
         plugins.push(serde_json::to_value(self).expect("索引项能写成 JSON"));
         let mut json = serde_json::to_vec_pretty(&index).expect("索引能写成 JSON");
         json.push(b'\n');
-        std::fs::write(&path, json).map_err(|e| format!("写不了 {}：{e}", path.display()))
+        std::fs::write(&path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
     }
 }
 
@@ -169,15 +171,37 @@ pub struct Index {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IndexError {
-    /// 索引的格式比核心新：要升级核心。
-    #[error("索引的格式是 {0}，这个版本的核心只读得懂 {FORMAT}：升级核心后才能用新的索引")]
+    /// 索引的格式比核心新：要升级核心。消息不带语言（这里拿不到），给 App 的整句由 [`Self::message`] 按
+    /// 请求的语言写（ADR-0043）。
+    #[error("{0}")]
     NewerFormat(u32),
-    #[error("索引读不懂：{0}")]
+    #[error("{0}")]
     Invalid(String),
 }
 
+impl IndexError {
+    /// 给 App 的整句，按语言写。
+    pub(crate) fn message(&self, langs: &Languages) -> String {
+        match self {
+            Self::NewerFormat(format) => crate::l10n::text(
+                langs,
+                "plugin-settings-store-index-newer",
+                &[
+                    ("format", format.to_string().into()),
+                    ("supported", FORMAT.to_string().into()),
+                ],
+            ),
+            Self::Invalid(error) => crate::l10n::text(
+                langs,
+                "plugin-settings-store-index-invalid",
+                &[("error", error.as_str().into())],
+            ),
+        }
+    }
+}
+
 impl Index {
-    pub fn parse(json: &[u8]) -> Result<Self, IndexError> {
+    pub fn parse(json: &[u8], langs: &Languages) -> Result<Self, IndexError> {
         let format = serde_json::from_slice::<serde_json::Value>(json)
             .map_err(|e| IndexError::Invalid(e.to_string()))?
             .get("format")
@@ -189,7 +213,10 @@ impl Index {
                 ));
             }
             Some(_) => {}
-            None => return Err(IndexError::Invalid("没有 format".to_owned())),
+            None => {
+                let why = crate::l10n::text(langs, "plugin-settings-store-index-no-format", &[]);
+                return Err(IndexError::Invalid(why));
+            }
         }
         let file: IndexFile =
             serde_json::from_slice(json).map_err(|e| IndexError::Invalid(e.to_string()))?;
@@ -200,7 +227,13 @@ impl Index {
         };
         match file.docs.map(serde_json::from_value::<DocsSpec>) {
             Some(Ok(docs)) => index.docs = Some(docs),
-            Some(Err(e)) => index.docs_problem = Some(format!("官方索引的 docs 读不懂：{e}")),
+            Some(Err(e)) => {
+                index.docs_problem = Some(crate::l10n::text(
+                    langs,
+                    "plugin-settings-store-index-docs-problem",
+                    &[("error", e.to_string().into())],
+                ))
+            }
             None => {}
         }
         match file
@@ -209,17 +242,28 @@ impl Index {
         {
             Some(Ok(onboarding)) => index.onboarding = Some(onboarding),
             Some(Err(e)) => {
-                index.onboarding_problem = Some(format!("官方索引的 onboarding 读不懂：{e}"))
+                index.onboarding_problem = Some(crate::l10n::text(
+                    langs,
+                    "plugin-settings-store-index-onboarding-problem",
+                    &[("error", e.to_string().into())],
+                ))
             }
             None => {}
         }
-        match file
-            .registry_mirrors
-            .map(super::super::registry_mirror::address::choices)
-        {
+        match file.registry_mirrors.map(|value| {
+            // 索引在缓存刷新时解析，校验消息按默认语言（ADR-0043 的回退）。
+            super::super::registry_mirror::address::choices(
+                value,
+                &super::super::languages::Languages::default(),
+            )
+        }) {
             Some(Ok(choices)) => index.registry_mirrors = choices,
             Some(Err(e)) => {
-                let reason = format!("官方索引的 registry_mirrors 读不懂：{e}");
+                let reason = crate::l10n::text(
+                    langs,
+                    "plugin-settings-store-index-mirrors-problem",
+                    &[("error", e.to_string().into())],
+                );
                 tracing::warn!(%reason);
                 index.registry_mirrors_problem = Some(reason);
             }
@@ -227,7 +271,7 @@ impl Index {
         }
         for entry in file.plugins {
             let source = entry.source.clone();
-            match check(entry, &index.plugins) {
+            match check(entry, &index.plugins, langs) {
                 Ok(listed) => index.plugins.push(listed),
                 Err(reason) => {
                     tracing::warn!(%source, %reason, "索引里的一项用不了，跳过");
@@ -244,32 +288,39 @@ impl Index {
 }
 
 /// 一项要来源合法、提交是 40 位、compose 和 `files` 里记的一致、清单读得懂，来源和插件 ID 都不和前面的重复。
-fn check(entry: IndexEntry, before: &[Listed]) -> Result<Listed, String> {
-    let source = SourceRef::parse(&entry.source).map_err(|e| e.to_string())?;
+fn check(entry: IndexEntry, before: &[Listed], langs: &Languages) -> Result<Listed, String> {
+    let text = |id: &str, args: &[(&str, wonton_l10n::Arg<'_>)]| crate::l10n::text(langs, id, args);
+    let source = SourceRef::parse(&entry.source, langs).map_err(|e| e.to_string())?;
     if source.wanted != Wanted::Latest {
-        return Err("source 不能带版本".to_owned());
+        return Err(text("plugin-settings-store-index-source-with-version", &[]));
     }
     if !is_commit_id(&entry.commit) {
-        return Err("commit 要是 40 位提交号".to_owned());
+        return Err(text("plugin-settings-store-index-commit-length", &[]));
     }
     if entry.files.get(COMPOSE_FILE) != Some(&sha256_hex(entry.compose.as_bytes())) {
-        return Err(format!(
-            "compose 和 files 里 {COMPOSE_FILE} 的 sha256 对不上"
+        return Err(text(
+            "plugin-settings-store-index-compose-digest",
+            &[("file", COMPOSE_FILE.into())],
         ));
     }
-    let manifest = PluginPackage::manifest_of(&entry.compose, &Languages::default())
-        .map_err(|e| e.to_string())?;
+    let manifest = PluginPackage::manifest_of(&entry.compose, langs).map_err(|e| e.to_string())?;
     if manifest.version != entry.version {
-        return Err(format!(
-            "version {} 和清单的版本 {} 不一致",
-            entry.version, manifest.version
+        return Err(text(
+            "plugin-settings-store-index-version-mismatch",
+            &[
+                ("version", entry.version.as_str().into()),
+                ("manifest", manifest.version.as_str().into()),
+            ],
         ));
     }
     if before.iter().any(|p| p.repo == source.repo) {
-        return Err("source 重复".to_owned());
+        return Err(text("plugin-settings-store-index-source-duplicate", &[]));
     }
     if before.iter().any(|p| p.manifest.id == manifest.id) {
-        return Err(format!("插件 ID {} 重复", manifest.id));
+        return Err(text(
+            "plugin-settings-store-index-id-duplicate",
+            &[("id", manifest.id.to_string().into())],
+        ));
     }
     Ok(Listed {
         entry,
@@ -294,11 +345,23 @@ pub enum Files {
 
 impl Files {
     /// 插件包里的一个文件，按索引记的 sha256 核对。
-    pub async fn file(&self, listed: &Listed, path: &str) -> Result<Vec<u8>, InstallError> {
+    pub async fn file(
+        &self,
+        listed: &Listed,
+        path: &str,
+        langs: &Languages,
+    ) -> Result<Vec<u8>, InstallError> {
         let sha256 = listed.entry.files.get(path).ok_or_else(|| {
-            InstallError::Invalid(format!("索引里 {} 的文件没有 {path}", listed.entry.source))
+            InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-store-index-file-missing",
+                &[
+                    ("source", listed.entry.source.as_str().into()),
+                    ("path", path.into()),
+                ],
+            ))
         })?;
-        self.verified(&listed.repo, &listed.entry.commit, path, sha256)
+        self.verified(&listed.repo, &listed.entry.commit, path, sha256, langs)
             .await
     }
 
@@ -309,60 +372,77 @@ impl Files {
         commit: &str,
         path: &str,
         sha256: &str,
+        langs: &Languages,
     ) -> Result<Vec<u8>, InstallError> {
         let data = match self {
-            Self::Dir(dir) => read_blob(dir, sha256)?,
+            Self::Dir(dir) => read_blob(dir, sha256, langs)?,
             Self::GitHub(github) => github
-                .file(repo, commit, path, MAX_FILE_BYTES)
+                .file(repo, commit, path, MAX_FILE_BYTES, langs)
                 .await
                 .map_err(github_error)?,
             Self::Third { location, github } => {
                 let blob = format!("blobs/{sha256}");
-                match location.read(github, &blob, MAX_FILE_BYTES).await {
+                match location.read(github, &blob, MAX_FILE_BYTES, langs).await {
                     Ok(data) => data,
                     Err(_) => github
-                        .file(repo, commit, path, MAX_FILE_BYTES)
+                        .file(repo, commit, path, MAX_FILE_BYTES, langs)
                         .await
                         .map_err(github_error)?,
                 }
             }
         };
         if sha256_hex(&data) != sha256 {
-            return Err(InstallError::Invalid(format!(
-                "{repo} 的 {path} 和索引里记的 sha256 对不上"
+            return Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-store-index-file-digest",
+                &[("repo", repo.to_string().into()), ("path", path.into())],
             )));
         }
         Ok(data)
     }
 
     /// 索引里这一项的插件包：compose 用索引里的，引用的文件逐个取来核对。
-    pub async fn package(&self, listed: &Listed) -> Result<PluginPackage, InstallError> {
+    pub async fn package(
+        &self,
+        listed: &Listed,
+        langs: &Languages,
+    ) -> Result<PluginPackage, InstallError> {
         let compose = &listed.entry.compose;
         let mut files = PackageFiles::new();
-        let optional = PluginPackage::optional_files(compose, &Languages::default())?;
-        for path in PluginPackage::referenced_files(compose, &Languages::default())? {
+        let optional = PluginPackage::optional_files(compose, langs)?;
+        for path in PluginPackage::referenced_files(compose, langs)? {
             if optional.contains(&path) && !listed.entry.files.contains_key(&path) {
                 continue;
             }
-            let data = self.file(listed, &path).await?;
+            let data = self.file(listed, &path, langs).await?;
             files.insert(path, data);
         }
-        let mut package = PluginPackage::with_files(compose, files, &Languages::default())?;
+        let mut package = PluginPackage::with_files(compose, files, langs)?;
         package.origin = Some(listed.origin());
         Ok(package)
     }
 }
 
-fn read_blob(dir: &Path, sha256: &str) -> Result<Vec<u8>, InstallError> {
+fn read_blob(dir: &Path, sha256: &str, langs: &Languages) -> Result<Vec<u8>, InstallError> {
     // sha256 来自索引：只收 64 位十六进制，拼进路径前先确认，免得 `../` 跑出目录。
     if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(InstallError::Invalid(format!(
-            "官方索引里的 sha256 不合法：{sha256}"
+        return Err(InstallError::Invalid(crate::l10n::text(
+            langs,
+            "plugin-settings-store-index-blob-invalid-sha",
+            &[("sha256", sha256.into())],
         )));
     }
     let path = dir.join("blobs").join(sha256);
-    std::fs::read(&path)
-        .map_err(|e| InstallError::NotFound(format!("索引目录里没有 {}：{e}", path.display())))
+    std::fs::read(&path).map_err(|e| {
+        InstallError::NotFound(crate::l10n::text(
+            langs,
+            "plugin-settings-store-index-blob-missing",
+            &[
+                ("path", path.display().to_string().into()),
+                ("error", e.to_string().into()),
+            ],
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -389,7 +469,7 @@ mod tests {
             }
         }"#;
 
-        let index = Index::parse(json.as_bytes()).unwrap();
+        let index = Index::parse(json.as_bytes(), &Languages::default()).unwrap();
         let onboarding = index.onboarding.unwrap();
         assert_eq!(onboarding.agents, ["com.example.agent"]);
         assert_eq!(onboarding.needs[0].plugins, ["app.example.photos"]);
@@ -431,7 +511,7 @@ mod tests {
             }
         }"#;
 
-        let index = Index::parse(json.as_bytes()).unwrap();
+        let index = Index::parse(json.as_bytes(), &Languages::default()).unwrap();
         let onboarding = index.onboarding.unwrap();
         assert_eq!(onboarding.needs[0].id, "photos");
         assert_eq!(onboarding.providers["en"][0].id, "openrouter");
@@ -446,7 +526,7 @@ mod tests {
             "onboarding": {"agents": "not a list"}
         }"#;
 
-        let index = Index::parse(json.as_bytes()).unwrap();
+        let index = Index::parse(json.as_bytes(), &Languages::default()).unwrap();
         assert_eq!(index.onboarding, None);
         assert!(index.onboarding_problem.is_some());
     }
@@ -459,14 +539,15 @@ mod tests {
             "onboarding": {"agents": [], "needs": [], "providers": {}, "prompts": []}
         }"#;
 
-        let index = Index::parse(json).unwrap();
+        let index = Index::parse(json, &Languages::default()).unwrap();
         assert_eq!(index.onboarding, None);
         assert!(index.onboarding_problem.is_some());
     }
 
     #[test]
     fn an_index_without_onboarding_has_no_catalog_problem() {
-        let index = Index::parse(br#"{"format": 1, "plugins": []}"#).unwrap();
+        let index =
+            Index::parse(br#"{"format": 1, "plugins": []}"#, &Languages::default()).unwrap();
 
         assert_eq!(index.onboarding, None);
         assert_eq!(index.onboarding_problem, None);

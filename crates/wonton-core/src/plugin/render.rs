@@ -42,8 +42,8 @@ pub enum RenderError {
     HostPath(String),
     #[error("{0}")]
     NoOwnerIdentity(String),
-    #[error("{}", crate::owner::NO_EMAIL)]
-    NoOwnerEmail,
+    #[error("{0}")]
+    NoOwnerEmail(String),
 }
 
 /// 引用了主人的身份变量却没注入时，分清是插件没申请还是主人没配（ADR-0022）。
@@ -56,7 +56,11 @@ fn explain_owner_vars(error: RenderError, ctx: &InstallContext, langs: &Language
         _ => None,
     };
     match (variable, &ctx.owner) {
-        (Some("WONTON_OWNER_EMAIL"), Some(_)) => RenderError::NoOwnerEmail,
+        (Some("WONTON_OWNER_EMAIL"), Some(_)) => RenderError::NoOwnerEmail(crate::l10n::text(
+            langs,
+            "plugin-settings-email-missing",
+            &[],
+        )),
         (Some(name @ ("WONTON_OWNER_NAME" | "WONTON_OWNER_EMAIL")), None) => {
             RenderError::NoOwnerIdentity(crate::l10n::text(
                 langs,

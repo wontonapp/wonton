@@ -19,7 +19,7 @@ use wonton_protocol::{PEER_ERROR_HEADER, PeerError, PeerErrorBody, PeerProblem, 
 
 use super::isolation;
 use super::{Gateway, TunnelPeer, api};
-use crate::peers::pick_zh_en;
+
 use crate::plugin::languages::Languages;
 
 /// 主人的语言，错误说明按它写（ADR-0043）。
@@ -80,46 +80,24 @@ fn error(langs: &Languages, kind: PeerError) -> Response {
 
 /// 类别的主人说得清的说明（ADR-0043）。
 fn message(kind: PeerError, langs: &Languages) -> String {
-    let (zh, en) = match kind {
-        PeerError::CodeExpired => (
-            "配对码过期了，请重新出一张码",
-            "The pairing code has expired; issue a new one",
-        ),
-        PeerError::CodeInvalid => (
-            "配对码读不懂：不是云吞的服务器配对码，或者被改过",
-            "The code is not a valid Wonton server pairing code, or it was altered",
-        ),
-        PeerError::CodeRevoked => (
-            "这张配对码已经作废，请对方重新发一张",
-            "This pairing code is no longer valid; ask for a new one",
-        ),
-        PeerError::TooManyRequests => (
-            "对方暂时收不了配对请求，稍后再试",
-            "The other server cannot take pairing requests right now; try again later",
-        ),
-        PeerError::RequestNotFound => ("这条请求已经不在了", "This request is no longer there"),
-        PeerError::PeerUnreachable => (
-            "连不上对方的服务器，稍后再试",
-            "Cannot reach the other server; try again later",
-        ),
-        PeerError::PeerRejected => ("对方拒绝了配对", "The other side declined the pairing"),
-        PeerError::AlreadyPaired => ("两台服务器已经配对过", "The two servers are already paired"),
-        PeerError::SelfPairing => ("这是你自己服务器的码", "This is your own server's code"),
-        PeerError::NotPaired => (
-            "这台服务器还没有和你配对",
-            "This server is not paired with yours",
-        ),
-        PeerError::Unauthenticated => (
-            "请先在 App 里配对，再从 App 里打开这一页",
-            "Pair this device with your server first, then open this from the app",
-        ),
+    let id = match kind {
+        PeerError::CodeExpired => "peers-error-code-expired",
+        PeerError::CodeInvalid => "peers-error-code-invalid",
+        PeerError::PeerUnreachable => "peers-error-peer-unreachable",
+        PeerError::PeerRejected => "peers-error-peer-rejected",
+        PeerError::AlreadyPaired => "peers-error-already-paired",
+        PeerError::SelfPairing => "peers-error-self-pairing",
+        PeerError::NotPaired => "peers-error-not-paired",
+        PeerError::Unauthenticated => "peers-error-unauthenticated",
+        PeerError::CodeRevoked => "peers-error-code-revoked",
+        PeerError::TooManyRequests => "peers-error-too-many-requests",
+        PeerError::RequestNotFound => "peers-error-request-not-found",
         // 客户端核心才有的类别和比这个 App 新的类别，核心不会回应。
-        PeerError::TransportUnavailable | PeerError::Protocol | PeerError::Other => (
-            "配对没有完成，请稍后再试",
-            "The pairing did not complete; try again later",
-        ),
+        PeerError::TransportUnavailable | PeerError::Protocol | PeerError::Other => {
+            "peers-error-transport"
+        }
     };
-    pick_zh_en(langs, zh.to_owned(), en.to_owned())
+    crate::l10n::text(langs, id, &[])
 }
 
 /// 没接 Matrix 的核心没有服务器配对：如实说不可用。
@@ -127,11 +105,7 @@ fn unavailable(langs: &Languages) -> Response {
     let body = Json(PeerErrorBody {
         error: PeerProblem {
             kind: PeerError::Other,
-            message: pick_zh_en(
-                langs,
-                "这台服务器没有接入 Matrix，配对用不了".to_owned(),
-                "This server is not connected to Matrix, so pairing is unavailable".to_owned(),
-            ),
+            message: crate::l10n::text(langs, "peers-error-matrix-unavailable", &[]),
         },
     });
     let mut response = (StatusCode::SERVICE_UNAVAILABLE, body).into_response();
@@ -227,11 +201,7 @@ pub async fn remove(
         Ok(false) => api::error_response(
             StatusCode::NOT_FOUND,
             "not_found",
-            &pick_zh_en(
-                &langs,
-                "没有配对过这台服务器".to_owned(),
-                "This server is not paired".to_owned(),
-            ),
+            &crate::l10n::text(&langs, "peers-error-not-paired-remove", &[]),
         ),
         Err(e) => {
             tracing::error!(error = %e, "配对记录写不进去");

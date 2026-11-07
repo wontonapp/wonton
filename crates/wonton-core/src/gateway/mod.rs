@@ -431,7 +431,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         }
     };
     if let Some(auth) = &route.proxy
-        && let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &gateway.owner.owner())
+        && let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &gateway.owner.owner(), &langs)
     {
         return pages::error(
             StatusCode::INTERNAL_SERVER_ERROR,

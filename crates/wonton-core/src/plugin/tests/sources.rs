@@ -184,7 +184,7 @@ async fn the_owner_can_go_back_to_an_older_version_after_a_warning() {
         texts(&preview)
     );
 
-    m.upgrade_source(&id(), &upgrade_request(&preview))
+    m.upgrade_source(&id(), &upgrade_request(&preview), &super::langs())
         .await
         .unwrap();
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().version, "1.0.0");
@@ -243,7 +243,7 @@ async fn switching_an_upload_to_a_repository_starts_following_that_repository() 
         .expect("来源变了要提示");
     assert!(switched.emphasis);
     assert!(switched.text.contains("你上传的文件"), "{}", switched.text);
-    m.upgrade_source(&id(), &upgrade_request(&preview))
+    m.upgrade_source(&id(), &upgrade_request(&preview), &super::langs())
         .await
         .unwrap();
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
@@ -276,7 +276,7 @@ async fn the_same_content_can_only_be_switched_to_from_another_source() {
         .await
         .unwrap();
     assert!(texts(&preview).iter().any(|t| t.contains("来源从")));
-    m.upgrade_source(&id(), &upgrade_request(&preview))
+    m.upgrade_source(&id(), &upgrade_request(&preview), &super::langs())
         .await
         .unwrap();
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
@@ -325,7 +325,7 @@ async fn an_added_repository_is_listed_once_under_added_sources() {
     let again = m.add_store_source("acme/hello", &zh()).await.unwrap_err();
     assert_eq!(again.kind(), "conflict", "{again}");
 
-    m.remove_store_source("github:acme/hello").unwrap();
+    m.remove_store_source("github:acme/hello", &zh()).unwrap();
     assert!(m.store_listing(&zh(), false).await.added.is_empty());
 }
 
@@ -416,7 +416,7 @@ async fn a_plugin_from_a_third_party_index_is_unreviewed_and_only_follows_that_i
         .await
         .unwrap();
     assert_eq!(upgrade.source.as_deref(), Some(source.as_str()));
-    m.upgrade_source(&id(), &upgrade_request(&upgrade))
+    m.upgrade_source(&id(), &upgrade_request(&upgrade), &super::langs())
         .await
         .unwrap();
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
@@ -428,15 +428,17 @@ async fn a_plugin_from_a_third_party_index_is_unreviewed_and_only_follows_that_i
 
     // 索引删了：插件照常，不再提示，并且说明原因。
     third_party_index(&github, "friend/plugins", REPO, "4.0.0");
-    m.remove_store_source(&added.address).unwrap();
+    m.remove_store_source(&added.address, &zh()).unwrap();
     m.check_upgrades_now().await;
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
     assert!(installed.upgrade.is_none());
     assert!(
-        installed
-            .notices
-            .iter()
-            .any(|n| n.text.contains("已经从商店删掉")),
+        installed.notices.iter().any(|n| {
+            n.text.contains(&super::message(
+                "plugin-settings-upgrade-index-removed",
+                &[("provider", "github.com/friend/plugins")],
+            ))
+        }),
         "{:?}",
         installed.notices
     );

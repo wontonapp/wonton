@@ -6,6 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+
+use crate::l10n::CATALOG;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 
@@ -16,6 +18,7 @@ use super::super::render::{RenderError, dry_run};
 use super::super::{Health, PluginPackage, PluginStatus, PluginView};
 use super::manager::manager_with;
 use super::package;
+use crate::plugin::languages::Languages;
 
 /// `init` 是一次性服务，`app` 等它以 0 退出后启动。
 fn with_init(app_extra: &str) -> String {
@@ -223,10 +226,16 @@ async fn timeout_also_names_the_failing_probes() {
     );
     docker.set_output(&app, 0, "插件日志：还在初始化", "");
     let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
-    let error = wait_for(&engine, &app, Target::Ready, deadline)
-        .await
-        .unwrap_err()
-        .to_string();
+    let error = wait_for(
+        &engine,
+        &app,
+        Target::Ready,
+        deadline,
+        &Languages::default(),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("探针一直失败"), "{error}");
     assert!(error.contains("插件日志：还在初始化"), "{error}");
 }
@@ -340,7 +349,17 @@ async fn a_failed_one_shot_dependency_fails_the_install_immediately() {
     );
     let message = err.to_string();
     assert!(message.contains(&bootstrap), "{message}");
-    assert!(message.contains("退出码 1"), "{message}");
+    assert!(
+        message.contains(&CATALOG.format(
+            CATALOG.negotiate(&["en"]),
+            "plugin-settings-health-exited",
+            &[
+                ("container", bootstrap.as_str().into()),
+                ("code", "1".into())
+            ],
+        )),
+        "{message}"
+    );
     assert!(message.contains("初始化失败"), "{message}");
     assert!(
         !message.contains(&app),

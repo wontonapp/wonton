@@ -5,6 +5,8 @@ use url::Url;
 use super::github::{GitHub, GitHubError, Repo};
 use super::github_source::{INDEX_SCHEME, SourceRef, Wanted};
 use super::install_error::InstallError;
+use super::languages::Languages;
+use crate::l10n;
 
 const RAW_HOST: &str = "raw.githubusercontent.com";
 pub const INDEX_FILE: &str = "index.json";
@@ -19,16 +21,26 @@ pub enum IndexLocation {
 
 impl IndexLocation {
     /// 规范后的地址。只认 https：未审核的来源要靠 TLS 确认内容没被改过。
-    pub fn parse(text: &str) -> Result<Self, InstallError> {
-        let invalid = |why: String| InstallError::Invalid(format!("索引地址 `{text}` 不对：{why}"));
+    pub fn parse(text: &str, langs: &Languages) -> Result<Self, InstallError> {
+        let invalid = |why: String| {
+            InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-index-address-invalid",
+                &[("text", text.into()), ("why", why.into())],
+            ))
+        };
         let url = Url::parse(text).map_err(|e| invalid(e.to_string()))?;
         if url.scheme() != "https" {
-            return Err(invalid("只支持 https".to_owned()));
+            return Err(invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-index-address-https",
+                &[],
+            )));
         }
         if url.host_str() == Some(RAW_HOST) {
             let parts: Vec<&str> = url.path().split('/').filter(|p| !p.is_empty()).collect();
             if let [owner, name, "HEAD", INDEX_FILE] = parts.as_slice() {
-                let source = SourceRef::parse(&format!("github:{owner}/{name}"))?;
+                let source = SourceRef::parse(&format!("github:{owner}/{name}"), langs)?;
                 debug_assert_eq!(source.wanted, Wanted::Latest);
                 return Ok(Self::Repo(source.repo));
             }
@@ -57,16 +69,30 @@ impl IndexLocation {
     }
 
     /// `index+<索引地址>#<插件 ID>` → 索引的位置和插件 ID。
-    pub fn of_item_source(source: &str) -> Result<(Self, &str), InstallError> {
-        let invalid = || InstallError::Invalid(format!("来源 `{source}` 不对"));
+    pub fn of_item_source<'a>(
+        source: &'a str,
+        langs: &Languages,
+    ) -> Result<(Self, &'a str), InstallError> {
+        let invalid = || {
+            InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-settings-item-source-invalid",
+                &[("source", source.into())],
+            ))
+        };
         let rest = source.strip_prefix(INDEX_SCHEME).ok_or_else(invalid)?;
         let (address, id) = rest.rsplit_once('#').ok_or_else(invalid)?;
-        Ok((Self::parse(address)?, id))
+        Ok((Self::parse(address, langs)?, id))
     }
 
     /// 索引文件。
-    pub async fn read_index(&self, github: &GitHub, max: u64) -> Result<Vec<u8>, GitHubError> {
-        self.read(github, INDEX_FILE, max).await
+    pub async fn read_index(
+        &self,
+        github: &GitHub,
+        max: u64,
+        langs: &Languages,
+    ) -> Result<Vec<u8>, GitHubError> {
+        self.read(github, INDEX_FILE, max, langs).await
     }
 
     /// 索引旁边的文件，`path` 相对索引所在的目录。
@@ -75,15 +101,24 @@ impl IndexLocation {
         github: &GitHub,
         path: &str,
         max: u64,
+        langs: &Languages,
     ) -> Result<Vec<u8>, GitHubError> {
         match self {
-            Self::Repo(repo) => github.file(repo, "HEAD", path, max).await,
-            Self::Url(url) if path == INDEX_FILE => github.url(url, max).await,
+            Self::Repo(repo) => github.file(repo, "HEAD", path, max, langs).await,
+            Self::Url(url) if path == INDEX_FILE => github.url(url, max, langs).await,
             Self::Url(url) => {
                 let sibling = url.join(path).map_err(|e| {
-                    GitHubError::NotFound(format!("{url} 旁边的 {path} 不是合法地址：{e}"))
+                    GitHubError::NotFound(l10n::text(
+                        langs,
+                        "plugin-settings-github-sibling-url",
+                        &[
+                            ("url", url.as_str().into()),
+                            ("path", path.into()),
+                            ("error", e.to_string().into()),
+                        ],
+                    ))
                 })?;
-                github.url(&sibling, max).await
+                github.url(&sibling, max, langs).await
             }
         }
     }
@@ -92,11 +127,12 @@ impl IndexLocation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::languages::Languages;
 
     #[test]
     fn an_index_in_a_repository_follows_the_default_branch_and_names_the_repository() {
         let text = "https://raw.githubusercontent.com/o/r/HEAD/index.json";
-        let location = IndexLocation::parse(text).unwrap();
+        let location = IndexLocation::parse(text, &Languages::default()).unwrap();
         assert!(matches!(&location, IndexLocation::Repo(repo) if repo.to_string() == "o/r"));
         assert_eq!(location.address(), text);
         assert_eq!(location.provider(), "github.com/o/r");
@@ -104,21 +140,33 @@ mod tests {
 
     #[test]
     fn an_item_source_finds_its_index_and_plugin_again() {
-        let location = IndexLocation::parse("https://example.com/wonton/index.json").unwrap();
+        let location = IndexLocation::parse(
+            "https://example.com/wonton/index.json",
+            &Languages::default(),
+        )
+        .unwrap();
         assert_eq!(location.provider(), "example.com");
         let source = location.item_source("app.hello");
         assert_eq!(
             source,
             "index+https://example.com/wonton/index.json#app.hello"
         );
-        let (found, id) = IndexLocation::of_item_source(&source).unwrap();
+        let (found, id) = IndexLocation::of_item_source(&source, &Languages::default()).unwrap();
         assert_eq!(found, location);
         assert_eq!(id, "app.hello");
     }
 
     #[test]
     fn only_https_is_accepted() {
-        assert!(IndexLocation::parse("http://example.com/index.json").is_err());
-        assert!(IndexLocation::of_item_source("index+http://example.com/i.json#a.b").is_err());
+        assert!(
+            IndexLocation::parse("http://example.com/index.json", &Languages::default()).is_err()
+        );
+        assert!(
+            IndexLocation::of_item_source(
+                "index+http://example.com/i.json#a.b",
+                &Languages::default()
+            )
+            .is_err()
+        );
     }
 }

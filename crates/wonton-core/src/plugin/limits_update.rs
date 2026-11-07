@@ -25,7 +25,7 @@ impl PluginManager {
         detached(async move {
             this.change_limits(&id, limits, &langs).await?;
             this.installed_detail(&id, &langs)
-                .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
+                .ok_or_else(|| InstallError::not_installed(&langs, &id))
         })
         .await
     }
@@ -36,9 +36,9 @@ impl PluginManager {
         limits: PluginLimits,
         langs: &Languages,
     ) -> Result<(), InstallError> {
-        self.check_not_upgrading()?;
+        self.check_not_upgrading(langs)?;
         if !self.is_installed(id) {
-            return Err(InstallError::NotInstalled(id.to_string()));
+            return Err(InstallError::not_installed(langs, id));
         }
         let ncpu = self.validate_limits(&limits, langs).await?;
         let _pass = self.lan.lock_pass().await;
@@ -112,7 +112,7 @@ impl PluginManager {
         let mut record = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         // 只要资源字段，用和安装前检查一样的占位环境：Bot 的令牌之类核心不存，真的环境凑不齐。
