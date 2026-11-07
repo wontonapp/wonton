@@ -26,13 +26,14 @@ impl ChatRoom {
             ReplyWithinThread::No,
             AddMentions::No,
         );
-        self.timeline.send(content.into()).await?;
+        self.timeline().await.send(content.into()).await?;
         Ok(())
     }
 
     /// 发一条 `m.notice`（状态说明）：Matrix 的推送规则默认不对 `m.notice` 响铃。
     pub async fn send_notice(&self, body: &str) -> Result<()> {
-        self.timeline
+        self.timeline()
+            .await
             .send(RoomMessageEventContent::notice_plain(body).into())
             .await?;
         Ok(())
@@ -40,7 +41,7 @@ impl ChatRoom {
 
     /// 本机时间线里话题最近一条已发出的消息的事件 ID；根消息自己也算话题里的一条。
     async fn latest_sent_in_thread(&self, root: &EventId) -> OwnedEventId {
-        for item in self.timeline.items().await.into_iter().rev() {
+        for item in self.timeline().await.items().await.into_iter().rev() {
             let Some(event) = item.as_event() else {
                 continue;
             };

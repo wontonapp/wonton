@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, mpsc, watch};
-use wonton_matrix::{BackPaginationStatus, ChatRoom, TimelineEntry, Vector};
+use wonton_matrix::{BackPaginationStatus, ChatRoom, TimelineEntry, Vector, VectorDiff};
 use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
 
 use super::confirmation::{Cards, CardsView};
@@ -61,72 +61,115 @@ impl TimelineSubscription {
 
 /// 先发当前条目，再逐批转发增量；翻页状态变了也发一批（增量为空）。确认卡片的显示还取决于这台设备回答的进展和
 /// 现在的时间，它们变了时比较前后的显示，变了的卡片发 `Set`，所以这里留着一份 SDK 的条目。
+/// `select!` 分支的结果：这一批送出去没有，以及这一批里有没有清空。
+enum Batch {
+    Sent(Result<(), ()>, bool),
+}
+
 async fn forward(
     room: &ChatRoom,
     mut cards: Cards,
     sender: &mpsc::UnboundedSender<TimelineUpdate>,
 ) {
-    let (entries, diffs) = room.entries().await;
-    let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
-    let mut shown = cards.view();
-    let mut read = ReadMark::of(&entries);
-    let mut statuses = std::pin::pin!(room.back_pagination_status().await);
-    let mut status = match statuses.next().await {
-        Some(status) => back_pagination(status),
-        None => BackPagination::Idle,
-    };
-    let reset = TimelineDiff::Reset {
-        items: entries
-            .iter()
-            .map(|entry| timeline_item(entry.clone(), &shown, &read))
-            .collect(),
-    };
-    if send(sender, vec![reset], status).is_err() {
-        return;
-    }
-    let mut diffs = std::pin::pin!(diffs);
-    loop {
-        let next_expiry = shown.next_expiry(&entries);
-        let sent = tokio::select! {
-            batch = diffs.next() => {
-                let Some(batch) = batch else { return };
-                let mut out = refresh(&entries, &mut shown, &cards, &read);
-                for diff in batch {
-                    out.push(timeline_diff(diff.clone(), &shown, &read));
-                    diff.apply(&mut entries);
+    let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
+    'outer: loop {
+        let (entries, diffs) = room.entries().await;
+        let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
+        let mut shown = cards.view();
+        let mut read = ReadMark::of(&entries);
+        let mut statuses = std::pin::pin!(room.back_pagination_status().await);
+        let mut status = match statuses.next().await {
+            Some(status) => back_pagination(status),
+            None => BackPagination::Idle,
+        };
+        let reset = TimelineDiff::Reset {
+            items: entries
+                .iter()
+                .map(|entry| timeline_item(entry.clone(), &shown, &read))
+                .collect(),
+        };
+        if send(sender, vec![reset], status).is_err() {
+            return;
+        }
+        let mut diffs = std::pin::pin!(diffs);
+        // 丢事件的时候常常是“后面没有别的增量了”，光靠增量触发查不出来；每秒看一次缓存有没有漏就够。
+        let mut check = tokio::time::interval(std::time::Duration::from_secs(1));
+        check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            let next_expiry = shown.next_expiry(&entries);
+            let sent = tokio::select! {
+                batch = diffs.next() => {
+                    let Some(batch) = batch else { return };
+                    let cleared = batch.iter().any(|diff| matches!(diff, VectorDiff::Clear));
+                if cleared {
+                    // 这一批是缓存从头重来：先告诉壳清空，剩下的增量反正换时间线后会整份重发，不再跟着发。
+                    Batch::Sent(send(sender, vec![TimelineDiff::Clear], status), true)
+                } else {
+                    let mut out = refresh(&entries, &mut shown, &cards, &read);
+                    for diff in batch {
+                        out.push(timeline_diff(diff.clone(), &shown, &read));
+                        diff.apply(&mut entries);
+                    }
+                    out.extend(move_read_mark(&entries, &shown, &mut read));
+                    // 缓存里已经有的事件没进时间线（活事件在时间线刚建好时被丢掉）：也重建一次，从缓存补回来。
+                    let missed = room.missed_cached_event(rebuilt_for.as_deref()).await;
+                    if missed.is_some() {
+                        rebuilt_for = missed.clone();
+                    }
+                    Batch::Sent(send(sender, out, status), missed.is_some())
                 }
-                out.extend(move_read_mark(&entries, &shown, &mut read));
-                send(sender, out, status)
+            }
+            _ = check.tick() => {
+                match room.missed_cached_event(rebuilt_for.as_deref()).await {
+                    Some(missed) => {
+                        rebuilt_for = Some(missed);
+                        Batch::Sent(Ok(()), true)
+                    }
+                    None => continue,
+                }
             }
             next = statuses.next() => {
-                let Some(next) = next else { return };
-                let next = back_pagination(next);
-                if next == status {
-                    continue;
+                    let Some(next) = next else { return };
+                    let next = back_pagination(next);
+                    if next == status {
+                        continue;
+                    }
+                    status = next;
+                    Batch::Sent(send(sender, Vec::new(), status), false)
                 }
-                status = next;
-                send(sender, Vec::new(), status)
+                changed = cards.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    let refreshed = refresh(&entries, &mut shown, &cards, &read);
+                    if refreshed.is_empty() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, refreshed, status), false)
+                }
+                () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
+                    let refreshed = refresh(&entries, &mut shown, &cards, &read);
+                    if refreshed.is_empty() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, refreshed, status), false)
+                }
+            };
+            match sent {
+                Batch::Sent(Err(_), _) => return,
+                Batch::Sent(Ok(()), true) => {
+                    // 事件缓存被清空重来：旧的一条接不到清空期间的事件。告诉壳从头来，换一条时间线，从缓存重新读。
+                    // 房间对象不换，壳因为这个清空往回翻页时还落在同一个房间上。
+                    if send(sender, vec![TimelineDiff::Clear], status).is_err() {
+                        return;
+                    }
+                    if room.rebuild_timeline().await.is_err() {
+                        return;
+                    }
+                    continue 'outer;
+                }
+                Batch::Sent(Ok(()), false) => {}
             }
-            changed = cards.changed() => {
-                if changed.is_err() {
-                    return;
-                }
-                let refreshed = refresh(&entries, &mut shown, &cards, &read);
-                if refreshed.is_empty() {
-                    continue;
-                }
-                send(sender, refreshed, status)
-            }
-            () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
-                let refreshed = refresh(&entries, &mut shown, &cards, &read);
-                if refreshed.is_empty() {
-                    continue;
-                }
-                send(sender, refreshed, status)
-            }
-        };
-        if sent.is_err() {
-            return;
         }
     }
 }

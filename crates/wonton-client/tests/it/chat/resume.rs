@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use wonton_client::{Action, ChatSync, HomeStatus};
+use wonton_client::{Action, ChatSync, HomeStatus, TimelineContent};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
 
 use super::support::{Home, Phone, Timeline, WAIT};
@@ -156,6 +156,70 @@ async fn the_chat_recovers_when_the_tunnel_comes_back() {
     chat.home.start_tunnel().await;
 
     chat.caught_up().await;
+}
+
+/// 编辑、表情回应、撤回不会在时间线里自己成一项：它们来的时候不能把整条时间线重建（壳会清屏重画，流式回复时就是
+/// 每秒一次）。内容照常更新。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn edits_reactions_and_redactions_do_not_rebuild_the_timeline() {
+    let mut chat = Chat::open().await;
+    chat.bot_room
+        .send_text("流式的第一版")
+        .await
+        .expect("Bot 发消息");
+    chat.timeline
+        .until("时间线里有这条", |item| text(item, "流式的第一版"))
+        .await;
+    let event = chat
+        .timeline
+        .items
+        .iter()
+        .find_map(|item| match &item.content {
+            TimelineContent::Message { message } => message.event_id.clone(),
+            _ => None,
+        })
+        .expect("消息的事件 ID");
+
+    // 连着改三次（流式回复就是这样），再回应、再撤回另一条。
+    for round in 1..=3 {
+        let body = format!("流式的第{}版", round + 1);
+        chat.bot_room
+            .send_raw_message(serde_json::json!({
+                "msgtype": "m.text",
+                "body": format!("* {body}"),
+                "m.new_content": {"msgtype": "m.text", "body": body},
+                "m.relates_to": {"rel_type": "m.replace", "event_id": event},
+            }))
+            .await
+            .expect("编辑");
+    }
+    chat.bot_room
+        .send_raw_event(
+            "m.reaction",
+            serde_json::json!({
+                "m.relates_to": {"rel_type": "m.annotation", "event_id": event, "key": "👍"},
+            }),
+        )
+        .await
+        .expect("回应");
+    let other = chat
+        .bot_room
+        .send_raw_message(serde_json::json!({"msgtype": "m.text", "body": "马上撤回"}))
+        .await
+        .expect("再发一条");
+    chat.bot_room
+        .redact(other.as_ref(), "撤回")
+        .await
+        .expect("撤回");
+
+    chat.timeline
+        .until("最后的编辑到了", |item| text(item, "流式的第4版"))
+        .await;
+    assert!(
+        !chat.timeline.was_cleared(),
+        "编辑、回应、撤回不该重建整条时间线"
+    );
 }
 
 /// 服务器丢了房间列表那条连接的位置（`M_UNKNOWN_POS`，负载高时 Tuwunel 实测会回）：SDK 从头同步，打开着的房间只剩最新

@@ -36,10 +36,12 @@ jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_
 pem = { version = "3.0.6", optional = true }
 # MIT OR Apache-2.0。用 Docker 起一次性的 Tuwunel。
 testcontainers = { version = "0.28.0", default-features = false, optional = true }
+# MIT。`WONTON_TEST_LOG` 有值时把日志打出来，查偶发失败用。
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"], optional = true }
 
 [features]
 # 一次性的 Tuwunel 和模拟核心的 JWT 签发，给本 crate 和客户端核心的集成测试共用；App 不启用。
-testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers", "tokio/io-util", "tokio/net"]
+testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers", "dep:tracing-subscriber", "tokio/io-util", "tokio/net"]
 
 [dev-dependencies]
 # 集成测试用 testkit。

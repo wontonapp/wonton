@@ -150,6 +150,7 @@ pub(super) struct RoomCards {
 }
 
 /// 一条时间线订阅看卡片要用的东西。
+#[derive(Clone)]
 pub(crate) struct Cards {
     core_account: OwnedUserId,
     answers: watch::Receiver<Answers>,

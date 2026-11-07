@@ -47,6 +47,24 @@ const CONFIG: &str = include_str!(concat!(
 const CONFIG_PATH: &str = "/etc/tuwunel/tuwunel.toml";
 const PORT: u16 = 8008;
 
+/// `WONTON_TEST_LOG` 有值时打开日志（值是 tracing 的过滤规则），写到标准错误；失败的时候按时间顺序留下当时发生了什么。
+fn init_test_logging() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let Ok(filter) = std::env::var("WONTON_TEST_LOG") else {
+            return;
+        };
+        let filter = tracing_subscriber::EnvFilter::try_new(filter)
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(false)
+            .with_writer(std::io::stderr)
+            .try_init()
+            .ok();
+    });
+}
+
 /// 等待异步结果的上限。正常情况下一两秒内就有结果；吊销设备后同步要等进行中的长轮询返回。
 const WAIT: Duration = Duration::from_secs(60);
 
@@ -64,6 +82,7 @@ impl TestServer {
     /// 设置了 `WONTON_MATRIX_HOMESERVER` 时改连现成的服务器（例如 dev.sh 起的服务器，或经隧道的
     /// 本地代理），用 `WONTON_MATRIX_JWT_KEY` 指向的私钥签发，默认是 dev.sh 生成的密钥。
     pub async fn start() -> Self {
+        init_test_logging();
         let Ok(url) = std::env::var("WONTON_MATRIX_HOMESERVER") else {
             return Self::container(&[]).await;
         };
