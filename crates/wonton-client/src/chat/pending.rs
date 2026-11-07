@@ -129,7 +129,11 @@ async fn follow_room(
                 // 报过一次就不再报，重放和重复编辑不再触发。
                 let witnessed = watched.remove(&card_id) || shown.answered_here(&card_id);
                 if witnessed && reported.insert(card_id.clone()) {
+                    // 测试钩子开着时决定等放行（见 test_hooks）：settled 在这一步之后才发出去。
+                    #[cfg(not(feature = "test-hooks"))]
                     succeeded(&plugin_id);
+                    #[cfg(feature = "test-hooks")]
+                    succeeded(&plugin_id).await;
                 }
             } else {
                 watched.insert(card_id);

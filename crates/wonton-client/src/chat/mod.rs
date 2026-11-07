@@ -33,6 +33,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures_util::StreamExt;
+#[cfg(feature = "test-hooks")]
+use futures_util::future::BoxFuture;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -88,7 +90,13 @@ pub(crate) struct ChatLink {
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
+#[cfg(not(feature = "test-hooks"))]
 pub(crate) type CardSuccess = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// 开着测试钩子（feature `test-hooks`）时，决定是个可等待的 future：钩子先报到、等放行，决定才继续，
+/// settled 也发不出去。见 `test_hooks`。
+#[cfg(feature = "test-hooks")]
+pub(crate) type CardSuccess = Arc<dyn for<'a> Fn(&'a str) -> BoxFuture<'a, ()> + Send + Sync>;
 
 struct Active {
     tasks: Vec<JoinHandle<()>>,

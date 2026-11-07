@@ -8116,6 +8116,7 @@ dependencies = [
  "tracing-subscriber",
  "uniffi",
  "url",
+ "wonton-client",
  "wonton-l10n",
  "wonton-matrix",
  "wonton-protocol",

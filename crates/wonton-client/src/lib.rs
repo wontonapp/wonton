@@ -43,6 +43,8 @@ mod session_store;
 mod settings;
 mod subscription;
 mod tabs;
+#[cfg(feature = "test-hooks")]
+pub(crate) mod test_hooks;
 
 pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;

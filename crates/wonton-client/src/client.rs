@@ -30,6 +30,8 @@ mod limits;
 mod media;
 mod push_route;
 mod switch;
+#[cfg(feature = "test-hooks")]
+mod test_hooks;
 mod tool_policy;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。

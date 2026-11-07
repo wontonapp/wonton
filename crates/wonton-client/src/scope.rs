@@ -36,6 +36,10 @@ pub(crate) struct Scope {
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) settings: SettingsLink,
+    /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
+    /// 换服务器换作用域，测试不换服务器就一直是同一个。
+    #[cfg(feature = "test-hooks")]
+    pub(crate) card_success_hook: Arc<crate::test_hooks::CardSuccessHook>,
     runtime: ScopeRuntime,
 }
 
@@ -105,6 +109,12 @@ impl Scope {
             dir,
             views.map(|v| v.plugins.clone()),
         );
+        #[cfg(feature = "test-hooks")]
+        let card_success_hook = Arc::new(crate::test_hooks::CardSuccessHook::new());
+        // 测试钩子开着时决定先报到、等放行（见 test_hooks），settled 也就发不出去；生产构建直通。
+        #[cfg(feature = "test-hooks")]
+        let card_success = crate::test_hooks::wrap(plugins.clone(), card_success_hook.clone());
+        #[cfg(not(feature = "test-hooks"))]
         let card_success = {
             let plugins = plugins.clone();
             Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
@@ -161,6 +171,8 @@ impl Scope {
             onboarding,
             peers,
             settings,
+            #[cfg(feature = "test-hooks")]
+            card_success_hook,
             runtime,
         }))
     }

@@ -30,11 +30,19 @@ impl Visit {
         let home = HomeLink::new(handle.clone(), Storage::open(root, dir)?, network, None)?;
         // 聊天部件要插件部件来认 Bot；Bot 的轮询随下面的 backgrounded 停掉，插件部件只在连上时取一次列表。
         let plugins = PluginsLink::new(handle.clone(), home.clone(), dir, None);
+        // 临时作用域不补取：卡片成功什么都不做。开着测试钩子时决定是个 future，直接完成。
+        let card_success: crate::chat::CardSuccess = {
+            #[cfg(not(feature = "test-hooks"))]
+            let noop: crate::chat::CardSuccess = Arc::new(|_: &str| {});
+            #[cfg(feature = "test-hooks")]
+            let noop: crate::chat::CardSuccess = Arc::new(|_: &str| Box::pin(async {}));
+            noop
+        };
         let chat = ChatLink::new(
             handle.clone(),
             home.clone(),
             dir,
-            Arc::new(|_: &str| {}),
+            card_success,
             plugins,
             None,
         )?;
