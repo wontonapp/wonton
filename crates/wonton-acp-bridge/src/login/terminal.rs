@@ -17,7 +17,7 @@ use tokio::{
 use super::LoginEvent;
 use crate::{
     acp::auth::AuthMethod,
-    error::{Error, Result},
+    error::{Detail, Error, Result},
 };
 
 pub async fn run(
@@ -28,9 +28,12 @@ pub async fn run(
 ) -> Result<()> {
     let login_socket = socket.with_extension("login.sock");
     let stream = UnixStream::connect(&login_socket).await.map_err(|error| {
-        Error::AgentNotReady(format!(
-            "连接登录控制 socket {} 失败：{error}",
-            login_socket.display()
+        Error::AgentNotReady(Detail::msg_with(
+            "login-socket-connect",
+            [
+                ("path", login_socket.display().to_string()),
+                ("error", error.to_string()),
+            ],
         ))
     })?;
     let (reader, mut writer) = stream.into_split();
@@ -44,7 +47,7 @@ pub async fn run(
             frame = frames.next_line() => match frame {
                 Ok(Some(frame)) => {
                     let Ok(value) = serde_json::from_str::<Value>(&frame) else {
-                        return Err(Error::Upstream("登录 socket 返回了无效帧".into()));
+                        return Err(Error::Upstream(Detail::msg("login-invalid-frame")));
                     };
                     if let Some(code) = value["exit"].as_i64() {
                         exit = Some(code);
@@ -65,32 +68,37 @@ pub async fn run(
         }
     }
     let Some(code) = exit else {
-        return Err(Error::Upstream("Agent 登录进程提前退出".into()));
+        return Err(Error::Upstream(Detail::msg("login-process-exited")));
     };
     if code != 0 {
         if let Some(line) = stderr_tail {
             let mut line = line;
             line.truncate(2000);
-            return Err(Error::Upstream(format!("Agent 登录失败：{line}")));
+            return Err(Error::Upstream(Detail::msg_with(
+                "login-failed-detail",
+                [("detail", line)],
+            )));
         }
-        return Err(Error::Upstream(format!(
-            "Agent 登录进程以退出码 {code} 失败"
+        return Err(Error::Upstream(Detail::msg_with(
+            "login-exit-code",
+            [("code", code.to_string())],
         )));
     }
     Ok(())
+}
+
+fn socket_closed(error: std::io::Error) -> Error {
+    Error::AgentNotReady(Detail::msg_with(
+        "login-socket-closed",
+        [("error", error.to_string())],
+    ))
 }
 
 async fn write_line(writer: &mut tokio::net::unix::OwnedWriteHalf, line: &str) -> Result<()> {
     writer
         .write_all(line.as_bytes())
         .await
-        .map_err(|error| Error::AgentNotReady(format!("登录 socket 已断开：{error}")))?;
-    writer
-        .write_all(b"\n")
-        .await
-        .map_err(|error| Error::AgentNotReady(format!("登录 socket 已断开：{error}")))?;
-    writer
-        .flush()
-        .await
-        .map_err(|error| Error::AgentNotReady(format!("登录 socket 已断开：{error}")))
+        .map_err(socket_closed)?;
+    writer.write_all(b"\n").await.map_err(socket_closed)?;
+    writer.flush().await.map_err(socket_closed)
 }

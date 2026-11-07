@@ -1,5 +1,6 @@
 use super::*;
 use crate::acp::test_support::*;
+use crate::l10n::zh;
 
 #[tokio::test]
 async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
@@ -15,7 +16,7 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
     .unwrap();
     assert_eq!(session, "session-1");
     let result = bounded(
-        client.prompt("session-1", "hi", 1024, Duration::from_secs(2)),
+        client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
         "prompt",
     )
     .await
@@ -73,13 +74,13 @@ async fn timeout_cancels_and_next_prompt_discards_late_update() {
         .await
         .unwrap();
     let first = bounded(
-        client.prompt("session-1", "long", 1024, Duration::from_millis(50)),
+        client.prompt("session-1", "long", 1024, Duration::from_millis(50), zh()),
         "cancelled prompt",
     )
     .await;
     assert!(matches!(first, Err(Error::TransportUnavailable(_))));
     let result = bounded(
-        client.prompt("session-1", "new", 1024, Duration::from_secs(2)),
+        client.prompt("session-1", "new", 1024, Duration::from_secs(2), zh()),
         "next prompt",
     )
     .await
@@ -115,7 +116,7 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
     .await
     .unwrap();
     let result = bounded(
-        client.prompt("session-1", "next", 1024, Duration::from_secs(2)),
+        client.prompt("session-1", "next", 1024, Duration::from_secs(2), zh()),
         "prompt",
     )
     .await
@@ -155,7 +156,7 @@ async fn prompt_errors_keep_their_categories() {
             .await
             .unwrap();
         let error = bounded(
-            client.prompt("session-1", "hi", 1024, Duration::from_secs(2)),
+            client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
             "prompt",
         )
         .await
@@ -181,7 +182,7 @@ async fn prompt_errors_show_the_reason_from_data() {
         .unwrap();
     let prompt_error = || {
         bounded(
-            client.prompt("session-1", "hi", 1024, Duration::from_secs(2)),
+            client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
             "prompt",
         )
     };
@@ -210,6 +211,7 @@ async fn prompt_errors_show_the_reason_from_data() {
     );
     // 整段截到 2 KiB，不切开多字节字符。
     if let Error::Upstream(text) = prompt_error().await.unwrap_err() {
+        let text = text.format(zh());
         assert!(
             text.len() > 2000 && text.len() <= 2048,
             "截断后 {} 字节",

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::{Detail, Error, Result};
 use crate::topics::SessionKey;
 use crate::topics::claims;
 use crate::topics::claims::Claim;
@@ -99,29 +99,35 @@ impl Board {
     pub(crate) async fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_owned();
         if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|error| Error::Upstream(format!("创建桥话题工作板目录失败：{error}")))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|error| {
+                Error::Upstream(Detail::data(format!("创建桥话题工作板目录失败：{error}")))
+            })?;
         }
         let doc = match tokio::fs::read(&path).await {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|error| Error::Upstream(format!("桥话题工作板损坏：{error}")))?,
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
+                Error::Upstream(Detail::data(format!("桥话题工作板损坏：{error}")))
+            })?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => TopicsDoc::default(),
-            Err(error) => return Err(Error::Upstream(format!("读取桥话题工作板失败：{error}"))),
+            Err(error) => {
+                return Err(Error::Upstream(Detail::data(format!(
+                    "读取桥话题工作板失败：{error}"
+                ))));
+            }
         };
         Ok(Self { path, doc })
     }
 
     pub(crate) async fn persist(&self) -> Result<()> {
-        let bytes = serde_json::to_vec_pretty(&self.doc)
-            .map_err(|error| Error::Upstream(format!("编码桥话题工作板失败：{error}")))?;
+        let bytes = serde_json::to_vec_pretty(&self.doc).map_err(|error| {
+            Error::Upstream(Detail::data(format!("编码桥话题工作板失败：{error}")))
+        })?;
         let temp = self.path.with_extension("tmp");
-        tokio::fs::write(&temp, bytes)
-            .await
-            .map_err(|error| Error::Upstream(format!("写桥话题工作板失败：{error}")))?;
-        tokio::fs::rename(&temp, &self.path)
-            .await
-            .map_err(|error| Error::Upstream(format!("替换桥话题工作板失败：{error}")))
+        tokio::fs::write(&temp, bytes).await.map_err(|error| {
+            Error::Upstream(Detail::data(format!("写桥话题工作板失败：{error}")))
+        })?;
+        tokio::fs::rename(&temp, &self.path).await.map_err(|error| {
+            Error::Upstream(Detail::data(format!("替换桥话题工作板失败：{error}")))
+        })
     }
 
     pub(crate) fn seq(&self) -> u64 {

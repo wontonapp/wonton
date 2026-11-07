@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::error::{Error, Result};
+use crate::error::{Detail, Error, Result};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionRecord {
@@ -23,15 +23,20 @@ impl SessionStore {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_owned();
         if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|error| Error::Upstream(format!("创建桥状态目录失败：{error}")))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|error| {
+                Error::Upstream(Detail::data(format!("创建桥状态目录失败：{error}")))
+            })?;
         }
         let records = match tokio::fs::read(&path).await {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|error| Error::Upstream(format!("桥会话映射损坏：{error}")))?,
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
+                Error::Upstream(Detail::data(format!("桥会话映射损坏：{error}")))
+            })?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
-            Err(error) => return Err(Error::Upstream(format!("读取桥会话映射失败：{error}"))),
+            Err(error) => {
+                return Err(Error::Upstream(Detail::data(format!(
+                    "读取桥会话映射失败：{error}"
+                ))));
+            }
         };
         Ok(Self {
             path,
@@ -56,14 +61,15 @@ impl SessionStore {
     }
 
     async fn persist(&self, records: &BTreeMap<String, SessionRecord>) -> Result<()> {
-        let bytes = serde_json::to_vec_pretty(records)
-            .map_err(|error| Error::Upstream(format!("编码桥会话映射失败：{error}")))?;
+        let bytes = serde_json::to_vec_pretty(records).map_err(|error| {
+            Error::Upstream(Detail::data(format!("编码桥会话映射失败：{error}")))
+        })?;
         let temp = self.path.with_extension("tmp");
         tokio::fs::write(&temp, bytes)
             .await
-            .map_err(|error| Error::Upstream(format!("写桥会话映射失败：{error}")))?;
+            .map_err(|error| Error::Upstream(Detail::data(format!("写桥会话映射失败：{error}"))))?;
         tokio::fs::rename(&temp, &self.path)
             .await
-            .map_err(|error| Error::Upstream(format!("替换桥会话映射失败：{error}")))
+            .map_err(|error| Error::Upstream(Detail::data(format!("替换桥会话映射失败：{error}"))))
     }
 }

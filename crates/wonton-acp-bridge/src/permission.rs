@@ -5,12 +5,16 @@ use std::{
 
 use serde_json::{Value, json};
 use url::Url;
+use wonton_l10n::{Arg, Lang};
 use wonton_protocol::{
     AGENT_PERMISSION_PATH, AgentPermissionKind, AgentPermissionOption, AgentPermissionOutcome,
     AgentPermissionRequest,
 };
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Detail, Error, Result},
+    l10n::text,
+};
 
 const REQUEST_GRACE_SECS: u64 = 5;
 
@@ -35,8 +39,12 @@ pub struct PermissionBroker {
 
 impl PermissionBroker {
     pub fn new(mcp_url: &str) -> Result<Self> {
-        let mut endpoint = Url::parse(mcp_url)
-            .map_err(|error| Error::InvalidInput(format!("WONTON_MCP_URL 无效：{error}")))?;
+        let mut endpoint = Url::parse(mcp_url).map_err(|error| {
+            Error::InvalidInput(Detail::msg_with(
+                "perm-mcp-url",
+                [("error", error.to_string())],
+            ))
+        })?;
         endpoint.set_path(AGENT_PERMISSION_PATH);
         endpoint.set_query(None);
         endpoint.set_fragment(None);
@@ -46,7 +54,10 @@ impl PermissionBroker {
             ))
             .build()
             .map_err(|error| {
-                Error::InvalidInput(format!("建立确认卡片 HTTP 客户端失败：{error}"))
+                Error::InvalidInput(Detail::msg_with(
+                    "perm-client",
+                    [("error", error.to_string())],
+                ))
             })?;
         Ok(Self { client, endpoint })
     }
@@ -62,17 +73,23 @@ impl PermissionBroker {
                     .send()
                     .await
                     .map_err(|error| {
-                        Error::ConfirmationUnavailable(format!("连接确认卡片接口失败：{error}"))
+                        Error::ConfirmationUnavailable(Detail::msg_with(
+                            "perm-broker-connect",
+                            [("error", error.to_string())],
+                        ))
                     })?;
                 let status = response.status();
                 let body = response.bytes().await.map_err(|error| {
-                    Error::ConfirmationUnavailable(format!("读取确认卡片响应失败：{error}"))
+                    Error::ConfirmationUnavailable(Detail::msg_with(
+                        "perm-broker-read",
+                        [("error", error.to_string())],
+                    ))
                 })?;
                 Ok::<_, Error>((status, body))
             },
         )
         .await
-        .map_err(|_| Error::ConfirmationUnavailable("确认卡片请求超时".into()))??;
+        .map_err(|_| Error::ConfirmationUnavailable(Detail::msg("perm-broker-timeout")))??;
         let (status, body) = response;
         if !status.is_success() {
             let detail = serde_json::from_slice::<Value>(&body)
@@ -80,13 +97,16 @@ impl PermissionBroker {
                 .and_then(|value| value["error"]["message"].as_str().map(str::to_owned))
                 .unwrap_or_else(|| format!("HTTP {status}"));
             return Err(match status.as_u16() {
-                400 => Error::InvalidInput(detail),
-                429 => Error::Busy(detail),
-                _ => Error::ConfirmationUnavailable(detail),
+                400 => Error::InvalidInput(Detail::data(detail)),
+                429 => Error::Busy(Detail::data(detail)),
+                _ => Error::ConfirmationUnavailable(Detail::data(detail)),
             });
         }
         let outcome: AgentPermissionOutcome = serde_json::from_slice(&body).map_err(|error| {
-            Error::ConfirmationUnavailable(format!("确认卡片响应无效：{error}"))
+            Error::ConfirmationUnavailable(Detail::msg_with(
+                "perm-broker-invalid",
+                [("error", error.to_string())],
+            ))
         })?;
         Ok(match outcome {
             AgentPermissionOutcome::Selected { choice_id } => pending
@@ -101,7 +121,7 @@ impl PermissionBroker {
     }
 }
 
-pub fn parse_pending(params: &Value) -> Result<PendingPermission> {
+pub fn parse_pending(params: &Value, lang: Lang) -> Result<PendingPermission> {
     let tool_call = &params["toolCall"];
     let tool_call_id = required_string(tool_call, "toolCallId")?;
     let title = required_string(tool_call, "title")?;
@@ -112,27 +132,32 @@ pub fn parse_pending(params: &Value) -> Result<PendingPermission> {
         .or_else(|| {
             tool_call["kind"]
                 .as_str()
-                .map(|kind| format!("ACP 工具类型：{kind}"))
+                .map(|kind| text(lang, "perm-tool-kind", &[("kind", Arg::from(kind))]))
         });
     let arguments = tool_call
         .get("rawInput")
         .filter(|value| !value.is_null())
-        .map(redact_secrets);
+        .map(|value| redact_secrets(value, lang));
     let mut options = Vec::new();
     let mut option_ids = HashMap::new();
     let mut seen_option_ids = HashSet::new();
     for (index, option) in params["options"]
         .as_array()
-        .ok_or_else(|| Error::InvalidInput("ACP 权限请求缺少 options".into()))?
+        .ok_or_else(|| Error::InvalidInput(Detail::msg("perm-missing-options")))?
         .iter()
         .enumerate()
     {
         let option_id = required_string(option, "optionId")?;
         if !seen_option_ids.insert(option_id.clone()) {
-            return Err(Error::InvalidInput("ACP 权限请求的 optionId 重复".into()));
+            return Err(Error::InvalidInput(Detail::msg("perm-duplicate-option-id")));
         }
         let kind: AgentPermissionKind = serde_json::from_value(json!(option["kind"].clone()))
-            .map_err(|error| Error::InvalidInput(format!("ACP 权限选项 kind 无效：{error}")))?;
+            .map_err(|error| {
+                Error::InvalidInput(Detail::msg_with(
+                    "perm-invalid-kind",
+                    [("error", error.to_string())],
+                ))
+            })?;
         let name = required_string(option, "name")?;
         let choice_id = format!("acp-{index}");
         option_ids.insert(choice_id.clone(), option_id);
@@ -143,7 +168,7 @@ pub fn parse_pending(params: &Value) -> Result<PendingPermission> {
         });
     }
     if options.is_empty() {
-        return Err(Error::InvalidInput("ACP 权限请求没有 options".into()));
+        return Err(Error::InvalidInput(Detail::msg("perm-empty-options")));
     }
     Ok(PendingPermission {
         request: AgentPermissionRequest {
@@ -162,10 +187,15 @@ fn required_string(value: &Value, field: &str) -> Result<String> {
         .as_str()
         .filter(|text| !text.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| Error::InvalidInput(format!("ACP 权限请求缺少 {field}")))
+        .ok_or_else(|| {
+            Error::InvalidInput(Detail::msg_with(
+                "perm-missing-field",
+                [("field", field.to_owned())],
+            ))
+        })
 }
 
-fn redact_secrets(value: &Value) -> Value {
+fn redact_secrets(value: &Value, lang: Lang) -> Value {
     match value {
         Value::Object(object) => Value::Object(
             object
@@ -181,15 +211,20 @@ fn redact_secrets(value: &Value) -> Value {
                     (
                         key.clone(),
                         if redacted {
-                            Value::String("[已隐藏]".into())
+                            Value::String(text(lang, "perm-redacted", &[]))
                         } else {
-                            redact_secrets(value)
+                            redact_secrets(value, lang)
                         },
                     )
                 })
                 .collect(),
         ),
-        Value::Array(values) => Value::Array(values.iter().map(redact_secrets).collect()),
+        Value::Array(values) => Value::Array(
+            values
+                .iter()
+                .map(|value| redact_secrets(value, lang))
+                .collect(),
+        ),
         _ => value.clone(),
     }
 }
@@ -197,6 +232,7 @@ fn redact_secrets(value: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::l10n::zh;
     use std::net::SocketAddr;
     use tokio::{
         io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -275,18 +311,21 @@ mod tests {
 
     #[test]
     fn maps_acp_options_to_opaque_core_choices() {
-        let pending = parse_pending(&json!({
-            "toolCall": {
-                "toolCallId": "call-1",
-                "title": "运行命令",
-                "kind": "execute",
-                "rawInput": {"command": "echo hi", "api_token": "secret"}
-            },
-            "options": [
-                {"optionId": "allow_once", "kind": "allow_once", "name": "允许一次"},
-                {"optionId": "reject_once", "kind": "reject_once", "name": "拒绝"}
-            ]
-        }))
+        let pending = parse_pending(
+            &json!({
+                "toolCall": {
+                    "toolCallId": "call-1",
+                    "title": "运行命令",
+                    "kind": "execute",
+                    "rawInput": {"command": "echo hi", "api_token": "secret"}
+                },
+                "options": [
+                    {"optionId": "allow_once", "kind": "allow_once", "name": "允许一次"},
+                    {"optionId": "reject_once", "kind": "reject_once", "name": "拒绝"}
+                ]
+            }),
+            zh(),
+        )
         .unwrap();
         assert_eq!(pending.request.options[0].choice_id, "acp-0");
         assert_eq!(pending.option_ids["acp-1"], "reject_once");
@@ -334,10 +373,12 @@ mod tests {
             "503 Service Unavailable",
         )
         .await;
-        assert!(matches!(invalid, Err(Error::InvalidInput(message)) if message == "bad request"));
-        assert!(matches!(busy, Err(Error::Busy(message)) if message == "too many"));
         assert!(
-            matches!(unavailable, Err(Error::ConfirmationUnavailable(message)) if message == "down")
+            matches!(invalid, Err(Error::InvalidInput(detail)) if detail.format(zh()) == "bad request")
+        );
+        assert!(matches!(busy, Err(Error::Busy(detail)) if detail.format(zh()) == "too many"));
+        assert!(
+            matches!(unavailable, Err(Error::ConfirmationUnavailable(detail)) if detail.format(zh()) == "down")
         );
     }
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::acp::test_support::*;
+use crate::l10n::zh;
 use crate::login::LoginSink;
 use serde_json::json;
 
@@ -35,7 +36,7 @@ impl LoginSink for MemorySink {
 
     async fn redact(&self, event_id: &str, reason: &str) -> crate::error::Result<()> {
         if self.fail_redact {
-            return Err(Error::Matrix("没有权限撤回这条消息".into()));
+            return Err(Error::Matrix(Detail::data("没有权限撤回这条消息")));
         }
         self.redactions
             .lock()
@@ -69,6 +70,7 @@ async fn broken_login_method_is_skipped_without_failing_connect() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "list methods",
     )
@@ -109,6 +111,7 @@ async fn url_login_completes_through_chat_commands() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "list methods",
     )
@@ -128,6 +131,7 @@ async fn url_login_completes_through_chat_commands() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "start login",
     )
@@ -139,7 +143,7 @@ async fn url_login_completes_through_chat_commands() {
         .any(|text| text.contains("https://auth.example/login"))
     {
         let event = bounded(events.recv(), "login event").await.unwrap();
-        bounded(login.event(event, &sink), "deliver event")
+        bounded(login.event(event, &sink, zh()), "deliver event")
             .await
             .unwrap();
     }
@@ -157,13 +161,16 @@ async fn url_login_completes_through_chat_commands() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "accept",
     )
     .await
     .unwrap();
     let event = bounded(events.recv(), "finished event").await.unwrap();
-    let reconnect = bounded(login.event(event, &sink), "finish").await.unwrap();
+    let reconnect = bounded(login.event(event, &sink, zh()), "finish")
+        .await
+        .unwrap();
     assert!(!reconnect);
 
     let session = bounded(
@@ -204,6 +211,7 @@ async fn terminal_login_forwards_code_and_reconnects() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "start terminal login",
     )
@@ -214,7 +222,7 @@ async fn terminal_login_forwards_code_and_reconnects() {
         panic!("期待终端登录输出链接");
     };
     assert_eq!(link, "https://auth.example/device");
-    bounded(login.event(event, &sink), "deliver link")
+    bounded(login.event(event, &sink, zh()), "deliver link")
         .await
         .unwrap();
 
@@ -226,6 +234,7 @@ async fn terminal_login_forwards_code_and_reconnects() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "send code",
     )
@@ -234,12 +243,14 @@ async fn terminal_login_forwards_code_and_reconnects() {
     let reconnect = loop {
         let event = bounded(events.recv(), "login event").await.unwrap();
         if let LoginEvent::Output(_) = &event {
-            bounded(login.event(event, &sink), "deliver output")
+            bounded(login.event(event, &sink, zh()), "deliver output")
                 .await
                 .unwrap();
             continue;
         }
-        break bounded(login.event(event, &sink), "finish").await.unwrap();
+        break bounded(login.event(event, &sink, zh()), "finish")
+            .await
+            .unwrap();
     };
     assert!(reconnect);
 
@@ -278,6 +289,7 @@ async fn terminal_login_redacts_the_forwarded_key_message() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "start terminal login",
     )
@@ -287,7 +299,7 @@ async fn terminal_login_redacts_the_forwarded_key_message() {
     let LoginEvent::Output(_) = &event else {
         panic!("期待终端登录输出链接");
     };
-    bounded(login.event(event, &sink), "deliver link")
+    bounded(login.event(event, &sink, zh()), "deliver link")
         .await
         .unwrap();
     // 开始登录不撤回任何消息。
@@ -300,6 +312,7 @@ async fn terminal_login_redacts_the_forwarded_key_message() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "send code",
     )
@@ -308,7 +321,7 @@ async fn terminal_login_redacts_the_forwarded_key_message() {
     // 只有转交给 Agent 的那一条被撤回。
     assert_eq!(
         sink.redactions(),
-        vec![("$key:example.org".to_owned(), REDACT_REASON.to_owned())]
+        vec![("$key:example.org".to_owned(), redact_reason(zh()))]
     );
     drop(client);
     agent.finish().await;
@@ -333,6 +346,7 @@ async fn failed_redaction_tells_the_user_to_delete_the_key() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "start terminal login",
     )
@@ -342,7 +356,7 @@ async fn failed_redaction_tells_the_user_to_delete_the_key() {
     let LoginEvent::Output(_) = &event else {
         panic!("期待终端登录输出链接");
     };
-    bounded(login.event(event, &sink), "deliver link")
+    bounded(login.event(event, &sink, zh()), "deliver link")
         .await
         .unwrap();
     bounded(
@@ -353,6 +367,7 @@ async fn failed_redaction_tells_the_user_to_delete_the_key() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "send code",
     )
@@ -401,6 +416,7 @@ async fn idle_url_elicitation_is_cancelled_immediately() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "list methods",
     )
@@ -430,6 +446,7 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "list methods",
     )
@@ -447,6 +464,7 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "unsupported method",
     )
@@ -463,6 +481,7 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "unknown method",
     )
@@ -502,6 +521,7 @@ async fn a_group_login_moves_to_the_direct_chat() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "start login in group",
     )
@@ -517,7 +537,7 @@ async fn a_group_login_moves_to_the_direct_chat() {
     };
     let link = link.clone();
     assert_eq!(link, "https://auth.example/device");
-    bounded(login.event(event, &direct), "deliver prompt")
+    bounded(login.event(event, &direct, zh()), "deliver prompt")
         .await
         .unwrap();
     assert!(direct.texts().iter().any(|text| text.contains(&link)));
@@ -531,7 +551,8 @@ async fn a_group_login_moves_to_the_direct_chat() {
                 &chat,
                 &client,
                 &agent.socket,
-                false
+                false,
+                zh(),
             ),
             "group chat",
         )
@@ -539,9 +560,20 @@ async fn a_group_login_moves_to_the_direct_chat() {
         .unwrap()
     );
 
-    // 私聊里回 key：照旧转交并撤回那条消息。
+    // 私聊里回 key：照旧转交并撤回那条消息；再取消。
+    finish_login_in_direct(&mut login, &direct, &group, &client, &agent.socket).await;
+}
+
+/// 私聊里交授权码并取消登录。
+async fn finish_login_in_direct(
+    login: &mut LoginFlow,
+    direct: &MemorySink,
+    group: &MemorySink,
+    client: &Arc<AcpClient>,
+    socket: &std::path::Path,
+) {
     let dm = LoginChat {
-        current: &direct,
+        current: direct,
         direct: None,
         group: false,
     };
@@ -550,9 +582,10 @@ async fn a_group_login_moves_to_the_direct_chat() {
             "code-42",
             "$key:example.org",
             &dm,
-            &client,
-            &agent.socket,
+            client,
+            socket,
             false,
+            zh(),
         ),
         "send code in direct chat",
     )
@@ -560,7 +593,7 @@ async fn a_group_login_moves_to_the_direct_chat() {
     .unwrap();
     assert_eq!(
         direct.redactions(),
-        [("$key:example.org".to_owned(), REDACT_REASON.to_owned())]
+        [("$key:example.org".to_owned(), redact_reason(zh()))]
     );
     assert_eq!(group.texts(), ["登录在我们的私聊里进行。"]);
 
@@ -569,9 +602,10 @@ async fn a_group_login_moves_to_the_direct_chat() {
             "/wonton login cancel",
             "$cancel:example.org",
             &dm,
-            &client,
-            &agent.socket,
+            client,
+            socket,
             false,
+            zh(),
         ),
         "cancel in direct chat",
     )
@@ -610,6 +644,7 @@ async fn a_group_login_without_a_direct_chat_says_where_to_go() {
             &client,
             &agent.socket,
             false,
+            zh(),
         ),
         "list in group without direct chat",
     )

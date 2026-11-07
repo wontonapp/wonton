@@ -52,8 +52,8 @@ semver = "1.0.28"
 # Apache-2.0 OR MIT（渲染用的 tiny-skia 是 BSD-3-Clause，解析 XML 的 roxmltree 是 MIT OR Apache-2.0，经 resvg 引用）。
 # SVG 图标渲染成 PNG；不开 text、raster-images、svgz：不渲染文字，不解码 SVG 里嵌的位图，不收压缩过的 SVG。
 resvg = { version = "0.49.0", default-features = false }
-# Apache-2.0。MCP 总线（ADR-0006、ADR-0016）：对 Agent 是 Streamable HTTP 服务器，对插件是客户端。
-rmcp = { version = "3.8.0", default-features = false, features = ["server", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
+# MCP 总线（ADR-0006、ADR-0016）：对 Agent 是 Streamable HTTP 服务器，对插件是客户端。
+rmcp = { workspace = true, features = ["server", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
 # Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理图片的子进程给自己设资源上限（setrlimit）；逐级 openat 打开共享文件夹
 # 里的文件。都不用写 unsafe。
 rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }

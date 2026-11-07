@@ -8074,8 +8074,10 @@ name = "wonton-acp-bridge"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "axum",
  "futures-util",
  "reqwest",
+ "rmcp",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8085,6 +8087,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "wonton-l10n",
  "wonton-matrix",
  "wonton-protocol",
 ]

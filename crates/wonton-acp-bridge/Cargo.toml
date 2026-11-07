@@ -23,10 +23,15 @@ tokio = { workspace = true, features = ["macros", "net", "process", "rt-multi-th
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 url = { workspace = true }
+# MCP 总线是 Streamable HTTP，客户端的握手交给官方 SDK。
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+wonton-l10n = { path = "../wonton-l10n" }
 wonton-matrix = { path = "../wonton-matrix" }
 wonton-protocol = { path = "../wonton-protocol" }
 
 [dev-dependencies]
+axum = { workspace = true }
+rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 tempfile = { workspace = true }
 
 [lints]

@@ -265,10 +265,10 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 向服务器取一个房间状态事件的内容；没有这个状态时返回 `None`。
+    /// 向服务器取一个房间状态事件的原始 JSON（含 `sender`）；没有这个状态时返回 `None`。
     ///
     /// 自定义事件类型不在 Sliding Sync 的默认 `required_state` 里，本机缓存也不会有，所以直接问服务器。
-    pub async fn fetch_state_event_content(
+    pub async fn fetch_state_event(
         &self,
         event_type: &str,
         state_key: &str,
@@ -284,10 +284,22 @@ impl ChatRoom {
             let value =
                 serde_json::to_value(&raw).map_err(|error| Error::Upstream(error.to_string()))?;
             if value["type"] == event_type && value["state_key"] == state_key {
-                return Ok(Some(value["content"].clone()));
+                return Ok(Some(value));
             }
         }
         Ok(None)
+    }
+
+    /// 向服务器取一个房间状态事件的内容；没有这个状态时返回 `None`。
+    pub async fn fetch_state_event_content(
+        &self,
+        event_type: &str,
+        state_key: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(self
+            .fetch_state_event(event_type, state_key)
+            .await?
+            .map(|event| event["content"].clone()))
     }
 
     /// 房间里已加入的成员数，只读本机数据，不等网络。
