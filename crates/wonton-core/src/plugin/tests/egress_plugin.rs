@@ -301,6 +301,39 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
 }
 
 #[tokio::test]
+async fn plugin_written_no_proxy_is_merged_and_networked_services_all_get_one() {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
+    install(&m, &proxy_app("app.proxy")).await;
+    m.set_egress_proxy(update(None, true, &[]), Languages::default())
+        .await
+        .unwrap();
+    let out = package(
+        "  web:\n    image: nginx\n    environment:\n      NO_PROXY: \"localhost,web\"\n  \
+         hub:\n    image: nginx",
+        "  permissions: [network.egress]",
+    )
+    .replace("id: app.test", "id: app.out");
+    install(&m, &out).await;
+    // 服务名按字典序：hub、web；私有网段在名单末尾。
+    let private = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
+                   172.16.0.0/12,192.168.0.0/16";
+    let web = env_of_container(&docker, "wonton-app-out--web");
+    assert_eq!(web["HTTP_PROXY"], super::super::egress::PROXY_URL);
+    assert_eq!(
+        web["NO_PROXY"],
+        format!("localhost,web,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,hub,{private}")
+    );
+    let hub = env_of_container(&docker, "wonton-app-out--hub");
+    assert_eq!(
+        hub["NO_PROXY"],
+        format!("localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,hub,web,{private}")
+    );
+}
+
+#[tokio::test]
 async fn egress_plugin_without_an_upstream_warns_but_does_not_block_installation() {
     let (docker, engine) = FakeDocker::start().await;
     add_default_bridge(&docker);

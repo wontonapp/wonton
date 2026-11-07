@@ -220,6 +220,47 @@ fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables()
 }
 
 #[test]
+fn compose_written_no_proxy_is_merged_into_every_networked_service() {
+    let compose = package(
+        "  web:\n    image: nginx\n    environment:\n      NO_PROXY: \"localhost,web\"\n  \
+         hub:\n    image: nginx\n    environment:\n      no_proxy: internal.example\n  \
+         db:\n    image: postgres",
+        "  permissions: [network.egress]",
+    );
+    let package = PluginPackage::parse(&compose).unwrap();
+    let (_, plan) = with_proxy(&package);
+
+    // 服务名按字典序：db、hub、web；私有网段在名单末尾。
+    let private = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
+                   172.16.0.0/12,192.168.0.0/16";
+    let web = super::env_of(service(&plan, "web"));
+    assert_eq!(
+        web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
+        &format!(
+            "NO_PROXY=localhost,web,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,\
+             db,hub,{private}"
+        )
+    );
+    let hub = super::env_of(service(&plan, "hub"));
+    assert_eq!(
+        hub.iter().find(|l| l.starts_with("no_proxy=")).unwrap(),
+        &format!(
+            "no_proxy=internal.example,localhost,127.0.0.1,::1,.wonton.internal,\
+             auth.wonton.localhost,db,hub,web,{private}"
+        )
+    );
+    // 没写的照常拿到完整名单。
+    let db = super::env_of(service(&plan, "db"));
+    assert_eq!(
+        db.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
+        &format!(
+            "NO_PROXY=localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,\
+             db,hub,web,{private}"
+        )
+    );
+}
+
+#[test]
 fn without_a_proxy_only_the_empty_url_variable_is_injected() {
     let compose = package(
         "  web:\n    image: nginx\n    environment:\n      SEARX_PROXY: ${WONTON_PROXY_URL}\n    \
