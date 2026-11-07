@@ -34,6 +34,7 @@ mod install_l10n;
 mod instances;
 mod lan;
 mod lan_docker;
+mod lan_ports;
 mod lan_webui;
 mod leftovers;
 mod limits;

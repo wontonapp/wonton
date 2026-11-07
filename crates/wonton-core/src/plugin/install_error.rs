@@ -35,6 +35,9 @@ pub enum InstallError {
     DockerUnavailable(String),
     #[error("Docker 操作失败：{0}")]
     Docker(String),
+    /// 插件要开的局域网端口被宿主上的别的容器或程序占着。`message` 里有地址、端口和 Docker 的原话。
+    #[error("{0}")]
+    PortTaken(String),
     /// 拉不下插件的镜像：镜像仓库连不上、镜像不存在、没有权限等。
     #[error("{0}")]
     ImagePull(String),
@@ -92,6 +95,7 @@ impl InstallError {
             Self::NotInstalled(_) => "not_installed",
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
+            Self::PortTaken(_) => "port_taken",
             Self::ImagePull(_) => "image_pull_failed",
             Self::OidcUnavailable(_) => "oidc_unavailable",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
@@ -125,6 +129,7 @@ impl InstallError {
             Self::NotInstalled(m) => Self::NotInstalled(m),
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),
+            Self::PortTaken(m) => Self::PortTaken(add(m)),
             Self::ImagePull(m) => Self::ImagePull(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
@@ -177,6 +182,7 @@ impl From<EngineError> for InstallError {
             EngineError::Unavailable(m) => Self::DockerUnavailable(m),
             EngineError::Unsupported(m) => Self::Unsupported(m),
             pull @ EngineError::Pull { .. } => Self::ImagePull(pull.to_string()),
+            EngineError::PortTaken(m) => Self::PortTaken(m),
             other => Self::Docker(other.to_string()),
         }
     }

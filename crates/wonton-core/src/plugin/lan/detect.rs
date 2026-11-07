@@ -8,6 +8,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use std::net::IpAddr;
+
 use bollard::container::LogOutput;
 use bollard::errors::Error as BollardError;
 use bollard::models::{ContainerCreateBody, HostConfig, NetworkCreateRequest};
@@ -41,6 +43,9 @@ pub enum Detector {
     /// 测试用：检测结果由测试给出，可以中途改。
     #[cfg(test)]
     Fixed(Arc<Mutex<Result<HostNetwork, String>>>),
+    /// 测试用：检测结果由测试给出，宿主端口探测总是失败（看预览有没有如实写明）。
+    #[cfg(test)]
+    FixedListen(Arc<Mutex<Result<HostNetwork, String>>>, String),
 }
 
 impl std::fmt::Debug for Detector {
@@ -50,6 +55,8 @@ impl std::fmt::Debug for Detector {
             Self::Here => f.write_str("Here"),
             #[cfg(test)]
             Self::Fixed(_) => f.write_str("Fixed"),
+            #[cfg(test)]
+            Self::FixedListen(..) => f.write_str("FixedListen"),
         }
     }
 }
@@ -64,30 +71,88 @@ impl Detector {
         labels: HashMap<String, String>,
     ) -> Result<Result<HostNetwork, String>, EngineError> {
         match self {
-            Self::Container { core } => engine.run_probe(core, name, labels).await,
+            Self::Container { core } => Ok(engine
+                .run_probe(core, name, labels, vec![probe::COMMAND.to_owned()])
+                .await?
+                .and_then(|stdout| {
+                    serde_json::from_slice(&stdout).map_err(|e| format!("检测容器的输出不对：{e}"))
+                })),
             Self::Here => Ok(tokio::task::spawn_blocking(|| probe::probe(Path::new("/")))
                 .await
                 .unwrap_or_else(|e| Err(format!("检测宿主的网卡时出错：{e}")))),
             #[cfg(test)]
             Self::Fixed(network) => Ok(network.lock().expect("检测结果锁中毒").clone()),
+            #[cfg(test)]
+            Self::FixedListen(network, _) => Ok(network.lock().expect("检测结果锁中毒").clone()),
+        }
+    }
+
+    /// 这些地址和端口在宿主上有程序在听吗（预览用，宿主上的非 Docker 进程占的端口 Docker 看不到）。返回听见的那些；
+    /// 探测本身失败时是 `Err(原因)`，调用方别当成“没人占”。只判得了 TCP，调用方只传 TCP 端口。
+    pub async fn listen(
+        &self,
+        engine: &Engine,
+        name: &str,
+        labels: HashMap<String, String>,
+        targets: &[(IpAddr, u16)],
+    ) -> Result<Vec<(IpAddr, u16)>, String> {
+        if targets.is_empty() {
+            return Ok(Vec::new());
+        }
+        let list = targets
+            .iter()
+            .map(|(address, port)| match address {
+                IpAddr::V6(_) => format!("[{address}]:{port}"),
+                IpAddr::V4(_) => format!("{address}:{port}"),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        match self {
+            Self::Container { core } => {
+                let stdout = engine
+                    .run_probe(
+                        core,
+                        name,
+                        labels,
+                        vec![probe::COMMAND.to_owned(), probe::LISTEN.to_owned(), list],
+                    )
+                    .await
+                    .map_err(|e| e.to_string())??;
+                serde_json::from_slice(&stdout).map_err(|e| format!("探测容器的输出不对：{e}"))
+            }
+            Self::Here => {
+                let targets = targets.to_vec();
+                tokio::task::spawn_blocking(move || probe::listen(&targets))
+                    .await
+                    .map_err(|e| format!("探测时出错：{e}"))
+            }
+            #[cfg(test)]
+            Self::Fixed(_) => Ok(Vec::new()),
+            #[cfg(test)]
+            Self::FixedListen(network, error) => match &*network.lock().expect("检测结果锁中毒")
+            {
+                Ok(_) => Err(error.clone()),
+                Err(reason) => Err(reason.clone()),
+            },
         }
     }
 }
 
 impl Engine {
-    /// 用核心容器的镜像起检测容器，读它打印的结果。
+    /// 用核心容器的镜像起检测容器，读它打印的结果（原始标准输出，两种子命令各自解析）。
     async fn run_probe(
         &self,
         core: &str,
         name: &str,
         labels: HashMap<String, String>,
-    ) -> Result<Result<HostNetwork, String>, EngineError> {
+        cmd: Vec<String>,
+    ) -> Result<Result<Vec<u8>, String>, EngineError> {
         let Some(image) = self.inspect_container(core).await?.and_then(|c| c.image) else {
             return Ok(Err(format!("查不到核心容器 {core} 的镜像")));
         };
         let body = ContainerCreateBody {
             image: Some(image),
-            cmd: Some(vec![probe::COMMAND.to_owned()]),
+            cmd: Some(cmd),
             user: Some(probe::NOBODY_USER.to_owned()),
             labels: Some(labels),
             host_config: Some(HostConfig {
@@ -108,7 +173,7 @@ impl Engine {
             let code = output.code;
             return Ok(Err(format!("检测容器以 {code} 退出：{}", reason.trim())));
         }
-        Ok(serde_json::from_slice(&output.stdout).map_err(|e| format!("检测容器的输出不对：{e}")))
+        Ok(Ok(output.stdout))
     }
 
     /// 起一个一次性容器，等它跑完，读它的输出。不论成败都删掉它；开始前先删掉上次核心在中途退出留下的。Docker 连不上时报错；

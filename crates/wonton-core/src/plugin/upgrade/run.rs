@@ -114,7 +114,7 @@ impl PluginManager {
         self.check_egress(manifest).await?;
         let gpu = self.gpu_grant(manifest, &langs).await?;
         let lan_webui = lan_webui && switched(&package).is_some();
-        let lan = self.lan_grant(&package, lan_webui).await?;
+        let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
         let outcome = self.upgrade_begun(&package, granted, (gpu, lan)).await;
@@ -253,7 +253,7 @@ impl PluginManager {
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         let package = installed_package(&record, &langs)?;
-        let lan = self.lan_grant(&package, record.lan_webui).await?;
+        let lan = self.lan_grant(&package, record.lan_webui, &langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
         ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
         let plan = render(&package, &ctx, &langs)?;

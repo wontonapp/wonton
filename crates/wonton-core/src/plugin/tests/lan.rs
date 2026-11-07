@@ -86,8 +86,25 @@ pub(super) async fn on(
     (docker, m, detected, dir)
 }
 
+/// 同 [`on`]，但宿主端口探测总是失败。
+pub(super) async fn on_with_failing_probe(
+    network: HostNetwork,
+    error: &str,
+) -> (FakeDocker, Arc<PluginManager>, Host, tempfile::TempDir) {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let detected: Host = Arc::new(Mutex::new(Ok(network)));
+    let lan = Lan::new(
+        Detector::FixedListen(detected.clone(), error.to_owned()),
+        None,
+    );
+    let m = Arc::new(manager_with(engine, &dir).with_lan(lan));
+    (docker, m, detected, dir)
+}
+
 /// Samba 式的插件：`samba` 开 445/tcp 和 137/udp，地址经变量交给它；`web` 不开局域网端口。
-fn samba(extra_permissions: &str) -> String {
+pub(super) fn samba(extra_permissions: &str) -> String {
     package(
         "  samba:\n    image: example/samba\n    environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}\n  \
          web:\n    image: nginx",

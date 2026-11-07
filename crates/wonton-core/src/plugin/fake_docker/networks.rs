@@ -169,6 +169,50 @@ pub(super) fn running(states: &BTreeMap<String, Value>, container: &str) -> bool
     states.get(container).is_none_or(|s| s["Running"] != false)
 }
 
+/// 容器列表里的 `State`，和 Docker 一样由 inspect 的状态推出来。
+pub(super) fn state_name(states: &BTreeMap<String, Value>, container: &str) -> &'static str {
+    match states.get(container) {
+        Some(state) if state["Running"] == false => "exited",
+        Some(state) if state["Paused"] == true => "paused",
+        Some(state) if state["Restarting"] == true => "restarting",
+        _ => "running",
+    }
+}
+
+/// 运行中的容器在列表里的 `Ports`：来自创建时的 `HostConfig.PortBindings`，停着的容器没有。
+pub(super) fn published(
+    created: &BTreeMap<String, Value>,
+    states: &BTreeMap<String, Value>,
+    container: &str,
+) -> Vec<Value> {
+    if !running(states, container) {
+        return Vec::new();
+    }
+    let Some(body) = created.get(container) else {
+        return Vec::new();
+    };
+    body["HostConfig"]["PortBindings"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .flat_map(|(key, bindings)| {
+            let mut parts = key.split('/');
+            let port: u16 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+            let protocol = parts.next().unwrap_or("tcp").to_owned();
+            bindings
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|binding| {
+                    let ip = binding["HostIp"].as_str()?;
+                    let public: u16 = binding["HostPort"].as_str()?.parse().ok()?;
+                    Some(json!({"IP": ip, "PrivatePort": port, "PublicPort": public, "Type": protocol}))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 /// 容器 inspect 里的端点：没指定地址的报成 127.0.0.1，测试在本机起假的插件网页。
 pub(super) fn endpoint_settings(endpoint: &Value) -> Value {
     let address = endpoint["IPAMConfig"]["IPv4Address"]

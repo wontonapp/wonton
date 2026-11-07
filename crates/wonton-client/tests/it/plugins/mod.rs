@@ -367,6 +367,10 @@ async fn failures_keep_their_reason() {
             PluginFailure::Conflict,
         ),
         (
+            core_error(409, "port_taken", "端口 2222 被容器 forgejo 占着"),
+            PluginFailure::LanPortTaken,
+        ),
+        (
             core_error(422, "device_unavailable", "设备不可用"),
             PluginFailure::DeviceUnavailable,
         ),

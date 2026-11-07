@@ -3,7 +3,11 @@
 
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
+use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
+
+use super::super::compose::PullPolicy;
 use super::super::docker::Engine;
 use super::super::lan::{Detector, Lan};
 use super::super::{PluginId, PluginManager, PluginStatus};
@@ -167,4 +171,97 @@ async fn lan_address_change_updates_real_containers_and_config_page() {
             &super::langs(),
         )
         .await;
+}
+
+/// 宿主上已经被别的容器发布着的端口，装的时候立刻就报、类别是端口被占，不是等超时。占着的容器是核心不认识的。
+#[tokio::test]
+#[ignore = "需要 Docker，端口被占时安装立刻失败"]
+async fn a_port_published_by_another_container_fails_the_install_right_away() {
+    let engine = Engine::connect().unwrap();
+    engine.check_server().await.unwrap();
+    let mut names = Names::new();
+    // 端口开在 Docker 默认网桥的网关上：那也是一个宿主地址，不用碰真网卡。
+    let network = names.instance().network("port-taken");
+    engine
+        .create_relay_network(&network, &names.instance().core_labels())
+        .await
+        .unwrap();
+    let address: IpAddr = engine
+        .network_gateway(&network)
+        .await
+        .unwrap()
+        .parse()
+        .unwrap();
+    // 别的容器占着 0.0.0.0 上的一个端口，和报出来的现象一样。宿主端口让 Docker 分配、事后再问它：先在测试里绑一个
+    // 再放掉，放掉到 Docker 绑上之间，并行的测试或别的进程可能拿走同一个端口。
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
+    let hold = names.oneshot_container("occupy");
+    let body = ContainerCreateBody {
+        image: Some(IMAGE.to_owned()),
+        cmd: Some(vec![
+            "httpd".to_owned(),
+            "-f".to_owned(),
+            "-p".to_owned(),
+            "8000".to_owned(),
+        ]),
+        exposed_ports: Some(vec!["8000/tcp".to_owned()]),
+        host_config: Some(HostConfig {
+            port_bindings: Some(
+                [(
+                    "8000/tcp".to_owned(),
+                    Some(vec![PortBinding {
+                        host_ip: Some("0.0.0.0".to_owned()),
+                        host_port: None,
+                    }]),
+                )]
+                .into(),
+            ),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    engine.create_container(&hold, body).await.unwrap();
+    engine.start_container(&hold).await.unwrap();
+    let port: u16 = engine
+        .inspect_container(&hold)
+        .await
+        .unwrap()
+        .and_then(|info| info.network_settings?.ports?.remove("8000/tcp")?)
+        .and_then(|bindings| {
+            bindings
+                .into_iter()
+                .find_map(|b| b.host_port.filter(|p| !p.is_empty()))
+        })
+        .expect("Docker 给占位容器发布了端口")
+        .parse()
+        .unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
+    manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
+    manager.lan = lan(address);
+    let source = compose(port);
+    let started = Instant::now();
+    let error = manager
+        .install(&source, &super::lan::granted(&source), super::langs())
+        .await
+        .unwrap_err();
+    let elapsed = started.elapsed();
+    assert_eq!(error.kind(), "port_taken", "{error}");
+    assert!(error.to_string().contains(&port.to_string()), "{error}");
+    assert!(
+        elapsed < Duration::from_secs(20),
+        "用了 {elapsed:?}，像是等超时了"
+    );
+    assert_eq!(manager.list().len(), 0, "没留下插件");
+    assert!(
+        engine
+            .inspect_container(&names.container("app.test", "lan"))
+            .await
+            .unwrap()
+            .is_none()
+    );
 }

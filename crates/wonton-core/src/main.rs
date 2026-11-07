@@ -9,7 +9,7 @@
 //! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
 //!   （`wonton_core::plugin::image_worker`）。
 //! - `wonton-core lan-probe`：核心内部用，在宿主网络里的一次性容器里读宿主的路由和网卡
-//!   （`wonton_core::plugin::lan::probe`）。
+//!   （`wonton_core::plugin::lan::probe`）；`lan-probe listen <地址:端口,…>` 报告哪些端口有程序在用。
 //! - `wonton-core egress-proxy-check`：查代理连不连得上，安装脚本和核心都在出口网络上的一次性容器里跑它
 //!   （`wonton_core::plugin::egress::check`）。
 //! - `wonton-core updater <安装目录> <数据目录>`：核心内部用，升级器容器（`wonton_core::upgrade::updater`）。
@@ -184,7 +184,7 @@ fn main() -> ExitCode {
     match args.get(1).map(String::as_str) {
         Some(image_worker::COMMAND) => return image_worker::child(&args[2..]),
         // 检测容器的结果打印在标准输出上，同样不初始化日志。
-        Some(lan::probe::COMMAND) => return lan::probe::command(),
+        Some(lan::probe::COMMAND) => return lan::probe::command(&args[2..]),
         Some(check::COMMAND) => return check::command(),
         Some(compose_images::COMMAND) => return compose_images::command(),
         _ => {}

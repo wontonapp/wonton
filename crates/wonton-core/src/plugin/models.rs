@@ -517,7 +517,9 @@ impl PluginManager {
         package: &PluginPackage,
         record: &InstalledRecord,
     ) -> Result<(), InstallError> {
-        let lan = self.lan_grant(package, record.lan_webui).await?;
+        let lan = self
+            .lan_grant(package, record.lan_webui, &self.owner_languages())
+            .await?;
         let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
             Some((pending, reservation)) => (Some(pending), Some(reservation)),
             None => (None, None),

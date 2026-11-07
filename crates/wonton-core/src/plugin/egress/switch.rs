@@ -169,7 +169,9 @@ impl PluginManager {
             &self.owner_languages(),
         )?;
         package.origin = record.origin.clone();
-        let lan = self.lan_grant(&package, record.lan_webui).await?;
+        let lan = self
+            .lan_grant(&package, record.lan_webui, &self.owner_languages())
+            .await?;
         // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动。
         let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
             Some((pending, reservation)) => (Some(pending), Some(reservation)),

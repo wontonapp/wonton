@@ -196,7 +196,7 @@ impl PluginManager {
         let m = &package.manifest;
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
         let gpu = self.gpu_preview(m, langs).await?;
-        let lan = self.lan_preview(package).await?;
+        let lan = self.lan_preview(package, langs).await?;
         let egress = self.egress_problem_for(m).await?;
         let egress_block = egress.as_ref().filter(|p| blocks(p));
         let blocked = blocked

@@ -5,12 +5,28 @@ use std::net::IpAddr;
 
 use wonton_protocol::{CardLine, LanFailure};
 
+use super::ports;
 use super::select::{Bound, Problem};
 use super::webui::open_ports;
-use super::{LanGrant, LanPortSpec};
+use super::{LanGrant, LanPortSpec, Protocol};
+use crate::l10n;
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::package::PluginPackage;
+
+/// 要连一下试试的地址和端口：连一下只判得了 TCP，UDP 端口不放。
+fn targets(addresses: &[IpAddr], ports: &[LanPortSpec]) -> Vec<(IpAddr, u16)> {
+    addresses
+        .iter()
+        .flat_map(|address| {
+            ports
+                .iter()
+                .filter(|port| port.protocol == Protocol::Tcp)
+                .map(move |port| (*address, port.port))
+        })
+        .collect()
+}
 
 /// 安装预览里关于局域网端口的部分，同 [`crate::plugin::gpu::GpuPreview`]。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -45,6 +61,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         lan_webui: bool,
+        langs: &Languages,
     ) -> Result<Option<LanGrant>, InstallError> {
         let manifest = &package.manifest;
         if manifest.lan.is_none() {
@@ -62,7 +79,13 @@ impl PluginManager {
             .await?
             .result
             .map_err(|p| self.unavailable(p))?;
-        let addresses = bound.iter().map(|b| b.ip).collect();
+        let addresses: Vec<IpAddr> = bound.iter().map(|b| b.ip).collect();
+        // 启动容器那一步 Docker 也会拒绝，但在拉了镜像、建了网络之后；这里先查，装之前就知道。
+        let published = self.engine.published_ports().await?;
+        let taken = ports::clashes(&published, Some(manifest.id.as_str()), &addresses, &ports);
+        if let Some(taken) = taken.first() {
+            return Err(InstallError::PortTaken(taken.describe(langs, false)));
+        }
         Ok(Some(self.lan_grant_on(package, lan_webui, addresses)))
     }
 
@@ -99,6 +122,7 @@ impl PluginManager {
     pub(in crate::plugin) async fn lan_preview(
         &self,
         package: &PluginPackage,
+        langs: &Languages,
     ) -> Result<LanPreview, InstallError> {
         let ports = open_ports(package, false);
         if ports.is_empty() {
@@ -119,9 +143,53 @@ impl PluginManager {
         notices.push(emphasized(
             "局域网里的设备直接连这些端口，不经核心登录，身份由插件自己验证".to_owned(),
         ));
+        let Some(bound) = result.as_ref().ok() else {
+            let blocked = self.lan_conflict(&package.manifest, &ports).or_else(|| {
+                result
+                    .as_ref()
+                    .err()
+                    .map(|problem| self.unavailable(problem.clone()).to_string())
+            });
+            return Ok(LanPreview { notices, blocked });
+        };
+        let addresses: Vec<IpAddr> = bound.iter().map(|b| b.ip).collect();
+        let published = self.engine.published_ports().await?;
+        // Docker 里占着的挡下来：现在就知道装不上。宿主上的进程只能连一下试试，Docker 看不到，只提示不挡。
+        let taken = ports::clashes(
+            &published,
+            Some(package.manifest.id.as_str()),
+            &addresses,
+            &ports,
+        );
         let blocked = self
             .lan_conflict(&package.manifest, &ports)
-            .or_else(|| Some(self.unavailable(result.err()?).to_string()));
+            .or_else(|| taken.first().map(|taken| taken.describe(langs, false)));
+        if blocked.is_none() {
+            let targets = targets(&addresses, &ports);
+            match self
+                .lan
+                .detector
+                .listen(
+                    &self.engine,
+                    &self.cfg.instance.lan_probe(),
+                    self.cfg.instance.core_labels(),
+                    &targets,
+                )
+                .await
+            {
+                Ok(heard) => {
+                    for taken in ports::unheard(&heard, &published) {
+                        notices.push(emphasized(taken.describe(langs, true)));
+                    }
+                }
+                // 漏报可能：别装作“没人占”。
+                Err(reason) => notices.push(emphasized(l10n::text(
+                    langs,
+                    "plugin-install-lan-port-probe-failed",
+                    &[("reason", reason.into())],
+                ))),
+            }
+        }
         Ok(LanPreview { notices, blocked })
     }
 

@@ -195,6 +195,9 @@ impl PluginManager {
     ) -> Self {
         // 核心直接跑在宿主上时 /dev 就是宿主的；在容器里要由 compose 挂载进来，见 [`Self::with_host`]。
         let host_dev = cfg.core_container.is_none().then(|| PathBuf::from("/dev"));
+        // Docker 层的错误按主人最近一次请求的语言写：Engine 自己读不了 store，接上语言文件的路径。
+        let mut engine = engine;
+        engine.set_owner_languages_path(store.owner_languages());
         let lan = Lan::for_core(cfg.core_container.clone());
         let core_proxy = CoreProxy::default();
         let github = GitHub::new(&core_proxy);
@@ -569,7 +572,7 @@ impl PluginManager {
         let gpu = self.gpu_grant(&manifest, langs).await?;
         // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
         let lan_webui = lan_webui && switched(&package).is_some();
-        let lan = self.lan_grant(&package, lan_webui).await?;
+        let lan = self.lan_grant(&package, lan_webui, langs).await?;
         let listed = Listed::new(&package, now_secs(), lan_webui, false, Default::default());
         self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");

@@ -11,6 +11,7 @@ pub mod client;
 pub mod detect;
 mod grant;
 mod monitor;
+pub(in crate::plugin) mod ports;
 pub mod probe;
 mod route_subnets;
 pub mod select;

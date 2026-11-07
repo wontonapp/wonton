@@ -20,7 +20,7 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 use wonton_l10n::Arg;
 
-use super::lan::Detector;
+use super::lan::{Detector, ports};
 use super::languages::Languages;
 use super::network_pool::NetworkPool;
 use crate::l10n;
@@ -53,6 +53,9 @@ pub enum EngineError {
     /// `context` 是出错的场合，`message` 是拼好的整句（见 `from_bollard`）。
     #[error("{message}")]
     Rejected { context: String, message: String },
+    /// 容器要发布的端口被宿主上别的东西占着，Docker 拒绝启动。`message` 是给主人看的那句，带上地址、端口和 Docker 的原话。
+    #[error("{0}")]
+    PortTaken(String),
     /// 镜像仓库连不上、镜像或标签不存在、没有权限等，`message` 是 Docker 的原话。
     #[error("{message}")]
     Pull { image: String, message: String },
@@ -72,18 +75,22 @@ pub(super) fn from_bollard(langs: &Languages, context: &str, error: BollardError
                 &[("what", what.into())],
             ))
         }
-        BollardError::DockerResponseServerError { message, .. }
-        | BollardError::DockerStreamError { error: message } => {
-            let error = l10n::text(
-                langs,
-                "plugin-install-docker-rejected",
-                &[("context", context.into()), ("error", message.into())],
-            );
-            EngineError::Rejected {
-                context: context.to_owned(),
-                message: error,
-            }
-        }
+        BollardError::DockerResponseServerError { message, .. } => match ports::taken(&message) {
+            Some(place) => EngineError::PortTaken(match place {
+                Some(place) => l10n::text(
+                    langs,
+                    "plugin-install-port-taken",
+                    &[("place", place.into()), ("error", message.into())],
+                ),
+                None => l10n::text(
+                    langs,
+                    "plugin-install-port-taken-unknown",
+                    &[("error", message.into())],
+                ),
+            }),
+            None => rejected(langs, context, message),
+        },
+        BollardError::DockerStreamError { error: message } => rejected(langs, context, message),
         BollardError::RequestTimeoutError => EngineError::TimedOut(l10n::text(
             langs,
             "plugin-install-docker-timed-out",
@@ -94,6 +101,19 @@ pub(super) fn from_bollard(langs: &Languages, context: &str, error: BollardError
             "plugin-install-docker-unavailable",
             &[("error", format!("{context}：{other}").into())],
         )),
+    }
+}
+
+/// Docker 拒绝了请求，原话带上。
+fn rejected(langs: &Languages, context: &str, message: String) -> EngineError {
+    let error = l10n::text(
+        langs,
+        "plugin-install-docker-rejected",
+        &[("context", context.into()), ("error", message.into())],
+    );
+    EngineError::Rejected {
+        context: context.to_owned(),
+        message: error,
     }
 }
 

@@ -17,7 +17,7 @@ use tokio::sync::{Notify, Semaphore, broadcast};
 
 use self::events::events_response;
 use self::exec::start_exec;
-use self::networks::{endpoint_settings, networks, running};
+use self::networks::{endpoint_settings, networks, published, running, state_name};
 use self::update::update_container;
 use self::volumes::volumes;
 use super::docker::Engine;
@@ -662,7 +662,14 @@ fn list_containers(docker: &Resources, query: &str) -> Response {
     };
     let list: Vec<Value> = labeled(&docker.containers, query)
         .filter(|(n, _)| on_network(n))
-        .map(|(n, labels)| json!({"Names": [format!("/{n}")], "Labels": labels}))
+        .map(|(n, labels)| {
+            json!({
+                "Names": [format!("/{n}")],
+                "Labels": labels,
+                "State": state_name(&docker.states, n),
+                "Ports": published(&docker.created, &docker.states, n),
+            })
+        })
         .collect();
     json_reply(StatusCode::OK, json!(list))
 }

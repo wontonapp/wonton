@@ -2,6 +2,9 @@
 //! [`super::detect`]），所以只读、只打印：从 `/proc/net/route` 读 main 表的默认路由和已用网段，经 netlink 列出地址，从
 //! `/sys/class/net` 认出网卡的类型。选哪个地址在核心里算（[`super::select`]）。
 //!
+//! `lan-probe listen <地址:端口,…>` 用同一个容器连一下这些地址和端口，报告哪些有程序在听：宿主上非 Docker 的进程占的端口
+//! 在 Docker 的容器列表里没有。
+//!
 //! `/proc/net/route` 只列 main 表：Tailscale 用出口节点时，策略路由把流量导到 tailscale0，`ip route get` 查到的就是
 //! 它，main 表里的默认路由还是物理网卡（ADR-0019 的“别的检测办法”）。
 
@@ -9,12 +12,20 @@ use std::fs;
 use std::net::IpAddr;
 use std::path::Path;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
 
 /// 子命令名：`wonton-core lan-probe`。
 pub const COMMAND: &str = "lan-probe";
+
+/// `lan-probe` 的第二种用法：`lan-probe listen <地址:端口,…>`，报告哪些地址和端口有程序在用（TCP 连得上）。
+/// 端口被宿主上的非 Docker 进程占着时 Docker 的容器列表里没有，靠这个在宿主网络里看出来。
+pub const LISTEN: &str = "listen";
+
+/// 连一下的时限：局域网里有人监听的话，本机上 300 毫秒足够；超时按没人用算（防火墙丢了 SYN 也算没人用）。
+const LISTEN_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// 一次性容器的用户：nobody。
 pub const NOBODY_USER: &str = "65534:65534";
@@ -62,7 +73,10 @@ pub struct HostAddress {
 }
 
 /// 子命令的入口：结果以 JSON 打印在标准输出上，出错时原因写在标准错误上、以 1 退出。
-pub fn command() -> ExitCode {
+pub fn command(args: &[String]) -> ExitCode {
+    if args.first().map(String::as_str) == Some(LISTEN) {
+        return listen_command(args.get(1).map(String::as_str).unwrap_or_default());
+    }
     match probe(Path::new("/")) {
         Ok(network) => match serde_json::to_string(&network) {
             Ok(json) => {
@@ -79,6 +93,61 @@ pub fn command() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn listen_command(targets: &str) -> ExitCode {
+    let heard = match parse_targets(targets) {
+        Ok(targets) => listen(&targets),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match serde_json::to_string(&heard) {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("输出探测结果失败：{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `192.168.0.10:445,[fd00::10]:445` 这样的一串。IPv6 要写在方括号里。
+pub fn parse_targets(text: &str) -> Result<Vec<(IpAddr, u16)>, String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            let (address, port) = item
+                .rsplit_once(':')
+                .ok_or_else(|| format!("{item} 不是地址:端口"))?;
+            let address = address
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse()
+                .map_err(|_| format!("{item} 的地址不对"))?;
+            let port = port.parse().map_err(|_| format!("{item} 的端口不对"))?;
+            Ok((address, port))
+        })
+        .collect()
+}
+
+/// 连得上的地址和端口：有程序在听。连接立刻关掉，只判有没有人接。
+pub fn listen(targets: &[(IpAddr, u16)]) -> Vec<(IpAddr, u16)> {
+    targets
+        .iter()
+        .copied()
+        .filter(|(address, port)| {
+            std::net::TcpStream::connect_timeout(
+                &std::net::SocketAddr::new(*address, *port),
+                LISTEN_TIMEOUT,
+            )
+            .is_ok()
+        })
+        .collect()
 }
 
 /// 读 `root` 下的 `/proc` 和 `/sys`，再经 netlink 列出本网络命名空间里的地址。
@@ -257,6 +326,22 @@ fn addresses() -> Result<Vec<(u32, HostAddress)>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 目标列表的写法和解析要能互相往返，IPv6 带方括号。
+    #[test]
+    fn targets_round_trip() {
+        let text = "192.168.0.10:445,[fd00::10]:445";
+        let targets = parse_targets(text).unwrap();
+        assert_eq!(
+            targets,
+            [
+                ("192.168.0.10".parse().unwrap(), 445),
+                ("fd00::10".parse().unwrap(), 445)
+            ]
+        );
+        assert!(parse_targets("192.168.0.10").is_err());
+        assert!(parse_targets("192.168.0.10:http").is_err());
+    }
 
     /// npchy（2026-11-02）的 `/proc/net/route`：有线和 Wi-Fi 各一条默认路由，另有 Docker 网桥和 Tailscale 的网段。
     const ROUTE: &str = "\
