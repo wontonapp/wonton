@@ -18,17 +18,17 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
         .await
         .unwrap();
     let mut names = Names::new();
-    let port = super::host_relay::free_port();
     let name = names.oneshot_container("relay-probe");
     engine
         .create_container(
             &name,
             ContainerCreateBody {
                 image: Some(IMAGE.to_owned()),
+                // 端口交给 nc 自己挑：测试先找空闲端口再交给它，中间隔着一次 `docker run`，宿主上别的进程能抢走。
                 cmd: Some(vec![
                     "sh".to_owned(),
                     "-c".to_owned(),
-                    format!("nc -l -p {port} -s 127.0.0.1"),
+                    "nc -l -p 0 -s 127.0.0.1".to_owned(),
                 ]),
                 host_config: Some(HostConfig {
                     network_mode: Some("host".to_owned()),
@@ -42,17 +42,34 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
     engine.start_container(&name).await.unwrap();
     let mut probed = None;
     for _ in 0..100 {
-        probed = super::super::host_relay::listens_beyond_loopback(
-            &engine,
-            &name,
-            port,
-            &super::super::languages::Languages::default(),
-        )
-        .await;
-        if probed.is_some() {
-            break;
+        if let Some(port) = listening_port(&engine, &name).await {
+            probed = super::super::host_relay::listens_beyond_loopback(
+                &engine,
+                &name,
+                port,
+                &super::super::languages::Languages::default(),
+            )
+            .await;
+            if probed.is_some() {
+                break;
+            }
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     assert_eq!(probed, Some(false));
+}
+
+/// 容器里 `nc` 挑上的端口。
+async fn listening_port(engine: &Engine, name: &str) -> Option<u16> {
+    let argv = ["netstat", "-ltnp"].map(str::to_owned);
+    let output = engine
+        .exec_output(name, &argv, None, std::time::Duration::from_secs(3))
+        .await
+        .ok()?;
+    output.stdout.lines().find_map(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        fields.last()?.ends_with("/nc").then_some(())?;
+        let (_, port) = fields.get(3)?.rsplit_once(':')?;
+        port.parse().ok()
+    })
 }

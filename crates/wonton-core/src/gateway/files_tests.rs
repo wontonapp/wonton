@@ -45,7 +45,11 @@ pub(super) async fn home() -> Home {
 
 /// `tusd` 是 tusd 的 `host:port`。
 pub(super) async fn home_with(tusd: Option<String>) -> Home {
-    let f = Fixture::new();
+    home_at(Fixture::new(), tusd).await
+}
+
+/// 用调用方先建好的目录建 home：要先起 tusd（端口由它自己挑）、再把这个端口交给网关时用。
+pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
     let public = PublicUrls {
         scheme: "http".into(),
         base_domain: CORE.into(),
