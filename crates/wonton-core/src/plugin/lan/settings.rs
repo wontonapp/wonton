@@ -124,6 +124,8 @@ impl PluginManager {
         Ok(LanSettings {
             choice: self.store.lan_choice()?.unwrap_or(LanChoice::Auto),
             fixed_by_environment: self.lan.fixed.is_some(),
+            announce_by_environment: false,
+            announce_addresses: addresses.clone(),
             addresses,
             problem,
             interfaces,
