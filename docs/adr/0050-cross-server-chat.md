@@ -105,6 +105,7 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
 
 | 情况 | 核心怎么知道 | App 上 |
 | --- | --- | --- |
+| 正在确认 | 刚配对，第一次 `probe` 还没出结果 | “正在确认”，不显示连上也不显示连不上 |
 | 已连上 | 最近一次 `probe` 成功 | 正常 |
 | 对方离线 | 连不上，或 `probe` 超时 | “对方服务器连不上”，带最后连上的时间；消息会在连上后补发 |
 | 对方删了配对 | 握手后被对方的服务器名单拒绝 | “对方已断开连接”，按钮“删除” |
@@ -116,7 +117,7 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
 ### ViewModel 和接口
 
 - `wonton-protocol`：
-  - `PeersViewModel`：配对过的服务器列表。每项有服务器名、对方主人的显示名、状态（`Connected`、`Offline`、`RemovedByPeer`、`AwaitingApproval`，认不出的落到 `Other`）、最后连上的时间。
+  - `PeersViewModel`：配对过的服务器列表。每项有服务器名、对方主人的显示名、状态（`Checking`、`Connected`、`Offline`、`RemovedByPeer`、`AwaitingApproval`，认不出的落到 `Other`）、最后连上的时间。
   - 动作：`ShowPeerCode`、`ScanPeerCode(code)`、`RemovePeer(server_name)`。
   - 设置首页多一项“其他服务器”，只给主人。
 - 核心：`/_wonton/api/peers`（列表、出码、扫码后提交、删除），只收主人设备经隧道来的请求（ADR-0017 的设备门）。

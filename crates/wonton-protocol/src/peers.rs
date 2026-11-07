@@ -41,6 +41,8 @@ pub struct PeerRow {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum PeerStatus {
+    /// 刚配对，第一次探活还没出结果：既不算连上，也不算连不上。
+    Checking,
     /// 最近一次探活成功。
     Connected,
     /// 连不上对方，或探活超时。消息会在连上后补发。
