@@ -11,7 +11,8 @@ use super::store_info::SpecVersion;
 
 /// 清单里一处新增的写法。
 enum Added {
-    /// `x-wonton` 下的一个字段，按路径找。
+    /// `x-wonton` 下的一个字段，按路径找；路径里的 `"*"` 匹配所在表里的任意一个键，报错写实际的键
+    /// （如按名字的表 `secrets.<名字>`）。
     Field(&'static [&'static str]),
     /// `x-wonton.permissions` 里的一项。
     Permission(&'static str),
@@ -49,6 +50,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_7, Added::NetworkModeService),
     (V0_7, Added::NoNewPrivilegesWithoutPermission),
     (V0_8, Added::Field(&["optional_permissions"])),
+    (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -93,12 +95,9 @@ fn places(
     };
     match added {
         Added::Field(path) => {
-            let value = path.iter().fold(manifest, |value, key| &value[key]);
-            if value.is_null() {
-                Vec::new()
-            } else {
-                vec![format!("x-wonton.{}", path.join("."))]
-            }
+            let mut found = Vec::new();
+            walk(manifest, path, &mut String::from("x-wonton"), &mut found);
+            found
         }
         Added::Permission(name) => permissions
             .contains(name)
@@ -127,6 +126,32 @@ fn places(
             )
         }
         Added::NoNewPrivilegesWithoutPermission => Vec::new(),
+    }
+}
+
+/// 走完一条字段路径，用到的写进 `found`：`place` 是走到这里的报错位置，`"*"` 展开成所在表里的每个键。
+fn walk(value: &Value, path: &[&str], place: &mut String, found: &mut Vec<String>) {
+    let Some((key, rest)) = path.split_first() else {
+        if !value.is_null() {
+            found.push(place.clone());
+        }
+        return;
+    };
+    let mut descend = |key: &str, next: &Value| {
+        let length = place.len();
+        place.push('.');
+        place.push_str(key);
+        walk(next, rest, place, found);
+        place.truncate(length);
+    };
+    if *key == "*" {
+        if let Some(table) = value.as_object() {
+            for (name, next) in table {
+                descend(name, next);
+            }
+        }
+    } else if let Some(next) = value.get(key).filter(|next| !next.is_null()) {
+        descend(key, next);
     }
 }
 

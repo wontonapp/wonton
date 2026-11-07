@@ -68,6 +68,7 @@ mod network_pool_probe_tests;
 #[cfg(test)]
 mod network_pool_tests;
 pub(crate) mod oom;
+mod owner_secrets;
 pub mod package;
 pub mod package_archive;
 pub mod package_files;
@@ -81,6 +82,7 @@ pub mod registry_mirror;
 pub mod render;
 pub mod requirements;
 pub mod save_grants;
+mod secret_spec;
 pub mod secrets;
 pub mod source_address;
 pub mod sources;
@@ -112,6 +114,7 @@ pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView}
 pub use manifest::{Manifest, Permission, PluginId};
 pub(crate) use manifest_tabs::validate_path;
 pub use mcp_server::{McpServer, ToolLimits};
+pub use owner_secrets::{SecretValue, ViewableSecrets};
 pub use package::PluginPackage;
 pub use proxy_auth::McpHeaders;
 pub use upgrade::UpgradeTo;

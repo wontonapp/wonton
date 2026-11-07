@@ -252,6 +252,15 @@ fn spawn_federation_config(
     );
 }
 
+/// 主人令牌：第一次启动生成一个，之后原样读。
+fn owner_token(cfg: &Config) -> anyhow::Result<String> {
+    let path = cfg.core_state_dir().join("owner-token");
+    let token = secret::load_or_create(&path)
+        .with_context(|| format!("读取主人令牌 {}", path.display()))?;
+    tracing::info!(path = %path.display(), "主人令牌已就绪");
+    Ok(token)
+}
+
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
@@ -262,10 +271,7 @@ async fn serve() -> anyhow::Result<()> {
     let docker = engine.check_server().await.context("连接 Docker")?;
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
-    let token_path = cfg.core_state_dir().join("owner-token");
-    let owner_token = secret::load_or_create(&token_path)
-        .with_context(|| format!("读取主人令牌 {}", token_path.display()))?;
-    tracing::info!(path = %token_path.display(), "主人令牌已就绪");
+    let owner_token = owner_token(&cfg)?;
 
     let upgrades = open_upgrades(&cfg, &engine);
     let http = HttpClient::new();
@@ -305,7 +311,7 @@ async fn serve() -> anyhow::Result<()> {
         bus.upstreams(),
         notices.clone(),
     ));
-    let files = open_files(&cfg, host, http.clone(), audit, images)?;
+    let files = open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
     let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
@@ -333,6 +339,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices)
         .with_files(Some(files))
+        .with_audit(Some(audit))
         .with_tusd(cfg.tusd.clone())
         .with_upgrades(Some(upgrades))
         .with_peers(peers.clone()),

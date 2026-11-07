@@ -95,6 +95,14 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             get(api::detail).delete(api::uninstall),
         )
         .route(
+            "/_wonton/api/plugins/{id}/secrets",
+            get(super::owner_secrets::list),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/secrets/{name}",
+            get(super::owner_secrets::value),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/start",
             post(super::plugin_start::start),
         )

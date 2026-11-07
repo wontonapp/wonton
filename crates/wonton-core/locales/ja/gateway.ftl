@@ -119,3 +119,12 @@ gateway-pair-code-used = このペアリングコードは既に使用済みで�
 gateway-pair-code-expired = ペアリングコードの有効期限が切れています。新しいコードを発行してください
 gateway-pair-first-used = このサーバーには既にペアリング済みのデバイスがあるため、初回ペアリングコードは再利用できません。サーバー上でsudo wonton pairを実行して新しいコードを発行してください
 gateway-pair-register-failed = サーバーがデバイスを登録できませんでした：{ $error }
+
+# オーナーがAppでプラグインのキーを確認する。
+gateway-owner-secrets-plugin-not-installed = アプリ{ $id }はインストールされていません
+gateway-owner-secrets-record-unreadable = アプリ{ $id }の記録を読み取れないため、キーを一覧できません
+gateway-owner-secrets-not-viewable = アプリ{ $id }は、閲覧できるキーとして{ $name }を宣言していません
+gateway-owner-secrets-not-generated = キー{ $name }にはまだ値がありません。アプリを一度起動する（またはアップグレードする）と再生成されます
+gateway-owner-secrets-store-failed = アプリのキーを読み取れませんでした：{ $error }
+gateway-owner-secrets-not-text = キー{ $name }に保存されている値はテキストではありません
+gateway-owner-secrets-audit-unavailable = 自宅サーバーに監査ログが接続されていないため、キーの値を表示できません

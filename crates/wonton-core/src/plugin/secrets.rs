@@ -194,7 +194,11 @@ mod tests {
 
     #[test]
     fn generated_values_match_openssl_rand_formats() {
-        let spec = |bytes, encoding| GenerateSecret { bytes, encoding };
+        let spec = |bytes, encoding| GenerateSecret {
+            bytes,
+            encoding,
+            view: None,
+        };
         let hex = generate(&spec(32, SecretEncoding::Hex));
         assert_eq!(hex.len(), 64);
         assert!(

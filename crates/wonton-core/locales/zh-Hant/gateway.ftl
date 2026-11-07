@@ -119,3 +119,12 @@ gateway-pair-code-used = 這個配對碼已經用過了，請換一個新碼
 gateway-pair-code-expired = 配對碼過期了，請換一個新碼
 gateway-pair-first-used = 這部伺服器已經有配對的裝置，首次配對碼不能再用；請在伺服器上執行 sudo wonton pair 另發一個配對碼
 gateway-pair-register-failed = 伺服器登記裝置失敗：{ $error }
+
+# 主人在 App 裡查看應用程式的金鑰。
+gateway-owner-secrets-plugin-not-installed = 應用程式 { $id } 沒有安裝
+gateway-owner-secrets-record-unreadable = 應用程式 { $id } 的記錄讀不出來，列不出它的金鑰
+gateway-owner-secrets-not-viewable = 應用程式 { $id } 沒有宣告可查看的金鑰 { $name }
+gateway-owner-secrets-not-generated = 金鑰 { $name } 還沒有值：啟動一次應用程式（或升級）會重新產生
+gateway-owner-secrets-store-failed = 讀應用程式金鑰失敗：{ $error }
+gateway-owner-secrets-not-text = 金鑰 { $name } 存的值不是文字
+gateway-owner-secrets-audit-unavailable = 家用伺服器沒有接審計日誌，不能查看金鑰的值

@@ -43,6 +43,7 @@ mod models;
 mod notify;
 mod notify_limit;
 mod onboarding;
+mod owner_secrets;
 mod pages;
 mod peers;
 mod plugin_start;
@@ -156,6 +157,9 @@ pub struct Gateway {
     notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
+    /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
+    /// 主人查看插件密钥的取值审计也从这里写。
+    pub(crate) audit: Option<Arc<crate::mcp::audit::Audit>>,
     /// tusd 的 `host:port`；没配置时上传如实报不可用。
     pub tusd: Option<String>,
     /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
@@ -212,6 +216,7 @@ impl Gateway {
             notices: None,
             notify_limiter: notify_limit::Limiter::default(),
             files: None,
+            audit: None,
             tusd: None,
             upgrades: None,
             peers: None,
@@ -266,6 +271,13 @@ impl Gateway {
     #[must_use]
     pub fn with_files(mut self, files: Option<Arc<crate::files::Files>>) -> Self {
         self.files = files;
+        self
+    }
+
+    /// 接上审计日志：主人查看插件密钥的取值审计这才可用。
+    #[must_use]
+    pub fn with_audit(mut self, audit: Option<Arc<crate::mcp::audit::Audit>>) -> Self {
+        self.audit = audit;
         self
     }
 
@@ -713,6 +725,8 @@ mod notify_tests;
 mod oidc_consent_tests;
 #[cfg(test)]
 mod onboarding_tests;
+#[cfg(test)]
+mod owner_secrets_tests;
 #[cfg(test)]
 mod pairing_tests;
 #[cfg(test)]

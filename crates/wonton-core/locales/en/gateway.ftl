@@ -119,3 +119,12 @@ gateway-pair-code-used = This pairing code was already used; get a new one
 gateway-pair-code-expired = The pairing code has expired; get a new one
 gateway-pair-first-used = This server already has paired devices and the first-pairing code can't be reused; run sudo wonton pair on the server to issue a new code
 gateway-pair-register-failed = The server couldn't register the device: { $error }
+
+# Owner viewing plugin secrets in the App.
+gateway-owner-secrets-plugin-not-installed = The app { $id } isn't installed
+gateway-owner-secrets-record-unreadable = The app { $id } record is unreadable, so its secrets can't be listed
+gateway-owner-secrets-not-viewable = The app { $id } doesn't declare a viewable secret { $name }
+gateway-owner-secrets-not-generated = The secret { $name } has no value yet; start the app once (or upgrade) to generate it again
+gateway-owner-secrets-store-failed = Couldn't read the app secret: { $error }
+gateway-owner-secrets-not-text = The secret { $name } isn't stored as text
+gateway-owner-secrets-audit-unavailable = The audit log isn't wired on this server, so secret values can't be shown

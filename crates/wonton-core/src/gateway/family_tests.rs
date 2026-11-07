@@ -513,6 +513,12 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
             "/_wonton/api/plugins/app.whoami/tool-policy",
             "",
         ),
+        (Method::GET, "/_wonton/api/plugins/app.whoami/secrets", ""),
+        (
+            Method::GET,
+            "/_wonton/api/plugins/app.whoami/secrets/admin_password",
+            "",
+        ),
         (
             Method::PUT,
             "/_wonton/api/plugins/app.whoami/tool-policy/always/hermes",
@@ -529,6 +535,10 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
         (Method::DELETE, "/_wonton/api/peers/rejected/r1", ""),
         (Method::DELETE, "/_wonton/api/peers/other.example", ""),
     ];
+    vec![("owner_only", owner_only), install_not_allowed_routes()]
+}
+
+fn install_not_allowed_routes() -> RouteTable {
     // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 owner_only。
     let install_routes: Vec<(Method, &str, &str)> = vec![
         (
@@ -550,10 +560,7 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
             "",
         ),
     ];
-    vec![
-        ("owner_only", owner_only),
-        ("install_not_allowed", install_routes),
-    ]
+    ("install_not_allowed", install_routes)
 }
 
 /// 直接记一个家人（邀请流程带 Matrix 查重，在别的测试里过）。

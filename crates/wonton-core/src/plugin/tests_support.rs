@@ -6,6 +6,7 @@ use super::listed::Listed;
 use super::manager::{Entry, PluginManager, PluginStatus};
 use super::manifest::{Manifest, PluginId};
 use super::proxy_auth::ProxyAuth;
+use super::secrets::Secrets;
 use super::store::InstalledRecord;
 use super::upstreams::{Endpoint, McpTarget};
 
@@ -31,6 +32,16 @@ impl PluginManager {
     #[cfg(test)]
     pub(crate) fn record_for_test(&self, id: &PluginId) -> Option<InstalledRecord> {
         self.store.load(id).ok().flatten()
+    }
+
+    /// 测试用：给登记过的插件塞密钥值，供主人查看接口的测试。
+    #[cfg(test)]
+    pub(crate) fn secrets_for_test(&self, id: &PluginId, values: &[(&str, &str)]) {
+        let secrets: Secrets = values
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.as_bytes().to_vec()))
+            .collect();
+        self.store.secrets().save(id, &secrets).expect("写测试密钥");
     }
 
     /// 测试用：给登记过的插件设上 MCP 服务的地址。

@@ -71,3 +71,20 @@ fn a_manifest_that_uses_nothing_new_passes_under_any_spec() {
 fn the_table_does_not_reach_past_the_core() {
     assert!(TABLE.iter().all(|(since, _)| *since <= SPEC_VERSION));
 }
+
+/// 按名字的表（`secrets`）里的新字段：`*` 展开成实际的键，一处一条；spec 写到那一版就不报。
+#[test]
+fn a_field_inside_a_name_keyed_table_names_the_actual_key() {
+    let manifest = json!({"secrets": {
+        "admin_token": {"generate": {}, "show_owner": {"label": {"en": "Admin token"}}},
+        "db_password": {"generate": {}}
+    }});
+    let found = problems(&document("0.7", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.secrets.admin_token.show_owner"),
+        "{found:?}"
+    );
+    assert!(found[0].contains("\"0.8\""), "{found:?}");
+    assert!(problems(&document("0.8", manifest, plain())).is_empty());
+}
