@@ -14,6 +14,8 @@ on:
       - "rust-toolchain.toml"
       - ".github/workflows/rust.yml"
       - "scripts/clean-docker-test-leftovers.sh"
+      - "scripts/ci-capture-container-logs.sh"
+      - "scripts/ci-note-sigterm.sh"
       - "!**/*.md"
   push:
     branches: [main]
@@ -61,10 +63,22 @@ jobs:
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: 测试（不含依赖 Docker 的集成测试）
-        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked
+        # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。
+        # shell: bash 带 pipefail：默认的 shell 不带，经过 tee 测试失败也会算成功。
+        shell: bash
+        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/test-output.log"
         env:
           # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
           DOCKER_HOST: unix:///nonexistent/docker.sock
+      - name: 失败时留下测试输出
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # 名字带上第几次运行：重跑另存一份，不覆盖失败那次。
+          name: rust-test-output-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-output.log
+          retention-days: 14
+          if-no-files-found: ignore
 
   docker:
     name: Rust Docker 测试
@@ -89,9 +103,23 @@ jobs:
         run: docker version
       - name: 清理被中断的 Docker 测试遗留
         run: bash scripts/clean-docker-test-leftovers.sh
+      - name: 记下测试起的容器的日志
+        # 测试结束时容器会被删掉；失败时上传这些日志，才看得到 tuwunel、核心当时说了什么。
+        run: |
+          mkdir -p "$RUNNER_TEMP/test-logs/containers"
+          nohup bash scripts/ci-capture-container-logs.sh "$RUNNER_TEMP/test-logs/containers" >/dev/null 2>&1 &
       - name: Docker 集成测试（标了 #[ignore] 的都是）
-        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored
+        shell: bash
+        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
       - name: 官方索引里的清单这份核心都读得懂
         run: |
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
           cargo run -q -p wonton-core --locked -- plugin check-index "$RUNNER_TEMP/index.json"
+      - name: 失败时留下测试输出和容器日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-docker-test-logs-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-logs
+          retention-days: 14
+          if-no-files-found: ignore
