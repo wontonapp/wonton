@@ -16,7 +16,7 @@ upgrade-launch-updater-failed = 啟動更新器失敗：{ $error }
 
 # 介面自己查不到要答的東西。
 upgrade-container-missing = 找不到家用伺服器的容器 { $name }
-upgrade-image-missing = 找不到正在使用的映像檔 { $image }
+upgrade-image-missing = 找不到正在使用的映像檔 { $image }；重新啟動家用伺服器後恢復
 
 # 背景檢查（每 6 小時一次，打開更新頁也會查）。
 upgrade-check-core-failed = 查家用伺服器的容器失敗：{ $error }
@@ -56,7 +56,7 @@ upgrade-components-failed =
        *[old] 處理舊版本不支援的元件失敗：{ $error }
     }
 upgrade-up-failed = 服務沒有啟動：{ $error }
-upgrade-core-image-wrong = 家用伺服器的容器用的是 { $actual }，不是 { $image }
+upgrade-core-image-wrong = 家用伺服器的容器跑的是 { $actual }（映像檔 { $actual_id }），不是 { $image }（映像檔 { $image_id }）
 upgrade-core-container-missing = 沒有家用伺服器的容器
 upgrade-containers-failed = 查系統服務的容器失敗：{ $error }
 upgrade-observe-timed-out = 觀察階段超過了時限

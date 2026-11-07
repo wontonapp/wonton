@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
+use super::PROJECT;
+use super::host::Mount;
 use super::state::Layout;
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -222,6 +224,20 @@ pub fn remove_others(layout: &Layout, keep: Option<&Path>) -> anyhow::Result<()>
         .filter(|dir| Some(dir.as_path()) != keep)
         .collect();
     remove_all(&others)
+}
+
+/// compose 项目里卷 `name` 在 Docker 里的名字。
+pub fn compose_volume(name: &str) -> String {
+    format!("{PROJECT}_{name}")
+}
+
+/// 把卷挂在 `/volume` 上的一次性容器用。
+pub fn volume_mount(name: &str, read_only: bool) -> Mount {
+    Mount::Volume {
+        name: compose_volume(name),
+        target: PathBuf::from("/volume"),
+        read_only,
+    }
 }
 
 #[cfg(test)]

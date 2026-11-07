@@ -3,7 +3,8 @@
 #
 # 再执行一次就是升级或修复：拉核心镜像的最新版本，密钥和数据都沿用，compose 文件按新的核心镜像重写。可调的环境变量：
 #
-#   WONTON_CORE_IMAGE   要装的核心镜像（默认 ghcr.io/geraldpeng6/wonton-core:beta，也可以写别的 tag 或 digest）
+#   WONTON_CORE_IMAGE   要装的核心镜像（默认 ghcr.io/geraldpeng6/wonton-core:beta），可以写别的 tag 或 digest。
+#                       tag 会按拉下来的镜像解析成仓库 digest 记进 .env，渠道照旧由这个 tag 决定
 #   WONTON_INSTALL_DIR  compose 文件、.env 和密钥（默认 /opt/wonton）
 #   WONTON_DATA_DIR     核心和插件的数据（默认 /var/lib/wonton）
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
@@ -192,11 +193,25 @@ else
   }
   rm -f "$pull_err"
 fi
-# 能写成 digest 就写 digest：升级、回滚都按它（ADR-0012）。本机构建的镜像没有 digest，照原样写。
-pinned=$pull_image
-if [ -z "$pin" ]; then
-  pinned=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$pull_image")
-  pinned=${pinned:-$pull_image}
+# 能写成 digest 就写 digest：升级、回滚都按它（ADR-0012）。给了 digest 的照写；给了标签的从拉下来的镜像的
+# RepoDigests 里取同一个仓库的那条，读不到就停下，不退回写标签：标签跟着渠道移走，回滚起到的就不是这一版。
+if [ -n "$pin" ]; then
+  pinned=$pull_image
+else
+  repository=${image%@*}
+  case "${repository##*/}" in
+    *:*) repository=${repository%:*} ;;
+  esac
+  case "$image" in
+    *@*) pinned=$image ;;
+    *)
+      pinned=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$pull_image" |
+        sed -n "s|^$repository@||p" | head -n 1)
+      [ -n "$pinned" ] ||
+        die "本机的镜像 $pull_image 没有仓库 $repository 的 digest，回滚时会认不出这一版。先 docker pull $pull_image，再执行一次"
+      pinned="$repository@$pinned"
+      ;;
+  esac
 fi
 
 # 系统服务都由核心镜像里的 compose 操作，和一键升级同一个（ADR-0025）：宿主不用装 compose 插件，读不到宿主的

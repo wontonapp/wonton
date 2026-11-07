@@ -209,7 +209,7 @@ impl Install {
         );
         fs::write(context.path().join("Dockerfile"), dockerfile).unwrap();
         let image = format!("{}:{version}", self.project);
-        must(&[
+        let image_id = must(&[
             "build",
             "-q",
             "-t",
@@ -221,6 +221,7 @@ impl Install {
             image,
             digest: Some(format!("sha256:{version}")),
             version: Some(version.to_owned()),
+            image_id: Some(image_id),
         }
     }
 

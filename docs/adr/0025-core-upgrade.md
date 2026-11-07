@@ -51,9 +51,9 @@ ADR-0012 定了“核心拉起一次性的升级器容器，失败回滚”，�
 | `pulling` | 确认新镜像在本机；让它列出它要用的其他镜像（`wonton-core compose-images`），经 Docker API 拉好 | `failed`，写明拉不到哪个镜像：什么都没动。这个阶段能取消，结果是 `canceled` |
 | `backing_up` | 查磁盘，停 `core`，备份（见“备份”） | 启动回原样，`failed` |
 | `switching` | 把 `.env` 的 `WONTON_CORE_IMAGE` 改成新的，在新镜像里执行 `init` | 回滚 |
-| `starting` | 处理核心管理的其他组件（见下），`up`；再查 `core` 服务的容器确实是新镜像 | 回滚 |
+| `starting` | 处理核心管理的其他组件（见下），`up`；再查 `core` 服务的容器确实跑在目标镜像上 | 回滚 |
 | `observing` | 过了健康检查后观察 3 分钟：设了重启策略的长期服务退出、重启、变成不健康，或者换了镜像，都算失败。一次性服务（如 `hydra-migrate`）只要求退出码为 0 | 回滚 |
-| `rolling_back` | 停 `core`，从备份恢复核心数据和安装目录，处理核心管理的其他组件，`up` | `rollback_failed` |
+| `rolling_back` | 停 `core`，从备份恢复核心数据和安装目录，处理核心管理的其他组件，`up`；再查容器跑的是升级开始时记下的那个镜像 | `rollback_failed` |
 
 结果还有 `completed` 和 `rolled_back`。会迁移数据的版本从 `starting` 起不回滚，结果是 `unresolved`，见“不可逆的版本”。升级器不在了、说不清做到哪一步时，核心写 `unknown`，见“状态文件”。
 
@@ -62,6 +62,8 @@ ADR-0012 定了“核心拉起一次性的升级器容器，失败回滚”，�
 - 回滚写回的是备份里的 compose 文件和配置：新镜像的 `init` 已经改写了它们，只改 `.env` 会用旧镜像配新 compose。
   `--remove-orphans` 删掉同一个项目里新版本多出来的系统容器。
 - 健康检查用 compose 文件里定义的，所有长期服务都要过。
+- `starting` 和 `rolling_back` 查 `core` 容器时比的是镜像 ID，不是 compose 里的引用：引用（渠道标签）会被移走，
+  比字符串分不出跑的其实是别的版本（#669）。回滚的期望值在发起升级时从运行中的容器记进状态文件（`from.image_id`）。
 - `.env` 写临时文件、fsync、改名，再 fsync 所在目录；`install.sh` 写 `.env` 也改成这样。升级器读到的 `.env` 缺必需的键时不写回，按失败处理。
   `install.sh` 看到 `wonton-updater` 还在运行时停下，不和它抢 `.env`。
 

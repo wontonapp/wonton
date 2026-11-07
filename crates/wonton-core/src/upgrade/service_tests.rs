@@ -72,6 +72,7 @@ fn in_progress(phase: Phase, now: u64) -> UpgradeState {
         image: image.to_owned(),
         digest: Some(digest.to_owned()),
         version: None,
+        image_id: None,
     };
     let mut state = UpgradeState::new(
         "u1".to_owned(),
@@ -346,6 +347,11 @@ async fn starting_launches_the_updater_from_the_running_image() {
     let run = status.run.unwrap();
     assert_eq!(run.to.digest, "sha256:new");
     assert_eq!(run.from.digest.as_deref(), Some("sha256:old"));
+    assert_eq!(
+        s.state().from.image_id.as_deref(),
+        Some("id-core"),
+        "回滚要认得出升级前跑的是哪个镜像"
+    );
     assert!(matches!(
         run.state,
         CoreUpgradeRunState::InProgress {

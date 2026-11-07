@@ -15,7 +15,7 @@ upgrade-launch-updater-failed = アップデーターを起動できませんで
 
 # API 自身が確認できなかったとき。
 upgrade-container-missing = 自宅サーバーのコンテナ{ $name }が見つかりません
-upgrade-image-missing = 実行中のイメージ{ $image }が見つかりません
+upgrade-image-missing = 実行中のイメージ{ $image }が見つかりません。自宅サーバーを再起動すると復旧します
 
 # バックグラウンドのチェック（6時間ごと。更新ページを開いたときも行う）。
 upgrade-check-core-failed = 自宅サーバーのコンテナを確認できませんでした：{ $error }
@@ -55,7 +55,7 @@ upgrade-components-failed =
        *[old] 旧バージョンが対応していないコンポーネントを処理できませんでした：{ $error }
     }
 upgrade-up-failed = サービスが起動しませんでした：{ $error }
-upgrade-core-image-wrong = 自宅サーバーのコンテナは{ $actual }を使っており、{ $image }ではありません
+upgrade-core-image-wrong = 自宅サーバーのコンテナは{ $actual }（イメージ { $actual_id }）を使っており、{ $image }（イメージ { $image_id }）ではありません
 upgrade-core-container-missing = 自宅サーバーのコンテナが見つかりません
 upgrade-containers-failed = システムサービスのコンテナを確認できませんでした：{ $error }
 upgrade-observe-timed-out = 新しいバージョンの監視が時間切れになりました

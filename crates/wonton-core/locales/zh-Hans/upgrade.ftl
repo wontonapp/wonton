@@ -15,7 +15,7 @@ upgrade-launch-updater-failed = 启动更新器失败：{ $error }
 
 # 接口自己查不到要答的东西。
 upgrade-container-missing = 查不到家里的服务器的容器 { $name }
-upgrade-image-missing = 查不到正在运行的镜像 { $image }
+upgrade-image-missing = 查不到正在运行的镜像 { $image }；重启家里的服务器后恢复
 
 # 后台检查（每 6 小时一次，打开更新页也会查）。
 upgrade-check-core-failed = 查家里的服务器的容器失败：{ $error }
@@ -55,7 +55,7 @@ upgrade-components-failed =
        *[old] 处理旧版本不支持的组件失败：{ $error }
     }
 upgrade-up-failed = 服务没有起来：{ $error }
-upgrade-core-image-wrong = 家里的服务器的容器用的是 { $actual }，不是 { $image }
+upgrade-core-image-wrong = 家里的服务器的容器跑的是 { $actual }（镜像 { $actual_id }），不是 { $image }（镜像 { $image_id }）
 upgrade-core-container-missing = 没有家里的服务器的容器
 upgrade-containers-failed = 查系统服务的容器失败：{ $error }
 upgrade-observe-timed-out = 观察阶段超过了时限

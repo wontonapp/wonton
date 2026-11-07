@@ -26,6 +26,7 @@ docker_reachable() {
 
 bash scripts/check-file-size.sh
 python3 -m unittest discover -q -s scripts/ui_text -t scripts
+python3 -m unittest discover -q -s scripts/install -t scripts
 python3 scripts/check-ui-text.py
 bash scripts/check-conflict-markers.sh
 bash scripts/check-bundled-plugin-versions.sh

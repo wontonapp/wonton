@@ -17,7 +17,7 @@ upgrade-launch-updater-failed = Can't start the updater: { $error }
 
 # The API couldn't answer for its own sake.
 upgrade-container-missing = Can't find the home server's container { $name }
-upgrade-image-missing = Can't find the running image { $image }
+upgrade-image-missing = Can't find the running image { $image }; restarting the home server fixes this
 
 # Background check (every 6 hours, or when the update page opens).
 upgrade-check-core-failed = Can't check the home server's container: { $error }
@@ -57,7 +57,7 @@ upgrade-components-failed =
        *[old] Can't remove the components the old version doesn't support: { $error }
     }
 upgrade-up-failed = The services didn't come up: { $error }
-upgrade-core-image-wrong = The home server's container is running { $actual }, not { $image }
+upgrade-core-image-wrong = The home server's container is running { $actual } (image { $actual_id }), not { $image } (image { $image_id })
 upgrade-core-container-missing = The home server's container is missing
 upgrade-containers-failed = Can't check the system services' containers: { $error }
 upgrade-observe-timed-out = Watching the new version took too long

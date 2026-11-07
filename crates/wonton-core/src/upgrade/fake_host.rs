@@ -58,12 +58,13 @@ pub struct FakeHost {
     install_dir: PathBuf,
 }
 
-fn core_container(image: &str) -> ServiceContainer {
+fn core_container(image: &str, image_id: &str) -> ServiceContainer {
     ServiceContainer {
         id: format!("id-{image}"),
         name: "wonton-core".into(),
         service: CORE_SERVICE.into(),
         image: image.into(),
+        image_id: image_id.into(),
         status: "running".into(),
         health: Some("healthy".into()),
         long_running: true,
@@ -88,7 +89,7 @@ impl FakeHost {
                 ("hydra:1".to_owned(), image("1")),
             ]),
             containers: vec![
-                core_container(OLD),
+                core_container(OLD, "id-0.1.0"),
                 ServiceContainer {
                     id: "id-hydra-migrate".into(),
                     name: "wonton-hydra-migrate-1".into(),
@@ -332,7 +333,12 @@ impl Host for FakeHost {
             if let Some(index) = running {
                 let changed = world.containers[index].image != image;
                 if changed || world.containers[index].status != "running" {
-                    world.containers[index] = core_container(&image);
+                    let image_id = world
+                        .images
+                        .get(&image)
+                        .map(|info| info.id.clone())
+                        .unwrap_or_default();
+                    world.containers[index] = core_container(&image, &image_id);
                 }
             }
             for container in &mut world.containers {

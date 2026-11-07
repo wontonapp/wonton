@@ -91,3 +91,6 @@ curl -fsSL http://<本机在 OrbStack 网桥上的 IP>:8000/install.sh | sudo WO
 amd64 用 `orb create --arch amd64 …` 和 `docker buildx build --platform linux/amd64 --load …`（交叉编译，见 Dockerfile
 开头）。用 `cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 在本机扮演手机配对。测完
 `orb delete` 删掉虚拟机。
+
+安装脚本会把镜像写成仓库 digest，本机 `docker build` 出来的镜像要带仓库 digest（containerd 镜像存储会带；经典存储不带，
+得先推到一个 registry 再拉）。没有时脚本停下并说明，不会退回写标签。
