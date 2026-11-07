@@ -10,8 +10,13 @@ services:
     ports:
       # 只监听本机：Tuwunel 不直接对局域网暴露，客户端经核心网关（M0 先直连）访问。
       - "127.0.0.1:${WONTON_DEV_MATRIX_PORT:-8008}:8008"
+    # 联邦选项在第二份配置里（ADR-0050）：基础配置给测试和网关用，联邦的只有这个栈挂。
+    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/federation.toml"]
     volumes:
       - ./tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
+      - ./federation.toml:/etc/tuwunel/federation.toml:ro
+      - ./.secrets/tls.crt:/etc/tuwunel/tls/tls.crt:ro
+      - ./.secrets/tls.key:/etc/tuwunel/tls/tls.key:ro
       - data:/var/lib/tuwunel
     environment:
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml

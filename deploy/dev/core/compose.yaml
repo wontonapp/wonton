@@ -195,9 +195,14 @@ services:
       TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
       TUWUNEL_ADDRESS: 0.0.0.0
       TUWUNEL_PORT: 8008
-      # 家里服务器默认不联邦（ADR-0003）。
-      TUWUNEL_ALLOW_FEDERATION: "false"
+      # 联邦只对配对过的服务器开：正式安装里名单文件由核心生成和热加载（ADR-0050）；这个栈挂不进
+      # 文件（DOCKER_HOST 可能是远端），也没有那份名单，等于没有限制，8448 不发布到主机出不去。
+      TUWUNEL_ALLOW_FEDERATION: "true"
       TUWUNEL_TRUSTED_SERVERS: "[]"
+      # 默认值含 10/8、127/8，会拦掉到转发组件的出站（ADR-0050）。
+      TUWUNEL_IP_RANGE_DENYLIST: "[]"
+      # 联邦对端证书是自签的，出站不校验（ADR-0050）。
+      TUWUNEL_ALLOW_INVALID_TLS_CERTIFICATES: "true"
       # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
       TUWUNEL_ALLOW_REGISTRATION: "false"
       TUWUNEL_LOGIN_WITH_PASSWORD: "false"

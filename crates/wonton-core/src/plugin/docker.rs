@@ -13,9 +13,10 @@ use bollard::models::{
 };
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
-    ListContainersOptionsBuilder, ListNetworksOptionsBuilder, ListVolumesOptionsBuilder,
-    LogsOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder,
-    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    KillContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
+    ListVolumesOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
+    RemoveVolumeOptionsBuilder, RestartContainerOptionsBuilder, StopContainerOptionsBuilder,
+    UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 
@@ -523,6 +524,29 @@ impl Engine {
             .await
             .map_err(|e| EngineError::from_bollard(&format!("启动容器 {name}"), e))
     }
+
+    /// 给容器发信号（如 `SIGUSR1`）；返回错误时信号可能已经发出，调用方不要盲目重试。
+    pub async fn kill_container(&self, name: &str, signal: &str) -> Result<()> {
+        let options = KillContainerOptionsBuilder::default()
+            .signal(signal)
+            .build();
+        self.docker
+            .kill_container(name, Some(options))
+            .await
+            .map_err(|e| EngineError::from_bollard(&format!("给容器 {name} 发 {signal}"), e))
+    }
+
+    /// 重启容器：先按 `timeout` 秒优雅停止（超时强杀），再启动。
+    pub async fn restart_container(&self, name: &str, timeout: u32) -> Result<()> {
+        let options = RestartContainerOptionsBuilder::default()
+            .t(timeout as i32)
+            .build();
+        self.patient()
+            .restart_container(name, Some(options))
+            .await
+            .map_err(|e| EngineError::from_bollard(&format!("重启容器 {name}"), e))
+    }
+
     /// 查询容器；不存在时返回 `None`。
     pub async fn inspect_container(&self, name: &str) -> Result<Option<ContainerInspectResponse>> {
         match self.docker.inspect_container(name, None).await {

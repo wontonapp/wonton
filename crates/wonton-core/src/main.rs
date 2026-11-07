@@ -30,7 +30,7 @@ use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
-use wonton_core::matrix::{Matrix, NoticeRoom};
+use wonton_core::matrix::{FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
 use wonton_core::oidc::Hydra;
@@ -245,6 +245,28 @@ fn plugin_engine(cfg: &Config) -> anyhow::Result<Engine> {
     Ok(Engine::connect()?.with_network_pool(cfg.plugin_network_pool, detector))
 }
 
+/// 联邦名单的运行时（ADR-0050）：盯配对组件的已配对名单（[`peers::Peers::paired_names`]），
+/// 变了就重写 Tuwunel 的第二份配置和 hosts。没接 Matrix 的核心没有配对，也就没有名单可盯。
+/// 核心每次启动都会按启动时的名单对齐一次，补上上次没发出去的更新。
+fn spawn_federation_config(
+    engine: &Engine,
+    cfg: &Config,
+    peers: &Option<Arc<peers::Peers>>,
+    notices: &Option<Arc<NoticeRoom>>,
+) {
+    let Some(names) = peers.as_ref().map(|peers| peers.paired_names()) else {
+        return;
+    };
+    FederationConfig::spawn(
+        engine.clone(),
+        cfg.install_dir.clone(),
+        cfg.core_container.clone(),
+        cfg.federation_core_addr,
+        notices.clone(),
+        names,
+    );
+}
+
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
@@ -272,7 +294,7 @@ async fn serve() -> anyhow::Result<()> {
         Arc::new(ImageWorker::current().context("找不到核心自己的可执行文件（处理图片要用）")?);
     let manager = plugin_manager(
         &cfg,
-        engine,
+        engine.clone(),
         store,
         images.clone(),
         http.clone(),
@@ -304,6 +326,8 @@ async fn serve() -> anyhow::Result<()> {
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &confirmations, &manager).await?;
+    // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
+    spawn_federation_config(&engine, &cfg, &peers, &notices);
     let push = open_push(&cfg, &tunnel, &manager)?;
     let gateway = Arc::new(
         Gateway::new(

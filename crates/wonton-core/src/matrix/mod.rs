@@ -7,10 +7,10 @@ mod admin;
 mod api;
 mod bot;
 mod bot_profile;
+pub(crate) mod federation_config;
 pub(crate) mod issuer;
 mod notices;
 mod session;
-
 use std::path::Path;
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ use serde_json::json;
 pub use admin::{ADMIN_LOCALPART, SERVER_USER_LOCALPART};
 pub use api::{JWT_LOGIN_TYPE, Login, MatrixError};
 pub use bot::{Avatar, BotAccount, BotSpec, ProvisionedBot};
+pub use federation_config::FederationConfig;
 pub use issuer::LOGIN_TOKEN_TTL_SECS;
 pub use notices::{Edited, NoticeRoom, Posted};
 pub use session::Session;

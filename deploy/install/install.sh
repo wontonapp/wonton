@@ -19,6 +19,9 @@
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
 #   WONTON_PLUGIN_NETWORK_POOL  插件网络使用的私有 IPv4 地址段（默认 10.213.0.0/16），核心从中分配 /26
+#   WONTON_FEDERATION_SUBNET  联邦网络的子网（默认 10.212.0.0/24）。同机装多套时各给一段；装好后换了值
+#                       compose 会要求重建网络
+#   WONTON_FEDERATION_CORE_ADDR  核心在联邦网络上的固定地址（默认 10.212.0.10），必须在子网里；装好后不能改
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
 #   WONTON_CORE_PIN     手动退回到这个 digest（sha256:…），之后照样跟渠道（ADR-0025）。有当时升级留下的备份就恢复核心
 #                       数据和安装目录
@@ -124,6 +127,11 @@ domain=${WONTON_BASE_DOMAIN:-$(saved WONTON_BASE_DOMAIN)}
 domain=${domain:-wonton.localhost}
 plugin_network_pool=${WONTON_PLUGIN_NETWORK_POOL:-$(saved WONTON_PLUGIN_NETWORK_POOL)}
 plugin_network_pool=${plugin_network_pool:-10.213.0.0/16}
+# 联邦网络（ADR-0050）：同机装多套时各给一段，地址必须落在子网里，compose 会当场拒绝不一致的组合。
+federation_subnet=${WONTON_FEDERATION_SUBNET:-$(saved WONTON_FEDERATION_SUBNET)}
+federation_subnet=${federation_subnet:-10.212.0.0/24}
+federation_core_addr=${WONTON_FEDERATION_CORE_ADDR:-$(saved WONTON_FEDERATION_CORE_ADDR)}
+federation_core_addr=${federation_core_addr:-10.212.0.10}
 # 没给也没记下时留空：核心用数据目录里记下的，第一次启动时是 owner。
 owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
@@ -380,6 +388,7 @@ write_config() {
     -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e TZ="$tz" \
     -e WONTON_MATRIX_SERVER_NAME="${WONTON_MATRIX_SERVER_NAME:-}" \
     -e WONTON_PLUGIN_NETWORK_POOL="$plugin_network_pool" \
+    -e WONTON_FEDERATION_CORE_ADDR="$federation_core_addr" \
     "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
   settle_proxy
@@ -399,6 +408,8 @@ WONTON_TUNNEL_PORT=$tunnel_port
 WONTON_BASE_DOMAIN=$domain
 WONTON_OWNER_NAME=$owner_name
 WONTON_PLUGIN_NETWORK_POOL=$plugin_network_pool
+WONTON_FEDERATION_SUBNET=$federation_subnet
+WONTON_FEDERATION_CORE_ADDR=$federation_core_addr
 TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_EGRESS_PROXY=$egress_proxy

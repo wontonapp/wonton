@@ -206,6 +206,9 @@ pub struct Config {
     /// 插件容器的 Docker `CgroupParent`（`WONTON_PLUGIN_SLICE`）；空值不设置。
     pub plugin_slice: Option<String>,
     pub plugin_network_pool: NetworkPool,
+    /// 核心在联邦网络上的固定地址（`WONTON_FEDERATION_CORE_ADDR`，ADR-0050）：fed/hosts 的条目都指向它，
+    /// 和 compose 里 federation 网络的子网是一对。必须是私有地址。
+    pub federation_core_addr: IpAddr,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
@@ -326,6 +329,7 @@ impl Config {
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
             plugin_slice: get("WONTON_PLUGIN_SLICE").filter(|value| !value.is_empty()),
             plugin_network_pool: parse(&get, network_pool::VAR, NetworkPool::default())?,
+            federation_core_addr: federation_core_addr(&get)?,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
@@ -537,6 +541,23 @@ pub fn http_authority(url: &str) -> Result<String, String> {
     let host = parsed.host_str().ok_or("缺少主机名")?;
     let port = parsed.port_or_known_default().unwrap_or(80);
     Ok(format!("{host}:{port}"))
+}
+
+/// 联邦地址（`WONTON_FEDERATION_CORE_ADDR`，ADR-0050）：fed/hosts 的条目都指向它。
+/// 必须是私有地址——联邦网络只在单机内部。
+fn federation_core_addr(get: &impl Fn(&str) -> Option<String>) -> Result<IpAddr, ConfigError> {
+    let addr = parse(
+        get,
+        "WONTON_FEDERATION_CORE_ADDR",
+        crate::matrix::federation_config::DEFAULT_CORE_ADDR,
+    )?;
+    if !crate::plugin::lan::is_private(addr) {
+        return Err(invalid(
+            "WONTON_FEDERATION_CORE_ADDR",
+            "必须是私有地址（联邦网络只在单机内部）",
+        ));
+    }
+    Ok(addr)
 }
 
 fn parse<T: std::str::FromStr>(

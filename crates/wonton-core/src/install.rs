@@ -6,22 +6,22 @@
 //!   `secrets/matrix-server-name`，之后不能改，要的和记下的不一致时拒绝（ADR-0009 的“Matrix 的服务器名”）。
 //! - 密钥在 `secrets/`（0700，文件 0600），主机上不需要 openssl。
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use crate::matrix::federation_config;
+use crate::secret;
 use anyhow::{Context, bail};
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 
-use crate::secret;
-
 /// 正式安装的 compose 文件，随核心的版本走。
 pub const COMPOSE: &str = include_str!("../../../deploy/install/compose.yaml");
-
 /// 主机上的 `wonton` 命令（`sudo wonton pair`），也随核心的版本走：升级时跟着换。
 pub const CLI: &str = include_str!("../../../deploy/install/wonton");
 
@@ -54,10 +54,12 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
 
     let tuwunel = secrets.join("tuwunel.toml");
     let server_name = server_name(&secrets, &tuwunel, requested, &mut report)?;
+    tls_cert(&secrets, &server_name, &mut report)?;
     write_private(
         &tuwunel,
-        &tuwunel_config(&server_name, &registration, &public_key),
+        &tuwunel_config(dir, &server_name, &registration, &public_key),
     )?;
+    fed_files(dir, &mut report)?;
     write_private(&dir.join("compose.yaml"), COMPOSE)?;
     write_file(&dir.join("wonton"), CLI, 0o755)?;
     Ok(report)
@@ -201,23 +203,37 @@ fn read_server_name(path: &Path) -> anyhow::Result<Option<String>> {
 }
 
 /// 选项和 `deploy/dev/matrix/tuwunel.toml` 一致，说明见 Tuwunel 仓库的 tuwunel-example.toml。
-fn tuwunel_config(server_name: &str, registration_secret: &str, public_key: &str) -> String {
+/// 联邦的取舍（ADR-0050）：名单制，只和配对过的服务器说话；TLS 自签且出站不校验，对端认证靠
+/// X-Matrix 签名和隧道的 endpoint ID；`dual_protocol` 让 8008 上的明文客户端接口照旧，网关不用改。
+fn tuwunel_config(
+    dir: &Path,
+    server_name: &str,
+    registration_secret: &str,
+    public_key: &str,
+) -> String {
+    let secrets = dir.join("secrets");
+    let secrets = secrets.to_string_lossy();
     format!(
         r#"# 由 wonton-core init 生成，升级时按新版本重写；改了会被覆盖。
 [global]
 server_name = "{server_name}"
 database_path = "/var/lib/tuwunel"
 address = "0.0.0.0"
-port = 8008
-# 家里服务器默认不联邦（ADR-0003）。
-allow_federation = false
+# 8008 明文给核心网关（客户端接口），8448 是联邦端口，只在内部网络上（ADR-0050）。
+port = [8008, 8448]
+# 联邦只对配对过的服务器开：名单在 fed/config.toml，核心改它并热加载（ADR-0050）。
+allow_federation = true
 trusted_servers = []
+# 默认值含 10/8、127/8，会拦掉到转发组件的出站；目的地的可达范围由名单收紧。
+ip_range_denylist = []
 # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
 allow_registration = false
 login_with_password = false
 new_user_displayname_suffix = ""
 # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
 registration_shared_secret = "{registration_secret}"
+# 对端证书是自签的（服务器名是内部域名，拿不到公共证书），出站不校验；对端认证落在 X-Matrix 签名上。
+allow_invalid_tls_certificates = true
 
 [global.jwt]
 enable = true
@@ -229,8 +245,65 @@ issuer = ["wonton-core"]
 audience = ["tuwunel"]
 key = """
 {public_key}"""
+
+[global.tls]
+# 自签证书，进站的联邦 TLS 在这里终结（经隧道的字节原样接到这个端口）。
+certs = "{secrets}/tuwunel-tls.crt"
+key = "{secrets}/tuwunel-tls.key"
+# 明文的客户端接口和 TLS 并存在同一个监听上，网关照旧用 http。
+dual_protocol = true
 "#
     )
+}
+
+/// 为本机服务器名生成自签证书，放进 `secrets/`（0600）。已有的成对保留：重装、升级不换。
+fn tls_cert(secrets: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
+    let cert = secrets.join("tuwunel-tls.crt");
+    let key = secrets.join("tuwunel-tls.key");
+    if cert.exists() && key.exists() {
+        report.kept.push(cert);
+        report.kept.push(key);
+        return Ok(());
+    }
+    let pair = rcgen::generate_simple_self_signed(vec![server_name.to_owned()])
+        .map_err(|e| anyhow::anyhow!("生成 {server_name} 的自签证书失败：{e}"))?;
+    write_private(&cert, &pair.cert.pem())?;
+    write_private(&key, &pair.signing_key.serialize_pem())?;
+    report.created.push(cert);
+    report.created.push(key);
+    Ok(())
+}
+
+/// 安装器里的联邦地址：`WONTON_FEDERATION_CORE_ADDR`，没设就用默认（和 compose、运行时同一个值）。
+fn federation_core_addr() -> std::net::IpAddr {
+    std::env::var("WONTON_FEDERATION_CORE_ADDR")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(crate::matrix::federation_config::DEFAULT_CORE_ADDR)
+}
+
+/// 联邦名单和 hosts 的初值（`fed/`，ADR-0050）。只在还没有时创建：第一次 `docker compose up` 把它们
+/// 挂进 Tuwunel 需要文件已经存在，之后的内容由核心运行时原地重写（不换 inode——单文件绑定挂载钉住
+/// 的是挂载时的 inode，换了名字容器读到的还是旧文件）。
+fn fed_files(dir: &Path, report: &mut Report) -> anyhow::Result<()> {
+    let fed = dir.join("fed");
+    fs::create_dir_all(&fed).with_context(|| format!("建立 {}", fed.display()))?;
+    let unpaired = BTreeSet::new();
+    // 空名单的 hosts 里没有联邦条目，地址用不上；从环境读是为了和运行时同源（install.sh 传进来的）。
+    let core_addr = federation_core_addr();
+    for (name, content) in [
+        ("config.toml", federation_config::allowlist_toml(&unpaired)),
+        ("hosts", federation_config::hosts(&unpaired, core_addr)),
+    ] {
+        let path = fed.join(name);
+        if path.exists() {
+            report.kept.push(path);
+            continue;
+        }
+        write_file(&path, &content, 0o644)?;
+        report.created.push(path);
+    }
+    Ok(())
 }
 
 fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
@@ -265,7 +338,7 @@ mod tests {
     fn init_creates_secrets_once_and_keeps_them_on_rerun() {
         let dir = tempfile::tempdir().unwrap();
         let first = init(dir.path(), Some("home.example")).unwrap();
-        assert_eq!(first.created.len(), 4, "{first:?}");
+        assert_eq!(first.created.len(), 8, "{first:?}");
         let key = fs::read_to_string(dir.path().join("secrets/matrix-jwt.pem")).unwrap();
         let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
         let mode = |path: &str| {
@@ -278,6 +351,10 @@ mod tests {
         assert_eq!(mode("secrets"), 0o700);
         assert_eq!(mode("secrets/matrix-jwt.pem"), 0o600);
         assert_eq!(mode("secrets/tuwunel.toml"), 0o600);
+        assert_eq!(mode("secrets/tuwunel-tls.crt"), 0o600, "联邦的自签证书");
+        assert_eq!(mode("secrets/tuwunel-tls.key"), 0o600, "联邦的证书私钥");
+        assert_eq!(mode("fed/config.toml"), 0o644);
+        assert_eq!(mode("fed/hosts"), 0o644);
         assert_eq!(mode("wonton"), 0o755, "主机上的 wonton 命令要能执行");
         assert!(
             fs::read_to_string(dir.path().join("compose.yaml"))
@@ -295,10 +372,45 @@ mod tests {
             fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap(),
             config
         );
-        assert!(init(dir.path(), Some("home.example")).is_ok());
+        assert!(
+            init(dir.path(), Some("home.example")).is_ok(),
+            "重装不换证书和名单文件"
+        );
         assert!(
             init(dir.path(), Some("other.example")).is_err(),
             "server_name 不能改"
+        );
+    }
+
+    /// 联邦的选项由安装时写进配置（ADR-0050）：名单制、不出公网、TLS 自签。
+    #[test]
+    fn tuwunel_config_has_the_federation_options() {
+        let dir = tempfile::tempdir().unwrap();
+        init(dir.path(), None).unwrap();
+        let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
+        for expected in [
+            "allow_federation = true",
+            "trusted_servers = []",
+            "ip_range_denylist = []",
+            "allow_invalid_tls_certificates = true",
+            "port = [8008, 8448]",
+            "dual_protocol = true",
+            "[global.tls]",
+            "tuwunel-tls.crt",
+        ] {
+            assert!(
+                config.contains(expected),
+                "{expected} 不在配置里：\n{config}"
+            );
+        }
+        // 没有配对时名单谁也匹配不上。
+        let list = fs::read_to_string(dir.path().join("fed/config.toml")).unwrap();
+        assert!(list.contains("'^_unpaired_"), "{list}");
+        let hosts = fs::read_to_string(dir.path().join("fed/hosts")).unwrap();
+        assert!(hosts.contains("127.0.0.1 localhost"), "{hosts}");
+        assert!(
+            !hosts.contains(&federation_config::DEFAULT_CORE_ADDR.to_string()),
+            "还没有配对，hosts 不应有联邦条目：{hosts}"
         );
     }
 

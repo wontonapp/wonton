@@ -339,6 +339,20 @@ mod tests {
         assert_eq!(serde_json::from_value::<LoginToken>(value).unwrap(), token);
     }
 
+    /// 联邦接口不转发（ADR-0050）：联邦只经隧道进来，网关这边从来不该有。
+    #[test]
+    fn federation_paths_are_not_forwarded() {
+        for path in [
+            "/_matrix/federation/v1/send/1",
+            "/_matrix/federation/",
+            "/_matrix/key/v2/server",
+            "/_matrix/key/",
+            "/_synapse/admin/v1/users",
+        ] {
+            assert!(!is_client_api(path), "{path} 不该被转发");
+        }
+    }
+
     #[test]
     fn paths_that_upstream_could_read_differently_are_refused() {
         for path in [

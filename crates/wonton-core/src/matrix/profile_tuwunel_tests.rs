@@ -16,6 +16,27 @@ use crate::test_docker::Names;
 
 const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
 const CONFIG: &str = include_str!("../../../../deploy/dev/matrix/tuwunel.toml");
+const FEDERATION: &str = include_str!("../../../../deploy/dev/matrix/federation.toml");
+
+/// 开发栈的第二份联邦配置和正式安装生成的保持一致（ADR-0050）：都按两份 `-c` 文件组成。
+/// 测试用基础配置起 Tuwunel（回环地址上联邦开不了），这份文件只有 dev compose 挂，这里钉住它的选项。
+#[test]
+fn the_dev_stack_federation_options_match_the_install() {
+    for expected in [
+        "port = [8008, 8448]",
+        "allow_federation = true",
+        "trusted_servers = []",
+        "ip_range_denylist = []",
+        "allow_invalid_tls_certificates = true",
+        "[global.tls]",
+        "dual_protocol = true",
+    ] {
+        assert!(
+            FEDERATION.contains(expected),
+            "{expected} 不在开发栈的联邦配置里：\n{FEDERATION}"
+        );
+    }
+}
 
 struct Tuwunel {
     _dir: tempfile::TempDir,
