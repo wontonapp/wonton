@@ -649,10 +649,12 @@ impl ClientCore {
 }
 
 impl ClientCore {
-    /// 关掉隧道的定时检查，只留回到前台、网络变化和重试触发的检查。只给测试用。
+    /// 关掉隧道的定时检查和升级状态的定时轮询，只留回到前台、网络变化和重试触发的检查。只给测试用。
     #[doc(hidden)]
     pub fn stop_periodic_checks(&self) {
-        self.scope().home.stop_periodic_checks();
+        let scope = self.scope();
+        scope.home.stop_periodic_checks();
+        scope.plugins.stop_upgrade_polling();
         self.replay().no_periodic_checks = true;
     }
 

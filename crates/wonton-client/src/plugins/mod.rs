@@ -70,6 +70,8 @@ pub(crate) struct PluginsLink {
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
     egress_epoch: AtomicU64,
     upgrade: Mutex<core_upgrade::UpgradeLocal>,
+    /// 只有测试会关：升级状态的定时轮询会让请求在测试不控制的时刻 settle，盖不住观察者要看的先后顺序。
+    upgrade_polling_paused: AtomicBool,
     registry: Mutex<registry_mirror::RegistryLocal>,
     takeover: Mutex<takeover::Slot>,
     starts: Mutex<HashMap<String, u64>>,
@@ -112,6 +114,7 @@ impl PluginsLink {
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
+            upgrade_polling_paused: AtomicBool::new(false),
             registry: Mutex::new(registry_mirror::RegistryLocal::default()),
             takeover: Mutex::new(takeover::Slot::default()),
             starts: Mutex::new(HashMap::new()),
@@ -166,6 +169,11 @@ impl PluginsLink {
     /// 隧道正在建：这时不用发请求，连上后 [`follow_home`] 接着取。
     fn connecting(&self) -> bool {
         self.home.view().status == HomeStatus::Connecting
+    }
+
+    /// 关掉升级状态的定时轮询，已经开着的循环到下一次醒来为止。只有测试用。
+    pub(crate) fn stop_upgrade_polling(&self) {
+        self.upgrade_polling_paused.store(true, Ordering::SeqCst);
     }
 
     /// `RefreshPlugins`：在后台重新取已安装的插件。隧道断着时请求会触发重连，所以只在主人要看的时候发，隧道状态变化时不发。

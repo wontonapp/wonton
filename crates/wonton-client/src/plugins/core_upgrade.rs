@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use reqwest::Method;
@@ -357,6 +358,9 @@ impl PluginsLink {
 
     /// 只有一个在跑。退出时再发布一次：刚过时限时，要从“暂时连不上”变成“不确定”。
     fn follow_core_upgrade(self: &Arc<Self>) {
+        if self.upgrade_polling_paused.load(Ordering::SeqCst) {
+            return;
+        }
         {
             let mut local = lock(&self.upgrade);
             if local.polling || !local.live(now_ms()) {
@@ -370,7 +374,7 @@ impl PluginsLink {
                 tokio::time::sleep(POLL_INTERVAL).await;
                 let epoch = {
                     let mut local = lock(&link.upgrade);
-                    if !local.live(now_ms()) {
+                    if link.upgrade_polling_paused.load(Ordering::SeqCst) || !local.live(now_ms()) {
                         local.polling = false;
                         break;
                     }

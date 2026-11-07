@@ -110,6 +110,7 @@ impl ClientCore {
         }
         if replay.no_periodic_checks {
             scope.home.stop_periodic_checks();
+            scope.plugins.stop_upgrade_polling();
         }
     }
 

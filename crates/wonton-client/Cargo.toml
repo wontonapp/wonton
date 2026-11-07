@@ -77,7 +77,7 @@ jni = "0.21"
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt", "time", "net", "io-util", "test-util"] }
+tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。
 wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
 # 对自己的 dev 依赖：编集成测试时给 test-hooks 打开，钩子代码就只进测试二进制。cargo 允许这样自引用；
