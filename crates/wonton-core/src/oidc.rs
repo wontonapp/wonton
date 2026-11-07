@@ -275,12 +275,17 @@ pub fn id_token_claims(
     role: Role,
     granted: &[String],
     extra_groups: &[String],
+    locale: Option<&str>,
 ) -> Value {
     let has = |scope: &str| granted.iter().any(|s| s == scope);
     let mut claims = serde_json::Map::new();
     if has("profile") {
         claims.insert("name".into(), json!(owner.display_name));
         claims.insert("preferred_username".into(), json!(owner.username));
+        // 这个是登录者本人最近一次请求的第一个语言标签，原样（BCP 47）。还没有记录就不放，不猜。
+        if let Some(locale) = locale {
+            claims.insert("locale".into(), json!(locale));
+        }
     }
     if has("email")
         && let Some(email) = &owner.email
@@ -318,7 +323,7 @@ mod tests {
             .into();
         let granted = granted_scopes(&requested);
         assert_eq!(granted, ["openid", "profile", "email", "groups"]);
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &[]);
+        let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
         assert_eq!(claims["email"], "owner@wonton.localhost");
         assert_eq!(claims["groups"], serde_json::json!(["owner"]));
         assert_eq!(claims["name"], "云吞");
@@ -326,16 +331,35 @@ mod tests {
             email: None,
             ..owner
         };
-        let claims = id_token_claims(&no_email, Role::Owner, &granted, &[]);
+        let claims = id_token_claims(&no_email, Role::Owner, &granted, &[], None);
         assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
         let member = Owner {
             username: "alice".into(),
             display_name: "爱丽丝".into(),
             email: None,
         };
-        let claims = id_token_claims(&member, Role::Member, &granted, &[]);
+        let claims = id_token_claims(&member, Role::Member, &granted, &[], None);
         assert_eq!(claims["groups"], serde_json::json!(["member"]));
         assert_eq!(claims["preferred_username"], "alice");
+    }
+
+    #[test]
+    fn locale_is_the_persons_own_and_needs_the_profile_scope() {
+        let alice = Owner {
+            username: "alice".into(),
+            display_name: "爱丽丝".into(),
+            email: None,
+        };
+        let profile: Vec<String> = ["openid", "profile"].map(String::from).into();
+        let claims = id_token_claims(&alice, Role::Member, &profile, &[], Some("zh-Hant-TW"));
+        assert_eq!(claims["locale"], "zh-Hant-TW", "原样，不收窄");
+        // 没授予 profile 就不发。
+        let openid: Vec<String> = vec!["openid".to_owned()];
+        let claims = id_token_claims(&alice, Role::Member, &openid, &[], Some("zh-Hant-TW"));
+        assert!(claims.get("locale").is_none());
+        // 这个人还没有记录时也不发，不猜。
+        let claims = id_token_claims(&alice, Role::Member, &profile, &[], None);
+        assert!(claims.get("locale").is_none());
     }
 
     #[test]
@@ -351,15 +375,16 @@ mod tests {
             Role::Owner,
             &granted,
             &["admin".into(), "media".into()],
+            None,
         );
         assert_eq!(claims["groups"], json!(["owner", "admin", "media"]));
         // 没授予 groups scope 就一个组也不发。
         let granted: Vec<String> = ["openid"].map(String::from).into();
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &["admin".into()]);
+        let claims = id_token_claims(&owner, Role::Owner, &granted, &["admin".into()], None);
         assert!(claims.get("groups").is_none());
         // 家人不拿客户端声明的组：家人就是 ["member"]（ADR-0045）。
         let granted: Vec<String> = vec!["groups".to_owned()];
-        let claims = id_token_claims(&owner, Role::Member, &granted, &["admin".into()]);
+        let claims = id_token_claims(&owner, Role::Member, &granted, &["admin".into()], None);
         assert_eq!(claims["groups"], json!(["member"]));
     }
 }

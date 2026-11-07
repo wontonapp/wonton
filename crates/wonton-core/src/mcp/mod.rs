@@ -14,6 +14,7 @@ mod file_results;
 mod file_tools;
 mod naming;
 mod notifier;
+mod people_tools;
 mod profile_tools;
 mod save_tools;
 mod server;
@@ -68,6 +69,12 @@ pub struct Endpoint {
     pub service: McpService,
 }
 
+/// `wonton__user_locale` 认人用的本服务器身份资料：Matrix 服务器名和家人记录。
+pub struct People {
+    server_name: String,
+    members: Arc<crate::members::Members>,
+}
+
 pub struct Bus {
     plugins: Arc<PluginManager>,
     confirmations: Arc<Confirmations>,
@@ -78,6 +85,8 @@ pub struct Bus {
     files: OnceLock<Arc<Files>>,
     /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
     help: OnceLock<Arc<Help>>,
+    /// 家人记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人用（[`Bus::attach_people`]）。
+    people: OnceLock<People>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -193,6 +202,7 @@ impl Bus {
             takeovers: Takeovers::new(),
             files: OnceLock::new(),
             help: OnceLock::new(),
+            people: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
@@ -214,6 +224,27 @@ impl Bus {
         if self.help.set(help).is_err() {
             tracing::error!("帮助文档接了两次，用先接上的");
         }
+    }
+
+    /// 接上家人记录和本服务器的 Matrix 服务器名（没接 Matrix 的核心是基础域名）。没接上时
+    /// `wonton__user_locale` 如实报错。
+    pub fn attach_people(&self, server_name: String, members: Arc<crate::members::Members>) {
+        if self
+            .people
+            .set(People {
+                server_name,
+                members,
+            })
+            .is_err()
+        {
+            tracing::error!("家人记录接了两次，用先接上的");
+        }
+    }
+
+    fn people(&self) -> Result<&People, String> {
+        self.people
+            .get()
+            .ok_or_else(|| "service_unavailable: the core has no family records".to_owned())
     }
 
     fn files(&self) -> Result<&Arc<Files>, Failure> {
@@ -687,6 +718,8 @@ mod file_tests;
 mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
+#[cfg(test)]
+mod people_tests;
 #[cfg(test)]
 mod profile_tests;
 #[cfg(test)]

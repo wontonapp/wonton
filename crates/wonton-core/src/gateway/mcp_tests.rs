@@ -530,7 +530,9 @@ async fn mcp_messages_follow_the_owner_languages() {
     use crate::l10n::CATALOG;
 
     let home = start(Some(vec![Permission::Models])).await;
-    home.gateway.plugins.note_owner_languages(Some("ja"));
+    home.gateway
+        .plugins
+        .note_person_languages("owner", Some("ja"));
     let response = post_from_plugin_network(&home, "/mcp").await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = response.into_body().collect().await.unwrap().to_bytes();

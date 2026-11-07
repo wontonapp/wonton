@@ -86,6 +86,7 @@ pub(super) struct Setup {
     pub(super) manager: Arc<PluginManager>,
     pub(super) caller: Caller,
     pub(super) dir: tempfile::TempDir,
+    pub(super) members: Arc<crate::members::Members>,
 }
 
 pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
@@ -229,10 +230,12 @@ pub(super) async fn setup_with(
         Arc::new(crate::mcp::audit::Audit::new(audit)),
         Arc::new(upstreams),
     );
+    let members = Arc::new(crate::members::Members::open(dir.path().join("members.json")).unwrap());
+    bus.attach_people("wonton.localhost".into(), members.clone());
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
     // 主人的语言：生产里由 App 的请求写入，卡片文字按它出中文。
-    manager.note_owner_languages(Some("zh"));
+    manager.note_person_languages("owner", Some("zh"));
     Setup {
         bus,
         cards,
@@ -240,6 +243,7 @@ pub(super) async fn setup_with(
         manager,
         caller,
         dir,
+        members,
     }
 }
 
@@ -250,6 +254,13 @@ impl Setup {
         self.bus
             .call(&self.caller, request, std::future::pending())
             .await
+    }
+
+    /// 以另一个调用方（别的插件）调用。
+    pub(super) async fn call_as(&self, caller: &Caller, name: &str, args: Value) -> CallToolResult {
+        let request = CallToolRequestParams::new(name.to_owned())
+            .with_arguments(args.as_object().cloned().unwrap_or_default());
+        self.bus.call(caller, request, std::future::pending()).await
     }
 
     /// 在后台调用，好在等确认时回答。

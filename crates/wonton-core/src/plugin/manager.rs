@@ -139,6 +139,8 @@ pub struct PluginManager {
     pub(super) upgrades: Upgrades,
     pub(super) oom: super::oom::OomRecords,
     pub(super) staged: StagedUploads,
+    /// 写“每个人的语言”表时串行化：读改整份文件，两个人同时来不能互相盖掉。
+    pub(super) people_writes: std::sync::Mutex<()>,
 }
 
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
@@ -196,9 +198,9 @@ impl PluginManager {
     ) -> Self {
         // 核心直接跑在宿主上时 /dev 就是宿主的；在容器里要由 compose 挂载进来，见 [`Self::with_host`]。
         let host_dev = cfg.core_container.is_none().then(|| PathBuf::from("/dev"));
-        // Docker 层的错误按主人最近一次请求的语言写：Engine 自己读不了 store，接上语言文件的路径。
+        // Docker 层的错误按主人最近一次请求的语言写：Engine 自己读不了 store，接上数据目录。
         let mut engine = engine;
-        engine.set_owner_languages_path(store.owner_languages());
+        engine.set_languages(store.people_languages(), cfg.owner.clone());
         let lan = Lan::for_core(cfg.core_container.clone());
         let core_proxy = CoreProxy::default();
         let github = GitHub::new(&core_proxy);
@@ -232,6 +234,7 @@ impl PluginManager {
             oom: Default::default(),
             upgrades: Upgrades::default(),
             staged: StagedUploads::default(),
+            people_writes: std::sync::Mutex::new(()),
         }
     }
 
@@ -285,6 +288,16 @@ impl PluginManager {
                     super::privileges::risk(p) == Some(super::privileges::CapabilityRisk::Highest)
                 })
             })
+    }
+
+    /// 插件装上的清单要了 `owner.identity`：它能看见人的身份，读家人名单和别人的语言都靠它。
+    pub fn gets_owner_identity(&self, id: &PluginId) -> bool {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .and_then(|entry| entry.listed.as_ref())
+            .is_some_and(|listed| listed.manifest.gets_owner_identity())
     }
 
     /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。

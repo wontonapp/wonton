@@ -137,12 +137,8 @@ pub async fn list(
     if let Some(denied) = denied(&gateway, peer, &headers) {
         return denied;
     }
-    // 记下主人的语言：配对提醒的文字从它来（照插件管理接口的做法）。
-    gateway.plugins.note_owner_languages(
-        headers
-            .get(hyper::header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    );
+    // 记下请求的人的语言：配对提醒的文字从它来（照插件管理接口的做法）。
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
     let langs = languages(&headers);
     let Some(peers) = peers(&gateway) else {
         return unavailable(&langs);

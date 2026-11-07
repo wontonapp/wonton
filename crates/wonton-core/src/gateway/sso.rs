@@ -225,7 +225,13 @@ pub async fn oidc_consent(
             );
         }
     };
-    let claims = id_token_claims(&identity, person.role, &granted, &groups);
+    let claims = id_token_claims(
+        &identity,
+        person.role,
+        &granted,
+        &groups,
+        gateway.plugins.person_locale(&person.username).as_deref(),
+    );
     tracing::info!(client = %request.client.client_id, ?granted, ?groups, person = %person.username, "接受 OIDC 授权");
     match hydra
         .accept_consent(&query.consent_challenge, &granted, claims)

@@ -35,12 +35,21 @@ fn png(width: u32, height: u32) -> Vec<u8> {
 /// 说话按主人语言（zh-Hans）：断言里的中文说明来自子进程和核心两边。
 fn zh_worker(timeout: Option<Duration>) -> (ImageWorker, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("langs.json"), "\"zh-Hans\"").unwrap();
+    let langs = dir.path().join("core/plugins/store");
+    std::fs::create_dir_all(&langs).unwrap();
+    std::fs::write(
+        langs.join("people-languages.json"),
+        r#"{"owner": "zh-Hans"}"#,
+    )
+    .unwrap();
     let mut worker = ImageWorker::new(WONTON_CORE);
     if let Some(t) = timeout {
         worker = worker.with_timeout(t);
     }
-    worker.set_owner_languages_path(dir.path().join("langs.json"));
+    worker.set_languages(
+        dir.path().join("core/plugins/store/people-languages.json"),
+        "owner".to_owned(),
+    );
     (worker, dir)
 }
 

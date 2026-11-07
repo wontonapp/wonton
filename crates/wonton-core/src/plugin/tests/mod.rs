@@ -47,6 +47,7 @@ mod network_mode;
 mod network_pool;
 mod oidc;
 mod owner;
+mod people_languages;
 mod preinstall;
 mod privileges;
 mod resources;

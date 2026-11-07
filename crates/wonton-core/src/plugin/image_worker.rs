@@ -217,8 +217,8 @@ pub struct ImageWorker {
     program: Program,
     timeout: Duration,
     running: Semaphore,
-    /// 主人的语言文件（见契约）：给子进程和父进程这边的消息用。
-    owner_languages_path: Option<PathBuf>,
+    /// 语言文件和主人的用户名，按它读主人的语言（见契约）：给子进程和父进程这边的消息用。
+    languages: Option<(PathBuf, String)>,
 }
 
 enum Program {
@@ -232,6 +232,13 @@ impl ImageWorker {
     /// 用正在运行的 `wonton-core` 自己处理。
     pub fn current() -> std::io::Result<Self> {
         Ok(Self::new(std::env::current_exe()?))
+    }
+
+    /// 同 [`Self::current`]，文字按这个语言文件里主人的语言写。
+    pub fn current_in(languages: PathBuf, owner: String) -> std::io::Result<Self> {
+        let mut worker = Self::current()?;
+        worker.set_languages(languages, owner);
+        Ok(worker)
     }
 
     /// 用给定的 `wonton-core` 可执行文件处理。
@@ -249,22 +256,24 @@ impl ImageWorker {
             program,
             timeout: TIMEOUT,
             running: Semaphore::new(MAX_RUNNING),
-            owner_languages_path: None,
+            languages: None,
         }
     }
 
-    /// 主人的语言文件（`Store::owner_languages`），用来给子进程和这边的消息选语言。
-    pub fn set_owner_languages_path(&mut self, path: PathBuf) {
-        self.owner_languages_path = Some(path);
+    /// 语言文件和主人的用户名，按它读主人的语言，给子进程和这边的消息选语言。
+    pub fn set_languages(&mut self, languages: PathBuf, owner: String) {
+        self.languages = Some((languages, owner));
     }
 
     pub(super) fn owner_languages(&self) -> Languages {
-        Languages::from_header(
-            self.owner_languages_path
-                .as_deref()
-                .and_then(|path| super::store::read_json::<String>(path).ok().flatten())
-                .as_deref(),
-        )
+        match &self.languages {
+            Some((languages, owner)) => Languages::from_header(
+                super::store::read_people_languages(languages)
+                    .get(owner)
+                    .map(String::as_str),
+            ),
+            None => Languages::default(),
+        }
     }
 
     /// 等一个子进程最多多久（默认 10 秒）。

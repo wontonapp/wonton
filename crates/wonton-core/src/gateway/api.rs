@@ -215,9 +215,10 @@ pub(crate) fn requester(
     headers: &HeaderMap,
 ) -> Result<Person, Box<Response>> {
     if denied(gateway, headers).is_none() {
+        gateway.note_languages(None, headers);
         return Ok(Person::owner(gateway.owner.username()));
     }
-    gateway
+    let person = gateway
         .device_person(peer.map(|Extension(peer)| peer))
         .ok_or_else(|| {
             Box::new(error_response(
@@ -225,7 +226,9 @@ pub(crate) fn requester(
                 "unauthenticated",
                 &l10n::text(&languages(headers), "gateway-denied", &[]),
             ))
-        })
+        })?;
+    gateway.note_languages(peer.map(|Extension(peer)| peer), headers);
+    Ok(person)
 }
 
 pub async fn list(
@@ -236,8 +239,7 @@ pub async fn list(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let accept = headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok());
-    gateway.plugins.note_owner_languages(accept);
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
     let mut plugins = gateway
         .plugins
         .installed_checked(&languages(&headers))
@@ -340,9 +342,7 @@ pub async fn install(
         return denied;
     }
     let langs = languages(&headers);
-    gateway
-        .plugins
-        .note_owner_languages(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()));
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
     let installed = match json_body::<InstallRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.install_source(&request).await,
@@ -506,9 +506,7 @@ pub async fn uninstall(
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
     let langs = languages(&headers);
-    gateway
-        .plugins
-        .note_owner_languages(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()));
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
     match gateway
         .plugins
         .uninstall_detached(id, query.purge, langs)

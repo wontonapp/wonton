@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 
 use super::audit::{Decision, Record};
 use super::{
-    Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, profile_tools,
-    save_tools,
+    Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, people_tools,
+    profile_tools, save_tools,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -100,6 +100,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(save_tools::definitions());
     tools.extend(authoring_tools::definitions());
     tools.extend(profile_tools::definitions());
+    tools.extend(people_tools::definitions());
     tools
 }
 
@@ -133,6 +134,7 @@ pub async fn call(
         profile_tools::GET | profile_tools::SET => {
             return profile_tools::call(bus, caller, tool, args).await;
         }
+        people_tools::USER_LOCALE => people_tools::call(bus, caller, &args),
         _ => Err(format!("没有工具 {name}")),
     };
     match read {

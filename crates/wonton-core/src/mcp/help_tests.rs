@@ -284,7 +284,7 @@ async fn the_default_language_is_the_one_the_app_asked_for() {
     let before = help.answer(Some("devices"), None).await.unwrap();
     assert_eq!(before["lang"], "en");
     rig.manager
-        .note_owner_languages(Some("zh-Hans-CN, en;q=0.8"));
+        .note_person_languages("owner", Some("zh-Hans-CN, en;q=0.8"));
     let after = help.answer(Some("devices"), None).await.unwrap();
     assert_eq!(after["lang"], "zh");
 }

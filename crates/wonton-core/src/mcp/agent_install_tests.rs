@@ -27,7 +27,7 @@ pub(super) async fn bench() -> Bench {
     let outbox = s.bus.plugins.app_data_dir(&id).join("outbox");
     fs::create_dir_all(&outbox).unwrap();
     // 主人的语言：生产里由 App 写入，卡片和提示按它出中文。
-    s.bus.plugins.note_owner_languages(Some("zh"));
+    s.bus.plugins.note_person_languages("owner", Some("zh"));
     Bench { s, outbox }
 }
 

@@ -193,8 +193,8 @@ pub struct Engine {
     pub(super) held_subnets: Arc<std::sync::Mutex<Vec<Ipv4Net>>>,
     pub(super) network_pool: NetworkPool,
     pub(super) network_detector: Detector,
-    /// 主人的语言存放在哪（[`Self::set_owner_languages_path`]）；没接上时按默认语言写。
-    owner_languages_path: Option<std::path::PathBuf>,
+    /// 语言文件和主人的用户名，按它找主人的语言（[`Self::set_languages`]）；没接上时按默认语言写。
+    languages: Option<(std::path::PathBuf, String)>,
 }
 
 type Result<T> = std::result::Result<T, EngineError>;
@@ -222,21 +222,25 @@ impl Engine {
             held_subnets: Arc::default(),
             network_pool: NetworkPool::default(),
             network_detector: Detector::Here,
-            owner_languages_path: None,
+            languages: None,
         }
     }
 
-    /// 主人语言文件的路径：读不到时按默认语言写（接线由核心启动时做）。
-    pub fn set_owner_languages_path(&mut self, path: std::path::PathBuf) {
-        self.owner_languages_path = Some(path);
+    /// 语言文件（[`super::store::Store::people_languages`]）和主人的用户名；读不到时按默认语言写
+    /// （接线由核心启动时做）。
+    pub fn set_languages(&mut self, file: std::path::PathBuf, owner: String) {
+        self.languages = Some((file, owner));
     }
 
     pub(super) fn owner_languages(&self) -> Languages {
-        let header = self
-            .owner_languages_path
-            .as_deref()
-            .and_then(|path| super::store::read_json::<String>(path).ok().flatten());
-        Languages::from_header(header.as_deref())
+        match &self.languages {
+            Some((file, owner)) => Languages::from_header(
+                super::store::read_people_languages(file)
+                    .get(owner)
+                    .map(String::as_str),
+            ),
+            None => Languages::default(),
+        }
     }
 
     fn fail(&self, id: &str, args: &[(&str, Arg<'_>)], error: BollardError) -> EngineError {

@@ -180,7 +180,7 @@ async fn a_port_taken_at_start_follows_the_owner_language() {
         "failed to set up container networking: driver failed programming external connectivity on endpoint x (abc):\
          Bind for 0.0.0.0:445 failed: port is already allocated",
     ));
-    m.note_owner_languages(Some("ja"));
+    m.note_person_languages("owner", Some("ja"));
     let compose = samba("");
     let error = m
         .install(

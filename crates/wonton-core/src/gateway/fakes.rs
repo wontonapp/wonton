@@ -103,6 +103,20 @@ pub(super) async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
 }
 
 pub(super) async fn fake_hydra_for(accepted: Arc<Mutex<Vec<Value>>>, subject: &str) -> SocketAddr {
+    fake_hydra_scopes(
+        accepted,
+        subject,
+        &["openid", "profile", "email", "groups", "admin"],
+    )
+    .await
+}
+
+/// 同 [`fake_hydra_for`]，授权请求只申请给定的 scope。
+pub(super) async fn fake_hydra_scopes(
+    accepted: Arc<Mutex<Vec<Value>>>,
+    subject: &str,
+    scopes: &'static [&'static str],
+) -> SocketAddr {
     let subject = subject.to_owned();
     let record = |accepted: Arc<Mutex<Vec<Value>>>, redirect: &'static str| {
         move |Json(body): Json<Value>| async move {
@@ -145,7 +159,7 @@ pub(super) async fn fake_hydra_for(accepted: Arc<Mutex<Vec<Value>>>, subject: &s
                         Json(json!({
                             "subject": subject,
                             "client": {"client_id": client_id},
-                            "requested_scope": ["openid", "profile", "email", "groups", "admin"],
+                            "requested_scope": scopes,
                         }))
                     }
                 },

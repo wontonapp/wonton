@@ -319,6 +319,11 @@ async fn serve() -> anyhow::Result<()> {
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // Bot 调用的确认卡片（ADR-0016）。
     let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    let server_name = cfg
+        .matrix
+        .as_ref()
+        .map_or_else(|| cfg.public.base_domain.clone(), |m| m.server_name.clone());
+    bus.attach_people(server_name, members.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
@@ -643,8 +648,9 @@ async fn start_plugin_manager(
     owner: Arc<OwnerStore>,
 ) -> anyhow::Result<(Arc<PluginManager>, Arc<ImageWorker>)> {
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
-    let images =
-        Arc::new(ImageWorker::current().context("找不到核心自己的可执行文件（处理图片要用）")?);
+    let images = ImageWorker::current_in(store.people_languages(), cfg.username.clone())
+        .context("找不到核心自己的可执行文件（处理图片要用）")?;
+    let images = Arc::new(images);
     let manager = Arc::new(open_plugin_manager(
         cfg,
         engine,

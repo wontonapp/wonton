@@ -65,7 +65,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
 use axum::response::{IntoResponse, Redirect, Response};
-use hyper::header::{ACCEPT, HOST, SET_COOKIE};
+use hyper::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
@@ -321,6 +321,23 @@ impl Gateway {
     /// 经隧道接入的已配对设备属于谁：用户名（家人）或主人。
     fn device_user(&self, peer: Option<TunnelPeer>) -> Option<String> {
         self.device_person(peer).map(|person| person.username)
+    }
+
+    /// 请求认得出是谁时，把它的 `Accept-Language` 记在这个人名下（ADR-0043）：语言按人给，主人和家人各记各的。
+    /// 认不出人就不记。
+    pub(crate) fn note_languages(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) {
+        let person = self.device_person(peer).or_else(|| {
+            let token = headers
+                .get(AUTHORIZATION)?
+                .to_str()
+                .ok()?
+                .strip_prefix("Bearer ")?;
+            self.check_owner_token(token)
+                .then(|| Person::owner(self.owner.username()))
+        });
+        let Some(person) = person else { return };
+        let accept = headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok());
+        self.plugins.note_person_languages(&person.username, accept);
     }
 
     /// 核心域名上的当前人：经隧道的已配对设备，或者局域网浏览器的核心会话（主人令牌登录，是主人）。

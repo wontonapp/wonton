@@ -302,6 +302,18 @@ fn recorded_username(
     }
 }
 
+/// 记下的主人用户名；没有记录或读不了时为空。只读，不检查 `WONTON_OWNER_NAME`，给后端没有身份的路径用
+/// （比如按数据目录找主人的语言）。
+pub fn recorded_name(state_dir: &Path) -> Option<String> {
+    match read_record(state_dir) {
+        Ok(record) => record.map(|r| r.username),
+        Err(error) => {
+            tracing::warn!(%error, "读不出主人记录，按没有用户名的路径处理");
+            None
+        }
+    }
+}
+
 fn read_record(state_dir: &Path) -> Result<Option<Record>, LockError> {
     let path = state_dir.join(RECORD);
     let unreadable = |message: String| LockError::Unreadable {

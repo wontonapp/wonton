@@ -6,7 +6,6 @@ use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::HeaderMap;
-use hyper::header::ACCEPT_LANGUAGE;
 
 use super::api::{install_denied, install_error, languages};
 use super::{Gateway, TunnelPeer};
@@ -25,9 +24,7 @@ pub async fn start(
         Ok(id) => id,
         Err(error) => return install_error(&InstallError::Invalid(error.to_string())),
     };
-    gateway
-        .plugins
-        .note_owner_languages(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()));
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
     if let Err(error) = gateway.plugins.start_detached(id.clone()).await {
         return install_error(&error);
     }

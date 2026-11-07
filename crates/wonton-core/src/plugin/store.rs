@@ -2,6 +2,7 @@
 //!
 //! 记录里有整个插件包（compose 原文和它引用的文件）和 OIDC 客户端密钥，文件权限设为 0600。
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::os::fd::BorrowedFd;
@@ -166,9 +167,9 @@ impl Store {
         self.dir.join("store").join("docs")
     }
 
-    /// 主人的语言：最近一次设备请求的 `Accept-Language` 原文。
-    pub fn owner_languages(&self) -> PathBuf {
-        self.dir.join("store").join("owner-languages.json")
+    /// 每个人的语言：用户名到最近一次设备请求的 `Accept-Language` 原文（ADR-0043）。
+    pub fn people_languages(&self) -> PathBuf {
+        self.dir.join("store").join(PEOPLE_LANGUAGES)
     }
 
     /// 读出全部记录，按 ID 排序。单个记录读不出、已损坏或与文件名不符只体现在它自己的结果里；
@@ -368,21 +369,44 @@ pub(crate) fn remove_file(path: &Path) -> Result<(), StoreError> {
     }
 }
 
+/// 记录每天用到的文件名。
+const PEOPLE_LANGUAGES: &str = "people-languages.json";
+
 /// 后台自己写给人看的文字（核心升级的检查和更新器，ADR-0043）按主人的语言写：那些路径上没有
-/// PluginManager，按数据目录直接读这个文件。和 [`Store::owner_languages`] 是同一个文件
-/// （`<数据目录>/core/plugins` 是 [`Store::open`] 收到的记录目录）。读不到时按英文，
-/// App 下一次管理请求会把它写上。
+/// PluginManager，按数据目录直接读。读不到时按英文，App 下一次管理请求会把它写上。
 pub fn read_owner_languages(data_dir: &Path) -> Languages {
-    let stored: Option<String> =
-        read_json(&owner_languages_dir(data_dir).join("owner-languages.json"))
-            .ok()
-            .flatten();
-    Languages::from_header(stored.as_deref())
+    let header = crate::owner::recorded_name(&data_dir.join("core"))
+        .and_then(|owner| read_person_languages(data_dir, &owner));
+    Languages::from_header(header.as_deref())
 }
 
-/// 记主人语言的目录：`<数据目录>/core/plugins/store/`。
-pub fn owner_languages_dir(data_dir: &Path) -> PathBuf {
+/// 某人最近一次请求的 `Accept-Language` 原文；没有记录时为空。
+pub fn read_person_languages(data_dir: &Path, username: &str) -> Option<String> {
+    read_person_languages_at(&people_languages_file(data_dir), username)
+}
+
+fn read_person_languages_at(file: &Path, username: &str) -> Option<String> {
+    read_people_languages(file).get(username).cloned()
+}
+
+/// 整份“用户名 → 语言”表；文件不在时为空表，读不了或坏了时也为空表，但打一条日志，不静默。
+pub fn read_people_languages(file: &Path) -> BTreeMap<String, String> {
+    match read_json(file) {
+        Ok(people) => people.unwrap_or_default(),
+        Err(error) => {
+            tracing::warn!(%error, path = %file.display(), "每个人的语言读不出来，按没有记录处理");
+            BTreeMap::new()
+        }
+    }
+}
+
+/// 记每个人语言的目录：`<数据目录>/core/plugins/store/`。
+pub fn people_languages_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("core").join("plugins").join("store")
+}
+
+fn people_languages_file(data_dir: &Path) -> PathBuf {
+    people_languages_dir(data_dir).join(PEOPLE_LANGUAGES)
 }
 
 /// 名字 → 字节内容的映射在 JSON 里以 base64 保存（插件包的文件、插件密钥）。
@@ -419,11 +443,12 @@ pub(super) mod base64_map {
 impl Store {
     /// 主人的语言，读失败时按默认语言（存储层没有请求头；ADR-0043 的后台路径）。
     fn owner_langs(&self) -> Languages {
-        let stored: Option<String> =
-            read_json(&self.dir.join("store").join("owner-languages.json"))
-                .ok()
-                .flatten();
-        Languages::from_header(stored.as_deref())
+        let header = self
+            .dir
+            .parent()
+            .and_then(crate::owner::recorded_name)
+            .and_then(|owner| read_person_languages_at(&self.people_languages(), &owner));
+        Languages::from_header(header.as_deref())
     }
 }
 
