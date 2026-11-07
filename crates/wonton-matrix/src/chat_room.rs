@@ -544,5 +544,6 @@ async fn local_member_names(room: &Room) -> MemberNames {
     )
 }
 
+mod send;
 #[cfg(test)]
 mod tests;

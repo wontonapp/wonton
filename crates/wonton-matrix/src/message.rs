@@ -34,6 +34,9 @@ pub struct Message {
     pub custom: Map<String, Value>,
     /// `m.mentions.user_ids`：正文里显式提及的用户，被编辑过时是最新的内容。
     pub mentions: Vec<OwnedUserId>,
+    /// 所属话题的根消息事件 ID（`m.relates_to` 里 `rel_type: m.thread` 的 `event_id`）；不是话题回复、
+    /// 以及话题的根消息自己是 `None`。被编辑过时按原消息：编辑不改所属话题。
+    pub thread_root: Option<OwnedEventId>,
     /// 是否被编辑过。
     pub edited: bool,
     /// 读到这条为止的其他人（显示名）。
@@ -69,8 +72,10 @@ pub enum SendStatus {
 /// 消息内容。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MessageBody {
-    /// 文字，包括 Bot 常用的 `m.notice`。
+    /// 文字。
     Text(String),
+    /// `m.notice`：Bot 发的状态说明。Matrix 的推送规则默认不因此响铃。
+    Notice(String),
     /// 图片。
     Image(ImageContent),
     /// 端到端加密的消息，本设备没有解密密钥。
@@ -160,7 +165,8 @@ impl MemberNames {
 
 /// 把消息类事件转成 [`Message`]；其他事件（成员变化、房间设置等）返回 `None`。
 pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<Message> {
-    let kind = &event.content().as_msglike()?.kind;
+    let msglike = event.content().as_msglike()?;
+    let kind = &msglike.kind;
     let edited = matches!(kind, MsgLikeKind::Message(message) if message.is_edited());
     let read_by = event
         .read_receipts()
@@ -178,6 +184,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         body: body(kind),
         custom: custom(event, kind),
         mentions: mentions(event, kind),
+        thread_root: msglike.thread_root.clone(),
         edited,
         read_by,
     })
@@ -273,8 +280,7 @@ pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {
     match kind {
         MsgLikeKind::Message(message) => match message.msgtype() {
             MessageType::Text(text) => MessageBody::Text(text.body.clone()),
-            // Bot 常用 m.notice 回复，内容同样是文字。
-            MessageType::Notice(notice) => MessageBody::Text(notice.body.clone()),
+            MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
             MessageType::Image(image) => MessageBody::Image(image.into()),
             msgtype => other(msgtype.msgtype()),
         },

@@ -264,8 +264,7 @@ fn body(event: &AnySyncTimelineEvent) -> MessageBody {
         AnySyncMessageLikeEvent::RoomMessage(SyncRoomMessageEvent::Original(original)) => {
             match &original.content.msgtype {
                 MessageType::Text(text) => MessageBody::Text(text.body.clone()),
-                // Bot 常用 m.notice 回复，内容同样是文字。
-                MessageType::Notice(notice) => MessageBody::Text(notice.body.clone()),
+                MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
                 MessageType::Image(image) => MessageBody::Image(image.into()),
                 other => MessageBody::Other {
                     kind: other.msgtype().to_owned(),

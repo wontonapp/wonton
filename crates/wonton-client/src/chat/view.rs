@@ -64,7 +64,7 @@ fn preview(latest: LatestMessage) -> Option<RoomPreview> {
 /// 消息的摘要：房间列表的预览用它。推送的正文是字符串，由 `push::notification` 转换。
 pub(crate) fn summary(body: MessageBody, is_own: bool) -> MessageSummary {
     match body {
-        MessageBody::Text(text) => {
+        MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
             if body.is_empty() && !files.is_empty() {
                 MessageSummary::Files
@@ -161,7 +161,7 @@ fn message_actions(body: &MessageContent) -> Vec<MessageAction> {
 
 fn message_content(body: MessageBody, is_own: bool) -> MessageContent {
     match body {
-        MessageBody::Text(text) => {
+        MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
             let blocks = if is_own {
                 rich::plain(&body)
@@ -336,6 +336,7 @@ mod tests {
                 body: MessageBody::Text("attachment".to_owned()),
                 custom: Default::default(),
                 mentions: Vec::new(),
+                thread_root: None,
                 edited: false,
                 read_by: Vec::new(),
             })),

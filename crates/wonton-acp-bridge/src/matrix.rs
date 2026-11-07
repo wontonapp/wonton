@@ -65,6 +65,7 @@ mod tests {
             body: MessageBody::Text(text.into()),
             custom: Default::default(),
             mentions: mentions.iter().map(|user| user.parse().unwrap()).collect(),
+            thread_root: None,
             edited: false,
             read_by: Vec::new(),
         }
