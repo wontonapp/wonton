@@ -319,6 +319,8 @@ pub enum BotProfileFailure {
     MediaRejected { problem: AvatarMediaProblem },
     /// 家里的服务器或 Matrix 出错。
     Upstream,
+    /// 只有主人的接口，家人的设备改不了（ADR-0045）。
+    OwnerOnly,
     #[serde(other)]
     Other,
 }

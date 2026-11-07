@@ -284,7 +284,7 @@ val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
  * 进入下一层的 Material 标题栏：返回在前，标题靠左，操作在后。
  *
  * `showsStatus` 把连接状态放进副标题；`showsStatusLine` 给内容全靠连接的页面：长时间连不上时换成标题下面那一行，带下一步，
- * 不然页面只会一直转圈。
+ * 不然页面只会一直转圈。`avatar` 放在标题前（和 Bot 私聊的房间用它显示状态头像，ADR-0044）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -295,6 +295,7 @@ fun WontonPushedBar(
     iconLabel: String = stringResource(R.string.design_back),
     showsStatus: Boolean = false,
     showsStatusLine: Boolean = false,
+    avatar: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val status = LocalWontonBarStatus.current
@@ -303,23 +304,29 @@ fun WontonPushedBar(
     Column(Modifier.fillMaxWidth()) {
         TopAppBar(
             title = {
-                Column {
-                    Text(
-                        title,
-                        Modifier.semantics { heading() },
-                        style = WontonTheme.typography.itemTitle,
-                        color = WontonTheme.colors.textPrimary.toColor(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    subtitle?.let {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+                ) {
+                    avatar?.invoke()
+                    Column {
                         Text(
-                            it,
-                            style = WontonTheme.typography.caption,
-                            color = WontonTheme.colors.textSecondary.toColor(),
+                            title,
+                            Modifier.semantics { heading() },
+                            style = WontonTheme.typography.itemTitle,
+                            color = WontonTheme.colors.textPrimary.toColor(),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        subtitle?.let {
+                            Text(
+                                it,
+                                style = WontonTheme.typography.caption,
+                                color = WontonTheme.colors.textSecondary.toColor(),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             },

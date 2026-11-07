@@ -91,6 +91,10 @@ kotlin {
                 implementation(libs.androidx.camera.view)
                 // Apache-2.0。在相机的帧里识别二维码（ZXing 的解码库，不含它的扫码界面）。
                 implementation(libs.zxing.core)
+                // Apache-2.0。Bot 状态头像的静音循环播放（ExoPlayer）和视频头像的转码（Transformer）。
+                implementation(libs.media3.exoplayer)
+                implementation(libs.media3.transformer)
+                implementation(libs.media3.effect)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             }
         }

@@ -113,12 +113,18 @@ private fun DetailContent(
     onToggled: (PluginDetail) -> Unit,
 ) {
     val colors = WontonTheme.colors
+    // 和 Bot 的已装应用在最上面有一节“资料”（ADR-0044）；家人线的“谁能用”以后加在这一节下面。
+    val chat = rememberChat(plugins.core)
+    val bot = detail.installed?.let { installed -> chat.bots.firstOrNull { it.pluginId == installed.id } }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         val working = task?.state is PluginTaskState.Running
+        if (bot != null) {
+            BotProfileSection(bot, plugins)
+        }
         DetailHeader(detail, plugins, detailAction(detail, working, navigation))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
             TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }

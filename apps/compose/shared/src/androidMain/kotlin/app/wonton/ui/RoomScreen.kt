@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
+import app.wonton.protocol.BotView
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
@@ -87,6 +88,8 @@ fun RoomRoute(
     title: String,
     isDirect: Boolean,
     isReadOnly: Boolean,
+    bot: BotView?,
+    plugins: PluginsState,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     onClose: () -> Unit,
@@ -113,7 +116,7 @@ fun RoomRoute(
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
     CompositionLocalProvider(LocalFiles provides FilesContext(transfers, onAction, onReject)) {
-        RoomScreen(core, roomId, title, isDirect, isReadOnly, timeline, onAction, onReject, onClose)
+        RoomScreen(core, roomId, title, isDirect, isReadOnly, bot, plugins, timeline, onAction, onReject, onClose)
     }
 }
 
@@ -127,6 +130,8 @@ private fun RoomScreen(
     title: String,
     isDirect: Boolean,
     isReadOnly: Boolean,
+    bot: BotView?,
+    plugins: PluginsState,
     timeline: TimelineState,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
@@ -134,10 +139,17 @@ private fun RoomScreen(
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
     val openMenu = { message: TimelineMessage, bounds: Rect -> menu = MessageMenuTarget(message, bounds) }
+    // 和 Bot 的私聊：顶栏显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字。
+    val barTitle = if (isDirect) bot?.name ?: title else title
+    val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
+        { BotAvatar(bot, plugins, WontonTheme.size.avatar) }
+    } else {
+        null
+    }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
-            WontonScreen(bar = { WontonPushedBar(title, onClose, showsStatus = true) }) {
+            WontonScreen(bar = { WontonPushedBar(barTitle, onClose, showsStatus = true, avatar = barAvatar) }) {
                 // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
                 Column(
                     Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),

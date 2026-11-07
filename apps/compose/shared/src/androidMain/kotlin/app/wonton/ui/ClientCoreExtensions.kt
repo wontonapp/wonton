@@ -11,6 +11,9 @@ import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.ServersViewModel
 import app.wonton.protocol.TimelineUpdate
 import app.wonton.protocol.TransfersViewModel
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -96,4 +99,14 @@ fun ClientCore.serversUpdates(): Flow<ServersViewModel> = flow {
     subscribeServers().use { subscription ->
         while (true) emit(subscription.next() ?: break)
     }
+}
+
+/**
+ * 订阅聊天状态：首帧用当前值，之后跟着更新。详情页的 Bot 资料一节用它（`ChatViewModel.bots`）；
+ * 聊天页自己收的是同一个订阅，多处同时收没有影响。
+ */
+@Composable
+fun rememberChat(core: ClientCore): ChatViewModel {
+    val initial = remember(core) { core.chat() }
+    return core.chatUpdates().collectAsState(initial = initial).value
 }

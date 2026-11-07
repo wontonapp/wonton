@@ -41,6 +41,7 @@ import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
+import app.wonton.protocol.BotView
 import app.wonton.protocol.MessageSummary
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -109,6 +110,8 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
                 title = row?.name ?: room,
                 isDirect = row?.isDirect == true,
                 isReadOnly = row?.isReadOnly == true,
+                bot = viewModel.bots.directBot(row),
+                plugins = plugins,
                 onAction = onAction,
                 onReject = { rejection = it },
                 onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
@@ -157,7 +160,7 @@ private fun ChatListScreen(
                     if (row.membership == RoomMembership.INVITED) {
                         InviteItem(row, onAction)
                     } else {
-                        RoomItem(row, plugins, onClick = { onOpenRoom(row.roomId) })
+                        RoomItem(row, viewModel.bots.directBot(row), plugins, onClick = { onOpenRoom(row.roomId) })
                     }
                 }
             }
@@ -217,8 +220,12 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     }
 }
 
+/** 和 Bot 的私聊行对应的 Bot；不是私聊、或没有 Bot 的房间为空。 */
+private fun List<BotView>.directBot(row: RoomRow?): BotView? =
+    row?.directUserId?.let { direct -> firstOrNull { it.userId == direct } }
+
 @Composable
-private fun RoomItem(row: RoomRow, plugins: PluginsState, onClick: () -> Unit) {
+private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     Row(
         Modifier.fillMaxWidth()
@@ -228,7 +235,7 @@ private fun RoomItem(row: RoomRow, plugins: PluginsState, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        RoomAvatar(row, plugins)
+        RoomAvatar(row, bot, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -310,10 +317,16 @@ private fun MessageSummary.line(): String = when (this) {
 }
 
 @Composable
-private fun RoomAvatar(row: RoomRow, plugins: PluginsState) {
+private fun RoomAvatar(row: RoomRow, bot: BotView?, plugins: PluginsState) {
     val size = WontonTheme.size.avatar
-    val bot = row.directUserId
-    val plugin = plugins.viewModel.installed?.plugins?.firstOrNull { bot != null && it.botUserId == bot }
+    if (bot != null) {
+        // 和 Bot 的私聊行：显示 Bot 的资料头像（状态头像在播，没有就静态头像、应用图标）。
+        BotAvatar(bot, plugins, size)
+        return
+    }
+    val plugin = plugins.viewModel.installed?.plugins?.firstOrNull {
+        row.directUserId != null && it.botUserId == row.directUserId
+    }
     if (plugin != null) {
         PluginIconImage(plugin.icon, size, plugins)
     } else {

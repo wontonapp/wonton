@@ -10,9 +10,9 @@ androidx-activity = "1.13.0"
 androidx-appcompat = "1.8.0"
 androidx-core = "1.18.0"
 androidx-webkit = "1.18.0"
-androidx-media3 = "1.8.0"
 unifiedpush-connector = "3.3.5"
 androidx-camera = "1.6.2"
+androidx-media3 = "1.11.1"
 zxing = "3.5.4"
 junit = "4.13.2"
 robolectric = "4.17"
@@ -36,6 +36,10 @@ unifiedpush-connector = { module = "org.unifiedpush.android:connector", version.
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "androidx-camera" }
 androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "androidx-camera" }
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "androidx-camera" }
+# Apache-2.0。Bot 状态头像的静音循环播放（ExoPlayer）和主人选取的视频转码（Transformer、CropEffect）。
+media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "androidx-media3" }
+media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidx-media3" }
+media3-effect = { module = "androidx.media3:media3-effect", version.ref = "androidx-media3" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 # EPL-1.0。单元测试的断言和 runner。
 junit = { module = "junit:junit", version.ref = "junit" }

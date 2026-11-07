@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -89,7 +90,9 @@ fun TimelineItemView(
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.ProfileChange -> CenteredNote(
-            content.previousName?.let { "$it 改名为 ${content.name}" } ?: "${content.name} 换了头像",
+            content.previousName
+                ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
+                ?: stringResource(R.string.timeline_profile_avatar, content.name),
         )
         is TimelineContent.DateDivider ->
             CenteredNote(DateFormat.getDateInstance(DateFormat.FULL).format(Date(content.timestampMs.toLong())))
