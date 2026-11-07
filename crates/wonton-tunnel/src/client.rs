@@ -347,6 +347,17 @@ impl TunnelClient {
         attempt
     }
 
+    /// 若现在 [`revalidate`]，会用多长的确认窗口。给测试把「慢路径的证据是否改变了决策」钉成确定性
+    /// 断言用：窗口只取决于连接、路径和探测证据，与机器负载无关。
+    ///
+    /// [`revalidate`]: Self::revalidate
+    #[doc(hidden)]
+    pub fn next_revalidate_window(&self) -> Duration {
+        self.inner
+            .live_connection()
+            .map_or(REVALIDATE_DEADLINE, |conn| self.revalidate_deadline(&conn))
+    }
+
     /// 限时确认隧道真的通：有连接时在它上面做一次往返，没有回应就断开它，连接状态和路径随之更新；没有连接时
     /// 等同于 [`ping`]。
     ///
