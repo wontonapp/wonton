@@ -122,7 +122,7 @@ struct PairingView: View {
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         case .unsupported:
-            WontonNotice(icon: .cameraOff, title: "这台设备不能扫码，请粘贴配对码。", isError: false)
+            WontonNotice(icon: .cameraOff, title: String(localized: .qrScannerUnsupportedPaste), isError: false)
         }
     }
 
@@ -150,7 +150,7 @@ struct PairingView: View {
 }
 
 /// 能不能用相机扫码。
-private enum CameraAccess {
+enum CameraAccess {
     case unsupported
     case notDetermined
     case denied

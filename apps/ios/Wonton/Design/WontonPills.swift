@@ -66,13 +66,23 @@ struct WontonChip: View {
 
 /// 列表行尾的小按钮。图形比按钮矮，命中区还是 48。
 struct WontonSmallButtonStyle: ButtonStyle {
+    enum Kind {
+        case secondary
+        case danger
+    }
+
+    var kind: Kind = .secondary
     @Environment(\.wontonColors) private var colors
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let text: Rgb = switch kind {
+        case .secondary: colors.textPrimary
+        case .danger: colors.danger
+        }
+        return configuration.label
             .wontonText(WontonTheme.typography.supporting)
-            .foregroundStyle(Color(colors.textPrimary))
+            .foregroundStyle(Color(text))
             .padding(.horizontal, WontonTheme.spacing.s12)
             .frame(minHeight: WontonTheme.size.smallButton)
             .background(Capsule().fill(Color(colors.surfaceSubtle)))

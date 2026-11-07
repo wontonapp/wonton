@@ -41,6 +41,8 @@ struct SettingsTab: View {
         case .pairing:
             PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
                 .wontonPushedScreen("重新配对")
+        case .peers:
+            PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
@@ -94,9 +96,10 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }
         case .language:
             LanguageSettingsRow()
-        case .peers:
-            // 这一版先不显示这一行；页面在 #552 的 App PR 里做。
-            EmptyView()
+        case let .peers(count):
+            NavigationLink(value: SettingsRoute.peers) {
+                WontonRow(title: String(localized: .peersTitle), value: String(count), showsForward: true)
+            }
         case .bottomBar:
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
         case .notifications:

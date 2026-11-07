@@ -15,6 +15,8 @@ final class AppNavigation {
     let onboarding: OnboardingModel
     private(set) var presentationRevision = 0
     private(set) var opensSettings = false
+    /// 链接要求直接打开“其他服务器”页并滚到“请求”；由 MainView 取走。
+    private var opensPeers = false
     private var pending: Task<Void, Never>?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel) {
@@ -75,10 +77,16 @@ final class AppNavigation {
             try select(.chat)
             chat.openDirectChat(with: bot, acceptingInvitation: true)
         case .peers:
-            // 设置里的“其他服务器”页随 ADR-0050 的界面一起接上，在那之前先到设置。
+            opensPeers = true
             try select(.settings)
             chat.resetNavigation()
         }
+    }
+
+    /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。
+    func takeOpensPeers() -> Bool {
+        defer { opensPeers = false }
+        return opensPeers
     }
 
     func askAgent(_ text: String) async throws {

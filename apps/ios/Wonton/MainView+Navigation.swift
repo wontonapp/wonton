@@ -18,6 +18,10 @@ extension MainView {
             tabs.send(.closeTabOverlay)
             if !dismissingCover { showsSettings = true }
         }
+        if navigation.takeOpensPeers() {
+            settings.path = [.peers]
+            settings.focusPeersRequests()
+        }
     }
 
     func showServerRoute(_ route: SettingsRoute) {
