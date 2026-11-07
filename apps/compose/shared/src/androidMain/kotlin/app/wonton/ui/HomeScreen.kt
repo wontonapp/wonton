@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreUpgradeViewModel
 import app.wonton.protocol.HomeStatus
@@ -30,9 +31,12 @@ fun HomeRoute(
     BackHandler(enabled = page != HomePage.LAUNCHER) { onPage(HomePage.LAUNCHER) }
     when {
         viewModel.status is HomeStatus.NotConfigured ->
-            PairingPage("配对", core, viewModel.pairing, onBack = null, actions = if (onSettings != null) {
-                { SettingsToolbarButton(settingsUpgrade, onSettings) }
-            } else null)
+            PairingPage(
+                stringResource(R.string.pairing_title), core, viewModel.pairing, onBack = null,
+                actions = if (onSettings != null) {
+                    { SettingsToolbarButton(settingsUpgrade, onSettings) }
+                } else null,
+            )
         else -> PluginPages(plugins, navigation) {
             if (page == HomePage.STORE) {
                 StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })

@@ -190,6 +190,8 @@ private fun NativeTab(
         TabRef.Settings -> SettingsPage(
             tabs.plugins, settings, home, appearance, chat, nav.settingsPage,
             onClose = { nav.settingsOverlay = false }.takeIf { nav.settingsOverlay },
+            peersOpenRequests = nav.peersOpenRequests,
+            onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
         ) { nav.settingsPage = it }
         is TabRef.Plugin -> Unit
     }

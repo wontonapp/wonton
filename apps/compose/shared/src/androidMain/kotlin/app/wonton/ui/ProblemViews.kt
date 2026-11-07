@@ -313,7 +313,7 @@ fun ProblemDetail(
 
 /** 什么都显示不出来，整页说明。 */
 @Composable
-fun ProblemView(problem: Problem, onRetry: () -> Unit) {
+fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
     val colors = WontonTheme.colors
     Column(
         Modifier.fillMaxSize().padding(WontonTheme.spacing.s32),
@@ -338,12 +338,14 @@ fun ProblemView(problem: Problem, onRetry: () -> Unit) {
                 color = colors.textSecondary.toColor(),
             )
         }
-        WontonButton(
-            stringResource(R.string.common_retry),
-            onRetry,
-            Modifier.padding(vertical = WontonTheme.spacing.s8),
-            kind = WontonButtonKind.SECONDARY,
-        )
+        onRetry?.let {
+            WontonButton(
+                stringResource(R.string.common_retry),
+                it,
+                Modifier.padding(vertical = WontonTheme.spacing.s8),
+                kind = WontonButtonKind.SECONDARY,
+            )
+        }
         problem.detail?.let { ProblemDetail(it) }
     }
 }

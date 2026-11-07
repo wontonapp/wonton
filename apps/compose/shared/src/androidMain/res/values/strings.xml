@@ -445,6 +445,126 @@
     <string name="invite_requesting">Asking your home server for a pairing code…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">Try again</string>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">Pairing</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">Pair again</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">On your home network, open the server\'s IP address in a browser (the installer prints it), then scan the pairing QR code on that page.</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">Paste the pairing code</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">Pair</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">Pairing…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">This device\'s name</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">The server didn\'t accept this pairing code</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">The pairing code has expired</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">This pairing code has been deactivated</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_retry_same_code">Try again with this code</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">The app and the server versions don\'t match</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">Make sure the phone and the server are on the same local network, or that the server can reach the internet, then try again.</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">Update the app and the server to the latest versions.</string>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">Other servers</string>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">Add</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">Show my code</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">Scan their code</string>
+    <!-- Empty page: the one sentence above the two add actions. -->
+    <string name="peers_empty">Not connected to any other servers yet</string>
+    <!-- Row subtitle when the other server can't be reached. -->
+    <string name="peers_status_offline">The other server is unreachable</string>
+    <!-- Under the offline subtitle. Argument: relative time like "3 hours ago". -->
+    <string name="peers_last_connected">Last connected %1$s</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">just now</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">The other server disconnected</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">Waiting for the other owner to approve</string>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">They declined your request</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">Checking connection</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">Status unknown</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">Requests</string>
+    <!-- Approve button on a request row. -->
+    <string name="peers_request_approve">Approve</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">Reject</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server\'s display name. -->
+    <string name="peers_request_conflicts">Has the same name as connected “%1$s”, but isn\'t that server</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">Rejected</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">Undo</string>
+    <!-- Confirmation dialog title for removing a paired server. Argument: the other owner's display name. -->
+    <string name="peers_remove_title">Remove “%1$s”?</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">You\'ll stop exchanging messages with this server.</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">This isn\'t a server pairing code</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">This code has been revoked. Ask them to send a new one.</string>
+    <!-- Failure title when the other server can't be reached. -->
+    <string name="peers_error_peer_unreachable">Can\'t reach the other server</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">The other owner didn\'t approve</string>
+    <!-- Failure title when the two servers are already paired. -->
+    <string name="peers_error_already_paired">Already connected to this server</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">This is your own server\'s code</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">This server isn\'t connected</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">Only the server\'s owner can manage other servers</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">Can\'t reach your home server</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">Something went wrong. Try again later.</string>
+    <!-- Failure title when the other server can't take more requests right now. -->
+    <string name="peers_error_too_many_requests">The other server can\'t take requests right now. Try again later.</string>
+    <!-- Notice when the request just handled was already processed elsewhere; the list refreshes itself. -->
+    <string name="peers_error_request_not_found">That request was already handled</string>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">Waiting for camera permission…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">Wonton doesn\'t have camera access, so it can\'t scan codes.</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">Allow camera access</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">Wonton doesn\'t have camera access. Turn it on in system settings to scan codes.</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">Open system settings</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">This device has no camera.</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">Server pairing QR code</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">Share</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">Reset</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">Reset the pairing code?</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">The current code will stop working, and pending requests sent with it are cleared.</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">Paste their code</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">Pair</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">Address</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->

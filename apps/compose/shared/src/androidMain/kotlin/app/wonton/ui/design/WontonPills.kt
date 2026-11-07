@@ -114,7 +114,7 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
 
 /** 列表行尾的小按钮。图形比按钮矮，命中区还是 48。 */
 @Composable
-fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
+fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true, danger: Boolean = false) {
     val colors = WontonTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -130,7 +130,11 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
                 .padding(horizontal = WontonTheme.spacing.s12),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text, style = WontonTheme.typography.supporting, color = colors.textPrimary.toColor())
+            Text(
+                text,
+                style = WontonTheme.typography.supporting,
+                color = (if (danger) colors.danger else colors.textPrimary).toColor(),
+            )
         }
     }
 }

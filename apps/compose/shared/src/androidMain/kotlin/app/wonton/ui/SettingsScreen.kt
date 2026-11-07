@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
@@ -38,6 +39,8 @@ fun SettingsPage(
     chat: ChatViewModel,
     subpage: SettingsSubpage,
     onClose: (() -> Unit)? = null,
+    peersOpenRequests: Boolean = false,
+    onPeersOpenRequestsHandled: () -> Unit = {},
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
@@ -58,6 +61,7 @@ fun SettingsPage(
         }
         SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
         SettingsSubpage.ABOUT -> AboutPage(version, back)
+        SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = tabText("设置", "Settings")
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
@@ -109,8 +113,11 @@ private fun SettingsEntryRow(
         )
         SettingsEntry.Appearance -> WontonRow("外观", showsForward = true) { onSubpage(SettingsSubpage.APPEARANCE) }
         SettingsEntry.Language -> LanguageSettingsRow()
-        // 这一版先不显示这一行；页面在 #552 的 App PR 里做。
-        is SettingsEntry.Peers -> Unit
+        // 服务器配对（ADR-0050）；核心只对主人设备取到过列表才给这一项。
+        is SettingsEntry.Peers -> WontonRow(
+            stringResource(R.string.peers_title), entry.count.toString(),
+            showsForward = true, onClick = { onSubpage(SettingsSubpage.PEERS) },
+        )
         SettingsEntry.BottomBar -> WontonRow(tabText("底栏", "Tab bar"), showsForward = true) {
             onSubpage(SettingsSubpage.TABS)
         }

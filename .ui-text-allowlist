@@ -9,11 +9,9 @@ apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppNavigation.kt | 待�
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppShortcuts.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatScreen.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ConnectionStatus.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/HomeScreen.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/HomeStatusPanel.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/NotificationSettingsScreen.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PageTakeover.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PairingScreen.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PluginDetailScreen.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PluginTabsHost.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PluginWebView.kt | 待抽取（ADR-0043） | 2026-12-31

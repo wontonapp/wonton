@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeViewModel
 import app.wonton.ui.design.WontonPushedBar
@@ -26,7 +27,7 @@ internal fun ServerSettingsPage(
         SettingsSubpage.INVITE -> WontonScreen(bar = { WontonPushedBar("添加设备", back) }) {
             InviteScreen(core, home.invite)
         }
-        SettingsSubpage.PAIRING -> PairingPage("重新配对", core, home.pairing, back)
+        SettingsSubpage.PAIRING -> PairingPage(stringResource(R.string.pairing_title_again), core, home.pairing, back)
         else -> error("Not a server settings page: $page")
     }
 }

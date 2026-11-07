@@ -6,6 +6,7 @@ import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.PeersViewModel
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.ServersViewModel
@@ -98,6 +99,15 @@ fun ClientCore.pluginsUpdates(): Flow<PluginsViewModel> = flow {
 fun ClientCore.serversUpdates(): Flow<ServersViewModel> = flow {
     subscribeServers().use { subscription ->
         while (true) emit(subscription.next() ?: break)
+    }
+}
+
+/** 把“其他服务器”页面的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
+fun ClientCore.peersUpdates(): Flow<PeersViewModel> = flow {
+    subscribePeers().use { subscription ->
+        while (true) {
+            emit(subscription.next() ?: break)
+        }
     }
 }
 

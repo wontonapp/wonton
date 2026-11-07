@@ -16,6 +16,8 @@ import app.wonton.protocol.TabRef
 internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
     var appsPage by mutableStateOf(HomePage.LAUNCHER)
     var settingsPage by mutableStateOf(SettingsSubpage.MAIN)
+    // 配对提醒的链接（wonton://settings/peers）带着它来：其他服务器页滚回顶上的“请求”。
+    var peersOpenRequests by mutableStateOf(false)
     var settingsOverlay by mutableStateOf(false)
     var tabMenu by mutableStateOf<TabRef?>(null)
     val plugins = PluginNavigation { entry ->
@@ -67,8 +69,11 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
                     else chat.openDirectChat(tabs.core, peer, acceptInvite = true),
                 )
             }
-            // 设置里的“其他服务器”页随 ADR-0050 的界面一起接上，在那之前先到设置。
-            AppLink.Peers -> settings()
+            // 核心在“Wonton”私聊里的配对提醒带这个链接，直接到“请求”（ADR-0050）。
+            AppLink.Peers -> {
+                settings(SettingsSubpage.PEERS)
+                peersOpenRequests = true
+            }
         }
     }
 

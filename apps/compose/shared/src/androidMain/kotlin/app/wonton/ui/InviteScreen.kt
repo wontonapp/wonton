@@ -161,7 +161,7 @@ private const val SECOND_MS = 1000L
 private const val SECONDS_PER_MINUTE = 60
 
 /** 每个模块一个像素，显示时不插值放大，二维码不会糊。 */
-private fun qrBitmap(text: String): ImageBitmap {
+internal fun qrBitmap(text: String): ImageBitmap {
     val hints = mapOf(EncodeHintType.MARGIN to 2, EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M)
     val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, hints)
     val pixels = IntArray(matrix.width * matrix.height) { index ->

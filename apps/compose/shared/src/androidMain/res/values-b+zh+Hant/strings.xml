@@ -445,6 +445,126 @@
     <string name="invite_requesting">正在向家用伺服器取得配對碼…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">重試</string>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">配對</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">重新配對</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">在家用區域網路裡，用瀏覽器開啟伺服器的 IP 位址（安裝時終端裡會給出），頁面上有配對 QR 碼。</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">貼上配對碼</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">配對</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">正在配對…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">這台裝置的名字</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">伺服器不認這個配對碼</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">配對碼過期了</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">這個配對碼已經停用</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_retry_same_code">用這個碼再試一次</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">App 和伺服器的版本對不上</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">請確認手機和伺服器在同一個區域網路裡，或者伺服器連得上網際網路，然後再試一次。</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">請把 App 和伺服器都更新到最新版本。</string>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">其他伺服器</string>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">新增</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">出示我的碼</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">掃描對方的碼</string>
+    <!-- Empty page: the one sentence above the two add actions. -->
+    <string name="peers_empty">還沒有連線其他伺服器</string>
+    <!-- Row subtitle when the other server can't be reached. -->
+    <string name="peers_status_offline">對方伺服器連不上</string>
+    <!-- Under the offline subtitle. Argument: relative time like "3 hours ago". -->
+    <string name="peers_last_connected">上次連線：%1$s</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">剛剛</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">對方已中斷連線</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">等對方同意</string>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">對方拒絕了</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">正在確認</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">狀態未知</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">請求</string>
+    <!-- Approve button on a request row. -->
+    <string name="peers_request_approve">同意</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">拒絕</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server's display name. -->
+    <string name="peers_request_conflicts">和已配對的「%1$s」重名，不是同一台</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">已拒絕</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">撤銷</string>
+    <!-- Confirmation dialog title for removing a paired server. Argument: the other owner's display name. -->
+    <string name="peers_remove_title">移除「%1$s」？</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">移除後不再和這台伺服器互通訊息。</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">這不是伺服器配對碼</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">這張碼已經作廢，請對方重新發一張</string>
+    <!-- Failure title when the other server can't be reached. -->
+    <string name="peers_error_peer_unreachable">連不上對方的伺服器</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">對方沒有同意</string>
+    <!-- Failure title when the two servers are already paired. -->
+    <string name="peers_error_already_paired">已經和這台伺服器連線過了</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">這是你自己伺服器的碼</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">這台伺服器還沒連線</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">只有伺服器主人能管理其他伺服器</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">連不上家用伺服器</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">出了點問題，請稍後再試</string>
+    <!-- Failure title when the other server can't take more requests right now. -->
+    <string name="peers_error_too_many_requests">對方暫時收不了請求，稍後再試</string>
+    <!-- Notice when the request just handled was already processed elsewhere; the list refreshes itself. -->
+    <string name="peers_error_request_not_found">這條請求已經處理過了</string>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">等待相機權限…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">雲吞沒有相機權限，無法掃碼。</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">允許使用相機</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">雲吞沒有相機權限，可以在系統設定裡開啟。</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">開啟系統設定</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">這台裝置沒有相機。</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">伺服器配對QR碼</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">分享</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">重設</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">重設配對碼？</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">舊碼會作廢，用舊碼發來的請求一併清掉</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">貼上配對碼</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">配對</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">位址</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
