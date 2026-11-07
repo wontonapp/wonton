@@ -867,6 +867,20 @@
     <string name="plugin_permission_added">新增</string>
     <!-- Small tag next to a permission the core doesn't support. -->
     <string name="plugin_permission_unsupported">不支援</string>
+    <string name="plugin_permission_optional">可選</string>
+    <string name="plugin_permission_risk_high">高風險</string>
+    <string name="plugin_permission_risk_very_high">很高風險</string>
+    <string name="plugin_permission_risk_highest">最高風險</string>
+    <string name="plugin_root_permission_badge">這個外掛能控制整台主機</string>
+    <string name="plugin_permission_open_title">開啟「%1$s」？</string>
+    <string name="plugin_permission_understand_title">我知道這個外掛能控制整台主機</string>
+    <string name="plugin_permission_host_root">開啟後它能以 root 身分管理這台主機上的容器。</string>
+    <string name="plugin_permission_continue">繼續</string>
+    <string name="plugin_permission_open">開啟</string>
+    <string name="plugin_permission_close_title">關閉「%1$s」？</string>
+    <string name="plugin_permission_close">關閉</string>
+    <string name="plugin_permission_opened_owner">你在 %1$s 開啟</string>
+    <string name="plugin_permission_opened_bot">Bot %1$s 在 %2$s 開啟</string>
     <!-- Button that adds the typed source address. -->
     <string name="plugin_sources_add">新增</string>
     <!-- Button that proceeds with the typed source address when changing versions. -->

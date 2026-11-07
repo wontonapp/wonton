@@ -867,6 +867,20 @@
     <string name="plugin_permission_added">新增</string>
     <!-- Small tag next to a permission the core doesn't support. -->
     <string name="plugin_permission_unsupported">不支持</string>
+    <string name="plugin_permission_optional">可选</string>
+    <string name="plugin_permission_risk_high">高风险</string>
+    <string name="plugin_permission_risk_very_high">很高风险</string>
+    <string name="plugin_permission_risk_highest">最高风险</string>
+    <string name="plugin_root_permission_badge">这个插件能控制整台主机</string>
+    <string name="plugin_permission_open_title">打开“%1$s”？</string>
+    <string name="plugin_permission_understand_title">我知道这个插件能控制整台主机</string>
+    <string name="plugin_permission_host_root">打开后它能以 root 身份管理这台主机上的容器。</string>
+    <string name="plugin_permission_continue">继续</string>
+    <string name="plugin_permission_open">打开</string>
+    <string name="plugin_permission_close_title">关掉“%1$s”？</string>
+    <string name="plugin_permission_close">关掉</string>
+    <string name="plugin_permission_opened_owner">你在 %1$s 打开</string>
+    <string name="plugin_permission_opened_bot">Bot %1$s 在 %2$s 打开</string>
     <!-- Button that adds the typed source address. -->
     <string name="plugin_sources_add">添加</string>
     <!-- Button that proceeds with the typed source address when changing versions. -->

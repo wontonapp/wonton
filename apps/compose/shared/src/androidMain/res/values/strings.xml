@@ -945,6 +945,21 @@
     <string name="plugin_permission_added">New</string>
     <!-- Small tag next to a permission the core doesn't support. -->
     <string name="plugin_permission_unsupported">Unsupported</string>
+    <string name="plugin_permission_optional">Optional</string>
+    <string name="plugin_permission_risk_high">High risk</string>
+    <string name="plugin_permission_risk_very_high">Very high risk</string>
+    <string name="plugin_permission_risk_highest">Highest risk</string>
+    <!-- Root permission mark on a plugin tile in the launcher. -->
+    <string name="plugin_root_permission_badge">This plugin can control the whole host</string>
+    <string name="plugin_permission_open_title">Turn on “%1$s”?</string>
+    <string name="plugin_permission_understand_title">I know this plugin can control the whole host</string>
+    <string name="plugin_permission_host_root">Once it is on, the plugin manages this host\'s containers as root.</string>
+    <string name="plugin_permission_continue">Continue</string>
+    <string name="plugin_permission_open">Turn on</string>
+    <string name="plugin_permission_close_title">Turn off “%1$s”?</string>
+    <string name="plugin_permission_close">Turn off</string>
+    <string name="plugin_permission_opened_owner">You turned this on %1$s</string>
+    <string name="plugin_permission_opened_bot">Bot %1$s turned this on %2$s</string>
     <!-- Button that adds the typed source address. -->
     <string name="plugin_sources_add">Add</string>
     <!-- Button that proceeds with the typed source address when changing versions. -->

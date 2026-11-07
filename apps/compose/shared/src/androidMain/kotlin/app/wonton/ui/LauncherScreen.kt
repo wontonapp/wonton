@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -57,6 +58,7 @@ import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
+import app.wonton.ui.icons.Lock
 import app.wonton.ui.icons.Store
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WarningCircleFill
@@ -227,6 +229,20 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
                 }
             }
             Badge(plugin, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp))
+            if (plugin.enabledRootPermissions.isNotEmpty()) {
+                IconButton(
+                    onClick = { navigation.detail = PluginRoute.Installed(plugin.id) },
+                    modifier = Modifier.align(Alignment.TopStart).offset(x = (-6).dp, y = (-6).dp),
+                ) {
+                    Icon(
+                        WontonIcon.Lock,
+                        contentDescription = stringResource(R.string.plugin_root_permission_badge),
+                        modifier = Modifier.size(WontonTheme.size.iconSmall)
+                            .background(WontonTheme.colors.canvas.toColor(), CircleShape),
+                        tint = WontonTheme.colors.warning.toColor(),
+                    )
+                }
+            }
         }
         Text(
             plugin.title,

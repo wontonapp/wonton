@@ -104,11 +104,13 @@ struct HomeView: View {
             let cell = GridItem(.adaptive(minimum: WontonTheme.size.launcherCell), spacing: WontonTheme.spacing.s12)
             LazyVGrid(columns: [cell], spacing: WontonTheme.spacing.s24) {
                 ForEach(installed.plugins, id: \.id) { plugin in
-                    LauncherIcon(model: plugins, plugin: plugin)
+                    LauncherIcon(model: plugins, plugin: plugin) {
+                        path.append(PluginRoute.installed(id: plugin.id))
+                    }
                         .contentShape(Rectangle())
                         .onTapGesture { tap(plugin) }
                         .onLongPressGesture { menuPlugin = plugin }
-                        .accessibilityElement(children: .combine)
+                        .accessibilityElement(children: .contain)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { tap(plugin) }
                         .accessibilityAction(named: "菜单") { menuPlugin = plugin }
@@ -258,6 +260,7 @@ private struct NoPlugins: View {
 private struct LauncherIcon: View {
     let model: PluginsModel
     let plugin: InstalledPlugin
+    let showDetails: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -272,6 +275,22 @@ private struct LauncherIcon: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) { badge.offset(x: 6, y: -6) }
+                .overlay(alignment: .bottomTrailing) {
+                    if !plugin.enabledRootPermissions.isEmpty {
+                        // 点按区域 48pt，看得见的圆只有 28pt；整体往右下挪，圆心落在图标角上，不盖住图标本身。
+                        Button(action: showDetails) {
+                            WontonIcon.lock.view(size: WontonTheme.size.iconSmall)
+                                .foregroundStyle(Color(colors.warning))
+                                .padding(WontonTheme.spacing.s4)
+                                .background(Circle().fill(Color(colors.canvas)))
+                                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(String(localized: .pluginRootPermissionBadge))
+                        .offset(x: 16, y: 16)
+                    }
+                }
             Text(plugin.title)
                 .wontonText(WontonTheme.typography.caption)
                 .foregroundStyle(Color(colors.textPrimary))

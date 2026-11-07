@@ -867,6 +867,20 @@
     <string name="plugin_permission_added">追加</string>
     <!-- Small tag next to a permission the core doesn't support. -->
     <string name="plugin_permission_unsupported">非対応</string>
+    <string name="plugin_permission_optional">任意</string>
+    <string name="plugin_permission_risk_high">高リスク</string>
+    <string name="plugin_permission_risk_very_high">非常に高いリスク</string>
+    <string name="plugin_permission_risk_highest">最高リスク</string>
+    <string name="plugin_root_permission_badge">このプラグインはホスト全体を操作できます</string>
+    <string name="plugin_permission_open_title">「%1$s」をオンにしますか？</string>
+    <string name="plugin_permission_understand_title">このプラグインがホスト全体を操作できることを理解しました</string>
+    <string name="plugin_permission_host_root">オンにすると、root としてこのホストのコンテナを操作します。</string>
+    <string name="plugin_permission_continue">続ける</string>
+    <string name="plugin_permission_open">オン</string>
+    <string name="plugin_permission_close_title">「%1$s」をオフにしますか？</string>
+    <string name="plugin_permission_close">オフ</string>
+    <string name="plugin_permission_opened_owner">%1$s にあなたがオン</string>
+    <string name="plugin_permission_opened_bot">%2$s に Bot %1$s がオン</string>
     <!-- Button that adds the typed source address. -->
     <string name="plugin_sources_add">追加</string>
     <!-- Button that proceeds with the typed source address when changing versions. -->

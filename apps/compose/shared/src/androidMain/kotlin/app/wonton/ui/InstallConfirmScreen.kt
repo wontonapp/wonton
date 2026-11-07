@@ -28,7 +28,6 @@ import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
 import app.wonton.ui.design.wontonContentPadding
-import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -53,6 +52,7 @@ fun InstallConfirmScreen(
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
+    var enabled by remember { mutableStateOf<Set<String>>(emptySet()) }
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
     var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
@@ -60,7 +60,10 @@ fun InstallConfirmScreen(
         value = null
         value = try {
             Result.success(
-                loadInstallPreview(plugins, confirmation).also { lanWebui = it.lanWebui?.enabled ?: false },
+                loadInstallPreview(plugins, confirmation).also { preview ->
+                    lanWebui = preview.lanWebui?.enabled ?: false
+                    enabled = preview.permissions.filter { it.optional && it.enabled }.map { it.permission }.toSet()
+                },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
@@ -94,35 +97,29 @@ fun InstallConfirmScreen(
                         preview,
                         plugins,
                         lanWebui,
+                        enabled,
                         onFillProfile = { fillingProfile = true },
                         onLanWebui = { lanWebui = it },
+                        onOptional = { permission, on ->
+                            enabled = if (on) enabled + permission else enabled - permission
+                        },
                     )
                 }
             }
-            preview?.let {
-                WontonButton(
-                    title,
-                    {
-                        // 在这里直接发给核心：被拒绝时原因留在确认页上，不随确认页关掉。
-                        val shown = it.copy(lanWebui = it.lanWebui?.copy(enabled = lanWebui))
-                        val action = if (isUpgrade) Action.UpgradePlugin(shown) else Action.InstallPlugin(shown)
-                        previousTask = plugins.viewModel.tasks.firstOrNull { task -> task.id == shown.id }
-                        rejection = plugins.core.send(action)
-                        if (rejection == null) {
-                            when {
-                                onAccepted != null -> onAccepted()
-                                isUpgrade -> onClose()
-                                else -> submittedId = shown.id
-                            }
+            preview?.let { current ->
+                val chosen = current.withPermissionChoices(lanWebui, enabled)
+                ConfirmInstallButton(chosen, title) {
+                    val action = if (isUpgrade) Action.UpgradePlugin(chosen) else Action.InstallPlugin(chosen)
+                    previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
+                    rejection = plugins.core.send(action)
+                    if (rejection == null) {
+                        when {
+                            onAccepted != null -> onAccepted()
+                            isUpgrade -> onClose()
+                            else -> submittedId = chosen.id
                         }
-                    },
-                    Modifier.padding(bottom = LocalWontonBottomInset.current)
-                        .padding(WontonTheme.spacing.pageInset)
-                        .fillMaxWidth(),
-                    // 装不了（blocked）、缺资料或者有核心不支持的权限时不能确认。
-                    enabled = it.blocked == null && it.missingProfile == null &&
-                        it.permissions.all { line -> line.supported },
-                )
+                    }
+                }
             }
         }
     }
@@ -184,8 +181,10 @@ private fun PreviewContent(
     preview: InstallPreview,
     plugins: PluginsState,
     lanWebui: Boolean,
+    enabled: Set<String>,
     onFillProfile: () -> Unit,
     onLanWebui: (Boolean) -> Unit,
+    onOptional: (String, Boolean) -> Unit,
 ) {
     val colors = WontonTheme.colors
     Column(
@@ -220,7 +219,8 @@ private fun PreviewContent(
                 WontonButton(stringResource(R.string.install_fill_profile), onFillProfile)
             }
         }
-        InstallAccessDetails(preview.notices, preview.permissions)
+        if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
+        InstallPermissionChoices(preview.permissions, enabled, onOptional)
         AlwaysAllowed(preview, plugins)
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->

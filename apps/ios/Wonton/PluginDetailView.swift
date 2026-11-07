@@ -85,7 +85,7 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, installed.writtenBy != nil {
                         AskEveryUpdateSection(model: model, id: installed.id, enabled: detail.askEveryUpdate ?? false)
                     }
-                    DetailSections(detail: detail)
+                    DetailSections(detail: detail, model: model) { loaded = .success($0) }
                     if let installed = detail.installed, installed.removable, !isWorking {
                         Button {
                             changingVersionOf = installed.id
@@ -321,9 +321,10 @@ private struct Screenshot: View {
     }
 }
 
-/// 更新说明、权限、要求和其他信息。
 private struct DetailSections: View {
     let detail: PluginDetail
+    let model: PluginsModel
+    let updated: (PluginDetail) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -339,7 +340,13 @@ private struct DetailSections: View {
         }
         if !detail.permissions.isEmpty {
             DetailSection(title: "权限") {
-                ForEach(detail.permissions, id: \.permission) { PermissionRow(line: $0) }
+                ForEach(detail.permissions, id: \.permission) { line in
+                    if line.optional, detail.installed != nil {
+                        OptionalPermissionRow(model: model, id: detail.id, line: line, updated: updated)
+                    } else {
+                        PermissionRow(line: line)
+                    }
+                }
             }
         }
         if !detail.requirements.isEmpty {

@@ -25,7 +25,6 @@ import app.wonton.protocol.Rgb
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Info
-import app.wonton.ui.icons.Shield
 import app.wonton.ui.icons.WarningFill
 import app.wonton.ui.icons.WontonIcon
 
@@ -92,26 +91,6 @@ fun NoticeLines(lines: List<CardLine>) {
     }
 }
 
-/** 要授予的一项权限：有风险级别时醒目，升级时新申请的、核心不支持的标出来。 */
-@Composable
-fun PermissionRow(line: PermissionLine) {
-    val colors = WontonTheme.colors
-    val risky = line.risk != null
-    Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        LineIcon(
-            if (risky) WontonIcon.WarningFill else WontonIcon.Shield,
-            (if (risky) colors.warning else colors.textSecondary).toColor(),
-        )
-        Text(
-            line.text,
-            Modifier.weight(1f),
-            style = WontonTheme.typography.body,
-            color = (if (risky) colors.warning else colors.textPrimary).toColor(),
-        )
-        if (line.added) Tag(stringResource(R.string.plugin_permission_added), colors.primary)
-        if (!line.supported) Tag(stringResource(R.string.plugin_permission_unsupported), colors.danger)
-    }
-}
 
 @Composable
 internal fun InstallAccessDetails(notices: List<CardLine>, permissions: List<PermissionLine>) {

@@ -143,7 +143,7 @@ private fun DetailContent(
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
         detail.installed?.let { InstalledDetailSections(detail, plugins, onToggled) }
-        DetailSections(detail)
+        DetailSections(detail, plugins, onToggled)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(
                 stringResource(R.string.install_change_version),
@@ -340,7 +340,7 @@ private fun Screenshot(source: PluginImage, plugins: PluginsState) {
 
 /** 更新说明、权限、要求和其他信息。 */
 @Composable
-private fun DetailSections(detail: PluginDetail) {
+private fun DetailSections(detail: PluginDetail, plugins: PluginsState, onToggled: (PluginDetail) -> Unit) {
     val colors = WontonTheme.colors
     detail.releaseNotes?.let { notes ->
         DetailSection(stringResource(R.string.install_release_notes)) {
@@ -348,9 +348,7 @@ private fun DetailSections(detail: PluginDetail) {
             Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         }
     }
-    if (detail.permissions.isNotEmpty()) {
-        DetailSection(stringResource(R.string.install_permissions)) { detail.permissions.forEach { PermissionRow(it) } }
-    }
+    PluginPermissionSection(detail, plugins, onToggled)
     if (detail.requirements.isNotEmpty()) {
         DetailSection(stringResource(R.string.plugin_requirements)) {
             detail.requirements.forEach { requirement ->

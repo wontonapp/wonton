@@ -16,12 +16,13 @@ extension View {
         detail: String? = nil,
         isPresented: Binding<Bool>,
         actions: [WontonDialogAction]? = nil,
-        onDismiss: (() -> Void)? = nil
+        onDismiss: (() -> Void)? = nil,
+        afterDismiss: (() -> Void)? = nil
     ) -> some View {
         background {
             // 挂在单独的空视图上：同一个视图上的弹出页互不抢，关掉系统转场也只影响这里。
             Color.clear
-                .fullScreenCover(isPresented: isPresented) {
+                .fullScreenCover(isPresented: isPresented, onDismiss: afterDismiss) {
                     WontonDialogView(
                         title: title,
                         message: message,

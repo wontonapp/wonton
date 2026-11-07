@@ -9,8 +9,10 @@ struct InstallConfirmView: View {
     @State private var loaded: Result<InstallPreview, Error>?
     @State private var rejection: Problem?
     @State private var lanWebui = false
+    @State private var enabled: Set<String> = []
     @State private var isFillingProfile = false
     @State private var submittedId: String?
+    @State private var hostAcknowledgement = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +27,7 @@ struct InstallConfirmView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if submittedId == nil, let preview {
                 Button {
-                    confirm(preview)
+                    requestConfirmation(preview)
                 } label: {
                     Text(confirmation.actionTitle).frame(maxWidth: .infinity)
                 }
@@ -36,6 +38,17 @@ struct InstallConfirmView: View {
         }
         .wontonModalScreen(confirmation.actionTitle)
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
+        .wontonDialog(
+            String(localized: .pluginPermissionUnderstandTitle),
+            message: String(localized: .pluginPermissionHostRoot),
+            isPresented: $hostAcknowledgement,
+            actions: [
+                WontonDialogAction(title: String(localized: .commonCancel)),
+                WontonDialogAction(title: confirmation.actionTitle, kind: .danger) {
+                    if let preview { confirm(preview) }
+                }
+            ]
+        )
         .task { await load() }
         // 填完回到这里，预览重新算，缺的资料有了就能装。
         .fullScreenCover(
@@ -54,7 +67,9 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui) { isFillingProfile = true }
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled) {
+                isFillingProfile = true
+            }
         }
     }
 
@@ -91,9 +106,22 @@ struct InstallConfirmView: View {
             case let .upgradeUpload(id, archive): try await model.core.previewUpgradeUpload(id: id, archive: archive)
             }
             lanWebui = preview.lanWebui?.enabled ?? false
+            enabled = Set(preview.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
             loaded = .success(preview)
         } catch {
             loaded = .failure(error)
+        }
+    }
+
+    private func requestConfirmation(_ preview: InstallPreview) {
+        let needsHost = preview.permissions.contains { line in
+            line.requiresHostConfirmation && (!line.optional || enabled.contains(line.permission))
+                && (line.optional || line.risk != nil)
+        }
+        if needsHost {
+            hostAcknowledgement = true
+        } else {
+            confirm(preview)
         }
     }
 
@@ -101,6 +129,12 @@ struct InstallConfirmView: View {
     private func confirm(_ shown: InstallPreview) {
         var preview = shown
         preview.lanWebui?.enabled = lanWebui
+        preview.permissions = preview.permissions.map { line in
+            guard line.optional else { return line }
+            var line = line
+            line.enabled = enabled.contains(line.permission)
+            return line
+        }
         let action: Action = isUpgrade ? .upgradePlugin(preview: preview) : .installPlugin(preview: preview)
         do {
             try model.core.dispatch(action: action)
@@ -119,6 +153,7 @@ private struct PreviewContent: View {
     let model: PluginsModel
     let preview: InstallPreview
     @Binding var lanWebui: Bool
+    @Binding var enabled: Set<String>
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -135,7 +170,27 @@ private struct PreviewContent: View {
                             .buttonStyle(WontonButtonStyle())
                     }
                 }
-                InstallPermissions(permissions: preview.permissions, notices: preview.notices)
+                if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
+                if !preview.permissions.isEmpty {
+                    DetailSection(title: String(localized: .installPermissions)) {
+                        ForEach(preview.permissions, id: \.permission) { line in
+                            if line.optional {
+                                PermissionRow(line: line, selection: Binding(
+                                    get: { enabled.contains(line.permission) },
+                                    set: { isOn in
+                                        if isOn {
+                                            enabled.insert(line.permission)
+                                        } else {
+                                            enabled.remove(line.permission)
+                                        }
+                                    }
+                                ))
+                            } else {
+                                PermissionRow(line: line)
+                            }
+                        }
+                    }
+                }
                 AlwaysAllowedSection(model: model, preview: preview)
                 if let offer = preview.lanWebui {
                     LanWebuiToggle(offer: offer, isOn: $lanWebui)
