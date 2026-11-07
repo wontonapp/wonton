@@ -16,10 +16,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tracing::debug;
 use wonton_client::{
-    Action, BackPagination, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin,
-    InstalledPlugins, Network, OnboardingViewModel, PushMethod, TimelineDiff, TimelineItem,
-    TimelineSubscription,
+    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin, InstalledPlugins,
+    Network, OnboardingViewModel, PushMethod,
 };
 use wonton_matrix::MatrixSession;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
@@ -31,6 +31,17 @@ pub const WAIT: Duration = Duration::from_secs(60);
 const BASE_DOMAIN: &str = "wonton.localhost";
 /// 和 deploy/dev/matrix/tuwunel.toml 的 server_name 一致。
 pub const OWNER: &str = "@owner:wonton.localhost";
+
+/// `WONTON_TEST_LOG` 有值时打开核心的日志（值是过滤规则，例如 `wonton_tunnel=debug,matrix_sdk=debug`），
+/// 写到标准错误；失败的时候按时间顺序留下当时发生了什么。
+pub fn init_test_logging() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if let Ok(filter) = std::env::var("WONTON_TEST_LOG") {
+            wonton_client::init_logging(filter, None);
+        }
+    });
+}
 
 pub struct Home {
     pub matrix: TestServer,
@@ -91,6 +102,7 @@ struct Core {
 
 impl Home {
     pub async fn start(devices: &[EndpointId]) -> Self {
+        init_test_logging();
         let push = PushGateway::start().await;
         let matrix = TestServer::with_push_gateway(&push).await;
         let core = Arc::new(Core {
@@ -415,8 +427,9 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         if expire_room_list(&mut tcp, &core, &text, &mut head).await {
             return;
         }
-        let mut upstream = TcpStream::connect(core.tuwunel.as_str()).await.unwrap();
-        upstream.write_all(&head).await.unwrap();
+        let Some(mut upstream) = forward_to(&core, &head).await else {
+            return;
+        };
         tokio::select! {
             _ = tokio::io::copy_bidirectional(&mut tcp, &mut upstream) => {}
             _ = down.wait_for(|down| *down) => {}
@@ -424,7 +437,12 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         }
         return;
     }
-    let Some(body) = read_body(&mut tcp, &text).await else {
+    answer_core_route(&core, &text, &mut tcp).await;
+}
+
+/// 假核心自己的接口：读完请求体，交给 Bot 的应答或 `respond`，没有就回 404。
+async fn answer_core_route(core: &Core, text: &str, tcp: &mut TcpStream) {
+    let Some(body) = read_body(tcp, text).await else {
         return;
     };
     if text.starts_with("post /_wonton/confirmations/")
@@ -433,9 +451,9 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         let mut released = core.hold_answers.subscribe();
         released.wait_for(|hold| !hold).await.ok();
     }
-    let reply = match core.bot_api.respond(&text, &body).await {
+    let reply = match core.bot_api.respond(text, &body).await {
         Some(reply) => Some(reply),
-        None => respond(&core, &text, &body),
+        None => respond(core, text, &body),
     };
     let response = match reply {
         Some((status, body)) => format!(
@@ -449,6 +467,24 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     };
     tcp.write_all(response.as_bytes()).await.ok();
     tcp.shutdown().await.ok();
+}
+
+/// 连上 Tuwunel 并把请求头转过去；连不上或写不进去就断开这条连接（客户端会重试）。
+async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
+    let mut upstream = match TcpStream::connect(core.tuwunel.as_str()).await {
+        Ok(upstream) => upstream,
+        Err(err) => {
+            debug!("fake core cannot reach Tuwunel: {err}");
+            return None;
+        }
+    };
+    match upstream.write_all(head).await {
+        Ok(()) => Some(upstream),
+        Err(err) => {
+            debug!("fake core cannot forward to Tuwunel: {err}");
+            None
+        }
+    }
 }
 
 /// 要求过期时，房间列表的下一个同步请求回 `M_UNKNOWN_POS`。连接号在请求体里，所以先读完请求体，别的同步请求连同
@@ -574,7 +610,7 @@ async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
 pub struct Phone {
-    core: Arc<ClientCore>,
+    pub(crate) core: Arc<ClientCore>,
 }
 
 impl Deref for Phone {
@@ -671,120 +707,4 @@ impl Phone {
     }
 }
 
-/// 壳那一侧维护的时间线：按顺序应用每一批增量。同步从头开始时（服务器回 `M_UNKNOWN_POS`）SDK 只留最新的一段，
-/// 列表被清空重来；壳这时露出顶上那一行，自己往回翻，这里也一样。
-pub struct Timeline {
-    pub items: Vec<TimelineItem>,
-    subscription: Arc<TimelineSubscription>,
-    core: Arc<ClientCore>,
-    room_id: String,
-    back_pagination: BackPagination,
-    started: bool,
-    cleared: bool,
-    paging: bool,
-}
-
-impl Timeline {
-    pub async fn open(phone: &Phone, room_id: &str) -> Self {
-        let subscription = phone
-            .subscribe_timeline(room_id.to_owned())
-            .await
-            .expect("订阅时间线");
-        Self {
-            items: Vec::new(),
-            subscription,
-            core: phone.core.clone(),
-            room_id: room_id.to_owned(),
-            back_pagination: BackPagination::Idle,
-            started: false,
-            cleared: false,
-            paging: false,
-        }
-    }
-
-    /// 应用一批增量。首批之后的 `Clear`、`Reset` 是列表被清空重来。
-    fn apply_update(&mut self, diffs: Vec<TimelineDiff>, back_pagination: BackPagination) {
-        // 翻页开始了，或者翻回来的条目到了：这一页算翻过，下回还在顶上就再翻。
-        if back_pagination != BackPagination::Idle || !diffs.is_empty() {
-            self.paging = false;
-        }
-        for diff in diffs {
-            if self.started && matches!(diff, TimelineDiff::Clear | TimelineDiff::Reset { .. }) {
-                self.cleared = true;
-            }
-            apply(&mut self.items, diff);
-        }
-        self.started = true;
-        self.back_pagination = back_pagination;
-    }
-
-    pub fn was_cleared(&self) -> bool {
-        self.cleared
-    }
-
-    /// 清空过、还没翻到头、没在翻：像壳一样再翻一页。
-    fn page_back_if_cleared(&mut self) {
-        if self.cleared && !self.paging && self.back_pagination == BackPagination::Idle {
-            self.paging = true;
-            self.core
-                .dispatch(Action::PaginateBackwards {
-                    room_id: self.room_id.clone(),
-                })
-                .expect("往回翻");
-        }
-    }
-
-    /// 应用增量，直到列表里有满足条件的条目。
-    pub async fn until<R>(
-        &mut self,
-        what: &str,
-        mut check: impl FnMut(&TimelineItem) -> Option<R>,
-    ) -> R {
-        self.until_items(what, |items| items.iter().find_map(&mut check))
-            .await
-    }
-
-    /// 应用增量，直到整个列表满足条件。
-    pub async fn until_items<R>(
-        &mut self,
-        what: &str,
-        mut check: impl FnMut(&[TimelineItem]) -> Option<R>,
-    ) -> R {
-        let waiting = async {
-            loop {
-                if let Some(found) = check(&self.items) {
-                    return found;
-                }
-                self.page_back_if_cleared();
-                let update = self.subscription.next().await.expect("时间线订阅提前结束");
-                self.apply_update(update.diffs, update.back_pagination);
-            }
-        };
-        match tokio::time::timeout(WAIT, waiting).await {
-            Ok(found) => found,
-            Err(_) => panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", self.items),
-        }
-    }
-}
-
-fn apply(items: &mut Vec<TimelineItem>, diff: TimelineDiff) {
-    match diff {
-        TimelineDiff::Append { items: more } => items.extend(more),
-        TimelineDiff::Clear => items.clear(),
-        TimelineDiff::PushFront { item } => items.insert(0, item),
-        TimelineDiff::PushBack { item } => items.push(item),
-        TimelineDiff::PopFront => {
-            items.remove(0);
-        }
-        TimelineDiff::PopBack => {
-            items.pop();
-        }
-        TimelineDiff::Insert { index, item } => items.insert(index as usize, item),
-        TimelineDiff::Set { index, item } => items[index as usize] = item,
-        TimelineDiff::Remove { index } => {
-            items.remove(index as usize);
-        }
-        TimelineDiff::Truncate { length } => items.truncate(length as usize),
-        TimelineDiff::Reset { items: all } => *items = all,
-    }
-}
+pub use super::timeline::Timeline;

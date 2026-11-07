@@ -2,11 +2,12 @@
 
 use std::time::{Duration, Instant};
 
+use futures_util::StreamExt;
 use wonton_client::{Action, ChatSync, HomeStatus};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
 
-use super::support::{Home, Phone, Timeline};
-use super::{accept_the_bots_invite, bot_receives, text};
+use super::support::{Home, Phone, Timeline, WAIT};
+use super::{accept_the_bots_invite, text};
 
 struct Chat {
     phone: Phone,
@@ -64,14 +65,7 @@ impl Chat {
                 text(item, "断开时 Bot 发的")
             })
             .await;
-        bot_receives(
-            &self.bot_room,
-            "Bot 收到断开时主人发的",
-            |message| {
-                (message.body == MessageBody::Text("断开时主人发的".to_owned())).then_some(())
-            },
-        )
-        .await;
+        self.bot_received("断开时主人发的").await;
         self.phone
             .wait_chat("同步恢复", |view| {
                 (view.sync == ChatSync::Running).then_some(())
@@ -82,6 +76,29 @@ impl Chat {
             self.login_tokens,
             "恢复不应重新登录"
         );
+    }
+
+    /// Bot 收到手机发的那条；等不到时把手机这边的情况一起打出来。
+    async fn bot_received(&self, body: &str) {
+        let waiting = async {
+            let mut updates = self.bot_room.message_updates().await;
+            while let Some(messages) = updates.next().await {
+                if messages
+                    .iter()
+                    .any(|message| message.body == MessageBody::Text(body.to_owned()))
+                {
+                    return;
+                }
+            }
+            panic!("Bot 的消息流提前结束");
+        };
+        if tokio::time::timeout(WAIT, waiting).await.is_err() {
+            panic!(
+                "Bot 收到{body}：{WAIT:?} 内没有等到；手机看到的时间线：{:#?}，状态：{:#?}",
+                self.timeline.items,
+                self.phone.chat(),
+            );
+        }
     }
 
     async fn sync_failed(&self) {

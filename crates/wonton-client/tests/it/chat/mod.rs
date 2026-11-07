@@ -20,6 +20,7 @@ mod send;
 mod server_switch;
 mod stale_join;
 mod support;
+mod timeline;
 mod upload_progress;
 
 use std::time::{Duration, Instant};
