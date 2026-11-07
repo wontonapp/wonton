@@ -73,3 +73,23 @@ fn registry_recommendation_requires_a_real_slow_or_failed_probe() {
     });
     assert!(recommended(Some(&probe)));
 }
+
+/// 索引里的地址列表读不懂时，设置页拿到的 choices 是空的，但带上一句问题，不假装没有地址。
+#[tokio::test]
+async fn unreadable_index_mirrors_reach_the_settings_page_as_a_problem() {
+    let (docker, engine) = crate::plugin::fake_docker::FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = super::test_support::manager(engine, &dir, "apptest");
+    std::fs::write(
+        dir.path().join("index/index.json"),
+        br#"{"format":1,"plugins":[],"registry_mirrors":[1]}"#,
+    )
+    .unwrap();
+    let settings = manager
+        .registry_mirror_settings(&Languages::default())
+        .await
+        .unwrap();
+    assert!(settings.choices.is_empty());
+    assert!(settings.choices_problem.is_some());
+    drop(docker);
+}

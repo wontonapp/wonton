@@ -31,7 +31,10 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<RegistryMirrorSettings, InstallError> {
         let mirror = self.registry_mirror_address(langs)?;
-        let (index, _, _) = self.storefront.official(false, langs).await;
+        let (index, _, problem) = self.storefront.official(false, langs).await;
+        let choices_problem = index
+            .registry_mirrors_problem
+            .or_else(|| problem.map(|problem| problem.details));
         let docker_hub = self
             .registry_mirror
             .docker_hub
@@ -42,6 +45,7 @@ impl PluginManager {
         Ok(RegistryMirrorSettings {
             mirror,
             choices: index.registry_mirrors,
+            choices_problem,
             docker_hub,
             recommended,
         })

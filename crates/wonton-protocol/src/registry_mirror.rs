@@ -30,6 +30,8 @@ pub struct RegistryMirrorSettings {
     pub mirror: Option<String>,
     /// 官方索引给的预置地址，按索引里的顺序；索引读不到时为空，这时只能自己填。
     pub choices: Vec<String>,
+    /// `choices` 读不懂（或整个索引读不到）时核心写的整句，壳显示在表单上；读到了就没有。
+    pub choices_problem: Option<String>,
     /// 最近一次直连 Docker Hub 的结果；还没测过，或者 Docker 守护进程自己配了代理（这时核心测的路径不是它拉镜像的路径）
     /// 时为空。
     pub docker_hub: Option<RegistryProbe>,
@@ -128,6 +130,7 @@ mod tests {
         let settings = RegistryMirrorSettings {
             mirror: Some("mirror.example.com".into()),
             choices: vec!["mirror.example.com".into(), "hub.example.net:5000".into()],
+            choices_problem: Some("索引里的 registry_mirrors 读不懂".into()),
             docker_hub: Some(probe(Some(RegistryProblem {
                 reason: RegistryFailure::Unreachable,
                 message: "5 秒没响应".into(),
