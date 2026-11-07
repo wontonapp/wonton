@@ -57,6 +57,7 @@ internal fun PluginProblem.onboardingTitle(): String = stringResource(
         PluginFailure.INVALID -> R.string.onboarding_problem_plugin_invalid
         PluginFailure.DEVICE_UNAVAILABLE -> R.string.onboarding_problem_plugin_device_unavailable
         PluginFailure.LAN_UNAVAILABLE -> R.string.onboarding_problem_plugin_lan_unavailable
+        PluginFailure.LAN_PORT_TAKEN -> R.string.onboarding_problem_plugin_lan_port_taken
         PluginFailure.CORE_UPGRADING -> R.string.onboarding_problem_plugin_core_upgrading
         PluginFailure.EGRESS_PROXY_UNAVAILABLE -> R.string.onboarding_problem_plugin_egress_proxy_unavailable
         PluginFailure.OWNER_PROFILE_INCOMPLETE -> R.string.onboarding_problem_plugin_owner_profile_incomplete

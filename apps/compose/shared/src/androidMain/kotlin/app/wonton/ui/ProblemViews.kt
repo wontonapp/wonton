@@ -182,6 +182,11 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_lan_unavailable_next_step,
         detail = detail,
     )
+    PluginFailure.LAN_PORT_TAKEN -> Problem(
+        titleRes = R.string.problem_plugin_lan_port_taken_title,
+        nextStepRes = R.string.problem_plugin_lan_port_taken_next_step,
+        detail = detail,
+    )
     PluginFailure.CORE_UPGRADING -> Problem(
         titleRes = R.string.problem_plugin_core_upgrading_title,
         nextStepRes = R.string.problem_plugin_core_upgrading_next_step,

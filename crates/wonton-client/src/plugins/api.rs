@@ -566,6 +566,7 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         Some("not_ready") => PluginFailure::Upstream,
         Some("invalid_input") => PluginFailure::Invalid,
         Some("lan_unavailable") => PluginFailure::LanUnavailable,
+        Some("port_taken") => PluginFailure::LanPortTaken,
         Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
         Some("core_upgrading") => PluginFailure::CoreUpgrading,
         Some("owner_profile_incomplete") => PluginFailure::OwnerProfileIncomplete,
@@ -641,6 +642,7 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::Conflict
         | PluginFailure::DeviceUnavailable
         | PluginFailure::LanUnavailable
+        | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
         | PluginFailure::OwnerProfileIncomplete
         | PluginFailure::CoreUpgrading => CoreError::NotReady { reason },

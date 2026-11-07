@@ -499,6 +499,8 @@
     <string name="onboarding_problem_plugin_egress_proxy_unavailable">服务器的代理连不上，请检查后重试。</string>
     <!-- Problem title while installing: the request was rejected as invalid. -->
     <string name="onboarding_problem_plugin_invalid">这个操作没被接受，查看详情后修改重试。</string>
+    <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
+    <string name="onboarding_problem_plugin_lan_port_taken">这个应用要开的端口被占用，停掉占着它的容器或程序再试。</string>
     <!-- Problem title while installing: no local network address is available for the app. -->
     <string name="onboarding_problem_plugin_lan_unavailable">没有可用的局域网地址，请检查服务器的网络设置。</string>
     <!-- Problem title while installing: the app wasn't found. -->
@@ -695,6 +697,10 @@
     <string name="problem_plugin_invalid_next_step">请联系应用的作者。</string>
     <!-- Problem title: the app's package is broken. -->
     <string name="problem_plugin_invalid_title">这个应用的安装包有问题</string>
+    <!-- Next step: stop the container or program using this port, then try again. -->
+    <string name="problem_plugin_lan_port_taken_next_step">停掉占着这个端口的容器或程序再试。</string>
+    <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
+    <string name="problem_plugin_lan_port_taken_title">端口被占用</string>
     <!-- Next step: choose an interface or address in the local network settings, then try again. -->
     <string name="problem_plugin_lan_unavailable_next_step">在局域网设置里选好网卡或地址后再试。</string>
     <!-- Problem title: no local network address could be picked for the app. -->

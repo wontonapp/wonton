@@ -9771,6 +9771,66 @@
         }
       }
     },
+    "problem.plugin.lanPortTaken.nextStep": {
+      "comment": "Next step: stop the container or program using this port, then try again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the container or program using this port, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停掉占着这个端口的容器或程序再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停掉佔著這個連接埠的容器或程式再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このポートを使っているコンテナかプログラムを止めてから、もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "problem.plugin.lanPortTaken.title": {
+      "comment": "Problem title: a port the app opens on the local network is used by another container or program.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port in use"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口被占用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接埠被佔用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポートが使用中です"
+          }
+        }
+      }
+    },
     "problem.plugin.lanUnavailable.nextStep": {
       "comment": "Next step: choose an interface or address in the local network settings, then try again.",
       "extractionState": "manual",

@@ -49,6 +49,8 @@ extension PluginFailure {
             categorizedProblem(.problemPluginDeviceUnavailableTitle, .problemPluginDeviceUnavailableNextStep, detail)
         case .lanUnavailable:
             categorizedProblem(.problemPluginLanUnavailableTitle, .problemPluginLanUnavailableNextStep, detail)
+        case .lanPortTaken:
+            categorizedProblem(.problemPluginLanPortTakenTitle, .problemPluginLanPortTakenNextStep, detail)
         case .coreUpgrading:
             categorizedProblem(.problemPluginCoreUpgradingTitle, .problemPluginCoreUpgradingNextStep, detail)
         case .egressProxyUnavailable:

@@ -502,6 +502,8 @@
     <string name="onboarding_problem_plugin_egress_proxy_unavailable">The server\'s proxy can\'t be reached. Check it and try again.</string>
     <!-- Problem title while installing: the request was rejected as invalid. -->
     <string name="onboarding_problem_plugin_invalid">This action wasn\'t accepted. Check the details, then change it and try again.</string>
+    <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
+    <string name="onboarding_problem_plugin_lan_port_taken">The port this app opens on the local network is in use. Stop the container or program using it, then try again.</string>
     <!-- Problem title while installing: no local network address is available for the app. -->
     <string name="onboarding_problem_plugin_lan_unavailable">No local network address is available. Check the server\'s network settings.</string>
     <!-- Problem title while installing: the app wasn't found. -->
@@ -698,6 +700,10 @@
     <string name="problem_plugin_invalid_next_step">Contact the app\'s author.</string>
     <!-- Problem title: the app's package is broken. -->
     <string name="problem_plugin_invalid_title">This app\'s package has a problem</string>
+    <!-- Next step: stop the container or program using this port, then try again. -->
+    <string name="problem_plugin_lan_port_taken_next_step">Stop the container or program using this port, then try again.</string>
+    <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
+    <string name="problem_plugin_lan_port_taken_title">Port in use</string>
     <!-- Next step: choose an interface or address in the local network settings, then try again. -->
     <string name="problem_plugin_lan_unavailable_next_step">Pick an interface or address in the local network settings, then try again.</string>
     <!-- Problem title: no local network address could be picked for the app. -->

@@ -709,6 +709,8 @@ pub enum PluginFailure {
     DeviceUnavailable,
     /// 家里的服务器选不出局域网地址，申请了 `network.lan` 的插件装不上：要主人在局域网设置里选网卡或地址。
     LanUnavailable,
+    /// 插件要开的局域网端口被宿主上的别的容器或程序占着：要主人停掉占着它的那个再试。
+    LanPortTaken,
     /// 家里的服务器正在升级，升级结束前不能动插件（ADR-0025）。
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
