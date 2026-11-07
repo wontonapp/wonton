@@ -6,7 +6,9 @@
 //!   记成“等对方同意”。
 //! - 同意：对方扫码时，出码方在“Wonton”私聊里发确认卡片（ADR-0016 的 `ConfirmationCard.peer_request`）。
 //!   同意后两边记成已配对；拒绝（或卡片过期）后通知扫码方，扫码方的那条记录删掉。
-//! - 删配对：记录删掉、联邦名单撤掉、通知对方一次（尽力而为；对方离线时，它以后在联邦握手被拒时知道）。
+//! - 删配对：记录删掉、联邦名单撤掉、通知对方一次（尽力而为）。
+//! - 对方删了配对：对方收到通知后（或握手被对方拒绝时）记录留着、标成“对方删了”，联邦名单同样撤掉；
+//!   主人在 App 里移除这一行才真删记录，重新配对时这条记录被新配对替换。
 //!
 //! 联邦转发用的接口：[`Peers::server_allowlist`]（入站名单）、[`Peers::lookup`]（服务器名 → endpoint ID，
 //! 核心层的“一个服务器名只会转发到配对时绑定的 endpoint ID”）、[`Peers::paired_names`]（已配对的服务器名，
@@ -27,7 +29,7 @@ use wonton_protocol::{
     PeerRow, PeerStatus, PeersView, SecretString,
 };
 use wonton_tunnel::Allowlist;
-use wonton_tunnel::federation::PeerStates;
+use wonton_tunnel::federation::{PeerStates, PeerStatus as FederationStatus};
 use wonton_tunnel::peer_pair::{PeerIdentity, PeerPairingCode};
 
 use crate::mcp::Confirmations;
@@ -49,6 +51,8 @@ pub enum Phase {
     AwaitingPeer,
     /// 对方扫了我，我的主人还没回答卡片。不出现在列表里，卡片就是它的展示。
     AwaitingOwner,
+    /// 对方删了这条配对。记录留着给主人看，等主人在 App 里移除；重新配对时被新记录替换。
+    RemovedByPeer,
 }
 
 /// 一条配对记录。
@@ -66,6 +70,9 @@ pub struct PeerRecord {
     /// 配对成立的时间（Unix 毫秒）。
     pub paired_at_ms: u64,
     pub phase: Phase,
+    /// 最近一次连上对方的时刻（Unix 毫秒）。转发组件的状态变成“已连上”时记下，离线时保留。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_connected_ms: Option<u64>,
     /// 还在等结果的记录过了这个时刻（Unix 毫秒）就当对方没有回应，删掉。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_expires_at_ms: Option<u64>,
@@ -134,8 +141,6 @@ pub struct Peers {
     names: watch::Sender<BTreeSet<String>>,
     /// 联邦转发组件的状态。还没接转发组件时，已配对的行按“正在确认”处理。
     forwarder: Mutex<Option<watch::Receiver<PeerStates>>>,
-    /// 每台对方服务器最近连上的时刻：转发组件的状态回到“已连上”时记一次。
-    last_connected_ms: Mutex<BTreeMap<String, u64>>,
     /// 主人的回答从确认卡片来（ADR-0016）。
     confirmations: Arc<Confirmations>,
     /// 主人的显示名，每次握手现取：主人改了资料，下次配对用的就是新名字。
@@ -209,7 +214,6 @@ impl Peers {
             names,
             server_allowlist,
             forwarder: Mutex::new(None),
-            last_connected_ms: Mutex::new(BTreeMap::new()),
             confirmations,
             owner_display_name,
             languages,
@@ -311,8 +315,64 @@ impl Peers {
     }
 
     /// 接上联邦转发组件：已配对行的状态和“最近连上”的时刻从这里来。
-    pub fn attach_forwarder(&self, states: watch::Receiver<PeerStates>) {
-        *self.forwarder.lock().expect("转发器状态锁中毒") = Some(states);
+    ///
+    /// 状态变化跟着记：连上时把时刻写进记录（持久化，重启后还在），对方拒绝本机时把记录标成“对方删了”。
+    pub fn attach_forwarder(self: &Arc<Self>, states: watch::Receiver<PeerStates>) {
+        *self.forwarder.lock().expect("转发器状态锁中毒") = Some(states.clone());
+        let peers = Arc::downgrade(self);
+        tokio::spawn(async move {
+            let mut states = states;
+            // 订阅方的第一份值就是当前状态：接上之前已经连上的也要记一次。
+            while states.changed().await.is_ok() {
+                for (name, status) in states.borrow_and_update().clone() {
+                    let Some(peers) = peers.upgrade() else {
+                        return;
+                    };
+                    match status {
+                        FederationStatus::Connected => peers.note_connected(&name),
+                        FederationStatus::RemovedByPeer => peers.note_removed_by_peer(&name),
+                        FederationStatus::Offline { .. } => {}
+                    }
+                }
+            }
+        });
+    }
+
+    /// 转发组件报“已连上”：记下时刻。同一段连接上反复报（数据往返也确认连接）时，同一毫秒不重复写盘。
+    fn note_connected(&self, server_name: &str) {
+        let mut inner = self.lock();
+        let Some(record) = inner.peers.get_mut(server_name) else {
+            return;
+        };
+        let now = now_ms();
+        if record.last_connected_ms == Some(now) {
+            return;
+        }
+        record.last_connected_ms = Some(now);
+        if let Err(e) = self.save(&inner.peers) {
+            tracing::error!(error = %e, "配对记录写不进去");
+        }
+    }
+
+    /// 联邦握手被对方拒绝：和收到删除通知一样，记录留着、标成“对方删了”、名单撤掉。
+    pub(super) fn note_removed_by_peer(&self, server_name: &str) {
+        let endpoint = {
+            let mut inner = self.lock();
+            let Some(record) = inner.peers.get_mut(server_name) else {
+                return;
+            };
+            if record.phase != Phase::Paired {
+                return;
+            }
+            record.phase = Phase::RemovedByPeer;
+            let endpoint = record.endpoint_id;
+            if let Err(e) = self.save(&inner.peers) {
+                tracing::error!(error = %e, "配对记录写不进去");
+            }
+            endpoint
+        };
+        self.retract(server_name, endpoint);
+        tracing::info!(server = %server_name, "对方服务器拒绝了本机，记录标成对方已断开");
     }
 
     /// 主人看到的服务器列表和当前出的码。还在等我们回答的记录不列（卡片就是它的展示），
@@ -366,10 +426,12 @@ impl Peers {
     }
 
     fn row(&self, record: &PeerRecord, langs: &Languages) -> PeerRow {
-        let (status, last_connected_ms) = match record.phase {
-            Phase::AwaitingPeer => (PeerStatus::AwaitingApproval, None),
+        let status = match record.phase {
+            Phase::AwaitingPeer => PeerStatus::AwaitingApproval,
+            Phase::RemovedByPeer => PeerStatus::RemovedByPeer,
             Phase::Paired | Phase::AwaitingOwner => self.forwarded_status(&record.server_name),
         };
+        let last_connected_ms = record.last_connected_ms;
         PeerRow {
             server_name: record.server_name.clone(),
             owner_user_id: record.owner_user_id.clone(),
@@ -382,28 +444,17 @@ impl Peers {
 
     /// 已配对的服务器按转发组件的状态给 [`PeerStatus`]（ADR-0050 的“状态”）。转发组件还没有这台的结果
     /// （刚配对、第一次探活还没出结果）时不报离线，给 `Checking`（壳显示“正在确认”）。
-    fn forwarded_status(&self, server_name: &str) -> (PeerStatus, Option<u64>) {
+    ///
+    fn forwarded_status(&self, server_name: &str) -> PeerStatus {
         let guard = self.forwarder.lock().expect("转发器状态锁中毒");
         let Some(states) = guard.as_ref() else {
-            return (PeerStatus::Checking, None);
+            return PeerStatus::Checking;
         };
-        let last_connected = self
-            .last_connected_ms
-            .lock()
-            .expect("最近连上锁中毒")
-            .get(server_name)
-            .copied();
         match states.borrow().get(server_name) {
-            Some(wonton_tunnel::federation::PeerStatus::Connected) => {
-                (PeerStatus::Connected, last_connected.or(Some(now_ms())))
-            }
-            Some(wonton_tunnel::federation::PeerStatus::Offline { .. }) => {
-                (PeerStatus::Offline, last_connected)
-            }
-            Some(wonton_tunnel::federation::PeerStatus::RemovedByPeer) => {
-                (PeerStatus::RemovedByPeer, last_connected)
-            }
-            None => (PeerStatus::Checking, last_connected),
+            Some(FederationStatus::Connected) => PeerStatus::Connected,
+            Some(FederationStatus::Offline { .. }) => PeerStatus::Offline,
+            Some(FederationStatus::RemovedByPeer) => PeerStatus::RemovedByPeer,
+            None => PeerStatus::Checking,
         }
     }
 
@@ -424,9 +475,7 @@ impl Peers {
         let guard = self.forwarder.lock().expect("转发器状态锁中毒");
         let states = guard.as_ref()?;
         match states.borrow().get(server_name)? {
-            wonton_tunnel::federation::PeerStatus::Offline { last_error, .. } => {
-                Some(last_error.to_string())
-            }
+            FederationStatus::Offline { last_error, .. } => Some(last_error.to_string()),
             _ => None,
         }
     }

@@ -1,6 +1,12 @@
 //! 服务器配对的行为测试：两台“核心”都在本机进程内，各自真实的 iroh endpoint 和服务器配对协议，
 //! 确认卡片由测试替身通道记下、在进程内回答。覆盖出码 → 扫码 → 卡片同意 → 两边记成已配对的全流程，
-//! 以及拒绝、过期、码被改、扫自己、已配对、结果只认扫过的 endpoint ID 和删配对通知。
+//! 以及拒绝、过期、码被改、扫自己、已配对、结果只认扫过的 endpoint ID、删配对通知和重新配对。
+//!
+//! 删除相关的测试在 `peers_tests/removal.rs`：本机“收到删除通知”和“回来后握手被对方拒绝”两条路
+//! 都按转发组件的接口模拟。接上真实联邦转发组件的测试在 `peers_tests/forwarder.rs`。
+
+mod forwarder;
+mod removal;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
@@ -8,10 +14,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use iroh::endpoint::presets;
-use iroh::{Endpoint, SecretKey};
+use iroh::{Endpoint, EndpointAddr, SecretKey};
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use wonton_protocol::{Answer, PeerError, PeerStatus};
 use wonton_tunnel::TunnelServer;
+use wonton_tunnel::federation::{
+    FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerStates,
+    PeerStatus as TunnelPeerStatus, ServerLookup,
+};
 use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, deliver_decision};
 use wonton_tunnel::relays::RelayTable;
 
@@ -50,11 +61,15 @@ struct TestCore {
     cards: Arc<Cards>,
     paired_names: watch::Receiver<BTreeSet<String>>,
     _server: TunnelServer,
+    /// 联邦入站接到的上游：探活只回 Ping，不碰它。
+    _upstream: TcpListener,
+    forwarder: Option<FederationForwarder>,
+    states: Option<watch::Receiver<PeerStates>>,
     dir: tempfile::TempDir,
 }
 
 impl TestCore {
-    /// 起一台测试核心：隧道 endpoint + 服务器配对协议，没有 Matrix。
+    /// 起一台测试核心：隧道 endpoint + 服务器配对协议 + 联邦入站，没有 Matrix。
     async fn start(name: &str, server_name: &str, ttl: Duration) -> Self {
         let cards = Arc::new(Cards::default());
         let confirmations = Arc::new(Confirmations::new(cards.clone(), ttl));
@@ -86,16 +101,27 @@ impl TestCore {
         )
         .unwrap();
         let paired_names = peers.paired_names();
+        let upstream = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let federation = FederationProtocol::new(
+            peers.server_allowlist().clone(),
+            upstream.local_addr().unwrap(),
+        );
         let (_server, _listener) = wonton_tunnel::TunnelServer::spawn_embedded_with_pairing_and(
             peers.tunnel().endpoint.clone(),
             peers.tunnel().devices.allowlist().clone(),
             wonton_tunnel::pair::PairProtocol::new(peers.tunnel().pairing.clone()),
-            [(
-                PEER_PAIR_ALPN,
-                Box::new(wonton_tunnel::peer_pair::PeerPairProtocol::new(Arc::new(
-                    super::pairing::PeerPairing(peers.clone()),
-                ))) as Box<dyn iroh::protocol::DynProtocolHandler>,
-            )],
+            [
+                (
+                    PEER_PAIR_ALPN,
+                    Box::new(wonton_tunnel::peer_pair::PeerPairProtocol::new(Arc::new(
+                        super::pairing::PeerPairing(peers.clone()),
+                    ))) as Box<dyn iroh::protocol::DynProtocolHandler>,
+                ),
+                (
+                    FEDERATION_ALPN,
+                    Box::new(federation) as Box<dyn iroh::protocol::DynProtocolHandler>,
+                ),
+            ],
         );
         Self {
             peers,
@@ -104,8 +130,48 @@ impl TestCore {
             cards,
             paired_names,
             _server,
+            _upstream: upstream,
+            forwarder: None,
+            states: None,
             dir,
         }
+    }
+
+    /// 接上真实的联邦转发组件：出站探活走真的 iroh 连接，状态写进这台核心。
+    async fn enable_federation(&mut self) {
+        let lookup: ServerLookup = {
+            let peers = self.peers.clone();
+            Arc::new(move |name: &str| peers.lookup(name))
+        };
+        let forwarder = FederationForwarder::bind(
+            self.peers.tunnel().endpoint.clone(),
+            (Ipv4Addr::LOCALHOST, 0).into(),
+            lookup,
+            self.peers.paired_names(),
+            Duration::from_millis(200),
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        let states = forwarder.watch_status();
+        self.peers.attach_forwarder(states.clone());
+        self.states = Some(states);
+        self.forwarder = Some(forwarder);
+    }
+
+    /// 把转发组件状态表里每一次出现的新状态记下来（按服务器名）。
+    fn record_states(&self) -> Arc<Mutex<Vec<(String, TunnelPeerStatus)>>> {
+        let history = Arc::new(Mutex::new(Vec::new()));
+        let mut states = self.states.clone().expect("要先接上转发组件");
+        let seen = history.clone();
+        tokio::spawn(async move {
+            while states.changed().await.is_ok() {
+                for (name, status) in states.borrow_and_update().iter() {
+                    seen.lock().unwrap().push((name.clone(), status.clone()));
+                }
+            }
+        });
+        history
     }
 
     /// 主人改资料。
@@ -164,10 +230,125 @@ impl TestCore {
             .find(|row| row.server_name == server_name)
     }
 
+    /// 等这一行记下最近连上的时刻，返回它。
+    async fn wait_connected_at(&self, server_name: &str) -> u64 {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if let Some(at) = self.row(server_name).and_then(|row| row.last_connected_ms) {
+                    return at;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("等最后连上的时刻超时")
+    }
+
+    /// 等 `server_name` 被标成“对方删了”：记录和名单都撤掉，查找不再认它。
+    async fn wait_removed(&self, server_name: &str) {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                let marked = self.row(server_name).is_some()
+                    && self.peers.lookup(server_name).is_none()
+                    && !self.paired_names.borrow().contains(server_name);
+                if marked {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("等 {server_name} 标成对方已断开超时"));
+    }
+
+    /// 等已配对名单里出现 `server_name`。
+    async fn wait_paired_names(&self, server_name: &str) {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if self.paired_names.borrow().contains(server_name) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("等已配对名单更新超时");
+    }
+
+    /// 等视图里某台服务器的行变成想要的状态。
+    async fn wait_row_status(&self, server_name: &str, want: PeerStatus) {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if self.row(server_name).is_some_and(|row| row.status == want) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("等 {server_name} 变成 {want:?} 超时"));
+    }
+
     /// 这台核心的 endpoint ID（配对码里带的那个）。
     fn id_endpoint(&self) -> iroh::EndpointId {
         self.peers.tunnel().endpoint.id()
     }
+
+    /// 连这台核心用的地址：endpoint ID 加上它的直连地址（测试不开中继）。
+    fn addr(&self) -> EndpointAddr {
+        let mut addr = EndpointAddr::new(self.id_endpoint());
+        for ip in self.peers.tunnel().direct_addrs() {
+            addr = addr.with_ip_addr(ip);
+        }
+        addr
+    }
+
+    /// 这台核心的配对记录文件。
+    fn store_path(&self) -> std::path::PathBuf {
+        self.dir.path().join("core/peers.json")
+    }
+
+    /// 从同一份存储重新起一个 `Peers`（核心重启）：返回新的记录表和它的已配对名单。
+    async fn reopen(&self) -> (Arc<Peers>, watch::Receiver<BTreeSet<String>>) {
+        let devices = Arc::new(Devices::open(self.dir.path().join("devices.json")).unwrap());
+        let endpoint = loopback_endpoint(SecretKey::generate()).await;
+        let tunnel = Tunnel::new(
+            devices,
+            Arc::new(|| Languages::from_header(None)),
+            endpoint,
+            0,
+            RelayTable::builtin_n0(),
+            watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
+        );
+        let peers = Peers::open(
+            self.store_path(),
+            OwnIdentity {
+                server_name: "a.example.internal".to_owned(),
+                owner_user_id: "@owner:a.example.internal".to_owned(),
+            },
+            tunnel,
+            self.confirmations.clone(),
+            Arc::new(|| "Alex".to_owned()),
+            Arc::new(|| Languages::from_header(Some("zh"))),
+        )
+        .unwrap();
+        let names = peers.paired_names();
+        (peers, names)
+    }
+}
+
+/// `a` 出码、`b` 扫码，`a` 的主人同意，两边都配对成立。
+async fn pair(a: &TestCore, b: &TestCore) {
+    let code = a.peers.issue_code();
+    b.peers.scan(code.code.expose()).await.unwrap();
+    let card = a.cards.wait_for(1).await;
+    a.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
+    a.wait_paired("b.example.internal").await;
+    b.wait_paired("a.example.internal").await;
+    a.wait_paired_names("b.example.internal").await;
+    b.wait_paired_names("a.example.internal").await;
 }
 
 fn tamper_secret(uri: &str) -> String {
@@ -230,9 +411,9 @@ async fn scan_then_approval_pairs_both_sides() {
     assert_eq!(a_bound, b.id_endpoint());
     assert_eq!(b_bound, code_id);
 
-    // 名单即时更新，行带上主人的身份。
-    assert!(a.paired_names.borrow().contains("b.example.internal"));
-    assert!(b.paired_names.borrow().contains("a.example.internal"));
+    // 名单跟着更新（结果送出去以后），行带上主人的身份。
+    a.wait_paired_names("b.example.internal").await;
+    b.wait_paired_names("a.example.internal").await;
     let row = a.row("b.example.internal").unwrap();
     assert_eq!(row.owner_display_name, "Jiale");
     assert_eq!(row.owner_user_id, "@owner:b.example.internal");
@@ -246,36 +427,6 @@ async fn scan_then_approval_pairs_both_sides() {
     let code = a.peers.issue_code();
     let error = b.peers.scan(code.code.expose()).await.unwrap_err();
     assert_eq!(error, PeerError::AlreadyPaired);
-}
-
-/// 刚配好、探活还没有结果：状态是“正在确认”（`Checking`），不报离线；探活一出结果就换成真状态。
-#[tokio::test]
-async fn a_paired_server_is_checking_until_the_first_probe_result() {
-    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
-    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
-    let code = a.peers.issue_code();
-    b.peers.scan(code.code.expose()).await.unwrap();
-    let card = a.cards.wait_for(1).await;
-    a.confirmations
-        .answer(&card.id, Answer::Approve, None)
-        .unwrap();
-    b.wait_paired("a.example.internal").await;
-
-    let (states, rx) = watch::channel(wonton_tunnel::federation::PeerStates::new());
-    b.peers.attach_forwarder(rx);
-    assert_eq!(
-        b.row("a.example.internal").unwrap().status,
-        PeerStatus::Checking,
-        "还没有探活结果时不报离线"
-    );
-
-    states.send_replace(BTreeMap::from([(
-        "a.example.internal".to_owned(),
-        wonton_tunnel::federation::PeerStatus::Connected,
-    )]));
-    let row = b.row("a.example.internal").unwrap();
-    assert_eq!(row.status, PeerStatus::Connected);
-    assert!(row.last_connected_ms.is_some(), "连上时要记下时刻");
 }
 
 /// 主人改了资料再出码，对方扫到的是新名字，列表里显示的也是新名字（不是核心启动时的旧名字）。
@@ -413,7 +564,7 @@ async fn a_decision_from_an_unscanned_endpoint_is_ignored() {
     assert!(b.peers.lookup("a.example.internal").is_none(), "没配上");
 }
 
-/// 删配对：两边名单各自撤掉，对方收到通知后把记录删掉。
+/// 删配对：两边名单各自撤掉，对方收到通知后留在列表里，标成“对方已断开连接”。
 #[tokio::test]
 async fn removing_a_pairing_notifies_the_peer() {
     let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
@@ -430,9 +581,10 @@ async fn removing_a_pairing_notifies_the_peer() {
 
     assert!(a.peers.remove("b.example.internal").await.unwrap());
     a.wait_gone("b.example.internal").await;
-    b.wait_gone("a.example.internal").await;
+    // 被删的一方留着记录，只是标成“对方删了”：联邦名单和查找都不再认它。
+    b.wait_removed("a.example.internal").await;
     assert!(!a.paired_names.borrow().contains("b.example.internal"));
-    assert!(!b.paired_names.borrow().contains("a.example.internal"));
+    assert!(b.row("a.example.internal").is_some());
 
     // 再删一次：没有这条记录了。
     assert!(!a.peers.remove("b.example.internal").await.unwrap());
@@ -526,6 +678,7 @@ async fn expired_pending_rows_are_dropped_from_the_view() {
         owner_display_name: "Late".to_owned(),
         paired_at_ms: 0,
         phase: super::Phase::AwaitingPeer,
+        last_connected_ms: None,
         pending_expires_at_ms: Some(1),
     };
     std::fs::write(

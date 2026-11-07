@@ -73,8 +73,9 @@ async fn spawn_relay(
     Ok((url, server))
 }
 
-/// 在同一个地址上重新起一个中继：旧的丢掉以后监听器是异步关的，等它关上再绑。
-async fn respawn_relay(
+/// 放手到 iroh 绑之间的空窗被同进程的别的 `bind(0)` 抢走时重来一次（最多 50 次；固定端口时顺便
+/// 等旧的监听器关掉）。
+async fn spawn_relay_retrying(
     port: u16,
     access: Arc<dyn DynAccessControl>,
 ) -> anyhow::Result<(RelayUrl, RelayServer)> {
@@ -111,7 +112,7 @@ async fn relay_endpoint(key: SecretKey, relays: RelayMap) -> Endpoint {
 
 #[tokio::test]
 async fn a_relay_with_a_shared_token_admits_endpoints_that_carry_it() -> anyhow::Result<()> {
-    let (url, _relay) = spawn_relay(0, Arc::new(SharedToken::new("tok"))).await?;
+    let (url, _relay) = spawn_relay_retrying(0, Arc::new(SharedToken::new("tok"))).await?;
     let table = RelayTable::parse(&format!("https://tok@{}", url.authority())).unwrap();
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
@@ -136,7 +137,7 @@ async fn a_relay_with_a_shared_token_admits_endpoints_that_carry_it() -> anyhow:
 
 #[tokio::test]
 async fn a_relay_with_a_shared_token_rejects_endpoints_without_it() -> anyhow::Result<()> {
-    let (url, _relay) = spawn_relay(0, Arc::new(SharedToken::new("tok"))).await?;
+    let (url, _relay) = spawn_relay_retrying(0, Arc::new(SharedToken::new("tok"))).await?;
     let table = RelayTable::parse(&url.to_string()).unwrap();
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
@@ -188,7 +189,8 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
         }
         found.ok_or_else(|| anyhow::anyhow!("24100..24200 里找不到空端口"))?
     };
-    let (first_url, first_relay) = respawn_relay(port, Arc::new(SharedToken::new("tok"))).await?;
+    let (first_url, first_relay) =
+        spawn_relay_retrying(port, Arc::new(SharedToken::new("tok"))).await?;
     let (_second_map, second_url, second_relay) = run_relay_server().await.unwrap();
     let table = RelayTable::parse(&format!("https://tok@127.0.0.1:{port};{second_url}")).unwrap();
     assert_eq!(table.tier_count(), 2);
@@ -253,7 +255,7 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
 
     // 第一档在同一个地址上恢复：低档的端口连得上，两侧撤掉第二档，请求回到第一档。
     let (_recovered_url, recovered_relay) =
-        respawn_relay(port, Arc::new(SharedToken::new("tok"))).await?;
+        spawn_relay_retrying(port, Arc::new(SharedToken::new("tok"))).await?;
     // iroh 重连中继有退避：等两侧都真正连上第一档（家里继状态里 R1 是 Connected）再撤档、发请求。
     wait_relay_connected(&phone_endpoint, &first_url).await;
     wait_relay_connected(&server_endpoint, &first_url).await;

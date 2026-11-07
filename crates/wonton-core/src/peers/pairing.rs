@@ -1,5 +1,8 @@
 //! 配对的业务流程：出码、扫码、同意卡片、删配对，以及隧道上 [`PeerPairHandler`] 的实现。
 //!
+//! 删配对分两种：主人移除（记录真删，通知对方一次，尽力而为）和对方删了（记录留着、标成对方已断开，
+//! 等主人移除）。重新配对时，标过的记录被新记录替换。
+//!
 //! [`PeerPairHandler`] 的方法由隧道在连接上同步调用，配对的后续（等卡片回答、送结果）是异步的，
 //! 所以真正的方法挂在 `Arc<Peers>` 上，由 [`PeerPairing`] 包装后交给隧道，后续任务克隆这个 Arc。
 
@@ -141,10 +144,16 @@ impl Peers {
         }
         {
             let mut inner = self.prune();
-            if let Some(record) = inner.peers.get(&code.server_name)
-                && record.phase == Phase::Paired
-            {
-                return Err(PeerError::AlreadyPaired);
+            match inner.peers.get(&code.server_name) {
+                Some(record) if record.phase == Phase::Paired => {
+                    return Err(PeerError::AlreadyPaired);
+                }
+                // 对方删了我们、它的记录已经没了：新配对替换这条，旧 endpoint 从入站名单撤掉。
+                Some(record) if record.phase == Phase::RemovedByPeer => {
+                    let old = record.endpoint_id;
+                    self.retract(&code.server_name, old);
+                }
+                _ => {}
             }
             let record = PeerRecord {
                 server_name: code.server_name.clone(),
@@ -155,6 +164,7 @@ impl Peers {
                 owner_display_name: String::new(),
                 paired_at_ms: 0,
                 phase: Phase::AwaitingPeer,
+                last_connected_ms: None,
                 pending_expires_at_ms: Some(now_ms() + millis(self.ttl() + PENDING_MARGIN)),
             };
             inner
@@ -208,7 +218,8 @@ impl Peers {
         }
     }
 
-    /// 主人删一台服务器的配对：记录删掉、名单撤掉，通知对方（尽力而为，不挡着返回）。
+    /// 主人移除一台服务器的配对：记录删掉、名单撤掉，通知对方（尽力而为，不挡着返回）。
+    /// 对方删了我们时，那边已经没有记录，收到通知也只当没这回事，不算错。
     pub async fn remove(
         self: &Arc<Self>,
         server_name: &str,
@@ -222,16 +233,19 @@ impl Peers {
             self.retract(server_name, record.endpoint_id);
             record.clone()
         };
-        tracing::info!(server = %server_name, "删了和对方服务器的配对");
-        let peers = self.clone();
-        let addr = record.endpoint_addr();
-        let own = self.own.server_name.clone();
-        tokio::spawn(async move {
-            // 一次就够：对方离线时，它以后在联邦握手被拒时知道（ADR-0050 的状态表）。
-            if let Err(e) = notify_removed(&peers.tunnel.endpoint, addr, &own).await {
-                tracing::info!(error = %e, "删除配对的通知没有送到对方");
-            }
-        });
+        tracing::info!(server = %server_name, "移除了和对方服务器的配对");
+        // 对方删了我们、这边只是把记录清掉时，它的记录已经没了：通知照样发，送到也只当没这回事。
+        if record.phase != Phase::RemovedByPeer {
+            let peers = self.clone();
+            let addr = record.endpoint_addr();
+            let own = self.own.server_name.clone();
+            tokio::spawn(async move {
+                // 一次就够：对方离线时，它以后在联邦握手被拒时知道（ADR-0050 的状态表）。
+                if let Err(e) = notify_removed(&peers.tunnel.endpoint, addr, &own).await {
+                    tracing::info!(error = %e, "移除配对的通知没有送到对方");
+                }
+            });
+        }
         Ok(true)
     }
 
@@ -251,7 +265,7 @@ impl Peers {
     }
 
     /// 名单维护：联邦名单和已配对服务器名里撤掉。
-    fn retract(&self, server_name: &str, endpoint_id: EndpointId) {
+    pub(super) fn retract(&self, server_name: &str, endpoint_id: EndpointId) {
         self.server_allowlist.revoke(&endpoint_id);
         self.names
             .send_if_modified(|names| names.remove(server_name));
@@ -277,21 +291,26 @@ impl Peers {
         inner
     }
 
-    /// 同意：记成已配对，联邦名单加上，把结果送给对方（对方也记成已配对）。
+    /// 同意：记成已配对，把结果送给对方（对方也记成已配对），结果送出后再让转发组件开始探活。
+    ///
+    /// 顺序要紧：对方一收下结果就会回送一条结果并开始探活，所以要先把对方放进本机的入站名单，再送结果；
+    /// 本机自己的探活由已配对名单触发，等结果送出（或确认送不到）之后再加，否则会赶在对方把本机放进
+    /// 名单之前探活，第一次就被拒。
     async fn approve(
         self: &Arc<Self>,
         server_name: &str,
         scanner: EndpointId,
         identity: PeerIdentity,
     ) {
-        let addr = {
+        let (_, addr) = {
             let mut inner = self.prune();
             let Some(record) = inner.peers.get_mut(server_name) else {
                 return;
             };
             if record.phase == Phase::Paired {
-                return; // 双方同时扫过对方的码时，可能已经配上了。
+                return; // 双方同时扫过对方的码、或对方的结果已经先到。
             }
+            let previous = record.endpoint_id;
             record.phase = Phase::Paired;
             record.endpoint_id = scanner;
             record.relays = identity.relays.clone();
@@ -304,10 +323,11 @@ impl Peers {
                 tracing::error!(error = %e, "配对记录写不进去");
                 return;
             }
+            if previous != scanner {
+                self.server_allowlist.revoke(&previous);
+            }
             self.server_allowlist.allow(scanner);
-            self.names
-                .send_if_modified(|names| names.insert(server_name.to_owned()));
-            identity.endpoint_addr(scanner)
+            (previous, identity.endpoint_addr(scanner))
         };
         tracing::info!(server = %server_name, "同意了和对方服务器的配对");
         let own = self.own_identity();
@@ -316,6 +336,15 @@ impl Peers {
                 server = %server_name,
                 "配对结果没有送到对方：对方的主人重新扫码即可接上"
             );
+        }
+        let still_paired = self
+            .lock()
+            .peers
+            .get(server_name)
+            .is_some_and(|record| record.phase == Phase::Paired);
+        if still_paired {
+            self.names
+                .send_if_modified(|names| names.insert(server_name.to_owned()));
         }
     }
 
@@ -374,16 +403,22 @@ impl Peers {
             );
         }
         let mut inner = self.prune();
-        if let Some(record) = inner.peers.get(&identity.server_name)
-            && record.phase == Phase::Paired
-        {
-            return (
-                error(
-                    PeerRejectReason::AlreadyPaired,
-                    format!("和 {} 已经配对过", identity.server_name),
-                ),
-                None,
-            );
+        match inner.peers.get(&identity.server_name) {
+            Some(record) if record.phase == Phase::Paired => {
+                return (
+                    error(
+                        PeerRejectReason::AlreadyPaired,
+                        format!("和 {} 已经配对过", identity.server_name),
+                    ),
+                    None,
+                );
+            }
+            // 对方删了我们、它的记录已经没了：新配对替换这条，旧 endpoint 从入站名单撤掉。
+            Some(record) if record.phase == Phase::RemovedByPeer => {
+                let old = record.endpoint_id;
+                self.retract(&identity.server_name, old);
+            }
+            _ => {}
         }
         if let Err(reject) = code::verify(&inner.code, secret) {
             return (error(reject.reason, reject.message), None);
@@ -398,6 +433,7 @@ impl Peers {
             owner_display_name: identity.owner_display_name.clone(),
             paired_at_ms: 0,
             phase: Phase::AwaitingOwner,
+            last_connected_ms: None,
             pending_expires_at_ms: Some(expires_at_ms),
         };
         inner
@@ -434,11 +470,14 @@ impl Peers {
     }
 
     /// 只认自己扫过的那个 endpoint ID 发来的配对结果（ADR-0050）。
+    ///
+    /// 已经配上的也收：两边同意时会互相回送一条结果，出码方先配好，扫码方那条回执落到这里时它已经是
+    /// `Paired`，收下才不会让扫码方白重试三次、报“配对结果没有送到”。
     pub(crate) fn on_expecting_decision(&self, from: &EndpointId) -> bool {
-        self.lock()
-            .peers
-            .values()
-            .any(|record| record.phase == Phase::AwaitingPeer && record.endpoint_id == *from)
+        self.lock().peers.values().any(|record| {
+            record.endpoint_id == *from
+                && matches!(record.phase, Phase::AwaitingPeer | Phase::Paired)
+        })
     }
 
     /// 自己扫的对方把主人的决定告诉我们了。返回要执行的后续。
@@ -456,6 +495,11 @@ impl Peers {
                 .find(|record| record.phase == Phase::AwaitingPeer && record.endpoint_id == from)?;
             record.server_name.clone()
         };
+        // 回执在派发处同步送回，回执一到对方就会开始探活：先把对方放进本机的入站名单再返回，
+        // 对方第一次探活就能连上。
+        if approved {
+            self.server_allowlist.allow(from);
+        }
         let peers = self.clone();
         let identity = identity.clone();
         Some(Box::pin(async move {
@@ -468,10 +512,11 @@ impl Peers {
         }))
     }
 
-    /// 对方删了和我们的配对。
+    /// 对方删了和我们的配对：记录留着、标成“对方删了”（持久化），联邦名单撤掉。主人移除这一行才真删。
     pub(crate) fn on_removed(&self, from: EndpointId, server_name: &str) {
         let mut inner = self.lock();
-        let Some(record) = inner.peers.get(server_name) else {
+        let Some(record) = inner.peers.get_mut(server_name) else {
+            // 对方已经是删掉之后的状态（主人移除过，或握手被拒已经标过）：收到通知也不算错。
             return;
         };
         if record.phase != Phase::Paired || record.endpoint_id != from {
@@ -482,12 +527,15 @@ impl Peers {
             );
             return;
         }
-        inner.peers.remove(server_name);
+        if record.phase == Phase::RemovedByPeer {
+            return;
+        }
+        record.phase = Phase::RemovedByPeer;
         if let Err(e) = self.save(&inner.peers) {
             tracing::error!(error = %e, "配对记录写不进去");
         }
         self.retract(server_name, from);
-        tracing::info!(server = %server_name, "对方删了和我们的配对");
+        tracing::info!(server = %server_name, "对方删了和我们的配对，记录留着并标成对方已断开");
     }
 
     /// 发卡片、等回答、按回答落记录并通知对方。
