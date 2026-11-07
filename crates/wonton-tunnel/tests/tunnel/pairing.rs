@@ -44,7 +44,7 @@ impl PairHandler for OneCode {
 fn code_for(server: &iroh::Endpoint, secret: PairingSecret) -> PairingCode {
     PairingCode {
         server_id: server.id(),
-        relay_urls: Vec::new(),
+        relays: Vec::new(),
         direct_addrs: server.bound_sockets(),
         base_domain: "wonton.localhost".to_owned(),
         core_url: Url::from_str("http://wonton.localhost/").unwrap(),

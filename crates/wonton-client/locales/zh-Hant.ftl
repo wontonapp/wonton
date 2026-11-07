@@ -225,6 +225,7 @@ files-stream-tunnel-unavailable = 隧道無法使用（{ $code }）
 home-ticket-invalid-json = 連線資訊不是合法的 JSON：{ $error }
 # 沒有參數。掃到的連線資訊裡沒有能連上伺服器的位址。
 home-ticket-no-addresses = 連線資訊裡沒有伺服器的中繼位址或直接連線位址
+home-ticket-relays-invalid = 中繼表不合法：{ $reason }
 # $domain 是連線資訊裡的原始基礎網域。
 home-ticket-invalid-domain = 基礎網域無效：{ $domain }
 # $error 是位址剖析器的原始錯誤。

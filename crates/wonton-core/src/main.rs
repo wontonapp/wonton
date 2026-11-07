@@ -642,7 +642,7 @@ fn open_files(
 async fn bind_tunnel(cfg: &Config, manager: &Arc<PluginManager>) -> anyhow::Result<Tunnel> {
     let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
     let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
-    let endpoint = tunnel::bind(key, cfg.tunnel_port).await?;
+    let endpoint = tunnel::bind(key, cfg.tunnel_port, &cfg.relays).await?;
     tracing::info!(
         endpoint_id = %endpoint.id(),
         sockets = ?endpoint.bound_sockets(),
@@ -659,6 +659,7 @@ async fn bind_tunnel(cfg: &Config, manager: &Arc<PluginManager>) -> anyhow::Resu
         owner_languages,
         endpoint,
         cfg.tunnel_port,
+        cfg.relays.clone(),
         addresses.clone(),
     );
     tunnel::spawn_announcing(tunnel.endpoint.clone(), tunnel.port, addresses);

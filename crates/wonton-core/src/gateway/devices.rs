@@ -3,7 +3,7 @@
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
-//! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继地址、直连地址和基础域名，客户端据此连接；经隧道的已配对设备也能调（App 连上后跟着服务器的地址走，ADR-0032） |
+//! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继表、直连地址和基础域名，客户端据此连接；经隧道的已配对设备也能调（App 连上后跟着服务器的地址走，ADR-0032） |
 //! | GET | `/_wonton/api/devices` | 已登记的设备 |
 //! | POST | `/_wonton/api/devices` | 请求体 `{"endpoint_id": "…"}`，登记一台设备 |
 //! | DELETE | `/_wonton/api/devices/{endpoint_id}` | 吊销，立即断开它的隧道连接 |
@@ -37,11 +37,11 @@ pub async fn tunnel(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let relay_urls = gateway.tunnel.relay_urls();
+    let relays = gateway.tunnel.relays();
     let direct_addrs = gateway.tunnel.direct_addrs();
     Json(json!({
         "endpoint_id": gateway.tunnel.endpoint.id(),
-        "relay_urls": relay_urls,
+        "relays": relays,
         "direct_addrs": direct_addrs,
         // 客户端的本地代理只转发这个域名和它的子域名（ADR-0004）。
         "base_domain": gateway.public.base_domain,
@@ -219,7 +219,7 @@ fn code_response(
     issued: IssuedCode,
 ) -> Response {
     let code = lan::code_for(gateway, direct_addrs, issued.secret);
-    if code.relay_urls.is_empty() && code.direct_addrs.is_empty() {
+    if code.relays.is_empty() && code.direct_addrs.is_empty() {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "not_ready",

@@ -199,13 +199,13 @@ App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwun
 App 扫一个一次性的配对码，成为主人的设备。线协议的类型和契约测试在 `crates/wonton-tunnel/src/pair.rs`，App 一侧的
 操作和状态是 `Action::PairHome`、`HomeViewModel::pairing`（`crates/wonton-protocol`）。
 
-**配对码**：二维码里是一个地址 `wonton://pair?v=0&id=…&relay=…&addr=…&domain=…&core=…&secret=…`。
+**配对码**：二维码里是一个地址 `wonton://pair?v=0&id=…&relays=…&addr=…&domain=…&core=…&secret=…`。
 
 | 参数 | 说明 |
 | --- | --- |
 | `v` | 格式版本，不兼容地变化时加一。App 认不出的版本提示更新 App，不当成坏码 |
 | `id` | 服务端的 endpoint ID |
-| `relay`、`addr` | 中继地址、直连地址，各自可以有多个，合起来至少一个：n0 的地址发现在国内靠不住（ADR-0004） |
+| `relays`、`addr` | 中继表、直连地址，合起来至少一个：n0 的地址发现在国内靠不住（ADR-0004）。`relays` 是 JSON 数组，每项 `{url, token?, tier}`（和 `/_wonton/api/tunnel` 的同一个序列化），令牌跟着表走（ADR-0048） |
 | `domain` | 基础域名。本地代理只转发它和它的子域名 |
 | `core` | 核心自己的地址，经隧道访问，主机名就是基础域名 |
 | `secret` | 一次性的配对密钥：128 位随机数，32 位十六进制小写 |

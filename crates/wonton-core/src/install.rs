@@ -14,11 +14,12 @@ use std::path::{Path, PathBuf};
 
 use crate::matrix::federation_config;
 use crate::secret;
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow, bail};
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use wonton_tunnel::relays::RelayTable;
 
 /// 正式安装的 compose 文件，随核心的版本走。
 pub const COMPOSE: &str = include_str!("../../../deploy/install/compose.yaml");
@@ -36,6 +37,13 @@ pub struct Report {
 pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
     if let Some(name) = requested {
         validate_server_name(name)?;
+    }
+    // 安装脚本把主人的中继表传进来（ADR-0048），不合法时当场报错，不用等核心容器反复重启。
+    if let Some(text) = std::env::var("WONTON_RELAYS")
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        RelayTable::parse(&text).map_err(|reason| anyhow!("WONTON_RELAYS 不合法：{reason}"))?;
     }
     let secrets = dir.join("secrets");
     fs::create_dir_all(&secrets).with_context(|| format!("建立 {}", secrets.display()))?;

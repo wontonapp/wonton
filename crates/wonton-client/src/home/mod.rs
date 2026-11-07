@@ -17,7 +17,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
-use iroh::{Endpoint, SecretKey, Watcher};
+use iroh::{Endpoint, RelayMode, SecretKey, Watcher};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
@@ -26,6 +26,7 @@ use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, ProxySettings,
 };
+use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable, relay_map, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
@@ -39,7 +40,7 @@ use ticket::Ticket;
 /// iroh 的网络配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
-    /// 用 n0 的公共中继和地址发现（开发和内测期，见 ADR-0004 的调整）。
+    /// 中继表从连接信息来（ADR-0048），地址发现照常；连接信息里一个中继都没有时用内置 n0。
     Internet,
     /// 只按连接信息里的直连地址连，不连中继、不做地址发现：本机和局域网测试用。
     DirectOnly,
@@ -422,10 +423,19 @@ impl HomeLink {
 
     async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
         let endpoint = self
-            .endpoint_builder()
+            .endpoint_builder(ticket.relays(), 1)
             .bind()
             .await
             .map_err(|e| format!("绑定网络失败：{e}"))?;
+        // 只建最优先的一档（ADR-0048）；掉档回退由这个任务盯着家中继状态做。DirectOnly 不连中继，
+        // 连接信息里一个中继都没有时没有表，也不回退。
+        if self.network == Network::Internet && !ticket.relays().is_empty() {
+            spawn_tier_fallback(
+                endpoint.clone(),
+                RelayTable::from_relays(ticket.relays().to_vec()),
+                FALLBACK_AFTER,
+            );
+        }
         let client = TunnelClient::new(endpoint.clone(), ticket.server_addr());
         let credential = ProxyCredential::generate();
         let domain = ticket.base_domain().to_owned();
@@ -463,16 +473,20 @@ impl HomeLink {
         })
     }
 
-    /// 本设备身份的 endpoint。
+    /// 本设备身份的 endpoint。`relays` 是连接信息或配对码带来的中继表，`tiers` 是要放进 endpoint 的
+    /// 档数：App 的隧道 endpoint 只放最优先的一档（ADR-0048），配对一次成、等不了回退，放全部档。
+    /// 连接信息里一个中继都没有时才用内置 n0。
     ///
     /// 关掉 GSO：网卡不支持时（实测 Android 模拟器的 virtio 网卡；内核对没有校验和卸载的网卡和 IPsec 都这样）
     /// 多包的发送报 EIO。noq-udp 随后关掉这个 socket 的 GSO，但 iroh 1.4.1 的发送端把分段上限存在建连那一刻，
-    /// 这条连接之后的多包发送每次都 EIO，错误还被吞掉：单包的心跳和确认照常往返，连接看着活着，请求却卡到连接
-    /// 被换掉（#154）。手机上的流量用不上 GSO 省下的那点 CPU。
-    fn endpoint_builder(&self) -> Builder {
-        let builder = match self.network {
-            Network::Internet => Endpoint::builder(presets::N0),
-            Network::DirectOnly => Endpoint::builder(presets::Minimal),
+    /// 这条连接之后的多包发送每次都 EIO，错误还被吞掉：单包的心跳和确认照常往返，连接看着活着，请求却卡到
+    /// 连接被换掉（#154）。手机上的流量用不上 GSO 省下的那点 CPU。
+    fn endpoint_builder(&self, relays: &[Relay], tiers: usize) -> Builder {
+        let builder = match (self.network, relays.is_empty()) {
+            (Network::Internet, false) => Endpoint::builder(presets::N0)
+                .relay_mode(RelayMode::Custom(relay_map(relays, tiers))),
+            (Network::Internet, true) => Endpoint::builder(presets::N0),
+            (Network::DirectOnly, _) => Endpoint::builder(presets::Minimal),
         };
         let transport = QuicTransportConfig::builder()
             .enable_segmentation_offload(false)

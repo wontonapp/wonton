@@ -12,12 +12,14 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use iroh::{EndpointAddr, EndpointId, RelayUrl};
+use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 pub use client::pair;
 pub use server::{PairHandler, PairProtocol};
+
+use crate::relays::Relay;
 
 /// 配对协议的 ALPN，和隧道的 ALPN 挂在同一个 endpoint 上。协议不兼容地变化时升级末尾的版本号。
 pub const PAIR_ALPN: &[u8] = b"wonton/pair/0";
@@ -35,7 +37,8 @@ pub const SECRET_LEN: usize = 16;
 #[derive(Clone, PartialEq, Eq)]
 pub struct PairingCode {
     pub server_id: EndpointId,
-    pub relay_urls: Vec<RelayUrl>,
+    /// 服务端的中继表：地址、可选准入令牌、档位（ADR-0048）。
+    pub relays: Vec<Relay>,
     /// 手机能直接到达的地址，例如局域网 IP 加核心发布的隧道端口。至少要有一个中继地址或直连地址：
     /// n0 的地址发现在国内靠不住（ADR-0004）。
     pub direct_addrs: Vec<SocketAddr>,
@@ -81,7 +84,7 @@ impl fmt::Debug for PairingCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PairingCode")
             .field("server_id", &self.server_id.fmt_short().to_string())
-            .field("relay_urls", &self.relay_urls)
+            .field("relays", &self.relays)
             .field("direct_addrs", &self.direct_addrs)
             .field("base_domain", &self.base_domain)
             .field("core_url", &self.core_url.as_str())
@@ -128,9 +131,9 @@ impl PairingCode {
             let mut query = url.query_pairs_mut();
             query.append_pair("v", CODE_VERSION);
             query.append_pair("id", &self.server_id.to_string());
-            for relay in &self.relay_urls {
-                query.append_pair("relay", relay.as_str());
-            }
+            // 整张中继表（连令牌和档位）放在一个参数里，和 `/_wonton/api/tunnel` 的 `relays` 同一个写法。
+            let relays = serde_json::to_string(&self.relays).expect("中继表总能写成 JSON");
+            query.append_pair("relays", &relays);
             for addr in &self.direct_addrs {
                 query.append_pair("addr", &addr.to_string());
             }
@@ -144,8 +147,8 @@ impl PairingCode {
     /// 连服务端用的地址。
     pub fn server_addr(&self) -> EndpointAddr {
         let mut addr = EndpointAddr::new(self.server_id);
-        for relay in &self.relay_urls {
-            addr = addr.with_relay_url(relay.clone());
+        for relay in &self.relays {
+            addr = addr.with_relay_url(relay.url.clone());
         }
         for ip in &self.direct_addrs {
             addr = addr.with_ip_addr(*ip);
@@ -158,7 +161,7 @@ impl PairingCode {
 struct Fields {
     version: Option<String>,
     id: Option<String>,
-    relays: Vec<String>,
+    relays: Option<String>,
     addrs: Vec<String>,
     domain: Option<String>,
     core: Option<String>,
@@ -171,7 +174,7 @@ impl Fields {
         match key {
             "v" => self.version = Some(value),
             "id" => self.id = Some(value),
-            "relay" => self.relays.push(value),
+            "relays" => self.relays = Some(value),
             "addr" => self.addrs.push(value),
             "domain" => self.domain = Some(value),
             "core" => self.core = Some(value),
@@ -188,13 +191,16 @@ impl Fields {
             .and_then(|id| {
                 EndpointId::from_str(id).map_err(|e| malformed("服务端 ID", &e.to_string()))
             })?;
-        let relay_urls = self
-            .relays
-            .iter()
-            .map(|relay| {
-                RelayUrl::from_str(relay).map_err(|e| malformed("中继地址", &e.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let relays = match self.relays.as_deref() {
+            Some(text) => serde_json::from_str::<Vec<Relay>>(text)
+                .map_err(|e| malformed("中继表", &e.to_string()))?,
+            None => Vec::new(),
+        };
+        for relay in &relays {
+            relay
+                .validate()
+                .map_err(|reason| malformed("中继表", &reason))?;
+        }
         let direct_addrs = self
             .addrs
             .iter()
@@ -202,7 +208,7 @@ impl Fields {
                 SocketAddr::from_str(addr).map_err(|e| malformed("直连地址", &e.to_string()))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if relay_urls.is_empty() && direct_addrs.is_empty() {
+        if relays.is_empty() && direct_addrs.is_empty() {
             return Err(malformed("服务端地址", "没有中继地址或直连地址"));
         }
         let base_domain = base_domain(self.domain.as_deref())?;
@@ -214,7 +220,7 @@ impl Fields {
             .ok_or_else(|| malformed("配对密钥", "应为 32 位十六进制小写"))?;
         Ok(PairingCode {
             server_id,
-            relay_urls,
+            relays,
             direct_addrs,
             base_domain,
             core_url,
@@ -315,7 +321,11 @@ mod tests {
     fn code() -> PairingCode {
         PairingCode {
             server_id: SecretKey::generate().public(),
-            relay_urls: vec![RelayUrl::from_str("https://relay.example.com./").unwrap()],
+            relays: vec![crate::relays::Relay {
+                url: "https://relay.example.com./".parse().unwrap(),
+                token: Some(crate::relays::RelayToken::new("tok")),
+                tier: 0,
+            }],
             direct_addrs: vec![
                 "192.168.1.20:18482".parse().unwrap(),
                 "[fd00::20]:18482".parse().unwrap(),
@@ -366,7 +376,7 @@ mod tests {
             url.to_string()
         };
         for broken in [
-            without("relay,addr"),
+            without("relays,addr"),
             without("secret"),
             without("core"),
             uri.replace("secret=abab", "secret=ABAB"),

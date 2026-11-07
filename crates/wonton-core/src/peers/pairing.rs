@@ -118,7 +118,7 @@ impl Peers {
         inner.code = Some(issued);
         let uri = wonton_tunnel::peer_pair::PeerPairingCode {
             server_id: self.tunnel.endpoint.id(),
-            relay_urls: self.tunnel.relay_urls(),
+            relay_urls: self.tunnel.relays().iter().map(|r| r.url.clone()).collect(),
             direct_addrs: self.tunnel.direct_addrs(),
             server_name: self.own.server_name.clone(),
             secret,

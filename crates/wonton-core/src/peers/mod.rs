@@ -101,9 +101,9 @@ impl OwnIdentity {
             owner_user_id: self.owner_user_id.clone(),
             owner_display_name,
             relays: tunnel
-                .relay_urls()
+                .relays()
                 .iter()
-                .map(|url| url.to_string())
+                .map(|relay| relay.url.to_string())
                 .collect(),
             addrs: tunnel.direct_addrs(),
         }
@@ -269,7 +269,7 @@ impl Peers {
         inner.code = Some(issued);
         let uri = wonton_tunnel::peer_pair::PeerPairingCode {
             server_id: self.tunnel.endpoint.id(),
-            relay_urls: self.tunnel.relay_urls(),
+            relay_urls: self.tunnel.relays().iter().map(|r| r.url.clone()).collect(),
             direct_addrs: self.tunnel.direct_addrs(),
             server_name: self.own.server_name.clone(),
             secret,
@@ -354,7 +354,7 @@ impl Peers {
             code: SecretString::new(
                 PeerPairingCode {
                     server_id: self.tunnel.endpoint.id(),
-                    relay_urls: self.tunnel.relay_urls(),
+                    relay_urls: self.tunnel.relays().iter().map(|r| r.url.clone()).collect(),
                     direct_addrs: self.tunnel.direct_addrs(),
                     server_name: self.own.server_name.clone(),
                     secret: issued.secret.clone(),

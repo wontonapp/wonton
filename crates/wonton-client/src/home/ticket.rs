@@ -6,7 +6,7 @@
 //! {
 //!   "server": {
 //!     "endpoint_id": "<64 位十六进制>",
-//!     "relay_urls": ["https://…"],
+//!     "relays": [{"url": "https://…", "token": "…", "tier": 0}],
 //!     "direct_addrs": ["192.168.0.2:18482"]
 //!   },
 //!   "base_domain": "wonton.localhost",
@@ -19,15 +19,17 @@
 //! 跟 `web_url` 一样。
 //!
 //! `server` 和核心的 `GET /_wonton/api/tunnel` 返回的字段相同，`base_domain` 也来自那里：本地代理只转发
-//! 这个域名和它的子域名，插件网页入口也必须在它下面。直连地址要写手机能到达的地址，例如局域网
-//! IP 加核心发布的隧道端口；n0 的地址发现在国内靠不住（ADR-0004），所以不靠它找服务端。
+//! 这个域名和它的子域名，插件网页入口也必须在它下面。`relays` 是核心的中继表（ADR-0048），App 用它建
+//! 自己一侧的 endpoint。直连地址要写手机能到达的地址，例如局域网 IP 加核心发布的隧道端口；n0 的地址发现
+//! 在国内靠不住（ADR-0004），所以不靠它找服务端。
 
 use std::net::SocketAddr;
 
-use iroh::{EndpointAddr, EndpointId, RelayUrl};
+use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wonton_l10n::l10n;
+use wonton_tunnel::relays::Relay;
 
 use crate::l10n::{CATALOG, language};
 
@@ -48,7 +50,7 @@ pub(crate) struct Ticket {
 struct Server {
     endpoint_id: EndpointId,
     #[serde(default)]
-    relay_urls: Vec<RelayUrl>,
+    relays: Vec<Relay>,
     #[serde(default)]
     direct_addrs: Vec<SocketAddr>,
 }
@@ -64,8 +66,18 @@ impl Ticket {
                 error = e.to_string()
             )
         })?;
-        if ticket.server.relay_urls.is_empty() && ticket.server.direct_addrs.is_empty() {
+        if ticket.server.relays.is_empty() && ticket.server.direct_addrs.is_empty() {
             return Err(l10n!(CATALOG, language(), "home-ticket-no-addresses"));
+        }
+        for relay in &ticket.server.relays {
+            relay.validate().map_err(|reason| {
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "home-ticket-relays-invalid",
+                    reason = reason
+                )
+            })?;
         }
         let domain = ticket
             .base_domain
@@ -160,8 +172,8 @@ impl Ticket {
 
     pub(crate) fn server_addr(&self) -> EndpointAddr {
         let mut addr = EndpointAddr::new(self.server.endpoint_id);
-        for relay in &self.server.relay_urls {
-            addr = addr.with_relay_url(relay.clone());
+        for relay in &self.server.relays {
+            addr = addr.with_relay_url(relay.url.clone());
         }
         for ip in &self.server.direct_addrs {
             addr = addr.with_ip_addr(*ip);
@@ -169,19 +181,25 @@ impl Ticket {
         addr
     }
 
-    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继地址或直连地址报告为空时留着旧的：中继可能只是暂时没连上，
-    /// 地址也可能只是这一次没测出来。
+    /// 连接信息里的中继表，App 建 endpoint 用。
+    pub(crate) fn relays(&self) -> &[Relay] {
+        &self.server.relays
+    }
+
+    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧的：中继可能
+    /// 只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，跑着的 endpoint 不会跟着换
+    /// （iroh#4642），要等下一次重建 endpoint。
     ///
     /// 直连地址是替换，不和旧的合并：核心报的就是手机到得了的地址（ADR-0032），旧地址只会越积越多，
     /// 容器网卡地址永远清不掉。
     pub(crate) fn with_reported(
         &self,
-        relay_urls: Vec<RelayUrl>,
+        relays: Vec<Relay>,
         direct_addrs: &[SocketAddr],
     ) -> Option<Self> {
         let mut updated = self.clone();
-        if !relay_urls.is_empty() {
-            updated.server.relay_urls = relay_urls;
+        if !relays.is_empty() {
+            updated.server.relays = relays;
         }
         if !direct_addrs.is_empty() {
             updated.server.direct_addrs = direct_addrs
@@ -190,7 +208,7 @@ impl Ticket {
                 .take(MAX_DIRECT_ADDRS)
                 .collect();
         }
-        let changed = updated.server.relay_urls != self.server.relay_urls
+        let changed = updated.server.relays != self.server.relays
             || updated.server.direct_addrs != self.server.direct_addrs;
         changed.then_some(updated)
     }
@@ -213,6 +231,7 @@ impl Ticket {
 #[cfg(test)]
 mod tests {
     use iroh::SecretKey;
+    use wonton_tunnel::relays::RelayToken;
 
     use super::*;
 
@@ -244,6 +263,44 @@ mod tests {
         let many: Vec<SocketAddr> = (1..=9).map(addr).collect();
         let full = moved.with_reported(Vec::new(), &many).unwrap();
         assert_eq!(full.direct_addrs(), &many[..8]);
+    }
+
+    #[test]
+    fn reported_relays_replace_the_saved_table_and_an_empty_report_keeps_the_old_one() {
+        let id = SecretKey::generate().public();
+        let text = format!(
+            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://a.example/", "tier": 0}}], "direct_addrs": ["192.168.1.2:18482"]}},
+                "base_domain": "wonton.localhost"}}"#
+        );
+        let ticket = Ticket::parse(&text).unwrap();
+        assert_eq!(ticket.relays().len(), 1);
+        assert_eq!(
+            ticket
+                .server_addr()
+                .relay_urls()
+                .cloned()
+                .collect::<Vec<_>>(),
+            ["https://a.example/".parse().unwrap()]
+        );
+        assert!(ticket.with_reported(Vec::new(), &[]).is_none());
+        let updated = ticket
+            .with_reported(
+                vec![Relay {
+                    url: "https://b.example/".parse().unwrap(),
+                    token: Some(RelayToken::new("tok")),
+                    tier: 0,
+                }],
+                &[],
+            )
+            .unwrap();
+        assert_eq!(updated.relays()[0].url.as_str(), "https://b.example/");
+        assert_eq!(updated.relays()[0].token.as_ref().unwrap().expose(), "tok");
+        // 地址里藏令牌的表项不被接受：令牌单独放。
+        let smuggled = format!(
+            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://tok@a.example/", "tier": 0}}]}},
+                "base_domain": "wonton.localhost"}}"#
+        );
+        assert!(Ticket::parse(&smuggled).is_err());
     }
 
     #[test]

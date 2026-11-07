@@ -225,6 +225,7 @@ files-stream-tunnel-unavailable = トンネルを利用できません（{ $code
 home-ticket-invalid-json = 接続情報が有効なJSONではありません：{ $error }
 # 引数なし。スキャンした接続情報にサーバーへ到達できるアドレスがありません。
 home-ticket-no-addresses = 接続情報にサーバーのリレーアドレスも直接接続アドレスもありません
+home-ticket-relays-invalid = リレーテーブルが有効ではありません：{ $reason }
 # $domain は接続情報に書かれた元のベースドメインです。
 home-ticket-invalid-domain = ベースドメインが無効です：{ $domain }
 # $error はURLパーサーの元のエラーです。

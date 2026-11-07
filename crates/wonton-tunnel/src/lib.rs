@@ -27,6 +27,7 @@ mod pacing;
 pub mod pair;
 pub mod peer_pair;
 mod proxy;
+pub mod relays;
 mod server;
 mod wire;
 

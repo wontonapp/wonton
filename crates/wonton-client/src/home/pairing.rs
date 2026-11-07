@@ -59,16 +59,19 @@ impl HomeLink {
         code: &PairingCode,
         device_name: &str,
     ) -> Result<PairResponse, TunnelError> {
-        let endpoint = self.endpoint_builder().bind().await.map_err(|e| {
-            TunnelError::TransportUnavailable {
+        // 配对一次成，等不了分档回退：endpoint 放全部档，哪一档能连就从哪一档走（ADR-0048）。
+        let endpoint = self
+            .endpoint_builder(&code.relays, usize::MAX)
+            .bind()
+            .await
+            .map_err(|e| TunnelError::TransportUnavailable {
                 reason: l10n!(
                     CATALOG,
                     language(),
                     "home-pairing-bind-failed",
                     error = e.to_string()
                 ),
-            }
-        })?;
+            })?;
         let outcome = pair::pair(&endpoint, code, device_name).await;
         endpoint.close().await;
         outcome
@@ -84,7 +87,7 @@ fn ticket(code: &PairingCode) -> String {
     json!({
         "server": {
             "endpoint_id": code.server_id,
-            "relay_urls": code.relay_urls,
+            "relays": code.relays,
             "direct_addrs": code.direct_addrs,
         },
         "base_domain": code.base_domain,

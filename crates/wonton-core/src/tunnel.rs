@@ -18,11 +18,12 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use iroh::endpoint::presets;
-use iroh::{Endpoint, RelayUrl, SecretKey, Watcher};
+use iroh::{Endpoint, RelayMode, RelayUrl, SecretKey, Watcher};
 use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
 use tower::ServiceExt;
 use wonton_tunnel::pair::PairProtocol;
+use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable};
 use wonton_tunnel::{PeerStream, TunnelListener, TunnelServer};
 
 use crate::device::Devices;
@@ -38,6 +39,8 @@ pub struct Tunnel {
     pub endpoint: Endpoint,
     /// 手机连隧道用的 UDP 端口：核心在容器里时是宿主上发布的端口，配对码里的直连地址用它。
     pub port: u16,
+    /// 中继表（ADR-0048），报给 App 连接信息用的就是它。
+    relays: RelayTable,
     lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
 }
 
@@ -48,6 +51,7 @@ impl Tunnel {
         owner_languages: OwnerLanguages,
         endpoint: Endpoint,
         port: u16,
+        relays: RelayTable,
         lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
     ) -> Self {
         let port = if port == 0 {
@@ -63,6 +67,7 @@ impl Tunnel {
             devices,
             endpoint,
             port,
+            relays,
             lan_addresses,
         }
     }
@@ -80,31 +85,27 @@ impl Tunnel {
         )
     }
 
-    /// 报给 App 的中继地址，`/_wonton/api/tunnel` 和配对码共用：当前家中继在前，再跟 endpoint 配置的其他中继。
-    /// 家中继会换（iroh 只在旧中继这一轮测到延迟时才留在原地），App 拿着全部中继，iroh 没选定路径时把包发给
-    /// 所有已知路径，服务器换到哪个中继第一个包都能到（ADR-0032「连接方式」）。
-    pub fn relay_urls(&self) -> Vec<RelayUrl> {
+    /// 报给 App 的中继表，`/_wonton/api/tunnel` 和配对码共用：整张表连同令牌和档位（ADR-0048）。
+    /// 家中继排在它那一档的第一个（#530 的规则）：iroh 没选定路径时把包发给所有已知路径，App 拿着
+    /// 全部中继，服务器换到哪个中继第一个包都能到（ADR-0032「连接方式」）。
+    pub fn relays(&self) -> Vec<Relay> {
         let home = self.endpoint.addr().relay_urls().next().cloned();
-        let statuses = self.endpoint.home_relay_status().get();
-        ordered_relays(home, statuses.iter().map(|relay| relay.url().clone()))
+        order_relays(home, &self.relays)
     }
 }
 
-/// 家中继排第一，其余按给定顺序跟上，去重。
-fn ordered_relays(
-    home: Option<RelayUrl>,
-    relays: impl IntoIterator<Item = RelayUrl>,
-) -> Vec<RelayUrl> {
-    let mut urls = Vec::new();
-    if let Some(home) = home {
-        urls.push(home);
+/// 家中继排在它那一档的第一个，其余按表的顺序跟上。
+fn order_relays(home: Option<RelayUrl>, table: &RelayTable) -> Vec<Relay> {
+    let mut relays = Vec::with_capacity(table.relays().len());
+    for tier in 0..table.tier_count() as u8 {
+        let (home_relay, rest): (Vec<_>, Vec<_>) = table
+            .tier(tier)
+            .iter()
+            .partition(|relay| home.as_ref() == Some(&relay.url));
+        relays.extend(home_relay.into_iter().cloned());
+        relays.extend(rest.into_iter().cloned());
     }
-    for url in relays {
-        if !urls.contains(&url) {
-            urls.push(url);
-        }
-    }
-    urls
+    relays
 }
 
 fn reachable_direct_addrs(
@@ -140,16 +141,25 @@ pub fn load_or_create_key(path: &Path) -> anyhow::Result<SecretKey> {
     SecretKey::from_str(&hex).with_context(|| format!("隧道私钥 {} 已损坏", path.display()))
 }
 
-/// 绑定隧道 endpoint。开发和内测期用 n0 的公共中继和地址发现（ADR-0004 的调整）；`port` 为 0 时由系统
-/// 分配，固定端口便于防火墙放行和容器发布端口。
-pub async fn bind(key: SecretKey, port: u16) -> anyhow::Result<Endpoint> {
-    let mut builder = Endpoint::builder(presets::N0).secret_key(key);
+/// 绑定隧道 endpoint。中继表从配置来（ADR-0048），一开始只放最优先的一档，掉档的回退交给
+/// [`wonton_tunnel::relays::spawn_tier_fallback`]；`port` 为 0 时由系统分配，固定端口便于防火墙放行
+/// 和容器发布端口。
+pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Result<Endpoint> {
+    let mut builder = Endpoint::builder(presets::N0)
+        .secret_key(key)
+        .relay_mode(RelayMode::Custom(wonton_tunnel::relays::relay_map(
+            table.relays(),
+            1,
+        )));
     if port != 0 {
         builder = builder
             .bind_addr((Ipv4Addr::UNSPECIFIED, port))?
             .bind_addr((Ipv6Addr::UNSPECIFIED, port))?;
     }
-    builder.bind().await.context("绑定隧道 endpoint")
+    let endpoint = builder.bind().await.context("绑定隧道 endpoint")?;
+    let _fallback =
+        wonton_tunnel::relays::spawn_tier_fallback(endpoint.clone(), table.clone(), FALLBACK_AFTER);
+    Ok(endpoint)
 }
 
 /// 把手机能到达的地址宣告给 iroh，跟着 `addresses` 变：核心在 Docker 里，iroh 自己只看得到容器内的地址，打洞信令里没有
@@ -319,20 +329,46 @@ mod tests {
     }
 
     #[test]
-    fn the_home_relay_is_first_and_others_follow_in_map_order() {
+    fn the_home_relay_leads_its_tier_and_tiers_keep_their_order() {
         let relay = |port: u16| {
             format!("https://127.0.0.1:{port}/")
                 .parse::<RelayUrl>()
                 .unwrap()
         };
         let (eu, ap, us) = (relay(443), relay(8443), relay(3443));
-        // 家中继在中继表里排最后也要排到最前；重复的不再出现；没有家中继时保持表的顺序。
-        assert_eq!(
-            ordered_relays(Some(us.clone()), [eu.clone(), ap.clone(), us.clone()]),
-            [us.clone(), eu, ap.clone()],
+        let relays = |relay: &Relay| relay.url.clone();
+        let table = |entries: &[RelayUrl]| {
+            RelayTable::from_relays(
+                entries
+                    .iter()
+                    .enumerate()
+                    .map(|(tier, url)| Relay {
+                        url: url.clone(),
+                        token: None,
+                        tier: tier as u8,
+                    })
+                    .collect(),
+            )
+        };
+        // 家中继在中继表里排最后也要排到它那一档的最前；没有家中继时保持表的顺序。
+        let home_first = order_relays(
+            Some(us.clone()),
+            &table(&[eu.clone(), ap.clone(), us.clone()]),
         );
-        assert_eq!(ordered_relays(None, [us.clone(), ap.clone()]), [us, ap]);
-        assert!(ordered_relays(None, []).is_empty());
+        assert_eq!(
+            home_first.iter().map(relays).collect::<Vec<_>>(),
+            [eu.clone(), ap.clone(), us.clone()]
+        );
+        let no_home = order_relays(None, &table(&[us.clone(), ap.clone()]));
+        assert_eq!(
+            no_home.iter().map(relays).collect::<Vec<_>>(),
+            [us, ap.clone()]
+        );
+        assert!(order_relays(None, &table(&[])).is_empty());
+        // 家中继不在表里时不添项。
+        let unknown = order_relays(Some(relay(9000)), &table(std::slice::from_ref(&ap)));
+        assert_eq!(unknown.len(), 1);
+        assert_eq!(unknown[0].url, ap);
     }
 
     #[tokio::test]

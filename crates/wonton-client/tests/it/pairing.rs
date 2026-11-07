@@ -49,7 +49,7 @@ impl Codes {
         codes.insert(secret.expose().to_owned(), outcome);
         PairingCode {
             server_id: self.server_id,
-            relay_urls: Vec::new(),
+            relays: Vec::new(),
             direct_addrs: self.direct_addrs.clone(),
             base_domain: "wonton.localhost".to_owned(),
             core_url: Url::from_str("http://wonton.localhost:18480/").unwrap(),

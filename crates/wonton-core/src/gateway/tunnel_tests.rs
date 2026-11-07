@@ -20,6 +20,7 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
 use serde_json::Value;
 use tower::ServiceExt;
+use wonton_tunnel::relays::RelayTable;
 use wonton_tunnel::{
     LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
 };
@@ -63,6 +64,7 @@ pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
         Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
         loopback_endpoint(SecretKey::generate()).await,
         0,
+        RelayTable::builtin_n0(),
         tokio::sync::watch::channel(std::collections::BTreeSet::from(["192.168.1.2"
             .parse()
             .unwrap()]))

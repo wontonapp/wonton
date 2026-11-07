@@ -39,6 +39,8 @@ services:
       WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:-}
       WONTON_PUBLIC_PORT: ${WONTON_PORT:?}
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
+      # 中继表（ADR-0048）：不设时用 n0 的公共中继。
+      WONTON_RELAYS: ${WONTON_RELAYS:-}
       WONTON_CORE_CONTAINER: ${WONTON_CORE_CONTAINER:-wonton-core}
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。

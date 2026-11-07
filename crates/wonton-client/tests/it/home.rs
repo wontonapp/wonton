@@ -246,7 +246,7 @@ async fn reported_lan_and_public_addresses_replace_seven_old_addresses() {
     *home.tunnel_info.lock().unwrap() = Some(
         serde_json::json!({
             "endpoint_id": home.key.public(),
-            "relay_urls": [],
+            "relays": [],
             "direct_addrs": [lan, public],
         })
         .to_string(),
@@ -523,7 +523,7 @@ impl Home {
     fn report_address(&self, addr: SocketAddr) {
         let id = self.key.public();
         *self.tunnel_info.lock().unwrap() = Some(format!(
-            r#"{{"endpoint_id": "{id}", "relay_urls": [], "direct_addrs": ["{addr}"]}}"#
+            r#"{{"endpoint_id": "{id}", "relays": [], "direct_addrs": ["{addr}"]}}"#
         ));
     }
 

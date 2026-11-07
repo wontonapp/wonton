@@ -10,6 +10,17 @@ use crate::plugin::egress::address::ProxyAddress;
 use crate::plugin::names::Instance;
 use crate::plugin::network_pool::{self, NetworkPool};
 use crate::plugin::storefront::StoreConfig;
+use wonton_tunnel::relays::RelayTable;
+
+mod hosts;
+
+pub use hosts::{
+    FILE_HOOKS_HOST, HostKind, PLUGIN_HEALTH_HOST, PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST,
+    PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PUSH_GATEWAY_HOST, PublicUrls,
+};
+
+/// 插件安装等待容器就绪的默认期限。
+pub const DEFAULT_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -17,138 +28,6 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("环境变量 {name} 不合法：{message}")]
     Invalid { name: &'static str, message: String },
-}
-
-/// 浏览器看到的地址：核心在 `<base>`，身份提供方在 `auth.<base>`，Matrix 客户端接口在 `matrix.<base>`，
-/// 插件在 `<slug>.<base>`。插件的 slug 至少两段（含 `-`），不会和 `auth`、`matrix` 重名。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublicUrls {
-    pub scheme: String,
-    pub base_domain: String,
-    pub port: u16,
-}
-
-/// 插件经核心在插件网络里的这个别名访问 Matrix 客户端接口（`WONTON_MATRIX_HOMESERVER`）。`.internal` 是留给
-/// 私有网络的顶级域名，基础域名不能落在它下面。
-pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
-
-/// 插件经核心在插件网络里的这个别名访问模型网关（`WONTON_MODEL_BASE_URL` 等）。
-pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
-
-/// Tuwunel 经这个地址调核心的推送代理（ADR-0003 的“接口：推送”）。不用解析它：Tuwunel 经出站代理发请求，代理
-/// 只代理这一个域名，代理地址就是核心网关。
-pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
-/// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。
-pub const PLUGIN_MCP_HOST: &str = "mcp.wonton.internal";
-/// 申请了 `plugins.health` 的插件经核心在插件网络里的这个别名读所有插件的健康状态（规范“插件健康探测”）。
-pub const PLUGIN_HEALTH_HOST: &str = "health.wonton.internal";
-/// 插件经核心在插件网络里的这个别名发通知（`WONTON_NOTIFY_URL`，ADR-0047）。
-pub const PLUGIN_NOTIFY_HOST: &str = "notify.wonton.internal";
-/// tusd 经核心在私有网络里的这个别名调文件钩子（ADR-0020）。
-pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
-
-/// 插件安装等待容器就绪的默认期限。
-pub const DEFAULT_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
-
-/// 网关按 Host 头区分的目标。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HostKind {
-    Core,
-    Auth,
-    Matrix,
-    Plugin(String),
-    /// 插件网络里的 Bot 访问 Matrix（[`PLUGIN_MATRIX_HOST`]）。
-    PluginMatrix,
-    /// 插件网络里的插件访问模型网关（[`PLUGIN_MODELS_HOST`]）。
-    PluginModels,
-    /// Tuwunel 调推送代理（[`PUSH_GATEWAY_HOST`]）。
-    Push,
-    /// 局域网浏览器用服务器的 IP 地址访问：状态页。
-    Lan(std::net::IpAddr),
-    /// 插件网络里的 Agent 访问 MCP 总线（[`PLUGIN_MCP_HOST`]）。
-    PluginMcp,
-    /// 插件网络里的插件读健康状态（[`PLUGIN_HEALTH_HOST`]）。
-    PluginHealth,
-    /// 插件网络里的插件发通知（[`PLUGIN_NOTIFY_HOST`]，ADR-0047）。
-    PluginNotify,
-    /// tusd 调文件钩子（[`FILE_HOOKS_HOST`]）。
-    FileHooks,
-    Unknown,
-}
-
-impl PublicUrls {
-    pub fn core_host(&self) -> &str {
-        &self.base_domain
-    }
-
-    pub fn auth_host(&self) -> String {
-        format!("auth.{}", self.base_domain)
-    }
-
-    pub fn matrix_host(&self) -> String {
-        format!("matrix.{}", self.base_domain)
-    }
-
-    pub fn plugin_host(&self, slug: &str) -> String {
-        format!("{slug}.{}", self.base_domain)
-    }
-
-    /// `scheme://host[:port]`，默认端口省略。
-    pub fn origin(&self, host: &str) -> String {
-        let default_port = matches!(
-            (self.scheme.as_str(), self.port),
-            ("http", 80) | ("https", 443)
-        );
-        if default_port {
-            format!("{}://{host}", self.scheme)
-        } else {
-            format!("{}://{host}:{}", self.scheme, self.port)
-        }
-    }
-
-    pub fn classify(&self, host_header: &str) -> HostKind {
-        let host = host_header
-            .rsplit_once(':')
-            .filter(|(_, port)| port.bytes().all(|b| b.is_ascii_digit()))
-            .map_or(host_header, |(host, _)| host)
-            .trim_end_matches('.')
-            .to_ascii_lowercase();
-        if host == self.base_domain {
-            return HostKind::Core;
-        }
-        if let Ok(ip) = host.trim_start_matches('[').trim_end_matches(']').parse() {
-            return HostKind::Lan(ip);
-        }
-        if host == PLUGIN_MATRIX_HOST {
-            return HostKind::PluginMatrix;
-        }
-        if host == PLUGIN_MODELS_HOST {
-            return HostKind::PluginModels;
-        }
-        if host == PUSH_GATEWAY_HOST {
-            return HostKind::Push;
-        }
-        if host == PLUGIN_MCP_HOST {
-            return HostKind::PluginMcp;
-        }
-        if host == PLUGIN_HEALTH_HOST {
-            return HostKind::PluginHealth;
-        }
-        if host == PLUGIN_NOTIFY_HOST {
-            return HostKind::PluginNotify;
-        }
-        if host == FILE_HOOKS_HOST {
-            return HostKind::FileHooks;
-        }
-        match host.strip_suffix(&format!(".{}", self.base_domain)) {
-            Some("auth") => HostKind::Auth,
-            Some("matrix") => HostKind::Matrix,
-            Some(slug) if !slug.is_empty() && !slug.contains('.') => {
-                HostKind::Plugin(slug.to_owned())
-            }
-            _ => HostKind::Unknown,
-        }
-    }
 }
 
 /// 身份提供方（Ory Hydra）的内部地址：只有核心能访问，插件和浏览器都经网关。两个地址都已规范化成
@@ -240,6 +119,8 @@ pub struct Config {
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
+    /// 中继表（`WONTON_RELAYS`，ADR-0048）。不设时用 n0 的公共中继。
+    pub relays: RelayTable,
     /// 联邦转发组件监听的地址（`WONTON_FEDERATION_LISTEN`，ADR-0050）。
     pub federation_listen: String,
     /// Tuwunel 的联邦端口（`WONTON_MATRIX_FEDERATION_ADDR`，ADR-0050），主机名用时解析。
@@ -356,6 +237,7 @@ impl Config {
                 DEFAULT_INSTALL_TIMEOUT.as_secs(),
             )?,
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
+            relays: parse_relays(&get)?,
             federation_listen: get("WONTON_FEDERATION_LISTEN")
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),
             matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")
@@ -388,6 +270,14 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
     ConfigError::Invalid {
         name,
         message: message.to_owned(),
+    }
+}
+
+/// `WONTON_RELAYS`：不设时用 n0 的公共中继，写不合法当场报错（ADR-0048）。
+fn parse_relays(get: &impl Fn(&str) -> Option<String>) -> Result<RelayTable, ConfigError> {
+    match get(wonton_tunnel::relays::RELAYS_VAR) {
+        Some(text) => RelayTable::parse(&text).map_err(|reason| invalid("WONTON_RELAYS", &reason)),
+        None => Ok(RelayTable::builtin_n0()),
     }
 }
 

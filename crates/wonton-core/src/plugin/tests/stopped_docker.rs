@@ -40,6 +40,7 @@ async fn gateway(
         Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
         endpoint,
         0,
+        wonton_tunnel::relays::RelayTable::builtin_n0(),
         manager.lan_addresses(),
     );
     let app = router(Arc::new(Gateway::new(

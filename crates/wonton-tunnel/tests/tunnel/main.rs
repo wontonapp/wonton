@@ -10,6 +10,7 @@ mod pacing;
 mod pairing;
 mod peer_pair;
 mod relay;
+mod relay_table;
 mod resume;
 mod stale_addrs;
 mod stall;

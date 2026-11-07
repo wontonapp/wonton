@@ -16,6 +16,9 @@
 #   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
 #   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改；
 #                       ADR-0019）。设成空就取消
+#   WONTON_RELAYS      中继表（ADR-0048）：档位用 ; 分开、前面的档优先，同档用 , 分开；令牌写在地址的
+#                       userinfo（https://TOKEN@host），n0 代表 iroh 内置的 n0 公共中继。默认不设：用 n0。
+#                       设成空就取消，回到 n0
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
 #   WONTON_PLUGIN_NETWORK_POOL  插件网络使用的私有 IPv4 地址段（默认 10.213.0.0/16），核心从中分配 /26
@@ -136,6 +139,8 @@ federation_core_addr=${federation_core_addr:-10.212.0.10}
 owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
 lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
+# 不用 `:-`：环境变量设成空就是取消上次的设置，回到 n0。
+relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
 egress_proxy=${WONTON_EGRESS_PROXY-$(saved WONTON_EGRESS_PROXY)}
 egress_detected=$(saved WONTON_EGRESS_PROXY_DETECTED)
 tz=${TZ:-$(saved TZ)}
@@ -249,7 +254,7 @@ proxy_for_containers() {
 }
 
 # .env 不加引号，这些字符会被 docker compose 或 sh 另作解释。
-proxy_fits_env() {
+fits_env() {
   case "$1" in
     *[[:space:]\$\'\"\`\\\#]*) return 1 ;;
   esac
@@ -306,7 +311,7 @@ detect_proxy() {
     case " $tried " in *" $proxy "*) continue ;; esac
     tried="$tried $proxy"
     shown=$(masked_proxy "$proxy")
-    if ! proxy_fits_env "$proxy"; then
+    if ! fits_env "$proxy"; then
       echo "提示：没用代理 $shown：地址里的特殊字符要写成百分号编码" >&2
     elif result=$(check_proxy "$proxy"); then
       message=$(check_message "$result")
@@ -332,7 +337,7 @@ settle_proxy() {
   if [ -n "$egress_proxy" ]; then
     egress_proxy=$(proxy_for_containers "$egress_proxy")
     shown=$(masked_proxy "$egress_proxy")
-    proxy_fits_env "$egress_proxy" || die "WONTON_EGRESS_PROXY 里的特殊字符要写成百分号编码：$shown"
+    fits_env "$egress_proxy" || die "WONTON_EGRESS_PROXY 里的特殊字符要写成百分号编码：$shown"
     ensure_egress_network
     info "测试代理 $shown"
     result=$(check_proxy "$egress_proxy") ||
@@ -384,11 +389,14 @@ manual_rollback() {
 write_config() {
   info "生成密钥和配置（已有的沿用）"
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
+  [ -z "$relays" ] || fits_env "$relays" ||
+    die "WONTON_RELAYS 里不能有空格和引号这些字符，令牌里的特殊字符写成百分号编码"
   docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
     -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e TZ="$tz" \
     -e WONTON_MATRIX_SERVER_NAME="${WONTON_MATRIX_SERVER_NAME:-}" \
     -e WONTON_PLUGIN_NETWORK_POOL="$plugin_network_pool" \
     -e WONTON_FEDERATION_CORE_ADDR="$federation_core_addr" \
+    -e WONTON_RELAYS="$relays" \
     "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
 
   settle_proxy
@@ -412,6 +420,7 @@ WONTON_FEDERATION_SUBNET=$federation_subnet
 WONTON_FEDERATION_CORE_ADDR=$federation_core_addr
 TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
+WONTON_RELAYS=$relays
 WONTON_EGRESS_PROXY=$egress_proxy
 EOF
   if [ -n "$plugin_slice" ]; then

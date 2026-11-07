@@ -13,6 +13,7 @@ use tokio::sync::watch;
 use wonton_protocol::{Answer, PeerError, PeerStatus};
 use wonton_tunnel::TunnelServer;
 use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, deliver_decision};
+use wonton_tunnel::relays::RelayTable;
 
 use super::{OwnIdentity, Peers};
 use crate::device::Devices;
@@ -65,6 +66,7 @@ impl TestCore {
             Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
             endpoint,
             0,
+            RelayTable::builtin_n0(),
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
         );
         let owner_name = Arc::new(Mutex::new(name.to_owned()));
@@ -488,6 +490,7 @@ async fn a_restart_drops_unanswered_requests_and_keeps_pairings() {
             Arc::new(|| Languages::from_header(None)),
             endpoint,
             0,
+            RelayTable::builtin_n0(),
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
         )
     };
@@ -544,6 +547,7 @@ async fn expired_pending_rows_are_dropped_from_the_view() {
         Arc::new(|| Languages::from_header(None)),
         endpoint,
         0,
+        RelayTable::builtin_n0(),
         watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
     );
     let peers = Peers::open(

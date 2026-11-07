@@ -8252,6 +8252,7 @@ dependencies = [
  "httparse",
  "iroh",
  "iroh-relay",
+ "percent-encoding",
  "rustls",
  "serde",
  "serde_json",

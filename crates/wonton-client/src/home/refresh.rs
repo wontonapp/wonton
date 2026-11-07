@@ -4,10 +4,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iroh::{EndpointId, RelayUrl};
+use iroh::EndpointId;
 use serde::Deserialize;
 use url::Url;
 use wonton_protocol::ProxySettings;
+use wonton_tunnel::relays::Relay;
 
 use super::HomeLink;
 use super::ticket::Ticket;
@@ -18,7 +19,7 @@ use crate::chat::proxy_url;
 struct Reported {
     endpoint_id: EndpointId,
     #[serde(default)]
-    relay_urls: Vec<RelayUrl>,
+    relays: Vec<Relay>,
     #[serde(default)]
     direct_addrs: Vec<SocketAddr>,
 }
@@ -47,8 +48,7 @@ impl HomeLink {
     }
 
     async fn remember(&self, text: &str, ticket: &Ticket, reported: Reported) {
-        let Some(updated) = ticket.with_reported(reported.relay_urls, &reported.direct_addrs)
-        else {
+        let Some(updated) = ticket.with_reported(reported.relays, &reported.direct_addrs) else {
             return;
         };
         let new_text = match serde_json::to_string(&updated) {

@@ -241,6 +241,7 @@ files-stream-tunnel-unavailable = The tunnel isn't available ({ $code })
 home-ticket-invalid-json = The connection info isn't valid JSON: { $error }
 # No parameters. The scanned connection info has no way to reach the home server.
 home-ticket-no-addresses = The connection info has no relay address or direct address for your home server.
+home-ticket-relays-invalid = The relay table isn't valid: { $reason }
 # $domain is the unchanged base domain from the connection info.
 home-ticket-invalid-domain = The base domain isn't valid: { $domain }
 # $error is the URL parser's original error.
