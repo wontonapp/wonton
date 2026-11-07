@@ -228,7 +228,7 @@ async fn a_failed_one_shot_dependency_fails_the_start_immediately() {
     );
     let message = error.to_string();
     assert!(message.contains(&init), "{message}");
-    assert!(message.contains("退出码 1"), "{message}");
+    assert!(message.contains("exit code 1"), "{message}");
     assert!(
         !message.contains(&db),
         "报的应该是失败的一次性服务，不是还没就绪的长期服务：{message}"

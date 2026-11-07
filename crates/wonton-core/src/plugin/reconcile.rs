@@ -20,6 +20,39 @@ pub(super) enum ContainersState {
     Stopped,
 }
 
+/// 看一眼插件的每个容器得到的结果。
+pub(super) struct Containers {
+    state: ContainersState,
+    /// 清单 `webui` 指向的服务的容器在运行、健康检查没失败：网关按它决定异常时照不照常转发。
+    web: bool,
+    /// 不健康的容器（或其他问题）的原因，按请求的语言写好，一个容器一条。
+    failures: Vec<String>,
+}
+
+impl Containers {
+    pub(super) fn web_serves(&self) -> bool {
+        self.web
+    }
+
+    /// 都就绪时给容器状态；有不健康的就把它们一起列在原因里。
+    pub(super) fn ready(self, langs: &Languages) -> Result<ContainersState, InstallError> {
+        let mut failures = self.failures.into_iter();
+        let Some(first) = failures.next() else {
+            return Ok(self.state);
+        };
+        let rest: Vec<String> = failures.collect();
+        if rest.is_empty() {
+            return Err(InstallError::Unhealthy(first));
+        }
+        let failures = std::iter::once(first).chain(rest).collect::<Vec<_>>();
+        Err(InstallError::Unhealthy(l10n::text(
+            langs,
+            "plugin-install-containers-unhealthy",
+            &[("failures", l10n::list(langs, &failures).into())],
+        )))
+    }
+}
+
 impl PluginManager {
     /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
     /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。`None` 表示常驻服务全部停止。
@@ -49,7 +82,11 @@ impl PluginManager {
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
-        let health = match self.check_containers(package, &langs).await? {
+        let health = match self
+            .check_containers(package, &langs)
+            .await?
+            .ready(&langs)?
+        {
             ContainersState::Running(health) => health,
             ContainersState::Stopped => return Ok(None),
         };
@@ -93,54 +130,79 @@ impl PluginManager {
         }
     }
 
-    /// 看一眼插件的每个容器，不等待。不在应有的状态是 [`InstallError::Unhealthy`]。
+    /// 看一眼插件的每个容器，不等待。不因为第一个不健康的容器就停下，把每个都看一遍。
     pub(super) async fn check_containers(
         &self,
         package: &PluginPackage,
         langs: &Languages,
-    ) -> Result<ContainersState, InstallError> {
+    ) -> Result<Containers, InstallError> {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
+        let webui = package
+            .manifest
+            .webui
+            .as_ref()
+            .map(|webui| webui.service.as_str());
         let mut running = 0;
         let mut healthy = true;
-        let mut stopped = None;
+        let mut stopped = Vec::new();
+        let mut failures = Vec::new();
+        let mut web = false;
         for service in package.service_names() {
             let name = self.cfg.instance.container(&slug, service);
-            match health::check_now(
+            let checked = health::check_now(
                 &self.engine,
                 &name,
                 service,
                 one_shot.contains(service),
                 langs,
             )
-            .await?
-            {
+            .await?;
+            if webui == Some(service) {
+                web = matches!(checked, Checked::Healthy | Checked::Running);
+            }
+            match checked {
                 Checked::Completed => {}
                 Checked::Healthy => running += 1,
                 Checked::Running => {
                     running += 1;
                     healthy = false;
                 }
-                Checked::Stopped => stopped = Some(name),
-                Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
+                Checked::Stopped => stopped.push(name),
+                Checked::Failed(reason) => failures.push(reason),
             }
         }
-        if let Some(container) = stopped {
-            return if running == 0 {
-                Ok(ContainersState::Stopped)
-            } else {
-                Err(InstallError::Unhealthy(l10n::text(
-                    &self.owner_languages(),
-                    "plugin-install-resident-partial",
-                    &[("container", container.into())],
-                )))
-            };
-        }
-        Ok(ContainersState::Running(if healthy {
+        let state = ContainersState::Running(if healthy {
             Health::Healthy
         } else {
             Health::Unknown
-        }))
+        });
+        if stopped.is_empty() {
+            return Ok(Containers {
+                state,
+                web,
+                failures,
+            });
+        }
+        if running == 0 && failures.is_empty() {
+            return Ok(Containers {
+                state: ContainersState::Stopped,
+                web,
+                failures,
+            });
+        }
+        if running > 0 {
+            failures.push(l10n::text(
+                langs,
+                "plugin-install-resident-partial",
+                &[("containers", l10n::list(langs, &stopped).into())],
+            ));
+        }
+        Ok(Containers {
+            state,
+            web,
+            failures,
+        })
     }
 
     /// 核对插件密钥：生成的都还在，插件写下的重新收存一次，变了就更新。返回全量密钥（generate 和

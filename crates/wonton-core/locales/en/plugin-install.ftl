@@ -64,7 +64,13 @@ plugin-install-stranger-attached = Still attached to network { $network }: { $na
 
 plugin-install-network-mismatch = App network { $network } { $actual }, but the way the manifest and your home server work it should be { $expected }: reinstall the app (you can keep its data) to apply it
 plugin-install-resident-stopped = This app's always-on services have stopped
-plugin-install-resident-partial = Some always-on services are still running, container { $container } has stopped
+plugin-install-resident-partial = Some always-on services are still running, these containers have stopped: { $containers }
+plugin-install-containers-unhealthy = Some containers aren't healthy: { $failures }
+plugin-install-container-unhealthy = Container { $container } failed its health check (last probe, exit code { $code }): { $output }
+plugin-install-container-unhealthy-nocode = Container { $container } failed its health check (last probe, exit code unknown): { $output }
+plugin-install-container-unhealthy-noprobe = Container { $container } failed its health check (Docker kept no probe result)
+plugin-install-container-not-running = Container { $container } isn't running ({ $status })
+plugin-install-one-shot-failed = The one-shot service's container { $container } didn't exit 0 ({ $status }, exit code { $code })
 plugin-install-reach-none = doesn't exist
 plugin-install-reach-egress = can reach the internet
 plugin-install-reach-internal = can't reach the internet

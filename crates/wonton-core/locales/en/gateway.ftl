@@ -29,6 +29,7 @@ gateway-state-updating = Updating
 
 # Error page.
 gateway-page-error-title = Something went wrong
+gateway-page-error-detail = Details
 gateway-not-found = There's no page here
 gateway-cross-site-write = This home server only accepts changes made from its own pages
 
@@ -37,7 +38,7 @@ gateway-unknown-host = Unknown address { $host }
 gateway-oidc-unconfigured = The home server has no identity provider configured
 gateway-no-app-for-host = No app is installed for { $host }
 gateway-no-webui = This app has no web page
-gateway-app-not-ready = The app { $id } isn't ready yet: { $status }
+gateway-app-not-ready = The app { $id } isn't ready yet
 gateway-proxy-sso-failed = Can't get the sign-in credentials for the app { $id }: { $error }
 gateway-cross-site-login = The gateway doesn't trust sign-in state on requests from another site; use the app's own page
 gateway-login-required = Sign in to Wonton first

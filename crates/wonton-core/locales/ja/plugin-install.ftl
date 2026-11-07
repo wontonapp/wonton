@@ -63,7 +63,13 @@ plugin-install-stranger-attached = ネットワーク{ $network }に{ $names }�
 
 plugin-install-network-mismatch = アプリのネットワーク{ $network }は{ $actual }が、マニフェストと自宅サーバーの動作からすると{ $expected }はずです：アプリを再インストール（データは残せます）すると反映されます
 plugin-install-resident-stopped = このアプリの常駐サービスが停止しています
-plugin-install-resident-partial = 一部の常駐サービスがまだ動いており、コンテナ{ $container }が停止しました
+plugin-install-resident-partial = 一部の常駐サービスがまだ動いており、次のコンテナが停止しました：{ $containers }
+plugin-install-containers-unhealthy = 一部のコンテナが不健康です：{ $failures }
+plugin-install-container-unhealthy = コンテナ{ $container }のヘルスチェックが失敗しました（最後のプローブ、終了コード { $code }）：{ $output }
+plugin-install-container-unhealthy-nocode = コンテナ{ $container }のヘルスチェックが失敗しました（最後のプローブ、終了コード不明）：{ $output }
+plugin-install-container-unhealthy-noprobe = コンテナ{ $container }のヘルスチェックが失敗しました（Docker にプローブの結果が残っていません）
+plugin-install-container-not-running = コンテナ{ $container }が動いていません（{ $status }）
+plugin-install-one-shot-failed = 一度きりのサービスのコンテナ{ $container }が 0 で終了しませんでした（{ $status }、終了コード { $code }）
 plugin-install-reach-none = 存在しない
 plugin-install-reach-egress = インターネットに出られる
 plugin-install-reach-internal = インターネットに出られない

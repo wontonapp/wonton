@@ -73,6 +73,8 @@ pub(super) struct Entry {
     /// 列表和详情页显示的信息；记录读不出来的插件为空。
     pub(super) listed: Option<Arc<Listed>>,
     pub(super) upstream: Option<Endpoint>,
+    /// 清单 `webui` 指向的容器在运行、健康检查没失败：插件整体异常时网关照样转发网页（见 [`super::watch`]）。
+    pub(super) web_serving: bool,
     /// 声明了 `provides.models`（不论状态）。
     pub(super) provides_models: bool,
     pub(super) provides_egress_proxy: bool,
@@ -113,6 +115,7 @@ impl Entry {
             health: None,
             checked_at: super::manager::now_secs(),
             upstream,
+            web_serving: false,
             provides_models: manifest
                 .provides
                 .as_ref()
@@ -130,11 +133,13 @@ impl Entry {
     }
 
     pub(super) fn running(listed: Arc<Listed>, deployed: Deployed) -> Self {
+        let web_serving = deployed.upstream.is_some();
         Self {
             health: Some(deployed.health),
             models: deployed.models,
             proxy: deployed.proxy,
             mcp: deployed.mcp,
+            web_serving,
             ..Self::new(listed, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -167,6 +172,7 @@ impl Entry {
             health: None,
             checked_at: super::manager::now_secs(),
             upstream: None,
+            web_serving: false,
             provides_models: false,
             provides_egress_proxy: false,
             models: None,

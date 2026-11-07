@@ -412,18 +412,20 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
                 &langs,
             );
         }
+        // 辅助容器坏了：网页服务自己的容器在运行、健康检查没失败就照常转发，网页里依赖坏掉的那部分由
+        // 应用自己报错。插件整体照旧是异常，App 里能看到是哪个容器。
+        (PluginStatus::Degraded { .. }, Some(upstream)) if route.web_serving => upstream.clone(),
         (status, _) => {
-            return pages::error(
+            let detail = pages::state_of(status, &langs);
+            return pages::error_with_detail(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "not_ready",
                 &l10n::text(
                     &langs,
                     "gateway-app-not-ready",
-                    &[
-                        ("id", route.id.as_str().into()),
-                        ("status", format!("{status:?}").into()),
-                    ],
+                    &[("id", route.id.as_str().into())],
                 ),
+                Some(&detail),
                 &langs,
             );
         }
@@ -520,6 +522,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
 mod bot_profile_tests;
 #[cfg(test)]
 mod core_upgrade_tests;
+#[cfg(test)]
+mod degraded_webui_tests;
 #[cfg(test)]
 mod egress_api_tests;
 #[cfg(test)]

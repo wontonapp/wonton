@@ -10,6 +10,7 @@ use super::docker::{Engine, EngineError};
 use super::languages::Languages;
 use super::oom::{OomLimit, oom_reason};
 use crate::http::HttpClient;
+use crate::l10n;
 
 const POLL: Duration = Duration::from_millis(500);
 /// 没有健康检查的容器至少要稳定运行这么久才算就绪，避免把“启动即崩溃”当成成功。
@@ -191,6 +192,50 @@ struct Probe {
     output: String,
 }
 
+/// 最近 `keep` 条探针，最旧的在前。没有 `Health.Log` 的旧 Docker 为空。
+fn recent_probes(state: &bollard::models::ContainerState, keep: usize) -> Vec<Probe> {
+    let Some(log) = state.health.as_ref().and_then(|h| h.log.as_ref()) else {
+        return Vec::new();
+    };
+    log.iter()
+        .rev()
+        .take(keep)
+        .rev()
+        .map(|entry| Probe {
+            exit_code: entry.exit_code,
+            output: clean_output(entry.output.as_deref().unwrap_or_default()),
+        })
+        .collect()
+}
+
+/// 健康检查失败的原因：带上最后一条探针的退出码和输出，让人不用去查 Docker 就能看出原因。
+fn unhealthy_reason(container: &str, probe: Option<Probe>, langs: &Languages) -> String {
+    let name = ("container", container.into());
+    match probe {
+        Some(Probe {
+            exit_code: Some(code),
+            output,
+        }) => l10n::text(
+            langs,
+            "plugin-install-container-unhealthy",
+            &[
+                name,
+                ("code", code.to_string().into()),
+                ("output", output.into()),
+            ],
+        ),
+        Some(Probe {
+            exit_code: None,
+            output,
+        }) => l10n::text(
+            langs,
+            "plugin-install-container-unhealthy-nocode",
+            &[name, ("output", output.into())],
+        ),
+        None => l10n::text(langs, "plugin-install-container-unhealthy-noprobe", &[name]),
+    }
+}
+
 /// 探针结果排成一段，和日志尾巴并列。没有 `Health.Log` 的旧 Docker 返回空段，错误和以前一样。
 fn probe_block(probes: &[Probe]) -> String {
     if probes.is_empty() {
@@ -263,22 +308,7 @@ async fn observe(
         .ok_or_else(|| Failure::Other(EngineError::NotFound(format!("容器 {container}")).into()))?;
     let state = info.state.unwrap_or_default();
     let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
-    let probes: Vec<Probe> = state
-        .health
-        .as_ref()
-        .and_then(|h| h.log.as_ref())
-        .map(|log| {
-            log.iter()
-                .rev()
-                .take(PROBES_KEPT)
-                .rev()
-                .map(|entry| Probe {
-                    exit_code: entry.exit_code,
-                    output: clean_output(entry.output.as_deref().unwrap_or_default()),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let probes = recent_probes(&state, PROBES_KEPT);
     let health = state.health.and_then(|h| h.status);
     let has_check = matches!(
         health,
@@ -376,7 +406,7 @@ pub async fn check_now(
     langs: &Languages,
 ) -> Result<Checked, EngineError> {
     let Some(info) = engine.inspect_container(container).await? else {
-        return Ok(Checked::Failed(crate::l10n::text(
+        return Ok(Checked::Failed(l10n::text(
             langs,
             "plugin-install-container-missing",
             &[("name", container.into())],
@@ -385,6 +415,7 @@ pub async fn check_now(
     let state = info.state.unwrap_or_default();
     let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
     let exit_code = state.exit_code.unwrap_or_default();
+    let last_probe = recent_probes(&state, 1).pop();
     let health = state.health.and_then(|h| h.status);
     let running = status == ContainerStateStatusEnum::RUNNING;
     let limit = OomLimit::of(info.host_config.as_ref());
@@ -395,19 +426,30 @@ pub async fn check_now(
     Ok(match (one_shot, status) {
         (true, ContainerStateStatusEnum::EXITED) if exit_code == 0 => Checked::Completed,
         (true, _) if running => Checked::Completed,
-        (true, _) => Checked::Failed(format!(
-            "一次性服务的容器 {container} 没有以 0 退出（{status:?}，退出码 {exit_code}）"
+        (true, _) => Checked::Failed(l10n::text(
+            langs,
+            "plugin-install-one-shot-failed",
+            &[
+                ("container", container.into()),
+                ("status", format!("{status:?}").into()),
+                ("code", exit_code.to_string().into()),
+            ],
         )),
         (false, ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::CREATED) => {
             Checked::Stopped
         }
-        (false, _) if !running => {
-            Checked::Failed(format!("容器 {container} 不在运行（{status:?}）"))
-        }
+        (false, _) if !running => Checked::Failed(l10n::text(
+            langs,
+            "plugin-install-container-not-running",
+            &[
+                ("container", container.into()),
+                ("status", format!("{status:?}").into()),
+            ],
+        )),
         (false, _) => match health {
             Some(HealthStatusEnum::HEALTHY) => Checked::Healthy,
             Some(HealthStatusEnum::UNHEALTHY) => {
-                Checked::Failed(format!("容器 {container} 健康检查失败"))
+                Checked::Failed(unhealthy_reason(container, last_probe, langs))
             }
             _ => Checked::Running,
         },

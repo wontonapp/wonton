@@ -63,7 +63,13 @@ plugin-install-stranger-attached = 网络 { $network } 上还接着 { $names }�
 
 plugin-install-network-mismatch = 应用网络 { $network } { $actual }，按清单和服务器的工作方式应该{ $expected }：重装应用（可以不删数据）后生效
 plugin-install-resident-stopped = 应用的常驻服务已停止
-plugin-install-resident-partial = 部分常驻服务仍在运行，容器 { $container } 已停止
+plugin-install-resident-partial = 部分常驻服务仍在运行，这些容器已停止：{ $containers }
+plugin-install-containers-unhealthy = 部分容器不健康：{ $failures }
+plugin-install-container-unhealthy = 容器 { $container } 健康检查失败（最后一次探针，退出码 { $code }）：{ $output }
+plugin-install-container-unhealthy-nocode = 容器 { $container } 健康检查失败（最后一次探针，退出码未知）：{ $output }
+plugin-install-container-unhealthy-noprobe = 容器 { $container } 健康检查失败（Docker 没留下探针结果）
+plugin-install-container-not-running = 容器 { $container } 不在运行（{ $status }）
+plugin-install-one-shot-failed = 一次性服务的容器 { $container } 没有以 0 退出（{ $status }，退出码 { $code }）
 plugin-install-reach-none = 不存在
 plugin-install-reach-egress = 能出网
 plugin-install-reach-internal = 不能出网

@@ -63,7 +63,13 @@ plugin-install-stranger-attached = 網路 { $network } 上還接著 { $names }�
 
 plugin-install-network-mismatch = 應用程式網路 { $network } { $actual }，但照清單和家用伺服器的運作方式應該{ $expected }：重新安裝應用程式（可以不刪資料）就會生效
 plugin-install-resident-stopped = 這個應用程式的常駐服務已經停止
-plugin-install-resident-partial = 部分常駐服務還在執行，容器 { $container } 已經停止
+plugin-install-resident-partial = 部分常駐服務還在執行，這些容器已經停止：{ $containers }
+plugin-install-containers-unhealthy = 部分容器不健康：{ $failures }
+plugin-install-container-unhealthy = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼 { $code }）：{ $output }
+plugin-install-container-unhealthy-nocode = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼未知）：{ $output }
+plugin-install-container-unhealthy-noprobe = 容器 { $container } 健康檢查失敗（Docker 沒有留下探針結果）
+plugin-install-container-not-running = 容器 { $container } 沒有在執行（{ $status }）
+plugin-install-one-shot-failed = 一次性服務的容器 { $container } 沒有以 0 結束（{ $status }，退出碼 { $code }）
 plugin-install-reach-none = 不存在
 plugin-install-reach-egress = 能連上網際網路
 plugin-install-reach-internal = 不能連上網際網路

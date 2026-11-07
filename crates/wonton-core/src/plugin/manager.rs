@@ -91,6 +91,8 @@ pub struct Route {
     pub status: PluginStatus,
     /// 核心可直接访问的插件网页地址。
     pub upstream: Option<Endpoint>,
+    /// 清单 `webui` 指向的容器在运行、健康检查没失败：插件整体异常时也照常转发。
+    pub web_serving: bool,
     /// 网页响应是否要加跨源隔离策略头。
     pub cross_origin_isolated: bool,
     /// `sso: proxy` 时网关代加的凭据。
@@ -313,6 +315,7 @@ impl PluginManager {
                 id: id.clone(),
                 status: entry.status.clone(),
                 upstream: entry.upstream.clone(),
+                web_serving: entry.web_serving,
                 cross_origin_isolated: entry
                     .listed
                     .as_ref()

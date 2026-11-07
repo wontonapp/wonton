@@ -198,6 +198,8 @@ pub(super) struct Harness {
     pub addr: SocketAddr,
     pub http: HttpClient,
     pub hits: Arc<AtomicUsize>,
+    /// 假插件回显服务的地址。
+    pub upstream: SocketAddr,
     pub manager: Arc<PluginManager>,
     pub docker: FakeDocker,
     _dir: tempfile::TempDir,
@@ -310,6 +312,7 @@ impl Harness {
             addr,
             http,
             hits,
+            upstream,
             manager,
             docker,
             _dir: dir,

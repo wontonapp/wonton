@@ -29,6 +29,7 @@ gateway-state-updating = 更新中
 
 # 錯誤頁。
 gateway-page-error-title = 出錯了
+gateway-page-error-detail = 詳情
 gateway-not-found = 沒有這個頁面
 gateway-cross-site-write = 家用伺服器只接受自己頁面發出的修改請求
 
@@ -37,7 +38,7 @@ gateway-unknown-host = 未知的位址 { $host }
 gateway-oidc-unconfigured = 家用伺服器沒有設定身分提供者
 gateway-no-app-for-host = 沒有安裝對應 { $host } 的應用程式
 gateway-no-webui = 這個應用程式沒有網頁入口
-gateway-app-not-ready = 應用程式 { $id } 尚未就緒：{ $status }
+gateway-app-not-ready = 應用程式 { $id } 尚未就緒
 gateway-proxy-sso-failed = 拿不到應用程式 { $id } 的代登入憑證：{ $error }
 gateway-cross-site-login = 閘道不認其他網頁發出的跨站請求的登入狀態，請從應用程式自己的頁面操作
 gateway-login-required = 需要先登入 Wonton

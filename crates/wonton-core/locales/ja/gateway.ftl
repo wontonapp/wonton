@@ -29,6 +29,7 @@ gateway-state-updating = アップデート中
 
 # エラーページ。
 gateway-page-error-title = エラーが発生しました
+gateway-page-error-detail = 詳細
 gateway-not-found = このページはありません
 gateway-cross-site-write = 自宅サーバーは、自分のページからの変更リクエストだけを受け付けます
 
@@ -37,7 +38,7 @@ gateway-unknown-host = 不明なアドレス{ $host }
 gateway-oidc-unconfigured = 自宅サーバーにIDプロバイダーが設定されていません
 gateway-no-app-for-host = { $host }に対応するアプリがインストールされていません
 gateway-no-webui = このアプリにはWebページがありません
-gateway-app-not-ready = アプリ{ $id }はまだ準備ができていません：{ $status }
+gateway-app-not-ready = アプリ{ $id }はまだ準備ができていません
 gateway-proxy-sso-failed = アプリ{ $id }の代行ログイン資格情報を取得できません：{ $error }
 gateway-cross-site-login = ゲートウェイは、他のサイトからのリクエストに付いたログイン状態を信頼しません。アプリ自身のページから操作してください
 gateway-login-required = まずWontonにログインしてください

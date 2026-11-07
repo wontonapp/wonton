@@ -108,14 +108,17 @@ async fn a_running_plugin_follows_its_container_down_and_back() {
     let (PluginStatus::Degraded { reason }, None) = seen(&m) else {
         panic!("{:?}", seen(&m));
     };
-    assert!(reason.contains("健康检查失败"), "{reason}");
+    assert!(reason.contains("failed its health check"), "{reason}");
 
     docker.set_state(&container, restarting());
     m.watch_containers().await;
     let (PluginStatus::Degraded { reason }, None) = seen(&m) else {
         panic!("{:?}", seen(&m));
     };
-    assert!(reason.contains("不在运行"), "原因也跟着容器走：{reason}");
+    assert!(
+        reason.contains("isn't running"),
+        "原因也跟着容器走：{reason}"
+    );
 
     docker.set_state(&container, with_health("starting"));
     m.watch_containers().await;
@@ -153,4 +156,71 @@ async fn trouble_that_is_not_about_containers_stays_until_someone_deals_with_it(
 
     m.watch_containers().await;
     assert_eq!(seen(&m).0, status);
+}
+
+/// 网页服务加一个辅助容器。
+async fn web_and_worker() -> String {
+    let port = serve(Router::new().route("/", get(|| async { "ok" })))
+        .await
+        .port();
+    package(
+        "  web:\n    image: nginx\n  worker:\n    image: redis\n",
+        &format!("  webui: {{service: web, port: {port}}}\n  permissions: []"),
+    )
+}
+
+// 辅助容器坏了：插件整体异常，原因里列出它和它最后一条探针；网页服务的容器好着，网关照常转发。
+#[tokio::test]
+async fn an_unhealthy_auxiliary_container_leaves_the_web_page_served() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    m.install(&web_and_worker().await, &[], super::langs())
+        .await
+        .unwrap();
+
+    let worker = container_name("app-test", "worker");
+    docker.set_state(
+        &worker,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy", "Log": [
+                {"ExitCode": 0, "Output": "早先通过的一次"},
+                {"ExitCode": 28, "Output": "curl: (28) Operation timed out"},
+            ]},
+        }),
+    );
+    m.watch_containers().await;
+
+    let (PluginStatus::Degraded { reason }, None) = seen(&m) else {
+        panic!("{:?}", seen(&m));
+    };
+    assert!(reason.contains(&worker), "{reason}");
+    assert!(
+        reason.contains("curl: (28) Operation timed out"),
+        "{reason}"
+    );
+    assert!(!reason.contains("早先通过的一次"), "只要最后一条：{reason}");
+    let route = m.route("app-test").unwrap();
+    assert!(route.web_serving, "{reason}");
+    assert!(route.upstream.is_some());
+}
+
+// 网页服务的容器自己不健康：路由不算能转发，网关回 503。
+#[tokio::test]
+async fn an_unhealthy_web_container_stops_serving() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager_with(engine, &dir);
+    m.install(&web_and_worker().await, &[], super::langs())
+        .await
+        .unwrap();
+
+    docker.set_state(&container_name("app-test", "web"), with_health("unhealthy"));
+    m.watch_containers().await;
+
+    assert!(degraded(&m), "{:?}", seen(&m));
+    let route = m.route("app-test").unwrap();
+    assert!(!route.web_serving);
+    assert!(route.upstream.is_some());
 }

@@ -123,7 +123,7 @@ impl PluginManager {
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        match self.check_containers(&package, langs).await? {
+        match self.check_containers(&package, langs).await?.ready(langs)? {
             ContainersState::Running(health) if *before == PluginStatus::Running => {
                 return Ok(Started {
                     health,

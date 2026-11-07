@@ -34,6 +34,8 @@ fn layout(title: &str, body: &str, langs: &Languages) -> String {
          body{{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;color:#222}}\
          input,button{{font-size:1rem;padding:.5rem}}input{{width:100%;box-sizing:border-box}}\
          li{{margin:.4rem 0}}code{{background:#f3f3f3;padding:0 .2rem}}.muted{{color:#777}}\
+         details{{margin:.8rem 0}}summary{{cursor:pointer}}\
+         pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;padding:.5rem}}\
          </style></head><body>{body}</body></html>",
         title = escape(title),
         lang = escape(lang),
@@ -41,11 +43,32 @@ fn layout(title: &str, body: &str, langs: &Languages) -> String {
 }
 
 pub fn error(status: StatusCode, kind: &'static str, message: &str, langs: &Languages) -> Response {
+    error_with_detail(status, kind, message, None, langs)
+}
+
+/// 同 [`error`]，另带一段默认收起的详情：给人看的一句话在上面，技术细节（状态、原因）放进 `details`。
+pub fn error_with_detail(
+    status: StatusCode,
+    kind: &'static str,
+    message: &str,
+    detail: Option<&str>,
+    langs: &Languages,
+) -> Response {
     let title = l10n::text(langs, "gateway-page-error-title", &[]);
+    let summary = l10n::text(langs, "gateway-page-error-detail", &[]);
+    let detail = detail
+        .map(|detail| {
+            format!(
+                "<details><summary>{}</summary><pre>{}</pre></details>",
+                escape(&summary),
+                escape(detail)
+            )
+        })
+        .unwrap_or_default();
     let body = layout(
         &title,
         &format!(
-            "<h1>{}</h1><p>{}</p><p class=\"muted\"><code>{kind}</code></p>",
+            "<h1>{}</h1><p>{}</p>{detail}<p class=\"muted\"><code>{kind}</code></p>",
             escape(&title),
             escape(message)
         ),

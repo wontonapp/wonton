@@ -30,7 +30,7 @@ impl PluginManager {
         });
     }
 
-    pub(super) async fn watch_containers(&self) {
+    pub(crate) async fn watch_containers(&self) {
         let watched: Vec<PluginId> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins
@@ -60,16 +60,12 @@ impl PluginManager {
         let Some(record) = self.store.load(id)? else {
             return Ok(());
         };
-        let mut package = PluginPackage::with_files(
-            &record.source,
-            record.files.clone(),
-            &self.owner_languages(),
-        )?;
+        let langs = self.owner_languages();
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), &langs)?;
         package.origin = record.origin.clone();
-        match self
-            .check_containers(&package, &self.owner_languages())
-            .await
-        {
+        let checked = self.check_containers(&package, &langs).await?;
+        self.saw_web(id, checked.web_serves());
+        match checked.ready(&langs) {
             Ok(ContainersState::Running(health))
                 if self.status_of(id) == Some(PluginStatus::Running) =>
             {
@@ -80,15 +76,26 @@ impl PluginManager {
             }
             Ok(ContainersState::Running(_)) => self.recover(id, &package, &record).await,
             Ok(ContainersState::Stopped) => self.saw_unavailable(id, PluginStatus::Stopped),
-            Err(e @ InstallError::Unhealthy(_)) => self.saw_unavailable(
-                id,
-                PluginStatus::Degraded {
-                    reason: e.to_string(),
-                },
-            ),
+            Err(InstallError::Unhealthy(reason)) => {
+                self.saw_unavailable(id, PluginStatus::Degraded { reason })
+            }
             Err(e) => return Err(e),
         }
         Ok(())
+    }
+
+    /// 网页服务容器能不能转发：网关按它决定插件异常时照不照常给网页。
+    fn saw_web(&self, id: &PluginId, serving: bool) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        let Some(entry) = plugins.get_mut(id) else {
+            return;
+        };
+        if entry.web_serving == serving {
+            return;
+        }
+        entry.web_serving = serving;
+        drop(plugins);
+        self.changed();
     }
 
     fn saw_running(&self, id: &PluginId, health: Health) {
