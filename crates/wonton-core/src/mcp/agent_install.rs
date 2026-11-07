@@ -12,6 +12,7 @@ use super::Outcome;
 use super::audit::{Decision, Record};
 use super::cards;
 use super::{Bus, Caller, error};
+use crate::bot_activity::Guard;
 use crate::files::share_fs::saving;
 use crate::l10n;
 use crate::plugin::check;
@@ -39,6 +40,7 @@ pub(super) async fn install(
     caller: &Caller,
     name: &str,
     args: JsonObject,
+    activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
     let id = args.get("id").and_then(Value::as_str);
@@ -50,8 +52,8 @@ pub(super) async fn install(
             &value,
             "invalid_input：id 和 dir 必须且只能给一个：官方索引里的用 id，自己写的用 dir",
         ),
-        (Some(id), None) => official(bus, caller, name, &value, id).await,
-        (None, Some(dir)) => from_dir(bus, caller, name, &value, dir).await,
+        (Some(id), None) => official(bus, caller, name, &value, id, activity).await,
+        (None, Some(dir)) => from_dir(bus, caller, name, &value, dir, activity).await,
     }
 }
 
@@ -62,6 +64,7 @@ async fn official(
     name: &str,
     value: &Value,
     id: &str,
+    activity: Guard,
 ) -> CallToolResult {
     let package = match super::core_tools::installable(bus, id).await {
         Ok(package) => package,
@@ -102,8 +105,14 @@ async fn official(
             )),
         }
     };
-    bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
-        .await
+    bus.confirmed_twice(
+        caller,
+        name,
+        value.clone(),
+        (draft, second, None, activity),
+        run,
+    )
+    .await
 }
 
 fn installed_outcome(view: &PluginView, note: Option<String>, langs: &Languages) -> Outcome {
@@ -151,6 +160,7 @@ async fn from_dir(
     name: &str,
     value: &Value,
     dir: &str,
+    activity: Guard,
 ) -> CallToolResult {
     let deny = |message: String| bus.deny(caller, name, value, &message);
     let app_data = bus.plugins.app_data_dir(&caller.id);
@@ -187,8 +197,18 @@ async fn from_dir(
         Err(e) => return deny(format!("internal_error：读插件记录失败：{e}")),
     };
     match record {
-        None => first_install(bus, caller, name, value, package, &langs).await,
-        Some(record) => update(bus, caller, name, value, package, record, &langs).await,
+        None => first_install(bus, caller, name, value, package, &langs, activity).await,
+        Some(record) => {
+            update(
+                bus,
+                caller,
+                name,
+                value,
+                package,
+                (record, &langs, activity),
+            )
+            .await
+        }
     }
 }
 
@@ -200,6 +220,7 @@ async fn first_install(
     value: &Value,
     package: PluginPackage,
     langs: &Languages,
+    activity: Guard,
 ) -> CallToolResult {
     let id = package.manifest.id.clone();
     // 之前还在等的同一份提交让位：主人不会面对两张都作数的卡。
@@ -259,8 +280,14 @@ async fn first_install(
             )),
         }
     };
-    bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
-        .await
+    bus.confirmed_twice(
+        caller,
+        name,
+        value.clone(),
+        (draft, second, None, activity),
+        run,
+    )
+    .await
 }
 
 /// 不打扰主人的更新：直接升级，写审计（ADR-0033 的“更新，权限没变宽”）。只有写它的 Bot 能更新；
@@ -309,6 +336,24 @@ async fn quiet_update(
     }
 }
 
+async fn quiet_update_detached(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    name: &str,
+    value: &Value,
+    package: PluginPackage,
+    (record, granted, activity): (InstalledRecord, Vec<Permission>, Guard),
+) -> CallToolResult {
+    let (bus, caller, name, value) = (bus.clone(), caller.clone(), name.to_owned(), value.clone());
+    tokio::spawn(async move {
+        let result = quiet_update(&bus, &caller, &name, &value, package, &record, granted).await;
+        drop(activity);
+        result
+    })
+    .await
+    .unwrap_or_else(|e| error(&format!("更新流程意外中止：{e}")))
+}
+
 /// 写审计；其余发卡片，最高级再多点一张。摘要和装着的相同报“没有变化”。
 async fn update(
     bus: &Arc<Bus>,
@@ -316,8 +361,7 @@ async fn update(
     name: &str,
     value: &Value,
     package: PluginPackage,
-    record: InstalledRecord,
-    langs: &Languages,
+    (record, langs, activity): (InstalledRecord, &Languages, Guard),
 ) -> CallToolResult {
     let deny = |message: String| bus.deny(caller, name, value, &message);
     let id = package.manifest.id.clone();
@@ -351,7 +395,15 @@ async fn update(
         bus.confirmations
             .supersede_pending(&caller.id, &id, langs)
             .await;
-        return quiet_update(bus, caller, name, value, package, &record, granted).await;
+        return quiet_update_detached(
+            bus,
+            caller,
+            name,
+            value,
+            package,
+            (record, granted, activity),
+        )
+        .await;
     }
     // 发卡片前同样让位：同一份插件只留一张等确认的卡。
     bus.confirmations
@@ -385,8 +437,14 @@ async fn update(
     let id_for_run = id;
     let run =
         move |bus: Arc<Bus>| upgrade_ran(bus, id_for_run, version, package, granted, lan_webui);
-    bus.confirmed_twice(caller, name, value.clone(), (draft, second, None), run)
-        .await
+    bus.confirmed_twice(
+        caller,
+        name,
+        value.clone(),
+        (draft, second, None, activity),
+        run,
+    )
+    .await
 }
 
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。

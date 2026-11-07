@@ -200,6 +200,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             get(owner_profile::read).put(owner_profile::save),
         )
         .route(
+            wonton_protocol::BOT_ACTIVITY_PATH,
+            get(super::bot_activity::get),
+        )
+        .route(
             wonton_protocol::ONBOARDING_PATH,
             get(onboarding::get).put(onboarding::put),
         )

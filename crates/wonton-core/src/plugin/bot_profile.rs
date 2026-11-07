@@ -210,7 +210,9 @@ impl PluginManager {
             })
             .await;
         let profile_rev = if written {
-            self.profiles.revisions.bump(id.as_str())
+            let profile_rev = self.profiles.revisions.bump(id.as_str());
+            self.activity.changed();
+            profile_rev
         } else {
             self.profiles.revisions.get(id.as_str())
         };
@@ -251,6 +253,7 @@ impl PluginManager {
         if written {
             editing.succeeded();
             self.profiles.revisions.bump(id.as_str());
+            self.activity.changed();
         }
         Ok(result?)
     }

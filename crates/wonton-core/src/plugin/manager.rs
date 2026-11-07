@@ -123,6 +123,7 @@ pub struct PluginManager {
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
@@ -221,6 +222,7 @@ impl PluginManager {
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
             changes: tokio::sync::watch::Sender::new(0),
+            activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             lan,
             egress: Egress::default(),
@@ -245,6 +247,7 @@ impl PluginManager {
 
     pub(super) fn changed(&self) {
         self.changes.send_modify(|generation| *generation += 1);
+        self.activity.changed();
     }
 
     /// 在运行、声明了 `mcp` 的插件。
@@ -612,6 +615,7 @@ impl PluginManager {
                     .write()
                     .expect("插件表锁中毒")
                     .remove(&manifest.id);
+                self.changed();
                 Err(e)
             }
         }
@@ -648,6 +652,8 @@ impl PluginManager {
             manifest.id.clone(),
             Entry::new(listed.clone(), PluginStatus::Installing, None),
         );
+        drop(plugins);
+        self.changed();
         Ok(())
     }
 
@@ -729,6 +735,7 @@ impl PluginManager {
             entry.checked_at = now_secs();
         }
         drop(_changing);
+        self.changed();
         tracing::info!(plugin = %id, purge, "开始卸载插件");
         match self.teardown(id, purge, langs).await {
             Ok(report) => {

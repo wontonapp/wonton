@@ -23,7 +23,7 @@ services:
         WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-unknown}
         # cargo 不认空值，没设 WONTON_DEV_BUILD_JOBS 时按 CPU 数（default）。
         CARGO_BUILD_JOBS: ${WONTON_DEV_BUILD_JOBS:-default}
-    image: wonton-core:dev
+    image: wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}
     # 核心要知道自己的容器名，才能把自己接入每个插件网络。
     container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
     restart: unless-stopped

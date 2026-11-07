@@ -13,6 +13,7 @@ use super::{
     Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, profile_tools,
     save_tools,
 };
+use crate::bot_activity::Guard;
 use crate::l10n;
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
@@ -106,14 +107,20 @@ fn success(value: &Value) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(value.to_string())])
 }
 
-pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject) -> CallToolResult {
+pub async fn call(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    tool: &str,
+    args: JsonObject,
+    activity: Guard,
+) -> CallToolResult {
     let name = naming::join(naming::CORE, tool);
     let value = Value::Object(args.clone());
     let read = match tool {
         LIST => Ok(list(bus)),
         SEARCH => search(bus, &args).await,
-        INSTALL => return agent_install::install(bus, caller, &name, args).await,
-        UNINSTALL => return uninstall(bus, caller, &name, args).await,
+        INSTALL => return agent_install::install(bus, caller, &name, args, activity).await,
+        UNINSTALL => return uninstall(bus, caller, &name, args, activity).await,
         HELP => help(bus, &args).await,
         authoring_tools::GUIDE => Ok(authoring_tools::guide()),
         authoring_tools::CHECK => authoring_tools::check(bus, caller, &args).await,
@@ -122,7 +129,7 @@ pub async fn call(bus: &Arc<Bus>, caller: &Caller, tool: &str, args: JsonObject)
             return file_tools::call(bus, caller, tool, args).await;
         }
         save_tools::LIST => save_tools::list(bus).await,
-        save_tools::SAVE => return save_tools::save(bus, caller, args).await,
+        save_tools::SAVE => return save_tools::save(bus, caller, args, activity).await,
         profile_tools::GET | profile_tools::SET => {
             return profile_tools::call(bus, caller, tool, args).await;
         }
@@ -284,6 +291,7 @@ async fn uninstall(
     caller: &Caller,
     name: &str,
     args: JsonObject,
+    activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
     let checked = required(&args, "id").and_then(|id| {
@@ -346,5 +354,6 @@ async fn uninstall(
             )),
         }
     };
-    bus.confirmed(caller, name, value, draft, run).await
+    bus.confirmed(caller, name, value, (draft, activity), run)
+        .await
 }

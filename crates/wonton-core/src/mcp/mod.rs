@@ -35,6 +35,7 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use serde_json::Value;
 use wonton_protocol::{ConfirmationState, FileFailure};
 
+use crate::bot_activity::Guard;
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::help::Help;
@@ -183,6 +184,7 @@ impl Bus {
         upstreams: Arc<Upstreams>,
     ) -> Arc<Self> {
         let recover = confirmations.has_leftover_windows();
+        confirmations.attach_activity(plugins.activity.clone());
         let bus = Arc::new(Self {
             plugins,
             confirmations,
@@ -327,6 +329,7 @@ impl Bus {
         request: CallToolRequestParams,
         cancelled: impl Future<Output = ()> + Send,
     ) -> CallToolResult {
+        let activity = self.plugins.activity.start_tool(&caller.id);
         let name = request.name.to_string();
         let arguments = request.arguments.unwrap_or_default();
         let args = Value::Object(arguments.clone());
@@ -334,7 +337,7 @@ impl Bus {
             return self.deny(caller, &name, &args, &format!("没有工具 {name}"));
         };
         if owner == naming::CORE {
-            return core_tools::call(self, caller, tool, arguments).await;
+            return core_tools::call(self, caller, tool, arguments, activity).await;
         }
         let Some(server) = self
             .plugins
@@ -349,16 +352,21 @@ impl Bus {
                 &format!("没有在运行的插件提供 {name}"),
             );
         };
-        self.call_plugin(caller, &server, &name, tool, arguments, cancelled)
-            .await
+        self.call_plugin(
+            caller,
+            &server,
+            (&name, tool, activity),
+            arguments,
+            cancelled,
+        )
+        .await
     }
 
     async fn call_plugin(
         self: &Arc<Self>,
         caller: &Caller,
         server: &McpServer,
-        name: &str,
-        tool: &str,
+        (name, tool, activity): (&str, &str, Guard),
         arguments: JsonObject,
         cancelled: impl Future<Output = ()> + Send,
     ) -> CallToolResult {
@@ -393,9 +401,10 @@ impl Bus {
                 .map(Basis::from)
         };
         let mut cancelled = std::pin::pin!(cancelled);
-        let (basis, held_ms) = if not_sensitive.is_some() {
-            (not_sensitive, None)
+        let (basis, held_ms, activity) = if not_sensitive.is_some() {
+            (not_sensitive, None, activity)
         } else {
+            drop(activity);
             let held_ms = match self
                 .hold(caller, name, &args, &server.id, cancelled.as_mut())
                 .await
@@ -413,7 +422,8 @@ impl Bus {
                         .map(Basis::Window)
                 })
             };
-            (cleared, held_ms)
+            let activity = self.plugins.activity.start_tool(&caller.id);
+            (cleared, held_ms, activity)
         };
         if let Some(basis) = basis {
             let outcome = forward(self, caller, server, tool, arguments, cancelled).await;
@@ -450,7 +460,7 @@ impl Bus {
             )
             .await
         };
-        self.confirmed_after_hold(caller, name, args, draft, run, held_ms)
+        self.confirmed_after_hold(caller, name, args, (draft, activity), run, held_ms)
             .await
     }
 
@@ -461,14 +471,14 @@ impl Bus {
         caller: &Caller,
         name: &str,
         args: Value,
-        draft: Draft,
+        (draft, activity): (Draft, Guard),
         run: F,
     ) -> CallToolResult
     where
         F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
-        self.confirmed_after_hold(caller, name, args, draft, run, None)
+        self.confirmed_after_hold(caller, name, args, (draft, activity), run, None)
             .await
     }
 
@@ -478,7 +488,7 @@ impl Bus {
         caller: &Caller,
         name: &str,
         args: Value,
-        draft: Draft,
+        (draft, activity): (Draft, Guard),
         run: F,
         held_ms: Option<u64>,
     ) -> CallToolResult
@@ -486,6 +496,7 @@ impl Bus {
         F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
+        drop(activity);
         let bus = self.clone();
         let caller = caller.clone();
         let name = name.to_owned();
@@ -493,7 +504,9 @@ impl Bus {
             let decision = bus.confirmations.ask(&caller.id, draft).await;
             match decision {
                 Ok(ticket) => {
+                    let activity = bus.plugins.activity.start_tool(&caller.id);
                     let outcome = run(bus.clone()).await;
+                    drop(activity);
                     bus.record(
                         &caller,
                         &name,
@@ -523,7 +536,7 @@ impl Bus {
         caller: &Caller,
         name: &str,
         args: Value,
-        (draft, second, held_ms): (Draft, Option<Draft>, Option<u64>),
+        (draft, second, held_ms, activity): (Draft, Option<Draft>, Option<u64>, Guard),
         run: F,
     ) -> CallToolResult
     where
@@ -532,9 +545,10 @@ impl Bus {
     {
         let Some(second) = second else {
             return self
-                .confirmed_after_hold(caller, name, args, draft, run, held_ms)
+                .confirmed_after_hold(caller, name, args, (draft, activity), run, held_ms)
                 .await;
         };
+        drop(activity);
         let bus = self.clone();
         let caller = caller.clone();
         let name = name.to_owned();
@@ -559,7 +573,9 @@ impl Bus {
                     return bus.refused(&caller, &name, &args, &refusal, None);
                 }
             };
+            let activity = bus.plugins.activity.start_tool(&caller.id);
             let outcome = run(bus.clone()).await;
+            drop(activity);
             bus.record(
                 &caller,
                 &name,
@@ -651,6 +667,8 @@ impl Bus {
     }
 }
 
+#[cfg(test)]
+mod activity_tests;
 #[cfg(test)]
 mod agent_install_card_tests;
 #[cfg(test)]

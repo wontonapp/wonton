@@ -2,13 +2,14 @@
 //!
 //! 主人的回答只经 [`Confirmations::answer`] 进来，网关只在已配对设备或主人令牌的请求上调用它（ADR-0024）。
 
+mod activity;
 mod windows;
 
 pub use windows::EndedWindow;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
@@ -141,6 +142,9 @@ pub struct Confirmations {
     /// 记着哪些卡片显示着时段，核心重启后才改得了它们。判定不读它。
     windows_file: Option<PathBuf>,
     table: Mutex<Table>,
+    /// 确认状态变化要唤醒的活动表。挂它的 Bus 可能重建（测试里共用 Confirmations），
+    /// 所以允许换接：新 Bus 的活动表才是当前事实源。
+    activity: RwLock<Option<Arc<crate::bot_activity::BotActivity>>>,
 }
 
 fn now_ms(at: SystemTime) -> u64 {
@@ -158,6 +162,7 @@ impl Confirmations {
             window: DEFAULT_WINDOW,
             windows_file: None,
             table: Mutex::new(Table::default()),
+            activity: RwLock::new(None),
         }
     }
 
@@ -242,6 +247,7 @@ impl Confirmations {
             created,
         };
         table.slots.insert(card.id.clone(), slot);
+        self.activity_changed();
         Ok((card, answered))
     }
 
@@ -251,17 +257,25 @@ impl Confirmations {
         card: &ConfirmationCard,
         answered: oneshot::Receiver<Chosen>,
     ) -> Result<Chosen, Refusal> {
-        let handle = match self.notifier.post(card).await {
-            Ok(handle) => handle,
-            Err(e) => {
+        let expires =
+            Duration::from_millis(card.expires_at_ms.saturating_sub(now_ms(SystemTime::now())));
+        let deadline = tokio::time::Instant::now() + expires;
+        let handle = match tokio::time::timeout_at(deadline, self.notifier.post(card)).await {
+            Ok(Ok(handle)) => handle,
+            Ok(Err(e)) => {
                 self.lock().slots.remove(&card.id);
+                self.activity_changed();
                 return Err(Refusal::Unavailable(e));
+            }
+            Err(_) => {
+                self.settle(&card.id, ConfirmationState::Expired).await;
+                return Err(Refusal::Expired);
             }
         };
         if let Some(slot) = self.lock().slots.get_mut(&card.id) {
             slot.handle = Some(handle);
         }
-        match tokio::time::timeout(self.ttl, answered).await {
+        match tokio::time::timeout_at(deadline, answered).await {
             Ok(Ok(chosen)) => Ok(chosen),
             Err(_) | Ok(Err(_)) => {
                 self.settle(&card.id, ConfirmationState::Expired).await;
@@ -319,12 +333,14 @@ impl Confirmations {
         };
         if waiter.send(chosen).is_err() {
             slot.card.state = ConfirmationState::Expired;
+            self.activity_changed();
             return Err(AnswerError::Expired);
         }
         slot.card.state = state.clone();
         if answer == Answer::AllowWindow {
             self.open_window(&mut table, id, now);
         }
+        self.activity_changed();
         Ok(state)
     }
 
@@ -348,6 +364,7 @@ impl Confirmations {
         let Some(waiter) = chosen else {
             return false;
         };
+        self.activity_changed();
         let _ = waiter.send(Chosen {
             answer: Answer::Reject,
             choice_id: Some(SUPERSEDED.to_owned()),
@@ -383,7 +400,9 @@ impl Confirmations {
 
     pub(super) async fn settle(&self, id: &str, state: ConfirmationState) {
         if let Some(slot) = self.lock().slots.get_mut(id) {
-            slot.waiter = None;
+            if slot.waiter.take().is_some() {
+                self.activity_changed();
+            }
             slot.card.state = state;
         }
         self.publish(id).await;

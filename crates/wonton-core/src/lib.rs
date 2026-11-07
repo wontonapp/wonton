@@ -12,7 +12,9 @@ pub mod test_docker;
 #[cfg(test)]
 mod test_docker_check;
 
+mod bot_activity;
 pub mod bot_media;
+
 pub mod config;
 pub mod device;
 pub mod files;

@@ -10,6 +10,7 @@ use super::audit::{Basis, Decision, Record};
 use super::core_tools::tool;
 use super::file_tools::decision;
 use super::{Bus, Caller, Outcome, cards, error, naming};
+use crate::bot_activity::Guard;
 use crate::files::Failure;
 use crate::files::share_fs::saving::{SaveTarget, Staged};
 use crate::l10n;
@@ -59,14 +60,19 @@ pub(super) async fn list(bus: &Bus) -> Result<Value, String> {
 }
 
 /// 放在后台任务里：暂存要有人收拾，确认过的调用不跟着 Agent 走（ADR-0016）。
-pub(super) async fn save(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResult {
+pub(super) async fn save(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    args: JsonObject,
+    activity: Guard,
+) -> CallToolResult {
     let (bus, caller) = (bus.clone(), caller.clone());
-    tokio::spawn(async move { run(&bus, &caller, args).await })
+    tokio::spawn(async move { run(&bus, &caller, args, activity).await })
         .await
         .unwrap_or_else(|e| error(&format!("存文件的流程意外中止：{e}")))
 }
 
-async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResult {
+async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard) -> CallToolResult {
     let name = naming::join(naming::CORE, SAVE);
     let value = Value::Object(args.clone());
     let (target, staged) = match stage(bus, caller, &args).await {
@@ -94,10 +100,12 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
     }
     let langs = bus.plugins.owner_languages();
     let draft = cards::save_file(&caller.name, &staged.files, &target, &langs);
+    drop(activity);
     let ticket = match bus.confirmations.ask(&caller.id, draft).await {
         Ok(ticket) => ticket,
         Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
     };
+    let activity = bus.plugins.activity.start_tool(&caller.id);
     let granted = match ticket.answer {
         Answer::ApproveWider => target.share.clone(),
         _ => folder,
@@ -116,6 +124,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
         });
     let summary = summary(&target, &staged, "granted", &granted);
     let (outcome, audited) = place(bus, staged, target, summary, note).await;
+    drop(activity);
     bus.record(
         caller,
         &name,

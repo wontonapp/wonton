@@ -22,6 +22,7 @@
 mod agent_permission;
 mod api;
 mod api_body;
+mod bot_activity;
 mod bot_profile;
 mod confirmations;
 mod core_routes;
@@ -522,6 +523,8 @@ fn with_cookie(mut response: Response, cookie: String) -> Response {
     response
 }
 
+#[cfg(test)]
+mod bot_activity_tests;
 #[cfg(test)]
 mod bot_profile_tests;
 #[cfg(test)]
