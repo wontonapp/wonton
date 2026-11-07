@@ -19,6 +19,16 @@ pub trait LoginSink {
     fn redact(&self, event_id: &str, reason: &str) -> impl Future<Output = Result<()>> + Send;
 }
 
+/// 群里的登录命令转到和主人的私聊执行：命令回执留在群里，登录过程只在私聊。
+pub struct LoginChat<'a, S: LoginSink> {
+    /// 命令或回复所在的那个房间。
+    pub current: &'a S,
+    /// 和主人的私聊；当前房间不是私聊时，登录输出都发到这里。
+    pub direct: Option<&'a S>,
+    /// 当前房间不是和主人的私聊。
+    pub group: bool,
+}
+
 /// 撤回已转交 Agent 的密钥消息时写的理由，房间里的人都能看到。
 const REDACT_REASON: &str = "已转交 Agent 登录";
 
@@ -76,6 +86,8 @@ impl LoginFlow {
         self.active.is_some()
     }
 
+    /// 私聊里的收发：登录命令和回复都在同一个房间。
+    #[cfg(test)]
     pub async fn receive(
         &mut self,
         text: &str,
@@ -85,62 +97,47 @@ impl LoginFlow {
         socket: &Path,
         busy: bool,
     ) -> Result<bool> {
+        self.receive_from(
+            text,
+            event_id,
+            &LoginChat {
+                current: sink,
+                direct: None,
+                group: false,
+            },
+            acp,
+            socket,
+            busy,
+        )
+        .await
+    }
+
+    pub async fn receive_from(
+        &mut self,
+        text: &str,
+        event_id: &str,
+        chat: &LoginChat<'_, impl LoginSink>,
+        acp: &Arc<AcpClient>,
+        socket: &Path,
+        busy: bool,
+    ) -> Result<bool> {
         let command = text
             .strip_prefix("/wonton login")
             .filter(|rest| rest.is_empty() || rest.starts_with(' '));
         if let Some(rest) = command {
-            let rest = rest.trim();
-            if rest == "cancel" {
-                self.answer.take().map(|answer| answer.send("cancel"));
-                self.active.take();
-                sink.send_login_text("登录已取消。").await?;
-                return Ok(true);
-            }
-            if matches!(rest, "accept" | "decline") {
-                if let Some(answer) = self.answer.take() {
-                    let _ = answer.send(if rest == "accept" {
-                        "accept"
-                    } else {
-                        "decline"
-                    });
-                } else {
-                    sink.send_login_text("没有等待回答的登录链接。").await?;
-                }
-                return Ok(true);
-            }
-            if self.active() || busy {
-                sink.send_login_text("请先结束当前操作，再发起登录。")
-                    .await?;
-            } else if rest.is_empty() {
-                sink.send_login_text(&methods_text(acp.auth_methods()))
-                    .await?;
-            } else if let Some(method) = acp
-                .auth_methods()
-                .iter()
-                .find(|method| method.id == rest && method.supported())
-            {
-                match self.start(method.clone(), acp.clone(), socket).await {
-                    Ok(()) => {
-                        sink.send_login_text(
-                            "正在发起 Agent 登录。取消请发送 /wonton login cancel。",
-                        )
-                        .await?
-                    }
-                    Err(error) => sink.send_login_text(&error.to_string()).await?,
-                }
-            } else if acp.auth_methods().iter().any(|method| method.id == rest) {
-                sink.send_login_text("桥还不支持这种登录方式。").await?;
-            } else {
-                sink.send_login_text("Agent 没有提供这种登录方式；发送 /wonton login 查看。")
-                    .await?;
-            }
+            self.handle_command(rest, chat, acp, socket, busy).await?;
             return Ok(true);
         }
+        // 群里的普通消息照常走 ACP；登录里的码和 key 在私聊里回。
+        if chat.group {
+            return Ok(false);
+        }
         if self.answer.is_some() {
-            sink.send_login_text(
-                "请先回复 /wonton login accept 或 /wonton login decline 处理登录链接。",
-            )
-            .await?;
+            chat.current
+                .send_login_text(
+                    "请先回复 /wonton login accept 或 /wonton login decline 处理登录链接。",
+                )
+                .await?;
             return Ok(true);
         }
         let Some(active) = &self.active else {
@@ -148,21 +145,94 @@ impl LoginFlow {
         };
         if active.terminal {
             if text.len() > 16 * 1024 || text.contains(['\n', '\r', '\0']) {
-                sink.send_login_text("授权码必须是单行文字，且不能超过 16 KiB。")
+                chat.current
+                    .send_login_text("授权码必须是单行文字，且不能超过 16 KiB。")
                     .await?;
             } else if active.input.send(text.to_owned()).await.is_ok() {
-                Self::redact_forwarded_message(event_id, sink).await?;
+                Self::redact_forwarded_message(event_id, chat.current).await?;
             } else {
-                sink.send_login_text("登录已结束，这条消息没有发送给 Agent。")
+                chat.current
+                    .send_login_text("登录已结束，这条消息没有发送给 Agent。")
                     .await?;
             }
         } else {
-            sink.send_login_text(
-                "登录期间不转发普通聊天；请在官方页面完成登录，或发送 /wonton login cancel。",
-            )
-            .await?;
+            chat.current
+                .send_login_text(
+                    "登录期间不转发普通聊天；请在官方页面完成登录，或发送 /wonton login cancel。",
+                )
+                .await?;
         }
         Ok(true)
+    }
+
+    async fn handle_command(
+        &mut self,
+        rest: &str,
+        chat: &LoginChat<'_, impl LoginSink>,
+        acp: &Arc<AcpClient>,
+        socket: &Path,
+        busy: bool,
+    ) -> Result<()> {
+        let rest = rest.trim();
+        // 群里发起时链接和码都不能留在群里：登录改到和主人的私聊里做。
+        let sink = match (chat.group, chat.direct) {
+            (true, None) => {
+                chat.current
+                    .send_login_text("找不到和你的私聊，请在私聊里发 /wonton login。")
+                    .await?;
+                return Ok(());
+            }
+            (true, Some(direct)) => {
+                chat.current
+                    .send_login_text("登录在我们的私聊里进行。")
+                    .await?;
+                direct
+            }
+            (false, _) => chat.current,
+        };
+        if rest == "cancel" {
+            self.answer.take().map(|answer| answer.send("cancel"));
+            self.active.take();
+            sink.send_login_text("登录已取消。").await?;
+            return Ok(());
+        }
+        if matches!(rest, "accept" | "decline") {
+            if let Some(answer) = self.answer.take() {
+                let _ = answer.send(if rest == "accept" {
+                    "accept"
+                } else {
+                    "decline"
+                });
+            } else {
+                sink.send_login_text("没有等待回答的登录链接。").await?;
+            }
+            return Ok(());
+        }
+        if self.active() || busy {
+            sink.send_login_text("请先结束当前操作，再发起登录。")
+                .await?;
+        } else if rest.is_empty() {
+            sink.send_login_text(&methods_text(acp.auth_methods()))
+                .await?;
+        } else if let Some(method) = acp
+            .auth_methods()
+            .iter()
+            .find(|method| method.id == rest && method.supported())
+        {
+            match self.start(method.clone(), acp.clone(), socket).await {
+                Ok(()) => {
+                    sink.send_login_text("正在发起 Agent 登录。取消请发送 /wonton login cancel。")
+                        .await?
+                }
+                Err(error) => sink.send_login_text(&error.to_string()).await?,
+            }
+        } else if acp.auth_methods().iter().any(|method| method.id == rest) {
+            sink.send_login_text("桥还不支持这种登录方式。").await?;
+        } else {
+            sink.send_login_text("Agent 没有提供这种登录方式；发送 /wonton login 查看。")
+                .await?;
+        }
+        Ok(())
     }
 
     /// 密钥已转交 Agent，原文不能留在聊天记录里：撤回；撤不动就明说，让用户自己删。

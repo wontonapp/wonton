@@ -476,3 +476,150 @@ async fn unsupported_login_method_is_hidden_and_harmless() {
     drop(client);
     agent.finish().await;
 }
+
+#[tokio::test]
+async fn a_group_login_moves_to_the_direct_chat() {
+    use crate::login::{LoginEvent, LoginFlow};
+    let agent = FakeAgent::start(Scenario::LoginTerminal).await;
+    let client = Arc::new(
+        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+            .await
+            .unwrap(),
+    );
+    let (mut login, mut events) = LoginFlow::new();
+    let group = MemorySink::default();
+    let direct = MemorySink::default();
+    let chat = LoginChat {
+        current: &group,
+        direct: Some(&direct),
+        group: true,
+    };
+    bounded(
+        login.receive_from(
+            "/wonton login term",
+            "$cmd:example.org",
+            &chat,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "start login in group",
+    )
+    .await
+    .unwrap();
+    // 群里只留一句，方式提示在私聊。
+    assert_eq!(group.texts(), ["登录在我们的私聊里进行。"]);
+
+    // 登录事件由私聊的处理循环投递。
+    let event = bounded(events.recv(), "terminal output").await.unwrap();
+    let LoginEvent::Output(link) = &event else {
+        panic!("期待终端登录提示");
+    };
+    let link = link.clone();
+    assert_eq!(link, "https://auth.example/device");
+    bounded(login.event(event, &direct), "deliver prompt")
+        .await
+        .unwrap();
+    assert!(direct.texts().iter().any(|text| text.contains(&link)));
+
+    // 群里再说普通的话照常走 ACP，不当成 key。
+    assert!(
+        !bounded(
+            login.receive_from(
+                "普通消息",
+                "$chat:example.org",
+                &chat,
+                &client,
+                &agent.socket,
+                false
+            ),
+            "group chat",
+        )
+        .await
+        .unwrap()
+    );
+
+    // 私聊里回 key：照旧转交并撤回那条消息。
+    let dm = LoginChat {
+        current: &direct,
+        direct: None,
+        group: false,
+    };
+    bounded(
+        login.receive_from(
+            "code-42",
+            "$key:example.org",
+            &dm,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "send code in direct chat",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        direct.redactions(),
+        [("$key:example.org".to_owned(), REDACT_REASON.to_owned())]
+    );
+    assert_eq!(group.texts(), ["登录在我们的私聊里进行。"]);
+
+    bounded(
+        login.receive_from(
+            "/wonton login cancel",
+            "$cancel:example.org",
+            &dm,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "cancel in direct chat",
+    )
+    .await
+    .unwrap();
+    assert!(!login.active());
+    assert!(
+        direct
+            .texts()
+            .iter()
+            .any(|text| text.contains("登录已取消"))
+    );
+}
+
+#[tokio::test]
+async fn a_group_login_without_a_direct_chat_says_where_to_go() {
+    use crate::login::LoginFlow;
+    let agent = FakeAgent::start(Scenario::LoginTerminal).await;
+    let client = Arc::new(
+        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+            .await
+            .unwrap(),
+    );
+    let (mut login, _events) = LoginFlow::new();
+    let group = MemorySink::default();
+    let chat = LoginChat {
+        current: &group,
+        direct: None,
+        group: true,
+    };
+    bounded(
+        login.receive_from(
+            "/wonton login",
+            "$cmd:example.org",
+            &chat,
+            &client,
+            &agent.socket,
+            false,
+        ),
+        "list in group without direct chat",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        group.texts(),
+        ["找不到和你的私聊，请在私聊里发 /wonton login。"]
+    );
+    assert!(!login.active());
+    drop(client);
+    agent.finish().await;
+}

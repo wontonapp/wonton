@@ -15,7 +15,7 @@ use crate::{
     commands::{self, CommandSink, Commands},
     config::{Config, Limits},
     error::{Error, Result as BridgeResult},
-    login::{LoginFlow, LoginSink},
+    login::{LoginChat, LoginEvent, LoginFlow, LoginSink},
     matrix::{IncomingText, new_owner_messages},
     state::{SessionRecord, SessionStore},
 };
@@ -26,6 +26,7 @@ struct Bridge {
     matrix: Arc<MatrixSession>,
     acp: Arc<AcpClient>,
     sessions: Arc<SessionStore>,
+    bot: wonton_matrix::OwnedUserId,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +77,60 @@ impl LoginSink for RoomSink<'_> {
     }
 }
 
+/// 登录是全 Agent 一份的：群里发起的命令转到和主人的私聊，事件也只在私聊里回。
+struct LoginService {
+    flow: tokio::sync::Mutex<LoginFlow>,
+    /// 主人和 Bot 的私聊；主房间本身是私聊时为 None。
+    direct: Option<Arc<ChatRoom>>,
+    bot: wonton_matrix::OwnedUserId,
+}
+
+impl LoginService {
+    async fn receive(
+        &self,
+        room: &Arc<ChatRoom>,
+        group: bool,
+        incoming: &IncomingText,
+        acp: &Arc<AcpClient>,
+        socket: &std::path::Path,
+        busy: bool,
+    ) -> BridgeResult<bool> {
+        let bot = &self.bot;
+        let current = RoomSink { room, bot };
+        let direct = self.direct.as_ref().map(|room| RoomSink { room, bot });
+        self.flow
+            .lock()
+            .await
+            .receive_from(
+                &incoming.text,
+                &incoming.event_id,
+                &LoginChat {
+                    current: &current,
+                    direct: direct.as_ref(),
+                    group,
+                },
+                acp,
+                socket,
+                busy,
+            )
+            .await
+    }
+
+    async fn event(&self, event: LoginEvent, room: &ChatRoom) -> BridgeResult<bool> {
+        self.flow
+            .lock()
+            .await
+            .event(
+                event,
+                &RoomSink {
+                    room,
+                    bot: &self.bot,
+                },
+            )
+            .await
+    }
+}
+
 struct RoomState {
     session_id: Option<String>,
     loaded: bool,
@@ -83,7 +138,6 @@ struct RoomState {
     queue: VecDeque<Job>,
     pending_interrupt: Option<Job>,
     last_activity: Instant,
-    login: LoginFlow,
 }
 
 pub async fn run() -> Result<()> {
@@ -106,21 +160,25 @@ pub async fn run() -> Result<()> {
     .await
     .context("登录 Matrix")?;
     matrix.start_sync().await.context("启动 Matrix 同步")?;
+    let bot = matrix.user_id().to_owned();
     let room = Arc::new(
         matrix
             .watch_room(&config.home_room)
             .await
             .context("打开 Matrix 主房间")?,
     );
-    // 连上 Agent 前先摆出桥自己的命令，Agent 可能一直不报命令表。
-    let bot = matrix.user_id().to_owned();
-    let mut commands = Commands::new();
-    commands
-        .reset(&RoomSink {
-            room: &room,
-            bot: &bot,
-        })
-        .await;
+    // 主房间不是和主人的私聊（共享 Bot 的主房间在家人群）时，登录链接改到私聊里发。
+    let direct = if is_group(&matrix, &room, &config.owner).await {
+        watch_direct(&matrix, &config.owner).await
+    } else {
+        None
+    };
+    let (login, login_rx) = LoginFlow::new();
+    let login = Arc::new(LoginService {
+        flow: tokio::sync::Mutex::new(login),
+        direct: direct.clone(),
+        bot: bot.clone(),
+    });
     let acp = connect_agent(&config).await?;
     let sessions = Arc::new(SessionStore::open(config.bridge_data.join("sessions.json")).await?);
     let bridge = Bridge {
@@ -128,10 +186,74 @@ pub async fn run() -> Result<()> {
         matrix: Arc::new(matrix),
         acp: Arc::new(acp),
         sessions,
+        bot,
     };
-    run_room(bridge, room, commands)
-        .await
-        .map_err(|error| anyhow::anyhow!(error))
+    match direct {
+        Some(direct) => {
+            // 登录事件只由私聊循环消费；它结束后整座桥退出重连。
+            let mut direct_loop = tokio::spawn(run_room(
+                bridge.clone(),
+                direct,
+                Some(login_rx),
+                login.clone(),
+            ));
+            let result = tokio::select! {
+                result = run_room(bridge, room, None, login) => result,
+                result = &mut direct_loop => match result {
+                    Ok(result) => result,
+                    Err(error) => Err(join_error(error)),
+                },
+            };
+            direct_loop.abort();
+            result.map_err(|error| anyhow::anyhow!(error))
+        }
+        None => run_room(bridge, room, Some(login_rx), login)
+            .await
+            .map_err(|error| anyhow::anyhow!(error)),
+    }
+}
+
+/// 当前房间不是和主人的私聊。私聊只有 `m.direct` 里那一个，群是别的房间；
+/// 私聊标记还没同步到时退回成员数，取不到按私聊。
+async fn is_group(matrix: &MatrixSession, room: &ChatRoom, owner: &wonton_matrix::UserId) -> bool {
+    match matrix.direct_chat_with(owner) {
+        Some(direct) => direct != *room.room_id(),
+        None => match room.joined_member_count().await {
+            Ok(count) => count > 2,
+            Err(error) => {
+                tracing::warn!(error = %error, "取不到房间成员数，按私聊处理");
+                false
+            }
+        },
+    }
+}
+
+/// 等和主人的私聊同步进来（首次安装后可能还没同步到），拿不到就当作没有。
+async fn watch_direct(
+    matrix: &MatrixSession,
+    owner: &wonton_matrix::UserId,
+) -> Option<Arc<ChatRoom>> {
+    for _ in 0..5 {
+        if let Some(room_id) = matrix.direct_chat_with(owner) {
+            match matrix.watch_room(&room_id).await {
+                Ok(room) => return Some(Arc::new(room)),
+                Err(error) => tracing::warn!(error = %error, "打开和主人的私聊失败，重试"),
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    None
+}
+
+fn join_error(error: tokio::task::JoinError) -> Error {
+    Error::TransportUnavailable(format!("私聊处理任务失败：{error}"))
+}
+
+async fn next_login_event(events: &mut Option<mpsc::Receiver<LoginEvent>>) -> Option<LoginEvent> {
+    match events {
+        Some(receiver) => receiver.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 async fn connect_agent(config: &Config) -> BridgeResult<AcpClient> {
@@ -155,8 +277,21 @@ async fn connect_agent(config: &Config) -> BridgeResult<AcpClient> {
     }
 }
 
-async fn run_room(bridge: Bridge, room: Arc<ChatRoom>, mut commands: Commands) -> BridgeResult<()> {
-    let bot = bridge.matrix.user_id().to_owned();
+async fn run_room(
+    bridge: Bridge,
+    room: Arc<ChatRoom>,
+    mut login_events: Option<mpsc::Receiver<LoginEvent>>,
+    login: Arc<LoginService>,
+) -> BridgeResult<()> {
+    let bot = bridge.bot.clone();
+    // 连上 Agent 前先摆出桥自己的命令，Agent 可能一直不报命令表。
+    let mut commands = Commands::new();
+    commands
+        .reset(&RoomSink {
+            room: room.as_ref(),
+            bot: &bot,
+        })
+        .await;
     let mut updates = room.message_updates().await;
     let mut acp_notices = bridge.acp.subscribe();
     let mut acp_closed = bridge.acp.closed();
@@ -169,7 +304,6 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>, mut commands: Commands) -
         .filter_map(|message| message.event_id.as_ref().map(ToString::to_string))
         .collect::<HashSet<_>>();
     let (finished_tx, mut finished_rx) = mpsc::channel(16);
-    let (login, mut login_rx) = LoginFlow::new();
     let mut state = RoomState {
         session_id: bridge
             .sessions
@@ -181,7 +315,6 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>, mut commands: Commands) -
         queue: VecDeque::new(),
         pending_interrupt: None,
         last_activity: Instant::now(),
-        login,
     };
     let mut idle_tick = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
@@ -191,7 +324,7 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>, mut commands: Commands) -
                     &bridge,
                     &room,
                     &mut state,
-                    &bot,
+                    &login,
                     &messages,
                     &mut seen,
                     &finished_tx,
@@ -212,12 +345,8 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>, mut commands: Commands) -
                     start_or_report(&bridge, &room, &mut state, job, &finished_tx).await?;
                 }
             }
-            Some(event) = login_rx.recv() => {
-                if state
-                    .login
-                    .event(event, &RoomSink { room: room.as_ref(), bot: &bot })
-                    .await?
-                {
+            Some(event) = next_login_event(&mut login_events) => {
+                if login.event(event, room.as_ref()).await? {
                     // 终端登录成功后重开 ACP 连接：进程退出码 0，Compose 拉起后重新 initialize。
                     room.send_text("Agent 登录完成，桥将重连。").await?;
                     return Ok(());
@@ -249,21 +378,15 @@ async fn route_owner_messages(
     bridge: &Bridge,
     room: &Arc<ChatRoom>,
     state: &mut RoomState,
-    bot: &UserId,
+    login: &LoginService,
     messages: &[Message],
     seen: &mut HashSet<String>,
     finished_tx: &mpsc::Sender<PromptFinished>,
 ) -> BridgeResult<()> {
-    // 群里别的 Bot 也能收到这条消息，命令要提及本 Bot 才算数；成员数取不到时按私聊处理。
-    let group = match room.joined_member_count().await {
-        Ok(count) => count > 2,
-        Err(error) => {
-            tracing::warn!(error = %error, "取不到房间成员数，按私聊处理");
-            false
-        }
-    };
-    for incoming in new_owner_messages(messages, &bridge.config.owner, bot, group, seen) {
-        receive_job(bridge, room, state, bot, incoming, finished_tx).await?;
+    // 群里别的 Bot 也能收到这条消息，命令要提及本 Bot 才算数；私聊不用。
+    let group = is_group(&bridge.matrix, room, &bridge.config.owner).await;
+    for incoming in new_owner_messages(messages, &bridge.config.owner, &bridge.bot, group, seen) {
+        receive_job(bridge, room, state, login, group, incoming, finished_tx).await?;
     }
     Ok(())
 }
@@ -298,7 +421,8 @@ async fn receive_job(
     bridge: &Bridge,
     room: &Arc<ChatRoom>,
     state: &mut RoomState,
-    bot: &UserId,
+    login: &LoginService,
+    group: bool,
     incoming: IncomingText,
     finished_tx: &mpsc::Sender<PromptFinished>,
 ) -> BridgeResult<()> {
@@ -311,15 +435,11 @@ async fn receive_job(
         room.send_text(&commands::help()).await?;
         return Ok(());
     }
-    if state
-        .login
+    if login
         .receive(
-            &incoming.text,
-            &incoming.event_id,
-            &RoomSink {
-                room: room.as_ref(),
-                bot,
-            },
+            room,
+            group,
+            &incoming,
             &bridge.acp,
             &bridge.config.socket,
             state.active,

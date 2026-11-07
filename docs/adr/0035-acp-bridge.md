@@ -56,7 +56,7 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 
 ### 登录（C3）
 
-模型 key 仍走 magpie；官方账号只在 Agent 官方程序内登录。插件清单用 `agent.login` 声明支持的方式并申请 `network.egress`，桥不把订阅请求送进 magpie。ACP 的 URL 引导（`elicitation/create` 的 URL）转成 Matrix 私聊中的链接卡片，主人点击后回到官方页面；终端类登录把官方给的链接和提示发到聊天，主人回复的授权码写入该 ACP 进程的 stdin。技术决定是直接转交、默认开启且不加开关；授权码不进日志、不存盘，聊天里的回复消息照常留在加密房间。公开版本不等 Anthropic 书面确认；条款怎么读、风险在谁见 [ADR-0034](0034-onboarding-and-help.md)，不在本 ADR 重复。
+模型 key 仍走 magpie；官方账号只在 Agent 官方程序内登录。插件清单用 `agent.login` 声明支持的方式并申请 `network.egress`，桥不把订阅请求送进 magpie。ACP 的 URL 引导（`elicitation/create` 的 URL）转成 Matrix 私聊中的链接卡片，主人点击后回到官方页面；终端类登录把官方给的链接和提示发到聊天，主人回复的授权码写入该 ACP 进程的 stdin。主房间是群（共享 Bot 的主房间在家人群）时，登录不在群里进行：桥在群里只回一句，方式列表、链接、码和取消都在主人与 Bot 的私聊里，找不到私聊就请主人在私聊里发起。登录状态是全 Agent 一份，同一时间只有一个。技术决定是直接转交、默认开启且不加开关；授权码不进日志、不存盘，聊天里的回复消息照常留在加密房间（密钥消息撤回），群里的那一句回执留在群里。公开版本不等 Anthropic 书面确认；条款怎么读、风险在谁见 [ADR-0034](0034-onboarding-and-help.md)，不在本 ADR 重复。
 
 ## 形态取舍
 

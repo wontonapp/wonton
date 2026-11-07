@@ -3,6 +3,8 @@
 //! ```text
 //! echo-bot probe --homeserver <地址> [--proxy <代理>] --login-token <JWT> --room <房间> --bot <Bot 的用户 ID>
 //!                [--text <文字>]… [--reply echo|any] [--wait <秒>] [--settle <秒>]
+//!                [--print-event-id <任意值>] [--mention <用户 ID>]
+//!                [--redacted <秒>] [--token-only <任意值>]
 //! ```
 //!
 //! 用核心签的登录令牌登录一台临时设备（密钥只在内存里），确认房间是加密的，按顺序发每条 `--text`，每发一条等
@@ -16,11 +18,13 @@ use anyhow::{Context, bail};
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::deserialized_responses::EncryptionInfo;
 use matrix_sdk::room::Room;
+use matrix_sdk::ruma::api::client::room::get_room_event;
+use matrix_sdk::ruma::events::Mentions;
 use matrix_sdk::ruma::events::room::message::{
     MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
 };
 use matrix_sdk::ruma::serde::JsonObject;
-use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
 use matrix_sdk::{Client, RoomState};
 use tokio::sync::mpsc;
 
@@ -30,7 +34,7 @@ use crate::PREFIX;
 const WAIT: Duration = Duration::from_secs(60);
 
 /// 认得的参数。
-const FLAGS: [&str; 9] = [
+const FLAGS: [&str; 13] = [
     "homeserver",
     "proxy",
     "login-token",
@@ -40,6 +44,10 @@ const FLAGS: [&str; 9] = [
     "reply",
     "wait",
     "settle",
+    "print-event-id",
+    "mention",
+    "redacted",
+    "token-only",
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -60,6 +68,14 @@ struct Options {
     reply: Reply,
     wait: Duration,
     settle: Option<Duration>,
+    /// 每发一条消息后打印它的事件 ID，供调用方在服务器上核对（如撤回）。
+    print_event_id: bool,
+    /// 每条消息都带上这个提及；群里的命令要提及 Bot 才算数。
+    mention: Option<OwnedUserId>,
+    /// 发完消息等服务器把它撤回（content 清空），最多等这么多秒。
+    redacted: Option<Duration>,
+    /// 只登录并打印访问令牌，不进房间。
+    token_only: bool,
 }
 
 impl Options {
@@ -116,6 +132,16 @@ impl Options {
             reply,
             wait,
             settle,
+            print_event_id: one("print-event-id").is_some(),
+            mention: one("mention")
+                .map(|mention| mention.parse())
+                .transpose()
+                .context("--mention 不是合法的用户 ID")?,
+            redacted: one("redacted")
+                .map(|secs| secs.parse().context("--redacted 要是秒数"))
+                .transpose()?
+                .map(Duration::from_secs),
+            token_only: one("token-only").is_some(),
         })
     }
 }
@@ -135,6 +161,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .initial_device_display_name("Wonton 冒烟")
         .await
         .context("用登录令牌登录")?;
+    if options.token_only {
+        // 不注销：调用方要拿这个令牌接着调接口。
+        let token = client.access_token().context("登录后没有访问令牌")?;
+        println!("令牌 {token}");
+        return Ok(());
+    }
     let result = converse(&client, &options).await;
     if let Err(e) = client.matrix_auth().logout().await {
         tracing::warn!(error = %e, "冒烟设备退出登录失败");
@@ -185,9 +217,18 @@ async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
     let rounds = async {
         for (round, text) in options.texts.iter().enumerate() {
             let round = round + 1;
-            room.send(RoomMessageEventContent::text_plain(text))
-                .await
-                .context("发消息")?;
+            let mut content = RoomMessageEventContent::text_plain(text);
+            if let Some(mention) = &options.mention {
+                content.mentions = Some(Mentions::with_user_ids([mention.clone()]));
+            }
+            let event_id = room.send(content).await.context("发消息")?;
+            if options.print_event_id {
+                println!("第 {round} 轮：事件 {}", event_id.response.event_id);
+            }
+            if let Some(seconds) = options.redacted {
+                verify_redacted(client, &options.room, &event_id.response.event_id, seconds)
+                    .await?;
+            }
             let wait = options.wait;
             let (body, encrypted) =
                 tokio::time::timeout(wait, next_reply(&mut replies, options.reply, text))
@@ -221,6 +262,33 @@ async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
     tokio::select! {
         stopped = &mut sync => bail!("同步中断：{stopped:?}"),
         result = rounds => result,
+    }
+}
+
+/// 等服务器把这条事件撤回：撤回后 content 是空对象。
+async fn verify_redacted(
+    client: &Client,
+    room_id: &OwnedRoomId,
+    event_id: &OwnedEventId,
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let request = get_room_event::v3::Request::new(room_id.clone(), event_id.clone());
+        let response = client.send(request).await.context("查撤回后的事件")?;
+        let value = serde_json::to_value(&response.event).context("解析事件")?;
+        let content = value.get("content").cloned().unwrap_or_default();
+        if content
+            .as_object()
+            .is_some_and(|content| content.is_empty())
+        {
+            println!("已撤回：content={{}}");
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            bail!("等到超时也没撤回，content={content}");
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
