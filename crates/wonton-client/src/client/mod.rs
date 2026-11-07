@@ -55,6 +55,8 @@ pub struct ClientCore {
     switching: Arc<Mutex<()>>,
     /// 为不是当前这台的服务器临时开的作用域。
     visits: Arc<Visits>,
+    /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
+    in_flight_registrations: push_route::InFlightRegistrations,
 }
 
 #[uniffi::export]
@@ -575,6 +577,7 @@ impl ClientCore {
             replay: Mutex::default(),
             switching,
             visits,
+            in_flight_registrations: Arc::default(),
         });
         core.attach(&scope);
         Ok(core)

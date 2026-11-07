@@ -12,8 +12,8 @@ use std::time::Duration;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
 use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{
@@ -29,7 +29,10 @@ use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
 
 use super::stale_join::StaleJoin;
 
+mod fake_core;
 mod matrix;
+
+use fake_core::fake_core;
 
 pub const WAIT: Duration = Duration::from_secs(60);
 const BASE_DOMAIN: &str = "wonton.localhost";
@@ -96,6 +99,10 @@ struct Core {
     answer_replies: Mutex<VecDeque<(u16, Value)>>,
     /// 为真时回答先不回，手机上这时是“正在发”。
     hold_answers: watch::Sender<bool>,
+    /// 为真时推送登记接口的响应先不回（请求照记），让后台登记停在“PUT 已收到、还没登记完”。
+    hold_push_registrations: watch::Sender<bool>,
+    /// 推送登记请求的到达次数；等的一方靠它的事件变化再查，不睡固定间隔。
+    push_registrations_seen: watch::Sender<u64>,
     uploads_paused: watch::Sender<bool>,
     /// 为真时手机的 keys/upload 一接上就断开（drop 语义），见 `chat::key_upload_order` 回归测试。
     hold_key_uploads: Arc<AtomicBool>,
@@ -140,6 +147,8 @@ impl Home {
             window_stops: Mutex::default(),
             answer_replies: Mutex::default(),
             hold_answers: watch::Sender::new(false),
+            hold_push_registrations: watch::Sender::new(false),
+            push_registrations_seen: watch::Sender::new(0),
             uploads_paused: watch::Sender::new(false),
             hold_key_uploads: Arc::new(AtomicBool::new(false)),
             key_uploads_forwarded: watch::Sender::new(0),
@@ -328,6 +337,16 @@ impl Home {
         .to_uri()
     }
 
+    /// 挂起（`true`）或放行（`false`）推送登记接口的响应；挂起期间请求照记不误。
+    pub fn hold_push_registrations(&self, hold: bool) {
+        self.core.hold_push_registrations.send_replace(hold);
+    }
+
+    /// 订阅推送登记请求的到达次数；等的一方靠事件变化再查，不睡固定间隔。
+    pub fn push_registrations_seen(&self) -> watch::Receiver<u64> {
+        self.core.push_registrations_seen.subscribe()
+    }
+
     pub fn ticket(&self) -> String {
         let tunnel = self.tunnel.as_ref().expect("隧道没在运行");
         let id = tunnel.endpoint().id();
@@ -411,68 +430,6 @@ impl Home {
     }
 }
 
-/// 模拟的核心：`POST /_wonton/matrix/login-token` 签发主人的登录令牌（字段同核心的 `LoginToken`），
-/// `PUT`、`DELETE /_wonton/push/registration` 记下推送登记（响应同核心的推送登记接口），`matrix.<基础域名>` 上的
-/// 请求原样转给 Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
-async fn fake_core(core: Arc<Core>) -> (SocketAddr, JoinHandle<()>) {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let task = tokio::spawn(async move {
-        loop {
-            let (tcp, _) = listener.accept().await.unwrap();
-            tokio::spawn(serve(tcp, core.clone()));
-        }
-    });
-    (addr, task)
-}
-
-async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
-    let mut head = Vec::new();
-    while !head.ends_with(b"\r\n\r\n") {
-        let mut byte = [0u8; 1];
-        if tcp.read(&mut byte).await.unwrap_or(0) == 0 {
-            return;
-        }
-        head.push(byte[0]);
-    }
-    let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
-    if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
-        core.bot_api.observe_matrix(&text);
-        matrix::serve_matrix(tcp, core, head, &text).await;
-        return;
-    }
-    answer_core_route(&core, &text, &mut tcp).await;
-}
-
-/// 假核心自己的接口：读完请求体，交给 Bot 的应答或 `respond`，没有就回 404。
-async fn answer_core_route(core: &Core, text: &str, tcp: &mut TcpStream) {
-    let Some(body) = read_body(tcp, text).await else {
-        return;
-    };
-    if text.starts_with("post /_wonton/confirmations/")
-        || text.starts_with("delete /_wonton/confirmations/")
-    {
-        let mut released = core.hold_answers.subscribe();
-        released.wait_for(|hold| !hold).await.ok();
-    }
-    let reply = match core.bot_api.respond(text, &body).await {
-        Some(reply) => Some(reply),
-        None => respond(core, text, &body),
-    };
-    let response = match reply {
-        Some((status, body)) => format!(
-            "HTTP/1.1 {status} Whatever\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-             connection: close\r\n\r\n{body}",
-            body.len()
-        ),
-        None => {
-            "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_owned()
-        }
-    };
-    tcp.write_all(response.as_bytes()).await.ok();
-    tcp.shutdown().await.ok();
-}
-
 async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
     let length = head
         .lines()
@@ -491,6 +448,8 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
             .lock()
             .unwrap()
             .push((method.to_owned(), body));
+        core.push_registrations_seen
+            .send_modify(|count| *count += 1);
     };
     if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
         let id = rest
