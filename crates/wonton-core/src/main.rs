@@ -33,6 +33,7 @@ use wonton_core::http::HttpClient;
 use wonton_core::matrix::{FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
+use wonton_core::members::Members;
 use wonton_core::oidc::Hydra;
 use wonton_core::owner::OwnerStore;
 use wonton_core::pairing::OwnerLanguages;
@@ -297,29 +298,24 @@ async fn serve() -> anyhow::Result<()> {
         HttpClient::for_system_services(&engine, cfg.core_container.as_deref()).await?;
     let hydra = connect_hydra(&cfg, &system_http).await?;
     let matrix = connect_matrix(&cfg, &system_http).await?;
-
-    let store = Store::open(cfg.core_state_dir().join("plugins"))?;
-    let images =
-        Arc::new(ImageWorker::current().context("找不到核心自己的可执行文件（处理图片要用）")?);
-    let manager = plugin_manager(
+    let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());
+    let (manager, images) = start_plugin_manager(
         &cfg,
         engine.clone(),
-        store,
-        images.clone(),
-        http.clone(),
-        hydra.as_ref().map(|(h, _)| h.clone()),
-        matrix.clone(),
+        upgrades.clone(),
+        &http,
+        hydra_for_manager,
+        &matrix,
         owner.clone(),
-        upgrades.frozen(),
     )
-    .await;
-    manager.spawn_registry_mirror_probe();
-    manager.restore().await.context("恢复已安装的插件")?;
-    spawn_plugin_monitors(&manager);
-    upgrades.spawn();
-    preinstall(&cfg, manager.clone(), upgrades.clone())?;
+    .await?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
+    let members = Arc::new(
+        Members::open(cfg.core_state_dir().join("members.json"))
+            .context("读取家人记录 members.json")?,
+    );
+    gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // Bot 调用的确认卡片（ADR-0016）。
     let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
@@ -332,7 +328,7 @@ async fn serve() -> anyhow::Result<()> {
     let files = open_files(&cfg, host, http.clone(), audit, images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
-    let tunnel = bind_tunnel(&cfg, &manager).await?;
+    let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
@@ -344,6 +340,7 @@ async fn serve() -> anyhow::Result<()> {
             cfg.public.clone(),
             owner,
             owner_token,
+            members,
             manager,
             hydra,
             http,
@@ -541,41 +538,36 @@ fn notice_room(
     })
 }
 
-/// 核心的插件管理器，接上它在用的其余部件。
+/// 装配插件管理器：引擎、来源、局域网与出网设置、镜像加速、升级冻结。
 #[allow(clippy::too_many_arguments)]
-async fn plugin_manager(
+fn open_plugin_manager(
     cfg: &Config,
     engine: Engine,
     store: Store,
-    images: Arc<ImageWorker>,
     http: HttpClient,
     hydra: Option<Hydra>,
     matrix: Option<Arc<Matrix>>,
     owner: Arc<OwnerStore>,
-    upgrade_freeze: tokio::sync::watch::Receiver<bool>,
-) -> Arc<PluginManager> {
-    let manager = Arc::new(
-        PluginManager::new(
-            engine,
-            store,
-            http,
-            hydra,
-            lifecycle_config(cfg, owner),
-            images,
-        )
-        .with_matrix(matrix)
-        .with_host(HostPaths::new(cfg.host_dev.clone()))
-        .with_lan(lan_state(cfg))
-        .with_egress(Egress::new(
-            cfg.egress_proxy.clone(),
-            cfg.egress_proxy_detected.clone(),
-        ))
-        .with_store(cfg.store.clone())
-        .with_upgrade_freeze(upgrade_freeze),
-    );
-    // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
-    manager.host_name().await;
-    manager
+    upgrades: &Upgrades,
+    images: Arc<ImageWorker>,
+) -> PluginManager {
+    PluginManager::new(
+        engine,
+        store,
+        http,
+        hydra,
+        lifecycle_config(cfg, owner),
+        images,
+    )
+    .with_matrix(matrix)
+    .with_host(HostPaths::new(cfg.host_dev.clone()))
+    .with_lan(lan_state(cfg))
+    .with_egress(Egress::new(
+        cfg.egress_proxy.clone(),
+        cfg.egress_proxy_detected.clone(),
+    ))
+    .with_store(cfg.store.clone())
+    .with_upgrade_freeze(upgrades.frozen())
 }
 
 /// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。
@@ -640,8 +632,46 @@ fn open_files(
     Ok(Arc::new(files))
 }
 
+/// 装配插件管理器：恢复已安装的插件、起监控、装默认插件（ADR-0025 的预装在后台跑）。
+async fn start_plugin_manager(
+    cfg: &Config,
+    engine: Engine,
+    upgrades: Arc<Upgrades>,
+    http: &HttpClient,
+    hydra: Option<Hydra>,
+    matrix: &Option<Arc<Matrix>>,
+    owner: Arc<OwnerStore>,
+) -> anyhow::Result<(Arc<PluginManager>, Arc<ImageWorker>)> {
+    let store = Store::open(cfg.core_state_dir().join("plugins"))?;
+    let images =
+        Arc::new(ImageWorker::current().context("找不到核心自己的可执行文件（处理图片要用）")?);
+    let manager = Arc::new(open_plugin_manager(
+        cfg,
+        engine,
+        store,
+        http.clone(),
+        hydra,
+        matrix.clone(),
+        owner.clone(),
+        &upgrades,
+        images.clone(),
+    ));
+    manager.spawn_registry_mirror_probe();
+    // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
+    manager.host_name().await;
+    manager.restore().await.context("恢复已安装的插件")?;
+    spawn_plugin_monitors(&manager);
+    upgrades.spawn();
+    preinstall(cfg, manager.clone(), upgrades.clone())?;
+    Ok((manager, images))
+}
+
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。
-async fn bind_tunnel(cfg: &Config, manager: &Arc<PluginManager>) -> anyhow::Result<Tunnel> {
+async fn bind_tunnel(
+    cfg: &Config,
+    manager: &Arc<PluginManager>,
+    members: Arc<Members>,
+) -> anyhow::Result<Tunnel> {
     let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
     let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
     let endpoint = tunnel::bind(key, cfg.tunnel_port, &cfg.relays).await?;
@@ -658,6 +688,7 @@ async fn bind_tunnel(cfg: &Config, manager: &Arc<PluginManager>) -> anyhow::Resu
     };
     let tunnel = Tunnel::new(
         Arc::new(devices),
+        members,
         owner_languages,
         endpoint,
         cfg.tunnel_port,

@@ -32,6 +32,8 @@ use wonton_tunnel::relays::RelayTable;
 
 use super::{OwnIdentity, OwnerNotices, PeerRequest, Peers};
 use crate::device::Devices;
+use crate::members::Members;
+
 use crate::plugin::languages::Languages;
 use crate::tunnel::Tunnel;
 
@@ -370,6 +372,7 @@ impl TestCore {
         let endpoint = loopback_endpoint(self.key.clone()).await;
         let tunnel = Tunnel::new(
             devices,
+            Arc::new(Members::open(self.dir.path().join("members.json")).unwrap()),
             Arc::new(|| Languages::from_header(None)),
             endpoint,
             0,
@@ -670,8 +673,10 @@ async fn pending_rows_do_not_expire() {
     .unwrap();
     let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
     let endpoint = loopback_endpoint(SecretKey::generate()).await;
+    let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
     let tunnel = Tunnel::new(
         devices,
+        members,
         Arc::new(|| Languages::from_header(None)),
         endpoint,
         0,

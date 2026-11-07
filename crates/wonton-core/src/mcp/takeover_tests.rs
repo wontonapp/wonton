@@ -155,7 +155,7 @@ async fn it_ends_only_when_the_last_device_hands_back() {
     s.bus.end_takeover(&notes(), PHONE);
     assert_still_held(&s, &call).await;
 
-    s.bus.end_device_takeovers("device:tablet");
+    s.bus.end_device_takeovers("tablet");
     let card = s.cards.wait_for(1).await;
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();

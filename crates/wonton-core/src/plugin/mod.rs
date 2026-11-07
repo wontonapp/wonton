@@ -18,6 +18,7 @@ pub mod docker_exec;
 mod docker_limits;
 pub mod egress;
 mod entry;
+pub mod family;
 pub mod gallery;
 pub mod github;
 pub mod github_source;

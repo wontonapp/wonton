@@ -369,6 +369,7 @@ impl PluginManager {
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),
             ask_every_update: old.record.ask_every_update,
+            family: old.record.family,
         })?;
         Ok(Deployed {
             upstream,

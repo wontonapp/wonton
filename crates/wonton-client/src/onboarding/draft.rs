@@ -4,9 +4,9 @@
 use std::collections::HashSet;
 
 use wonton_protocol::{
-    ModelProviderInput, ModelProviders, Onboarding, OnboardingModelChoice, OnboardingProfileStep,
-    OwnerProfile, OwnerProfileUpdate, SecretString, check_display_name, check_email_change,
-    normalized_email,
+    Me, ModelProviderInput, ModelProviders, Onboarding, OnboardingModelChoice,
+    OnboardingProfileStep, OwnerProfileUpdate, SecretString, check_display_name,
+    check_email_change, normalized_email,
 };
 
 use super::view::installable;
@@ -50,7 +50,7 @@ pub(super) enum ModelDraft {
 }
 
 impl Draft {
-    pub fn profile_values(&self, owner: Option<&OwnerProfile>) -> (String, String) {
+    pub fn profile_values(&self, owner: Option<&Me>) -> (String, String) {
         self.profile.clone().unwrap_or_else(|| {
             owner.map_or_else(Default::default, |owner| {
                 (
@@ -61,7 +61,7 @@ impl Draft {
         })
     }
 
-    pub fn profile_step(&self, owner: Option<&OwnerProfile>) -> OnboardingProfileStep {
+    pub fn profile_step(&self, owner: Option<&Me>) -> OnboardingProfileStep {
         let (display_name, email) = self.profile_values(owner);
         OnboardingProfileStep {
             display_name,
@@ -72,7 +72,7 @@ impl Draft {
     }
 
     /// 查名字和邮箱，规则和家里服务器保存时的同一份。不合规则时记下原因，返回假。
-    pub fn check_profile(&mut self, owner: Option<&OwnerProfile>) -> bool {
+    pub fn check_profile(&mut self, owner: Option<&Me>) -> bool {
         let (name, email) = self.profile_values(owner);
         self.name_problem = check_display_name(name.trim()).err();
         let previous = owner.and_then(|owner| owner.email.as_deref());
@@ -82,7 +82,7 @@ impl Draft {
     }
 
     /// 要保存的资料；没跳过、和家里服务器上的不一样时才有。
-    pub fn profile_update(&self, owner: Option<&OwnerProfile>) -> Option<OwnerProfileUpdate> {
+    pub fn profile_update(&self, owner: Option<&Me>) -> Option<OwnerProfileUpdate> {
         if self.profile_skipped {
             return None;
         }

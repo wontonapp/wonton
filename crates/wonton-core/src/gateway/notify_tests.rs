@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use wonton_protocol::NOTICE_FIELD;
 
-use super::tunnel_tests::loopback_tunnel;
+use super::fakes::loopback_tunnel;
 use super::{Gateway, router};
 use crate::http::HttpClient;
 use crate::matrix::{Matrix, NoticeRoom};
@@ -107,14 +107,16 @@ async fn start() -> Home {
         dir.path().join("notice-room"),
         Arc::new(crate::plugin::languages::Languages::default),
     ));
+    let (tunnel, members) = loopback_tunnel(dir.path()).await;
     let gateway = Gateway::new(
         public,
         profile,
         super::tests::TOKEN.into(),
+        members,
         plugins,
         None,
         HttpClient::new(),
-        loopback_tunnel(dir.path()).await,
+        tunnel,
     )
     .with_notices(Some(notices));
     Home {

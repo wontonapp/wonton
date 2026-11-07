@@ -39,6 +39,7 @@ gateway-oidc-unconfigured = 自宅サーバーにIDプロバイダーが設定�
 gateway-no-app-for-host = { $host }に対応するアプリがインストールされていません
 gateway-no-webui = このアプリにはWebページがありません
 gateway-app-not-ready = アプリ{ $id }はまだ準備ができていません
+gateway-plugin-not-shared = アプリ{ $id }は家族に共有されていません
 gateway-proxy-sso-failed = アプリ{ $id }の代行ログイン資格情報を取得できません：{ $error }
 gateway-cross-site-login = ゲートウェイは、他のサイトからのリクエストに付いたログイン状態を信頼しません。アプリ自身のページから操作してください
 gateway-login-required = まずWontonにログインしてください
@@ -53,6 +54,7 @@ gateway-sso-local-only = リダイレクトできるのは、このサーバー�
 gateway-sso-missing-code = ハンドオフコードがありません
 gateway-sso-code-invalid = ハンドオフコードが無効か期限切れです。ページを開き直してください
 gateway-sso-user-mismatch = IDプロバイダーが覚えているのは別のユーザーです
+gateway-proxy-sso-member-missing = あなたのアカウントはもうホームサーバーにありません。オーナーに招待し直してもらってください
 gateway-sso-consent-mismatch = 承認リクエストが、現在ログイン中のユーザーと一致しません
 
 # 上流への転送。

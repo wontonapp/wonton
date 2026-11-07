@@ -309,10 +309,17 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
     );
 }
 
-const PROFILE: &str = "/_wonton/api/owner-profile";
+const PROFILE: &str = wonton_protocol::ME_PATH;
 
 fn profile(name: Option<&str>, email: Option<&str>) -> Canned {
-    let body = serde_json::json!({"username": "owner", "display_name": name, "email": email});
+    let body = serde_json::json!({
+        "user_id": "@owner:wonton.localhost",
+        "username": "owner",
+        "role": "owner",
+        "display_name": name,
+        "email": email,
+        "can_install_plugins": true,
+    });
     Canned(200, body.to_string())
 }
 
@@ -327,11 +334,7 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     };
     let refused = core_error(400, "invalid_input", "不像邮箱");
     rig.core.answer(Method::PUT, PROFILE, refused);
-    let error = rig
-        .app
-        .save_owner_profile(update.clone())
-        .await
-        .unwrap_err();
+    let error = rig.app.save_me(update.clone()).await.unwrap_err();
     assert_eq!(
         error,
         CoreError::InvalidInput {
@@ -345,7 +348,7 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
         email: Some("me@example.com".to_owned()),
         ..update
     };
-    let profile = rig.app.save_owner_profile(good).await.unwrap();
+    let profile = rig.app.save_me(good).await.unwrap();
     assert_eq!(profile.email.as_deref(), Some("me@example.com"));
     let sent = rig.core.seen(&Method::PUT, PROFILE);
     assert!(sent[1].body.contains("me@example.com"), "{}", sent[1].body);

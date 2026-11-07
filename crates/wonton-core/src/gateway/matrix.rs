@@ -34,7 +34,7 @@ pub struct LoginToken {
     pub homeserver_url: String,
     /// Tuwunel 的 `server_name`，即 Matrix 用户 ID 冒号后的部分。
     pub server_name: String,
-    /// 设备所属用户的 Matrix 用户 ID，如 `@owner:wonton.localhost`。M1 的已配对设备都属于主人。
+    /// 设备所属用户的 Matrix 用户 ID，如 `@owner:wonton.localhost`。主人的设备是主人，家人的设备是这个家人（ADR-0045）。
     pub user_id: String,
     /// 登录请求的 `type`：`org.matrix.login.jwt`。
     pub login_type: String,
@@ -44,21 +44,19 @@ pub struct LoginToken {
     pub expires_in: u64,
 }
 
-/// `POST /_wonton/matrix/login-token`。
+/// `POST /_wonton/matrix/login-token`。设备属于谁，令牌就是谁的账号（ADR-0045）：主人的设备签主人的，
+/// 家人的设备签这个家人的；账号在第一次登录时由 JWT 建。
 pub async fn login_token(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
 ) -> Response {
-    if gateway
-        .device_user(peer.map(|Extension(peer)| peer))
-        .is_none()
-    {
+    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
             "只给经隧道接入的已配对设备签发 Matrix 登录令牌",
         );
-    }
+    };
     let Some(matrix) = &gateway.matrix else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -66,14 +64,13 @@ pub async fn login_token(
             UNAVAILABLE,
         );
     };
-    // M1 的已配对设备都属于主人。
-    let localpart = gateway.owner.username();
+    let localpart = person.username;
     Json(LoginToken {
         homeserver_url: gateway.public.origin(&gateway.public.matrix_host()),
         server_name: matrix.server_name().to_owned(),
-        user_id: matrix.user_id(localpart),
+        user_id: matrix.user_id(&localpart),
         login_type: JWT_LOGIN_TYPE.to_owned(),
-        token: matrix.login_token(localpart),
+        token: matrix.login_token(&localpart),
         expires_in: LOGIN_TOKEN_TTL_SECS,
     })
     .into_response()

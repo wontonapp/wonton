@@ -1,24 +1,22 @@
-//! 网关行为测试：走真实 TCP 连接。插件上游和 Hydra 管理接口的替身只存在于测试里。
+//! 网关行为测试：走真实 TCP 连接。插件上游和 Hydra 管理接口的替身在 [`super::fakes`] 里。
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
-use axum::extract::{RawQuery, Request};
-use axum::response::Response;
-use axum::routing::get;
-use axum::{Json, Router};
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 use tower::ServiceExt;
 
-use super::tunnel_tests::loopback_tunnel;
+use super::fakes::loopback_tunnel;
+use super::fakes::{bind, echo_upstream, fake_hydra, serve};
 use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
 use crate::http::HttpClient;
@@ -32,133 +30,13 @@ use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
+use crate::tunnel::{Tunnel, TunnelEntry};
 
 pub(super) const TOKEN: &str = "test-owner-token";
 pub(super) const CORE: &str = "wonton.localhost";
 pub(super) const PLUGIN: &str = "app-whoami.wonton.localhost";
 pub(super) const WHOAMI: &str =
     include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
-
-async fn serve(listener: TcpListener, router: Router) {
-    tokio::spawn(async move {
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await
-        .unwrap();
-    });
-}
-
-async fn bind() -> (TcpListener, SocketAddr) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    (listener, addr)
-}
-
-/// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节；
-/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回。
-pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
-    let router = Router::new()
-        .route("/ws", get(upgrade_echo))
-        .route("/set-cookie", get(set_cookies))
-        .fallback(move |req: Request| {
-            let hits = hits.clone();
-            async move {
-                hits.fetch_add(1, Ordering::SeqCst);
-                let headers: serde_json::Map<String, Value> = req
-                    .headers()
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), json!(String::from_utf8_lossy(v.as_bytes()))))
-                    .collect();
-                Json(json!({"path": req.uri().to_string(), "headers": headers}))
-            }
-        });
-    let (listener, addr) = bind().await;
-    serve(listener, router).await;
-    addr
-}
-
-async fn set_cookies(RawQuery(query): RawQuery) -> Response {
-    let mut response = Response::new(Body::empty());
-    for (_, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
-        let value = value.parse().unwrap();
-        response.headers_mut().append(header::SET_COOKIE, value);
-    }
-    response
-}
-
-async fn upgrade_echo(mut req: Request) -> Response {
-    let on_upgrade = hyper::upgrade::on(&mut req);
-    tokio::spawn(async move {
-        if let Ok(upgraded) = on_upgrade.await {
-            let mut io = hyper_util::rt::TokioIo::new(upgraded);
-            let mut buf = [0u8; 64];
-            if let Ok(n) = io.read(&mut buf).await {
-                let _ = io.write_all(&buf[..n]).await;
-            }
-        }
-    });
-    Response::builder()
-        .status(StatusCode::SWITCHING_PROTOCOLS)
-        .header(header::CONNECTION, "upgrade")
-        .header(header::UPGRADE, "echo")
-        .body(Body::empty())
-        .unwrap()
-}
-
-/// 假 Hydra 管理接口：返回预设的登录、授权请求，记录核心提交的接受内容。
-pub(super) async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
-    let record = |accepted: Arc<Mutex<Vec<Value>>>, redirect: &'static str| {
-        move |Json(body): Json<Value>| async move {
-            accepted.lock().unwrap().push(body);
-            Json(json!({"redirect_to": redirect}))
-        }
-    };
-    let router = Router::new()
-        .route(
-            "/admin/oauth2/auth/requests/login",
-            get(|| async {
-                Json(json!({"skip": false, "subject": "", "client": {"client_id": "app.whoami"}}))
-            }),
-        )
-        .route(
-            "/admin/oauth2/auth/requests/login/accept",
-            axum::routing::put(record(
-                accepted.clone(),
-                "http://auth.wonton.localhost/after-login",
-            )),
-        )
-        .route(
-            "/admin/oauth2/auth/requests/consent",
-            get(|RawQuery(query): RawQuery| async move {
-                // 用 challenge 传客户端 ID：测试按客户端区分声明。
-                let challenge = query
-                    .as_deref()
-                    .and_then(|q| {
-                        q.split('&').find_map(|pair| {
-                            pair.strip_prefix("consent_challenge=").map(str::to_owned)
-                        })
-                    })
-                    .unwrap_or_default();
-                Json(json!({
-                    "subject": "owner",
-                    "client": {"client_id": challenge},
-                    "requested_scope": ["openid", "profile", "email", "groups", "admin"],
-                }))
-            }),
-        )
-        .route(
-            "/admin/oauth2/auth/requests/consent/accept",
-            axum::routing::put(record(
-                accepted,
-                "http://auth.wonton.localhost/after-consent",
-            )),
-        );
-    let (listener, addr) = bind().await;
-    serve(listener, router).await;
-    addr
-}
 
 pub(super) struct Reply {
     pub status: StatusCode,
@@ -192,6 +70,21 @@ impl Reply {
     pub fn text(&self) -> &str {
         &self.text
     }
+
+    /// 家人测试以设备的隧道身份发请求时构造：进程内 `oneshot` 的响应转成 [`Reply`]。
+    pub(super) async fn of(response: axum::response::Response) -> Self {
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        Reply {
+            status,
+            headers,
+            text: String::from_utf8_lossy(&bytes).into_owned(),
+        }
+    }
 }
 
 pub(super) struct Harness {
@@ -202,6 +95,14 @@ pub(super) struct Harness {
     pub upstream: SocketAddr,
     pub manager: Arc<PluginManager>,
     pub docker: FakeDocker,
+    /// 网关的路由：家人测试用它以设备的隧道身份发请求（进程内塞扩展，和隧道入口的做法一致）。
+    pub app: Router,
+    pub tunnel: Tunnel,
+    /// 家人记录：和网关里用的是同一份（隧道配对也用它）。
+    pub members: Arc<crate::members::Members>,
+    pub data_dir: std::path::PathBuf,
+    /// 隧道入口：配对协议（`wonton/pair/0`）在测试里也能用。
+    _entry: crate::tunnel::TunnelEntry,
     _dir: tempfile::TempDir,
 }
 
@@ -297,17 +198,21 @@ impl Harness {
         let manifest =
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
+        let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(
             public,
             profile,
             TOKEN.into(),
+            members.clone(),
             manager.clone(),
             hydra,
             http.clone(),
-            loopback_tunnel(dir.path()).await,
+            tunnel.clone(),
         )
         .with_upgrades(upgrades);
-        serve(listener, router(Arc::new(gateway))).await;
+        let app = router(Arc::new(gateway));
+        let entry = TunnelEntry::spawn(&tunnel, app.clone());
+        serve(listener, app.clone()).await;
         Self {
             addr,
             http,
@@ -315,6 +220,11 @@ impl Harness {
             upstream,
             manager,
             docker,
+            app,
+            tunnel,
+            members,
+            data_dir: dir.path().to_owned(),
+            _entry: entry,
             _dir: dir,
         }
     }
@@ -337,14 +247,16 @@ impl Harness {
             base_domain: CORE.into(),
             port: self.addr.port(),
         };
+        let (tunnel, members) = loopback_tunnel(self._dir.path()).await;
         let gateway = Gateway::new(
             public,
             OwnerStore::for_test(self._dir.path(), &owner()),
             TOKEN.into(),
+            members,
             self.manager.clone(),
             None,
             self.http.clone(),
-            loopback_tunnel(self._dir.path()).await,
+            tunnel,
         );
         let app = router(Arc::new(gateway));
         let mut request = hyper::Request::builder()

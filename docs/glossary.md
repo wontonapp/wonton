@@ -26,6 +26,9 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | Agent | agent | Agent | エージェント | 驱动 Bot 的程序 |
 | 默认 Agent | Default Agent | 預設 Agent | デフォルトのエージェント | |
 | Bot | bot | Bot | ボット | 类别名，英文界面也不改叫 Assistant；每个 Bot 有自己的名字，指具体的那一个时写它的名字 |
+| 家人 | family member | 家人 | 家族 | 服务器主人邀请的人，每人一个账号 |
+| 私人 Bot | private bot | 私人 Bot | 個人ボット | 归一个人所有的 Bot，邀请家人时默认给每人建一个 |
+| 共享 Bot | shared bot | 共享 Bot | 共有ボット | 主人建的全家共用的 Bot |
 | 模型 | model | 模型 | モデル | AI 模型 |
 | 服务商 | provider | 供應商 | プロバイダー | 模型的服务商 |
 | key | API key | API 金鑰 | APIキー | |

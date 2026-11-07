@@ -34,18 +34,23 @@ fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(accept)
 }
 
-/// 配对接口的鉴权：只认经隧道的已配对设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
-/// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。
+/// 配对接口的鉴权：只认经隧道的主人设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
+/// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。和哪台服务器配对是主人的事（ADR-0045
+/// “谁能做什么”），家人的设备回 403 `owner_only`。
 fn denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Option<Response> {
-    let Some(Extension(TunnelPeer(id))) = peer else {
+    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
         return Some(error(&languages(headers), PeerError::Unauthenticated));
     };
-    if !gateway.tunnel.devices.contains(&id) {
-        return Some(error(&languages(headers), PeerError::Unauthenticated));
+    if !person.is_owner() {
+        return Some(api::error_response(
+            StatusCode::FORBIDDEN,
+            "owner_only",
+            "服务器配对只有主人能管",
+        ));
     }
     if isolation::not_from_another_page(headers, &gateway.core_origin()) {
         None

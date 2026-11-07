@@ -42,7 +42,7 @@ pub async fn start(
     Query(query): Query<SsoQuery>,
     req: Request,
 ) -> Response {
-    let Some(user) = gateway.core_user(req.extensions().get().copied(), req.headers()) else {
+    let Some(person) = gateway.core_person(req.extensions().get().copied(), req.headers()) else {
         return login_redirect(&gateway, &path_and_query(req.uri()));
     };
     let langs = api::languages(req.headers());
@@ -66,7 +66,7 @@ pub async fn start(
             &langs,
         );
     }
-    let code = gateway.sessions.create_code(&user, &host);
+    let code = gateway.sessions.create_code(&person, &host);
     let mut path = target.path().to_owned();
     if let Some(q) = target.query() {
         path.push('?');
@@ -97,7 +97,7 @@ pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
             &langs,
         );
     };
-    let Some(user) = gateway.sessions.redeem_code(&query.code, host) else {
+    let Some(person) = gateway.sessions.redeem_code(&query.code, host) else {
         return pages::error(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
@@ -108,7 +108,7 @@ pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
     // 只允许跳到本域名内的路径，防止开放重定向。
     let to =
         same_origin_path(&gateway.public.origin(host), &query.to).unwrap_or_else(|| "/".to_owned());
-    let sid = gateway.sessions.create_app(&user, host);
+    let sid = gateway.sessions.create_app(&person, host);
     let cookie = set_cookie(APP_COOKIE, &sid, APP_TTL, gateway.secure_cookies());
     with_cookie(Redirect::to(&to).into_response(), cookie)
 }
@@ -135,7 +135,8 @@ fn oidc_failure(e: &OidcError, langs: &Languages) -> Response {
     pages::error(status, kind, &e.to_string(), langs)
 }
 
-/// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。
+/// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。subject 是当前
+/// 这个人（主人和家人各有自己的账号，ADR-0045）。
 pub async fn oidc_login(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<LoginChallenge>,
@@ -144,7 +145,7 @@ pub async fn oidc_login(
     uri: hyper::Uri,
 ) -> Response {
     let langs = api::languages(&headers);
-    let Some(user) = gateway.core_user(peer.map(|Extension(peer)| peer), &headers) else {
+    let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
         return login_redirect(&gateway, &path_and_query(&uri));
     };
     let Some(hydra) = &gateway.hydra else {
@@ -159,7 +160,7 @@ pub async fn oidc_login(
         Ok(request) => request,
         Err(e) => return oidc_failure(&e, &langs),
     };
-    if request.skip && request.subject != user {
+    if request.skip && request.subject != person.username {
         return pages::error(
             StatusCode::CONFLICT,
             "conflict",
@@ -167,14 +168,18 @@ pub async fn oidc_login(
             &langs,
         );
     }
-    tracing::info!(client = %request.client.client_id, %user, "接受 OIDC 登录");
-    match hydra.accept_login(&query.login_challenge, &user).await {
+    tracing::info!(client = %request.client.client_id, person = %person.username, "接受 OIDC 登录");
+    match hydra
+        .accept_login(&query.login_challenge, &person.username)
+        .await
+    {
         Ok(to) => Redirect::to(&to).into_response(),
         Err(e) => oidc_failure(&e, &langs),
     }
 }
 
-/// Hydra 的授权确认端点：插件由主人安装，即视为已授权；只发放清单内的 scope 和对应的声明。
+/// Hydra 的授权确认端点：插件由主人安装，即视为已授权；只发放清单内的 scope 和对应的声明。声明按当前
+/// 这个人出（ADR-0045）：`sub`、`preferred_username` 是他的用户名，`groups` 是他的角色。
 pub async fn oidc_consent(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<ConsentChallenge>,
@@ -183,7 +188,7 @@ pub async fn oidc_consent(
     uri: hyper::Uri,
 ) -> Response {
     let langs = api::languages(&headers);
-    let Some(user) = gateway.core_user(peer.map(|Extension(peer)| peer), &headers) else {
+    let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
         return login_redirect(&gateway, &path_and_query(&uri));
     };
     let Some(hydra) = &gateway.hydra else {
@@ -198,7 +203,7 @@ pub async fn oidc_consent(
         Ok(request) => request,
         Err(e) => return oidc_failure(&e, &langs),
     };
-    if request.subject != user || user != gateway.owner.username() {
+    if request.subject != person.username {
         return pages::error(
             StatusCode::FORBIDDEN,
             "permission_denied",
@@ -208,8 +213,20 @@ pub async fn oidc_consent(
     }
     let granted = granted_scopes(&request.requested_scope);
     let groups = gateway.plugins.oidc_owner_groups(&request.client.client_id);
-    let claims = id_token_claims(&gateway.owner.owner(), &granted, &groups);
-    tracing::info!(client = %request.client.client_id, ?granted, ?groups, "接受 OIDC 授权");
+    let identity = match gateway.identity_of(&person) {
+        Ok(identity) => identity,
+        Err(e) => {
+            tracing::warn!(error = %e, "OIDC 授权拿不到身份");
+            return pages::error(
+                StatusCode::FORBIDDEN,
+                "permission_denied",
+                &l10n::text(&langs, "gateway-proxy-sso-member-missing", &[]),
+                &langs,
+            );
+        }
+    };
+    let claims = id_token_claims(&identity, person.role, &granted, &groups);
+    tracing::info!(client = %request.client.client_id, ?granted, ?groups, person = %person.username, "接受 OIDC 授权");
     match hydra
         .accept_consent(&query.consent_challenge, &granted, claims)
         .await

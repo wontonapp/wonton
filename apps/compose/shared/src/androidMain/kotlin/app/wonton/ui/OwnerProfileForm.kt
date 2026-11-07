@@ -11,7 +11,7 @@ import androidx.compose.ui.res.stringResource
 
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import app.wonton.protocol.OwnerProfile
+import app.wonton.protocol.Me
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonTextField
@@ -20,7 +20,7 @@ import app.wonton.ui.design.toColor
 
 @Composable
 internal fun OwnerProfileForm(
-    profile: OwnerProfile,
+    profile: Me,
     name: String,
     onName: (String) -> Unit,
     email: String,

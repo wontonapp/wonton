@@ -15,9 +15,9 @@ use crate::l10n;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, files, isolation, matrix,
-    model_providers, onboarding, owner_profile, pages, peers, push, same_origin_path, sso,
-    tool_policy, with_cookie,
+    Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, family, files, isolation,
+    matrix, me, model_providers, onboarding, pages, peers, push, same_origin_path, settings_api,
+    sso, store_api, tool_policy, with_cookie,
 };
 
 /// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
@@ -108,22 +108,25 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
         )
         .route(
             "/_wonton/api/plugins/{id}/lan-webui",
-            put(api::set_lan_webui),
+            put(settings_api::set_lan_webui),
         )
-        .route("/_wonton/api/plugins/{id}/limits", put(api::set_limits))
+        .route(
+            "/_wonton/api/plugins/{id}/limits",
+            put(settings_api::set_limits),
+        )
         .route(
             "/_wonton/api/plugins/{id}/ask-every-update",
-            put(api::set_ask_every_update),
+            put(settings_api::set_ask_every_update),
         )
         .route(
             "/_wonton/api/plugins/{id}/save-grants",
-            delete(api::revoke_save_grant),
+            delete(settings_api::revoke_save_grant),
         )
-        .route("/_wonton/api/store", get(api::store))
-        .route("/_wonton/api/store/plugin", get(api::store_plugin))
+        .route("/_wonton/api/store", get(store_api::store))
+        .route("/_wonton/api/store/plugin", get(store_api::store_plugin))
         .route(
             "/_wonton/api/store/sources",
-            post(api::add_store_source).delete(api::remove_store_source),
+            post(store_api::add_store_source).delete(store_api::remove_store_source),
         )
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
 }
@@ -181,11 +184,14 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             &wonton_protocol::bot_profile_path("{id}"),
             put(super::bot_profile::save),
         )
-        .route("/_wonton/api/lan", get(api::lan).put(api::set_lan))
-        .route("/_wonton/api/storage", get(api::storage))
+        .route(
+            "/_wonton/api/lan",
+            get(settings_api::lan).put(settings_api::set_lan),
+        )
+        .route("/_wonton/api/storage", get(settings_api::storage))
         .route(
             "/_wonton/api/egress-proxy",
-            get(api::egress_proxy).put(api::set_egress_proxy),
+            get(settings_api::egress_proxy).put(settings_api::set_egress_proxy),
         )
         .route(
             "/_wonton/api/registry-mirror",
@@ -195,10 +201,8 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/api/registry-mirror/test",
             post(super::registry_mirror::test),
         )
-        .route(
-            wonton_protocol::OWNER_PROFILE_PATH,
-            get(owner_profile::read).put(owner_profile::save),
-        )
+        .route(wonton_protocol::ME_PATH, get(me::read).put(me::save))
+        .merge(member_routes())
         .route(
             wonton_protocol::BOT_ACTIVITY_PATH,
             get(super::bot_activity::get),
@@ -247,6 +251,32 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .with_state(gateway)
 }
 
+/// 家人和共享 Bot（ADR-0045）：邀请、设置、配对码、移除、插件开放。
+fn member_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::MEMBERS_PATH,
+            get(family::list).post(family::invite),
+        )
+        .route("/_wonton/api/members/{username}", put(family::settings))
+        .route(
+            "/_wonton/api/members/{username}/pairing-code",
+            post(family::pairing_code).delete(family::void_pairing_code),
+        )
+        .route(
+            "/_wonton/api/members/{username}/remove",
+            post(family::remove),
+        )
+        .route(
+            wonton_protocol::SHARED_BOTS_PATH,
+            post(family::new_shared_bot),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/family",
+            put(family::set_plugin_family),
+        )
+}
+
 /// 插件网页和核心同站，能让浏览器带着核心会话向核心发表单或 `fetch`（比如替主人退出登录）。所以改状态的
 /// 请求只接受核心自己的页面发起的。
 async fn reject_cross_site_writes(
@@ -273,8 +303,8 @@ async fn home(
     headers: HeaderMap,
 ) -> Response {
     let langs = api::languages(&headers);
-    match gateway.core_user(peer.map(|Extension(peer)| peer), &headers) {
-        Some(user) => pages::status(&user, &gateway.plugins.list(), &langs),
+    match gateway.core_person(peer.map(|Extension(peer)| peer), &headers) {
+        Some(person) => pages::status(&person.username, &gateway.plugins.list(), &langs),
         None => pages::login("/", false, &langs),
     }
 }
@@ -310,7 +340,9 @@ async fn login(
         tracing::warn!("主人令牌不正确");
         return pages::login(&next, true, &api::languages(&headers));
     }
-    let sid = gateway.sessions.create_core(gateway.owner.username());
+    // 主人令牌登录的核心会话是主人（ADR-0045）。
+    let person = super::Person::owner(gateway.owner.username());
+    let sid = gateway.sessions.create_core(&person);
     let cookie = set_cookie(CORE_COOKIE, &sid, CORE_TTL, gateway.secure_cookies());
     with_cookie(Redirect::to(&next).into_response(), cookie)
 }

@@ -66,6 +66,15 @@ impl BotStore {
             .collect())
     }
 
+    /// 全部 Bot 用掉的 Matrix 用户名（localpart）：给家人用户名的查重用（ADR-0045）。
+    pub fn localparts(&self) -> Result<BTreeSet<String>, StoreError> {
+        Ok(self
+            .records_except(None)?
+            .iter()
+            .filter_map(|record| localpart(&record.account.user_id).map(str::to_owned))
+            .collect())
+    }
+
     /// 主房间是 `room` 的 Bot 的用户名。
     pub fn in_home_room(&self, room: &str) -> Result<Vec<String>, StoreError> {
         Ok(self

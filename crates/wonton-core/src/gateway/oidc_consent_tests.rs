@@ -6,7 +6,8 @@ use hyper::StatusCode;
 use serde_json::json;
 
 use super::CORE_COOKIE;
-use super::tests::{CORE, Harness, TOKEN, WHOAMI, fake_hydra};
+use super::fakes::fake_hydra;
+use super::tests::{CORE, Harness, TOKEN, WHOAMI};
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginPackage, PluginStatus};
 

@@ -248,6 +248,7 @@ impl PluginManager {
             origin: package.origin.clone(),
             written_by: None,
             ask_every_update: false,
+            family: false,
         })?;
         Ok(Deployed {
             upstream,

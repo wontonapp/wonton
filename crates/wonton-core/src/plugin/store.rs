@@ -66,6 +66,9 @@ pub struct InstalledRecord {
     /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ask_every_update: bool,
+    /// 主人开放给家人了（ADR-0045）：家人的设备能打开它的网页，家人的插件列表里有它。默认关。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub family: bool,
 }
 
 fn limits_empty(limits: &PluginLimits) -> bool {
@@ -473,6 +476,7 @@ mod tests {
             origin: None,
             written_by: None,
             ask_every_update: false,
+            family: false,
         }
     }
 

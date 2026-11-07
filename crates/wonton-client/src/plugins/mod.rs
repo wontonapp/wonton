@@ -6,7 +6,7 @@ mod cache;
 pub(crate) mod cards;
 mod core_upgrade;
 mod egress;
-mod owner_profile;
+mod me;
 mod polling;
 mod registry_mirror;
 mod start;

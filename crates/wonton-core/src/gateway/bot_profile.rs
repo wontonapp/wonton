@@ -20,15 +20,19 @@ pub(super) async fn save(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if gateway
-        .device_user(peer.map(|Extension(peer)| peer))
-        .is_none()
-    {
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            "需要经隧道连接的主人设备",
-        );
+    match gateway.device_person(peer.map(|Extension(peer)| peer)) {
+        None => {
+            return error_response(
+                StatusCode::UNAUTHORIZED,
+                "unauthenticated",
+                "需要经隧道连接的主人设备",
+            );
+        }
+        // Bot 的名字和头像全家都看得到，由主人定（ADR-0045“谁能做什么”）。
+        Some(person) if !person.is_owner() => {
+            return error_response(StatusCode::FORBIDDEN, "owner_only", "Bot 资料只有主人能改");
+        }
+        Some(_) => {}
     }
     if !isolation::not_from_another_page(&headers, &gateway.core_origin()) {
         return error_response(

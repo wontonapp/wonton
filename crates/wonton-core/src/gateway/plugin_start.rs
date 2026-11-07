@@ -8,7 +8,7 @@ use axum::{Extension, Json};
 use hyper::HeaderMap;
 use hyper::header::ACCEPT_LANGUAGE;
 
-use super::api::{install_error, languages, plugin_denied};
+use super::api::{install_denied, install_error, languages};
 use super::{Gateway, TunnelPeer};
 use crate::plugin::{InstallError, PluginId};
 
@@ -18,7 +18,7 @@ pub async fn start(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+    if let Some(denied) = install_denied(&gateway, peer, &headers) {
         return denied;
     }
     let id = match PluginId::parse(&id) {

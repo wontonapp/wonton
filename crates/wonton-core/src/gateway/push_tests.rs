@@ -15,8 +15,8 @@ use iroh::{EndpointId, SecretKey};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
+use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
-use super::tunnel_tests::loopback_tunnel;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
@@ -87,7 +87,7 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        let tunnel = loopback_tunnel(dir.path()).await;
+        let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();
         tunnel.devices.add(phone, None).unwrap();
         let push = Arc::new(
@@ -102,6 +102,7 @@ impl Home {
             public,
             profile,
             TOKEN.into(),
+            members,
             plugins.clone(),
             None,
             http,

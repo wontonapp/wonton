@@ -15,6 +15,8 @@ use hyper::header::{COOKIE, HeaderValue};
 
 use crate::secret::random_token;
 
+use super::Person;
+
 pub const CORE_COOKIE: &str = "wonton_session";
 pub const APP_COOKIE: &str = "wonton_app";
 
@@ -31,13 +33,13 @@ struct Expiring<T> {
 
 #[derive(Clone, PartialEq, Eq)]
 struct Bound {
-    user: String,
+    person: Person,
     host: String,
 }
 
 #[derive(Default)]
 struct Inner {
-    core: HashMap<String, Expiring<String>>,
+    core: HashMap<String, Expiring<Person>>,
     app: HashMap<String, Expiring<Bound>>,
     codes: HashMap<String, Expiring<Bound>>,
 }
@@ -58,17 +60,17 @@ impl SessionStore {
         self.inner.lock().expect("会话表锁中毒")
     }
 
-    pub fn create_core(&self, user: &str) -> String {
+    pub fn create_core(&self, person: &Person) -> String {
         let sid = random_token();
         let entry = Expiring {
-            value: user.to_owned(),
+            value: person.clone(),
             expires: Instant::now() + CORE_TTL,
         };
         self.lock().core.insert(sid.clone(), entry);
         sid
     }
 
-    pub fn core_user(&self, sid: &str) -> Option<String> {
+    pub fn core_user(&self, sid: &str) -> Option<Person> {
         live(&mut self.lock().core, sid)
     }
 
@@ -76,18 +78,18 @@ impl SessionStore {
     pub fn revoke_core(&self, sid: &str) {
         let mut inner = self.lock();
         if let Some(entry) = inner.core.remove(sid) {
-            let user = entry.value;
-            inner.app.retain(|_, v| v.value.user != user);
-            inner.codes.retain(|_, v| v.value.user != user);
+            let person = entry.value;
+            inner.app.retain(|_, v| v.value.person != person);
+            inner.codes.retain(|_, v| v.value.person != person);
         }
     }
 
     /// 为某个插件域名签发一次性交接码，60 秒内有效。
-    pub fn create_code(&self, user: &str, host: &str) -> String {
+    pub fn create_code(&self, person: &Person, host: &str) -> String {
         let code = random_token();
         let entry = Expiring {
             value: Bound {
-                user: user.to_owned(),
+                person: person.clone(),
                 host: host.to_owned(),
             },
             expires: Instant::now() + CODE_TTL,
@@ -97,18 +99,18 @@ impl SessionStore {
     }
 
     /// 兑换交接码：只能用一次，且只能在签发时指定的域名上兑换。
-    pub fn redeem_code(&self, code: &str, host: &str) -> Option<String> {
+    pub fn redeem_code(&self, code: &str, host: &str) -> Option<Person> {
         let mut inner = self.lock();
         let bound = live(&mut inner.codes, code)?;
         inner.codes.remove(code);
-        (bound.host == host).then_some(bound.user)
+        (bound.host == host).then_some(bound.person)
     }
 
-    pub fn create_app(&self, user: &str, host: &str) -> String {
+    pub fn create_app(&self, person: &Person, host: &str) -> String {
         let sid = random_token();
         let entry = Expiring {
             value: Bound {
-                user: user.to_owned(),
+                person: person.clone(),
                 host: host.to_owned(),
             },
             expires: Instant::now() + APP_TTL,
@@ -117,9 +119,9 @@ impl SessionStore {
         sid
     }
 
-    pub fn app_user(&self, sid: &str, host: &str) -> Option<String> {
+    pub fn app_user(&self, sid: &str, host: &str) -> Option<Person> {
         let bound = live(&mut self.lock().app, sid)?;
-        (bound.host == host).then_some(bound.user)
+        (bound.host == host).then_some(bound.person)
     }
 }
 
@@ -188,29 +190,32 @@ pub fn set_cookie(name: &str, value: &str, max_age: Duration, secure: bool) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wonton_protocol::Role;
 
     #[test]
     fn handoff_codes_are_single_use_and_host_bound() {
         let store = SessionStore::default();
-        let code = store.create_code("owner", "a.wonton.localhost");
+        let owner = Person {
+            username: "owner".into(),
+            role: Role::Owner,
+        };
+        let code = store.create_code(&owner, "a.wonton.localhost");
         assert_eq!(store.redeem_code(&code, "b.wonton.localhost"), None);
-        let code = store.create_code("owner", "a.wonton.localhost");
-        assert_eq!(
-            store.redeem_code(&code, "a.wonton.localhost"),
-            Some("owner".into())
-        );
+        let code = store.create_code(&owner, "a.wonton.localhost");
+        assert_eq!(store.redeem_code(&code, "a.wonton.localhost"), Some(owner));
         assert_eq!(store.redeem_code(&code, "a.wonton.localhost"), None);
     }
 
     #[test]
     fn app_sessions_are_host_bound_and_die_with_logout() {
         let store = SessionStore::default();
-        let core = store.create_core("owner");
-        let app = store.create_app("owner", "a.wonton.localhost");
-        assert_eq!(
-            store.app_user(&app, "a.wonton.localhost"),
-            Some("owner".into())
-        );
+        let owner = Person {
+            username: "owner".into(),
+            role: Role::Owner,
+        };
+        let core = store.create_core(&owner);
+        let app = store.create_app(&owner, "a.wonton.localhost");
+        assert_eq!(store.app_user(&app, "a.wonton.localhost"), Some(owner));
         assert_eq!(store.app_user(&app, "b.wonton.localhost"), None);
         store.revoke_core(&core);
         assert_eq!(store.core_user(&core), None);

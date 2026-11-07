@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use wonton_protocol::{PEER_ERROR_HEADER, PEERS_PATH};
 
-use super::tunnel_tests::loopback_tunnel;
+use super::fakes::loopback_tunnel;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
@@ -94,7 +94,7 @@ async fn home_with(
         lifecycle,
         ImageWorker::in_process(),
     ));
-    let tunnel = loopback_tunnel(dir.path()).await;
+    let (tunnel, members) = loopback_tunnel(dir.path()).await;
     let peers = Peers::open(
         dir.path().join("core/peers.json"),
         OwnIdentity {
@@ -114,6 +114,7 @@ async fn home_with(
         public,
         profile,
         TOKEN.into(),
+        members,
         manager,
         None,
         HttpClient::new(),

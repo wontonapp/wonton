@@ -39,6 +39,7 @@ gateway-oidc-unconfigured = 家里的服务器没有配置身份提供方
 gateway-no-app-for-host = 没有安装对应 { $host } 的应用
 gateway-no-webui = 这个应用没有网页入口
 gateway-app-not-ready = 应用 { $id } 尚未就绪
+gateway-plugin-not-shared = 应用 { $id } 没有开放给家人
 gateway-proxy-sso-failed = 拿不到应用 { $id } 的代登录凭据：{ $error }
 gateway-cross-site-login = 网关不认其他网页发来的跨站请求的登录状态，请从应用自己的页面操作
 gateway-login-required = 需要先登录 Wonton
@@ -53,6 +54,7 @@ gateway-sso-local-only = 只能跳转到本机的插件地址
 gateway-sso-missing-code = 缺少交接码
 gateway-sso-code-invalid = 交接码无效或已过期，请重新打开
 gateway-sso-user-mismatch = 身份提供方记住的是另一个用户
+gateway-proxy-sso-member-missing = 你的账号已经不在家里服务器上，要主人重新邀请
 gateway-sso-consent-mismatch = 授权请求与当前登录的用户不一致
 
 # 转发给上游。

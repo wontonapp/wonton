@@ -1,9 +1,7 @@
 //! 你的资料（ADR-0030）：显示名和邮箱在 App 里填，存在家里的服务器上，单点登录和要身份的插件从那里取。
+//! 读写的接口是 [`ME_PATH`](crate::ME_PATH)（ADR-0045 起按人：主人写 [`OwnerProfileUpdate`]，家人改自己的）。
 
 use serde::{Deserialize, Serialize};
-
-/// 读写资料的接口：`GET` 和 `PUT` 都返回 [`OwnerProfile`]，`PUT` 的请求体是 [`OwnerProfileUpdate`]。
-pub const OWNER_PROFILE_PATH: &str = "/_wonton/api/owner-profile";
 
 /// 家里的服务器上的资料。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

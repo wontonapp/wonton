@@ -25,6 +25,7 @@ pub mod install;
 pub(crate) mod l10n;
 pub mod matrix;
 pub mod mcp;
+pub mod members;
 pub mod oidc;
 pub mod owner;
 pub mod pairing;

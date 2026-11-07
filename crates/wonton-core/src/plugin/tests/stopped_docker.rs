@@ -17,6 +17,7 @@ use crate::config::DEFAULT_INSTALL_TIMEOUT;
 use crate::device::Devices;
 use crate::gateway::{Gateway, router};
 use crate::http::HttpClient;
+use crate::members::Members;
 use crate::test_docker::Names;
 use crate::tunnel::Tunnel;
 
@@ -35,8 +36,10 @@ async fn gateway(
         .bind()
         .await
         .unwrap();
+    let members = Arc::new(Members::open(dir.join("members.json")).unwrap());
     let tunnel = Tunnel::new(
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+        members.clone(),
         Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
         endpoint,
         0,
@@ -47,6 +50,7 @@ async fn gateway(
         manager.cfg.public.clone(),
         manager.cfg.profile.clone(),
         TOKEN.to_owned(),
+        members,
         manager,
         None,
         HttpClient::new(),

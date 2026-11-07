@@ -16,9 +16,9 @@ use iroh::{EndpointId, SecretKey};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
+use super::fakes::loopback_tunnel;
 use super::send_limits::{Clock, SendLimiter, SendLimits};
 use super::tests::{CORE, TOKEN, owner};
-use super::tunnel_tests::loopback_tunnel;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::{Config, PublicUrls};
 use crate::http::HttpClient;
@@ -94,7 +94,7 @@ impl Home {
             "172.30.1.0/24",
             vec!["matrix.bot".parse::<Permission>().unwrap()],
         );
-        let tunnel = loopback_tunnel(dir.path()).await;
+        let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();
         tunnel.devices.add(phone, None).unwrap();
         // Bot 和设备的访问令牌：假 Tuwunel 的 `whoami` 认它们。
@@ -116,6 +116,7 @@ impl Home {
             public,
             profile,
             TOKEN.into(),
+            members,
             plugins,
             None,
             http,

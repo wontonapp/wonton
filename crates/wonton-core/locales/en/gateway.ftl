@@ -39,6 +39,7 @@ gateway-oidc-unconfigured = The home server has no identity provider configured
 gateway-no-app-for-host = No app is installed for { $host }
 gateway-no-webui = This app has no web page
 gateway-app-not-ready = The app { $id } isn't ready yet
+gateway-plugin-not-shared = { $id } isn't shared with family members
 gateway-proxy-sso-failed = Can't get the sign-in credentials for the app { $id }: { $error }
 gateway-cross-site-login = The gateway doesn't trust sign-in state on requests from another site; use the app's own page
 gateway-login-required = Sign in to Wonton first
@@ -53,6 +54,7 @@ gateway-sso-local-only = Redirects can only go to this server's app addresses
 gateway-sso-missing-code = The handoff code is missing
 gateway-sso-code-invalid = The handoff code is invalid or expired; open the page again
 gateway-sso-user-mismatch = The identity provider remembers a different user
+gateway-proxy-sso-member-missing = Your account is no longer on this home server; ask the owner to invite you again
 gateway-sso-consent-mismatch = The authorization request doesn't match the signed-in user
 
 # Forwarding to upstreams (auth endpoints, model gateway).

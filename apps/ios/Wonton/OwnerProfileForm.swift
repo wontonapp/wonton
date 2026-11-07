@@ -5,7 +5,7 @@ import WontonClient
 @MainActor
 @Observable
 final class OwnerProfileFormState {
-    private(set) var profile: OwnerProfile?
+    private(set) var profile: Me?
     private(set) var loadProblem: Problem?
     private(set) var saveProblem: Problem?
     private(set) var isSaving = false
@@ -21,7 +21,7 @@ final class OwnerProfileFormState {
         profile = nil
         loadProblem = nil
         do {
-            let profile = try await core.ownerProfile()
+            let profile = try await core.me()
             name = profile.displayName ?? ""
             email = profile.email ?? ""
             self.profile = profile
@@ -36,7 +36,7 @@ final class OwnerProfileFormState {
         isSaving = true
         defer { isSaving = false }
         do {
-            let saved = try await core.saveOwnerProfile(update: OwnerProfileUpdate(displayName: name, email: email))
+            let saved = try await core.saveMe(update: OwnerProfileUpdate(displayName: name, email: email))
             guard !Task.isCancelled else { return false }
             profile = saved
             return true

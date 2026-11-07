@@ -2,7 +2,6 @@
 //! 网关。插件上游和 Hydra 管理接口的替身与 `tests.rs` 共用。
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,21 +16,20 @@ use base64::engine::general_purpose::STANDARD;
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
-use iroh::endpoint::presets;
-use iroh::{Endpoint, SecretKey};
+use iroh::SecretKey;
 use serde_json::Value;
 use tower::ServiceExt;
-use wonton_tunnel::relays::RelayTable;
+
 use wonton_tunnel::{
     LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
 };
 
+use super::fakes::{echo_upstream, fake_hydra, loopback_endpoint, loopback_tunnel};
 use super::isolation_tests::{OTHER, browser_cases};
 use super::proxy_sso_tests::{KEY, VAULT_HOST, leaked, received, register_vault};
-use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, echo_upstream, fake_hydra, owner};
+use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, owner};
 use super::{Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
-use crate::device::Devices;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
@@ -46,33 +44,6 @@ use crate::tunnel::{Tunnel, TunnelEntry};
 /// 浏览器看到的端口：经隧道时不监听，只用来拼地址。
 const PORT: u16 = 18480;
 
-/// 只走回环地址的 iroh endpoint：不连中继，不做地址发现。
-pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
-    Endpoint::builder(presets::Minimal)
-        .secret_key(key)
-        .clear_ip_transports()
-        .bind_addr((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .bind()
-        .await
-        .unwrap()
-}
-
-/// 测试用的隧道：空的设备登记表，加一个只走回环地址的 endpoint。
-pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
-    Tunnel::new(
-        Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
-        Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
-        loopback_endpoint(SecretKey::generate()).await,
-        0,
-        RelayTable::builtin_n0(),
-        tokio::sync::watch::channel(std::collections::BTreeSet::from(["192.168.1.2"
-            .parse()
-            .unwrap()]))
-        .1,
-    )
-}
-
 pub(super) struct Home {
     pub(super) app: Router,
     plugins: Arc<PluginManager>,
@@ -83,11 +54,19 @@ pub(super) struct Home {
 }
 
 impl Home {
+    /// 记录目录：测试要往插件记录目录里放 Bot 记录。
+    pub(super) fn data_dir(&self) -> &std::path::Path {
+        self._dir.path()
+    }
+
     pub(super) async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         Self::start_with(hydra_admin, None).await
     }
 
-    async fn start_with(hydra_admin: Option<SocketAddr>, matrix: Option<Arc<Matrix>>) -> Self {
+    pub(super) async fn start_with(
+        hydra_admin: Option<SocketAddr>,
+        matrix: Option<Arc<Matrix>>,
+    ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
         let public = PublicUrls {
@@ -132,11 +111,12 @@ impl Home {
         let manifest =
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
-        let tunnel = loopback_tunnel(dir.path()).await;
+        let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(
             public,
             profile,
             TOKEN.into(),
+            members,
             manager.clone(),
             hydra,
             http,
@@ -211,7 +191,7 @@ impl Phone {
     }
 
     /// 等到隧道客户端看到服务端以“未授权”断开连接。
-    async fn wait_until_rejected(&self) {
+    pub(super) async fn wait_until_rejected(&self) {
         let mut status = self.client.watch_status();
         let rejected = TunnelStatus::Disconnected(TunnelError::Unauthorized);
         tokio::time::timeout(
@@ -262,7 +242,7 @@ impl Phone {
     }
 
     /// 经本地代理发一个请求，`Host` 原样带到网关。每个请求一条新连接，测试之间不受连接池影响。
-    async fn send(
+    pub(super) async fn send(
         &self,
         method: Method,
         host: &str,
@@ -302,7 +282,7 @@ impl Phone {
     }
 }
 
-fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub(super) fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).map(|v| v.to_str().unwrap())
 }
 
@@ -429,15 +409,26 @@ async fn device_identity_signs_in_to_oidc_without_a_core_session() {
     );
 }
 
+/// 设备管理按人（ADR-0045）：主人的设备能列所有设备，登记设备仍只认主人令牌；家人的设备只能看到自己的
+/// （家人一侧在 family_tests 里）。
 #[tokio::test]
-async fn device_management_still_requires_the_owner_token() {
+async fn the_owners_device_lists_devices_but_cannot_add_without_the_token() {
     let home = Home::start(None).await;
     let device = SecretKey::generate();
     home.register(&device).await;
     let phone = Phone::start(device, &home).await;
 
-    let (status, headers, _) = phone.get(CORE, "/_wonton/api/devices").await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, _) = phone.get(CORE, "/_wonton/api/devices").await;
+    assert_eq!(status, StatusCode::OK, "主人的设备看得到设备列表");
+    let (status, headers, _) = phone
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/devices",
+            &[("content-type", "application/json")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "登记设备仍只认主人令牌");
     assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
 }
 
@@ -529,10 +520,12 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         }
     }
 
-    for route in ["/_wonton/api/devices", "/_wonton/api/lan"] {
-        let (status, _, _) = phone.send(Method::GET, CORE, route, &[]).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "{route} 只给主人");
-    }
+    // 设备列表认主人的设备（ADR-0045）；家人的设备会拿到 403 owner_only（family_tests）。
+    // 局域网设置在这里读不了：Home 的引擎连不上 Docker，LAN 探测如实报 503，鉴权在 family_tests 的表里。
+    let (status, _, _) = phone
+        .send(Method::GET, CORE, "/_wonton/api/devices", &[])
+        .await;
+    assert_eq!(status, StatusCode::OK, "主人的设备能读");
     // App 连上后跟着服务器的地址走，插件网页不能借设备身份探测。
     let route = "/_wonton/api/tunnel";
     let (status, _, text) = phone.send(Method::GET, CORE, route, &[]).await;

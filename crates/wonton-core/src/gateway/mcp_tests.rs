@@ -26,8 +26,8 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 
+use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
-use super::tunnel_tests::loopback_tunnel;
 use super::{ERROR_HEADER, Gateway, TunnelPeer, router};
 use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
@@ -121,14 +121,16 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         confirmations,
         Arc::new(crate::mcp::audit::Audit::new(audit)),
     );
+    let (tunnel, members) = loopback_tunnel(dir.path()).await;
     let gateway = Gateway::new(
         public,
         profile,
         TOKEN.into(),
+        members,
         manager,
         None,
         http,
-        loopback_tunnel(dir.path()).await,
+        tunnel,
     )
     .with_mcp(Some(bus.endpoint()));
     let gateway = Arc::new(gateway);
@@ -746,7 +748,7 @@ async fn only_the_owner_can_take_over_and_a_revoked_device_stops_operating() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let started = home.audit();
     assert_eq!(started[0]["takeover"], "started");
-    assert_eq!(started[0]["by"], format!("device:{}", peer.0));
+    assert_eq!(started[0]["by"], format!("owner/device:{}", peer.0));
 
     let bearer = format!("Bearer {TOKEN}");
     let request = hyper::Request::builder()

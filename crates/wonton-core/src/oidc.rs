@@ -14,6 +14,7 @@ use tokio::time::{Instant, sleep};
 use crate::config::OidcProviderConfig;
 use crate::http::{HttpClient, HttpError};
 use crate::owner::Owner;
+use wonton_protocol::Role;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -266,10 +267,15 @@ pub fn granted_scopes(requested: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 在 `owner` 之外加上客户端声明的组
-/// （清单 `oidc.owner_groups`，只发给这个客户端）：Hydra 把 `session.id_token` 的声明
-/// 同时用作 ID 令牌和 userinfo 的内容。
-pub fn id_token_claims(owner: &Owner, granted: &[String], extra_groups: &[String]) -> Value {
+/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是家庭角色：主人 `["owner"]` 加客户端声明的组
+/// （清单 `oidc.owner_groups`，只发给这个客户端），家人 `["member"]`（ADR-0045）。Hydra 把
+/// `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
+pub fn id_token_claims(
+    owner: &Owner,
+    role: Role,
+    granted: &[String],
+    extra_groups: &[String],
+) -> Value {
     let has = |scope: &str| granted.iter().any(|s| s == scope);
     let mut claims = serde_json::Map::new();
     if has("profile") {
@@ -283,9 +289,14 @@ pub fn id_token_claims(owner: &Owner, granted: &[String], extra_groups: &[String
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
-        let mut groups: Vec<&str> = Vec::with_capacity(extra_groups.len() + 1);
-        groups.push("owner");
-        groups.extend(extra_groups.iter().map(String::as_str));
+        let groups: Vec<String> = match role {
+            Role::Owner => {
+                let mut groups = vec!["owner".to_owned()];
+                groups.extend(extra_groups.iter().cloned());
+                groups
+            }
+            _ => vec!["member".to_owned()],
+        };
         claims.insert("groups".into(), json!(groups));
     }
     Value::Object(claims)
@@ -302,18 +313,29 @@ mod tests {
             display_name: "云吞".into(),
             email: Some("owner@wonton.localhost".into()),
         };
-        let requested: Vec<String> = ["openid", "email", "admin:all"].map(String::from).into();
+        let requested: Vec<String> = ["openid", "profile", "email", "groups", "admin:all"]
+            .map(String::from)
+            .into();
         let granted = granted_scopes(&requested);
-        assert_eq!(granted, ["openid", "email"]);
-        let claims = id_token_claims(&owner, &granted, &[]);
+        assert_eq!(granted, ["openid", "profile", "email", "groups"]);
+        let claims = id_token_claims(&owner, Role::Owner, &granted, &[]);
         assert_eq!(claims["email"], "owner@wonton.localhost");
-        assert!(claims.get("name").is_none() && claims.get("groups").is_none());
+        assert_eq!(claims["groups"], serde_json::json!(["owner"]));
+        assert_eq!(claims["name"], "云吞");
         let no_email = Owner {
             email: None,
             ..owner
         };
-        let claims = id_token_claims(&no_email, &granted, &[]);
+        let claims = id_token_claims(&no_email, Role::Owner, &granted, &[]);
         assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
+        let member = Owner {
+            username: "alice".into(),
+            display_name: "爱丽丝".into(),
+            email: None,
+        };
+        let claims = id_token_claims(&member, Role::Member, &granted, &[]);
+        assert_eq!(claims["groups"], serde_json::json!(["member"]));
+        assert_eq!(claims["preferred_username"], "alice");
     }
 
     #[test]
@@ -324,11 +346,20 @@ mod tests {
             email: None,
         };
         let granted: Vec<String> = ["openid", "groups"].map(String::from).into();
-        let claims = id_token_claims(&owner, &granted, &["admin".into(), "media".into()]);
+        let claims = id_token_claims(
+            &owner,
+            Role::Owner,
+            &granted,
+            &["admin".into(), "media".into()],
+        );
         assert_eq!(claims["groups"], json!(["owner", "admin", "media"]));
         // 没授予 groups scope 就一个组也不发。
         let granted: Vec<String> = ["openid"].map(String::from).into();
-        let claims = id_token_claims(&owner, &granted, &["admin".into()]);
+        let claims = id_token_claims(&owner, Role::Owner, &granted, &["admin".into()]);
         assert!(claims.get("groups").is_none());
+        // 家人不拿客户端声明的组：家人就是 ["member"]（ADR-0045）。
+        let granted: Vec<String> = vec!["groups".to_owned()];
+        let claims = id_token_claims(&owner, Role::Member, &granted, &["admin".into()]);
+        assert_eq!(claims["groups"], json!(["member"]));
     }
 }

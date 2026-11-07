@@ -5,7 +5,7 @@ use tokio::sync::watch;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, FileCard,
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
-    InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel, OwnerProfile,
+    InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
     OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
     ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
     TransfersViewModel,
@@ -296,24 +296,20 @@ impl ClientCore {
             .await
     }
 
-    /// 取家里服务器上的资料（ADR-0030），设置页和填资料的页面渲染它。
-    pub async fn owner_profile(&self) -> Result<OwnerProfile, CoreError> {
+    /// 取家里服务器上这台设备的人（ADR-0045），设置页和填资料的页面渲染它。
+    pub async fn me(&self) -> Result<Me, CoreError> {
         let scope = self.scope();
         let plugins = scope.plugins.clone();
-        scope
-            .run(async move { plugins.owner_profile().await })
-            .await
+        scope.run(async move { plugins.me().await }).await
     }
 
-    /// 保存资料，名字同步成 Matrix 上的显示名。不合规则时返回 `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
-    pub async fn save_owner_profile(
-        &self,
-        update: OwnerProfileUpdate,
-    ) -> Result<OwnerProfile, CoreError> {
+    /// 保存资料（主人写 owner.json，家人写自己那条），名字同步成 Matrix 上的显示名。不合规则时返回
+    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
+    pub async fn save_me(&self, update: OwnerProfileUpdate) -> Result<Me, CoreError> {
         let scope = self.scope();
         let plugins = scope.plugins.clone();
         let saved = scope
-            .run(async move { plugins.save_owner_profile(update).await })
+            .run(async move { plugins.save_profile(update).await })
             .await?;
         if let Some(name) = saved.display_name.clone() {
             scope.chat.set_owner_display_name(name);

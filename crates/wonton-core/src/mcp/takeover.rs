@@ -157,11 +157,13 @@ impl Bus {
         self.end_holders(plugin, TakeoverEnd::Handed, |holder, _| holder == by);
     }
 
-    /// 设备被吊销：它正在操作的插件不再算它。
-    pub fn end_device_takeovers(&self, by: &str) {
+    /// 设备被吊销：它正在操作的插件不再算它。`id` 是设备的 endpoint id：操作者的 `by` 是
+    /// `<用户名>/device:<id>`（ADR-0045），按设备部分匹配。
+    pub fn end_device_takeovers(&self, id: &str) {
+        let device = format!("device:{id}");
         for plugin in self.takeovers.operating_plugins() {
             self.end_holders(&plugin, TakeoverEnd::DeviceRevoked, |holder, _| {
-                holder == by
+                holder.ends_with(&device)
             });
         }
     }

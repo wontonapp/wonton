@@ -131,7 +131,7 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 
 - **设备登记**：这组验证里主人用令牌经管理 API（`POST /_wonton/api/devices`）登记设备，扫码配对见下面的
   “接口：扫码配对”。
-  登记表存在 `core/devices.json`，所有设备都属于主人。吊销（`dev.sh revoke`）立即断开该设备的隧道连接；
+  登记表存在 `core/devices.json`，设备记着归属人：主人的设备不写，家人的设备登记在家人名下（ADR-0045）。吊销（`dev.sh revoke`）立即断开该设备的隧道连接；
   网关对每个请求再查一次登记表，吊销和断开之间漏进来的请求也不放行。
 - **放行范围**：插件网页、核心首页、OIDC 登录和授权确认端点接受隧道身份。经隧道的已配对设备不需要核心
   会话，也不需要插件会话交接；Hydra 回到核心的登录端点时，核心直接按设备身份接受登录。冒烟实测：
@@ -165,7 +165,7 @@ App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwun
   | --- | --- |
   | `homeserver_url` | Matrix 客户端接口的地址：`<scheme>://matrix.<基础域名>[:端口]`，经隧道访问，`Host` 原样保留 |
   | `server_name` | Tuwunel 的 `server_name`，即用户 ID 冒号后的部分 |
-  | `user_id` | 设备所属的用户，如 `@owner:wonton.localhost`。M1 的已配对设备都属于主人 |
+  | `user_id` | 设备所属的用户，如 `@owner:wonton.localhost`。主人的设备是主人，家人的设备是这个家人（ADR-0045） |
   | `login_type` | `org.matrix.login.jwt` |
   | `token` | 一次性的登录 JWT，声明见上面的验证结果（M0-2） |
   | `expires_in` | 令牌还能用多少秒（120） |

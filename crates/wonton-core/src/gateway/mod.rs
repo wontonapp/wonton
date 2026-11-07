@@ -10,8 +10,8 @@
 //! | `<slug>.<base>` | 插件网页，需要插件会话 |
 //!
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
-//! （[`TunnelPeer`]），网关据此直接认出主人。局域网浏览器仍走核心会话加插件会话交接。
-//! 本地代理可能被同机其他 App 借用，所以设备一侧的本地代理要校验会话凭据（ADR-0004、#20）；
+//! （[`TunnelPeer`]），网关按设备登记表认出它的人（[`Person`]，ADR-0045）。局域网浏览器仍走核心会话加
+//! 插件会话交接。本地代理可能被同机其他 App 借用，所以设备一侧的本地代理要校验会话凭据（ADR-0004、#20）；
 //! 网关只在插件网页、OIDC 登录和授权确认端点、Matrix 登录令牌、Matrix 客户端接口、文件接口和插件管理接口（不能是网页
 //! 发起的，ADR-0017）上接受隧道身份，其余管理 API 仍要主人令牌。
 //!
@@ -28,18 +28,19 @@ mod confirmations;
 mod core_routes;
 mod core_upgrade;
 mod devices;
+pub mod family;
 mod files;
 mod health;
 mod isolation;
 mod lan;
 pub mod matrix;
 mod mcp;
+mod me;
 mod model_providers;
 mod models;
 mod notify;
 mod notify_limit;
 mod onboarding;
-mod owner_profile;
 mod pages;
 mod peers;
 mod plugin_start;
@@ -53,7 +54,9 @@ pub(crate) mod send_limits;
 
 pub use send_limits::{SendLimiter, SendLimits};
 mod session;
+mod settings_api;
 mod sso;
+mod store_api;
 mod tool_policy;
 
 use std::net::SocketAddr;
@@ -66,13 +69,22 @@ use hyper::header::{ACCEPT, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
+use wonton_protocol::{MemberStatus, Role};
+
+/// 家人的记录找不到了（比如刚被移除）：代登录和 OIDC 声明拿不到身份，如实报错。
+#[derive(Debug, thiserror::Error)]
+#[error("家人 {0} 不在记录里（可能刚被移除）")]
+pub(crate) struct MissingMember(pub(crate) String);
 
 use crate::config::{self, HostKind, PublicUrls};
 use crate::http::HttpClient;
 use crate::l10n;
 use crate::matrix::Matrix;
+use crate::members::Members;
 use crate::oidc::Hydra;
-use crate::owner::OwnerStore;
+use crate::owner::{Owner, OwnerStore};
+use crate::plugin::languages::Languages;
+use crate::plugin::upstreams::Endpoint;
 use crate::plugin::{PluginManager, PluginStatus};
 use crate::push::Push;
 use crate::secret::constant_time_eq;
@@ -86,10 +98,39 @@ pub use session::{APP_COOKIE, CORE_COOKIE};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TunnelPeer(pub EndpointId);
 
+/// 网关认出的人（ADR-0045）：经隧道的已配对设备看设备记录里的人，局域网浏览器的核心会话是主人。
+/// 认人只看隧道身份对应的设备记录，不读请求里的任何字段。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Person {
+    pub username: String,
+    pub role: Role,
+}
+
+impl Person {
+    pub fn owner(username: &str) -> Self {
+        Self {
+            username: username.to_owned(),
+            role: Role::Owner,
+        }
+    }
+
+    pub fn member(username: &str) -> Self {
+        Self {
+            username: username.to_owned(),
+            role: Role::Member,
+        }
+    }
+
+    pub fn is_owner(&self) -> bool {
+        self.role == Role::Owner
+    }
+}
+
 pub struct Gateway {
     pub public: PublicUrls,
     pub owner: Arc<OwnerStore>,
     owner_token: String,
+    pub members: Arc<Members>,
     pub plugins: Arc<PluginManager>,
     pub hydra: Option<Hydra>,
     /// 身份提供方公开端点的内部地址（`host:port`），`auth.<base>` 的请求转发到这里。
@@ -128,10 +169,12 @@ pub struct Gateway {
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
     /// `http://主机:端口`。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         public: PublicUrls,
         owner: Arc<OwnerStore>,
         owner_token: String,
+        members: Arc<Members>,
         plugins: Arc<PluginManager>,
         hydra: Option<(Hydra, String)>,
         http: HttpClient,
@@ -150,6 +193,7 @@ impl Gateway {
             public,
             owner,
             owner_token,
+            members,
             plugins,
             hydra,
             hydra_public,
@@ -250,31 +294,113 @@ impl Gateway {
         constant_time_eq(token.trim(), &self.owner_token)
     }
 
-    /// 经隧道接入的已配对设备属于主人（M0 只有主人一个用户）。吊销后立即不再认它，哪怕请求还在
-    /// 一条没来得及断开的连接上。
-    fn device_user(&self, peer: Option<TunnelPeer>) -> Option<String> {
+    /// 经隧道接入的已配对设备是谁（ADR-0045）：设备记录里写了家人就是他，没写是主人。吊销后立即不再认它，
+    /// 哪怕请求还在一条没来得及断开的连接上。
+    fn device_person(&self, peer: Option<TunnelPeer>) -> Option<Person> {
         let TunnelPeer(id) = peer?;
-        self.tunnel
-            .devices
-            .contains(&id)
-            .then(|| self.owner.username().to_owned())
+        let device = self.tunnel.devices.get(&id)?;
+        let Some(username) = device.user else {
+            return Some(Person::owner(self.owner.username()));
+        };
+        // 失败即停：设备记的家人必须在记录里、还没被移除。记录对不上时按认不出处理，不编一个身份放行。
+        match self.members.get(&username) {
+            Some(record) if record.status != MemberStatus::Removed => {
+                Some(Person::member(&record.username))
+            }
+            _ => {
+                tracing::warn!(
+                    device = %id.fmt_short(),
+                    member = %username,
+                    "设备的家人不在记录里或已移除，拒绝这台设备的请求"
+                );
+                None
+            }
+        }
     }
 
-    /// 核心域名上的当前用户（M0 只有主人）：经隧道的已配对设备，或者局域网浏览器的核心会话。
-    fn core_user(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) -> Option<String> {
-        self.device_user(peer).or_else(|| {
+    /// 经隧道接入的已配对设备属于谁：用户名（家人）或主人。
+    fn device_user(&self, peer: Option<TunnelPeer>) -> Option<String> {
+        self.device_person(peer).map(|person| person.username)
+    }
+
+    /// 核心域名上的当前人：经隧道的已配对设备，或者局域网浏览器的核心会话（主人令牌登录，是主人）。
+    fn core_person(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) -> Option<Person> {
+        self.device_person(peer).or_else(|| {
             session::cookies(headers, CORE_COOKIE).find_map(|sid| self.sessions.core_user(sid))
         })
     }
 
-    /// 插件子域名上的当前用户：经隧道的已配对设备，或者这个子域名的插件会话。只在
+    /// 插件子域名上的当前人：经隧道的已配对设备，或者这个子域名的插件会话。只在
     /// [`isolation::credentials_allowed`] 放行的请求上调用。
-    fn plugin_user(&self, host: &str, req: &Request) -> Option<String> {
-        self.device_user(req.extensions().get().copied())
+    fn plugin_person(&self, host: &str, req: &Request) -> Option<Person> {
+        self.device_person(req.extensions().get().copied())
             .or_else(|| {
                 session::cookies(req.headers(), APP_COOKIE)
                     .find_map(|sid| self.sessions.app_user(sid, host))
             })
+    }
+
+    /// 代登录和 OIDC 声明要的身份值（用户名、显示名、邮箱）：主人来自 `owner.json`，家人来自
+    /// `members.json`。字段结构相同，复用 [`Owner`] 值类型。家人的记录找不到了就报错：不编一个身份出来。
+    pub(crate) fn identity_of(&self, person: &Person) -> Result<Owner, MissingMember> {
+        if person.is_owner() {
+            return Ok(self.owner.owner());
+        }
+        let record = self
+            .members
+            .get(&person.username)
+            .ok_or_else(|| MissingMember(person.username.clone()))?;
+        Ok(Owner {
+            username: record.username,
+            display_name: record.display_name,
+            email: record.email,
+        })
+    }
+
+    /// 这台设备的人在 `GET ME_PATH` 里看到的自己（ADR-0045 的 `Me`）。家人的记录找不到了就报错：
+    /// 设备刚被移除时会这样，不编一个身份出来。
+    pub(crate) fn me(&self, person: &Person) -> Result<wonton_protocol::Me, MissingMember> {
+        let user_id = self
+            .matrix
+            .as_ref()
+            .map(|m| m.user_id(&person.username))
+            .unwrap_or_else(|| format!("@{}:{}", person.username, self.public.base_domain));
+        if person.is_owner() {
+            let profile = self.owner.profile();
+            Ok(wonton_protocol::Me {
+                user_id,
+                username: profile.username,
+                role: Role::Owner,
+                display_name: profile.display_name,
+                email: profile.email,
+                can_install_plugins: true,
+            })
+        } else {
+            let record = self
+                .members
+                .get(&person.username)
+                .ok_or_else(|| MissingMember(person.username.clone()))?;
+            if record.status == MemberStatus::Removed {
+                return Err(MissingMember(person.username.clone()));
+            }
+            Ok(wonton_protocol::Me {
+                user_id,
+                username: record.username,
+                role: Role::Member,
+                display_name: Some(record.display_name),
+                email: record.email,
+                can_install_plugins: record.can_install_plugins,
+            })
+        }
+    }
+
+    /// 这个人能不能装卸、升级插件：主人总是能，家人要主人授权（ADR-0045）。
+    pub(crate) fn can_install_plugins(&self, person: &Person) -> bool {
+        person.is_owner()
+            || self
+                .members
+                .get(&person.username)
+                .is_some_and(|record| record.can_install_plugins)
     }
 
     fn secure_cookies(&self) -> bool {
@@ -380,6 +506,40 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
     proxy::forward(&gateway.system_http, target, req, fwd, &langs).await
 }
 
+/// 插件网页的上游地址：运行中直接给；辅助容器坏了但网页还服务着也照常转发，网页里依赖坏掉的
+/// 那部分由应用自己报错。没运行时给要直接回给客户端的错误页。
+fn plugin_upstream(
+    route: &crate::plugin::manager::Route,
+    langs: &Languages,
+) -> Result<Endpoint, Box<Response>> {
+    match (&route.status, &route.upstream) {
+        (PluginStatus::Running, Some(upstream)) => Ok(upstream.clone()),
+        (PluginStatus::Running, None) => Err(Box::new(pages::error(
+            StatusCode::NOT_FOUND,
+            "no_webui",
+            &l10n::text(langs, "gateway-no-webui", &[]),
+            langs,
+        ))),
+        (PluginStatus::Degraded { .. }, Some(upstream)) if route.web_serving => {
+            Ok(upstream.clone())
+        }
+        (status, _) => {
+            let detail = pages::state_of(status, langs);
+            Err(Box::new(pages::error_with_detail(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "not_ready",
+                &l10n::text(
+                    langs,
+                    "gateway-app-not-ready",
+                    &[("id", route.id.as_str().into())],
+                ),
+                Some(&detail),
+                langs,
+            )))
+        }
+    }
+}
+
 /// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
 /// 页面发起的请求和导航。`sso: proxy` 的插件这时加上代登录凭据（`proxy_sso`）。然后转发给插件，并过滤插件
 /// 响应里的 `Set-Cookie` 和会交出凭据的头。
@@ -403,53 +563,59 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     }
     let origin = gateway.public.origin(&host);
     let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
-    if !credentials || gateway.plugin_user(&host, &req).is_none() {
-        return unauthenticated(gateway, &host, &req, credentials);
+    let person = gateway.plugin_person(&host, &req);
+    if !credentials {
+        return unauthenticated(gateway, &host, &req, false);
     }
-    let upstream = match (&route.status, &route.upstream) {
-        (PluginStatus::Running, Some(upstream)) => upstream.clone(),
-        (PluginStatus::Running, None) => {
-            return pages::error(
-                StatusCode::NOT_FOUND,
-                "no_webui",
-                &l10n::text(&langs, "gateway-no-webui", &[]),
-                &langs,
-            );
-        }
-        // 辅助容器坏了：网页服务自己的容器在运行、健康检查没失败就照常转发，网页里依赖坏掉的那部分由
-        // 应用自己报错。插件整体照旧是异常，App 里能看到是哪个容器。
-        (PluginStatus::Degraded { .. }, Some(upstream)) if route.web_serving => upstream.clone(),
-        (status, _) => {
-            let detail = pages::state_of(status, &langs);
-            return pages::error_with_detail(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "not_ready",
-                &l10n::text(
-                    &langs,
-                    "gateway-app-not-ready",
-                    &[("id", route.id.as_str().into())],
-                ),
-                Some(&detail),
-                &langs,
-            );
-        }
+    let Some(person) = person else {
+        return unauthenticated(gateway, &host, &req, true);
     };
-    if let Some(auth) = &route.proxy
-        && let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &gateway.owner.owner(), &langs)
-    {
+    // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
+    // 家人这一侧没有别的门槛。
+    if !person.is_owner() && !gateway.plugins.family_enabled(&route.id) {
         return pages::error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "proxy_credentials",
+            StatusCode::FORBIDDEN,
+            "not_shared",
             &l10n::text(
                 &langs,
-                "gateway-proxy-sso-failed",
-                &[
-                    ("id", route.id.as_str().into()),
-                    ("error", e.to_string().into()),
-                ],
+                "gateway-plugin-not-shared",
+                &[("id", route.id.as_str().into())],
             ),
             &langs,
         );
+    }
+    let upstream = match plugin_upstream(&route, &langs) {
+        Ok(upstream) => upstream,
+        Err(response) => return *response,
+    };
+    if let Some(auth) = &route.proxy {
+        let identity = match gateway.identity_of(&person) {
+            Ok(identity) => identity,
+            Err(e) => {
+                tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
+                return pages::error(
+                    StatusCode::FORBIDDEN,
+                    "permission_denied",
+                    &l10n::text(&langs, "gateway-proxy-sso-member-missing", &[]),
+                    &langs,
+                );
+            }
+        };
+        if let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &identity, &langs) {
+            return pages::error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "proxy_credentials",
+                &l10n::text(
+                    &langs,
+                    "gateway-proxy-sso-failed",
+                    &[
+                        ("id", route.id.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ),
+                &langs,
+            );
+        }
     }
     let fwd = proxy::Forwarded {
         client: client_addr(&req),
@@ -534,7 +700,13 @@ mod degraded_webui_tests;
 #[cfg(test)]
 mod egress_api_tests;
 #[cfg(test)]
+mod fakes;
+#[cfg(test)]
+mod family_plugin_tests;
+#[cfg(test)]
 mod family_rules_tests;
+#[cfg(test)]
+mod family_tests;
 #[cfg(test)]
 mod files_plugin_tests;
 #[cfg(test)]
@@ -573,8 +745,6 @@ mod notify_tests;
 mod oidc_consent_tests;
 #[cfg(test)]
 mod onboarding_tests;
-#[cfg(test)]
-mod owner_profile_tests;
 #[cfg(test)]
 mod pairing_tests;
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! 管理接口给 App 的视图（ADR-0017 的“接口：App 和核心”）：已安装的插件、详情页、安装预览和图标。文字按请求的
 //! 语言挑好，App 原样显示。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use wonton_protocol::{
@@ -23,6 +24,7 @@ use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::render::{dry_run, dry_run_with_email};
+use super::store::StoreError;
 use super::views_source::source_notices;
 use crate::l10n;
 
@@ -502,6 +504,11 @@ impl PluginManager {
         }
     }
 
+    /// 全部 Bot 用掉的 Matrix 用户名（localpart），给家人用户名的查重用（ADR-0045）。
+    pub fn bot_localparts(&self) -> Result<BTreeSet<String>, StoreError> {
+        self.store.bots().localparts()
+    }
+
     /// 填上插件的 Bot 和写它的人：读记录要读文件，不在插件表的锁里做。
     fn with_bot(&self, mut plugin: InstalledPlugin) -> InstalledPlugin {
         let Ok(id) = PluginId::parse(&plugin.id) else {
@@ -512,7 +519,10 @@ impl PluginManager {
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
         }
         match self.store.load(&id) {
-            Ok(record) => plugin.written_by = record.and_then(|record| record.written_by),
+            Ok(record) => {
+                plugin.written_by = record.as_ref().and_then(|record| record.written_by.clone());
+                plugin.family = record.is_some_and(|record| record.family);
+            }
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),
         }
         plugin

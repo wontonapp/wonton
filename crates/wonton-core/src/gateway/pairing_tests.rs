@@ -8,8 +8,9 @@ use iroh::SecretKey;
 use tower::ServiceExt;
 use wonton_tunnel::pair::{PairResponse, PairingCode, RejectReason, pair};
 
+use super::fakes::loopback_endpoint;
 use super::tests::{CORE, TOKEN};
-use super::tunnel_tests::{Home, Phone, loopback_endpoint};
+use super::tunnel_tests::{Home, Phone};
 
 /// 局域网里的浏览器用这个地址打开状态页。
 const LAN_HOST: &str = "192.168.1.20:18480";

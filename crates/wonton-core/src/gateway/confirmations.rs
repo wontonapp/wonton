@@ -1,5 +1,6 @@
 //! 主人回答确认卡片（ADR-0016、ADR-0024）。和管理接口同一道门：主人令牌，或者经隧道的已配对设备，设备的请求还要不是
-//! 别的网页发起的。插件网络里来的请求两样都没有，Agent 拿到 ID 也答不了。
+//! 别的网页发起的。插件网络里来的请求两样都没有，Agent 拿到 ID 也答不了。卡片现在都发给主人（ADR-0045）：家人
+//! 列出来是空的，回答别人的卡片回 403 `not_yours`；发到归属人是后续任务。
 
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd};
 
-use super::api::{acted_by, error_response, languages, plugin_denied};
+use super::api::{acted_by, denied, error_response, languages, plugin_denied, requester};
 use super::{Gateway, TunnelPeer};
 use crate::l10n;
 use crate::mcp::AnswerError;
@@ -33,6 +34,17 @@ pub async fn pending(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
+    if !person.is_owner() {
+        // 卡片都发给主人：家人这里没有自己的卡片。
+        return Json(ConfirmationList {
+            confirmations: Vec::new(),
+        })
+        .into_response();
+    }
     let Some(mcp) = &gateway.mcp else {
         return mcp_unavailable(&languages(&headers));
     };
@@ -51,6 +63,9 @@ pub async fn answer(
     let by = acted_by(&gateway, peer.as_ref(), &headers);
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
+    }
+    if let Some(not_yours) = not_the_owners_card(&gateway, peer, &headers) {
+        return not_yours;
     }
     let Some(mcp) = &gateway.mcp else {
         return mcp_unavailable(&languages(&headers));
@@ -93,6 +108,9 @@ pub async fn stop_window(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
+    if let Some(not_yours) = not_the_owners_card(&gateway, peer, &headers) {
+        return not_yours;
+    }
     let Some(mcp) = &gateway.mcp else {
         return mcp_unavailable(&languages(&headers));
     };
@@ -101,5 +119,27 @@ pub async fn stop_window(
     } else {
         let message = l10n::text(&languages(&headers), "gateway-no-allow-window", &[]);
         error_response(StatusCode::NOT_FOUND, "not_found", &message)
+    }
+}
+
+/// 卡片都发给主人（ADR-0045）：主人的令牌和设备能答，家人的设备回答回 403 `not_yours`。
+fn not_the_owners_card(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+) -> Option<Response> {
+    denied(gateway, headers)?;
+    let person = match requester(gateway, peer, headers) {
+        Ok(person) => person,
+        Err(response) => return Some(*response),
+    };
+    if person.is_owner() {
+        None
+    } else {
+        Some(error_response(
+            StatusCode::FORBIDDEN,
+            "not_yours",
+            "这张卡片不是发给你的",
+        ))
     }
 }

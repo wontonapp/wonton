@@ -18,9 +18,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, ModelProviderFailure, ModelProviderProblem, ModelProviders,
+    Action, CoreError, HomeStatus, Me, ModelProviderFailure, ModelProviderProblem, ModelProviders,
     Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingUpdate,
-    OnboardingViewModel, OwnerProfile, PluginFailure, PluginProblem,
+    OnboardingViewModel, PluginFailure, PluginProblem,
 };
 
 use crate::chat::ChatLink;
@@ -39,7 +39,7 @@ struct LocalState {
     revision: u64,
     /// 正在显示的一步。中间的步骤只在这台设备上（ADR-0038）；还没取到时为空。
     step: Option<OnboardingStep>,
-    owner: Option<OwnerProfile>,
+    owner: Option<Me>,
     providers: Option<ModelProviders>,
     draft: Draft,
     testing: bool,
@@ -212,7 +212,7 @@ impl OnboardingLink {
             };
             // 走完了的不取资料和服务商：没有地方显示它们，重看引导时再取。
             let details = if in_flow {
-                Some(tokio::join!(api::owner_profile(&api), api::providers(&api)))
+                Some(tokio::join!(api::me(&api), api::providers(&api)))
             } else {
                 None
             };
@@ -227,7 +227,7 @@ impl OnboardingLink {
         &self,
         onboarding: Onboarding,
         details: Option<(
-            Result<OwnerProfile, PluginProblem>,
+            Result<Me, PluginProblem>,
             Result<ModelProviders, ModelProviderProblem>,
         )>,
     ) {

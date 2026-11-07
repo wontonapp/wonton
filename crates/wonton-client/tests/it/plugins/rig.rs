@@ -332,7 +332,7 @@ async fn onboarding_routes(
             _ => core_error_response(405),
         });
     }
-    if path == "/_wonton/api/owner-profile" {
+    if path == wonton_protocol::ME_PATH {
         let mut owner = core.owner.lock().unwrap();
         let value = owner.get_or_insert_with(|| owner_json(None, None));
         if *method == Method::PUT
@@ -368,7 +368,14 @@ async fn onboarding_routes(
 }
 
 fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
-    serde_json::json!({"username": "owner", "display_name": name, "email": email})
+    serde_json::json!({
+        "user_id": "@owner:wonton.localhost",
+        "username": "owner",
+        "role": "owner",
+        "display_name": name,
+        "email": email,
+        "can_install_plugins": true,
+    })
 }
 
 pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {

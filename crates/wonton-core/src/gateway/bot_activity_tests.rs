@@ -14,8 +14,9 @@ use wonton_protocol::{
     Answer, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivityReport, BotProfileUpdate,
 };
 
+use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
-use super::tunnel_tests::{Phone, loopback_tunnel};
+use super::tunnel_tests::Phone;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
@@ -114,12 +115,21 @@ impl Home {
                 dir.path().join("audit.jsonl"),
             )),
         );
-        let tunnel = loopback_tunnel(dir.path()).await;
+        let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let peer = TunnelPeer(SecretKey::generate().public());
         tunnel.devices.add(peer.0, None).unwrap();
         let gateway = Arc::new(
-            Gateway::new(public, profile, TOKEN.into(), plugins, None, http, tunnel)
-                .with_mcp(Some(bus.endpoint())),
+            Gateway::new(
+                public,
+                profile,
+                TOKEN.into(),
+                members,
+                plugins,
+                None,
+                http,
+                tunnel,
+            )
+            .with_mcp(Some(bus.endpoint())),
         );
         let app = router(gateway.clone());
         let entry = TunnelEntry::spawn(&gateway.tunnel, app.clone());
@@ -234,7 +244,10 @@ async fn only_paired_tunnel_devices_can_read_activity() {
         h.app.clone().oneshot(cross_site).await.unwrap().status(),
         StatusCode::FORBIDDEN
     );
-    let sid = h.gateway.sessions.create_core("owner");
+    let sid = h
+        .gateway
+        .sessions
+        .create_core(&super::Person::owner("owner"));
     let mut cookie_request = h.request(None, None);
     cookie_request.headers_mut().insert(
         header::COOKIE,

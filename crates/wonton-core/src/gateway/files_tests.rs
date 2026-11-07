@@ -15,9 +15,9 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use wonton_protocol::{FileId, FileInfo, FileSource};
 
+use super::fakes::loopback_tunnel;
 use super::files_plugin_tests::{plugin_origin, plugin_service};
 use super::tests::{CORE, TOKEN, owner};
-use super::tunnel_tests::loopback_tunnel;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::files::record::{Accessor, Origin};
@@ -82,13 +82,14 @@ pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
         lifecycle,
         ImageWorker::in_process(),
     ));
-    let tunnel = loopback_tunnel(dir).await;
+    let (tunnel, members) = loopback_tunnel(dir).await;
     let key = SecretKey::generate();
     tunnel.devices.add(key.public(), None).unwrap();
     let gateway = Gateway::new(
         public,
         profile,
         TOKEN.into(),
+        members,
         manager,
         None,
         http,

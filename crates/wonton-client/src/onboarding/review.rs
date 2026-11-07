@@ -433,7 +433,7 @@ impl OnboardingLink {
         };
         self.set_entry(PROFILE, OnboardingItemState::Running);
         let result = match self.plugins.api() {
-            Ok(api) => api::save_owner_profile(&api, &update).await,
+            Ok(api) => api::save_me(&api, &update).await,
             Err(problem) => Err(problem),
         };
         if self.generation() != generation {

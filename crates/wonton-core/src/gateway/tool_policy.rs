@@ -1,4 +1,5 @@
-//! 主人放宽确认的接口（ADR-0024）。和管理接口同一道门；Agent 和插件都在插件网络里，两样身份都没有，打开不了。
+//! 主人放宽确认的接口（ADR-0024）。只给主人（ADR-0045）：卡片都发给主人，放宽也是主人的设置。Agent 和插件都在
+//! 插件网络里，两样身份都没有，打开不了。
 
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, Method, StatusCode};
 
-use super::api::{acted_by, error_response, install_error, plugin_denied};
+use super::api::{acted_by, error_response, install_error, owner_denied};
 use super::{Gateway, TunnelPeer};
 use crate::l10n;
 use crate::mcp::{Endpoint, PolicyChange};
@@ -27,7 +28,7 @@ fn granted<'a>(
     id: &str,
 ) -> Result<Granted<'a>, Box<Response>> {
     let by = acted_by(gateway, peer.as_ref(), headers);
-    if let Some(denied) = plugin_denied(gateway, peer, headers) {
+    if let Some(denied) = owner_denied(gateway, peer, headers) {
         return Err(Box::new(denied));
     }
     let Some(mcp) = &gateway.mcp else {

@@ -13,7 +13,7 @@ mod loading;
 mod refresh;
 
 const ONBOARDING: &str = "/_wonton/api/onboarding";
-const PROFILE: &str = "/_wonton/api/owner-profile";
+const PROFILE: &str = wonton_protocol::ME_PATH;
 const PROVIDERS: &str = "/_wonton/api/models/providers";
 const KEY: &str = "/_wonton/api/models/providers/openai";
 const KEY_TEST: &str = "/_wonton/api/models/providers/openai/test";
