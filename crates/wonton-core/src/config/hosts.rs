@@ -10,8 +10,7 @@ pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 /// 插件经核心在插件网络里的这个别名发通知（`WONTON_NOTIFY_URL`，ADR-0047）。
 pub const PLUGIN_NOTIFY_HOST: &str = "notify.wonton.internal";
 
-/// Tuwunel 经这个地址调核心的推送代理（ADR-0003 的“接口：推送”）。不用解析它：Tuwunel 经出站代理发请求，代理
-/// 只代理这一个域名，代理地址就是核心网关。
+/// Tuwunel 经核心私有网络上的这个别名直连推送专用监听（ADR-0003 的“接口：推送”）。
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
 
 /// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。

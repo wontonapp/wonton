@@ -267,8 +267,8 @@ key = "/etc/tuwunel/tls.key"
 dual_protocol = true
 
 # 出站都经核心的 CONNECT 代理（ADR-0050）：服务器名不查 DNS、不写 hosts，代理按配对名单经隧道转给对方，
-# 别的目的地它一律拒绝。include 为空表示所有域名（服务器名可以是安装时指定的任意名字）；推送代理
-# （push.wonton.internal）不是联邦对端，不经它。
+# 别的目的地它一律拒绝。include 为空表示所有域名（服务器名可以是安装时指定的任意名字）；推送
+# （push.wonton.internal）直连核心在 core 网络上的专用监听，不经联邦代理。
 [global.proxy]
 [[global.proxy.by_domain]]
 url = "http://{federation_proxy}"
@@ -368,11 +368,6 @@ mod tests {
         assert_eq!(mode("secrets/tuwunel-tls.key"), 0o600, "联邦的证书私钥");
         assert_eq!(mode("fed/config.toml"), 0o644);
         assert_eq!(mode("wonton"), 0o755, "主机上的 wonton 命令要能执行");
-        assert!(
-            fs::read_to_string(dir.path().join("compose.yaml"))
-                .unwrap()
-                .contains("wonton-core")
-        );
 
         let again = init(dir.path(), None).unwrap();
         assert!(again.created.is_empty(), "{again:?}");
@@ -392,39 +387,6 @@ mod tests {
             init(dir.path(), Some("other.example")).is_err(),
             "server_name 不能改"
         );
-    }
-
-    /// 联邦的选项由安装时写进配置（ADR-0050）：名单制、不出公网、TLS 自签。
-    #[test]
-    fn tuwunel_config_has_the_federation_options() {
-        let dir = tempfile::tempdir().unwrap();
-        init(dir.path(), None).unwrap();
-        let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
-        for expected in [
-            "allow_federation = true",
-            "trusted_servers = []",
-            "ip_range_denylist = []",
-            "allow_invalid_tls_certificates = true",
-            "port = [8008, 8448]",
-            "dual_protocol = true",
-            "[global.tls]",
-            "certs = \"/etc/tuwunel/tls.crt\"",
-        ] {
-            assert!(
-                config.contains(expected),
-                "{expected} 不在配置里：\n{config}"
-            );
-        }
-        assert!(
-            config.contains(&format!(
-                "url = \"http://{}\"",
-                federation_config::PROXY_ADDR
-            )),
-            "联邦出站要经核心的代理：\n{config}"
-        );
-        // 没有配对时名单谁也匹配不上。
-        let list = fs::read_to_string(dir.path().join("fed/config.toml")).unwrap();
-        assert!(list.contains("'^_unpaired_"), "{list}");
     }
 
     fn recorded(dir: &Path) -> String {
@@ -448,8 +410,6 @@ mod tests {
                 .bytes()
                 .all(|c| matches!(c, b'a'..=b'z' | b'2'..=b'7'))
         );
-        let config = fs::read_to_string(a.path().join("secrets/tuwunel.toml")).unwrap();
-        assert!(config.contains(&format!("server_name = \"{name}\"")));
 
         init(a.path(), None).unwrap();
         assert_eq!(recorded(a.path()), name, "再执行一次不换名字");

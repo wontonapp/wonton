@@ -57,6 +57,8 @@ services:
       # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
       # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。
       WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
+      # 推送直连核心在 core 网络上的 80 端口，不经联邦 CONNECT 代理，也不发布到宿主。
+      WONTON_PUSH_LISTEN: push.wonton.internal:80
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: /usr/share/wonton/default-plugins
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -97,8 +99,8 @@ services:
           recursive: disabled
     networks:
       core:
-        # tusd 经前一个调文件钩子，Tuwunel 经后一个走联邦出站代理。
-        aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal]
+        # 文件钩子、联邦出站代理和推送监听只在这个网络上。
+        aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal, push.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy

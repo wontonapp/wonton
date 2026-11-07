@@ -110,9 +110,11 @@ App 被杀后收不到任何消息。
 
 **3. 推送代理：`POST http://push.wonton.internal/_matrix/push/v1/notify`**
 
-- Matrix Push Gateway API v1，只给 Tuwunel 用。Tuwunel 默认拒绝推到私网地址（`ip_range_denylist`），连核心容器都
-  推不到；所以给它配出站代理，只代理 `push.wonton.internal`（`proxy.by_domain`），代理地址是核心网关。代理地址
-  不受这个限制，其他 pusher 仍受它保护。
+- Matrix Push Gateway API v1，只给 Tuwunel 用。正式安装和开发栈都把 `push.wonton.internal` 设为核心在 `core`
+  网络上的别名，`WONTON_PUSH_LISTEN=push.wonton.internal:80` 只绑定这个网络的地址；不发布到宿主，也不监听插件
+  网络。专用监听只接受推送 Host，其他 Host 返回 404；未设置这个变量时不启动专用监听。
+- Tuwunel 的 `ip_range_denylist` 留空以允许内部服务（ADR-0050），推送直连专用监听，不经联邦 CONNECT 代理；
+  安装配置的 `proxy.by_domain.exclude` 保留这个域名。
 - Matrix 推送网关没有鉴权，pushkey 是核心生成的 256 位随机串，兼作凭据；推送代理另外只接受 Tuwunel 的地址来的
   请求（按核心配置里的 Matrix 服务器地址现查，容器重建后地址会变），局域网、插件网络和隧道来的都拒绝。
 - 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。

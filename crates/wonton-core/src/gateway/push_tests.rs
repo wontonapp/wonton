@@ -35,11 +35,12 @@ const P256DH: &str =
     "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
 const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
 const PUSH_HOST: &str = "push.wonton.internal";
-/// 假的 Tuwunel 在 127.0.0.1 上，它经出站代理发来的请求的 TCP 来源。
+/// 假的 Tuwunel 在 127.0.0.1 上，它发来的请求的 TCP 来源。
 const TUWUNEL: &str = "127.0.0.1:41000";
 
 struct Home {
     app: Router,
+    push_app: Router,
     tunnel: Tunnel,
     plugins: Arc<PluginManager>,
     push: Arc<Push>,
@@ -110,8 +111,10 @@ impl Home {
         )
         .with_matrix(Some(Arc::new(matrix)))
         .with_push(Some(push.clone()));
+        let gateway = Arc::new(gateway);
         Self {
-            app: router(Arc::new(gateway)),
+            push_app: super::push_router(gateway.clone()),
+            app: router(gateway),
             tunnel,
             plugins,
             push,
@@ -181,7 +184,7 @@ impl Home {
         .await
     }
 
-    /// Tuwunel 经出站代理发来的通知：TCP 来源是它在核心网络里的地址。
+    /// Tuwunel 发来的通知：TCP 来源是它在核心网络里的地址。
     async fn notify(
         &self,
         from: &str,
@@ -270,9 +273,10 @@ async fn only_paired_devices_through_the_tunnel_can_register_for_push() {
 
 #[tokio::test]
 async fn the_push_gateway_answers_only_the_matrix_server() {
-    let home = Home::start().await;
+    let mut home = Home::start().await;
     let (_, _, body) = home.register(Some(home.phone)).await;
     let pushkey = body["pushkey"].as_str().unwrap().to_owned();
+    home.app = home.push_app.clone();
     home.plugins
         .register_source_for_test("app.echo", "172.30.1.0/24", Vec::new());
 
@@ -321,6 +325,31 @@ async fn the_push_gateway_answers_only_the_matrix_server() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["errcode"], "M_BAD_JSON");
+}
+
+#[tokio::test]
+async fn the_push_listener_does_not_expose_other_gateway_hosts() {
+    let mut home = Home::start().await;
+    home.app = home.push_app.clone();
+    for host in [
+        CORE,
+        "matrix.wonton.localhost",
+        "auth.wonton.localhost",
+        "127.0.0.1",
+        "other.example",
+    ] {
+        let (status, _, _) = home
+            .send(
+                Method::GET,
+                host,
+                "/_wonton/health",
+                None,
+                TUWUNEL,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{host}");
+    }
 }
 
 #[tokio::test]

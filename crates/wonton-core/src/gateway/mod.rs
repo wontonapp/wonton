@@ -53,6 +53,7 @@ mod registry_mirror;
 mod room_rules;
 pub(crate) mod send_limits;
 
+pub use push::router as push_router;
 pub use send_limits::{SendLimiter, SendLimits};
 mod session;
 mod settings_api;

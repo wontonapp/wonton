@@ -20,6 +20,9 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 镜像发布在 `ghcr.io/geraldpeng6/wonton-core`，`stable` 和 `beta` 两个渠道（ADR-0012），1.0 之前安装脚本默认装 `beta`；安装脚本另放在一个公开的
 小仓库里，因为主仓库是私有的。
 
+Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外端口；网络、地址和配置约定见
+[ADR-0003 的“接口：推送”](../../docs/adr/0003-matrix-and-encrypted-push.md#接口推送m0-3)。
+
 ## 装在哪
 
 | 路径 | 内容 |

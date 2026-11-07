@@ -16,7 +16,6 @@
 //! - `wonton-core compose-images`：升级器在新镜像里执行，列出这个版本要用的其他镜像。
 //! - `wonton-core manual-rollback …`：`install.sh` 手动退回时在目标镜像里执行（`wonton_core::upgrade::manual`）。
 
-use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -150,6 +149,7 @@ fn extra_protocols(
 mod federation_addrs;
 mod pair_command;
 mod plugin_command;
+mod push_listener;
 
 /// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
 const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
@@ -337,7 +337,8 @@ async fn serve() -> anyhow::Result<()> {
         .with_upgrades(Some(upgrades))
         .with_peers(peers.clone()),
     );
-    let app = gateway::router(gateway);
+    let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
+    let app = gateway::router(gateway.clone());
     let listener = TcpListener::bind(cfg.listen)
         .await
         .with_context(|| format!("监听 {}", cfg.listen))?;
@@ -348,13 +349,12 @@ async fn serve() -> anyhow::Result<()> {
         url = %cfg.public.origin(cfg.public.core_host()),
         "网关已启动"
     );
-    let served = axum::serve(
+    let served = push_listener::serve(
         listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
+        app,
+        push_listener.map(|listener| (listener, gateway::push_router(gateway))),
     )
-    .with_graceful_shutdown(shutdown())
-    .await
-    .context("网关异常退出");
+    .await;
     entry.shutdown().await;
     served
 }

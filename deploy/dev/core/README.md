@@ -125,8 +125,8 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 
 ## 推送
 
-Tuwunel 默认不往私网地址推送（`ip_range_denylist`），compose 里的 `TUWUNEL_PROXY` 让它只把 `push.wonton.internal`
-（核心的推送代理）经核心网关代理出去，见 ADR-0003 的“接口：推送”。
+Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装一致；地址、来源检查和宿主开发模式见
+[ADR-0003 的“接口：推送”](../../../docs/adr/0003-matrix-and-encrypted-push.md#接口推送m0-3)。
 
 ## 端到端冒烟
 

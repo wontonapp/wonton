@@ -55,6 +55,7 @@ services:
       WONTON_ANNOUNCE_ADDRESSES: ${WONTON_DEV_ANNOUNCE_ADDRESSES:-}
       # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
       WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
+      WONTON_PUSH_LISTEN: push.wonton.internal:80
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
       # 裸的 `hydra`、`tusd` 就可能解析到插件的容器。
       WONTON_OIDC_ADMIN_URL: http://hydra.wonton.internal:4445
@@ -93,8 +94,8 @@ services:
           recursive: disabled
     networks:
       core:
-        # tusd 经这个别名调文件钩子。
-        aliases: [files-hooks.wonton.internal]
+        # 文件钩子和推送监听只在这个网络上，与正式安装一致。
+        aliases: [files-hooks.wonton.internal, push.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy
@@ -221,9 +222,6 @@ services:
       TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
       TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
-      # Tuwunel 默认不往私网地址推送（ip_range_denylist），核心容器也在私网里。推送代理的地址只经这个出站代理到达
-      # 核心网关；代理地址不受那个限制，别的 pusher 仍受它保护（ADR-0003 的“接口：推送”）。
-      TUWUNEL_PROXY: '{by_domain=[{url="http://${WONTON_DEV_PROJECT:-wonton-dev-core}:${WONTON_DEV_PORT:-18480}",include=["push.wonton.internal"]}]}'
     volumes:
       - tuwunel:/var/lib/tuwunel
     networks:
