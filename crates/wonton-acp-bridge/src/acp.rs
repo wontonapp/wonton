@@ -22,6 +22,7 @@ use crate::{
 };
 
 pub mod auth;
+mod mode;
 mod rpc_error;
 use auth::{AuthMethod, AuthRequests, parse_auth_methods};
 use rpc_error::RpcError;
@@ -189,18 +190,15 @@ impl AcpClient {
             .as_str()
             .ok_or_else(|| Error::AgentNotReady("session/new 没有返回 sessionId".into()))?
             .to_owned();
-        self.set_mode(&session_id, mode).await?;
+        match mode::request(&result, &session_id, mode) {
+            Some((method, params)) => {
+                self.request(method, params)
+                    .await
+                    .map_err(|error| Error::Upstream(error.message))?;
+            }
+            None => tracing::info!(mode, "Agent 不分工作模式，跳过切换"),
+        }
         Ok(session_id)
-    }
-
-    async fn set_mode(&self, session_id: &str, mode: &str) -> Result<()> {
-        self.request(
-            "session/set_mode",
-            json!({"sessionId": session_id, "modeId": mode}),
-        )
-        .await
-        .map_err(|error| Error::Upstream(error.message))?;
-        Ok(())
     }
 
     pub async fn load_or_resume(&self, session_id: &str, cwd: &str, mcp_url: &str) -> Result<()> {

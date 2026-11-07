@@ -33,6 +33,8 @@ pub(crate) enum Scenario {
     PromptTransportError,
     PromptUpstreamError,
     PromptErrorData,
+    /// `session/new` 应答不带 `modes` 和 `configOptions`，也不认 `session/set_mode`（dsh 0.2.2 的实测行为）。
+    NoModes,
 }
 
 pub(crate) struct FakeAgent {
@@ -225,13 +227,7 @@ async fn serve_connection(
                 }
             }
             "session/new" => {
-                if matches!(scenario, Scenario::LoginUrl | Scenario::LoginTerminal)
-                    && !logged_in.load(Ordering::Relaxed)
-                {
-                    rpc_error(&writer, &message["id"], -32000, "Authentication required").await;
-                } else {
-                    reply(&writer, &message["id"], json!({"sessionId": "session-1"})).await;
-                }
+                new_session(&writer, &message["id"], &scenario, &logged_in).await;
             }
             "authenticate" => {
                 handle_authenticate(&writer, &message["id"], &mut lines, &scenario, &logged_in)
@@ -251,6 +247,9 @@ async fn serve_connection(
                     }
                 }
             }
+            "session/set_mode" if matches!(scenario, Scenario::NoModes) => {
+                fail(&writer, &message["id"], "Method not found").await;
+            }
             "session/set_mode" => {
                 reply(&writer, &message["id"], json!({})).await;
             }
@@ -269,6 +268,30 @@ async fn serve_connection(
             }
             _ => {}
         }
+    }
+}
+
+async fn new_session(
+    writer: &Arc<Mutex<OwnedWriteHalf>>,
+    id: &Value,
+    scenario: &Scenario,
+    logged_in: &AtomicBool,
+) {
+    if matches!(scenario, Scenario::LoginUrl | Scenario::LoginTerminal)
+        && !logged_in.load(Ordering::Relaxed)
+    {
+        rpc_error(writer, id, -32000, "Authentication required").await;
+    } else if matches!(scenario, Scenario::NoModes) {
+        reply(writer, id, json!({"sessionId": "session-1"})).await;
+    } else {
+        let modes =
+            json!({"currentModeId": "default", "availableModes": [{"id": "plan", "name": "Plan"}]});
+        reply(
+            writer,
+            id,
+            json!({"sessionId": "session-1", "modes": modes}),
+        )
+        .await;
     }
 }
 

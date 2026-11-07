@@ -165,7 +165,7 @@ ACP 桥的 C1 设计、容器边界、Matrix/ACP/MCP 转换和 C3 登录路径�
   “No, and tell Codex what to do differently”，这一轮以 `cancelled` 结束，等主人的新指示。桥不能把它当成失败。
 - 取消：等确认时发 `session/cancel`，并对挂起的请求回答 `cancelled`。四家都以 `cancelled` 结束，什么都没执行。
 - 模式要由桥显式设：Codex 默认 `agent`（自动审核），Qwen 默认 `auto`（模型分类器自动批准），都不是最严格的。
-  桥在 `session/new` 之后 `session/set_mode` 到上表的最严格模式，聊天里不提供切到 bypass、yolo、full-access 的入口。
+  桥在 `session/new` 之后切到上表的最严格模式（切法见 ADR-0035），聊天里不提供切到 bypass、yolo、full-access 的入口。
 - Claude 适配器启动 Claude Code 时总带 `--allow-dangerously-skip-permissions`。这个参数不跳过权限，只是允许之后
   切到 `bypassPermissions`。镜像里放 managed settings（`/etc/claude-code/managed-settings.json` 写
   `permissions.disableBypassPermissionsMode: "disable"`）后，切换被拒（实测）。全程没有用

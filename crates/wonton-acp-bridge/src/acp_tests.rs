@@ -44,6 +44,29 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
 }
 
 #[tokio::test]
+async fn agent_without_modes_gets_a_session_without_set_mode() {
+    let agent = FakeAgent::start(Scenario::NoModes).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    let session = bounded(
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    assert_eq!(session, "session-1");
+    let requests = agent.requests().await;
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request["method"] == "session/set_mode")
+    );
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
 async fn timeout_cancels_and_next_prompt_discards_late_update() {
     let agent = FakeAgent::start(Scenario::CancelLateUpdate).await;
     let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
