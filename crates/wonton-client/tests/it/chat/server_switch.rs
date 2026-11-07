@@ -18,7 +18,7 @@ async fn moving_to_another_server_signs_in_afresh() {
     phone.connect(&a);
     let (_, on_a) = phone.signed_in().await;
     let a_bot = a.bot("hermes", "Hermes").await;
-    let a_room = accept_the_bots_invite(&phone, &a_bot).await;
+    let a_room = accept_the_bots_invite(&a, &phone, &a_bot).await;
 
     phone.connect(&b);
 
@@ -52,7 +52,7 @@ async fn moving_to_another_server_signs_in_afresh() {
         "B 上不应还留着 A 的房间"
     );
     let b_bot = b.bot("hermes", "Hermes").await;
-    let b_room = accept_the_bots_invite(&phone, &b_bot).await;
+    let b_room = accept_the_bots_invite(&b, &phone, &b_bot).await;
     chat_with_the_bot(&phone, &b_bot, &b_room).await;
     drop(phone);
 
@@ -73,7 +73,7 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
     phone.connect(&home);
     let (_, device) = phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
 
     // 旧地址已经不通，所以手机只能经新地址收到这条消息；预览能显示正文，说明房间密钥也在。
@@ -116,7 +116,7 @@ async fn switching_back_keeps_the_first_servers_chat() {
     phone.connect(&a);
     let (_, on_a) = phone.signed_in().await;
     let a_bot = a.bot("hermes", "Hermes").await;
-    let a_room = accept_the_bots_invite(&phone, &a_bot).await;
+    let a_room = accept_the_bots_invite(&a, &phone, &a_bot).await;
     let timeline = phone
         .subscribe_timeline(a_room.to_string())
         .await

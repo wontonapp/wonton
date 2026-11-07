@@ -27,7 +27,7 @@ impl Chat {
         phone.connect(&home);
         phone.signed_in().await;
         let bot = home.bot("hermes", "Hermes").await;
-        let room_id = accept_the_bots_invite(&phone, &bot).await;
+        let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
         let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
         let timeline = Timeline::open(&phone, room_id.as_str()).await;
         let login_tokens = home.login_tokens();

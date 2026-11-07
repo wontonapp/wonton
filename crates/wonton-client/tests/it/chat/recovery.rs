@@ -87,7 +87,7 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
     .await;
     // 跨过真实同步和加入房间的往返，不只检查登录时的初始快照。
     let bot = home.bot("hermes", "Hermes").await;
-    accept_the_bots_invite(&second, &bot).await;
+    accept_the_bots_invite(&home, &second, &bot).await;
     assert_recovery(
         &second.chat().encryption,
         RecoveryStatus::Incomplete,
@@ -157,7 +157,7 @@ async fn an_unverified_device_does_not_enable_backup_for_an_account_without_reco
     )
     .await;
     let bot = home.bot("hermes", "Hermes").await;
-    accept_the_bots_invite(&phone, &bot).await;
+    accept_the_bots_invite(&home, &phone, &bot).await;
     assert_recovery(
         &phone.chat().encryption,
         RecoveryStatus::Disabled,
@@ -190,7 +190,7 @@ async fn failed_automatic_backup_stays_disabled_until_a_new_session() {
     phone.dispatch(Action::DismissChatProblem).unwrap();
     phone.dispatch(Action::AppForegrounded).unwrap();
     let bot = home.bot("hermes", "Hermes").await;
-    accept_the_bots_invite(&phone, &bot).await;
+    accept_the_bots_invite(&home, &phone, &bot).await;
     assert_recovery(
         &phone.chat().encryption,
         RecoveryStatus::Disabled,

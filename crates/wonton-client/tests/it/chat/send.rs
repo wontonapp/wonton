@@ -18,7 +18,7 @@ async fn the_owner_cancels_a_rejected_message_and_the_next_one_goes_out() {
     phone.connect(&home);
     phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     let room = room_id.to_string();
     let mut timeline = Timeline::open(&phone, &room).await;
 

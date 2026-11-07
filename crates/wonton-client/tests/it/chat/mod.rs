@@ -9,6 +9,7 @@ mod bot_profile;
 mod bot_profile_support;
 mod card_plugin_refresh;
 mod confirmation;
+mod key_upload_order;
 mod onboarding;
 mod pending;
 mod push;
@@ -23,13 +24,13 @@ mod upload_progress;
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, ImageContent, ImageThumbnail, ImageUpload, MessageContent, RecoveryStatus,
+    Action, ChatAccount, ImageContent, ImageThumbnail, ImageUpload, MessageContent, RecoveryStatus,
     RoomMembership, SecretString, TimelineContent, TimelineItem,
 };
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Message, MessageBody, OwnedRoomId, OwnedUserId};
 
-use support::{Home, OWNER, Phone, Timeline};
+use support::{Home, OWNER, Phone, Timeline, WAIT};
 
 /// 2×2 的 PNG。
 const PNG: &[u8] = include_bytes!("../../../../wonton-matrix/tests/tuwunel/fixtures/2x2.png");
@@ -50,7 +51,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
     assert_eq!(home.login_tokens(), 1);
 
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     chat_with_the_bot(&phone, &bot, &room_id).await;
     let recovery_key = read_and_wait_for_recovery(&phone, &room_id).await;
     drop(phone);
@@ -137,7 +138,7 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
     phone.connect(&home);
     phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     chat_with_the_bot(&phone, &bot, &room_id).await;
     drop(phone);
     std::fs::remove_dir_all(dir.path().join("servers/1/matrix/store")).expect("删掉聊天存储");
@@ -186,8 +187,58 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
         .await;
 }
 
+/// Bot 建私聊前等主人当前设备的密钥上服务器：Bot 发消息时的收信人设备表来自它本地 crypto store，
+/// 手机的密钥还没上服务器它就查不到这台设备，首条消息的房间密钥不会发给手机，消息永远解不开。
+/// 以服务器为准（`/keys/query`），没有就等假核心放行下一次 keys/upload 再查（事件驱动，不睡固定间隔）。
+async fn wait_for_owner_device_keys(home: &Home, phone: &Phone, bot: &MatrixSession) {
+    home.mark_device_keys_wait_started();
+    let device_id = match &phone.chat().account {
+        ChatAccount::SignedIn { device_id, .. } => device_id.clone(),
+        other => panic!("等设备密钥前应已登录：{other:?}"),
+    };
+    let owner: OwnedUserId = OWNER.parse().unwrap();
+    let deadline = tokio::time::Instant::now() + WAIT;
+    let mut forwarded = home.key_uploads_forwarded();
+    loop {
+        if bot
+            .server_device_ids_of(&owner)
+            .await
+            .expect("查主人的设备")
+            .iter()
+            .any(|id| id.as_str() == device_id)
+        {
+            return;
+        }
+        // 等下一次 keys/upload 被放行（计数变化）。放行到 Tuwunel 入库之间有几毫秒差，放行后
+        // 短轮询 3 秒吸收这个延迟——事件仍是触发器，查不到才要求再放行一次。总时限是 WAIT。
+        if tokio::time::timeout_at(deadline, forwarded.changed())
+            .await
+            .is_err()
+        {
+            panic!(
+                "等主人的设备密钥（{device_id}）上服务器超时：手机的 keys/upload 没有被放行或放了还是查不到（放行计数 {}）",
+                *forwarded.borrow()
+            );
+        }
+        let settle = tokio::time::Instant::now() + Duration::from_secs(3);
+        while tokio::time::Instant::now() < settle {
+            if bot
+                .server_device_ids_of(&owner)
+                .await
+                .expect("查主人的设备")
+                .iter()
+                .any(|id| id.as_str() == device_id)
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+    }
+}
+
 /// Bot 发来加密私聊的邀请，等房间名同步成 Bot 的名字、对方也认出来后主人再接受。
-async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoomId {
+async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession) -> OwnedRoomId {
+    wait_for_owner_device_keys(home, phone, bot).await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = bot
         .create_direct_chat(&owner, true)

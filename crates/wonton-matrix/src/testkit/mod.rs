@@ -4,6 +4,7 @@
 
 mod admin;
 mod issuer;
+mod keys;
 mod push;
 mod relay;
 

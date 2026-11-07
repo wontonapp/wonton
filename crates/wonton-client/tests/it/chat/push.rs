@@ -78,7 +78,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     );
 
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 
     // App 被杀，Bot 这时回复：房间密钥经 to-device 发给手机，手机还没收到。
     drop(phone);
@@ -237,7 +237,7 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
         |view: &wonton_client::ChatViewModel| (view.push == PushStatus::Registered).then_some(());
     phone.wait_chat("A 上推送已登记", registered).await;
     let bot = a.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&a, &phone, &bot).await;
 
     phone.dispatch(Action::AddServer).unwrap();
     phone.connect(&b);

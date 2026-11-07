@@ -20,7 +20,7 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
     phone.connect(&home);
     phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     let room = room_id.to_string();
     let mut timeline = Timeline::open(&phone, &room).await;
 

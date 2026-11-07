@@ -35,7 +35,7 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
 
     let bot = home.bot("hermes", "Hermes").await;
     assert_eq!(bot.user_id().as_str(), "@hermes:wonton.localhost");
-    let room_id = accept_the_bots_invite(&phone, &bot).await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 
     // 走完了引导、默认 Agent 的私聊在列表里，主人的第一条消息还没发：输入框上方给候选提问。
     let prompts = phone

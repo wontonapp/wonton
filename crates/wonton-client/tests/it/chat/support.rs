@@ -63,6 +63,12 @@ struct Core {
     /// 为真时回答先不回，手机上这时是“正在发”。
     hold_answers: watch::Sender<bool>,
     uploads_paused: watch::Sender<bool>,
+    /// 为真时手机的 keys/upload 一接上就断开（drop 语义），见 `chat::key_upload_order` 回归测试。
+    hold_key_uploads: Arc<AtomicBool>,
+    /// 放行过的手机 keys/upload 次数；等“设备密钥上服务器”的一方靠它的事件变化再查，不睡固定间隔。
+    key_uploads_forwarded: watch::Sender<u64>,
+    /// 等待函数进门标记：为真表示测试开始等设备密钥上服务器（先于 Bot 发消息就该放行）。
+    device_keys_wait_started: watch::Sender<bool>,
     /// 为真时 Tuwunel 像挂了一样：转发中的请求断开，新请求一接上就断开。
     matrix_down: watch::Sender<bool>,
     /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
@@ -98,6 +104,9 @@ impl Home {
             answer_replies: Mutex::default(),
             hold_answers: watch::Sender::new(false),
             uploads_paused: watch::Sender::new(false),
+            hold_key_uploads: Arc::new(AtomicBool::new(false)),
+            key_uploads_forwarded: watch::Sender::new(0),
+            device_keys_wait_started: watch::Sender::new(false),
             matrix_down: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
@@ -285,6 +294,31 @@ impl Home {
         self.core.uploads_paused.send_replace(true);
     }
 
+    /// 回归测试开关：挂起期间手机的 keys/upload 一接上就断开（drop 语义，不挡其他请求；SDK 的
+    /// outgoing 请求失败只记日志，下一轮同步自动重试）。
+    pub fn hold_key_uploads(&self) {
+        self.core.hold_key_uploads.store(true, Ordering::SeqCst);
+    }
+
+    /// 开关本体给放开挂起的任务：先到先放的逻辑里，放行的一方不持有 [`Home`]。
+    pub fn key_uploads_hold(&self) -> Arc<AtomicBool> {
+        self.core.hold_key_uploads.clone()
+    }
+
+    /// 转发计数的接收端：`changed()` 等下一次 keys/upload 被放行。
+    pub fn key_uploads_forwarded(&self) -> watch::Receiver<u64> {
+        self.core.key_uploads_forwarded.subscribe()
+    }
+
+    /// 等待函数进门时调用：放开的任务看到它就知道测试开始等设备密钥了。
+    pub fn mark_device_keys_wait_started(&self) {
+        self.core.device_keys_wait_started.send_replace(true);
+    }
+
+    pub fn device_keys_wait_started(&self) -> watch::Receiver<bool> {
+        self.core.device_keys_wait_started.subscribe()
+    }
+
     pub fn resume_uploads(&self) {
         self.core.uploads_paused.send_replace(false);
     }
@@ -348,6 +382,14 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         {
             let mut paused = core.uploads_paused.subscribe();
             paused.wait_for(|paused| !paused).await.unwrap();
+        }
+        // `chat::key_upload_order` 回归测试：挂起期间手机的 keys/upload 一接上就断开（drop 语义），
+        // 放行后才转发并计数；SDK 那头只记一条 outgoing 请求失败的日志，下一轮同步自动重试。
+        if text.starts_with("post /_matrix/client/v3/keys/upload") {
+            if core.hold_key_uploads.load(Ordering::SeqCst) {
+                return;
+            }
+            core.key_uploads_forwarded.send_modify(|count| *count += 1);
         }
         let mut down = core.matrix_down.subscribe();
         if *down.borrow() {
