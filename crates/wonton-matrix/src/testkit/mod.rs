@@ -127,7 +127,10 @@ impl TestServer {
             .with_copy_to(CONFIG_PATH, CONFIG.as_bytes().to_vec())
             .with_env_var("TUWUNEL_CONFIG", CONFIG_PATH)
             .with_env_var("TUWUNEL_JWT__KEY", issuer.public_key_pem())
-            .with_env_var("TUWUNEL_REGISTRATION_SHARED_SECRET", &secret);
+            .with_env_var("TUWUNEL_REGISTRATION_SHARED_SECRET", &secret)
+            // CI 失败时只上传本次作业起的容器的日志（scripts/ci-capture-container-logs.sh 按它认）：testcontainers
+            // 起的名字是随机的，认不出是哪个测试进程的。
+            .with_label("wonton.test-pid", std::process::id().to_string());
         request = match host_port {
             Some(_) => request.with_network("host"),
             // Docker Desktop、OrbStack 自带这个名字，Linux 上要显式加。

@@ -104,10 +104,10 @@ jobs:
       - name: 清理被中断的 Docker 测试遗留
         run: bash scripts/clean-docker-test-leftovers.sh
       - name: 记下测试起的容器的日志
-        # 测试结束时容器会被删掉；失败时上传这些日志，才看得到 tuwunel、核心当时说了什么。
+        # 测试结束时容器会被删掉；失败时上传这些日志，才看得到 tuwunel、核心当时说了什么。只记本作业起的（见脚本）。
         run: |
           mkdir -p "$RUNNER_TEMP/test-logs/containers"
-          nohup bash scripts/ci-capture-container-logs.sh "$RUNNER_TEMP/test-logs/containers" >/dev/null 2>&1 &
+          nohup bash scripts/ci-capture-container-logs.sh "$RUNNER_TEMP/test-logs/containers" "$PPID" >/dev/null 2>&1 &
       - name: Docker 集成测试（标了 #[ignore] 的都是）
         shell: bash
         run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
