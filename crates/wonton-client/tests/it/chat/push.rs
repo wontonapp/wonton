@@ -71,22 +71,19 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
             (view.push == PushStatus::Registered).then_some(())
         })
         .await;
-    // 开机按默认方式（保持连接）会先发一次清登记的 DELETE，等登记用的 PUT。
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-    let subscription = loop {
-        if let Some((_, subscription)) = home.push_requests().iter().find(|(m, _)| m == "PUT") {
-            break subscription.clone();
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "家里没收到推送登记：{:?}",
-            home.push_requests()
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    };
+    // 开机按默认方式（保持连接）会清一次家里的登记，但 unregister 拿着锁等登录，醒来时壳可能已经切到
+    // UnifiedPush 并给来了地址：这时直接登记新地址，不再发 DELETE。所以序列是 ["DELETE", "PUT"] 或只有
+    // ["PUT"]，都对；PUT 之后再 DELETE 不会出现：清登记和登记共用一把锁，开机那次清登记先拿到、先做完。
+    // `register` 在 PUT 返回、注册完 pusher 之后才发布 Registered，看到它时请求已经记全，不用再等。
+    let requests = home.push_requests();
+    let methods: Vec<_> = requests.iter().map(|(method, _)| method.as_str()).collect();
+    assert!(
+        matches!(methods.as_slice(), ["PUT"] | ["DELETE", "PUT"]),
+        "家里的登记请求序列不对：{methods:?}"
+    );
     assert_eq!(
-        subscription,
-        json!({"endpoint": ENDPOINT, "keys": {"p256dh": P256DH, "auth": AUTH}}),
+        &requests.last().unwrap().1,
+        &json!({"endpoint": ENDPOINT, "keys": {"p256dh": P256DH, "auth": AUTH}}),
         "登记给家里的是 W3C 推送订阅的格式"
     );
 
