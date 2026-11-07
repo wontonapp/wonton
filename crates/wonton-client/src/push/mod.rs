@@ -9,9 +9,10 @@ mod notification;
 pub(crate) mod record;
 mod registration;
 
-pub(crate) use notification::Payload;
+pub(crate) use notification::{Payload, push_notification};
 
 use std::path::{Path, PathBuf};
+
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use base64::Engine as _;
@@ -20,7 +21,7 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_matrix::PusherConfig;
 use wonton_protocol::{
-    ChatAccount, ChatFailure, ChatViewModel, CoreError, PushEndpoint, PushStatus,
+    ChatAccount, ChatFailure, ChatViewModel, CoreError, PushEndpoint, PushMethod, PushStatus,
 };
 
 use crate::chat::{ChatLink, failure};
@@ -39,6 +40,8 @@ pub(crate) struct PushLink {
     chat: Arc<ChatLink>,
     /// 槽位目录。
     dir: PathBuf,
+    /// 收新消息的方式（ADR-0003）：保持连接时不登记推送，家里的登记和 pusher 都删掉。
+    method: watch::Receiver<PushMethod>,
     state: Mutex<State>,
     /// 串行化登记和取消登记。
     busy: tokio::sync::Mutex<()>,
@@ -57,21 +60,32 @@ impl PushLink {
         home: Arc<HomeLink>,
         chat: Arc<ChatLink>,
         dir: &Path,
+        method: watch::Receiver<PushMethod>,
     ) -> Arc<Self> {
         let push = Arc::new(Self {
             runtime: runtime.clone(),
             home,
             chat: chat.clone(),
             dir: dir.to_owned(),
+            method: method.clone(),
             state: Mutex::new(State::default()),
             busy: tokio::sync::Mutex::new(()),
         });
         runtime.spawn(follow_chat(Arc::downgrade(&push), chat.subscribe()));
+        runtime.spawn(follow_method(Arc::downgrade(&push), method));
         push
     }
 
-    /// `SetPushEndpoint`：校验后记下，登录着就马上登记，没登录的话登录后登记。
+    /// `SetPushEndpoint`：校验后记下，登录着就马上登记，没登录的话登录后登记。收新消息的方式是保持连接时
+    /// 不用推送，壳不该给来地址，拒绝。
     pub(crate) fn set_endpoint(self: &Arc<Self>, endpoint: PushEndpoint) -> Result<(), CoreError> {
+        if *self.method.borrow() == PushMethod::Keepalive {
+            return Err(CoreError::InvalidInput {
+                reason: "the push method is keep-connection; switch the method to UnifiedPush \
+                         in settings before registering an endpoint"
+                    .to_owned(),
+            });
+        }
         validate(&endpoint)?;
         self.lock().endpoint = Some(endpoint);
         self.chat.set_push(PushStatus::Registering);
@@ -85,6 +99,14 @@ impl PushLink {
         self.lock().endpoint = None;
         record::clear(&self.dir);
         self.chat.set_push(PushStatus::Unavailable { message });
+        self.runtime.spawn(self.clone().unregister());
+    }
+
+    /// 换成保持连接（`SetPushMethod`，启动时存的就是它也算）：壳不再给推送地址，家里的登记和 pusher 都删掉，
+    /// 同一条消息不会既推送又本地通知；上次没删掉的这次接着删。状态回到“未开启”，这不是错误。
+    pub(crate) fn switched_to_keepalive(self: &Arc<Self>) {
+        self.lock().endpoint = None;
+        self.chat.set_push(PushStatus::NoEndpoint);
         self.runtime.spawn(self.clone().unregister());
     }
 
@@ -160,7 +182,8 @@ impl PushLink {
         }
     }
 
-    /// 家里的登记按设备删，不用 pushkey，上次启动时留下的也删得掉；pusher 只删这次登记过的。App 刚启动就收不了推送
+    /// 删掉家里的登记和 pusher，`PushUnavailable` 和换成保持连接都走这一条（尽力而为）。家里的登记按设备删，
+    /// 不用 pushkey，上次启动时留下的也删得掉；pusher 只删这次登记过的，别的设备的不动。App 刚启动就收不了推送
     /// 时（比如主人拒绝了通知权限），先等会话就绪。
     async fn unregister(self: Arc<Self>) {
         let _busy = self.busy.lock().await;
@@ -203,6 +226,20 @@ async fn follow_chat(push: Weak<PushLink>, mut chat: watch::Receiver<ChatViewMod
         device = signed_in;
         drop(link);
         if chat.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+/// 跟着推送方式：保持连接时家里的登记和 pusher 都不要（启动时存的就是保持连接，上次留下的也删掉）。
+/// UnifiedPush 不用做什么，壳会登记分发器、给来推送地址。
+async fn follow_method(push: Weak<PushLink>, mut method: watch::Receiver<PushMethod>) {
+    loop {
+        if *method.borrow_and_update() == PushMethod::Keepalive {
+            let Some(link) = push.upgrade() else { return };
+            link.switched_to_keepalive();
+        }
+        if method.changed().await.is_err() {
             return;
         }
     }

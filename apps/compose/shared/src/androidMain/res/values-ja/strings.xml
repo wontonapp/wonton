@@ -939,4 +939,8 @@
     <string name="page_media_channel">再生</string>
     <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
     <string name="page_media_start_failed">バックグラウンドでサービスを開始できません。再生は続け、後で再試行します：%1$s（フォアグラウンドサービス：%2$s）</string>
+    <!-- 通知設定ページのスイッチ：オン = フォアグラウンドサービスがホームサーバーとのトンネルを維持し、新着メッセージはアプリがローカル通知で表示する。オフ = UnifiedPush で通知（ADR-0003）。 -->
+    <string name="keepalive_toggle">接続を維持</string>
+    <!-- システムで通知が無効のとき、スイッチの下に出る説明：サービスは動き続けるが、新着メッセージは通知されない。 -->
+    <string name="keepalive_without_permission">通知権限がないため、新着メッセージは通知として表示されません。接続は維持されます。</string>
 </resources>

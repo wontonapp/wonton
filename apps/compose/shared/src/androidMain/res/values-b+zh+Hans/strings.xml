@@ -939,4 +939,8 @@
     <string name="page_media_channel">播放</string>
     <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
     <string name="page_media_start_failed">后台起不了服务，播放继续，稍后重试：%1$s（前台服务：%2$s）</string>
+    <!-- 通知设置页的开关：开 = 前台服务让和家里服务器的隧道在后台不断，新消息由 App 弹本地通知；关 = 走 UnifiedPush 推送（ADR-0003）。 -->
+    <string name="keepalive_toggle">保持连接</string>
+    <!-- 系统里关了通知时，开关下面的一行说明：服务照常运行，但新消息弹不出通知。 -->
+    <string name="keepalive_without_permission">没有通知权限：新消息弹不出通知，连接照常保持。</string>
 </resources>

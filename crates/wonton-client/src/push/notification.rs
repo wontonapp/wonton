@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use wonton_matrix::{MatrixSession, MessageBody, OwnedEventId, OwnedRoomId, UserId};
+use wonton_matrix::{
+    EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
+};
 use wonton_protocol::{
     ChatAccount, ChatFailure, CoreError, HomeStatus, MessageSummary, NOTICE_FIELD,
     NotificationCategory, PluginNotice, PushContent, PushNotification,
@@ -103,40 +105,13 @@ impl PushLink {
             Ok(Ok(None)) => return Ok(None),
             Ok(Ok(Some(message))) => message,
         };
-        let confirmation = match pushed_card(session.user_id(), &message.sender, &message.custom) {
-            PushedCard::None => None,
-            PushedCard::Waiting(card) => Some(card),
-            PushedCard::Expired => return Ok(None),
-        };
-        let notice = plugin_notice(session.user_id(), &message.sender, &message.custom);
-        let content = match message.body {
-            MessageBody::Undecryptable => PushContent::Unavailable {
-                reason: ChatFailure::NotReady,
-                message: "还没收到这条消息的房间密钥".to_owned(),
-            },
-            MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Message {
-                body: "邀请你加入".to_owned(),
-            },
-            body => PushContent::Message {
-                body: push_text(summary(body, false)),
-            },
-        };
-        Ok(Some(PushNotification {
-            server_id: None,
-            room_id: payload.room_id.clone(),
-            event_id: payload.event_id.clone(),
-            sender: message.sender_name,
-            room_name: message.room_name,
-            category: if confirmation.is_some() {
-                NotificationCategory::Confirmation
-            } else if notice.is_some() {
-                NotificationCategory::PluginNotice
-            } else {
-                NotificationCategory::Message
-            },
-            content,
-            confirmation,
-        }))
+        Ok(push_notification(
+            None,
+            session.user_id(),
+            &room_id,
+            &event_id,
+            message,
+        ))
     }
 
     /// 等聊天登录（或从本机恢复）好。登录失败、超时都给出原因。
@@ -172,6 +147,51 @@ impl PushLink {
             }),
         }
     }
+}
+
+/// 推送和保持连接的后台通知共用的映射（ADR-0003 的“设计：保持连接”）：发送者、房间名、类别、确认卡片、
+/// 取不到正文的占位。卡片已经过期时不用通知，返回 `None`。
+pub(crate) fn push_notification(
+    server_id: Option<String>,
+    own_user: &UserId,
+    room_id: &RoomId,
+    event_id: &EventId,
+    message: Notification,
+) -> Option<PushNotification> {
+    let confirmation = match pushed_card(own_user, &message.sender, &message.custom) {
+        PushedCard::None => None,
+        PushedCard::Waiting(card) => Some(card),
+        PushedCard::Expired => return None,
+    };
+    let notice = plugin_notice(own_user, &message.sender, &message.custom);
+    let content = match message.body {
+        MessageBody::Undecryptable => PushContent::Unavailable {
+            reason: ChatFailure::NotReady,
+            message: "还没收到这条消息的房间密钥".to_owned(),
+        },
+        MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Message {
+            body: "邀请你加入".to_owned(),
+        },
+        body => PushContent::Message {
+            body: push_text(summary(body, false)),
+        },
+    };
+    Some(PushNotification {
+        server_id,
+        room_id: room_id.to_string(),
+        event_id: event_id.to_string(),
+        sender: message.sender_name,
+        room_name: message.room_name,
+        content,
+        category: if confirmation.is_some() {
+            NotificationCategory::Confirmation
+        } else if notice.is_some() {
+            NotificationCategory::PluginNotice
+        } else {
+            NotificationCategory::Message
+        },
+        confirmation,
+    })
 }
 
 /// 推送的正文是字符串：这里把摘要转成占位文字，图片、文件等的占位写在这里。

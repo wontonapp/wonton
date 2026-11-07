@@ -946,4 +946,8 @@
     <string name="page_media_channel">Playback</string>
     <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
     <string name="page_media_start_failed">Could not start background playback; still playing, will retry: %1$s (foreground service: %2$s)</string>
+    <!-- Switch on the notification settings page: on = a foreground service keeps the tunnel to the home server connected and new messages arrive as local notifications; off = push via UnifiedPush (ADR-0003). -->
+    <string name="keepalive_toggle">Keep connection</string>
+    <!-- Supporting line under the keep-connection switch when notifications are disabled in the system: the service still runs, but new messages can't pop up. -->
+    <string name="keepalive_without_permission">Without the notification permission, new messages won&#8217;t show as notifications. The connection is still kept.</string>
 </resources>

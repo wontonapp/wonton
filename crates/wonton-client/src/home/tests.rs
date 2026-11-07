@@ -1,21 +1,27 @@
 use super::*;
 
-async fn paused_home() -> (tempfile::TempDir, Arc<HomeLink>) {
+async fn paused_home() -> (
+    tempfile::TempDir,
+    Arc<HomeLink>,
+    watch::Receiver<PushMethod>,
+) {
     let dir = tempfile::tempdir().unwrap();
     let storage = Storage::open(dir.path(), dir.path()).unwrap();
+    let (_method_tx, method_rx) = watch::channel(PushMethod::default());
     let home = HomeLink::new(
         tokio::runtime::Handle::current(),
         storage,
         Network::DirectOnly,
         None,
+        method_rx.clone(),
     )
     .unwrap();
-    (dir, home)
+    (dir, home, method_rx)
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_media_pause_keeps_checking_for_a_minute() {
-    let (_dir, home) = paused_home().await;
+    let (_dir, home, _method_rx) = paused_home().await;
     home.backgrounded();
     home.page_media_active(true);
     home.page_media_active(false);
@@ -27,7 +33,7 @@ async fn a_media_pause_keeps_checking_for_a_minute() {
 
 #[tokio::test(start_paused = true)]
 async fn going_to_the_background_during_the_grace_keeps_checking() {
-    let (_dir, home) = paused_home().await;
+    let (_dir, home, _method_rx) = paused_home().await;
     home.backgrounded();
     home.page_media_active(true);
     home.page_media_active(false);
@@ -41,7 +47,7 @@ async fn going_to_the_background_during_the_grace_keeps_checking() {
 
 #[tokio::test(start_paused = true)]
 async fn a_woken_release_does_not_override_playback() {
-    let (_dir, home) = paused_home().await;
+    let (_dir, home, _method_rx) = paused_home().await;
     home.backgrounded();
     home.page_media_active(true);
     home.page_media_active(false);
@@ -54,7 +60,7 @@ async fn a_woken_release_does_not_override_playback() {
 
 #[tokio::test(start_paused = true)]
 async fn playing_again_cancels_the_release() {
-    let (_dir, home) = paused_home().await;
+    let (_dir, home, _method_rx) = paused_home().await;
     home.backgrounded();
     home.page_media_active(true);
     home.page_media_active(false);
@@ -67,7 +73,7 @@ async fn playing_again_cancels_the_release() {
 
 #[tokio::test(start_paused = true)]
 async fn page_media_keeps_the_tunnel_checked_in_the_background() {
-    let (_dir, home) = paused_home().await;
+    let (_dir, home, _method_rx) = paused_home().await;
     home.backgrounded();
     assert!(*home.background.borrow());
     home.page_media_active(true);

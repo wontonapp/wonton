@@ -71,6 +71,7 @@ crates/wonton-client/src/plugins/takeover.rs | 待抽取（ADR-0043） | 2026-12
 crates/wonton-client/src/push/mod.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/push/notification.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/push/registration.rs | 待抽取（ADR-0043） | 2026-12-31
+crates/wonton-client/src/push_method.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/servers.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/session_store.rs | 待抽取（ADR-0043） | 2026-12-31
 crates/wonton-client/src/tabs/bridge/context.rs | 待抽取（ADR-0043） | 2026-12-31

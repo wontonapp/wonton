@@ -8,7 +8,7 @@ use wonton_client::{
     BotNameProblem, BotProfileFailure, BotView, CoreError, MediaHandle, TimelineContent,
 };
 use wonton_matrix::MatrixSession;
-use wonton_protocol::AVATARS_FIELD;
+use wonton_protocol::{AVATARS_FIELD, PushMethod};
 
 use super::PNG;
 use super::bot_profile_support::{set_field, typing};
@@ -96,6 +96,12 @@ async fn bot_profiles_actions_activity_and_cached_video_through_the_tunnel() {
     wait_bot(&phone, |bot| bot.name == "Renamed by Bot").await;
     home.bot_api.broken.send_replace(true);
     wait_bot(&phone, |bot| bot.activity.is_none()).await;
+    // 后台暂停轮询的前提是收新消息走 UnifiedPush（ADR-0003）：保持连接是默认方式，退到后台也照常轮询。
+    phone
+        .dispatch(Action::SetPushMethod {
+            method: PushMethod::UnifiedPush,
+        })
+        .unwrap();
     phone.dispatch(Action::AppBackgrounded).unwrap();
     let polls = home.bot_api.polls.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(3_200)).await;

@@ -259,6 +259,7 @@ async fn a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet() {
     let home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     phone.signed_in().await;
+    phone.use_unified_push().await;
     phone
         .dispatch(Action::SetPushEndpoint {
             endpoint: endpoint(),

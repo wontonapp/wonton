@@ -7,6 +7,7 @@
 
 mod ask;
 mod avatar_files;
+mod background;
 mod bot_activity;
 mod bot_poll;
 mod bot_profile;
@@ -15,6 +16,7 @@ mod bots;
 mod confirmation;
 mod contacts;
 mod display_name;
+mod follow_home;
 mod login;
 mod onboarding;
 mod pending;
@@ -30,7 +32,7 @@ mod view;
 use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures_util::StreamExt;
 #[cfg(feature = "test-hooks")]
@@ -41,8 +43,8 @@ use tokio::task::JoinHandle;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
-    ConfirmationAnswer, CoreError, DeviceVerification, EncryptionStatus, HomeStatus, HomeViewModel,
-    ImageUpload, MediaHandle, ProxySettings, PushStatus, RecoveryStatus,
+    ConfirmationAnswer, CoreError, DeviceVerification, EncryptionStatus, ImageUpload, MediaHandle,
+    ProxySettings, PushMethod, PushStatus, RecoveryStatus,
 };
 
 pub use bots::bot_current_avatar;
@@ -87,6 +89,10 @@ pub(crate) struct ChatLink {
     display_name: Mutex<Option<String>>,
     bots: Arc<bots::Bots>,
     avatar_files: avatar_files::AvatarFiles,
+    /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
+    method: watch::Receiver<PushMethod>,
+    /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
+    background: AtomicBool,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -133,6 +139,7 @@ impl ChatLink {
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
         view: Option<watch::Sender<ChatViewModel>>,
+        method: watch::Receiver<PushMethod>,
     ) -> Result<Arc<Self>, CoreError> {
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
@@ -177,8 +184,10 @@ impl ChatLink {
             display_name: Mutex::new(None),
             bots,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
+            method,
+            background: AtomicBool::new(false),
         });
-        runtime.spawn(follow_home(Arc::downgrade(&chat), home.subscribe()));
+        runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
     }
 
@@ -234,10 +243,6 @@ impl ChatLink {
             }
             ChatAccount::Failed { .. } | ChatAccount::SignedOut | ChatAccount::SigningIn => {}
         }
-    }
-
-    pub(crate) fn backgrounded(&self) {
-        self.bots.backgrounded();
     }
 
     /// 处理聊天操作。参数不合法、还没登录时直接返回错误；网络操作在后台执行，失败放进 `problem`。
@@ -579,36 +584,6 @@ impl ChatLink {
     }
 }
 
-/// 跟着家里的连接：本地代理就绪或换了就（重新）登录；隧道恢复连接时，登录失败过就再试一次。
-async fn follow_home(chat: Weak<ChatLink>, mut home: watch::Receiver<HomeViewModel>) {
-    let mut proxy: Option<ProxySettings> = None;
-    let mut connected = false;
-    loop {
-        let (next_proxy, now_connected) = {
-            let view = home.borrow_and_update();
-            (view.proxy.clone(), view.status == HomeStatus::Connected)
-        };
-        let Some(link) = chat.upgrade() else { return };
-        let reconnected = now_connected && !connected;
-        connected = now_connected;
-        if next_proxy != proxy {
-            proxy.clone_from(&next_proxy);
-            match next_proxy {
-                Some(next) => {
-                    link.runtime.spawn(link.clone().connect(next));
-                }
-                None => link.disconnect().await,
-            }
-        } else if reconnected {
-            link.foregrounded();
-        }
-        drop(link);
-        if home.changed().await.is_err() {
-            return;
-        }
-    }
-}
-
 impl ChatLink {
     /// 用 `proxy` 登录或恢复会话，然后开始同步。
     async fn connect(self: Arc<Self>, proxy: ProxySettings) {
@@ -690,35 +665,40 @@ impl ChatLink {
     }
 
     /// 把会话的房间列表、加密状态、同步状态和会话事件接到 ViewModel 上。
+    /// 房间列表跟着 SDK 的房间流走：每批都重排、记进 ViewModel。主人的机器人排前面的规则在 `room_order` 里。
+    fn observe_rooms(self: &Arc<Self>, session: &Arc<MatrixSession>) -> JoinHandle<()> {
+        let view = self.view.clone();
+        let session = session.clone();
+        let room_order = self.room_order.clone();
+        let primary_bot = self.primary_bot.clone();
+        self.runtime.spawn(async move {
+            let rooms = match session.rooms().await {
+                Ok(rooms) => rooms,
+                Err(error) => {
+                    tracing::warn!("拿不到房间列表：{error}");
+                    return;
+                }
+            };
+            let core = core_account(session.user_id());
+            let mut rooms = std::pin::pin!(rooms);
+            while let Some(rooms) = rooms.next().await {
+                let mut rows: Vec<_> = rooms
+                    .into_iter()
+                    .map(|room| room_row(room, &core))
+                    .collect();
+                sort_rooms(&mut rows);
+                let bot = lock(&primary_bot).clone();
+                let rows = room_order.replace(rows, bot.as_deref());
+                view.send_modify(|view| view.rooms = rows);
+            }
+        })
+    }
+
+    /// 把会话的房间列表、加密状态、同步状态和会话事件接到 ViewModel 上。
     fn observe(self: &Arc<Self>, session: &Arc<MatrixSession>) -> Vec<JoinHandle<()>> {
         let view = self.view.clone();
-        let rooms = {
-            let session = session.clone();
-            let view = view.clone();
-            let room_order = self.room_order.clone();
-            let primary_bot = self.primary_bot.clone();
-            self.runtime.spawn(async move {
-                let rooms = match session.rooms().await {
-                    Ok(rooms) => rooms,
-                    Err(error) => {
-                        tracing::warn!("拿不到房间列表：{error}");
-                        return;
-                    }
-                };
-                let core = core_account(session.user_id());
-                let mut rooms = std::pin::pin!(rooms);
-                while let Some(rooms) = rooms.next().await {
-                    let mut rows: Vec<_> = rooms
-                        .into_iter()
-                        .map(|room| room_row(room, &core))
-                        .collect();
-                    sort_rooms(&mut rows);
-                    let bot = lock(&primary_bot).clone();
-                    let rows = room_order.replace(rows, bot.as_deref());
-                    view.send_modify(|view| view.rooms = rows);
-                }
-            })
-        };
+        let background = self.observe_background(session);
+        let rooms = self.observe_rooms(session);
         let encryption = self
             .runtime
             .spawn(recovery::watch(Arc::downgrade(self), session.clone()));
@@ -772,7 +752,16 @@ impl ChatLink {
                 }
             })
         };
-        vec![rooms, encryption, sync, events, syncing, cards, catching_up]
+        vec![
+            background,
+            rooms,
+            encryption,
+            sync,
+            events,
+            syncing,
+            cards,
+            catching_up,
+        ]
     }
 }
 

@@ -16,6 +16,8 @@ pub(crate) struct SettingsLink {
 }
 
 impl SettingsLink {
+    // 订阅来源就是有这么多：home、chat、plugins、peers、servers、method 加上要通知的 view，收进结构体只是搬家。
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         runtime: &Handle,
         mut home: watch::Receiver<HomeViewModel>,
@@ -23,25 +25,30 @@ impl SettingsLink {
         mut plugins: watch::Receiver<PluginsViewModel>,
         mut peers: watch::Receiver<PeersViewModel>,
         mut servers: watch::Receiver<ServersViewModel>,
+        mut method: watch::Receiver<PushMethod>,
         view: Option<watch::Sender<SettingsViewModel>>,
     ) -> Self {
         let compute = |home: &watch::Receiver<HomeViewModel>,
                        chat: &watch::Receiver<ChatViewModel>,
                        plugins: &watch::Receiver<PluginsViewModel>,
                        peers: &watch::Receiver<PeersViewModel>,
-                       servers: &watch::Receiver<ServersViewModel>| {
+                       servers: &watch::Receiver<ServersViewModel>,
+                       method: &watch::Receiver<PushMethod>| {
             let chat = chat.borrow();
             settings_view(
                 &home.borrow().status,
                 current_name(&servers.borrow()),
                 chat.encryption.recovery,
+                *method.borrow(),
                 &chat.push,
                 plugins.borrow().core_upgrade.is_prompting(),
-                peers.borrow().peers.len(),
-                peers.borrow().state == PeersState::Ready,
+                (peers.borrow().state == PeersState::Ready).then(|| peers.borrow().peers.len()),
             )
         };
-        let view = reuse(view, compute(&home, &chat, &plugins, &peers, &servers));
+        let view = reuse(
+            view,
+            compute(&home, &chat, &plugins, &peers, &servers, &method),
+        );
         let sender = view.clone();
         runtime.spawn(async move {
             loop {
@@ -51,8 +58,9 @@ impl SettingsLink {
                     changed = plugins.changed() => if changed.is_err() { break },
                     changed = peers.changed() => if changed.is_err() { break },
                     changed = servers.changed() => if changed.is_err() { break },
+                    changed = method.changed() => if changed.is_err() { break },
                 }
-                let next = compute(&home, &chat, &plugins, &peers, &servers);
+                let next = compute(&home, &chat, &plugins, &peers, &servers, &method);
                 sender.send_if_modified(|view| {
                     let modified = *view != next;
                     *view = next;
@@ -76,16 +84,16 @@ impl SettingsLink {
 
 /// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观、语言、底栏和通知，再是聊天相关的，最后是很少点的。
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
-/// “其他服务器”只给主人：核心的配对接口只让主人设备读，列表取到过（`peers_ready`）才说明这台设备是主人的，
+/// “其他服务器”只给主人：核心的配对接口只让主人设备读，列表取到过（`Some`）才说明这台设备是主人的，
 /// 台数才拿得到。
 fn settings_view(
     status: &HomeStatus,
     name: Option<ServerName>,
     recovery: RecoveryStatus,
+    method: PushMethod,
     push: &PushStatus,
     upgrade: bool,
-    peers_count: usize,
-    peers_ready: bool,
+    peers: Option<usize>,
 ) -> SettingsViewModel {
     let paired = !matches!(status, HomeStatus::NotConfigured);
     let backup = SettingsEntry::ChatBackup { recovery };
@@ -94,7 +102,7 @@ fn settings_view(
         SettingsEntry::Language,
         SettingsEntry::BottomBar,
         SettingsEntry::Notifications {
-            method: PushMethod::default(),
+            method,
             push: push.clone(),
             categories: NotificationCategory::ALL.to_vec(),
         },
@@ -111,7 +119,7 @@ fn settings_view(
             vec![SettingsEntry::DefaultAgent, backup],
             vec![SettingsEntry::RestartOnboarding, SettingsEntry::About],
         ];
-        if peers_ready {
+        if let Some(peers_count) = peers {
             // “其他服务器”和服务器管理是一类：放在服务器的同一组里。
             groups[1].push(SettingsEntry::Peers {
                 count: u32::try_from(peers_count).unwrap_or(u32::MAX),
@@ -147,10 +155,10 @@ mod tests {
                 &status,
                 None,
                 RecoveryStatus::Unknown,
+                PushMethod::Keepalive,
                 &PushStatus::NoEndpoint,
                 false,
-                0,
-                false,
+                Some(0),
             );
             let all = entries(&view);
             let appearance = all
@@ -167,10 +175,10 @@ mod tests {
             &HomeStatus::NotConfigured,
             None,
             RecoveryStatus::Unknown,
+            PushMethod::Keepalive,
             &PushStatus::NoEndpoint,
             false,
-            0,
-            false,
+            None,
         );
         assert_eq!(
             entries(&view),
@@ -203,10 +211,10 @@ mod tests {
                 name: "办公室".into(),
             }),
             RecoveryStatus::Enabled,
+            PushMethod::Keepalive,
             &PushStatus::Registered,
             true,
-            0,
-            false,
+            None,
         );
         assert_eq!(view.sections[0].entries, [SettingsEntry::Profile]);
         assert_eq!(
@@ -226,20 +234,20 @@ mod tests {
     /// “其他服务器”跟着配对列表走：列表取到过（这台设备是主人的）才给，台数是已配对的数量。
     #[test]
     fn the_peers_entry_follows_the_peers_list() {
-        let view = |peers_count: usize, peers_ready: bool| {
+        let view = |peers: Option<usize>| {
             settings_view(
                 &HomeStatus::Connected,
                 None,
                 RecoveryStatus::Unknown,
+                PushMethod::Keepalive,
                 &PushStatus::NoEndpoint,
                 false,
-                peers_count,
-                peers_ready,
+                peers,
             )
         };
         let server_group = |view: &SettingsViewModel| view.sections[1].entries.clone();
         assert_eq!(
-            server_group(&view(0, false)),
+            server_group(&view(None)),
             [SettingsEntry::Server {
                 name: None,
                 status: HomeStatus::Connected,
@@ -247,7 +255,7 @@ mod tests {
             }]
         );
         assert_eq!(
-            server_group(&view(2, true)),
+            server_group(&view(Some(2))),
             [
                 SettingsEntry::Server {
                     name: None,
@@ -283,6 +291,7 @@ mod tests {
             code: None,
         });
         let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());
+        let (_method_tx, method_rx) = watch::channel(PushMethod::default());
         let link = SettingsLink::new(
             &Handle::current(),
             home_rx,
@@ -290,6 +299,7 @@ mod tests {
             plugins_rx,
             peers_rx,
             servers_rx,
+            method_rx,
             None,
         );
         let mut updates = link.sender().subscribe();

@@ -14,6 +14,7 @@ use crate::chat::ChatLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
+use crate::push_method::PushMethodLink;
 use crate::servers::ServerList;
 
 pub(crate) struct Visit {
@@ -27,7 +28,16 @@ impl Visit {
     fn open(slot: &str, root: &Path, dir: &Path, network: Network) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
-        let home = HomeLink::new(handle.clone(), Storage::open(root, dir)?, network, None)?;
+        let storage = Storage::open(root, dir)?;
+        // 和正式作用域一致：方式是整机设置，放设备级的 root（见 Scope::open）。
+        let push_method = PushMethodLink::new(root);
+        let home = HomeLink::new(
+            handle.clone(),
+            storage,
+            network,
+            None,
+            push_method.subscribe(),
+        )?;
         // 聊天部件要插件部件来认 Bot；Bot 的轮询随下面的 backgrounded 停掉，插件部件只在连上时取一次列表。
         let plugins = PluginsLink::new(handle.clone(), home.clone(), dir, None);
         // 临时作用域不补取：卡片成功什么都不做。开着测试钩子时决定是个 future，直接完成。
@@ -45,9 +55,10 @@ impl Visit {
             card_success,
             plugins,
             None,
+            push_method.subscribe(),
         )?;
         chat.backgrounded();
-        let push = PushLink::new(handle, home, chat.clone(), dir);
+        let push = PushLink::new(handle, home, chat.clone(), dir, push_method.subscribe());
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             chat,

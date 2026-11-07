@@ -9,8 +9,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import app.wonton.android.keepalive.KeepaliveService
 import app.wonton.android.push.PushNotifications
 import app.wonton.android.push.PushRegistration
+import app.wonton.client.ClientCore
 import app.wonton.client.initLogging
 import app.wonton.client.parseAppLink
 import app.wonton.protocol.Action
@@ -19,7 +23,10 @@ import app.wonton.ui.StartupFailure
 import app.wonton.ui.RoomRequest
 import app.wonton.ui.WontonApp
 import app.wonton.ui.defaultDeviceName
+import app.wonton.ui.homeUpdates
 import app.wonton.ui.send
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -53,6 +60,7 @@ class MainActivity : AppCompatActivity() {
         }
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
         PushRegistration(this, core).start()
+        keepConnectionService(core)
         requestRoom(intent)
         requestLink(intent)
         setContent {
@@ -84,6 +92,25 @@ class MainActivity : AppCompatActivity() {
         }
         intent.removeExtra(EXTRA_ROOM)
         intent.removeExtra(EXTRA_SERVER)
+    }
+
+    /** “保持连接”的前台服务只看 `keep_connection`（ADR-0003 的“设计：保持连接”）：已配对、方式是保持连接时开，
+     *  设置里关掉或没配对时停。变化只发生在界面上，Activity 活着的时候都接得住；服务比 Activity 活得久。 */
+    private fun keepConnectionService(core: ClientCore) {
+        lifecycleScope.launch {
+            core.homeUpdates()
+                .distinctUntilChangedBy { home -> home.keepConnection }
+                .collect { home ->
+                    if (home.keepConnection) {
+                        ContextCompat.startForegroundService(
+                            this@MainActivity,
+                            Intent(this@MainActivity, KeepaliveService::class.java),
+                        )
+                    } else {
+                        stopService(Intent(this@MainActivity, KeepaliveService::class.java))
+                    }
+                }
+        }
     }
 
     private fun requestLink(intent: Intent) {

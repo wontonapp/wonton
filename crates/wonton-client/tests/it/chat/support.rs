@@ -18,7 +18,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{
     Action, BackPagination, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin,
-    InstalledPlugins, Network, OnboardingViewModel, TimelineDiff, TimelineItem,
+    InstalledPlugins, Network, OnboardingViewModel, PushMethod, TimelineDiff, TimelineItem,
     TimelineSubscription,
 };
 use wonton_matrix::MatrixSession;
@@ -636,6 +636,14 @@ impl Phone {
             }
         })
         .await
+    }
+
+    /// 这些测试登记推送端点，走的是 UnifiedPush：默认方式是保持连接（ADR-0003），先切过去才登记得了。
+    pub async fn use_unified_push(&self) {
+        self.dispatch(Action::SetPushMethod {
+            method: PushMethod::UnifiedPush,
+        })
+        .unwrap();
     }
 
     /// 等引导的视图满足条件。

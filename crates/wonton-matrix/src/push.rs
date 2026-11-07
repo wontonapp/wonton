@@ -1,8 +1,11 @@
 //! 推送（ADR-0003 的“设计：加密推送”）：在 Matrix 服务器上注册指向家里推送代理的 pusher；推送到了，取回那条消息、
 //! 在本机解密。推送本身只带房间和事件 ID，正文只在这里解密。
 
+use std::sync::Arc;
+
+use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedTimelineEvent;
 use matrix_sdk::ruma::{
-    EventId, OwnedUserId, RoomId,
+    EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId,
     api::client::push::{PusherIds, PusherInit, PusherKind, get_pushers},
     events::{
         AnySyncMessageLikeEvent, AnySyncTimelineEvent,
@@ -10,10 +13,12 @@ use matrix_sdk::ruma::{
     },
     push::HttpPusherData,
 };
+use matrix_sdk::{Client, sync::Notification as SdkNotification};
 use matrix_sdk_ui::notification_client::{
     NotificationClient, NotificationEvent, NotificationItem, NotificationProcessSetup,
     NotificationStatus, RawNotificationEvent,
 };
+use matrix_sdk_ui::sync_service::SyncService;
 use serde_json::{Map, Value};
 
 use crate::{Error, MatrixSession, MessageBody, Result};
@@ -41,6 +46,15 @@ impl std::fmt::Debug for PusherConfig {
             .field("gateway_url", &self.gateway_url)
             .finish_non_exhaustive()
     }
+}
+
+/// 同步循环里取回并解密的一条该通知的消息（ADR-0003 的“设计：保持连接”）。房间和事件 ID 在 SDK 给回调的
+/// 通知对象上没有，单独带上。
+#[derive(Clone, Debug)]
+pub struct BackgroundNotification {
+    pub room_id: OwnedRoomId,
+    pub event_id: OwnedEventId,
+    pub message: Notification,
 }
 
 /// 推送对应的那条消息，已在本机解密。
@@ -98,6 +112,58 @@ impl MatrixSession {
         room_id: &RoomId,
         event_id: &EventId,
     ) -> Result<Option<Notification>> {
+        self.fetcher().notification(room_id, event_id).await
+    }
+
+    /// 能取回并解密通知的那部分会话状态（client 和同步服务），Clone，matrix-sdk 的通知回调里要用。
+    pub(crate) fn fetcher(&self) -> NotificationFetcher {
+        NotificationFetcher {
+            client: self.client.clone(),
+            sync: self.sync.clone(),
+        }
+    }
+
+    /// 注册一个后台通知的回调（ADR-0003 的“设计：保持连接”）：同步循环里出现该通知的事件（sliding sync 的
+    /// 通知在本机按账号的推送规则评估，和服务器给 pusher 的判断一致），取回那条消息、按推送同样的方式映射，
+    /// 交给 `on_notification`。按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。会话释放后
+    /// 不再触发。
+    pub async fn register_background_notifications(
+        &self,
+        on_notification: impl Fn(BackgroundNotification) + Send + Sync + Clone + 'static,
+    ) {
+        let fetcher = self.fetcher();
+        self.client
+            .register_notification_handler(move |notification, room, _client| {
+                let fetcher = fetcher.clone();
+                let on_notification = on_notification.clone();
+                async move {
+                    // SDK 的通知回调是一个接一个等完的；取回消息要经隧道，可能要几秒，放后台跑，
+                    // 不拖住同步循环。
+                    tokio::spawn(fetcher.fetch(
+                        notification,
+                        room.room_id().to_owned(),
+                        on_notification,
+                    ));
+                }
+            })
+            .await;
+    }
+}
+
+/// 能取回并解密通知的那部分会话状态：推送路径和后台通知的回调共用。
+#[derive(Clone)]
+pub(crate) struct NotificationFetcher {
+    client: Client,
+    sync: Arc<SyncService>,
+}
+
+impl NotificationFetcher {
+    /// 同 [`MatrixSession::notification`]：取回那条消息并在本机解密。
+    async fn notification(
+        &self,
+        room_id: &RoomId,
+        event_id: &EventId,
+    ) -> Result<Option<Notification>> {
         // 和 App 同一个进程（Android 上推送唤醒的就是 App 的进程）：和正在跑的同步共用加密同步，不另起一个。
         let setup = NotificationProcessSetup::SingleProcess {
             sync_service: self.sync.clone(),
@@ -118,9 +184,37 @@ impl MatrixSession {
             ))),
         }
     }
-}
 
-impl MatrixSession {
+    /// 同步循环里来了一个该通知的事件：取回消息、按推送同样的方式映射，交给回调。邀请不从这里来
+    /// （同步的邀请一节另有处理），只处理已加入房间的时间线事件。
+    async fn fetch(
+        self,
+        notification: SdkNotification,
+        room_id: OwnedRoomId,
+        on_notification: impl FnOnce(BackgroundNotification),
+    ) {
+        let event = match notification.event {
+            RawAnySyncOrStrippedTimelineEvent::Sync(event) => event,
+            RawAnySyncOrStrippedTimelineEvent::Stripped(_) => return,
+        };
+        // 事件本体是 raw 的：解开才拿得到事件 ID；解不开的丢弃，取不到消息也无从通知。
+        let Ok(event) = event.deserialize() else {
+            return;
+        };
+        let event_id = event.event_id().to_owned();
+        match self.notification(&room_id, &event_id).await {
+            Ok(Some(message)) => on_notification(BackgroundNotification {
+                room_id,
+                event_id,
+                message,
+            }),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "background notification: failed to fetch the event")
+            }
+        }
+    }
+
     /// 本机存储里的房间是不是私聊。通知客户端用的是只在内存里的一份状态，只有这次同步到的数据，常常不知道
     /// `m.direct`。
     async fn is_direct(&self, room_id: &RoomId) -> bool {

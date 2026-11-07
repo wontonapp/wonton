@@ -12,11 +12,13 @@ impl Rig {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runtime = Handle::current();
+        let (_, method_rx) = tokio::sync::watch::channel(wonton_protocol::PushMethod::default());
         let home_link = HomeLink::new(
             runtime.clone(),
             crate::home::Storage::open(dir.path(), dir.path()).unwrap(),
             crate::home::Network::DirectOnly,
             None,
+            method_rx,
         )
         .unwrap();
         let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path(), None);

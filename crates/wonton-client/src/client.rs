@@ -121,6 +121,7 @@ impl ClientCore {
                 self.replay().push = Some(PushInput::Unavailable(message));
                 Ok(())
             }
+            Action::SetPushMethod { method } => scope.push_method.set(method),
             action @ (Action::RefreshOnboarding
             | Action::RestartOnboarding
             | Action::ChooseOnboardingAgent { .. }

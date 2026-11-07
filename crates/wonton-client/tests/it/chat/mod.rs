@@ -13,6 +13,7 @@ mod key_upload_order;
 mod onboarding;
 mod pending;
 mod push;
+mod push_method;
 mod recovery;
 mod resume;
 mod send;

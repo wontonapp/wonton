@@ -164,6 +164,13 @@ Android 收新消息有两种方式，存在本机、每台设备各选各的（
 
 推送规则由客户端评估，结果和 Tuwunel 给 pusher 的判断一致：两边读的是同一份账号的推送规则。
 
+前台服务的类型用 `specialUse`（Android 14 起前台服务必须声明类型，Android 15 起类型决定能跑多久）：`dataSync`
+在 Android 15 上每天累计只能跑 6 小时，过了就停，撑不住“一直连着”；`connectedDevice` 要求有配套外设，隧道对端
+是家里自己的服务器，不算。`specialUse` 没有系统加的时限，代价是要向 Google Play 声明用途：清单里的服务标
+`foregroundServiceType="specialUse"`，用 `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 写一句话说明（本 App 写的是
+“为后台保持到用户自建家庭服务器的隧道连接，端到端加密消息持续到达”），上架时在 Play Console 的声明里对每个
+specialUse 服务给出同样的说明和一段演示视频。国内应用市场没有这套类型制度，按各市场的后台保活规范走。
+
 ## 验证结果（M0-2）
 
 验证版本：Tuwunel v1.9.4，matrix-sdk 与 matrix-sdk-ui 0.19.1。可复跑：

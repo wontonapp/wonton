@@ -20,6 +20,7 @@ use crate::onboarding::OnboardingLink;
 use crate::peers::PeersLink;
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
+use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
 use crate::tabs::TabsLink;
 pub(crate) use runtime::ScopeRuntime;
@@ -30,6 +31,7 @@ pub(crate) struct Scope {
     pub(crate) home: Arc<HomeLink>,
     pub(crate) chat: Arc<ChatLink>,
     pub(crate) push: Arc<PushLink>,
+    pub(crate) push_method: PushMethodLink,
     pub(crate) plugins: Arc<PluginsLink>,
     pub(crate) tabs: Arc<TabsLink>,
     pub(crate) files: Arc<FilesLink>,
@@ -97,11 +99,14 @@ impl Scope {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
         let storage = Storage::open(root, dir)?;
+        // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
+        let push_method = PushMethodLink::new(root);
         let home = HomeLink::new(
             handle.clone(),
             storage,
             network,
             views.map(|v| v.home.clone()),
+            push_method.subscribe(),
         )?;
         let plugins = PluginsLink::new(
             handle.clone(),
@@ -126,8 +131,15 @@ impl Scope {
             card_success,
             plugins.clone(),
             views.map(|v| v.chat.clone()),
+            push_method.subscribe(),
         )?;
-        let push = PushLink::new(handle.clone(), home.clone(), chat.clone(), dir);
+        let push = PushLink::new(
+            handle.clone(),
+            home.clone(),
+            chat.clone(),
+            dir,
+            push_method.subscribe(),
+        );
         let tabs = TabsLink::new(
             handle.clone(),
             home.clone(),
@@ -158,6 +170,7 @@ impl Scope {
             plugins.subscribe(),
             peers.subscribe(),
             servers,
+            push_method.subscribe(),
             views.map(|v| v.settings.clone()),
         );
         Ok(Arc::new(Self {
@@ -165,6 +178,7 @@ impl Scope {
             home,
             chat,
             push,
+            push_method,
             plugins,
             tabs,
             files,

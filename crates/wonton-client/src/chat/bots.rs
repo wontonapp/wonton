@@ -47,13 +47,6 @@ pub(super) struct Record {
     pub identity: u64,
 }
 
-impl super::ChatLink {
-    pub(crate) fn app_foregrounded(self: &Arc<Self>) {
-        self.bots.foregrounded();
-        self.foregrounded();
-    }
-}
-
 impl Bots {
     pub fn new(
         runtime: Handle,

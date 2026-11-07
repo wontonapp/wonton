@@ -15,7 +15,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use wonton_client::{
     Action, ClientCore, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure, HomeStatus,
-    HomeViewModel, Network, ProxySettings,
+    HomeViewModel, Network, ProxySettings, PushMethod,
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
@@ -375,6 +375,34 @@ async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_nex
     );
 }
 
+/// 保持连接（ADR-0003）：App 在后台、方式是保持连接时，核心不算在后台——探测和自动重连照常，
+/// 断掉的连接不回前台也换新（对照 [`in_the_background_the_core_leaves_the_connection_alone`]）。
+#[tokio::test]
+async fn keep_connection_replaces_a_dropped_connection_while_backgrounded() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+
+    // 已配对、方式是保持连接：keep_connection 变真，退到后台核心也照样保活。
+    phone
+        .dispatch(Action::SetPushMethod {
+            method: PushMethod::Keepalive,
+        })
+        .unwrap();
+    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone.wait_for(|view| view.keep_connection).await;
+
+    home.drop_connections_silently().await;
+    home.wait_for_a_connection().await;
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
+        .await;
+}
+
 #[tokio::test]
 async fn in_the_background_the_core_leaves_the_connection_alone() {
     let dir = tempfile::tempdir().unwrap();
@@ -385,6 +413,13 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
 
+    // 后台暂停的前提是收新消息走 UnifiedPush（ADR-0003）：保持连接是默认方式，退到后台也照常探测和重连。
+    phone
+        .dispatch(Action::SetPushMethod {
+            method: PushMethod::UnifiedPush,
+        })
+        .unwrap();
+    phone.wait_for(|view| !view.keep_connection).await;
     phone.dispatch(Action::AppBackgrounded).unwrap();
     home.drop_connections_silently().await;
     // 比定时检查的间隔加限时都长。

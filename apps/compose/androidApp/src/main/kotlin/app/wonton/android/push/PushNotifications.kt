@@ -33,7 +33,11 @@ object PushNotifications {
         })
     }
 
-    fun show(context: Context, notification: PushNotification) {
+    fun show(
+        context: Context,
+        notification: PushNotification,
+        tag: String = tag(notification.serverId, notification.roomId, notification.confirmation?.id),
+    ) {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "没有通知权限，这条推送弹不出来")
             return
@@ -47,7 +51,6 @@ object PushNotifications {
             is PushContent.Unavailable -> "新消息（内容暂时取不到：${content.message}）"
         }
         val card = notification.confirmation
-        val tag = tag(notification.serverId, notification.roomId, card?.id)
         val open = PendingIntent.getActivity(
             context,
             // Intent data 包含完整目标，哈希碰撞也不会把两台服务器的通知合并。

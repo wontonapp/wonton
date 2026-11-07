@@ -52,6 +52,8 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     phone.connect(&home);
     phone.signed_in().await;
 
+    phone.use_unified_push().await;
+
     // 地址或公钥不对的订阅，壳给的时候就被拒绝。
     let mut broken = endpoint();
     broken.p256dh = "not-a-key".to_owned();
@@ -69,8 +71,19 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
             (view.push == PushStatus::Registered).then_some(())
         })
         .await;
-    let (method, subscription) = home.push_requests()[0].clone();
-    assert_eq!(method, "PUT");
+    // 开机按默认方式（保持连接）会先发一次清登记的 DELETE，等登记用的 PUT。
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    let subscription = loop {
+        if let Some((_, subscription)) = home.push_requests().iter().find(|(m, _)| m == "PUT") {
+            break subscription.clone();
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "家里没收到推送登记：{:?}",
+            home.push_requests()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
     assert_eq!(
         subscription,
         json!({"endpoint": ENDPOINT, "keys": {"p256dh": P256DH, "auth": AUTH}}),
@@ -115,6 +128,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
 
     // 分发器注销了本 App：照实显示，家里的登记和 pusher 都删掉。
     woken.signed_in().await;
+    woken.use_unified_push().await;
     woken
         .dispatch(Action::SetPushEndpoint {
             endpoint: endpoint(),
@@ -228,6 +242,7 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     let b = Home::start(&[phone.device_id()]).await;
     phone.connect(&a);
     phone.signed_in().await;
+    phone.use_unified_push().await;
     phone
         .dispatch(Action::SetPushEndpoint {
             endpoint: endpoint(),
@@ -305,6 +320,7 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
         |view: &wonton_client::ChatViewModel| (view.push == PushStatus::Registered).then_some(());
     phone.connect(&a);
     phone.signed_in().await;
+    phone.use_unified_push().await;
     phone
         .dispatch(Action::SetPushEndpoint {
             endpoint: endpoint(),
@@ -318,6 +334,7 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
 
     let mut moved = endpoint();
     moved.url = "https://ntfy.example/upWonton456?up=1".to_owned();
+    phone.use_unified_push().await;
     phone
         .dispatch(Action::SetPushEndpoint {
             endpoint: moved.clone(),
@@ -342,6 +359,7 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
 
     let on_a = a.push_requests().len();
     let on_b = b.push_requests().len();
+    phone.use_unified_push().await;
     phone
         .dispatch(Action::SetPushEndpoint { endpoint: moved })
         .unwrap();

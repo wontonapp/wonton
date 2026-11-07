@@ -37,6 +37,7 @@ mod onboarding;
 mod peers;
 mod plugins;
 mod push;
+mod push_method;
 mod scope;
 mod servers;
 mod session_store;
@@ -91,8 +92,8 @@ pub use wonton_protocol::{
     PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
     PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState,
     PluginTab, PluginTakeover, PluginTask, PluginTaskState, PluginTrust, PluginsViewModel,
-    ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus,
-    RecoveryStatus, RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest,
+    ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushMethod, PushNotification,
+    PushStatus, RecoveryStatus, RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest,
     RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel,
     RegistryProbe, RegistryProblem, ReplacedAgent, RequirementLine, RequirementStatus, Rgb,
     RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString, SendState, ServerName,

@@ -4,6 +4,7 @@
 //! 状态放在 watch 通道里，壳经订阅拿到 [`HomeViewModel`]。网络操作都在核心自己的 tokio 运行时里执行，
 //! `dispatch` 不阻塞。
 
+mod background;
 mod connection;
 mod invite;
 mod pairing;
@@ -24,7 +25,7 @@ use tokio::task::JoinHandle;
 use url::Url;
 use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
-    HomePath, HomeStatus, HomeViewModel, ProxySettings,
+    HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
 use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable, relay_map, spawn_tier_fallback};
 use wonton_tunnel::{
@@ -91,6 +92,8 @@ pub(crate) struct HomeLink {
     app_backgrounded: AtomicBool,
     /// 插件网页的音频在放：退到后台也保持探测和自动重连。
     page_media: AtomicBool,
+    /// 收新消息的方式是保持连接（ADR-0003）：壳的前台服务让进程和隧道在后台活着，核心不停探测和自动重连。
+    keep_connection: AtomicBool,
     /// 媒体停下后延迟释放保活的任务，重新播放时取消。
     media_release: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// 每次媒体状态变化加一。释放任务醒来后只认自己那次，被后来的播放抢先时不覆盖。
@@ -117,6 +120,7 @@ impl HomeLink {
         storage: Storage,
         network: Network,
         view: Option<watch::Sender<HomeViewModel>>,
+        push_method: watch::Receiver<PushMethod>,
     ) -> Result<Arc<Self>, CoreError> {
         let device_key = storage.device_key()?;
         tracing::info!(device_id = %device_key.public(), "本机设备身份");
@@ -152,11 +156,17 @@ impl HomeLink {
             background: watch::Sender::new(false),
             app_backgrounded: AtomicBool::new(false),
             page_media: AtomicBool::new(false),
+            keep_connection: AtomicBool::new(false),
             media_release: std::sync::Mutex::new(None),
             media_generation: AtomicU64::new(0),
             periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
         });
+        home.runtime.spawn(background::follow_keep_connection(
+            Arc::downgrade(&home),
+            home.subscribe(),
+            push_method,
+        ));
         if let Some(text) = saved {
             // 只有校验过的连接信息才会被保存，读出来不合法说明存储坏了。
             let ticket = Ticket::parse(&text).map_err(|reason| CoreError::Storage {
@@ -190,72 +200,6 @@ impl HomeLink {
         self.storage.save_ticket(text)?;
         self.start(text.to_owned(), ticket);
         Ok(())
-    }
-
-    /// `AppForegrounded`：在后台检查连接，必要时重连。
-    pub(crate) fn foregrounded(self: &Arc<Self>) {
-        self.app_backgrounded.store(false, Ordering::SeqCst);
-        self.sync_background();
-        self.lock_tracker().foregrounded(Instant::now());
-        self.recount();
-        self.runtime.spawn(self.clone().resume());
-    }
-
-    pub(crate) fn stop_periodic_checks(&self) {
-        self.periodic_checks.send_replace(false);
-    }
-
-    /// `AppBackgrounded`：停止探测和自动重连；壳报告过在放声音时不真的停（见 [`Self::page_media_active`]）。
-    /// 连接不主动断，后台音乐和正在传的文件还在用它。
-    pub(crate) fn backgrounded(&self) {
-        self.app_backgrounded.store(true, Ordering::SeqCst);
-        self.sync_background();
-    }
-
-    /// 网页媒体开始或停止播放：播放期间 App 退到后台也照常探测、自动重连，隧道不会空闲断开。
-    /// 停止后由核心再保活 [`MEDIA_RELEASE_GRACE`]，只留一瞬的换曲间隙也用这里盖住。
-    pub(crate) fn page_media_active(self: &Arc<Self>, active: bool) {
-        let mut pending = self
-            .media_release
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(release) = pending.take() {
-            release.abort();
-        }
-        let generation = self.media_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        if active {
-            if self.page_media.swap(true, Ordering::SeqCst) {
-                return;
-            }
-            self.sync_background();
-            self.lock_tracker().foregrounded(Instant::now());
-            self.recount();
-            self.runtime.spawn(self.clone().resume());
-        } else if self.page_media.load(Ordering::SeqCst) {
-            // 宽限期内保持 page_media 为真：这时切后台仍是前台保活，不会停探测。
-            let home = self.clone();
-            let release = self.runtime.spawn(async move {
-                tokio::time::sleep(MEDIA_RELEASE_GRACE).await;
-                let _pending = home
-                    .media_release
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                if home.media_generation.load(Ordering::SeqCst) != generation {
-                    return;
-                }
-                home.page_media.store(false, Ordering::SeqCst);
-                home.sync_background();
-            });
-            *pending = Some(release);
-        }
-    }
-
-    fn sync_background(&self) {
-        let background =
-            self.app_backgrounded.load(Ordering::SeqCst) && !self.page_media.load(Ordering::SeqCst);
-        if *self.background.borrow() != background {
-            self.background.send_replace(background);
-        }
     }
 
     /// `NetworkChanged`：让 iroh 重新检查路径，取消旧网络上的建连，确认现有连接还通。在后台时只做第一件，回到前台再确认。
