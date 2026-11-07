@@ -98,9 +98,10 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
             .is_none()
     );
     println!("registry mirror: 错摘要拒绝，不建容器：{error}");
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let offline = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
-    drop(listener);
+    // 绑住端口但不监听，到测试结束都不放：连过来一定被拒，别的进程也拿不走这个端口。
+    let offline_socket = tokio::net::TcpSocket::new_v4().unwrap();
+    offline_socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let offline = offline_socket.local_addr().unwrap().to_string();
     enable(fixture, &offline).await;
     let error = fixture
         .manager

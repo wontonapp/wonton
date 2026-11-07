@@ -1,7 +1,7 @@
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
-use bollard::models::{ContainerConfig, ContainerCreateBody, HostConfig};
+use bollard::models::{ContainerConfig, ContainerCreateBody, HostConfig, PortBinding};
 use bollard::query_parameters::{
     CommitContainerOptionsBuilder, PushImageOptionsBuilder, RemoveImageOptionsBuilder,
 };
@@ -15,11 +15,13 @@ use crate::test_docker::Names;
 
 const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const REGISTRY: &str = "public.ecr.aws/docker/library/registry:2";
+const REGISTRY_PORT: &str = "5000/tcp";
 
 pub(super) struct Fixture {
     pub engine: Engine,
     pub dir: tempfile::TempDir,
     pub manager: PluginManager,
+    /// 仓库在宿主回环上的地址，[`Self::start`] 之后才有。
     pub mirror: String,
     pub repo: String,
     pub id: PluginId,
@@ -36,13 +38,11 @@ impl Fixture {
         let dir = tempfile::tempdir().unwrap();
         let mut names = Names::new();
         let manager = super::test_support::manager(engine.clone(), &dir, names.name());
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let mirror = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         Self {
             engine,
             dir,
             manager,
-            mirror,
+            mirror: String::new(),
             repo: format!("{}/fixture", names.name()),
             id: PluginId::parse(&format!("app.{}", names.name())).unwrap(),
             registry: names.oneshot_container("registry"),
@@ -52,7 +52,9 @@ impl Fixture {
         }
     }
 
-    pub async fn start(&self) {
+    /// 端口由 Docker 发布时分配，不先在测试里绑一个再放掉：放掉到仓库绑上之间，并行的测试或别的进程可能拿走同一个
+    /// 端口，仓库起不来，就绪检查却被占着端口的那个应答（CI 上实测过：另一个测试的仓库应答，它一拆，推镜像就被拒）。
+    pub async fn start(&mut self) {
         for image in [REGISTRY, BASE] {
             self.engine
                 .ensure_image(image, PullPolicy::Missing, None)
@@ -62,22 +64,23 @@ impl Fixture {
         let storage = self.dir.path().join("registry");
         std::fs::create_dir(&storage).unwrap();
         let owner = std::fs::metadata(&storage).unwrap();
+        let loopback = PortBinding {
+            host_ip: Some("127.0.0.1".into()),
+            host_port: None,
+        };
         self.engine
             .create_container(
                 &self.registry,
                 ContainerCreateBody {
                     image: Some(REGISTRY.to_owned()),
                     user: Some(format!("{}:{}", owner.uid(), owner.gid())),
-                    env: Some(vec![
-                        format!("REGISTRY_HTTP_ADDR={}", self.mirror),
-                        "REGISTRY_STORAGE_DELETE_ENABLED=true".into(),
-                    ]),
+                    env: Some(vec!["REGISTRY_STORAGE_DELETE_ENABLED=true".into()]),
+                    exposed_ports: Some(vec![REGISTRY_PORT.into()]),
                     host_config: Some(HostConfig {
-                        network_mode: Some("host".into()),
-                        binds: Some(vec![format!(
-                            "{}:/var/lib/registry",
-                            self.dir.path().join("registry").display()
-                        )]),
+                        port_bindings: Some(
+                            [(REGISTRY_PORT.to_owned(), Some(vec![loopback]))].into(),
+                        ),
+                        binds: Some(vec![format!("{}:/var/lib/registry", storage.display())]),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -86,6 +89,19 @@ impl Fixture {
             .await
             .unwrap();
         self.engine.start_container(&self.registry).await.unwrap();
+        let port = self
+            .engine
+            .inspect_container(&self.registry)
+            .await
+            .unwrap()
+            .and_then(|info| info.network_settings?.ports?.remove(REGISTRY_PORT)?)
+            .and_then(|bindings| {
+                bindings
+                    .into_iter()
+                    .find_map(|b| b.host_port.filter(|p| !p.is_empty()))
+            })
+            .expect("Docker 给仓库发布了端口");
+        self.mirror = format!("127.0.0.1:{port}");
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
