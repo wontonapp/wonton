@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use wonton_protocol::{
-    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginDetail,
-    PluginHealth, PluginKind as Kind, PluginLimits, PluginState, PluginTab, PluginTrust,
-    PluginWriter, RequirementLine, RequirementStatus,
+    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginChat,
+    PluginDetail, PluginHealth, PluginKind as Kind, PluginLimits, PluginState, PluginTab,
+    PluginTrust, PluginWriter, RequirementLine, RequirementStatus,
 };
 
 use super::egress::probe::blocks;
@@ -459,7 +459,11 @@ impl PluginManager {
             notices.extend(self.oom_notices(id, langs));
         }
         InstalledPlugin {
-            chat: Default::default(),
+            chat: manifest
+                .filter(|m| super::bots::is_bot(m))
+                .map(|m| PluginChat {
+                    form: m.bot.as_ref().map_or_default(|bot| bot.chat_layout),
+                }),
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),

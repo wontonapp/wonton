@@ -7,6 +7,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::ChatForm;
 
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
@@ -210,6 +211,9 @@ pub struct BotProfile {
     pub avatar: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatars: Option<BTreeMap<String, String>>,
+    /// 和这个 Bot 的私聊怎么显示（ADR-0060）；没写是气泡。
+    #[serde(default)]
+    pub chat_layout: ChatForm,
 }
 
 /// 一个插件多个 Bot：`services` 里的服务每个 Bot 一份，其余服务全插件一份。M1 只有默认 Bot。
@@ -581,6 +585,15 @@ impl Manifest {
 /// `bot`、`bots` 和 `agent.protocol: matrix` 都以 Bot 身份收发消息，必须申请 `matrix.bot`。
 fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
     super::bot_avatars::validate_manifest(manifest)?;
+    if manifest
+        .bot
+        .as_ref()
+        .is_some_and(|bot| bot.chat_layout == ChatForm::Other)
+    {
+        return Err(ManifestError::Invalid(
+            "bot.chat_layout 只能是 bubbles 或 document".to_owned(),
+        ));
+    }
     let wants_bot = [
         ("bot", manifest.bot.is_some()),
         ("bots", manifest.bots.is_some()),

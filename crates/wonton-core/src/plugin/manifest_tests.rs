@@ -102,6 +102,36 @@ fn bot_avatars_accept_exactly_the_four_activity_keys() {
 }
 
 #[test]
+fn bot_chat_layout_defaults_to_bubbles_and_accepts_only_the_two_forms() {
+    let base = serde_json::json!({
+        "spec": "0.6", "id": "com.example.bot", "version": "1.0.0", "kind": "agent",
+        "title": {"zh": "代理", "en": "Agent"},
+        "description": {"zh": "描述", "en": "Description"},
+        "permissions": ["matrix.bot"],
+        "agent": {"protocol": "matrix"},
+        "bot": {}
+    });
+    let manifest: Manifest = serde_json::from_value(base.clone()).unwrap();
+    manifest.validate(&Languages::default()).unwrap();
+    assert_eq!(manifest.bot.clone().unwrap().chat_layout, ChatForm::Bubbles);
+    for (form, expected) in [
+        ("bubbles", ChatForm::Bubbles),
+        ("document", ChatForm::Document),
+    ] {
+        let mut value = base.clone();
+        value["bot"] = serde_json::json!({"chat_layout": form});
+        let manifest: Manifest = serde_json::from_value(value).unwrap();
+        manifest.validate(&Languages::default()).unwrap();
+        assert_eq!(manifest.bot.unwrap().chat_layout, expected);
+    }
+    // 比这个核心新的取值解析成 `Other`，装上以后不会按默认的 `Bubbles` 静默处理，校验时就报。
+    let mut invalid: Manifest = serde_json::from_value(base).unwrap();
+    invalid.bot.as_mut().unwrap().chat_layout = ChatForm::Other;
+    let error = invalid.validate(&Languages::default()).unwrap_err();
+    assert!(error.to_string().contains("bot.chat_layout"), "{error}");
+}
+
+#[test]
 fn plugin_id_must_be_reverse_dns() {
     assert_eq!(
         PluginId::parse("app.immich.photos").unwrap().slug(),

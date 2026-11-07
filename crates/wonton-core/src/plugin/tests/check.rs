@@ -339,3 +339,13 @@ async fn interpolation_errors_name_the_field() {
         "{report:?}"
     );
 }
+
+/// 显示方式的取值写错时和安装时报同一条错误。
+#[tokio::test]
+async fn an_unknown_chat_layout_is_reported() {
+    let compose = compose("  bot:\n    image: echo", "  bot: {chat_layout: hologram}")
+        .replace("permissions: []", "permissions: [matrix.bot]");
+    let dir = repo(&compose);
+    let err = run(dir.path(), false).await.unwrap_err();
+    assert!(err.contains("bot.chat_layout"), "{err}");
+}

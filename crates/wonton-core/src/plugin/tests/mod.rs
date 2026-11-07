@@ -11,6 +11,7 @@ use super::render::{RenderError, dry_run};
 mod bot_avatars;
 mod bot_lifecycle;
 mod bots;
+mod chat_layout;
 mod check;
 mod configs;
 mod configs_docker;
