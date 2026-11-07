@@ -96,12 +96,12 @@ impl fmt::Debug for PairingCode {
 /// 扫到的不是能用的配对码。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InvalidCode {
-    #[error("不是云吞的配对码")]
+    #[error("not a Wonton pairing code")]
     NotPairingCode,
     /// 配对码比这个 App 新：要更新 App，换一个码没有用。
-    #[error("配对码的格式版本是 {0}，这个 App 认不出，请更新 App")]
+    #[error("pairing code format version {0} is not recognized by this app; update the app")]
     UnsupportedVersion(String),
-    #[error("配对码里的{field}不对：{reason}")]
+    #[error("invalid {field} in the pairing code: {reason}")]
     Malformed { field: &'static str, reason: String },
 }
 
@@ -119,20 +119,21 @@ impl PairingCode {
         match fields.version.as_deref() {
             Some(CODE_VERSION) => {}
             Some(other) => return Err(InvalidCode::UnsupportedVersion(other.to_owned())),
-            None => return Err(malformed("版本", "缺少 v")),
+            None => return Err(malformed("version", "missing v")),
         }
         fields.build()
     }
 
     /// 写成二维码里的文字。
     pub fn to_uri(&self) -> String {
-        let mut url = Url::parse("wonton://pair").expect("固定的地址总能解析");
+        let mut url = Url::parse("wonton://pair").expect("the fixed URL always parses");
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("v", CODE_VERSION);
             query.append_pair("id", &self.server_id.to_string());
             // 整张中继表（连令牌和档位）放在一个参数里，和 `/_wonton/api/tunnel` 的 `relays` 同一个写法。
-            let relays = serde_json::to_string(&self.relays).expect("中继表总能写成 JSON");
+            let relays = serde_json::to_string(&self.relays)
+                .expect("the relay table always serializes to JSON");
             query.append_pair("relays", &relays);
             for addr in &self.direct_addrs {
                 query.append_pair("addr", &addr.to_string());
@@ -187,29 +188,32 @@ impl Fields {
         let server_id = self
             .id
             .as_deref()
-            .ok_or_else(|| malformed("服务端 ID", "缺少 id"))
+            .ok_or_else(|| malformed("server ID", "missing id"))
             .and_then(|id| {
-                EndpointId::from_str(id).map_err(|e| malformed("服务端 ID", &e.to_string()))
+                EndpointId::from_str(id).map_err(|e| malformed("server ID", &e.to_string()))
             })?;
         let relays = match self.relays.as_deref() {
             Some(text) => serde_json::from_str::<Vec<Relay>>(text)
-                .map_err(|e| malformed("中继表", &e.to_string()))?,
+                .map_err(|e| malformed("relay table", &e.to_string()))?,
             None => Vec::new(),
         };
         for relay in &relays {
             relay
                 .validate()
-                .map_err(|reason| malformed("中继表", &reason))?;
+                .map_err(|reason| malformed("relay table", &reason))?;
         }
         let direct_addrs = self
             .addrs
             .iter()
             .map(|addr| {
-                SocketAddr::from_str(addr).map_err(|e| malformed("直连地址", &e.to_string()))
+                SocketAddr::from_str(addr).map_err(|e| malformed("direct address", &e.to_string()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         if relays.is_empty() && direct_addrs.is_empty() {
-            return Err(malformed("服务端地址", "没有中继地址或直连地址"));
+            return Err(malformed(
+                "server address",
+                "no relay URL or direct address",
+            ));
         }
         let base_domain = base_domain(self.domain.as_deref())?;
         let core_url = core_url(self.core.as_deref(), &base_domain)?;
@@ -217,7 +221,7 @@ impl Fields {
             .secret
             .as_deref()
             .and_then(PairingSecret::from_hex)
-            .ok_or_else(|| malformed("配对密钥", "应为 32 位十六进制小写"))?;
+            .ok_or_else(|| malformed("pairing secret", "expected 32 lowercase hex digits"))?;
         Ok(PairingCode {
             server_id,
             relays,
@@ -230,7 +234,7 @@ impl Fields {
 }
 
 fn base_domain(text: Option<&str>) -> Result<String, InvalidCode> {
-    let text = text.ok_or_else(|| malformed("基础域名", "缺少 domain"))?;
+    let text = text.ok_or_else(|| malformed("base domain", "missing domain"))?;
     let domain = text.trim_end_matches('.').to_ascii_lowercase();
     let valid_label = |label: &str| {
         !label.is_empty()
@@ -241,20 +245,20 @@ fn base_domain(text: Option<&str>) -> Result<String, InvalidCode> {
     if domain.split('.').all(valid_label) {
         Ok(domain)
     } else {
-        Err(malformed("基础域名", text))
+        Err(malformed("base domain", text))
     }
 }
 
 fn core_url(text: Option<&str>, domain: &str) -> Result<Url, InvalidCode> {
-    let text = text.ok_or_else(|| malformed("核心地址", "缺少 core"))?;
-    let url = Url::parse(text).map_err(|e| malformed("核心地址", &e.to_string()))?;
+    let text = text.ok_or_else(|| malformed("core URL", "missing core"))?;
+    let url = Url::parse(text).map_err(|e| malformed("core URL", &e.to_string()))?;
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
     if matches!(url.scheme(), "http" | "https") && host == domain {
         Ok(url)
     } else {
         Err(malformed(
-            "核心地址",
-            &format!("要是 {domain} 的 http(s) 地址"),
+            "core URL",
+            &format!("must be an http(s) URL under {domain}"),
         ))
     }
 }

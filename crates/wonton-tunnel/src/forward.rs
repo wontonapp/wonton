@@ -28,7 +28,7 @@ pub(crate) enum PumpError {
 impl fmt::Display for PumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Tcp(err) => write!(f, "本地 TCP 连接出错：{err}"),
+            Self::Tcp(err) => write!(f, "local TCP connection failed: {err}"),
             Self::Tunnel(err) => err.fmt(f),
         }
     }

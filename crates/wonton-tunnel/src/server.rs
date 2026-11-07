@@ -83,7 +83,7 @@ impl TunnelProtocol {
                 changed = allowlist.changed() => {
                     if changed.is_err() || !allowlist.borrow_and_update().contains(&remote) {
                         conn.close(CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED);
-                        return "设备已被吊销".to_owned();
+                        return "device revoked".to_owned();
                     }
                 }
                 // 及时回收结束的流任务，长连接上的 JoinSet 才不会越积越多。
@@ -91,7 +91,7 @@ impl TunnelProtocol {
                     if let Err(err) = joined
                         && err.is_panic()
                     {
-                        error!(remote = %remote.fmt_short(), "隧道流任务 panic：{err}");
+                        error!(remote = %remote.fmt_short(), "tunnel stream task panicked: {err}");
                     }
                 }
             }
@@ -105,14 +105,14 @@ impl ProtocolHandler for TunnelProtocol {
         // 先订阅再检查：检查之后、订阅之前发生的吊销也会被看到。
         let mut allowlist = self.allowlist.subscribe();
         if !allowlist.borrow_and_update().contains(&remote) {
-            warn!(remote = %remote, "拒绝未配对的设备");
+            warn!(remote = %remote, "rejected an unpaired device");
             conn.close(CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED);
             return Ok(());
         }
         conn.set_max_concurrent_bi_streams(MAX_CONCURRENT_STREAMS);
-        info!(remote = %remote.fmt_short(), "设备已连接");
+        info!(remote = %remote.fmt_short(), "device connected");
         let reason = self.serve(&conn, remote, allowlist).await;
-        info!(remote = %remote.fmt_short(), %reason, "设备连接结束");
+        info!(remote = %remote.fmt_short(), %reason, "device connection ended");
         Ok(())
     }
 }
@@ -125,7 +125,7 @@ async fn serve_stream(
 ) {
     let mut kind = [0u8; 1];
     if let Err(err) = recv.read_exact(&mut kind).await {
-        debug!("流在请求类型之前就结束了：{err}");
+        debug!("the stream ended before the request type: {err}");
         return;
     }
     match Request::from_byte(kind[0]) {
@@ -135,7 +135,7 @@ async fn serve_stream(
         },
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
         None => {
-            warn!(kind = kind[0], "不支持的请求类型");
+            warn!(kind = kind[0], "unsupported request type");
             reply(&mut send, Status::UnsupportedRequest).await;
         }
     }
@@ -145,16 +145,16 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
     let mut tcp = match TcpStream::connect(upstream).await {
         Ok(tcp) => tcp,
         Err(err) => {
-            warn!(%upstream, "连不上上游 HTTP 服务：{err}");
+            warn!(%upstream, "failed to reach the upstream HTTP service: {err}");
             reply(&mut send, Status::UpstreamUnavailable).await;
             return;
         }
     };
     if let Err(err) = tcp.set_nodelay(true) {
-        debug!("上游连接设置 TCP_NODELAY 失败：{err}");
+        debug!("failed to set TCP_NODELAY on the upstream connection: {err}");
     }
     if let Err(err) = send.write_all(&[Status::Ok as u8]).await {
-        debug!("回写状态失败：{err}");
+        debug!("failed to write the status: {err}");
         forward::abort(&mut send, &mut recv);
         return;
     }
@@ -164,7 +164,7 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
         forward::tcp_to_tunnel(&mut tcp_read, &mut send),
     );
     if let Err(err) = result {
-        debug!("转发中断：{err}");
+        debug!("forwarding interrupted: {err}");
         forward::abort(&mut send, &mut recv);
     }
 }
@@ -177,12 +177,12 @@ async fn hand_over(
     streams: &mpsc::Sender<PeerStream>,
 ) {
     let Ok(slot) = streams.reserve().await else {
-        warn!("嵌入方已停止接收隧道流");
+        warn!("the embedder has stopped accepting tunnel streams");
         reply(&mut send, Status::UpstreamUnavailable).await;
         return;
     };
     if let Err(err) = send.write_all(&[Status::Ok as u8]).await {
-        debug!("回写状态失败：{err}");
+        debug!("failed to write the status: {err}");
         forward::abort(&mut send, &mut recv);
         return;
     }
@@ -194,7 +194,7 @@ async fn reply(send: &mut SendStream, status: Status) {
         Ok(()) => {
             send.finish().ok();
         }
-        Err(err) => debug!("回写状态失败：{err}"),
+        Err(err) => debug!("failed to write the status: {err}"),
     }
 }
 
@@ -281,7 +281,7 @@ impl TunnelServer {
         match self.router.shutdown().await {
             Ok(()) => {}
             Err(err) if err.is_panic() => std::panic::resume_unwind(err.into_panic()),
-            Err(err) => error!("隧道服务端关闭异常：{err}"),
+            Err(err) => error!("tunnel server shutdown failed: {err}"),
         }
     }
 }

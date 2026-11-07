@@ -15,25 +15,25 @@ use crate::wire::CLOSE_UNAUTHORIZED;
 #[non_exhaustive]
 pub enum TunnelError {
     /// 服务端拒绝了本设备：endpoint ID 不在已配对白名单里，或已被吊销。
-    #[error("服务端拒绝了本设备：endpoint ID 未配对或已被吊销")]
+    #[error("the server rejected this device: endpoint ID not paired or revoked")]
     Unauthorized,
     /// 连不上服务端，或连接中断、超时。下一次使用时会自动重连。
-    #[error("隧道传输不可用：{reason}")]
+    #[error("tunnel transport unavailable: {reason}")]
     TransportUnavailable {
         /// 底层错误的描述。
         reason: String,
     },
     /// 隧道是通的，但服务端连不上它要转发到的上游 HTTP 服务。
-    #[error("服务端连不上上游 HTTP 服务")]
+    #[error("the server cannot reach its upstream HTTP service")]
     UpstreamUnavailable,
     /// 对端违反隧道协议，通常是两端版本不匹配。
-    #[error("隧道协议错误：{reason}")]
+    #[error("tunnel protocol error: {reason}")]
     Protocol {
         /// 违反协议的具体情况。
         reason: String,
     },
     /// 本地的隧道客户端或 endpoint 已经关闭。
-    #[error("隧道客户端已关闭")]
+    #[error("the tunnel client is closed")]
     Closed,
 }
 
@@ -71,7 +71,7 @@ pub(crate) fn from_connection_error(err: &ConnectionError) -> TunnelError {
         ConnectionError::ApplicationClosed(close) if close.error_code == CLOSE_UNAUTHORIZED => {
             TunnelError::Unauthorized
         }
-        ConnectionError::LocallyClosed => TunnelError::transport("本机已断开这条连接"),
+        ConnectionError::LocallyClosed => TunnelError::transport("connection closed locally"),
         other => TunnelError::transport(other),
     }
 }
@@ -101,7 +101,9 @@ pub(crate) fn from_read_error(err: &ReadError) -> TunnelError {
 pub(crate) fn from_read_exact_error(err: &ReadExactError) -> TunnelError {
     match err {
         ReadExactError::ReadError(source) => from_read_error(source),
-        ReadExactError::FinishedEarly(_) => TunnelError::protocol("服务端没有回状态就结束了流"),
+        ReadExactError::FinishedEarly(_) => {
+            TunnelError::protocol("the server ended the stream without sending a status")
+        }
     }
 }
 

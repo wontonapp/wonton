@@ -22,7 +22,12 @@ pub async fn pair(
 ) -> Result<PairResponse, TunnelError> {
     tokio::time::timeout(PAIR_TIMEOUT, exchange(endpoint, code, device_name))
         .await
-        .map_err(|_| TunnelError::transport(format!("{} 秒内没有配对完", PAIR_TIMEOUT.as_secs())))?
+        .map_err(|_| {
+            TunnelError::transport(format!(
+                "pairing did not finish within {}s",
+                PAIR_TIMEOUT.as_secs()
+            ))
+        })?
 }
 
 async fn exchange(
@@ -39,15 +44,16 @@ async fn exchange(
         secret: code.secret.clone(),
         device_name: device_name.to_owned(),
     };
-    let body = serde_json::to_vec(&request).expect("请求总能编成 JSON");
+    let body = serde_json::to_vec(&request).expect("the request always serializes to JSON");
     send.write_all(&body)
         .await
         .map_err(|e| from_write_error(&e))?;
     send.finish().map_err(TunnelError::transport)?;
     let reply = read_reply(&mut recv).await?;
     conn.close(VarInt::from_u32(0), b"done");
-    serde_json::from_slice(&reply)
-        .map_err(|e| TunnelError::protocol(format!("服务端的配对回应不合规：{e}")))
+    serde_json::from_slice(&reply).map_err(|e| {
+        TunnelError::protocol(format!("malformed pairing response from the server: {e}"))
+    })
 }
 
 /// 读服务端的回应，直到回应结束（FIN）。
@@ -61,7 +67,9 @@ async fn read_reply(recv: &mut RecvStream) -> Result<Vec<u8>, TunnelError> {
     loop {
         // 协议里回应不会接近这个长度；到上限还没读到结束就不再收，与回应长度上限一致。
         if reply.len() >= MAX_MESSAGE_LEN {
-            return Err(TunnelError::transport("服务端的配对回应超过长度上限"));
+            return Err(TunnelError::transport(
+                "the pairing response from the server exceeds the length limit",
+            ));
         }
         match recv.read_chunk(MAX_MESSAGE_LEN - reply.len()).await {
             Ok(Some(bytes)) => reply.extend_from_slice(&bytes),
@@ -88,7 +96,9 @@ fn connect_error(err: &ConnectError) -> TunnelError {
     if let Some(ConnectionError::ConnectionClosed(close)) = closed
         && u64::from(close.error_code) == NO_APPLICATION_PROTOCOL
     {
-        return TunnelError::protocol("服务端不接受这个版本的配对协议");
+        return TunnelError::protocol(
+            "the server does not accept this version of the pairing protocol",
+        );
     }
     from_connect_error(err)
 }

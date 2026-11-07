@@ -38,7 +38,7 @@ pub(crate) async fn accept(
         }
     };
     if !credential.matches(head.header("proxy-authorization")) {
-        debug!("本地代理拒绝了没有会话凭据的连接");
+        debug!("local proxy rejected a connection without session credentials");
         reject(tcp_write, tcp_read, Rejection::Unauthorized).await;
         return None;
     }
@@ -46,13 +46,13 @@ pub(crate) async fn accept(
     if !host.as_deref().is_some_and(|host| in_domain(host, domain)) {
         debug!(
             host = host.as_deref().unwrap_or("-"),
-            "本地代理拒绝了家里服务器以外的地址"
+            "local proxy rejected an address outside the home server"
         );
         reject(tcp_write, tcp_read, Rejection::ForeignHost).await;
         return None;
     }
     if head.method.eq_ignore_ascii_case("CONNECT") {
-        debug!(target = %head.target, "本地代理收到 CONNECT");
+        debug!(target = %head.target, "local proxy received CONNECT");
         tcp_write
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await
@@ -60,7 +60,7 @@ pub(crate) async fn accept(
         return Some(head.rest);
     }
     // 只记主机：路径和查询里可能有 OAuth 授权码等秘密。
-    debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "本地代理收到请求");
+    debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "local proxy received a request");
     Some(head.rewrite())
 }
 
@@ -85,11 +85,19 @@ async fn reject(tcp_write: &mut OwnedWriteHalf, tcp_read: &mut OwnedReadHalf, wh
         Rejection::Unauthorized => (
             "407 Proxy Authentication Required",
             "proxy-authenticate: Basic realm=\"wonton\"\r\n",
-            "本地代理只接受带本 App 会话凭据的请求\n",
+            "the local proxy only accepts requests carrying this app's session credentials\n",
         ),
-        Rejection::ForeignHost => ("403 Forbidden", "", "本地代理只转发家里服务器的地址\n"),
-        Rejection::TooLarge => ("431 Request Header Fields Too Large", "", "请求头太大\n"),
-        Rejection::Malformed => ("400 Bad Request", "", "请求头不合法\n"),
+        Rejection::ForeignHost => (
+            "403 Forbidden",
+            "",
+            "the local proxy only forwards addresses of the home server\n",
+        ),
+        Rejection::TooLarge => (
+            "431 Request Header Fields Too Large",
+            "",
+            "request headers too large\n",
+        ),
+        Rejection::Malformed => ("400 Bad Request", "", "malformed request headers\n"),
     };
     let code = match why {
         Rejection::Unauthorized => "proxy-unauthorized",
@@ -264,7 +272,10 @@ mod tests {
         ] {
             assert!(!in_domain(host, "wonton.localhost"), "{host}");
         }
-        assert!(!in_domain("anything", ""), "空的基础域名不放行任何地址");
+        assert!(
+            !in_domain("anything", ""),
+            "an empty base domain admits no host"
+        );
         assert_eq!(
             strip_port("app.wonton.localhost:18480"),
             "app.wonton.localhost"
@@ -299,7 +310,7 @@ mod tests {
         let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
         let mut request = httparse::Request::new(&mut headers);
         let httparse::Status::Complete(len) = request.parse(bytes).unwrap() else {
-            panic!("改写后的请求头不完整");
+            panic!("rewritten request head is incomplete");
         };
         let line = format!("{} {}", request.method.unwrap(), request.path.unwrap());
         let headers = request

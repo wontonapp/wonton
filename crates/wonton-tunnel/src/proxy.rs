@@ -58,7 +58,7 @@ impl LocalProxy {
         if !addr.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("本地代理只能监听回环地址，收到 {addr}"),
+                format!("the local proxy can only listen on loopback addresses, got {addr}"),
             ));
         }
         let listener = TcpListener::bind(addr).await?;
@@ -91,13 +91,13 @@ async fn accept_loop(listener: TcpListener, client: TunnelClient, access: Arc<Pr
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((tcp, peer)) => {
-                    debug!(%peer, "本地代理收到连接");
+                    debug!(%peer, "local proxy accepted a connection");
                     // 这条连接之后的日志都带上它的本地端口，并发的连接才分得清。
-                    let span = debug_span!("本地连接", port = peer.port());
+                    let span = debug_span!("local connection", port = peer.port());
                     connections.spawn(serve_local(client.clone(), tcp, access.clone()).instrument(span));
                 }
                 Err(err) => {
-                    warn!("本地代理接受连接失败：{err}");
+                    warn!("local proxy failed to accept a connection: {err}");
                     tokio::time::sleep(ACCEPT_BACKOFF).await;
                 }
             },
@@ -106,7 +106,7 @@ async fn accept_loop(listener: TcpListener, client: TunnelClient, access: Arc<Pr
                 if let Err(err) = joined
                     && err.is_panic()
                 {
-                    error!("本地代理连接任务 panic：{err}");
+                    error!("local proxy connection task panicked: {err}");
                 }
             }
         }
@@ -124,7 +124,7 @@ enum RelayError {
 
 async fn serve_local(client: TunnelClient, tcp: TcpStream, access: Arc<ProxyAccess>) {
     if let Err(err) = tcp.set_nodelay(true) {
-        debug!("本地连接设置 TCP_NODELAY 失败：{err}");
+        debug!("failed to set TCP_NODELAY on the local connection: {err}");
     }
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
     // 正向代理先收下第一个请求头：校验凭据，CONNECT 回 200，绝对形式的请求行改写后送进隧道。
@@ -154,7 +154,7 @@ async fn serve_local(client: TunnelClient, tcp: TcpStream, access: Arc<ProxyAcce
             respond_error(&mut tcp_write, &mut tcp_read, &err).await;
         }
         Err(RelayError::Aborted(err)) => {
-            debug!("转发中断：{err}");
+            debug!("forwarding interrupted: {err}");
             stream.abort();
         }
     }
@@ -192,8 +192,8 @@ async fn relay(
                     if !upload_done {
                         match tokio::time::timeout(LINGER, &mut upload).await {
                             Ok(Ok(())) => {}
-                            Ok(Err(err)) => debug!("响应已结束，上传收尾中断：{err}"),
-                            Err(_) => debug!("响应已结束，不再等待客户端 EOF"),
+                            Ok(Err(err)) => debug!("response finished; upload drain interrupted: {err}"),
+                            Err(_) => debug!("response finished; no longer waiting for client EOF"),
                         }
                     }
                     break;
@@ -227,7 +227,7 @@ async fn respond_error(
     tcp_read: &mut OwnedReadHalf,
     err: &TunnelError,
 ) {
-    debug!("本地代理回错误响应：{err}");
+    debug!("local proxy is sending an error response: {err}");
     respond(tcp_write, tcp_read, &error_response(err)).await;
 }
 
@@ -238,7 +238,7 @@ pub(crate) async fn respond(
     response: &str,
 ) {
     if let Err(write_err) = tcp_write.write_all(response.as_bytes()).await {
-        debug!("回写错误响应失败：{write_err}");
+        debug!("failed to write the error response: {write_err}");
         return;
     }
     tcp_write.shutdown().await.ok();

@@ -72,7 +72,7 @@ impl FederationProtocol {
                 changed = allowlist.changed() => {
                     if changed.is_err() || !allowlist.borrow_and_update().contains(&remote) {
                         conn.close(CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED);
-                        return "对方已不在服务器名单里".to_owned();
+                        return "the peer is no longer in the server list".to_owned();
                     }
                 }
                 // 及时回收结束的流任务，长连接上的 JoinSet 才不会越积越多。
@@ -80,7 +80,7 @@ impl FederationProtocol {
                     if let Err(err) = joined
                         && err.is_panic()
                     {
-                        error!(remote = %remote.fmt_short(), "联邦流任务 panic：{err}");
+                        error!(remote = %remote.fmt_short(), "federation stream task panicked: {err}");
                     }
                 }
             }
@@ -95,14 +95,14 @@ impl ProtocolHandler for FederationProtocol {
         let mut allowlist = self.allowlist.subscribe();
         if !allowlist.borrow_and_update().contains(&remote) {
             self.rejected.fetch_add(1, Ordering::Relaxed);
-            warn!(remote = %remote, "拒绝不在服务器名单里的连接");
+            warn!(remote = %remote, "rejected a connection not in the server list");
             conn.close(CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED);
             return Ok(());
         }
         conn.set_max_concurrent_bi_streams(MAX_CONCURRENT_STREAMS);
-        info!(remote = %remote.fmt_short(), "对方服务器已连接");
+        info!(remote = %remote.fmt_short(), "peer server connected");
         let reason = self.serve(&conn, remote, allowlist).await;
-        info!(remote = %remote.fmt_short(), %reason, "对方服务器连接结束");
+        info!(remote = %remote.fmt_short(), %reason, "peer server connection ended");
         Ok(())
     }
 }
@@ -110,14 +110,14 @@ impl ProtocolHandler for FederationProtocol {
 async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr) {
     let mut kind = [0u8; 1];
     if let Err(err) = recv.read_exact(&mut kind).await {
-        debug!("流在请求类型之前就结束了：{err}");
+        debug!("the stream ended before the request type: {err}");
         return;
     }
     match Request::from_byte(kind[0]) {
         Some(Request::Forward) => forward_to_upstream(send, recv, upstream).await,
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
         None => {
-            warn!(kind = kind[0], "不支持的请求类型");
+            warn!(kind = kind[0], "unsupported request type");
             reply(&mut send, Status::UnsupportedRequest).await;
         }
     }
@@ -127,16 +127,16 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
     let mut tcp = match TcpStream::connect(upstream).await {
         Ok(tcp) => tcp,
         Err(err) => {
-            warn!(%upstream, "连不上本机 Tuwunel 的联邦端口：{err}");
+            warn!(%upstream, "cannot reach the local Tuwunel federation port: {err}");
             reply(&mut send, Status::UpstreamUnavailable).await;
             return;
         }
     };
     if let Err(err) = tcp.set_nodelay(true) {
-        debug!("上游连接设置 TCP_NODELAY 失败：{err}");
+        debug!("failed to set TCP_NODELAY on the upstream connection: {err}");
     }
     if let Err(err) = send.write_all(&[Status::Ok as u8]).await {
-        debug!("回写状态失败：{err}");
+        debug!("failed to write the status: {err}");
         forward::abort(&mut send, &mut recv);
         return;
     }
@@ -146,7 +146,7 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
         forward::tcp_to_tunnel(&mut tcp_read, &mut send),
     );
     if let Err(err) = result {
-        debug!("转发中断：{err}");
+        debug!("forwarding interrupted: {err}");
         forward::abort(&mut send, &mut recv);
     }
 }
@@ -156,6 +156,6 @@ async fn reply(send: &mut SendStream, status: Status) {
         Ok(()) => {
             send.finish().ok();
         }
-        Err(err) => debug!("回写状态失败：{err}"),
+        Err(err) => debug!("failed to write the status: {err}"),
     }
 }

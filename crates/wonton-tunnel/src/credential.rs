@@ -35,7 +35,7 @@ impl ProxyCredential {
     /// 随机生成一份凭据：用户名固定为 `wonton`，密码是 256 位随机数的十六进制。
     pub fn generate() -> Self {
         let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
+        getrandom::fill(&mut bytes).expect("the OS random source is unavailable");
         Self {
             username: "wonton".to_owned(),
             password: bytes.iter().map(|b| format!("{b:02x}")).collect(),

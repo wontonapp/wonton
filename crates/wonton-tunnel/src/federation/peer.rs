@@ -215,7 +215,7 @@ impl PeerClient {
                 }
                 // 连接恰好在检查之后断开。这时还没发出任何数据，换一条新连接重试一次是安全的。
                 Err(err) if !retried => {
-                    debug!(server = %self.name, "开流失败，换新连接重试：{err}");
+                    debug!(server = %self.name, "opening the stream failed, retrying with a new connection: {err}");
                     retried = true;
                 }
                 Err(err) => return Err(from_connection_error(&err)),
@@ -243,9 +243,9 @@ impl PeerClient {
             }
             Ok(Err(err)) => Err(err),
             Err(_) => {
-                info!(server = %self.name, ?timeout, "现有连接限时内没有回应，断开");
+                info!(server = %self.name, ?timeout, "the existing connection did not respond in time, closing it");
                 conn.close(CLOSE_NORMAL, b"no response");
-                Err(TunnelError::transport("探活限时内没有回应"))
+                Err(TunnelError::transport("the probe did not respond in time"))
             }
         }
     }
@@ -320,7 +320,9 @@ impl PeerClient {
         if let Some(not_before) = lock(&self.pacing).not_before()
             && tokio::time::Instant::now() < not_before
         {
-            return Err(TunnelError::transport("正在按退避等待重连"));
+            return Err(TunnelError::transport(
+                "waiting for the backoff before reconnecting",
+            ));
         }
         let (_, addr) = lock(&self.target).clone();
         let started = Instant::now();
@@ -330,13 +332,15 @@ impl PeerClient {
             Ok(Ok(conn)) => conn,
             Ok(Err(err)) => return Err(self.dial_failed(from_connect_error(&err))),
             Err(_) => {
-                return Err(self.dial_failed(TunnelError::transport("建连限时内没有回应")));
+                return Err(self.dial_failed(TunnelError::transport(
+                    "connecting did not complete in time",
+                )));
             }
         };
         info!(
             server = %self.name,
             handshake_ms = started.elapsed().as_millis(),
-            "联邦连接已建立"
+            "federation connection established"
         );
         watch_close(Arc::downgrade(self), &conn);
         *lock(&self.conn) = Some(conn.clone());
@@ -344,7 +348,7 @@ impl PeerClient {
     }
 
     fn dial_failed(&self, err: TunnelError) -> TunnelError {
-        info!(server = %self.name, "联邦建连失败：{err}");
+        info!(server = %self.name, "federation connection failed: {err}");
         // 状态由探活任务写：它下一次（按这里的退避）探活会试同一个名字，把真实原因记进状态。
         lock(&self.pacing).failed();
         err
@@ -400,10 +404,10 @@ impl PeerClient {
             lock(&self.pacing).failed();
         }
         if err == TunnelError::Unauthorized {
-            info!(server = %self.name, "对方服务器拒绝了本机");
+            info!(server = %self.name, "the peer server rejected this server");
             self.set_status(PeerStatus::RemovedByPeer);
         } else {
-            info!(server = %self.name, "联邦连接已断开：{err}");
+            info!(server = %self.name, "federation connection lost: {err}");
             self.set_offline(err);
         }
     }
@@ -421,7 +425,7 @@ async fn ping_loop(
         match lookup(&client.name) {
             Some((id, addr)) => client.set_target(id, addr),
             None => {
-                info!(server = %client.name, "对方服务器已不在配对名单里，停止转发和探活");
+                info!(server = %client.name, "the peer server is no longer in the paired server list, stopping forwarding and probes");
                 peers.remove(&client.name);
                 return;
             }
@@ -468,8 +472,13 @@ async fn ping_on(conn: &Connection) -> Result<(), TunnelError> {
         .map_err(|err| from_read_exact_error(&err))?;
     match Status::from_byte(byte[0]) {
         Some(Status::Ok) => Ok(()),
-        Some(_) => Err(TunnelError::protocol("对方不认识 ping 请求")),
-        None => Err(TunnelError::protocol(format!("未知的状态字节 {}", byte[0]))),
+        Some(_) => Err(TunnelError::protocol(
+            "the peer does not recognize the ping request",
+        )),
+        None => Err(TunnelError::protocol(format!(
+            "unknown status byte {}",
+            byte[0]
+        ))),
     }
 }
 

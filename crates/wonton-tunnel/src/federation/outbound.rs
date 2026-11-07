@@ -164,7 +164,7 @@ async fn accept_loop(listener: TcpListener, ctx: Arc<ForwarderCtx>, counters: Ar
                 tokio::spawn(serve_conn(tcp, ctx, counters));
             }
             Err(err) => {
-                warn!("联邦出站监听出错：{err}");
+                warn!("federation outbound listener failed: {err}");
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
@@ -179,13 +179,13 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
             counters
                 .invalid_client_hello
                 .fetch_add(1, Ordering::Relaxed);
-            warn!(%reason, "联邦出站：连接开头不是能用的 TLS ClientHello");
+            warn!(%reason, "federation outbound: connection does not start with a usable TLS ClientHello");
             return;
         }
     };
     let Some((id, addr)) = (ctx.lookup)(&name) else {
         counters.unknown_server.fetch_add(1, Ordering::Relaxed);
-        warn!(%name, "联邦出站：SNI 不在配对名单里，关闭连接");
+        warn!(%name, "federation outbound: SNI not in the paired server list, closing the connection");
         return;
     };
     let peer = ctx.peers.get_or_create(&name, id, addr.clone(), &ctx);
@@ -193,13 +193,13 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
     let mut stream = match peer.open_forward().await {
         Ok(stream) => stream,
         Err(err) => {
-            debug!(server = %name, "联邦出站：连不上对方：{err}");
+            debug!(server = %name, "federation outbound: cannot reach the peer: {err}");
             return;
         }
     };
     // ClientHello 之前的字节原样转过去（同一段 TCP 里 ClientHello 之后紧跟的字节也在里面）。
     if let Err(err) = stream.send.write_all(&hello).await {
-        debug!(server = %name, "联邦出站：发送 ClientHello 失败：{err}");
+        debug!(server = %name, "federation outbound: failed to send the ClientHello: {err}");
         stream.abort();
         return;
     }
@@ -207,7 +207,7 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
     let mut status = [0u8; 1];
     match stream.recv.read_exact(&mut status).await {
         Err(err) => {
-            debug!(server = %name, "联邦出站：读状态失败：{err}");
+            debug!(server = %name, "federation outbound: failed to read the status: {err}");
             stream.abort();
         }
         Ok(_) => match Status::from_byte(status[0]) {
@@ -216,11 +216,11 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
                 relay(stream, tcp).await;
             }
             Some(Status::UpstreamUnavailable) => {
-                info!(server = %name, "联邦出站：对方连不上它的 Tuwunel");
+                info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
                 stream.abort();
             }
             _ => {
-                warn!(server = %name, kind = status[0], "联邦出站：对方不支持这个请求");
+                warn!(server = %name, kind = status[0], "federation outbound: the peer does not support this request");
                 stream.abort();
             }
         },
@@ -234,7 +234,7 @@ async fn relay(mut stream: ForwardStream, tcp: TcpStream) {
         forward::tcp_to_tunnel(&mut tcp_read, &mut stream.send),
         forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write),
     ) {
-        debug!("联邦转发中断：{err}");
+        debug!("federation forwarding interrupted: {err}");
         stream.abort();
     }
 }
@@ -251,15 +251,15 @@ const READ_CHUNK: usize = 4096;
 /// 连接开头读不出 SNI 的原因。
 #[derive(Debug, thiserror::Error)]
 enum HelloError {
-    #[error("连接在 ClientHello 之前就关了：{0}")]
+    #[error("the connection closed before the ClientHello: {0}")]
     Closed(io::Error),
-    #[error("不是 TLS 或 ClientHello 不合法：{0}")]
+    #[error("not TLS or an invalid ClientHello: {0}")]
     NotTls(io::Error),
-    #[error("ClientHello 里没有 SNI")]
+    #[error("the ClientHello carries no SNI")]
     NoSni,
-    #[error("ClientHello 超过字节上限")]
+    #[error("the ClientHello exceeds the size limit")]
     TooLarge,
-    #[error("ClientHello 限时内没有读完整")]
+    #[error("the ClientHello did not complete within the time limit")]
     Timeout,
 }
 
@@ -277,7 +277,9 @@ async fn read_client_hello(tcp: &mut TcpStream) -> Result<(Vec<u8>, String), Hel
             // read_tls 每次最多吃进一条记录，返回吃掉的字节数；剩下的留在 view 里下轮再喂。
             let used = acceptor.read_tls(&mut view).map_err(HelloError::NotTls)?;
             if used == 0 {
-                return Err(HelloError::NotTls(io::Error::other("读不出完整的记录")));
+                return Err(HelloError::NotTls(io::Error::other(
+                    "could not read a complete record",
+                )));
             }
             consumed += used;
             match acceptor.accept() {
@@ -304,7 +306,7 @@ async fn read_client_hello(tcp: &mut TcpStream) -> Result<(Vec<u8>, String), Hel
         if n == 0 {
             return Err(HelloError::Closed(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "ClientHello 之前连接就关了",
+                "the connection closed before the ClientHello",
             )));
         }
         buf.extend_from_slice(&chunk[..n]);
