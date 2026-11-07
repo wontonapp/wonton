@@ -70,7 +70,7 @@ const FEDERATION_PING_TIMEOUT: Duration = Duration::from_secs(10);
 #[allow(clippy::type_complexity)]
 async fn open_peers_and_federation(
     cfg: &Config,
-    owner: &OwnerStore,
+    owner: &Arc<OwnerStore>,
     tunnel: &Tunnel,
     confirmations: &Arc<mcp::Confirmations>,
     manager: &Arc<PluginManager>,
@@ -82,15 +82,19 @@ async fn open_peers_and_federation(
     let Some(matrix) = &cfg.matrix else {
         return Ok((None, None, None));
     };
+    let owner_display_name: Arc<dyn Fn() -> String + Send + Sync> = {
+        let owner = Arc::clone(owner);
+        Arc::new(move || owner.owner().display_name)
+    };
     let peers = peers::Peers::open(
         cfg.core_state_dir().join("peers.json"),
         peers::OwnIdentity {
             server_name: matrix.server_name.clone(),
             owner_user_id: format!("@{}:{}", cfg.username, matrix.server_name),
-            owner_display_name: owner.owner().display_name,
         },
         tunnel.clone(),
         confirmations.clone(),
+        owner_display_name,
         {
             let manager = manager.clone();
             Arc::new(move || manager.owner_languages())
@@ -111,6 +115,7 @@ async fn open_peers_and_federation(
         tunnel.endpoint.clone(),
         listen,
         Arc::new(move |name: &str| lookup.lookup(name)),
+        peers.paired_names(),
         FEDERATION_PING_INTERVAL,
         FEDERATION_PING_TIMEOUT,
     )

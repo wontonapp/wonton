@@ -164,7 +164,7 @@ impl Peers {
                 .map_err(|e| storage_failed(e, "扫码的记录写不进去"))?;
         }
         let code_server_name = code.server_name.clone();
-        let identity = self.own.to_wire(&self.tunnel);
+        let identity = self.own_identity();
         match scan(&self.tunnel.endpoint, code, identity).await {
             // 等对方同意：把对方的身份记上。
             Ok(PeerReply::AwaitingApproval { identity }) => {
@@ -310,7 +310,7 @@ impl Peers {
             identity.endpoint_addr(scanner)
         };
         tracing::info!(server = %server_name, "同意了和对方服务器的配对");
-        let own = self.own.to_wire(&self.tunnel);
+        let own = self.own_identity();
         if !deliver_with_retries(&self.tunnel.endpoint, addr, true, own).await {
             tracing::warn!(
                 server = %server_name,
@@ -339,7 +339,7 @@ impl Peers {
             }
         }
         tracing::info!(server = %server_name, "拒绝了和对方服务器的配对");
-        let own = self.own.to_wire(&self.tunnel);
+        let own = self.own_identity();
         let addr = identity.endpoint_addr(scanner);
         deliver_with_retries(&self.tunnel.endpoint, addr, false, own).await;
     }
@@ -425,7 +425,7 @@ impl Peers {
         tracing::info!(server = %identity.server_name, "对方扫了我们的码，等主人同意");
         (
             PeerReply::AwaitingApproval {
-                identity: self.own.to_wire(&self.tunnel),
+                identity: self.own_identity(),
             },
             Some(Box::pin(async move {
                 peers.wait_for_answer(waiting, card).await;

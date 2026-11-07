@@ -81,10 +81,10 @@ async fn home() -> (Router, Arc<Peers>, iroh::EndpointId, tempfile::TempDir) {
         OwnIdentity {
             server_name: "a.example.internal".to_owned(),
             owner_user_id: "@owner:a.example.internal".to_owned(),
-            owner_display_name: "云吞".to_owned(),
         },
         tunnel.clone(),
         confirmations,
+        Arc::new(|| "云吞".to_owned()),
         Arc::new(|| crate::plugin::languages::Languages::from_header(Some("zh"))),
     )
     .unwrap();

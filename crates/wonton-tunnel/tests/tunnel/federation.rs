@@ -2,7 +2,7 @@
 //! Tuwunel 用本机 TCP 连接模拟，上游是回环上的记录/回显服务。不依赖外网和 Docker。
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     net::{Ipv4Addr, SocketAddr},
     sync::{
         Arc, Mutex,
@@ -144,6 +144,8 @@ struct TestPeer {
     server: Option<TunnelServer>,
     _listener: wonton_tunnel::TunnelListener,
     forwarder: Option<FederationForwarder>,
+    /// 已配对的服务器名，转发器据此开始探活。
+    paired: watch::Sender<BTreeSet<String>>,
     states: watch::Receiver<PeerStates>,
 }
 
@@ -157,10 +159,12 @@ impl TestPeer {
         let server_allowlist = Allowlist::default();
         let upstream = Upstream::spawn().await;
         let federation = FederationProtocol::new(server_allowlist.clone(), upstream.addr);
+        let (paired, paired_rx) = watch::channel(BTreeSet::new());
         let forwarder = FederationForwarder::bind(
             endpoint.clone(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
             lookup.clone(),
+            paired_rx,
             PING_INTERVAL,
             PING_TIMEOUT,
         )
@@ -189,6 +193,7 @@ impl TestPeer {
             server: Some(server),
             _listener: listener,
             forwarder: Some(forwarder),
+            paired,
             states,
         }
     }
@@ -214,6 +219,7 @@ impl TestPeer {
             endpoint.clone(),
             self.listen,
             self.lookup.clone(),
+            self.paired.subscribe(),
             PING_INTERVAL,
             PING_TIMEOUT,
         )
@@ -232,6 +238,26 @@ impl TestPeer {
         self.server = Some(server);
         self._listener = listener;
         self.forwarder = Some(forwarder);
+    }
+
+    /// 改配对名单。
+    fn set_paired<const N: usize>(&self, names: [&str; N]) {
+        self.paired
+            .send_replace(names.iter().map(|name| (*name).to_owned()).collect());
+    }
+
+    /// 等某台对方服务器从状态表里消失。
+    async fn wait_gone(&self, name: &str) {
+        timeout(WAIT, async {
+            loop {
+                if !self.states.borrow().contains_key(name) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("等状态条目消失超时");
     }
 
     /// 等某台对方服务器的状态变成想要的值。
@@ -433,6 +459,63 @@ async fn goes_offline_when_the_peer_stops_and_recovers_when_it_returns() {
     b.restart().await;
     a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
         .await;
+}
+
+/// 两边互相放进名单、名字绑上查找表，但一个字节的联邦流量都不发。
+fn pair_quietly(a: &TestPeer, b: &TestPeer, table: &Pairings) {
+    table
+        .lock()
+        .unwrap()
+        .insert(B_NAME.to_owned(), (b.id, b.addr.clone()));
+    a.server_allowlist.allow(b.id);
+    b.server_allowlist.allow(a.id);
+}
+
+/// 只配对、没有任何出站流量：转发器自己建客户端开始探活，一个周期内状态就是 Connected，
+/// 探活不走对方的上游。
+#[tokio::test]
+async fn probes_a_paired_server_without_any_outbound_traffic() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_quietly(&a, &b, &table);
+    a.set_paired([B_NAME]);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+    assert_eq!(b.upstream.connections(), 0, "探活不该碰上游");
+}
+
+/// 配对后新加的服务器马上开始探活；对方不在（endpoint 在，但没有联邦协议）时状态就是 Offline。
+#[tokio::test]
+async fn probes_a_server_added_to_the_pairing_later() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    // 只起了 endpoint、没挂联邦协议的空壳当“对方不在”。
+    let ghost = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Short).await;
+    let ghost_addr = ghost.addr();
+    table
+        .lock()
+        .unwrap()
+        .insert(C_NAME.to_owned(), (ghost_addr.id, ghost_addr));
+    a.set_paired([C_NAME]);
+    a.wait_for(C_NAME, |status| {
+        matches!(status, PeerStatus::Offline { .. })
+    })
+    .await;
+}
+
+/// 配对删掉：这台服务器从状态表里消失，探活停下。
+#[tokio::test]
+async fn stops_probing_a_server_removed_from_the_pairing() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_quietly(&a, &b, &table);
+    a.set_paired([B_NAME]);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+    a.set_paired([]);
+    a.wait_gone(B_NAME).await;
 }
 
 /// 设备名单的 ID 连不上联邦 ALPN，服务器名单的 ID 连不上隧道 ALPN：都以 403 关闭。

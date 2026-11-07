@@ -87,20 +87,19 @@ impl PeerRecord {
     }
 }
 
-/// 自己这边的身份，配对时发给对方。
+/// 自己这边的身份，配对时发给对方。主人的显示名不在这里：它在每次握手时现取（主人会改资料）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnIdentity {
     pub server_name: String,
     pub owner_user_id: String,
-    pub owner_display_name: String,
 }
 
 impl OwnIdentity {
-    pub(crate) fn to_wire(&self, tunnel: &Tunnel) -> PeerIdentity {
+    pub(crate) fn to_wire(&self, tunnel: &Tunnel, owner_display_name: String) -> PeerIdentity {
         PeerIdentity {
             server_name: self.server_name.clone(),
             owner_user_id: self.owner_user_id.clone(),
-            owner_display_name: self.owner_display_name.clone(),
+            owner_display_name,
             relays: tunnel
                 .relay_urls()
                 .iter()
@@ -133,12 +132,14 @@ pub struct Peers {
     server_allowlist: Allowlist,
     /// 已配对的服务器名，配对和删除时即时更新。给 Tuwunel 配置（名单和 /etc/hosts）订阅。
     names: watch::Sender<BTreeSet<String>>,
-    /// 联邦转发组件的状态。没接转发组件时已配对的行按离线处理。
+    /// 联邦转发组件的状态。还没接转发组件时，已配对的行按“正在确认”处理。
     forwarder: Mutex<Option<watch::Receiver<PeerStates>>>,
     /// 每台对方服务器最近连上的时刻：转发组件的状态回到“已连上”时记一次。
     last_connected_ms: Mutex<BTreeMap<String, u64>>,
     /// 主人的回答从确认卡片来（ADR-0016）。
     confirmations: Arc<Confirmations>,
+    /// 主人的显示名，每次握手现取：主人改了资料，下次配对用的就是新名字。
+    owner_display_name: Arc<dyn Fn() -> String + Send + Sync>,
     /// 主人的语言，卡片和说明按它写（ADR-0043）。
     languages: Arc<dyn Fn() -> Languages + Send + Sync>,
     inner: Mutex<Inner>,
@@ -183,6 +184,7 @@ impl Peers {
         own: OwnIdentity,
         tunnel: Tunnel,
         confirmations: Arc<Confirmations>,
+        owner_display_name: Arc<dyn Fn() -> String + Send + Sync>,
         languages: Arc<dyn Fn() -> Languages + Send + Sync>,
     ) -> Result<Arc<Self>, PeerStoreError> {
         let path = path.into();
@@ -209,6 +211,7 @@ impl Peers {
             forwarder: Mutex::new(None),
             last_connected_ms: Mutex::new(BTreeMap::new()),
             confirmations,
+            owner_display_name,
             languages,
         }))
     }
@@ -302,6 +305,11 @@ impl Peers {
         (record.phase == Phase::Paired).then(|| (record.endpoint_id, record.endpoint_addr()))
     }
 
+    /// 这次的配对握手里要发给对方的身份。主人的显示名现取，主人改资料后不用重启核心。
+    pub(crate) fn own_identity(&self) -> PeerIdentity {
+        self.own.to_wire(&self.tunnel, (self.owner_display_name)())
+    }
+
     /// 接上联邦转发组件：已配对行的状态和“最近连上”的时刻从这里来。
     pub fn attach_forwarder(&self, states: watch::Receiver<PeerStates>) {
         *self.forwarder.lock().expect("转发器状态锁中毒") = Some(states);
@@ -372,11 +380,12 @@ impl Peers {
         }
     }
 
-    /// 已配对的服务器按转发组件的状态给 [`PeerStatus`]（ADR-0050 的“状态”）；转发组件没连过的按离线处理。
+    /// 已配对的服务器按转发组件的状态给 [`PeerStatus`]（ADR-0050 的“状态”）。转发组件还没有这台的结果
+    /// （刚配对、第一次探活还没出结果）时不报离线，给 `Checking`（壳显示“正在确认”）。
     fn forwarded_status(&self, server_name: &str) -> (PeerStatus, Option<u64>) {
         let guard = self.forwarder.lock().expect("转发器状态锁中毒");
         let Some(states) = guard.as_ref() else {
-            return (PeerStatus::Offline, None);
+            return (PeerStatus::Checking, None);
         };
         let last_connected = self
             .last_connected_ms
@@ -394,7 +403,7 @@ impl Peers {
             Some(wonton_tunnel::federation::PeerStatus::RemovedByPeer) => {
                 (PeerStatus::RemovedByPeer, last_connected)
             }
-            None => (PeerStatus::Offline, last_connected),
+            None => (PeerStatus::Checking, last_connected),
         }
     }
 

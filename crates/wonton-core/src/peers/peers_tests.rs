@@ -2,9 +2,9 @@
 //! 确认卡片由测试替身通道记下、在进程内回答。覆盖出码 → 扫码 → 卡片同意 → 两边记成已配对的全流程，
 //! 以及拒绝、过期、码被改、扫自己、已配对、结果只认扫过的 endpoint ID 和删配对通知。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use iroh::endpoint::presets;
@@ -43,8 +43,8 @@ async fn loopback_endpoint(key: SecretKey) -> Endpoint {
 }
 
 struct TestCore {
-    name: &'static str,
     peers: Arc<Peers>,
+    owner_name: Arc<Mutex<String>>,
     confirmations: Arc<Confirmations>,
     cards: Arc<Cards>,
     paired_names: watch::Receiver<BTreeSet<String>>,
@@ -54,7 +54,7 @@ struct TestCore {
 
 impl TestCore {
     /// 起一台测试核心：隧道 endpoint + 服务器配对协议，没有 Matrix。
-    async fn start(name: &'static str, server_name: &str, ttl: Duration) -> Self {
+    async fn start(name: &str, server_name: &str, ttl: Duration) -> Self {
         let cards = Arc::new(Cards::default());
         let confirmations = Arc::new(Confirmations::new(cards.clone(), ttl));
         let dir = tempfile::tempdir().unwrap();
@@ -66,15 +66,19 @@ impl TestCore {
             0,
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
         );
+        let owner_name = Arc::new(Mutex::new(name.to_owned()));
         let peers = Peers::open(
             dir.path().join("core/peers.json"),
             OwnIdentity {
                 server_name: server_name.to_owned(),
                 owner_user_id: format!("@owner:{server_name}"),
-                owner_display_name: name.to_owned(),
             },
             tunnel,
             confirmations.clone(),
+            Arc::new({
+                let owner_name = owner_name.clone();
+                move || owner_name.lock().unwrap().clone()
+            }),
             Arc::new(|| Languages::from_header(Some("zh"))),
         )
         .unwrap();
@@ -91,14 +95,19 @@ impl TestCore {
             )],
         );
         Self {
-            name,
             peers,
+            owner_name,
             confirmations,
             cards,
             paired_names,
             _server,
             dir,
         }
+    }
+
+    /// 主人改资料。
+    fn set_owner_name(&self, name: &str) {
+        *self.owner_name.lock().unwrap() = name.to_owned();
     }
 
     /// 等到这台核心把 `server_name` 记成已配对，返回绑定的对方 endpoint ID。
@@ -224,13 +233,75 @@ async fn scan_then_approval_pairs_both_sides() {
     let row = a.row("b.example.internal").unwrap();
     assert_eq!(row.owner_display_name, "Jiale");
     assert_eq!(row.owner_user_id, "@owner:b.example.internal");
-    assert_eq!(row.status, PeerStatus::Offline, "没接联邦转发组件时按离线");
+    assert_eq!(
+        row.status,
+        PeerStatus::Checking,
+        "没接联邦转发组件时状态还在确认"
+    );
 
     // 已经配对过：再扫同一个服务器的码，直接说清。
     let code = a.peers.issue_code();
     let error = b.peers.scan(code.code.expose()).await.unwrap_err();
     assert_eq!(error, PeerError::AlreadyPaired);
-    let _ = a.name;
+}
+
+/// 刚配好、探活还没有结果：状态是“正在确认”（`Checking`），不报离线；探活一出结果就换成真状态。
+#[tokio::test]
+async fn a_paired_server_is_checking_until_the_first_probe_result() {
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
+    let code = a.peers.issue_code();
+    b.peers.scan(code.code.expose()).await.unwrap();
+    let card = a.cards.wait_for(1).await;
+    a.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
+    b.wait_paired("a.example.internal").await;
+
+    let (states, rx) = watch::channel(wonton_tunnel::federation::PeerStates::new());
+    b.peers.attach_forwarder(rx);
+    assert_eq!(
+        b.row("a.example.internal").unwrap().status,
+        PeerStatus::Checking,
+        "还没有探活结果时不报离线"
+    );
+
+    states.send_replace(BTreeMap::from([(
+        "a.example.internal".to_owned(),
+        wonton_tunnel::federation::PeerStatus::Connected,
+    )]));
+    let row = b.row("a.example.internal").unwrap();
+    assert_eq!(row.status, PeerStatus::Connected);
+    assert!(row.last_connected_ms.is_some(), "连上时要记下时刻");
+}
+
+/// 主人改了资料再出码，对方扫到的是新名字，列表里显示的也是新名字（不是核心启动时的旧名字）。
+#[tokio::test]
+async fn an_owner_rename_reaches_the_peer_as_the_current_name() {
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
+
+    a.set_owner_name("改名了");
+    let code = a.peers.issue_code();
+    b.peers.scan(code.code.expose()).await.unwrap();
+    let row = b.row("a.example.internal").expect("扫码后应有这条记录");
+    assert_eq!(row.owner_display_name, "改名了");
+
+    let card = a.cards.wait_for(1).await;
+    assert_eq!(
+        card.peer_request
+            .expect("应是配对请求的卡片")
+            .owner_display_name,
+        "Jiale"
+    );
+    a.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
+    b.wait_paired("a.example.internal").await;
+    assert_eq!(
+        b.row("a.example.internal").unwrap().owner_display_name,
+        "改名了"
+    );
 }
 
 /// 主人拒绝：出码方的记录删掉，扫码方收到结果后也删掉。
@@ -425,10 +496,10 @@ async fn a_restart_drops_unanswered_requests_and_keeps_pairings() {
         OwnIdentity {
             server_name: "a.example.internal".to_owned(),
             owner_user_id: "@owner:a.example.internal".to_owned(),
-            owner_display_name: "Alex".to_owned(),
         },
         tunnel_clone,
         confirmations,
+        Arc::new(|| "Alex".to_owned()),
         languages,
     )
     .unwrap();
@@ -477,10 +548,10 @@ async fn expired_pending_rows_are_dropped_from_the_view() {
         OwnIdentity {
             server_name: "a.example.internal".to_owned(),
             owner_user_id: "@owner:a.example.internal".to_owned(),
-            owner_display_name: "Alex".to_owned(),
         },
         tunnel,
         confirmations,
+        Arc::new(|| "Alex".to_owned()),
         Arc::new(|| Languages::from_header(Some("zh"))),
     )
     .unwrap();

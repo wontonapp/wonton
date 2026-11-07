@@ -7,8 +7,10 @@
 //!
 //! - 入站：[`FederationProtocol`]，只接受服务器名单里的 endpoint ID。
 //! - 出站：[`FederationForwarder`]，每台对方服务器一条共享连接，断开后按退避重连、定时探活。
+//!   配对名单（嵌入方给的 watch）里出现的服务器马上开始探活，不等出站流量；删掉的拆掉。
 //! - 状态：每台对方服务器一个 [`PeerStatus`]，经 [`FederationForwarder::watch_status`] 给嵌入方；
-//!   Tuwunel 分不清对方离线和拒绝本机，由嵌入方按这里的状态区分（ADR-0050 的“状态”）。
+//!   还没有探活结果时表里没有这台，嵌入方按“状态未知”处理。Tuwunel 分不清对方离线和拒绝本机，
+//!   由嵌入方按这里的状态区分（ADR-0050 的“状态”）。
 
 mod outbound;
 mod peer;

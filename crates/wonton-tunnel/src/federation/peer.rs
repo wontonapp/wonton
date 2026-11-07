@@ -4,7 +4,7 @@
 //! 的原因：它的 ALPN 固定为隧道的，而隧道负责人正在改客户端（#506），合并后这里整体换成 `TunnelClient`。
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
     time::{Duration, Instant, SystemTime},
 };
@@ -48,7 +48,7 @@ pub enum PeerStatus {
 
 /// 已接触过的各台对方服务器的状态，按 Matrix 服务器名索引。
 ///
-/// 名字还没出现 = 本机还没有连过它；名字从配对名单里删除后，条目也随之消失。
+/// 名字还没出现 = 还没有这台服务器的探活结果（刚配对时）；名字从配对名单里删除后，条目也随之消失。
 pub type PeerStates = BTreeMap<String, PeerStatus>;
 
 /// 出站侧的一条转发流，已写入请求类型。
@@ -125,6 +125,18 @@ impl PeerTable {
         tracked.ping.abort();
         tracked.client.hang_up();
         tracked.client.remove_state();
+    }
+
+    /// 拆掉不在 `names` 里的每一台，留下的不动。
+    pub(crate) fn retain(self: &Arc<Self>, names: &BTreeSet<String>) {
+        let gone: Vec<String> = lock(&self.peers)
+            .keys()
+            .filter(|name| !names.contains(*name))
+            .cloned()
+            .collect();
+        for name in gone {
+            self.remove(&name);
+        }
     }
 
     /// 停掉所有探活任务并断开连接。转发器停止时调用。

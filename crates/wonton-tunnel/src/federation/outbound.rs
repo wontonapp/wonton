@@ -5,6 +5,7 @@
 //! 转发。转发器不看 ClientHello 之后的内容，断开也不当协议错误。
 
 use std::{
+    collections::BTreeSet,
     io,
     net::SocketAddr,
     sync::{
@@ -51,13 +52,15 @@ struct Counters {
     invalid_client_hello: AtomicU64,
 }
 
-/// 联邦出站转发器：在 `listen` 上接受本机 Tuwunel 发往对方服务器的连接，按 SNI 经 iroh 转出去。
+/// 联邦出站转发器：在 `listen` 上接受本机 Tuwunel 发往对方服务器的连接，按 SNI 经 iroh 转出去；
+/// 配对名单里每出现一台服务器就建它的客户端并开始探活，不等出站流量。
 #[derive(Debug)]
 pub struct FederationForwarder {
     peers: Arc<PeerTable>,
     status: watch::Sender<PeerStates>,
     counters: Arc<Counters>,
     listener: AbortHandle,
+    sync: AbortHandle,
     listen_addr: SocketAddr,
 }
 
@@ -72,12 +75,14 @@ pub(super) struct ForwarderCtx {
 }
 
 impl FederationForwarder {
-    /// 在 `listen` 上开始转发。`ping_interval` 和 `ping_timeout` 是对每台对方服务器的定时探活周期和
-    /// 每次探活的超时。
+    /// 在 `listen` 上开始转发。`paired` 是已配对的服务器名：名单里出现的每台马上建客户端并探活，
+    /// 名单里消失的拆掉。`ping_interval` 和 `ping_timeout` 是对每台对方服务器的定时探活周期和每次
+    /// 探活的超时。
     pub async fn bind(
         endpoint: Endpoint,
         listen: SocketAddr,
         lookup: ServerLookup,
+        paired: watch::Receiver<BTreeSet<String>>,
         ping_interval: Duration,
         ping_timeout: Duration,
     ) -> io::Result<Self> {
@@ -94,11 +99,13 @@ impl FederationForwarder {
             ping_timeout,
         });
         let task = tokio::spawn(accept_loop(listener, ctx.clone(), counters.clone()));
+        let sync = tokio::spawn(sync_loop(paired, ctx.clone())).abort_handle();
         Ok(Self {
             peers: ctx.peers.clone(),
             status,
             counters,
             listener: task.abort_handle(),
+            sync,
             listen_addr,
         })
     }
@@ -125,7 +132,27 @@ impl FederationForwarder {
 impl Drop for FederationForwarder {
     fn drop(&mut self) {
         self.listener.abort();
+        self.sync.abort();
         self.peers.stop_all();
+    }
+}
+
+/// 配对名单变了就跟着变：新出现的服务器马上建客户端、立刻开始探活（不等出站流量，否则没有联邦流量的
+/// 时候状态一直空着）；从名单里删掉的、查询已经查不到的马上拆掉。
+async fn sync_loop(mut paired: watch::Receiver<BTreeSet<String>>, ctx: Arc<ForwarderCtx>) {
+    loop {
+        let names = paired.borrow_and_update().clone();
+        ctx.peers.retain(&names);
+        for name in &names {
+            let Some((id, addr)) = (ctx.lookup)(name) else {
+                continue;
+            };
+            let peer = ctx.peers.get_or_create(name, id, addr.clone(), &ctx);
+            peer.set_target(id, addr);
+        }
+        if paired.changed().await.is_err() {
+            return;
+        }
     }
 }
 
