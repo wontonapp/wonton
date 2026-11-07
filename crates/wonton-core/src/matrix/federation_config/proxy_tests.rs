@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use hyper::{Method, StatusCode};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey};
+use iroh::test_utils::run_relay_server;
+use iroh::tls::CaTlsConfig;
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMap, RelayMode, SecretKey};
 use tokio::sync::watch;
 use wonton_tunnel::Allowlist;
 use wonton_tunnel::federation::{
@@ -43,10 +45,19 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
         .enable_all()
         .build()
         .unwrap();
+    // 失败时 iroh 的 warn（重新绑定失败、endpoint 关闭）跟着测试输出一起打出来。
+    let _ = tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .try_init();
     runtime.block_on(async {
         let pairings: Pairings = Arc::default();
-        let a = Core::start(&pairings).await;
-        let b = Core::start(&pairings).await;
+        let (relays, _, _relay) = run_relay_server().await.unwrap();
+        let a = Core::start(&pairings, &relays).await;
+        let b = Core::start(&pairings, &relays).await;
         // 两套同时起，谁也不指定子网。
         let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let (stack_a, stack_b) = std::thread::scope(|scope| {
@@ -81,18 +92,20 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
         // A → B（邀请）和 B → A（加入）都经各自的代理；第一次要先等 well-known 失败、取对方的签名密钥。
         let room = create_room(&server_a, &alice).await;
         let (on_a, on_b, alice, bob, room) = (&server_a, &server_b, &alice, &bob, room.as_str());
-        until("跨机邀请和加入", || async move {
+        let invited = until("跨机邀请和加入", || async move {
             invite(on_a, alice, room, &bob.user_id).await?;
             join(on_b, &bob.token, room).await
         })
         .await;
+        invited.unwrap_or_else(|error| panic!("{error}\n{}", diagnose(&a, &b, &pairings)));
         let body = format!("你好 {}", crate::secret::random_token());
         send_text(on_a, alice, room, &body).await;
         let body = body.as_str();
-        until("B 收到 A 发的消息", || async move {
+        let delivered = until("B 收到 A 发的消息", || async move {
             received(on_b, bob, room, body).await
         })
         .await;
+        delivered.unwrap_or_else(|error| panic!("{error}\n{}", diagnose(&a, &b, &pairings)));
 
         for core in [&a, &b] {
             assert_eq!(
@@ -119,15 +132,23 @@ struct Core {
 }
 
 impl Core {
-    async fn start(pairings: &Pairings) -> Self {
+    /// 和正式的核心一样带中继：宿主上 Docker 增删网卡时 iroh 在原端口重新绑定 UDP，同进程正在起子进程
+    /// （docker CLI）时子进程在 exec 前还拿着这个 fd，绑定报 AddrInUse；只有 IP 传输的 endpoint 会因此
+    /// 整个关掉，有中继的只丢直连（iroh 1.4.1，Linux 上实测）。
+    async fn start(pairings: &Pairings, relays: &RelayMap) -> Self {
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::generate())
             .clear_ip_transports()
             .bind_addr((Ipv4Addr::LOCALHOST, 0))
             .unwrap()
+            .relay_mode(RelayMode::Custom(relays.clone()))
+            .ca_tls_config(CaTlsConfig::insecure_skip_verify())
             .bind()
             .await
             .unwrap();
+        tokio::time::timeout(WAIT, endpoint.online())
+            .await
+            .expect("测试中继应在几秒内连上");
         let (paired, paired_rx) = watch::channel(BTreeSet::new());
         let table = pairings.clone();
         // 不用宿主网络时容器经 host-gateway 连进来，所以绑在所有地址上；正式安装只绑在核心的内部网络上。
@@ -364,8 +385,8 @@ fn docker<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-/// 重试到成功为止，一分钟内不成功就带最后一次的错误失败。
-async fn until<F, Fut>(what: &str, mut attempt: F)
+/// 重试到成功为止，一分钟内不成功就带最后一次的错误返回。
+async fn until<F, Fut>(what: &str, mut attempt: F) -> Result<(), String>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
@@ -373,11 +394,32 @@ where
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         match attempt().await {
-            Ok(()) => return,
-            Err(error) if Instant::now() > deadline => panic!("{what}没有成功：{error}"),
+            Ok(()) => return Ok(()),
+            Err(error) if Instant::now() > deadline => {
+                return Err(format!("{what}没有成功：{error}"));
+            }
             Err(_) => tokio::time::sleep(Duration::from_millis(500)).await,
         }
     }
+}
+
+/// 失败时两个转发组件看到的：对方的状态（含最近一次的错误）、出站计数和配对表里对方的地址。
+fn diagnose(a: &Core, b: &Core, pairings: &Pairings) -> String {
+    let side = |name: &str, core: &Core| {
+        format!(
+            "{name}（{}）：状态 {:?}，出站错误 {:?}，自己现在的地址 {:?}",
+            core.id().fmt_short(),
+            core.forwarder.watch_status().borrow(),
+            core.forwarder.outbound_errors(),
+            core.endpoint.addr(),
+        )
+    };
+    format!(
+        "{}\n{}\n配对表：{:?}",
+        side("A", a),
+        side("B", b),
+        pairings.lock().unwrap()
+    )
 }
 
 async fn send_text(server: &ClusterServer, account: &Account, room: &str, body: &str) {
