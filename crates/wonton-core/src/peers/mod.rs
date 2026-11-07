@@ -395,6 +395,8 @@ impl Peers {
         };
         PeersView {
             peers: rows,
+            requests: Vec::new(),
+            rejected: Vec::new(),
             code: self.active_code(),
         }
     }

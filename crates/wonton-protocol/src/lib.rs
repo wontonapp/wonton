@@ -119,8 +119,10 @@ pub use owner::{
     check_email_change, normalized_email,
 };
 pub use peers::{
-    PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRow,
-    PeerScan, PeerStatus, PeersState, PeersView, PeersViewModel, peer_code_path, peer_path,
+    PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,
+    PeerRow, PeerScan, PeerStatus, PeersState, PeersView, PeersViewModel, RejectedPeerRow,
+    peer_code_path, peer_code_reset_path, peer_path, peer_rejected_path, peer_request_approve_path,
+    peer_request_reject_path,
 };
 pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;

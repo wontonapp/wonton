@@ -67,6 +67,8 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
                     else chat.openDirectChat(tabs.core, peer, acceptInvite = true),
                 )
             }
+            // 设置里的“其他服务器”页随 ADR-0050 的界面一起接上，在那之前先到设置。
+            AppLink.Peers -> settings()
         }
     }
 

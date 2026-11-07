@@ -74,6 +74,10 @@ final class AppNavigation {
             let bot = try primaryBot()
             try select(.chat)
             chat.openDirectChat(with: bot, acceptingInvitation: true)
+        case .peers:
+            // 设置里的“其他服务器”页随 ADR-0050 的界面一起接上，在那之前先到设置。
+            try select(.settings)
+            chat.resetNavigation()
         }
     }
 

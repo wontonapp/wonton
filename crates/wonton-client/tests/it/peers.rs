@@ -21,7 +21,13 @@ const QUIET: Duration = Duration::from_secs(8);
 const STATUS_WAIT: Duration = Duration::from_secs(45);
 
 fn peers_view(peers: Vec<PeerRow>, code: Option<PeerCode>) -> String {
-    serde_json::to_string(&PeersView { peers, code }).unwrap()
+    serde_json::to_string(&PeersView {
+        peers,
+        requests: Vec::new(),
+        rejected: Vec::new(),
+        code,
+    })
+    .unwrap()
 }
 
 fn row(server_name: &str) -> PeerRow {

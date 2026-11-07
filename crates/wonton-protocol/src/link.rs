@@ -18,6 +18,8 @@ pub enum AppLink {
     NewChat,
     /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`Action::AskAgent`](crate::Action::AskAgent)。
     AgentChat,
+    /// 打开设置里的“其他服务器”，滚到“请求”（ADR-0050：核心在“Wonton”私聊里的配对提醒带这个链接）。
+    Peers,
 }
 
 impl AppLink {
@@ -38,6 +40,7 @@ impl AppLink {
             },
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
+            Self::Peers => "settings/peers".to_owned(),
         };
         format!("{SCHEME}{path}")
     }
@@ -63,6 +66,7 @@ impl AppLink {
             }
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
+            ["settings", "peers"] => Some(Self::Peers),
             _ => None,
         }
     }
@@ -113,6 +117,7 @@ mod tests {
             },
             AppLink::NewChat,
             AppLink::AgentChat,
+            AppLink::Peers,
         ];
         for link in links {
             assert_eq!(AppLink::parse(&link.to_url()), Some(link));

@@ -89,6 +89,15 @@ fn message(kind: PeerError, langs: &Languages) -> String {
             "配对码读不懂：不是云吞的服务器配对码，或者被改过",
             "The code is not a valid Wonton server pairing code, or it was altered",
         ),
+        PeerError::CodeRevoked => (
+            "这张配对码已经作废，请对方重新发一张",
+            "This pairing code is no longer valid; ask for a new one",
+        ),
+        PeerError::TooManyRequests => (
+            "对方暂时收不了配对请求，稍后再试",
+            "The other server cannot take pairing requests right now; try again later",
+        ),
+        PeerError::RequestNotFound => ("这条请求已经不在了", "This request is no longer there"),
         PeerError::PeerUnreachable => (
             "连不上对方的服务器，稍后再试",
             "Cannot reach the other server; try again later",

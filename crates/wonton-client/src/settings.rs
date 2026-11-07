@@ -288,6 +288,8 @@ mod tests {
         let (peers_tx, peers_rx) = watch::channel(PeersViewModel {
             state: PeersState::Loading,
             peers: Vec::new(),
+            requests: Vec::new(),
+            rejected: Vec::new(),
             code: None,
         });
         let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());

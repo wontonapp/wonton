@@ -1,4 +1,4 @@
-//! 跨服务器配对（ADR-0050）：主人出码、对方扫码、出码方同意，两台服务器的联邦就走 iroh。
+//! 跨服务器配对（ADR-0050）：主人的码长期有效，对方扫码或粘贴后发来请求，出码方同意，两台服务器的联邦就走 iroh。
 //!
 //! 核心的管理接口 `/_wonton/api/peers` 收发这里的类型，只收主人设备经隧道来的请求（ADR-0017 的设备门）。
 //! 客户端核心原样交给壳。
@@ -15,6 +15,10 @@ use crate::SecretString;
 pub struct PeersView {
     /// 配对过的服务器，按配对时间排。
     pub peers: Vec<PeerRow>,
+    /// 别的服务器发来、还没处理的配对请求，按收到的时间排。
+    pub requests: Vec<PeerRequestRow>,
+    /// 主人拒绝过的请求，按拒绝的时间排，能撤销。
+    pub rejected: Vec<RejectedPeerRow>,
     /// 主人出了码、还没过期时是这张码。
     pub code: Option<PeerCode>,
 }
@@ -49,8 +53,10 @@ pub enum PeerStatus {
     Offline,
     /// 握手后被对方的服务器名单拒绝：对方删了配对。
     RemovedByPeer,
-    /// 我扫了对方的码，对方还没点同意。
+    /// 我发了配对请求，对方还没处理；这一行的“移除”取消请求。
     AwaitingApproval,
+    /// 对方拒绝了我的配对请求。
+    Declined,
     /// 比这个 App 新的核心给的状态。
     #[serde(other)]
     Other,
@@ -60,17 +66,51 @@ pub enum PeerStatus {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeerCode {
-    /// 二维码的内容（`wonton://peer?…`），带一次性密钥，和设备配对码一样打码；格式由核心定，壳只显示。
+    /// 二维码和“分享”的内容（`wonton://peer?…`），日志里照样打码；格式由核心定，壳只显示和分享。
     pub code: SecretString,
     /// 过期时间，Unix 毫秒。
     pub expires_at_ms: u64,
+}
+
+/// 别的服务器发来的一条配对请求（ADR-0050）。除了 `id`，都是对方自报的，界面上不写成核实过的身份。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PeerRequestRow {
+    /// 核心给的请求 ID。请求按它认，不按服务器名：服务器名是自报的，两条请求可能报同一个。
+    pub id: String,
+    /// 对方报的 Matrix 服务器名。
+    pub server_name: String,
+    /// 对方报的主人的 Matrix 用户 ID。
+    pub owner_user_id: String,
+    /// 对方报的主人的显示名。
+    pub owner_display_name: String,
+    /// 收到的时刻（Unix 毫秒）；同一台服务器再发时是最后一次的时刻。
+    pub received_at_ms: u64,
+    /// 自报的显示名或服务器名和一台已配对的服务器重名、endpoint ID 却不一样时，是那台的显示名
+    /// （主人的显示名，空时是服务器名），壳醒目标出“不是同一台”。没有重名时为空。
+    pub conflicts_with: Option<String>,
+    /// 核心按 App 的语言写的“详情”：对方 endpoint ID 前 8 位。
+    pub detail: Option<String>,
+}
+
+/// 主人拒绝过的一条请求。同一台服务器（按 endpoint ID）再发来的请求直接回“对方拒绝了”，撤销后照常收下。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RejectedPeerRow {
+    pub id: String,
+    pub server_name: String,
+    pub owner_user_id: String,
+    pub owner_display_name: String,
+    /// 拒绝的时刻（Unix 毫秒）。
+    pub rejected_at_ms: u64,
+    pub detail: Option<String>,
 }
 
 /// `POST /_wonton/api/peers` 的请求体：提交扫来的配对码。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeerScan {
-    /// 扫来的码（`wonton://peer?…`），带一次性密钥，和扫码配对一样打码（[`Action::PairHome`](crate::Action::PairHome)）。
+    /// 扫来或粘贴的码（`wonton://peer?…`），带对方的请求令牌，和扫码配对一样打码（[`Action::PairHome`](crate::Action::PairHome)）。
     pub code: SecretString,
 }
 
@@ -85,7 +125,27 @@ pub fn peer_code_path() -> String {
     format!("{PEERS_PATH}/code")
 }
 
-/// 删除一台服务器的配对的路径（`DELETE`）。
+/// 重置配对码的路径（`POST`）：换一个令牌，旧码作废，用旧码发来、还没处理的请求一并清掉。
+pub fn peer_code_reset_path() -> String {
+    format!("{PEERS_PATH}/code/reset")
+}
+
+/// 同意一条请求的路径（`POST`）。
+pub fn peer_request_approve_path(id: &str) -> String {
+    format!("{PEERS_PATH}/requests/{id}/approve")
+}
+
+/// 拒绝一条请求的路径（`POST`）。
+pub fn peer_request_reject_path(id: &str) -> String {
+    format!("{PEERS_PATH}/requests/{id}/reject")
+}
+
+/// 撤销一次拒绝的路径（`DELETE`）。
+pub fn peer_rejected_path(id: &str) -> String {
+    format!("{PEERS_PATH}/rejected/{id}")
+}
+
+/// 移除一台服务器的配对、或取消自己发出的请求的路径（`DELETE`）。
 pub fn peer_path(server_name: &str) -> String {
     format!("{PEERS_PATH}/{server_name}")
 }
@@ -100,9 +160,15 @@ pub enum PeerError {
     CodeExpired,
     /// 码读不懂：不是配对码，或者被改过。
     CodeInvalid,
+    /// 码已作废：对方重置过码，这是重置前的那张，要一张新的。
+    CodeRevoked,
+    /// 对方暂时收不了请求：待处理的请求满了，或者这一小时收得太多。
+    TooManyRequests,
+    /// 要同意、拒绝或撤销的请求已经不在了（别的设备处理过，或者对方取消了）。
+    RequestNotFound,
     /// 扫码后连不上出码方。
     PeerUnreachable,
-    /// 出码方点了拒绝。
+    /// 对方拒绝了：这次拒绝的，或者以前拒绝过、还没撤销。
     PeerRejected,
     /// 两台服务器已经配对过。
     AlreadyPaired,
@@ -127,6 +193,9 @@ impl PeerError {
         match self {
             Self::CodeExpired => "code_expired",
             Self::CodeInvalid => "code_invalid",
+            Self::CodeRevoked => "code_revoked",
+            Self::TooManyRequests => "too_many_requests",
+            Self::RequestNotFound => "request_not_found",
             Self::PeerUnreachable => "peer_unreachable",
             Self::PeerRejected => "peer_rejected",
             Self::AlreadyPaired => "already_paired",
@@ -142,8 +211,10 @@ impl PeerError {
     /// 配对接口用哪个 HTTP 状态码返回这个类别；只有客户端核心才有的类别为空。
     pub fn http_status(self) -> Option<u16> {
         match self {
-            Self::CodeExpired => Some(410),
+            Self::CodeExpired | Self::CodeRevoked => Some(410),
             Self::CodeInvalid | Self::SelfPairing => Some(400),
+            Self::TooManyRequests => Some(429),
+            Self::RequestNotFound => Some(404),
             Self::PeerUnreachable => Some(502),
             Self::PeerRejected | Self::NotPaired => Some(403),
             Self::AlreadyPaired => Some(409),
@@ -166,14 +237,19 @@ pub struct PeerProblem {
     pub message: String,
 }
 
-/// “其他服务器”页面（ADR-0050）：配对过的服务器，以及主人的出码。
+/// “其他服务器”页面（ADR-0050）：配对过的服务器、发来的请求，以及出码页开着时本机的码。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeersViewModel {
     pub state: PeersState,
     /// 配对过的服务器，按配对时间排。
     pub peers: Vec<PeerRow>,
-    /// 主人出了码、还没过期时是这张码，壳画成二维码。
+    /// 别的服务器发来、还没处理的配对请求。
+    pub requests: Vec<PeerRequestRow>,
+    /// 主人拒绝过的请求，能撤销。
+    pub rejected: Vec<RejectedPeerRow>,
+    /// 出码页开着（[`Action::ShowPeerCode`](crate::Action::ShowPeerCode) 之后、
+    /// [`Action::HidePeerCode`](crate::Action::HidePeerCode) 之前）时是本机的码，壳画成二维码、放进分享。
     pub code: Option<PeerCode>,
 }
 
@@ -208,21 +284,50 @@ mod tests {
         }
     }
 
+    fn request() -> PeerRequestRow {
+        PeerRequestRow {
+            id: "r1".into(),
+            server_name: "ghi23456.wonton".into(),
+            owner_user_id: "@sam:ghi23456.wonton".into(),
+            owner_display_name: "Alex".into(),
+            received_at_ms: 1_799_000_100_000,
+            conflicts_with: Some("Alex".into()),
+            detail: Some("endpoint 1a2b3c4d".into()),
+        }
+    }
+
+    fn rejected() -> RejectedPeerRow {
+        RejectedPeerRow {
+            id: "r0".into(),
+            server_name: "jkl34567.wonton".into(),
+            owner_user_id: "@kim:jkl34567.wonton".into(),
+            owner_display_name: "Kim".into(),
+            rejected_at_ms: 1_799_000_200_000,
+            detail: None,
+        }
+    }
+
     /// 契约：列表、出码、扫码请求、设置入口和操作都能经 JSON 往返。
     #[test]
     fn peers_types_round_trip_through_json() {
         let view = PeersView {
             peers: vec![row()],
-            code: Some(PeerCode {
-                code: SecretString::new("wonton://peer?k=one-time-secret"),
-                expires_at_ms: 1_799_000_600_000,
-            }),
+            requests: vec![request()],
+            rejected: vec![rejected()],
+            code: None,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert_eq!(serde_json::from_str::<PeersView>(&json).unwrap(), view);
 
+        let code = PeerCode {
+            code: SecretString::new("wonton://peer?t=request-token"),
+            expires_at_ms: 1_799_000_600_000,
+        };
+        let json = serde_json::to_string(&code).unwrap();
+        assert_eq!(serde_json::from_str::<PeerCode>(&json).unwrap(), code);
+
         let scan = PeerScan {
-            code: SecretString::new("wonton://peer?k=one-time-secret"),
+            code: SecretString::new("wonton://peer?t=request-token"),
         };
         let json = serde_json::to_string(&scan).unwrap();
         assert_eq!(serde_json::from_str::<PeerScan>(&json).unwrap(), scan);
@@ -236,7 +341,9 @@ mod tests {
         let model = PeersViewModel {
             state: PeersState::Ready,
             peers: vec![row()],
-            code: None,
+            requests: vec![request()],
+            rejected: vec![rejected()],
+            code: Some(code),
         };
         let json = serde_json::to_string(&model).unwrap();
         assert_eq!(
@@ -250,6 +357,8 @@ mod tests {
                 message: "连不上对方的服务器".into(),
             },
             peers: Vec::new(),
+            requests: Vec::new(),
+            rejected: Vec::new(),
             code: None,
         };
         let json = serde_json::to_string(&model).unwrap();
@@ -261,9 +370,14 @@ mod tests {
         for action in [
             Action::RefreshPeers,
             Action::ShowPeerCode,
+            Action::HidePeerCode,
+            Action::ResetPeerCode,
             Action::ScanPeerCode {
-                code: SecretString::new("wonton://peer?k=one-time-secret"),
+                code: SecretString::new("wonton://peer?t=request-token"),
             },
+            Action::ApprovePeerRequest { id: "r1".into() },
+            Action::RejectPeerRequest { id: "r1".into() },
+            Action::UnrejectPeerRequest { id: "r0".into() },
             Action::RemovePeer {
                 server_name: "abc12345.wonton".into(),
             },
@@ -287,6 +401,8 @@ mod tests {
                     "detail": null,
                 }
             ],
+            "requests": [],
+            "rejected": [],
             "code": null,
         }))
         .unwrap();
@@ -303,6 +419,9 @@ mod tests {
         for (kind, expected) in [
             ("code_expired", PeerError::CodeExpired),
             ("code_invalid", PeerError::CodeInvalid),
+            ("code_revoked", PeerError::CodeRevoked),
+            ("too_many_requests", PeerError::TooManyRequests),
+            ("request_not_found", PeerError::RequestNotFound),
             ("peer_unreachable", PeerError::PeerUnreachable),
             ("peer_rejected", PeerError::PeerRejected),
             ("already_paired", PeerError::AlreadyPaired),

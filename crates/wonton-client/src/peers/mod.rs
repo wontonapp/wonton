@@ -63,6 +63,8 @@ impl PeersLink {
         let initial = PeersViewModel {
             state: PeersState::Loading,
             peers: Vec::new(),
+            requests: Vec::new(),
+            rejected: Vec::new(),
             code: None,
         };
         let link = Arc::new(Self {
@@ -154,6 +156,8 @@ impl PeersLink {
                 self.set_code(list.code);
                 self.view.send_modify(|view| {
                     view.peers = list.peers;
+                    view.requests = list.requests;
+                    view.rejected = list.rejected;
                     view.state = PeersState::Ready;
                 });
             }
