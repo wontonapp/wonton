@@ -260,6 +260,9 @@ async fn apply_command(
             if !current_session(link, session) {
                 return;
             }
+            // 发布结果和放开 `starting` 在同一把锁里（同 `receive`）：壳一看到失败就重试时，
+            // `start_verification` 不会撞上还没放开的 `starting`、报“没准备好”。
+            let mut control = lock(&link.verification);
             match result {
                 Ok(request) => install(link, flow, request),
                 Err(error) => {
@@ -278,7 +281,7 @@ async fn apply_command(
                     report(link, &error);
                 }
             }
-            if let Some(control) = lock(&link.verification).as_mut() {
+            if let Some(control) = control.as_mut() {
                 control.starting = false;
             }
         }
@@ -287,6 +290,7 @@ async fn apply_command(
                 .as_ref()
                 .is_some_and(|flow| flow.keys_deadline.is_some());
             if fetching && matches!(operation, Operation::Cancel) {
+                let mut control = lock(&link.verification);
                 link.view.send_modify(|view| {
                     if let Some(snapshot) = view.encryption.verification_flow.as_mut() {
                         snapshot.stage = VerificationStage::Cancelled {
@@ -298,7 +302,7 @@ async fn apply_command(
                     flow.finished = true;
                     flow.keys_deadline = None;
                 }
-                if let Some(control) = lock(&link.verification).as_mut() {
+                if let Some(control) = control.as_mut() {
                     control.operating = false;
                 }
                 return;
@@ -319,6 +323,7 @@ async fn apply_command(
                 if !current_session(link, session) {
                     return;
                 }
+                let mut control = lock(&link.verification);
                 match result {
                     Ok(()) => match verification.flow() {
                         Ok(snapshot) => update(link, flow, snapshot),
@@ -326,6 +331,10 @@ async fn apply_command(
                     },
                     Err(error) => fail(link, flow, &error),
                 }
+                if let Some(control) = control.as_mut() {
+                    control.operating = false;
+                }
+                return;
             }
             if let Some(control) = lock(&link.verification).as_mut() {
                 control.operating = false;
