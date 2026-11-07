@@ -16,16 +16,20 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::debug;
 use wonton_client::{
     Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin, InstalledPlugins,
     Network, OnboardingViewModel, PushMethod,
 };
 use wonton_matrix::MatrixSession;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
-use wonton_tunnel::{Allowlist, TunnelServer};
+use wonton_tunnel::pair::{
+    PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, SECRET_LEN,
+};
+use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
 
-use super::stale_join::{StaleJoin, forward_one};
+use super::stale_join::StaleJoin;
+
+mod matrix;
 
 pub const WAIT: Duration = Duration::from_secs(60);
 const BASE_DOMAIN: &str = "wonton.localhost";
@@ -52,9 +56,28 @@ pub struct Home {
     tunnel: Option<TunnelServer>,
     tunnel_key: SecretKey,
     tunnel_port: u16,
-    allowlist: Allowlist,
+    pairing: Arc<Pairing>,
+    relay: JoinHandle<()>,
     core_addr: SocketAddr,
     _core: JoinHandle<()>,
+}
+
+/// 配对的假服务端：配上就把设备放行。chat 的测试只配一次，不区分发出去的码。
+#[derive(Debug)]
+struct Pairing {
+    allowlist: Allowlist,
+}
+
+impl PairHandler for Pairing {
+    fn pair(
+        &self,
+        device: EndpointId,
+        _secret: &PairingSecret,
+        _device_name: &str,
+    ) -> PairResponse {
+        self.allowlist.allow(device);
+        PairResponse::Paired
+    }
 }
 
 /// 模拟的核心记下的东西。
@@ -91,6 +114,8 @@ struct Core {
     join_reported_as_invited: AtomicBool,
     /// 为真时房间列表的下一个同步请求回 `M_UNKNOWN_POS`，像服务器丢了这条连接的位置。
     expire_room_list: AtomicBool,
+    verification_failure: AtomicUsize,
+    hold_backup_read: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
@@ -126,6 +151,8 @@ impl Home {
             stale_join: watch::Sender::new(None),
             join_reported_as_invited: AtomicBool::new(false),
             expire_room_list: AtomicBool::new(false),
+            verification_failure: AtomicUsize::new(0),
+            hold_backup_read: watch::Sender::new(false),
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
@@ -136,7 +163,15 @@ impl Home {
         let endpoint = loopback_endpoint(tunnel_key.clone(), 0).await;
         let tunnel_port = endpoint.bound_sockets()[0].port();
         let allowlist = Allowlist::new(devices.iter().copied());
-        let tunnel = TunnelServer::spawn(endpoint, allowlist.clone(), addr);
+        let pairing = Arc::new(Pairing {
+            allowlist: allowlist.clone(),
+        });
+        let (tunnel, listener) = TunnelServer::spawn_embedded_with_pairing(
+            endpoint,
+            allowlist.clone(),
+            PairProtocol::new(pairing.clone()),
+        );
+        let relay = relay(listener, addr);
         Self {
             matrix,
             push,
@@ -145,7 +180,8 @@ impl Home {
             tunnel: Some(tunnel),
             tunnel_key,
             tunnel_port,
-            allowlist,
+            pairing,
+            relay,
             core_addr: addr,
             _core: task,
         }
@@ -170,6 +206,16 @@ impl Home {
         self.core
             .reject_backup_creation
             .store(reject, Ordering::SeqCst);
+    }
+
+    pub fn fail_verification(&self, status: u16) {
+        self.core
+            .verification_failure
+            .store(status as usize, Ordering::SeqCst);
+    }
+
+    pub fn hold_backup_read(&self, hold: bool) {
+        self.core.hold_backup_read.send_replace(hold);
     }
 
     /// 设置假核心的引导状态；没设置时引导接口回 404。
@@ -234,11 +280,13 @@ impl Home {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
         let endpoint = loopback_endpoint(self.tunnel_key.clone(), self.tunnel_port).await;
-        self.tunnel = Some(TunnelServer::spawn(
+        let (tunnel, listener) = TunnelServer::spawn_embedded_with_pairing(
             endpoint,
-            self.allowlist.clone(),
-            self.core_addr,
-        ));
+            self.pairing.allowlist.clone(),
+            PairProtocol::new(self.pairing.clone()),
+        );
+        self.tunnel = Some(tunnel);
+        self.relay = relay(listener, self.core_addr);
     }
 
     /// 同样的身份换一个端口，手机看来就是这台服务器换了地址。
@@ -246,11 +294,13 @@ impl Home {
         self.stop_tunnel().await;
         let endpoint = loopback_endpoint(self.tunnel_key.clone(), 0).await;
         self.tunnel_port = endpoint.bound_sockets()[0].port();
-        self.tunnel = Some(TunnelServer::spawn(
+        let (tunnel, listener) = TunnelServer::spawn_embedded_with_pairing(
             endpoint,
-            self.allowlist.clone(),
-            self.core_addr,
-        ));
+            self.pairing.allowlist.clone(),
+            PairProtocol::new(self.pairing.clone()),
+        );
+        self.tunnel = Some(tunnel);
+        self.relay = relay(listener, self.core_addr);
     }
 
     /// 登记推送时核心回给设备的 pushkey。
@@ -261,6 +311,21 @@ impl Home {
     /// 推送登记接口收到的请求。
     pub fn push_requests(&self) -> Vec<(String, Value)> {
         self.core.push_requests.lock().unwrap().clone()
+    }
+
+    /// 一个配对码，扫了会和这台服务器配对。
+    pub fn pairing_code(&self) -> String {
+        let tunnel = self.tunnel.as_ref().expect("隧道没在运行");
+        let secret = PairingSecret::from_bytes([7; SECRET_LEN]);
+        PairingCode {
+            server_id: tunnel.endpoint().id(),
+            relays: Vec::new(),
+            direct_addrs: tunnel.endpoint().bound_sockets(),
+            base_domain: BASE_DOMAIN.to_owned(),
+            core_url: url::Url::parse(&format!("http://{BASE_DOMAIN}/")).unwrap(),
+            secret,
+        }
+        .to_uri()
     }
 
     pub fn ticket(&self) -> String {
@@ -373,68 +438,7 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
     if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
         core.bot_api.observe_matrix(&text);
-        if text.starts_with("post /_matrix/client/v3/room_keys/version ")
-            && core.reject_backup_creation.load(Ordering::SeqCst)
-        {
-            let body = r#"{"errcode":"M_FORBIDDEN","error":"Backup creation rejected"}"#;
-            let response = format!(
-                "HTTP/1.1 403 Forbidden\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-                 connection: close\r\n\r\n{body}",
-                body.len()
-            );
-            tcp.write_all(response.as_bytes()).await.unwrap();
-            tcp.shutdown().await.unwrap();
-            return;
-        }
-        if text.starts_with("post /_matrix/media/")
-            && text
-                .lines()
-                .next()
-                .is_some_and(|line| line.contains("/upload"))
-        {
-            let mut paused = core.uploads_paused.subscribe();
-            paused.wait_for(|paused| !paused).await.unwrap();
-        }
-        // `chat::key_upload_order` 回归测试：挂起期间手机的 keys/upload 一接上就断开（drop 语义），
-        // 放行后才转发并计数；SDK 那头只记一条 outgoing 请求失败的日志，下一轮同步自动重试。
-        if text.starts_with("post /_matrix/client/v3/keys/upload") {
-            if core.hold_key_uploads.load(Ordering::SeqCst) {
-                return;
-            }
-            core.key_uploads_forwarded.send_modify(|count| *count += 1);
-        }
-        let mut down = core.matrix_down.subscribe();
-        if *down.borrow() {
-            return;
-        }
-        let asks_for_members = text
-            .lines()
-            .next()
-            .is_some_and(|line| line.contains("/members"));
-        if asks_for_members && core.members_down.load(Ordering::SeqCst) {
-            core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
-            return;
-        }
-        let mut stale = core.stale_join.subscribe();
-        let armed = stale.borrow().clone();
-        if let Some(armed) = armed {
-            if forward_one(tcp, &core.tuwunel, &head, &armed).await {
-                core.stale_join.send_replace(None);
-                core.join_reported_as_invited.store(true, Ordering::SeqCst);
-            }
-            return;
-        }
-        if expire_room_list(&mut tcp, &core, &text, &mut head).await {
-            return;
-        }
-        let Some(mut upstream) = forward_to(&core, &head).await else {
-            return;
-        };
-        tokio::select! {
-            _ = tokio::io::copy_bidirectional(&mut tcp, &mut upstream) => {}
-            _ = down.wait_for(|down| *down) => {}
-            _ = stale.wait_for(Option::is_some) => {}
-        }
+        matrix::serve_matrix(tcp, core, head, &text).await;
         return;
     }
     answer_core_route(&core, &text, &mut tcp).await;
@@ -467,57 +471,6 @@ async fn answer_core_route(core: &Core, text: &str, tcp: &mut TcpStream) {
     };
     tcp.write_all(response.as_bytes()).await.ok();
     tcp.shutdown().await.ok();
-}
-
-/// 连上 Tuwunel 并把请求头转过去；连不上或写不进去就断开这条连接（客户端会重试）。
-async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
-    let mut upstream = match TcpStream::connect(core.tuwunel.as_str()).await {
-        Ok(upstream) => upstream,
-        Err(err) => {
-            debug!("fake core cannot reach Tuwunel: {err}");
-            return None;
-        }
-    };
-    match upstream.write_all(head).await {
-        Ok(()) => Some(upstream),
-        Err(err) => {
-            debug!("fake core cannot forward to Tuwunel: {err}");
-            None
-        }
-    }
-}
-
-/// 要求过期时，房间列表的下一个同步请求回 `M_UNKNOWN_POS`。连接号在请求体里，所以先读完请求体，别的同步请求连同
-/// 请求体照常转发。回真时这个请求已经答完（或者读不下去了）。
-async fn expire_room_list(
-    tcp: &mut TcpStream,
-    core: &Core,
-    text: &str,
-    head: &mut Vec<u8>,
-) -> bool {
-    if !text.starts_with("post /_matrix/client/unstable/org.matrix.simplified_msc3575/sync")
-        || !core.expire_room_list.load(Ordering::SeqCst)
-    {
-        return false;
-    }
-    let Some(body) = read_body(tcp, text).await else {
-        return true;
-    };
-    if String::from_utf8_lossy(&body).contains(r#""conn_id":"room-list""#)
-        && core.expire_room_list.swap(false, Ordering::SeqCst)
-    {
-        let body = r#"{"errcode":"M_UNKNOWN_POS","error":"Unknown position"}"#;
-        let response = format!(
-            "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-             connection: close\r\n\r\n{body}",
-            body.len()
-        );
-        tcp.write_all(response.as_bytes()).await.ok();
-        tcp.shutdown().await.ok();
-        return true;
-    }
-    head.extend_from_slice(&body);
-    false
 }
 
 async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
@@ -705,6 +658,20 @@ impl Phone {
             ),
         }
     }
+}
+
+/// 把隧道交给嵌入方的流接到假核心的 TCP 上，拆开后连接各自结束。
+fn relay(mut listener: TunnelListener, upstream: SocketAddr) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(mut stream) = listener.accept().await {
+            tokio::spawn(async move {
+                let Ok(mut tcp) = TcpStream::connect(upstream).await else {
+                    return;
+                };
+                let _ = tokio::io::copy_bidirectional(&mut stream, &mut tcp).await;
+            });
+        }
+    })
 }
 
 pub use super::timeline::Timeline;

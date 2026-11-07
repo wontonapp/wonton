@@ -237,6 +237,8 @@ home-ticket-invalid-core-url = 自宅サーバーのアドレスが無効です�
 # $domain は接続情報のベースドメイン、$url は接続情報に書かれた元のアドレスです。
 home-ticket-core-url-under-domain = 自宅サーバーのアドレスは{ $domain }のhttp(s)アドレスである必要があります：{ $url }
 # $error はネットワーク設定の元のエラーです。
+# 引数なし。ペアリング画面のデバイス名欄が空です。
+home-pairing-name-empty = デバイス名が空です
 home-pairing-bind-failed = ネットワーク接続を確立できません：{ $error }
 # タブバー（tabs/view.rs、tabs/config.rs）と外観（appearance/mod.rs）の画面の「詳細」。
 # コアの文字は両シェルで共通のため Android の書き方に合わせ、ナビゲーションバーと書きます。プラグインはユーザーには「アプリ」です。

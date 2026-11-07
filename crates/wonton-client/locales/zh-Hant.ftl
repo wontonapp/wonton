@@ -237,6 +237,8 @@ home-ticket-invalid-core-url = 家用伺服器位址無效：{ $error }
 # $domain 是連線資訊的基礎網域，$url 是連線資訊裡的原始位址。
 home-ticket-core-url-under-domain = 家用伺服器位址必須是 { $domain } 的 http(s) 位址：{ $url }
 # $error 是網路初始化的原始錯誤。
+# 沒有參數。配對頁的裝置名欄位被清空了。
+home-pairing-name-empty = 裝置名是空的。
 home-pairing-bind-failed = 無法建立網路連線：{ $error }
 # 底欄（tabs/view.rs、tabs/config.rs）和外觀（appearance/mod.rs）的介面「詳細資訊」。
 # 對使用者，插件一律叫「App」；底欄按 Android 慣例寫「底部導覽列」。

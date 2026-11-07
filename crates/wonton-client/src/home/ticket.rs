@@ -40,6 +40,9 @@ const MAX_DIRECT_ADDRS: usize = 8;
 pub(crate) struct Ticket {
     server: Server,
     base_domain: String,
+    /// 配对时填的设备名，Matrix 设备显示名和 pusher 的设备名都用它。`ConnectHome` 给的连接信息里没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    device_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     core_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,6 +143,10 @@ impl Ticket {
         }
         Ok(Self {
             base_domain: domain,
+            device_name: ticket
+                .device_name
+                .map(|name| name.trim().to_owned())
+                .filter(|name| !name.is_empty()),
             ..ticket
         })
     }
@@ -225,6 +232,11 @@ impl Ticket {
     /// 家里服务器的基础域名（小写，不带末尾的点）。
     pub(crate) fn base_domain(&self) -> &str {
         &self.base_domain
+    }
+
+    /// 配对时填的设备名；去掉首尾空白后为空也算没有。
+    pub(crate) fn device_name(&self) -> Option<&str> {
+        self.device_name.as_deref()
     }
 }
 

@@ -102,12 +102,21 @@ impl MatrixSession {
     /// 恢复密钥只在这里给出一次，调用方要存好，主人在别的设备上恢复时要用。账号已经设置过恢复时返回
     /// [`Error::NotReady`]：再设置一次会换掉秘密存储的密钥，主人手里的旧恢复密钥就作废了。本设备未验证时也一样：
     /// 它没有交叉签名的私钥，存不进秘密存储，之后别的设备输对恢复密钥也一直不完整（matrix-sdk 0.19 实测）。
+    /// “已验证”但手里没有交叉签名私钥的设备（SAS 确认过但对方给不出秘密）同样拒绝：SDK 的验证状态只看签名链，
+    /// 不代表持有私钥（matrix-sdk 0.19.1 的 `VerificationState::Verified` 语义）。
     pub async fn enable_recovery(&self) -> Result<String> {
         let encryption = self.client.encryption();
-        if matches!(
+        let verified = !matches!(
             encryption.verification_state().get(),
             VerificationState::Unverified
-        ) {
+        );
+        let has_keys = encryption
+            .cross_signing_status()
+            .await
+            .is_some_and(|status| {
+                status.has_master && status.has_self_signing && status.has_user_signing
+            });
+        if !verified || !has_keys {
             return Err(Error::NotReady(
                 "这台设备没有账号的身份密钥，要到最早配对的那台设备上开启".to_owned(),
             ));

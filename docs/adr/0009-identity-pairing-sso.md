@@ -215,7 +215,9 @@ App 扫一个一次性的配对码，成为主人的设备。线协议的类型�
 **配对**
 
 1. 还没登记的设备用 ALPN `wonton/pair/0` 连上服务端（和隧道的 `wonton/tunnel/0` 在同一个 endpoint 上），开一条双向流，
-   写入请求后结束发送：`{"type": "pair", "secret": "…", "device_name": "…"}`。`device_name` 给主人在设备列表里认设备用。
+   写入请求后结束发送：`{"type": "pair", "secret": "…", "device_name": "…"}`。`device_name` 是主人在设备列表里认设备用的名字，
+   App 配对时填，去掉首尾空白后为空就报 `InvalidInput`，不登记一台没有名字的设备。配对成功后它随连接信息存在设备本机，
+   Matrix 登录和推送登记拿它当设备显示名，确认弹窗里看到的也是它。
 2. 服务端回一个 JSON 后结束：`{"result": "paired"}`，或者 `{"result": "rejected", "reason": "…", "message": "…"}`。请求和
    回应都不超过 4096 字节，超过就断开。
 3. 登记的是 QUIC 握手认证过的设备 endpoint ID，请求里没有身份字段。成功后设备改用隧道的 ALPN 连接，之后和已登记的设备

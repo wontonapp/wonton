@@ -8230,6 +8230,7 @@ dependencies = [
  "tokio",
  "tracing",
  "wonton-matrix",
+ "wonton-protocol",
 ]
 
 [[package]]

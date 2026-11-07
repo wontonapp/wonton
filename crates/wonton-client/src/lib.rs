@@ -104,7 +104,8 @@ pub use wonton_protocol::{
     TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors, ThemeMode, TimelineContent,
     TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry,
     ToolPolicyView, Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpgradeOffer, UploadSource, WindowView,
+    TransfersViewModel, UpgradeOffer, UploadSource, VerificationCancel, VerificationEmoji,
+    VerificationFlow, VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
     AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload, BotActivity,

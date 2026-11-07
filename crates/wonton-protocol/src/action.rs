@@ -24,8 +24,8 @@ pub enum Action {
     /// `InvalidInput`；连接的进展和结果体现在 [`HomeViewModel`](crate::HomeViewModel) 里。
     ConnectHome { ticket: String },
     /// 扫码配对：`code` 是二维码里的文字（`wonton://pair?…`，格式见 ADR-0009 的“接口：扫码配对”），里面有一次性的
-    /// 配对密钥，所以和恢复密钥一样打码；`device_name` 是主人在设备列表里认这台设备用的名字。不是配对码时返回
-    /// `InvalidInput`；进展和结果在 [`HomeViewModel::pairing`](crate::HomeViewModel::pairing) 里，配对成功后存下连接
+    /// 配对密钥，所以和恢复密钥一样打码；`device_name` 是主人在设备列表里认这台设备用的名字，去掉首尾空白后不能为
+    /// 空。不是配对码、名字为空时返回 `InvalidInput`；进展和结果在 [`HomeViewModel::pairing`](crate::HomeViewModel::pairing) 里，配对成功后存下连接
     /// 信息并连上，之后每次启动自动连接，和 `ConnectHome` 一样。
     PairHome {
         code: SecretString,

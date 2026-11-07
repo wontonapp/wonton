@@ -237,6 +237,8 @@ home-ticket-invalid-core-url = 核心地址不合法：{ $error }
 # $domain 是连接信息的基础域名，$url 是连接信息里的原始地址。
 home-ticket-core-url-under-domain = 核心地址要是 { $domain } 的 http(s) 地址：{ $url }
 # $error 是网络初始化的原始错误。
+# 没有参数。配对页的设备名一栏被清空了。
+home-pairing-name-empty = 设备名是空的。
 home-pairing-bind-failed = 绑定网络失败：{ $error }
 # 底栏（tabs/view.rs、tabs/config.rs）和外观（appearance/mod.rs）的界面「详情」。
 

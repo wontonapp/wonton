@@ -27,6 +27,7 @@ mod session;
 mod sign_in;
 mod storage;
 mod timeline;
+mod verification;
 mod view;
 
 use std::future::Future;
@@ -93,6 +94,7 @@ pub(crate) struct ChatLink {
     method: watch::Receiver<PushMethod>,
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
+    verification: Mutex<Option<verification::Control>>,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -187,6 +189,7 @@ impl ChatLink {
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
             background: AtomicBool::new(false),
+            verification: Mutex::new(None),
         });
         runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -302,13 +305,11 @@ impl ChatLink {
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
-            Action::StartDeviceVerification
+            action @ (Action::StartDeviceVerification
             | Action::AcceptDeviceVerification { .. }
             | Action::ConfirmVerification { .. }
             | Action::DenyVerification { .. }
-            | Action::CancelDeviceVerification { .. } => Err(CoreError::NotReady {
-                reason: "这个版本还不能由另一台设备确认，请输入恢复密钥".to_owned(),
-            }),
+            | Action::CancelDeviceVerification { .. }) => self.verification_action(action),
             Action::AnswerConfirmation {
                 id,
                 answer,
@@ -654,11 +655,14 @@ impl ChatLink {
 
     async fn forget_current(&self) {
         self.bots.set_session(None);
+        *lock(&self.verification) = None;
         *lock(&self.open_room) = None;
         self.room_order.clear();
         self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);
         self.view.send_modify(|view| {
+            view.encryption.can_verify_with_other_device = false;
+            view.encryption.verification_flow = None;
             view.pending_confirmations.clear();
             view.settled_confirmations.clear();
         });
@@ -756,7 +760,7 @@ impl ChatLink {
                 }
             })
         };
-        vec![
+        let mut tasks = vec![
             background,
             rooms,
             encryption,
@@ -765,7 +769,9 @@ impl ChatLink {
             syncing,
             cards,
             catching_up,
-        ]
+        ];
+        tasks.extend(self.verification_tasks(session));
+        tasks
     }
 }
 

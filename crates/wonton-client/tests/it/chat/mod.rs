@@ -9,6 +9,7 @@ mod bot_profile;
 mod bot_profile_support;
 mod card_plugin_refresh;
 mod confirmation;
+mod device_name;
 mod key_upload_order;
 mod onboarding;
 mod pending;
@@ -22,6 +23,7 @@ mod stale_join;
 mod support;
 mod timeline;
 mod upload_progress;
+mod verification;
 
 use std::time::{Duration, Instant};
 

@@ -8,6 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# LicenseRef-Proprietary。确认流程的 ViewModel 类型直接用协议的，不再维护一份平行模型。
+wonton-protocol = { path = "../wonton-protocol" }
 # Apache-2.0。默认特性含 E2EE、SQLite 存储与 rustls；bundled-sqlite 自带 SQLite，移动端不依赖系统库。
 matrix-sdk = { workspace = true, features = ["bundled-sqlite"] }
 # Apache-2.0。Sliding Sync 同步服务、房间列表与时间线；版本必须与 matrix-sdk 一致。

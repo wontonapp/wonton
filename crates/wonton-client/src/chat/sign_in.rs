@@ -8,7 +8,7 @@ use super::storage::StoredSession;
 use super::{ChatLink, failure, login};
 use crate::l10n::{CATALOG, language};
 
-/// 本设备在 Matrix 服务器上的显示名。
+/// 连接信息里没有设备名时的显示名（`ConnectHome` 给的连接信息没有）。
 const DEVICE_NAME: &str = "Wonton App";
 
 impl ChatLink {
@@ -18,9 +18,14 @@ impl ChatLink {
         server_id: String,
     ) -> Result<MatrixSession, (ChatFailure, String)> {
         let lang = language();
+        // Matrix 设备名用配对时填的名字，主人才能在设备列表里认出是哪台。
+        let device_name = self
+            .home
+            .device_name()
+            .unwrap_or_else(|| DEVICE_NAME.to_owned());
         let config = |homeserver_url: String| SessionConfig {
             homeserver_url,
-            device_name: DEVICE_NAME.to_owned(),
+            device_name: device_name.clone(),
             store: StoreConfig::Sqlite {
                 path: self.storage.store_dir(),
                 passphrase: None,

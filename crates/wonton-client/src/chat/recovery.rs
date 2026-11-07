@@ -27,6 +27,9 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
         link.view.send_modify(|view| {
             let encryption = &mut view.encryption;
             encryption.verification = verification(state.verification);
+            if encryption.verification != DeviceVerification::Unverified {
+                encryption.can_verify_with_other_device = false;
+            }
             if !resetting {
                 encryption.recovery = recovery(state.recovery);
             }
@@ -35,7 +38,9 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
                 && !resetting
                 && encryption.verification == DeviceVerification::Verified
                 && encryption.recovery == RecoveryStatus::Disabled
-                && encryption.recovery_key.is_none();
+                && encryption.recovery_key.is_none()
+                // SAS 的设备不能靠自动新建备份伪装取回了旧密钥；没有的秘密必须报 KeysMissing。
+                && encryption.verification_flow.is_none();
         });
         if !enable {
             continue;

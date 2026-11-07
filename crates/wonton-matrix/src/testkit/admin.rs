@@ -56,12 +56,26 @@ impl Admin {
 
     /// 用户当前的设备 ID。
     pub async fn device_ids(&self, user_id: &UserId) -> Vec<String> {
+        self.devices(user_id)
+            .await
+            .into_iter()
+            .map(|(device_id, _)| device_id)
+            .collect()
+    }
+
+    /// 用户的设备连同各自的显示名。
+    pub async fn devices(&self, user_id: &UserId) -> Vec<(String, Option<String>)> {
         let path = format!("/_synapse/admin/v2/users/{user_id}/devices");
         let response = self.call(Method::GET, &path, None).await;
         let devices = response["devices"].as_array().expect("应返回设备列表");
         devices
             .iter()
-            .map(|device| device["device_id"].as_str().unwrap().to_owned())
+            .map(|device| {
+                (
+                    device["device_id"].as_str().unwrap().to_owned(),
+                    device["display_name"].as_str().map(str::to_owned),
+                )
+            })
             .collect()
     }
 

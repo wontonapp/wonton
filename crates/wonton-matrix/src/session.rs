@@ -119,6 +119,7 @@ pub struct MatrixSession {
     /// 发送出错以后接着发（[`send_queue`](crate::send_queue)），会话释放时停止。
     sending: JoinHandle<()>,
     pub(crate) subscriptions: tokio::sync::Mutex<RoomSubscriptions>,
+    pub(crate) verifications: Arc<crate::verification::concurrency::Registry>,
     /// 叫醒等着重开发送队列的任务，见 [`MatrixSession::resume`]。
     pub(crate) resume_sending: Arc<Notify>,
     /// 叫醒等着重启同步的任务，见 [`MatrixSession::resume`]。
@@ -225,6 +226,7 @@ impl MatrixSession {
             resume_sending,
             resume_sync: Notify::new(),
             subscriptions: tokio::sync::Mutex::default(),
+            verifications: Arc::default(),
         })
     }
 

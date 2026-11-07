@@ -26,9 +26,16 @@ impl HomeLink {
                 });
             }
         };
+        // 名字是设备在主人设备列表里的标识，空名字配上去以后没法认。App 的配对页默认带设备名，只有清空了才会走到这里。
+        let device_name = device_name.trim();
+        if device_name.is_empty() {
+            return Err(CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "home-pairing-name-empty"),
+            });
+        }
         self.set_pairing(Some(PairingStatus::InProgress));
         self.runtime
-            .spawn(self.clone().pair_with(code, device_name.trim().to_owned()));
+            .spawn(self.clone().pair_with(code, device_name.to_owned()));
         Ok(())
     }
 
@@ -36,7 +43,7 @@ impl HomeLink {
         let status = match self.exchange(&code, &device_name).await {
             Ok(PairResponse::Paired) => {
                 tracing::info!(server = %code.server_id.fmt_short(), "paired with the home server");
-                match self.connect(&ticket(&code)) {
+                match self.connect(&ticket(&code, &device_name)) {
                     Ok(()) => None,
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
                 }
@@ -82,8 +89,8 @@ impl HomeLink {
     }
 }
 
-/// 存下来的连接信息：码里的服务端地址、基础域名和核心地址，不含配对密钥。
-fn ticket(code: &PairingCode) -> String {
+/// 存下来的连接信息：码里的服务端地址、基础域名和核心地址，加这台设备的名字，不含配对密钥。
+fn ticket(code: &PairingCode, device_name: &str) -> String {
     json!({
         "server": {
             "endpoint_id": code.server_id,
@@ -92,6 +99,7 @@ fn ticket(code: &PairingCode) -> String {
         },
         "base_domain": code.base_domain,
         "core_url": code.core_url,
+        "device_name": device_name,
     })
     .to_string()
 }

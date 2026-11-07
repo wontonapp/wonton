@@ -350,6 +350,12 @@ impl HomeLink {
             .clone()
     }
 
+    /// 配对时填的设备名；`ConnectHome` 给的连接信息里没有，存储坏了也为空。
+    pub(crate) fn device_name(&self) -> Option<String> {
+        let ticket = Ticket::parse(self.lock_ticket().as_deref()?).ok()?;
+        ticket.device_name().map(str::to_owned)
+    }
+
     fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
         *self.lock_ticket() = Some(text);
         *self

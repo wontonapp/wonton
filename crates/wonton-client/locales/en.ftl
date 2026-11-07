@@ -253,6 +253,8 @@ home-ticket-invalid-core-url = The home server address isn't valid: { $error }
 # $domain is the connection info's base domain, $url the unchanged address from the connection info.
 home-ticket-core-url-under-domain = The home server address must be an http(s) address of { $domain }: { $url }
 # $error is the network setup's original error.
+# No parameters. The device name field on the pairing screen was left empty.
+home-pairing-name-empty = The device name is empty.
 home-pairing-bind-failed = Can't set up the network connection: { $error }
 # Tabs module (crates/wonton-client/src/tabs/view.rs, tabs/config.rs) and appearance module (appearance/mod.rs).
 # These are user-facing "details" (CoreError reasons, problem messages) shown collapsed under errors in the shells.

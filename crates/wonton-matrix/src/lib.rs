@@ -28,6 +28,7 @@ mod sync;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 mod timeline;
+mod verification;
 
 pub use chat_room::{BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload};
 pub use encryption::{EncryptionState, Recovery, Verification};
@@ -44,3 +45,4 @@ pub use rooms::{LatestMessage, Membership, RoomInfo};
 pub use session::{MatrixSession, SavedSession, SessionConfig, SessionEvent, StoreConfig};
 pub use sync::SyncStatus;
 pub use timeline::{EntryKind, TimelineEntry};
+pub use verification::SelfVerification;
