@@ -36,6 +36,7 @@ struct MainView: View {
         rootContent
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
+        .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
         .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
         .fullScreenCover(
             item: $onboardingGateway, onDismiss: {
@@ -186,6 +187,12 @@ struct MainView: View {
             shown = chat.shownRoom(in: nativeTab)
         }
         return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
+    }
+
+    /// “添加设备”和聊天备份页正开着：这两处不管什么状态都在页面里显示确认流程（ADR-0046），所以页面开着就不弹窗。
+    /// 页面的显示和这里的压制用同一条判断，页面改了要一起改。
+    private var verificationSurfacesOpen: Bool {
+        settings.path.contains(.invite) || settings.path.contains(.chatBackup) || chat.path.contains(.chatBackup)
     }
 
     var nativeTab: AppTab {

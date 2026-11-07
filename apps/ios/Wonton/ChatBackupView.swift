@@ -6,6 +6,7 @@ import WontonClient
 struct ChatBackupView: View {
     let model: ChatModel
     @State private var key = ""
+    @State private var showKeyEntry = false
     @State private var isConfirmingReset = false
     @Environment(\.wontonColors) private var colors
 
@@ -24,6 +25,11 @@ struct ChatBackupView: View {
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                     }
+                }
+                // 确认流程在这一屏显示，不管恢复是什么状态：这一页开着时弹窗压着不弹（DeviceVerificationDialogs），
+                // 页面就是唯一看得到请求的地方。流程结束时留着结果，收起弹窗后还在这里看得到。
+                if let flow = encryption.verificationFlow {
+                    DeviceVerificationFlowView(flow: flow, model: model, useRecoveryKey: { showKeyEntry = true })
                 }
                 nextStep
                 if encryption.canReset {
@@ -56,25 +62,47 @@ struct ChatBackupView: View {
     @ViewBuilder private var nextStep: some View {
         switch encryption.recovery {
         case .incomplete:
-            VStack(spacing: WontonTheme.spacing.s12) {
-                SecureField(String(localized: .chatBackupRecoveryKey), text: $key)
-                    .textFieldStyle(.plain)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .wontonField()
-                Button {
-                    model.send(.recoverEncryption(recoveryKey: key))
-                    key = ""
-                } label: {
-                    Text(.chatBackupRecover).frame(maxWidth: .infinity)
+            if showKeyEntry {
+                recoveryKeyEntry
+            } else if encryption.verificationFlow != nil {
+                EmptyView()
+            } else if encryption.canVerifyWithOtherDevice {
+                // 账号里有别的已验证设备：确认和恢复密钥两条路并列（ADR-0046）。
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    Button { model.send(.startDeviceVerification) } label: {
+                        Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .primary))
+                    Button { showKeyEntry = true } label: {
+                        Text(.verificationUseRecoveryKey).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-                .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } else {
+                recoveryKeyEntry
             }
         case .inProgress:
             ProgressView().frame(maxWidth: .infinity)
         case .disabled, .enabled, .unknown:
             EmptyView()
+        }
+    }
+
+    private var recoveryKeyEntry: some View {
+        VStack(spacing: WontonTheme.spacing.s12) {
+            SecureField(String(localized: .chatBackupRecoveryKey), text: $key)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .wontonField()
+            Button {
+                model.send(.recoverEncryption(recoveryKey: key))
+                key = ""
+            } label: {
+                Text(.chatBackupRecover).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WontonButtonStyle(kind: .primary))
+            .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 

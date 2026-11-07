@@ -51,14 +51,16 @@ import app.wonton.ui.design.toColor
 @Composable
 fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, onClose: () -> Unit) {
     val colors = WontonTheme.colors
+    var key by rememberSaveable { mutableStateOf("") }
+    var showKeyEntry by rememberSaveable { mutableStateOf(false) }
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.chat_backup_title), onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
-            encryption.recoveryKey?.let { key ->
-                RecoveryKey(key, onConfirm = { onAction(Action.ConfirmRecoveryKeySaved) })
+            encryption.recoveryKey?.let { saved ->
+                RecoveryKey(saved, onConfirm = { onAction(Action.ConfirmRecoveryKeySaved) })
             }
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(
@@ -70,7 +72,12 @@ fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
                     Text(it, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
                 }
             }
-            NextStep(encryption, onAction)
+            // 确认流程在这一屏显示，不管恢复是什么状态：这一页开着时弹窗压着不弹（[DeviceVerificationDialogs]），
+            // 页面就是唯一看得到请求的地方。流程结束时留着结果，收起弹窗后还在这里看得到。
+            encryption.verificationFlow?.let { flow ->
+                VerificationFlowContent(flow, onAction, onUseRecoveryKey = { showKeyEntry = true })
+            }
+            NextStep(encryption, key, { key = it }, showKeyEntry, { showKeyEntry = true }, onAction)
             if (encryption.canReset) ResetBackup(onAction)
         }
     }
@@ -101,35 +108,72 @@ private fun ResetBackup(onAction: (Action) -> Unit) {
 }
 
 @Composable
-private fun NextStep(encryption: EncryptionStatus, onAction: (Action) -> Unit) {
-    var key by rememberSaveable { mutableStateOf("") }
+private fun NextStep(
+    encryption: EncryptionStatus,
+    key: String,
+    onKey: (String) -> Unit,
+    showKeyEntry: Boolean,
+    onUseRecoveryKey: () -> Unit,
+    onAction: (Action) -> Unit,
+) {
     when (encryption.recovery) {
-        RecoveryStatus.INCOMPLETE -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
-            WontonTextField(
-                value = key,
-                onValueChange = { key = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = stringResource(R.string.chat_backup_recovery_key),
-                visualTransformation = PasswordVisualTransformation(),
-                // 按密码输入：输入法不联想、不自动改写和大写，否则恢复密钥会被“纠正”成别的字。
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Password,
-                ),
-            )
-            WontonButton(
-                stringResource(R.string.chat_backup_recover),
-                {
-                    onAction(Action.RecoverEncryption(key))
-                    key = ""
-                },
-                Modifier.fillMaxWidth(),
-                enabled = key.isNotBlank(),
-            )
+        RecoveryStatus.INCOMPLETE -> when {
+            showKeyEntry -> RecoveryKeyEntry(key, onKey, onAction)
+            encryption.verificationFlow != null -> Unit
+            encryption.canVerifyWithOtherDevice -> VerificationChoices(onAction, onUseRecoveryKey)
+            else -> RecoveryKeyEntry(key, onKey, onAction)
         }
         RecoveryStatus.IN_PROGRESS -> CircularProgressIndicator()
         RecoveryStatus.DISABLED, RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
+    }
+}
+
+/** 账号里有别的已验证设备：确认和恢复密钥两条路并列（ADR-0046）。 */
+@Composable
+private fun VerificationChoices(onAction: (Action) -> Unit, onUseRecoveryKey: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+    ) {
+        WontonButton(
+            stringResource(R.string.verification_verify_with_other_device),
+            { onAction(Action.StartDeviceVerification) },
+            Modifier.weight(1f),
+        )
+        WontonButton(
+            stringResource(R.string.verification_use_recovery_key),
+            onUseRecoveryKey,
+            Modifier.weight(1f),
+            WontonButtonKind.SECONDARY,
+        )
+    }
+}
+
+@Composable
+private fun RecoveryKeyEntry(key: String, onKeyChange: (String) -> Unit, onAction: (Action) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+        WontonTextField(
+            value = key,
+            onValueChange = onKeyChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = stringResource(R.string.chat_backup_recovery_key),
+            visualTransformation = PasswordVisualTransformation(),
+            // 按密码输入：输入法不联想、不自动改写和大写，否则恢复密钥会被“纠正”成别的字。
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Password,
+            ),
+        )
+        WontonButton(
+            stringResource(R.string.chat_backup_recover),
+            {
+                onAction(Action.RecoverEncryption(key))
+                onKeyChange("")
+            },
+            Modifier.fillMaxWidth(),
+            enabled = key.isNotBlank(),
+        )
     }
 }
 

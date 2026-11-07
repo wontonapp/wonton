@@ -66,7 +66,7 @@ fun SettingsPage(
             val title = tabText("设置", "Settings")
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
         }) { SettingsScreen(settings, version, onSubpage) }
-        else -> ServerSettingsPage(plugins, home, subpage, onSubpage)
+        else -> ServerSettingsPage(plugins, home, chat, subpage, onSubpage)
     }
     chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.DismissChatProblem) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }

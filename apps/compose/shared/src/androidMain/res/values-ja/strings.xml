@@ -1131,4 +1131,100 @@
     <string name="message_summary_image">[画像]</string>
     <string name="message_summary_undecryptable">[暗号化されたメッセージ]</string>
     <string name="message_summary_redacted">[削除されたメッセージ]</string>
+    <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
+    <string name="common_ok">OK</string>
+    <string name="verification_title">デバイスの確認</string>
+    <string name="verification_incoming_message">このデバイスで「%1$s」を確認しますか？</string>
+    <string name="verification_accept">確認を開始</string>
+    <string name="verification_deny">拒否</string>
+    <string name="verification_same">同じ</string>
+    <string name="verification_different">違う</string>
+    <string name="verification_compare_title">両方のデバイスに同じものが表示されていますか？</string>
+    <string name="verification_requested">もう一方のデバイスの承認を待っています…</string>
+    <string name="verification_requested_hint">もう一方のスマホでWontonを開いてください。</string>
+    <string name="verification_starting">確認を準備しています…</string>
+    <string name="verification_waiting_for_other">もう一方のデバイスの確認を待っています…</string>
+    <string name="verification_fetching_keys">鍵を取得しています…</string>
+    <string name="verification_done_here">確認できました。以前のメッセージも読めます。</string>
+    <string name="verification_done_other">確認が完了しました</string>
+    <string name="verification_retry">再試行</string>
+    <string name="verification_use_recovery_key">復旧キーを入力</string>
+    <string name="verification_verify_with_other_device">別のデバイスで確認</string>
+    <string name="verification_cancelled_by_me">確認を取り消しました。</string>
+    <string name="verification_cancelled_by_other">もう一方のデバイスが確認を取り消しました。</string>
+    <string name="verification_cancelled_mismatch">両方のデバイスで絵文字が一致しなかったため、確認を取り消しました。</string>
+    <string name="verification_cancelled_timeout">もう一方のデバイスが時間内に応答しなかったため、確認を取り消しました。</string>
+    <string name="verification_cancelled_accepted_elsewhere">別のデバイスがこの確認を引き継ぎました。</string>
+    <string name="verification_cancelled_concurrent_request">同時に別の確認リクエストが届いたため、両方取り消しました。</string>
+    <string name="verification_cancelled_keys_missing">もう一方のデバイスに渡せる鍵がなく、以前のメッセージは開けません。</string>
+    <string name="verification_cancelled_failed">問題が発生したため、確認が完了しませんでした。</string>
+    <string name="verification_cancelled_other">確認が完了しませんでした。</string>
+    <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table
+         (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0). -->
+    <string-array name="verification_emoji">
+        <item>犬</item>
+        <item>猫</item>
+        <item>ライオン</item>
+        <item>馬</item>
+        <item>ユニコーン</item>
+        <item>ブタ</item>
+        <item>ゾウ</item>
+        <item>うさぎ</item>
+        <item>パンダ</item>
+        <item>ニワトリ</item>
+        <item>ペンギン</item>
+        <item>亀</item>
+        <item>魚</item>
+        <item>たこ</item>
+        <item>ちょうちょ</item>
+        <item>花</item>
+        <item>木</item>
+        <item>サボテン</item>
+        <item>きのこ</item>
+        <item>地球</item>
+        <item>月</item>
+        <item>雲</item>
+        <item>炎</item>
+        <item>バナナ</item>
+        <item>リンゴ</item>
+        <item>いちご</item>
+        <item>とうもろこし</item>
+        <item>ピザ</item>
+        <item>ケーキ</item>
+        <item>ハート</item>
+        <item>スマイル</item>
+        <item>ロボット</item>
+        <item>帽子</item>
+        <item>めがね</item>
+        <item>スパナ</item>
+        <item>サンタ</item>
+        <item>いいね</item>
+        <item>傘</item>
+        <item>砂時計</item>
+        <item>時計</item>
+        <item>ギフト</item>
+        <item>電球</item>
+        <item>本</item>
+        <item>鉛筆</item>
+        <item>クリップ</item>
+        <item>はさみ</item>
+        <item>錠前</item>
+        <item>鍵</item>
+        <item>金槌</item>
+        <item>電話機</item>
+        <item>旗</item>
+        <item>電車</item>
+        <item>自転車</item>
+        <item>飛行機</item>
+        <item>ロケット</item>
+        <item>トロフィー</item>
+        <item>ボール</item>
+        <item>ギター</item>
+        <item>トランペット</item>
+        <item>ベル</item>
+        <item>いかり</item>
+        <item>ヘッドホン</item>
+        <item>フォルダー</item>
+        <item>ピン</item>
+    </string-array>
 </resources>

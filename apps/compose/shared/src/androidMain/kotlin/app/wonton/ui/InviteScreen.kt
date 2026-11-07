@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.DeviceInvite
+import app.wonton.protocol.VerificationFlow
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -52,10 +53,15 @@ import kotlinx.coroutines.delay
 
 /**
  * “添加设备”：向家里的服务器要一个一次性配对码，画成二维码给新设备上的云吞 App 扫。进展和码都来自核心的
- * [invite]（`HomeViewModel.invite`）。
+ * [invite]（`HomeViewModel.invite`）。新设备发起的确认请求（ADR-0046）在配对码出示期间就在这一屏接着显示。
  */
 @Composable
-fun InviteScreen(core: ClientCore, invite: DeviceInvite?, modifier: Modifier = Modifier) {
+fun InviteScreen(
+    core: ClientCore,
+    invite: DeviceInvite?,
+    verification: VerificationFlow? = null,
+    modifier: Modifier = Modifier,
+) {
     // 核心当场拒绝的原因，比如还没配对。
     var refusal by remember { mutableStateOf<Problem?>(null) }
     val request = { refusal = core.send(Action.InviteDevice) }
@@ -66,6 +72,9 @@ fun InviteScreen(core: ClientCore, invite: DeviceInvite?, modifier: Modifier = M
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
+        verification?.takeIf { !it.startedHere }?.let { flow ->
+            VerificationFlowContent(flow, onAction = { action -> refusal = core.send(action) }, onUseRecoveryKey = null)
+        }
         refusal?.let { ProblemNotice(it, WontonIcon.Error) }
         when (invite) {
             null, is DeviceInvite.Requesting -> Row(

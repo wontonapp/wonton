@@ -5,11 +5,16 @@ import WontonClient
 /// `HomeViewModel.invite`。
 struct InviteView: View {
     @Bindable var model: HomeModel
+    let chat: ChatModel
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+                // 配对码正出示给新设备时，新设备发来的确认请求就在这一屏接着显示，不另弹（ADR-0046）。
+                if let flow = chat.viewModel.encryption.verificationFlow, !flow.startedHere {
+                    DeviceVerificationFlowView(flow: flow, model: chat)
+                }
                 switch model.viewModel.invite {
                 case nil, .requesting:
                     HStack(spacing: WontonTheme.spacing.s12) {

@@ -37,7 +37,7 @@ struct SettingsTab: View {
         switch route {
         case .server: ConnectionView(model: home, plugins: plugins)
         case .connectionDetails: ConnectionDetailsView(model: home)
-        case .invite: InviteView(model: home)
+        case .invite: InviteView(model: home, chat: chat)
         case .pairing:
             PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
                 .wontonPushedScreen("重新配对")
