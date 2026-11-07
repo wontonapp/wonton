@@ -157,7 +157,12 @@ async fn stage(
     let dir = args.get("dir").and_then(Value::as_str);
     let target = SaveTarget::parse(share, dir)?;
     let app_data = bus.plugins.app_data_dir(&caller.id);
-    let staged = bus.files()?.stage_save(app_data, paths, &target).await?;
+    // Agent 替主人存文件：按主人最近一次的语言。
+    let langs = bus.plugins.owner_languages();
+    let staged = bus
+        .files()?
+        .stage_save(app_data, paths, &target, &langs)
+        .await?;
     Ok((target, staged))
 }
 
@@ -181,7 +186,10 @@ async fn place(
     let folder = target.folder();
     let langs = bus.plugins.owner_languages();
     let placed = match bus.files() {
-        Ok(files) => files.place_saved(staged, target).await,
+        Ok(files) => {
+            let langs = bus.plugins.owner_languages();
+            files.place_saved(staged, target, &langs).await
+        }
         Err(failure) => Err(failure),
     };
     let placed = match placed {

@@ -133,6 +133,11 @@ impl Catalog {
         Lang(choose_language(requested, &self.tags).expect("catalog must include en"))
     }
 
+    /// 挑中的语言的标签（`zh-Hans`、`ja`…），网页的 `lang` 属性用它。
+    pub fn tag(&self, lang: Lang) -> &'static str {
+        self.tags[lang.0]
+    }
+
     pub fn format(&self, lang: Lang, id: &str, args: &[(&str, Arg<'_>)]) -> String {
         let bundle = &self.bundles[lang.0];
         let (bundle, pattern) = match bundle.get_message(id).and_then(|message| message.value()) {

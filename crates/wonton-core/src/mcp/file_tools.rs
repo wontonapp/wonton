@@ -15,6 +15,7 @@ use super::{Bus, Caller, error, naming};
 use crate::files::Failure;
 use crate::files::content::can_thumbnail;
 use crate::files::record::FileRecord;
+use crate::plugin::languages::Languages;
 
 pub(super) const VIEW: &str = "view_file";
 pub(super) const SHARE: &str = "share_file";
@@ -102,15 +103,17 @@ async fn run(
     tool: &str,
     args: &JsonObject,
 ) -> Result<(CallToolResult, FileRecord), Failure> {
-    let id = file_id(args)?;
+    // Agent 替主人调工具，请求里没有 Accept-Language：按主人最近一次的语言。
+    let langs = bus.plugins.owner_languages();
+    let id = file_id(args, &langs)?;
     let files = bus.files()?;
     let bot = bus.bot_name(caller)?;
-    let record = files.for_bot(&id, &bot).await?;
+    let record = files.for_bot(&id, &bot, &langs).await?;
     if tool == VIEW {
         // 图片照旧走预览；其余按内容试文本（能按 UTF-8 解、没有 NUL 字节才算，不只看 MIME）：PDF 等其他二进制仍然
         // not_viewable。文本只读开头 MAX_TEXT_PREVIEW_BYTES 字节，结果里写明截断和总大小。
         let image_error = if can_thumbnail(&record.name, record.mime_type.as_deref()) {
-            match files.preview(&record).await {
+            match files.preview(&record, &langs).await {
                 Ok(jpeg) => {
                     let content = vec![
                         ContentBlock::text(format!(
@@ -128,7 +131,7 @@ async fn run(
         } else {
             None
         };
-        let head = match files.text_preview(&record).await {
+        let head = match files.text_preview(&record, &langs).await {
             Ok(head) => head,
             Err(text_error) => return Err(image_error.unwrap_or(text_error)),
         };
@@ -155,7 +158,7 @@ async fn run(
         ))];
         return Ok((CallToolResult::success(content), record));
     }
-    let record = files.share_with_owner(&id, &bot).await?;
+    let record = files.share_with_owner(&id, &bot, &langs).await?;
     let text = format!(
         "已分享给主人。把下面这个链接原样放进回复，主人会看到文件卡片：\n{}",
         record.id.link()
@@ -165,11 +168,15 @@ async fn run(
 }
 
 /// 编号写得不对，和没有这个编号是一回事：模型抄错了字符，该让它知道这个编号用不了。
-fn file_id(args: &JsonObject) -> Result<FileId, Failure> {
+fn file_id(args: &JsonObject, langs: &Languages) -> Result<FileId, Failure> {
     let id = args
         .get("file_id")
         .and_then(Value::as_str)
         .ok_or_else(|| Failure::new(FileFailure::InvalidInput, "缺少参数 file_id"))?;
-    id.parse()
-        .map_err(|_| Failure::new(FileFailure::FileUnknown, "没有这个文件"))
+    id.parse().map_err(|_| {
+        Failure::new(
+            FileFailure::FileUnknown,
+            crate::l10n::text(langs, "files-not-found", &[]),
+        )
+    })
 }

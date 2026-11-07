@@ -39,6 +39,7 @@ use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::help::Help;
 use crate::l10n;
+use crate::plugin::languages::Languages;
 use crate::plugin::tool_policy::Clearance;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
@@ -243,6 +244,11 @@ impl Bus {
 
     pub fn confirmations(&self) -> &Confirmations {
         &self.confirmations
+    }
+
+    /// 主人最近一次请求用的语言：Agent 和 Bot 的调用没有请求头，文字按它写（ADR-0043）。
+    pub fn owner_languages(&self) -> Languages {
+        self.plugins.owner_languages()
     }
 
     pub fn endpoint(self: &Arc<Self>) -> Endpoint {

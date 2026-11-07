@@ -21,6 +21,7 @@
 
 mod agent_permission;
 mod api;
+mod api_body;
 mod bot_profile;
 mod confirmations;
 mod core_routes;
@@ -67,6 +68,7 @@ use tower::ServiceExt;
 
 use crate::config::{self, HostKind, PublicUrls};
 use crate::http::HttpClient;
+use crate::l10n;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
 use crate::owner::OwnerStore;
@@ -313,11 +315,19 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::FileHooks => files::hook_request(&gateway, req).await,
         HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
-        HostKind::Unknown => pages::error(
-            StatusCode::NOT_FOUND,
-            "unknown_host",
-            &format!("未知的地址 {host}"),
-        ),
+        HostKind::Unknown => {
+            let langs = api::languages(req.headers());
+            pages::error(
+                StatusCode::NOT_FOUND,
+                "unknown_host",
+                &l10n::text(
+                    &langs,
+                    "gateway-unknown-host",
+                    &[("host", host.as_str().into())],
+                ),
+                &langs,
+            )
+        }
     }
 }
 
@@ -344,11 +354,13 @@ async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &
 /// `auth.<base>`：身份提供方的公开端点（授权、令牌、用户信息、JWKS、发现文档）。
 /// 这些端点本身就面向公网设计，由协议保护；真正的用户鉴权发生在核心的登录端点。
 async fn auth_request(gateway: &Gateway, req: Request) -> Response {
+    let langs = api::languages(req.headers());
     let Some(authority) = &gateway.hydra_public else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
-            "核心没有配置身份提供方",
+            &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
+            &langs,
         );
     };
     let fwd = proxy::Forwarded {
@@ -356,11 +368,12 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
         scheme: &gateway.public.scheme,
     };
     let endpoint = crate::plugin::upstreams::Endpoint::Tcp(authority.clone());
+    let name = l10n::text(&langs, "gateway-name-oidc", &[]);
     let target = proxy::Target {
         endpoint: &endpoint,
-        name: "身份提供方",
+        name: &name,
     };
-    proxy::forward(&gateway.system_http, target, req, fwd).await
+    proxy::forward(&gateway.system_http, target, req, fwd, &langs).await
 }
 
 /// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
@@ -368,11 +381,17 @@ async fn auth_request(gateway: &Gateway, req: Request) -> Response {
 /// 响应里的 `Set-Cookie` 和会交出凭据的头。
 async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
     let host = gateway.public.plugin_host(slug);
+    let langs = api::languages(req.headers());
     let Some(route) = gateway.plugins.route(slug) else {
         return pages::error(
             StatusCode::NOT_FOUND,
             "not_installed",
-            &format!("没有安装对应 {host} 的应用"),
+            &l10n::text(
+                &langs,
+                "gateway-no-app-for-host",
+                &[("host", host.as_str().into())],
+            ),
+            &langs,
         );
     };
     if req.uri().path() == "/_wonton/session" {
@@ -386,13 +405,26 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     let upstream = match (&route.status, &route.upstream) {
         (PluginStatus::Running, Some(upstream)) => upstream.clone(),
         (PluginStatus::Running, None) => {
-            return pages::error(StatusCode::NOT_FOUND, "no_webui", "这个应用没有网页入口");
+            return pages::error(
+                StatusCode::NOT_FOUND,
+                "no_webui",
+                &l10n::text(&langs, "gateway-no-webui", &[]),
+                &langs,
+            );
         }
         (status, _) => {
             return pages::error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "not_ready",
-                &format!("应用 {} 尚未就绪：{status:?}", route.id),
+                &l10n::text(
+                    &langs,
+                    "gateway-app-not-ready",
+                    &[
+                        ("id", route.id.as_str().into()),
+                        ("status", format!("{status:?}").into()),
+                    ],
+                ),
+                &langs,
             );
         }
     };
@@ -402,7 +434,15 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         return pages::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "proxy_credentials",
-            &format!("插件 {} 的代登录凭据：{e}", route.id),
+            &l10n::text(
+                &langs,
+                "gateway-proxy-sso-failed",
+                &[
+                    ("id", route.id.as_str().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+            &langs,
         );
     }
     let fwd = proxy::Forwarded {
@@ -413,9 +453,9 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         endpoint: &upstream,
         name: route.id.as_str(),
     };
-    let mut response = match proxy::forward_or(&gateway.http, target, req, fwd).await {
+    let mut response = match proxy::forward_or(&gateway.http, target, req, fwd, &langs).await {
         Ok(response) => response,
-        Err(error) => return error.response(route.id.as_str()),
+        Err(error) => return error.response(route.id.as_str(), &langs),
     };
     isolation::sanitize_set_cookies(response.headers_mut());
     if let Some(auth) = &route.proxy {
@@ -430,11 +470,13 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
 /// 未登录：浏览器的页面请求跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
 fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bool) -> Response {
+    let langs = api::languages(req.headers());
     if !credentials {
         return pages::error(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
-            "网关不认其他网页发来的跨站请求的登录状态，请从应用自己的页面操作",
+            &l10n::text(&langs, "gateway-cross-site-login", &[]),
+            &langs,
         );
     }
     let wants_html = req
@@ -454,7 +496,8 @@ fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bo
     pages::error(
         StatusCode::UNAUTHORIZED,
         "unauthenticated",
-        "需要先登录 Wonton",
+        &l10n::text(&langs, "gateway-login-required", &[]),
+        &langs,
     )
 }
 

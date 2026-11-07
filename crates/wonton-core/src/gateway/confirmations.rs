@@ -10,15 +10,17 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd};
 
-use super::api::{acted_by, error_response, plugin_denied};
+use super::api::{acted_by, error_response, languages, plugin_denied};
 use super::{Gateway, TunnelPeer};
+use crate::l10n;
 use crate::mcp::AnswerError;
+use crate::plugin::languages::Languages;
 
-fn mcp_unavailable() -> Response {
+fn mcp_unavailable(langs: &Languages) -> Response {
     error_response(
         StatusCode::SERVICE_UNAVAILABLE,
         "mcp_unavailable",
-        "核心没有启用 MCP 总线",
+        &l10n::text(langs, "gateway-mcp-disabled", &[]),
     )
 }
 
@@ -32,7 +34,7 @@ pub async fn pending(
         return denied;
     }
     let Some(mcp) = &gateway.mcp else {
-        return mcp_unavailable();
+        return mcp_unavailable(&languages(&headers));
     };
     let confirmations = mcp.bus.confirmations().pending();
     Json(ConfirmationList { confirmations }).into_response()
@@ -51,13 +53,15 @@ pub async fn answer(
         return denied;
     }
     let Some(mcp) = &gateway.mcp else {
-        return mcp_unavailable();
+        return mcp_unavailable(&languages(&headers));
     };
     let answer: ConfirmationAnswer = match serde_json::from_slice(&body) {
         Ok(answer) => answer,
         Err(e) => {
-            let message = format!(
-                "请求体要是 {{\"answer\": \"approve\" | \"approve_wider\" | \"allow_window\" | \"reject\"}}：{e}"
+            let message = l10n::text(
+                &languages(&headers),
+                "gateway-confirm-invalid-body",
+                &[("error", e.to_string().into())],
             );
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
@@ -90,11 +94,12 @@ pub async fn stop_window(
         return denied;
     }
     let Some(mcp) = &gateway.mcp else {
-        return mcp_unavailable();
+        return mcp_unavailable(&languages(&headers));
     };
     if mcp.bus.end_window(&id, WindowEnd::Stopped, Some(&by)).await {
         StatusCode::NO_CONTENT.into_response()
     } else {
-        error_response(StatusCode::NOT_FOUND, "not_found", "没有生效中的放行时段")
+        let message = l10n::text(&languages(&headers), "gateway-no-allow-window", &[]);
+        error_response(StatusCode::NOT_FOUND, "not_found", &message)
     }
 }

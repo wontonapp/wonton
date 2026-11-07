@@ -27,7 +27,7 @@ use wonton_tunnel::{PeerStream, TunnelListener, TunnelServer};
 
 use crate::device::Devices;
 use crate::gateway::TunnelPeer;
-use crate::pairing::Pairing;
+use crate::pairing::{OwnerLanguages, Pairing};
 use crate::secret;
 
 /// 网关需要知道的隧道信息：已配对设备、发配对码的一方，以及向主人报告服务端地址用的 endpoint。
@@ -45,6 +45,7 @@ impl Tunnel {
     /// `port` 为 0 时用 endpoint 实际绑定的端口（直接跑在宿主上、由系统分配端口时）。
     pub fn new(
         devices: Arc<Devices>,
+        owner_languages: OwnerLanguages,
         endpoint: Endpoint,
         port: u16,
         lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
@@ -58,7 +59,7 @@ impl Tunnel {
             port
         };
         Self {
-            pairing: Arc::new(Pairing::new(devices.clone())),
+            pairing: Arc::new(Pairing::new(devices.clone(), owner_languages)),
             devices,
             endpoint,
             port,

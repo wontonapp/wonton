@@ -3,6 +3,7 @@
 use std::os::unix::fs::PermissionsExt;
 
 use super::*;
+use crate::files::test_support::any_langs;
 
 /// 回收槽里留着东西，就像改名之后崩溃了。
 fn left_halfway(transfers: &std::path::Path, slot: usize, name: &str, content: &str) {
@@ -12,7 +13,7 @@ fn left_halfway(transfers: &std::path::Path, slot: usize, name: &str, content: &
 
 fn prepare(transfers: &std::path::Path) {
     let dir = File::open(transfers).unwrap();
-    removal::prepare_trash(dir.as_fd()).unwrap();
+    removal::prepare_trash(dir.as_fd(), &any_langs()).unwrap();
 }
 
 #[test]
@@ -69,7 +70,14 @@ fn a_slot_keeps_its_placeholder_and_still_counts_as_empty() {
     let dir = File::open(&transfers).unwrap();
     let opened = open_regular(dir.as_fd(), "a.txt").unwrap();
     assert_eq!(
-        removal::remove_if_same(dir.as_fd(), dir.as_fd(), "a.txt", &opened.snapshot).unwrap(),
+        removal::remove_if_same(
+            dir.as_fd(),
+            dir.as_fd(),
+            "a.txt",
+            &opened.snapshot,
+            &any_langs()
+        )
+        .unwrap(),
         Deleted::Removed { durable: true }
     );
     assert!(
@@ -122,7 +130,9 @@ fn a_delete_leaves_nothing_behind() {
     let target = reference("transfers/a.txt");
     let snapshot = f.shares.open(&target).unwrap().snapshot;
     assert_eq!(
-        f.shares.delete_if_unchanged(&target, &snapshot).unwrap(),
+        f.shares
+            .delete_if_unchanged(&target, &snapshot, &any_langs())
+            .unwrap(),
         Deleted::Removed { durable: true }
     );
     assert_eq!(visible_in(&transfers), Vec::<String>::new());
@@ -139,7 +149,9 @@ fn a_stuck_slot_does_not_stop_deletes() {
     let target = reference("transfers/a.txt");
     let snapshot = f.shares.open(&target).unwrap().snapshot;
     assert_eq!(
-        f.shares.delete_if_unchanged(&target, &snapshot).unwrap(),
+        f.shares
+            .delete_if_unchanged(&target, &snapshot, &any_langs())
+            .unwrap(),
         Deleted::Removed { durable: true }
     );
     assert_eq!(trash_contents(&transfers), ["0/stuck.txt"]);
@@ -151,7 +163,9 @@ fn a_stuck_slot_does_not_stop_deletes() {
     fs::write(transfers.join("b.txt"), "photo").unwrap();
     let target = reference("transfers/b.txt");
     let snapshot = f.shares.open(&target).unwrap().snapshot;
-    let refused = f.shares.delete_if_unchanged(&target, &snapshot);
+    let refused = f
+        .shares
+        .delete_if_unchanged(&target, &snapshot, &any_langs());
     assert!(matches!(refused, Err(ShareError::Io(_))), "{refused:?}");
     assert!(transfers.join("b.txt").exists());
 }
@@ -165,7 +179,7 @@ fn without_noreplace_a_rename_still_keeps_what_is_there() {
     fs::create_dir(transfers.join("from")).unwrap();
     fs::create_dir(transfers.join("taken")).unwrap();
     super::NO_NOREPLACE.set(true);
-    let put = removal::put_back(dir.as_fd(), "from", dir.as_fd(), "taken");
+    let put = removal::put_back(dir.as_fd(), "from", dir.as_fd(), "taken", &any_langs());
     super::NO_NOREPLACE.set(false);
     assert_eq!(put.unwrap(), "taken (1)");
     assert_eq!(visible_in(&transfers), ["taken", "taken (1)"]);
@@ -268,7 +282,7 @@ fn deleting_what_was_swapped_in_at_the_last_moment_puts_it_back() {
     let dir = f.shares.open_dir(TRANSFERS, &[]).unwrap();
     let dir = dir.as_fd();
     assert_eq!(
-        removal::remove_if_same(dir, dir, "a.jpg", &original).unwrap(),
+        removal::remove_if_same(dir, dir, "a.jpg", &original, &any_langs()).unwrap(),
         Deleted::Changed
     );
     assert_eq!(visible_in(&dir_path), ["a.jpg"]);
@@ -281,7 +295,7 @@ fn deleting_what_was_swapped_in_at_the_last_moment_puts_it_back() {
     fs::remove_file(dir_path.join("a.jpg")).unwrap();
     fs::create_dir(dir_path.join("a.jpg")).unwrap();
     assert_eq!(
-        removal::remove_if_same(dir, dir, "a.jpg", &original).unwrap(),
+        removal::remove_if_same(dir, dir, "a.jpg", &original, &any_langs()).unwrap(),
         Deleted::Changed
     );
     assert!(dir_path.join("a.jpg").is_dir());
@@ -291,7 +305,7 @@ fn deleting_what_was_swapped_in_at_the_last_moment_puts_it_back() {
     fs::write(dir_path.join("moved"), "moved aside").unwrap();
     fs::write(dir_path.join("a.jpg"), "newer").unwrap();
     assert_eq!(
-        removal::put_back(dir, "moved", dir, "a.jpg").unwrap(),
+        removal::put_back(dir, "moved", dir, "a.jpg", &any_langs()).unwrap(),
         "a (1).jpg"
     );
     assert_eq!(visible_in(&dir_path), ["a (1).jpg", "a.jpg"]);
@@ -301,7 +315,7 @@ fn deleting_what_was_swapped_in_at_the_last_moment_puts_it_back() {
     );
 
     assert_eq!(
-        removal::remove_if_same(dir, dir, "gone.jpg", &original).unwrap(),
+        removal::remove_if_same(dir, dir, "gone.jpg", &original, &any_langs()).unwrap(),
         Deleted::AlreadyGone
     );
 }
@@ -331,7 +345,9 @@ fn a_trash_swapped_for_another_is_not_used_and_is_replaced_at_the_next_start() {
         fs::create_dir_all(transfers.join(TRASH).join(slot.to_string())).unwrap();
     }
     fs::write(transfers.join(TRASH).join("0/planted"), "x").unwrap();
-    let refused = f.shares.delete_if_unchanged(&reference, &snapshot);
+    let refused = f
+        .shares
+        .delete_if_unchanged(&reference, &snapshot, &any_langs());
     assert!(matches!(refused, Err(ShareError::Io(_))), "{refused:?}");
     assert_eq!(
         fs::read_to_string(transfers.join("a.txt")).unwrap(),
@@ -345,7 +361,9 @@ fn a_trash_swapped_for_another_is_not_used_and_is_replaced_at_the_next_start() {
         "假的那套里的东西放回 transfers，空了的目录不留"
     );
     assert_eq!(
-        f.shares.delete_if_unchanged(&reference, &snapshot).unwrap(),
+        f.shares
+            .delete_if_unchanged(&reference, &snapshot, &any_langs())
+            .unwrap(),
         Deleted::Removed { durable: true }
     );
 }
@@ -400,7 +418,9 @@ fn one_slot_that_is_not_private_stops_deletes() {
     let (reference, snapshot) = deletable(&f);
     let transfers = f.root.join(TRANSFERS);
     mode(&transfers.join(TRASH).join("0"), 0o755);
-    let refused = f.shares.delete_if_unchanged(&reference, &snapshot);
+    let refused = f
+        .shares
+        .delete_if_unchanged(&reference, &snapshot, &any_langs());
     assert!(matches!(refused, Err(ShareError::Io(_))), "{refused:?}");
     assert!(transfers.join("a.txt").exists());
     f.shares.prepare_removal().unwrap();
@@ -432,7 +452,9 @@ fn a_missing_trash_is_reported_and_not_rebuilt_while_running() {
     let (reference, snapshot) = deletable(&f);
     let transfers = f.root.join(TRANSFERS);
     fs::remove_dir_all(transfers.join(TRASH)).unwrap();
-    let refused = f.shares.delete_if_unchanged(&reference, &snapshot);
+    let refused = f
+        .shares
+        .delete_if_unchanged(&reference, &snapshot, &any_langs());
     assert!(matches!(refused, Err(ShareError::Io(_))), "{refused:?}");
     assert!(transfers.join("a.txt").exists());
     assert!(!transfers.join(TRASH).exists());
@@ -444,7 +466,9 @@ fn a_slot_without_its_placeholder_is_reported() {
     let (reference, snapshot) = deletable(&f);
     let transfers = f.root.join(TRANSFERS);
     fs::remove_file(transfers.join(TRASH).join("0").join(removal::keep_name())).unwrap();
-    let refused = f.shares.delete_if_unchanged(&reference, &snapshot);
+    let refused = f
+        .shares
+        .delete_if_unchanged(&reference, &snapshot, &any_langs());
     assert!(matches!(refused, Err(ShareError::Io(_))), "{refused:?}");
     assert!(transfers.join("a.txt").exists());
     f.shares.prepare_removal().unwrap();
@@ -463,7 +487,9 @@ fn a_delete_that_cannot_be_confirmed_on_disk_still_counts_as_removed() {
     let f = fixture();
     let (reference, snapshot) = deletable(&f);
     super::DIR_SYNC_FAILS.set(Some("a.txt".to_owned()));
-    let deleted = f.shares.delete_if_unchanged(&reference, &snapshot);
+    let deleted = f
+        .shares
+        .delete_if_unchanged(&reference, &snapshot, &any_langs());
     super::DIR_SYNC_FAILS.set(None);
     assert_eq!(deleted.unwrap(), Deleted::Removed { durable: false });
     assert!(!f.root.join(TRANSFERS).join("a.txt").exists());

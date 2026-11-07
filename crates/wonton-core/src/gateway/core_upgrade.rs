@@ -12,6 +12,7 @@ use wonton_protocol::{CoreUpgradeCheckRequest, CoreUpgradeRequest};
 
 use super::api::{error_response, languages, plugin_denied};
 use super::{Gateway, TunnelPeer};
+use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::upgrade::service::{UpgradeError, Upgrades};
 
@@ -40,14 +41,18 @@ fn upgrades(
         Box::new(error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "not_ready",
-            "这个核心没有启用一键升级",
+            &l10n::text(&languages(headers), "gateway-upgrade-disabled", &[]),
         ))
     })
 }
 
-fn parsed<T: DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
+fn parsed<T: DeserializeOwned>(body: &[u8], langs: &Languages) -> Result<T, Box<Response>> {
     serde_json::from_slice(body).map_err(|e| {
-        let message = format!("请求体不对：{e}");
+        let message = l10n::text(
+            langs,
+            "gateway-invalid-body",
+            &[("error", e.to_string().into())],
+        );
         Box::new(error_response(
             StatusCode::BAD_REQUEST,
             "invalid_input",
@@ -85,7 +90,7 @@ pub async fn check(
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
-    let request: CoreUpgradeCheckRequest = match parsed(&body) {
+    let request: CoreUpgradeCheckRequest = match parsed(&body, &languages(&headers)) {
         Ok(request) => request,
         Err(response) => return *response,
     };
@@ -103,7 +108,7 @@ pub async fn start(
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
-    let request: CoreUpgradeRequest = match parsed(&body) {
+    let request: CoreUpgradeRequest = match parsed(&body, &languages(&headers)) {
         Ok(request) => request,
         Err(response) => return *response,
     };

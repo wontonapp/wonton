@@ -8,7 +8,9 @@ use super::record::{Accessor, BOT_TTL_SECS, FileRecord, Origin};
 use super::resource::InternalUrl;
 use super::share_fs::{self, ShareRef, sanitize_name};
 use super::{BotRef, Failure, Files, Scale, new_id};
+use crate::l10n;
 use crate::plugin::PluginId;
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 
 impl Files {
@@ -20,8 +22,9 @@ impl Files {
         reference: ShareRef,
         name: Option<&str>,
         mime_type: Option<&str>,
+        langs: &Languages,
     ) -> Result<FileRecord, Failure> {
-        self.require_share(&bot.plugin, &reference.share)?;
+        self.require_share(&bot.plugin, &reference.share, langs)?;
         let bot = bot.clone();
         let name = sanitize_name(name.unwrap_or_else(|| reference.file_name()));
         let mime_type = mime_type.map(str::to_owned);
@@ -44,9 +47,10 @@ impl Files {
         name: &str,
         mime_type: Option<&str>,
         size: Option<u64>,
+        langs: &Languages,
     ) -> Result<FileRecord, Failure> {
         if let Some(url) = internal_url {
-            let parsed = InternalUrl::parse(url)
+            let parsed = InternalUrl::parse(url, langs)
                 .map_err(|e| Failure::new(FileFailure::PermissionDenied, e))?;
             self.host.service_upstream(plugin, &parsed).await?;
         }
@@ -113,50 +117,68 @@ impl Files {
 
     /// Bot 调工具时查编号：不在范围里、过期了，还有这之后才出的问题（来源插件的授权收回了、文件改过或者没了）。主人亲手授权的 Bot
     /// 不核对来源插件的授权，也不核对文件改没改过：这是主人给的文件，读得到就行。
-    pub async fn for_bot(&self, id: &FileId, bot: &str) -> Result<FileRecord, Failure> {
-        let record = self.authorize(id, &Accessor::Bot(bot.to_owned()))?;
+    pub async fn for_bot(
+        &self,
+        id: &FileId,
+        bot: &str,
+        langs: &Languages,
+    ) -> Result<FileRecord, Failure> {
+        let record = self.authorize(id, &Accessor::Bot(bot.to_owned()), langs)?;
         match &record.origin {
             Origin::Share { reference } if record.owner_granted.contains(bot) => {
-                self.open_share(reference.clone()).await?;
+                self.open_share(reference.clone(), langs).await?;
             }
             Origin::Share { reference } => {
                 if let FileSource::Bot { plugin, .. } = &record.source {
                     let plugin = PluginId::parse(plugin)
                         .map_err(|e| Failure::internal(format!("记录里的插件 ID 不对：{e}")))?;
-                    self.require_share(&plugin, &reference.share)?;
+                    self.require_share(&plugin, &reference.share, langs)?;
                 }
-                let now = self.open_share(reference.clone()).await?.snapshot;
+                let now = self.open_share(reference.clone(), langs).await?.snapshot;
                 let changed = record.registered.is_some_and(|then| {
                     then.size != now.size || then.modified_ns != now.modified_ns
                 });
                 if changed {
                     return Err(Failure::new(
                         FileFailure::FileChanged,
-                        "文件登记后改过，你看过的可能不是现在的内容，再找一次",
+                        l10n::text(langs, "files-changed", &[]),
                     ));
                 }
             }
             Origin::Upload { reference, .. } => {
-                self.open_share(reference.clone()).await?;
+                self.open_share(reference.clone(), langs).await?;
             }
             Origin::Plugin { plugin, .. } => self.host.check_plugin(plugin)?,
         }
         Ok(record)
     }
 
-    fn require_share(&self, plugin: &PluginId, share: &str) -> Result<(), Failure> {
+    fn require_share(
+        &self,
+        plugin: &PluginId,
+        share: &str,
+        langs: &Languages,
+    ) -> Result<(), Failure> {
         if self.host.share_granted(plugin, share)? {
             return Ok(());
         }
         Err(Failure::new(
             FileFailure::PermissionDenied,
-            format!("插件 {plugin} 没有共享文件夹 {share} 的授权"),
+            l10n::text(
+                langs,
+                "files-share-not-authorized",
+                &[("plugin", plugin.as_str().into()), ("share", share.into())],
+            ),
         ))
     }
 
     /// 给 Bot 看的预览：长边 1024 像素的 JPEG，不带原文件的元数据。
-    pub async fn preview(&self, record: &FileRecord) -> Result<Vec<u8>, Failure> {
-        self.scaled(record, Scale::Preview).await
+    pub async fn preview(
+        &self,
+        record: &FileRecord,
+        langs: &Languages,
+    ) -> Result<Vec<u8>, Failure> {
+        self.scaled(record, Scale::Preview, langs).await
     }
 
     /// Bot 把文件分享给主人：加进范围，不再过期。
@@ -164,14 +186,15 @@ impl Files {
         self: &Arc<Self>,
         id: &FileId,
         bot: &str,
+        langs: &Languages,
     ) -> Result<FileRecord, Failure> {
-        self.authorize(id, &Accessor::Bot(bot.to_owned()))?;
-        let id = id.clone();
+        self.authorize(id, &Accessor::Bot(bot.to_owned()), langs)?;
+        let (id, langs) = (id.clone(), langs.clone());
         self.blocking(move |files| {
             files
                 .registry
                 .grant(&id, Accessor::Owner, now_secs())?
-                .ok_or_else(Failure::unknown)
+                .ok_or_else(|| Failure::unknown(&langs))
         })
         .await
     }

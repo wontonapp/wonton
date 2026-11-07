@@ -12,6 +12,7 @@ use wonton_protocol::FileId;
 use super::{Pending, STALE_SECS, Uploads};
 use crate::files::record::Lookup;
 use crate::files::{Failure, Files};
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::{StoreError, read_json};
 
@@ -231,7 +232,9 @@ impl Files {
             }
         }
         for id in retry {
-            if let Err(e) = self.finish_upload(&id).await {
+            // 清理是后台任务，没有请求头。
+            let langs = Languages::from_header(None);
+            if let Err(e) = self.finish_upload(&id, &langs).await {
                 tracing::error!(file = %id, error = %e, "放传完的文件失败，下次清理时再试");
             }
         }

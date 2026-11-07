@@ -62,6 +62,7 @@ impl TestCore {
         let endpoint = loopback_endpoint(SecretKey::generate()).await;
         let tunnel = Tunnel::new(
             devices,
+            Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
             endpoint,
             0,
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
@@ -484,6 +485,7 @@ async fn a_restart_drops_unanswered_requests_and_keeps_pairings() {
         let endpoint = loopback_endpoint(SecretKey::generate()).await;
         Tunnel::new(
             devices,
+            Arc::new(|| Languages::from_header(None)),
             endpoint,
             0,
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
@@ -539,6 +541,7 @@ async fn expired_pending_rows_are_dropped_from_the_view() {
     let endpoint = loopback_endpoint(SecretKey::generate()).await;
     let tunnel = Tunnel::new(
         devices,
+        Arc::new(|| Languages::from_header(None)),
         endpoint,
         0,
         watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,

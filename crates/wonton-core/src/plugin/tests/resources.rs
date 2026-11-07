@@ -7,6 +7,7 @@ use super::super::upstreams::ResourceUpstreamError;
 use super::super::{PluginId, PluginPackage};
 use super::manager::{manager_in_container, manager_with};
 use super::package;
+use crate::files::test_support::any_langs;
 use crate::files::{CoreHost, FileHost, resource::InternalUrl};
 use crate::mcp::test_support::{Notes, serve_notes};
 use crate::mcp::upstream::Upstreams;
@@ -147,7 +148,7 @@ async fn an_unreadable_plugin_record_is_the_cores_problem() {
     std::fs::write(dir.path().join("plugins/app.mine.json"), "{ 坏了").unwrap();
     let host = CoreHost::new(Arc::new(m), Arc::new(Upstreams::new()), None);
 
-    let url = InternalUrl::parse("http://server:2283/a").unwrap();
+    let url = InternalUrl::parse("http://server:2283/a", &any_langs()).unwrap();
     let failure = host.service_upstream(&mine, &url).await.unwrap_err();
     assert_eq!(failure.kind, FileFailure::Internal);
 }
@@ -197,7 +198,7 @@ async fn the_core_host_tells_why_a_service_has_no_upstream() {
     let host = CoreHost::new(Arc::new(m), Arc::new(Upstreams::new()), None);
 
     let kind = async |plugin: &PluginId, url: &str| {
-        let url = InternalUrl::parse(url).unwrap();
+        let url = InternalUrl::parse(url, &any_langs()).unwrap();
         host.service_upstream(plugin, &url)
             .await
             .map_err(|e| e.kind)

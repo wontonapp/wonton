@@ -42,55 +42,27 @@ use axum::{Extension, Json};
 use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use serde_json::json;
 use wonton_protocol::{
     AddSourceRequest, AddedTools, AskEveryUpdate, EgressProxyUpdate, InstallRequest, InstallSource,
     LanChoice, LanWebuiUpdate, PluginLimits, UpgradeRequest, UpgradeResult,
 };
 
+pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
 use super::{Gateway, TunnelPeer, isolation, pages};
+use crate::l10n;
 use crate::plugin::gallery::Variant;
 use crate::plugin::image_worker::ImageError;
 use crate::plugin::languages::Languages;
-use crate::plugin::package_archive;
-use crate::plugin::{InstallError, Permission, PluginId, PluginPackage, PluginView, UpgradeTo};
-
-/// 上传插件包的请求体上限：压缩包里可以带着插件包以外的文件。插件包本身的大小由解析时检查。
-pub const MAX_UPLOAD_BYTES: usize = package_archive::MAX_ARCHIVE_BYTES;
+use crate::plugin::{InstallError, Permission, PluginId, PluginView, UpgradeTo};
 
 pub(super) fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()))
 }
 
-/// JSON 请求体是按来源预览或安装（`InstallSource`、`InstallRequest`）；其余是上传的插件包。解析不了时是
-/// `InstallError::Invalid`。
-fn json_body<T: DeserializeOwned>(
-    headers: &HeaderMap,
-    body: &[u8],
-) -> Option<Result<T, InstallError>> {
-    let json = headers
-        .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|t| t.starts_with("application/json"));
-    json.then(|| {
-        serde_json::from_slice(body).map_err(|e| InstallError::Invalid(format!("请求体不对：{e}")))
-    })
-}
-
-/// 请求体里的插件包：压缩包（按内容认格式，见 [`package_archive`]），或者 compose 文本。
-fn package(headers: &HeaderMap, body: &[u8]) -> Result<PluginPackage, InstallError> {
-    let tar = headers
-        .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|t| t.starts_with("application/x-tar"));
-    if tar || package_archive::is_archive(body) {
-        return Ok(PluginPackage::from_archive(body)?);
-    }
-    let source = std::str::from_utf8(body).map_err(|_| {
-        InstallError::Invalid("不是插件包：要 tar、tar.gz、zip 或 compose 文件".to_owned())
-    })?;
-    Ok(PluginPackage::parse(source)?)
+/// 带一个 `{error}` 参数的接口文字。
+pub(super) fn text1(langs: &Languages, id: &'static str, error: &str) -> String {
+    l10n::text(langs, id, &[("error", error.into())])
 }
 
 pub(crate) fn error_response(status: StatusCode, kind: &'static str, message: &str) -> Response {
@@ -167,7 +139,7 @@ pub(super) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
         _ => Some(error_response(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
-            "这台设备没有配对或者已被移除，要重新配对；命令行要带 Authorization: Bearer <令牌>",
+            &l10n::text(&languages(headers), "gateway-denied", &[]),
         )),
     }
 }
@@ -193,7 +165,7 @@ pub(crate) fn plugin_denied(
     Some(error_response(
         StatusCode::FORBIDDEN,
         "cross_site",
-        "插件管理接口不接受其他网页发来的请求",
+        &l10n::text(&languages(headers), "gateway-cross-site-api", &[]),
     ))
 }
 
@@ -369,8 +341,6 @@ pub async fn preview_upgrade(
     }
 }
 
-const NO_BUS: &str = "核心没有启用 MCP 总线";
-
 pub async fn upgrade(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -386,9 +356,10 @@ pub async fn upgrade(
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
     };
+    let langs = languages(&headers);
     let before = match &gateway.mcp {
         Some(mcp) => mcp.bus.tool_names(&id).await,
-        None => Err(NO_BUS.to_owned()),
+        None => Err(l10n::text(&langs, "gateway-mcp-disabled", &[])),
     };
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
@@ -413,10 +384,10 @@ pub async fn upgrade(
     let added_tools = match &gateway.mcp {
         Some(mcp) => mcp.bus.added_tools(&id, before).await,
         None => AddedTools::NotCompared {
-            reason: NO_BUS.to_owned(),
+            reason: l10n::text(&langs, "gateway-mcp-disabled", &[]),
         },
     };
-    match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
+    match gateway.plugins.installed_plugin(&id, &langs) {
         Some(plugin) => Json(UpgradeResult {
             plugin,
             added_tools,
@@ -484,7 +455,7 @@ pub async fn add_store_source(
     }
     let request = match serde_json::from_slice::<AddSourceRequest>(&body) {
         Ok(request) => request,
-        Err(e) => return install_error(&InstallError::Invalid(format!("请求体不对：{e}"))),
+        Err(e) => return install_error(&invalid_body(&headers, e)),
     };
     match gateway
         .plugins
@@ -555,7 +526,7 @@ pub async fn storage(
         Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "storage_unavailable",
-            &format!("查磁盘空间失败：{e}"),
+            &text1(&languages(&headers), "gateway-disk-space", &e.to_string()),
         ),
     }
 }
@@ -581,7 +552,11 @@ pub async fn set_lan(
     let choice = match serde_json::from_slice::<LanChoice>(&body) {
         Ok(choice) => choice,
         Err(e) => {
-            let message = format!("请求体不是局域网设置的选择：{e}");
+            let message = text1(
+                &languages(&headers),
+                "gateway-invalid-lan-choice",
+                &e.to_string(),
+            );
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
@@ -745,11 +720,11 @@ pub async fn revoke_save_grant(
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
     };
-    let Some(mcp) = &gateway.mcp else {
-        let message = "核心没有启用 MCP 总线";
-        return error_response(StatusCode::SERVICE_UNAVAILABLE, "mcp_unavailable", message);
-    };
     let langs = languages(&headers);
+    let Some(mcp) = &gateway.mcp else {
+        let message = l10n::text(&langs, "gateway-mcp-disabled", &[]);
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, "mcp_unavailable", &message);
+    };
     if gateway.plugins.installed_detail(&id, &langs).is_none() {
         return install_error(&InstallError::NotInstalled(id.to_string()));
     }
@@ -772,7 +747,9 @@ pub async fn image(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let not_found = || error_response(StatusCode::NOT_FOUND, "not_found", "没有这张图片");
+    let langs = languages(&headers);
+    let icon = l10n::text(&langs, "gateway-icon-not-found", &[]);
+    let not_found = || error_response(StatusCode::NOT_FOUND, "not_found", &icon);
     let Some(variant) = Variant::parse(&file) else {
         return not_found();
     };
@@ -789,7 +766,7 @@ pub async fn image(
         Err(ImageError::Refused(reason)) => error_response(
             StatusCode::UNPROCESSABLE_ENTITY,
             "invalid_input",
-            &format!("图标处理不了：{reason}"),
+            &text1(&langs, "gateway-icon-failed", reason.as_str()),
         ),
         Err(e @ ImageError::Unavailable(_)) => error_response(
             StatusCode::SERVICE_UNAVAILABLE,

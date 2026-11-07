@@ -60,6 +60,7 @@ pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
 pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
     Tunnel::new(
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+        Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
         loopback_endpoint(SecretKey::generate()).await,
         0,
         tokio::sync::watch::channel(std::collections::BTreeSet::from(["192.168.1.2"

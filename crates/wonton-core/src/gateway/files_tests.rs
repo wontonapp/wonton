@@ -22,6 +22,7 @@ use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::files::record::{Accessor, Origin};
 use crate::files::test_support::Fixture;
+use crate::files::test_support::any_langs;
 use crate::http::HttpClient;
 use crate::owner::OwnerStore;
 use crate::plugin::PluginManager;
@@ -484,7 +485,7 @@ async fn grants_add_the_bots_of_a_room() {
     assert!(
         home.f
             .files
-            .authorize(&id, &Accessor::Bot("hermes".into()))
+            .authorize(&id, &Accessor::Bot("hermes".into()), &any_langs())
             .is_ok()
     );
 
@@ -496,7 +497,7 @@ async fn grants_add_the_bots_of_a_room() {
     assert!(
         home.f
             .files
-            .authorize(&id, &Accessor::Bot("hermes".into()))
+            .authorize(&id, &Accessor::Bot("hermes".into()), &any_langs())
             .is_err()
     );
     assert_eq!(
@@ -522,7 +523,7 @@ async fn grants_add_the_bots_of_a_room() {
     assert!(
         home.f
             .files
-            .authorize(&bots_only, &Accessor::Bot("hermes".into()))
+            .authorize(&bots_only, &Accessor::Bot("hermes".into()), &any_langs())
             .is_err()
     );
 }
@@ -652,4 +653,46 @@ async fn transfers_and_changes_are_audited() {
     );
     assert_eq!(lines[0]["range"], "2-5");
     assert_eq!(lines[2]["bots"], json!(["hermes"]));
+}
+
+/// 文件接口的错误按 `Accept-Language` 挑语言：ja 和 fr-FR 拿到不同的同一句话（期望值由目录格式化出来）。
+#[tokio::test]
+async fn file_errors_follow_the_requested_language() {
+    use crate::files::new_upload_id;
+
+    let home = home().await;
+    let path = info(&new_upload_id());
+    let message = {
+        let home = &home;
+        move |header: &'static str| {
+            let path = path.clone();
+            async move {
+                let reply = home
+                    .send(
+                        home.request(Method::GET, &path)
+                            .header(header::ACCEPT_LANGUAGE, header)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await;
+                assert_eq!(reply.error_kind(), "file_unknown", "{header}");
+                reply.json()["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            }
+        }
+    };
+    let ja = message("ja").await;
+    let french = message("fr-FR").await;
+    let expected = |tag: &str| {
+        crate::l10n::CATALOG.format(
+            crate::l10n::CATALOG.negotiate(&[tag]),
+            "files-not-found",
+            &[],
+        )
+    };
+    assert_eq!(ja, expected("ja"));
+    assert_eq!(french, expected("en"));
+    assert_ne!(ja, french);
 }

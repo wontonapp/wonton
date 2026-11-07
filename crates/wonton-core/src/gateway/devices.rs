@@ -22,10 +22,12 @@ use iroh::EndpointId;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::api::{denied, error_response, plugin_denied};
+use super::api::{denied, error_response, languages, plugin_denied};
 use super::{Gateway, TunnelPeer, lan};
 use crate::device::DeviceError;
+use crate::l10n;
 use crate::pairing::{CodeKind, IssuedCode};
+use crate::plugin::languages::Languages;
 
 pub async fn tunnel(
     State(gateway): State<Arc<Gateway>>,
@@ -68,11 +70,12 @@ pub async fn add(
     if let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
+    let langs = languages(&headers);
     let Some(id) = serde_json::from_str::<NewDevice>(&body)
         .ok()
         .and_then(|device| parse_id(&device.endpoint_id))
     else {
-        return invalid_id();
+        return invalid_id(&langs);
     };
     match gateway.tunnel.devices.add(id, None) {
         Ok(added) => {
@@ -96,8 +99,9 @@ pub async fn remove(
     if let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
+    let langs = languages(&headers);
     let Some(id) = parse_id(&id) else {
-        return invalid_id();
+        return invalid_id(&langs);
     };
     match gateway.tunnel.devices.remove(&id) {
         Ok(true) => {
@@ -108,7 +112,11 @@ pub async fn remove(
             }
             Json(json!({"endpoint_id": id, "removed": true})).into_response()
         }
-        Ok(false) => error_response(StatusCode::NOT_FOUND, "not_found", "没有登记这台设备"),
+        Ok(false) => error_response(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            &l10n::text(&langs, "gateway-devices-not-found", &[]),
+        ),
         Err(e) => storage_error(&e),
     }
 }
@@ -117,11 +125,11 @@ fn parse_id(text: &str) -> Option<EndpointId> {
     EndpointId::from_str(text.trim()).ok()
 }
 
-fn invalid_id() -> Response {
+fn invalid_id(langs: &Languages) -> Response {
     error_response(
         StatusCode::BAD_REQUEST,
         "invalid_input",
-        "请求体应为 {\"endpoint_id\": \"<64 位十六进制>\"}",
+        &l10n::text(langs, "gateway-devices-invalid-id", &[]),
     )
 }
 
@@ -151,13 +159,14 @@ pub async fn pairing_code(
     if !from_device && let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
+    let langs = languages(&headers);
     let request = match new_code(&body) {
         Ok(request) => request,
-        Err(e) => return invalid_code_request(&e),
+        Err(e) => return invalid_code_request(&langs, &e),
     };
     let issued = gateway.tunnel.pairing.issue(CodeKind::Invite);
     tracing::info!("主人发了一个配对码");
-    code_response(&gateway, request.direct_addrs, issued)
+    code_response(&gateway, &langs, request.direct_addrs, issued)
 }
 
 /// 安装终端上显示的首次配对码（`wonton-core pair --first`），和状态页上的是同一个：第一台设备配上后一起作废。
@@ -169,16 +178,17 @@ pub async fn first_pairing_code(
     if let Some(denied) = denied(&gateway, &headers) {
         return denied;
     }
+    let langs = languages(&headers);
     let request = match new_code(&body) {
         Ok(request) => request,
-        Err(e) => return invalid_code_request(&e),
+        Err(e) => return invalid_code_request(&langs, &e),
     };
     match gateway.tunnel.pairing.first_code() {
-        Some(issued) => code_response(&gateway, request.direct_addrs, issued),
+        Some(issued) => code_response(&gateway, &langs, request.direct_addrs, issued),
         None => error_response(
             StatusCode::CONFLICT,
             "paired",
-            "服务器上已经有配对的设备，不再发首次配对码",
+            &l10n::text(&langs, "gateway-devices-already-paired", &[]),
         ),
     }
 }
@@ -190,21 +200,30 @@ fn new_code(body: &str) -> Result<NewCode, serde_json::Error> {
     serde_json::from_str(body)
 }
 
-fn invalid_code_request(e: &serde_json::Error) -> Response {
+fn invalid_code_request(langs: &Languages, e: &serde_json::Error) -> Response {
     error_response(
         StatusCode::BAD_REQUEST,
         "invalid_input",
-        &format!("请求体应为 {{\"direct_addrs\": [\"IP:端口\"]}}：{e}"),
+        &l10n::text(
+            langs,
+            "gateway-devices-invalid-addrs",
+            &[("error", e.to_string().into())],
+        ),
     )
 }
 
-fn code_response(gateway: &Gateway, direct_addrs: Vec<SocketAddr>, issued: IssuedCode) -> Response {
+fn code_response(
+    gateway: &Gateway,
+    langs: &Languages,
+    direct_addrs: Vec<SocketAddr>,
+    issued: IssuedCode,
+) -> Response {
     let code = lan::code_for(gateway, direct_addrs, issued.secret);
     if code.relay_urls.is_empty() && code.direct_addrs.is_empty() {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "not_ready",
-            "隧道还没连上中继，请求里也没给直连地址，码里没有能连的地址",
+            &l10n::text(langs, "gateway-devices-no-addresses", &[]),
         );
     }
     Json(json!({"code": code.to_uri(), "expires_in": issued.expires_in.as_secs()})).into_response()

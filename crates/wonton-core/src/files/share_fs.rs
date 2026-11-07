@@ -16,9 +16,10 @@ use rustix::io::Errno;
 use serde::{Deserialize, Serialize};
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
+use crate::plugin::languages::Languages;
 use crate::plugin::store;
 pub use placing::{Abandoned, BeforeLink, Names};
-use removal::{prepare_trash, recover_trash, remove_if_same};
+use removal::{prepare_trash, recover_trash};
 
 mod placing;
 mod removal;
@@ -239,10 +240,13 @@ impl Shares {
         &self,
         reference: &ShareRef,
         expected: &Snapshot,
+        langs: &Languages,
     ) -> Result<Deleted, ShareError> {
         if reference.share != TRANSFERS {
-            return Err(ShareError::Refused(format!(
-                "核心只删共享文件夹 {TRANSFERS} 里的文件"
+            return Err(ShareError::Refused(crate::l10n::text(
+                langs,
+                "files-delete-transfers-only",
+                &[("folder", TRANSFERS.into())],
             )));
         }
         let (leaf, dirs) = split_leaf(reference)?;
@@ -263,19 +267,20 @@ impl Shares {
         }
         let transfers = self.open_dir(TRANSFERS, &[])?;
         let _removing = self.removing.lock().expect("删除锁中毒");
-        remove_if_same(transfers.as_fd(), dir.as_fd(), leaf, expected)
+        removal::remove_if_same(transfers.as_fd(), dir.as_fd(), leaf, expected, langs)
     }
 
     /// 启动时：建好回收槽，建不了要让启动失败：磁盘满了再建就晚了，主人会删不了文件。
     pub fn prepare_removal(&self) -> Result<(), ShareError> {
         let dir = self.open_dir(TRANSFERS, &[])?;
-        prepare_trash(dir.as_fd())
+        // 启动时没有请求头：回收槽的核对错误按英文说，只进启动日志。
+        prepare_trash(dir.as_fd(), &Languages::from_header(None))
     }
 
     /// 启动时找回删除到一半的文件，见 [`recover_trash`]。只在启动时找：运行中槽里可能正有删除在进行。
     pub fn recover_deleting(&self) -> Result<(), ShareError> {
         let dir = self.open_dir(TRANSFERS, &[])?;
-        recover_trash(dir.as_fd())
+        recover_trash(dir.as_fd(), &Languages::from_header(None))
     }
 }
 

@@ -12,15 +12,18 @@ use wonton_protocol::AGENT_PERMISSION_PATH;
 use super::agent_permission;
 use super::api::error_response;
 use super::{Gateway, client_addr};
+use crate::l10n;
 use crate::mcp::Caller;
 use crate::plugin::Permission;
 
 pub async fn request(gateway: &Gateway, mut req: Request) -> Response {
+    // Agent 和 Bot 的调用没有请求头，文字按主人的语言写。
+    let langs = gateway.plugins.owner_languages();
     let Some(mcp) = &gateway.mcp else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "mcp_unavailable",
-            "核心没有启用 MCP 总线",
+            &l10n::text(&langs, "gateway-mcp-disabled", &[]),
         );
     };
     let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
@@ -30,14 +33,18 @@ pub async fn request(gateway: &Gateway, mut req: Request) -> Response {
             return error_response(
                 StatusCode::FORBIDDEN,
                 "permission_denied",
-                &format!("插件 {} 没有申请 tools 权限", source.id),
+                &l10n::text(
+                    &langs,
+                    "gateway-tools-permission",
+                    &[("id", source.id.to_string().into())],
+                ),
             );
         }
         None => {
             return error_response(
                 StatusCode::FORBIDDEN,
                 "unauthenticated",
-                "这个地址只给插件网络里的插件用",
+                &l10n::text(&langs, "gateway-plugin-network-only", &[]),
             );
         }
     };

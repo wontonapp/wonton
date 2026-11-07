@@ -26,6 +26,7 @@ fn lookup_uses_cldr_scripts_and_request_priority() {
     ] {
         let lang = catalog.negotiate(&[requested]);
         assert_eq!(catalog.format(lang, "language", &[]), expected);
+        assert_eq!(catalog.tag(lang), expected);
     }
     let lang = catalog.negotiate(&["ja", "zh-TW"]);
     assert_eq!(catalog.format(lang, "language", &[]), "ja");

@@ -518,6 +518,26 @@ async fn only_plugin_networks_with_the_tools_permission_get_in() {
     );
 }
 
+/// MCP 总线的文字按主人的语言写（ADR-0043）：Agent 的调用没有请求头，用 owner_languages；
+/// 期望值由目录格式化出来比，ja 和 en 要真的不同。
+#[tokio::test]
+async fn mcp_messages_follow_the_owner_languages() {
+    use crate::l10n::CATALOG;
+
+    let home = start(Some(vec![Permission::Models])).await;
+    home.gateway.plugins.note_owner_languages(Some("ja"));
+    let response = post_from_plugin_network(&home, "/mcp").await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let reply: Value = serde_json::from_slice(&body).unwrap();
+    // 权限检查报的是调用方（Agent 的插件）的编号，不是被调用的应用。
+    let args = &[("id", "com.example.agent".into())];
+    let expected =
+        |tag: &str| CATALOG.format(CATALOG.negotiate(&[tag]), "gateway-tools-permission", args);
+    assert_eq!(reply["error"]["message"], expected("ja"));
+    assert_ne!(expected("ja"), expected("en"));
+}
+
 #[tokio::test]
 async fn only_paired_devices_answer_confirmations() {
     let home = start(Some(vec![Permission::Tools])).await;

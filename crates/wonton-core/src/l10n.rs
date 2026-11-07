@@ -28,6 +28,11 @@ pub(crate) fn lang(languages: &Languages) -> Lang {
     CATALOG.negotiate(languages.requested())
 }
 
+/// 协商出的语言标签（`zh-Hans`、`zh-Hant`、`ja`、`en`），网页的 `lang` 属性用它。
+pub(crate) fn lang_tag(languages: &Languages) -> &'static str {
+    CATALOG.tag(lang(languages))
+}
+
 /// 按请求的语言写一条消息。
 pub(crate) fn text(languages: &Languages, id: &str, args: &[(&str, Arg<'_>)]) -> String {
     CATALOG.format(lang(languages), id, args)

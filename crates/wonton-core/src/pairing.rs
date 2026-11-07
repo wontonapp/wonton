@@ -9,6 +9,11 @@ use iroh::EndpointId;
 use wonton_tunnel::pair::{PairHandler, PairResponse, PairingSecret, RejectReason, SECRET_LEN};
 
 use crate::device::Devices;
+use crate::l10n;
+use crate::plugin::languages::Languages;
+
+/// 每次发拒绝文案时问一句主人的语言（配对走 QUIC 协议没有请求头，按 ADR-0043 用主人最近的语言）。
+pub type OwnerLanguages = Arc<dyn Fn() -> Languages + Send + Sync>;
 
 /// 码的有效期。
 pub const CODE_TTL: Duration = Duration::from_secs(600);
@@ -49,6 +54,7 @@ struct Entry {
 /// 发码、验码，配对成功时登记设备。码只在内存里，核心重启后全部作废。
 pub struct Pairing {
     devices: Arc<Devices>,
+    owner_languages: OwnerLanguages,
     ttl: Duration,
     codes: Mutex<HashMap<String, Entry>>,
 }
@@ -63,14 +69,15 @@ impl std::fmt::Debug for Pairing {
 }
 
 impl Pairing {
-    pub fn new(devices: Arc<Devices>) -> Self {
-        Self::with_ttl(devices, CODE_TTL)
+    pub fn new(devices: Arc<Devices>, owner_languages: OwnerLanguages) -> Self {
+        Self::with_ttl(devices, owner_languages, CODE_TTL)
     }
 
     /// 测试用更短的有效期。
-    pub fn with_ttl(devices: Arc<Devices>, ttl: Duration) -> Self {
+    pub fn with_ttl(devices: Arc<Devices>, owner_languages: OwnerLanguages, ttl: Duration) -> Self {
         Self {
             devices,
+            owner_languages,
             ttl,
             codes: Mutex::new(HashMap::new()),
         }
@@ -137,14 +144,24 @@ impl PairHandler for Pairing {
     fn pair(&self, device: EndpointId, secret: &PairingSecret, device_name: &str) -> PairResponse {
         let mut codes = self.lock();
         prune(&mut codes);
+        let langs = (self.owner_languages)();
         let Some(entry) = codes.get_mut(secret.expose()) else {
-            return rejected(RejectReason::UnknownCode, "服务器没有发过这个配对码");
+            return rejected(
+                RejectReason::UnknownCode,
+                &l10n::text(&langs, "gateway-pair-unknown-code", &[]),
+            );
         };
         if entry.used {
-            return rejected(RejectReason::Used, "这个配对码已经用过了，请换一个新码");
+            return rejected(
+                RejectReason::Used,
+                &l10n::text(&langs, "gateway-pair-code-used", &[]),
+            );
         }
         if entry.expires_at <= Instant::now() {
-            return rejected(RejectReason::Expired, "配对码过期了，请换一个新码");
+            return rejected(
+                RejectReason::Expired,
+                &l10n::text(&langs, "gateway-pair-code-expired", &[]),
+            );
         }
         let kind = entry.kind;
         let name: String = device_name.chars().take(MAX_NAME_CHARS).collect();
@@ -161,13 +178,17 @@ impl PairHandler for Pairing {
             }
             Ok(None) => rejected(
                 RejectReason::Closed,
-                "这台服务器已经有配对的设备，首次配对码不能再用；请在服务器上执行 sudo wonton pair 另发一个配对码",
+                &l10n::text(&langs, "gateway-pair-first-used", &[]),
             ),
             Err(e) => {
                 tracing::error!(error = %e, "配对时登记设备失败");
                 rejected(
                     RejectReason::ServerError,
-                    &format!("服务器登记设备失败：{e}"),
+                    &l10n::text(
+                        &langs,
+                        "gateway-pair-register-failed",
+                        &[("error", e.to_string().into())],
+                    ),
                 )
             }
         }
@@ -205,9 +226,16 @@ mod tests {
     use super::*;
 
     fn pairing(ttl: Duration) -> (tempfile::TempDir, Pairing) {
+        pairing_with_languages(ttl, Arc::new(|| Languages::from_header(None)))
+    }
+
+    fn pairing_with_languages(
+        ttl: Duration,
+        owner_languages: OwnerLanguages,
+    ) -> (tempfile::TempDir, Pairing) {
         let dir = tempfile::tempdir().unwrap();
         let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
-        (dir, Pairing::with_ttl(devices, ttl))
+        (dir, Pairing::with_ttl(devices, owner_languages, ttl))
     }
 
     fn device() -> EndpointId {
@@ -284,5 +312,28 @@ mod tests {
         assert_eq!(reason(&pairing.pair(phone, &code.secret, &long)), None);
         let name = pairing.devices().list()[0].name.clone().unwrap();
         assert_eq!(name.chars().count(), MAX_NAME_CHARS);
+    }
+
+    #[test]
+    fn rejections_follow_the_owner_language() {
+        let message = |header: &str| {
+            let langs = Languages::from_header(Some(header));
+            let (_dir, pairing) = pairing_with_languages(CODE_TTL, Arc::new(move || langs.clone()));
+            match pairing.pair(
+                device(),
+                &PairingSecret::from_bytes([9; SECRET_LEN]),
+                "手机",
+            ) {
+                PairResponse::Rejected { message, .. } => message,
+                PairResponse::Paired => panic!("未知码应该被拒"),
+            }
+        };
+        let ja = message("ja");
+        let fr = message("fr-FR");
+        assert_eq!(ja, {
+            let expected = l10n::CATALOG.negotiate(&["ja"]);
+            l10n::CATALOG.format(expected, "gateway-pair-unknown-code", &[])
+        });
+        assert_ne!(ja, fr, "拒绝文案跟着主人的语言协商");
     }
 }

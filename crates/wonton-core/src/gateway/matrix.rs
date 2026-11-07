@@ -150,6 +150,8 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
 
 /// 只转发客户端接口，先挡住可能被上游读成别的路径的写法。
 async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
+    // 转发层只在路径不合法时出一页 HTML 错误页；Matrix 的文字不在本批范围，这里只给它请求的语言。
+    let langs = super::api::languages(req.headers());
     let path = req.uri().path();
     if is_ambiguous(path) {
         return matrix_error(
@@ -184,7 +186,7 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         endpoint: &endpoint,
         name: "Tuwunel",
     };
-    match proxy::forward_or(&gateway.system_http, target, req, fwd).await {
+    match proxy::forward_or(&gateway.system_http, target, req, fwd, &langs).await {
         Ok(response) => response,
         Err(e) => matrix_forward_error(e),
     }

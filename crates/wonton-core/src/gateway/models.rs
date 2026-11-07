@@ -5,12 +5,20 @@
 use axum::extract::Request;
 use axum::response::Response;
 use hyper::StatusCode;
+use hyper::header::ACCEPT_LANGUAGE;
 
 use super::api::error_response;
 use super::{Gateway, client_addr, proxy};
+use crate::l10n;
 use crate::plugin::Permission;
+use crate::plugin::languages::Languages;
 
 pub async fn request(gateway: &Gateway, req: Request) -> Response {
+    let langs = Languages::from_header(
+        req.headers()
+            .get(ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    );
     let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
     match source {
         Some(source) if source.permissions.contains(&Permission::Models) => {}
@@ -18,14 +26,18 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
             return error_response(
                 StatusCode::FORBIDDEN,
                 "permission_denied",
-                &format!("插件 {} 没有申请 models 权限", source.id),
+                &l10n::text(
+                    &langs,
+                    "gateway-models-permission",
+                    &[("id", source.id.to_string().into())],
+                ),
             );
         }
         None => {
             return error_response(
                 StatusCode::FORBIDDEN,
                 "unauthenticated",
-                "这个地址只给插件网络里的插件用",
+                &l10n::text(&langs, "gateway-plugin-network-only", &[]),
             );
         }
     }
@@ -33,7 +45,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "models_unavailable",
-            "模型网关没在运行",
+            &l10n::text(&langs, "gateway-models-down", &[]),
         );
     };
     let fwd = proxy::Forwarded {
@@ -41,32 +53,42 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         scheme: "http",
     };
     let endpoint = crate::plugin::upstreams::Endpoint::Tcp(route.upstream.clone());
+    let name = l10n::text(&langs, "gateway-name-models", &[]);
     let target = proxy::Target {
         endpoint: &endpoint,
-        name: "模型网关",
+        name: &name,
     };
-    match proxy::forward_or(&gateway.http, target, req, fwd).await {
+    match proxy::forward_or(&gateway.http, target, req, fwd, &langs).await {
         Ok(response) => response,
-        Err(e) => forward_error(&route.id, e),
+        Err(e) => forward_error(&langs, e),
     }
 }
 
-fn forward_error(
-    route: &crate::plugin::manifest::PluginId,
-    error: proxy::ForwardError,
-) -> Response {
+fn forward_error(langs: &Languages, error: proxy::ForwardError) -> Response {
+    let name = l10n::text(langs, "gateway-name-models", &[]);
     match error {
         proxy::ForwardError::Unreachable(e) | proxy::ForwardError::SystemResolution(e) => {
             error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_unreachable",
-                &format!("模型网关 {route} 暂时无法访问：{e}"),
+                &l10n::text(
+                    langs,
+                    "gateway-upstream-unreachable",
+                    &[
+                        ("name", name.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ),
             )
         }
         proxy::ForwardError::HeaderTimeout => error_response(
             StatusCode::GATEWAY_TIMEOUT,
             "upstream_timeout",
-            &format!("模型网关 {route} 迟迟没有回应，可以稍后重试"),
+            &l10n::text(
+                langs,
+                "gateway-upstream-timeout",
+                &[("name", name.as_str().into())],
+            ),
         ),
     }
 }
@@ -89,10 +111,7 @@ mod tests {
                 "upstream_timeout",
             ),
         ] {
-            let response = forward_error(
-                &crate::plugin::manifest::PluginId::parse("a.b.c").unwrap(),
-                error,
-            );
+            let response = forward_error(&Languages::default(), error);
             assert_eq!(response.status(), status);
             assert_eq!(response.headers()["x-wonton-error"], kind);
         }

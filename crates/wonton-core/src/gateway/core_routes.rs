@@ -11,6 +11,8 @@ use axum::{Json, Router};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
+use crate::l10n;
+
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, files, isolation, matrix,
@@ -203,8 +205,14 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .merge(confirmation_routes())
         .merge(files::routes(gateway.clone()))
-        .fallback(|| async {
-            pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面")
+        .fallback(|headers: HeaderMap| async move {
+            let langs = api::languages(&headers);
+            pages::error(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                &l10n::text(&langs, "gateway-not-found", &[]),
+                &langs,
+            )
         })
         .layer(middleware::from_fn_with_state(
             gateway.clone(),
@@ -224,10 +232,12 @@ async fn reject_cross_site_writes(
         return next.run(req).await;
     }
     tracing::warn!(method = %req.method(), path = req.uri().path(), "拒绝核心域名上的跨站修改请求");
+    let langs = api::languages(req.headers());
     pages::error(
         StatusCode::FORBIDDEN,
         "cross_site",
-        "核心只接受自己页面发起的修改请求",
+        &l10n::text(&langs, "gateway-cross-site-write", &[]),
+        &langs,
     )
 }
 
@@ -236,9 +246,10 @@ async fn home(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
+    let langs = api::languages(&headers);
     match gateway.core_user(peer.map(|Extension(peer)| peer), &headers) {
-        Some(user) => pages::status(&user, &gateway.plugins.list()),
-        None => pages::login("/", false),
+        Some(user) => pages::status(&user, &gateway.plugins.list(), &langs),
+        None => pages::login("/", false, &langs),
     }
 }
 
@@ -248,8 +259,12 @@ struct NextQuery {
     next: Option<String>,
 }
 
-async fn login_page(Query(query): Query<NextQuery>) -> Response {
-    pages::login(query.next.as_deref().unwrap_or("/"), false)
+async fn login_page(Query(query): Query<NextQuery>, headers: HeaderMap) -> Response {
+    pages::login(
+        query.next.as_deref().unwrap_or("/"),
+        false,
+        &api::languages(&headers),
+    )
 }
 
 #[derive(Deserialize)]
@@ -259,11 +274,15 @@ struct LoginForm {
     next: Option<String>,
 }
 
-async fn login(State(gateway): State<Arc<Gateway>>, Form(form): Form<LoginForm>) -> Response {
+async fn login(
+    State(gateway): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    Form(form): Form<LoginForm>,
+) -> Response {
     let next = safe_next(&gateway, form.next.as_deref());
     if !gateway.check_owner_token(&form.token) {
         tracing::warn!("主人令牌不正确");
-        return pages::login(&next, true);
+        return pages::login(&next, true, &api::languages(&headers));
     }
     let sid = gateway.sessions.create_core(gateway.owner.username());
     let cookie = set_cookie(CORE_COOKIE, &sid, CORE_TTL, gateway.secure_cookies());

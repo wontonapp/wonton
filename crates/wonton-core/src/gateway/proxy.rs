@@ -17,6 +17,8 @@ use crate::http::{
     HttpClient, HttpError,
     deadline::{FlushIo, ResponseDeadline},
 };
+use crate::l10n;
+use crate::plugin::languages::Languages;
 use crate::plugin::upstreams::Endpoint;
 
 const RESPONSE_HEADER_DEADLINE: Duration = Duration::from_secs(120);
@@ -92,8 +94,9 @@ pub async fn forward(
     target: Target<'_>,
     req: Request,
     fwd: Forwarded<'_>,
+    langs: &Languages,
 ) -> Response {
-    forward_with_deadline(http, target, req, fwd, RESPONSE_HEADER_DEADLINE).await
+    forward_with_deadline(http, target, req, fwd, RESPONSE_HEADER_DEADLINE, langs).await
 }
 
 /// 同 [`forward`]，期限由调用方指定（测试用短期限），失败回 HTML 错误页。
@@ -103,11 +106,12 @@ pub(crate) async fn forward_with_deadline(
     req: Request,
     fwd: Forwarded<'_>,
     limit: Duration,
+    langs: &Languages,
 ) -> Response {
     let name = target.name;
-    match forward_with_limit(http, target, req, fwd, limit).await {
+    match forward_with_limit(http, target, req, fwd, limit, langs).await {
         Ok(response) => response,
-        Err(error) => error.response(name),
+        Err(error) => error.response(name, langs),
     }
 }
 
@@ -122,20 +126,26 @@ pub enum ForwardError {
 }
 
 impl ForwardError {
-    pub(super) fn response(self, name: &str) -> Response {
+    pub(super) fn response(self, name: &str, langs: &Languages) -> Response {
         match self {
             Self::SystemResolution(e) => {
-                pages::error(StatusCode::BAD_GATEWAY, "upstream_unreachable", &e)
+                pages::error(StatusCode::BAD_GATEWAY, "upstream_unreachable", &e, langs)
             }
             Self::Unreachable(e) => pages::error(
                 StatusCode::BAD_GATEWAY,
                 "upstream_unreachable",
-                &format!("{name} 暂时无法访问：{e}"),
+                &l10n::text(
+                    langs,
+                    "gateway-upstream-unreachable",
+                    &[("name", name.into()), ("error", e.as_str().into())],
+                ),
+                langs,
             ),
             Self::HeaderTimeout => pages::error(
                 StatusCode::GATEWAY_TIMEOUT,
                 "upstream_timeout",
-                &format!("{name} 迟迟没有回应，可以稍后重试"),
+                &l10n::text(langs, "gateway-upstream-timeout", &[("name", name.into())]),
+                langs,
             ),
         }
     }
@@ -156,8 +166,9 @@ pub async fn forward_or(
     target: Target<'_>,
     req: Request,
     fwd: Forwarded<'_>,
+    langs: &Languages,
 ) -> Result<Response, ForwardError> {
-    forward_with_limit(http, target, req, fwd, RESPONSE_HEADER_DEADLINE).await
+    forward_with_limit(http, target, req, fwd, RESPONSE_HEADER_DEADLINE, langs).await
 }
 
 async fn forward_with_limit(
@@ -166,6 +177,7 @@ async fn forward_with_limit(
     mut req: Request,
     fwd: Forwarded<'_>,
     limit: Duration,
+    langs: &Languages,
 ) -> Result<Response, ForwardError> {
     let upgrade = is_upgrade(req.headers());
     let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
@@ -184,7 +196,8 @@ async fn forward_with_limit(
         return Ok(pages::error(
             StatusCode::BAD_REQUEST,
             "invalid_input",
-            "请求路径不合法",
+            &l10n::text(langs, "gateway-invalid-path", &[]),
+            langs,
         ));
     };
     let host = parts.headers.get(header::HOST).cloned();
@@ -399,6 +412,7 @@ mod tests {
                                     client: None,
                                     scheme: "http",
                                 },
+                                &Languages::from_header(None),
                             )
                             .await,
                         )
@@ -466,6 +480,7 @@ mod tests {
             },
             request,
             forwarded,
+            &Languages::from_header(None),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);

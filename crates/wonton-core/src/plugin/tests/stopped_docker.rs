@@ -37,6 +37,7 @@ async fn gateway(
         .unwrap();
     let tunnel = Tunnel::new(
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+        Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
         endpoint,
         0,
         manager.lan_addresses(),

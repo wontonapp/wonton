@@ -18,20 +18,23 @@ use wonton_tunnel::pair::{PairingCode, PairingSecret};
 use super::{Gateway, pages};
 use crate::pairing::IssuedCode;
 use crate::plugin::PluginStatus;
+use crate::plugin::languages::Languages;
 
 /// 状态页多久自己刷新一次：码快过期、或者刚被扫走时，页面跟着换。
 const REFRESH_SECS: u32 = 20;
 
 pub fn request(gateway: &Gateway, host_ip: IpAddr, req: &Request) -> Response {
+    // 局域网页不在多语言范围（ADR-0043），保持现状：文字固定简体，插件标题按同一套回退挑中文。
+    let langs = Languages::from_header(Some("zh"));
     if req.method() != Method::GET || req.uri().path() != "/" {
-        return pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面");
+        return pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面", &langs);
     }
     let code = gateway
         .tunnel
         .pairing
         .first_code()
         .map(|issued| pairing_code(gateway, host_ip, issued));
-    let mut response = Html(page(gateway, code.as_ref())).into_response();
+    let mut response = Html(page(gateway, code.as_ref(), &langs)).into_response();
     // 码是一次性的，页面不能被缓存。
     response
         .headers_mut()
@@ -66,7 +69,7 @@ pub(super) fn core_url(gateway: &Gateway) -> Url {
     Url::parse(&gateway.public.origin(gateway.public.core_host())).expect("核心地址总能解析")
 }
 
-fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>) -> String {
+fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>, langs: &Languages) -> String {
     let pairing = match code {
         Some((code, expires_in)) => {
             let svg = QrCode::new(code.to_uri().as_bytes())
@@ -93,7 +96,7 @@ fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>) -> String {
     };
     let body = format!(
         "<h1>云吞</h1><h2>运行状态</h2><ul>{status}</ul>{pairing}",
-        status = status_items(gateway)
+        status = status_items(gateway, langs)
     );
     format!(
         "<!doctype html><html lang=\"zh\"><head><meta charset=\"utf-8\">\
@@ -108,7 +111,7 @@ fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>) -> String {
 
 /// 只给数字和就绪与否：局域网里谁都打得开这个页面，不列出主人装了哪些插件。随核心附带的插件每台主机都有，没在运行
 /// 时逐个写明在装还是出了什么错（比如拉不下镜像）。
-fn status_items(gateway: &Gateway) -> String {
+fn status_items(gateway: &Gateway, langs: &Languages) -> String {
     let ready = |ok: bool| if ok { "就绪" } else { "没有接入" };
     let plugins = gateway.plugins.list();
     let running = plugins
@@ -138,10 +141,10 @@ fn status_items(gateway: &Gateway) -> String {
     items.extend(gateway.plugins.bundled_not_running().iter().map(|p| {
         // 原因的第一行说清是什么错。没通过健康检查时后面跟着容器日志，Agent 的日志里可能有聊天内容，只在主人登录后
         // 的插件列表里给。
-        let state = pages::state_of(&p.status);
+        let state = pages::state_of(&p.status, langs);
         format!(
             "{}：{}",
-            pages::escape(&pages::title_of(p)),
+            pages::escape(&pages::title_of(p, langs)),
             pages::escape(state.lines().next().unwrap_or_default())
         )
     }));

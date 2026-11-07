@@ -20,6 +20,11 @@ const AGENT: &str = "com.example.agent";
 const NOTES: &str = "app.example.notes";
 const FIND: &str = "app-example-notes__find";
 
+/// 测试不挑语言：空的 `Languages` 协商成英文。
+fn any_langs() -> crate::plugin::languages::Languages {
+    crate::plugin::languages::Languages::from_header(None)
+}
+
 struct Bench {
     s: Setup,
     f: Fixture,
@@ -129,7 +134,7 @@ impl Bench {
     }
 
     async fn owner_info(&self, id: &FileId) -> Result<FileInfo, FileFailure> {
-        let info = self.f.files.info(id, &Accessor::Owner).await;
+        let info = self.f.files.info(id, &Accessor::Owner, &any_langs()).await;
         info.map_err(|e| e.kind)
     }
 }
@@ -494,7 +499,10 @@ async fn bots_see_device_uploads_once_granted() {
         .lock()
         .unwrap()
         .insert("!bot:home".into(), vec![AGENT.into()]);
-    b.f.files.grant_room(&id, "!bot:home").await.unwrap();
+    b.f.files
+        .grant_room(&id, "!bot:home", &any_langs())
+        .await
+        .unwrap();
     let result = b.view(&id).await;
     assert!(!failed(&result), "{}", text(&result));
     assert_eq!(images(&result), [(32, 32)]);
@@ -518,16 +526,25 @@ async fn owner_grants_outlive_the_source_plugin_grant() {
         .lock()
         .unwrap()
         .insert("!bot:home".into(), vec![AGENT.into()]);
-    b.f.files.grant_room(&id, "!bot:home").await.unwrap();
+    b.f.files
+        .grant_room(&id, "!bot:home", &any_langs())
+        .await
+        .unwrap();
     assert!(!failed(&b.share(&id).await), "主人给的，插件的授权不再算数");
     b.f.put("photos/a.txt", b"owner edited");
     assert!(!failed(&b.share(&id).await), "主人给的，读得到就行");
 
-    b.f.files.revoke_bot(&id, AGENT).await.unwrap();
+    b.f.files
+        .revoke_bot(&id, AGENT, &any_langs())
+        .await
+        .unwrap();
     starts_with_kind(&b.share(&id).await, FileFailure::FileUnknown);
     assert!(b.owner_info(&id).await.is_ok(), "主人自己不受影响");
 
-    b.f.files.grant_room(&id, "!bot:home").await.unwrap();
+    b.f.files
+        .grant_room(&id, "!bot:home", &any_langs())
+        .await
+        .unwrap();
     std::fs::remove_file(b.f.shares_dir.join("photos/a.txt")).unwrap();
     starts_with_kind(&b.share(&id).await, FileFailure::FileGone);
 }

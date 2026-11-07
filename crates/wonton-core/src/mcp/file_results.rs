@@ -18,6 +18,7 @@ use crate::files::record::FileRecord;
 use crate::files::share_fs::ShareRef;
 use crate::files::{BotRef, Failure, Files};
 use crate::plugin::PluginId;
+use crate::plugin::languages::Languages;
 
 /// 一个结果最多登记这么多个文件，每个占一行上下文。
 const MAX_FILES: usize = 100;
@@ -46,6 +47,7 @@ pub(super) async fn rewrite(
     mut result: CallToolResult,
 ) -> (CallToolResult, Vec<AuditedFile>) {
     strip_meta(&mut result.meta);
+    let langs = bus.plugins.owner_languages();
     let target = bus
         .files()
         .and_then(|files| Ok((files.clone(), bus.bot_ref(caller, plugin)?)));
@@ -72,7 +74,7 @@ pub(super) async fn rewrite(
         }
         let registered = match &target {
             Ok((files, bot)) => {
-                tokio::time::timeout_at(deadline, register(files, bot, plugin, &link)).await
+                tokio::time::timeout_at(deadline, register(files, bot, plugin, &link, &langs)).await
             }
             Err(failure) => Ok(Err(failure.clone())),
         };
@@ -87,7 +89,7 @@ pub(super) async fn rewrite(
         refusals.push(AuditedFile::refused(plugin, &link.uri, failure.kind));
         parts.push(Part::Block(ContentBlock::text(refused(&link, &failure))));
     }
-    let previews = previews(target.as_ref().ok().map(|(files, _)| files), &parts).await;
+    let previews = previews(target.as_ref().ok().map(|(files, _)| files), &parts, &langs).await;
     let mut audited = Vec::new();
     let (mut content, mut previewed) = (Vec::with_capacity(parts.len()), false);
     for (part, preview) in parts.into_iter().zip(previews) {
@@ -122,13 +124,16 @@ async fn register(
     bot: &BotRef,
     plugin: &PluginId,
     link: &Resource,
+    langs: &Languages,
 ) -> Result<FileRecord, Failure> {
     let mime_type = link.mime_type.as_deref();
     if ShareRef::is_reference(&link.uri) {
         let reference = ShareRef::parse(&link.uri)
             .map_err(|why| Failure::new(FileFailure::PermissionDenied, why))?;
         let name = Some(link.name.as_str()).filter(|name| !name.is_empty());
-        return files.register_share(bot, reference, name, mime_type).await;
+        return files
+            .register_share(bot, reference, name, mime_type, langs)
+            .await;
     }
     let internal = link
         .meta
@@ -137,13 +142,17 @@ async fn register(
         .and_then(|url| url.as_str());
     files
         .register_resource(
-            bot, plugin, &link.uri, internal, &link.name, mime_type, link.size,
+            bot, plugin, &link.uri, internal, &link.name, mime_type, link.size, langs,
         )
         .await
 }
 
 /// 每张图片的预览，和 `parts` 一一对应，前 [`MAX_PREVIEWS`] 张之外都是空的。解不了的也占名额、不附，文字照常。
-async fn previews(files: Option<&Arc<Files>>, parts: &[Part]) -> Vec<Option<String>> {
+async fn previews(
+    files: Option<&Arc<Files>>,
+    parts: &[Part],
+    langs: &Languages,
+) -> Vec<Option<String>> {
     let mut left = MAX_PREVIEWS;
     let jobs = parts.iter().map(|part| {
         let wanted = match part {
@@ -160,7 +169,8 @@ async fn previews(files: Option<&Arc<Files>>, parts: &[Part]) -> Vec<Option<Stri
             // 同时读的就超过名额，串行的插件还会被误判超时。后台的这次仍受名额和读取期限的约束。
             let job = tokio::spawn({
                 let (files, record) = (files.clone(), record.clone());
-                async move { files.preview(&record).await }
+                let langs = langs.clone();
+                async move { files.preview(&record, &langs).await }
             });
             match tokio::time::timeout(files.preview_budget, job).await {
                 Ok(Ok(Ok(jpeg))) => Some(STANDARD.encode(jpeg)),

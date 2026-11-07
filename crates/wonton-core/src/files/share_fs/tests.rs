@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use super::placing::{link_checked, link_to_temp};
 use super::removal::TRASH;
 use super::*;
+use crate::files::test_support::any_langs;
 use crate::plugin::hostdir::Owner;
 
 mod removal_tests;
@@ -157,19 +158,25 @@ fn delete_checks_the_file_is_still_the_same_one() {
     fs::remove_file(&path).unwrap();
     fs::write(&path, "another").unwrap();
     assert_eq!(
-        f.shares.delete_if_unchanged(&target, &original).unwrap(),
+        f.shares
+            .delete_if_unchanged(&target, &original, &any_langs())
+            .unwrap(),
         Deleted::Changed
     );
     assert_eq!(fs::read_to_string(&path).unwrap(), "another");
 
     let current = f.shares.open(&target).unwrap().snapshot;
     assert_eq!(
-        f.shares.delete_if_unchanged(&target, &current).unwrap(),
+        f.shares
+            .delete_if_unchanged(&target, &current, &any_langs())
+            .unwrap(),
         Deleted::Removed { durable: true }
     );
     assert!(!path.exists());
     assert_eq!(
-        f.shares.delete_if_unchanged(&target, &current).unwrap(),
+        f.shares
+            .delete_if_unchanged(&target, &current, &any_langs())
+            .unwrap(),
         Deleted::AlreadyGone
     );
 }
@@ -185,7 +192,9 @@ fn delete_does_not_follow_a_symlink_put_in_its_place() {
     fs::rename(&path, &elsewhere).unwrap();
     symlink(&elsewhere, &path).unwrap();
     assert_eq!(
-        f.shares.delete_if_unchanged(&target, &original).unwrap(),
+        f.shares
+            .delete_if_unchanged(&target, &original, &any_langs())
+            .unwrap(),
         Deleted::Changed
     );
     assert!(elsewhere.exists());
@@ -198,7 +207,9 @@ fn only_files_in_transfers_can_be_deleted() {
     let f = fixture();
     let target = reference("photos/2025/a.jpg");
     let original = f.shares.open(&target).unwrap().snapshot;
-    let refused = f.shares.delete_if_unchanged(&target, &original);
+    let refused = f
+        .shares
+        .delete_if_unchanged(&target, &original, &any_langs());
     assert!(
         matches!(refused, Err(ShareError::Refused(_))),
         "{refused:?}"
@@ -230,6 +241,7 @@ fn place(f: &Fixture, id: &str, size: u64, name: &str) -> Result<(String, Snapsh
             owner: f.owner,
             placing_inode: None,
         },
+        &any_langs(),
         &mut |_, _| Ok(()),
     )
 }
@@ -402,9 +414,15 @@ fn copy_again(
         owner: f.owner,
         placing_inode,
     };
-    placing::through_temp(&source, ID, dir.as_fd(), names, &mut |_, _| Ok(()), |_| {
-        Ok(None)
-    })
+    placing::through_temp(
+        &source,
+        ID,
+        dir.as_fd(),
+        names,
+        &any_langs(),
+        &mut |_, _| Ok(()),
+        |_| Ok(None),
+    )
     .unwrap()
 }
 
@@ -531,7 +549,15 @@ fn a_file_swapped_onto_the_target_name_is_left_alone() {
     fs::write(transfers.join("ours"), "ours").unwrap();
     let ours = fs::File::open(transfers.join("ours")).unwrap();
     // 把“名字上已经是别的文件”造出来：链接的是别的文件，核对的是 `ours`。
-    let err = link_checked(dir.as_fd(), "theirs", "a.txt", &ours, &mut |_, _| Ok(())).unwrap_err();
+    let err = link_checked(
+        dir.as_fd(),
+        "theirs",
+        "a.txt",
+        &ours,
+        &any_langs(),
+        &mut |_, _| Ok(()),
+    )
+    .unwrap_err();
     assert!(matches!(err, ShareError::Refused(_)), "{err}");
     assert_eq!(
         fs::read_to_string(transfers.join("a.txt")).unwrap(),
@@ -551,7 +577,15 @@ fn data_swapped_after_opening_is_not_placed() {
     fs::write(uploads(&f).join(ID), "swapped").unwrap();
     let dir = f.shares.open_dir(TRANSFERS, &[]).unwrap();
     let temp = format!("{UPLOAD_TEMP_PREFIX}{ID}");
-    let err = link_to_temp(data_dir.as_fd(), ID, dir.as_fd(), &temp, &source.file).unwrap_err();
+    let err = link_to_temp(
+        data_dir.as_fd(),
+        ID,
+        dir.as_fd(),
+        &temp,
+        &source.file,
+        &any_langs(),
+    )
+    .unwrap_err();
     assert!(matches!(err, ShareError::Refused(_)), "{err}");
     assert!(names_in(&transfers).is_empty());
     assert_eq!(fs::read_to_string(uploads(&f).join(ID)).unwrap(), "swapped");

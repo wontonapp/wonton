@@ -11,6 +11,7 @@ use tokio::{
 };
 
 use super::{Endpoint, Forwarded, HttpClient, Target, forward_with_limit};
+use crate::plugin::languages::Languages;
 
 const LIMIT: Duration = Duration::from_millis(300);
 const WAIT: Duration = Duration::from_secs(10);
@@ -36,6 +37,7 @@ async fn forward(endpoint: &Endpoint, request: Request<Body>) -> axum::response:
             scheme: "http",
         },
         LIMIT,
+        &Languages::from_header(None),
     )
     .await
     .unwrap()
@@ -55,6 +57,7 @@ async fn web(endpoint: &Endpoint, request: Request<Body>) -> axum::response::Res
             scheme: "http",
         },
         LIMIT,
+        &Languages::from_header(None),
     )
     .await
 }
@@ -76,6 +79,7 @@ async fn api(
             scheme: "http",
         },
         LIMIT,
+        &Languages::from_header(None),
     )
     .await
 }

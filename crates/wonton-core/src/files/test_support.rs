@@ -19,7 +19,13 @@ use crate::mcp::audit::Audit;
 use crate::plugin::PluginId;
 use crate::plugin::hostdir::Owner;
 use crate::plugin::image_worker::ImageWorker;
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
+
+/// 测试不挑语言：空的 `Languages` 协商成英文。
+pub(crate) fn any_langs() -> Languages {
+    Languages::from_header(None)
+}
 
 /// 预设回答的核心。
 #[derive(Default)]
@@ -272,6 +278,7 @@ impl Fixture {
                     owner: self.owner,
                     placing_inode: None,
                 },
+                &Languages::from_header(None),
                 &mut |_, _| Ok(()),
             )
             .unwrap();
@@ -337,4 +344,9 @@ impl Fixture {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
     }
+}
+
+/// `wonton-share:` 引用，测试里拼路径用。
+pub(crate) fn share(path: &str) -> ShareRef {
+    ShareRef::parse(&format!("wonton-share:{path}")).unwrap()
 }
