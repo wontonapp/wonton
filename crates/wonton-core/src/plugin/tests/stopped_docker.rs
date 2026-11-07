@@ -5,13 +5,11 @@ use std::sync::Arc;
 
 use bollard::models::ContainerStateStatusEnum;
 use bollard::query_parameters::StopContainerOptionsBuilder;
-use futures_util::FutureExt;
 use iroh::{Endpoint, SecretKey};
 use serde_json::Value;
 use tokio::net::TcpListener;
 
 use super::super::docker::Engine;
-use super::super::names::Instance;
 use super::super::{PluginManager, PluginStatus};
 use super::manager::manager_in_instance;
 use super::package;
@@ -19,6 +17,7 @@ use crate::config::DEFAULT_INSTALL_TIMEOUT;
 use crate::device::Devices;
 use crate::gateway::{Gateway, router};
 use crate::http::HttpClient;
+use crate::test_docker::Names;
 use crate::tunnel::Tunnel;
 
 const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
@@ -72,11 +71,10 @@ async fn exercise(
     manager: Arc<PluginManager>,
     engine: &Engine,
     dir: &tempfile::TempDir,
-    instance: &str,
+    names: &Names,
 ) {
     let installed = manager.install(&compose(), &[]).await.unwrap();
     assert_eq!(installed.status, PluginStatus::Running);
-    let names = Instance::parse(Some(instance)).unwrap();
     let app = names.container("app-test", "app");
     let init = names.container("app-test", "init");
     let app_before = engine.inspect_container(&app).await.unwrap().unwrap();
@@ -106,41 +104,57 @@ async fn exercise(
     );
     manager.watch_containers().await;
     assert_eq!(manager.list()[0].status, PluginStatus::Stopped);
-    let mut restarted = manager_in_instance(engine.clone(), dir, instance);
+    let mut restarted = manager_in_instance(engine.clone(), dir, names.name());
     restarted.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
     let restarted = Arc::new(restarted);
     restarted.restore().await.unwrap();
     assert_eq!(restarted.list()[0].status, PluginStatus::Stopped);
 
     let (port, server) = gateway(restarted.clone(), dir.path()).await;
-    let result = std::panic::AssertUnwindSafe(async {
-        let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let url = format!("http://127.0.0.1:{port}/_wonton/api/plugins/app.test/start");
-        for _ in 0..2 {
-            let response = http.post(&url).header("host", "wonton.localhost:8080")
-                .bearer_auth(TOKEN).send().await.unwrap();
-            let status = response.status();
-            let body: Value = response.json().await.unwrap();
-            assert_eq!(status.as_u16(), 200, "{body}");
-            assert_eq!(body["status"]["state"], "running");
-        }
-        let route = restarted.route("app-test").unwrap();
-        let upstream = route.upstream.unwrap();
-        let page = http.get(upstream.url("/")).send().await.unwrap().text().await.unwrap();
-        assert_eq!(page, "persistent\n");
-        assert_eq!(restarted.list()[0].status, PluginStatus::Running);
-        let app_after = engine.inspect_container(&app).await.unwrap().unwrap();
-        let init_after = engine.inspect_container(&init).await.unwrap().unwrap();
-        assert_eq!(app_before.id, app_after.id);
-        assert_eq!(init_before.state.unwrap().started_at, init_after.state.unwrap().started_at);
-        assert_eq!(std::fs::read(data.join("init-runs")).unwrap(), initialized);
-        assert_eq!(app_after.state.unwrap().status, Some(ContainerStateStatusEnum::RUNNING));
-        println!("{instance}: exited → Stopped（巡检和核心重启）→ POST start 200 → Running；重复 start 200；网页 persistent；容器 ID 和一次性服务未改变");
-    }).catch_unwind().await;
-    server.abort();
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let url = format!("http://127.0.0.1:{port}/_wonton/api/plugins/app.test/start");
+    for _ in 0..2 {
+        let response = http
+            .post(&url)
+            .header("host", "wonton.localhost:8080")
+            .bearer_auth(TOKEN)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(status.as_u16(), 200, "{body}");
+        assert_eq!(body["status"]["state"], "running");
     }
+    let route = restarted.route("app-test").unwrap();
+    let upstream = route.upstream.unwrap();
+    let page = http
+        .get(upstream.url("/"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(page, "persistent\n");
+    assert_eq!(restarted.list()[0].status, PluginStatus::Running);
+    let app_after = engine.inspect_container(&app).await.unwrap().unwrap();
+    let init_after = engine.inspect_container(&init).await.unwrap().unwrap();
+    assert_eq!(app_before.id, app_after.id);
+    assert_eq!(
+        init_before.state.unwrap().started_at,
+        init_after.state.unwrap().started_at
+    );
+    assert_eq!(std::fs::read(data.join("init-runs")).unwrap(), initialized);
+    assert_eq!(
+        app_after.state.unwrap().status,
+        Some(ContainerStateStatusEnum::RUNNING)
+    );
+    println!(
+        "{}: exited → Stopped（巡检和核心重启）→ POST start 200 → Running；重复 start 200；网页 persistent；容器 ID 和一次性服务未改变",
+        names.name()
+    );
+    server.abort();
 }
 
 #[tokio::test]
@@ -148,36 +162,9 @@ async fn exercise(
 async fn stopped_plugin_starts_existing_containers_via_http() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
+    let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
-    let instance = format!("s2{:x}", getrandom::u32().unwrap());
-    let mut manager = manager_in_instance(engine.clone(), &dir, &instance);
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
     manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
-    let manager = Arc::new(manager);
-    let result = std::panic::AssertUnwindSafe(exercise(manager.clone(), &engine, &dir, &instance))
-        .catch_unwind()
-        .await;
-    let names = Instance::parse(Some(&instance)).unwrap();
-    engine
-        .remove_container(&names.container("app-test", "app"))
-        .await
-        .unwrap();
-    engine
-        .remove_container(&names.container("app-test", "init"))
-        .await
-        .unwrap();
-    engine
-        .remove_network(&names.network("app-test"))
-        .await
-        .unwrap();
-    assert!(
-        engine
-            .inspect_container(&names.container("app-test", "app"))
-            .await
-            .unwrap()
-            .is_none()
-    );
-    println!("{instance}: 已删除本测试全部容器和网络");
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    exercise(Arc::new(manager), &engine, &dir, &names).await;
 }

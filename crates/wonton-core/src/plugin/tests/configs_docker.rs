@@ -10,10 +10,10 @@ use std::time::Duration;
 use super::super::compose::PullPolicy;
 use super::super::docker::Engine;
 use super::super::docker_exec::ExecOutput;
-use super::super::names::Instance;
 use super::super::{PluginId, PluginPackage, PluginStatus};
-use super::manager::manager_with;
+use super::manager::manager_in_instance;
 use super::package;
+use crate::test_docker::Names;
 
 const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
 
@@ -41,15 +41,16 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
         .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
+    let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
     // 默认的 5 秒熬不过无健康检查服务要求的 3 秒稳定运行（STABLE_FOR）加安装步骤。
-    let mut manager = manager_with(engine.clone(), &dir);
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
     manager.cfg.install_timeout = Duration::from_secs(60);
     let m = Arc::new(manager);
     m.install(&compose("v1\\n"), &[]).await.unwrap();
     assert_eq!(m.list()[0].status, PluginStatus::Running);
 
-    let web = Instance::default().container("app-test", "web");
+    let web = names.container("app-test", "web");
     async fn run(engine: &Engine, web: &str, argv: &[&str]) -> ExecOutput {
         let argv: Vec<String> = argv.iter().map(|a| a.to_string()).collect();
         engine
@@ -67,7 +68,12 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     let write = run(&engine, &web, &["sh", "-c", "echo x > /tmp/w"]).await;
     assert_ne!(write.exit_code, 0, "{}", write.stdout);
     // 宿主上的 store 文件是 daemon 写的，属主和权限照声明——核心以非 root 运行时也成立。
-    let staged = dir.path().join("core/configs/app-test/web/0");
+    // 有实例名时，configs 存在 <数据目录>/core/configs/<实例>/<插件>/<服务>/<编号>。
+    let staged = dir
+        .path()
+        .join("core/configs")
+        .join(names.name())
+        .join("app-test/web/0");
     let meta = std::fs::metadata(&staged).unwrap();
     assert_eq!(
         (meta.uid(), meta.gid(), meta.mode() & 0o777),

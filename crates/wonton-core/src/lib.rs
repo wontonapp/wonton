@@ -2,6 +2,16 @@
 //!
 //! 设计见 `docs/ARCHITECTURE.md` 与 `docs/adr/0006-plugin-system.md`。
 
+// 真实 Docker 测试的共用辅助（#[cfg(test)] 的 test_docker）对单元测试和 tests/ 里的集成测试都按
+// `wonton_core::` 引用，本 crate 内部给自己起这个别名，两种编译单元共用同一份文件。
+#[cfg(test)]
+extern crate self as wonton_core;
+
+#[cfg(test)]
+pub mod test_docker;
+#[cfg(test)]
+mod test_docker_check;
+
 pub mod bot_media;
 pub mod config;
 pub mod device;

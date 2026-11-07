@@ -15,6 +15,10 @@ use wonton_core::plugin::egress::address::ProxyAddress;
 use wonton_core::plugin::egress::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
 use wonton_core::plugin::egress::lists::{self, Lists, Reach};
 
+// 共用的真实 Docker 测试辅助：每次运行唯一的实例名和资源回收。
+#[path = "../src/test_docker.rs"]
+mod test_docker;
+
 /// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const USERNAME: &str = "u@x";
@@ -36,43 +40,21 @@ struct Names {
 }
 
 impl Names {
-    fn new() -> Self {
-        let prefix = format!("wonton-gosttest{}", std::process::id());
-        let name = |suffix: &str| format!("{prefix}-{suffix}");
+    /// 全部一次性资源，名字带每次运行唯一的实例名，由 `test_docker::Names` 的守卫回收。
+    fn new(names: &mut test_docker::Names) -> Self {
+        // 出口容器的名字和它自己的网络名是同一个。
+        let relay = names.oneshot_network("gost-relay");
         Self {
-            own: prefix.clone(),
-            plugin: name("plugin"),
-            upstream_network: name("upnet"),
-            far_network: name("farnet"),
-            relay: prefix.clone(),
-            upstream: name("upstream"),
-            far: name("far"),
-            near: name("near"),
-            client: name("client"),
-            neighbor: name("neighbor"),
-        }
-    }
-
-    async fn remove(&self, engine: &Engine) {
-        let containers = [
-            &self.relay,
-            &self.upstream,
-            &self.far,
-            &self.near,
-            &self.client,
-            &self.neighbor,
-        ];
-        for container in containers {
-            engine.remove_container(container).await.unwrap();
-        }
-        let networks = [
-            &self.own,
-            &self.plugin,
-            &self.upstream_network,
-            &self.far_network,
-        ];
-        for network in networks {
-            engine.remove_network(network).await.unwrap();
+            own: relay.clone(),
+            plugin: names.oneshot_network("gost-plugin"),
+            upstream_network: names.oneshot_network("gost-upnet"),
+            far_network: names.oneshot_network("gost-farnet"),
+            relay: names.register_container(relay),
+            upstream: names.oneshot_container("gost-upstream"),
+            far: names.oneshot_container("gost-far"),
+            near: names.oneshot_container("gost-near"),
+            client: names.oneshot_container("gost-client"),
+            neighbor: names.oneshot_container("gost-neighbor"),
         }
     }
 }
@@ -322,13 +304,9 @@ async fn the_relay_goes_through_the_owners_proxy_and_follows_its_lists() {
             .await
             .unwrap();
     }
-    let names = Names::new();
+    let mut names = test_docker::Names::new();
+    let names = Names::new(&mut names);
     let dir = tempfile::tempdir().unwrap();
     let files = RelayFiles::new(dir.path().join("relay"), runner());
-    let run = std::panic::AssertUnwindSafe(exercise(&engine, &names, &files));
-    let result = futures_util::FutureExt::catch_unwind(run).await;
-    names.remove(&engine).await;
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    exercise(&engine, &names, &files).await;
 }

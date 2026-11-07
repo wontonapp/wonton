@@ -11,6 +11,7 @@ use crate::plugin::PluginManager;
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::Engine;
 use crate::plugin::manifest::PluginId;
+use crate::test_docker::Names;
 
 const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const REGISTRY: &str = "public.ecr.aws/docker/library/registry:2";
@@ -24,6 +25,8 @@ pub(super) struct Fixture {
     pub id: PluginId,
     registry: String,
     seed: String,
+    /// 守卫活到测试结束：一次性容器按登记回收，插件的容器、网络、卷带实例标签，守卫按标签统一清。
+    _names: Names,
     pub images: Vec<String>,
 }
 
@@ -31,8 +34,8 @@ impl Fixture {
     pub fn new() -> Self {
         let engine = Engine::connect().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let manager = super::test_support::manager(engine.clone(), &dir);
-        let unique = getrandom::u32().unwrap();
+        let mut names = Names::new();
+        let manager = super::test_support::manager(engine.clone(), &dir, names.name());
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let mirror = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         Self {
@@ -40,10 +43,11 @@ impl Fixture {
             dir,
             manager,
             mirror,
-            repo: format!("wonton-emcm/fixture{unique:x}"),
-            id: PluginId::parse(&format!("app.registry{unique:x}")).unwrap(),
-            registry: format!("wonton-emcm-registry-{unique:x}"),
-            seed: format!("wonton-emcm-seed-{unique:x}"),
+            repo: format!("{}/fixture", names.name()),
+            id: PluginId::parse(&format!("app.{}", names.name())).unwrap(),
+            registry: names.oneshot_container("registry"),
+            seed: names.oneshot_container("fixture-seed"),
+            _names: names,
             images: Vec::new(),
         }
     }
@@ -203,18 +207,16 @@ impl Fixture {
     pub fn container(&self) -> String {
         self.manager.cfg.instance.container(&self.id.slug(), "app")
     }
+}
 
-    pub async fn clean(&self) {
-        self.engine
-            .remove_container(&self.container())
-            .await
-            .unwrap();
-        self.engine
-            .remove_network(&self.manager.cfg.instance.network(&self.id.slug()))
-            .await
-            .unwrap();
-        self.engine.remove_container(&self.seed).await.unwrap();
-        self.engine.remove_container(&self.registry).await.unwrap();
-        self.evict_fixture_images().await;
+impl Drop for Fixture {
+    /// 镜像不在守卫的标签清理里（不是容器、网络、卷），按 ID 用 CLI 删；容器先删掉，
+    /// rmi 不被在用的镜像挡住。
+    fn drop(&mut self) {
+        for id in std::mem::take(&mut self.images) {
+            let _ = std::process::Command::new("docker")
+                .args(["rmi", "-f", &id])
+                .output();
+        }
     }
 }

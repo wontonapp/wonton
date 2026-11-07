@@ -11,7 +11,7 @@ use bollard::models::{
     ContainerCreateBody, HostConfig, Ipam, IpamConfig, NetworkCreateRequest, NetworkInspect,
     PortBinding,
 };
-use futures_util::{FutureExt, future::join_all};
+use futures_util::future::join_all;
 use ipnet::Ipv4Net;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -22,11 +22,13 @@ use wonton_core::plugin::docker::{Engine, NetworkReach};
 use wonton_core::plugin::lan::detect::Detector;
 use wonton_core::plugin::network_pool::NetworkPool;
 
+// 共用的真实 Docker 测试辅助：每次运行唯一的实例名和资源回收。
+#[path = "../src/test_docker.rs"]
+mod test_docker;
+
 /// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const PORT: &str = "7000/tcp";
-/// 发布端口测试和重建测试共享固定的进程内资源名。
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct Names {
     core_network: String,
@@ -36,19 +38,12 @@ struct Names {
 
 impl Names {
     /// 插件网络 `…-egress` 排在核心网络 `…_core` 前面（`-` 小于 `_`），和真实的名字一样。
-    fn new() -> Self {
-        let prefix = prefix("gateway");
+    fn new(names: &mut test_docker::Names) -> Self {
         Self {
-            core_network: format!("{prefix}_core"),
-            plugin_network: format!("{prefix}-egress"),
-            container: format!("{prefix}--core"),
+            core_network: names.oneshot_network("gateway_core"),
+            plugin_network: names.oneshot_network("gateway-egress"),
+            container: names.oneshot_container("gateway-core"),
         }
-    }
-
-    async fn remove(&self, engine: &Engine) {
-        engine.remove_container(&self.container).await.unwrap();
-        engine.remove_network(&self.plugin_network).await.unwrap();
-        engine.remove_network(&self.core_network).await.unwrap();
     }
 }
 
@@ -86,13 +81,12 @@ async fn published_port(engine: &Engine, container: &str) -> u16 {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn leaving_an_egress_plugin_network_keeps_connections_through_published_ports() {
-    let _serial = SERIAL.lock().await;
+    let mut names = test_docker::Names::new();
+    let names = Names::new(&mut names);
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(private_pool("gateway").await, Detector::Here);
     engine.check_server().await.unwrap();
-    let names = Names::new();
-    names.remove(&engine).await;
     engine
         .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
@@ -146,7 +140,10 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         .unwrap();
     let after = echo(&mut stream, "still here\n").await;
 
-    names.remove(&engine).await;
+    // 资源已经卸完，断言连接还活着；剩下的回收交给 Names 守卫。
+    engine.remove_container(&names.container).await.unwrap();
+    engine.remove_network(&names.plugin_network).await.unwrap();
+    engine.remove_network(&names.core_network).await.unwrap();
     after.expect("核心退出插件网络后，经发布端口的连接断了");
 }
 
@@ -169,14 +166,8 @@ async fn sleeper(engine: &Engine, name: &str, network: &str) {
         }),
         ..Default::default()
     };
-    engine.remove_container(name).await.unwrap();
     engine.create_container(name, body).await.unwrap();
     engine.start_container(name).await.unwrap();
-}
-
-/// 建网络的名字前缀，和别的测试、别的进程分开；清理脚本按它回收中断后留下的资源。
-fn prefix(test: &str) -> String {
-    format!("wonton-nettest-{}-{test}", std::process::id())
 }
 
 fn overlaps(left: Ipv4Net, right: Ipv4Net) -> bool {
@@ -262,29 +253,11 @@ async fn assert_core_attach(engine: &Engine, network: &str, core: &str, subnet: 
     assert_eq!(got.as_deref(), Some(address.to_string().as_str()));
 }
 
-/// 只清理本测试显式列出的资源；单项超时或失败不妨碍继续回收其余资源。
-async fn remove_resources(engine: &Engine, networks: &[String], containers: &[&str]) {
-    let mut failures = Vec::new();
-    for container in containers {
-        let removed = timeout(Duration::from_secs(30), engine.remove_container(container)).await;
-        if !matches!(removed, Ok(Ok(()))) {
-            failures.push(format!("container {container}: {removed:?}"));
-        }
-    }
-    for network in networks {
-        let removed = timeout(Duration::from_secs(30), engine.remove_network(network)).await;
-        if !matches!(removed, Ok(Ok(()))) {
-            failures.push(format!("network {network}: {removed:?}"));
-        }
-    }
-    assert!(failures.is_empty(), "资源清理失败: {failures:?}");
-}
-
 /// 并发分配显式小网段，自动地址不能占用核心保留的最后一个地址。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free() {
-    let _serial = SERIAL.lock().await;
+    let mut names = test_docker::Names::new();
     let pool = private_pool("concurrent").await;
     let engine = Engine::connect()
         .unwrap()
@@ -295,52 +268,44 @@ async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free
         .await
         .unwrap();
     let labels = HashMap::new();
-    let names: Vec<String> = (0..20)
-        .map(|i| format!("{}-{i}", prefix("concurrent")))
+    let networks: Vec<String> = (0..20)
+        .map(|i| names.oneshot_network(&format!("concurrent-{i}")))
         .collect();
-    let core = prefix("concurrent--core");
-    let own = prefix("concurrent--own");
-    let result = std::panic::AssertUnwindSafe(async {
-        let created = join_all(
-            names
-                .iter()
-                .map(|name| engine.create_network(name, &labels, NetworkReach::Isolated)),
-        )
-        .await;
-        for result in created {
-            result.unwrap();
-        }
-        // none 模式的容器不能再接入别的网络（Docker 29 实测），核心容器先放在自己的一次性网络上。
-        engine
-            .create_network(&own, &labels, NetworkReach::Egress)
-            .await
-            .unwrap();
-        sleeper(&engine, &core, &own).await;
-        let mut subnets = Vec::new();
-        for name in &names {
-            let subnet = subnet_of(name).await;
-            assert_eq!(subnet.prefix_len(), 26);
-            assert!(pool.subnet().contains(&subnet));
-            for other in &subnets {
-                assert!(!overlaps(subnet, *other));
-            }
-            subnets.push(subnet);
-            assert_core_attach(&engine, name, &core, subnet).await;
-            engine.disconnect_network(name, &core).await.unwrap();
-        }
-    })
-    .catch_unwind()
+    let core = names.oneshot_container("concurrent-core");
+    let own = names.oneshot_network("concurrent-own");
+    let created = join_all(
+        networks
+            .iter()
+            .map(|name| engine.create_network(name, &labels, NetworkReach::Isolated)),
+    )
     .await;
-    remove_resources(&engine, &[names, vec![own]].concat(), &[&core]).await;
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
+    for result in created {
+        result.unwrap();
+    }
+    // none 模式的容器不能再接入别的网络（Docker 29 实测），核心容器先放在自己的一次性网络上。
+    engine
+        .create_network(&own, &labels, NetworkReach::Egress)
+        .await
+        .unwrap();
+    sleeper(&engine, &core, &own).await;
+    let mut subnets = Vec::new();
+    for name in &networks {
+        let subnet = subnet_of(name).await;
+        assert_eq!(subnet.prefix_len(), 26);
+        assert!(pool.subnet().contains(&subnet));
+        for other in &subnets {
+            assert!(!overlaps(subnet, *other));
+        }
+        subnets.push(subnet);
+        assert_core_attach(&engine, name, &core, subnet).await;
+        engine.disconnect_network(name, &core).await.unwrap();
     }
 }
 
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_recreation() {
-    let _serial = SERIAL.lock().await;
+    let mut names = test_docker::Names::new();
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(private_pool("recreation").await, Detector::Here);
@@ -353,11 +318,10 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
         NetworkReach::Internal,
         NetworkReach::Isolated,
     ] {
-        let network = prefix(&format!("{reach:?}").to_lowercase());
-        let (app, core) = (format!("{network}--app"), format!("{network}--core"));
-        engine.remove_container(&app).await.unwrap();
-        engine.remove_container(&core).await.unwrap();
-        engine.remove_network(&network).await.unwrap();
+        let kind = format!("{reach:?}").to_lowercase();
+        let network = names.oneshot_network(&format!("recreation-{kind}"));
+        let app = names.oneshot_container(&format!("recreation-app-{kind}"));
+        let core = names.oneshot_container(&format!("recreation-core-{kind}"));
         engine
             .create_network(&network, &HashMap::new(), reach)
             .await
@@ -371,7 +335,7 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
         // 核心容器删掉重建后还是这个地址。每个容器停下要等 10 秒，只在一种网络上重建。
         let cycles = if reach == NetworkReach::Egress { 2 } else { 1 };
         for _ in 0..cycles {
-            let other = format!("{core}-net");
+            let other = names.oneshot_network(&format!("recreation-core-net-{kind}"));
             engine.remove_container(&core).await.unwrap();
             engine.remove_network(&other).await.unwrap();
             engine
@@ -406,8 +370,6 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
             .unwrap();
         assert!(lower.contains(&ip), "{ip} 不在前一半 {lower}");
         assert_eq!(last_usable(subnet), Some(address));
-        engine.remove_container(&app).await.unwrap();
-        engine.remove_network(&network).await.unwrap();
     }
 }
 
@@ -415,7 +377,7 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_network_already_on_the_next_subnet_is_skipped() {
-    let _serial = SERIAL.lock().await;
+    let mut names = test_docker::Names::new();
     let pool = private_pool("occupied").await;
     let engine = Engine::connect()
         .unwrap()
@@ -424,48 +386,42 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
         .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
-    let (taken, plugin, core) = (prefix("taken"), prefix("plugin"), prefix("occupied--core"));
-    let own = prefix("occupied--own");
+    let taken = names.oneshot_network("occupied-taken");
+    let plugin = names.oneshot_network("occupied-plugin");
+    let core = names.oneshot_container("occupied-core");
+    let own = names.oneshot_network("occupied-own");
     let first = pool.subnet().subnets(26).unwrap().next().unwrap();
-    let result = std::panic::AssertUnwindSafe(async {
-        docker()
-            .create_network(NetworkCreateRequest {
-                name: taken.clone(),
-                internal: Some(true),
-                ipam: Some(Ipam {
-                    config: Some(vec![IpamConfig {
-                        subnet: Some(first.to_string()),
-                        ..Default::default()
-                    }]),
+    docker()
+        .create_network(NetworkCreateRequest {
+            name: taken.clone(),
+            internal: Some(true),
+            ipam: Some(Ipam {
+                config: Some(vec![IpamConfig {
+                    subnet: Some(first.to_string()),
                     ..Default::default()
-                }),
+                }]),
                 ..Default::default()
-            })
-            .await
-            .unwrap();
-        engine
-            .create_network(&plugin, &HashMap::new(), NetworkReach::Internal)
-            .await
-            .unwrap();
-        let chosen = subnet_of(&plugin).await;
-        assert_eq!(chosen.prefix_len(), 26);
-        assert!(pool.subnet().contains(&chosen));
-        assert!(!overlaps(chosen, first));
-        assert_eq!(subnet_of(&taken).await, first);
-        // none 模式的容器不能再接入别的网络（Docker 29 实测），核心容器先放在自己的一次性网络上。
-        engine
-            .create_network(&own, &HashMap::new(), NetworkReach::Egress)
-            .await
-            .unwrap();
-        sleeper(&engine, &core, &own).await;
-        assert_core_attach(&engine, &plugin, &core, chosen).await;
-    })
-    .catch_unwind()
-    .await;
-    remove_resources(&engine, &[plugin, taken, own], &[&core]).await;
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+            }),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    engine
+        .create_network(&plugin, &HashMap::new(), NetworkReach::Internal)
+        .await
+        .unwrap();
+    let chosen = subnet_of(&plugin).await;
+    assert_eq!(chosen.prefix_len(), 26);
+    assert!(pool.subnet().contains(&chosen));
+    assert!(!overlaps(chosen, first));
+    assert_eq!(subnet_of(&taken).await, first);
+    // none 模式的容器不能再接入别的网络（Docker 29 实测），核心容器先放在自己的一次性网络上。
+    engine
+        .create_network(&own, &HashMap::new(), NetworkReach::Egress)
+        .await
+        .unwrap();
+    sleeper(&engine, &core, &own).await;
+    assert_core_attach(&engine, &plugin, &core, chosen).await;
 }
 
 /// 40 个插件网络全部落在配置的地址段里、互不重叠。Docker 默认地址池大约建 30 个网络就用完（#120），
@@ -473,48 +429,35 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn forty_plugin_networks_all_fit_the_configured_pool() {
-    let _serial = SERIAL.lock().await;
+    let mut names = test_docker::Names::new();
     let pool = private_pool("forty").await;
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    let names: Vec<String> = (0..40).map(|i| prefix(&format!("forty-{i}"))).collect();
-    let result = std::panic::AssertUnwindSafe(async {
-        for name in &names {
-            engine
-                .create_network(name, &HashMap::new(), NetworkReach::Internal)
-                .await
-                .unwrap();
-        }
-        let mut subnets = Vec::new();
-        for name in &names {
-            let subnet = subnet_of(name).await;
-            assert_eq!(subnet.prefix_len(), 26, "{name}");
-            assert!(
-                pool.subnet().contains(&subnet),
-                "{name}: {subnet} 不在地址段里"
-            );
-            subnets.push(subnet);
-        }
-        for (i, left) in subnets.iter().enumerate() {
-            for right in &subnets[i + 1..] {
-                assert!(!overlaps(*left, *right), "{left} 和 {right} 重叠");
-            }
-        }
-    })
-    .catch_unwind()
-    .await;
-    remove_resources(&engine, &names, &[]).await;
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
+    let networks: Vec<String> = (0..40)
+        .map(|i| names.oneshot_network(&format!("forty-{i}")))
+        .collect();
+    for name in &networks {
+        engine
+            .create_network(name, &HashMap::new(), NetworkReach::Internal)
+            .await
+            .unwrap();
     }
-}
-
-async fn cleanup(engine: &Engine, network: &str, containers: &[&str]) {
-    for container in containers {
-        engine.remove_container(container).await.unwrap();
+    let mut subnets = Vec::new();
+    for name in &networks {
+        let subnet = subnet_of(name).await;
+        assert_eq!(subnet.prefix_len(), 26, "{name}");
+        assert!(
+            pool.subnet().contains(&subnet),
+            "{name}: {subnet} 不在地址段里"
+        );
+        subnets.push(subnet);
     }
-    engine.remove_network(network).await.unwrap();
+    for (i, left) in subnets.iter().enumerate() {
+        for right in &subnets[i + 1..] {
+            assert!(!overlaps(*left, *right), "{left} 和 {right} 重叠");
+        }
+    }
 }
 
 /// 在容器里跑一条命令，返回退出码。
@@ -551,7 +494,7 @@ async fn run_in(container: &str, cmd: &[&str]) -> i64 {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
-    let _serial = SERIAL.lock().await;
+    let mut names = test_docker::Names::new();
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(private_pool("forwarding").await, Detector::Here);
@@ -559,11 +502,10 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
         .ensure_image(IMAGE, PullPolicy::Missing, None)
         .await
         .unwrap();
-    let plugin = prefix("forward");
-    let own = format!("{plugin}_core");
-    let (core, app) = (format!("{plugin}--core"), format!("{plugin}--app"));
-    cleanup(&engine, &plugin, &[&core, &app]).await;
-    engine.remove_network(&own).await.unwrap();
+    let plugin = names.oneshot_network("forward");
+    let own = names.oneshot_network("forward-core");
+    let core = names.oneshot_container("forward-core");
+    let app = names.oneshot_container("forward-app");
     engine
         .create_network(&own, &HashMap::new(), NetworkReach::Egress)
         .await
@@ -612,8 +554,6 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
     )
     .await;
     let reached = run_in(&core, &["ping", "-c", "1", "-W", "2", &app_ip]).await;
-    cleanup(&engine, &plugin, &[&core, &app]).await;
-    engine.remove_network(&own).await.unwrap();
     assert_eq!(forwarded, 0, "核心的 ip_forward 没关");
     assert_eq!(reached, 0, "关了转发后连不到插件网络上的容器");
 }

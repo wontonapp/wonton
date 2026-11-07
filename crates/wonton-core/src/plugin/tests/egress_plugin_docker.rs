@@ -1,12 +1,10 @@
 //! 真实代理提供方、出口容器和出网插件：上游停掉后回 503，不改成直连。
 //! 这些测试验证行为不验证速度，期限和生产一致；共用 runner 忙时 Docker 起容器会慢。
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, HostConfig};
-use futures_util::FutureExt;
 use wonton_protocol::{EgressFailure, EgressProxyUpdate};
 
 use super::super::compose::PullPolicy;
@@ -18,11 +16,12 @@ use super::super::egress::settings::Egress;
 use super::super::lan::{Lan, detect::Detector};
 use super::super::languages::Languages;
 use super::super::names::Instance;
-use super::super::{PluginId, PluginManager, PluginPackage};
+use super::super::{PluginManager, PluginPackage};
 use super::lan::{Host, office};
 use super::manager::manager_in_instance;
 use super::package;
 use crate::config::DEFAULT_INSTALL_TIMEOUT;
+use crate::test_docker::Names;
 
 const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
 
@@ -72,13 +71,14 @@ async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
     .unwrap();
     let far_net = names.network("far");
     engine
-        .create_relay_network(&far_net, &HashMap::new())
+        .create_relay_network(&far_net, &names.core_labels())
         .await
         .unwrap();
     let far = names.container("far", "web");
     engine.create_container(&far, ContainerCreateBody {
         image: Some(BUSYBOX.to_owned()),
         cmd: Some(["sh", "-c", "mkdir -p /www; echo proxy-only > /www/index.html; exec httpd -f -p 80 -h /www"].map(str::to_owned).to_vec()),
+        labels: Some(names.core_labels()),
         host_config: Some(HostConfig { network_mode: Some(far_net.clone()), ..Default::default() }),
         ..Default::default()
     }).await.unwrap();
@@ -152,42 +152,12 @@ async fn egress_plugin_relay_uses_provider_dns_and_fails_closed() {
             .await
             .unwrap();
     }
-    let instance = format!("emc{:x}", getrandom::u32().unwrap());
-    let names = Instance::parse(Some(&instance)).unwrap();
+    let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
     let host: Host = Arc::new(Mutex::new(Ok(office())));
-    let mut manager = manager_in_instance(engine.clone(), &dir, &instance)
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name())
         .with_lan(Lan::new(Detector::Fixed(host), None))
         .with_egress(Egress::default().with_prober(Prober::Fine));
     manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
-    let manager = Arc::new(manager);
-    let result = std::panic::AssertUnwindSafe(exercise(&manager, &engine, &names))
-        .catch_unwind()
-        .await;
-    manager
-        .store
-        .save_egress_settings(&Default::default())
-        .unwrap();
-    for id in ["app.out", "app.proxy"] {
-        let _ = manager.uninstall(&PluginId::parse(id).unwrap(), true).await;
-    }
-    for container in [
-        names.container("app-out", "client"),
-        names.container("app-proxy", "proxy"),
-        names.container("far", "web"),
-        names.egress(),
-    ] {
-        engine.remove_container(&container).await.unwrap();
-    }
-    for network in [
-        names.network("app-out"),
-        names.network("app-proxy"),
-        names.network("far"),
-        names.egress(),
-    ] {
-        engine.remove_network(&network).await.unwrap();
-    }
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    exercise(&Arc::new(manager), &engine, names.instance()).await;
 }

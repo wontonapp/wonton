@@ -8,6 +8,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+// 共用的真实 Docker 测试辅助：每次运行唯一的实例名和资源回收。
+#[path = "../src/test_docker.rs"]
+mod test_docker;
+
 use bollard::models::ContainerCreateBody;
 use wonton_core::config::PublicUrls;
 use wonton_core::http::HttpClient;
@@ -16,7 +20,7 @@ use wonton_core::plugin::docker::{Engine, NetworkReach};
 use wonton_core::plugin::image_worker::ImageWorker;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::manager::PluginManager;
-use wonton_core::plugin::names::{Instance, LABEL_PLUGIN};
+use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::store::Store;
 
 const ID: &str = "app.leftovers";
@@ -39,18 +43,26 @@ x-wonton:
 ";
 
 /// 一套用自己实例名的核心：只碰这个测试建的资源，和同一台 Docker 上别的核心、别的 runner 互不相干。
+/// 容器、网络和卷由 `test_docker::Names` 的守卫按实例标签和登记的名字回收。
 struct Core {
     engine: Engine,
     instance: Instance,
+    /// 守卫活到测试结束：登记的一次性容器和带实例标签的插件资源随它回收。
+    names: test_docker::Names,
+    core_container: String,
+    other_core: String,
     dir: tempfile::TempDir,
 }
 
 impl Core {
-    fn new(tag: &str) -> Self {
-        let name = format!("{tag}{}", std::process::id());
+    fn new() -> Self {
+        let mut names = test_docker::Names::new();
         Self {
             engine: Engine::connect().unwrap(),
-            instance: Instance::parse(Some(&name)).unwrap(),
+            instance: names.instance().clone(),
+            core_container: names.oneshot_container("core"),
+            other_core: names.oneshot_container("other-core"),
+            names,
             dir: tempfile::tempdir().unwrap(),
         }
     }
@@ -62,7 +74,7 @@ impl Core {
             .ensure_image(IMAGE, PullPolicy::Missing, None)
             .await
             .unwrap();
-        self.start_idle(&self.core_container()).await;
+        self.start_idle(&self.core_container).await;
     }
 
     async fn start_idle(&self, name: &str) {
@@ -73,16 +85,6 @@ impl Core {
         };
         self.engine.create_container(name, body).await.unwrap();
         self.engine.start_container(name).await.unwrap();
-    }
-
-    /// 另一套没设实例名的核心，也用空转的容器扮演。
-    fn other_core(&self) -> String {
-        format!("{}-other", self.network())
-    }
-
-    /// 名字里没有 `--`，不会和插件的容器重名。
-    fn core_container(&self) -> String {
-        format!("{}-core", self.network())
     }
 
     /// 核心（重新）启动后的插件管理器，数据目录不变。
@@ -99,7 +101,7 @@ impl Core {
             data_dir: self.dir.path().to_owned(),
             apps_dir: self.dir.path().join("apps"),
             shares_dir: self.dir.path().join("shares"),
-            core_container: Some(self.core_container()),
+            core_container: Some(self.core_container.clone()),
             tz: "UTC".into(),
             puid: owner.uid(),
             pgid: owner.gid(),
@@ -145,25 +147,6 @@ impl Core {
         let container = inspect.unwrap()?;
         let running = container.state.and_then(|s| s.running) == Some(true);
         running.then(|| container.id.unwrap())
-    }
-
-    /// 删掉这个测试建的全部资源。
-    async fn clean(&self) {
-        for idle in [self.core_container(), self.other_core()] {
-            self.engine.remove_container(&idle).await.unwrap();
-        }
-        let found = self
-            .engine
-            .labeled(LABEL_PLUGIN, ID, |labels| self.instance.owns(labels))
-            .await
-            .unwrap();
-        for container in &found.containers {
-            self.engine.remove_container(container).await.unwrap();
-        }
-        for network in found.networks {
-            self.engine.remove_network(&network).await.unwrap();
-        }
-        self.engine.remove_network(&self.network()).await.unwrap();
     }
 }
 
@@ -212,25 +195,23 @@ async fn recovers(core: &Core) -> Result<(), String> {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn installing_again_recovers_from_a_core_restart_midway_through_an_install() {
-    let core = Core::new("lefta");
+    let core = Core::new();
     core.prepare().await;
-    let outcome = recovers(&core).await;
-    core.clean().await;
-    outcome.unwrap();
+    recovers(&core).await.unwrap();
 }
 
 async fn stays_away(core: &Core) -> Result<(), String> {
     let plugin = restart_midway(core).await?;
-    let other = core.other_core();
-    core.start_idle(&other).await;
+    let other = &core.other_core;
+    core.start_idle(other).await;
     core.engine
-        .connect_network(&core.network(), &other, Vec::new())
+        .connect_network(&core.network(), other, Vec::new())
         .await
         .map_err(|e| e.to_string())?;
     let Err(error) = core.manager().install(PLUGIN, &[]).await else {
         return Err("另一套核心接在网络上，不应当装上".into());
     };
-    if error.kind() != "conflict" || !error.to_string().contains(&other) {
+    if error.kind() != "conflict" || !error.to_string().contains(other.as_str()) {
         return Err(format!("应当说出是谁接在上面（{}）：{error}", error.kind()));
     }
     if core.container_id().await.as_ref() != Some(&plugin) {
@@ -246,15 +227,14 @@ async fn stays_away(core: &Core) -> Result<(), String> {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_plugin_of_another_running_core_is_left_alone() {
-    let core = Core::new("leftc");
+    let core = Core::new();
     core.prepare().await;
-    let outcome = stays_away(&core).await;
-    core.clean().await;
-    outcome.unwrap();
+    stays_away(&core).await.unwrap();
 }
 
-async fn refuses(core: &Core) -> Result<(), String> {
-    let network = core.network();
+async fn refuses(core: &mut Core) -> Result<(), String> {
+    // 空标签：这是一套别的核心留下的同名网络，不是本插件的，守卫按标签扫不到，显式登记。
+    let network = core.names.register_network(core.network());
     let labels = HashMap::new();
     core.engine
         .create_network(&network, &labels, NetworkReach::Egress)
@@ -276,9 +256,7 @@ async fn refuses(core: &Core) -> Result<(), String> {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_network_the_plugin_does_not_own_is_reported_and_left_alone() {
-    let core = Core::new("leftb");
+    let mut core = Core::new();
     core.prepare().await;
-    let outcome = refuses(&core).await;
-    core.clean().await;
-    outcome.unwrap();
+    refuses(&mut core).await.unwrap();
 }

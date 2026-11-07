@@ -28,6 +28,7 @@ mod health;
 mod host_check;
 mod host_facts;
 mod host_relay;
+mod host_relay_docker;
 mod instances;
 mod lan;
 mod lan_docker;

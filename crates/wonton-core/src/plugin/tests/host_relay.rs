@@ -133,55 +133,6 @@ async fn a_loopback_only_host_webui_gets_no_firewall_notice() {
 }
 
 #[tokio::test]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
-    use crate::plugin::compose::PullPolicy;
-    use crate::plugin::docker::Engine;
-    use bollard::models::{ContainerCreateBody, HostConfig};
-
-    let engine = Engine::connect().unwrap();
-    engine.check_server().await.unwrap();
-    const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
-    engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
-        .await
-        .unwrap();
-    let port = free_port();
-    let name = format!("wonton-priv-377-{}", std::process::id());
-    engine.remove_container(&name).await.unwrap();
-    engine
-        .create_container(
-            &name,
-            ContainerCreateBody {
-                image: Some(IMAGE.to_owned()),
-                cmd: Some(vec![
-                    "sh".to_owned(),
-                    "-c".to_owned(),
-                    format!("nc -l -p {port} -s 127.0.0.1"),
-                ]),
-                host_config: Some(HostConfig {
-                    network_mode: Some("host".to_owned()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    engine.start_container(&name).await.unwrap();
-    let mut probed = None;
-    for _ in 0..100 {
-        probed = super::super::host_relay::listens_beyond_loopback(&engine, &name, port).await;
-        if probed.is_some() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    engine.remove_container(&name).await.unwrap();
-    assert_eq!(probed, Some(false));
-}
-
-#[tokio::test]
 async fn a_wildcard_host_webui_still_gets_the_firewall_notice() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -225,7 +176,7 @@ async fn an_unknown_listener_does_not_claim_a_firewall() {
 }
 
 /// 当前空着的回环端口：直连探测打的是宿主上的这个端口，测试结果不受本机其他服务影响。
-fn free_port() -> u16 {
+pub(super) fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()

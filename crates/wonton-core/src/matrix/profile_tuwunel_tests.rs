@@ -12,18 +12,19 @@ use super::profile_tests::sample_avatars;
 use super::{Matrix, MatrixError, Session};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
+use crate::test_docker::Names;
 
 const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
 const CONFIG: &str = include_str!("../../../../deploy/dev/matrix/tuwunel.toml");
 
 struct Tuwunel {
-    name: Option<String>,
     _dir: tempfile::TempDir,
     config: MatrixConfig,
 }
 
 impl Tuwunel {
-    fn start() -> Self {
+    /// `name` 由调用方的 test_docker::Names 生成并登记，容器由守卫回收。
+    fn start(name: String) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tuwunel.toml");
         std::fs::write(&path, CONFIG).unwrap();
@@ -33,10 +34,8 @@ impl Tuwunel {
         let public = format!(
             "TUWUNEL_JWT__KEY=-----BEGIN PUBLIC KEY-----\n{public}\n-----END PUBLIC KEY-----\n"
         );
-        let name = format!("bp-core-profile-{}", crate::secret::random_token());
         // 在 run 之前持有 guard：启动成功但后续初始化失败也必须删掉本测试的容器。
         let mut server = Self {
-            name: Some(name.clone()),
             _dir: dir,
             config: MatrixConfig {
                 url: String::new(),
@@ -88,38 +87,13 @@ impl Tuwunel {
         server.config.url = format!("http://{address}");
         server
     }
-
-    fn remove(&mut self) {
-        if let Some(name) = self.name.as_ref() {
-            let result = Command::new("docker")
-                .args(["rm", "--force", "--volumes", name])
-                .output();
-            match result {
-                Ok(output) if output.status.success() => self.name = None,
-                Ok(output) => panic!(
-                    "删除测试容器失败：{}",
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-                Err(error) => panic!("删除测试容器失败：{error}"),
-            }
-        }
-    }
-}
-
-impl Drop for Tuwunel {
-    fn drop(&mut self) {
-        if let Some(name) = self.name.take() {
-            let _ = Command::new("docker")
-                .args(["rm", "--force", "--volumes", &name])
-                .output();
-        }
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，独立 bp-core- 容器验证 Tuwunel v1.9.4 的 MSC4133 和认证媒体"]
 async fn tuwunel_bot_profile_fields_round_trip_and_temporary_devices_are_removed() {
-    let mut server = Tuwunel::start();
+    let mut names = Names::new();
+    let server = Tuwunel::start(names.oneshot_container("tuwunel"));
     let dir = tempfile::tempdir().unwrap();
     let matrix = Matrix::connect(&server.config, dir.path(), HttpClient::new())
         .await
@@ -166,5 +140,4 @@ async fn tuwunel_bot_profile_fields_round_trip_and_temporary_devices_are_removed
         .await
         .unwrap();
     assert_eq!(matrix.devices(&login.user_id).await.unwrap(), before);
-    server.remove();
 }

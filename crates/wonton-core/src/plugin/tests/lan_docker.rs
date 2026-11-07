@@ -4,15 +4,13 @@
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
-use futures_util::FutureExt;
-
 use super::super::docker::Engine;
 use super::super::lan::{Detector, Lan};
-use super::super::names::Instance;
 use super::super::{PluginId, PluginManager, PluginStatus};
 use super::manager::manager_in_instance;
 use super::package;
 use crate::config::DEFAULT_INSTALL_TIMEOUT;
+use crate::test_docker::Names;
 
 const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
 
@@ -81,7 +79,7 @@ async fn page(manager: &PluginManager) -> String {
 
 async fn exercise(
     manager: &mut PluginManager,
-    names: &Instance,
+    names: &Names,
     addresses: [IpAddr; 2],
     dir: &std::path::Path,
     port: u16,
@@ -133,65 +131,33 @@ async fn exercise(
 async fn lan_address_change_updates_real_containers_and_config_page() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    let instance = format!("p173{:x}", getrandom::u32().unwrap());
-    let names = Instance::parse(Some(&instance)).unwrap();
+    let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
-    let mut manager = manager_in_instance(engine.clone(), &dir, &instance);
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
     manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let result = std::panic::AssertUnwindSafe(async {
-        let mut addresses = Vec::new();
-        for fixture in ["address-one", "address-two"] {
-            let network = names.network(fixture);
+    let mut addresses = Vec::new();
+    for fixture in ["address-one", "address-two"] {
+        let network = names.instance().network(fixture);
+        engine
+            .create_relay_network(&network, &names.instance().core_labels())
+            .await
+            .unwrap();
+        addresses.push(
             engine
-                .create_relay_network(&network, &names.core_labels())
+                .network_gateway(&network)
                 .await
-                .unwrap();
-            addresses.push(
-                engine
-                    .network_gateway(&network)
-                    .await
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-            );
-        }
-        let addresses = [addresses[0], addresses[1]];
-        manager.lan = lan(addresses[0]);
-        exercise(&mut manager, &names, addresses, dir.path(), port).await;
-    })
-    .catch_unwind()
-    .await;
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+    }
+    let addresses = [addresses[0], addresses[1]];
+    manager.lan = lan(addresses[0]);
+    exercise(&mut manager, &names, addresses, dir.path(), port).await;
     let _ = manager
         .uninstall(&PluginId::parse("app.test").unwrap(), false)
         .await;
-    for service in ["init", "web", "lan", "untouched"] {
-        engine
-            .remove_container(&names.container("app-test", service))
-            .await
-            .unwrap();
-    }
-    engine
-        .remove_network(&names.lan_network("app-test"))
-        .await
-        .unwrap();
-    engine
-        .remove_network(&names.network("app-test"))
-        .await
-        .unwrap();
-    for fixture in ["address-one", "address-two"] {
-        engine
-            .remove_network(&names.network(fixture))
-            .await
-            .unwrap();
-    }
-    if dir.path().join("apps").exists() {
-        std::fs::remove_dir_all(dir.path().join("apps")).unwrap();
-    }
-    println!("{instance}: 已删除本测试全部容器、网络和数据");
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
 }

@@ -24,6 +24,7 @@ use super::files_upload_tests::deployed_tusd;
 use super::tests::CORE;
 use super::tunnel_tests::Phone;
 use crate::config::FILE_HOOKS_HOST;
+use crate::test_docker::Names;
 use crate::tunnel::TunnelEntry;
 
 const CHUNK: usize = 256 << 10;
@@ -36,7 +37,7 @@ fn free_port() -> u16 {
         .port()
 }
 
-/// 退出时删掉的 tusd 容器。
+/// 退出时删掉的 tusd 容器：名字由调用方的 test_docker::Names 登记并回收。
 struct Tusd {
     name: String,
     port: u16,
@@ -44,9 +45,8 @@ struct Tusd {
 
 impl Tusd {
     /// 镜像和参数取自部署文件，端口换掉。
-    fn start(uploads: &Path, gateway: u16, port: u16) -> Self {
+    fn start(uploads: &Path, gateway: u16, port: u16, name: String) -> Self {
         let service = deployed_tusd(crate::install::COMPOSE);
-        let name = format!("wonton-tusdtest{}-{port}", std::process::id());
         let meta = std::fs::metadata(uploads).unwrap();
         let mut docker = Command::new("docker");
         docker
@@ -118,27 +118,27 @@ impl Tusd {
     }
 }
 
-impl Drop for Tusd {
-    fn drop(&mut self) {
-        let _ = Command::new("docker")
-            .args(["rm", "-f", &self.name])
-            .output();
-    }
-}
-
 struct Setup {
     home: Home,
     phone: Phone,
     tusd: Tusd,
+    /// 守卫活到测试结束，tusd 容器随它回收。
+    _names: Names,
     _entry: TunnelEntry,
 }
 
 async fn setup() -> Setup {
+    let mut names = Names::new();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gateway_port = listener.local_addr().unwrap().port();
     let tusd_port = free_port();
     let home = home_with(Some(format!("127.0.0.1:{tusd_port}"))).await;
-    let tusd = Tusd::start(&home.f.uploads_dir(), gateway_port, tusd_port);
+    let tusd = Tusd::start(
+        &home.f.uploads_dir(),
+        gateway_port,
+        tusd_port,
+        names.oneshot_container("tusd"),
+    );
     tusd.wait_ready().await;
     let app = home.app.clone();
     tokio::spawn(async move {
@@ -157,6 +157,7 @@ async fn setup() -> Setup {
         home,
         phone,
         tusd,
+        _names: names,
         _entry: entry,
     }
 }

@@ -12,7 +12,7 @@ use crate::plugin::names::Instance;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
 
-pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
+pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir, instance: &str) -> PluginManager {
     let owner = std::fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -39,7 +39,7 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> PluginManager 
         ),
         gateway_port: 8080,
         plugin_slice: None,
-        instance: Instance::parse(Some("emcm")).unwrap(),
+        instance: Instance::parse(Some(instance)).unwrap(),
     };
     let index_dir = dir.path().join("index");
     std::fs::create_dir(&index_dir).unwrap();

@@ -1,4 +1,3 @@
-use futures_util::FutureExt;
 use wonton_protocol::RegistryMirrorUpdate;
 
 use super::docker_fixture::Fixture;
@@ -125,24 +124,12 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
 #[ignore = "需要 Docker，registry:2 验证摘要拉取与容器引用"]
 async fn registry_mirror_docker_installs_verified_digest_without_recreating() {
     let mut fixture = Fixture::new();
-    let result = std::panic::AssertUnwindSafe(correct_digest(&mut fixture))
-        .catch_unwind()
-        .await;
-    fixture.clean().await;
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    correct_digest(&mut fixture).await;
 }
 
 #[tokio::test]
 #[ignore = "需要 Docker，registry:2 验证错摘要和断网不回退直连"]
 async fn registry_mirror_docker_refuses_wrong_content_and_unreachable_mirror() {
     let mut fixture = Fixture::new();
-    let result = std::panic::AssertUnwindSafe(wrong_digest_and_unreachable(&mut fixture))
-        .catch_unwind()
-        .await;
-    fixture.clean().await;
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    wrong_digest_and_unreachable(&mut fixture).await;
 }
