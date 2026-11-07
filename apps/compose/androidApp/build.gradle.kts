@@ -89,6 +89,10 @@ android {
             abiFilters += providers.gradleProperty("wonton.abis").get().split(" ").filter { it.isNotBlank() }
         }
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -99,6 +103,28 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     // Apache-2.0（连带的 Tink 也是）。接 UnifiedPush 分发器：在本机生成 Web Push 密钥对，按 RFC 8291 解开推送。
     implementation(libs.unifiedpush.connector)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.junit)
+    // shared 用 implementation 引 Compose，测试编译 StepCardFrame 要自己拿到这些类型。
+    testImplementation(libs.compose.runtime)
+    testImplementation(libs.compose.foundation)
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
+}
+
+/** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */
+tasks.withType<Test>().configureEach {
+    // Robolectric 第一次跑会按系统属性里的代理下载 android-all（CI 和本机都靠 https_proxy）。
+    listOf("http.proxyHost", "http.proxyPort", "https.proxyHost", "https.proxyPort").forEach { key ->
+        System.getProperty(key)?.let { systemProperty(key, it) }
+    }
+    // JDK 21 默认不导出 Robolectric 在 API 36 上要用的内部类（jdk.internal.access、FileDescriptor）。
+    jvmArgs(
+        "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+    )
 }
 
 detekt {

@@ -39,7 +39,7 @@ concurrency:
 
 jobs:
   build:
-    name: detekt 与 Debug 构建
+    name: detekt、单元测试与 Debug 构建
     # 自托管 runner（ADR-0012 的“CI”）：Android SDK 和 NDK 预装在 runner 主机上，由 runner 的环境给出 ANDROID_HOME。
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
@@ -92,6 +92,6 @@ jobs:
         with:
           # GRADLE_USER_HOME 在 runner 主机上跨次运行保留，不经 GitHub 的缓存服务上传下载。
           cache-disabled: true
-      - name: detekt（函数 ≤ 100 行）与 Debug APK
+      - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
-        run: ./gradlew detekt :androidApp:assembleDebug
+        run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
