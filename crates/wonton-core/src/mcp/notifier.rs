@@ -15,7 +15,7 @@ fn encode(posted: &Posted) -> String {
 
 fn decode(handle: &str) -> Result<Posted, String> {
     let (room, event) = serde_json::from_str(handle)
-        .map_err(|e| format!("确认卡片的句柄读不懂（{handle}）：{e}"))?;
+        .map_err(|e| format!("can't parse the confirmation card handle ({handle}): {e}"))?;
     Ok(Posted { room, event })
 }
 
@@ -26,7 +26,7 @@ impl Notifier for NoticeRoom {
             self.send(&cards::content(card, &langs))
                 .await
                 .map(|posted| encode(&posted))
-                .map_err(|e| format!("确认卡片发不到 Wonton 房间：{e}"))
+                .map_err(|e| format!("can't post the confirmation card to the Wonton room: {e}"))
         }
         .boxed()
     }
@@ -41,7 +41,7 @@ impl Notifier for NoticeRoom {
             let edited = self
                 .edit(&decode(handle)?, &cards::content(card, &langs))
                 .await
-                .map_err(|e| format!("更新确认卡片失败：{e}"))?;
+                .map_err(|e| format!("can't update the confirmation card: {e}"))?;
             Ok(match edited {
                 Edited::InPlace => None,
                 Edited::Reposted(posted) => Some(encode(&posted)),
@@ -57,7 +57,7 @@ pub struct NoMatrix;
 impl Notifier for NoMatrix {
     fn post<'a>(&'a self, _card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
         async {
-            Err("核心没有接入 Matrix（WONTON_MATRIX_URL），没法给主人发确认卡片".to_owned())
+            Err("the home server has no Matrix connection (WONTON_MATRIX_URL), so the confirmation card can't reach the owner".to_owned())
         }
         .boxed()
     }

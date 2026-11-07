@@ -83,8 +83,11 @@ async fn lists_the_package_and_warns_about_what_the_store_would_flag() {
     let [unpinned, unhealthy] = &report.warnings[..] else {
         panic!("{report:?}")
     };
-    assert!(unpinned.contains("nginx:1.27 没有按摘要固定"), "{unpinned}");
-    assert!(unhealthy.contains("没有健康检查"), "{unhealthy}");
+    assert!(
+        unpinned.contains("nginx:1.27 isn't pinned by digest"),
+        "{unpinned}"
+    );
+    assert!(unhealthy.contains("has no healthcheck"), "{unhealthy}");
 }
 
 #[tokio::test]
@@ -93,12 +96,12 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         .await
         .unwrap();
     for expected in [
-        "没有按摘要固定",
-        "没有健康检查",
-        "官方索引要求写 tags",
-        "官方索引要求写 license",
-        "官方索引要求写 author",
-        "官方索引要求写 notices",
+        "isn't pinned by digest",
+        "has no healthcheck",
+        "the official index requires tags",
+        "the official index requires license",
+        "the official index requires author",
+        "the official index requires notices",
     ] {
         assert!(
             report.problems.iter().any(|p| p.contains(expected)),
@@ -168,7 +171,7 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
         &[("width", "48".into()), ("height", "24".into())],
     );
     assert!(
-        icon.starts_with("图标 icon.svg：") && icon.contains(&viewbox),
+        icon.starts_with("icon icon.svg: ") && icon.contains(&viewbox),
         "{icon}"
     );
     let gif_format = crate::l10n::text(
@@ -177,10 +180,10 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
         &[("format", "Gif".into())],
     );
     assert!(
-        gif.starts_with("截图 shots/gif.png：") && gif.contains(&gif_format),
+        gif.starts_with("screenshot shots/gif.png: ") && gif.contains(&gif_format),
         "{gif}"
     );
-    for expected in ["shots/tall.png 是 600×900", "横屏和竖屏"] {
+    for expected in ["shots/tall.png is 600×900", "landscape and portrait"] {
         assert!(
             report.warnings.iter().any(|w| w.contains(expected)),
             "{expected}：{report:?}"
@@ -191,7 +194,10 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
     write(dir.path(), "icon.svg", round.as_bytes());
     let report = run(dir.path(), false).await.unwrap();
     assert!(
-        report.warnings.iter().any(|w| w.contains("角是透明的")),
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("transparent corners")),
         "{report:?}"
     );
 }

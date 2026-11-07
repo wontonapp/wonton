@@ -87,7 +87,7 @@ fn too_large_reply(
     read: Option<u64>,
     declared: Option<u64>,
 ) -> ServerJsonRpcMessage {
-    let why = format!("响应超过 {limit} 字节");
+    let why = format!("response exceeds {limit} bytes");
     let mut detail = serde_json::Map::new();
     detail.insert("limit".to_owned(), serde_json::json!(limit as u64));
     if let Some(read) = read {
@@ -116,7 +116,7 @@ fn too_large(
             session,
         )),
         None => Err(StreamableHttpError::UnexpectedServerResponse(Cow::Owned(
-            format!("响应超过 {limit} 字节"),
+            format!("response exceeds {limit} bytes"),
         ))),
     }
 }
@@ -181,13 +181,13 @@ impl BoundedHttp {
         {
             return Ok(StreamableHttpPostResponse::Json(error, session));
         }
-        let mut why = format!("HTTP {status}：{}", words(&body));
+        let mut why = format!("HTTP {status}: {}", words(&body));
         if matches!(
             status,
             reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
         ) {
             // 不自动重试、也不重新取密钥：凭据不对是清单和插件的事，如实报出来。
-            why.push_str("：插件的 MCP 服务拒绝了核心的凭据");
+            why.push_str("; the app's MCP server rejected the credentials");
         }
         not_mcp(message, session, why)
     }
@@ -362,7 +362,8 @@ impl StreamableHttpClient for BoundedHttp {
                                 if request_id(&message)
                                     .is_some_and(|id| !answers(&parsed, &id)) =>
                             {
-                                let why = format!("回答对不上这个请求：{}", words(&body));
+                                let why =
+                                    format!("reply does not answer this request: {}", words(&body));
                                 not_mcp(&message, session, why)
                             }
                             Ok(parsed) => Ok(StreamableHttpPostResponse::Json(parsed, session)),
@@ -370,7 +371,7 @@ impl StreamableHttpClient for BoundedHttp {
                             Err(e) => not_mcp(
                                 &message,
                                 session,
-                                format!("读不懂响应：{e}：{}", words(&body)),
+                                format!("can't parse the response: {e}: {}", words(&body)),
                             ),
                         }
                     }
@@ -380,7 +381,7 @@ impl StreamableHttpClient for BoundedHttp {
                 }
             }
             other => {
-                let why = format!("响应的 Content-Type 不对：{other:?}");
+                let why = format!("unexpected Content-Type: {other:?}");
                 not_mcp(&message, session, why)
             }
         }

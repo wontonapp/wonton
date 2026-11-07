@@ -197,7 +197,7 @@ fn icon_must_be_a_png_or_svg_in_the_package() {
         assert!(err.contains("icon"), "{icon}：{err}");
     }
     let err = parse_err("  icon: icon.svg");
-    assert!(err.contains("不存在"), "{err}");
+    assert!(err.contains("does not exist"), "{err}");
     let files = PackageFiles::from([("icon.svg".to_owned(), b"<svg/>".to_vec())]);
     PluginPackage::with_files(&compose("  icon: icon.svg"), files, &langs()).unwrap();
 }
@@ -219,7 +219,7 @@ fn package_size_is_limited() {
 fn notices_travel_with_the_package_and_stay_text() {
     let yaml = compose("  notices: [NOTICE, licenses/MIT.txt]");
     let err = PluginPackage::with_files(&yaml, PackageFiles::new(), &langs()).unwrap_err();
-    assert!(err.to_string().contains("不存在"), "{err}");
+    assert!(err.to_string().contains("does not exist"), "{err}");
 
     let mit = ("licenses/MIT.txt".to_owned(), b"MIT".to_vec());
     let files = PackageFiles::from([("NOTICE".to_owned(), b"source".to_vec()), mit.clone()]);

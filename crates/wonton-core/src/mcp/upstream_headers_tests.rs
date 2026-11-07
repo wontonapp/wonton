@@ -184,5 +184,5 @@ async fn a_401_from_the_upstream_says_the_plugin_rejected_the_credentials() {
     let plugin = auth_plugin().await;
     plugin.require("s3cret");
     let error = upstreams.tools(&plugin.server).await.unwrap_err();
-    assert!(error.contains("凭据"), "{error}");
+    assert!(error.contains("rejected the credentials"), "{error}");
 }

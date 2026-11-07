@@ -119,7 +119,7 @@ async fn plugin_check_processes_images_in_the_same_limited_process() {
         panic!("{report:?}")
     };
     assert!(
-        problem.starts_with("图标 icon.svg：处理超过 2 秒"),
+        problem.starts_with("icon icon.svg: 处理超过 2 秒"),
         "{problem}"
     );
 }

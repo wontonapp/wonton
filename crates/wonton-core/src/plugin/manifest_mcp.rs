@@ -55,7 +55,9 @@ pub(super) fn validate(mcp: &McpEndpoint) -> Result<(), ManifestError> {
         .as_deref()
         .is_some_and(|path| !path.starts_with('/'))
     {
-        return Err(ManifestError::Invalid("mcp.path 必须以 / 开头".to_owned()));
+        return Err(ManifestError::Invalid(
+            "mcp.path must start with /".to_owned(),
+        ));
     }
     for (name, seconds) in [
         ("mcp.tool_idle_seconds", mcp.tool_idle_seconds),
@@ -63,26 +65,27 @@ pub(super) fn validate(mcp: &McpEndpoint) -> Result<(), ManifestError> {
     ] {
         if seconds.is_some_and(|seconds| seconds == 0 || seconds > MAX_TOOL_SECONDS) {
             return Err(ManifestError::Invalid(format!(
-                "{name} 要在 1 到 {MAX_TOOL_SECONDS} 之间"
+                "{name} must be between 1 and {MAX_TOOL_SECONDS}"
             )));
         }
     }
     if let Some(tools) = &mcp.tools {
         if tools.is_empty() {
             return Err(ManifestError::Invalid(
-                "mcp.tools 至少写一个工具名；要全部提供就不写这个字段".to_owned(),
+                "mcp.tools needs at least one tool name; omit the field to expose all tools"
+                    .to_owned(),
             ));
         }
         let mut seen = std::collections::BTreeSet::new();
         for name in tools {
             if !is_tool_name(name) {
                 return Err(ManifestError::Invalid(format!(
-                    "mcp.tools 里的 {name:?} 不是合法的工具名：1 到 128 个字符，只能有 ASCII 字母、数字、_、- 和 ."
+                    "mcp.tools entry {name:?} is not a valid tool name: 1 to 128 characters, only ASCII letters, digits, _, -, and ."
                 )));
             }
             if !seen.insert(name.as_str()) {
                 return Err(ManifestError::Invalid(format!(
-                    "mcp.tools 里的 {name} 重复了"
+                    "mcp.tools entry {name} is duplicated"
                 )));
             }
         }
@@ -91,7 +94,7 @@ pub(super) fn validate(mcp: &McpEndpoint) -> Result<(), ManifestError> {
     let total = mcp.tool_total_seconds.unwrap_or(DEFAULT_TOOL_TOTAL_SECONDS);
     if mcp.tool_idle_seconds.is_some_and(|idle| idle > total) {
         return Err(ManifestError::Invalid(format!(
-            "mcp.tool_idle_seconds 不能超过总期限（{total} 秒），把 mcp.tool_total_seconds 也写上"
+            "mcp.tool_idle_seconds must not exceed the total timeout ({total} s); set mcp.tool_total_seconds as well"
         )));
     }
     Ok(())

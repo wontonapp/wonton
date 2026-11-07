@@ -53,7 +53,7 @@ impl PluginManager {
                     Err(error) => {
                         tracing::warn!(
                             %error,
-                            "取不到宿主主机名，WONTON_HOST_NAME 注入为空；下次安装再取"
+                            "can't get the host hostname; injecting an empty WONTON_HOST_NAME, retrying on the next install"
                         );
                         Err(error.to_string())
                     }

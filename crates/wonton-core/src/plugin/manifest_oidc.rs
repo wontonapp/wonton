@@ -14,20 +14,20 @@ const MAX_GROUP_NAME: usize = 64;
 pub(super) fn validate(client: &OidcClient) -> Result<(), ManifestError> {
     if client.owner_groups.len() > MAX_OWNER_GROUPS {
         return Err(ManifestError::Invalid(format!(
-            "webui.oidc.owner_groups 最多 {MAX_OWNER_GROUPS} 个"
+            "webui.oidc.owner_groups allows at most {MAX_OWNER_GROUPS} entries"
         )));
     }
     let mut seen = BTreeSet::new();
     for name in &client.owner_groups {
         if !is_group_name(name) {
             return Err(ManifestError::Invalid(format!(
-                "webui.oidc.owner_groups 的 `{name}` 不合法：1 到 {MAX_GROUP_NAME} 个字符，只含 \
-                 ASCII 字母、数字和 _-.:"
+                "webui.oidc.owner_groups entry `{name}` is invalid: 1 to {MAX_GROUP_NAME} characters, \
+                 only ASCII letters, digits, and _-.:"
             )));
         }
         if !seen.insert(name.as_str()) {
             return Err(ManifestError::Invalid(format!(
-                "webui.oidc.owner_groups 的 `{name}` 重复了"
+                "webui.oidc.owner_groups entry `{name}` is duplicated"
             )));
         }
     }
@@ -82,12 +82,12 @@ mod tests {
         let error = validate(&client(&["admin", "admin"]))
             .unwrap_err()
             .to_string();
-        assert!(error.contains("重复"), "{error}");
+        assert!(error.contains("duplicated"), "{error}");
         let error = validate(&client(&[
             "g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8",
         ]))
         .unwrap_err()
         .to_string();
-        assert!(error.contains("最多 8 个"), "{error}");
+        assert!(error.contains("at most 8"), "{error}");
     }
 }

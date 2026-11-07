@@ -31,7 +31,7 @@ pub struct AgentSpec {
 pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     if manifest.kind == PluginKind::Agent && manifest.agent.is_none() {
         return Err(ManifestError::Invalid(
-            "kind 为 agent 时必须提供 agent.protocol".to_owned(),
+            "kind is agent, so agent.protocol is required".to_owned(),
         ));
     }
     let Some(agent) = &manifest.agent else {
@@ -41,13 +41,13 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     for login in &agent.login {
         if !is_label(&login.id) {
             return Err(ManifestError::Invalid(format!(
-                "agent.login id `{}` 不合法",
+                "agent.login id `{}` is invalid",
                 login.id
             )));
         }
         if !seen.insert(&login.id) {
             return Err(ManifestError::Invalid(format!(
-                "agent.login id `{}` 重复了",
+                "agent.login id `{}` is duplicated",
                 login.id
             )));
         }
@@ -55,7 +55,7 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     }
     if !agent.login.is_empty() && !manifest.permissions.contains(&Permission::NetworkEgress) {
         return Err(ManifestError::Invalid(
-            "声明了 agent.login 就必须申请 network.egress 权限".to_owned(),
+            "agent.login requires the network.egress permission".to_owned(),
         ));
     }
     Ok(())

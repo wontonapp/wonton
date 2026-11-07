@@ -56,12 +56,12 @@ fn load(path: &PathBuf) -> HashMap<String, Persisted> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == ErrorKind::NotFound => return HashMap::new(),
         Err(e) => {
-            tracing::error!(path = %path.display(), error = %e, "读不出放行时段的记录");
+            tracing::error!(path = %path.display(), error = %e, "can't read the saved confirmation windows");
             return HashMap::new();
         }
     };
     serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        tracing::error!(path = %path.display(), error = %e, "放行时段的记录坏了");
+        tracing::error!(path = %path.display(), error = %e, "saved confirmation windows are corrupt");
         HashMap::new()
     })
 }
@@ -220,7 +220,7 @@ impl Confirmations {
             }
         }
         if let Err(e) = write_json(file, &saved) {
-            tracing::error!(path = %file.display(), error = %e, "记不下放行时段");
+            tracing::error!(path = %file.display(), error = %e, "can't save the confirmation windows");
         }
     }
 
@@ -261,7 +261,9 @@ impl Confirmations {
                         reason: WindowEnd::CoreRestarted,
                     });
                 }
-                Err(e) => tracing::warn!(confirmation = %id, error = %e, "还改不了上次的放行卡片"),
+                Err(e) => {
+                    tracing::warn!(confirmation = %id, error = %e, "can't update the leftover window card yet")
+                }
             }
         }
         if !ended.is_empty() {

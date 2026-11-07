@@ -325,7 +325,7 @@ async fn only_successes_count_towards_the_ten_per_hour_limit_and_rejections_pres
         .split("retry_after_secs=")
         .nth(1)
         .unwrap()
-        .split('，')
+        .split(';')
         .next()
         .unwrap()
         .parse::<u64>()

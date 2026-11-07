@@ -67,25 +67,27 @@ pub(super) fn definitions() -> Vec<Tool> {
     vec![
         tool(
             GUIDE,
-            "读写插件用的说明：这台核心支持的规范版本、完整说明和两个最小例子的全部文件。主人想要新页面、\
-             新应用或小工具，或者要改你之前写的插件时，先调这个。",
+            "The plugin-writing guide: the spec version this home server supports, the full guide, and every file of \
+             two minimal examples. Call this first when the owner wants a new page, app, or small tool, or when you \
+             need to change a plugin you wrote before.",
             json!({"type": "object", "properties": {}}),
             true,
         ),
         tool(
             CHECK,
-            "校验你 outbox 里的一个插件目录，一次列出全部问题和提醒。不改任何东西，不装。改到没有 problems \
-             为止，这一步不用问主人。",
+            "Validate a plugin directory in your outbox and list all problems and warnings at once. Changes nothing, \
+             installs nothing. Iterate until there are no problems; this step doesn't need the owner's approval.",
             json!({"type": "object", "properties": {
-                "dir": {"type": "string", "description": "outbox 里的相对路径，如 myapp"},
+                "dir": {"type": "string", "description": "relative path in your outbox, e.g. myapp"},
             }, "required": ["dir"]}),
             true,
         ),
         tool(
             STATUS,
-            "看一个已装插件的状态：运行状态、健康，和它网页探测的状态码。你看不到页面长什么样，装完请主人看。",
+            "Check an installed plugin: run state, health, and the status code of its web probe. You can't see what \
+             the page looks like; ask the owner to look after installing.",
             json!({"type": "object", "properties": {
-                "id": {"type": "string", "description": "插件 ID，如 app.example.hello"},
+                "id": {"type": "string", "description": "plugin ID, e.g. app.example.hello"},
             }, "required": ["id"]}),
             true,
         ),
@@ -115,7 +117,7 @@ pub(super) async fn check(bus: &Bus, caller: &Caller, args: &JsonObject) -> Resu
         .get("dir")
         .and_then(Value::as_str)
         .filter(|dir| !dir.is_empty())
-        .ok_or("invalid_input：缺少参数 dir")?;
+        .ok_or("invalid_input: missing argument dir")?;
     let app_data = bus.plugins.app_data_dir(&caller.id);
     // 目录 fd 一路钉住，包里的文件都从它读，中途换成软链接也出不去。
     let (opened, _) = saving::outbox_dir(&app_data, dir).map_err(|e| e.to_string())?;
@@ -148,14 +150,14 @@ pub(super) async fn status(bus: &Bus, caller: &Caller, args: &JsonObject) -> Res
         .get("id")
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty())
-        .ok_or("invalid_input：缺少参数 id")?;
-    let id = PluginId::parse(id).map_err(|e| format!("invalid_input：{e}"))?;
+        .ok_or("invalid_input: missing argument id")?;
+    let id = PluginId::parse(id).map_err(|e| format!("invalid_input: {e}"))?;
     let view = bus
         .plugins
         .list()
         .into_iter()
         .find(|p| p.id == id)
-        .ok_or_else(|| format!("invalid_input：没有装 {id}"))?;
+        .ok_or_else(|| format!("invalid_input: {id} is not installed"))?;
     let mut result = json!({
         "id": id.to_string(),
         "status": view.status,

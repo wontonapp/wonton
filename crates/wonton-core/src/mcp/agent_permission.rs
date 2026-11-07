@@ -25,18 +25,18 @@ pub enum AgentPermissionError {
 fn check(request: &AgentPermissionRequest) -> Result<(), AgentPermissionError> {
     let invalid = |message: &str| Err(AgentPermissionError::InvalidInput(message.to_owned()));
     if request.tool_call_id.is_empty() || request.title.is_empty() {
-        return invalid("tool_call_id 和 title 不能为空");
+        return invalid("tool_call_id and title must not be empty");
     }
     if request.options.is_empty() {
-        return invalid("options 不能为空");
+        return invalid("options must not be empty");
     }
     let blank = |o: &AgentPermissionOption| o.choice_id.is_empty() || o.name.is_empty();
     if request.options.iter().any(blank) {
-        return invalid("选项的 choice_id 和 name 不能为空");
+        return invalid("every option needs a non-empty choice_id and name");
     }
     let mut ids = HashSet::new();
     if !request.options.iter().all(|o| ids.insert(&o.choice_id)) {
-        return invalid("选项的 choice_id 重复了");
+        return invalid("choice_id is duplicated across options");
     }
     Ok(())
 }

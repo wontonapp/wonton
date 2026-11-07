@@ -47,19 +47,19 @@ pub fn sha256_hex(data: &[u8]) -> String {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum FileError {
-    #[error("不存在")]
+    #[error("does not exist")]
     Missing,
-    #[error("`{0}` 是软链接，插件包里的文件不能经过软链接")]
+    #[error("`{0}` is a symlink; files in a plugin package must not go through symlinks")]
     Symlink(String),
-    #[error("`{0}` 不是目录")]
+    #[error("`{0}` is not a directory")]
     NotDir(String),
-    #[error("不是普通文件")]
+    #[error("not a regular file")]
     NotFile,
-    #[error("不是 UTF-8 文本")]
+    #[error("not UTF-8 text")]
     NotText,
-    #[error("超过 {} KiB", MAX_FILE_BYTES >> 10)]
+    #[error("over {} KiB", MAX_FILE_BYTES >> 10)]
     TooBig,
-    #[error("读取失败：{0}")]
+    #[error("can't read: {0}")]
     Io(String),
 }
 
@@ -67,24 +67,26 @@ pub enum FileError {
 /// 就要确定，不随安装环境变化。
 pub fn normalize(raw: &str) -> Result<String, String> {
     if raw.contains('$') {
-        return Err(format!("路径 `{raw}` 不能用变量"));
+        return Err(format!("path `{raw}` must not use variables"));
     }
     let mut parts = Vec::new();
     for component in Path::new(raw).components() {
         match component {
             Component::Normal(part) => parts.push(
                 part.to_str()
-                    .ok_or_else(|| format!("路径 `{raw}` 不是合法的 UTF-8"))?,
+                    .ok_or_else(|| format!("path `{raw}` is not valid UTF-8"))?,
             ),
             Component::CurDir => {}
             Component::RootDir | Component::Prefix(_) => {
-                return Err(format!("路径 `{raw}` 必须相对 compose 文件所在的目录"));
+                return Err(format!(
+                    "path `{raw}` must be relative to the directory of docker-compose.yml"
+                ));
             }
-            Component::ParentDir => return Err(format!("路径 `{raw}` 不能包含 ..")),
+            Component::ParentDir => return Err(format!("path `{raw}` must not contain ..")),
         }
     }
     if parts.is_empty() {
-        return Err(format!("路径 `{raw}` 为空"));
+        return Err(format!("path `{raw}` is empty"));
     }
     Ok(parts.join("/"))
 }
@@ -142,7 +144,7 @@ fn open_component(
 fn dir_error(e: Errno, shown: impl Fn() -> String) -> FileError {
     match e {
         Errno::NOENT => FileError::Missing,
-        _ => FileError::Io(format!("{}：{e}", shown())),
+        _ => FileError::Io(format!("{}: {e}", shown())),
     }
 }
 
@@ -176,7 +178,7 @@ pub fn read_at(dir: BorrowedFd<'_>, rel: &str) -> Result<Vec<u8>, FileError> {
 }
 
 fn io_error(e: &std::io::Error, what: &str) -> FileError {
-    FileError::Io(format!("{what}：{e}"))
+    FileError::Io(format!("{what}: {e}"))
 }
 
 /// 从插件包目录的路径读出 `rel`：先按同一套规则打开目录，再 [`read_at`]。
@@ -201,9 +203,9 @@ pub fn write_archive(compose: &[u8], files: &PackageFiles) -> Vec<u8> {
         header.set_mtime(0);
         builder
             .append_data(&mut header, path, data)
-            .expect("路径都经过 normalize，写进内存不会失败");
+            .expect("paths are normalized; writing to memory can't fail");
     }
-    builder.into_inner().expect("写进内存不会失败")
+    builder.into_inner().expect("writing to memory can't fail")
 }
 
 #[cfg(test)]
@@ -234,7 +236,7 @@ mod tests {
             assert_eq!(normalize(raw).unwrap(), normalized, "{raw}");
         }
         for bad in ["/etc/passwd", "../x", "a/../b", "", ".", "${X}/a"] {
-            assert!(normalize(bad).is_err(), "{bad} 应被拒绝");
+            assert!(normalize(bad).is_err(), "{bad} should be rejected");
         }
     }
 

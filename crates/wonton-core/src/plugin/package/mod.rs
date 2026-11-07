@@ -513,7 +513,7 @@ impl PluginPackage {
             .values()
             .filter_map(|spec| match spec {
                 SecretSpec::Collect(collect) => {
-                    Some(("secrets 的 collect.service", Some(&collect.service)))
+                    Some(("secrets.collect.service", Some(&collect.service)))
                 }
                 SecretSpec::Generate(_) => None,
             });
@@ -582,7 +582,7 @@ fn pathed<E: fmt::Display>(error: &serde_path_to_error::Error<E>) -> String {
     if path.is_empty() {
         error.inner().to_string()
     } else {
-        format!("`{path}`：{}", error.inner())
+        format!("`{path}`: {}", error.inner())
     }
 }
 
@@ -661,12 +661,14 @@ fn check_service_name(name: &str, langs: &Languages) -> Result<(), PackageError>
 fn check_service_keys(name: &str, service: &Value, langs: &Languages) -> Result<(), PackageError> {
     let service_err = |message: String| service_error(langs, name, message);
     let Value::Object(map) = service else {
-        return Err(service_err("服务定义必须是映射".to_owned()));
+        return Err(service_err(
+            "the service definition must be a mapping".to_owned(),
+        ));
     };
     super::network_mode::validate_fields(name, map)?;
     for key in map.keys() {
         if let Some(reason) = forbidden_service_key_reason(key, langs) {
-            return Err(service_err(format!("不支持 `{key}`：{reason}")));
+            return Err(service_err(format!("unsupported key `{key}`: {reason}")));
         }
     }
     match map.get("network_mode") {
@@ -674,12 +676,12 @@ fn check_service_keys(name: &str, service: &Value, langs: &Languages) -> Result<
         Some(Value::String(mode)) => match NetworkMode::try_from(mode.clone()) {
             Ok(_) => Ok(()),
             Err(_) => Err(service_err(format!(
-                "不支持 network_mode `{mode}`：{}",
+                "unsupported network_mode `{mode}`: {}",
                 network_mode_refusal(mode, langs)
             ))),
         },
         Some(other) => Err(service_err(format!(
-            "network_mode 必须是字符串，不能写 `{other}`"
+            "network_mode must be a string, not `{other}`"
         ))),
     }
 }
@@ -732,7 +734,11 @@ fn parse_configs(
         return Ok(BTreeMap::new());
     };
     let Value::Object(map) = value else {
-        return Err(top_level_error(langs, "configs", "必须是映射".to_owned()));
+        return Err(top_level_error(
+            langs,
+            "configs",
+            "must be a mapping".to_owned(),
+        ));
     };
     map.into_iter()
         .map(|(name, mut definition)| {
@@ -742,18 +748,22 @@ fn parse_configs(
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
             if !name_ok {
-                return Err(config_err("配置名只能包含字母、数字、-、_ 和 .".to_owned()));
+                return Err(config_err(
+                    "config names allow only letters, digits, -, _, and .".to_owned(),
+                ));
             }
             strip_extensions(&mut definition);
             let Value::Object(fields) = definition else {
-                return Err(config_err("必须是映射，写明 file 或 content".to_owned()));
+                return Err(config_err(
+                    "must be a mapping with either file or content".to_owned(),
+                ));
             };
             for key in fields.keys() {
                 if let Some(reason) = forbidden_config_key_reason(key, langs) {
-                    return Err(config_err(format!("不支持 `{key}`：{reason}")));
+                    return Err(config_err(format!("unsupported key `{key}`: {reason}")));
                 }
                 if !matches!(key.as_str(), "file" | "content") {
-                    return Err(config_err(format!("不支持 `{key}`")));
+                    return Err(config_err(format!("unsupported key `{key}`")));
                 }
             }
             let source = match (fields.get("file"), fields.get("content")) {
@@ -761,9 +771,11 @@ fn parse_configs(
                     ConfigSource::File(package_files::normalize(path).map_err(config_err)?)
                 }
                 (None, Some(Value::String(text))) => ConfigSource::Content(text.clone()),
-                (Some(_), Some(_)) => return Err(config_err("file 和 content 只能写一个".into())),
-                (None, None) => return Err(config_err("必须写 file 或 content".to_owned())),
-                _ => return Err(config_err("file 和 content 必须是字符串".to_owned())),
+                (Some(_), Some(_)) => {
+                    return Err(config_err("write either file or content, not both".into()));
+                }
+                (None, None) => return Err(config_err("write either file or content".to_owned())),
+                _ => return Err(config_err("file and content must be strings".to_owned())),
             };
             Ok((name, source))
         })

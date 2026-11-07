@@ -422,12 +422,15 @@ fn oidc_owner_groups_are_checked_in_the_manifest() {
     for (oidc, needle) in [
         (
             "{redirect_paths: [/cb], owner_groups: [admin, admin]}",
-            "重复",
+            "duplicated",
         ),
-        ("{redirect_paths: [/cb], owner_groups: [家 组]}", "不合法"),
+        (
+            "{redirect_paths: [/cb], owner_groups: [家 组]}",
+            "is invalid",
+        ),
         (
             &format!("{{redirect_paths: [/cb], owner_groups: [{nine}]}}"),
-            "最多 8 个",
+            "at most 8",
         ),
     ] {
         let error = PluginPackage::parse(&webui(oidc), &super::langs()).unwrap_err();

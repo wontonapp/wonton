@@ -59,9 +59,12 @@ impl Archive {
             flate2::read::GzDecoder::new(body)
                 .take(MAX_UNPACKED_BYTES + 1)
                 .read_to_end(&mut tar)
-                .map_err(|e| format!("解不开 gzip：{e}"))?;
+                .map_err(|e| format!("can't decompress gzip: {e}"))?;
             if tar.len() as u64 > MAX_UNPACKED_BYTES {
-                return Err(format!("解开后超过 {} MiB", MAX_UNPACKED_BYTES >> 20));
+                return Err(format!(
+                    "unpacks to more than {} MiB",
+                    MAX_UNPACKED_BYTES >> 20
+                ));
             }
             Format::Tar(tar)
         } else if body.starts_with(ZIP_MAGIC) || body.starts_with(ZIP_EMPTY_MAGIC) {
@@ -77,8 +80,8 @@ impl Archive {
         let mut entries = Vec::new();
         let mut add = |raw: String, kind: Kind| {
             if entries.len() >= MAX_ENTRIES {
-                // 目录的原文里没有对应的消息 ID，保留中文原样。
-                return Err(format!("压缩包里超过 {MAX_ENTRIES} 项"));
+                // 这条没有对应的消息 ID，不按语言写。
+                return Err(format!("the archive holds more than {MAX_ENTRIES} entries"));
             }
             if let Ok(path) = normalize(&raw) {
                 entries.push((path, kind));
@@ -208,7 +211,7 @@ impl Archive {
         }
         let mut files = PackageFiles::new();
         let mut keep = |path: &str, data: Vec<u8>| -> Result<(), String> {
-            let rel = wanted.get(path).expect("只读要的文件");
+            let rel = wanted.get(path).expect("only wanted files are read");
             if data.len() as u64 > MAX_FILE_BYTES {
                 return Err(format!("`{rel}` {}", FileError::TooBig));
             }
@@ -501,13 +504,18 @@ mod tests {
     fn archives_that_unpack_too_big_or_hold_too_many_entries_are_refused() {
         let bomb = gz(&vec![0; MAX_UNPACKED_BYTES as usize + 1]);
         assert!(bomb.len() < MAX_ARCHIVE_BYTES);
-        assert!(Archive::open(&bomb).err().unwrap().contains("解开后超过"));
+        assert!(
+            Archive::open(&bomb)
+                .err()
+                .unwrap()
+                .contains("unpacks to more than")
+        );
 
         let entries: Vec<(String, &[u8])> = (0..=MAX_ENTRIES)
             .map(|i| (format!("f{i}"), b"".as_slice()))
             .collect();
         let entries: Vec<(&str, &[u8])> = entries.iter().map(|(p, d)| (p.as_str(), *d)).collect();
         let many = zip_of(&entries);
-        assert!(read_all(&many, &[]).unwrap_err().contains("超过"));
+        assert!(read_all(&many, &[]).unwrap_err().contains("more than"));
     }
 }

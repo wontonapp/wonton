@@ -312,9 +312,9 @@ fn a_plugin_can_limit_its_tools_to_a_valid_allowlist() {
     assert_eq!(parse("").unwrap().tools, None);
     for (extra, why) in [
         (", tools: []", "mcp.tools"),
-        (", tools: [search, search]", "重复"),
-        (", tools: [\"search files\"]", "不是合法的工具名"),
-        (", tools: [搜索]", "不是合法的工具名"),
+        (", tools: [search, search]", "duplicated"),
+        (", tools: [\"search files\"]", "not a valid tool name"),
+        (", tools: [搜索]", "not a valid tool name"),
     ] {
         let error = parse(extra).unwrap_err().to_string();
         assert!(error.contains(why), "{extra}: {error}");
