@@ -6,7 +6,8 @@
 //! 条目只在取到过列表时给（核心只让主人设备读这个接口，非主人的设备取不到，也就看不到这一项）。
 //! 扫码、删除成功后再取一次；出的码显示到过期，过期后清掉。有东西在等对方的时候——出的码还没作废，
 //! 列表里有还没批的请求，或有一行刚配对还没探活出结果——再隔几秒取一次，跟上对方的扫码和同意，
-//! 不用退出页面再进；都没有了就停。
+//! 不用退出页面再进；都没有了就停。列表取到过（包括空的）以后按核心的探活周期取，已配对服务器的
+//! 连上、掉线、对方删了配对在半分钟内显示出来，设置首页的台数也跟着变。
 
 mod api;
 
@@ -31,6 +32,11 @@ use crate::scope::reuse;
 /// 有东西在等对方时隔这么久取一次列表。和插件页在安装、升级、卸载时重新取已安装列表的节奏一致：
 /// 同意配对是对方主人手点的动作，几秒内跟上就够；再快是白费的请求，再慢主人盯着“等对方同意”等得久。
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
+
+/// 没有可等的东西以后取列表的间隔：核心每 30 秒探活一次已配对的服务器（`FEDERATION_PING_INTERVAL`），
+/// 按同样的周期取就够——对方掉线、对方删了配对，以及别的设备上的配对和删除，都在半分钟左右跟上，
+/// 不用退出页面再进。更快只是白费的请求，探活本身比这慢。
+const STATUS_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) struct PeersLink {
     handle: Handle,
@@ -71,6 +77,7 @@ impl PeersLink {
         });
         link.spawn(follow_home(Arc::downgrade(&link)));
         link.spawn(follow_waiting(Arc::downgrade(&link)));
+        link.spawn(follow_status(Arc::downgrade(&link)));
         link
     }
 
@@ -190,7 +197,8 @@ impl PeersLink {
         });
     }
 
-    /// 删掉和一台服务器的配对。成功后重新取列表：两边名单都撤了，已有的跨机房间留着。
+    /// 删掉和一台服务器的配对。成功后先把那一行从列表里去掉（设置首页的台数马上跟上，取列表失败也不回退），
+    /// 再重新取列表：两边名单都撤了，已有的跨机房间留着。
     fn remove(self: &Arc<Self>, server_name: &str) {
         let link = self.clone();
         let server_name = server_name.to_owned();
@@ -200,7 +208,12 @@ impl PeersLink {
                 Err(failure) => Err(failure),
             };
             match outcome {
-                Ok(()) => link.refresh(),
+                Ok(()) => {
+                    link.view.send_modify(|view| {
+                        view.peers.retain(|row| row.server_name != server_name)
+                    });
+                    link.refresh();
+                }
                 Err(failure) => link.fail(failure),
             }
         });
@@ -310,6 +323,38 @@ fn waiting(view: &PeersViewModel) -> bool {
                 PeerStatus::Checking | PeerStatus::AwaitingApproval
             )
         })
+}
+
+/// 要不要按探活周期取列表：连上了家里的服务器，而且列表取到过（空列表也算——别的设备上配对、
+/// 删除时这里才知道；取失败过也取，过一会儿再试）。页面开着时不另行登记：设置首页的那一行也要
+/// 跟着列表变，它一直订阅着，壳的页面订阅分不出“有没有人在看”。
+async fn follow_status(link: Weak<PeersLink>) {
+    let Some(strong) = link.upgrade() else { return };
+    let mut view = strong.view.subscribe();
+    let mut home = strong.home.subscribe();
+    drop(strong);
+    loop {
+        let connected = home.borrow_and_update().status == HomeStatus::Connected;
+        let listed = {
+            let view = view.borrow_and_update();
+            !view.peers.is_empty() || !matches!(view.state, PeersState::Loading)
+        };
+        if !(connected && listed) {
+            tokio::select! {
+                changed = view.changed() => if changed.is_err() { return },
+                changed = home.changed() => if changed.is_err() { return },
+            }
+            continue;
+        }
+        tokio::time::sleep(STATUS_INTERVAL).await;
+        let Some(link) = link.upgrade() else { return };
+        // 这期间连不上或有人在等更急的东西（码、等对方同意）：`follow_home` 和 `follow_waiting`
+        // 管着，不重复取。
+        if link.home.view().status != HomeStatus::Connected || waiting(&link.view.borrow()) {
+            continue;
+        }
+        link.fetch(false).await;
+    }
 }
 
 /// 跟着家里的连接：连上（App 启动、重新配对、断线恢复）时取一次列表。

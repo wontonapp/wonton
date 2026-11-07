@@ -17,6 +17,8 @@ use crate::plugins::rig::{Canned, Headered, Rig, WAIT};
 /// 安静窗：要跨过完整的轮询周期（间隔是客户端核心里的 3 秒常量）。核心跑在自己的运行时里，
 /// 测试的暂停时钟驱动不了它，只能观察真实时间（同 tabs/polling.rs 的 `QUIET`）。
 const QUIET: Duration = Duration::from_secs(8);
+/// 已配对服务器的状态按探活周期（30 秒）取：等一个变化要跨过整整一个周期再加余量。
+const STATUS_WAIT: Duration = Duration::from_secs(45);
 
 fn peers_view(peers: Vec<PeerRow>, code: Option<PeerCode>) -> String {
     serde_json::to_string(&PeersView { peers, code }).unwrap()
@@ -49,8 +51,16 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-async fn wait_peers(rig: &Rig, mut done: impl FnMut(&PeersViewModel) -> bool) -> PeersViewModel {
-    let deadline = Instant::now() + WAIT;
+async fn wait_peers(rig: &Rig, done: impl FnMut(&PeersViewModel) -> bool) -> PeersViewModel {
+    wait_peers_within(rig, WAIT, done).await
+}
+
+async fn wait_peers_within(
+    rig: &Rig,
+    within: Duration,
+    mut done: impl FnMut(&PeersViewModel) -> bool,
+) -> PeersViewModel {
+    let deadline = Instant::now() + within;
     loop {
         let view = rig.app.peers();
         if done(&view) {
@@ -81,7 +91,11 @@ fn peers_entry(rig: &Rig) -> Option<SettingsEntry> {
 
 /// 等那一行变成期望的样子。设置首页是跟着 peers 的 watch 另算的，比页面状态晚一步，读完页面直接断言会抢跑。
 async fn wait_peers_entry(rig: &Rig, expected: Option<SettingsEntry>) {
-    let deadline = Instant::now() + WAIT;
+    wait_peers_entry_within(rig, WAIT, expected).await;
+}
+
+async fn wait_peers_entry_within(rig: &Rig, within: Duration, expected: Option<SettingsEntry>) {
+    let deadline = Instant::now() + within;
     loop {
         if peers_entry(rig) == expected {
             return;
@@ -232,6 +246,80 @@ async fn removing_a_peer_refreshes_the_list() {
     })
     .await;
     wait_peers_entry(&rig, Some(SettingsEntry::Peers { count: 1 })).await;
+}
+
+/// 删掉最后一台：列表空掉，设置首页的“其他服务器”是 0，不是删掉之前那 1。
+#[tokio::test]
+async fn removing_the_last_peer_zeroes_the_settings_count() {
+    let rig = Rig::new().await;
+    connected_and_listed(&rig, vec![row("abc12345.wonton")]).await;
+    wait_peers_entry(&rig, Some(SettingsEntry::Peers { count: 1 })).await;
+
+    rig.core.answer(
+        Method::DELETE,
+        &peer_path("abc12345.wonton"),
+        Canned(StatusCode::OK.as_u16(), "{}".into()),
+    );
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new(), None)),
+    );
+    // 取列表压住：那一行要在删除成功后马上没有，不等下一次取列表。
+    rig.core.hold(Method::GET, PEERS_PATH);
+    rig.app
+        .dispatch(Action::RemovePeer {
+            server_name: "abc12345.wonton".into(),
+        })
+        .unwrap();
+    wait_peers(&rig, |view| view.peers.is_empty()).await;
+    rig.core.release(Method::GET, PEERS_PATH);
+    wait_peers(&rig, |view| view.state == PeersState::Ready).await;
+    wait_peers_entry(&rig, Some(SettingsEntry::Peers { count: 0 })).await;
+}
+
+/// 页面开着、没有别的东西可等：对方掉线在一个探活周期左右显示出来，不用退出页面再进；
+/// 对方随后删了这台（列表里没有了），设置首页的台数跟着变。
+#[tokio::test]
+async fn a_status_change_shows_up_within_a_probe_cycle() {
+    let rig = Rig::new().await;
+    connected_and_listed(&rig, vec![row("abc12345.wonton")]).await;
+    wait_peers_entry(&rig, Some(SettingsEntry::Peers { count: 1 })).await;
+
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(
+            StatusCode::OK.as_u16(),
+            peers_view(
+                vec![PeerRow {
+                    status: PeerStatus::Offline,
+                    ..row("abc12345.wonton")
+                }],
+                None,
+            ),
+        ),
+    );
+    let view = wait_peers_within(&rig, STATUS_WAIT, |view| {
+        view.state == PeersState::Ready
+            && view
+                .peers
+                .first()
+                .is_some_and(|row| row.status == PeerStatus::Offline)
+    })
+    .await;
+    assert_eq!(view.peers.len(), 1);
+
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(StatusCode::OK.as_u16(), peers_view(Vec::new(), None)),
+    );
+    wait_peers_within(&rig, STATUS_WAIT, |view| {
+        view.state == PeersState::Ready && view.peers.is_empty()
+    })
+    .await;
+    wait_peers_entry_within(&rig, STATUS_WAIT, Some(SettingsEntry::Peers { count: 0 })).await;
 }
 
 /// 扫码失败：家里的服务器给的类别（`X-Wonton-Error`）落进 `Failed`。
