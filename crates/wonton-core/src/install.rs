@@ -65,7 +65,7 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
     tls_cert(&secrets, &server_name, &mut report)?;
     write_private(
         &tuwunel,
-        &tuwunel_config(dir, &server_name, &registration, &public_key),
+        &tuwunel_config(&server_name, &registration, &public_key),
     )?;
     fed_files(dir, &mut report)?;
     write_private(&dir.join("compose.yaml"), COMPOSE)?;
@@ -213,14 +213,7 @@ fn read_server_name(path: &Path) -> anyhow::Result<Option<String>> {
 /// 选项和 `deploy/dev/matrix/tuwunel.toml` 一致，说明见 Tuwunel 仓库的 tuwunel-example.toml。
 /// 联邦的取舍（ADR-0050）：名单制，只和配对过的服务器说话；TLS 自签且出站不校验，对端认证靠
 /// X-Matrix 签名和隧道的 endpoint ID；`dual_protocol` 让 8008 上的明文客户端接口照旧，网关不用改。
-fn tuwunel_config(
-    dir: &Path,
-    server_name: &str,
-    registration_secret: &str,
-    public_key: &str,
-) -> String {
-    let secrets = dir.join("secrets");
-    let secrets = secrets.to_string_lossy();
+fn tuwunel_config(server_name: &str, registration_secret: &str, public_key: &str) -> String {
     format!(
         r#"# 由 wonton-core init 生成，升级时按新版本重写；改了会被覆盖。
 [global]
@@ -255,9 +248,10 @@ key = """
 {public_key}"""
 
 [global.tls]
-# 自签证书，进站的联邦 TLS 在这里终结（经隧道的字节原样接到这个端口）。
-certs = "{secrets}/tuwunel-tls.crt"
-key = "{secrets}/tuwunel-tls.key"
+# 自签证书，进站的联邦 TLS 在这里终结（经隧道的字节原样接到这个端口）。容器里的路径：compose 把
+# secrets/tuwunel-tls.* 挂到这里。
+certs = "/etc/tuwunel/tls.crt"
+key = "/etc/tuwunel/tls.key"
 # 明文的客户端接口和 TLS 并存在同一个监听上，网关照旧用 http。
 dual_protocol = true
 "#
@@ -336,6 +330,9 @@ fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+mod tuwunel_tests;
+
+#[cfg(test)]
 mod tests {
     use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 
@@ -404,7 +401,7 @@ mod tests {
             "port = [8008, 8448]",
             "dual_protocol = true",
             "[global.tls]",
-            "tuwunel-tls.crt",
+            "certs = \"/etc/tuwunel/tls.crt\"",
         ] {
             assert!(
                 config.contains(expected),

@@ -209,6 +209,9 @@ services:
       - tuwunel:/var/lib/tuwunel
       - ${WONTON_INSTALL_DIR}/secrets/tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
       - ${WONTON_INSTALL_DIR}/fed/config.toml:/etc/tuwunel/fed.toml:ro
+      # 联邦进站的自签证书，tuwunel.toml 按这两个容器里的路径读。
+      - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
+      - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
       # 联邦的出站解析不走 DNS：配对过的服务器名写在这里，指向核心的固定地址（ADR-0050）。
       - ${WONTON_INSTALL_DIR}/fed/hosts:/etc/hosts:ro
     # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）；8448 不映射到主机，联邦只经隧道进来。
