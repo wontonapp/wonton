@@ -139,6 +139,9 @@ impl PluginManager {
                 )
                 .collect(),
             hints: self.models_hint(id, m).into_iter().collect(),
+            missing_requires: Vec::new(),
+            missing_wants: Vec::new(),
+            capability_providers: Vec::new(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
@@ -261,9 +264,13 @@ impl PluginManager {
             permissions: super::views_permissions::permission_lines(m, enabled, langs),
             secret_inputs: Vec::new(),
             notices,
+            missing_requires: Vec::new(),
+            missing_wants: Vec::new(),
+            wanting_plugins: Vec::new(),
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
+            blocked_category: None,
             missing_profile: self.missing_profile(package, langs),
             devices: None,
             lan_webui: webui::switched(package).map(|switched| switched.offer(false, langs)),
@@ -741,7 +748,10 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         installed: Some(installed),
         blocked: None,
         notices: Vec::new(),
+        missing_requires: Vec::new(),
+        missing_wants: Vec::new(),
         hints: Vec::new(),
+        capability_providers: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         ask_every_update: None,

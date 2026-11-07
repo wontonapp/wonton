@@ -499,3 +499,19 @@ plugin-install-img-worker-malformed = The image process produced output in the w
 ## 预装（启动时随服务器带的包）失败的原因。
 plugin-install-preinstall-retrying = Preinstall failed (tried { $attempts } time(s), will retry automatically)
 plugin-install-preinstall-failed = Preinstall failed
+
+# ── Capability dependencies (capabilities.rs, ADR-0053) ───────────────────
+
+plugin-capability-unknown = This core does not know capability { $capability }; upgrade the core before installing
+plugin-capability-third-party-format = Capability { $capability } is invalid: third-party capabilities look like x-<vendor>.<name> with lowercase letters, digits, and hyphens
+plugin-capability-egress-no-consumer = egress_proxy has no consumer declaration and cannot appear in requires or wants
+plugin-capability-duplicate = capability { $capability } is listed twice in { $field }
+plugin-capability-in-both-lists = capability { $capability } cannot be in both requires and wants
+plugin-capability-provider-requires = a plugin that provides capabilities cannot require other capabilities
+plugin-capability-port-zero = provides.{ $capability }.port must not be 0
+plugin-capability-credentials-required = provides.{ $capability } must declare credentials: each consumer gets a credential of its own
+plugin-capability-credentials-forbidden = provides.{ $capability } must not declare credentials: this capability serves only requests forwarded by the core
+plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } must be a non-empty argv naming the credential with { $placeholder }
+plugin-capability-service-unknown = { $field } refers to service `{ $service }`, which doesn't exist in the compose file
+plugin-capability-service-not-forwardable = { $field } must not point at a network_mode: none service: the core forwards into it and issues credentials there
+plugin-install-capability-deps-unsupported = this core does not support dependencies between plugins yet; upgrade the core before installing

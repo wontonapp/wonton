@@ -1,18 +1,37 @@
 //! 插件给其他插件提供的能力（`provides`）。
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Permission, PluginKind};
 use crate::l10n::text;
 
+/// 插件给其他插件提供的能力（ADR-0053）：`models` 和 `egress_proxy` 有专用字段，其余能力（核心定义的
+/// 或第三方的）按能力名放进 [`Self::capabilities`]。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Provides {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models: Option<ModelsProvider>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub egress_proxy: Option<EgressProxyProvider>,
+    /// 其他能力的提供方，键是能力名：核心定义的（如 `search`）或第三方的（如 `x-acme.ledger`）。
+    #[serde(default, flatten)]
+    pub capabilities: BTreeMap<String, ProviderService>,
+}
+
+/// 一个能力提供方监听的服务和端口，可选的凭据命令（ADR-0053）。服务名是否存在由 [`super::package`]
+/// 对照 compose 检查。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Provides {
-    #[serde(default)]
-    pub models: Option<ModelsProvider>,
-    #[serde(default)]
-    pub egress_proxy: Option<EgressProxyProvider>,
+pub struct ProviderService {
+    pub service: String,
+    pub port: u16,
+    /// 声明了就给每个使用方签一个只属于它的凭据，注入 `WONTON_<名字>_KEY`；不声明时提供方只认经核心
+    /// 转发来的请求（ADR-0053）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials: Option<CredentialCommands>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,7 +153,10 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     let Some(provides) = &manifest.provides else {
         return Ok(());
     };
-    if provides.models.is_none() && provides.egress_proxy.is_none() {
+    if provides.models.is_none()
+        && provides.egress_proxy.is_none()
+        && provides.capabilities.is_empty()
+    {
         return Err(invalid(&text(langs, "plugin-install-prv-empty", &[])));
     }
     let Some(models) = &provides.models else {

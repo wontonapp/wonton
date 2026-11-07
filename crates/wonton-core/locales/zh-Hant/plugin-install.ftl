@@ -498,3 +498,19 @@ plugin-install-img-worker-malformed = 處理圖片的行程輸出的格式不對
 ## 预装（启动时随服务器带的包）失败的原因。
 plugin-install-preinstall-retrying = 預先安裝失敗（已試 { $attempts } 次，稍後自動重試）
 plugin-install-preinstall-failed = 預先安裝失敗
+
+# ── 能力依賴（capabilities.rs，ADR-0053）──────────────────────────────────
+
+plugin-capability-unknown = 這份核心不認識能力 { $capability }，升級核心後再裝
+plugin-capability-third-party-format = 能力 { $capability } 不合法：第三方能力要寫成 x-<作者>.<名字>，作者和名字用小寫字母、數字、連字符號
+plugin-capability-egress-no-consumer = egress_proxy 沒有使用方聲明，不能寫在 requires 或 wants 裡
+plugin-capability-duplicate = { $field } 裡的能力 { $capability } 寫了兩次
+plugin-capability-in-both-lists = 能力 { $capability } 不能同時在 requires 和 wants 裡
+plugin-capability-provider-requires = 提供能力的插件不能 requires 別的能力
+plugin-capability-port-zero = provides.{ $capability }.port 不能為 0
+plugin-capability-credentials-required = provides.{ $capability } 要宣告 credentials：給每個使用方簽一個只屬於它的憑據
+plugin-capability-credentials-forbidden = provides.{ $capability } 不能宣告 credentials：這個能力的提供方只認經核心轉發來的請求
+plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } 是非空的 argv，並用 { $placeholder } 指明憑據名
+plugin-capability-service-unknown = { $field } 引用的服務 `{ $service }` 在 compose 裡不存在
+plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode: none 的服務：核心要轉發進去、在裡面簽發憑據
+plugin-install-capability-deps-unsupported = 這個核心還不支援外掛之間的依賴，升級核心後再裝

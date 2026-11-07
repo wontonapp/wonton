@@ -26,7 +26,7 @@ use wonton_core::plugin::image_worker::ImageWorker;
 use wonton_core::plugin::languages::Languages;
 use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::storefront::index::{Index, IndexEntry};
-use wonton_core::plugin::{host_check, host_facts};
+use wonton_core::plugin::{capabilities, host_check, host_facts};
 
 mod locked;
 
@@ -223,7 +223,36 @@ fn check_index(path: &Path) -> ExitCode {
     for plugin in &index.skipped {
         eprintln!("读不懂 {}：{}", plugin.source, plugin.reason);
     }
-    if !index.skipped.is_empty() {
+    // ADR-0053：每个被 requires 的能力，索引里至少要有一个插件提供，否则这个使用方装不上。
+    let provides = |name: &str| {
+        index
+            .plugins
+            .iter()
+            .any(|listed| match capabilities::lookup(name) {
+                Some(capability) => capabilities::is_provided(capability, &listed.manifest),
+                // 第三方能力核心只按名字配对：有人声明提供就算数。
+                None => listed
+                    .manifest
+                    .provides
+                    .as_ref()
+                    .is_some_and(|p| p.capabilities.contains_key(name)),
+            })
+    };
+    let mut uncovered = Vec::new();
+    for listed in &index.plugins {
+        for name in &listed.manifest.requires {
+            if !provides(name) {
+                uncovered.push(format!(
+                    "{} 需要能力 {name}，索引里没有插件提供它",
+                    listed.entry.source
+                ));
+            }
+        }
+    }
+    for problem in &uncovered {
+        eprintln!("{problem}");
+    }
+    if !index.skipped.is_empty() || !uncovered.is_empty() {
         return ExitCode::FAILURE;
     }
     println!("{} 个插件都读得懂", index.plugins.len());

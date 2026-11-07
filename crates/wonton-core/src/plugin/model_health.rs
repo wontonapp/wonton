@@ -65,6 +65,8 @@ impl PluginManager {
             return Some(wonton_protocol::PluginHint {
                 category: Category::ModelsNotConnected,
                 detail: None,
+                provider: None,
+                capability: None,
             });
         }
         let (has_keys, problem, route) = self.store.model_keys().hint_basis(id);
@@ -72,6 +74,8 @@ impl PluginManager {
             return Some(wonton_protocol::PluginHint {
                 category: Category::ModelsNotConnected,
                 detail: problem,
+                provider: None,
+                capability: None,
             });
         }
         route.map(|route| match route {
@@ -81,15 +85,21 @@ impl PluginManager {
                 wonton_protocol::PluginHint {
                     category: Category::ModelsNotConnected,
                     detail: Some(detail),
+                    provider: None,
+                    capability: None,
                 }
             }
             RouteProbe::NoDefaultModel => wonton_protocol::PluginHint {
                 category: Category::ModelsNoDefaultModel,
                 detail: None,
+                provider: None,
+                capability: None,
             },
             RouteProbe::ProviderError(detail) => wonton_protocol::PluginHint {
                 category: Category::ModelsProviderError,
                 detail: Some(detail),
+                provider: None,
+                capability: None,
             },
         })
     }

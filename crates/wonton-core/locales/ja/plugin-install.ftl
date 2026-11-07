@@ -498,3 +498,19 @@ plugin-install-img-worker-malformed = 画像処理のプロセスの出力形式
 ## 预装（启动时随服务器带的包）失败的原因。
 plugin-install-preinstall-retrying = プリインストールに失敗しました（{ $attempts } 回試行、自動で再試行します）
 plugin-install-preinstall-failed = プリインストールに失敗しました
+
+# ── 能力依存（capabilities.rs、ADR-0053）──────────────────────────────────
+
+plugin-capability-unknown = このコアは能力 { $capability } を認識しません。コアを更新してからインストールしてください
+plugin-capability-third-party-format = 能力 { $capability } が不正です。サードパーティー能力は x-<作者>.<名前> の形で、作者と名前は小文字・数字・ハイフンで書きます
+plugin-capability-egress-no-consumer = egress_proxy には利用者宣言がなく、requires や wants には書けません
+plugin-capability-duplicate = { $field } の能力 { $capability } が重複しています
+plugin-capability-in-both-lists = 能力 { $capability } を requires と wants の両方に入れられません
+plugin-capability-provider-requires = 能力を提供するプラグインは他の能力を requires できません
+plugin-capability-port-zero = provides.{ $capability }.port は 0 にできません
+plugin-capability-credentials-required = provides.{ $capability } には credentials の宣言が必要です。利用者ごとに専用の資格情報を発行するためです
+plugin-capability-credentials-forbidden = provides.{ $capability } には credentials を宣言できません。この能力の提供元はコアが転送した要求だけを受け付けます
+plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } は空でない argv で、{ $placeholder } で資格情報名を指し示す必要があります
+plugin-capability-service-unknown = { $field } が参照するサービス `{ $service }` が compose ファイルにありません
+plugin-capability-service-not-forwardable = { $field } は network_mode: none のサービスを指せません。コアが転送し、そこで資格情報を発行するためです
+plugin-install-capability-deps-unsupported = このコアはプラグイン間の依存関係にまだ対応していません。コアを更新してからインストールしてください

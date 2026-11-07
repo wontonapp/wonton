@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::*;
+use crate::plugin::hint::{PluginHint, PluginHintCategory};
 use crate::{Action, LanPort, LanProtocol, TabLayout};
 
 fn icon(hash: &str) -> PluginIcon {
@@ -189,10 +190,27 @@ fn preview() -> InstallPreview {
             text: "云吞没有审核过这个应用，代码和镜像由 someone 提供".into(),
             emphasis: true,
         }],
+        missing_requires: vec![MissingCapability {
+            capability: "jellyfin".into(),
+            third_party: false,
+            providers: vec![CapabilityProvider {
+                id: "app.jellyfin".into(),
+                title: "Jellyfin".into(),
+                source: "github:example/wonton-jellyfin".into(),
+                high_privilege: false,
+            }],
+        }],
+        missing_wants: vec![MissingCapability {
+            capability: "x-acme.ledger".into(),
+            third_party: true,
+            providers: Vec::new(),
+        }],
+        wanting_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         missing_profile: None,
         blocked: None,
+        blocked_category: None,
         devices: Some(vec![PluginDevice {
             id: "usb-1".into(),
             name: "Zigbee 棒".into(),
@@ -265,6 +283,20 @@ fn detail() -> PluginDetail {
         hints: vec![PluginHint {
             category: PluginHintCategory::ModelsNotConnected,
             detail: Some("模型网关没在运行".into()),
+            provider: None,
+            capability: None,
+        }],
+        missing_requires: Vec::new(),
+        missing_wants: Vec::new(),
+        capability_providers: vec![ConsumerCapabilitySetting {
+            capability: "jellyfin".into(),
+            third_party: false,
+            providers: vec![CapabilityProviderRef {
+                id: "app.jellyfin".into(),
+                title: "Jellyfin".into(),
+                high_privilege: false,
+            }],
+            selected: None,
         }],
         lan_webui: None,
         save_grants: Vec::new(),
@@ -303,6 +335,11 @@ fn interface_types_round_trip_through_json() {
         secrets: SecretValues::from([("brave_key".into(), crate::SecretString::new("s3cret"))]),
         devices: vec!["usb-1".into()],
         lan_webui: true,
+        install_together: vec![InstallTogether {
+            id: "app.model.gateway".into(),
+            source: "github:example/wonton-model-gateway".into(),
+        }],
+        connect_plugins: Vec::new(),
     };
     assert_eq!(round_trip(&request), request);
     let upgrade = UpgradeRequest {
@@ -460,6 +497,10 @@ fn wire_format_is_stable() {
     assert_eq!(request.secrets["brave_key"].expose(), "s3cret");
     assert!(request.devices.is_empty(), "旧 App 不带设备选择，按空算");
     assert!(!request.lan_webui, "旧 App 不带这个字段，按关算");
+    assert!(
+        request.install_together.is_empty(),
+        "旧 App 不带一起装的插件，按空算"
+    );
 
     let older: InstallRequest = serde_json::from_value(json!({
         "source": "github:o/r@v1.0.0",
@@ -564,12 +605,15 @@ fn the_models_not_connected_hint_keeps_its_wire_format() {
     let hint = PluginHint {
         category: PluginHintCategory::ModelsNotConnected,
         detail: Some("网关拒绝了凭据命令（issue，退出码 1）".into()),
+        provider: None,
+        capability: None,
     };
     assert_eq!(
         json!(hint),
         json!({
             "category": "models_not_connected",
             "detail": "网关拒绝了凭据命令（issue，退出码 1）",
+            "provider": null, "capability": null,
         })
     );
     assert_eq!(round_trip(&hint), hint);
@@ -577,10 +621,12 @@ fn the_models_not_connected_hint_keeps_its_wire_format() {
     let quiet = PluginHint {
         category: PluginHintCategory::ModelsNotConnected,
         detail: None,
+        provider: None,
+        capability: None,
     };
     assert_eq!(
         json!(quiet),
-        json!({"category": "models_not_connected", "detail": null})
+        json!({"category": "models_not_connected", "detail": null, "provider": null, "capability": null})
     );
 
     let mut shown = serde_json::to_value(detail()).unwrap();
@@ -591,6 +637,8 @@ fn the_models_not_connected_hint_keeps_its_wire_format() {
         vec![PluginHint {
             category: PluginHintCategory::ModelsNotConnected,
             detail: None,
+            provider: None,
+            capability: None,
         }]
     );
 
@@ -598,20 +646,25 @@ fn the_models_not_connected_hint_keeps_its_wire_format() {
     let no_default = PluginHint {
         category: PluginHintCategory::ModelsNoDefaultModel,
         detail: None,
+        provider: None,
+        capability: None,
     };
     let provider_error = PluginHint {
         category: PluginHintCategory::ModelsProviderError,
         detail: Some("服务商 DeepSeek 拒绝了 key（401）".into()),
+        provider: None,
+        capability: None,
     };
     assert_eq!(
         json!(no_default),
-        json!({"category": "models_no_default_model", "detail": null})
+        json!({"category": "models_no_default_model", "detail": null, "provider": null, "capability": null})
     );
     assert_eq!(
         json!(provider_error),
         json!({
             "category": "models_provider_error",
             "detail": "服务商 DeepSeek 拒绝了 key（401）",
+            "provider": null, "capability": null,
         })
     );
     assert_eq!(round_trip(&no_default), no_default);
@@ -731,6 +784,8 @@ fn values_from_a_newer_core_still_parse() {
         vec![PluginHint {
             category: PluginHintCategory::Other,
             detail: Some("x".into()),
+            provider: None,
+            capability: None,
         }]
     );
 }
@@ -741,3 +796,5 @@ where
 {
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
+
+mod capability;

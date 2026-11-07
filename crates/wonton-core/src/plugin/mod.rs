@@ -6,6 +6,7 @@ pub mod bot_profile;
 pub mod bot_services;
 pub mod bots;
 mod by_source;
+pub mod capabilities;
 pub mod check;
 pub mod compose;
 pub mod configs;

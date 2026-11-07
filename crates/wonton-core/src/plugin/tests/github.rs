@@ -221,6 +221,8 @@ async fn a_source_without_a_version_installs_the_latest_release_and_remembers_it
         secrets: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
+        install_together: Vec::new(),
+        connect_plugins: Vec::new(),
     };
     m.install_source(&request).await.unwrap();
     let id = PluginId::parse("app.hello").unwrap();
@@ -270,6 +272,8 @@ async fn a_tag_moved_after_the_preview_is_not_installed() {
         secrets: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
+        install_together: Vec::new(),
+        connect_plugins: Vec::new(),
     };
     let err = m.install_source(&request).await.unwrap_err();
     assert_eq!(err.kind(), "changed", "{err}");

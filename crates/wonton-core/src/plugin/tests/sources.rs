@@ -62,6 +62,8 @@ fn install_request(preview: &InstallPreview) -> InstallRequest {
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
         lan_webui: false,
+        install_together: Vec::new(),
+        connect_plugins: Vec::new(),
     }
 }
 

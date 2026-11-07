@@ -94,10 +94,10 @@ fn egress_manifest_requires_existing_compose_service() {
     assert!(matches!(
         error,
         PackageError::UnknownService {
-            field: "provides.egress_proxy.service",
+            field,
             service,
             ..
-        } if service == "missing"
+        } if field == "provides.egress_proxy.service" && service == "missing"
     ));
 }
 

@@ -217,6 +217,9 @@ impl PluginManager {
                 .installed_detail(&m.id, langs)
                 .map(|detail| detail.hints)
                 .unwrap_or_default(),
+            missing_requires: Vec::new(),
+            missing_wants: Vec::new(),
+            capability_providers: Vec::new(),
             lan_webui: self
                 .with_lan_client(
                     &m.id,

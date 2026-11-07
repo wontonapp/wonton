@@ -560,6 +560,7 @@ impl PluginManager {
         self.check_icon(&package, langs).await?;
         let manifest = package.manifest.clone();
         check_permissions(&manifest, granted, enabled, langs)?;
+        super::capabilities::unsupported_dependencies(&manifest, langs)?;
         self.check_requirements(&manifest, langs).await?;
         self.check_egress(&manifest, langs).await?;
         let gpu = self.gpu_grant(&manifest, granted, langs).await?;

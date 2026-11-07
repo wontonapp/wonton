@@ -548,6 +548,12 @@ pub struct Manifest {
     /// 系统插件给其他插件提供的能力，见规范“模型网关”。
     #[serde(default)]
     pub provides: Option<Provides>,
+    /// 依赖的能力：索引里没有提供方就装不上（ADR-0053）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+    /// 可选依赖的能力：有提供方就用，没有照装（ADR-0053）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wants: Vec<String>,
     /// 拿到显卡的服务，见规范“显卡”；要和 `devices.gpu` 权限一起声明。
     #[serde(default)]
     pub gpu: Option<GpuSpec>,
@@ -623,6 +629,7 @@ impl Manifest {
         super::requirements::validate(self, langs)?;
         super::lan::validate(self, langs)?;
         super::provides::validate(self, langs)?;
+        super::capabilities::validate(self, langs)?;
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {

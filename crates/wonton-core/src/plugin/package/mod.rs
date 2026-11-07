@@ -30,6 +30,9 @@ use super::package_files::{
 };
 use crate::l10n::text;
 
+#[path = "package_capability_services.rs"]
+mod capability_services;
+
 pub(super) mod errors;
 
 pub use errors::PackageError;
@@ -572,6 +575,7 @@ impl PluginPackage {
                 text(langs, "plugin-install-pkg-egress-network-mode", &[]),
             ));
         }
+        self.check_capability_services(langs)?;
         Ok(())
     }
 }

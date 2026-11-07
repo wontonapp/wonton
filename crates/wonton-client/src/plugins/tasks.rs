@@ -57,6 +57,8 @@ impl PluginsLink {
             secrets: Default::default(),
             devices: Vec::new(),
             lan_webui,
+            install_together: Vec::new(),
+            connect_plugins: Vec::new(),
         };
         let link = self.clone();
         let id = preview.id;

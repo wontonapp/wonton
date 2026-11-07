@@ -1,17 +1,26 @@
 //! 插件商店和已安装的插件（ADR-0017 的“接口：App 和核心”）。
 //!
-//! 核心的管理接口（`/_wonton/api/` 下）收发这里的类型；客户端核心把它们放进 [`PluginsViewModel`] 交给壳。文字由核心
-//! 按请求的 `Accept-Language` 挑好语言，壳原样显示。图片都经核心处理成位图（[`PluginImage`]），壳不直接取插件给的图片。
+//! 核心的管理接口（`/_wonton/api/` 下）收发这里的类型；客户端核心把它们放进 [`PluginsViewModel`] 交给壳。文字由核心按
+//! 请求的 `Accept-Language` 挑好语言，壳原样显示。图片都经核心处理成位图（[`PluginImage`]），壳不直接取插件给的图片。
 //!
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other` 或 `Unknown`，不让整份列表解析失败。
 
-mod hint;
+mod capability_deps;
+pub mod hint;
 mod owner_secrets;
 mod permission;
 mod secret_input;
+#[path = "task.rs"]
+mod task;
 mod tool_policy;
+pub use capability_deps::{
+    BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
+    CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
+    ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
+    UninstallRequest,
+};
+use serde::{Deserialize, Serialize};
 
-pub use hint::{PluginHint, PluginHintCategory};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
@@ -19,11 +28,10 @@ pub use permission::{
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
+pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
-
-use serde::{Deserialize, Serialize};
 
 use crate::{
     CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginChat, PluginTab,
@@ -441,10 +449,19 @@ pub struct PluginDetail {
     #[serde(default)]
     pub notices: Vec<CardLine>,
     /// 装着的插件缺了某个平台能力、在用它自己的设置时的轻提示（如没接模型网关），类别见
-    /// [`PluginHintCategory`]；不是错误，状态照常，一页可以有多条。没有可提示的情况（没装、
+    /// [`hint::PluginHintCategory`]；不是错误，状态照常，一页可以有多条。没有可提示的情况（没装、
     /// 能力都接上了）时是空列表。
     #[serde(default)]
-    pub hints: Vec<PluginHint>,
+    pub hints: Vec<hint::PluginHint>,
+    /// 缺的 `requires` 能力（ADR-0053）：`providers` 列索引里能提供它的插件；没有的装不上。
+    #[serde(default)]
+    pub missing_requires: Vec<MissingCapability>,
+    /// 缺的 `wants` 能力（ADR-0053）：照装，少点能力。
+    #[serde(default)]
+    pub missing_wants: Vec<MissingCapability>,
+    /// 使用方给每种能力单独指定的提供方（ADR-0053）；`selected` 为空表示跟全局默认走。
+    #[serde(default)]
+    pub capability_providers: Vec<ConsumerCapabilitySetting>,
     /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
     pub lan_webui: Option<LanWebuiOffer>,
     /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。
@@ -534,12 +551,26 @@ pub struct InstallPreview {
     pub secret_inputs: Vec<SecretInput>,
     /// 确认前要看到的其他说明：未审核、镜像来自哪里、留着旧数据、降级、换来源、对宿主的要求等，按顺序显示，`emphasis` 的醒目显示。
     pub notices: Vec<CardLine>,
+    /// 缺的 `requires` 能力（ADR-0053）：索引里有提供方的列出插件，主人确认一起装；没有的装不上。
+    #[serde(default)]
+    pub missing_requires: Vec<MissingCapability>,
+    /// 缺的 `wants` 能力（ADR-0053）：照装，少点能力。
+    #[serde(default)]
+    pub missing_wants: Vec<MissingCapability>,
+    /// 装的是提供方、而已装的插件正 `wants` 这个能力时（ADR-0053 的“高权限能力”），列出它们：不自动
+    /// 接上，主人在安装请求里勾选的才接上；没勾的以后在它们的详情页里接。
+    #[serde(default)]
+    pub wanting_plugins: Vec<CapabilityProviderRef>,
     /// 升级或换版本时是装着的版本；新装时为空。
     pub upgrade_from: Option<String>,
     /// 这个版本的更新说明。
     pub release_notes: Option<String>,
     /// 装不了的原因；能装时为空，确认按钮这时不可点。
     pub blocked: Option<String>,
+    /// 装不了的类别（ADR-0053）：App 按类别写文字，`blocked` 是细节。其他原因核心只写 `blocked`。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub blocked_category: Option<BlockedCategory>,
     /// 要先填资料才能装时的说明，确认按钮这时不可点。壳显示这句话和去填资料的按钮，填完重新预览。
     pub missing_profile: Option<String>,
     /// 可供主人选择、交给插件服务的宿主设备；不需要选择时为空。
@@ -574,6 +605,13 @@ pub struct InstallRequest {
     /// 打开开关 `lan_webui`。预览没有 [`LanWebuiOffer`] 时不起作用。
     #[serde(default)]
     pub lan_webui: bool,
+    /// 要一起装的提供方（ADR-0053），带安装来源（和预览的 `providers[].source` 一致）。
+    #[serde(default)]
+    pub install_together: Vec<InstallTogether>,
+    /// 要接上的已装使用方插件 ID（ADR-0053 的“高权限能力”）：装的是提供方、预览里列了
+    /// `wanting_plugins`，主人勾选的才接上。
+    #[serde(default)]
+    pub connect_plugins: Vec<String>,
 }
 
 /// `POST /_wonton/api/plugins/{id}/upgrade` 的请求体（JSON）：换到升级预览给的版本。
@@ -705,54 +743,6 @@ pub enum PluginFailure {
     Upstream,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
-}
-
-/// 一次安装、升级或卸载。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PluginTask {
-    /// 插件 ID。
-    pub id: String,
-    pub title: String,
-    pub icon: Option<PluginIcon>,
-    pub operation: PluginOperation,
-    pub state: PluginTaskState,
-    /// 升级比旧版本多了哪些工具；不是升级、没做完或者等不到结果时为空。
-    pub added_tools: Option<AddedTools>,
-}
-
-/// `POST /_wonton/api/plugins/{id}/upgrade` 的响应。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UpgradeResult {
-    pub plugin: InstalledPlugin,
-    pub added_tools: AddedTools,
-}
-
-/// 任务做的是什么。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PluginOperation {
-    Install,
-    Upgrade,
-    Uninstall,
-}
-
-/// 任务的进展。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum PluginTaskState {
-    /// 家里的服务器在做；App 退到后台或者断开了，它也照样做完。
-    Running,
-    /// 做完了，已安装列表随之更新。
-    Succeeded,
-    Failed {
-        reason: PluginFailure,
-        message: String,
-    },
-    /// 等不到结果：家里的服务器可能已经做完了，要看已安装列表。
-    Uncertain { message: String },
 }
 
 #[cfg(test)]

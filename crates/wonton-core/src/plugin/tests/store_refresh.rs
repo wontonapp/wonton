@@ -75,6 +75,8 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         secrets: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
+        install_together: Vec::new(),
+        connect_plugins: Vec::new(),
     };
     m.install_source(&request).await.unwrap();
 }

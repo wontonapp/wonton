@@ -130,6 +130,7 @@ impl PluginManager {
             })
             .collect();
         check_permissions(manifest, granted, &enabled, &langs)?;
+        super::super::capabilities::unsupported_dependencies(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
         let gpu = self

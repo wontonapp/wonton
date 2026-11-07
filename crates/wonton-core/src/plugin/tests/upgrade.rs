@@ -92,6 +92,8 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         secrets: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
+        install_together: Vec::new(),
+        connect_plugins: Vec::new(),
     };
     m.install_source(&request).await.unwrap();
 }
@@ -149,6 +151,8 @@ async fn owner_limits_survive_the_upgrade() {
     let detail = m.installed_detail(&id(), &zh()).unwrap();
     assert_eq!(detail.limits, Some(memory_only(6 * GIB)));
 }
+
+mod capability_deps;
 
 fn memory_only(memory: u64) -> wonton_protocol::PluginLimits {
     wonton_protocol::PluginLimits {

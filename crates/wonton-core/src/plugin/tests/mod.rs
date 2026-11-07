@@ -11,6 +11,8 @@ use super::render::{RenderError, dry_run};
 mod bot_avatars;
 mod bot_lifecycle;
 mod bots;
+mod capability_deps_install;
+mod capability_manifest;
 mod chat_layout;
 mod check;
 mod configs;
