@@ -25,8 +25,27 @@ invite-request-failed = 自宅サーバーからペアリングコードを取�
 invite-invalid-response = 自宅サーバーから返されたペアリングコードの形式が正しくありません：{ $reason }
 # $status は元のHTTPステータスコードです。
 invite-server-status = 自宅サーバーからHTTP { $status }が返されました
-# $message と $kind はサーバーの元のエラーメッセージとエラーコードです。
+# $message と $kind はサーバーのエラーメッセージとエラーコードです。
 invite-server-error = { $message }（{ $kind }）
+
+# 他のサーバー（ADR-0050）。既定で折りたたまれる「詳細」です。
+# $reason は元のエラーの詳細です。
+peers-transport = 自宅サーバーに接続できません：{ $reason }
+# $seconds はタイムアウトの秒数です。
+peers-timeout = { $seconds } 秒以内に応答がありませんでした
+# 接続情報やローカルプロキシがまだなく、リクエストを送れません。
+peers-not-connected = まだ自宅サーバーに接続していません。
+# シェルがサーバーペアリング以外の操作をここに送ってきました。
+peers-invalid-action = サーバーのペアリング操作ではありません。
+
+# $reason はローカルプロキシや HTTP クライアントの元のエラーです。
+peers-invalid-proxy = ローカルプロキシを利用できません：{ $reason }
+# $status は HTTP ステータスコードです。
+peers-server-status = 自宅サーバーが HTTP { $status } を返しました
+# $reason は JSON パーサーの元のエラーです。
+peers-invalid-response = 自宅サーバーの応答を読み取れません：{ $reason }
+# $reason はトンネルに拒否されたときの元の文章です。
+peers-rejected = 自宅サーバーがこのデバイスを拒否しました：{ $reason }
 
 # セットアップの各ステップ。操作が違うステップで行われたり、状態を取得できていないときの理由です。
 onboarding-steps-not-in-flow = セットアップが進行中ではありません

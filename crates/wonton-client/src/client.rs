@@ -6,9 +6,9 @@ use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, DeviceNetwork,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeViewModel, InstallPreview, LanChoice, LanSettings, MediaHandle, OnboardingViewModel,
-    OwnerProfile, OwnerProfileUpdate, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
-    TransfersViewModel,
+    OwnerProfile, OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel,
+    RoomTransfers, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
+    TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -20,8 +20,8 @@ use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TabsSubscription, TransfersSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::{PushInput, Replay};
@@ -89,7 +89,7 @@ impl ClientCore {
             Action::RefreshPeers
             | Action::ShowPeerCode
             | Action::ScanPeerCode { .. }
-            | Action::RemovePeer { .. } => Err(peers_unsupported()),
+            | Action::RemovePeer { .. } => scope.peers.dispatch(action),
             Action::AppForegrounded => {
                 scope.foregrounded();
                 Ok(())
@@ -264,6 +264,16 @@ impl ClientCore {
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
         Arc::new(SettingsSubscription::new(self.views.settings.subscribe()))
+    }
+
+    /// 当前的“其他服务器”页面（ADR-0050），用于首帧渲染。
+    pub fn peers(&self) -> PeersViewModel {
+        self.views.peers.borrow().clone()
+    }
+
+    /// 订阅“其他服务器”页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_peers(&self) -> Arc<PeersSubscription> {
+        Arc::new(PeersSubscription::new(self.views.peers.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -677,6 +687,7 @@ impl ClientCore {
                 crate::l10n::set_languages(&languages);
                 scope.plugins.set_languages(languages.clone());
                 scope.onboarding.set_languages(languages.clone());
+                scope.peers.set_languages(languages.clone());
                 self.replay().languages = Some(languages);
                 Ok(())
             }
@@ -755,13 +766,6 @@ impl ClientCore {
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
         reason: "这个版本的客户端核心不支持局域网设置".into(),
-    }
-}
-
-/// 服务器配对的接口先于实现合并（ADR-0050）：实现之前如实失败。
-fn peers_unsupported() -> CoreError {
-    CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持服务器配对".into(),
     }
 }
 

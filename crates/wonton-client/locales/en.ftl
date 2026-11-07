@@ -31,6 +31,28 @@ invite-server-status = Your home server returned HTTP { $status }
 # $message and $kind are the server's original error text and error code.
 invite-server-error = { $message } ({ $kind })
 
+# Other servers (ADR-0050). Collapsed technical details.
+# $reason is the original error detail.
+peers-transport = Can't reach your home server: { $reason }
+# $seconds is the request timeout in seconds.
+peers-timeout = { $seconds ->
+    [one] No response within { $seconds } second
+   *[other] No response within { $seconds } seconds
+}
+# There's no connection information or local proxy yet, so the request can't be sent.
+peers-not-connected = You're not connected to your home server yet.
+# The shell routed an action here that isn't a server-pairing action.
+peers-invalid-action = Not a server-pairing action.
+
+# $reason is the local proxy's or HTTP client's original error.
+peers-invalid-proxy = The local proxy isn't available: { $reason }
+# $status is the unchanged HTTP status code.
+peers-server-status = Your home server returned HTTP { $status }
+# $reason is the JSON parser's original error.
+peers-invalid-response = Can't read your home server's response: { $reason }
+# $reason is the tunnel's original refusal text.
+peers-rejected = Your home server rejected this device: { $reason }
+
 # Onboarding steps. Shown as error details when an action lands on the wrong
 # setup step or the setup status hasn't loaded.
 onboarding-steps-not-in-flow = Setup isn't running.

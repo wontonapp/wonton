@@ -12,6 +12,7 @@ mod files_services;
 mod files_support;
 mod home;
 mod pairing;
+mod peers;
 mod plugins;
 mod servers;
 mod session_list;

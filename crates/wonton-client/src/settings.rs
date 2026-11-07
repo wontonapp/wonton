@@ -3,9 +3,9 @@
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PluginsViewModel, PushMethod,
-    PushStatus, RecoveryStatus, ServerName, ServersViewModel, SettingsEntry, SettingsSection,
-    SettingsViewModel,
+    ChatViewModel, HomeStatus, HomeViewModel, NotificationCategory, PeersState, PeersViewModel,
+    PluginsViewModel, PushMethod, PushStatus, RecoveryStatus, ServerName, ServersViewModel,
+    SettingsEntry, SettingsSection, SettingsViewModel,
 };
 
 use crate::scope::reuse;
@@ -21,12 +21,14 @@ impl SettingsLink {
         mut home: watch::Receiver<HomeViewModel>,
         mut chat: watch::Receiver<ChatViewModel>,
         mut plugins: watch::Receiver<PluginsViewModel>,
+        mut peers: watch::Receiver<PeersViewModel>,
         mut servers: watch::Receiver<ServersViewModel>,
         view: Option<watch::Sender<SettingsViewModel>>,
     ) -> Self {
         let compute = |home: &watch::Receiver<HomeViewModel>,
                        chat: &watch::Receiver<ChatViewModel>,
                        plugins: &watch::Receiver<PluginsViewModel>,
+                       peers: &watch::Receiver<PeersViewModel>,
                        servers: &watch::Receiver<ServersViewModel>| {
             let chat = chat.borrow();
             settings_view(
@@ -35,9 +37,11 @@ impl SettingsLink {
                 chat.encryption.recovery,
                 &chat.push,
                 plugins.borrow().core_upgrade.is_prompting(),
+                peers.borrow().peers.len(),
+                peers.borrow().state == PeersState::Ready,
             )
         };
-        let view = reuse(view, compute(&home, &chat, &plugins, &servers));
+        let view = reuse(view, compute(&home, &chat, &plugins, &peers, &servers));
         let sender = view.clone();
         runtime.spawn(async move {
             loop {
@@ -45,9 +49,10 @@ impl SettingsLink {
                     changed = home.changed() => if changed.is_err() { break },
                     changed = chat.changed() => if changed.is_err() { break },
                     changed = plugins.changed() => if changed.is_err() { break },
+                    changed = peers.changed() => if changed.is_err() { break },
                     changed = servers.changed() => if changed.is_err() { break },
                 }
-                let next = compute(&home, &chat, &plugins, &servers);
+                let next = compute(&home, &chat, &plugins, &peers, &servers);
                 sender.send_if_modified(|view| {
                     let modified = *view != next;
                     *view = next;
@@ -71,12 +76,16 @@ impl SettingsLink {
 
 /// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观、语言、底栏和通知，再是聊天相关的，最后是很少点的。
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
+/// “其他服务器”只给主人：核心的配对接口只让主人设备读，列表取到过（`peers_ready`）才说明这台设备是主人的，
+/// 台数才拿得到。
 fn settings_view(
     status: &HomeStatus,
     name: Option<ServerName>,
     recovery: RecoveryStatus,
     push: &PushStatus,
     upgrade: bool,
+    peers_count: usize,
+    peers_ready: bool,
 ) -> SettingsViewModel {
     let paired = !matches!(status, HomeStatus::NotConfigured);
     let backup = SettingsEntry::ChatBackup { recovery };
@@ -91,7 +100,7 @@ fn settings_view(
         },
     ];
     let groups = if paired {
-        vec![
+        let mut groups = vec![
             vec![SettingsEntry::Profile],
             vec![SettingsEntry::Server {
                 name,
@@ -101,7 +110,14 @@ fn settings_view(
             phone,
             vec![SettingsEntry::DefaultAgent, backup],
             vec![SettingsEntry::RestartOnboarding, SettingsEntry::About],
-        ]
+        ];
+        if peers_ready {
+            // “其他服务器”和服务器管理是一类：放在服务器的同一组里。
+            groups[1].push(SettingsEntry::Peers {
+                count: u32::try_from(peers_count).unwrap_or(u32::MAX),
+            });
+        }
+        groups
     } else {
         vec![phone, vec![backup], vec![SettingsEntry::About]]
     };
@@ -133,6 +149,8 @@ mod tests {
                 RecoveryStatus::Unknown,
                 &PushStatus::NoEndpoint,
                 false,
+                0,
+                false,
             );
             let all = entries(&view);
             let appearance = all
@@ -150,6 +168,8 @@ mod tests {
             None,
             RecoveryStatus::Unknown,
             &PushStatus::NoEndpoint,
+            false,
+            0,
             false,
         );
         assert_eq!(
@@ -185,6 +205,8 @@ mod tests {
             RecoveryStatus::Enabled,
             &PushStatus::Registered,
             true,
+            0,
+            false,
         );
         assert_eq!(view.sections[0].entries, [SettingsEntry::Profile]);
         assert_eq!(
@@ -199,6 +221,42 @@ mod tests {
         );
         assert!(entries(&view).contains(&SettingsEntry::DefaultAgent));
         assert!(entries(&view).contains(&SettingsEntry::RestartOnboarding));
+    }
+
+    /// “其他服务器”跟着配对列表走：列表取到过（这台设备是主人的）才给，台数是已配对的数量。
+    #[test]
+    fn the_peers_entry_follows_the_peers_list() {
+        let view = |peers_count: usize, peers_ready: bool| {
+            settings_view(
+                &HomeStatus::Connected,
+                None,
+                RecoveryStatus::Unknown,
+                &PushStatus::NoEndpoint,
+                false,
+                peers_count,
+                peers_ready,
+            )
+        };
+        let server_group = |view: &SettingsViewModel| view.sections[1].entries.clone();
+        assert_eq!(
+            server_group(&view(0, false)),
+            [SettingsEntry::Server {
+                name: None,
+                status: HomeStatus::Connected,
+                upgrade: false
+            }]
+        );
+        assert_eq!(
+            server_group(&view(2, true)),
+            [
+                SettingsEntry::Server {
+                    name: None,
+                    status: HomeStatus::Connected,
+                    upgrade: false
+                },
+                SettingsEntry::Peers { count: 2 },
+            ]
+        );
     }
 
     #[tokio::test]
@@ -216,34 +274,21 @@ mod tests {
             invite: None,
             keep_connection: false,
         };
-        let chat = ChatViewModel {
-            account: wonton_protocol::ChatAccount::SignedOut,
-            sync: wonton_protocol::ChatSync::Idle,
-            encryption: wonton_protocol::EncryptionStatus {
-                verification: wonton_protocol::DeviceVerification::Unknown,
-                recovery: RecoveryStatus::Unknown,
-                recovery_key: None,
-                backup_reminder: None,
-                can_verify_with_other_device: false,
-                verification_flow: None,
-            },
-            rooms: Vec::new(),
-            problem: None,
-            push: PushStatus::NoEndpoint,
-            pending_confirmations: Vec::new(),
-            settled_confirmations: Vec::new(),
-            background_notifications: Vec::new(),
-            bots: Vec::new(),
-        };
         let (home_tx, home_rx) = watch::channel(home(HomeStatus::NotConfigured));
-        let (chat_tx, chat_rx) = watch::channel(chat);
+        let (chat_tx, chat_rx) = watch::channel(chat_view_model());
         let (plugins_tx, plugins_rx) = watch::channel(PluginsViewModel::default());
+        let (peers_tx, peers_rx) = watch::channel(PeersViewModel {
+            state: PeersState::Loading,
+            peers: Vec::new(),
+            code: None,
+        });
         let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());
         let link = SettingsLink::new(
             &Handle::current(),
             home_rx,
             chat_rx,
             plugins_rx,
+            peers_rx,
             servers_rx,
             None,
         );
@@ -292,5 +337,46 @@ mod tests {
                 upgrade: false
             }
         );
+
+        // 配对列表取到了，“其他服务器”这一行才出现，台数是已配对的数量。
+        peers_tx.send_modify(|peers| {
+            peers.state = PeersState::Ready;
+            peers.peers = vec![wonton_protocol::PeerRow {
+                server_name: "abc12345.wonton".into(),
+                owner_user_id: "@alex:def67890.wonton".into(),
+                owner_display_name: "Alex".into(),
+                status: wonton_protocol::PeerStatus::Connected,
+                last_connected_ms: None,
+                detail: None,
+            }];
+        });
+        updates.changed().await.unwrap();
+        assert_eq!(
+            link.view().sections[1].entries[1],
+            SettingsEntry::Peers { count: 1 }
+        );
+    }
+
+    /// 引导前后都不会变的一份聊天状态。
+    fn chat_view_model() -> ChatViewModel {
+        ChatViewModel {
+            account: wonton_protocol::ChatAccount::SignedOut,
+            sync: wonton_protocol::ChatSync::Idle,
+            encryption: wonton_protocol::EncryptionStatus {
+                verification: wonton_protocol::DeviceVerification::Unknown,
+                recovery: RecoveryStatus::Unknown,
+                recovery_key: None,
+                backup_reminder: None,
+                can_verify_with_other_device: false,
+                verification_flow: None,
+            },
+            rooms: Vec::new(),
+            problem: None,
+            push: PushStatus::NoEndpoint,
+            pending_confirmations: Vec::new(),
+            settled_confirmations: Vec::new(),
+            background_notifications: Vec::new(),
+            bots: Vec::new(),
+        }
     }
 }

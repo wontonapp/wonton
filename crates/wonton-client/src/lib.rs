@@ -34,6 +34,7 @@ mod l10n;
 mod link;
 mod logging;
 mod onboarding;
+mod peers;
 mod plugins;
 mod push;
 mod scope;
@@ -53,8 +54,8 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use subscription::{
     AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TabsSubscription, TransfersSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
@@ -83,23 +84,24 @@ pub use wonton_protocol::{
     OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeedRow,
     OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem,
     OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel,
-    OpenWindow, OwnerProfile, OwnerProfileUpdate, PairingFailure, PairingStatus,
-    PendingConfirmation, PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice,
-    PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation,
-    PluginProblem, PluginState, PluginTab, PluginTakeover, PluginTask, PluginTaskState,
-    PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation, PushContent, PushEndpoint,
-    PushNotification, PushStatus, RecoveryStatus, RegistryFailure, RegistryMirrorSettings,
-    RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate,
-    RegistryMirrorViewModel, RegistryProbe, RegistryProblem, ReplacedAgent, RequirementLine,
-    RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString,
-    SendState, ServerName, ServerRow, ServersViewModel, SessionListViewModel, SessionRow,
-    SettingsEntry, SettingsSection, SettingsViewModel, SourceKind, StepNav, StoreFailure,
-    StoreItem, StoreListing, StoreProblem, StoreSection, TabCandidate, TabDisplay,
-    TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
-    TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors, ThemeMode, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry,
-    ToolPolicyView, Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpgradeOffer, UploadSource, WindowView,
+    OpenWindow, OwnerProfile, OwnerProfileUpdate, PairingFailure, PairingStatus, PeerCode,
+    PeerError, PeerRow, PeerStatus, PeersState, PeersViewModel, PendingConfirmation,
+    PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState,
+    PluginTab, PluginTakeover, PluginTask, PluginTaskState, PluginTrust, PluginsViewModel,
+    ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushNotification, PushStatus,
+    RecoveryStatus, RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest,
+    RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel,
+    RegistryProbe, RegistryProblem, ReplacedAgent, RequirementLine, RequirementStatus, Rgb,
+    RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString, SendState, ServerName,
+    ServerRow, ServersViewModel, SessionListViewModel, SessionRow, SettingsEntry, SettingsSection,
+    SettingsViewModel, SourceKind, StepNav, StoreFailure, StoreItem, StoreListing, StoreProblem,
+    StoreSection, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout,
+    TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize,
+    ThemeColors, ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    TimelineUpdate, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction,
+    TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer,
+    UploadSource, WindowView,
 };
 pub use wonton_protocol::{
     AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload, BotActivity,

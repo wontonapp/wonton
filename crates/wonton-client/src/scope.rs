@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, CoreError, HomeViewModel, OnboardingViewModel, PluginsViewModel,
+    ChatViewModel, CoreError, HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel,
     ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
@@ -17,6 +17,7 @@ use crate::chat::ChatLink;
 use crate::files::FilesLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::onboarding::OnboardingLink;
+use crate::peers::PeersLink;
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::settings::SettingsLink;
@@ -33,6 +34,7 @@ pub(crate) struct Scope {
     pub(crate) tabs: Arc<TabsLink>,
     pub(crate) files: Arc<FilesLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
+    pub(crate) peers: Arc<PeersLink>,
     pub(crate) settings: SettingsLink,
     runtime: ScopeRuntime,
 }
@@ -47,6 +49,7 @@ pub(crate) struct Views {
     pub(crate) tabs: watch::Sender<TabsViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
+    pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -59,6 +62,7 @@ impl Views {
             tabs: scope.tabs.sender(),
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
+            peers: scope.peers.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -136,11 +140,13 @@ impl Scope {
             dir,
             views.map(|v| v.onboarding.clone()),
         );
+        let peers = PeersLink::new(handle.clone(), home.clone(), views.map(|v| v.peers.clone()));
         let settings = SettingsLink::new(
             &handle,
             home.subscribe(),
             chat.subscribe(),
             plugins.subscribe(),
+            peers.subscribe(),
             servers,
             views.map(|v| v.settings.clone()),
         );
@@ -153,6 +159,7 @@ impl Scope {
             tabs,
             files,
             onboarding,
+            peers,
             settings,
             runtime,
         }))

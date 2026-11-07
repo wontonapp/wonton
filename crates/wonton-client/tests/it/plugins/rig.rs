@@ -32,6 +32,10 @@ pub const IMAGE: &str = "/_wonton/api/images/abc/icon-192.png";
 #[derive(Clone)]
 pub struct Canned(pub u16, pub String);
 
+/// 带响应头的预设回应：状态码、响应头（按顺序）、响应体。
+#[derive(Clone)]
+pub struct Headered(pub u16, pub Vec<(String, String)>, pub String);
+
 pub fn core_error(status: u16, kind: &str, message: &str) -> Canned {
     let body = serde_json::json!({"error": {"kind": kind, "message": message}});
     Canned(status, body.to_string())
@@ -62,6 +66,9 @@ pub struct CoreState {
     canned: Mutex<HashMap<(Method, String), VecDeque<Canned>>>,
     /// 用完预设的回应后，某个方法和路径一直用的回应。
     standing: Mutex<HashMap<(Method, String), Canned>>,
+    /// 同上，但带响应头：有的接口把错误类别写在响应头里（如 `X-Wonton-Error`）。
+    canned_headered: Mutex<HashMap<(Method, String), Headered>>,
+    standing_headered: Mutex<HashMap<(Method, String), Headered>>,
     /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
     holds: Holds,
     seen: Mutex<Vec<Seen>>,
@@ -91,6 +98,20 @@ impl CoreState {
             .lock()
             .unwrap()
             .insert((method, path.to_owned()), canned);
+    }
+
+    pub fn answer_headered(&self, method: Method, path: &str, headered: Headered) {
+        self.canned_headered
+            .lock()
+            .unwrap()
+            .insert((method, path.to_owned()), headered);
+    }
+
+    pub fn answer_always_headered(&self, method: Method, path: &str, headered: Headered) {
+        self.standing_headered
+            .lock()
+            .unwrap()
+            .insert((method, path.to_owned()), headered);
     }
 
     pub fn stop_answering(&self, method: Method, path: &str) {
@@ -145,6 +166,28 @@ impl CoreState {
     }
 }
 
+/// 带响应头的预设回应（如 `X-Wonton-Error`）：排在前头，先于不带头的查。
+fn headered_response(core: &CoreState, method: &Method, path: &str) -> Option<Response> {
+    let headered = core
+        .canned_headered
+        .lock()
+        .unwrap()
+        .remove(&(method.clone(), path.to_owned()))
+        .or_else(|| {
+            core.standing_headered
+                .lock()
+                .unwrap()
+                .get(&(method.clone(), path.to_owned()))
+                .cloned()
+        })?;
+    let Headered(status, headers, body) = headered;
+    let mut builder = Response::builder().status(StatusCode::from_u16(status).unwrap());
+    for (name, value) in headers {
+        builder = builder.header(name, value);
+    }
+    Some(builder.body(Body::from(body)).unwrap())
+}
+
 pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let path = parts
@@ -175,6 +218,9 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
     }
     if path == IMAGE {
         return (StatusCode::OK, vec![0x89, 0x50]).into_response();
+    }
+    if let Some(response) = headered_response(&core, &parts.method, parts.uri.path()) {
+        return response;
     }
     let canned = core
         .canned

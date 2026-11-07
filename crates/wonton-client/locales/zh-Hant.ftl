@@ -28,6 +28,25 @@ invite-server-status = 家用伺服器傳回 HTTP { $status }
 # $message 和 $kind 是伺服器的原始錯誤說明和錯誤碼。
 invite-server-error = { $message }（{ $kind }）
 
+# 其他伺服器（ADR-0050）。預設收起的「詳情」。
+# $reason 是原始錯誤詳情。
+peers-transport = 連不上家裡的伺服器：{ $reason }
+# $seconds 是請求逾時的秒數。
+peers-timeout = { $seconds } 秒內沒有回應
+# 還沒有連線資訊或本機代理，請求送不出去。
+peers-not-connected = 還沒連上家用伺服器。
+# 殼把不是伺服器配對的操作發到了這裡。
+peers-invalid-action = 不是伺服器配對操作。
+
+# $reason 是本機代理位址或 HTTP 用戶端的原始錯誤。
+peers-invalid-proxy = 本機代理不可用：{ $reason }
+# $status 是原始 HTTP 狀態碼。
+peers-server-status = 家裡的伺服器回了 HTTP { $status }
+# $reason 是 JSON 解析器的原始錯誤。
+peers-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
+# $reason 是隧道拒絕的原話。
+peers-rejected = 家裡的伺服器拒絕了這台裝置：{ $reason }
+
 # 初始設定的步驟操作：落在錯的步驟上、狀態沒取到時的原因。
 onboarding-steps-not-in-flow = 不在初始設定裡
 onboarding-steps-already-committed = 已經點了完成
