@@ -60,6 +60,7 @@ fn install_request(preview: &InstallPreview) -> InstallRequest {
             .map(|p| p.permission.clone())
             .collect(),
         enabled_permissions: Vec::new(),
+        secrets: Default::default(),
         lan_webui: false,
     }
 }
@@ -76,6 +77,7 @@ fn upgrade_request(preview: &InstallPreview) -> UpgradeRequest {
             .map(|p| p.permission.clone())
             .collect(),
         enabled_permissions: Vec::new(),
+        secrets: Default::default(),
         lan_webui: false,
     }
 }

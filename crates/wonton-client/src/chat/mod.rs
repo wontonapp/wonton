@@ -468,7 +468,11 @@ impl ChatLink {
         }
         let answers = self.answers.clone();
         self.runtime.spawn(async move {
-            let body = ConfirmationAnswer { answer, choice_id };
+            let body = ConfirmationAnswer {
+                answer,
+                choice_id,
+                secrets: Default::default(),
+            };
             let outcome = confirmation::send_answer(&core_url, &proxy, &id, body).await;
             answers.send_modify(|answers| answers.finish(id, outcome));
         });

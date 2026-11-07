@@ -205,6 +205,7 @@ impl PluginManager {
                 .map(|p| permission_line(p, langs))
                 .collect(),
             requirements: requirement_checks(m, &facts, langs),
+            secret_inputs: Vec::new(),
             has_web: m.webui.is_some(),
             installed,
             blocked: blocked(m, &facts, langs),

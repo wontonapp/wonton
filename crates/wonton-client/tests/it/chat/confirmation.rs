@@ -60,7 +60,10 @@ async fn the_owner_answers_cards_and_sees_how_they_end() {
     answer(&phone, "install", Answer::Reject);
     assert_eq!(
         home.confirmation_answers(),
-        [("install".to_owned(), json!({"answer": "approve"}))]
+        [(
+            "install".to_owned(),
+            json!({"answer": "approve", "secrets": {}})
+        )]
     );
 
     // 卡片原地更新成结果，不算“已编辑”。
@@ -94,7 +97,10 @@ async fn the_owner_answers_cards_and_sees_how_they_end() {
     .await;
     assert_eq!(
         home.confirmation_answers().last().unwrap(),
-        &("uninstall".to_owned(), json!({"answer": "reject"}))
+        &(
+            "uninstall".to_owned(),
+            json!({"answer": "reject", "secrets": {}})
+        )
     );
 
     // 主人的另一台设备答的，发给插件后没等到结果：如实显示“不确定”。
@@ -371,7 +377,7 @@ async fn buttons_with_the_same_answer_are_told_apart() {
         home.confirmation_answers(),
         [(
             "agent".to_owned(),
-            json!({"answer": "approve", "choice_id": "always"})
+            json!({"answer": "approve", "choice_id": "always", "secrets": {}})
         )]
     );
 }

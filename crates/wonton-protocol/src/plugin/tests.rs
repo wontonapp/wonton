@@ -178,6 +178,13 @@ fn preview() -> InstallPreview {
                 Some(PermissionRisk::VeryHigh),
             ),
         ],
+        secret_inputs: vec![SecretInput {
+            name: "brave_key".into(),
+            title: "Brave Search API key".into(),
+            description: Some("Free tier has 2,000 queries a month".into()),
+            url: Some("https://api-dashboard.search.brave.com/app/keys".into()),
+            required: true,
+        }],
         notices: vec![CardLine {
             text: "云吞没有审核过这个应用，代码和镜像由 someone 提供".into(),
             emphasis: true,
@@ -244,6 +251,13 @@ fn detail() -> PluginDetail {
             status: RequirementStatus::Unmet,
             problem: Some("这台主机只有 1.5 GB 内存".into()),
         }],
+        secret_inputs: vec![SecretInputState {
+            name: "brave_key".into(),
+            title: "Brave Search API key".into(),
+            required: false,
+            filled: true,
+            changed_at_ms: Some(1_793_000_000_000),
+        }],
         has_web: true,
         installed: Some(installed()),
         blocked: None,
@@ -286,6 +300,7 @@ fn interface_types_round_trip_through_json() {
         digest: preview().digest,
         grant: vec!["network.host".into()],
         enabled_permissions: vec!["docker.socket".into()],
+        secrets: SecretValues::from([("brave_key".into(), crate::SecretString::new("s3cret"))]),
         devices: vec!["usb-1".into()],
         lan_webui: true,
     };
@@ -296,6 +311,7 @@ fn interface_types_round_trip_through_json() {
         digest: preview().digest,
         grant: vec![],
         enabled_permissions: vec![],
+        secrets: SecretValues::new(),
         lan_webui: false,
     };
     assert_eq!(round_trip(&upgrade), upgrade);
@@ -437,11 +453,21 @@ fn wire_format_is_stable() {
         "source": "github:o/r@v1.0.0",
         "digest": "sha256:00",
         "grant": ["models"],
+        "secrets": {"brave_key": "s3cret"},
     }))
     .unwrap();
     assert_eq!(request.grant, ["models"]);
+    assert_eq!(request.secrets["brave_key"].expose(), "s3cret");
     assert!(request.devices.is_empty(), "旧 App 不带设备选择，按空算");
     assert!(!request.lan_webui, "旧 App 不带这个字段，按关算");
+
+    let older: InstallRequest = serde_json::from_value(json!({
+        "source": "github:o/r@v1.0.0",
+        "digest": "sha256:00",
+        "grant": ["models"],
+    }))
+    .unwrap();
+    assert!(older.secrets.is_empty(), "旧 App 不带密钥表，按没填算");
     assert_eq!(
         serde_json::to_value(PluginTaskState::Failed {
             reason: PluginFailure::SourceUnavailable,
@@ -605,9 +631,14 @@ fn a_core_without_writers_lists_plugins_without_them() {
     let mut shown = serde_json::to_value(detail()).unwrap();
     shown.as_object_mut().unwrap().remove("ask_every_update");
     shown.as_object_mut().unwrap().remove("hints");
+    shown.as_object_mut().unwrap().remove("secret_inputs");
     let shown: PluginDetail = serde_json::from_value(shown).unwrap();
     assert_eq!(shown.ask_every_update, None);
     assert!(shown.hints.is_empty(), "旧核心没有这个字段，轻提示为空");
+    assert!(
+        shown.secret_inputs.is_empty(),
+        "旧核心没有这个字段，没有要填的"
+    );
 }
 
 #[test]
@@ -683,6 +714,14 @@ fn values_from_a_newer_core_still_parse() {
     }))
     .unwrap();
     assert!(request.enabled_permissions.is_empty());
+
+    let mut older = serde_json::to_value(preview()).unwrap();
+    older.as_object_mut().unwrap().remove("secret_inputs");
+    let older: InstallPreview = serde_json::from_value(older).unwrap();
+    assert!(
+        older.secret_inputs.is_empty(),
+        "旧核心没有这个字段，没有要填的"
+    );
 
     let mut shown = serde_json::to_value(detail()).unwrap();
     shown["hints"] = json!([{"category": "model_pool_drained", "detail": "x"}]);

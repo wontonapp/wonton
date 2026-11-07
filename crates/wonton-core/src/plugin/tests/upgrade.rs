@@ -89,6 +89,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
             .map(|p| p.permission.clone())
             .collect(),
         enabled_permissions: Vec::new(),
+        secrets: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
     };
@@ -109,6 +110,7 @@ async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
             .map(|p| p.permission.clone())
             .collect(),
         enabled_permissions: Vec::new(),
+        secrets: Default::default(),
         lan_webui: false,
     };
     m.upgrade_source(&id(), &request, &super::langs()).await
@@ -325,6 +327,7 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
         digest: preview.digest.clone(),
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
+        secrets: Default::default(),
         lan_webui: false,
     };
     let err = m

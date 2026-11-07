@@ -72,6 +72,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         digest: preview.digest,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
+        secrets: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
     };

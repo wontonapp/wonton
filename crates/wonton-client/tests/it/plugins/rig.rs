@@ -445,6 +445,7 @@ pub fn preview(id: &str) -> InstallPreview {
             off_loss: None,
             opened: None,
         }],
+        secret_inputs: Vec::new(),
         notices: Vec::new(),
         upgrade_from: None,
         release_notes: None,

@@ -54,6 +54,7 @@ impl PluginsLink {
             digest: preview.digest,
             grant,
             enabled_permissions,
+            secrets: Default::default(),
             devices: Vec::new(),
             lan_webui,
         };
@@ -87,6 +88,7 @@ impl PluginsLink {
             digest: preview.digest,
             grant,
             enabled_permissions,
+            secrets: Default::default(),
             lan_webui,
         };
         let link = self.clone();

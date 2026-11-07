@@ -163,6 +163,9 @@ pub struct ConfirmationAnswer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub choice_id: Option<String>,
+    /// 装插件、升级插件的卡片要主人填的密钥（ADR-0064），键是卡片列的项；别的卡片带上时返回 400 `invalid_input`。
+    #[serde(default)]
+    pub secrets: crate::SecretValues,
 }
 
 /// 回答之后卡片的状态。
@@ -281,14 +284,28 @@ mod tests {
         let answer = ConfirmationAnswer {
             answer: Answer::Approve,
             choice_id: Some("opaque-2".into()),
+            secrets: crate::SecretValues::new(),
         };
         assert_eq!(
             json!(answer),
-            json!({"answer": "approve", "choice_id": "opaque-2"})
+            json!({"answer": "approve", "choice_id": "opaque-2", "secrets": {}})
         );
         let answer: ConfirmationAnswer =
             serde_json::from_value(json!({"answer": "reject"})).unwrap();
         assert_eq!(answer.choice_id, None);
+        assert!(answer.secrets.is_empty(), "旧 App 不带密钥表，按空算");
+
+        let answer: ConfirmationAnswer = serde_json::from_value(json!({
+            "answer": "approve",
+            "secrets": {"brave_key": "s3cret"},
+        }))
+        .unwrap();
+        assert_eq!(answer.secrets["brave_key"].expose(), "s3cret");
+        assert_eq!(
+            format!("{:?}", answer.secrets["brave_key"]),
+            "<redacted>",
+            "回答里填的值不泄露"
+        );
     }
 
     /// 契约：卡片的 JSON 形状。

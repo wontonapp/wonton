@@ -8,12 +8,16 @@
 mod hint;
 mod owner_secrets;
 mod permission;
+mod secret_input;
 mod tool_policy;
 
 pub use hint::{PluginHint, PluginHintCategory};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
+};
+pub use secret_input::{
+    SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
@@ -424,6 +428,9 @@ pub struct PluginDetail {
     pub permissions: Vec<PermissionLine>,
     /// 对宿主的要求和这台主机满不满足。
     pub requirements: Vec<RequirementLine>,
+    /// 主人要填的密钥和填没填（ADR-0064），按清单里的顺序；装着的版本才列，`input` 项才在里面。没有值。
+    #[serde(default)]
+    pub secret_inputs: Vec<SecretInputState>,
     /// 装好后有网页（小程序）。
     pub has_web: bool,
     /// 装着时是它的状态；没装时为空。
@@ -522,6 +529,9 @@ pub struct InstallPreview {
     pub author: Option<PluginAuthor>,
     /// 要授予的全部权限；主人确认的就是这些。
     pub permissions: Vec<PermissionLine>,
+    /// 要主人填的密钥（ADR-0064）；值不在预览里，跟着安装、升级请求上行。升级预览只列新增的和还没填的。
+    #[serde(default)]
+    pub secret_inputs: Vec<SecretInput>,
     /// 确认前要看到的其他说明：未审核、镜像来自哪里、留着旧数据、降级、换来源、对宿主的要求等，按顺序显示，`emphasis` 的醒目显示。
     pub notices: Vec<CardLine>,
     /// 升级或换版本时是装着的版本；新装时为空。
@@ -555,6 +565,9 @@ pub struct InstallRequest {
     /// 主人在预览里打开的可选项（[`PermissionLine::optional`] 的 `permission`），没带就是全关。
     #[serde(default)]
     pub enabled_permissions: Vec<String>,
+    /// 主人填的密钥值（[`SecretValues`]），键是预览里 [`SecretInput::name`]。
+    #[serde(default)]
+    pub secrets: SecretValues,
     /// 主人选择的设备 ID；没有设备选择时为空。
     #[serde(default)]
     pub devices: Vec<String>,
@@ -579,6 +592,9 @@ pub struct UpgradeRequest {
     /// 同 [`InstallRequest::enabled_permissions`]。
     #[serde(default)]
     pub enabled_permissions: Vec<String>,
+    /// 同 [`InstallRequest::secrets`]：升级只要新增的、还没填的项。
+    #[serde(default)]
+    pub secrets: SecretValues,
     /// 同 [`InstallRequest::lan_webui`]。
     #[serde(default)]
     pub lan_webui: bool,

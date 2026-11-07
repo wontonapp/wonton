@@ -139,9 +139,11 @@ pub use plugin::{
     PluginAuthor, PluginDetail, PluginDevice, PluginFailure, PluginHealth, PluginHint,
     PluginHintCategory, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
     PluginProblem, PluginState, PluginTakeover, PluginTask, PluginTaskState, PluginTrust,
-    PluginWriter, PluginsViewModel, RequirementLine, RequirementStatus, SourceKind, StorageUsage,
-    StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState, ToolAccess,
+    PluginWriter, PluginsViewModel, RequirementLine, RequirementStatus, SecretInput,
+    SecretInputState, SecretUpdate, SecretValues, SourceKind, StorageUsage, StoreFailure,
+    StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState, ToolAccess,
     ToolPolicyEntry, ToolPolicyView, UpgradeOffer, UpgradeRequest, UpgradeResult,
+    secret_input_path,
 };
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use push::{
