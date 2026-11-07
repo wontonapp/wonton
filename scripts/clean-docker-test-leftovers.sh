@@ -102,4 +102,24 @@ while IFS= read -r name; do
   fi
 done <<<"$networks"
 
-printf '清理完成：删除容器 %d 个，网络 %d 个\n' "$containers_removed" "$networks_removed"
+# registry_mirror 的测试推到一次性仓库再拉回来的镜像（`127.0.0.1:<端口>/<实例名>/fixture`，没有标签）不随测试删掉，
+# 一台 runner 上攒了 500 多个。实例名是 `wt<十六进制 PID><随机数>`，拆不出 PID，只按建好的时间判断；有容器在用的
+# `docker rmi` 不加 -f 会拒绝，不动。
+fixture_pattern='^127\.0\.0\.1:[0-9]+/wt[0-9a-f]+/fixture$'
+images_removed=0
+images="$(docker images --no-trunc --format '{{.ID}}|{{.Repository}}|{{.CreatedAt}}')"
+while IFS='|' read -r id repo created; do
+  [[ "$repo" =~ $fixture_pattern ]] || continue
+  if ! created_at="$(date -d "${created% *}" +%s 2>/dev/null)"; then
+    printf '解析镜像创建时间失败，跳过：%s\n' "$repo" >&2
+    continue
+  fi
+  (( now - created_at > min_age_seconds )) || continue
+  if docker rmi "$id" >/dev/null 2>&1; then
+    images_removed=$((images_removed + 1))
+  else
+    printf '删除测试镜像失败，继续：%s\n' "$repo" >&2
+  fi
+done <<<"$images"
+
+printf '清理完成：删除容器 %d 个，网络 %d 个，测试镜像 %d 个\n' "$containers_removed" "$networks_removed" "$images_removed"
