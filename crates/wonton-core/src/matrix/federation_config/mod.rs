@@ -1,16 +1,13 @@
-//! 联邦名单和 hosts 由核心生成和更新（ADR-0050）。
+//! 联邦名单由核心生成和更新（ADR-0050）。
 //!
 //! 输入是已配对服务器名的 `tokio::sync::watch::Receiver<BTreeSet<String>>`（配对组件给出）。名单变了：
-//! 原地重写安装目录 `fed/` 里的 `config.toml`（名单）和 `hosts`（每个名字指向核心的固定地址），再经
-//! Docker API 给 Tuwunel 发 `SIGUSR1`。两份文件都是单文件绑定挂载，容器钉住挂载时的 inode，所以只做
-//! 原地截断写，不用临时文件改名。hosts 不能热加载（Tuwunel 只在启动时读它，`SIGUSR1` 不重建解析器，
-//! 实测见 ADR-0050 的“验证”）：名单新增了名字就重启 Tuwunel；只删名字时 `SIGUSR1` 就够，被删名字的
-//! 出站已被名单挡住，不再需要解析它。
+//! 原地重写安装目录里的 `fed/config.toml`，再经 Docker API 给 Tuwunel 发 `SIGUSR1` 热加载。文件是单文件
+//! 绑定挂载，容器钉住挂载时的 inode，所以只做原地截断写，不用临时文件改名。服务器名的出站解析不归
+//! 这里管：Tuwunel 的联邦出站都经核心的 CONNECT 代理，代理按配对名单选路。
 //!
 //! 失败如实记日志，并经通知房间告诉主人；不吞掉。
 
 use std::collections::BTreeSet;
-use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,14 +19,15 @@ use crate::plugin::docker::{Engine, LabeledResources};
 
 mod files;
 #[cfg(test)]
+mod proxy_tests;
+#[cfg(test)]
 mod tests;
 
-pub(crate) use files::{allowlist_toml, hosts, names_in_hosts};
+pub(crate) use files::allowlist_toml;
 
-/// 核心在联邦网络上的默认固定地址：hosts 名单都指向它。正式安装由
-/// `WONTON_FEDERATION_CORE_ADDR` 配置（compose 和 install.sh 写进 .env），同机装多套时
-/// 每套一段；和 `deploy/install/compose.yaml` 里 federation 网络的 subnet 是一对，一起改。
-pub(crate) const DEFAULT_CORE_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 212, 0, 10));
+/// 核心给 Tuwunel 开的联邦出站代理：核心在内部网络上的别名和端口。`deploy/install/compose.yaml` 里核心的
+/// 网络别名和 `WONTON_FEDERATION_LISTEN` 用的是同一个值，一起改。
+pub(crate) const PROXY_ADDR: &str = "federation-proxy.wonton.internal:8448";
 
 /// Compose 项目里 Tuwunel 容器的服务名标签。
 const SERVICE_LABEL: &str = "com.docker.compose.service";
@@ -37,12 +35,10 @@ const SERVICE_LABEL: &str = "com.docker.compose.service";
 /// 盯着配对名单，变了就把 Tuwunel 的配置跟上来。
 pub struct FederationConfig {
     engine: Engine,
-    /// 安装目录，`fed/config.toml` 和 `fed/hosts` 由这里重写。
+    /// 安装目录，`fed/config.toml` 由这里重写。
     install_dir: PathBuf,
     /// 核心自己的容器名，用它找同一个 Compose 项目里的 Tuwunel。
     core_container: Option<String>,
-    /// 核心在联邦网络上的地址，hosts 的条目都指向它。
-    core_addr: IpAddr,
     notice: Option<Arc<NoticeRoom>>,
 }
 
@@ -52,7 +48,6 @@ impl FederationConfig {
         engine: Engine,
         install_dir: Option<PathBuf>,
         core_container: Option<String>,
-        core_addr: IpAddr,
         notice: Option<Arc<NoticeRoom>>,
         mut peers: watch::Receiver<BTreeSet<String>>,
     ) {
@@ -64,7 +59,6 @@ impl FederationConfig {
             engine,
             install_dir,
             core_container: Some(core_container),
-            core_addr,
             notice,
         });
         tokio::spawn(async move {
@@ -91,31 +85,15 @@ impl FederationConfig {
     }
 
     async fn apply_inner(&self, names: &BTreeSet<String>) -> anyhow::Result<()> {
-        let hosts_path = self.install_dir.join("fed/hosts");
-        let on_disk = tokio::fs::read_to_string(&hosts_path)
-            .await
-            .unwrap_or_default();
-        // 名单新增了名字：hosts 的新条目要 Tuwunel 重启才生效；只删名字 SIGUSR1 就够。
-        let added = names
-            .iter()
-            .any(|name| !names_in_hosts(&on_disk, self.core_addr).contains(name));
-        // SIGUSR1 无条件发：热加载是幂等的，也补上上次核心死在“写完文件、信号没发出去”之间的可能。
         self.write_in_place(
             &self.install_dir.join("fed/config.toml"),
             &allowlist_toml(names),
         )
         .await?;
-        self.write_in_place(&hosts_path, &hosts(names, self.core_addr))
-            .await?;
+        // SIGUSR1 无条件发：热加载是幂等的，也补上上次核心死在“写完文件、信号没发出去”之间的可能。
         let container = self.tuwunel_container().await?;
-        if added {
-            // 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（compose.yaml 里的宽限期同此）。
-            self.engine.restart_container(&container, 300).await?;
-            tracing::info!(%container, "联邦名单加了新服务器，已重启 Tuwunel 让 hosts 生效");
-        } else {
-            self.engine.kill_container(&container, "SIGUSR1").await?;
-            tracing::info!(%container, "联邦名单已重写并热加载");
-        }
+        self.engine.kill_container(&container, "SIGUSR1").await?;
+        tracing::info!(%container, "联邦名单已重写并热加载");
         Ok(())
     }
 

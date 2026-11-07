@@ -408,7 +408,6 @@ plugin-install-docker-archive-unparseable = 归档无法解析：{ $error }
 plugin-install-docker-context-start-container = 启动容器 { $name }
 plugin-install-docker-context-inspect-container = 查询容器 { $name }
 plugin-install-docker-context-kill-container = 给容器 { $name } 发 { $signal }
-plugin-install-docker-context-restart-container = 重启容器 { $name }
 plugin-install-docker-context-stop-container = 停止容器 { $name }
 plugin-install-docker-context-remove-container = 删除容器 { $name }
 plugin-install-docker-context-list-containers = 列出容器

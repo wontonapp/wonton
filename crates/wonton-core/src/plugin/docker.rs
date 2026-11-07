@@ -14,8 +14,7 @@ use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
     KillContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
     ListVolumesOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-    RemoveVolumeOptionsBuilder, RestartContainerOptionsBuilder, StopContainerOptionsBuilder,
-    UploadToContainerOptionsBuilder,
+    RemoveVolumeOptionsBuilder, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 use wonton_l10n::Arg;
@@ -521,17 +520,6 @@ impl Engine {
                     e,
                 )
             })
-    }
-
-    /// 重启容器：先按 `timeout` 秒优雅停止（超时强杀），再启动。
-    pub async fn restart_container(&self, name: &str, timeout: u32) -> Result<()> {
-        let options = RestartContainerOptionsBuilder::default()
-            .t(timeout as i32)
-            .build();
-        self.patient()
-            .restart_container(name, Some(options))
-            .await
-            .map_err(|e| self.fail_name("plugin-install-docker-context-restart-container", name, e))
     }
 
     /// 查询容器；不存在时返回 `None`。

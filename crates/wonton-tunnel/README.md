@@ -84,12 +84,11 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 - **入站**：`FederationProtocol`（`TunnelServer::spawn_embedded_with_pairing_and` 挂到核心的 router 上）。
   名单认过的连接，每条双向流原样接到本机 Tuwunel 的联邦端口（8448），不解 TLS。对方从名单里被去掉时，
   它的现有连接随即被关闭。
-- **出站**：`FederationForwarder::bind` 在 Tuwunel 的网络上监听（Tuwunel 的 `/etc/hosts` 把每个配对过的
-  服务器名指向这个地址）。每条连接先读 TLS ClientHello 取 SNI（rustls 的 Acceptor，只解析、不回握手、
-  不终结 TLS），SNI 就是对方的 Matrix 服务器名；按嵌入方提供的查找函数（服务器名 → 配对时记下的
-  endpoint ID 和地址）选路，把已读的 ClientHello 和后续字节原样转过去。查找函数返回 `None`（名字不在
-  配对名单里）或开头不是带 SNI 的 ClientHello：关闭连接，分别记一次 `unknown_server` /
-  `invalid_client_hello`。
+- **出站**：`FederationForwarder::bind` 开一个 HTTP CONNECT 代理，本机 Tuwunel 的联邦出站经它走（Tuwunel
+  的 `proxy` 配置）。`CONNECT <服务器名>:8448` 按嵌入方提供的查找函数（服务器名 → 配对时记下的 endpoint ID
+  和地址）选路，对方接上它的 Tuwunel 后回 200，之后的字节（两台 Tuwunel 之间的 TLS）原样转发，不终结 TLS。
+  别的端口（Tuwunel 先拨 443 取 well-known）回 502，Tuwunel 随即改拨 8448；名字不在配对名单里回 403，
+  记一次 `unknown_server`；开头不是能读懂的 CONNECT 回 400，记一次 `invalid_request`；对方连不上回 502。
 - **每台对方服务器一条共享连接**（`TunnelClient` 的形状：复用、退避、探活）。断了下次用时按退避重连；
   定时 ping 探活，周期和超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
 - **状态**：`watch_status` 给出每台对方服务器的 `PeerStatus`。`Connected` 是最近一次探活或数据往返成功；

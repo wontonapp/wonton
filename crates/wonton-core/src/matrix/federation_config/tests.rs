@@ -8,12 +8,12 @@ use super::{allowlist_toml, files::regex_escape};
 use crate::http::{HttpClient, RequestBody};
 use crate::plugin::docker::Engine;
 
-const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
+pub(super) const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
 const WAIT: Duration = Duration::from_secs(15);
 
 /// 真实 Tuwunel（v1.9.4）：两份配置里的名单生效，原地重写第二份后发 SIGUSR1，
-/// 名单外的邀请被拒、名单内的放行（ADR-0050）。hosts 的热加载不在这里测：它只在
-/// Tuwunel 启动时被读，核心对它的唯一手段是重启（实测见 ADR-0050 的“验证”）。
+/// 名单外的邀请被拒、名单内的放行（ADR-0050）。这里的服务器经 Docker 网络别名互相直连，
+/// 经核心转发组件的出站在 `proxy_tests.rs`。
 #[test]
 #[ignore = "需要 Docker，跑一遍约一分钟"]
 fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
@@ -242,10 +242,10 @@ async fn expect_invite_accepted(cluster: &Cluster, inviter: &Account, room: &str
 }
 
 /// 一台测试用的 Tuwunel：容器名、映射出来的地址、挂进去的名单文件。
-struct ClusterServer {
-    name: String,
-    address: String,
-    fed_path: Option<std::path::PathBuf>,
+pub(super) struct ClusterServer {
+    pub(super) name: String,
+    pub(super) address: String,
+    pub(super) fed_path: Option<std::path::PathBuf>,
 }
 
 /// 一组测试容器和它们的专用网络，Drop 时全部删掉。
@@ -375,7 +375,7 @@ impl Drop for Cluster {
     }
 }
 
-async fn wait_ready(base: &str) {
+pub(super) async fn wait_ready(base: &str) {
     let http = HttpClient::new();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while std::time::Instant::now() < deadline {
@@ -396,7 +396,12 @@ async fn wait_ready(base: &str) {
 }
 
 /// 共享密钥注册一个普通用户，返回访问令牌和用户 ID（Synapse 兼容的管理接口，ADR-0009）。
-async fn register_user(http: &HttpClient, base: &str, shared_secret: &str, user: &str) -> Account {
+pub(super) async fn register_user(
+    http: &HttpClient,
+    base: &str,
+    shared_secret: &str,
+    user: &str,
+) -> Account {
     use aws_lc_rs::hmac;
     let (status, value) = http
         .json(
@@ -442,12 +447,12 @@ async fn register_user(http: &HttpClient, base: &str, shared_secret: &str, user:
     }
 }
 
-struct Account {
-    token: String,
-    user_id: String,
+pub(super) struct Account {
+    pub(super) token: String,
+    pub(super) user_id: String,
 }
 
-async fn create_room(server: &ClusterServer, account: &Account) -> String {
+pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> String {
     let http = HttpClient::new();
     let (_, value) = http
         .request_json(
@@ -463,7 +468,7 @@ async fn create_room(server: &ClusterServer, account: &Account) -> String {
 }
 
 /// 邀请；被本机名单拒绝时返回带原因的错误（同步 403）。
-async fn invite(
+pub(super) async fn invite(
     server: &ClusterServer,
     account: &Account,
     room: &str,
@@ -490,7 +495,7 @@ async fn invite(
 }
 
 /// 对端用户接受邀请并加入：跨机握手走通的唯一客户端可见证据。
-async fn join(server: &ClusterServer, token: &str, room: &str) -> Result<(), String> {
+pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Result<(), String> {
     let http = HttpClient::new();
     // 同步拿到邀请，再加入。
     let (_, value) = http

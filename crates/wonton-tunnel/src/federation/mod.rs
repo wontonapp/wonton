@@ -1,9 +1,9 @@
 //! 联邦转发（ADR-0050）：两台配对过的 Wonton 服务器的 Matrix 联邦流量经 iroh 互转。
 //!
-//! Tuwunel 的联邦写死了 HTTPS：本机 Tuwunel 把发往对方服务器名的连接交给本模块监听的地址，模块从
-//! TLS ClientHello 里读出 SNI（不终结 TLS），按配对时记下的“服务器名 → endpoint ID”绑定经 iroh 转过去；
-//! 反方向上，对方经 [`FEDERATION_ALPN`] 进来的每条流原样接到本机 Tuwunel 的联邦端口。TLS 在两台
-//! Tuwunel 之间端到端，本模块只按 SNI 选路，看不到联邦内容。
+//! Tuwunel 的联邦写死了 HTTPS：本机 Tuwunel 的联邦出站经本模块监听的 HTTP CONNECT 代理走，模块按
+//! CONNECT 里的服务器名和配对时记下的“服务器名 → endpoint ID”绑定经 iroh 转过去；反方向上，对方经
+//! [`FEDERATION_ALPN`] 进来的每条流原样接到本机 Tuwunel 的联邦端口。TLS 在两台 Tuwunel 之间端到端，
+//! 本模块只按服务器名选路，看不到联邦内容。
 //!
 //! - 入站：[`FederationProtocol`]，只接受服务器名单里的 endpoint ID。
 //! - 出站：[`FederationForwarder`]，每台对方服务器一条共享连接，断开后按退避重连、定时探活。

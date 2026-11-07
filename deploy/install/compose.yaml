@@ -52,9 +52,9 @@ services:
       WONTON_LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES:-}
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
       WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
-      # 核心在联邦网络上的固定地址（ADR-0050）：fed/hosts 的名单都指向它。和下面 networks.federation
-      # 的 ipv4_address、子网是一对，同机装多套时各给一段（install.sh 写进 .env）。
-      WONTON_FEDERATION_CORE_ADDR: ${WONTON_FEDERATION_CORE_ADDR:-10.212.0.10}
+      # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
+      # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。
+      WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: /usr/share/wonton/default-plugins
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -82,8 +82,8 @@ services:
       # 容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}
       - ${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro
-      # 联邦名单和 hosts（ADR-0050）：核心原地重写（不能换 inode，单文件绑定挂载钉住 inode），
-      # Tuwunel 只读挂载里面的两个文件。
+      # 联邦名单（ADR-0050）：核心原地重写（不能换 inode，单文件绑定挂载钉住 inode），Tuwunel 只读挂载里面的
+      # config.toml。
       - ${WONTON_INSTALL_DIR}/fed:${WONTON_INSTALL_DIR}/fed
       # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
       # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
@@ -95,13 +95,8 @@ services:
           recursive: disabled
     networks:
       core:
-        # tusd 经这个别名调文件钩子。
-        aliases: [files-hooks.wonton.internal]
-      federation:
-        # 核心在联邦网络上的固定地址：fed/hosts 的名单都指向它（ADR-0050）。和上面传给核心的
-        # WONTON_FEDERATION_CORE_ADDR、文件末尾 federation 网络的 subnet 是同一个值，一起改；
-        # 地址变了会黏住 Tuwunel 的目的地缓存和 hosts 快照，装好后不能变。
-        ipv4_address: ${WONTON_FEDERATION_CORE_ADDR:-10.212.0.10}
+        # tusd 经前一个调文件钩子，Tuwunel 经后一个走联邦出站代理。
+        aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy
@@ -212,13 +207,10 @@ services:
       # 联邦进站的自签证书，tuwunel.toml 按这两个容器里的路径读。
       - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
       - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
-      # 联邦的出站解析不走 DNS：配对过的服务器名写在这里，指向核心的固定地址（ADR-0050）。
-      - ${WONTON_INSTALL_DIR}/fed/hosts:/etc/hosts:ro
-    # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）；8448 不映射到主机，联邦只经隧道进来。
+    # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）；8448 不映射到主机，联邦只经隧道进出。
     networks:
       core:
         aliases: [tuwunel.wonton.internal]
-      federation:
     healthcheck:
       test: ["CMD", "tuwunel", "--health-check"]
       interval: 10s
@@ -228,13 +220,6 @@ services:
 
 networks:
   core:
-  # 联邦专用的内部网络（ADR-0050）：只有核心和 Tuwunel，8448 不出这台机器。子网固定是为了核心的
-  # ipv4_address 固定；同机装多套时用 WONTON_FEDERATION_SUBNET 各给一段，撞上宿主已有的网络时
-  # compose 起不来，报错明确，换个网段重跑安装命令即可。
-  federation:
-    ipam:
-      config:
-        - subnet: ${WONTON_FEDERATION_SUBNET:-10.212.0.0/24}
 
 volumes:
   hydra:

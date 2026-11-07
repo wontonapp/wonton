@@ -1,7 +1,6 @@
-//! 联邦两份文件的生成（ADR-0050）：`fed/config.toml` 的名单正则和 `fed/hosts`。纯函数，运行时在 [super]。
+//! 联邦名单文件 `fed/config.toml` 的生成（ADR-0050）。纯函数，运行时在 [super]。
 
 use std::collections::BTreeSet;
-use std::net::IpAddr;
 
 /// 名单文件的内容：每个配对过的服务器名一个锚定正则。
 pub(crate) fn allowlist_toml(names: &BTreeSet<String>) -> String {
@@ -28,29 +27,6 @@ pub(crate) fn allowlist_toml(names: &BTreeSet<String>) -> String {
     )
 }
 
-/// hosts 文件的内容：回环两行加每个配对过的服务器名指向核心的固定地址。
-pub(crate) fn hosts(names: &BTreeSet<String>, core_addr: IpAddr) -> String {
-    let mut out = String::from(
-        "# 核心生成并原地重写，别手改（ADR-0050）。\n\
-         # Tuwunel 只在启动时读它：内容变了核心会重启 Tuwunel。\n\
-         127.0.0.1 localhost\n\
-         ::1 localhost\n",
-    );
-    for name in names {
-        out.push_str(&format!("{core_addr} {name}\n"));
-    }
-    out
-}
-
-/// hosts 里记下的配对名字：指向核心固定地址的行。
-pub(crate) fn names_in_hosts(text: &str, core_addr: IpAddr) -> BTreeSet<String> {
-    let prefix = core_addr.to_string();
-    text.lines()
-        .filter(|line| line.starts_with(&prefix))
-        .filter_map(|line| line.split_whitespace().nth(1).map(str::to_owned))
-        .collect()
-}
-
 /// 服务器名进正则：名字经过校验只有 `[a-z0-9.-]`，点要转义；其他符号也一并转义，转义字母和数字
 /// 在正则里是错的，不会出现。
 pub(crate) fn regex_escape(name: &str) -> String {
@@ -67,13 +43,10 @@ pub(crate) fn regex_escape(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::net::{IpAddr, Ipv4Addr};
 
     use regex::RegexSet;
 
-    use super::{allowlist_toml, hosts, names_in_hosts};
-
-    const ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 212, 0, 10));
+    use super::allowlist_toml;
 
     fn patterns(list: &str) -> Vec<String> {
         // 生成的行形如 `allowed_remote_server_names_experimental = ['…', '…']`，取出方括号里的字面量。
@@ -115,20 +88,5 @@ mod tests {
     fn the_empty_allowlist_matches_nothing() {
         assert!(!matches(&[], "abcdefghijklmnopqrstuvwx.wonton.internal"));
         assert!(!matches(&[], "anything.example.org"));
-    }
-
-    #[test]
-    fn the_hosts_file_points_every_name_at_the_core() {
-        let mut names = BTreeSet::new();
-        names.insert("aa.wonton.internal".to_owned());
-        names.insert("bb.wonton.internal".to_owned());
-        let file = hosts(&names, ADDR);
-        assert!(file.contains("127.0.0.1 localhost\n"), "{file}");
-        assert_eq!(file.matches(&ADDR.to_string()).count(), 2, "{file}");
-        assert_eq!(names_in_hosts(&file, ADDR), names, "{file}");
-        assert_eq!(
-            names_in_hosts("127.0.0.1 localhost\n", ADDR),
-            BTreeSet::new()
-        );
     }
 }

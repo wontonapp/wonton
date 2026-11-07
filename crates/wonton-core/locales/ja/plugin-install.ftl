@@ -408,7 +408,6 @@ plugin-install-docker-archive-unparseable = アーカイブを解析できませ
 plugin-install-docker-context-start-container = コンテナ{ $name }の起動
 plugin-install-docker-context-inspect-container = コンテナ{ $name }の照会
 plugin-install-docker-context-kill-container = コンテナ{ $name }に{ $signal }を送信
-plugin-install-docker-context-restart-container = コンテナ{ $name }の再起動
 plugin-install-docker-context-stop-container = コンテナ{ $name }の停止
 plugin-install-docker-context-remove-container = コンテナ{ $name }の削除
 plugin-install-docker-context-list-containers = コンテナの一覧

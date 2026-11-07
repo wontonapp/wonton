@@ -12,12 +12,9 @@ publish.workspace = true
 base64 = { workspace = true }
 # MIT OR Apache-2.0。生成本地代理的会话凭据。
 getrandom = { workspace = true }
-# MIT OR Apache-2.0。解析本地代理收到的第一个请求头（hyper 用的同一个解析器）。
+# MIT OR Apache-2.0。解析本地代理和联邦出站代理收到的第一个请求头（hyper 用的同一个解析器）。
 httparse = "1.10.1"
 iroh = { workspace = true }
-# Apache-2.0 OR MIT。从连接开头的 TLS ClientHello 读 SNI（rustls 的 Acceptor，只解析、不回握手）。
-# 不用 tls-parser：它是 LGPL，这个 crate 静态链进 iOS/Android 的 App。iroh 和 reqwest 已经依赖 rustls。
-rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 # MIT OR Apache-2.0。中继令牌写在地址的 userinfo 里，按百分号编码解码。
 percent-encoding = "2.3.2"
 # MIT OR Apache-2.0。配对请求和回应的 JSON。

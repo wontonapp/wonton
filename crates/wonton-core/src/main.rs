@@ -105,16 +105,11 @@ async fn open_peers_and_federation(
         },
     )
     .context("读取服务器配对记录")?;
-    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站转发器在 Tuwunel 的网络上监听。
-    let upstream = resolve_federation_upstream(cfg).await?;
+    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。
+    let upstream = federation_addrs::upstream(cfg).await?;
     let protocol = FederationProtocol::new(peers.server_allowlist().clone(), upstream);
     let lookup = peers.clone();
-    let listen: SocketAddr = cfg.federation_listen.parse().with_context(|| {
-        format!(
-            "WONTON_FEDERATION_LISTEN 不是地址：{}",
-            cfg.federation_listen
-        )
-    })?;
+    let listen = federation_addrs::listen(&cfg.federation_listen).await?;
     let forwarder = FederationForwarder::bind(
         tunnel.endpoint.clone(),
         listen,
@@ -152,26 +147,7 @@ fn extra_protocols(
     extra
 }
 
-/// 解析 Tuwunel 的联邦地址（主机名用时解析，这里一次）：容器刚起来时名字可能还没注册，重试一阵再失败。
-async fn resolve_federation_upstream(cfg: &Config) -> anyhow::Result<SocketAddr> {
-    let addr = cfg.matrix_federation_addr.as_str();
-    const TRIES: u32 = 30;
-    for attempt in 1..=TRIES {
-        match tokio::net::lookup_host(addr).await {
-            Ok(mut resolved) => match resolved.next() {
-                Some(upstream) => return Ok(upstream),
-                None => tracing::warn!(attempt, "联邦地址 {addr} 没有解析出任何地址"),
-            },
-            Err(e) if attempt < TRIES => {
-                tracing::debug!(attempt, error = %e, "联邦地址 {addr} 还解析不了");
-            }
-            Err(e) => return Err(anyhow::anyhow!("解析联邦地址 {addr} 失败：{e}")),
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
-    bail!("联邦地址 {addr} 一直解析不了：{TRIES} 次重试都失败")
-}
-
+mod federation_addrs;
 mod pair_command;
 mod plugin_command;
 
@@ -256,7 +232,7 @@ fn plugin_engine(cfg: &Config) -> anyhow::Result<Engine> {
 }
 
 /// 联邦名单的运行时（ADR-0050）：盯配对组件的已配对名单（[`peers::Peers::paired_names`]），
-/// 变了就重写 Tuwunel 的第二份配置和 hosts。没接 Matrix 的核心没有配对，也就没有名单可盯。
+/// 变了就重写 Tuwunel 的第二份配置。没接 Matrix 的核心没有配对，也就没有名单可盯。
 /// 核心每次启动都会按启动时的名单对齐一次，补上上次没发出去的更新。
 fn spawn_federation_config(
     engine: &Engine,
@@ -271,7 +247,6 @@ fn spawn_federation_config(
         engine.clone(),
         cfg.install_dir.clone(),
         cfg.core_container.clone(),
-        cfg.federation_core_addr,
         notices.clone(),
         names,
     );

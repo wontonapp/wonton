@@ -409,7 +409,6 @@ plugin-install-docker-archive-unparseable = Can't parse the archive: { $error }
 plugin-install-docker-context-start-container = start container { $name }
 plugin-install-docker-context-inspect-container = inspect container { $name }
 plugin-install-docker-context-kill-container = send { $signal } to container { $name }
-plugin-install-docker-context-restart-container = restart container { $name }
 plugin-install-docker-context-stop-container = stop container { $name }
 plugin-install-docker-context-remove-container = remove container { $name }
 plugin-install-docker-context-list-containers = list containers

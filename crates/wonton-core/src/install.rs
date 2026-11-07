@@ -65,7 +65,12 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
     tls_cert(&secrets, &server_name, &mut report)?;
     write_private(
         &tuwunel,
-        &tuwunel_config(&server_name, &registration, &public_key),
+        &tuwunel_config(
+            &server_name,
+            &registration,
+            &public_key,
+            federation_config::PROXY_ADDR,
+        ),
     )?;
     fed_files(dir, &mut report)?;
     write_private(&dir.join("compose.yaml"), COMPOSE)?;
@@ -213,7 +218,13 @@ fn read_server_name(path: &Path) -> anyhow::Result<Option<String>> {
 /// 选项和 `deploy/dev/matrix/tuwunel.toml` 一致，说明见 Tuwunel 仓库的 tuwunel-example.toml。
 /// 联邦的取舍（ADR-0050）：名单制，只和配对过的服务器说话；TLS 自签且出站不校验，对端认证靠
 /// X-Matrix 签名和隧道的 endpoint ID；`dual_protocol` 让 8008 上的明文客户端接口照旧，网关不用改。
-fn tuwunel_config(server_name: &str, registration_secret: &str, public_key: &str) -> String {
+/// 联邦出站经 `federation_proxy`（`主机:端口`）上核心的 CONNECT 代理。
+fn tuwunel_config(
+    server_name: &str,
+    registration_secret: &str,
+    public_key: &str,
+    federation_proxy: &str,
+) -> String {
     format!(
         r#"# 由 wonton-core init 生成，升级时按新版本重写；改了会被覆盖。
 [global]
@@ -225,7 +236,7 @@ port = [8008, 8448]
 # 联邦只对配对过的服务器开：名单在 fed/config.toml，核心改它并热加载（ADR-0050）。
 allow_federation = true
 trusted_servers = []
-# 默认值含 10/8、127/8，会拦掉到转发组件的出站；目的地的可达范围由名单收紧。
+# 默认值含 10/8、127/8，会拦掉直连内部网络上的服务；联邦的目的地由名单和核心的代理收紧。
 ip_range_denylist = []
 # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
 allow_registration = false
@@ -254,6 +265,15 @@ certs = "/etc/tuwunel/tls.crt"
 key = "/etc/tuwunel/tls.key"
 # 明文的客户端接口和 TLS 并存在同一个监听上，网关照旧用 http。
 dual_protocol = true
+
+# 出站都经核心的 CONNECT 代理（ADR-0050）：服务器名不查 DNS、不写 hosts，代理按配对名单经隧道转给对方，
+# 别的目的地它一律拒绝。include 为空表示所有域名（服务器名可以是安装时指定的任意名字）；推送代理
+# （push.wonton.internal）不是联邦对端，不经它。
+[global.proxy]
+[[global.proxy.by_domain]]
+url = "http://{federation_proxy}"
+include = []
+exclude = ["push.wonton.internal"]
 "#
     )
 }
@@ -276,35 +296,23 @@ fn tls_cert(secrets: &Path, server_name: &str, report: &mut Report) -> anyhow::R
     Ok(())
 }
 
-/// 安装器里的联邦地址：`WONTON_FEDERATION_CORE_ADDR`，没设就用默认（和 compose、运行时同一个值）。
-fn federation_core_addr() -> std::net::IpAddr {
-    std::env::var("WONTON_FEDERATION_CORE_ADDR")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(crate::matrix::federation_config::DEFAULT_CORE_ADDR)
-}
-
-/// 联邦名单和 hosts 的初值（`fed/`，ADR-0050）。只在还没有时创建：第一次 `docker compose up` 把它们
-/// 挂进 Tuwunel 需要文件已经存在，之后的内容由核心运行时原地重写（不换 inode——单文件绑定挂载钉住
-/// 的是挂载时的 inode，换了名字容器读到的还是旧文件）。
+/// 联邦名单的初值（`fed/config.toml`，ADR-0050）。只在还没有时创建：第一次 `docker compose up` 把它挂进
+/// Tuwunel 需要文件已经存在，之后的内容由核心运行时原地重写（不换 inode——单文件绑定挂载钉住的是挂载时的
+/// inode，换了名字容器读到的还是旧文件）。
 fn fed_files(dir: &Path, report: &mut Report) -> anyhow::Result<()> {
     let fed = dir.join("fed");
     fs::create_dir_all(&fed).with_context(|| format!("建立 {}", fed.display()))?;
-    let unpaired = BTreeSet::new();
-    // 空名单的 hosts 里没有联邦条目，地址用不上；从环境读是为了和运行时同源（install.sh 传进来的）。
-    let core_addr = federation_core_addr();
-    for (name, content) in [
-        ("config.toml", federation_config::allowlist_toml(&unpaired)),
-        ("hosts", federation_config::hosts(&unpaired, core_addr)),
-    ] {
-        let path = fed.join(name);
-        if path.exists() {
-            report.kept.push(path);
-            continue;
-        }
-        write_file(&path, &content, 0o644)?;
-        report.created.push(path);
+    let path = fed.join("config.toml");
+    if path.exists() {
+        report.kept.push(path);
+        return Ok(());
     }
+    write_file(
+        &path,
+        &federation_config::allowlist_toml(&BTreeSet::new()),
+        0o644,
+    )?;
+    report.created.push(path);
     Ok(())
 }
 
@@ -343,7 +351,7 @@ mod tests {
     fn init_creates_secrets_once_and_keeps_them_on_rerun() {
         let dir = tempfile::tempdir().unwrap();
         let first = init(dir.path(), Some("home.example")).unwrap();
-        assert_eq!(first.created.len(), 8, "{first:?}");
+        assert_eq!(first.created.len(), 7, "{first:?}");
         let key = fs::read_to_string(dir.path().join("secrets/matrix-jwt.pem")).unwrap();
         let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
         let mode = |path: &str| {
@@ -359,7 +367,6 @@ mod tests {
         assert_eq!(mode("secrets/tuwunel-tls.crt"), 0o600, "联邦的自签证书");
         assert_eq!(mode("secrets/tuwunel-tls.key"), 0o600, "联邦的证书私钥");
         assert_eq!(mode("fed/config.toml"), 0o644);
-        assert_eq!(mode("fed/hosts"), 0o644);
         assert_eq!(mode("wonton"), 0o755, "主机上的 wonton 命令要能执行");
         assert!(
             fs::read_to_string(dir.path().join("compose.yaml"))
@@ -408,15 +415,16 @@ mod tests {
                 "{expected} 不在配置里：\n{config}"
             );
         }
+        assert!(
+            config.contains(&format!(
+                "url = \"http://{}\"",
+                federation_config::PROXY_ADDR
+            )),
+            "联邦出站要经核心的代理：\n{config}"
+        );
         // 没有配对时名单谁也匹配不上。
         let list = fs::read_to_string(dir.path().join("fed/config.toml")).unwrap();
         assert!(list.contains("'^_unpaired_"), "{list}");
-        let hosts = fs::read_to_string(dir.path().join("fed/hosts")).unwrap();
-        assert!(hosts.contains("127.0.0.1 localhost"), "{hosts}");
-        assert!(
-            !hosts.contains(&federation_config::DEFAULT_CORE_ADDR.to_string()),
-            "还没有配对，hosts 不应有联邦条目：{hosts}"
-        );
     }
 
     fn recorded(dir: &Path) -> String {

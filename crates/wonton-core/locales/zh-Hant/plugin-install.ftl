@@ -408,7 +408,6 @@ plugin-install-docker-archive-unparseable = 封存檔無法解析：{ $error }
 plugin-install-docker-context-start-container = 啟動容器 { $name }
 plugin-install-docker-context-inspect-container = 查詢容器 { $name }
 plugin-install-docker-context-kill-container = 對容器 { $name } 發送 { $signal }
-plugin-install-docker-context-restart-container = 重新啟動容器 { $name }
 plugin-install-docker-context-stop-container = 停止容器 { $name }
 plugin-install-docker-context-remove-container = 刪除容器 { $name }
 plugin-install-docker-context-list-containers = 列出容器
