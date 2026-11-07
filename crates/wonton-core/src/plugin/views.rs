@@ -493,6 +493,7 @@ impl PluginManager {
             upgrade,
             removable: !entry.system,
             notices,
+            enabled_root_permissions: Vec::new(),
         }
     }
 

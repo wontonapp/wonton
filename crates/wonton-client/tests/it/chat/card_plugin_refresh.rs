@@ -58,6 +58,7 @@ fn plugin() -> InstalledPlugin {
         upgrade: None,
         removable: true,
         notices: Vec::new(),
+        enabled_root_permissions: Vec::new(),
     }
 }
 

@@ -217,6 +217,7 @@ async fn a_source_without_a_version_installs_the_latest_release_and_remembers_it
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         grant: Vec::new(),
+        enabled_permissions: Vec::new(),
         devices: Vec::new(),
         lan_webui: false,
     };
@@ -264,6 +265,7 @@ async fn a_tag_moved_after_the_preview_is_not_installed() {
         source: preview.source.unwrap(),
         digest: preview.digest,
         grant: Vec::new(),
+        enabled_permissions: Vec::new(),
         devices: Vec::new(),
         lan_webui: false,
     };

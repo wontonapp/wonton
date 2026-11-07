@@ -56,8 +56,10 @@ fn install_request(preview: &InstallPreview) -> InstallRequest {
         grant: preview
             .permissions
             .iter()
+            .filter(|p| !p.optional)
             .map(|p| p.permission.clone())
             .collect(),
+        enabled_permissions: Vec::new(),
         lan_webui: false,
     }
 }
@@ -70,8 +72,10 @@ fn upgrade_request(preview: &InstallPreview) -> UpgradeRequest {
         grant: preview
             .permissions
             .iter()
+            .filter(|p| !p.optional)
             .map(|p| p.permission.clone())
             .collect(),
+        enabled_permissions: Vec::new(),
         lan_webui: false,
     }
 }

@@ -396,6 +396,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         upgrade: None,
         removable: true,
         notices: Vec::new(),
+        enabled_root_permissions: Vec::new(),
     }
 }
 
@@ -431,6 +432,10 @@ pub fn preview(id: &str) -> InstallPreview {
             notice: None,
             supported: true,
             added: false,
+            optional: false,
+            enabled: false,
+            off_loss: None,
+            opened: None,
         }],
         notices: Vec::new(),
         upgrade_from: None,

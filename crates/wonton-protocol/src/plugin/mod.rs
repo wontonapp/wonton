@@ -7,10 +7,14 @@
 
 mod hint;
 mod owner_secrets;
+mod permission;
 mod tool_policy;
 
 pub use hint::{PluginHint, PluginHintCategory};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
+pub use permission::{
+    PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
+};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
@@ -90,56 +94,6 @@ pub struct PluginWriter {
     pub title: String,
 }
 
-/// 权限的风险级别。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PermissionRisk {
-    High,
-    VeryHigh,
-    Highest,
-    /// 比这个 App 新的核心给的级别，按最高风险处理。
-    #[default]
-    #[serde(other)]
-    Other,
-}
-
-/// 要授予插件的一项权限。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PermissionLine {
-    /// 清单里的写法，如 `storage.share.photos:read`。
-    pub permission: String,
-    /// 给主人看的说明，如“读共享文件夹 photos”。
-    pub text: String,
-    /// 风险级别；普通权限为空，不认识的级别落到 [`PermissionRisk::Other`]。
-    #[serde(default)]
-    pub risk: Option<PermissionRisk>,
-    /// 这项权限的风险提示；没有额外提示时为空。
-    #[serde(default)]
-    pub notice: Option<String>,
-    /// 核心支持这项权限；不支持时插件装不了。
-    pub supported: bool,
-    /// 升级时新申请的，标出来。
-    pub added: bool,
-}
-
-/// 预览中可供主人选择、交给插件服务的一个宿主设备。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PluginDevice {
-    /// 核心用来识别设备的稳定 ID。
-    pub id: String,
-    /// 给主人的设备名称。
-    pub name: String,
-    /// 设备在容器里的目标路径。
-    pub target: String,
-    /// 这个设备要交给的服务。
-    pub service: String,
-    /// 是否可以不选择。
-    pub optional: bool,
-}
-
 /// `GET /_wonton/api/plugins` 的响应。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -200,6 +154,9 @@ pub struct InstalledPlugin {
     pub removable: bool,
     /// 要主人知道的情况，如“这个版本的 tag 被作者改到了别的提交”；按顺序显示，`emphasis` 的醒目显示。
     pub notices: Vec<CardLine>,
+    /// 现在开着的最高级可选权限（ADR-0057），如 `docker.socket`：列表里据此带醒目标志，没有时为空。
+    #[serde(default)]
+    pub enabled_root_permissions: Vec<String>,
 }
 
 /// 插件的状态。
@@ -589,8 +546,12 @@ pub struct InstallRequest {
     pub source: String,
     /// 预览给的 `digest`；对不上时得到 409 `changed`。
     pub digest: String,
-    /// 主人确认的权限：预览里列出的全部权限，少一项多一项都装不上。
+    /// 主人确认的权限：每项必需权限都要在，少一项装不上；可以带上可选项（老客户端会这么做），但它们不算打开；
+    /// 多出预览里没有的项装不上。
     pub grant: Vec<String>,
+    /// 主人在预览里打开的可选项（[`PermissionLine::optional`] 的 `permission`），没带就是全关。
+    #[serde(default)]
+    pub enabled_permissions: Vec<String>,
     /// 主人选择的设备 ID；没有设备选择时为空。
     #[serde(default)]
     pub devices: Vec<String>,
@@ -610,7 +571,11 @@ pub struct UpgradeRequest {
     #[serde(default)]
     pub source: Option<String>,
     pub digest: String,
+    /// 同 [`InstallRequest::grant`]。
     pub grant: Vec<String>,
+    /// 同 [`InstallRequest::enabled_permissions`]。
+    #[serde(default)]
+    pub enabled_permissions: Vec<String>,
     /// 同 [`InstallRequest::lan_webui`]。
     #[serde(default)]
     pub lan_webui: bool,

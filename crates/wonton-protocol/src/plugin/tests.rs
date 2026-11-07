@@ -23,6 +23,10 @@ fn permission(permission: &str, text: &str, risk: Option<PermissionRisk>) -> Per
         notice: None,
         supported: true,
         added: false,
+        optional: false,
+        enabled: false,
+        off_loss: None,
+        opened: None,
     }
 }
 
@@ -70,6 +74,7 @@ fn installed() -> InstalledPlugin {
         }),
         removable: true,
         notices: vec![],
+        enabled_root_permissions: vec!["docker.socket".into()],
     }
 }
 
@@ -279,6 +284,7 @@ fn interface_types_round_trip_through_json() {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
         grant: vec!["network.host".into()],
+        enabled_permissions: vec!["docker.socket".into()],
         devices: vec!["usb-1".into()],
         lan_webui: true,
     };
@@ -288,6 +294,7 @@ fn interface_types_round_trip_through_json() {
         source: Some("upload:sha256:abc".into()),
         digest: preview().digest,
         grant: vec![],
+        enabled_permissions: vec![],
         lan_webui: false,
     };
     assert_eq!(round_trip(&upgrade), upgrade);
@@ -483,8 +490,24 @@ fn permission_risk_and_notice_keep_wire_values() {
         notice: Some("这个插件能控制整台主机".into()),
         supported: true,
         added: true,
+        optional: true,
+        enabled: true,
+        off_loss: Some("看不到每个容器的占用".into()),
+        opened: Some(PermissionOpened {
+            since: 1_760_000_000,
+            bot: Some(PluginWriter {
+                plugin_id: "app.hermes".into(),
+                title: "Hermes".into(),
+            }),
+        }),
     };
     assert_eq!(round_trip(&line), line);
+    assert_eq!(
+        serde_json::to_value(&line).unwrap()["opened"]["bot"]["plugin_id"],
+        json!("app.hermes")
+    );
+    let update = PermissionUpdate { enabled: true };
+    assert_eq!(round_trip(&update), update);
     assert_eq!(
         serde_json::to_value(PermissionRisk::VeryHigh).unwrap(),
         json!("very_high")
@@ -631,6 +654,34 @@ fn values_from_a_newer_core_still_parse() {
     assert_eq!(plugin.web_display, TabDisplay::Other);
     assert_eq!(plugin.tabs[0].layout, TabLayout::Other);
     assert_eq!(plugin.tabs[0].display, TabDisplay::Other);
+
+    // 老客户端的文档里没有可选权限的字段：落到默认值，也就是“必需、关着”。
+    let mut line =
+        serde_json::to_value(permission("docker.socket", "访问 Docker socket", None)).unwrap();
+    for key in ["optional", "enabled", "off_loss", "opened"] {
+        line.as_object_mut().unwrap().remove(key);
+    }
+    let line: PermissionLine = serde_json::from_value(line).unwrap();
+    assert!(!line.optional);
+    assert!(!line.enabled);
+    assert!(line.off_loss.is_none());
+    assert!(line.opened.is_none());
+
+    let mut plugin = serde_json::to_value(installed()).unwrap();
+    plugin
+        .as_object_mut()
+        .unwrap()
+        .remove("enabled_root_permissions");
+    let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
+    assert!(plugin.enabled_root_permissions.is_empty());
+
+    let request: InstallRequest = serde_json::from_value(json!({
+        "source": "github:example/wonton-immich",
+        "digest": "sha256:abc",
+        "grant": [],
+    }))
+    .unwrap();
+    assert!(request.enabled_permissions.is_empty());
 
     let mut shown = serde_json::to_value(detail()).unwrap();
     shown["hints"] = json!([{"category": "model_pool_drained", "detail": "x"}]);

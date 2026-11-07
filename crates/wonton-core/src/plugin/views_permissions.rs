@@ -108,6 +108,10 @@ pub fn permission_line(permission: &Permission, langs: &Languages) -> Permission
         notice: permission_notice(permission, langs),
         supported: supported(permission),
         added: false,
+        optional: false,
+        enabled: false,
+        off_loss: None,
+        opened: None,
     }
 }
 

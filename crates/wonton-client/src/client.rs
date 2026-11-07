@@ -502,6 +502,24 @@ impl ClientCore {
             .await
     }
 
+    /// 开关插件的一项可选权限（ADR-0057）：打开时核心重建拿到字段的服务，做完才回应；返回开关之后的详情。
+    pub async fn set_plugin_permission(
+        &self,
+        id: String,
+        permission: String,
+        enabled: bool,
+    ) -> Result<PluginDetail, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move {
+                plugins
+                    .set_plugin_permission(&id, &permission, enabled)
+                    .await
+            })
+            .await
+    }
+
     /// 开关“每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发卡片；返回开关之后的详情。
     pub async fn set_ask_every_update(
         &self,

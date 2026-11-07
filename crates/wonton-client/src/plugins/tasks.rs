@@ -37,6 +37,7 @@ impl PluginsLink {
     pub(crate) fn install(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
         let lan_webui = lan_webui_chosen(&preview);
+        let enabled_permissions = enabled_permissions(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -52,6 +53,7 @@ impl PluginsLink {
             source,
             digest: preview.digest,
             grant,
+            enabled_permissions,
             devices: Vec::new(),
             lan_webui,
         };
@@ -78,11 +80,13 @@ impl PluginsLink {
             preview.icon.clone(),
             PluginOperation::Upgrade,
         )?;
+        let enabled_permissions = enabled_permissions(&preview);
         let request = UpgradeRequest {
             devices: Vec::new(),
             source: preview.source,
             digest: preview.digest,
             grant,
+            enabled_permissions,
             lan_webui,
         };
         let link = self.clone();
@@ -375,7 +379,7 @@ fn lan_webui_chosen(preview: &InstallPreview) -> bool {
         .is_some_and(|offer| offer.enabled)
 }
 
-/// 确认页上看到的就是授予的：预览里列出的全部权限（ADR-0017）。预览说装不了时不发请求。
+/// 确认页上看到的就是授予的：预览里列出的必需权限，可选项不在这里（ADR-0057）。预览说装不了时不发请求。
 fn confirmed(preview: &InstallPreview) -> Result<Vec<String>, CoreError> {
     if let Some(blocked) = preview
         .blocked
@@ -389,6 +393,17 @@ fn confirmed(preview: &InstallPreview) -> Result<Vec<String>, CoreError> {
     Ok(preview
         .permissions
         .iter()
+        .filter(|line| !line.optional)
         .map(|line| line.permission.clone())
         .collect())
+}
+
+/// 主人在确认页上打开了的可选项。
+fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
+    preview
+        .permissions
+        .iter()
+        .filter(|line| line.optional && line.enabled)
+        .map(|line| line.permission.clone())
+        .collect()
 }

@@ -115,6 +115,7 @@ fn plugins(revision: &str) -> PluginsViewModel {
                 upgrade: None,
                 removable: true,
                 notices: Vec::new(),
+                enabled_root_permissions: Vec::new(),
             }],
             upgrade_check: None,
         }),

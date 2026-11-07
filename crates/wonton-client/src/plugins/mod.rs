@@ -26,8 +26,8 @@ use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
-    PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState, PluginsViewModel,
-    ProxySettings, StorageUsage, StoreItem, StoreListing, TabRef,
+    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState,
+    PluginsViewModel, ProxySettings, StorageUsage, StoreItem, StoreListing, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -543,6 +543,27 @@ impl PluginsLink {
         let update = LanWebuiUpdate { enabled };
         let result = api
             .put(&["plugins", id, "lan-webui"], &update, INSTALL_TIMEOUT)
+            .await
+            .map_err(to_core_error);
+        self.refresh_installed();
+        result
+    }
+
+    /// 开关一项可选权限（ADR-0057）。核心要重建容器，做完才回应；返回开关之后的详情。
+    pub(crate) async fn set_plugin_permission(
+        self: &Arc<Self>,
+        id: &str,
+        permission: &str,
+        enabled: bool,
+    ) -> Result<PluginDetail, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        let update = PermissionUpdate { enabled };
+        let result = api
+            .put(
+                &["plugins", id, "permissions", permission],
+                &update,
+                INSTALL_TIMEOUT,
+            )
             .await
             .map_err(to_core_error);
         self.refresh_installed();
