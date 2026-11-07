@@ -14,6 +14,10 @@ use wonton_protocol::{
 
 use crate::plugins::rig::{Canned, Headered, Rig, WAIT};
 
+/// 安静窗：要跨过完整的轮询周期（间隔是客户端核心里的 3 秒常量）。核心跑在自己的运行时里，
+/// 测试的暂停时钟驱动不了它，只能观察真实时间（同 tabs/polling.rs 的 `QUIET`）。
+const QUIET: Duration = Duration::from_secs(8);
+
 fn peers_view(peers: Vec<PeerRow>, code: Option<PeerCode>) -> String {
     serde_json::to_string(&PeersView { peers, code }).unwrap()
 }
@@ -341,4 +345,182 @@ async fn a_device_the_core_does_not_allow_sees_no_peers_entry() {
     rig.connected().await;
     wait_failed(&rig, PeerError::Unauthenticated).await;
     assert_eq!(peers_entry(&rig), None);
+}
+
+/// 等待中的轮询：对方扫了码、核心把码作废以后，几秒内 ViewModel 的码也清掉（壳会跟着关弹层）。
+/// 没人可等之后就停：再跨过完整的轮询周期也不发列表请求。
+#[tokio::test]
+async fn a_voided_code_is_picked_up_by_the_poll_and_polling_then_stops() {
+    let rig = Rig::new().await;
+    connected_and_listed(&rig, Vec::new()).await;
+
+    let code = PeerCode {
+        code: SecretString::new("wonton://peer?k=one-time-secret"),
+        expires_at_ms: now_ms() + 600_000,
+    };
+    rig.core.answer(
+        Method::POST,
+        &peer_code_path(),
+        Canned(
+            StatusCode::OK.as_u16(),
+            serde_json::to_string(&code).unwrap(),
+        ),
+    );
+    rig.app.dispatch(Action::ShowPeerCode).unwrap();
+    wait_peers(&rig, |view| view.code.is_some()).await;
+
+    // 假核心这边码已经作废（对方扫掉了），出码的一方也没有可等的一条：下一次轮询把它清掉。
+    let view = wait_peers(&rig, |view| view.code.is_none()).await;
+    assert_eq!(view.state, PeersState::Ready);
+
+    let before = rig.core.seen(&Method::GET, PEERS_PATH).len();
+    let deadline = Instant::now() + QUIET;
+    while Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        rig.core.seen(&Method::GET, PEERS_PATH).len(),
+        before,
+        "没人可等了还在发列表请求"
+    );
+}
+
+/// 扫码后对方点了同意：假核心把那条改成已连上，几秒内 ViewModel 跟上，不用退出页面再进。
+#[tokio::test]
+async fn an_approval_is_picked_up_by_the_poll() {
+    let rig = Rig::new().await;
+    connected_and_listed(&rig, Vec::new()).await;
+
+    rig.core.answer(
+        Method::POST,
+        PEERS_PATH,
+        Canned(StatusCode::OK.as_u16(), "{}".into()),
+    );
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(
+            StatusCode::OK.as_u16(),
+            peers_view(
+                vec![PeerRow {
+                    status: PeerStatus::AwaitingApproval,
+                    ..row("abc12345.wonton")
+                }],
+                None,
+            ),
+        ),
+    );
+    rig.app
+        .dispatch(Action::ScanPeerCode {
+            code: SecretString::new("wonton://peer?k=one-time-secret"),
+        })
+        .unwrap();
+    wait_peers(&rig, |view| {
+        view.state == PeersState::Ready
+            && view
+                .peers
+                .first()
+                .is_some_and(|row| row.status == PeerStatus::AwaitingApproval)
+    })
+    .await;
+
+    // 对方点了同意：下一次轮询取到改过的那行。
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(
+            StatusCode::OK.as_u16(),
+            peers_view(vec![row("abc12345.wonton")], None),
+        ),
+    );
+    let view = wait_peers(&rig, |view| {
+        view.state == PeersState::Ready
+            && view
+                .peers
+                .first()
+                .is_some_and(|row| row.status == PeerStatus::Connected)
+    })
+    .await;
+    assert_eq!(view.peers.len(), 1);
+}
+
+/// 刚配对的一行先是「正在确认」（Checking）：假核心把它改成真状态后几秒内 ViewModel 跟上，
+/// 之后没人可等，轮询停。
+#[tokio::test]
+async fn a_checking_row_is_followed_until_it_settles_and_polling_then_stops() {
+    let rig = Rig::new().await;
+    connected_and_listed(&rig, Vec::new()).await;
+
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(
+            StatusCode::OK.as_u16(),
+            peers_view(
+                vec![PeerRow {
+                    status: PeerStatus::Checking,
+                    ..row("abc12345.wonton")
+                }],
+                None,
+            ),
+        ),
+    );
+    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    wait_peers(&rig, |view| {
+        view.state == PeersState::Ready
+            && view
+                .peers
+                .first()
+                .is_some_and(|row| row.status == PeerStatus::Checking)
+    })
+    .await;
+
+    // 第一次探活出了结果：下一次轮询取到改过的那行。
+    rig.core.answer_always(
+        Method::GET,
+        PEERS_PATH,
+        Canned(
+            StatusCode::OK.as_u16(),
+            peers_view(vec![row("abc12345.wonton")], None),
+        ),
+    );
+    let view = wait_peers(&rig, |view| {
+        view.state == PeersState::Ready
+            && view
+                .peers
+                .first()
+                .is_some_and(|row| row.status == PeerStatus::Connected)
+    })
+    .await;
+    assert_eq!(view.peers.len(), 1);
+
+    // 变成真状态就没人可等：跨过完整的轮询周期再没有一个列表请求。
+    let before = rig.core.seen(&Method::GET, PEERS_PATH).len();
+    let deadline = Instant::now() + QUIET;
+    while Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        rig.core.seen(&Method::GET, PEERS_PATH).len(),
+        before,
+        "没人可等了还在发列表请求"
+    );
+}
+
+/// 没有可等的东西（码没有、列表里没有还没批的请求）时不发轮询请求。
+#[tokio::test]
+async fn with_nothing_to_wait_for_no_poll_requests_are_made() {
+    let rig = Rig::new().await;
+    connected_and_listed(&rig, vec![row("abc12345.wonton")]).await;
+
+    let before = rig.core.seen(&Method::GET, PEERS_PATH).len();
+    let deadline = Instant::now() + QUIET;
+    while Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        rig.core.seen(&Method::GET, PEERS_PATH).len(),
+        before,
+        "没有可等的东西还在发列表请求"
+    );
 }

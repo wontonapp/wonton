@@ -4,7 +4,9 @@
 //! 状态 [`PeersState`]：取列表时 `Loading`，最近一次取到了 `Ready`，最近一次操作（取列表、出码、扫码、
 //! 删除）失败 `Failed`。连上家里的服务器时取一次列表——设置首页的“其他服务器”一项要显示已配对的台数，
 //! 条目只在取到过列表时给（核心只让主人设备读这个接口，非主人的设备取不到，也就看不到这一项）。
-//! 扫码、删除成功后再取一次；出的码显示到过期，过期后清掉。
+//! 扫码、删除成功后再取一次；出的码显示到过期，过期后清掉。有东西在等对方的时候——出的码还没作废，
+//! 列表里有还没批的请求，或有一行刚配对还没探活出结果——再隔几秒取一次，跟上对方的扫码和同意，
+//! 不用退出页面再进；都没有了就停。
 
 mod api;
 
@@ -18,12 +20,17 @@ use tokio::sync::watch;
 use tokio::sync::watch::Sender as WatchSender;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, PeerCode, PeerError, PeersState, PeersViewModel, SecretString,
+    Action, CoreError, HomeStatus, PeerCode, PeerError, PeerStatus, PeersState, PeersViewModel,
+    SecretString,
 };
 
 use crate::home::HomeLink;
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
+
+/// 有东西在等对方时隔这么久取一次列表。和插件页在安装、升级、卸载时重新取已安装列表的节奏一致：
+/// 同意配对是对方主人手点的动作，几秒内跟上就够；再快是白费的请求，再慢主人盯着“等对方同意”等得久。
+const POLL_INTERVAL: Duration = Duration::from_secs(3);
 
 pub(crate) struct PeersLink {
     handle: Handle,
@@ -63,6 +70,7 @@ impl PeersLink {
             code_epoch: AtomicU64::new(0),
         });
         link.spawn(follow_home(Arc::downgrade(&link)));
+        link.spawn(follow_waiting(Arc::downgrade(&link)));
         link
     }
 
@@ -116,14 +124,19 @@ impl PeersLink {
     /// 取列表和出码状态。失败不影响已显示的列表，下次成功时一起换掉。
     fn refresh(self: &Arc<Self>) {
         let link = self.clone();
-        self.spawn(async move { link.fetch().await });
+        self.spawn(async move { link.fetch(true).await });
     }
 
-    async fn fetch(self: Arc<Self>) {
+    /// 取列表和出码状态。失败不影响已显示的列表，下次成功时一起换掉。
+    /// `mark_loading`：取之前先把状态拨成 `Loading`，主人的操作要马上有反馈；后台轮询不拨——页面上
+    /// 那份列表还在显示，几秒一次的拨动没有信息，设置首页的台数只在 `Ready` 时给，会跟着一闪一闪。
+    async fn fetch(self: Arc<Self>, mark_loading: bool) {
         // 排队而不是跳过：扫码、删除成功后的刷新要排在正在跑的请求后面，才能取到它们的结果。
         let _guard = self.list_queue.lock().await;
-        self.view
-            .send_modify(|view| view.state = PeersState::Loading);
+        if mark_loading {
+            self.view
+                .send_modify(|view| view.state = PeersState::Loading);
+        }
         let outcome = match self.api() {
             Ok(api) => api.list().await,
             Err(failure) => Err(failure),
@@ -221,8 +234,13 @@ impl PeersLink {
         });
     }
 
-    /// 记下新的出码（或清掉），并安排到点清掉。
+    /// 记下新的出码（或清掉），并安排到点清掉。和正显示的同一张码就不动：等待时的轮询每隔几秒取到它
+    /// 一次，别每次都重摆过期定时器、往壳重推一遍。
     fn set_code(self: &Arc<Self>, code: Option<PeerCode>) {
+        let unchanged = self.view.borrow().code.as_ref() == code.as_ref();
+        if unchanged {
+            return;
+        }
         let epoch = self.code_epoch.fetch_add(1, Ordering::SeqCst) + 1;
         self.view.send_modify(|view| view.code = code.clone());
         let Some(code) = code else { return };
@@ -256,6 +274,42 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// 有东西在等对方时自己取列表：出的码还没作废（对方随时可能扫掉），列表里有还没批的请求（对方随时
+/// 可能点同意），或有一行刚配对、第一次探活还没出结果（几十秒内见分晓）。都没有了就睡到状态再变，
+/// 这期间一个请求都不发；取列表失败不停轮询，状态照现有规则进 `Failed`，下一次照样取。作用域
+/// 关掉时这个任务跟着停。
+async fn follow_waiting(link: Weak<PeersLink>) {
+    let Some(strong) = link.upgrade() else { return };
+    let mut view = strong.view.subscribe();
+    drop(strong);
+    loop {
+        if !waiting(&view.borrow_and_update()) {
+            if view.changed().await.is_err() {
+                return;
+            }
+            continue;
+        }
+        // 刚出现的可等的东西多半是刚落地的那次取列表带来的，先隔一个周期再取。
+        tokio::time::sleep(POLL_INTERVAL).await;
+        let Some(link) = link.upgrade() else { return };
+        if !waiting(&link.view.borrow()) {
+            continue;
+        }
+        link.fetch(false).await;
+    }
+}
+
+/// 现在有没有东西在等对方：出的码还没作废，列表里有还没批的请求，或有一行刚配对、第一次探活还没出结果。
+fn waiting(view: &PeersViewModel) -> bool {
+    view.code.is_some()
+        || view.peers.iter().any(|row| {
+            matches!(
+                row.status,
+                PeerStatus::Checking | PeerStatus::AwaitingApproval
+            )
+        })
 }
 
 /// 跟着家里的连接：连上（App 启动、重新配对、断线恢复）时取一次列表。
