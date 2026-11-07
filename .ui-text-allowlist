@@ -2,28 +2,6 @@
 # 每行一条：路径 | 原因 | 到期日（YYYY-MM-DD）。原因里不能有 |。
 # 列出的文件不查界面文字（源码字符串、界面接口的写死文字、字符串目录）；到期后例外失效，CI 重新失败。
 # 文件里的写死文字抽完后，这一行会报错，删掉它。这个列表只减不增：新代码直接写进字符串目录，不要加进来。
-apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/PushRegistration.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/WontonPushService.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppNavigation.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/AppShortcuts.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatScreen.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ConnectionStatus.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/HomeStatusPanel.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/NotificationSettingsScreen.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PageTakeover.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PluginDetailScreen.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PluginTabsHost.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PluginWebView.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ServerSettings.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/SettingsScreen.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/SettingsToolbarButton.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/TabFullscreen.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/TabPinControls.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/TabStatus.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/TabTexts.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/TabsSettingsScreen.kt | 待抽取（ADR-0043） | 2026-12-31
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/TimelineItemView.kt | 待抽取（ADR-0043） | 2026-12-31
 apps/ios/Wonton/AppNavigation.swift | 待抽取（ADR-0043） | 2026-12-31
 apps/ios/Wonton/BottomPin.swift | 待抽取（ADR-0043） | 2026-12-31
 apps/ios/Wonton/ChatListView.swift | 待抽取（ADR-0043） | 2026-12-31

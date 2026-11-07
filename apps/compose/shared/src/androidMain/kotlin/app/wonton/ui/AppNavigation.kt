@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -13,7 +14,7 @@ import app.wonton.protocol.OnboardingStep
 import app.wonton.protocol.OnboardingViewModel
 import app.wonton.protocol.TabRef
 
-internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
+internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val context: Context) {
     var appsPage by mutableStateOf(HomePage.LAUNCHER)
     var settingsPage by mutableStateOf(SettingsSubpage.MAIN)
     // 配对提醒的链接（wonton://settings/peers）带着它来：其他服务器页滚回顶上的“请求”。
@@ -65,7 +66,9 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation) {
                 tabs.send(Action.SelectTab(TabRef.Chat))
                 val peer = onboarding.primaryBotUserId
                 tabs.plugins.reject(
-                    if (peer == null) CoreException.NotReady("还没有默认 Agent，请先在引导中选择并安装。").problem
+                    if (peer == null) {
+                        CoreException.NotReady(context.getString(R.string.problem_no_default_agent)).problem
+                    }
                     else chat.openDirectChat(tabs.core, peer, acceptInvite = true),
                 )
             }
@@ -134,9 +137,8 @@ internal fun AppLinkEffect(request: AppLinkRequest?, navigation: AppNavigation) 
             }
         }
         if (onboarding.step == OnboardingStep.FINISHED) {
-            if (pluginLinkReady(request.link, navigation.tabs.plugins) &&
-                navigation.isReadyForLink()
-            ) navigation.openLink(request.link, core.onboarding())
+            val pluginReady = pluginLinkReady(request.link, navigation.tabs.plugins, navigation.context)
+            if (pluginReady && navigation.isReadyForLink()) navigation.openLink(request.link, core.onboarding())
         }
         request.consume()
     }
@@ -145,7 +147,7 @@ internal fun AppLinkEffect(request: AppLinkRequest?, navigation: AppNavigation) 
 private fun AppNavigation.isReadyForLink(): Boolean =
     tabs.core.home().status !is HomeStatus.NotConfigured && tabs.core.onboarding().step == OnboardingStep.FINISHED
 
-private suspend fun pluginLinkReady(link: AppLink, plugins: PluginsState): Boolean {
+private suspend fun pluginLinkReady(link: AppLink, plugins: PluginsState, context: Context): Boolean {
     if (link !is AppLink.Tab || link.tab !is TabRef.Plugin) return true
     val core = plugins.core
     val initial = core.plugins()
@@ -157,7 +159,9 @@ private suspend fun pluginLinkReady(link: AppLink, plugins: PluginsState): Boole
         }
     }
     if (loaded.installed == null) {
-        plugins.reject(loaded.problem?.problem ?: CoreException.NotReady("应用列表还没有准备好，请稍后重试。").problem)
+        val reason = loaded.problem?.problem
+            ?: CoreException.NotReady(context.getString(R.string.problem_apps_not_ready)).problem
+        plugins.reject(reason)
     }
     return loaded.installed != null
 }

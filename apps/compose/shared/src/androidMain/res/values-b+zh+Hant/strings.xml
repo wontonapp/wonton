@@ -54,6 +54,20 @@
     <!-- Choice row: light mode. -->
     <string name="appearance_theme_light">淺色</string>
     <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_empty">還沒有聊天</string>
+    <string name="chat_signing_in">正在登入…</string>
+    <string name="chat_signed_out">還沒連上家用伺服器</string>
+    <string name="chat_encrypted">已加密</string>
+    <string name="chat_own_preview">你：%1$s</string>
+    <string name="chat_unread_count">%1$d 則未讀</string>
+    <string name="chat_yesterday">昨天</string>
+    <string name="chat_invite_direct">%1$s 邀請你私訊</string>
+    <string name="chat_invite_room">%1$s 邀請你加入房間</string>
+    <string name="chat_invite_accept">接受</string>
+    <string name="chat_invite_decline">拒絕</string>
+    <string name="chat_start_direct">發起私訊</string>
+    <string name="chat_peer_placeholder">使用者名稱或 Matrix ID</string>
+    <string name="chat_start">發起</string>
     <string name="chat_backup_copy">複製</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">換手機或新裝置時，輸入復原金鑰就能看到以前的訊息。</string>
@@ -169,6 +183,17 @@
     <string name="bot_state_waiting">等你確認</string>
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
     <string name="bot_state_offline">離線</string>
+    <string name="timeline_new_messages_below">以下是新訊息</string>
+    <string name="timeline_start">以上是聊天的開頭</string>
+    <string name="timeline_edited">已編輯</string>
+    <string name="timeline_sending">傳送中</string>
+    <string name="timeline_read">已讀</string>
+    <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
+    <string name="timeline_send_failed">傳送失敗：%1$s</string>
+    <string name="timeline_resend">重新傳送</string>
+    <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
+    <string name="timeline_redacted">訊息已收回</string>
+    <string name="timeline_unsupported">暫不支援顯示的訊息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
     <string name="timeline_profile_rename">%1$s 改名為 %2$s</string>
     <!-- Timeline note: someone changed their avatar. Argument: their name. -->
@@ -212,6 +237,41 @@
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">允許至 %1$s</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_unpaired">未配對</string>
+    <string name="connection_connected">已連線</string>
+    <string name="connection_waiting_network">等待網路…</string>
+    <string name="connection_connecting">連線中…</string>
+    <string name="connection_updating">正在更新…</string>
+    <string name="connection_server_offline">家用伺服器似乎離線了</string>
+    <string name="connection_device_rejected">家用伺服器已不認這支手機</string>
+    <string name="connection_version_mismatch">雲吞或家用伺服器需要更新</string>
+    <string name="connection_pair_again">重新配對</string>
+    <string name="connection_view">查看連線</string>
+    <string name="connection_lan">區域網路</string>
+    <string name="connection_relay">經由中繼</string>
+    <string name="connection_direct">直接連線</string>
+    <string name="connection_details_title">詳細資訊</string>
+    <string name="connection_new_version">有新版本</string>
+    <string name="connection_add_device">新增裝置</string>
+    <string name="connection_mobile_network">行動網路</string>
+    <string name="connection_ok">正常</string>
+    <string name="connection_failing">不通</string>
+    <string name="connection_unknown">不確定</string>
+    <string name="connection_path">路徑</string>
+    <string name="connection_latency">延遲</string>
+    <string name="connection_lost_packets">封包遺失</string>
+    <string name="connection_last_handshake">上次交握</string>
+    <string name="connection_disconnects">斷線次數</string>
+    <string name="connection_last_connected">上次連上</string>
+    <string name="connection_last_failure">上次失敗</string>
+    <string name="home_connection">連線</string>
+    <string name="home_awaiting">等你確認</string>
+    <plurals name="home_cards">
+        <item quantity="other">%1$d 張</item>
+    </plurals>
+    <string name="home_none">沒有</string>
+    <string name="home_storage">儲存空間</string>
+    <string name="home_storage_value">可用 %1$s，共 %2$s</string>
     <string name="connection_addresses_stale">伺服器的位址可能已經過時，會自動再取</string>
     <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
     <string name="core_upgrade_cancel_upgrade">取消更新</string>
@@ -466,6 +526,8 @@
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">這個配對碼已經停用</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_next_new_code">換一個新的配對碼：在已配對的裝置上點「新增裝置」取得，或在主機上執行 sudo wonton pair。</string>
+    <string name="pairing_next_closed">這台伺服器已經有配對的裝置，首次配對碼無法再用；請從已配對的裝置新增，或在主機上執行 sudo wonton pair 另發一個碼。</string>
     <string name="pairing_retry_same_code">用這個碼再試一次</string>
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">App 和伺服器的版本對不上</string>
@@ -788,6 +850,20 @@
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">讀不出這張照片</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_save_folders">可儲存檔案的資料夾</string>
+    <string name="plugin_save_revoke">撤銷</string>
+    <string name="plugin_updates_section">更新</string>
+    <string name="plugin_ask_every_update">每次都詢問</string>
+    <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
+    <string name="plugin_requirements">需求</string>
+    <string name="plugin_info">資訊</string>
+    <string name="plugin_tags">標籤</string>
+    <string name="plugin_author">作者</string>
+    <string name="plugin_license">授權條款</string>
+    <string name="plugin_source">來源</string>
+    <string name="plugin_stars">星數</string>
+    <string name="plugin_homepage">首頁</string>
+    <string name="plugin_repository">程式碼儲存庫</string>
     <string name="plugin_permission_added">新增</string>
     <!-- Small tag next to a permission the core doesn't support. -->
     <string name="plugin_permission_unsupported">不支援</string>
@@ -849,9 +925,10 @@
     <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">解除安裝「%1$s」？</string>
-    <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
-    <string name="problem_appearance_title">無法儲存外觀設定</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <string name="problem_appearance_title">無法儲存外觀設定</string>
+    <string name="problem_apps_not_ready">應用程式清單還沒準備好，請稍後重試。</string>
+    <string name="problem_no_default_agent">還沒有預設 Agent，請先在初始設定中選擇並安裝。</string>
     <string name="problem_invalid_input_title">無法執行這個操作</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">正在載入</string>
@@ -1013,8 +1090,30 @@
     <string name="servers_remove_message">將刪除這支手機上這台伺服器的聊天記錄和檔案，不會影響伺服器上的資料。</string>
     <!-- Destructive confirmation title for removing a server from this phone. Argument: the server's displayed name, including a localized default or the owner's unmodified name. May wrap. -->
     <string name="servers_remove_title">移除「%1$s」？</string>
+    <string name="settings_profile">個人資料</string>
+    <string name="settings_appearance">外觀</string>
+    <string name="settings_nav_bar">底部導覽列</string>
+    <string name="settings_default_agent">預設 Agent</string>
+    <string name="settings_about">關於</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_toolbar">設定</string>
+    <string name="settings_toolbar_update">設定，有新版本</string>
+    <string name="settings_show_setup_again">重看初始設定</string>
     <string name="settings_language">語言</string>
     <string name="settings_language_system">跟隨系統</string>
+    <string name="shortcuts_not_updated">桌面捷徑沒有更新</string>
+    <string name="shortcuts_rejected">系統沒有接受捷徑。</string>
+    <string name="shortcuts_unlock">請解鎖裝置後重新開啟雲吞。</string>
+    <string name="shortcuts_not_allowed">系統不允許更新捷徑。</string>
+    <string name="shortcuts_rate_limited">系統暫時限制了捷徑更新，請稍後重新開啟雲吞。</string>
+    <string name="shortcuts_update_refused">系統沒有接受捷徑更新，請稍後重新開啟雲吞。</string>
+    <string name="shortcuts_app_uninstalled">這個應用程式已解除安裝</string>
+    <string name="shortcut_icon_missing">取不到「%1$s」的圖示，請檢查連線後重新開啟雲吞。</string>
+    <string name="shortcut_icon_convert_failed">「%1$s」的圖示無法轉換，請重新開啟雲吞。</string>
+    <string name="shortcut_new_chat">新增聊天</string>
+    <string name="shortcut_agent_chat">詢問 Bot</string>
+    <string name="shortcuts_too_few">系統只允許 %1$d 個捷徑，無法同時顯示「新增聊天」和「詢問 Bot」。</string>
+    <string name="shortcuts_too_many">系統最多允許 %1$d 個捷徑，已優先保留「新增聊天」「詢問 Bot」，應用程式頁面依底部導覽列順序顯示。</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">新增來源</string>
     <!-- Button on a store row to install an app you don't have. -->
@@ -1046,6 +1145,50 @@
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">經 %1$s</string>
     <!-- 全屏頁面膠囊上退出全屏的按鈕。 -->
+    <string name="takeover_hand_back">交還</string>
+    <string name="takeover_start">我來操作</string>
+    <string name="takeover_got_it">知道了</string>
+    <string name="takeover_not_started">沒有開始操作：%1$s</string>
+    <string name="takeover_lost">已交還，連線斷了</string>
+    <string name="takeover_lost_reason">已交還：%1$s</string>
+    <string name="tab_webview_too_old">請更新 Android System WebView 後再試</string>
+    <string name="tab_stopped">%1$s 已停止</string>
+    <string name="tab_problem">%1$s 出了問題</string>
+    <string name="tab_page_removed">新版本不再提供這個頁面</string>
+    <string name="tab_status_unknown">無法確定應用程式狀態</string>
+    <string name="tab_starting">正在啟動…</string>
+    <string name="tab_uninstalling">正在解除安裝…</string>
+    <string name="tab_upgrading">正在更新…</string>
+    <string name="tab_open_anyway">仍然開啟</string>
+    <string name="tab_unpin_from_bar">從底部導覽列移除</string>
+    <string name="tab_start">啟動</string>
+    <string name="tab_view_details">查看詳細資訊</string>
+    <string name="tab_cross_origin_title">這個應用程式暫時無法在 Android 版雲吞裡開啟</string>
+    <string name="tab_cross_origin_detail">目前的 Android System WebView：%1$s；需要 156 或更新版本。</string>
+    <string name="tab_webview_version_unknown">取不到版本號</string>
+    <string name="tab_load_not_ready">應用程式還沒準備好</string>
+    <string name="tab_load_upstream">應用程式的網頁打不開</string>
+    <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
+    <string name="tab_settings_unreadable">無法讀取底部導覽列設定</string>
+    <string name="tab_open_settings">底部導覽列設定</string>
+    <string name="tab_menu_open_fullscreen">全螢幕開啟</string>
+    <string name="tab_edit_bar">編輯底部導覽列</string>
+    <string name="tab_fullscreen">全螢幕</string>
+    <string name="tab_choose_page">選擇頁面</string>
+    <string name="tab_choose_replace">選擇要取代的項目</string>
+    <string name="tab_bar_full">底部導覽列已滿：固定%1$s</string>
+    <string name="tab_pin_a11y">%1$s，%2$s</string>
+    <string name="tab_add_more">新增更多</string>
+    <string name="tab_show_labels">顯示文字</string>
+    <string name="tab_move_up">上移</string>
+    <string name="tab_move_down">下移</string>
+    <string name="tab_add_to_bar">新增至底部導覽列</string>
+    <string name="tab_defaults_shown">已顯示預設底部導覽列。修改後會重新儲存設定。</string>
+    <string name="tab_no_browser">無法開啟瀏覽器</string>
+    <string name="tab_chat">聊天</string>
+    <string name="tab_apps">應用程式</string>
+    <string name="tab_settings">設定</string>
+    <string name="tab_app_page">應用程式頁面</string>
     <string name="tab_exit_fullscreen">退出全螢幕</string>
     <!-- 全屏膠囊選單項:帶開關,控制這個頁面從底欄打開時是否直接全屏。 -->
     <string name="tab_menu_always_fullscreen">總是全螢幕</string>
@@ -1124,6 +1267,28 @@
     <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
     <string name="page_media_start_failed">背景起不了服務，播放繼續，稍後重試：%1$s（前景服務：%2$s）</string>
     <!-- 通知設定頁的開關：開 = 前台服務讓和家用伺服器的隧道在後台不斷，新訊息由 App 彈本機通知；關 = 走 UnifiedPush 推送（ADR-0003）。 -->
+    <string name="notification_title">通知</string>
+    <string name="notification_system">系統通知</string>
+    <string name="notification_push">推送</string>
+    <string name="notification_channel_message">聊天訊息</string>
+    <string name="notification_channel_confirmation">等你確認</string>
+    <string name="notification_channel_plugin">應用程式通知</string>
+    <string name="notification_value_on">已開啟</string>
+    <string name="notification_value_off">已關閉</string>
+    <string name="notification_value_registering">註冊中</string>
+    <string name="notification_value_not_set">未開啟</string>
+    <string name="notification_value_unavailable">收不到</string>
+    <string name="notification_channel_created">已建立</string>
+    <string name="notification_channel_not_created">未建立</string>
+    <string name="push_status_no_endpoint">未註冊</string>
+    <string name="push_status_registering">正在註冊</string>
+    <string name="push_status_registered">已註冊</string>
+    <string name="push_status_unavailable">收不到推送，請檢查系統通知和分發器</string>
+    <string name="push_status_failed_transport">註冊失敗，連上家用伺服器後重試</string>
+    <string name="push_status_failed_unauthorized">註冊失敗，請重新配對</string>
+    <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
+    <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
+    <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>
     <string name="keepalive_toggle">保持連線</string>
     <!-- 系統裡關了通知時，開關下面的一行說明：服務照常執行，但新訊息彈不出通知。 -->
     <string name="keepalive_without_permission">沒有通知權限：新訊息彈不出通知，連線照常保持。</string>

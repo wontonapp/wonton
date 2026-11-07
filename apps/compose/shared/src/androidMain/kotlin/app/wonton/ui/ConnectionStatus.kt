@@ -36,22 +36,22 @@ import java.text.DateFormat
 import java.util.Date
 
 internal val HomeStatus.connectionText: String
-    get() = when (this) {
-        is HomeStatus.NotConfigured -> "未配对"
-        is HomeStatus.Connected -> "已连接"
+    @Composable get() = when (this) {
+        is HomeStatus.NotConfigured -> stringResource(R.string.connection_unpaired)
+        is HomeStatus.Connected -> stringResource(R.string.connection_connected)
         is HomeStatus.Connecting -> ConnectionNotice.Connecting.sentence
         is HomeStatus.Disconnected -> ConnectionNotice.Unreachable(false).sentence
     }
 
 val ConnectionNotice.sentence: String
-    get() = when (this) {
-        is ConnectionNotice.WaitingForNetwork -> "等待网络…"
-        is ConnectionNotice.Connecting -> "连接中…"
-        is ConnectionNotice.Updating -> "正在更新…"
-        is ConnectionNotice.ServerOffline -> "家里的服务器好像离线了"
-        is ConnectionNotice.Unreachable -> "连不上家里的服务器"
-        is ConnectionNotice.DeviceRejected -> "这台手机已不被家里的服务器认可"
-        is ConnectionNotice.VersionMismatch -> "App 或家里的服务器需要更新"
+    @Composable get() = when (this) {
+        is ConnectionNotice.WaitingForNetwork -> stringResource(R.string.connection_waiting_network)
+        is ConnectionNotice.Connecting -> stringResource(R.string.connection_connecting)
+        is ConnectionNotice.Updating -> stringResource(R.string.connection_updating)
+        is ConnectionNotice.ServerOffline -> stringResource(R.string.connection_server_offline)
+        is ConnectionNotice.Unreachable -> stringResource(R.string.problem_transport_unavailable_title)
+        is ConnectionNotice.DeviceRejected -> stringResource(R.string.connection_device_rejected)
+        is ConnectionNotice.VersionMismatch -> stringResource(R.string.connection_version_mismatch)
     }
 
 private val ConnectionNotice.isShort: Boolean
@@ -67,6 +67,7 @@ private val ConnectionNotice.retrying: Boolean?
         else -> null
     }
 
+@Composable
 fun connectionBarStatus(
     notice: ConnectionNotice?,
     onRetry: () -> Unit,
@@ -91,10 +92,10 @@ private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             if (notice is ConnectionNotice.DeviceRejected) {
-                WontonSmallButton("重新配对", { onOpen(SettingsSubpage.PAIRING) })
+                WontonSmallButton(stringResource(R.string.connection_pair_again), { onOpen(SettingsSubpage.PAIRING) })
             } else {
                 notice.retrying?.let { RetryButton(it, onRetry) }
-                WontonSmallButton("查看连接", { onOpen(SettingsSubpage.SERVER) })
+                WontonSmallButton(stringResource(R.string.connection_view), { onOpen(SettingsSubpage.SERVER) })
             }
         }
     }
@@ -113,7 +114,7 @@ private fun RetryButton(retrying: Boolean, onRetry: () -> Unit) {
                 strokeWidth = 2.dp,
             )
         }
-        WontonSmallButton("重试", onRetry, enabled = !retrying)
+        WontonSmallButton(stringResource(R.string.common_retry), onRetry, enabled = !retrying)
     }
 }
 
@@ -126,7 +127,8 @@ fun ConnectionPage(
     onNavigate: (SettingsSubpage) -> Unit,
 ) {
     val details = viewModel.details
-    WontonScreen(bar = { WontonPushedBar("家里的服务器", { onNavigate(SettingsSubpage.MAIN) }) }) {
+    val back = { onNavigate(SettingsSubpage.MAIN) }
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.egress_path_home_server), back) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -134,15 +136,17 @@ fun ConnectionPage(
         ) {
             ServersGroup(plugins)
             WontonGroup {
-                WontonRow("手机网络", details.network.check.text)
+                WontonRow(stringResource(R.string.connection_mobile_network), details.network.check.text)
                 WontonSeparator()
-                WontonRow("中继", details.relay.text)
+                WontonRow(stringResource(R.string.connection_relay), details.relay.text)
                 WontonSeparator()
-                WontonRow("家里的服务器", details.server.text)
+                WontonRow(stringResource(R.string.egress_path_home_server), details.server.text)
             }
             viewModel.notice?.retrying?.let { RetryButton(it, onRetry) }
             WontonGroup {
-                WontonRow("详情", showsForward = true, onClick = { onNavigate(SettingsSubpage.CONNECTION_DETAILS) })
+                WontonRow(stringResource(R.string.connection_details_title), showsForward = true) {
+                    onNavigate(SettingsSubpage.CONNECTION_DETAILS)
+                }
             }
             WontonGroup {
                 WontonRow(
@@ -156,19 +160,22 @@ fun ConnectionPage(
                 }
                 WontonSeparator()
                 WontonRow(
-                    "升级服务器",
-                    value = "有新版本".takeIf { plugins.viewModel.coreUpgrade.isPrompting() },
+                    stringResource(R.string.core_upgrade_title),
+                    value = stringResource(R.string.connection_new_version)
+                        .takeIf { plugins.viewModel.coreUpgrade.isPrompting() },
                     showsForward = true,
                     onClick = { onNavigate(SettingsSubpage.CORE_UPGRADE) },
                 )
             }
             WontonGroup {
-                WontonRow("添加设备", showsForward = true, onClick = { onNavigate(SettingsSubpage.INVITE) })
+                WontonRow(stringResource(R.string.connection_add_device), showsForward = true) {
+                    onNavigate(SettingsSubpage.INVITE)
+                }
             }
             WontonGroup {
                 WontonRow(
-                    "重新配对", titleTint = WontonTheme.colors.danger, showsForward = true,
-                    onClick = { onNavigate(SettingsSubpage.PAIRING) },
+                    stringResource(R.string.connection_pair_again), titleTint = WontonTheme.colors.danger,
+                    showsForward = true, onClick = { onNavigate(SettingsSubpage.PAIRING) },
                 )
             }
         }
@@ -178,7 +185,7 @@ fun ConnectionPage(
 @Composable
 fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
     val details = viewModel.details
-    WontonScreen(bar = { WontonPushedBar("详情", onBack) }) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.connection_details_title), onBack) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -190,33 +197,39 @@ fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                     WontonSeparator()
                 }
                 viewModel.path?.let { path ->
-                    WontonRow("路径", path.kindText)
+                    WontonRow(stringResource(R.string.connection_path), path.kindText)
                     WontonSeparator()
-                    WontonRow("延迟", "${path.rttMs} ms")
+                    WontonRow(stringResource(R.string.connection_latency), "${path.rttMs} ms")
                     WontonSeparator()
                 }
-                WontonRow("丢包", "${details.lostPackets} / ${details.sentPackets}")
+                WontonRow(
+                    stringResource(R.string.connection_lost_packets),
+                    "${details.lostPackets} / ${details.sentPackets}",
+                )
                 details.handshakeMs?.let {
                     WontonSeparator()
-                    WontonRow("上次握手", "$it ms")
+                    WontonRow(stringResource(R.string.connection_last_handshake), "$it ms")
                 }
                 WontonSeparator()
-                WontonRow("断开次数", "${details.disconnects}")
+                WontonRow(stringResource(R.string.connection_disconnects), "${details.disconnects}")
                 details.lastConnectedAtMs?.let {
                     WontonSeparator()
-                    WontonRow("最后连上", DateFormat.getDateTimeInstance().format(Date(it.toLong())))
+                    WontonRow(
+                        stringResource(R.string.connection_last_connected),
+                        DateFormat.getDateTimeInstance().format(Date(it.toLong())),
+                    )
                 }
             }
-            details.lastFailure?.let { WontonGroup { WontonRow("上次失败", it) } }
+            details.lastFailure?.let { WontonGroup { WontonRow(stringResource(R.string.connection_last_failure), it) } }
         }
     }
 }
 
 private val HomePath.kindText: String
-    get() = when {
-        lan -> "局域网"
-        relay -> "中继"
-        else -> "直连"
+    @Composable get() = when {
+        lan -> stringResource(R.string.connection_lan)
+        relay -> stringResource(R.string.connection_relay)
+        else -> stringResource(R.string.connection_direct)
     }
 
 /** 连接是否走得通以核心为准，这一行只说系统怎么讲。 */
@@ -228,8 +241,8 @@ private val DeviceNetwork?.check: ConnectionCheck
     }
 
 private val ConnectionCheck.text: String
-    get() = when (this) {
-        ConnectionCheck.OK -> "正常"
-        ConnectionCheck.FAILING -> "不通"
-        ConnectionCheck.UNKNOWN -> "不确定"
+    @Composable get() = when (this) {
+        ConnectionCheck.OK -> stringResource(R.string.connection_ok)
+        ConnectionCheck.FAILING -> stringResource(R.string.connection_failing)
+        ConnectionCheck.UNKNOWN -> stringResource(R.string.connection_unknown)
     }

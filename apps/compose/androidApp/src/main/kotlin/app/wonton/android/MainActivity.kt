@@ -45,7 +45,7 @@ class MainActivity : AppCompatActivity() {
             initLogging(filter, File(filesDir, "core.log").path)
         }
         val core = (application as WontonApplication).core.getOrElse { failure ->
-            setContent { StartupFailure("核心启动失败：$failure") }
+            setContent { StartupFailure(getString(R.string.startup_core_failed, failure)) }
             return
         }
         // 开发时用 adb 传入配对码（dev.sh pair 输出的最后一行），模拟器上不用扫码；wonton_open_web 是插件网页的
@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         val code = intent.getStringExtra("wonton_pairing_code")?.takeIf { debuggable }
         val rejected = code?.let { core.send(Action.PairHome(it, defaultDeviceName(this))) }
         if (rejected != null) {
-            setContent { StartupFailure("开发时传入的配对码被拒绝：$rejected") }
+            setContent { StartupFailure(getString(R.string.startup_code_rejected, rejected)) }
             return
         }
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null

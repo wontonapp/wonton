@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,14 +53,14 @@ internal fun TabBarMenu(item: TabItem, tabs: TabsState, onEdit: () -> Unit, onDi
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             WontonGroup {
                 item.page?.let { page ->
-                    WontonRow(tabText("全屏打开", "Open fullscreen"), onClick = {
+                    WontonRow(stringResource(R.string.tab_menu_open_fullscreen), onClick = {
                         close { tabs.send(Action.EnterFullscreen(item.tab)) }
                     })
                     Row(Modifier.fillMaxWidth().padding(WontonTheme.spacing.s16),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text(tabText("总是全屏", "Always fullscreen"), Modifier.weight(1f),
+                        Text(stringResource(R.string.tab_menu_always_fullscreen), Modifier.weight(1f),
                             style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor())
-                        val label = tabText("总是全屏", "Always fullscreen")
+                        val label = stringResource(R.string.tab_menu_always_fullscreen)
                         Box(Modifier.semantics { contentDescription = label }) {
                             WontonSwitch(page.opensFullscreen, { enabled ->
                                 tabs.send(Action.SetTabDisplay(item.tab, displayChoice(enabled)))
@@ -67,7 +68,7 @@ internal fun TabBarMenu(item: TabItem, tabs: TabsState, onEdit: () -> Unit, onDi
                         }
                     }
                 }
-                WontonRow(tabText("编辑底栏", "Edit tab bar"), onClick = { close(onEdit) })
+                WontonRow(stringResource(R.string.tab_edit_bar), onClick = { close(onEdit) })
             }
         }
     }
@@ -87,18 +88,20 @@ internal fun PluginTabBar(
     Column(Modifier.fillMaxWidth().background(colors.canvas.toColor())) {
         TopAppBar(
             title = { Text(status.title ?: page.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            navigationIcon = { if (canGoBack) WontonIconButton(WontonIcon.Back, tabText("返回", "Back"), onBack) },
+            navigationIcon = {
+                if (canGoBack) WontonIconButton(WontonIcon.Back, stringResource(R.string.tab_menu_back), onBack)
+            },
             actions = {
                 takeover?.let { TakeoverButton(it) }
-                WontonIconButton(WontonIcon.Expand, tabText("全屏", "Fullscreen"), onExpand)
-                WontonIconButton(WontonIcon.Refresh, tabText("重新加载", "Reload"), onReload)
-                if (overlay) WontonIconButton(WontonIcon.Close, tabText("关闭", "Close"), onClose)
+                WontonIconButton(WontonIcon.Expand, stringResource(R.string.tab_fullscreen), onExpand)
+                WontonIconButton(WontonIcon.Refresh, stringResource(R.string.tab_menu_reload), onReload)
+                if (overlay) WontonIconButton(WontonIcon.Close, stringResource(R.string.common_close), onClose)
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
         status.line?.let { Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset)) { it() } }
         if (page.state is TabState.Upgrading) Text(
-            tabText("正在升级…", "Updating…"), Modifier.padding(horizontal = WontonTheme.spacing.pageInset),
+            stringResource(R.string.tab_upgrading), Modifier.padding(horizontal = WontonTheme.spacing.pageInset),
             color = colors.textSecondary.toColor(), style = WontonTheme.typography.supporting,
         )
     }

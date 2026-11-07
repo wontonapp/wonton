@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.onSizeChanged
@@ -202,7 +203,8 @@ private fun PageChrome(
 /** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
 @Composable
 private fun shortStatus(page: TabPage): String? =
-    LocalWontonBarStatus.current.title ?: if (page.state is TabState.Upgrading) tabText("正在升级…", "Updating…") else null
+    LocalWontonBarStatus.current.title
+        ?: if (page.state is TabState.Upgrading) stringResource(R.string.tab_upgrading) else null
 
 
 @Composable
@@ -300,7 +302,7 @@ private fun pageTakeover(tab: TabRef, tabs: TabsState, active: Boolean): PageTak
 @Composable
 internal fun externalLinkOpener(onFailure: (Problem) -> Unit): (String) -> Unit {
     val context = LocalContext.current
-    val title = tabText("打不开浏览器", "Cannot open the browser")
+    val title = stringResource(R.string.tab_no_browser)
     return { url ->
         try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         catch (failure: ActivityNotFoundException) { onFailure(Problem(title, detail = failure.message)) }

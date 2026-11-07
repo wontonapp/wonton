@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import app.wonton.android.R
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.PushMethod
@@ -26,7 +27,7 @@ class PushRegistration(private val activity: ComponentActivity, private val core
             if (granted) {
                 register()
             } else if (core.settings().pushMethod == PushMethod.UNIFIED_PUSH) {
-                core.send(Action.PushUnavailable("没有通知权限：App 被杀或锁屏时弹不出新消息"))
+                core.send(Action.PushUnavailable(activity.getString(R.string.push_no_permission)))
             }
         }
 
@@ -43,7 +44,7 @@ class PushRegistration(private val activity: ComponentActivity, private val core
             if (found) {
                 UnifiedPush.register(activity, messageForDistributor = "Wonton")
             } else {
-                core.send(Action.PushUnavailable("没有装 UnifiedPush 分发器（比如 ntfy）：App 被杀或锁屏时收不到新消息"))
+                core.send(Action.PushUnavailable(activity.getString(R.string.push_no_distributor)))
             }
         }
     }

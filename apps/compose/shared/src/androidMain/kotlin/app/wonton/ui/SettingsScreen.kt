@@ -56,14 +56,16 @@ fun SettingsPage(
             onClose = back,
         )
         SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)
-        SettingsSubpage.APPEARANCE -> WontonScreen(bar = { WontonPushedBar("外观", back) }) {
+        SettingsSubpage.APPEARANCE -> WontonScreen(bar = {
+            WontonPushedBar(stringResource(R.string.settings_appearance), back)
+        }) {
             AppearanceScreen(core, appearance)
         }
         SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
         SettingsSubpage.ABOUT -> AboutPage(version, back)
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
-            val title = tabText("设置", "Settings")
+            val title = stringResource(R.string.tab_settings)
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
         }) { SettingsScreen(settings, version, onSubpage) }
         else -> ServerSettingsPage(plugins, home, chat, subpage, onSubpage)
@@ -105,44 +107,60 @@ private fun SettingsEntryRow(
 ) {
     val onboarding = LocalOnboarding.current
     when (entry) {
-        SettingsEntry.Profile -> WontonRow("你的资料", showsForward = true) { onSubpage(SettingsSubpage.PROFILE) }
+        SettingsEntry.Profile -> WontonRow(stringResource(R.string.settings_profile), showsForward = true) {
+            onSubpage(SettingsSubpage.PROFILE)
+        }
         is SettingsEntry.Server -> WontonRow(
             (entry.name ?: ServerName.Default(1u)).displayName(), entry.status.connectionText,
             showsForward = true, badge = entry.upgrade,
             onClick = { onSubpage(SettingsSubpage.SERVER) },
         )
-        SettingsEntry.Appearance -> WontonRow("外观", showsForward = true) { onSubpage(SettingsSubpage.APPEARANCE) }
+        SettingsEntry.Appearance -> WontonRow(stringResource(R.string.settings_appearance), showsForward = true) {
+            onSubpage(SettingsSubpage.APPEARANCE)
+        }
         SettingsEntry.Language -> LanguageSettingsRow()
         // 服务器配对（ADR-0050）；核心只对主人设备取到过列表才给这一项。
         is SettingsEntry.Peers -> WontonRow(
             stringResource(R.string.peers_title), entry.count.toString(),
             showsForward = true, onClick = { onSubpage(SettingsSubpage.PEERS) },
         )
-        SettingsEntry.BottomBar -> WontonRow(tabText("底栏", "Tab bar"), showsForward = true) {
+        SettingsEntry.BottomBar -> WontonRow(stringResource(R.string.settings_nav_bar), showsForward = true) {
             onSubpage(SettingsSubpage.TABS)
         }
         is SettingsEntry.Notifications -> WontonRow(
-            "通知", if (notificationsEnabled()) entry.push.notificationValue else "已关闭", showsForward = true,
+            stringResource(R.string.notification_title),
+            if (notificationsEnabled()) {
+                entry.push.notificationValue
+            } else {
+                stringResource(R.string.notification_value_off)
+            },
+            showsForward = true,
             onClick = { onSubpage(SettingsSubpage.NOTIFICATIONS) },
         )
         SettingsEntry.DefaultAgent -> WontonRow(
-            "默认 Agent", onboarding.view.agents.firstOrNull { it.selected }?.title,
+            stringResource(R.string.settings_default_agent), onboarding.view.agents.firstOrNull { it.selected }?.title,
             showsForward = true, onClick = onChooseAgent,
         )
-        is SettingsEntry.ChatBackup -> WontonRow("聊天记录备份", entry.recovery.backupValue, showsForward = true) {
+        is SettingsEntry.ChatBackup -> WontonRow(
+            stringResource(R.string.chat_backup_title), entry.recovery.backupValue, showsForward = true,
+        ) {
             onSubpage(SettingsSubpage.BACKUP)
         }
-        SettingsEntry.RestartOnboarding -> WontonRow("重看引导") { onboarding.send(Action.RestartOnboarding) }
-        SettingsEntry.About -> WontonRow("关于", version, showsForward = true) { onSubpage(SettingsSubpage.ABOUT) }
+        SettingsEntry.RestartOnboarding -> WontonRow(stringResource(R.string.settings_show_setup_again)) {
+            onboarding.send(Action.RestartOnboarding)
+        }
+        SettingsEntry.About -> WontonRow(stringResource(R.string.settings_about), version, showsForward = true) {
+            onSubpage(SettingsSubpage.ABOUT)
+        }
     }
 }
 
 @Composable
 private fun AboutPage(version: String, onBack: () -> Unit) {
-    WontonScreen(bar = { WontonPushedBar("关于", onBack) }) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.settings_about), onBack) }) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset)) {
-            WontonGroup { WontonRow("版本", version) }
+            WontonGroup { WontonRow(stringResource(R.string.settings_version), version) }
         }
     }
 }

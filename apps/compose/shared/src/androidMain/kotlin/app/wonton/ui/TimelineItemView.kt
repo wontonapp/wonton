@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.content.res.Resources
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,12 +33,13 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -102,13 +104,13 @@ fun TimelineItemView(
         ) {
             NoteEdge()
             Text(
-                "以下是新消息",
+                stringResource(R.string.timeline_new_messages_below),
                 style = WontonTheme.typography.caption,
                 color = WontonTheme.colors.accentInk.toColor(),
             )
             NoteEdge()
         }
-        TimelineContent.TimelineStart -> CenteredNote("以上是聊天的开头")
+        TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
     }
 }
 
@@ -215,7 +217,7 @@ fun BubbleSurface(
             MessageBody(message.body, core, message.sendState, reserve, onCardAction)
         }
     }
-    val reserve = footerReserve(message)
+    val reserve = footerReserve(message, LocalContext.current.resources)
     if (reserve != null) {
         // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
         Box(padded) {
@@ -243,7 +245,7 @@ private fun messageTime(message: TimelineMessage): String =
  * 时间能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
  * 开头是普通空格：不能和前一个词连着折行。
  */
-private fun footerReserve(message: TimelineMessage): String? {
+private fun footerReserve(message: TimelineMessage, resources: Resources): String? {
     val body = message.body as? MessageContent.Text
     val inlineLast = when (body?.blocks?.lastOrNull()?.kind) {
         RichBlockKind.Paragraph, RichBlockKind.Heading, is RichBlockKind.ListItem -> true
@@ -251,10 +253,12 @@ private fun footerReserve(message: TimelineMessage): String? {
     }
     if (!inlineLast || !body?.files.isNullOrEmpty() || message.sendState is SendState.Failed) return null
     val parts = buildList {
-        if (message.edited) add("已编辑")
+        if (message.edited) add(resources.getString(R.string.timeline_edited))
         add(messageTime(message))
-        if (message.sendState is SendState.Sending) add("发送中")
-        if (message.sendState is SendState.Sent && message.isOwn && message.readBy.isNotEmpty()) add("已读")
+        if (message.sendState is SendState.Sending) add(resources.getString(R.string.timeline_sending))
+        if (message.sendState is SendState.Sent && message.isOwn && message.readBy.isNotEmpty()) {
+            add(resources.getString(R.string.timeline_read))
+        }
     }
     return " \u00A0\u00A0" + parts.joinToString("  ").replace(' ', '\u00A0')
 }
@@ -265,13 +269,13 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier, onRetry:
     val style = WontonTheme.typography.caption
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-        if (message.edited) Text("已编辑", style = style, color = color)
+        if (message.edited) Text(stringResource(R.string.timeline_edited), style = style, color = color)
         Text(messageTime(message), style = style, color = color)
         when (val state = message.sendState) {
-            is SendState.Sending -> Text("发送中", style = style, color = color)
+            is SendState.Sending -> Text(stringResource(R.string.timeline_sending), style = style, color = color)
             is SendState.Failed -> FailedSend(state, onRetry, onCancel)
             SendState.Sent -> if (message.isOwn && message.readBy.isNotEmpty()) {
-                Text("已读", style = style, color = color)
+                Text(stringResource(R.string.timeline_read), style = style, color = color)
             }
         }
     }
@@ -295,7 +299,11 @@ private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: (
                 tint = danger,
             )
             Text(
-                if (state.recoverable) "发送失败，会自动重试" else "发送失败：${state.message}",
+                if (state.recoverable) {
+                    stringResource(R.string.timeline_send_failed_retrying)
+                } else {
+                    stringResource(R.string.timeline_send_failed, state.message)
+                },
                 style = WontonTheme.typography.caption,
                 color = danger,
             )
@@ -304,8 +312,10 @@ private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: (
     if (choosing) {
         WontonActionSheet(
             listOf(
-                WontonSheetAction("重发", WontonIcon.Refresh, onClick = onRetry),
-                WontonSheetAction("删除", WontonIcon.Trash, isDanger = true, onClick = onCancel),
+                WontonSheetAction(stringResource(R.string.timeline_resend), WontonIcon.Refresh, onClick = onRetry),
+                WontonSheetAction(
+                    stringResource(R.string.common_delete), WontonIcon.Trash, isDanger = true, onClick = onCancel,
+                ),
             ),
             { choosing = false },
         )
@@ -326,15 +336,15 @@ private fun MessageBody(
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             Icon(WontonIcon.LockKey, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall))
-            Text("无法解密：本设备还没有这条消息的密钥", style = WontonTheme.typography.supporting)
+            Text(stringResource(R.string.timeline_undecryptable), style = WontonTheme.typography.supporting)
         }
         MessageContent.Redacted -> Text(
-            "消息已撤回",
+            stringResource(R.string.timeline_redacted),
             Modifier.alpha(WontonTheme.ratio.secondaryContent),
             fontStyle = FontStyle.Italic,
         )
         is MessageContent.Unsupported -> Text(
-            "暂不支持显示的消息（${body.kind}）",
+            stringResource(R.string.timeline_unsupported, body.kind),
             Modifier.alpha(WontonTheme.ratio.secondaryContent),
             style = WontonTheme.typography.supporting,
         )

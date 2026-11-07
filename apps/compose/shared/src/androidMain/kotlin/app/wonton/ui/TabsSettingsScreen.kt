@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -73,7 +74,7 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
     }
     BackHandler(onBack = onBack)
     val list = rememberLazyListState()
-    WontonScreen(bar = { TabSettingsBar(tabText("底栏", "Tab bar"), onBack) }) {
+    WontonScreen(bar = { TabSettingsBar(stringResource(R.string.settings_nav_bar), onBack) }) {
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
@@ -85,7 +86,9 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
             if (viewModel.candidates.isNotEmpty()) {
                 item(key = "add") {
                     WontonGroup {
-                        WontonRow(tabText("添加更多", "Add more"), showsForward = true, onClick = { adding = true })
+                        WontonRow(
+                            stringResource(R.string.tab_add_more), showsForward = true, onClick = { adding = true },
+                        )
                     }
                 }
             }
@@ -97,7 +100,7 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
 @Composable
 private fun TabLabelsRow(visible: Boolean) {
     val tabs = LocalTabs.current
-    val title = tabText("显示文字", "Show labels")
+    val title = stringResource(R.string.tab_show_labels)
     Row(
         Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
@@ -181,8 +184,8 @@ private fun CurrentTabsGroup(items: List<TabItem>, list: LazyListState) {
 @Composable
 private fun TabSettingsRow(item: TabItem, index: Int, count: Int, modifier: Modifier) {
     val tabs = LocalTabs.current
-    val moveUp = tabText("上移", "Move up")
-    val moveDown = tabText("下移", "Move down")
+    val moveUp = stringResource(R.string.tab_move_up)
+    val moveDown = stringResource(R.string.tab_move_down)
     val colors = WontonTheme.colors
     Row(
         modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
@@ -204,7 +207,7 @@ private fun TabSettingsRow(item: TabItem, index: Int, count: Int, modifier: Modi
         Text(item.tabTitle(), Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
             style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         if (item.removable) {
-            WontonIconButton(WontonIcon.Trash, tabText("从底栏移除", "Remove from tab bar"),
+            WontonIconButton(WontonIcon.Trash, stringResource(R.string.tab_unpin_from_bar),
                 { tabs.send(Action.UnpinTab(item.tab)) }, tint = colors.danger.toColor())
         }
     }
@@ -226,7 +229,7 @@ private fun TabDragHandle() {
 @Composable
 private fun TabCandidatesScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    WontonScreen(bar = { TabSettingsBar(tabText("添加到底栏", "Add to tab bar"), onBack) }) {
+    WontonScreen(bar = { TabSettingsBar(stringResource(R.string.tab_add_to_bar), onBack) }) {
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
             contentPadding = wontonContentPaddingValues(),
@@ -249,7 +252,7 @@ private fun TabSettingsBar(title: String, onBack: () -> Unit) {
 private fun TabCandidateRow(candidate: TabCandidate) {
     val tabs = LocalTabs.current
     val plugin = candidate.plugin
-    val title = if (plugin == null) tabText("设置", "Settings") else {
+    val title = if (plugin == null) stringResource(R.string.tab_settings) else {
         plugin.pageTitle?.let { "${plugin.title} · $it" } ?: plugin.title
     }
     Row(
@@ -273,8 +276,8 @@ private fun TabCandidateRow(candidate: TabCandidate) {
 internal fun TabsConfigurationProblem(viewModel: TabsViewModel) {
     viewModel.problem?.let {
         ProblemNotice(Problem(
-            tabText("读不了底栏设置", "Could not read tab settings"),
-            tabText("已显示默认底栏。修改底栏后会重新保存设置。", "Showing default tabs. Changes will save the settings again."),
+            stringResource(R.string.tab_settings_unreadable),
+            stringResource(R.string.tab_defaults_shown),
             it.message,
         ))
     }

@@ -17,7 +17,7 @@ import app.wonton.protocol.PushContent
 import app.wonton.protocol.PushNotification
 import app.wonton.ui.line
 import app.wonton.ui.notificationChannelId
-import app.wonton.ui.notificationTitle
+import app.wonton.ui.notificationTitleRes
 
 /** 新消息的系统通知：同一个房间的通知合并成一条，显示最新的一条消息。确认卡片每张一条，答完或过期就撤下。 */
 object PushNotifications {
@@ -30,7 +30,8 @@ object PushNotifications {
         manager.deleteNotificationChannel("messages")
         manager.createNotificationChannels(NotificationCategory.entries.map { category ->
             NotificationChannel(
-                category.notificationChannelId, category.notificationTitle, NotificationManager.IMPORTANCE_HIGH,
+                category.notificationChannelId, context.getString(category.notificationTitleRes),
+                NotificationManager.IMPORTANCE_HIGH,
             )
         })
     }

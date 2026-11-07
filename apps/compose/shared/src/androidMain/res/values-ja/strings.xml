@@ -54,6 +54,20 @@
     <!-- Choice row: light mode. -->
     <string name="appearance_theme_light">ライト</string>
     <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_empty">チャットはまだありません</string>
+    <string name="chat_signing_in">サインインしています…</string>
+    <string name="chat_signed_out">自宅サーバーにまだ接続していません</string>
+    <string name="chat_encrypted">暗号化済み</string>
+    <string name="chat_own_preview">あなた：%1$s</string>
+    <string name="chat_unread_count">未読%1$d件</string>
+    <string name="chat_yesterday">昨日</string>
+    <string name="chat_invite_direct">%1$sがあなたをダイレクトチャットに招待しました</string>
+    <string name="chat_invite_room">%1$sがあなたをルームに招待しました</string>
+    <string name="chat_invite_accept">参加</string>
+    <string name="chat_invite_decline">拒否</string>
+    <string name="chat_start_direct">ダイレクトチャットを開始</string>
+    <string name="chat_peer_placeholder">ユーザー名またはMatrix ID</string>
+    <string name="chat_start">開始</string>
     <string name="chat_backup_copy">コピー</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">機種変更などの際に復旧キーを入力すると、過去のメッセージが表示されます。</string>
@@ -169,6 +183,17 @@
     <string name="bot_state_waiting">確認待ち</string>
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
     <string name="bot_state_offline">オフライン</string>
+    <string name="timeline_new_messages_below">以下が新着メッセージです</string>
+    <string name="timeline_start">チャットの最初です</string>
+    <string name="timeline_edited">編集済み</string>
+    <string name="timeline_sending">送信中</string>
+    <string name="timeline_read">既読</string>
+    <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
+    <string name="timeline_send_failed">送信できませんでした：%1$s</string>
+    <string name="timeline_resend">再送信</string>
+    <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
+    <string name="timeline_redacted">メッセージは削除されました</string>
+    <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
     <string name="timeline_profile_rename">%1$sの名前が%2$sに変わりました</string>
     <!-- Timeline note: someone changed their avatar. Argument: their name. -->
@@ -212,6 +237,41 @@
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">%1$sまで許可</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_unpaired">未ペアリング</string>
+    <string name="connection_connected">接続済み</string>
+    <string name="connection_waiting_network">ネットワークを待っています…</string>
+    <string name="connection_connecting">接続しています…</string>
+    <string name="connection_updating">アップデートしています…</string>
+    <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
+    <string name="connection_device_rejected">このスマートフォンは自宅サーバーに認識されていません</string>
+    <string name="connection_version_mismatch">Wontonまたは自宅サーバーのアップデートが必要です</string>
+    <string name="connection_pair_again">ペアリングし直す</string>
+    <string name="connection_view">接続を表示</string>
+    <string name="connection_lan">ローカルネットワーク</string>
+    <string name="connection_relay">リレー</string>
+    <string name="connection_direct">直接接続</string>
+    <string name="connection_details_title">詳細</string>
+    <string name="connection_new_version">新しいバージョンあり</string>
+    <string name="connection_add_device">デバイスを追加</string>
+    <string name="connection_mobile_network">モバイルネットワーク</string>
+    <string name="connection_ok">正常</string>
+    <string name="connection_failing">接続不可</string>
+    <string name="connection_unknown">不明</string>
+    <string name="connection_path">経路</string>
+    <string name="connection_latency">遅延</string>
+    <string name="connection_lost_packets">パケット損失</string>
+    <string name="connection_last_handshake">最後のハンドシェイク</string>
+    <string name="connection_disconnects">切断回数</string>
+    <string name="connection_last_connected">最後に接続した日時</string>
+    <string name="connection_last_failure">最後の失敗</string>
+    <string name="home_connection">接続</string>
+    <string name="home_awaiting">確認待ち</string>
+    <plurals name="home_cards">
+        <item quantity="other">%1$d件</item>
+    </plurals>
+    <string name="home_none">なし</string>
+    <string name="home_storage">ストレージ</string>
+    <string name="home_storage_value">空き%1$s／全体%2$s</string>
     <string name="connection_addresses_stale">サーバーのアドレスが古い可能性があります。自動で取り直します</string>
     <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
     <string name="core_upgrade_cancel_upgrade">アップデートをキャンセル</string>
@@ -466,6 +526,8 @@
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">このペアリングコードは無効化されています</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_next_new_code">新しいコードを取得してください。ペアリング済みのデバイスで「デバイスを追加」を選ぶか、ホストでsudo wonton pairを実行します。</string>
+    <string name="pairing_next_closed">このサーバーにはすでにペアリング済みのデバイスがあるため、最初のペアリングコードはもう使えません。ペアリング済みのデバイスから追加するか、ホストでsudo wonton pairを実行して新しいコードを発行してください。</string>
     <string name="pairing_retry_same_code">このコードでもう一度試す</string>
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">Appとサーバーのバージョンが一致していません</string>
@@ -788,6 +850,20 @@
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">この写真を読み込めません</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_save_folders">保存できるフォルダ</string>
+    <string name="plugin_save_revoke">取り消す</string>
+    <string name="plugin_updates_section">アップデート</string>
+    <string name="plugin_ask_every_update">毎回確認</string>
+    <string name="plugin_written_by_agent">あなたのエージェント・%1$s</string>
+    <string name="plugin_requirements">要件</string>
+    <string name="plugin_info">情報</string>
+    <string name="plugin_tags">タグ</string>
+    <string name="plugin_author">作者</string>
+    <string name="plugin_license">ライセンス</string>
+    <string name="plugin_source">提供元</string>
+    <string name="plugin_stars">スター数</string>
+    <string name="plugin_homepage">ホームページ</string>
+    <string name="plugin_repository">リポジトリ</string>
     <string name="plugin_permission_added">追加</string>
     <!-- Small tag next to a permission the core doesn't support. -->
     <string name="plugin_permission_unsupported">非対応</string>
@@ -849,9 +925,10 @@
     <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
-    <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
-    <string name="problem_appearance_title">外観設定を保存できませんでした</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <string name="problem_appearance_title">外観設定を保存できませんでした</string>
+    <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
+    <string name="problem_no_default_agent">デフォルトのエージェントがありません。セットアップで選択してインストールしてください。</string>
     <string name="problem_invalid_input_title">この操作は実行できません</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">読み込み中</string>
@@ -1013,8 +1090,30 @@
     <string name="servers_remove_message">このスマートフォンに保存されたチャット履歴とファイルが削除されます。サーバー上のデータは削除されません。</string>
     <!-- Destructive confirmation title for removing a server from this phone. Argument: the server's displayed name, including a localized default or the owner's unmodified name. May wrap. -->
     <string name="servers_remove_title">「%1$s」を削除しますか？</string>
+    <string name="settings_profile">プロフィール</string>
+    <string name="settings_appearance">外観</string>
+    <string name="settings_nav_bar">ナビゲーションバー</string>
+    <string name="settings_default_agent">デフォルトのエージェント</string>
+    <string name="settings_about">Wontonについて</string>
+    <string name="settings_version">バージョン</string>
+    <string name="settings_toolbar">設定</string>
+    <string name="settings_toolbar_update">設定、新しいバージョンあり</string>
+    <string name="settings_show_setup_again">セットアップをもう一度見る</string>
     <string name="settings_language">言語</string>
     <string name="settings_language_system">システムのデフォルト</string>
+    <string name="shortcuts_not_updated">ショートカットを更新できませんでした</string>
+    <string name="shortcuts_rejected">システムがショートカットを受け付けませんでした。</string>
+    <string name="shortcuts_unlock">デバイスのロックを解除して、Wontonをもう一度開いてください。</string>
+    <string name="shortcuts_not_allowed">システムがショートカットの更新を許可していません。</string>
+    <string name="shortcuts_rate_limited">システムがショートカットの更新を一時的に制限しています。しばらくしてからWontonをもう一度開いてください。</string>
+    <string name="shortcuts_update_refused">システムがショートカットの更新を受け付けませんでした。しばらくしてからWontonをもう一度開いてください。</string>
+    <string name="shortcuts_app_uninstalled">このアプリはアンインストールされました</string>
+    <string name="shortcut_icon_missing">「%1$s」のアイコンを取得できませんでした。接続を確認して、Wontonをもう一度開いてください。</string>
+    <string name="shortcut_icon_convert_failed">「%1$s」のアイコンを変換できません。Wontonをもう一度開いてください。</string>
+    <string name="shortcut_new_chat">新しいチャット</string>
+    <string name="shortcut_agent_chat">ボットに質問</string>
+    <string name="shortcuts_too_few">システムが許可するショートカットは%1$d個だけなので、「新しいチャット」と「ボットに質問」を同時に表示できません。</string>
+    <string name="shortcuts_too_many">システムが許可するショートカットは最大%1$d個です。「新しいチャット」「ボットに質問」を優先し、アプリのページはナビゲーションバーの順に表示します。</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">提供元を追加</string>
     <!-- Button on a store row to install an app you don't have. -->
@@ -1046,6 +1145,50 @@
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">%1$s経由</string>
     <!-- 全画面ページのカプセルで全画面を終了するボタン。 -->
+    <string name="takeover_hand_back">操作を返す</string>
+    <string name="takeover_start">操作する</string>
+    <string name="takeover_got_it">了解</string>
+    <string name="takeover_not_started">操作を開始できませんでした：%1$s</string>
+    <string name="takeover_lost">操作を返しました。接続が切れました</string>
+    <string name="takeover_lost_reason">操作を返しました：%1$s</string>
+    <string name="tab_webview_too_old">Android System WebViewを更新してもう一度お試しください</string>
+    <string name="tab_stopped">%1$sは停止しました</string>
+    <string name="tab_problem">%1$sで問題が発生しました</string>
+    <string name="tab_page_removed">このページは新しいバージョンでは提供されません</string>
+    <string name="tab_status_unknown">アプリの状態を確認できません</string>
+    <string name="tab_starting">起動しています…</string>
+    <string name="tab_uninstalling">アンインストールしています…</string>
+    <string name="tab_upgrading">アップデートしています…</string>
+    <string name="tab_open_anyway">そのまま開く</string>
+    <string name="tab_unpin_from_bar">ナビゲーションバーから外す</string>
+    <string name="tab_start">起動</string>
+    <string name="tab_view_details">詳細を表示</string>
+    <string name="tab_cross_origin_title">このアプリはWontonのAndroid版ではまだ開けません</string>
+    <string name="tab_cross_origin_detail">現在のAndroid System WebView：%1$s。156以降が必要です。</string>
+    <string name="tab_webview_version_unknown">バージョンを取得できません</string>
+    <string name="tab_load_not_ready">アプリの準備ができていません</string>
+    <string name="tab_load_upstream">アプリのページを開けません</string>
+    <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_settings_unreadable">ナビゲーションバーの設定を読み込めません</string>
+    <string name="tab_open_settings">ナビゲーションバーの設定</string>
+    <string name="tab_menu_open_fullscreen">全画面で開く</string>
+    <string name="tab_edit_bar">ナビゲーションバーを編集</string>
+    <string name="tab_fullscreen">全画面</string>
+    <string name="tab_choose_page">ページを選択</string>
+    <string name="tab_choose_replace">置き換える項目を選択</string>
+    <string name="tab_bar_full">ナビゲーションバーがいっぱいです：%1$sを追加</string>
+    <string name="tab_pin_a11y">%1$s、%2$s</string>
+    <string name="tab_add_more">さらに追加</string>
+    <string name="tab_show_labels">ラベルを表示</string>
+    <string name="tab_move_up">上へ移動</string>
+    <string name="tab_move_down">下へ移動</string>
+    <string name="tab_add_to_bar">ナビゲーションバーに追加</string>
+    <string name="tab_defaults_shown">デフォルトのナビゲーションバーを表示しています。変更すると設定が保存されます。</string>
+    <string name="tab_no_browser">ブラウザを開けません</string>
+    <string name="tab_chat">チャット</string>
+    <string name="tab_apps">アプリ</string>
+    <string name="tab_settings">設定</string>
+    <string name="tab_app_page">アプリのページ</string>
     <string name="tab_exit_fullscreen">全画面を終了</string>
     <!-- 全画面カプセルのメニュー項目:タブバーから開いたときに全画面にするスイッチ。 -->
     <string name="tab_menu_always_fullscreen">常に全画面</string>
@@ -1124,6 +1267,28 @@
     <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
     <string name="page_media_start_failed">バックグラウンドでサービスを開始できません。再生は続け、後で再試行します：%1$s（フォアグラウンドサービス：%2$s）</string>
     <!-- 通知設定ページのスイッチ：オン = フォアグラウンドサービスがホームサーバーとのトンネルを維持し、新着メッセージはアプリがローカル通知で表示する。オフ = UnifiedPush で通知（ADR-0003）。 -->
+    <string name="notification_title">通知</string>
+    <string name="notification_system">システム通知</string>
+    <string name="notification_push">プッシュ通知</string>
+    <string name="notification_channel_message">チャットメッセージ</string>
+    <string name="notification_channel_confirmation">確認待ち</string>
+    <string name="notification_channel_plugin">アプリからの通知</string>
+    <string name="notification_value_on">オン</string>
+    <string name="notification_value_off">オフ</string>
+    <string name="notification_value_registering">登録中</string>
+    <string name="notification_value_not_set">未設定</string>
+    <string name="notification_value_unavailable">受信できません</string>
+    <string name="notification_channel_created">作成済み</string>
+    <string name="notification_channel_not_created">未作成</string>
+    <string name="push_status_no_endpoint">未登録</string>
+    <string name="push_status_registering">登録中</string>
+    <string name="push_status_registered">登録済み</string>
+    <string name="push_status_unavailable">プッシュを受信できません。システムの通知とディストリビューターを確認してください</string>
+    <string name="push_status_failed_transport">登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください</string>
+    <string name="push_status_failed_unauthorized">登録に失敗しました。ペアリングをやり直してください</string>
+    <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
+    <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
+    <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>
     <string name="keepalive_toggle">接続を維持</string>
     <!-- システムで通知が無効のとき、スイッチの下に出る説明：サービスは動き続けるが、新着メッセージは通知されない。 -->
     <string name="keepalive_without_permission">通知権限がないため、新着メッセージは通知として表示されません。接続は維持されます。</string>

@@ -52,19 +52,19 @@ val NotificationCategory.notificationChannelId: String
         NotificationCategory.PLUGIN_NOTICE -> "plugin_notice"
     }
 
-val NotificationCategory.notificationTitle: String
+val NotificationCategory.notificationTitleRes: Int
     get() = when (this) {
-        NotificationCategory.MESSAGE -> "聊天消息"
-        NotificationCategory.CONFIRMATION -> "等你确认"
-        NotificationCategory.PLUGIN_NOTICE -> "应用通知"
+        NotificationCategory.MESSAGE -> R.string.notification_channel_message
+        NotificationCategory.CONFIRMATION -> R.string.notification_channel_confirmation
+        NotificationCategory.PLUGIN_NOTICE -> R.string.notification_channel_plugin
     }
 
 internal val PushStatus.notificationValue: String
-    get() = when (this) {
-        PushStatus.Registered -> "已开启"
-        PushStatus.Registering -> "登记中"
-        PushStatus.NoEndpoint -> "未开启"
-        is PushStatus.Unavailable, is PushStatus.Failed -> "收不到"
+    @Composable get() = when (this) {
+        PushStatus.Registered -> stringResource(R.string.notification_value_on)
+        PushStatus.Registering -> stringResource(R.string.notification_value_registering)
+        PushStatus.NoEndpoint -> stringResource(R.string.notification_value_not_set)
+        is PushStatus.Unavailable, is PushStatus.Failed -> stringResource(R.string.notification_value_unavailable)
     }
 
 /** 设置页“通知”条目里存的收新消息的方式（ADR-0003）。通知条目一直在，取不到说明协议对不上。 */
@@ -103,7 +103,7 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
     val manager = context.getSystemService(NotificationManager::class.java)
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val keepalive = entry.method == PushMethod.KEEPALIVE
-    WontonScreen(bar = { WontonPushedBar("通知", onBack) }) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.notification_title), onBack) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -115,14 +115,18 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                     rejection = core.send(Action.SetPushMethod(method))
                 }
                 WontonSeparator()
-                WontonRow("系统通知", if (enabled) "已开启" else "已关闭", showsForward = true) {
+                WontonRow(
+                    stringResource(R.string.notification_system),
+                    stringResource(if (enabled) R.string.notification_value_on else R.string.notification_value_off),
+                    showsForward = true,
+                ) {
                     context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
                 }
                 // 推送只在 UnifiedPush 下用：保持连接时新消息由前台服务收，这一行没有意义。
                 if (!keepalive) {
                     WontonSeparator()
-                    WontonRow("推送", entry.push.notificationStatus)
+                    WontonRow(stringResource(R.string.notification_push), entry.push.notificationStatus)
                 }
             }
             if (keepalive && !enabled) {
@@ -145,11 +149,12 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                         manager.getNotificationChannel(category.notificationChannelId)
                     }
                     val status = when {
-                        !enabled || channel?.importance == NotificationManager.IMPORTANCE_NONE -> "已关闭"
-                        channel == null -> "未创建"
-                        else -> "已开启"
+                        !enabled || channel?.importance == NotificationManager.IMPORTANCE_NONE ->
+                            stringResource(R.string.notification_value_off)
+                        channel == null -> stringResource(R.string.notification_channel_not_created)
+                        else -> stringResource(R.string.notification_value_on)
                     }
-                    WontonRow(category.notificationTitle, status, showsForward = true) {
+                    WontonRow(stringResource(category.notificationTitleRes), status, showsForward = true) {
                         context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                             .putExtra(Settings.EXTRA_CHANNEL_ID, category.notificationChannelId))
@@ -185,16 +190,18 @@ private fun KeepaliveToggle(keepalive: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 private val PushStatus.notificationStatus: String
-    get() = when (this) {
-        PushStatus.NoEndpoint -> "未登记"
-        PushStatus.Registering -> "正在登记"
-        PushStatus.Registered -> "已登记"
-        is PushStatus.Unavailable -> "收不到推送，请检查系统通知和分发器"
-        is PushStatus.Failed -> when (reason) {
-            ChatFailure.TRANSPORT_UNAVAILABLE -> "登记失败，连上家里的服务器后重试"
-            ChatFailure.UNAUTHORIZED -> "登记失败，请重新配对"
-            ChatFailure.UPSTREAM -> "登记失败，家里的服务器出错了"
-            ChatFailure.NOT_READY -> "登记失败，请等聊天连接就绪"
-            ChatFailure.INVALID_INPUT -> "登记失败，推送地址无效"
-        }
+    @Composable get() = when (this) {
+        PushStatus.NoEndpoint -> stringResource(R.string.push_status_no_endpoint)
+        PushStatus.Registering -> stringResource(R.string.push_status_registering)
+        PushStatus.Registered -> stringResource(R.string.push_status_registered)
+        is PushStatus.Unavailable -> stringResource(R.string.push_status_unavailable)
+        is PushStatus.Failed -> stringResource(
+            when (reason) {
+                ChatFailure.TRANSPORT_UNAVAILABLE -> R.string.push_status_failed_transport
+                ChatFailure.UNAUTHORIZED -> R.string.push_status_failed_unauthorized
+                ChatFailure.UPSTREAM -> R.string.push_status_failed_upstream
+                ChatFailure.NOT_READY -> R.string.push_status_failed_not_ready
+                ChatFailure.INVALID_INPUT -> R.string.push_status_failed_invalid_input
+            },
+        )
     }

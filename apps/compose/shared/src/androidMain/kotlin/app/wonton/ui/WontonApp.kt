@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
@@ -66,7 +67,8 @@ internal fun ServerApp(
     val tabs = remember(core) { TabsState(plugins) }
     val draft = remember(core) { TabDraft() }
     val chat = rememberChatNavigation { tabs.send(Action.SelectTab(it)) }
-    val navigation = remember(core) { AppNavigation(tabs, chat) }
+    val context = LocalContext.current.applicationContext
+    val navigation = remember(core, context) { AppNavigation(tabs, chat, context) }
     LaunchedEffect(tabs) { tabs.observe() }
     LaunchedEffect(chatView) { chat.onUpdate(chatView) }
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }

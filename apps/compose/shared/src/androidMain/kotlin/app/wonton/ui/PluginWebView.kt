@@ -132,7 +132,7 @@ fun rememberPluginWebViewController(): PluginWebViewController = remember { Plug
 fun pluginOrigin(url: String): String {
     val uri = Uri.parse(url)
     val scheme = uri.scheme?.lowercase()
-    require(scheme == "http" || scheme == "https") { "插件地址必须是 HTTP(S)" }
+    require(scheme == "http" || scheme == "https") { "plugin URL must be HTTP(S)" }
     val host = requireNotNull(uri.host).lowercase()
     val port = uri.port.takeUnless { it == -1 || (scheme == "http" && it == 80) || (scheme == "https" && it == 443) }
     return "$scheme://$host${port?.let { ":$it" }.orEmpty()}"
@@ -338,7 +338,7 @@ private fun overrideProxy(proxy: ProxySettings, onReady: () -> Unit) {
         WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE) &&
             WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS),
     ) {
-        "这台设备的 WebView 太旧，不支持按域名设置代理，应用网页打不开"
+        "this device's WebView is too old to set a proxy per domain, app pages can't open"
     }
     val config = ProxyConfig.Builder()
         .addProxyRule("${proxy.host}:${proxy.port}")
@@ -348,7 +348,7 @@ private fun overrideProxy(proxy: ProxySettings, onReady: () -> Unit) {
         .build()
     val sameThread = Executor { it.run() }
     ProxyController.getInstance().setProxyOverride(config, sameThread) {
-        Log.i(TAG, "WebView 代理已设为 ${proxy.host}:${proxy.port}")
+        Log.i(TAG, "WebView proxy set to ${proxy.host}:${proxy.port}")
         onReady()
     }
 }
@@ -411,7 +411,7 @@ private class ProxyAuthClient(
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-        Log.w(TAG, "WebView 渲染器退出 didCrash=${detail.didCrash()}")
+        Log.w(TAG, "WebView renderer exited, didCrash=${detail.didCrash()}")
         snapshot.recoveryUrl = currentUrl
         (view as ThemedPluginWebView).rendererGone = true
         view.disposePage()
@@ -472,7 +472,7 @@ private class ProxyAuthClient(
         failedUrl = null
         // 只记到路径：查询串和片段里可能有 OAuth 授权码等秘密（例如 /login/generic_oauth?code=…）。
         val page = Uri.parse(url).buildUpon().clearQuery().fragment(null).build()
-        Log.i(TAG, "网页加载完成 page=$page")
+        Log.i(TAG, "page finished loading, page=$page")
         controller.updateHistory()
         // 出错的加载也会走到这里。
         if (!failedThisLoad) {

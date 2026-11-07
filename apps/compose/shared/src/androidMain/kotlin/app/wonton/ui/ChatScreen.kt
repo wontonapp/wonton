@@ -31,6 +31,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -42,7 +44,6 @@ import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.BotView
-import app.wonton.protocol.MessageSummary
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.ui.design.WontonButton
@@ -141,7 +142,7 @@ private fun ChatListScreen(
     onStartChat: () -> Unit,
 ) {
     WontonScreen(
-        bar = { WontonRootBar("聊天") },
+        bar = { WontonRootBar(stringResource(R.string.tab_chat)) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -169,7 +170,7 @@ private fun ChatListScreen(
             if (viewModel.rooms.isEmpty() && synced) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        "还没有聊天",
+                        stringResource(R.string.chat_empty),
                         style = WontonTheme.typography.itemTitle,
                         color = WontonTheme.colors.textPrimary.toColor(),
                     )
@@ -186,7 +187,7 @@ private fun ChatListScreen(
                 containerColor = WontonTheme.colors.accentFill.toColor(),
                 contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
             ) {
-                Icon(WontonIcon.Add, "新会话", Modifier.size(WontonTheme.size.icon))
+                Icon(WontonIcon.Add, stringResource(R.string.shortcut_new_chat), Modifier.size(WontonTheme.size.icon))
             }
         }
     }
@@ -203,14 +204,14 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         ?: (sync as? ChatSync.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
             ?.let { it.reason.problem(it.message) }
             .takeIf { account is ChatAccount.SignedIn }
-    val progress = "正在登录…".takeIf { account == ChatAccount.SigningIn }
+    val progress = stringResource(R.string.chat_signing_in).takeIf { account == ChatAccount.SigningIn }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
     Column(
         Modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         if (account == ChatAccount.SignedOut) {
-            WontonNotice(WontonIcon.Connection, "还没有连上家里的服务器", isError = false)
+            WontonNotice(WontonIcon.Connection, stringResource(R.string.chat_signed_out), isError = false)
         }
         failure?.let { ProblemRow(it) }
         progress?.let {
@@ -257,7 +258,7 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick
                     if (row.isEncrypted) {
                         Icon(
                             WontonIcon.LockFill,
-                            contentDescription = "已加密",
+                            contentDescription = stringResource(R.string.chat_encrypted),
                             modifier = Modifier.size(WontonTheme.size.iconTiny),
                             tint = colors.textSecondary.toColor(),
                         )
@@ -279,12 +280,15 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick
 @Composable
 private fun RoomPreviewLine(row: RoomRow) {
     val colors = WontonTheme.colors
+    val resources = LocalContext.current.resources
+    val preview = row.preview?.body?.line(resources).orEmpty()
+    val text = if (row.preview?.isOwn == true) stringResource(R.string.chat_own_preview, preview) else preview
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         Text(
-            row.preview?.let { if (it.isOwn) "我：${it.body.line()}" else it.body.line() }.orEmpty(),
+            text,
             Modifier.weight(1f),
             style = WontonTheme.typography.supporting,
             color = colors.textSecondary.toColor(),
@@ -292,7 +296,7 @@ private fun RoomPreviewLine(row: RoomRow) {
             overflow = TextOverflow.Ellipsis,
         )
         if (row.unreadCount > 0uL) {
-            val spoken = "${row.unreadCount} 条未读"
+            val spoken = stringResource(R.string.chat_unread_count, row.unreadCount)
             Text(
                 row.unreadCount.toString(),
                 Modifier.semantics { contentDescription = spoken }
@@ -303,17 +307,6 @@ private fun RoomPreviewLine(row: RoomRow) {
             )
         }
     }
-}
-
-/** Bot 用它的应用的图标，其他人用名字的第一个字。 */
-/** 房间列表预览的一行：正文原样，图片、文件等占位在这里写。 */
-private fun MessageSummary.line(): String = when (this) {
-    is MessageSummary.Text -> text
-    is MessageSummary.Files -> "[文件]"
-    is MessageSummary.Image -> "[图片]"
-    is MessageSummary.Undecryptable -> "[加密消息]"
-    is MessageSummary.Redacted -> "[已撤回]"
-    is MessageSummary.Other -> "[$kind]"
 }
 
 @Composable
@@ -344,13 +337,14 @@ private fun RoomAvatar(row: RoomRow, bot: BotView?, plugins: PluginsState) {
 }
 
 /** 列表里的时间：今天的写几点，昨天写“昨天”，一周内写星期，再早写日期。 */
+@Composable
 private fun roomTime(timestampMs: Long): String {
     val time = Instant.ofEpochMilli(timestampMs).atZone(ZoneId.systemDefault())
     val today = LocalDate.now()
     val days = ChronoUnit.DAYS.between(time.toLocalDate(), today)
     val pattern = when {
         days == 0L -> "HH:mm"
-        days == 1L -> return "昨天"
+        days == 1L -> return stringResource(R.string.chat_yesterday)
         days < DAYS_SHOWN_AS_WEEKDAY -> "EEE"
         time.year == today.year -> "M/d"
         else -> "yyyy/M/d"
@@ -365,13 +359,16 @@ private fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
         Text(
-            "${row.name} 邀请你${if (row.isDirect) "私聊" else "加入房间"}",
+            stringResource(if (row.isDirect) R.string.chat_invite_direct else R.string.chat_invite_room, row.name),
             style = WontonTheme.typography.itemTitle,
             color = WontonTheme.colors.textPrimary.toColor(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            WontonButton("接受", { onAction(Action.JoinRoom(row.roomId)) })
-            WontonButton("拒绝", { onAction(Action.LeaveRoom(row.roomId)) }, kind = WontonButtonKind.SECONDARY)
+            WontonButton(stringResource(R.string.chat_invite_accept), { onAction(Action.JoinRoom(row.roomId)) })
+            WontonButton(
+                stringResource(R.string.chat_invite_decline), { onAction(Action.LeaveRoom(row.roomId)) },
+                kind = WontonButtonKind.SECONDARY,
+            )
         }
     }
 }
@@ -382,7 +379,7 @@ private fun StartChatScreen(core: ClientCore, onStart: (String) -> Unit, onClose
     var peer by rememberSaveable { mutableStateOf("") }
     val input = peer.trim()
     val contacts = remember(input) { core.chatContacts(input) }
-    WontonScreen(bar = { WontonPushedBar("发起私聊", onClose) }) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.chat_start_direct), onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -392,13 +389,16 @@ private fun StartChatScreen(core: ClientCore, onStart: (String) -> Unit, onClose
                 value = peer,
                 onValueChange = { peer = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = "用户名或 Matrix ID",
+                placeholder = stringResource(R.string.chat_peer_placeholder),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
                     autoCorrectEnabled = false,
                 ),
             )
-            WontonButton("发起", { onStart(input) }, Modifier.fillMaxWidth(), enabled = input.isNotEmpty())
+            WontonButton(
+                stringResource(R.string.chat_start), { onStart(input) }, Modifier.fillMaxWidth(),
+                enabled = input.isNotEmpty(),
+            )
             if (contacts.isNotEmpty()) {
                 WontonGroup {
                     contacts.forEachIndexed { index, contact ->

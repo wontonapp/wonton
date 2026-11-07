@@ -150,8 +150,9 @@ private fun PairingProgress(status: PairingStatus, onRetry: (() -> Unit)?) {
         is PairingStatus.Failed -> WontonNotice(
             WontonIcon.Warning,
             stringResource(failureTitle(status.reason)),
-            lines = listOfNotNull(status.message, failureHint(status.reason)?.let { stringResource(it) }),
+            lines = listOfNotNull(failureHint(status.reason)?.let { stringResource(it) }),
         ) {
+            if (status.reason.showsCoreMessage()) ProblemDetail(status.message)
             if (onRetry != null && status.reason.canRetrySameCode()) {
                 WontonButton(
                     stringResource(R.string.pairing_retry_same_code), onRetry, kind = WontonButtonKind.SECONDARY,
@@ -170,11 +171,19 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.PROTOCOL -> R.string.pairing_failure_protocol
 }
 
-/** 服务器拒绝时，它的说明里已经写了下一步；本机这一侧的失败补一句。 */
+/** 码被拒、过期、停用这几类，服务器写的说明和标题说的是同一件事，只留标题和下一步。 */
 private fun failureHint(reason: PairingFailure): Int? = when (reason) {
+    PairingFailure.REJECTED, PairingFailure.EXPIRED -> R.string.pairing_next_new_code
+    PairingFailure.CLOSED -> R.string.pairing_next_closed
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_hint_transport
     PairingFailure.PROTOCOL -> R.string.pairing_hint_protocol
-    else -> null
+    PairingFailure.UPSTREAM -> null
+}
+
+/** 服务器给的原因是原始值（语言是服务器主人的），收进默认收起的详情。 */
+private fun PairingFailure.showsCoreMessage(): Boolean = when (this) {
+    PairingFailure.TRANSPORT_UNAVAILABLE, PairingFailure.UPSTREAM, PairingFailure.PROTOCOL -> true
+    PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.CLOSED -> false
 }
 
 /** 连不上和服务器出错可能是暂时的，同一个码可以再试；其余原因要换码或者更新。 */

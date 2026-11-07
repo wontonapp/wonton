@@ -3,6 +3,7 @@ package app.wonton.android.push
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import app.wonton.android.R
 import app.wonton.android.WontonApplication
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -29,18 +30,18 @@ class WontonPushService : PushService() {
         val core = core() ?: return
         val keys = endpoint.pubKeySet
         val action = if (keys == null) {
-            Action.PushUnavailable("分发器没有给出 Web Push 公钥，推送内容没法加密")
+            Action.PushUnavailable(getString(R.string.push_no_public_key))
         } else {
             Action.SetPushEndpoint(PushEndpoint(endpoint.url, keys.pubKey, keys.auth))
         }
-        core.send(action)?.let { Log.w(TAG, "核心不接受推送地址：$it") }
+        core.send(action)?.let { Log.w(TAG, "core rejected the push endpoint: $it") }
     }
 
     override fun onMessage(message: PushMessage, instance: String) {
         // 解不开的推送不是家里的服务器发的（只有它知道本机的公钥和认证密钥）。连接库这时把原文当明文交过来，
         // 不能显示。
         if (!message.decrypted) {
-            Log.w(TAG, "丢弃一条没能解密的推送")
+            Log.w(TAG, "dropping a push that couldn't be decrypted")
             return
         }
         val core = core() ?: return
@@ -54,9 +55,9 @@ class WontonPushService : PushService() {
             try {
                 val notification = core.resolvePush(message.content)
                 if (notification != null) PushNotifications.show(context, notification)
-                Log.i(TAG, "推送处理完，用时 ${SystemClock.elapsedRealtime() - received} ms")
+                Log.i(TAG, "push handled in ${SystemClock.elapsedRealtime() - received} ms")
             } catch (rejected: CoreException) {
-                Log.w(TAG, "推送内容不是家里的服务器发的格式：$rejected")
+                Log.w(TAG, "push content isn't in the home server's format: $rejected")
             } finally {
                 if (wakeLock.isHeld) wakeLock.release()
             }
@@ -64,16 +65,16 @@ class WontonPushService : PushService() {
     }
 
     override fun onRegistrationFailed(reason: FailedReason, instance: String) {
-        core()?.send(Action.PushUnavailable("分发器拒绝了登记：$reason"))
+        core()?.send(Action.PushUnavailable(getString(R.string.push_registration_rejected, reason)))
     }
 
     override fun onUnregistered(instance: String) {
-        core()?.send(Action.PushUnavailable("分发器注销了本 App"))
+        core()?.send(Action.PushUnavailable(getString(R.string.push_unregistered)))
     }
 
     private fun core(): ClientCore? {
         val core = (application as WontonApplication).core.getOrNull()
-        if (core == null) Log.e(TAG, "核心没起来，处理不了推送")
+        if (core == null) Log.e(TAG, "core isn't running, can't handle the push")
         return core
     }
 
