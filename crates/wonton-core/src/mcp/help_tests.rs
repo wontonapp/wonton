@@ -7,11 +7,14 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use wonton_l10n::Arg;
 
 use super::tests::{failed, manager, setup, text};
 use crate::help::{CoreVersion, Help};
+use crate::l10n::CATALOG;
 use crate::plugin::PluginManager;
 use crate::plugin::docker::Engine;
+use crate::plugin::languages::Languages;
 use crate::plugin::package_files::sha256_hex;
 
 const BASELINE: &str = "1111111111111111111111111111111111111111";
@@ -179,9 +182,20 @@ async fn an_interrupted_fetch_keeps_the_old_docs_and_says_why() {
         .unwrap();
     assert_eq!(body["docs_commit"], BASELINE);
     assert_eq!(body["body"], "旧的正文\n");
+    // refresh_problem 整段用主人的语言（rig 没记主人的语言，回退英文）：取新版失败的原因
+    // 在前面（细节带临时目录，原样带上），后面由目录写文档的年龄。期望值由目录格式化。
     let problem = body["refresh_problem"].as_str().unwrap();
-    assert!(problem.contains("取不到新的帮助文档"), "{problem}");
-    assert!(problem.contains("天前的文档"), "{problem}");
+    let owner = CATALOG.negotiate(Languages::from_header(None).requested());
+    let failed = CATALOG.format(owner, "chat-help-refresh-failed", &[("details", "".into())]);
+    assert!(problem.starts_with(failed.trim_end()), "{problem}");
+    assert!(problem.contains("索引目录里没有"), "{problem}");
+    let days = body["docs_updated_days_ago"].as_u64().unwrap();
+    let age = CATALOG.format(
+        owner,
+        "chat-help-docs-age",
+        &[("problem", "".into()), ("days", Arg::from(days))],
+    );
+    assert!(problem.ends_with(&age), "{problem}");
     assert!(!rig.cached(NEWER), "没取全不切换");
 }
 

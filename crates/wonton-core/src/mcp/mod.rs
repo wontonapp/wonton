@@ -38,6 +38,7 @@ use wonton_protocol::{ConfirmationState, FileFailure};
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::help::Help;
+use crate::l10n;
 use crate::plugin::tool_policy::Clearance;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
@@ -120,13 +121,14 @@ async fn forward(
         .await;
     match called {
         Ok(result) => {
+            let langs = bus.plugins.owner_languages();
             let state = if result.is_error == Some(true) {
                 ConfirmationState::Failed {
-                    message: "工具报告执行失败".to_owned(),
+                    message: l10n::text(&langs, "chat-tool-failed", &[]),
                 }
             } else {
                 ConfirmationState::Succeeded {
-                    message: "已执行".to_owned(),
+                    message: l10n::text(&langs, "chat-tool-ran", &[]),
                 }
             };
             let (result, files) = file_results::rewrite(bus, caller, &server.id, result).await;
@@ -420,9 +422,14 @@ impl Bus {
             return outcome.result;
         }
         let plugin = cards::text(&server.title);
-        let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest);
+        let langs = self.plugins.owner_languages();
+        let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest, &langs);
         if !highest {
-            draft = draft.with_window(server.id.as_str(), self.confirmations.window_length());
+            draft = draft.with_window(
+                server.id.as_str(),
+                self.confirmations.window_length(),
+                &langs,
+            );
         }
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());

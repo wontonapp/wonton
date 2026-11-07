@@ -100,6 +100,7 @@ async fn start() -> Home {
         matrix,
         "owner",
         dir.path().join("notice-room"),
+        Arc::new(crate::plugin::languages::Languages::default),
     ));
     let gateway = Gateway::new(
         public,

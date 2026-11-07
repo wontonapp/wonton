@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, ConfirmationWindow, WindowEnd};
 
 use super::{Chosen, Confirmations, Table, now_ms};
+use crate::l10n;
 use crate::plugin::PluginId;
+use crate::plugin::languages::Languages;
 use crate::plugin::store::write_json;
 
 /// 还显示着时段的一张卡片。
@@ -227,7 +229,8 @@ impl Confirmations {
     }
 
     /// 把上次运行留下的卡片改成“核心重启，已结束”。改成功的才从文件里删，没成功的下次再试。
-    pub async fn recover_windows(&self) -> Vec<EndedWindow> {
+    pub async fn recover_windows(&self, langs: &Languages) -> Vec<EndedWindow> {
+        let uncertain = l10n::text(langs, "chat-uncertain-restart", &[]);
         let leftovers: Vec<_> = self
             .lock()
             .leftovers
@@ -244,7 +247,7 @@ impl Confirmations {
             // 核心停的时候这次调用可能还在执行，结果不知道了。
             if card.state == ConfirmationState::Running {
                 card.state = ConfirmationState::Uncertain {
-                    message: "核心重启了，不知道有没有执行完".to_owned(),
+                    message: uncertain.clone(),
                 };
             }
             match self.notifier.update(&entry.handle, &card).await {

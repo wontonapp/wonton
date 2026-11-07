@@ -12,6 +12,7 @@ use wonton_protocol::{
 use super::audit::{AgentPermissionRecord, Decision};
 use super::confirm::Refusal;
 use super::{Bus, Caller, cards};
+use crate::l10n;
 
 /// 没能请主人确认的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,8 +78,13 @@ impl Asked {
         };
         if option.kind.answer() == Answer::Approve {
             self.audit(Decision::Approved, Some(option));
+            let langs = self.bus.plugins.owner_languages();
             let state = ConfirmationState::Succeeded {
-                message: format!("已选择“{}”", option.name),
+                message: l10n::text(
+                    &langs,
+                    "chat-agent-chose",
+                    &[("choice", option.name.as_str().into())],
+                ),
             };
             self.bus.confirmations.settle(&self.card, state).await;
         } else {
@@ -102,8 +108,9 @@ impl Drop for Asked {
         };
         let (bus, card) = (self.bus.clone(), std::mem::take(&mut self.card));
         runtime.spawn(async move {
+            let langs = bus.plugins.owner_languages();
             let state = ConfirmationState::Failed {
-                message: "Agent 不再等这个回答了，这次确认作废".to_owned(),
+                message: l10n::text(&langs, "chat-agent-abandoned", &[]),
             };
             bus.confirmations.settle(&card, state).await;
         });
@@ -118,7 +125,8 @@ impl Bus {
         request: AgentPermissionRequest,
     ) -> Result<AgentPermissionOutcome, AgentPermissionError> {
         check(&request)?;
-        let draft = cards::agent_permission(&caller.name, &request);
+        let langs = self.plugins.owner_languages();
+        let draft = cards::agent_permission(&caller.name, &request, &langs);
         let mut asked = Asked {
             bus: self.clone(),
             caller: caller.id.to_string(),

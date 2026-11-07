@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::admin::{ADMIN_LOCALPART, SERVER_USER_LOCALPART};
 use super::api::{Login, MatrixError};
 use super::{Matrix, Session};
+use crate::plugin::languages::Languages;
 
 /// 换用户名的次数上限：`<名字>`、`<名字>-2` …… `<名字>-20`。
 const MAX_CANDIDATES: u32 = 20;
@@ -138,7 +139,12 @@ impl Matrix {
 
     /// 把主房间交给主人：Bot 邀请主人、记进自己的 `m.direct`，核心代主人加入、记进主人的 `m.direct`。主人已经在
     /// 里面（重装）时什么也不做，返回 false。中途失败时撤回（[`Session::abandon`]）再返回错误。
-    pub async fn hand_over(&self, owner: &str, bot: &ProvisionedBot) -> Result<bool, MatrixError> {
+    pub async fn hand_over(
+        &self,
+        owner: &str,
+        bot: &ProvisionedBot,
+        langs: &Languages,
+    ) -> Result<bool, MatrixError> {
         let session = Session::new(&self.api, &bot.account.user_id, &bot.access_token);
         let room = &bot.account.home_room;
         if session.joined_members(room).await?.contains(&bot.owner) {
@@ -154,7 +160,7 @@ impl Matrix {
             })
             .await;
         if let Err(e) = handed_over {
-            if let Err(cleanup) = session.abandon(room, &bot.owner).await {
+            if let Err(cleanup) = session.abandon(room, &bot.owner, langs).await {
                 tracing::error!(%room, error = %cleanup, "撤回没交给主人的主房间失败");
             }
             return Err(e);
@@ -163,9 +169,13 @@ impl Matrix {
     }
 
     /// 收回交给主人的主房间（安装在交出之后失败了）：主人退出，Bot 也退出。要在吊销 Bot 的设备之前做。
-    pub async fn withdraw(&self, bot: &ProvisionedBot) -> Result<(), MatrixError> {
+    pub async fn withdraw(
+        &self,
+        bot: &ProvisionedBot,
+        langs: &Languages,
+    ) -> Result<(), MatrixError> {
         Session::new(&self.api, &bot.account.user_id, &bot.access_token)
-            .abandon(&bot.account.home_room, &bot.owner)
+            .abandon(&bot.account.home_room, &bot.owner, langs)
             .await
     }
 

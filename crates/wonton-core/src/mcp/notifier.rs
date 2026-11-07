@@ -22,7 +22,8 @@ fn decode(handle: &str) -> Result<Posted, String> {
 impl Notifier for NoticeRoom {
     fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
         async move {
-            self.send(&cards::content(card))
+            let langs = (self.languages)();
+            self.send(&cards::content(card, &langs))
                 .await
                 .map(|posted| encode(&posted))
                 .map_err(|e| format!("确认卡片发不到 Wonton 房间：{e}"))
@@ -36,8 +37,9 @@ impl Notifier for NoticeRoom {
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<Option<String>, String>> {
         async move {
+            let langs = (self.languages)();
             let edited = self
-                .edit(&decode(handle)?, &cards::content(card))
+                .edit(&decode(handle)?, &cards::content(card, &langs))
                 .await
                 .map_err(|e| format!("更新确认卡片失败：{e}"))?;
             Ok(match edited {

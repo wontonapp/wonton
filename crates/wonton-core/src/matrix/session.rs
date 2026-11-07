@@ -4,6 +4,8 @@ use hyper::Method;
 use serde_json::{Map, Value, json};
 
 use super::api::{Api, MatrixError, encode};
+use crate::l10n;
+use crate::plugin::languages::Languages;
 
 /// 一个已登录用户的会话。令牌属于核心刚登录的设备，用完由调用方吊销或退出。
 pub struct Session<'a> {
@@ -179,9 +181,15 @@ impl<'a> Session<'a> {
     }
 
     /// 撤回对 `user` 的邀请并退出房间：建好的私聊没能交到对方手里时用，免得对方收到一个没人应答的邀请。
-    pub async fn abandon(&self, room: &str, user: &str) -> Result<(), MatrixError> {
+    pub async fn abandon(
+        &self,
+        room: &str,
+        user: &str,
+        langs: &Languages,
+    ) -> Result<(), MatrixError> {
         let room = encode(room);
-        let kick = json!({"user_id": user, "reason": "Wonton 没能建好这个私聊"});
+        let reason = l10n::text(langs, "chat-kick-reason", &[]);
+        let kick = json!({"user_id": user, "reason": reason});
         let path = format!("/_matrix/client/v3/rooms/{room}/kick");
         self.json(Method::POST, &path, Some(&kick), "撤回邀请")
             .await?;

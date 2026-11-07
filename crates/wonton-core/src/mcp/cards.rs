@@ -5,13 +5,15 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use wonton_l10n::Arg;
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow, PeerRequest, PermissionRisk,
+    ConfirmationState, ConfirmationWindow, PeerRequest, PermissionRisk, WindowEnd,
 };
 
 use super::file_results::human_size;
 use crate::files::share_fs::saving::{SaveTarget, StagedFile};
+use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{LocalizedText, Manifest};
 use crate::plugin::privileges::{self, CapabilityRisk};
@@ -35,12 +37,20 @@ pub struct Draft {
 impl Draft {
     /// 加上“N 分钟内都允许”，放在拒绝前面。核心自己的工具不走这里（ADR-0024）。
     #[must_use]
-    pub fn with_window(mut self, plugin: &str, length: Duration) -> Self {
+    pub fn with_window(mut self, plugin: &str, length: Duration, langs: &Languages) -> Self {
         let secs = length.as_secs();
         let label = if secs.is_multiple_of(60) {
-            format!("{} 分钟内都允许", secs / 60)
+            l10n::text(
+                langs,
+                "chat-card-window-minutes",
+                &[("minutes", Arg::from(secs / 60))],
+            )
         } else {
-            format!("{secs} 秒内都允许")
+            l10n::text(
+                langs,
+                "chat-card-window-seconds",
+                &[("secs", Arg::from(secs))],
+            )
         };
         let at = self.choices.len().saturating_sub(1);
         self.choices.insert(
@@ -115,12 +125,21 @@ fn permission_lines(manifest: &Manifest, langs: &Languages) -> Vec<CardLine> {
 }
 
 /// 服务和镜像：镜像要按摘要固定，主人在卡片上就能看到要跑的是哪些。
-fn image_lines(package: &PluginPackage) -> Vec<CardLine> {
+fn image_lines(package: &PluginPackage, langs: &Languages) -> Vec<CardLine> {
     match render::dry_run(package) {
         Ok(plan) => plan
             .containers
             .iter()
-            .map(|c| line(format!("服务 {} 用镜像 {}", c.service, c.image)))
+            .map(|c| {
+                line(l10n::text(
+                    langs,
+                    "chat-card-image",
+                    &[
+                        ("service", c.service.as_str().into()),
+                        ("image", c.image.as_str().into()),
+                    ],
+                ))
+            })
             .collect(),
         // 渲染不了的问题由校验和安装报，卡片上不放报错。
         Err(_) => Vec::new(),
@@ -171,9 +190,10 @@ pub fn added_lines(
         .cloned()
         .collect();
     if !added_ports.is_empty() {
-        lines.push(emphasized(format!(
-            "新增局域网端口 {}",
-            added_ports.join("、")
+        lines.push(emphasized(l10n::text(
+            langs,
+            "chat-card-ports-added",
+            &[("ports", l10n::list(langs, &added_ports).into())],
         )));
     }
     let services = |m: Option<&Manifest>| {
@@ -186,9 +206,10 @@ pub fn added_lines(
         .cloned()
         .collect();
     if !added_gpu.is_empty() {
-        lines.push(emphasized(format!(
-            "新增用显卡的服务 {}",
-            added_gpu.join("、")
+        lines.push(emphasized(l10n::text(
+            langs,
+            "chat-card-gpu-added",
+            &[("services", l10n::list(langs, &added_gpu).into())],
         )));
     }
     lines
@@ -198,22 +219,41 @@ pub fn added_lines(
 pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft {
     let mut lines = vec![
         line(text(&manifest.description)),
-        line(format!("版本 {}，来自官方索引", manifest.version)),
+        line(l10n::text(
+            langs,
+            "chat-card-version-official",
+            &[("version", manifest.version.as_str().into())],
+        )),
     ];
     if manifest.permissions.is_empty() {
-        lines.push(line("不需要额外的权限"));
+        lines.push(line(l10n::text(langs, "chat-card-no-permissions", &[])));
     } else {
-        lines.push(line("要授予的权限："));
+        lines.push(line(l10n::text(langs, "chat-card-permissions-header", &[])));
         lines.extend(permission_lines(manifest, langs));
     }
     Draft {
-        title: format!("{requester} 想安装 {}", text(&manifest.title)),
+        title: install_title(requester, manifest, langs),
         lines,
-        choices: choices("安装", "不装"),
+        choices: choices(
+            &l10n::text(langs, "chat-choice-install", &[]),
+            &l10n::text(langs, "chat-choice-deny-install", &[]),
+        ),
         scope: None,
         peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
     }
+}
+
+/// 卡片标题里的应用名：清单里挑好的那种文字。
+fn install_title(requester: &str, manifest: &Manifest, langs: &Languages) -> String {
+    l10n::text(
+        langs,
+        "chat-card-install-title",
+        &[
+            ("requester", requester.into()),
+            ("title", text(&manifest.title).into()),
+        ],
+    )
 }
 
 /// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像，和“以后不再问”的说明。
@@ -221,17 +261,23 @@ pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft
 pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages) -> Draft {
     let manifest = &package.manifest;
     let mut lines = vec![
-        emphasized(format!(
-            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，你自己把关"
+        emphasized(l10n::text(
+            langs,
+            "chat-card-agent-source",
+            &[("requester", requester.into())],
         )),
         line(text(&manifest.description)),
-        line(format!("版本 {}", manifest.version)),
+        line(l10n::text(
+            langs,
+            "chat-card-version",
+            &[("version", manifest.version.as_str().into())],
+        )),
     ];
-    lines.extend(image_lines(package));
+    lines.extend(image_lines(package, langs));
     if manifest.permissions.is_empty() {
-        lines.push(line("不需要额外的权限"));
+        lines.push(line(l10n::text(langs, "chat-card-no-permissions", &[])));
     } else {
-        lines.push(line("要授予的权限："));
+        lines.push(line(l10n::text(langs, "chat-card-permissions-header", &[])));
         lines.extend(permission_lines(manifest, langs));
     }
     lines.extend(cross_origin_isolation_notice(manifest, langs));
@@ -242,14 +288,19 @@ pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages
         )
     });
     if !always_asks {
-        lines.push(line(format!(
-            "以后 {requester} 改这个插件不再问，除非要更多权限"
+        lines.push(line(l10n::text(
+            langs,
+            "chat-card-agent-ask-again",
+            &[("requester", requester.into())],
         )));
     }
     Draft {
-        title: format!("{requester} 想安装 {}", text(&manifest.title)),
+        title: install_title(requester, manifest, langs),
         lines,
-        choices: choices("安装", "不装"),
+        choices: choices(
+            &l10n::text(langs, "chat-choice-install", &[]),
+            &l10n::text(langs, "chat-choice-deny-install", &[]),
+        ),
         scope: None,
         peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
@@ -268,10 +319,19 @@ pub fn agent_update(
 ) -> Draft {
     let manifest = &package.manifest;
     let mut lines = vec![
-        emphasized(format!(
-            "来自你的 Agent · {requester}，没有经过审核：代码由 Agent 写，你自己把关"
+        emphasized(l10n::text(
+            langs,
+            "chat-card-agent-source",
+            &[("requester", requester.into())],
         )),
-        line(format!("从版本 {from} 更新到 {}", manifest.version)),
+        line(l10n::text(
+            langs,
+            "chat-card-update-from",
+            &[
+                ("from", from.into()),
+                ("to", manifest.version.as_str().into()),
+            ],
+        )),
         line(header),
     ];
     lines.extend_from_slice(added);
@@ -281,9 +341,19 @@ pub fn agent_update(
         lines.push(notice);
     }
     Draft {
-        title: format!("{requester} 想更新 {}", text(&manifest.title)),
+        title: l10n::text(
+            langs,
+            "chat-card-update-title",
+            &[
+                ("requester", requester.into()),
+                ("title", text(&manifest.title).into()),
+            ],
+        ),
         lines,
-        choices: choices("更新", "不更新"),
+        choices: choices(
+            &l10n::text(langs, "chat-choice-update", &[]),
+            &l10n::text(langs, "chat-choice-deny-update", &[]),
+        ),
         scope: None,
         peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
@@ -332,9 +402,19 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         .next()
         .unwrap_or_default();
     Draft {
-        title: format!("{} 能控制整台主机", text(&manifest.title)),
-        lines: vec![emphasized(notice), emphasized("代码会以本机 root 身份运行")],
-        choices: choices("我知道这个插件能控制整台主机", "不装"),
+        title: l10n::text(
+            langs,
+            "chat-card-highest-title",
+            &[("title", text(&manifest.title).into())],
+        ),
+        lines: vec![
+            emphasized(notice),
+            emphasized(l10n::text(langs, "chat-card-highest-line", &[])),
+        ],
+        choices: choices(
+            &l10n::text(langs, "chat-card-highest-confirm", &[]),
+            &l10n::text(langs, "chat-choice-deny-install", &[]),
+        ),
         scope: None,
         peer_request: None,
         plugin_id: Some(manifest.id.to_string()),
@@ -342,16 +422,23 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
 }
 
 /// 卸载插件。
-pub fn uninstall(requester: &str, title: &str, delete_data: bool) -> Draft {
+pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Languages) -> Draft {
     let data = if delete_data {
-        emphasized("并删除它的数据，不可恢复")
+        emphasized(l10n::text(langs, "chat-card-uninstall-purge", &[]))
     } else {
-        line("保留它的数据，以后重装还在")
+        line(l10n::text(langs, "chat-card-uninstall-keep", &[]))
     };
     Draft {
-        title: format!("{requester} 想卸载 {title}"),
+        title: l10n::text(
+            langs,
+            "chat-card-uninstall-title",
+            &[("requester", requester.into()), ("title", title.into())],
+        ),
         lines: vec![data],
-        choices: choices("卸载", "取消"),
+        choices: choices(
+            &l10n::text(langs, "chat-choice-uninstall", &[]),
+            &l10n::text(langs, "chat-choice-cancel", &[]),
+        ),
         scope: None,
         peer_request: None,
         plugin_id: None,
@@ -365,23 +452,35 @@ pub fn tool_call(
     tool: &str,
     arguments: &Value,
     highest: bool,
+    langs: &Languages,
 ) -> Draft {
-    let mut lines = vec![line("这个工具会改动数据")];
+    let mut lines = vec![line(l10n::text(langs, "chat-card-tool-data", &[]))];
     if highest {
-        lines.push(emphasized("这个操作以本机 root 身份执行"));
+        lines.push(emphasized(l10n::text(langs, "chat-card-tool-root", &[])));
     }
-    lines.push(arguments_line(arguments));
+    lines.push(arguments_line(arguments, langs));
     Draft {
-        title: format!("{requester} 想用 {plugin} 的 {tool}"),
+        title: l10n::text(
+            langs,
+            "chat-card-tool-title",
+            &[
+                ("requester", requester.into()),
+                ("plugin", plugin.into()),
+                ("tool", tool.into()),
+            ],
+        ),
         lines,
-        choices: choices("允许", "拒绝"),
+        choices: choices(
+            &l10n::text(langs, "chat-choice-allow", &[]),
+            &l10n::text(langs, "chat-choice-deny", &[]),
+        ),
         scope: None,
         peer_request: None,
         plugin_id: None,
     }
 }
 
-fn arguments_line(arguments: &Value) -> CardLine {
+fn arguments_line(arguments: &Value, langs: &Languages) -> CardLine {
     const MAX: usize = 600;
     let mut args = arguments.to_string();
     if args.len() > MAX {
@@ -392,13 +491,26 @@ fn arguments_line(arguments: &Value) -> CardLine {
         args.truncate(cut);
         args.push('…');
     }
-    line(format!("参数：{args}"))
+    line(l10n::text(
+        langs,
+        "chat-card-args",
+        &[("args", args.into())],
+    ))
 }
 
 /// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项。没有拒绝类的选项时加一个不带 `choice_id` 的“取消”。
-pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Draft {
+pub fn agent_permission(
+    requester: &str,
+    request: &AgentPermissionRequest,
+    langs: &Languages,
+) -> Draft {
     let mut lines: Vec<_> = request.description.iter().map(line).collect();
-    lines.extend(request.arguments.as_ref().map(arguments_line));
+    lines.extend(
+        request
+            .arguments
+            .as_ref()
+            .map(|args| arguments_line(args, langs)),
+    );
     let mut buttons: Vec<_> = request
         .options
         .iter()
@@ -411,12 +523,19 @@ pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Dr
     if !buttons.iter().any(|button| button.answer == Answer::Reject) {
         buttons.push(CardChoice {
             answer: Answer::Reject,
-            label: "取消".to_owned(),
+            label: l10n::text(langs, "chat-choice-cancel", &[]),
             choice_id: None,
         });
     }
     Draft {
-        title: format!("{requester}：{}", request.title),
+        title: l10n::text(
+            langs,
+            "chat-card-agent-title",
+            &[
+                ("requester", requester.into()),
+                ("title", request.title.as_str().into()),
+            ],
+        ),
         lines,
         choices: buttons,
         scope: None,
@@ -426,41 +545,86 @@ pub fn agent_permission(requester: &str, request: &AgentPermissionRequest) -> Dr
 }
 
 /// Bot 把文件存进共享文件夹（ADR-0027）。目标就是共享文件夹本身时没有更大的范围可选。
-pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> Draft {
+pub fn save_file(
+    requester: &str,
+    files: &[StagedFile],
+    target: &SaveTarget,
+    langs: &Languages,
+) -> Draft {
     const LISTED: usize = 10;
     let folder = target.folder();
     let mut lines: Vec<CardLine> = files
         .iter()
         .take(LISTED)
-        .map(|file| line(format!("· {}（{}）", file.name, human_size(file.size))))
+        .map(|file| {
+            line(format!(
+                "· {}",
+                l10n::text(
+                    langs,
+                    "chat-card-save-file",
+                    &[
+                        ("name", file.name.as_str().into()),
+                        ("size", human_size(file.size).into()),
+                    ],
+                )
+            ))
+        })
         .collect();
     if files.len() > LISTED {
-        lines.push(line(format!("还有 {} 个文件", files.len() - LISTED)));
+        lines.push(line(l10n::text(
+            langs,
+            "chat-card-save-more",
+            &[("count", Arg::from((files.len() - LISTED) as u64))],
+        )));
     }
     if files.len() > 1 {
-        let total = files.iter().map(|file| file.size).sum();
-        lines.push(line(format!("共 {}", human_size(total))));
+        let total: u64 = files.iter().map(|file| file.size).sum();
+        lines.push(line(l10n::text(
+            langs,
+            "chat-card-save-total",
+            &[("total", human_size(total).into())],
+        )));
     }
-    lines.push(emphasized("Bot 提供，内容未审核"));
+    lines.push(emphasized(l10n::text(
+        langs,
+        "chat-card-save-unreviewed",
+        &[],
+    )));
     let mut buttons = vec![CardChoice {
         answer: Answer::Approve,
-        label: format!("允许存进 {folder}"),
+        label: l10n::text(
+            langs,
+            "chat-card-save-allow",
+            &[("folder", folder.as_str().into())],
+        ),
         choice_id: None,
     }];
     if !target.dirs.is_empty() {
         buttons.push(CardChoice {
             answer: Answer::ApproveWider,
-            label: format!("允许存进 {}", target.share),
+            label: l10n::text(
+                langs,
+                "chat-card-save-allow",
+                &[("folder", target.share.as_str().into())],
+            ),
             choice_id: None,
         });
     }
     buttons.push(CardChoice {
         answer: Answer::Reject,
-        label: "拒绝".to_owned(),
+        label: l10n::text(langs, "chat-choice-deny", &[]),
         choice_id: None,
     });
     Draft {
-        title: format!("{requester} 想把 {} 个文件存进 {folder}", files.len()),
+        title: l10n::text(
+            langs,
+            "chat-card-save-title",
+            &[
+                ("requester", requester.into()),
+                ("count", Arg::from(files.len() as u64)),
+                ("folder", folder.into()),
+            ],
+        ),
         lines,
         choices: buttons,
         scope: None,
@@ -470,40 +634,65 @@ pub fn save_file(requester: &str, files: &[StagedFile], target: &SaveTarget) -> 
 }
 
 /// 给其他 Matrix 客户端看的纯文本。
-pub fn body(card: &ConfirmationCard) -> String {
+pub fn body(card: &ConfirmationCard, langs: &Languages) -> String {
     let mut out = card.title.clone();
     for line in &card.lines {
         out.push('\n');
         out.push_str(&line.text);
     }
     out.push('\n');
+    let message = |id: &str| l10n::text(langs, id, &[]);
     out.push_str(&match &card.state {
-        ConfirmationState::Pending => "请在 Wonton App 里确认。".to_owned(),
-        ConfirmationState::Running => "已确认，正在执行……".to_owned(),
-        ConfirmationState::Succeeded { message } => format!("已完成：{message}"),
-        ConfirmationState::Failed { message } => format!("没有成功：{message}"),
-        ConfirmationState::Uncertain { message } => format!("结果不确定：{message}"),
-        ConfirmationState::Rejected => "已拒绝，没有执行。".to_owned(),
-        ConfirmationState::Expired => "没有在期限内确认，已过期，没有执行。".to_owned(),
+        ConfirmationState::Pending => message("chat-card-state-pending"),
+        ConfirmationState::Running => message("chat-card-state-running"),
+        ConfirmationState::Succeeded { message } => l10n::text(
+            langs,
+            "chat-card-state-succeeded",
+            &[("message", message.as_str().into())],
+        ),
+        ConfirmationState::Failed { message } => l10n::text(
+            langs,
+            "chat-card-state-failed",
+            &[("message", message.as_str().into())],
+        ),
+        ConfirmationState::Uncertain { message } => l10n::text(
+            langs,
+            "chat-card-state-uncertain",
+            &[("message", message.as_str().into())],
+        ),
+        ConfirmationState::Rejected => message("chat-card-state-rejected"),
+        ConfirmationState::Expired => message("chat-card-state-expired"),
     });
     if let Some(window) = &card.window {
         out.push('\n');
-        out.push_str(&window_text(window));
+        out.push_str(&window_text(window, langs));
     }
     out
 }
 
-fn window_text(window: &ConfirmationWindow) -> String {
-    window
-        .ended_note()
-        .unwrap_or_else(|| "放行时段生效中，到期前不再询问。".to_owned())
+fn window_text(window: &ConfirmationWindow, langs: &Languages) -> String {
+    if let Some(reason) = window.ended {
+        let count = window.allowed.unwrap_or(0);
+        let reason = match reason {
+            WindowEnd::Expired => "expired",
+            WindowEnd::Stopped => "stopped",
+            WindowEnd::CoreRestarted => "restarted",
+            WindowEnd::Unknown => "unknown",
+        };
+        return l10n::text(
+            langs,
+            "chat-window-ended",
+            &[("reason", reason.into()), ("count", Arg::from(count))],
+        );
+    }
+    l10n::text(langs, "chat-window-active", &[])
 }
 
 /// 卡片的 Matrix 消息内容。用 `m.text` 的原因见 ADR-0016。
-pub fn content(card: &ConfirmationCard) -> Value {
+pub fn content(card: &ConfirmationCard, langs: &Languages) -> Value {
     json!({
         "msgtype": "m.text",
-        "body": body(card),
+        "body": body(card, langs),
         CARD_FIELD: card,
     })
 }
@@ -513,21 +702,66 @@ mod tests {
     use wonton_protocol::ConfirmationState;
 
     use super::*;
+    use crate::l10n::CATALOG;
 
     /// 契约：`wonton-client` 的 `a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet` 证明这种消息推得到手机。
     #[test]
     fn a_card_is_a_message_the_default_push_rules_notify() {
+        let langs = Languages::default();
         let card = ConfirmationCard {
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
             lines: Vec::new(),
-            choices: choices("安装", "不装"),
+            choices: choices(
+                &l10n::text(&langs, "chat-choice-install", &[]),
+                &l10n::text(&langs, "chat-choice-deny-install", &[]),
+            ),
             expires_at_ms: 1,
             plugin_id: None,
             peer_request: None,
             window: None,
         };
-        assert_eq!(content(&card)["msgtype"], "m.text");
+        assert_eq!(content(&card, &langs)["msgtype"], "m.text");
+    }
+
+    /// 卡片正文按语言协商：ja 请求给日文，fr-FR 回退英文，两种真的不同。期望值由目录格式化。
+    #[test]
+    fn the_card_body_follows_the_requested_language() {
+        let card = ConfirmationCard {
+            id: "abc".into(),
+            state: ConfirmationState::Pending,
+            title: "Hermes 想安装 Grafana".into(),
+            lines: vec![line("一条说明")],
+            choices: Vec::new(),
+            expires_at_ms: 1,
+            plugin_id: None,
+            peer_request: None,
+            window: Some(ConfirmationWindow {
+                expires_at_ms: 1,
+                allowed: Some(2),
+                ended: Some(WindowEnd::Expired),
+            }),
+        };
+        for (header, tag) in [("ja", "ja"), ("fr-FR", "en"), ("zh-TW", "zh-Hant")] {
+            let langs = Languages::from_header(Some(header));
+            let expected = CATALOG.negotiate(&[tag]);
+            let body = body(&card, &langs);
+            assert!(
+                body.contains(&CATALOG.format(expected, "chat-card-state-pending", &[])),
+                "{header}: {body}"
+            );
+            assert!(
+                body.contains(&CATALOG.format(
+                    expected,
+                    "chat-window-ended",
+                    &[("reason", "expired".into()), ("count", Arg::from(2u64))]
+                )),
+                "{header}: {body}"
+            );
+        }
+        let ja = body(&card, &Languages::from_header(Some("ja")));
+        let en = body(&card, &Languages::from_header(Some("fr-FR")));
+        assert_ne!(ja, en);
     }
 }

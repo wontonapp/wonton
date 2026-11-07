@@ -44,6 +44,7 @@ use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::hostdir::Owner;
 use wonton_core::plugin::image_worker::{self, ImageWorker};
 use wonton_core::plugin::lan::{self, Lan};
+use wonton_core::plugin::languages::Languages;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::preinstall::Backoff;
@@ -310,7 +311,10 @@ async fn serve() -> anyhow::Result<()> {
     preinstall(&cfg, manager.clone(), upgrades.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
-    let notices = notice_room(&cfg, matrix.as_ref());
+    let notices = notice_room(&cfg, matrix.as_ref(), {
+        let manager = manager.clone();
+        Arc::new(move || manager.owner_languages())
+    });
     // 服务器配对的同意卡片（ADR-0050）和 Bot 调用确认用同一套 Confirmations。
     let (bus, confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
@@ -503,10 +507,19 @@ fn preinstall(
 }
 
 /// 和主人的通知房间（ADR-0016）：插件通知、确认卡片都发进这里。没接 Matrix 时插件通知如实报不可用。
-fn notice_room(cfg: &Config, matrix: Option<&Arc<Matrix>>) -> Option<Arc<NoticeRoom>> {
+fn notice_room(
+    cfg: &Config,
+    matrix: Option<&Arc<Matrix>>,
+    languages: Arc<dyn Fn() -> Languages + Send + Sync>,
+) -> Option<Arc<NoticeRoom>> {
     matrix.map(|matrix| {
         let saved = cfg.core_state_dir().join("matrix-notice-room");
-        Arc::new(NoticeRoom::new(matrix.clone(), &cfg.username, saved))
+        Arc::new(NoticeRoom::new(
+            matrix.clone(),
+            &cfg.username,
+            saved,
+            languages,
+        ))
     })
 }
 

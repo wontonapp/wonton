@@ -12,6 +12,7 @@ use super::file_tools::decision;
 use super::{Bus, Caller, Outcome, cards, error, naming};
 use crate::files::Failure;
 use crate::files::share_fs::saving::{SaveTarget, Staged};
+use crate::l10n;
 use crate::plugin::save_grants::covers;
 
 pub(super) const LIST: &str = "list_shares";
@@ -91,7 +92,8 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
         bus.record(caller, &name, &audited, Decision::Allowed, None, &outcome);
         return outcome.result;
     }
-    let draft = cards::save_file(&caller.name, &staged.files, &target);
+    let langs = bus.plugins.owner_languages();
+    let draft = cards::save_file(&caller.name, &staged.files, &target, &langs);
     let ticket = match bus.confirmations.ask(&caller.id, draft).await {
         Ok(ticket) => ticket,
         Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
@@ -106,7 +108,11 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResul
         .err()
         .map(|e| {
             tracing::error!(plugin = %caller.id, error = %e, "记存文件的授权失败");
-            format!("授权没记下来（{e}），下次存还要问主人")
+            l10n::text(
+                &langs,
+                "chat-save-note-grant",
+                &[("error", e.to_string().into())],
+            )
         });
     let summary = summary(&target, &staged, "granted", &granted);
     let (outcome, audited) = place(bus, staged, target, summary, note).await;
@@ -173,6 +179,7 @@ async fn place(
     note: Option<String>,
 ) -> (Outcome, Value) {
     let folder = target.folder();
+    let langs = bus.plugins.owner_languages();
     let placed = match bus.files() {
         Ok(files) => files.place_saved(staged, target).await,
         Err(failure) => Err(failure),
@@ -187,9 +194,13 @@ async fn place(
         let message = if placed.saved.is_empty() {
             failure.to_string()
         } else {
-            format!(
-                "存好了 {}，后面的没存成：{failure}",
-                placed.saved.join("、")
+            l10n::text(
+                &langs,
+                "chat-save-partial",
+                &[
+                    ("saved", l10n::list(&langs, &placed.saved).into()),
+                    ("failure", failure.to_string().into()),
+                ],
             )
         };
         return (Outcome::failed(message), summary);
@@ -199,8 +210,16 @@ async fn place(
         result["note"] = json!(note);
     }
     let message = match note {
-        Some(note) => format!("已存进 {folder}。{note}"),
-        None => format!("已存进 {folder}"),
+        Some(note) => l10n::text(
+            &langs,
+            "chat-save-done-note",
+            &[("folder", folder.as_str().into()), ("note", note.into())],
+        ),
+        None => l10n::text(
+            &langs,
+            "chat-save-done",
+            &[("folder", folder.as_str().into())],
+        ),
     };
     let outcome = Outcome {
         result: CallToolResult::success(vec![ContentBlock::text(result.to_string())]),

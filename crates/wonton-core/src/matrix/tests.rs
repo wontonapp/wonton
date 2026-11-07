@@ -10,6 +10,7 @@ use super::fake::{Fake, User, start};
 use super::{Avatar, BotSpec, Matrix};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
+use crate::plugin::languages::Languages;
 
 async fn connect(dir: &tempfile::TempDir, config: &MatrixConfig) -> Matrix {
     Matrix::connect(config, dir.path(), HttpClient::new())
@@ -132,7 +133,12 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
     }
 
     // 插件装好后交给主人：主人在里面，双方的 m.direct 都记着它。
-    assert!(matrix.hand_over("owner", &bot).await.unwrap());
+    assert!(
+        matrix
+            .hand_over("owner", &bot, &Languages::default())
+            .await
+            .unwrap()
+    );
     {
         let state = fake.state();
         let both = BTreeSet::from(["@echo:test".to_owned(), "@owner:test".to_owned()]);
@@ -145,7 +151,12 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
         assert!(state.devices("@owner:test").is_empty());
     }
     // 主人已经在里面（重装）：不再交一次。
-    assert!(!matrix.hand_over("owner", &bot).await.unwrap());
+    assert!(
+        !matrix
+            .hand_over("owner", &bot, &Languages::default())
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -155,7 +166,10 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
     let matrix = connect(&dir, &config).await;
     let taken = BTreeSet::new();
     let first = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
-    matrix.hand_over("owner", &first).await.unwrap();
+    matrix
+        .hand_over("owner", &first, &Languages::default())
+        .await
+        .unwrap();
     matrix
         .delete_device(&first.account.user_id, &first.device_id)
         .await
@@ -216,7 +230,12 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
         fake.state().user("@echo:test").display_name.as_deref(),
         Some("主人改过的名字")
     );
-    assert!(matrix.hand_over("owner", &third).await.unwrap());
+    assert!(
+        matrix
+            .hand_over("owner", &third, &Languages::default())
+            .await
+            .unwrap()
+    );
     assert_eq!(members(&fake, &third.account.home_room).len(), 2);
 }
 
@@ -253,7 +272,12 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
         .unwrap();
     assert_eq!(third.account, first.account);
     assert_eq!(fake.state().rooms.len(), 1);
-    assert!(matrix.hand_over("owner", &third).await.unwrap());
+    assert!(
+        matrix
+            .hand_over("owner", &third, &Languages::default())
+            .await
+            .unwrap()
+    );
     assert_eq!(members(&fake, &first.account.home_room).len(), 2);
 }
 

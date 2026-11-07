@@ -8,6 +8,8 @@ use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::{Value, json};
 use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, WindowEnd};
 
+use crate::plugin::languages::Languages;
+
 use super::confirm::{AnswerError, Confirmations, DEFAULT_WINDOW};
 use super::test_support::Cards;
 use super::tests::{Setup, setup_window, text};
@@ -211,8 +213,19 @@ async fn core_tools_offer_no_window_and_refuse_the_answer() {
 /// 没有总线的场合：一张能开时段的卡片，点了“都允许”。
 async fn open_on(confirmations: &Arc<Confirmations>, cards: &Arc<Cards>) -> String {
     let caller = PluginId::parse("com.example.agent").unwrap();
-    let draft = cards::tool_call("Bot", "笔记", "delete", &json!({}), false)
-        .with_window("app.example.notes", confirmations.window_length());
+    let draft = cards::tool_call(
+        "Bot",
+        "笔记",
+        "delete",
+        &json!({}),
+        false,
+        &Languages::default(),
+    )
+    .with_window(
+        "app.example.notes",
+        confirmations.window_length(),
+        &Languages::default(),
+    );
     let asking = confirmations.clone();
     let ask = tokio::spawn(async move { asking.ask(&caller, draft).await });
     let id = cards.wait_for(1).await.id;
@@ -252,11 +265,16 @@ async fn after_a_restart_the_window_is_gone_and_its_card_says_so_once_matrix_is_
         None
     );
     assert!(restarted.has_leftover_windows());
-    assert!(restarted.recover_windows().await.is_empty());
+    assert!(
+        restarted
+            .recover_windows(&Languages::default())
+            .await
+            .is_empty()
+    );
     assert!(restarted.has_leftover_windows(), "没改成功的留着");
 
     cards.broken.store(false, Ordering::SeqCst);
-    let ended = restarted.recover_windows().await;
+    let ended = restarted.recover_windows(&Languages::default()).await;
     assert_eq!(ended[0].reason, WindowEnd::CoreRestarted);
     assert_eq!(ended[0].allowed, None);
     assert!(!restarted.has_leftover_windows());

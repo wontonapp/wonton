@@ -79,7 +79,8 @@ impl Bus {
         let bus = self.clone();
         tokio::spawn(async move {
             loop {
-                for ended in bus.confirmations.recover_windows().await {
+                let langs = bus.plugins.owner_languages();
+                for ended in bus.confirmations.recover_windows(&langs).await {
                     bus.audit_ended(&ended, None);
                 }
                 if !bus.confirmations.has_leftover_windows() {

@@ -257,13 +257,21 @@ impl PluginManager {
         &self,
         bot: &ProvisionedBot,
     ) -> Result<bool, InstallError> {
-        Ok(self.matrix()?.hand_over(&self.cfg.owner, bot).await?)
+        let langs = self.owner_languages();
+        Ok(self
+            .matrix()?
+            .hand_over(&self.cfg.owner, bot, &langs)
+            .await?)
     }
 
     /// 安装在交出主房间之后失败了：收回它，主人那边不留一个没有 Bot 应答的私聊。
     pub(super) async fn withdraw_home_room(&self, bot: &ProvisionedBot) -> Result<(), String> {
         let matrix = self.matrix().map_err(|e| e.to_string())?;
-        matrix.withdraw(bot).await.map_err(|e| e.to_string())
+        let langs = self.owner_languages();
+        matrix
+            .withdraw(bot, &langs)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// 安装失败回滚：吊销这次登录的设备，账号和主房间留给下次安装。

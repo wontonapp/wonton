@@ -16,7 +16,9 @@ use tokio::sync::oneshot;
 use wonton_protocol::{Answer, CardChoice, ConfirmationCard, ConfirmationState};
 
 use super::cards::Draft;
+use crate::l10n;
 use crate::plugin::PluginId;
+use crate::plugin::languages::Languages;
 use crate::secret::random_token;
 
 /// 同一个插件同时等待确认的请求最多这么多，再多的直接拒绝。
@@ -335,11 +337,12 @@ impl Confirmations {
 
     /// 还在等主人的确认被新提交取代（ADR-0033 的暂存）：卡片改成“已被新版本取代”，
     /// 等待的那次工具调用拿到 [`Refusal::Superseded`]。已经不在等（回答了或在执行）时不动，返回假。
-    pub(super) async fn supersede(&self, id: &str) -> bool {
+    pub(super) async fn supersede(&self, id: &str, langs: &Languages) -> bool {
+        let superseded = l10n::text(langs, "chat-superseded", &[]);
         let chosen = self.lock().slots.get_mut(id).and_then(|slot| {
             let waiter = slot.waiter.take()?;
             slot.card.state = ConfirmationState::Failed {
-                message: "已被新版本取代".to_owned(),
+                message: superseded,
             };
             Some(waiter)
         });
@@ -355,7 +358,12 @@ impl Confirmations {
     }
 
     /// 这个 Bot 还在等的、关于某个插件的卡片：被这个插件的新提交取代（ADR-0033 的暂存）。
-    pub(super) async fn supersede_pending(&self, caller: &PluginId, plugin: &PluginId) -> bool {
+    pub(super) async fn supersede_pending(
+        &self,
+        caller: &PluginId,
+        plugin: &PluginId,
+        langs: &Languages,
+    ) -> bool {
         let pending = {
             let table = self.lock();
             table
@@ -371,7 +379,7 @@ impl Confirmations {
         let Some(id) = pending else {
             return false;
         };
-        self.supersede(&id).await
+        self.supersede(&id, langs).await
     }
 
     pub(super) async fn settle(&self, id: &str, state: ConfirmationState) {

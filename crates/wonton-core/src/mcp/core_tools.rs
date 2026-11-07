@@ -13,6 +13,7 @@ use super::{
     Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, profile_tools,
     save_tools,
 };
+use crate::l10n;
 use crate::plugin::manifest::{Manifest, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
@@ -308,19 +309,36 @@ async fn uninstall(
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let draft = cards::uninstall(&caller.name, &title, purge);
+    let langs = bus.plugins.owner_languages();
+    let draft = cards::uninstall(&caller.name, &title, purge, &langs);
     let run = move |bus: Arc<Bus>| async move {
         match bus.plugins.uninstall_detached(id.clone(), purge).await {
             Ok(report) => {
-                let data = if report.data_removed {
-                    "，数据已删除"
+                let message = if report.data_removed {
+                    l10n::text(
+                        &langs,
+                        "chat-uninstall-done-purge",
+                        &[("title", title.as_str().into())],
+                    )
                 } else {
-                    "，数据保留"
+                    l10n::text(
+                        &langs,
+                        "chat-uninstall-done-keep",
+                        &[("title", title.as_str().into())],
+                    )
                 };
                 let result = json!({"uninstalled": id, "report": report});
-                Outcome::ok(result.to_string(), format!("已卸载 {title}{data}"))
+                Outcome::ok(result.to_string(), message)
             }
-            Err(e) => Outcome::failed(format!("卸载 {id} 失败（{}）：{e}", e.kind())),
+            Err(e) => Outcome::failed(l10n::text(
+                &langs,
+                "chat-uninstall-failed",
+                &[
+                    ("id", id.as_str().into()),
+                    ("kind", e.kind().into()),
+                    ("error", e.to_string().into()),
+                ],
+            )),
         }
     };
     bus.confirmed(caller, name, value, draft, run).await
