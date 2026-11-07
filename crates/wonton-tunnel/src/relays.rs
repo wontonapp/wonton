@@ -6,16 +6,18 @@
 //! `/_wonton/api/tunnel` 和配对码，App 用它建自己一侧的 endpoint。
 //!
 //! 分档回退（[`spawn_tier_fallback`]）：endpoint 一开始只放最优先的一档，这一档全部连不上、持续
-//! 超过 [`FALLBACK_AFTER`] 才把下一档加进来；低档的中继端口恢复可达后撤掉。档内谁快用谁由 iroh 按
-//! 探测延迟挑（家中继），这里不排先后。
+//! 超过 [`FALLBACK_AFTER`] 才把下一档加进来；被撤的档里有中继真的收我们（探针 endpoint 带令牌
+//! 握手成功）才撤回来。档内谁快用谁由 iroh 按探测延迟挑（家中继），这里不排先后。
 
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use iroh::defaults::DEFAULT_HTTPS_PORT;
+use anyhow::Context;
 use iroh::endpoint::default_relay_mode;
-use iroh::{Endpoint, RelayConfig, RelayMap, RelayUrl, Watcher};
+use iroh::endpoint::presets;
+use iroh::tls::CaTlsConfig;
+use iroh::{Endpoint, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey, Watcher};
 use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -34,9 +36,6 @@ pub const FALLBACK_AFTER: Duration = Duration::from_secs(30);
 
 /// 回退判定多久看一次 iroh 的家中继状态。阈值是秒级的，1 秒的粒度够了。
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
-
-/// 探一个低档中继的端口连不连得上，等多久。
-const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// 一台中继：地址、可选的准入令牌、档位（数字小的优先）。
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -345,28 +344,100 @@ impl TierFallbackHandle {
     }
 }
 
-/// 中继的 TCP 端口现在连得上吗。连得上只说明中继进程活着，不代表准入还认我们；够撤档判断用了。
-async fn reachable(relay: &RelayUrl) -> bool {
-    let Some(host) = relay.host_str() else {
-        return false;
+/// 起一个只连 `map` 里这些中继的探针 endpoint：最小 preset、随机身份、不做直连和地址发现。它的
+/// 家中继状态就是「带令牌的真握手」的结论：中继进程活着却不收我们（令牌被吊销、配额用完、反向
+/// 代理后面后端挂了）时，握手到不了 Connected，不会误判成恢复（只看 TCP 端口就会来回切）。
+///
+/// 准入按 endpoint ID 的话（ADR-0048 里收费后的 http 回调），探针的临时身份不在名单里：探针会一直
+/// 判成不可达，停在低档上。这是保守方向——连接不断，只是恢复判断变慢，等有按身份的探针办法再换。
+async fn spawn_probe(map: RelayMap, tls: Option<CaTlsConfig>) -> anyhow::Result<Endpoint> {
+    let mut builder = Endpoint::builder(presets::Minimal)
+        .secret_key(SecretKey::generate())
+        .clear_ip_transports()
+        .relay_mode(RelayMode::Custom(map));
+    if let Some(tls) = tls {
+        builder = builder.ca_tls_config(tls);
+    }
+    builder.bind().await.context("绑定中继探针 endpoint")
+}
+
+/// 按当前被撤的档（tiers 档以上全部启用时就是 0..wanted）对齐探针的覆盖集合，返回探针真正连上的
+/// 中继——恢复信号。没有激活回退（wanted == 0）时关掉探针。
+async fn probe_signal(
+    probe: &mut Option<Endpoint>,
+    table: &RelayTable,
+    wanted: usize,
+    tls: Option<CaTlsConfig>,
+) -> Vec<RelayUrl> {
+    if wanted == 0 {
+        if let Some(p) = probe.take() {
+            tokio::spawn(async move { p.close().await });
+        }
+        return Vec::new();
+    }
+    let wanted: Vec<Relay> = (0..wanted)
+        .flat_map(|tier| table.tier(tier as u8))
+        .cloned()
+        .collect();
+    if probe.as_ref().is_none_or(Endpoint::is_closed) {
+        if let Some(dead) = probe.take() {
+            drop(dead);
+        }
+        match spawn_probe(relay_map(table.relays(), 0), tls).await {
+            Ok(p) => *probe = Some(p),
+            Err(error) => {
+                tracing::warn!(%error, "中继表：恢复探针起不来，这拍不判恢复");
+                return Vec::new();
+            }
+        }
+    }
+    let Some(p) = probe.as_ref() else {
+        return Vec::new();
     };
-    let port = relay.port_or_known_default().unwrap_or(DEFAULT_HTTPS_PORT);
-    // 连接成功才算可达：被快速拒绝（Ok(Err)）是中继挂了，不是可达。
-    tokio::time::timeout(PROBE_TIMEOUT, tokio::net::TcpStream::connect((host, port)))
-        .await
-        .is_ok_and(|connect| connect.is_ok())
+    // 对齐覆盖集合：多的撤掉、缺的加进。
+    let held: Vec<RelayUrl> = p
+        .home_relay_status()
+        .get()
+        .iter()
+        .map(|status| status.url().clone())
+        .collect();
+    for url in &held {
+        if !wanted.iter().any(|relay| &relay.url == url) {
+            p.remove_relay(url).await;
+        }
+    }
+    for relay in &wanted {
+        if !held.contains(&relay.url) {
+            p.insert_relay(relay.url.clone(), Arc::new(relay.relay_config()))
+                .await;
+        }
+    }
+    p.home_relay_status()
+        .get()
+        .iter()
+        .filter(|status| status.is_connected())
+        .map(|status| status.url().clone())
+        .collect()
 }
 
 /// 盯着 iroh 的家中继状态跑分档回退：到点了就 [`Endpoint::insert_relay`] 下一档、
 /// [`Endpoint::remove_relay`] 撤掉不要的档。endpoint 关掉后自己结束。
+///
+/// `probe_tls` 是探针 endpoint 的 TLS 配置：生产里不设（用 iroh 默认的证书校验，和主 endpoint 一致），
+/// 测试里传跳过校验（本地中继是自签证书）。探针的 TLS 立场要和主 endpoint 一样，否则会误判。
 pub fn spawn_tier_fallback(
     endpoint: Endpoint,
     table: RelayTable,
     after: Duration,
+    probe_tls: Option<CaTlsConfig>,
 ) -> TierFallbackHandle {
     let (enabled, watching) = tokio::sync::watch::channel(1);
     tokio::spawn(async move {
         let mut fallback = TierFallback::new();
+        // 长寿命探针：只在回退激活期间存在，档数变了不改建，直接对它 insert/remove_relay 对齐被撤
+        // 的档集合（和主 endpoint 同一套调用）。不重建就不必每次重新 bind + 重新握手：换档的瞬间
+        // 主 endpoint 也在重连同一批中继，两边不会互相抢拨号。
+        let mut probe: Option<Endpoint> = None;
         let mut ticker = tokio::time::interval(POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -381,24 +452,13 @@ pub fn spawn_tier_fallback(
                 .filter(|status| status.is_connected())
                 .map(|status| status.url().clone())
                 .collect();
-            // 只有低档恢复了才要撤档，才值得去探它们的端口。
-            let mut reachable_relays = Vec::new();
-            if fallback.enabled_tiers() > 1 {
-                let mut probes = tokio::task::JoinSet::new();
-                for tier in 0..fallback.enabled_tiers() - 1 {
-                    for relay in table.tier(tier as u8) {
-                        let url = relay.url.clone();
-                        probes.spawn(async move { (url.clone(), reachable(&url).await) });
-                    }
-                }
-                while let Some(joined) = probes.join_next().await {
-                    if let Ok((url, alive)) = joined
-                        && alive
-                    {
-                        reachable_relays.push(url);
-                    }
-                }
-            }
+            let reachable_relays = probe_signal(
+                &mut probe,
+                &table,
+                fallback.enabled_tiers().saturating_sub(1),
+                probe_tls.clone(),
+            )
+            .await;
             match fallback.step(&table, &connected, &reachable_relays, Instant::now(), after) {
                 Some(TierAction::Enable(tier)) => {
                     tracing::info!(tier, relays = ?table.tier(tier).iter().map(|r| r.url.clone()).collect::<Vec<_>>(), "中继表：这一档全断超阈值，加进下一档");

@@ -1,7 +1,11 @@
-//! 中继表的行为测试（ADR-0048）：两个本地测试中继，第一档开 shared_token 准入。带令牌能经中继
-//! 连上，不带令牌被拒；第一档停掉以后在阈值内经第二档连上；第一档恢复后撤掉第二档。
+//! 中继表的行为测试（ADR-0048）。需要“同一地址上停掉再恢复 / 换成拒绝令牌的中继”的档，走测试
+//! 自己握着的 [`Forwarder`]：表里的地址是转发器前门，从头到尾不变，后端随时切（无后端 = 中继挂了
+//! 反代还活着）。中继本身一律 bind(0) 随机端口，没有先绑后放的竞态，也不重试。
+//!
+//! 覆盖：带令牌能经中继连上、不带令牌被拒；第一档停掉后在阈值内经第二档连上；第一档恢复后撤掉
+//! 第二档；第一档换成拒绝令牌的中继后不撤回（#641）；三档时第 1 档恢复撤回一档。
 
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,10 +16,10 @@ use iroh::{
     tls::CaTlsConfig,
 };
 use iroh_relay::server::{
-    Access, AccessControl, CertConfig, ClientRequest, DynAccessControl,
+    Access, AccessControl, AllowAll, CertConfig, ClientRequest, DynAccessControl,
     RelayConfig as RelayServerConfig, Server as RelayServer, ServerConfig, TlsConfig,
 };
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use wonton_tunnel::relays::{RelayTable, relay_map, spawn_tier_fallback};
 use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelServer, TunnelStatus};
 
@@ -23,6 +27,10 @@ use crate::support::{Phone, Upstream, WAIT};
 
 /// 测试里的回退阈值。iroh 第一次连上家中继多半在几百毫秒内，2 秒的阈值足够它先连上第一档。
 const FALLBACK_AFTER: Duration = Duration::from_secs(2);
+
+/// 断言“不撤回”要等的窗口。修前的 TCP 探测在拒绝中继出现后 1-3 秒内就会错判恢复并撤档
+/// （1 秒轮询 + 2 秒探测限时），8 秒的窗口足够把误判等出来；修对以后这个窗口白等 8 秒。
+const FLAP_WINDOW: Duration = Duration::from_secs(8);
 
 /// 只认 `token` 的准入：和 iroh-relay 二进制的 `shared_token` 一个做法。
 #[derive(Debug)]
@@ -43,19 +51,11 @@ impl AccessControl for SharedToken {
     }
 }
 
-/// 在 `port`（0 为系统分配）上起一个本地测试中继。
-///
-/// 先把端口握在手里再生成证书：证书要几毫秒，先放手的话端口会被并发的 `bind(0)` 抢走；握住，
-/// 生成完立刻 `drop` 再让 iroh 绑，空窗只有微秒级。
-async fn spawn_relay(
-    port: u16,
-    access: Arc<dyn DynAccessControl>,
-) -> anyhow::Result<(RelayUrl, RelayServer)> {
-    let held = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await?;
-    let port = held.local_addr()?.port();
+/// 在随机端口上起一个本地测试中继：bind(0) 由内核原子分配，没有先绑后放的竞态。
+async fn spawn_relay(access: Arc<dyn DynAccessControl>) -> anyhow::Result<(RelayUrl, RelayServer)> {
     let (_certs, server_config) = iroh_relay::server::testing::self_signed_tls_certs_and_config();
     let tls = TlsConfig::new(
-        (Ipv4Addr::LOCALHOST, port),
+        (Ipv4Addr::LOCALHOST, 0),
         CertConfig::Manual { server_config },
     );
     // TLS 和明文 HTTP（captive portal 用）是两个监听器：HTTP 给个随机端口，别和 TLS 抢。
@@ -65,7 +65,6 @@ async fn spawn_relay(
     relay.access = access;
     let mut config = ServerConfig::default();
     config.relay = Some(relay);
-    drop(held);
     let server = RelayServer::spawn(config).await?;
     let url = format!("https://{}", server.https_addr().expect("配置了 TLS 地址"))
         .parse()
@@ -73,22 +72,60 @@ async fn spawn_relay(
     Ok((url, server))
 }
 
-/// 放手到 iroh 绑之间的空窗被同进程的别的 `bind(0)` 抢走时重来一次（最多 50 次；固定端口时顺便
-/// 等旧的监听器关掉）。
-async fn spawn_relay_retrying(
-    port: u16,
-    access: Arc<dyn DynAccessControl>,
-) -> anyhow::Result<(RelayUrl, RelayServer)> {
-    for _ in 0..50 {
-        match spawn_relay(port, access.clone()).await {
-            Ok(spawned) => return Ok(spawned),
-            Err(err) if format!("{err:#}").contains("in use") => {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+/// 测试自己握着的 TCP 转发器：前门绑一次、整条测试不放，表里的地址从头到尾不变；后端随时切。
+///
+/// - 无后端时接受连接后立即关：中继进程挂了、反向代理还活着，正是 #641 说的那种“端口连得上、
+///   中继不收我们”。
+/// - 后端换成另一台中继：同一个地址上“停掉再恢复”或“换成拒绝令牌的中继”，不用固定端口，
+///   也不用重试（#648 的 `spawn_relay_retrying` 是拿重试盖竞态，这里整个不成立：竞态不存在了）。
+struct Forwarder {
+    /// 前门地址：放进中继表的就是它。
+    front: SocketAddr,
+    backend: tokio::sync::watch::Sender<Option<SocketAddr>>,
+}
+
+impl Forwarder {
+    async fn spawn() -> anyhow::Result<Self> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let front = listener.local_addr()?;
+        let (backend, mut backend_rx) = tokio::sync::watch::channel(None);
+        tokio::spawn(async move {
+            loop {
+                let accepted = tokio::select! {
+                    accepted = listener.accept() => accepted,
+                    _ = backend_rx.changed() => continue,
+                };
+                let (mut downstream, _) = match accepted {
+                    Ok(accepted) => accepted,
+                    // accept 的良性错误（连接在 accept 前就被对端重置等，争抢压测下很常见）不退出：
+                    // 前门一关，表里的地址就再也连不上，回退判定全盘失效。歇一下再收，避免持续
+                    // 出错时热转。
+                    Err(_) => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        continue;
+                    }
+                };
+                let Some(backend) = *backend_rx.borrow() else {
+                    continue; // 无后端：刚接受的连接随变量一起关掉
+                };
+                if let Ok(mut upstream) = TcpStream::connect(backend).await {
+                    tokio::spawn(async move {
+                        let _ = tokio::io::copy_bidirectional(&mut downstream, &mut upstream).await;
+                    });
+                }
             }
-            Err(err) => return Err(err),
-        }
+        });
+        Ok(Self { front, backend })
     }
-    anyhow::bail!("端口 {port} 一直绑不上")
+
+    fn set_backend(&self, backend: Option<SocketAddr>) {
+        self.backend.send_replace(backend);
+    }
+
+    /// 前门的中继地址（表里用的形式）。
+    fn relay_url(&self) -> RelayUrl {
+        format!("https://{}", self.front).parse().unwrap()
+    }
 }
 
 /// 只走本地测试中继的 endpoint：不做地址发现，不走 UDP 直连，中继表由表项给。
@@ -112,7 +149,7 @@ async fn relay_endpoint(key: SecretKey, relays: RelayMap) -> Endpoint {
 
 #[tokio::test]
 async fn a_relay_with_a_shared_token_admits_endpoints_that_carry_it() -> anyhow::Result<()> {
-    let (url, _relay) = spawn_relay_retrying(0, Arc::new(SharedToken::new("tok"))).await?;
+    let (url, _relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
     let table = RelayTable::parse(&format!("https://tok@{}", url.authority())).unwrap();
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
@@ -137,7 +174,7 @@ async fn a_relay_with_a_shared_token_admits_endpoints_that_carry_it() -> anyhow:
 
 #[tokio::test]
 async fn a_relay_with_a_shared_token_rejects_endpoints_without_it() -> anyhow::Result<()> {
-    let (url, _relay) = spawn_relay_retrying(0, Arc::new(SharedToken::new("tok"))).await?;
+    let (url, _relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
     let table = RelayTable::parse(&url.to_string()).unwrap();
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
@@ -174,40 +211,36 @@ async fn a_relay_with_a_shared_token_rejects_endpoints_without_it() -> anyhow::R
 
 #[tokio::test]
 async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()> {
-    // 第一档的端口固定，停掉以后能在同一个地址上恢复。挑内核临时端口段之外的端口：中继停掉以后
-    // 临时端口马上会被别的 bind(0) 拿走，撤档用的 TCP 探测就会把无关服务当成“低档恢复”。
-    let port = {
-        let mut found = None;
-        for candidate in 24100..24200u16 {
-            if TcpListener::bind((Ipv4Addr::LOCALHOST, candidate))
-                .await
-                .is_ok()
-            {
-                found = Some(candidate);
-                break;
-            }
-        }
-        found.ok_or_else(|| anyhow::anyhow!("24100..24200 里找不到空端口"))?
-    };
-    let (first_url, first_relay) =
-        spawn_relay_retrying(port, Arc::new(SharedToken::new("tok"))).await?;
+    // 第一档走转发器：表里的地址是前门，整条测试不变；中继在转发器后面，停掉和恢复都切后端。
+    let first = Forwarder::spawn().await?;
+    let first_url = first.relay_url();
+    let (_first_relay_url, first_relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
+    first.set_backend(Some(first_relay.https_addr().expect("配置了 TLS 地址")));
     let (_second_map, second_url, second_relay) = run_relay_server().await.unwrap();
-    let table = RelayTable::parse(&format!("https://tok@127.0.0.1:{port};{second_url}")).unwrap();
+    let table = RelayTable::parse(&format!("https://tok@{};{second_url}", first.front)).unwrap();
     assert_eq!(table.tier_count(), 2);
 
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
     let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
-    let mut server_fallback =
-        spawn_tier_fallback(server_endpoint.clone(), table.clone(), FALLBACK_AFTER);
+    let mut server_fallback = spawn_tier_fallback(
+        server_endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        Some(CaTlsConfig::insecure_skip_verify()),
+    );
     let server = TunnelServer::spawn(
         server_endpoint.clone(),
         Allowlist::new([device.public()]),
         upstream.addr,
     );
     let phone_endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
-    let mut phone_fallback =
-        spawn_tier_fallback(phone_endpoint.clone(), table.clone(), FALLBACK_AFTER);
+    let mut phone_fallback = spawn_tier_fallback(
+        phone_endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        Some(CaTlsConfig::insecure_skip_verify()),
+    );
 
     // 先只拿第一档当拨号提示：连上的路径只能是第一档。拨号前等两端的 R1 传输真正连上：端点刚
     // 绑定时传输还在连，拨号撞上没就绪的传输会白等一个 DIAL_DEADLINE。
@@ -233,10 +266,11 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
             .with_relay_url(first_url.clone())
             .with_relay_url(second_url.clone()),
     );
-    // 停掉第一档：要显式关。旧连接的唯一路径随第一档的传输一起断，QUIC 的空闲超时会让它自己
-    // 断开：订阅客户端状态等它断（事件），再重拨。不主动探杀：探测返回后马上重拨会撞上 iroh
-    // 还没处理完的路径记忆，握手只发往死路径（实测）。
+    // 停掉第一档：后端中继关掉（旧连接的唯一路径随它断，QUIC 空闲超时会让连接自己断开，事件），
+    // 前门留着一个没后端的转发器——中继进程挂了、反向代理还活着，新的拨号连上前门就被关。
+    // 不主动探杀：探测返回后马上重拨会撞上 iroh 还没处理完的路径记忆，握手只发往死路径（实测）。
     first_relay.shutdown().await.ok();
+    first.set_backend(None);
     tokio::time::timeout(WAIT, phone_fallback.wait_enabled_tiers(2))
         .await
         .expect("手机侧应加进第二档");
@@ -253,9 +287,10 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
     let path = phone.client.path().expect("请求应有选中路径");
     assert_eq!(path.remote, TransportAddr::Relay(second_url.clone()));
 
-    // 第一档在同一个地址上恢复：低档的端口连得上，两侧撤掉第二档，请求回到第一档。
-    let (_recovered_url, recovered_relay) =
-        spawn_relay_retrying(port, Arc::new(SharedToken::new("tok"))).await?;
+    // 第一档在同一个地址上恢复：后端换回一台认令牌的中继，前门没变，两侧撤掉第二档，请求回到
+    // 第一档。
+    let (_recovered_url, recovered_relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
+    first.set_backend(Some(recovered_relay.https_addr().expect("配置了 TLS 地址")));
     // iroh 重连中继有退避：等两侧都真正连上第一档（家里继状态里 R1 是 Connected）再撤档、发请求。
     wait_relay_connected(&phone_endpoint, &first_url).await;
     wait_relay_connected(&server_endpoint, &first_url).await;
@@ -281,6 +316,206 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
     assert_eq!(path.remote, TransportAddr::Relay(first_url.clone()));
 
     drop(recovered_relay);
+    drop(first);
+    phone.client.close();
+    phone_endpoint.close().await;
+    server_endpoint.close().await;
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_refusing_top_tier_does_not_flap() -> anyhow::Result<()> {
+    // 第一档的地址活着但不收我们：中继进程在听（端口连得上），却不认我们的令牌（配额用完、令牌
+    // 被吊销）。回退到第二档以后不许撤回来：端口连得上不等于中继恢复。
+    // 表里放的是转发器前门：先是认令牌的中继，回退后切成拒绝令牌的中继——同一地址换成不收我们
+    // 的中继，正是 #641 的来回切场景。
+    let first = Forwarder::spawn().await?;
+    let first_url = first.relay_url();
+    let (_first_relay_url, first_relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
+    first.set_backend(Some(first_relay.https_addr().expect("配置了 TLS 地址")));
+    let (_second_map, second_url, second_relay) = run_relay_server().await.unwrap();
+    let table = RelayTable::parse(&format!("https://tok@{};{second_url}", first.front)).unwrap();
+    assert_eq!(table.tier_count(), 2);
+
+    let device = SecretKey::generate();
+    let upstream = Upstream::spawn().await;
+    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let mut server_fallback = spawn_tier_fallback(
+        server_endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        Some(CaTlsConfig::insecure_skip_verify()),
+    );
+    let server = TunnelServer::spawn(
+        server_endpoint.clone(),
+        Allowlist::new([device.public()]),
+        upstream.addr,
+    );
+    let phone_endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let mut phone_fallback = spawn_tier_fallback(
+        phone_endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        Some(CaTlsConfig::insecure_skip_verify()),
+    );
+
+    // 先经第一档连上：连接建立在第二档之前，后面断言它一直不断。
+    wait_relay_connected(&phone_endpoint, &first_url).await;
+    wait_relay_connected(&server_endpoint, &first_url).await;
+    let address = EndpointAddr::new(server.endpoint().id()).with_relay_url(first_url.clone());
+    let phone = Phone::on(phone_endpoint.clone(), address, ProxyAccess::Open).await;
+    let response = timeout_get(&phone, "/via-first").await;
+    assert_eq!(response.status, 200);
+
+    // 第一档停掉（后端中继关掉；转发器还在听，像反代活着但后端没了），回退到第二档。
+    phone.client.set_server_addr(
+        EndpointAddr::new(server.endpoint().id())
+            .with_relay_url(first_url.clone())
+            .with_relay_url(second_url.clone()),
+    );
+    first_relay.shutdown().await.ok();
+    tokio::time::timeout(WAIT, phone_fallback.wait_enabled_tiers(2))
+        .await
+        .expect("手机侧应加进第二档");
+    tokio::time::timeout(WAIT, server_fallback.wait_enabled_tiers(2))
+        .await
+        .expect("服务端侧应加进第二档");
+    wait_relay_connected(&phone_endpoint, &second_url).await;
+    wait_relay_connected(&server_endpoint, &second_url).await;
+    wait_disconnected(&phone).await;
+    wait_reestablished(&phone).await;
+    let response = timeout_get(&phone, "/via-second").await;
+    assert_eq!(response.status, 200);
+    let path = phone.client.path().expect("请求应有选中路径");
+    assert_eq!(path.remote, TransportAddr::Relay(second_url.clone()));
+
+    // 第一档的地址上换成一个不认我们令牌的中继：端口连得上（转发器在听），握手被拒。
+    // 不许判成“恢复”。
+    let (_refusing_url, refusing_relay) = spawn_relay(Arc::new(SharedToken::new("other"))).await?;
+    first.set_backend(Some(refusing_relay.https_addr().expect("配置了 TLS 地址")));
+
+    // 撤回判定在几秒内就该发生一次（修前的 TCP 探测就是这样错判的），等一个比它宽的窗口：
+    // 窗口内两侧都不许把启用档数降回 1。预期超时，真的撤回了就是来回切。
+    let no_flap = tokio::time::timeout(FLAP_WINDOW, phone_fallback.wait_enabled_tiers(1)).await;
+    assert!(no_flap.is_err(), "手机侧不应撤回第二档：第一档只是端口活着");
+    let no_flap = tokio::time::timeout(FLAP_WINDOW, server_fallback.wait_enabled_tiers(1)).await;
+    assert!(
+        no_flap.is_err(),
+        "服务端侧不应撤回第二档：第一档只是端口活着"
+    );
+    // 连接一直不断：隧道不许在这段时间里掉过线，窗口过后同一个连接还能发请求。
+    let dropped = tokio::time::timeout(FLAP_WINDOW, wait_disconnected(&phone)).await;
+    assert!(dropped.is_err(), "回退期间隧道不该断开");
+    let response = timeout_get(&phone, "/via-second-still").await;
+    assert_eq!(response.status, 200);
+    let path = phone.client.path().expect("请求应有选中路径");
+    assert_eq!(path.remote, TransportAddr::Relay(second_url.clone()));
+
+    phone.client.close();
+    phone_endpoint.close().await;
+    server_endpoint.close().await;
+    server.shutdown().await;
+    drop(first);
+    refusing_relay.shutdown().await.ok();
+    second_relay.shutdown().await.ok();
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_recovered_middle_tier_pulls_back_one_level() -> anyhow::Result<()> {
+    // 三档：0、1 档都停掉落到第 2 档，再让第 1 档恢复。撤档一次只撤一档：探针得跟着启用档数
+    // 变，把新被撤的第 1 档也探起来——修前探针建好就复用，第 1 档恢复没人探，撤不回来。
+    let tier0 = Forwarder::spawn().await?;
+    let tier1 = Forwarder::spawn().await?;
+    let (_r0_url, r0) = spawn_relay(Arc::new(SharedToken::new("tok0"))).await?;
+    tier0.set_backend(Some(r0.https_addr().expect("配置了 TLS 地址")));
+    let (_r1_url, r1) = spawn_relay(Arc::new(AllowAll)).await?;
+    tier1.set_backend(Some(r1.https_addr().expect("配置了 TLS 地址")));
+    let (_third_map, third_url, third_relay) = run_relay_server().await.unwrap();
+    let table = RelayTable::parse(&format!(
+        "https://tok0@{};https://{};{third_url}",
+        tier0.front, tier1.front
+    ))
+    .unwrap();
+    assert_eq!(table.tier_count(), 3);
+
+    let device = SecretKey::generate();
+    let upstream = Upstream::spawn().await;
+    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let mut server_fallback = spawn_tier_fallback(
+        server_endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        Some(CaTlsConfig::insecure_skip_verify()),
+    );
+    let server = TunnelServer::spawn(
+        server_endpoint.clone(),
+        Allowlist::new([device.public()]),
+        upstream.addr,
+    );
+    let phone_endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let mut phone_fallback = spawn_tier_fallback(
+        phone_endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        Some(CaTlsConfig::insecure_skip_verify()),
+    );
+
+    // 先经第 0 档连上。
+    wait_relay_connected(&phone_endpoint, &tier0.relay_url()).await;
+    wait_relay_connected(&server_endpoint, &tier0.relay_url()).await;
+    let address = EndpointAddr::new(server.endpoint().id()).with_relay_url(tier0.relay_url());
+    let phone = Phone::on(phone_endpoint.clone(), address, ProxyAccess::Open).await;
+    let response = timeout_get(&phone, "/via-tier0").await;
+    assert_eq!(response.status, 200);
+
+    // 0、1 档都停（后端关、前门留着没后端的转发器），两次落档到第 2 档。
+    phone.client.set_server_addr(
+        EndpointAddr::new(server.endpoint().id())
+            .with_relay_url(tier0.relay_url())
+            .with_relay_url(tier1.relay_url())
+            .with_relay_url(third_url.clone()),
+    );
+    r0.shutdown().await.ok();
+    r1.shutdown().await.ok();
+    tier0.set_backend(None);
+    tier1.set_backend(None);
+    tokio::time::timeout(WAIT, phone_fallback.wait_enabled_tiers(3))
+        .await
+        .expect("手机侧应落到第三档");
+    tokio::time::timeout(WAIT, server_fallback.wait_enabled_tiers(3))
+        .await
+        .expect("服务端侧应落到第三档");
+    wait_relay_connected(&phone_endpoint, &third_url).await;
+    wait_relay_connected(&server_endpoint, &third_url).await;
+    wait_disconnected(&phone).await;
+    wait_reestablished(&phone).await;
+    let response = timeout_get(&phone, "/via-third").await;
+    assert_eq!(response.status, 200);
+
+    // 第 1 档恢复（同一前门换上新后端）：撤档一次只撤一档，第 2 档撤掉、第 1 档的路径接上。
+    let (_r1b_url, r1b) = spawn_relay(Arc::new(AllowAll)).await?;
+    tier1.set_backend(Some(r1b.https_addr().expect("配置了 TLS 地址")));
+    tokio::time::timeout(WAIT, phone_fallback.wait_enabled_tiers(2))
+        .await
+        .expect("手机侧应撤回到启用两档");
+    tokio::time::timeout(WAIT, server_fallback.wait_enabled_tiers(2))
+        .await
+        .expect("服务端侧应撤回到启用两档");
+    wait_relay_connected(&phone_endpoint, &tier1.relay_url()).await;
+    wait_relay_connected(&server_endpoint, &tier1.relay_url()).await;
+    // 旧连接还握在经第 2 档的中继上（remove_relay 不断开已建立的连接）：把它停掉，重拨走第 1 档。
+    third_relay.shutdown().await.ok();
+    wait_disconnected(&phone).await;
+    wait_reestablished(&phone).await;
+    let response = timeout_get(&phone, "/via-recovered-tier1").await;
+    assert_eq!(response.status, 200);
+    let path = phone.client.path().expect("请求应有选中路径");
+    assert_eq!(path.remote, TransportAddr::Relay(tier1.relay_url()));
+
+    drop(tier0);
+    drop(tier1);
     phone.client.close();
     phone_endpoint.close().await;
     server_endpoint.close().await;

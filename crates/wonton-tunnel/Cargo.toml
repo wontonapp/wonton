@@ -8,6 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# MIT OR Apache-2.0。错误链带上原因（探针绑定失败等）。
+anyhow = { workspace = true }
 # MIT OR Apache-2.0。解析本地代理收到的 Proxy-Authorization（Basic）。
 base64 = { workspace = true }
 # MIT OR Apache-2.0。生成本地代理的会话凭据。
@@ -27,7 +29,6 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true }
 # 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
 iroh = { workspace = true, features = ["test-utils"] }
 # MIT OR Apache-2.0。持有测试中继的 `Server`：它一掉服务器就停。

@@ -412,6 +412,7 @@ impl HomeLink {
                 endpoint.clone(),
                 RelayTable::from_relays(ticket.relays().to_vec()),
                 FALLBACK_AFTER,
+                None,
             );
         }
         let client = TunnelClient::new(endpoint.clone(), ticket.server_addr());

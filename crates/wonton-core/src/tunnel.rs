@@ -159,8 +159,12 @@ pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Resu
             .bind_addr((Ipv6Addr::UNSPECIFIED, port))?;
     }
     let endpoint = builder.bind().await.context("绑定隧道 endpoint")?;
-    let _fallback =
-        wonton_tunnel::relays::spawn_tier_fallback(endpoint.clone(), table.clone(), FALLBACK_AFTER);
+    let _fallback = wonton_tunnel::relays::spawn_tier_fallback(
+        endpoint.clone(),
+        table.clone(),
+        FALLBACK_AFTER,
+        None,
+    );
     Ok(endpoint)
 }
 
