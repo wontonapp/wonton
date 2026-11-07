@@ -24,7 +24,9 @@ use super::host::{
 };
 use super::state::PULL_STALL;
 use super::{LABEL_COMPONENT, LABEL_MANAGED_BY, PROJECT, UPDATER_CONTAINER};
+use crate::l10n;
 use crate::plugin::docker::Engine;
+use crate::plugin::languages::Languages;
 
 /// 核心镜像里的 compose（`deploy/dev/core/Dockerfile`）。
 pub const COMPOSE_BIN: &str = "/usr/local/bin/docker-compose";
@@ -36,18 +38,30 @@ const COMPOSE_DOWN: Duration = Duration::from_secs(330);
 const OUTPUT_TAIL: usize = 4 << 10;
 const STOP_SECS: i32 = 30;
 
+/// 每次用时读主人最近一次请求的语言：后台写文字（检查、更新器）按它写（ADR-0043）。
+pub type OwnerLanguages = Box<dyn Fn() -> Languages + Send + Sync>;
+
 pub struct DockerHost {
     engine: Engine,
     compose: PathBuf,
+    owner_languages: OwnerLanguages,
 }
 
 impl DockerHost {
-    pub fn new(engine: Engine) -> Self {
-        Self::with_compose(engine, PathBuf::from(COMPOSE_BIN))
+    pub fn new(engine: Engine, owner_languages: OwnerLanguages) -> Self {
+        Self::with_compose(engine, PathBuf::from(COMPOSE_BIN), owner_languages)
     }
 
-    pub fn with_compose(engine: Engine, compose: PathBuf) -> Self {
-        Self { engine, compose }
+    pub fn with_compose(engine: Engine, compose: PathBuf, owner_languages: OwnerLanguages) -> Self {
+        Self {
+            engine,
+            compose,
+            owner_languages,
+        }
+    }
+
+    fn langs(&self) -> Languages {
+        (self.owner_languages)()
     }
 
     /// compose 里环境变量优先于 `.env`：不能带任何 `WONTON_*`，带着旧的 `WONTON_CORE_IMAGE` 就换不了镜像。
@@ -66,21 +80,44 @@ impl DockerHost {
                 command.env(key, value);
             }
         }
-        let child = command
-            .spawn()
-            .map_err(|e| failed(format!("运行 {} 失败：{e}", self.compose.display())))?;
+        let langs = self.langs();
+        let child = command.spawn().map_err(|e| {
+            failed(l10n::text(
+                &langs,
+                "upgrade-compose-run-failed",
+                &[
+                    ("path", self.compose.display().to_string().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ))
+        })?;
         let output = tokio::time::timeout(limit, child.wait_with_output())
             .await
-            .map_err(|_| failed(format!("compose 超过 {} 秒还没结束", limit.as_secs())))?
-            .map_err(|e| failed(format!("等 compose 结束失败：{e}")))?;
+            .map_err(|_| {
+                failed(l10n::text(
+                    &langs,
+                    "upgrade-compose-timed-out",
+                    &[("seconds", limit.as_secs().to_string().into())],
+                ))
+            })?
+            .map_err(|e| {
+                failed(l10n::text(
+                    &langs,
+                    "upgrade-compose-wait-failed",
+                    &[("error", e.to_string().into())],
+                ))
+            })?;
         if output.status.success() {
             return Ok(());
         }
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(failed(format!(
-            "compose 失败（{}）：{}",
-            output.status,
-            tail(stderr.trim())
+        Err(failed(l10n::text(
+            &langs,
+            "upgrade-compose-failed",
+            &[
+                ("status", output.status.to_string().into()),
+                ("error", tail(stderr.trim()).into()),
+            ],
         )))
     }
 
@@ -141,10 +178,13 @@ impl DockerHost {
         let waited = tokio::time::timeout(job.timeout, wait.next()).await;
         drop(wait);
         if waited.is_err() {
-            let message = format!(
-                "容器 {} 超过 {} 秒还没结束",
-                job.name,
-                job.timeout.as_secs()
+            let message = l10n::text(
+                &self.langs(),
+                "upgrade-one-shot-timed-out",
+                &[
+                    ("name", job.name.as_str().into()),
+                    ("seconds", job.timeout.as_secs().to_string().into()),
+                ],
             );
             self.engine
                 .remove_container(&job.name)
@@ -157,7 +197,13 @@ impl DockerHost {
             .await?
             .and_then(|c| c.state)
             .and_then(|s| s.exit_code)
-            .ok_or_else(|| failed(format!("查不到容器 {} 的退出码", job.name)))?;
+            .ok_or_else(|| {
+                failed(l10n::text(
+                    &self.langs(),
+                    "upgrade-exit-code-unknown",
+                    &[("name", job.name.as_str().into())],
+                ))
+            })?;
         let (stdout, stderr) = self.output_of(&job.name).await;
         self.engine
             .remove_container(&job.name)
@@ -183,7 +229,13 @@ impl DockerHost {
         loop {
             let item = tokio::time::timeout(PULL_STALL, stream.next())
                 .await
-                .map_err(|_| failed(format!("拉 {image} 连续 5 分钟没有进展")))?;
+                .map_err(|_| {
+                    failed(l10n::text(
+                        &self.langs(),
+                        "upgrade-pull-stalled",
+                        &[("image", image.into())],
+                    ))
+                })?;
             let Some(item) = item else {
                 return Ok(());
             };
@@ -415,8 +467,16 @@ impl Host for DockerHost {
     }
 
     fn free_bytes(&self, path: &Path) -> Result<u64> {
-        let stats = rustix::fs::statvfs(path)
-            .map_err(|e| failed(format!("查 {} 的磁盘空间失败：{e}", path.display())))?;
+        let stats = rustix::fs::statvfs(path).map_err(|e| {
+            failed(l10n::text(
+                &self.langs(),
+                "upgrade-free-space-failed",
+                &[
+                    ("path", path.display().to_string().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ))
+        })?;
         Ok(stats.f_bavail.saturating_mul(stats.f_frsize.max(1)))
     }
 
@@ -449,10 +509,13 @@ impl Host for DockerHost {
                 .inspect_registry_image(source, None)
                 .await
                 .map_err(|e| failed(bollard_message(e)))?;
-            inspected
-                .descriptor
-                .digest
-                .ok_or_else(|| failed(format!("分发接口没有给 {source} 的 digest")))
+            inspected.descriptor.digest.ok_or_else(|| {
+                failed(l10n::text(
+                    &self.langs(),
+                    "upgrade-registry-digest-missing",
+                    &[("source", source.into())],
+                ))
+            })
         })
     }
 

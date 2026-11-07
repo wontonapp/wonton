@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, bail};
 
 use super::state::Layout;
+use crate::l10n;
+use crate::plugin::languages::Languages;
 
 /// 备份写完才有这个文件：没写完的不能用来恢复。
 const COMPLETE: &str = ".complete";
@@ -47,12 +49,13 @@ pub fn tree_size(dir: &Path, skip: &[PathBuf]) -> anyhow::Result<u64> {
 }
 
 fn copy_entry(from: &Path, to: &Path) -> anyhow::Result<()> {
-    let meta = fs::symlink_metadata(from).with_context(|| format!("读取 {}", from.display()))?;
+    // 文件操作的上下文是原始值（和系统报错一样），不进 Fluent；句子在上面的层写。
+    let meta = fs::symlink_metadata(from).with_context(|| format!("read {}", from.display()))?;
     let kind = meta.file_type();
     if kind.is_symlink() {
         symlink(fs::read_link(from)?, to)?;
     } else if kind.is_file() {
-        fs::copy(from, to).with_context(|| format!("复制 {}", from.display()))?;
+        fs::copy(from, to).with_context(|| format!("copy {}", from.display()))?;
         let times = fs::FileTimes::new().set_modified(meta.modified()?);
         fs::File::options().write(true).open(to)?.set_times(times)?;
     } else {
@@ -61,7 +64,7 @@ fn copy_entry(from: &Path, to: &Path) -> anyhow::Result<()> {
     }
     chown(to, Some(meta.uid()), Some(meta.gid()))
         .or_else(|e| if kind.is_symlink() { Ok(()) } else { Err(e) })
-        .with_context(|| format!("设置 {} 的属主", to.display()))?;
+        .with_context(|| format!("set the owner of {}", to.display()))?;
     if kind.is_file() {
         fs::set_permissions(to, fs::Permissions::from_mode(meta.mode()))?;
     }
@@ -70,11 +73,11 @@ fn copy_entry(from: &Path, to: &Path) -> anyhow::Result<()> {
 
 /// 把 `from` 的内容复制进 `to`，保留权限、属主和修改时间。`skip` 里的路径（完整路径）不复制。
 pub fn copy_tree(from: &Path, to: &Path, skip: &[PathBuf], expired: Expired) -> anyhow::Result<()> {
-    let meta = fs::metadata(from).with_context(|| format!("读取 {}", from.display()))?;
-    fs::create_dir_all(to).with_context(|| format!("建立 {}", to.display()))?;
-    for entry in fs::read_dir(from).with_context(|| format!("读取 {}", from.display()))? {
+    let meta = fs::metadata(from).with_context(|| format!("read {}", from.display()))?;
+    fs::create_dir_all(to).with_context(|| format!("create {}", to.display()))?;
+    for entry in fs::read_dir(from).with_context(|| format!("read {}", from.display()))? {
         if expired() {
-            bail!("复制 {} 超过了时限", from.display());
+            bail!("copying {} took too long", from.display());
         }
         let source = entry?.path();
         if skip.contains(&source) {
@@ -88,14 +91,14 @@ pub fn copy_tree(from: &Path, to: &Path, skip: &[PathBuf], expired: Expired) -> 
         }
     }
     chown(to, Some(meta.uid()), Some(meta.gid()))
-        .with_context(|| format!("设置 {} 的属主", to.display()))?;
+        .with_context(|| format!("set the owner of {}", to.display()))?;
     fs::set_permissions(to, fs::Permissions::from_mode(meta.mode()))?;
     Ok(())
 }
 
 /// 清空目录的内容，`skip` 里的路径和它们的上级目录留着。目录本身可能是挂载点，不删。
 fn clear_dir(dir: &Path, skip: &[PathBuf]) -> anyhow::Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("读取 {}", dir.display()))? {
+    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
         let path = entry?.path();
         if skip.contains(&path) {
             continue;
@@ -104,9 +107,9 @@ fn clear_dir(dir: &Path, skip: &[PathBuf]) -> anyhow::Result<()> {
         if is_dir && skip.iter().any(|s| s.starts_with(&path)) {
             clear_dir(&path, skip)?;
         } else if is_dir {
-            fs::remove_dir_all(&path).with_context(|| format!("删除 {}", path.display()))?;
+            fs::remove_dir_all(&path).with_context(|| format!("delete {}", path.display()))?;
         } else {
-            fs::remove_file(&path).with_context(|| format!("删除 {}", path.display()))?;
+            fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
         }
     }
     Ok(())
@@ -155,9 +158,16 @@ pub fn mark_complete(dir: &Path) -> anyhow::Result<()> {
 }
 
 /// 从备份恢复核心数据和安装目录。不碰 `upgrade/` 和 `files/uploads/`。
-pub fn restore_files(layout: &Layout, dir: &Path) -> anyhow::Result<()> {
+pub fn restore_files(layout: &Layout, dir: &Path, langs: &Languages) -> anyhow::Result<()> {
     if !dir.join(COMPLETE).exists() {
-        bail!("备份 {} 没有写完，不能用来恢复", dir.display());
+        bail!(
+            "{}",
+            l10n::text(
+                langs,
+                "upgrade-backup-incomplete",
+                &[("path", dir.display().to_string().into())],
+            )
+        );
     }
     let never = || false;
     let skips = core_skips(layout);
@@ -218,6 +228,10 @@ pub fn remove_others(layout: &Layout, keep: Option<&Path>) -> anyhow::Result<()>
 mod tests {
     use super::*;
 
+    fn langs() -> Languages {
+        Languages::from_header(None)
+    }
+
     struct Temp(PathBuf);
 
     impl Drop for Temp {
@@ -273,7 +287,7 @@ mod tests {
         fs::write(layout.core_dir().join("paired-during-upgrade"), "x").unwrap();
         fs::remove_file(layout.core_dir().join("plugins/a.json")).unwrap();
 
-        restore_files(&layout, &dir).unwrap();
+        restore_files(&layout, &dir, &langs()).unwrap();
 
         assert_eq!(fs::read_to_string(layout.env_path()).unwrap(), "old");
         assert!(!layout.install_dir.join("added-by-init").exists());
@@ -297,7 +311,7 @@ mod tests {
         let (_temp, layout) = setup();
         let dir = create_dir(&layout, "sha256:old", "u1").unwrap();
         copy_files(&layout, &dir, &|| false).unwrap();
-        assert!(restore_files(&layout, &dir).is_err());
+        assert!(restore_files(&layout, &dir, &langs()).is_err());
         assert_eq!(fs::read_to_string(layout.env_path()).unwrap(), "old");
     }
 

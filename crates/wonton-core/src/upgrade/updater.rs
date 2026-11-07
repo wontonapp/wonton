@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
+use wonton_l10n::Arg;
 use wonton_protocol::{
     CoreUpgradeFailure as Failure, CoreUpgradePhase as Phase, CoreUpgradeProblem,
 };
@@ -17,6 +18,8 @@ use super::host::{Host, Mount, OneShot, ServiceContainer};
 use super::observe::Baseline;
 use super::state::{self, Layout, MAX_UPDATER_STARTS, OBSERVE, Outcome, UpgradeState, problem};
 use super::{CORE_SERVICE, PROJECT, UPDATER_CONTAINER, backup, components, compose_images};
+use crate::l10n;
+use crate::plugin::languages::Languages;
 
 /// 拉镜像、观察时多久看一次。
 const POLL: Duration = Duration::from_secs(5);
@@ -51,15 +54,22 @@ fn halt(reason: Failure, message: impl Into<String>) -> Halt {
     Halt::Problem(problem(reason, message))
 }
 
-/// 升级器的入口。`observe` 是观察多久，正式运行是 [`OBSERVE`]。
-pub async fn run(host: &dyn Host, layout: Layout, observe: Duration) -> anyhow::Result<()> {
-    let state = state::load(&layout.state_path())?;
+/// 升级器的入口。`observe` 是观察多久，正式运行是 [`OBSERVE`]。文字按主人的语言写：App 的管理请求会把它存下来
+/// （ADR-0043），升级器进程没有插件管理器，进来时已经读好。
+pub async fn run(
+    host: &dyn Host,
+    layout: Layout,
+    langs: Languages,
+    observe: Duration,
+) -> anyhow::Result<()> {
+    let state = state::load(&layout.state_path(), &langs)?;
     if let Some(mut state) = state.filter(|s| !s.is_ended()) {
         state.updater_starts += 1;
-        state::save(&layout.state_path(), &state)?;
+        state::save(&layout.state_path(), &state, &langs)?;
         let mut updater = Updater {
             host,
             layout,
+            langs,
             observe,
             state,
             resumed: true,
@@ -81,6 +91,7 @@ pub const fn observe_period() -> Duration {
 struct Updater<'a> {
     host: &'a dyn Host,
     layout: Layout,
+    langs: Languages,
     observe: Duration,
     state: UpgradeState,
     /// 这个阶段是升级器重启后接着做的，不是刚从上一个阶段走过来的。
@@ -88,9 +99,17 @@ struct Updater<'a> {
 }
 
 impl Updater<'_> {
+    /// 这个进程写进状态文件的文字（App 的详情里显示）按主人的语言写（ADR-0043）。
+    fn msg(&self, id: &str, args: &[(&str, Arg<'_>)]) -> String {
+        l10n::text(&self.langs, id, args)
+    }
+
     async fn drive(&mut self) -> anyhow::Result<()> {
         if self.state.updater_starts > MAX_UPDATER_STARTS {
-            let crashed = problem(Failure::UpdaterFailed, "升级器反复崩溃");
+            let crashed = problem(
+                Failure::UpdaterFailed,
+                self.msg("upgrade-updater-crashed", &[]),
+            );
             self.handle(crashed).await?;
         }
         while !self.state.is_ended() {
@@ -101,7 +120,10 @@ impl Updater<'_> {
                 Phase::Starting => self.starting().await,
                 Phase::Observing => self.observing().await,
                 Phase::RollingBack => self.rolling_back().await,
-                Phase::Other => Err(halt(Failure::Protocol, "状态文件里的阶段读不懂")),
+                Phase::Other => Err(halt(
+                    Failure::Protocol,
+                    self.msg("upgrade-phase-unreadable", &[]),
+                )),
             };
             self.resumed = false;
             match step {
@@ -133,7 +155,13 @@ impl Updater<'_> {
                 let failure = match self.state.problem.take() {
                     Some(first) => problem(
                         failure.reason,
-                        format!("{}。回滚的起因：{}", failure.message, first.message),
+                        self.msg(
+                            "upgrade-rollback-cause",
+                            &[
+                                ("message", failure.message.as_str().into()),
+                                ("cause", first.message.as_str().into()),
+                            ],
+                        ),
                     ),
                     None => failure,
                 };
@@ -154,7 +182,13 @@ impl Updater<'_> {
         match self.host.compose_up(&self.layout.install_dir, wait).await {
             Ok(()) => self.finish(Outcome::Failed, Some(failure)),
             Err(e) => {
-                let message = format!("{}。之后启动回原来的版本也失败了：{e}", failure.message);
+                let message = self.msg(
+                    "upgrade-restore-also-failed",
+                    &[
+                        ("message", failure.message.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                );
                 self.finish(
                     Outcome::RollbackFailed,
                     Some(problem(failure.reason, message)),
@@ -169,7 +203,7 @@ impl Updater<'_> {
     }
 
     fn save(&self) -> anyhow::Result<()> {
-        state::save(&self.layout.state_path(), &self.state)
+        state::save(&self.layout.state_path(), &self.state, &self.langs)
     }
 
     fn finish(
@@ -215,7 +249,13 @@ impl Updater<'_> {
             )
             .await?;
         if listed.exit_code != 0 {
-            let message = format!("新镜像 {target} 列不出它要用的镜像：{}", listed.stderr);
+            let message = self.msg(
+                "upgrade-list-images-failed",
+                &[
+                    ("image", target.as_str().into()),
+                    ("error", listed.stderr.as_str().into()),
+                ],
+            );
             return Err(halt(Failure::Upstream, message));
         }
         for image in listed.stdout.lines().filter(|l| !l.trim().is_empty()) {
@@ -234,11 +274,15 @@ impl Updater<'_> {
 
     /// 本机没有就拉。拉取时查取消和时限。
     async fn ensure_image(&self, image: &str) -> Result<(), Halt> {
-        let present = self
-            .host
-            .image(image)
-            .await
-            .map_err(|e| halt(Failure::Upstream, format!("查镜像 {image} 失败：{e}")))?;
+        let present = self.host.image(image).await.map_err(|e| {
+            halt(
+                Failure::Upstream,
+                self.msg(
+                    "upgrade-inspect-image-failed",
+                    &[("image", image.into()), ("error", e.to_string().into())],
+                ),
+            )
+        })?;
         if present.is_some() {
             return Ok(());
         }
@@ -251,13 +295,19 @@ impl Updater<'_> {
                 pulled = &mut pull => {
                     return pulled.map_err(|e| halt(
                         Failure::RegistryUnavailable,
-                        format!("拉不到镜像 {image}：{e}"),
+                        self.msg(
+                            "upgrade-pull-image-failed",
+                            &[("image", image.into()), ("error", e.to_string().into())],
+                        ),
                     ));
                 }
                 () = self.host.sleep(POLL) => {
                     self.check_canceled()?;
                     if self.host.now() > limit {
-                        return Err(halt(Failure::TimedOut, format!("拉镜像 {image} 超过了时限")));
+                        return Err(halt(
+                            Failure::TimedOut,
+                            self.msg("upgrade-pull-image-timed-out", &[("image", image.into())]),
+                        ));
                     }
                 }
             }
@@ -282,7 +332,14 @@ impl Updater<'_> {
         self.host.run_once(&job).await.map_err(|e| {
             halt(
                 Failure::Upstream,
-                format!("在镜像 {image} 里执行 {cmd:?} 失败：{e}"),
+                self.msg(
+                    "upgrade-run-in-image-failed",
+                    &[
+                        ("image", image.into()),
+                        ("cmd", format!("{cmd:?}").into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ),
             )
         })
     }
@@ -293,7 +350,7 @@ impl Updater<'_> {
         if left == 0 {
             return Err(halt(
                 Failure::TimedOut,
-                "从停核心到新核心起来超过了 30 分钟",
+                self.msg("upgrade-window-exceeded", &[]),
             ));
         }
         Ok(left)
@@ -315,8 +372,15 @@ impl Updater<'_> {
         let dir = backup::create_dir(&self.layout, &self.backup_key(), &self.state.id)?;
         let limit = self.state.phase_limit_at();
         let expired = || self.host.now() > limit;
-        backup::copy_files(&self.layout, &dir, &expired)
-            .map_err(|e| halt(Failure::Upstream, format!("备份失败：{e:#}")))?;
+        backup::copy_files(&self.layout, &dir, &expired).map_err(|e| {
+            halt(
+                Failure::Upstream,
+                self.msg(
+                    "upgrade-backup-failed",
+                    &[("error", format!("{e:#}").into())],
+                ),
+            )
+        })?;
         for (volume, _) in &volumes {
             self.back_up_volume(volume, &dir).await?;
         }
@@ -338,10 +402,15 @@ impl Updater<'_> {
                 mounts: vec![volume_mount(volume, true)],
                 timeout: QUICK_JOB,
             };
-            let output =
-                self.host.run_once(&job).await.map_err(|e| {
-                    halt(Failure::Upstream, format!("查卷 {volume} 的大小失败：{e}"))
-                })?;
+            let output = self.host.run_once(&job).await.map_err(|e| {
+                halt(
+                    Failure::Upstream,
+                    self.msg(
+                        "upgrade-volume-size-failed",
+                        &[("volume", volume.into()), ("error", e.to_string().into())],
+                    ),
+                )
+            })?;
             let size = output
                 .stdout
                 .split_whitespace()
@@ -350,7 +419,13 @@ impl Updater<'_> {
             let size = size.ok_or_else(|| {
                 halt(
                     Failure::Upstream,
-                    format!("查不出卷 {volume} 的大小：{}", output.stderr),
+                    self.msg(
+                        "upgrade-volume-size-unknown",
+                        &[
+                            ("volume", volume.into()),
+                            ("error", output.stderr.as_str().into()),
+                        ],
+                    ),
                 )
             })?;
             sizes.push((volume.clone(), size));
@@ -362,14 +437,24 @@ impl Updater<'_> {
     async fn make_room(&self, volumes: u64) -> Result<(), Halt> {
         let size = backup::files_size(&self.layout)? + volumes;
         let needed = size + size / 100 * SPACE_MARGIN_PERCENT;
-        let free = self
-            .host
-            .free_bytes(&self.layout.core_dir())
-            .map_err(|e| halt(Failure::Upstream, format!("查磁盘空间失败：{e}")))?;
+        let free = self.host.free_bytes(&self.layout.core_dir()).map_err(|e| {
+            halt(
+                Failure::Upstream,
+                self.msg(
+                    "upgrade-disk-space-failed",
+                    &[("error", e.to_string().into())],
+                ),
+            )
+        })?;
         let (old, old_size) = backup::deletable(&self.layout)?;
         if free + old_size < needed {
-            let message = format!(
-                "磁盘不够：备份要 {needed} 字节，只有 {free} 字节可用，旧备份能腾出 {old_size} 字节"
+            let message = self.msg(
+                "upgrade-backup-no-space",
+                &[
+                    ("needed", needed.to_string().into()),
+                    ("free", free.to_string().into()),
+                    ("old", old_size.to_string().into()),
+                ],
             );
             return Err(halt(Failure::NoSpace, message));
         }
@@ -391,7 +476,13 @@ impl Updater<'_> {
             self.host.stop(&container.name).await.map_err(|e| {
                 halt(
                     Failure::Upstream,
-                    format!("停服务 {} 失败：{e}", container.service),
+                    self.msg(
+                        "upgrade-stop-service-failed",
+                        &[
+                            ("service", container.service.as_str().into()),
+                            ("error", e.to_string().into()),
+                        ],
+                    ),
                 )
             })?;
         }
@@ -422,13 +513,23 @@ impl Updater<'_> {
             ],
             timeout: Duration::from_secs(left),
         };
-        let output = self
-            .host
-            .run_once(&job)
-            .await
-            .map_err(|e| halt(Failure::Upstream, format!("备份卷 {volume} 失败：{e}")))?;
+        let output = self.host.run_once(&job).await.map_err(|e| {
+            halt(
+                Failure::Upstream,
+                self.msg(
+                    "upgrade-backup-volume-failed",
+                    &[("volume", volume.into()), ("error", e.to_string().into())],
+                ),
+            )
+        })?;
         if output.exit_code != 0 {
-            let message = format!("备份卷 {volume} 失败：{}", output.stderr);
+            let message = self.msg(
+                "upgrade-backup-volume-failed",
+                &[
+                    ("volume", volume.into()),
+                    ("error", output.stderr.as_str().into()),
+                ],
+            );
             return Err(halt(Failure::Upstream, message));
         }
         Ok(())
@@ -445,6 +546,18 @@ impl Updater<'_> {
     async fn switch_image(&self) -> Result<(), Halt> {
         let path = self.layout.env_path();
         let env = EnvFile::read(&path).map_err(|e| halt(Failure::Upstream, format!("{e:#}")))?;
+        if let Some(key) = env.missing_required_key() {
+            return Err(halt(
+                Failure::Upstream,
+                self.msg(
+                    "upgrade-env-missing-key",
+                    &[
+                        ("path", path.display().to_string().into()),
+                        ("key", key.into()),
+                    ],
+                ),
+            ));
+        }
         let domain = env.get("WONTON_BASE_DOMAIN").unwrap_or_default().to_owned();
         let target = self.state.to.image.clone();
         env.write_image(&path, &target)?;
@@ -463,7 +576,10 @@ impl Updater<'_> {
             .await?;
         if output.exit_code != 0 {
             // 跳不过去的版本在这里拒绝，并写明先升到哪个版本（已定 3）。
-            let message = format!("新版本的 init 失败了：{}", output.stderr.trim());
+            let message = self.msg(
+                "upgrade-init-failed",
+                &[("error", output.stderr.trim().into())],
+            );
             return Err(halt(Failure::InitFailed, message));
         }
         Ok(())
@@ -475,12 +591,17 @@ impl Updater<'_> {
             self.switch_image().await?;
         }
         let target = self.state.to.image.clone();
-        components::prepare(self.host, &target).await.map_err(|e| {
-            halt(
-                Failure::Upstream,
-                format!("处理新版本不支持的组件失败：{e}"),
-            )
-        })?;
+        components::prepare(self.host, &target, &self.langs)
+            .await
+            .map_err(|e| {
+                halt(
+                    Failure::Upstream,
+                    self.msg(
+                        "upgrade-components-failed",
+                        &[("target", "new".into()), ("error", e.to_string().into())],
+                    ),
+                )
+            })?;
         self.up(left).await?;
         self.verify_core_image(&target).await?;
         self.enter(Phase::Observing)?;
@@ -492,7 +613,12 @@ impl Updater<'_> {
         self.host
             .compose_up(&self.layout.install_dir, wait)
             .await
-            .map_err(|e| halt(Failure::Unhealthy, format!("服务没有起来：{e}")))
+            .map_err(|e| {
+                halt(
+                    Failure::Unhealthy,
+                    self.msg("upgrade-up-failed", &[("error", e.to_string().into())]),
+                )
+            })
     }
 
     async fn verify_core_image(&self, image: &str) -> Result<(), Halt> {
@@ -502,17 +628,31 @@ impl Updater<'_> {
             Some(core) if core.image == image => Ok(()),
             Some(core) => Err(halt(
                 Failure::Unhealthy,
-                format!("核心的容器用的是 {}，不是 {image}", core.image),
+                self.msg(
+                    "upgrade-core-image-wrong",
+                    &[
+                        ("actual", core.image.as_str().into()),
+                        ("image", image.into()),
+                    ],
+                ),
             )),
-            None => Err(halt(Failure::Unhealthy, "没有核心的容器")),
+            None => Err(halt(
+                Failure::Unhealthy,
+                self.msg("upgrade-core-container-missing", &[]),
+            )),
         }
     }
 
     async fn containers(&self) -> Result<Vec<ServiceContainer>, Halt> {
-        self.host
-            .project_containers(PROJECT)
-            .await
-            .map_err(|e| halt(Failure::Upstream, format!("查系统服务的容器失败：{e}")))
+        self.host.project_containers(PROJECT).await.map_err(|e| {
+            halt(
+                Failure::Upstream,
+                self.msg(
+                    "upgrade-containers-failed",
+                    &[("error", e.to_string().into())],
+                ),
+            )
+        })
     }
 
     async fn observing(&mut self) -> Result<(), Halt> {
@@ -520,14 +660,17 @@ impl Updater<'_> {
         if self.resumed {
             let left = limit.saturating_sub(self.host.now());
             if left == 0 {
-                return Err(halt(Failure::TimedOut, "观察阶段超过了时限"));
+                return Err(halt(
+                    Failure::TimedOut,
+                    self.msg("upgrade-observe-timed-out", &[]),
+                ));
             }
             self.up(left).await?;
         }
         let baseline = Baseline::of(&self.containers().await?);
         let until = self.host.now() + self.observe.as_secs();
         loop {
-            if let Some(found) = baseline.problem(&self.containers().await?) {
+            if let Some(found) = baseline.problem(&self.containers().await?, &self.langs) {
                 return Err(halt(Failure::Crashed, found));
             }
             if self.host.now() >= until {
@@ -543,10 +686,16 @@ impl Updater<'_> {
         let limit = self.state.phase_limit_at();
         let left = limit.saturating_sub(self.host.now());
         if left == 0 {
-            return Err(halt(Failure::TimedOut, "回滚超过了 20 分钟"));
+            return Err(halt(
+                Failure::TimedOut,
+                self.msg("upgrade-rollback-timed-out", &[]),
+            ));
         }
         let Some(dir) = self.state.backup_dir.clone() else {
-            return Err(halt(Failure::Upstream, "状态文件里没有备份目录"));
+            return Err(halt(
+                Failure::Upstream,
+                self.msg("upgrade-no-backup-dir", &[]),
+            ));
         };
         let from = self.state.from.image.clone();
         // 新版本的核心可能没起来，也可能正在反复重启：停掉它再动它的数据。
@@ -556,19 +705,36 @@ impl Updater<'_> {
             .iter()
             .filter(|c| c.service == CORE_SERVICE)
         {
-            self.host
-                .stop(&container.name)
-                .await
-                .map_err(|e| halt(Failure::Upstream, format!("停核心失败：{e}")))?;
+            self.host.stop(&container.name).await.map_err(|e| {
+                halt(
+                    Failure::Upstream,
+                    self.msg(
+                        "upgrade-stop-core-failed",
+                        &[("error", e.to_string().into())],
+                    ),
+                )
+            })?;
         }
-        backup::restore_files(&self.layout, &dir)
-            .map_err(|e| halt(Failure::Upstream, format!("恢复备份失败：{e:#}")))?;
-        components::prepare(self.host, &from).await.map_err(|e| {
+        backup::restore_files(&self.layout, &dir, &self.langs).map_err(|e| {
             halt(
                 Failure::Upstream,
-                format!("处理旧版本不支持的组件失败：{e}"),
+                self.msg(
+                    "upgrade-restore-failed",
+                    &[("error", format!("{e:#}").into())],
+                ),
             )
         })?;
+        components::prepare(self.host, &from, &self.langs)
+            .await
+            .map_err(|e| {
+                halt(
+                    Failure::Upstream,
+                    self.msg(
+                        "upgrade-components-failed",
+                        &[("target", "old".into()), ("error", e.to_string().into())],
+                    ),
+                )
+            })?;
         self.up(left).await?;
         self.verify_core_image(&from).await?;
         self.finish(Outcome::RolledBack, None)?;

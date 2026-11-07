@@ -13,6 +13,8 @@ use super::state::{
     self, ImageRef, Layout, MAX_UPDATER_STARTS, Outcome, UpgradeState, WINDOW_LIMIT,
 };
 use super::updater;
+use crate::l10n;
+use crate::plugin::languages::Languages;
 
 struct Temp(PathBuf);
 
@@ -26,6 +28,11 @@ struct Scene {
     _temp: Temp,
     layout: Layout,
     host: FakeHost,
+}
+
+/// 测试没写主人的语言文件：升级器文字按英文（期望值由目录格式化出来）。
+fn langs() -> Languages {
+    Languages::from_header(None)
 }
 
 const ENV: &str = "WONTON_CORE_SOURCE=reg/core:beta\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
@@ -68,13 +75,18 @@ impl Scene {
             migrates,
             self.host.now.load(std::sync::atomic::Ordering::SeqCst),
         );
-        state::save(&self.layout.state_path(), &fresh).unwrap();
+        state::save(&self.layout.state_path(), &fresh, &langs()).unwrap();
     }
 
     async fn run(&self) {
-        updater::run(&self.host, self.layout.clone(), Duration::from_secs(180))
-            .await
-            .unwrap();
+        updater::run(
+            &self.host,
+            self.layout.clone(),
+            langs(),
+            Duration::from_secs(180),
+        )
+        .await
+        .unwrap();
     }
 
     /// 跑到主机上设好的停住的地方，升级器在那一刻没了。
@@ -86,7 +98,9 @@ impl Scene {
     }
 
     fn state(&self) -> UpgradeState {
-        state::load(&self.layout.state_path()).unwrap().unwrap()
+        state::load(&self.layout.state_path(), &langs())
+            .unwrap()
+            .unwrap()
     }
 
     fn env_image(&self) -> String {
@@ -269,7 +283,7 @@ async fn an_updater_killed_while_observing_brings_services_up_and_observes_again
         Phase::Observing,
         s.host.now.load(std::sync::atomic::Ordering::SeqCst),
     );
-    state::save(&s.layout.state_path(), &observing).unwrap();
+    state::save(&s.layout.state_path(), &observing, &langs()).unwrap();
     s.host.world().log.clear();
     let before = s.host.now.load(std::sync::atomic::Ordering::SeqCst);
 
@@ -293,7 +307,7 @@ async fn an_updater_that_keeps_crashing_gives_up_on_the_phase() {
     let mut crashing = s.state();
     assert_eq!(crashing.phase, Phase::Starting);
     crashing.updater_starts = MAX_UPDATER_STARTS;
-    state::save(&s.layout.state_path(), &crashing).unwrap();
+    state::save(&s.layout.state_path(), &crashing, &langs()).unwrap();
 
     s.run().await;
 
@@ -301,7 +315,13 @@ async fn an_updater_that_keeps_crashing_gives_up_on_the_phase() {
     assert_eq!(end.result, Some(Outcome::RolledBack));
     let problem = end.problem.unwrap();
     assert_eq!(problem.reason, Failure::UpdaterFailed);
-    assert!(problem.message.contains("反复崩溃"), "{}", problem.message);
+    assert!(
+        problem
+            .message
+            .contains(&l10n::text(&langs(), "upgrade-updater-crashed", &[])),
+        "{}",
+        problem.message
+    );
 }
 
 #[tokio::test]
@@ -408,8 +428,13 @@ async fn a_failed_rollback_reports_both_reasons_and_keeps_the_backup() {
     let end = s.state();
     assert_eq!(end.result, Some(Outcome::RollbackFailed));
     let message = end.problem.unwrap().message;
+    // 两条原因都在：回滚时的失败（起不回旧版本），和当初触发回滚的失败。文字由目录出，
+    // 这两条是假主机给的原始错误（数据），断言它们被带上。
     assert!(message.contains("旧版本也起不来"), "{message}");
-    assert!(message.contains("不健康"), "要带上回滚的起因：{message}");
+    assert!(
+        message.contains("服务 core 不健康"),
+        "要带上回滚的起因：{message}"
+    );
     assert!(backup::deletable(&s.layout).unwrap().0.is_empty());
 }
 
@@ -492,7 +517,7 @@ async fn completing_cleans_up_what_is_no_longer_needed() {
         OLD.to_owned(),
         "tuwunel:1".to_owned(),
     ];
-    state::save(&s.layout.state_path(), &fresh).unwrap();
+    state::save(&s.layout.state_path(), &fresh, &langs()).unwrap();
 
     s.run().await;
 
@@ -510,7 +535,7 @@ async fn an_updater_that_finds_a_finished_state_just_stops_restarting() {
     let s = scene();
     let mut ended = s.state();
     ended.result = Some(Outcome::Completed);
-    state::save(&s.layout.state_path(), &ended).unwrap();
+    state::save(&s.layout.state_path(), &ended, &langs()).unwrap();
     s.run().await;
     assert_eq!(s.host.log(), vec!["disable-restart wonton-updater"]);
     assert_eq!(s.env_image(), OLD);

@@ -261,7 +261,14 @@ impl Install {
             "60",
         ]);
         Isolated {
-            inner: DockerHost::with_compose(Engine::connect().unwrap(), self.compose_wrapper()),
+            inner: DockerHost::with_compose(
+                Engine::connect().unwrap(),
+                self.compose_wrapper(),
+                Box::new({
+                    let data_dir = layout.data_dir.clone();
+                    move || wonton_core::plugin::store::read_owner_languages(&data_dir)
+                }),
+            ),
             project: self.project.clone(),
         }
     }
@@ -269,6 +276,7 @@ impl Install {
     /// 从 `from` 升到 `to`，返回写下的最终状态。
     async fn upgrade(&self, host: &Isolated, from: &ImageRef, to: &ImageRef) -> UpgradeState {
         let layout = self.layout();
+        let langs = wonton_core::plugin::languages::Languages::from_header(None);
         let started = UpgradeState::new(
             "test".to_owned(),
             from.clone(),
@@ -276,9 +284,11 @@ impl Install {
             Vec::new(),
             host.now(),
         );
-        state::save(&layout.state_path(), &started).unwrap();
-        updater::run(host, layout.clone(), OBSERVE).await.unwrap();
-        state::load(&layout.state_path()).unwrap().unwrap()
+        state::save(&layout.state_path(), &started, &langs).unwrap();
+        updater::run(host, layout.clone(), langs.clone(), OBSERVE)
+            .await
+            .unwrap();
+        state::load(&layout.state_path(), &langs).unwrap().unwrap()
     }
 
     async fn core_image(&self, host: &Isolated) -> String {

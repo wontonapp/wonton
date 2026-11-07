@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 
 use super::state::write_atomic;
 
@@ -24,16 +24,19 @@ pub struct EnvFile {
 
 impl EnvFile {
     pub fn read(path: &Path) -> anyhow::Result<Self> {
-        let text = fs::read_to_string(path).with_context(|| format!("读取 {}", path.display()))?;
-        let file = Self {
+        // 文件操作的上下文是原始值（和系统报错一样），不进 Fluent；句子在上面的层写。
+        let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+        Ok(Self {
             lines: text.lines().map(str::to_owned).collect(),
-        };
-        for key in REQUIRED {
-            if file.get(key).is_none_or(str::is_empty) {
-                bail!("{} 里缺 {key}", path.display());
-            }
-        }
-        Ok(file)
+        })
+    }
+
+    /// [`REQUIRED`] 里第一个缺的键（没写或为空）；都齐时是 `None`。缺了说明文件坏了，不能写回去。
+    pub fn missing_required_key(&self) -> Option<&'static str> {
+        REQUIRED
+            .iter()
+            .find(|key| self.get(key).is_none_or(str::is_empty))
+            .copied()
     }
 
     /// 同一个键写了几次时最后一次算数，和 compose 一样。
@@ -91,14 +94,16 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    /// 缺必需的键不写回：写回去也起不来，还丢了能看出问题的原文件。
+    /// 缺必需的键就不写回：写回去也起不来，还丢了能看出问题的原文件。句子由调用方按语言写。
     #[test]
     fn a_file_missing_required_keys_is_refused() {
         let dir = temp();
         let path = dir.join(".env");
         fs::write(&path, "WONTON_CORE_IMAGE=r@old\n").unwrap();
-        let error = EnvFile::read(&path).unwrap_err().to_string();
-        assert!(error.contains("WONTON_INSTALL_DIR"), "{error}");
+        assert_eq!(
+            EnvFile::read(&path).unwrap().missing_required_key(),
+            Some("WONTON_INSTALL_DIR")
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

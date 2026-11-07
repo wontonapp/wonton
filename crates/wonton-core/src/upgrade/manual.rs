@@ -48,6 +48,8 @@ pub fn parse(args: &[String]) -> anyhow::Result<ManualRollback> {
 
 impl ManualRollback {
     pub async fn run(&self, host: &dyn Host) -> anyhow::Result<()> {
+        // 主机终端命令，文字不迁（E 类）；里面的库函数要一个语言，按基础语言给。
+        let langs = crate::plugin::languages::Languages::from_header(None);
         let containers = host.project_containers(PROJECT).await?;
         let volumes = self.backed_up_volumes()?;
         for container in containers.iter().filter(|c| {
@@ -59,12 +61,12 @@ impl ManualRollback {
             host.stop(&container.name).await?;
         }
         if let Some(dir) = &self.backup {
-            backup::restore_files(&self.layout, dir)?;
+            backup::restore_files(&self.layout, dir, &langs)?;
             for volume in &volumes {
                 self.restore_volume(host, dir, volume).await?;
             }
         }
-        components::prepare(host, &self.image).await?;
+        components::prepare(host, &self.image, &langs).await?;
         Ok(())
     }
 

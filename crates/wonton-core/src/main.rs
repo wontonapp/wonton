@@ -417,7 +417,13 @@ fn upgrade_config(cfg: &Config) -> UpgradeConfig {
 fn open_upgrades(cfg: &Config, engine: &Engine) -> Arc<Upgrades> {
     Arc::new(Upgrades::new(
         upgrade_config(cfg),
-        Arc::new(DockerHost::new(engine.clone())),
+        Arc::new(DockerHost::new(
+            engine.clone(),
+            Box::new({
+                let data_dir = cfg.data_dir.clone();
+                move || wonton_core::plugin::store::read_owner_languages(&data_dir)
+            }),
+        )),
     ))
 }
 
@@ -691,17 +697,32 @@ async fn run_updater(args: &[String]) -> anyhow::Result<()> {
     let [install_dir, data_dir] = args else {
         bail!("用法：wonton-core updater <安装目录> <数据目录>");
     };
-    let host = DockerHost::new(Engine::connect()?);
+    let host = DockerHost::new(
+        Engine::connect()?,
+        Box::new({
+            let data_dir: std::path::PathBuf = data_dir.into();
+            move || wonton_core::plugin::store::read_owner_languages(&data_dir)
+        }),
+    );
     let layout = Layout {
         install_dir: install_dir.into(),
         data_dir: data_dir.into(),
     };
-    updater::run(&host, layout, updater::observe_period()).await
+    // 升级器写进状态文件的文字（App 详情里显示）按主人的语言（ADR-0043）。
+    let langs = wonton_core::plugin::store::read_owner_languages(&layout.data_dir);
+    updater::run(&host, layout, langs, updater::observe_period()).await
 }
 
 async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
     let rollback = manual::parse(args)?;
-    rollback.run(&DockerHost::new(Engine::connect()?)).await
+    let host = DockerHost::new(
+        Engine::connect()?,
+        Box::new({
+            let data_dir = rollback.layout.data_dir.clone();
+            move || wonton_core::plugin::store::read_owner_languages(&data_dir)
+        }),
+    );
+    rollback.run(&host).await
 }
 
 /// 第二个参数是基础域名：旧版本的升级器照这个格式调新镜像的 `init`，所以留着，`init` 不再用它。Matrix 服务器名只在

@@ -16,6 +16,7 @@ use wonton_protocol::{LanChoice, PluginLimits, PluginWriter};
 use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
+use super::languages::Languages;
 use super::manifest::{Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
@@ -361,6 +362,23 @@ pub(crate) fn remove_file(path: &Path) -> Result<(), StoreError> {
             source,
         }),
     }
+}
+
+/// 后台自己写给人看的文字（核心升级的检查和更新器，ADR-0043）按主人的语言写：那些路径上没有
+/// PluginManager，按数据目录直接读这个文件。和 [`Store::owner_languages`] 是同一个文件
+/// （`<数据目录>/core/plugins` 是 [`Store::open`] 收到的记录目录）。读不到时按英文，
+/// App 下一次管理请求会把它写上。
+pub fn read_owner_languages(data_dir: &Path) -> Languages {
+    let stored: Option<String> =
+        read_json(&owner_languages_dir(data_dir).join("owner-languages.json"))
+            .ok()
+            .flatten();
+    Languages::from_header(stored.as_deref())
+}
+
+/// 记主人语言的目录：`<数据目录>/core/plugins/store/`。
+pub fn owner_languages_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("core").join("plugins").join("store")
 }
 
 /// 名字 → 字节内容的映射在 JSON 里以 base64 保存（插件包的文件、插件密钥）。

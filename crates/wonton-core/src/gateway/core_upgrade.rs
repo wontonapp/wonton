@@ -10,15 +10,16 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CoreUpgradeCheckRequest, CoreUpgradeRequest};
 
-use super::api::{error_response, plugin_denied};
+use super::api::{error_response, languages, plugin_denied};
 use super::{Gateway, TunnelPeer};
+use crate::plugin::languages::Languages;
 use crate::upgrade::service::{UpgradeError, Upgrades};
 
 fn failure(error: &UpgradeError) -> Response {
     let status = match error {
         UpgradeError::Changed(_)
         | UpgradeError::NotReady(_)
-        | UpgradeError::Busy
+        | UpgradeError::Busy(_)
         | UpgradeError::TooLate(_) => StatusCode::CONFLICT,
         UpgradeError::Upstream(_) => StatusCode::BAD_GATEWAY,
         UpgradeError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -55,8 +56,8 @@ fn parsed<T: DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
     })
 }
 
-async fn respond(upgrades: &Upgrades, status: StatusCode) -> Response {
-    match upgrades.status().await {
+async fn respond(upgrades: &Upgrades, langs: &Languages, status: StatusCode) -> Response {
+    match upgrades.status(langs).await {
         Ok(current) => (status, Json(current)).into_response(),
         Err(e) => failure(&e),
     }
@@ -68,7 +69,7 @@ pub async fn status(
     headers: HeaderMap,
 ) -> Response {
     match upgrades(&gateway, peer, &headers) {
-        Ok(upgrades) => respond(&upgrades, StatusCode::OK).await,
+        Ok(upgrades) => respond(&upgrades, &languages(&headers), StatusCode::OK).await,
         Err(response) => *response,
     }
 }
@@ -89,7 +90,7 @@ pub async fn check(
         Err(response) => return *response,
     };
     upgrades.trigger_check(request.manual);
-    respond(&upgrades, StatusCode::OK).await
+    respond(&upgrades, &languages(&headers), StatusCode::OK).await
 }
 
 pub async fn start(
@@ -106,7 +107,7 @@ pub async fn start(
         Ok(request) => request,
         Err(response) => return *response,
     };
-    match upgrades.start(&request.digest).await {
+    match upgrades.start(&request.digest, &languages(&headers)).await {
         Ok(current) => (StatusCode::ACCEPTED, Json(current)).into_response(),
         Err(e) => failure(&e),
     }
@@ -121,7 +122,7 @@ pub async fn cancel(
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
-    match upgrades.cancel().await {
+    match upgrades.cancel(&languages(&headers)).await {
         Ok(current) => (StatusCode::ACCEPTED, Json(current)).into_response(),
         Err(e) => failure(&e),
     }
