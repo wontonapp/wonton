@@ -34,6 +34,7 @@ pub(crate) fn sort_rooms(rows: &mut [RoomRow]) {
 pub(crate) fn room_row(room: RoomInfo, core: &UserId) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {
+        layout: Default::default(),
         room_id: room.room_id.to_string(),
         name: room.name,
         is_direct: room.is_direct,

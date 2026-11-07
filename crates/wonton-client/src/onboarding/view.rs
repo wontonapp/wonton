@@ -211,6 +211,7 @@ mod tests {
 
     fn chat(room_id: &str, bot: Option<&str>) -> ChatViewModel {
         ChatViewModel {
+            chat_layout_default: Default::default(),
             account: ChatAccount::SignedIn {
                 user_id: "@owner:home".to_owned(),
                 device_id: "DEVICE".to_owned(),
@@ -225,6 +226,7 @@ mod tests {
                 verification_flow: None,
             },
             rooms: vec![RoomRow {
+                layout: Default::default(),
                 room_id: room_id.to_owned(),
                 name: "Hermes".to_owned(),
                 is_direct: true,

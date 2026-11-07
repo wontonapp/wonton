@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::MediaHandle;
+use crate::{BotChatSettings, MediaHandle};
 
 /// Bot 资料里状态头像那个字段的名字。
 pub const AVATARS_FIELD: &str = "app.wonton.avatars";
@@ -234,6 +234,8 @@ pub struct BotView {
     pub saving: bool,
     /// 最近一次改资料失败；壳显示后用 [`Action::DismissBotProfileProblem`](crate::Action::DismissBotProfileProblem) 清掉。
     pub problem: Option<BotProfileProblem>,
+    /// Bot 资料页“显示”一节（ADR-0060）。
+    pub chat: BotChatSettings,
 }
 
 impl BotView {
@@ -432,6 +434,7 @@ mod tests {
             poster: None,
         };
         let mut bot = BotView {
+            chat: Default::default(),
             user_id: "@b:h".into(),
             plugin_id: "a.b".into(),
             name: "B".into(),

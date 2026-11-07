@@ -32,6 +32,7 @@ fn permission(permission: &str, text: &str, risk: Option<PermissionRisk>) -> Per
 
 fn installed() -> InstalledPlugin {
     InstalledPlugin {
+        chat: Default::default(),
         id: "app.immich.photos".into(),
         title: "相册".into(),
         summary: "照片备份、人脸与语义搜索".into(),

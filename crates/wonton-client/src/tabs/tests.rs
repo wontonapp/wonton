@@ -90,6 +90,7 @@ fn plugins(revision: &str) -> PluginsViewModel {
     PluginsViewModel {
         installed: Some(InstalledPlugins {
             plugins: vec![InstalledPlugin {
+                chat: Default::default(),
                 id: "app.shared".to_owned(),
                 title: revision.to_owned(),
                 summary: String::new(),

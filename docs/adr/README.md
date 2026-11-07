@@ -67,3 +67,4 @@
 | [0055](0055-model-gateway-optional.md) | 模型网关可选：装 Agent 插件不再要求先有网关 |
 | [0057](0057-optional-permissions.md) | 可选权限：声明成默认关，主人自己打开 |
 | [0058](0058-agent-side-sessions.md) | Agent 的话题会话：都能干活，互相知道对方在做什么，改同一个文件时排队 |
+| [0060](0060-chat-layouts.md) | 聊天页的显示方式：气泡或文档，核心合成，壳只画预设 |

@@ -154,6 +154,7 @@ impl ChatLink {
         let view = reuse(
             view,
             ChatViewModel {
+                chat_layout_default: Default::default(),
                 account: ChatAccount::SignedOut,
                 sync: ChatSync::Idle,
                 encryption,
@@ -314,6 +315,9 @@ impl ChatLink {
                 choice_id,
             } => self.answer_confirmation(id, answer, choice_id),
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
+            Action::SetChatLayout { .. } => Err(CoreError::NotReady {
+                reason: "this client core does not implement chat layouts (ADR-0060)".to_owned(),
+            }),
             _ => Err(invalid("不是聊天操作")),
         }
     }

@@ -118,6 +118,7 @@ mod tests {
 
     fn plugin(title: &str, bot: Option<&str>) -> InstalledPlugin {
         InstalledPlugin {
+            chat: Default::default(),
             id: title.to_owned(),
             title: title.to_owned(),
             summary: String::new(),
@@ -147,6 +148,7 @@ mod tests {
 
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
+            layout: Default::default(),
             room_id: format!("!{name}:s"),
             name: name.to_owned(),
             is_direct: peer.is_some(),

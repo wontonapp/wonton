@@ -14,6 +14,7 @@ mod appearance;
 mod bot_commands;
 mod bot_profile;
 mod chat;
+mod chat_layout;
 mod confirmation;
 mod core_upgrade;
 mod egress;
@@ -61,6 +62,10 @@ pub use chat::{
     BackupReminder, ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
     DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, MessageSummary,
     PendingConfirmation, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
+};
+pub use chat_layout::{
+    BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
+    ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,

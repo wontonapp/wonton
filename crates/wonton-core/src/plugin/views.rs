@@ -457,6 +457,7 @@ impl PluginManager {
             notices.extend(self.oom_notices(id, langs));
         }
         InstalledPlugin {
+            chat: Default::default(),
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),

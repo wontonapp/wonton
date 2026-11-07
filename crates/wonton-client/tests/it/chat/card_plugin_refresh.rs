@@ -33,6 +33,7 @@ fn succeeded(message: &str) -> Value {
 
 fn plugin() -> InstalledPlugin {
     InstalledPlugin {
+        chat: Default::default(),
         id: PLUGIN.to_owned(),
         title: "看板".to_owned(),
         summary: String::new(),

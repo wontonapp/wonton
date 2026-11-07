@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, AvatarUpload, BotActivity, DeviceNetwork, FileId, FontStyle, ImageUpload,
-    InstallPreview, ModelProviderInput, OnboardingTip, PushEndpoint, PushMethod, Rgb, SecretString,
-    TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
+    Answer, AvatarUpload, BotActivity, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork, FileId,
+    FontStyle, ImageUpload, InstallPreview, ModelProviderInput, OnboardingTip, PushEndpoint,
+    PushMethod, Rgb, SecretString, TabDisplayChoice, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -288,6 +288,13 @@ pub enum Action {
     SetTextSize { size: TextSize },
     /// 选字体，只从 [`AppearanceViewModel::fonts`](crate::AppearanceViewModel::fonts) 里选。
     SetFont { font: FontStyle },
+
+    // 聊天显示方式（ADR-0060）。选择存在 Matrix 账号数据里，写不了时进 `ChatViewModel::problem`，显示方式不变。
+    /// 把这一份的选择换成 `choice`：为空的项回到默认值。
+    SetChatLayout {
+        target: ChatLayoutTarget,
+        choice: ChatLayoutChoice,
+    },
 
     // 底栏（ADR-0033）。配置存在本机，写不了时返回 `Storage`，底栏不变。
     /// 打开一个页面。插件页已固定时切到它的标签，没固定时盖在主界面上（[`TabsViewModel::overlay`](crate::TabsViewModel::overlay)）。

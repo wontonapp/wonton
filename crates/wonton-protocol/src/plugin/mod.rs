@@ -22,8 +22,8 @@ pub use tool_policy::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginTab, RegistryMirrorViewModel,
-    TabDisplay,
+    CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginChat, PluginTab,
+    RegistryMirrorViewModel, TabDisplay,
 };
 
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
@@ -143,6 +143,9 @@ pub struct InstalledPlugin {
     /// 插件声明的底栏页面。
     #[serde(default)]
     pub tabs: Vec<PluginTab>,
+    /// 插件的 Bot 在聊天页上的声明（ADR-0060）；没有 Bot 的插件为空。
+    #[serde(default)]
+    pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
     /// 主人开放给家人了（ADR-0045）。家人的设备只拿到开放了的插件。

@@ -5,7 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotView, PushNotification, PushStatus, SecretString, VerificationFlow};
+use crate::{
+    BotView, ChatLayout, ChatLayoutChoice, PushNotification, PushStatus, SecretString,
+    VerificationFlow,
+};
 
 /// 聊天页的 ViewModel。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +34,8 @@ pub struct ChatViewModel {
     pub background_notifications: Vec<PushNotification>,
     /// 已装插件的 Bot：名字、头像、状态头像和此刻的状态（ADR-0044）。壳按 [`RoomRow::direct_user_id`] 找私聊对方是哪个 Bot。
     pub bots: Vec<BotView>,
+    /// 聊天显示方式的全局默认里用户改过的项（ADR-0060），设置页的“聊天显示”读它。
+    pub chat_layout_default: ChatLayoutChoice,
 }
 
 /// 一张等主人回答的确认卡片。
@@ -204,6 +209,8 @@ pub struct RoomRow {
     pub preview: Option<RoomPreview>,
     /// 未读消息数。
     pub unread_count: u64,
+    /// 打开这个房间时怎么显示（ADR-0060）。
+    pub layout: ChatLayout,
 }
 
 /// 本账号在房间里的成员状态。
@@ -320,6 +327,7 @@ mod tests {
 
     fn sample_view_model() -> ChatViewModel {
         ChatViewModel {
+            chat_layout_default: Default::default(),
             account: ChatAccount::SignedIn {
                 user_id: "@owner:home.example".into(),
                 device_id: "ABCDEFGH".into(),
@@ -337,6 +345,7 @@ mod tests {
                 verification_flow: None,
             },
             rooms: vec![RoomRow {
+                layout: Default::default(),
                 room_id: "!bot:home.example".into(),
                 name: "Hermes".into(),
                 is_direct: true,

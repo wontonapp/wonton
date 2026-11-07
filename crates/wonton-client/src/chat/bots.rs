@@ -196,6 +196,7 @@ impl Bots {
                     .and_then(|_| old.iter().find(|bot| bot.plugin_id == plugin.id))
                     .cloned()
                     .unwrap_or_else(|| BotView {
+                        chat: Default::default(),
                         user_id: user.clone(),
                         plugin_id: plugin.id.clone(),
                         name: plugin.title.clone(),
@@ -384,6 +385,7 @@ mod tests {
 
     fn view(activity: Option<BotActivity>, states: &[(&str, BotActivity)]) -> BotView {
         BotView {
+            chat: Default::default(),
             user_id: "@bot:home".into(),
             plugin_id: "app.bot".into(),
             name: "Bot".into(),
