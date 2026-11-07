@@ -335,6 +335,7 @@ mod tests {
                 status,
                 body: MessageBody::Text("attachment".to_owned()),
                 custom: Default::default(),
+                mentions: Vec::new(),
                 edited: false,
                 read_by: Vec::new(),
             })),

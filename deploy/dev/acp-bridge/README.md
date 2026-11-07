@@ -55,6 +55,8 @@ OMP 18.16 不读取 `OPENAI_BASE_URL` 和 `OPENAI_MODEL`。入口脚本将这三
 
 聊天里普通文字排队执行；`/wonton interrupt <文字>` 取消当前轮后重来，`/wonton queue <文字>` 显式排队，`/wonton steer <文字>` 在 Agent 声明 steering 时插话。Agent 请求自身工具权限时，桥经核心的确认卡片接口等主人回答。
 
+Agent 经 ACP 报的命令表写成房间里 `app.wonton.bot.commands` 状态事件（`state_key` 是桥自己的 Matrix ID），`/wonton` 排在最前，表没变不重写，Agent 断开时回到只有 `/wonton`。写不进去（群里桥不是管理员）时桥在房间里提示一次。群里有别的 Bot 时，命令消息要提及桥才处理；私聊不用提及。
+
 ## 登录（C3）
 
 Agent 声明了 ACP 登录方式时，聊天里发 `/wonton login` 列出方式，`/wonton login <方式 ID>` 发起；URL 引导转成聊天里的链接，回复 `/wonton login accept` / `/wonton login decline`；终端类登录的链接和提示发进聊天，主人回复的授权码原样写入登录进程 stdin。`/wonton login cancel` 取消。

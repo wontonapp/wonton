@@ -3,6 +3,7 @@
 
 mod acp;
 mod bridge;
+mod commands;
 mod config;
 mod error;
 mod login;

@@ -16,6 +16,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 futures-util = "0.3.34"
 reqwest = { workspace = true, features = ["json"] }
 tokio = { workspace = true, features = ["macros", "net", "process", "rt-multi-thread", "signal", "sync", "time", "io-std", "io-util"] }

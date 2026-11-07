@@ -58,7 +58,7 @@ rmcp = { version = "3.8.0", default-features = false, features = ["server", "cli
 # 里的文件。都不用写 unsafe。
 rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
 # 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
-sha2 = "0.10"
+sha2 = { workspace = true }
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
 sse-stream = "0.2.6"
 # 校验 TZ 是 IANA 时区名（Unlicense OR MIT）：核心镜像里不一定有 /usr/share/zoneinfo。

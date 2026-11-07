@@ -64,6 +64,7 @@ mod tests {
                 status: SendStatus::Sent,
                 body: MessageBody::Text(id.to_owned()),
                 custom: Default::default(),
+                mentions: Vec::new(),
                 edited: false,
                 read_by: read_by.iter().map(|&name| name.to_owned()).collect(),
             })),

@@ -40,6 +40,7 @@ pub(crate) struct FakeAgent {
     pub(crate) socket: PathBuf,
     requests: Arc<Mutex<Vec<Value>>>,
     responses: Arc<Mutex<Vec<Value>>>,
+    commands: broadcast::Sender<Value>,
     task: JoinHandle<()>,
     handlers: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
@@ -53,6 +54,8 @@ impl FakeAgent {
         let recorded = requests.clone();
         let responses = Arc::new(Mutex::new(Vec::new()));
         let recorded_responses = responses.clone();
+        let (commands, _) = broadcast::channel(8);
+        let connection_commands = commands.clone();
         let logged_in = Arc::new(AtomicBool::new(false));
         let login_logged_in = logged_in.clone();
         let mut login_listener = None;
@@ -74,6 +77,7 @@ impl FakeAgent {
                     stream,
                     recorded,
                     recorded_responses.clone(),
+                    connection_commands.clone(),
                     scenario,
                     logged_in,
                 ));
@@ -93,6 +97,7 @@ impl FakeAgent {
             socket,
             requests,
             responses,
+            commands,
             task,
             handlers,
         }
@@ -104,6 +109,11 @@ impl FakeAgent {
 
     pub(crate) async fn responses(&self) -> Vec<Value> {
         self.responses.lock().await.clone()
+    }
+
+    /// 让每条连接的 Agent 发一次 `available_commands_update`。
+    pub(crate) fn send_commands(&self, commands: Value) {
+        let _ = self.commands.send(commands);
     }
 
     pub(crate) async fn finish(self) {
@@ -162,17 +172,31 @@ async fn serve_connection(
     stream: UnixStream,
     recorded: Arc<Mutex<Vec<Value>>>,
     responses: Arc<Mutex<Vec<Value>>>,
+    commands: broadcast::Sender<Value>,
     scenario: Scenario,
     logged_in: Arc<AtomicBool>,
 ) {
     let (reader, writer) = stream.into_split();
     let writer = Arc::new(Mutex::new(writer));
     let mut lines = BufReader::new(reader).lines();
+    let mut command_updates = commands.subscribe();
     let (cancelled, _) = broadcast::channel(4);
     let mut prompts = 0;
-    while let Ok(Some(line)) = lines.next_line().await {
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
-            return;
+    loop {
+        let message = tokio::select! {
+            line = lines.next_line() => {
+                let Ok(Some(line)) = line else {
+                    return;
+                };
+                let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                    return;
+                };
+                message
+            }
+            Ok(commands) = command_updates.recv() => {
+                notify_commands(&writer, commands).await;
+                continue;
+            }
         };
         recorded.lock().await.push(message.clone());
         let method = message["method"].as_str().unwrap_or_default();
@@ -399,6 +423,24 @@ async fn handle_prompt(
     let text = if count == 1 { "hello" } else { "new" };
     notify(writer, "message-1", text).await;
     reply(writer, &message["id"], json!({"stopReason": "end_turn"})).await;
+}
+
+async fn notify_commands(writer: &Arc<Mutex<OwnedWriteHalf>>, commands: Value) {
+    send(
+        writer,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "session-1",
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": commands
+                }
+            }
+        }),
+    )
+    .await;
 }
 
 async fn notify(writer: &Arc<Mutex<OwnedWriteHalf>>, message_id: &str, text: &str) {

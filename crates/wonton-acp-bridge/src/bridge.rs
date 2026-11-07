@@ -1,16 +1,18 @@
 use std::{
     collections::{HashSet, VecDeque},
+    result::Result as StdResult,
     sync::Arc,
     time::Instant,
 };
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use tokio::sync::mpsc;
-use wonton_matrix::{ChatRoom, MatrixSession, SessionConfig, StoreConfig};
+use tokio::sync::{broadcast, mpsc};
+use wonton_matrix::{ChatRoom, MatrixSession, Message, SessionConfig, StoreConfig, UserId};
 
 use crate::{
-    acp::{AcpClient, PromptResult},
+    acp::{AcpClient, AgentNotice, PromptResult},
+    commands::{self, CommandSink, Commands},
     config::{Config, Limits},
     error::{Error, Result as BridgeResult},
     login::{LoginFlow, LoginSink},
@@ -46,6 +48,23 @@ struct PromptFinished {
 
 struct RoomSink<'a> {
     room: &'a ChatRoom,
+    bot: &'a UserId,
+}
+
+impl CommandSink for RoomSink<'_> {
+    async fn set_commands(&self, content: &serde_json::Value) -> wonton_matrix::Result<()> {
+        self.room
+            .send_state_event_raw(
+                wonton_protocol::BOT_COMMANDS_EVENT,
+                self.bot.as_str(),
+                content.clone(),
+            )
+            .await
+    }
+
+    async fn send_command_text(&self, text: &str) -> wonton_matrix::Result<()> {
+        self.room.send_text(text).await
+    }
 }
 
 impl LoginSink for RoomSink<'_> {
@@ -87,6 +106,21 @@ pub async fn run() -> Result<()> {
     .await
     .context("登录 Matrix")?;
     matrix.start_sync().await.context("启动 Matrix 同步")?;
+    let room = Arc::new(
+        matrix
+            .watch_room(&config.home_room)
+            .await
+            .context("打开 Matrix 主房间")?,
+    );
+    // 连上 Agent 前先摆出桥自己的命令，Agent 可能一直不报命令表。
+    let bot = matrix.user_id().to_owned();
+    let mut commands = Commands::new();
+    commands
+        .reset(&RoomSink {
+            room: &room,
+            bot: &bot,
+        })
+        .await;
     let acp = connect_agent(&config).await?;
     let sessions = Arc::new(SessionStore::open(config.bridge_data.join("sessions.json")).await?);
     let bridge = Bridge {
@@ -95,7 +129,9 @@ pub async fn run() -> Result<()> {
         acp: Arc::new(acp),
         sessions,
     };
-    bridge.run_home_room().await
+    run_room(bridge, room, commands)
+        .await
+        .map_err(|error| anyhow::anyhow!(error))
 }
 
 async fn connect_agent(config: &Config) -> BridgeResult<AcpClient> {
@@ -119,27 +155,15 @@ async fn connect_agent(config: &Config) -> BridgeResult<AcpClient> {
     }
 }
 
-impl Bridge {
-    async fn run_home_room(self) -> Result<()> {
-        let room = self
-            .matrix
-            .watch_room(&self.config.home_room)
-            .await
-            .context("打开 Matrix 主房间")?;
-        run_room(self, Arc::new(room))
-            .await
-            .map_err(|error| anyhow::anyhow!(error))
-    }
-}
-
-async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
-    let owner = bridge.config.owner.clone();
+async fn run_room(bridge: Bridge, room: Arc<ChatRoom>, mut commands: Commands) -> BridgeResult<()> {
+    let bot = bridge.matrix.user_id().to_owned();
     let mut updates = room.message_updates().await;
+    let mut acp_notices = bridge.acp.subscribe();
     let mut acp_closed = bridge.acp.closed();
     if *acp_closed.borrow() {
-        return stop_for_agent_disconnect(&room).await;
+        return stop_for_agent_disconnect(&room, &mut commands, &bot).await;
     }
-    let initial: Vec<wonton_matrix::Message> = updates.next().await.unwrap_or_default();
+    let initial: Vec<Message> = updates.next().await.unwrap_or_default();
     let mut seen = initial
         .iter()
         .filter_map(|message| message.event_id.as_ref().map(ToString::to_string))
@@ -163,9 +187,20 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
     loop {
         tokio::select! {
             Some(messages) = updates.next() => {
-                for incoming in new_owner_messages(&messages, &owner, &mut seen) {
-                    receive_job(&bridge, &room, &mut state, incoming, &finished_tx).await?;
-                }
+                route_owner_messages(
+                    &bridge,
+                    &room,
+                    &mut state,
+                    &bot,
+                    &messages,
+                    &mut seen,
+                    &finished_tx,
+                )
+                .await?;
+            }
+            notice = acp_notices.recv() => {
+                handle_notice(&mut commands, &room, &bot, state.session_id.as_deref(), notice)
+                    .await;
             }
             Some(finished) = finished_rx.recv() => {
                 state.active = false;
@@ -178,7 +213,11 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
                 }
             }
             Some(event) = login_rx.recv() => {
-                if state.login.event(event, &RoomSink { room: room.as_ref() }).await? {
+                if state
+                    .login
+                    .event(event, &RoomSink { room: room.as_ref(), bot: &bot })
+                    .await?
+                {
                     // 终端登录成功后重开 ACP 连接：进程退出码 0，Compose 拉起后重新 initialize。
                     room.send_text("Agent 登录完成，桥将重连。").await?;
                     return Ok(());
@@ -198,7 +237,7 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
             }
             changed = acp_closed.changed() => {
                 if changed.is_ok() && *acp_closed.borrow() {
-                    return stop_for_agent_disconnect(&room).await;
+                    return stop_for_agent_disconnect(&room, &mut commands, &bot).await;
                 }
             }
             else => return Err(Error::TransportUnavailable("Matrix 房间消息流已关闭".into())),
@@ -206,16 +245,70 @@ async fn run_room(bridge: Bridge, room: Arc<ChatRoom>) -> BridgeResult<()> {
     }
 }
 
+async fn route_owner_messages(
+    bridge: &Bridge,
+    room: &Arc<ChatRoom>,
+    state: &mut RoomState,
+    bot: &UserId,
+    messages: &[Message],
+    seen: &mut HashSet<String>,
+    finished_tx: &mpsc::Sender<PromptFinished>,
+) -> BridgeResult<()> {
+    // 群里别的 Bot 也能收到这条消息，命令要提及本 Bot 才算数；成员数取不到时按私聊处理。
+    let group = match room.joined_member_count().await {
+        Ok(count) => count > 2,
+        Err(error) => {
+            tracing::warn!(error = %error, "取不到房间成员数，按私聊处理");
+            false
+        }
+    };
+    for incoming in new_owner_messages(messages, &bridge.config.owner, bot, group, seen) {
+        receive_job(bridge, room, state, bot, incoming, finished_tx).await?;
+    }
+    Ok(())
+}
+
+async fn handle_notice(
+    commands: &mut Commands,
+    room: &ChatRoom,
+    bot: &UserId,
+    current_session: Option<&str>,
+    notice: StdResult<AgentNotice, broadcast::error::RecvError>,
+) {
+    match notice {
+        Ok(AgentNotice::Update { session_id, update }) => {
+            commands
+                .receive(
+                    &RoomSink { room, bot },
+                    current_session,
+                    &session_id,
+                    &update,
+                )
+                .await;
+        }
+        Ok(_) => {}
+        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+            tracing::warn!(skipped, "ACP 通知跟不上，命令菜单可能停在旧表");
+        }
+        Err(broadcast::error::RecvError::Closed) => {}
+    }
+}
+
 async fn receive_job(
     bridge: &Bridge,
     room: &Arc<ChatRoom>,
     state: &mut RoomState,
+    bot: &UserId,
     incoming: IncomingText,
     finished_tx: &mpsc::Sender<PromptFinished>,
 ) -> BridgeResult<()> {
     if incoming.text.is_empty() {
         room.send_text("输入不支持：ACP 桥 C2 只接受普通文字。")
             .await?;
+        return Ok(());
+    }
+    if commands::is_help_request(&incoming.text) {
+        room.send_text(&commands::help()).await?;
         return Ok(());
     }
     if state
@@ -225,6 +318,7 @@ async fn receive_job(
             &incoming.event_id,
             &RoomSink {
                 room: room.as_ref(),
+                bot,
             },
             &bridge.acp,
             &bridge.config.socket,
@@ -473,7 +567,12 @@ async fn report_prompt(room: &ChatRoom, result: BridgeResult<PromptResult>) {
     }
 }
 
-async fn stop_for_agent_disconnect(room: &ChatRoom) -> BridgeResult<()> {
+async fn stop_for_agent_disconnect(
+    room: &ChatRoom,
+    commands: &mut Commands,
+    bot: &UserId,
+) -> BridgeResult<()> {
+    commands.reset(&RoomSink { room, bot }).await;
     let _ = room
         .send_text("传输不可用：ACP Agent 连接断开，桥将退出并由容器重启。")
         .await;

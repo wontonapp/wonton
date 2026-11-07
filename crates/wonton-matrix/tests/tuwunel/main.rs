@@ -18,4 +18,5 @@ mod messaging;
 mod profile;
 mod push;
 mod send_queue;
+mod state;
 mod support;

@@ -32,6 +32,8 @@ pub struct Message {
     /// `m.text` 内容里带命名空间的自定义字段（如 `app.wonton.confirmation`），被编辑过时是最新的内容。SDK
     /// 解析消息时丢掉了它们，这里从原始事件里取。别的消息类型没有。
     pub custom: Map<String, Value>,
+    /// `m.mentions.user_ids`：正文里显式提及的用户，被编辑过时是最新的内容。
+    pub mentions: Vec<OwnedUserId>,
     /// 是否被编辑过。
     pub edited: bool,
     /// 读到这条为止的其他人（显示名）。
@@ -175,6 +177,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         status: status(event.send_state()),
         body: body(kind),
         custom: custom(event, kind),
+        mentions: mentions(event, kind),
         edited,
         read_by,
     })
@@ -211,35 +214,56 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
 }
 
 fn custom(event: &EventTimelineItem, kind: &MsgLikeKind) -> Map<String, Value> {
+    content(event, kind)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(key, _)| key.contains('.') && !key.starts_with("m."))
+        .collect()
+}
+
+fn mentions(event: &EventTimelineItem, kind: &MsgLikeKind) -> Vec<OwnedUserId> {
+    content(event, kind)
+        .map(|content| mentions_of(&content))
+        .unwrap_or_default()
+}
+
+/// `m.mentions.user_ids`；不认识的名字跳过。
+pub(crate) fn mentions_of(content: &Map<String, Value>) -> Vec<OwnedUserId> {
+    content
+        .get("m.mentions")
+        .and_then(|mentions| mentions.get("user_ids"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|user| user.as_str()?.parse().ok())
+        .collect()
+}
+
+/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象；不是文字消息时没有。
+fn content(event: &EventTimelineItem, kind: &MsgLikeKind) -> Option<Map<String, Value>> {
     let is_text = matches!(kind, MsgLikeKind::Message(message)
         if matches!(message.msgtype(), MessageType::Text(_)));
     if !is_text {
-        return Map::new();
+        return None;
     }
     // SDK 核对过编辑：发送者和原消息相同才算数。
     let edit = event.latest_edit_json();
-    let Some(raw) = edit.or(event.original_json()) else {
-        return Map::new();
-    };
+    let raw = edit.or(event.original_json())?;
     let content = match raw.get_field::<Map<String, Value>>("content") {
         Ok(content) => content.unwrap_or_default(),
         Err(error) => {
             tracing::warn!("消息内容读不了：{error}");
-            return Map::new();
+            return None;
         }
     };
-    let content = if edit.is_some() {
+    if edit.is_some() {
         match content.into_iter().find(|(key, _)| key == "m.new_content") {
-            Some((_, Value::Object(new_content))) => new_content,
-            _ => Map::new(),
+            Some((_, Value::Object(new_content))) => Some(new_content),
+            _ => None,
         }
     } else {
-        content
-    };
-    content
-        .into_iter()
-        .filter(|(key, _)| key.contains('.') && !key.starts_with("m."))
-        .collect()
+        Some(content)
+    }
 }
 
 pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {
@@ -260,5 +284,43 @@ pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {
         MsgLikeKind::Poll(_) => other("m.poll.start"),
         MsgLikeKind::LiveLocation(_) => other("m.beacon_info"),
         MsgLikeKind::Other(message) => other(&message.event_type().to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn content(value: Value) -> Map<String, Value> {
+        let Value::Object(content) = value else {
+            panic!("不是对象");
+        };
+        content
+    }
+
+    #[test]
+    fn mentions_come_from_the_mention_list_and_unknown_names_are_skipped() {
+        assert_eq!(
+            mentions_of(&content(json!({
+                "body": "看这个",
+                "m.mentions": {"user_ids": ["@bot:example.org", "坏名字", "@owner:example.org"]}
+            }))),
+            ["@bot:example.org", "@owner:example.org"]
+        );
+        assert!(mentions_of(&content(json!({"body": "没有提及"}))).is_empty());
+        assert!(mentions_of(&content(json!({"m.mentions": {}}))).is_empty());
+    }
+
+    #[test]
+    fn an_edit_reads_the_new_content() {
+        // 编辑事件把新内容放在 `m.new_content` 里；提及也用编辑后的。
+        let edited =
+            content(json!({"m.new_content": {"m.mentions": {"user_ids": ["@bot:example.org"]}}}));
+        let Value::Object(new_content) = edited["m.new_content"].clone() else {
+            panic!("不是对象");
+        };
+        assert_eq!(mentions_of(&new_content), ["@bot:example.org"]);
     }
 }

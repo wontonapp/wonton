@@ -167,7 +167,7 @@ impl AcpClient {
         self.inner.closed.subscribe()
     }
 
-    fn subscribe(&self) -> broadcast::Receiver<AgentNotice> {
+    pub(crate) fn subscribe(&self) -> broadcast::Receiver<AgentNotice> {
         self.inner.notices.subscribe()
     }
 

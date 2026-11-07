@@ -9,7 +9,7 @@ use matrix_sdk::{
     event_cache::PaginationStatus,
     ruma::{
         OwnedEventId, RoomId, UInt, api::client::receipt::create_receipt::v3::ReceiptType,
-        events::room::message::RoomMessageEventContent,
+        api::client::state::get_state_events, events::room::message::RoomMessageEventContent,
     },
     send_queue::SendHandle,
 };
@@ -141,6 +141,53 @@ impl ChatRoom {
             .send(RoomMessageEventContent::text_plain(body).into())
             .await?;
         Ok(())
+    }
+
+    /// 发一个房间状态事件；`state_key` 为空串时是房间级状态。内容原样发，不需要 ruma 认识事件类型。
+    pub async fn send_state_event_raw(
+        &self,
+        event_type: &str,
+        state_key: &str,
+        content: serde_json::Value,
+    ) -> Result<()> {
+        self.room
+            .send_state_event_raw(event_type, state_key, content)
+            .await?;
+        Ok(())
+    }
+
+    /// 向服务器取一个房间状态事件的内容；没有这个状态时返回 `None`。
+    ///
+    /// 自定义事件类型不在 Sliding Sync 的默认 `required_state` 里，本机缓存也不会有，所以直接问服务器。
+    pub async fn fetch_state_event_content(
+        &self,
+        event_type: &str,
+        state_key: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        let response = self
+            .room
+            .client()
+            .send(get_state_events::v3::Request::new(
+                self.room_id().to_owned(),
+            ))
+            .await?;
+        for raw in response.room_state {
+            let value =
+                serde_json::to_value(&raw).map_err(|error| Error::Upstream(error.to_string()))?;
+            if value["type"] == event_type && value["state_key"] == state_key {
+                return Ok(Some(value["content"].clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// 房间里已加入的成员数，只读本机数据，不等网络。
+    pub async fn joined_member_count(&self) -> Result<usize> {
+        Ok(self
+            .room
+            .members_no_sync(RoomMemberships::JOIN)
+            .await?
+            .len())
     }
 
     /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
