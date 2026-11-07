@@ -241,6 +241,14 @@ plugin-install-priv-missing-cap-add = Permission { $permission } has no matching
 plugin-install-priv-missing-devices = Permission { $permission } has no matching devices field
 plugin-install-priv-field-requires = { $field } needs manifest permission { $permission }
 plugin-install-priv-missing-field = Manifest permission { $permission } has no matching { $field } field
+plugin-install-optional-not-allowed = Permission { $permission } cannot be optional
+plugin-install-optional-declared-twice = Permission { $permission } is in both permissions and optional_permissions
+plugin-install-optional-off-loss = Optional permission { $permission } needs off_loss (what is lost when it is off) in both Chinese and English
+plugin-install-optional-gpu-required = Optional permission { $permission } gives no GPU while off, so requirements.gpu.need cannot be required
+plugin-install-optional-not-enabled = Optional permission { $permission } is not declared as optional
+plugin-install-optional-duplicate = Optional permission { $permission } is listed twice
+upgrade-optional-became-required = This version makes { $permission } required; it is granted after you confirm
+upgrade-optional-removed = This version removes the optional permission { $permission }
 
 # ── provides (provides.rs) ───────────────────────────────────────────────────
 

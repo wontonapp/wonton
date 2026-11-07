@@ -99,7 +99,13 @@ impl PluginManager {
             ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
             let ctx = self
-                .install_context(manifest, Some(secret), generated, &langs)
+                .install_context(
+                    manifest,
+                    Some(secret),
+                    generated,
+                    &record.effective_permissions(manifest),
+                    &langs,
+                )
                 .await?;
             self.hydra(&langs)?
                 .upsert_client(&client_spec(manifest, &ctx, secret))

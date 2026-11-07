@@ -719,6 +719,8 @@ mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
 #[cfg(test)]
+mod optional_permission_tests;
+#[cfg(test)]
 mod people_tests;
 #[cfg(test)]
 mod profile_tests;

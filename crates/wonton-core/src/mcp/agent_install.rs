@@ -19,7 +19,7 @@ use crate::plugin::check;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
-use crate::plugin::store::InstalledRecord;
+use crate::plugin::store::{EnabledPermission, InstalledRecord};
 use crate::plugin::{PluginId, PluginPackage, PluginView, package_files};
 use wonton_protocol::PluginWriter;
 
@@ -309,6 +309,7 @@ async fn quiet_update(
             &id,
             package,
             granted,
+            record.enabled_permissions.clone(),
             record.lan_webui,
             &bus.plugins.owner_languages(),
         )
@@ -389,6 +390,7 @@ async fn update(
     // 授予的就是新清单里写的：减权限时旧授予不作数，没变宽时它是子集。
     let granted = package.manifest.permissions.clone();
     let lan_webui = record.lan_webui;
+    let enabled = record.enabled_permissions.clone();
     if widened.is_empty() && !risky && !record.ask_every_update {
         // 不打扰主人：直接更新，写审计（ADR-0033 的“更新，权限没变宽”）。之前还在等的
         // 同一份提交让位，不能让主人批一份已经被盖掉的。
@@ -435,8 +437,11 @@ async fn update(
     );
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
-    let run =
-        move |bus: Arc<Bus>| upgrade_ran(bus, id_for_run, version, package, granted, lan_webui);
+    let run = move |bus: Arc<Bus>| {
+        upgrade_ran(
+            bus, id_for_run, version, package, granted, enabled, lan_webui,
+        )
+    };
     bus.confirmed_twice(
         caller,
         name,
@@ -448,18 +453,20 @@ async fn update(
 }
 
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
+#[allow(clippy::too_many_arguments)] // 卡片执行要用的几个值，再包一层也是逐个填。
 async fn upgrade_ran(
     bus: Arc<Bus>,
     id: PluginId,
     version: String,
     package: PluginPackage,
     granted: Vec<Permission>,
+    enabled: Vec<EnabledPermission>,
     lan_webui: bool,
 ) -> Outcome {
     let langs = bus.plugins.owner_languages();
     match bus
         .plugins
-        .upgrade_upload(&id, package, granted, lan_webui, &langs)
+        .upgrade_upload(&id, package, granted, enabled, lan_webui, &langs)
         .await
     {
         Ok(()) => {

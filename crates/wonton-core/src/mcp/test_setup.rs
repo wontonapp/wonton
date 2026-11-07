@@ -203,6 +203,67 @@ pub(super) async fn setup_root() -> Setup {
     .await
 }
 
+/// 有一项可选、默认关的最高级权限（`docker.socket`）的插件。
+pub(super) const OPTIONAL: &str = "name: notes
+services:
+  web:
+    image: nginx
+    environment:
+      STATE: '${WONTON_PERMISSION_DOCKER_SOCKET:-off}'
+  agent:
+    image: example/agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+x-wonton:
+  spec: '0.5'
+  id: app.example.notes
+  version: 0.1.0
+  kind: app
+  title: {zh: 笔记, en: Notes}
+  description: {zh: 记笔记, en: Notes}
+  optional_permissions:
+    docker.socket:
+      off_loss: {zh: 看不到容器, en: No containers}
+  permissions: []
+";
+
+/// 装上 [`OPTIONAL`] 的管理器和总线：记录已经写好，可以直接开关。
+pub(super) async fn setup_optional() -> Setup {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager(engine, &dir);
+    let package = PluginPackage::parse(OPTIONAL, &Languages::from_header(Some("zh-Hans"))).unwrap();
+    manager
+        .install_package(package, &[], Languages::from_header(Some("zh-Hans")))
+        .await
+        .unwrap();
+    let cards = Arc::new(Cards::default());
+    let confirmations = Arc::new(Confirmations::new(cards.clone(), Duration::from_secs(5)));
+    let audit = dir.path().join("audit.jsonl");
+    write_index(&dir);
+    let bus = Bus::with_upstreams(
+        manager.clone(),
+        confirmations,
+        Arc::new(crate::mcp::audit::Audit::new(audit)),
+        Arc::new(Upstreams::new()),
+    );
+    let members = Arc::new(crate::members::Members::open(dir.path().join("members.json")).unwrap());
+    bus.attach_people("wonton.localhost".into(), members.clone());
+    let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
+    let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
+    manager.note_person_languages("owner", Some("zh"));
+    let _ = docker;
+    Setup {
+        bus,
+        cards,
+        notes: Notes::default(),
+        manager,
+        caller,
+        dir,
+        members,
+    }
+}
+
 pub(super) async fn setup_with(
     engine: Engine,
     ttl: Duration,

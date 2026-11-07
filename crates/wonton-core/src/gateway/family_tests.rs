@@ -389,6 +389,69 @@ async fn owner_only_routes_reject_member_devices_with_owner_only() {
     assert_eq!(reply.error_kind(), Some("unauthenticated"));
 }
 
+#[tokio::test]
+async fn install_authorization_does_not_allow_changing_plugin_permissions() {
+    let h = Harness::start(None).await;
+    let member = SecretKey::generate().public();
+    seed_member(&h, "mia", true);
+    h.tunnel
+        .devices
+        .add_if(member, None, Some("mia".to_owned()), |_| true)
+        .unwrap();
+
+    for (method, path, content_type, body) in [
+        (
+            Method::POST,
+            "/_wonton/api/plugins",
+            "application/json",
+            r#"{"source":"github:o/r","grant":[],"enabled_permissions":["docker.socket"]}"#,
+        ),
+        (
+            Method::POST,
+            "/_wonton/api/plugins/app.whoami/upgrade",
+            "application/json",
+            r#"{"grant":[],"enabled_permissions":["docker.socket"]}"#,
+        ),
+        (
+            Method::POST,
+            "/_wonton/api/plugins?enabled_permissions=docker.socket",
+            "application/yaml",
+            "{}",
+        ),
+        (
+            Method::POST,
+            "/_wonton/api/plugins/app.whoami/upgrade?enabled_permissions=docker.socket",
+            "application/yaml",
+            "{}",
+        ),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/permissions/docker.socket",
+            "application/json",
+            r#"{"enabled":true}"#,
+        ),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/permissions/docker.socket",
+            "application/json",
+            r#"{"enabled":false}"#,
+        ),
+    ] {
+        let reply = send_as(
+            &h.app,
+            Some(member),
+            method.clone(),
+            CORE,
+            path,
+            &[("content-type", content_type)],
+            body,
+        )
+        .await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {path}");
+        assert_eq!(reply.error_kind(), Some("owner_only"), "{}", reply.text());
+    }
+}
+
 /// 路由表的一层：`kind` 是没授权的家人拿到的错误码。
 type RouteTable = (&'static str, Vec<(Method, &'static str, &'static str)>);
 
@@ -423,6 +486,17 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
             "/_wonton/api/plugins/app.whoami/family",
             "{\"enabled\": true}",
         ),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/permissions/docker.socket",
+            "{\"enabled\": true}",
+        ),
+        (Method::POST, "/_wonton/api/plugins", "{}"),
+        (
+            Method::POST,
+            "/_wonton/api/plugins/app.whoami/upgrade",
+            "{}",
+        ),
         (Method::GET, "/_wonton/api/storage", ""),
         (Method::POST, "/_wonton/api/store/sources", "{}"),
         (Method::DELETE, "/_wonton/api/store/sources?address=x", ""),
@@ -455,7 +529,7 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
         (Method::DELETE, "/_wonton/api/peers/rejected/r1", ""),
         (Method::DELETE, "/_wonton/api/peers/other.example", ""),
     ];
-    // 装卸升级类是另一层：没授权的家人是 install_not_allowed，不是 owner_only。
+    // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 owner_only。
     let install_routes: Vec<(Method, &str, &str)> = vec![
         (
             Method::POST,

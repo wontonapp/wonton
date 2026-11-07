@@ -28,7 +28,7 @@ use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
-use super::super::store::InstalledRecord;
+use super::super::store::{EnabledPermission, InstalledRecord};
 use super::super::upstreams::{core_aliases, uses_sso};
 use super::super::vars::MatrixVars;
 use super::{installed_package, newer};
@@ -98,11 +98,12 @@ fn pin_images(plan: &mut Deployment, images: &HashMap<String, String>) {
 }
 
 impl PluginManager {
-    /// 检查并升级，`granted` 必须和新版本声明的权限完全一致：这就是主人的确认。
+    /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`requested` 是主人勾选的可选项。
     pub(in crate::plugin) async fn upgrade_checked(
         &self,
         package: PluginPackage,
         granted: &[Permission],
+        requested: &[EnabledPermission],
         lan_webui: bool,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
@@ -111,16 +112,39 @@ impl PluginManager {
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
-        check_permissions(manifest, granted, &langs)?;
+        // 只有新版本还声明成可选的才留下；以前开着的沿用原来的时间和人（ADR-0057）。
+        let record = self
+            .store
+            .load(id)?
+            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        let enabled: Vec<EnabledPermission> = requested
+            .iter()
+            .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
+            .map(|item| {
+                record
+                    .enabled_permissions
+                    .iter()
+                    .find(|old| old.permission == item.permission)
+                    .cloned()
+                    .unwrap_or_else(|| item.clone())
+            })
+            .collect();
+        check_permissions(manifest, granted, &enabled, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
-        let gpu = self.gpu_grant(manifest, &langs).await?;
+        let gpu = self
+            .gpu_grant(
+                manifest,
+                &manifest.effective_permissions(&super::super::store::permission_set(&enabled)),
+                &langs,
+            )
+            .await?;
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
         let outcome = self
-            .upgrade_begun(&package, granted, (gpu, lan), &langs)
+            .upgrade_begun(&package, granted, &enabled, (gpu, lan), &langs)
             .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
@@ -218,6 +242,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         granted: &[Permission],
+        enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
         langs: &Languages,
     ) -> Outcome {
@@ -227,7 +252,7 @@ impl PluginManager {
         };
         let mut progress = Progress::default();
         let error = match self
-            .replace_version(&old, package, granted, grants, &mut progress)
+            .replace_version(&old, package, granted, enabled, grants, &mut progress)
             .await
         {
             Ok(deployed) => {
@@ -301,11 +326,14 @@ impl PluginManager {
         old: &Old,
         package: &PluginPackage,
         granted: &[Permission],
+        enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
-        let prepared = self.prepare_new(old, package, grants, progress).await?;
+        let prepared = self
+            .prepare_new(old, package, enabled, grants, progress)
+            .await?;
         let langs = self.owner_languages();
         let Prepared {
             mut ctx,
@@ -358,6 +386,7 @@ impl PluginManager {
             source: package.source.clone(),
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
+            enabled_permissions: enabled.to_vec(),
             limits: old.record.limits,
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
@@ -386,6 +415,7 @@ impl PluginManager {
         &self,
         old: &Old,
         package: &PluginPackage,
+        enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
@@ -400,7 +430,13 @@ impl PluginManager {
         let proxy =
             ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         let mut ctx = self
-            .install_context(manifest, oidc_secret.as_deref(), generated, &langs)
+            .install_context(
+                manifest,
+                oidc_secret.as_deref(),
+                generated,
+                &manifest.effective_permissions(&super::super::store::permission_set(enabled)),
+                &langs,
+            )
             .await?;
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
@@ -713,7 +749,12 @@ impl PluginManager {
         }
         let granted = manifest.permissions.clone();
         if let Err(e) = self
-            .upgrade_checked(package, &granted, installed.lan_webui)
+            .upgrade_checked(
+                package,
+                &granted,
+                &installed.enabled_permissions,
+                installed.lan_webui,
+            )
             .await
         {
             let from = installed.version;

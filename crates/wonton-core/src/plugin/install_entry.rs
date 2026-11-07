@@ -6,6 +6,7 @@ use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView, detached};
 use super::manifest::{Permission, PluginKind};
 use super::package::PluginPackage;
+use super::store::EnabledPermission;
 use crate::l10n;
 
 impl PluginManager {
@@ -38,6 +39,19 @@ impl PluginManager {
         lan_webui: bool,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
+        self.install_user_enabled(package, granted, &[], lan_webui, langs)
+            .await
+    }
+
+    /// 同 [`Self::install_user`]，另外带上主人打开了的可选权限（ADR-0057）。
+    pub async fn install_user_enabled(
+        &self,
+        package: PluginPackage,
+        granted: &[Permission],
+        enabled: &[EnabledPermission],
+        lan_webui: bool,
+        langs: Languages,
+    ) -> Result<PluginView, InstallError> {
         if package.manifest.kind == PluginKind::System {
             return Err(InstallError::Unsupported(l10n::text(
                 &langs,
@@ -45,7 +59,7 @@ impl PluginManager {
                 &[],
             )));
         }
-        self.install_checked(package, granted, lan_webui, &langs)
+        self.install_checked(package, granted, enabled, lan_webui, &langs)
             .await
     }
 
@@ -59,5 +73,22 @@ impl PluginManager {
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
         detached(async move { this.install_user(package, &granted, lan_webui, langs).await }).await
+    }
+
+    /// 同 [`Self::install_detached`]，另外带上主人打开了的可选权限（ADR-0057）。
+    pub async fn install_detached_enabled(
+        self: &Arc<Self>,
+        package: PluginPackage,
+        granted: Vec<Permission>,
+        enabled: Vec<EnabledPermission>,
+        lan_webui: bool,
+        langs: Languages,
+    ) -> Result<PluginView, InstallError> {
+        let this = Arc::clone(self);
+        detached(async move {
+            this.install_user_enabled(package, &granted, &enabled, lan_webui, langs)
+                .await
+        })
+        .await
     }
 }

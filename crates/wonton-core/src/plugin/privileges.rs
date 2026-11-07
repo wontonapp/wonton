@@ -92,6 +92,62 @@ pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
     }
 }
 
+/// 可以声明成可选、默认关的权限（ADR-0057）。判据：关着时整段字段能拿掉，插件还能运行。
+pub fn may_be_optional(permission: &Permission) -> bool {
+    matches!(
+        permission,
+        Permission::DockerSocket
+            | Permission::DevicesGpu
+            | Permission::DevicesSerial
+            | Permission::DevicesUsb
+    )
+}
+
+/// 开着时注入给插件的变量名（ADR-0057）。注入给这个插件的所有服务，关着时不定义。
+pub fn permission_var(permission: &Permission) -> Option<&'static str> {
+    match permission {
+        Permission::DockerSocket => Some("WONTON_PERMISSION_DOCKER_SOCKET"),
+        Permission::DevicesGpu => Some("WONTON_PERMISSION_DEVICES_GPU"),
+        Permission::DevicesSerial => Some("WONTON_PERMISSION_DEVICES_SERIAL"),
+        Permission::DevicesUsb => Some("WONTON_PERMISSION_DEVICES_USB"),
+        _ => None,
+    }
+}
+
+/// `optional_permissions` 的键和 `off_loss`：在允许名单里、不和必需的重复、每种语言都写了。
+pub fn validate_optional(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
+    for (permission, optional) in &manifest.optional_permissions {
+        if !may_be_optional(permission) {
+            return Err(ManifestError::Invalid(text(
+                langs,
+                "plugin-install-optional-not-allowed",
+                &[("permission", permission.to_string().into())],
+            )));
+        }
+        if manifest.permissions.contains(permission) {
+            return Err(ManifestError::Invalid(text(
+                langs,
+                "plugin-install-optional-declared-twice",
+                &[("permission", permission.to_string().into())],
+            )));
+        }
+        let complete = ["zh", "en"].iter().all(|lang| {
+            optional
+                .off_loss
+                .get(*lang)
+                .is_some_and(|text| !text.trim().is_empty())
+        });
+        if !complete {
+            return Err(ManifestError::Invalid(text(
+                langs,
+                "plugin-install-optional-off-loss",
+                &[("permission", permission.to_string().into())],
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// 固定设备不扩大宿主路径的允许范围；串口和 USB 由后续的设备选择流程处理。
 pub fn is_fixed_device(path: &str) -> bool {
     matches!(path, "/dev/net/tun" | "/dev/fuse")
@@ -118,7 +174,7 @@ pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), M
         || manifest.permissions.contains(&Permission::MatrixBot)
         || manifest.bots.is_some();
     if restricted
-        && let Some(permission) = manifest.permissions.iter().find(|permission| {
+        && let Some(permission) = manifest.all_permissions().find(|permission| {
             matches!(
                 risk(permission),
                 Some(CapabilityRisk::VeryHigh | CapabilityRisk::Highest)
@@ -132,8 +188,7 @@ pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), M
         )));
     }
     if let Some(permission) = manifest
-        .permissions
-        .iter()
+        .all_permissions()
         .find_map(|permission| match permission {
             Permission::Device { path } if !is_fixed_device(path) => Some(path),
             _ => None,
@@ -515,7 +570,9 @@ fn require(
     field: &str,
     langs: &Languages,
 ) -> Result<(), ServiceError> {
-    if manifest.permissions.contains(&permission) {
+    if manifest.permissions.contains(&permission)
+        || manifest.optional_permissions.contains_key(&permission)
+    {
         Ok(())
     } else {
         Err(ServiceError::new(
@@ -539,7 +596,10 @@ fn check_declared(
     field: &str,
     langs: &Languages,
 ) -> Result<(), ServiceError> {
-    if manifest.permissions.contains(&permission) && !used {
+    if (manifest.permissions.contains(&permission)
+        || manifest.optional_permissions.contains_key(&permission))
+        && !used
+    {
         Err(ServiceError::new(
             "*",
             text(

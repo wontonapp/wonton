@@ -38,6 +38,14 @@ chat-card-update-header-ask-every = 権限は変わっていませんが、「�
 chat-card-install-title = { $requester }が{ $title }のインストールを要求しています
 chat-card-update-title = { $requester }が{ $title }のアップデートを要求しています
 chat-card-uninstall-title = { $requester }が{ $title }のアンインストールを要求しています
+chat-card-permission-enable-title = { $requester }が「{ $title }」の{ $permission }をオンにしようとしています
+chat-card-permission-disable-title = { $requester }が「{ $title }」の{ $permission }をオフにしようとしています
+chat-card-permission-off-loss = 失うもの：{ $loss }
+chat-card-permission-root = オンにするとこのアプリはホスト全体を操作でき、root で実行されます。
+chat-choice-permission-enable = オンにする
+chat-choice-permission-disable = オフにする
+chat-permission-done = 「{ $title }」の権限を変更しました
+chat-permission-failed = { $id } の権限の変更に失敗しました：{ $error }
 chat-card-tool-title = { $requester }が{ $plugin }の{ $tool }を使おうとしています
 
 # エージェント権限カードのタイトル。$title はエージェントが付けたリクエスト名。

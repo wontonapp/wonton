@@ -35,6 +35,14 @@ chat-card-update-header-ask-every = 权限没有变宽，你打开了“每次�
 chat-card-install-title = { $requester } 想安装 { $title }
 chat-card-update-title = { $requester } 想更新 { $title }
 chat-card-uninstall-title = { $requester } 想卸载 { $title }
+chat-card-permission-enable-title = { $requester } 要在“{ $title }”上打开「{ $permission }」
+chat-card-permission-disable-title = { $requester } 要在“{ $title }”上关掉「{ $permission }」
+chat-card-permission-off-loss = 关掉以后：{ $loss }
+chat-card-permission-root = 打开后这个应用能控制整台主机，操作以本机 root 身份执行。
+chat-choice-permission-enable = 打开
+chat-choice-permission-disable = 关掉
+chat-permission-done = 已经改好“{ $title }”的权限
+chat-permission-failed = 给 { $id } 改权限失败：{ $error }
 chat-card-tool-title = { $requester } 想用 { $plugin } 的 { $tool }
 
 # Agent 权限卡片的标题。$title 是 Agent 给这次请求起的名字。

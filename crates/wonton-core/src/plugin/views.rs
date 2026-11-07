@@ -24,7 +24,7 @@ use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::render::{dry_run, dry_run_with_email};
-use super::store::StoreError;
+use super::store::{EnabledPermission, StoreError};
 use super::views_source::source_notices;
 use crate::l10n;
 
@@ -85,12 +85,11 @@ impl PluginManager {
         };
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
+        let record = self.store.load(id).ok().flatten();
         // “每次都问”只有 Agent 写的插件才有（ADR-0033）。
         let ask_every_update = installed.written_by.is_some().then(|| {
-            self.store
-                .load(id)
-                .ok()
-                .flatten()
+            record
+                .as_ref()
                 .is_some_and(|record| record.ask_every_update)
         });
         Some(PluginDetail {
@@ -113,11 +112,13 @@ impl PluginManager {
             license: m.license.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: m
-                .permissions
-                .iter()
-                .map(|p| permission_line(p, langs))
-                .collect(),
+            permissions: super::views_permissions::permission_lines(
+                m,
+                record
+                    .as_ref()
+                    .map_or(&[][..], |record| &record.enabled_permissions),
+                langs,
+            ),
             requirements: Vec::new(),
             has_web: m.webui.is_some(),
             installed: Some(installed),
@@ -155,7 +156,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
         let blocked = blocked_by(self.precheck(&package.manifest, langs).await)?;
-        let mut preview = self.preview_with(package, langs, blocked, None).await?;
+        let mut preview = self
+            .preview_with(package, langs, blocked, None, &[])
+            .await?;
         if let Some(notice) = self.retained_data(&package.manifest.id, langs).await? {
             let after_review_notice = usize::from(preview.trust != PluginTrust::Official);
             preview.notices.insert(after_review_notice, notice);
@@ -189,6 +192,7 @@ impl PluginManager {
         langs: &Languages,
         blocked: Option<String>,
         written_by: Option<PluginWriter>,
+        enabled: &[EnabledPermission],
     ) -> Result<InstallPreview, InstallError> {
         let plan = dry_run(package, langs)?;
         let icon = self.check_icon(package, langs).await?;
@@ -197,7 +201,10 @@ impl PluginManager {
         }
         let m = &package.manifest;
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
-        let gpu = self.gpu_preview(m, langs).await?;
+        let granted = m.effective_permissions(&super::store::permission_set(enabled));
+        let gpu = self
+            .gpu_preview(m, granted.contains(&Permission::DevicesGpu), langs)
+            .await?;
         let lan = self.lan_preview(package, langs).await?;
         let egress = self.egress_problem_for(m, langs).await?;
         let egress_block = egress.as_ref().filter(|p| blocks(p));
@@ -246,11 +253,7 @@ impl PluginManager {
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
-            permissions: m
-                .permissions
-                .iter()
-                .map(|p| permission_line(p, langs))
-                .collect(),
+            permissions: super::views_permissions::permission_lines(m, enabled, langs),
             notices,
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
@@ -525,6 +528,20 @@ impl PluginManager {
         match self.store.load(&id) {
             Ok(record) => {
                 plugin.written_by = record.as_ref().and_then(|record| record.written_by.clone());
+                plugin.enabled_root_permissions = record
+                    .as_ref()
+                    .map(|record| {
+                        record
+                            .enabled_permissions
+                            .iter()
+                            .filter(|item| {
+                                super::privileges::risk(&item.permission)
+                                    == Some(super::privileges::CapabilityRisk::Highest)
+                            })
+                            .map(|item| item.permission.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 plugin.family = record.is_some_and(|record| record.family);
             }
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),

@@ -240,6 +240,14 @@ plugin-install-priv-missing-cap-add = 權限 { $permission } 沒有對應的 cap
 plugin-install-priv-missing-devices = 權限 { $permission } 沒有對應的 devices 欄位
 plugin-install-priv-field-requires = { $field } 需要清單權限 { $permission }
 plugin-install-priv-missing-field = 清單權限 { $permission } 沒有對應的 { $field } 欄位
+plugin-install-optional-not-allowed = 權限 { $permission } 不能宣告成可選
+plugin-install-optional-declared-twice = 權限 { $permission } 同時寫在 permissions 和 optional_permissions 裡
+plugin-install-optional-off-loss = 可選權限 { $permission } 要寫 off_loss（關著時少了什麼），中文和英文都要有
+plugin-install-optional-gpu-required = 可選權限 { $permission } 關著時不會給顯示卡，requirements.gpu.need 不能寫 required
+plugin-install-optional-not-enabled = 可選項 { $permission } 沒有宣告成可選
+plugin-install-optional-duplicate = 可選項 { $permission } 寫了兩遍
+upgrade-optional-became-required = 新版本把 { $permission } 改成必要權限，確認後授予
+upgrade-optional-removed = 新版本去掉了可選項 { $permission }
 
 # ── provides（provides.rs）─────────────────────────────────────────────────
 

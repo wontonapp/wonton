@@ -47,6 +47,7 @@ mod models;
 mod network_mode;
 mod network_pool;
 mod oidc;
+mod optional_permissions;
 mod owner;
 mod people_languages;
 mod preinstall;

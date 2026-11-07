@@ -27,7 +27,7 @@ use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, render};
 use super::secrets::{self, Secrets};
-use super::store::InstalledRecord;
+use super::store::{EnabledPermission, InstalledRecord};
 use super::upstreams::Endpoint;
 use super::upstreams::{McpTarget, core_aliases, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
@@ -134,13 +134,14 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         granted: &[Permission],
+        enabled: &[EnabledPermission],
         gpu: Option<GpuGrant>,
         lan: Option<LanGrant>,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let mut undo = Undo::default();
         match self
-            .deploy_inner(package, granted, (gpu, lan), &mut undo, langs)
+            .deploy_inner(package, granted, enabled, (gpu, lan), &mut undo, langs)
             .await
         {
             Ok(deployed) => Ok(deployed),
@@ -166,6 +167,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         granted: &[Permission],
+        enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
         undo: &mut Undo,
         langs: &Languages,
@@ -178,8 +180,9 @@ impl PluginManager {
             secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
         let proxy =
             ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
+        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
         let mut ctx = self
-            .install_context(manifest, secret.as_deref(), generated, langs)
+            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
             .await?;
         ctx.gpu = gpu;
         ctx.lan = lan;
@@ -238,6 +241,7 @@ impl PluginManager {
             source: package.source.clone(),
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
+            enabled_permissions: enabled.to_vec(),
             limits: Default::default(),
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
@@ -333,6 +337,7 @@ impl PluginManager {
         manifest: &Manifest,
         secret: Option<&str>,
         generated: BTreeMap<String, String>,
+        granted: &[Permission],
         langs: &Languages,
     ) -> Result<InstallContext, InstallError> {
         if self.cfg.profile.email().is_none() && super::manifest_oidc::needs_owner_email(manifest) {
@@ -430,6 +435,7 @@ impl PluginManager {
             memory_total: self.memory_total().await,
             host_name: self.host_name().await,
             cgroup_parent: self.cfg.plugin_slice.clone(),
+            granted: granted.to_vec(),
         })
     }
 

@@ -408,10 +408,18 @@ impl PluginManager {
             secrets::generated_values(manifest, &secrets, &langs).map_err(InstallError::Storage)?;
         let secret = record.oidc_client_secret.as_deref();
         let mut ctx = self
-            .install_context(manifest, secret, generated, &langs)
+            .install_context(
+                manifest,
+                secret,
+                generated,
+                &record.effective_permissions(manifest),
+                &langs,
+            )
             .await?;
         ctx.limits = record.limits;
-        ctx.gpu = self.gpu_grant(manifest, &langs).await?;
+        ctx.gpu = self
+            .gpu_grant(manifest, &record.effective_permissions(manifest), &langs)
+            .await?;
         ctx.models = self.stored_model_vars(package)?;
         if let Some(network) = lan.as_ref().and_then(|grant| grant.network.as_ref())
             && self.engine.network_reach(network).await?.is_none()

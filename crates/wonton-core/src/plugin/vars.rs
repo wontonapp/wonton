@@ -148,6 +148,12 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     if let Some(grant) = &ctx.lan {
         set(lan::ADDRESSES_VAR, grant.var());
     }
+    // 可选权限开着时给所有服务一个 1，关着时不定义（ADR-0057）。
+    for permission in &ctx.granted {
+        if let Some(var) = super::privileges::permission_var(permission) {
+            set(var, "1".to_owned());
+        }
+    }
     if let Some(address) = &ctx.core_address {
         set(core_address::VAR, address.clone());
     }

@@ -19,13 +19,30 @@ use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
 use super::languages::Languages;
-use super::manifest::{Permission, PluginId};
+use super::manifest::{Manifest, Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
 use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
 use super::tool_policy::ToolPolicy;
+
+/// 一项可选权限现在开着，以及是谁、什么时候打开的（ADR-0057）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnabledPermission {
+    pub permission: Permission,
+    /// Unix 秒。
+    pub since: u64,
+    pub opened_by: OpenedBy,
+}
+
+/// 打开一项可选权限的人。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum OpenedBy {
+    Owner,
+    Bot { plugin_id: String, title: String },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
@@ -41,6 +58,9 @@ pub struct InstalledRecord {
     )]
     pub files: PackageFiles,
     pub granted_permissions: Vec<Permission>,
+    /// 主人或 Bot 打开了的可选项（ADR-0057）；关着的可选项不在这里。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enabled_permissions: Vec<EnabledPermission>,
     #[serde(default, skip_serializing_if = "limits_empty")]
     pub limits: PluginLimits,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
@@ -72,8 +92,56 @@ pub struct InstalledRecord {
     pub family: bool,
 }
 
+impl InstalledRecord {
+    /// 记录里开着的可选权限。
+    pub fn enabled(&self) -> Vec<Permission> {
+        self.enabled_permissions
+            .iter()
+            .map(|item| item.permission.clone())
+            .collect()
+    }
+
+    /// 这份记录对 `manifest` 的生效集：必需权限加上开着的可选项。
+    pub fn effective_permissions(&self, manifest: &Manifest) -> Vec<Permission> {
+        manifest.effective_permissions(&self.enabled())
+    }
+}
+
 fn limits_empty(limits: &PluginLimits) -> bool {
     *limits == PluginLimits::default()
+}
+
+/// 解析请求里的权限写法。
+pub fn parse_permissions(
+    values: &[String],
+) -> Result<Vec<Permission>, super::manifest::ManifestError> {
+    values
+        .iter()
+        .map(|value| value.parse::<Permission>())
+        .collect()
+}
+
+/// 打开的可选项里的权限名。
+pub fn permission_set(items: &[EnabledPermission]) -> Vec<Permission> {
+    items.iter().map(|item| item.permission.clone()).collect()
+}
+
+/// 解析请求里打开了的可选项，带上打开的时间和人。
+pub fn parse_enabled(
+    values: &[String],
+    opened_by: OpenedBy,
+    since: u64,
+) -> Result<Vec<EnabledPermission>, super::manifest::ManifestError> {
+    values
+        .iter()
+        .map(|value| {
+            Ok(EnabledPermission {
+                permission: value.parse::<Permission>()?,
+                since,
+                opened_by: opened_by.clone(),
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -495,6 +563,7 @@ mod tests {
             source: "services: {}".into(),
             files: [("config.yaml".to_owned(), b"a: \x01\xff".to_vec())].into(),
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
+            enabled_permissions: Vec::new(),
             limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,

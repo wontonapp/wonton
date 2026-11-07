@@ -47,6 +47,14 @@ chat-card-update-header-ask-every = Permissions didn't widen; you turned on "Ask
 chat-card-install-title = { $requester } wants to install { $title }
 chat-card-update-title = { $requester } wants to update { $title }
 chat-card-uninstall-title = { $requester } wants to uninstall { $title }
+chat-card-permission-enable-title = { $requester } wants to turn on { $permission } for { $title }
+chat-card-permission-disable-title = { $requester } wants to turn off { $permission } for { $title }
+chat-card-permission-off-loss = What is lost: { $loss }
+chat-card-permission-root = Once on, this app can control the whole host; actions run as root.
+chat-choice-permission-enable = Turn on
+chat-choice-permission-disable = Turn off
+chat-permission-done = Updated the permission for { $title }
+chat-permission-failed = Changing the permission for { $id } failed: { $error }
 chat-card-tool-title = { $requester } wants to use { $tool } from { $plugin }
 
 # Title of an agent-permission card. $title is what the agent called its request.

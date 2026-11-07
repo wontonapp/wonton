@@ -213,6 +213,7 @@ impl PluginManager {
                 .install_checked(
                     package.clone(),
                     &manifest.permissions,
+                    &[],
                     false,
                     &self.owner_languages(),
                 )

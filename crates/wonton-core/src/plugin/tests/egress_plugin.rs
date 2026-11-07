@@ -182,6 +182,27 @@ async fn egress_plugin_singleton_reserves_even_during_concurrent_installs() {
     assert_eq!(m.list().len(), 1);
 }
 
+/// 代理连不上时：消费者的预览被拦，安装报 `egress_proxy_unavailable`。
+async fn assert_consumer_blocked(m: &PluginManager, langs: &Languages) {
+    let app = consumer("app.out");
+    let preview = m
+        .preview_install(&PluginPackage::parse(&app, &super::langs()).unwrap(), langs)
+        .await
+        .unwrap();
+    assert!(preview.blocked.is_some());
+    let grants = PluginPackage::parse(&app, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    assert_eq!(
+        m.install(&app, &grants, super::langs())
+            .await
+            .unwrap_err()
+            .kind(),
+        "egress_proxy_unavailable"
+    );
+}
+
 #[tokio::test]
 async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgrade_and_reinstall() {
     let (docker, engine) = FakeDocker::start().await;
@@ -210,26 +231,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
             m.egress_problem().unwrap().reason,
             EgressFailure::ProxyUnreachable
         );
-        let app = consumer("app.out");
-        let preview = m
-            .preview_install(
-                &PluginPackage::parse(&app, &super::langs()).unwrap(),
-                &langs,
-            )
-            .await
-            .unwrap();
-        assert!(preview.blocked.is_some());
-        let grants = PluginPackage::parse(&app, &super::langs())
-            .unwrap()
-            .manifest
-            .permissions;
-        assert_eq!(
-            m.install(&app, &grants, super::langs())
-                .await
-                .unwrap_err()
-                .kind(),
-            "egress_proxy_unavailable"
-        );
+        assert_consumer_blocked(&m, &langs).await;
     }
     m.engine.remove_container(name).await.unwrap();
     m.probe_egress(&Languages::default()).await.unwrap();
@@ -251,6 +253,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         &PluginId::parse("app.proxy").unwrap(),
         upgraded,
         grants,
+        Vec::new(),
         false,
         &super::langs(),
     )
@@ -322,6 +325,7 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
         &PluginId::parse("app.proxy").unwrap(),
         upgraded,
         grants,
+        Vec::new(),
         false,
         &super::langs(),
     )

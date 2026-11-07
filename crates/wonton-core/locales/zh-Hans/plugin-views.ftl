@@ -33,6 +33,8 @@ permission-security-opt = 修改容器安全选项（最高权限）
 permission-privileged = 以特权模式运行（最高权限）
 permission-devices-gpu = 使用 GPU（高权限）
 permission-device = 访问宿主设备 { $path }（高权限）
+permission-devices-serial = 访问宿主串口设备（高权限）
+permission-devices-usb = 访问宿主 USB 设备（高权限）
 permission-docker-socket = 控制 Docker（最高权限）
 
 # 高权限下面带的长说明。
@@ -41,6 +43,7 @@ permission-notice-network-host = 这个应用能直接访问你家里的网络�
 permission-notice-highest-risk = 这个应用能控制整台主机：读写所有文件和其他应用的数据，改动或停掉 Wonton 自己。这等于把主机的 root 交给它。只装你信任的应用。卸载后，它建的容器和改过的东西不会被清理。
 permission-notice-network-lan = 局域网里的设备可以直接连接应用开放的端口，不经 Wonton 登录；身份验证由应用自己负责。
 permission-notice-device = 这个应用可以访问宿主设备 { $path }。
+permission-notice-devices = 这个应用可以访问你交给它的宿主设备。
 
 # 应用详情里的提示。
 plugin-firewall-notice = 本机防火墙可能挡住了外来连接，局域网设备可能连不进来

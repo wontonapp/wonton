@@ -168,6 +168,8 @@ fn permissions_round_trip_and_unknown_is_rejected() {
         "security.opt",
         "privileged",
         "devices.gpu",
+        "devices.serial",
+        "devices.usb",
         "devices./dev/net/tun",
         "docker.socket",
     ] {
@@ -178,7 +180,7 @@ fn permissions_round_trip_and_unknown_is_rejected() {
         "storage.share.photos",
         "storage.share.Photos:read",
         "root",
-        "devices.usb",
+        "devices.",
     ] {
         assert!(bad.parse::<Permission>().is_err(), "{bad} 应被拒绝");
     }

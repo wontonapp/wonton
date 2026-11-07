@@ -34,6 +34,8 @@ permission-security-opt = Change container security options (highest permission)
 permission-privileged = Run in privileged mode (highest permission)
 permission-devices-gpu = Use the GPU (high permission)
 permission-device = Access the host device { $path } (high permission)
+permission-devices-serial = Access host serial devices (high permission)
+permission-devices-usb = Access host USB devices (high permission)
 permission-docker-socket = Control Docker (highest permission)
 
 # Longer explanations shown under the high permissions.
@@ -42,6 +44,7 @@ permission-notice-network-host = This app can directly access your home network 
 permission-notice-highest-risk = This app can control the entire host: read and write all files and other apps' data, change or stop Wonton itself. This is equivalent to giving it root on the host. Only install apps you trust. After uninstalling, containers it created and things it changed will not be cleaned up.
 permission-notice-network-lan = Devices on your local network can connect directly to the app's ports without Wonton login; the app is responsible for authentication.
 permission-notice-device = This app can access the host device { $path }.
+permission-notice-devices = This app can access host devices you give it.
 
 # Notices in the app detail view.
 plugin-firewall-notice = A firewall on this machine may be blocking incoming connections, so devices on your local network may not be able to connect.

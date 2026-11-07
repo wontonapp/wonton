@@ -33,6 +33,8 @@ permission-security-opt = コンテナのセキュリティオプションを変
 permission-privileged = 特権モードで実行します（最高権限）
 permission-devices-gpu = GPUを使用します（高権限）
 permission-device = ホストのデバイス{ $path }にアクセスします（高権限）
+permission-devices-serial = ホストのシリアルデバイスを使います（高権限）
+permission-devices-usb = ホストの USB デバイスを使います（高権限）
 permission-docker-socket = Dockerを操作します（最高権限）
 
 # 高い権限の下に付く詳しい説明。
@@ -41,6 +43,7 @@ permission-notice-network-host = このアプリは自宅のネットワーク�
 permission-notice-highest-risk = このアプリはホスト全体を制御できます。すべてのファイルやほかのアプリのデータを読み書きし、Wonton自身を変更したり停止したりできます。これはホストのrootを渡すのと同じです。信頼できるアプリだけをインストールしてください。アンインストールしても、作成されたコンテナや変更された内容は削除されません。
 permission-notice-network-lan = ローカルネットワークのデバイスから、Wontonのログインなしでアプリが開放したポートに直接接続できます。認証はアプリ自身が行います。
 permission-notice-device = このアプリはホストのデバイス{ $path }にアクセスできます。
+permission-notice-devices = このアプリは渡したホストのデバイスにアクセスできます。
 
 # アプリ詳細の通知。
 plugin-firewall-notice = このマシンのファイアウォールが外部からの接続を遮断している可能性があり、ローカルネットワークのデバイスから接続できないかもしれません

@@ -372,7 +372,9 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         &super::langs(),
     )
     .unwrap();
-    m.upgrade_checked(package, &granted(), false).await.unwrap();
+    m.upgrade_checked(package, &granted(), &[], false)
+        .await
+        .unwrap();
     assert_eq!(bed.env(), before);
     assert!(bed.token_valid(&before["TOKEN"]));
     let target = container_name("app-echo", "bot");

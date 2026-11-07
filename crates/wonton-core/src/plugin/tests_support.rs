@@ -6,6 +6,7 @@ use super::listed::Listed;
 use super::manager::{Entry, PluginManager, PluginStatus};
 use super::manifest::{Manifest, PluginId};
 use super::proxy_auth::ProxyAuth;
+use super::store::InstalledRecord;
 use super::upstreams::{Endpoint, McpTarget};
 
 impl PluginManager {
@@ -24,6 +25,12 @@ impl PluginManager {
             .write()
             .expect("插件表锁中毒")
             .insert(id, entry);
+    }
+
+    /// 测试用：读插件的安装记录。
+    #[cfg(test)]
+    pub(crate) fn record_for_test(&self, id: &PluginId) -> Option<InstalledRecord> {
+        self.store.load(id).ok().flatten()
     }
 
     /// 测试用：给登记过的插件设上 MCP 服务的地址。

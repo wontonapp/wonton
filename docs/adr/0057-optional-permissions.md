@@ -65,6 +65,7 @@ optional_permissions:
     这是安全的方向。
 - 安装记录新增 `enabled_permissions`（每项带打开的时间和发起人：主人，或带着 Bot 的 ID 和名字），`granted_permissions` 仍是必需项。
   渲染、健康检查、预览一律看两者的并集。
+- 直接安装、升级和开关可选权限的 HTTP 接口只给主人；家人即使已有“能装插件”授权，也不能从这些入口改变权限。
 
 ### 装好以后
 

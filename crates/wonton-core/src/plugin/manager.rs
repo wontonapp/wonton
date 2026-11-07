@@ -33,7 +33,7 @@ use super::proxy_auth::ProxyAuth;
 use super::render::dry_run;
 use super::sources::{Source, Sources};
 use super::staged::StagedUploads;
-use super::store::{InstalledRecord, Store};
+use super::store::{EnabledPermission, InstalledRecord, Store};
 use super::storefront::{StoreConfig, Storefront};
 use super::upgrade::Upgrades;
 use super::upstreams::Endpoint;
@@ -143,31 +143,7 @@ pub struct PluginManager {
     pub(super) people_writes: std::sync::Mutex<()>,
 }
 
-/// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
-pub(super) fn supported(permission: &Permission) -> bool {
-    matches!(
-        permission,
-        Permission::StorageShare { .. }
-            | Permission::NetworkEgress
-            | Permission::EgressProxy
-            | Permission::MatrixBot
-            | Permission::Models
-            | Permission::Tools
-            | Permission::PluginsHealth
-            | Permission::Notify
-            | Permission::OwnerIdentity
-            | Permission::DevicesGpu
-            | Permission::NetworkLan
-            | Permission::NetworkHost
-            | Permission::Capability { .. }
-            | Permission::HostPid
-            | Permission::HostIpc
-            | Permission::SecurityOpt
-            | Permission::Privileged
-            | Permission::Device { .. }
-            | Permission::DockerSocket
-    )
-}
+pub(super) use super::grant::{check_permissions, supported};
 
 pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
@@ -575,6 +551,7 @@ impl PluginManager {
         &self,
         package: PluginPackage,
         granted: &[Permission],
+        enabled: &[EnabledPermission],
         lan_webui: bool,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
@@ -582,17 +559,20 @@ impl PluginManager {
         dry_run(&package, langs)?;
         self.check_icon(&package, langs).await?;
         let manifest = package.manifest.clone();
-        check_permissions(&manifest, granted, langs)?;
+        check_permissions(&manifest, granted, enabled, langs)?;
         self.check_requirements(&manifest, langs).await?;
         self.check_egress(&manifest, langs).await?;
-        let gpu = self.gpu_grant(&manifest, langs).await?;
+        let gpu = self.gpu_grant(&manifest, granted, langs).await?;
         // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui, langs).await?;
         let listed = Listed::new(&package, now_secs(), lan_webui, false, Default::default());
         self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
-        match self.deploy(&package, granted, gpu, lan, langs).await {
+        match self
+            .deploy(&package, granted, enabled, gpu, lan, langs)
+            .await
+        {
             Ok(deployed) => {
                 tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
                 let listed = Listed::new(
@@ -771,41 +751,6 @@ impl PluginManager {
             }
         }
     }
-}
-
-pub(super) fn check_permissions(
-    manifest: &Manifest,
-    granted: &[Permission],
-    langs: &Languages,
-) -> Result<(), InstallError> {
-    if let Some(extra) = granted.iter().find(|p| !manifest.permissions.contains(p)) {
-        return Err(InstallError::Invalid(l10n::text(
-            langs,
-            "plugin-install-permission-not-declared",
-            &[("permission", extra.to_string().into())],
-        )));
-    }
-    let missing: Vec<String> = manifest
-        .permissions
-        .iter()
-        .filter(|p| !granted.contains(p))
-        .map(ToString::to_string)
-        .collect();
-    if !missing.is_empty() {
-        return Err(InstallError::PermissionNotGranted(l10n::text(
-            langs,
-            "plugin-settings-permission-not-granted",
-            &[("permissions", l10n::list(langs, &missing).into())],
-        )));
-    }
-    if let Some(p) = manifest.permissions.iter().find(|p| !supported(p)) {
-        return Err(InstallError::Unsupported(l10n::text(
-            langs,
-            "plugin-install-permission-unsupported",
-            &[("permission", p.to_string().into())],
-        )));
-    }
-    Ok(())
 }
 
 /// 记录读不懂时给主人看的原因：比如核心升级后不再认记录里的字段。

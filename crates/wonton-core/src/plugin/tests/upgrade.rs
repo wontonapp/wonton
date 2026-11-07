@@ -396,9 +396,16 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
 
     let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
     let newer = hello("1.2.0", "", "  permissions: []\n");
-    m.upgrade_upload(&id(), parse(&newer), Vec::new(), false, &super::langs())
-        .await
-        .unwrap();
+    m.upgrade_upload(
+        &id(),
+        parse(&newer),
+        Vec::new(),
+        Vec::new(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     assert_eq!(image(&docker, &web()), "web:1.2.0");
     assert_eq!(
         m.installed_plugin(&id(), &zh()).unwrap().trust,
@@ -408,7 +415,14 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
 
     let other = hello("1.3.0", "", "  permissions: []\n").replace("id: app.hello", "id: app.other");
     let err = m
-        .upgrade_upload(&id(), parse(&other), Vec::new(), false, &super::langs())
+        .upgrade_upload(
+            &id(),
+            parse(&other),
+            Vec::new(),
+            Vec::new(),
+            false,
+            &super::langs(),
+        )
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
@@ -423,6 +437,43 @@ fn echo(version: &str, services: &str) -> String {
          description: {{zh: 回声, en: Echo}}\n  bot: {{display_name: {{zh: 回声, en: Echo}}}}\n  \
          permissions: [matrix.bot, network.egress]\n"
     )
+}
+
+/// 新版本多了一个起不来的服务：升级被整体退回，报 rolled-back，bot 的设备和代理环境都不变。
+async fn upgrade_expect_rollback(
+    m: &Arc<PluginManager>,
+    docker: &FakeDocker,
+    id: &PluginId,
+    bot: &str,
+    token: &str,
+) {
+    let helper = container_name("app-echo", "helper");
+    docker.set_state(
+        &helper,
+        json!({"Status": "exited", "Running": false, "ExitCode": 1}),
+    );
+    let broken = echo("1.1.0", "  helper:\n    image: helper:1\n");
+    let err = m
+        .upgrade_upload(
+            id,
+            PluginPackage::parse(&broken, &super::langs()).unwrap(),
+            permissions(&broken),
+            Vec::new(),
+            false,
+            &super::langs(),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains(&super::message(
+            "plugin-settings-upgrade-rolled-back",
+            &[("new", "1.1.0"), ("version", "1.0.0")],
+        )),
+        "{err}"
+    );
+    let env = env_of_container(docker, bot);
+    assert_eq!(env["TOKEN"], token, "退回旧版本也沿用同一台设备");
+    assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
 }
 
 #[tokio::test]
@@ -452,37 +503,19 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     let device = m.store.bots().load(&id).unwrap().unwrap().device_id;
 
     let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
-    let helper = container_name("app-echo", "helper");
-    docker.set_state(
-        &helper,
-        json!({"Status": "exited", "Running": false, "ExitCode": 1}),
-    );
-    let broken = echo("1.1.0", "  helper:\n    image: helper:1\n");
-    let err = m
-        .upgrade_upload(
-            &id,
-            parse(&broken),
-            permissions(&broken),
-            false,
-            &super::langs(),
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        err.to_string().contains(&super::message(
-            "plugin-settings-upgrade-rolled-back",
-            &[("new", "1.1.0"), ("version", "1.0.0")],
-        )),
-        "{err}"
-    );
-    let env = env_of_container(&docker, &bot);
-    assert_eq!(env["TOKEN"], token, "退回旧版本也沿用同一台设备");
-    assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
+    upgrade_expect_rollback(&m, &docker, &id, &bot, &token).await;
 
     let v2 = echo("1.2.0", "");
-    m.upgrade_upload(&id, parse(&v2), permissions(&v2), false, &super::langs())
-        .await
-        .unwrap();
+    m.upgrade_upload(
+        &id,
+        parse(&v2),
+        permissions(&v2),
+        Vec::new(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     let env = env_of_container(&docker, &bot);
     assert_eq!(env["TOKEN"], token);
     assert_eq!(env["AUTH"], format!("Bearer {token}"));
@@ -497,7 +530,14 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     m.engine.remove_container(&bot).await.unwrap();
     let v3 = echo("1.3.0", "");
     let err = m
-        .upgrade_upload(&id, parse(&v3), permissions(&v3), false, &super::langs())
+        .upgrade_upload(
+            &id,
+            parse(&v3),
+            permissions(&v3),
+            Vec::new(),
+            false,
+            &super::langs(),
+        )
         .await
         .unwrap_err();
     assert!(
@@ -666,7 +706,7 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let v2 =
         PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
     let err = m
-        .upgrade_upload(&id(), v2, Vec::new(), false, &super::langs())
+        .upgrade_upload(&id(), v2, Vec::new(), Vec::new(), false, &super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "core_upgrading", "{err}");

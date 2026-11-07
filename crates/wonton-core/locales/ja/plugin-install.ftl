@@ -240,6 +240,14 @@ plugin-install-priv-missing-cap-add = 権限{ $permission }に対応するcap_ad
 plugin-install-priv-missing-devices = 権限{ $permission }に対応するdevicesフィールドがありません
 plugin-install-priv-field-requires = { $field }にはマニフェスト権限{ $permission }が必要です
 plugin-install-priv-missing-field = マニフェスト権限{ $permission }に対応する{ $field }フィールドがありません
+plugin-install-optional-not-allowed = 権限{ $permission }は任意にできません
+plugin-install-optional-declared-twice = 権限{ $permission }が permissions と optional_permissions の両方にあります
+plugin-install-optional-off-loss = 任意の権限{ $permission }には off_loss（切ったとき失うもの）を中国語と英語の両方で書きます
+plugin-install-optional-gpu-required = 任意の権限{ $permission }は切るとGPUを渡さないので、requirements.gpu.need は required にできません
+plugin-install-optional-not-enabled = 任意権限{ $permission }は任意として宣言されていません
+plugin-install-optional-duplicate = 任意権限{ $permission }が二度あります
+upgrade-optional-became-required = このバージョンは{ $permission }を必須にします。確認すると付与されます
+upgrade-optional-removed = このバージョンは任意権限{ $permission }を削除します
 
 # ── provides（provides.rs）─────────────────────────────────────────────────
 

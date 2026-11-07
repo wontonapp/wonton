@@ -17,8 +17,9 @@ use super::manager::{InstallError, PluginManager, detached};
 use super::manifest::{Permission, PluginId};
 use super::package::PluginPackage;
 use super::source_address::chosen_source;
-use super::store::InstalledRecord;
+use super::store::{EnabledPermission, InstalledRecord};
 use super::storefront::index::{Index, Listed as IndexListed};
+use crate::l10n;
 
 /// 升到哪里。
 pub enum UpgradeTo {
@@ -319,7 +320,13 @@ impl PluginManager {
         }
         let blocked = self.host_block(&package.manifest, langs).await?;
         let mut preview = self
-            .preview_with(&package, langs, blocked, record.written_by.clone())
+            .preview_with(
+                &package,
+                langs,
+                blocked,
+                record.written_by.clone(),
+                &record.enabled_permissions,
+            )
             .await?;
         preview.upgrade_from = Some(record.version.clone());
         if upload {
@@ -327,6 +334,11 @@ impl PluginManager {
         }
         let warnings = chosen_warnings(&record, &package, langs);
         preview.notices.splice(0..0, warnings);
+        preview.permissions = super::views_permissions::permission_lines(
+            &package.manifest,
+            &record.enabled_permissions,
+            langs,
+        );
         for line in &mut preview.permissions {
             let granted = &record.granted_permissions;
             line.added = !granted.iter().any(|p| p.to_string() == line.permission);
@@ -335,6 +347,41 @@ impl PluginManager {
         preview
             .notices
             .extend(closing_ports(&old, &record, &package, langs));
+        // 以前可选、现在关着又改成必需：这个版本要主人重新确认一次。
+        for permission in &package.manifest.permissions {
+            let was_optional = old.manifest.optional_permissions.contains_key(permission);
+            let was_enabled = record
+                .enabled_permissions
+                .iter()
+                .any(|item| &item.permission == permission);
+            if was_optional && !was_enabled {
+                preview.notices.push(CardLine {
+                    text: l10n::text(
+                        langs,
+                        "upgrade-optional-became-required",
+                        &[("permission", permission.to_string().into())],
+                    ),
+                    emphasis: true,
+                });
+            }
+        }
+        // 以前可选、这个版本去掉了：关掉它的开关不再出现。
+        for permission in old.manifest.optional_permissions.keys() {
+            if !package
+                .manifest
+                .optional_permissions
+                .contains_key(permission)
+            {
+                preview.notices.push(CardLine {
+                    text: l10n::text(
+                        langs,
+                        "upgrade-optional-removed",
+                        &[("permission", permission.to_string().into())],
+                    ),
+                    emphasis: false,
+                });
+            }
+        }
         preview.lan_webui = switched(&package).map(|s| {
             let kept = record.lan_webui && switched(&old).is_some();
             s.offer(kept, langs)
@@ -350,12 +397,14 @@ impl PluginManager {
         request: &UpgradeRequest,
         langs: &Languages,
     ) -> Result<(), InstallError> {
-        let granted = request
-            .grant
-            .iter()
-            .map(|p| p.parse::<Permission>())
-            .collect::<Result<Vec<_>, _>>()
+        let granted = super::store::parse_permissions(&request.grant)
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
+        let requested = super::store::parse_enabled(
+            &request.enabled_permissions,
+            super::store::OpenedBy::Owner,
+            super::manager::now_secs(),
+        )
+        .map_err(|e| InstallError::Invalid(e.to_string()))?;
         let record = self.upgradable_record(id, langs)?;
         let package = match &request.source {
             Some(source) => {
@@ -373,7 +422,7 @@ impl PluginManager {
                 &[("id", id.as_str().into()), ("digest", digest.into())],
             )));
         }
-        self.upgrade_detached(package, granted, request.lan_webui)
+        self.upgrade_detached(package, granted, requested, request.lan_webui)
             .await?;
         self.staged.remove(&digest);
         Ok(())
@@ -385,12 +434,13 @@ impl PluginManager {
         id: &PluginId,
         package: PluginPackage,
         granted: Vec<Permission>,
+        enabled: Vec<EnabledPermission>,
         lan_webui: bool,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let record = self.upgradable_record(id, langs)?;
         Self::check_same_plugin(&package, &record, langs)?;
-        self.upgrade_detached(package, granted, lan_webui || record.lan_webui)
+        self.upgrade_detached(package, granted, enabled, lan_webui || record.lan_webui)
             .await
     }
 
@@ -398,9 +448,14 @@ impl PluginManager {
         self: &Arc<Self>,
         package: PluginPackage,
         granted: Vec<Permission>,
+        requested: Vec<EnabledPermission>,
         lan_webui: bool,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
-        detached(async move { this.upgrade_checked(package, &granted, lan_webui).await }).await
+        detached(async move {
+            this.upgrade_checked(package, &granted, &requested, lan_webui)
+                .await
+        })
+        .await
     }
 }

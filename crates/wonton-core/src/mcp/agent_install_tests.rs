@@ -483,6 +483,7 @@ async fn an_owner_upgrade_takes_the_plugin_back_from_the_agent() {
             &id,
             package,
             granted,
+            Vec::new(),
             false,
             &Languages::from_header(Some("zh")),
         )

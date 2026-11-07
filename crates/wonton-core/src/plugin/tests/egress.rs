@@ -89,6 +89,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             files: Default::default(),
             limits: Default::default(),
             granted_permissions: Vec::new(),
+            enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             origin: None,

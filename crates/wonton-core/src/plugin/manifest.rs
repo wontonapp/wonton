@@ -320,8 +320,13 @@ pub enum Access {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum Permission {
-    StorageShare { name: String, access: Access },
-    StorageHome { access: Access },
+    StorageShare {
+        name: String,
+        access: Access,
+    },
+    StorageHome {
+        access: Access,
+    },
     Models,
     Tools,
     // 只读，只给状态，不算高权限（规范“插件健康探测”）。
@@ -333,13 +338,21 @@ pub enum Permission {
     EgressProxy,
     NetworkLan,
     NetworkHost,
-    Capability { name: String },
+    Capability {
+        name: String,
+    },
     HostPid,
     HostIpc,
     SecurityOpt,
     Privileged,
     DevicesGpu,
-    Device { path: String },
+    /// 宿主串口设备，路径由主人选（ADR-0036）。
+    DevicesSerial,
+    /// 宿主 USB 设备，路径由主人选（ADR-0036）。
+    DevicesUsb,
+    Device {
+        path: String,
+    },
     DockerSocket,
 }
 
@@ -357,6 +370,8 @@ impl Permission {
                 | Self::SecurityOpt
                 | Self::Privileged
                 | Self::DevicesGpu
+                | Self::DevicesSerial
+                | Self::DevicesUsb
                 | Self::Device { .. }
                 | Self::DockerSocket
         )
@@ -392,6 +407,8 @@ impl FromStr for Permission {
             "security.opt" => Some(Self::SecurityOpt),
             "privileged" => Some(Self::Privileged),
             "devices.gpu" => Some(Self::DevicesGpu),
+            "devices.serial" => Some(Self::DevicesSerial),
+            "devices.usb" => Some(Self::DevicesUsb),
             "docker.socket" => Some(Self::DockerSocket),
             _ => None,
         };
@@ -462,6 +479,8 @@ impl fmt::Display for Permission {
             Self::SecurityOpt => f.write_str("security.opt"),
             Self::Privileged => f.write_str("privileged"),
             Self::DevicesGpu => f.write_str("devices.gpu"),
+            Self::DevicesSerial => f.write_str("devices.serial"),
+            Self::DevicesUsb => f.write_str("devices.usb"),
             Self::Device { path } => write!(f, "devices.{path}"),
             Self::DockerSocket => f.write_str("docker.socket"),
         }
@@ -539,16 +558,52 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
     pub permissions: Vec<Permission>,
+    /// 可选、默认关的权限（ADR-0057）：装好以后由主人开关，开着才兑现对应的 compose 字段。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub optional_permissions: BTreeMap<Permission, OptionalPermission>,
     #[serde(default)]
     pub settings: Option<String>,
     #[serde(default)]
     pub requirements: Option<Requirements>,
 }
 
+/// `optional_permissions` 里的一项。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OptionalPermission {
+    /// 关着时少了什么，给主人看（ADR-0057）。
+    pub off_loss: LocalizedText,
+}
+
 impl Manifest {
     /// 容器拿不拿得到主人的身份变量。
     pub fn gets_owner_identity(&self) -> bool {
         self.permissions.contains(&Permission::OwnerIdentity)
+    }
+
+    /// 声明过的全部权限：必需的在前，可选的按权限名。校验按它遍历。
+    pub fn all_permissions(&self) -> impl Iterator<Item = &Permission> {
+        self.permissions
+            .iter()
+            .chain(self.optional_permissions.keys())
+    }
+
+    /// 一项权限是不是声明成可选、默认关。
+    pub fn optional_permission(&self, permission: &Permission) -> Option<&OptionalPermission> {
+        self.optional_permissions.get(permission)
+    }
+
+    /// 生效集：必需权限加上现在开着的可选项。
+    pub fn effective_permissions(&self, enabled: &[Permission]) -> Vec<Permission> {
+        self.permissions
+            .iter()
+            .chain(
+                enabled
+                    .iter()
+                    .filter(|permission| self.optional_permissions.contains_key(*permission)),
+            )
+            .cloned()
+            .collect()
     }
 
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。
@@ -563,6 +618,7 @@ impl Manifest {
         super::manifest_agent::validate(self)?;
         validate_bots(self)?;
         super::privileges::validate_manifest(self, langs)?;
+        super::privileges::validate_optional(self, langs)?;
         super::gpu::validate(self, langs)?;
         super::requirements::validate(self, langs)?;
         super::lan::validate(self, langs)?;

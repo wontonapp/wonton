@@ -115,6 +115,10 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             put(settings_api::set_limits),
         )
         .route(
+            "/_wonton/api/plugins/{id}/permissions/{permission}",
+            put(api::set_plugin_permission),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/ask-every-update",
             put(settings_api::set_ask_every_update),
         )

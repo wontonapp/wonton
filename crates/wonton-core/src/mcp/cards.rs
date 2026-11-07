@@ -1,6 +1,8 @@
 //! 确认卡片的内容（ADR-0016）：标题、说明行、按钮，以及给其他 Matrix 客户端看的纯文本。文字都由核心写好，
 //! App 原样渲染。
 
+mod permission;
+
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -10,6 +12,8 @@ use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
     ConfirmationState, ConfirmationWindow, PermissionRisk, WindowEnd,
 };
+
+pub(crate) use permission::set_permission;
 
 use super::file_results::human_size;
 use crate::files::share_fs::saving::{SaveTarget, StagedFile};

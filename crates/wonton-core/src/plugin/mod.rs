@@ -23,6 +23,9 @@ pub mod gallery;
 pub mod github;
 pub mod github_source;
 pub mod gpu;
+#[cfg(test)]
+pub(crate) mod gpu_fake_host;
+mod grant;
 pub mod health;
 pub mod health_probe;
 pub mod host_check;
@@ -66,6 +69,7 @@ pub(crate) mod oom;
 pub mod package;
 pub mod package_archive;
 pub mod package_files;
+mod permissions_switch;
 pub mod preinstall;
 pub mod privileges;
 pub mod provides;

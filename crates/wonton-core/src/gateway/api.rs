@@ -1,15 +1,16 @@
-//! 插件管理 API（ADR-0017 的“接口：App 和核心”）。接口按人分三层（ADR-0045）：只给主人的（商店、服务器设置、
-//! [`owner_denied`]），装卸升级插件的（主人授权了的家人也能用，[`install_denied`]），和每个人自己的（读插件、
-//! 看详情，[`plugin_denied`] 认出设备后由处理器按人过滤）。响应是 `wonton-protocol` 的类型，文字按 `Accept-Language`
-//! 挑语言。
+//! 插件管理 API（ADR-0017 的“接口：App 和核心”）。接口按人分三层（ADR-0045）：只给主人的（服务器设置、直接安装、
+//! 升级和可选权限开关，[`owner_denied`]），主人授权了的家人也能用的（商店、预览、启动、卸载，[`install_denied`]），
+//! 和每个人自己的（读插件、看详情，[`plugin_denied`] 认出设备后由处理器按人过滤）。响应是 `wonton-protocol` 的类型，
+//! 文字按 `Accept-Language` 挑语言。
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
 //! | GET | `/_wonton/api/plugins` | 已安装的插件（`InstalledPlugins`） |
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`）；上传的包暂存到确认，`source` 是 `upload:sha256:…` |
-//! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；权限必须与清单声明的一致（201 `InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；`grant` 含全部必需权限，可选项放在 `enabled_permissions`（201 `InstalledPlugin`） |
 //! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`） |
+//! | PUT | `/_wonton/api/plugins/{id}/permissions/{permission}` | 开关一项可选权限（`PermissionUpdate`），重建完返回详情（200 `PluginDetail`） |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 `{}` 时取能升到的版本，带 `source` 或者插件包时换到主人选的，可以比装着的旧；返回要主人确认的内容（`InstallPreview`） |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`UpgradeResult`） |
@@ -33,12 +34,15 @@ use serde_json::json;
 use wonton_protocol::{AddedTools, InstallRequest, InstallSource, UpgradeRequest, UpgradeResult};
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
+use super::api_switch::{enabled, granted, upload_parts};
 use super::{Gateway, Person, TunnelPeer, isolation, pages};
+
+pub use super::api_switch::set_plugin_permission;
 use crate::l10n;
 use crate::plugin::gallery::Variant;
 use crate::plugin::image_worker::ImageError;
 use crate::plugin::languages::Languages;
-use crate::plugin::{InstallError, Permission, PluginId, PluginView, UpgradeTo};
+use crate::plugin::{InstallError, PluginId, PluginView, UpgradeTo};
 
 pub(super) fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()))
@@ -325,10 +329,13 @@ pub async fn preview(
 #[derive(Deserialize)]
 pub struct InstallQuery {
     #[serde(default)]
-    grant: String,
+    pub(super) grant: String,
     /// 主人打开了开关 `lan_webui`。
     #[serde(default)]
-    lan_webui: bool,
+    pub(super) lan_webui: bool,
+    /// 主人打开了的可选项，逗号分隔（ADR-0057）。
+    #[serde(default)]
+    pub(super) enabled_permissions: String,
 }
 
 pub async fn install(
@@ -338,7 +345,7 @@ pub async fn install(
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
         return denied;
     }
     let langs = languages(&headers);
@@ -368,22 +375,12 @@ async fn install_upload(
     body: &[u8],
 ) -> Result<PluginView, InstallError> {
     let granted = granted(query)?;
+    let enabled = enabled(query)?;
     let package = package(langs, headers, body)?;
     gateway
         .plugins
-        .install_detached(package, granted, query.lan_webui, langs.clone())
+        .install_detached_enabled(package, granted, enabled, query.lan_webui, langs.clone())
         .await
-}
-
-fn granted(query: &InstallQuery) -> Result<Vec<Permission>, InstallError> {
-    query
-        .grant
-        .split(',')
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .map(str::parse)
-        .collect::<Result<Vec<Permission>, _>>()
-        .map_err(|e: <Permission as std::str::FromStr>::Err| InstallError::Invalid(e.to_string()))
 }
 
 /// 升级预览的 JSON 请求体：`{}` 是升到提示的版本，带 `source` 是换到这个来源。
@@ -434,7 +431,7 @@ pub async fn upgrade(
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -449,13 +446,11 @@ pub async fn upgrade(
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
-        None => match granted(&query)
-            .and_then(|grant| Ok((grant, package(&languages(&headers), &headers, &body)?)))
-        {
-            Ok((grant, package)) => {
+        None => match upload_parts(&languages(&headers), &headers, &body, &query) {
+            Ok((grant, enabled, package)) => {
                 let plugins = &gateway.plugins;
                 plugins
-                    .upgrade_upload(&id, package, grant, query.lan_webui, &langs)
+                    .upgrade_upload(&id, package, grant, enabled, query.lan_webui, &langs)
                     .await
             }
             Err(e) => return install_error(&e),

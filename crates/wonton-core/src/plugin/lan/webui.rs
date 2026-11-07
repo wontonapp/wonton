@@ -227,7 +227,7 @@ impl PluginManager {
     }
 
     /// 开关改成 `enabled` 后端口开在哪、告诉手机哪。有端口要开时，和新装一样核对冲突和地址。
-    async fn addresses_for(
+    pub(in crate::plugin) async fn addresses_for(
         &self,
         listed: &Listed,
         enabled: bool,

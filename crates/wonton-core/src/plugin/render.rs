@@ -138,6 +138,8 @@ pub struct InstallContext {
     pub limits: wonton_protocol::PluginLimits,
     /// 插件 systemd slice；没有安装 slice 时不设置父 cgroup。
     pub cgroup_parent: Option<String>,
+    /// 生效集：主人确认的必需权限加上开着的可选项（ADR-0057）。渲染按它决定可选字段给不给。
+    pub granted: Vec<Permission>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -168,6 +170,7 @@ impl std::fmt::Debug for InstallContext {
             .field("host_name", &self.host_name)
             .field("limits", &self.limits)
             .field("cgroup_parent", &self.cgroup_parent)
+            .field("granted", &self.granted)
             .finish()
     }
 }
@@ -311,6 +314,13 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
         host_name: String::new(),
         cgroup_parent: None,
         slug,
+        granted: manifest.effective_permissions(
+            &manifest
+                .optional_permissions
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
     }
 }
 
@@ -355,7 +365,11 @@ fn render_plan(
             read_only_shares: &read_only_shares,
             named: package.named_volumes(),
             service: &name,
-            allow_docker_socket: manifest.permissions.contains(&Permission::DockerSocket),
+            allow_docker_socket: ctx.granted.contains(&Permission::DockerSocket),
+            socket_declared: manifest.permissions.contains(&Permission::DockerSocket)
+                || manifest
+                    .optional_permissions
+                    .contains_key(&Permission::DockerSocket),
             langs,
         }
         .build(&service.volumes, &mut binds)?;

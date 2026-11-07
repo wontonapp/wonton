@@ -22,6 +22,7 @@
 mod agent_permission;
 mod api;
 mod api_body;
+mod api_switch;
 mod bot_activity;
 mod bot_profile;
 mod confirmations;

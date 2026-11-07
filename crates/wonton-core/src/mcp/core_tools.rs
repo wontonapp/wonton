@@ -15,15 +15,17 @@ use super::{
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
-use crate::plugin::manifest::{Manifest, PluginKind};
+use crate::plugin::manifest::{Manifest, Permission, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
 use crate::plugin::{InstallError, PluginId, PluginPackage};
+use wonton_protocol::ConfirmationState;
 
 const LIST: &str = "list_plugins";
 const SEARCH: &str = "search_catalog";
 const INSTALL: &str = "install_plugin";
 const UNINSTALL: &str = "uninstall_plugin";
+const SET_PERMISSION: &str = "set_plugin_permission";
 const HELP: &str = "help";
 
 fn schema(value: Value) -> Arc<JsonObject> {
@@ -87,6 +89,17 @@ pub fn definitions() -> Vec<Tool> {
         ),
     ];
     tools.push(tool(
+        SET_PERMISSION,
+        "打开或关掉一个插件的可选权限（如 docker.socket）。打开每次都要主人点确认卡片，关掉是收权限、可以按你的\
+         放宽直接做。调用前先用一句话告诉主人卡片会发到“Wonton”私聊。",
+        json!({"type": "object", "properties": {
+            "id": id,
+            "permission": {"type": "string", "description": "权限写法，如 docker.socket"},
+            "enabled": {"type": "boolean", "description": "true 打开，false 关掉"},
+        }, "required": ["id", "permission", "enabled"]}),
+        false,
+    ));
+    tools.push(tool(
         HELP,
         "查 Wonton 和 Wonton App 的帮助文档：怎么加设备、接模型、装应用、用底栏和确认卡片、升级、备份、连不上怎么办。\
          主人问到这些时先查这里再回答，不要凭印象说。不写 topic 时返回目录，写了返回那一页。",
@@ -122,6 +135,7 @@ pub async fn call(
         SEARCH => search(bus, &args).await,
         INSTALL => return agent_install::install(bus, caller, &name, args, activity).await,
         UNINSTALL => return uninstall(bus, caller, &name, args, activity).await,
+        SET_PERMISSION => return set_permission(bus, caller, &name, args, activity).await,
         HELP => help(bus, &args).await,
         authoring_tools::GUIDE => Ok(authoring_tools::guide()),
         authoring_tools::CHECK => authoring_tools::check(bus, caller, &args).await,
@@ -286,6 +300,109 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, St
         ));
     }
     Ok(package)
+}
+
+/// 开关一项可选权限（ADR-0057）：打开必发卡片、不能被放宽；关掉按 ADR-0024 的放宽走。
+async fn set_permission(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    name: &str,
+    args: JsonObject,
+    activity: Guard,
+) -> CallToolResult {
+    let value = Value::Object(args.clone());
+    let checked = required(&args, "id")
+        .and_then(|id| PluginId::parse(id).map_err(|e| e.to_string()))
+        .and_then(|id| {
+            let enabled = args
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| "enabled 要是 true 或 false".to_owned())?;
+            let permission = required(&args, "permission")?
+                .parse::<Permission>()
+                .map_err(|e| e.to_string())?;
+            let view = bus
+                .plugins
+                .list()
+                .into_iter()
+                .find(|p| p.id == id)
+                .ok_or_else(|| format!("没有装 {id}"))?;
+            let line = bus
+                .plugins
+                .installed_detail(&id, &bus.plugins.owner_languages())
+                .ok_or_else(|| format!("{id} 的详情读不到"))?
+                .permissions
+                .into_iter()
+                .find(|line| line.permission == permission.to_string() && line.optional)
+                .ok_or_else(|| format!("{id} 没有把 {permission} 声明成可选"))?;
+            Ok((id, permission, enabled, line, cards::text(&view.title)))
+        });
+    let (id, permission, enabled, line, title) = match checked {
+        Ok(found) => found,
+        Err(message) => return bus.deny(caller, name, &value, &message),
+    };
+    let langs = bus.plugins.owner_languages();
+    let highest = line.risk == Some(wonton_protocol::PermissionRisk::Highest);
+    let bot = crate::plugin::store::OpenedBy::Bot {
+        plugin_id: caller.id.to_string(),
+        title: caller.name.clone(),
+    };
+    let run = {
+        let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
+        move |bus: Arc<Bus>| async move {
+            match bus
+                .plugins
+                .set_plugin_permission(
+                    id.clone(),
+                    permission.clone(),
+                    enabled,
+                    bot,
+                    langs.clone(),
+                )
+                .await
+            {
+                Ok(_) => Outcome::ok(
+                    json!({"id": id.to_string(), "permission": permission.to_string(), "enabled": enabled})
+                        .to_string(),
+                    l10n::text(&langs, "chat-permission-done", &[("title", title.into())]),
+                ),
+                Err(e) => Outcome::failed(l10n::text(
+                    &langs,
+                    "chat-permission-failed",
+                    &[("id", id.to_string().into()), ("error", e.to_string().into())],
+                )),
+            }
+        }
+    };
+    // 关掉是收权限：已放宽的调用不再发卡。
+    if enabled {
+        let draft = cards::set_permission(&caller.name, &title, &line, enabled, highest, &langs);
+        return bus
+            .confirmed(caller, name, value, (draft, activity), run)
+            .await;
+    }
+    let cleared = bus
+        .plugins
+        .tool_policy()
+        .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
+        .is_some();
+    if cleared {
+        let outcome = run(Arc::clone(bus)).await;
+        let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
+        bus.audit.record(&Record {
+            caller: caller.id.as_str(),
+            tool: name,
+            arguments: &value,
+            decision: Decision::Allowed,
+            basis: None,
+            outcome: Some(if failed { "failed" } else { "ok" }),
+            files: &[],
+        });
+        return outcome.result;
+    }
+    let draft = cards::set_permission(&caller.name, &title, &line, enabled, highest, &langs);
+    bus.confirmed(caller, name, value, (draft, activity), run)
+        .await
 }
 
 async fn uninstall(

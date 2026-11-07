@@ -19,7 +19,7 @@ pub struct Lan {
     /// `WONTON_ANNOUNCE_ADDRESSES`：启动器声明的宣告地址，设了就绑通配地址、宣告用它。
     pub(in crate::plugin) announce: Option<Vec<Announced>>,
     /// 定期检测、设置页和改选择各自触发检测，一次一次来，不同时重建同一个插件。
-    pub(super) pass: tokio::sync::Mutex<()>,
+    pub(in crate::plugin) pass: tokio::sync::Mutex<()>,
     /// 最近一次选出的局域网地址。检测失败时留着上次的：查不出来不等于地址没了。
     pub(super) addresses: watch::Sender<BTreeSet<IpAddr>>,
     memory: Mutex<Memory>,

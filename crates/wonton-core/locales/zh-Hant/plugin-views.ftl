@@ -33,6 +33,8 @@ permission-security-opt = 修改容器安全選項（最高權限）
 permission-privileged = 以特權模式執行（最高權限）
 permission-devices-gpu = 使用 GPU（高權限）
 permission-device = 存取主機裝置 { $path }（高權限）
+permission-devices-serial = 存取主機序列埠裝置（高權限）
+permission-devices-usb = 存取主機 USB 裝置（高權限）
 permission-docker-socket = 控制 Docker（最高權限）
 
 # 高權限下面帶的長說明。
@@ -41,6 +43,7 @@ permission-notice-network-host = 這個應用程式能直接存取你家裡的�
 permission-notice-highest-risk = 這個應用程式能控制整台主機：讀寫所有檔案和其他應用程式的資料，改動或停用 Wonton 自己。這等於把主機的 root 交給它。只安裝你信任的應用程式。解除安裝後，它建立的容器和改過的東西不會被清理。
 permission-notice-network-lan = 區域網路裡的裝置可以直接連接應用程式開放的連接埠，不經 Wonton 登入；身分驗證由應用程式自己負責。
 permission-notice-device = 這個應用程式可以存取主機裝置 { $path }。
+permission-notice-devices = 這個應用程式可以存取你交給它的主機裝置。
 
 # 應用程式詳情裡的提示。
 plugin-firewall-notice = 本機防火牆可能擋住了外來連線，區域網路裝置可能連不進來
