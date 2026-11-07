@@ -118,7 +118,10 @@ jobs:
           WONTON_TEST_REQUIRE_CONTAINERD: "1"
       - name: 官方索引里的清单这份核心都读得懂
         run: |
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+          # 自建 runner 经宿主的出口代理取 raw.githubusercontent；代理偶尔卡住时 curl 默认连 300 秒才放弃（2026-11-07 194-1 上 #711 因此被取消），
+          # 所以限死连接和总时长，卡住就快速重试。
+          curl -fsSL --connect-timeout 20 --max-time 120 --retry 5 --retry-all-errors --retry-delay 5 \
+            -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
           cargo run -q -p wonton-core --locked -- plugin check-index "$RUNNER_TEMP/index.json"
       - name: 失败时留下测试输出和容器日志
         if: failure()
