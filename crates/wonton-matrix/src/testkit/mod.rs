@@ -49,7 +49,6 @@ const PORT: u16 = 8008;
 
 /// 等待异步结果的上限。正常情况下一两秒内就有结果；吊销设备后同步要等进行中的长轮询返回。
 const WAIT: Duration = Duration::from_secs(60);
-const PORT_TRIES: u32 = 5;
 
 /// 一台供测试使用的 Tuwunel，以及持有它签发密钥的“核心”。
 pub struct TestServer {
@@ -86,7 +85,7 @@ impl TestServer {
 
     /// 用 Docker 起一台一次性的 Tuwunel，`overrides` 以环境变量形式覆盖配置。
     pub async fn container(overrides: &[(&str, &str)]) -> Self {
-        Self::start_container(overrides, None)
+        Self::start_container(overrides, false)
             .await
             .unwrap_or_else(|error| start_failed(&error))
     }
@@ -101,37 +100,32 @@ impl TestServer {
         if !cfg!(target_os = "linux") {
             return Self::container(&[("TUWUNEL_PROXY", proxy.as_str())]).await;
         }
-        // 从 `free_port` 放开端口到 Tuwunel 绑上要几百毫秒，宿主上别的进程可能占走（出站连接也从这段取端口，CI 上实测）。
-        for _ in 0..PORT_TRIES {
-            let port = free_port();
-            let port_text = port.to_string();
-            let overrides = [
-                ("TUWUNEL_PROXY", proxy.as_str()),
-                ("TUWUNEL_ADDRESS", "127.0.0.1"),
-                ("TUWUNEL_PORT", port_text.as_str()),
-            ];
-            match Self::start_container(&overrides, Some(port)).await {
-                Ok(server) => return server,
-                Err(error) if error.to_string().contains("Address already in use") => {}
-                Err(error) => start_failed(&error),
-            }
-        }
-        panic!("启动 Tuwunel 容器失败：换了 {PORT_TRIES} 个端口都被占了");
+        // 端口交给 Tuwunel 自己挑（`TUWUNEL_PORT=0`）：先挑再交出去，到它真绑之间隔着几百毫秒，宿主上别的进程
+        // （出站连接也从这段临时端口里取）能把它抢走，Tuwunel 就绑不上。
+        let overrides = [
+            ("TUWUNEL_PROXY", proxy.as_str()),
+            ("TUWUNEL_ADDRESS", "127.0.0.1"),
+            ("TUWUNEL_PORT", "0"),
+        ];
+        Self::start_container(&overrides, true)
+            .await
+            .unwrap_or_else(|error| start_failed(&error))
     }
 
-    /// `host_port` 为空时容器在自己的网络里，发布 8008；否则用宿主的网络，听这个端口。
+    /// `host_network` 为真时容器用宿主的网络，端口由 Tuwunel 自己挑、从它的日志里读；否则容器在自己的网络里，
+    /// 发布 8008。
     async fn start_container(
         overrides: &[(&str, &str)],
-        host_port: Option<u16>,
+        host_network: bool,
     ) -> std::result::Result<Self, TestcontainersError> {
         let issuer = Issuer::generate();
         let secret = random_hex(32);
         let (name, tag) = image();
         let image = GenericImage::new(name, tag)
             .with_wait_for(WaitFor::message_on_either_std("Listening on"));
-        let image = match host_port {
-            Some(_) => image,
-            None => image.with_exposed_port(PORT.tcp()),
+        let image = match host_network {
+            true => image,
+            false => image.with_exposed_port(PORT.tcp()),
         };
         let mut request = image
             .with_copy_to(CONFIG_PATH, CONFIG.as_bytes().to_vec())
@@ -141,18 +135,18 @@ impl TestServer {
             // CI 失败时只上传本次作业起的容器的日志（scripts/ci-capture-container-logs.sh 按它认）：testcontainers
             // 起的名字是随机的，认不出是哪个测试进程的。
             .with_label("wonton.test-pid", std::process::id().to_string());
-        request = match host_port {
-            Some(_) => request.with_network("host"),
+        request = match host_network {
+            true => request.with_network("host"),
             // Docker Desktop、OrbStack 自带这个名字，Linux 上要显式加。
-            None => request.with_host("host.docker.internal", Host::HostGateway),
+            false => request.with_host("host.docker.internal", Host::HostGateway),
         };
         for (key, value) in overrides {
             request = request.with_env_var(*key, *value);
         }
         let container = request.start().await?;
-        let url = match host_port {
-            Some(port) => format!("http://127.0.0.1:{port}"),
-            None => {
+        let url = match host_network {
+            true => format!("http://127.0.0.1:{}", listening_port(&container).await),
+            false => {
                 let host = container.get_host().await.expect("容器地址");
                 let port = container.get_host_port_ipv4(PORT).await.expect("容器端口");
                 format!("http://{host}:{port}")
@@ -243,11 +237,20 @@ fn start_failed(error: &TestcontainersError) -> ! {
     )
 }
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .and_then(|listener| listener.local_addr())
-        .expect("找空闲端口")
-        .port()
+/// Tuwunel 挑上的端口：它把 `Listening on ["tcp:127.0.0.1:端口"]` 打在 stdout 上，绑好了才打。
+async fn listening_port(container: &ContainerAsync<GenericImage>) -> u16 {
+    let stdout = container
+        .stdout_to_vec()
+        .await
+        .expect("读 Tuwunel 的 stdout");
+    let text = String::from_utf8_lossy(&stdout);
+    text.lines()
+        .rev()
+        .find_map(|line| {
+            let (_, port) = line.split_once("Listening on [\"tcp:127.0.0.1:")?;
+            port.split('"').next()?.parse().ok()
+        })
+        .unwrap_or_else(|| panic!("Tuwunel 的日志里没有它挑上的端口：{text}"))
 }
 
 /// compose.yaml 里的镜像，拆成名字和标签。
