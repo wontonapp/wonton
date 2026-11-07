@@ -34,6 +34,7 @@ fn bundle(avatars: &str, files: &[(&str, &[u8])]) -> PluginPackage {
             .iter()
             .map(|(p, b)| (p.to_string(), b.to_vec()))
             .collect(),
+        &super::langs(),
     )
     .unwrap()
 }
@@ -85,11 +86,11 @@ impl Bed {
 fn avatar_paths_are_normalized_and_optional_posters_survive_every_package_form() {
     let source = source("{idle: ./avatars//idle.mp4}");
     assert_eq!(
-        PluginPackage::referenced_files(&source).unwrap(),
+        PluginPackage::referenced_files(&source, &super::langs()).unwrap(),
         ["avatars/idle.mp4", "avatars/idle.jpg"]
     );
     assert_eq!(
-        PluginPackage::optional_files(&source).unwrap(),
+        PluginPackage::optional_files(&source, &super::langs()).unwrap(),
         ["avatars/idle.jpg"]
     );
     for poster in [false, true] {
@@ -97,10 +98,10 @@ fn avatar_paths_are_normalized_and_optional_posters_survive_every_package_form()
         if poster {
             files.insert("avatars/idle.jpg".into(), JPEG.to_vec());
         }
-        let package = PluginPackage::with_files(&source, files.clone()).unwrap();
+        let package = PluginPackage::with_files(&source, files.clone(), &super::langs()).unwrap();
         assert_eq!(package.files(), &files);
         assert_eq!(
-            PluginPackage::from_archive(&package.archive())
+            PluginPackage::from_archive(&package.archive(), &super::langs())
                 .unwrap()
                 .files(),
             &files
@@ -111,7 +112,12 @@ fn avatar_paths_are_normalized_and_optional_posters_survive_every_package_form()
         for (path, data) in &files {
             std::fs::write(dir.path().join(path), data).unwrap();
         }
-        assert_eq!(PluginPackage::load_dir(dir.path()).unwrap().files(), &files);
+        assert_eq!(
+            PluginPackage::load_dir(dir.path(), &super::langs())
+                .unwrap()
+                .files(),
+            &files
+        );
     }
 }
 
@@ -119,11 +125,15 @@ fn avatar_paths_are_normalized_and_optional_posters_survive_every_package_form()
 fn invalid_required_paths_and_unsafe_or_oversized_optional_posters_are_rejected() {
     for path in ["../idle.mp4", "/idle.mp4", "${IDLE}", ""] {
         assert!(
-            PluginPackage::with_files(&source(&format!("{{idle: '{path}'}}")), BTreeMap::new())
-                .is_err()
+            PluginPackage::with_files(
+                &source(&format!("{{idle: '{path}'}}")),
+                BTreeMap::new(),
+                &super::langs()
+            )
+            .is_err()
         );
     }
-    assert!(PluginPackage::parse(&source("{idle: idle.mp4}")).is_err());
+    assert!(PluginPackage::parse(&source("{idle: idle.mp4}"), &super::langs()).is_err());
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("docker-compose.yml"),
@@ -132,7 +142,7 @@ fn invalid_required_paths_and_unsafe_or_oversized_optional_posters_are_rejected(
     .unwrap();
     std::fs::write(dir.path().join("idle.mp4"), PNG).unwrap();
     std::os::unix::fs::symlink("idle.mp4", dir.path().join("idle.jpg")).unwrap();
-    assert!(PluginPackage::load_dir(dir.path()).is_err());
+    assert!(PluginPackage::load_dir(dir.path(), &super::langs()).is_err());
     let files = PackageFiles::from([
         ("idle.mp4".into(), PNG.to_vec()),
         (
@@ -140,7 +150,9 @@ fn invalid_required_paths_and_unsafe_or_oversized_optional_posters_are_rejected(
             vec![0; usize::try_from(package_files::MAX_FILE_BYTES + 1).unwrap()],
         ),
     ]);
-    assert!(PluginPackage::with_files(&source("{idle: idle.mp4}"), files).is_err());
+    assert!(
+        PluginPackage::with_files(&source("{idle: idle.mp4}"), files, &super::langs()).is_err()
+    );
 }
 
 #[tokio::test]
@@ -220,7 +232,7 @@ async fn defaults_upload_as_bot_and_preserve_any_existing_field_including_empty(
         &[("idle.mp4", PNG), ("idle.jpg", JPEG), ("working.png", PNG)],
     );
     bed.manager
-        .install_package(package.clone(), &grant())
+        .install_package(package.clone(), &grant(), super::langs())
         .await
         .unwrap();
     let initial = bed.avatars().await.unwrap();
@@ -242,9 +254,12 @@ async fn defaults_upload_as_bot_and_preserve_any_existing_field_including_empty(
         })
         .await
         .unwrap();
-    bed.manager.uninstall(&id(), false).await.unwrap();
     bed.manager
-        .install_package(invalid, &grant())
+        .uninstall(&id(), false, &super::langs())
+        .await
+        .unwrap();
+    bed.manager
+        .install_package(invalid, &grant(), super::langs())
         .await
         .unwrap();
     assert_eq!(bed.avatars().await, Some(StateAvatars::default()));
@@ -281,7 +296,7 @@ async fn invalid_default_or_poster_fails_before_any_upload_and_retry_reuses_acco
         );
         let error = bed
             .manager
-            .install_package(package, &grant())
+            .install_package(package, &grant(), super::langs())
             .await
             .unwrap_err();
         assert!(matches!(error, InstallError::Invalid(_)));
@@ -301,7 +316,11 @@ async fn invalid_default_or_poster_fails_before_any_upload_and_retry_reuses_acco
         );
         assert_eq!(bed.manager.profile_revisions().get("app.test"), 0);
         bed.manager
-            .install_package(bundle("{idle: good.png}", &[("good.png", PNG)]), &grant())
+            .install_package(
+                bundle("{idle: good.png}", &[("good.png", PNG)]),
+                &grant(),
+                super::langs(),
+            )
             .await
             .unwrap();
         assert!(bed.avatars().await.unwrap().states.contains_key("idle"));
@@ -316,13 +335,17 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
         "  bot:\n    image: echo\n    environment:\n      TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}",
         "  permissions: [matrix.bot]",
     );
-    bed.manager.install(&old, &grant()).await.unwrap();
+    bed.manager
+        .install(&old, &grant(), super::langs())
+        .await
+        .unwrap();
     let before = bed.fake.state().devices("@test:test");
     assert_eq!(bed.avatars().await, None);
     let invalid = bundle("{idle: idle.mp4}", &[("idle.mp4", b"invalid")]);
     let invalid = PluginPackage::with_files(
         &invalid.source.replace("1.0.0", "1.1.0"),
         invalid.files().clone(),
+        &super::langs(),
     )
     .unwrap();
     assert!(matches!(
@@ -335,9 +358,12 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     assert!(bed.fake.state().media.is_empty());
     assert_eq!(bed.avatars().await, None);
     let next = bundle("{idle: idle.mp4}", &[("idle.mp4", PNG)]);
-    let next =
-        PluginPackage::with_files(&next.source.replace("1.0.0", "1.1.0"), next.files().clone())
-            .unwrap();
+    let next = PluginPackage::with_files(
+        &next.source.replace("1.0.0", "1.1.0"),
+        next.files().clone(),
+        &super::langs(),
+    )
+    .unwrap();
     bed.manager
         .upgrade_upload(&id(), next, grant(), false)
         .await
@@ -352,9 +378,12 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
         .await
         .unwrap();
     let next = bundle("{idle: idle.mp4}", &[("idle.mp4", b"invalid")]);
-    let next =
-        PluginPackage::with_files(&next.source.replace("1.0.0", "1.2.0"), next.files().clone())
-            .unwrap();
+    let next = PluginPackage::with_files(
+        &next.source.replace("1.0.0", "1.2.0"),
+        next.files().clone(),
+        &super::langs(),
+    )
+    .unwrap();
     bed.manager
         .upgrade_upload(&id(), next, grant(), false)
         .await
@@ -369,7 +398,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
 async fn unavailable_matrix_does_not_turn_into_invalid_media_or_touch_existing_device() {
     let bed = Bed::start().await;
     bed.manager
-        .install_package(bundle("{}", &[]), &grant())
+        .install_package(bundle("{}", &[]), &grant(), super::langs())
         .await
         .unwrap();
     let devices = bed.fake.state().devices("@test:test");

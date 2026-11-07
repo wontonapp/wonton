@@ -94,7 +94,7 @@ impl Engine {
             .docker
             .list_networks(None)
             .await
-            .map_err(|e| EngineError::from_bollard(&context, e))?;
+            .map_err(|e| super::docker::from_bollard(&self.owner_languages(), &context, e))?;
         let mut used = Vec::new();
         for config in networks.into_iter().flat_map(|network| {
             network

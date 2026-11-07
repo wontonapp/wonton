@@ -95,8 +95,11 @@ fn newer(new: &str, installed: &str) -> bool {
 }
 
 /// 记录里的插件包。
-fn installed_package(record: &InstalledRecord) -> Result<PluginPackage, InstallError> {
-    let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+fn installed_package(
+    record: &InstalledRecord,
+    langs: &Languages,
+) -> Result<PluginPackage, InstallError> {
+    let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
     package.origin = record.origin.clone();
     Ok(package)
 }
@@ -254,7 +257,7 @@ impl PluginManager {
         };
         if chosen {
             Self::check_same_plugin(&package, &record)?;
-            let installed = installed_package(&record)?;
+            let installed = installed_package(&record, &self.owner_languages())?;
             // 内容一样但来源不同的要放行：装它的索引删了之后，主人靠这个改跟仓库走，不用等上游出新版本。
             if installed.digest() == package.digest() && same_source(&record, &package) {
                 return Err(InstallError::Invalid(format!(
@@ -277,7 +280,7 @@ impl PluginManager {
             let granted = &record.granted_permissions;
             line.added = !granted.iter().any(|p| p.to_string() == line.permission);
         }
-        let old = installed_package(&record)?;
+        let old = installed_package(&record, &self.owner_languages())?;
         preview
             .notices
             .extend(closing_ports(&old, &record, &package));

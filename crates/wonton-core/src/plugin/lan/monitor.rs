@@ -270,7 +270,8 @@ impl PluginManager {
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+        let langs = self.owner_languages();
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), &langs)?;
         package.origin = record.origin.clone();
         if let Some(addresses) = addresses {
             let addresses: Vec<IpAddr> = addresses.iter().copied().collect();
@@ -295,7 +296,8 @@ impl PluginManager {
         let ctx = self
             .rebuild_context(package, record, Some(grant), pending.as_ref())
             .await?;
-        let mut plan = render(package, &ctx)?;
+        let langs = self.owner_languages();
+        let mut plan = render(package, &ctx, &langs)?;
         match (&pending, reservation) {
             (Some(pending), Some(reservation)) => {
                 self.apply_migration(
@@ -340,9 +342,12 @@ impl PluginManager {
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
         let secret = record.oidc_client_secret.as_deref();
-        let mut ctx = self.install_context(manifest, secret, generated).await?;
+        let langs = self.owner_languages();
+        let mut ctx = self
+            .install_context(manifest, secret, generated, &langs)
+            .await?;
         ctx.limits = record.limits;
-        ctx.gpu = self.gpu_grant(manifest).await?;
+        ctx.gpu = self.gpu_grant(manifest, &langs).await?;
         ctx.models = self.stored_model_vars(package)?;
         if let Some(network) = lan.as_ref().and_then(|grant| grant.network.as_ref())
             && self.engine.network_reach(network).await?.is_none()
@@ -379,6 +384,7 @@ impl PluginManager {
         ctx: &InstallContext,
         mut plan: Deployment,
     ) -> Result<(), InstallError> {
+        let langs = self.owner_languages();
         self.prepare_images(&mut plan).await?;
         // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
         for container in plan.containers.iter() {
@@ -386,7 +392,7 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
-        self.start_containers(&plan, &mut Undo::default(), deadline)
+        self.start_containers(&plan, &mut Undo::default(), deadline, &langs)
             .await?;
         Ok(())
     }

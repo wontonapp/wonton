@@ -139,7 +139,9 @@ impl PluginManager {
         if found.is_some() {
             let labels = created.and_then(|c| c.labels.clone()).unwrap_or_default();
             if !self.cfg.instance.is_component(&labels) {
-                return Err(name_taken("容器", &name, &labels));
+                let langs = self.owner_languages();
+                let what = crate::l10n::text(&langs, "plugin-install-word-container", &[]);
+                return Err(name_taken(&what, &name, &labels, &langs));
             }
         }
         let current = created
@@ -194,7 +196,11 @@ impl PluginManager {
         match self.engine.network_labels(&name).await? {
             None => self.engine.create_relay_network(&name, &labels).await?,
             Some(found) if self.cfg.instance.is_component(&found) => {}
-            Some(found) => return Err(name_taken("网络", &name, &found)),
+            Some(found) => {
+                let langs = self.owner_languages();
+                let what = crate::l10n::text(&langs, "plugin-install-word-network", &[]);
+                return Err(name_taken(&what, &name, &found, &langs));
+            }
         }
         Ok(())
     }

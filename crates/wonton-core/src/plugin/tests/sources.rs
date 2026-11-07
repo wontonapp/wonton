@@ -24,7 +24,7 @@ fn hello(version: &str, manifest: &str) -> String {
 }
 
 fn package(compose: &str) -> PluginPackage {
-    PluginPackage::parse(compose).unwrap()
+    PluginPackage::parse(compose, &super::langs()).unwrap()
 }
 
 fn id() -> PluginId {
@@ -141,7 +141,9 @@ async fn leftover_data_under_the_same_id_is_called_out_before_installing() {
         .unwrap();
     assert!(!texts(&first).iter().any(|t| t.contains("留着")));
     m.install_source(&install_request(&first)).await.unwrap();
-    m.uninstall_detached(id(), false).await.unwrap();
+    m.uninstall_detached(id(), false, super::langs())
+        .await
+        .unwrap();
 
     let again = m
         .preview_upload(package(&hello("1.0.0", "  author: {name: 别人}\n")), &zh())
@@ -451,7 +453,7 @@ async fn a_changed_file_in_a_third_party_index_is_refused() {
     );
     let mut files = PackageFiles::new();
     files.insert("config.yaml".to_owned(), config.as_bytes().to_vec());
-    let good = PluginPackage::with_files(&compose, files).unwrap();
+    let good = PluginPackage::with_files(&compose, files, &super::langs()).unwrap();
     let entry = IndexEntry::of(&good, "github:acme/hello", &commit).unwrap();
     // 索引旁边的 blob 被换了，也不会回退到别的内容：对不上 sha256 就不装。
     let blob = format!("blobs/{}", entry.files["config.yaml"]);

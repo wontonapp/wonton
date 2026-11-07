@@ -13,6 +13,8 @@ use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, RgbIma
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::{self, ImageHrefResolver, roxmltree};
 
+use super::languages::Languages;
+
 mod preflight;
 
 /// 图标输出的两种边长：列表和主屏用小的，详情页和确认页用大的。
@@ -79,50 +81,58 @@ pub struct Screenshot {
 }
 
 /// 普通插件图标的处理。
-pub fn icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
-    encode_icon(icon_pixels(format, data)?)
+pub fn icon(format: IconFormat, data: &[u8], langs: &Languages) -> Result<Icon, String> {
+    encode_icon(icon_pixels(format, data, langs)?, langs)
 }
 
 /// 底栏图标只取透明通道表达形状，并且必须同时有透明和非透明像素。
-pub fn tab_icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
-    let mut pixels = tab_icon_pixels(format, data)?;
-    validate_tab_icon(&pixels)?;
+pub fn tab_icon(format: IconFormat, data: &[u8], langs: &Languages) -> Result<Icon, String> {
+    let mut pixels = tab_icon_pixels(format, data, langs)?;
+    validate_tab_icon(&pixels, langs)?;
     for pixel in pixels.pixels_mut() {
         pixel.0[..3].fill(u8::MAX);
     }
-    encode_icon(pixels)
+    encode_icon(pixels, langs)
 }
 
-fn encode_icon(large: RgbaImage) -> Result<Icon, String> {
+fn encode_icon(large: RgbaImage, langs: &Languages) -> Result<Icon, String> {
     let small = imageops::resize(&large, ICON_SMALL, ICON_SMALL, FilterType::Lanczos3);
     Ok(Icon {
         transparent_corner: has_transparent_corner(&large),
-        small: encode_png(small)?,
-        large: encode_png(large)?,
+        small: encode_png(small, langs)?,
+        large: encode_png(large, langs)?,
     })
 }
 
-fn validate_tab_icon(pixels: &RgbaImage) -> Result<(), String> {
+fn validate_tab_icon(pixels: &RgbaImage, langs: &Languages) -> Result<(), String> {
     let all_opaque = pixels.pixels().all(|pixel| pixel[3] == u8::MAX);
     let all_transparent = pixels.pixels().all(|pixel| pixel[3] == 0);
     if all_opaque || all_transparent {
-        return Err("底栏图标的透明通道不能全不透明或全透明".to_owned());
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-tab-icon-alpha",
+            &[],
+        ));
     }
     Ok(())
 }
 
 /// 图标画成 512×512 的 RGBA：PNG 解码后缩放，SVG 用 resvg 渲染。
-fn icon_pixels(format: IconFormat, data: &[u8]) -> Result<RgbaImage, String> {
+fn icon_pixels(format: IconFormat, data: &[u8], langs: &Languages) -> Result<RgbaImage, String> {
     match format {
-        IconFormat::Png => png_icon(data, MIN_ICON_EDGE),
-        IconFormat::Svg => svg_icon(data),
+        IconFormat::Png => png_icon(data, MIN_ICON_EDGE, langs),
+        IconFormat::Svg => svg_icon(data, langs),
     }
 }
 
-fn tab_icon_pixels(format: IconFormat, data: &[u8]) -> Result<RgbaImage, String> {
+fn tab_icon_pixels(
+    format: IconFormat,
+    data: &[u8],
+    langs: &Languages,
+) -> Result<RgbaImage, String> {
     match format {
-        IconFormat::Png => png_icon(data, 1),
-        IconFormat::Svg => svg_icon(data),
+        IconFormat::Png => png_icon(data, 1, langs),
+        IconFormat::Svg => svg_icon(data, langs),
     }
 }
 
@@ -133,15 +143,24 @@ fn has_transparent_corner(pixels: &RgbaImage) -> bool {
         .any(|&(x, y)| pixels.get_pixel(x, y)[3] < 128)
 }
 
-pub fn screenshot(data: &[u8]) -> Result<Screenshot, String> {
+pub fn screenshot(data: &[u8], langs: &Languages) -> Result<Screenshot, String> {
     if data.len() > MAX_SCREENSHOT_BYTES {
-        return Err(format!("超过 {} KiB", MAX_SCREENSHOT_BYTES >> 10));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-too-many-kib",
+            &[("kib", (MAX_SCREENSHOT_BYTES >> 10).into())],
+        ));
     }
-    let format = image::guess_format(data).map_err(|_| "不是 PNG 或 JPEG 图片".to_owned())?;
+    let format = image::guess_format(data)
+        .map_err(|_| crate::l10n::text(langs, "plugin-install-img-not-png-or-jpeg", &[]))?;
     if !matches!(format, ImageFormat::Png | ImageFormat::Jpeg) {
-        return Err(format!("是 {format:?} 图片，截图只收 PNG 或 JPEG"));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-is-format",
+            &[("format", format!("{format:?}").into())],
+        ));
     }
-    let image = decode(data, format)?;
+    let image = decode(data, format, langs)?;
     let (width, height) = (image.width(), image.height());
     let image = if width.max(height) > SCREENSHOT_EDGE {
         image.resize(SCREENSHOT_EDGE, SCREENSHOT_EDGE, FilterType::Lanczos3)
@@ -151,7 +170,13 @@ pub fn screenshot(data: &[u8]) -> Result<Screenshot, String> {
     let mut jpeg = Vec::new();
     JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
         .encode_image(&on_white(&image.to_rgba8()))
-        .map_err(|e| format!("编码 JPEG 失败：{e}"))?;
+        .map_err(|e| {
+            crate::l10n::text(
+                langs,
+                "plugin-install-img-encode-jpeg-failed",
+                &[("error", e.to_string().into())],
+            )
+        })?;
     Ok(Screenshot {
         jpeg,
         width,
@@ -160,26 +185,35 @@ pub fn screenshot(data: &[u8]) -> Result<Screenshot, String> {
 }
 
 /// 文件的缩略图：长边 800 像素的 JPEG。
-pub fn thumbnail(data: &[u8]) -> Result<Vec<u8>, String> {
-    scaled_jpeg(data, THUMBNAIL_EDGE)
+pub fn thumbnail(data: &[u8], langs: &Languages) -> Result<Vec<u8>, String> {
+    scaled_jpeg(data, THUMBNAIL_EDGE, langs)
 }
 
 /// 给 Bot 看的预览：长边 1024 像素的 JPEG（ADR-0020 的“Bot”）。
-pub fn preview(data: &[u8]) -> Result<Vec<u8>, String> {
-    scaled_jpeg(data, PREVIEW_EDGE)
+pub fn preview(data: &[u8], langs: &Languages) -> Result<Vec<u8>, String> {
+    scaled_jpeg(data, PREVIEW_EDGE, langs)
 }
 
 /// 缩到长边 `edge` 的 JPEG，按 EXIF 转正。重新编码后不带原文件的元数据（拍摄地点这些）。
-fn scaled_jpeg(data: &[u8], edge: u32) -> Result<Vec<u8>, String> {
+fn scaled_jpeg(data: &[u8], edge: u32, langs: &Languages) -> Result<Vec<u8>, String> {
     if data.len() > MAX_THUMBNAIL_INPUT {
-        return Err(format!("超过 {} MiB", MAX_THUMBNAIL_INPUT >> 20));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-too-many-mib",
+            &[("mib", (MAX_THUMBNAIL_INPUT >> 20).into())],
+        ));
     }
-    let format = image::guess_format(data).map_err(|_| "不是支持的图片格式".to_owned())?;
+    let format = image::guess_format(data)
+        .map_err(|_| crate::l10n::text(langs, "plugin-install-img-not-supported-format", &[]))?;
     if !matches!(
         format,
         ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Gif | ImageFormat::WebP
     ) {
-        return Err(format!("{format:?} 做不了缩略图"));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-format-no-thumbnail",
+            &[("format", format!("{format:?}").into())],
+        ));
     }
     let mut reader = ImageReader::with_format(Cursor::new(data), format);
     let mut limits = Limits::default();
@@ -187,15 +221,21 @@ fn scaled_jpeg(data: &[u8], edge: u32) -> Result<Vec<u8>, String> {
     limits.max_image_height = Some(THUMBNAIL_MAX_EDGE);
     limits.max_alloc = Some(384 << 20);
     reader.limits(limits);
-    let failed = |e: image::ImageError| match e {
-        image::ImageError::Limits(_) => {
-            format!("超过 {THUMBNAIL_MAX_EDGE}×{THUMBNAIL_MAX_EDGE} 像素或内存上限")
-        }
-        other => format!("解码失败：{other}"),
+    let failed = |e: image::ImageError, langs: &Languages| match e {
+        image::ImageError::Limits(_) => crate::l10n::text(
+            langs,
+            "plugin-install-img-over-edge-or-memory",
+            &[("max", THUMBNAIL_MAX_EDGE.into())],
+        ),
+        other => crate::l10n::text(
+            langs,
+            "plugin-install-img-decode-failed",
+            &[("error", other.to_string().into())],
+        ),
     };
-    let mut decoder = reader.into_decoder().map_err(failed)?;
-    let orientation = decoder.orientation().map_err(failed)?;
-    let mut image = DynamicImage::from_decoder(decoder).map_err(failed)?;
+    let mut decoder = reader.into_decoder().map_err(|e| failed(e, langs))?;
+    let orientation = decoder.orientation().map_err(|e| failed(e, langs))?;
+    let mut image = DynamicImage::from_decoder(decoder).map_err(|e| failed(e, langs))?;
     image.apply_orientation(orientation);
     if image.width().max(image.height()) > edge {
         image = image.resize(edge, edge, FilterType::Triangle);
@@ -203,25 +243,49 @@ fn scaled_jpeg(data: &[u8], edge: u32) -> Result<Vec<u8>, String> {
     let mut jpeg = Vec::new();
     JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
         .encode_image(&on_white(&image.to_rgba8()))
-        .map_err(|e| format!("编码 JPEG 失败：{e}"))?;
+        .map_err(|e| {
+            crate::l10n::text(
+                langs,
+                "plugin-install-img-encode-jpeg-failed",
+                &[("error", e.to_string().into())],
+            )
+        })?;
     Ok(jpeg)
 }
 
-fn png_icon(data: &[u8], min_edge: u32) -> Result<RgbaImage, String> {
+fn png_icon(data: &[u8], min_edge: u32, langs: &Languages) -> Result<RgbaImage, String> {
     if data.len() > MAX_PNG_ICON_BYTES {
-        return Err(format!("PNG 图标超过 {} KiB", MAX_PNG_ICON_BYTES >> 10));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-png-too-big",
+            &[("kib", (MAX_PNG_ICON_BYTES >> 10).into())],
+        ));
     }
     if image::guess_format(data).ok() != Some(ImageFormat::Png) {
-        return Err("文件名是 .png，内容却不是 PNG".to_owned());
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-png-content",
+            &[],
+        ));
     }
-    let image = decode(data, ImageFormat::Png)?;
+    let image = decode(data, ImageFormat::Png, langs)?;
     let (w, h) = (image.width(), image.height());
     if w != h {
-        return Err(format!("图标要是正方形，这张是 {w}×{h}"));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-not-square",
+            &[("width", w.into()), ("height", h.into())],
+        ));
     }
     if w < min_edge {
-        return Err(format!(
-            "PNG 图标至少 {min_edge}×{min_edge}，这张是 {w}×{h}"
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-png-too-small",
+            &[
+                ("min", min_edge.into()),
+                ("width", w.into()),
+                ("height", h.into()),
+            ],
         ));
     }
     Ok(imageops::resize(
@@ -232,19 +296,29 @@ fn png_icon(data: &[u8], min_edge: u32) -> Result<RgbaImage, String> {
     ))
 }
 
-fn svg_icon(data: &[u8]) -> Result<RgbaImage, String> {
+fn svg_icon(data: &[u8], langs: &Languages) -> Result<RgbaImage, String> {
     if data.len() > MAX_SVG_ICON_BYTES {
-        return Err(format!("SVG 图标超过 {} KiB", MAX_SVG_ICON_BYTES >> 10));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-svg-too-big",
+            &[("kib", (MAX_SVG_ICON_BYTES >> 10).into())],
+        ));
     }
-    let text = std::str::from_utf8(data).map_err(|_| "SVG 要是 UTF-8 文本（不收压缩过的 SVG）")?;
+    let text = std::str::from_utf8(data)
+        .map_err(|_| crate::l10n::text(langs, "plugin-install-img-svg-not-utf8", &[]))?;
     let options = roxmltree::ParsingOptions {
         allow_dtd: false,
         nodes_limit: MAX_XML_NODES,
         ..roxmltree::ParsingOptions::default()
     };
-    let doc = roxmltree::Document::parse_with_options(text, options)
-        .map_err(|e| format!("不是合法的 SVG：{e}"))?;
-    preflight::check(&doc)?;
+    let doc = roxmltree::Document::parse_with_options(text, options).map_err(|e| {
+        crate::l10n::text(
+            langs,
+            "plugin-install-img-svg-invalid",
+            &[("error", e.to_string().into())],
+        )
+    })?;
+    preflight::check(&doc, langs)?;
     let options = usvg::Options {
         image_href_resolver: ImageHrefResolver {
             resolve_data: Box::new(|_, _, _| None),
@@ -252,14 +326,24 @@ fn svg_icon(data: &[u8]) -> Result<RgbaImage, String> {
         },
         ..usvg::Options::default()
     };
-    let tree =
-        usvg::Tree::from_xmltree(&doc, &options).map_err(|e| format!("解析 SVG 失败：{e}"))?;
+    let tree = usvg::Tree::from_xmltree(&doc, &options).map_err(|e| {
+        crate::l10n::text(
+            langs,
+            "plugin-install-img-svg-parse-failed",
+            &[("error", e.to_string().into())],
+        )
+    })?;
     let size = tree.size();
     let (w, h) = (size.width(), size.height());
     if (w - h).abs() > w.max(h) * 1e-3 {
-        return Err(format!("SVG 的 viewBox 要是正方形，这张是 {w}×{h}"));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-img-svg-viewbox",
+            &[("width", w.into()), ("height", h.into())],
+        ));
     }
-    let mut pixmap = Pixmap::new(ICON_LARGE, ICON_LARGE).ok_or("分配画布失败")?;
+    let mut pixmap = Pixmap::new(ICON_LARGE, ICON_LARGE)
+        .ok_or_else(|| crate::l10n::text(langs, "plugin-install-img-canvas-alloc-failed", &[]))?;
     let edge = ICON_LARGE as f32;
     resvg::render(
         &tree,
@@ -274,10 +358,11 @@ fn svg_icon(data: &[u8]) -> Result<RgbaImage, String> {
             [c.red(), c.green(), c.blue(), c.alpha()]
         })
         .collect();
-    RgbaImage::from_raw(ICON_LARGE, ICON_LARGE, rgba).ok_or_else(|| "转换画布失败".to_owned())
+    RgbaImage::from_raw(ICON_LARGE, ICON_LARGE, rgba)
+        .ok_or_else(|| crate::l10n::text(langs, "plugin-install-img-canvas-convert-failed", &[]))
 }
 
-fn decode(data: &[u8], format: ImageFormat) -> Result<DynamicImage, String> {
+fn decode(data: &[u8], format: ImageFormat, langs: &Languages) -> Result<DynamicImage, String> {
     let mut reader = ImageReader::with_format(Cursor::new(data), format);
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_EDGE);
@@ -285,16 +370,30 @@ fn decode(data: &[u8], format: ImageFormat) -> Result<DynamicImage, String> {
     limits.max_alloc = Some(256 << 20);
     reader.limits(limits);
     reader.decode().map_err(|e| match e {
-        image::ImageError::Limits(_) => format!("超过 {MAX_EDGE}×{MAX_EDGE} 像素"),
-        other => format!("解码失败：{other}"),
+        image::ImageError::Limits(_) => crate::l10n::text(
+            langs,
+            "plugin-install-img-over-max-edge",
+            &[("max", MAX_EDGE.into())],
+        ),
+        other => crate::l10n::text(
+            langs,
+            "plugin-install-img-decode-failed",
+            &[("error", other.to_string().into())],
+        ),
     })
 }
 
-fn encode_png(image: RgbaImage) -> Result<Vec<u8>, String> {
+fn encode_png(image: RgbaImage, langs: &Languages) -> Result<Vec<u8>, String> {
     let mut out = Cursor::new(Vec::new());
     DynamicImage::ImageRgba8(image)
         .write_to(&mut out, ImageFormat::Png)
-        .map_err(|e| format!("编码 PNG 失败：{e}"))?;
+        .map_err(|e| {
+            crate::l10n::text(
+                langs,
+                "plugin-install-img-encode-png-failed",
+                &[("error", e.to_string().into())],
+            )
+        })?;
     Ok(out.into_inner())
 }
 

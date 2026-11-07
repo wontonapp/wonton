@@ -470,7 +470,12 @@ async fn an_owner_upgrade_takes_the_plugin_back_from_the_agent() {
         "index.html".to_owned(),
         "<h1>主人升的</h1>".as_bytes().to_vec(),
     );
-    let package = crate::plugin::PluginPackage::with_files(&compose, files).unwrap();
+    let package = crate::plugin::PluginPackage::with_files(
+        &compose,
+        files,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
     let granted = package.manifest.permissions.clone();
     b.s.manager
         .upgrade_upload(&id, package, granted, false)

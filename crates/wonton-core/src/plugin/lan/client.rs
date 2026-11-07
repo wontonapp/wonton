@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{LanClient, LanWebuiOffer};
 
+use crate::plugin::languages::Languages;
 use crate::plugin::manager::PluginManager;
 use crate::plugin::manifest::{Manifest, ManifestError, PluginId};
 use crate::plugin::proxy_auth;
@@ -23,7 +24,11 @@ pub struct LanClientSpec {
     pub password: String,
 }
 
-pub(super) fn validate(manifest: &Manifest, client: &LanClientSpec) -> Result<(), ManifestError> {
+pub(super) fn validate(
+    manifest: &Manifest,
+    client: &LanClientSpec,
+    langs: &Languages,
+) -> Result<(), ManifestError> {
     let invalid = |message: String| ManifestError::Invalid(format!("lan.client：{message}"));
     if !client.address.contains(HOST) {
         return Err(invalid(format!("address 要写 {HOST}")));
@@ -33,7 +38,7 @@ pub(super) fn validate(manifest: &Manifest, client: &LanClientSpec) -> Result<()
         if template.contains("{name}") {
             return Err(invalid("不能用 {name}".to_owned()));
         }
-        proxy_auth::check_template(manifest, template).map_err(invalid)?;
+        proxy_auth::check_template(manifest, template, langs).map_err(invalid)?;
     }
     Ok(())
 }
@@ -77,7 +82,8 @@ impl PluginManager {
         let stored = stored.ok_or("密钥库里没有这个插件")?;
         let generated = secrets::generated_values(manifest, &stored)?;
         let owner = self.cfg.profile.owner();
-        let fill = |template| proxy_auth::fill_template(template, &owner, &generated);
+        let langs = self.owner_languages();
+        let fill = |template| proxy_auth::fill_template(template, &owner, &generated, &langs);
         let mut hosts = BTreeSet::new();
         let slug = id.slug();
         for port in &lan.ports {

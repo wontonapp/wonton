@@ -16,6 +16,7 @@ use tokio::net::TcpListener;
 
 use super::session;
 use super::tests::{CORE, Harness, PLUGIN};
+use crate::plugin::languages::Languages;
 use crate::plugin::proxy_auth::ProxyAuth;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
 
@@ -52,9 +53,17 @@ pub(super) const KEY: &str = "4f1c0de5a7b2e9d3c6a8f0b1e2d3c4b5a69788796a5b4c3d2e
 pub(super) async fn register_vault(manager: &PluginManager) -> Arc<AtomicUsize> {
     let hits = Arc::new(AtomicUsize::new(0));
     let addr = upstream(hits.clone()).await;
-    let manifest = PluginPackage::parse(VAULT).unwrap().manifest;
+    let manifest = PluginPackage::parse(VAULT, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     let generated = BTreeMap::from([("web_key".to_owned(), KEY.to_owned())]);
-    let auth = ProxyAuth::resolve(&manifest, &generated).unwrap().unwrap();
+    let auth = ProxyAuth::resolve(
+        &manifest,
+        &generated,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap()
+    .unwrap();
     let id = manifest.id.clone();
     manager.register_for_test(manifest, PluginStatus::Running, Some(addr.to_string()));
     manager.proxy_for_test(&id, auth);

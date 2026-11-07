@@ -15,10 +15,12 @@ use bollard::models::{
 };
 use ipnet::Ipv4Net;
 
-use super::docker::{Engine, EngineError, GATEWAY_MODES, NetworkReach};
+use super::docker::{Engine, EngineError, GATEWAY_MODES, NetworkReach, from_bollard};
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, Sso};
 use super::upstreams::core_aliases;
+use crate::l10n;
 
 /// 别的核心或程序可能同时选中同一段。沿用 #474 的重试次数与间隔，不把并发碰撞当地址池耗尽。
 const CREATE_ATTEMPTS: u32 = 10;
@@ -84,10 +86,10 @@ pub(super) fn reserved_ipam(subnet: Ipv4Net, gateway: Option<String>) -> Option<
     })
 }
 
-fn no_layout(context: &str) -> EngineError {
+fn no_layout(langs: &Languages, context: &str) -> EngineError {
     EngineError::Rejected {
         context: context.to_owned(),
-        message: "网络没有能给核心留地址的 IPv4 网段".to_owned(),
+        message: l10n::text(langs, "plugin-install-coreaddr-no-ipv4-layout", &[]),
     }
 }
 
@@ -97,23 +99,44 @@ pub(super) fn subnet_taken(error: &EngineError) -> bool {
         if message.contains("overlap") || message.contains("already in use"))
 }
 
-fn pool_exhausted_error(name: &str, pool: super::network_pool::NetworkPool) -> EngineError {
+fn pool_exhausted_error(
+    langs: &Languages,
+    name: &str,
+    pool: super::network_pool::NetworkPool,
+) -> EngineError {
     let count = 1u32 << (26 - pool.subnet().prefix_len());
     EngineError::Rejected {
-        context: format!(
-            "创建网络 {name}，核心给插件网络留的地址段用完了，插件装不上；卸掉不用的插件，\
-             或把核心配置 {} 里的地址段改大",
-            super::network_pool::VAR
+        context: l10n::text(
+            langs,
+            "plugin-install-coreaddr-pool-exhausted-context",
+            &[
+                ("name", name.into()),
+                ("var", super::network_pool::VAR.into()),
+            ],
         ),
-        message: format!("地址段 {}，已用 {count}/{count} 个 /26 网段", pool.subnet()),
+        message: l10n::text(
+            langs,
+            "plugin-install-coreaddr-pool-exhausted",
+            &[
+                ("subnet", pool.subnet().to_string().into()),
+                ("count", count.into()),
+            ],
+        ),
     }
 }
 
 /// 试满次数还是撞：仍是 Docker 的拒绝，原话不动，前面写明重试过。
-fn kept_taken(error: EngineError) -> EngineError {
+fn kept_taken(langs: &Languages, error: EngineError) -> EngineError {
     match error {
         EngineError::Rejected { context, message } => EngineError::Rejected {
-            context: format!("{context}，{CREATE_ATTEMPTS} 次都和同时建的网络撞了网段"),
+            context: l10n::text(
+                langs,
+                "plugin-install-coreaddr-kept-taken",
+                &[
+                    ("context", context.into()),
+                    ("attempts", CREATE_ATTEMPTS.into()),
+                ],
+            ),
             message,
         },
         other => other,
@@ -210,10 +233,9 @@ impl Engine {
                     .iter()
                     .copied(),
             );
-            let subnet = self
-                .network_pool
-                .available(&used)
-                .ok_or_else(|| pool_exhausted_error(&request.name, self.network_pool))?;
+            let subnet = self.network_pool.available(&used).ok_or_else(|| {
+                pool_exhausted_error(&self.owner_languages(), &request.name, self.network_pool)
+            })?;
             let isolated = request
                 .options
                 .as_ref()
@@ -233,7 +255,9 @@ impl Engine {
                     taken.push(subnet);
                     tokio::time::sleep(retry_delay()).await;
                 }
-                Err(error) if subnet_taken(&error) => return Err(kept_taken(error)),
+                Err(error) if subnet_taken(&error) => {
+                    return Err(kept_taken(&self.owner_languages(), error));
+                }
                 other => return other,
             }
         }
@@ -275,12 +299,13 @@ impl Engine {
                 .iter()
                 .copied(),
         );
+        let langs = self.owner_languages();
         let mut pending = Vec::with_capacity(count);
         for _ in 0..count {
             let subnet = self
                 .network_pool
                 .available(&used)
-                .ok_or_else(|| pool_exhausted_error(name, self.network_pool))?;
+                .ok_or_else(|| pool_exhausted_error(&langs, name, self.network_pool))?;
             pending.push(subnet);
             used.push(subnet);
         }
@@ -310,6 +335,7 @@ impl Engine {
             .is_some_and(|mode| mode == "isolated");
         let gateway =
             (!isolated).then(|| Ipv4Addr::from(subnet.network().to_bits() + 1).to_string());
+        let langs = self.owner_languages();
         let ipam = reserved_ipam(subnet, gateway).expect("/26 能给核心留地址");
         let name = request.name.clone();
         match self
@@ -321,9 +347,15 @@ impl Engine {
         {
             Ok(()) => Ok(()),
             Err(error) if subnet_taken(&error) => Err(EngineError::Rejected {
-                context: format!("创建网络 {name}"),
-                message: format!(
-                    "预留的网段 {subnet} 被别的程序刚好占了：重试这次重建，会另挑网段"
+                context: l10n::text(
+                    &langs,
+                    "plugin-install-coreaddr-context-create-network",
+                    &[("name", name.into())],
+                ),
+                message: l10n::text(
+                    &langs,
+                    "plugin-install-coreaddr-reserved-taken",
+                    &[("subnet", subnet.to_string().into())],
                 ),
             }),
             Err(error) => Err(error),
@@ -334,12 +366,17 @@ impl Engine {
         &self,
         request: NetworkCreateRequest,
     ) -> Result<(), EngineError> {
-        let context = format!("创建网络 {}", request.name);
+        let langs = self.owner_languages();
+        let context = l10n::text(
+            &langs,
+            "plugin-install-coreaddr-context-create-network",
+            &[("name", request.name.clone().into())],
+        );
         self.docker
             .create_network(request)
             .await
             .map(|_| ())
-            .map_err(|e| EngineError::from_bollard(&context, e))
+            .map_err(|e| from_bollard(&langs, &context, e))
     }
 
     /// 查询网络；不存在时返回 `None`。
@@ -347,9 +384,15 @@ impl Engine {
         &self,
         name: &str,
     ) -> Result<Option<NetworkInspect>, EngineError> {
+        let langs = self.owner_languages();
+        let context = l10n::text(
+            &langs,
+            "plugin-install-coreaddr-context-inspect-network",
+            &[("name", name.into())],
+        );
         match self.docker.inspect_network(name, None).await {
             Ok(network) => Ok(Some(network)),
-            Err(e) => match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
+            Err(e) => match from_bollard(&langs, &context, e) {
                 EngineError::NotFound(_) => Ok(None),
                 other => Err(other),
             },
@@ -358,19 +401,24 @@ impl Engine {
 
     /// 插件网络里留给核心的地址。网络还没留出来（核心升级前建的）时报错：这时指定地址接入，Engine 28 会拒绝。
     pub async fn core_address(&self, network: &str) -> Result<Ipv4Addr, EngineError> {
-        let context = format!("查询网络 {network}");
+        let langs = self.owner_languages();
+        let context = l10n::text(
+            &langs,
+            "plugin-install-coreaddr-context-inspect-network",
+            &[("name", network.into())],
+        );
         let found = self
             .inspect_network(network)
             .await?
             .ok_or_else(|| EngineError::NotFound(context.clone()))?;
-        let layout = layout_of(&found).ok_or_else(|| no_layout(&context))?;
+        let layout = layout_of(&found).ok_or_else(|| no_layout(&langs, &context))?;
         if !layout.reserved {
             return Err(EngineError::Rejected {
                 context,
-                message: "网络还没有给核心留出地址".to_owned(),
+                message: l10n::text(&langs, "plugin-install-coreaddr-no-core-address", &[]),
             });
         }
-        last_usable(layout.subnet).ok_or_else(|| no_layout(&context))
+        last_usable(layout.subnet).ok_or_else(|| no_layout(&langs, &context))
     }
 
     /// 容器在网络里的端点，容器停着也有；容器不在或者没接这个网络时为空。
@@ -421,7 +469,16 @@ impl Engine {
             .connect_network(network, request)
             .await
             .map_err(|e| {
-                EngineError::from_bollard(&format!("把 {container} 接入网络 {network}"), e)
+                let langs = self.owner_languages();
+                from_bollard(
+                    &langs,
+                    &l10n::text(
+                        &langs,
+                        "plugin-install-docker-context-connect-network",
+                        &[("container", container.into()), ("network", network.into())],
+                    ),
+                    e,
+                )
             })
     }
 }

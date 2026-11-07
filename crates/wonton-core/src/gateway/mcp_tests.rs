@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use crate::plugin::languages::Languages;
 use axum::body::Body;
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderValue};
@@ -102,7 +103,9 @@ async fn start(permissions: Option<Vec<Permission>>) -> Home {
         lifecycle,
         ImageWorker::in_process(),
     ));
-    let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
+    let manifest = PluginPackage::parse(NOTES, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     let id = manifest.id.clone();
     manager.register_for_test(manifest, PluginStatus::Running, None);
     let notes = Notes::default();
@@ -763,7 +766,9 @@ async fn only_the_owner_can_take_over_and_a_revoked_device_stops_operating() {
 #[tokio::test]
 async fn a_plugin_that_is_not_running_cannot_be_taken_over() {
     let home = start(None).await;
-    let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
+    let manifest = PluginPackage::parse(NOTES, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     home.gateway.plugins.register_for_test(
         manifest,
         PluginStatus::Degraded {

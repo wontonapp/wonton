@@ -20,6 +20,7 @@ use crate::matrix::{Matrix, NoticeRoom};
 use crate::owner::OwnerStore;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
+use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{Permission, PluginManager, PluginPackage, PluginStatus};
@@ -92,7 +93,11 @@ async fn start() -> Home {
         (MONITOR, false, "172.30.1.0/24"),
         (PANEL, true, "172.30.2.0/24"),
     ] {
-        let package = PluginPackage::parse(&manifest(id, webui)).unwrap();
+        let package = PluginPackage::parse(
+            &manifest(id, webui),
+            &Languages::from_header(Some("zh-Hans")),
+        )
+        .unwrap();
         plugins.register_for_test(package.manifest, PluginStatus::Running, None);
         plugins.register_source_for_test(id, subnet, vec![Permission::Notify]);
     }

@@ -20,6 +20,7 @@ use crate::config::{
     PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PublicUrls,
 };
 use crate::http::HttpError;
+use crate::l10n;
 
 /// MCP 服务没写 `path` 时的路径。
 const DEFAULT_MCP_PATH: &str = "/mcp";
@@ -264,9 +265,18 @@ impl PluginManager {
             return Ok(None);
         };
         // 插件交的东西不对（密钥没写下、不是文本、填不出合法头值）：不是核心存储的错，按输入错误报。
-        let headers = super::proxy_auth::resolve_mcp_headers(manifest, secrets).map_err(|e| {
-            InstallError::Invalid(format!("插件 {} 的 MCP 请求头解析不了：{e}", manifest.id))
-        })?;
+        let langs = self.owner_languages();
+        let headers =
+            super::proxy_auth::resolve_mcp_headers(manifest, secrets, &langs).map_err(|e| {
+                InstallError::Invalid(l10n::text(
+                    &langs,
+                    "plugin-install-upstream-mcp-headers",
+                    &[
+                        ("id", manifest.id.to_string().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
+            })?;
         let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
         if let Some(endpoint) = self
             .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service)
@@ -356,8 +366,9 @@ impl PluginManager {
             .load(id)
             .map_err(|e| internal(e.to_string()))?
             .ok_or(ResourceUpstreamError::Unavailable)?;
-        let package = PluginPackage::with_files(&record.source, record.files)
-            .map_err(|e| internal(e.to_string()))?;
+        let package =
+            PluginPackage::with_files(&record.source, record.files, &self.owner_languages())
+                .map_err(|e| internal(e.to_string()))?;
         if !package.has_service(service) {
             return Err(ResourceUpstreamError::NotItsService);
         }
@@ -379,11 +390,14 @@ impl PluginManager {
         port: u16,
         network: &str,
     ) -> Result<String, InstallError> {
+        let langs = self.owner_languages();
         self.service_address(container, host, port, network)
             .await?
             .ok_or_else(|| {
-                InstallError::Docker(format!(
-                    "容器 {container} 不存在，或者在网络 {network} 中没有地址"
+                InstallError::Docker(l10n::text(
+                    &langs,
+                    "plugin-install-upstream-container-missing",
+                    &[("container", container.into()), ("network", network.into())],
                 ))
             })
     }
@@ -415,6 +429,7 @@ mod tests {
     use super::super::package::PluginPackage;
     use super::*;
     use crate::config::{PLUGIN_HEALTH_HOST, PLUGIN_MODELS_HOST, PublicUrls};
+    use crate::plugin::languages::Languages;
 
     const MANIFEST: &str = "name: t
 services:
@@ -440,11 +455,15 @@ x-wonton:
 
     #[test]
     fn health_alias_is_only_for_plugins_that_asked_for_it() {
-        let manifest = PluginPackage::parse(MANIFEST).unwrap().manifest;
+        let manifest = PluginPackage::parse(MANIFEST, &Languages::from_header(Some("zh-Hans")))
+            .unwrap()
+            .manifest;
         let aliases = core_aliases(&public(), &manifest);
         assert!(aliases.contains(&PLUGIN_HEALTH_HOST.to_owned()));
         assert!(aliases.contains(&PLUGIN_MODELS_HOST.to_owned()));
-        let mut without = PluginPackage::parse(MANIFEST).unwrap().manifest;
+        let mut without = PluginPackage::parse(MANIFEST, &Languages::from_header(Some("zh-Hans")))
+            .unwrap()
+            .manifest;
         without
             .permissions
             .retain(|p| *p != Permission::PluginsHealth);

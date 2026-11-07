@@ -178,7 +178,10 @@ async fn a_failed_record_write_rolls_back_the_deployment() {
     let m = manager_with(engine, &dir);
     // 记录的位置被一个目录占着：写记录必然失败，以 root 运行也一样。
     fs::create_dir_all(dir.path().join("plugins/app.test.json")).unwrap();
-    let err = m.install(&app("app.test"), &[]).await.unwrap_err();
+    let err = m
+        .install(&app("app.test"), &[], super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "storage", "{err}");
     let started = format!(
         "POST /containers/{}/start",
@@ -226,8 +229,10 @@ async fn configs_are_written_after_create_and_before_start() {
         )
     );
     let files: PackageFiles = [("app.yaml".to_owned(), b"level: info\n".to_vec())].into();
-    let package = PluginPackage::with_files(&compose, files.clone()).unwrap();
-    m.install_package(package, &[]).await.unwrap();
+    let package = PluginPackage::with_files(&compose, files.clone(), &super::langs()).unwrap();
+    m.install_package(package, &[], super::langs())
+        .await
+        .unwrap();
 
     let web = container_name("app-test", "web");
     let writes = docker.writes();
@@ -276,8 +281,10 @@ async fn a_read_only_service_gets_configs_mounted_from_the_core_store() {
         )
     );
     let files: PackageFiles = [("app.yaml".to_owned(), b"level: info\n".to_vec())].into();
-    let package = PluginPackage::with_files(&compose, files).unwrap();
-    m.install_package(package, &[]).await.unwrap();
+    let package = PluginPackage::with_files(&compose, files, &super::langs()).unwrap();
+    m.install_package(package, &[], super::langs())
+        .await
+        .unwrap();
 
     let web = container_name("app-test", "web");
     let helper = format!("{web}.cfgseed");
@@ -321,9 +328,13 @@ async fn a_read_only_service_gets_configs_mounted_from_the_core_store() {
     assert_eq!(mounts[0]["ReadOnly"], true);
     assert_eq!(docker.archive(&web), None);
 
-    m.uninstall(&PluginId::parse("app.test").unwrap(), false)
-        .await
-        .unwrap();
+    m.uninstall(
+        &PluginId::parse("app.test").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     assert!(!store.exists(), "卸载要删掉 store 目录");
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
@@ -374,7 +385,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
     );
     // 主人能卸载这个异常的插件，它的记录文件随之删除。
     let id = PluginId::parse("app.broken").unwrap();
-    m.uninstall(&id, false).await.unwrap();
+    m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert!(!broken.exists());
     assert_eq!(m.list().len(), 1);
 }
@@ -388,14 +399,18 @@ async fn every_declared_permission_must_be_confirmed() {
         "  permissions: ['storage.share.photos:read', 'notify']",
     );
     let photos = vec!["storage.share.photos:read".parse().unwrap()];
-    let err = m.install(&share, &photos).await.unwrap_err();
+    let err = m
+        .install(&share, &photos, super::langs())
+        .await
+        .unwrap_err();
     assert!(
         matches!(&err, InstallError::PermissionNotGranted(p) if p == &["notify"]),
         "{err}"
     );
     let extra = vec!["models".parse().unwrap()];
     assert!(matches!(
-        m.install_package(example("whoami"), &extra).await,
+        m.install_package(example("whoami"), &extra, super::langs())
+            .await,
         Err(InstallError::Invalid(_))
     ));
     // notify 核心能兑现（ADR-0047）：授权后能装，环境里有发通知的地址。
@@ -406,7 +421,7 @@ async fn every_declared_permission_must_be_confirmed() {
         "storage.share.photos:read".parse().unwrap(),
         "notify".parse().unwrap(),
     ];
-    m.install(&share, &all).await.unwrap();
+    m.install(&share, &all, super::langs()).await.unwrap();
     assert_eq!(m.list().len(), 1);
     let env = env_of_container(&docker, &container_name("app-test", "web"));
     assert_eq!(
@@ -419,22 +434,32 @@ async fn every_declared_permission_must_be_confirmed() {
 async fn docker_outage_is_reported_and_leaves_nothing_behind() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager(&dir);
-    let err = m.install_package(example("whoami"), &[]).await.unwrap_err();
+    let err = m
+        .install_package(example("whoami"), &[], super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "docker_unavailable", "{err}");
     assert!(m.list().is_empty());
     let whoami = example("whoami");
     let system = PluginPackage::with_files(
         &whoami.source.replace("kind: app", "kind: system"),
         whoami.files().clone(),
+        &super::langs(),
     )
     .unwrap();
     assert_eq!(
-        m.install_package(system, &[]).await.unwrap_err().kind(),
+        m.install_package(system, &[], super::langs())
+            .await
+            .unwrap_err()
+            .kind(),
         "unsupported"
     );
     let id = super::super::PluginId::parse("app.whoami").unwrap();
     assert_eq!(
-        m.uninstall(&id, true).await.unwrap_err().kind(),
+        m.uninstall(&id, true, &super::langs())
+            .await
+            .unwrap_err()
+            .kind(),
         "not_installed"
     );
 }
@@ -445,7 +470,10 @@ async fn an_image_that_cannot_be_pulled_fails_the_install_with_dockers_reason() 
     docker.fail_pulls(Some("manifest unknown"));
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let err = m.install_package(example("whoami"), &[]).await.unwrap_err();
+    let err = m
+        .install_package(example("whoami"), &[], super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "image_pull_failed", "{err}");
     assert!(m.list().is_empty());
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
@@ -473,7 +501,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let compose = proxy_app(web.port());
     let preview = m
         .preview_install(
-            &PluginPackage::parse(&compose).unwrap(),
+            &PluginPackage::parse(&compose, &super::langs()).unwrap(),
             &Languages::default(),
         )
         .await
@@ -484,7 +512,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         "安装确认页上显示会自动登录：{:?}",
         preview.notices
     );
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &[], super::langs()).await.unwrap();
     let owner = crate::owner::Owner {
         username: "owner".into(),
         display_name: "主人".into(),
@@ -522,9 +550,13 @@ async fn sso_plugins_that_ask_for_the_identity_get_the_owner_name_and_email() {
             web.port()
         ),
     );
-    m.install(&compose, &["owner.identity".parse().unwrap()])
-        .await
-        .unwrap();
+    m.install(
+        &compose,
+        &["owner.identity".parse().unwrap()],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
     assert_eq!(env["ADMIN"], "owner");
     assert_eq!(env["MAIL"], "owner@example.com");
@@ -536,8 +568,10 @@ fn plugins_without_sso_cannot_reference_the_owner() {
         "  web:\n    image: nginx\n    environment: {MAIL: '${WONTON_OWNER_EMAIL}'}",
         "  webui: {service: web, port: 80}\n  permissions: []",
     );
-    let pkg = PluginPackage::parse(&compose).unwrap();
-    let err = super::super::render::dry_run(&pkg).unwrap_err().to_string();
+    let pkg = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let err = super::super::render::dry_run(&pkg, &super::langs())
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("WONTON_OWNER_EMAIL"), "{err}");
 }
 
@@ -548,7 +582,10 @@ fn proxy_sso_templates_use_known_placeholders_and_long_generated_secrets() {
             "  webui:\n    service: web\n    port: 80\n    sso: proxy\n    proxy:\n      \
              headers: {headers}\n      cookies: {cookies}\n  secrets: {secrets}\n  permissions: []"
         );
-        PluginPackage::parse(&package("  web:\n    image: nginx", &manifest))
+        PluginPackage::parse(
+            &package("  web:\n    image: nginx", &manifest),
+            &super::langs(),
+        )
     };
     let key = "{web_key: {generate: {bytes: 32}}}";
     let ok = parse(
@@ -600,7 +637,9 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = Arc::new(manager_with(engine, &dir));
-    m.install(&app("app.test"), &[]).await.unwrap();
+    m.install(&app("app.test"), &[], super::langs())
+        .await
+        .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     let hold = docker.hold(&format!(
         "DELETE /containers/{}",
@@ -608,7 +647,7 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     ));
     let request = tokio::spawn({
         let (m, id) = (m.clone(), id.clone());
-        async move { m.uninstall_detached(id, true).await }
+        async move { m.uninstall_detached(id, true, super::langs()).await }
     });
     hold.reached().await;
     // 请求断开时 hyper 丢弃处理它的 future。
@@ -616,7 +655,10 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     assert!(request.await.unwrap_err().is_cancelled());
 
     // 卸载还在进行：再来一次如实回答，不另起一次。
-    let err = m.uninstall_detached(id.clone(), true).await.unwrap_err();
+    let err = m
+        .uninstall_detached(id.clone(), true, super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "conflict");
     assert_eq!(m.list()[0].status, PluginStatus::Uninstalling);
 
@@ -643,7 +685,7 @@ async fn mcp_headers_that_cannot_be_resolved_are_invalid() {
         "  permissions: []\n  secrets:\n    pat:\n      collect: {service: mcp, path: /run/token}\n  \
          mcp:\n    service: mcp\n    port: 8080\n    \
          transport: streamable-http\n    headers:\n      Authorization: Bearer {secret:pat}",
-    ))
+    ), &super::langs())
     .unwrap();
     let error = host
         .mcp_upstream(&package.manifest, "net", &Default::default())
@@ -666,16 +708,23 @@ fn a_collected_secret_with_trailing_newline_is_rejected_for_mcp_headers() {
         "  permissions: []\n  secrets:\n    pat:\n      collect: {service: init, path: /run/token}\n  \
          mcp:\n    service: mcp\n    port: 8080\n    transport: streamable-http\n    headers:\n      \
          Authorization: Bearer {secret:pat}",
-    ))
+    ), &super::langs())
     .unwrap();
     let newline = BTreeMap::from([("pat".to_owned(), b"tok-123\n".to_vec())]);
     let error =
-        super::super::proxy_auth::resolve_mcp_headers(&package.manifest, &newline).unwrap_err();
-    assert!(error.contains("含换行或控制字符"), "{error}");
+        super::super::proxy_auth::resolve_mcp_headers(&package.manifest, &newline, &super::langs())
+            .unwrap_err();
+    let expected = super::message(
+        "plugin-install-proxy-secret-newline",
+        &[("name", "authorization"), ("secret", "pat")],
+    );
+    assert_eq!(error, expected, "{error}");
     assert!(error.contains("pat"), "{error}");
     assert!(!error.contains("tok-123"), "{error}");
     let clean = BTreeMap::from([("pat".to_owned(), b"tok-123".to_vec())]);
-    let headers = super::super::proxy_auth::resolve_mcp_headers(&package.manifest, &clean).unwrap();
+    let headers =
+        super::super::proxy_auth::resolve_mcp_headers(&package.manifest, &clean, &super::langs())
+            .unwrap();
     let map = headers.custom_headers();
     assert_eq!(map[&AUTHORIZATION], "Bearer tok-123");
     assert!(map[&AUTHORIZATION].is_sensitive(), "密钥要标记 sensitive");

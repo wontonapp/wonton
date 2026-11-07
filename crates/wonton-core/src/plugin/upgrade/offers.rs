@@ -360,7 +360,7 @@ impl PluginManager {
         let Ok(compose) = String::from_utf8(compose) else {
             return skip(format!("{COMPOSE_FILE} 不是 UTF-8 文本"));
         };
-        let manifest = match PluginPackage::manifest_of(&compose) {
+        let manifest = match PluginPackage::manifest_of(&compose, &Languages::default()) {
             Ok(manifest) => manifest,
             Err(e) => return skip(format!("清单读不懂：{e}")),
         };

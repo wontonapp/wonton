@@ -19,6 +19,7 @@ use crate::owner::{Owner, OwnerStore};
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
+use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
@@ -153,7 +154,8 @@ fn write_index(dir: &tempfile::TempDir) {
                 + "  lan: {ports: [{service: web, port: 445}]}\n",
         ),
     ] {
-        let package = PluginPackage::parse(&source).unwrap();
+        let package =
+            PluginPackage::parse(&source, &Languages::from_header(Some("zh-Hans"))).unwrap();
         let source = format!("github:example/{repo}");
         let entry = IndexEntry::of(&package, &source, &"a".repeat(40)).unwrap();
         entry.write_to(&dir.path().join("index"), &package).unwrap();
@@ -211,7 +213,9 @@ pub(super) async fn setup_with(
     let manager = manager(engine, &dir);
     let notes = Notes::default();
     let url = serve_notes(notes.clone()).await;
-    let manifest = PluginPackage::parse(manifest_source).unwrap().manifest;
+    let manifest = PluginPackage::parse(manifest_source, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     let id = manifest.id.clone();
     manager.register_for_test(manifest, PluginStatus::Running, None);
     manager.mcp_for_test(&id, url);

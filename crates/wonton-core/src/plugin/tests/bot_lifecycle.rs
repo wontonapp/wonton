@@ -95,7 +95,9 @@ fn id() -> PluginId {
 async fn a_bot_plugin_gets_its_own_matrix_identity_through_the_core() {
     let bed = Bed::start().await;
     let m = bed.manager();
-    m.install(&echo(), &granted()).await.unwrap();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let env = bed.env();
     assert_eq!(env["HS"], "http://matrix.wonton.internal:8080");
     assert_eq!(env["USER"], "@echo:test");
@@ -120,7 +122,9 @@ async fn a_bot_plugin_gets_its_own_matrix_identity_through_the_core() {
 async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
     let bed = Bed::start().await;
     let m = bed.manager();
-    m.install(&echo(), &granted()).await.unwrap();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let first = bed.env();
     let source_address = bed.source_address();
     bed.matrix
@@ -130,7 +134,7 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
         .await
         .unwrap();
 
-    let report = m.uninstall(&id(), false).await.unwrap();
+    let report = m.uninstall(&id(), false, &super::langs()).await.unwrap();
     let bot = report.bot.unwrap();
     assert_eq!(
         (bot.user_id.as_str(), bot.devices_removed, bot.deactivated),
@@ -143,7 +147,9 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
     assert!(m.source(source_address).is_none());
 
     // 不删数据重装：同一个账号、同一个主房间，新的设备。
-    m.install(&echo(), &granted()).await.unwrap();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let second = bed.env();
     assert_eq!(
         (&second["USER"], &second["ROOM"]),
@@ -161,12 +167,14 @@ async fn uninstall_revokes_the_bot_and_deleting_data_deactivates_its_account() {
     );
 
     // 删除数据：账号停用，不可恢复；再装是一个新账号和新的主房间。
-    let report = m.uninstall(&id(), true).await.unwrap();
+    let report = m.uninstall(&id(), true, &super::langs()).await.unwrap();
     assert!(report.bot.unwrap().deactivated);
     assert!(bed.tuwunel.state().user("@echo:test").deactivated);
     let store = Store::open(bed.dir.path().join("plugins")).unwrap();
     assert_eq!(store.bots().load(&id()).unwrap(), None);
-    m.install(&echo(), &granted()).await.unwrap();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let third = bed.env();
     assert_eq!(third["USER"], "@echo-2:test");
     assert_ne!(third["ROOM"], first["ROOM"]);
@@ -181,7 +189,9 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
         &bot,
         json!({"Status": "exited", "Running": false, "ExitCode": 1}),
     );
-    m.install(&echo(), &granted()).await.unwrap_err();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap_err();
     let failed = bed.env();
     assert!(!bed.token_valid(&failed["TOKEN"]), "回滚吊销这次登录的设备");
     {
@@ -197,7 +207,9 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
 
     bed.docker
         .set_state(&bot, json!({"Status": "running", "Running": true}));
-    m.install(&echo(), &granted()).await.unwrap();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     assert_eq!(
         bed.env()["ROOM"],
         failed["ROOM"],
@@ -217,7 +229,7 @@ async fn a_core_restart_midway_through_an_install_revokes_the_device_it_left_beh
     let m = Arc::new(bed.manager());
     let task = tokio::spawn({
         let m = m.clone();
-        async move { m.install(&echo(), &granted()).await }
+        async move { m.install(&echo(), &granted(), super::langs()).await }
     });
     held.reached().await;
     task.abort();
@@ -226,7 +238,10 @@ async fn a_core_restart_midway_through_an_install_revokes_the_device_it_left_beh
     let orphan = bed.env();
     assert!(bed.token_valid(&orphan["TOKEN"]));
 
-    bed.manager().install(&echo(), &granted()).await.unwrap();
+    bed.manager()
+        .install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let env = bed.env();
     assert!(!bed.token_valid(&orphan["TOKEN"]), "上次的令牌不能还能用");
     assert!(bed.token_valid(&env["TOKEN"]));
@@ -241,7 +256,9 @@ async fn an_install_failing_after_the_handover_takes_the_chat_back() {
     // 安装记录写不进去（位置被一个目录占着）：这一步在把主房间交给主人之后。
     let record = bed.dir.path().join("plugins/app.echo.json");
     std::fs::create_dir_all(&record).unwrap();
-    m.install(&echo(), &granted()).await.unwrap_err();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap_err();
     let failed = bed.env();
     assert!(
         bed.tuwunel.state().rooms[&failed["ROOM"]]
@@ -251,7 +268,9 @@ async fn an_install_failing_after_the_handover_takes_the_chat_back() {
     );
 
     std::fs::remove_dir(&record).unwrap();
-    m.install(&echo(), &granted()).await.unwrap();
+    m.install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let room = bed.env()["ROOM"].clone();
     assert_ne!(room, failed["ROOM"]);
     assert!(
@@ -264,7 +283,10 @@ async fn an_install_failing_after_the_handover_takes_the_chat_back() {
 #[tokio::test]
 async fn a_restart_reports_a_bot_whose_device_was_revoked() {
     let bed = Bed::start().await;
-    bed.manager().install(&echo(), &granted()).await.unwrap();
+    bed.manager()
+        .install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap();
     let restarted = bed.manager();
     restarted.restore().await.unwrap();
     assert_eq!(restarted.list()[0].status, PluginStatus::Running);
@@ -286,7 +308,10 @@ async fn a_restart_reports_a_bot_whose_device_was_revoked() {
 async fn bot_plugins_need_the_core_to_reach_matrix() {
     let bed = Bed::start().await;
     let m = manager_in_container(bed.engine.clone(), &bed.dir);
-    let err = m.install(&echo(), &granted()).await.unwrap_err();
+    let err = m
+        .install(&echo(), &granted(), super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "matrix_unavailable", "{err}");
     assert!(bed.docker.networks().is_empty(), "什么都还没建");
 }
@@ -294,7 +319,7 @@ async fn bot_plugins_need_the_core_to_reach_matrix() {
 #[tokio::test]
 async fn the_echo_bot_example_gets_only_its_matrix_identity() {
     let package = example("echo-bot");
-    let plan = dry_run(&package).unwrap();
+    let plan = dry_run(&package, &super::langs()).unwrap();
     let env = env_of(&plan.containers[0]);
     for var in ["HOMESERVER", "USER_ID", "ACCESS_TOKEN", "OWNER"] {
         let set = env
@@ -308,7 +333,9 @@ async fn the_echo_bot_example_gets_only_its_matrix_identity() {
 
     let bed = Bed::start().await;
     let m = bed.manager();
-    m.install_package(package, &granted()).await.unwrap();
+    m.install_package(package, &granted(), super::langs())
+        .await
+        .unwrap();
     let bot = container_name("agent-echo", "bot");
     let user = bed.docker.env(&bot);
     assert!(
@@ -330,11 +357,15 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
             "  permissions: [matrix.bot]",
             "  bots: {services: [bot, proxy]}\n  permissions: [matrix.bot]",
         );
-    m.install(&source, &granted()).await.unwrap();
+    m.install(&source, &granted(), super::langs())
+        .await
+        .unwrap();
     let before = bed.env();
-    let package =
-        super::super::PluginPackage::parse(&source.replace("version: 1.0.0", "version: 1.1.0"))
-            .unwrap();
+    let package = super::super::PluginPackage::parse(
+        &source.replace("version: 1.0.0", "version: 1.1.0"),
+        &super::langs(),
+    )
+    .unwrap();
     m.upgrade_checked(package, &granted(), false).await.unwrap();
     assert_eq!(bed.env(), before);
     assert!(bed.token_valid(&before["TOKEN"]));
@@ -344,7 +375,7 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         bed.docker.created(&proxy).unwrap()["HostConfig"]["NetworkMode"],
         format!("container:{target}")
     );
-    m.uninstall(&id(), false).await.unwrap();
+    m.uninstall(&id(), false, &super::langs()).await.unwrap();
     assert!(!bed.docker.containers().contains(&target));
     assert!(!bed.docker.containers().contains(&proxy));
     assert!(!bed.token_valid(&before["TOKEN"]));

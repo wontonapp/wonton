@@ -41,7 +41,7 @@ fn secret_declarations_are_checked() {
     ] {
         assert!(
             matches!(
-                PluginPackage::parse(&with_secrets(bad)),
+                PluginPackage::parse(&with_secrets(bad), &super::langs()),
                 Err(PackageError::Manifest(_))
             ),
             "{bad}"
@@ -49,13 +49,13 @@ fn secret_declarations_are_checked() {
     }
     let unknown = with_secrets(&RECOVERY.replace("service: web", "service: nope"));
     assert!(matches!(
-        PluginPackage::parse(&unknown),
+        PluginPackage::parse(&unknown, &super::langs()),
         Err(PackageError::UnknownService { .. })
     ));
     // 没声明的密钥变量和别的未定义变量一样，安装前就报错。
     let undeclared = with_secrets("").replace("WONTON_SECRET_WEB_KEY", "WONTON_SECRET_OTHER");
-    let pkg = PluginPackage::parse(&undeclared).unwrap();
-    assert!(super::super::render::dry_run(&pkg).is_err());
+    let pkg = PluginPackage::parse(&undeclared, &super::langs()).unwrap();
+    assert!(super::super::render::dry_run(&pkg, &super::langs()).is_err());
 }
 
 #[tokio::test]
@@ -65,7 +65,9 @@ async fn generated_secrets_are_injected_and_kept_until_data_is_removed() {
     let m = manager_with(engine, &dir);
     let id = PluginId::parse("app.test").unwrap();
     let web = container_name("app-test", "web");
-    m.install(&with_secrets(""), &[]).await.unwrap();
+    m.install(&with_secrets(""), &[], super::langs())
+        .await
+        .unwrap();
     let key = env_value(&docker.env(&web), "KEY").expect("注入了密钥");
     assert!(
         key.len() == 32 && key.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -79,14 +81,18 @@ async fn generated_secrets_are_injected_and_kept_until_data_is_removed() {
     );
 
     // 不删数据卸载后重装：沿用原来的值，已经写进数据里的密码才对得上。
-    m.uninstall(&id, false).await.unwrap();
+    m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert!(file.exists(), "不删数据时密钥随数据保留");
-    m.install(&with_secrets(""), &[]).await.unwrap();
+    m.install(&with_secrets(""), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(env_value(&docker.env(&web), "KEY").as_deref(), Some(&*key));
 
-    m.uninstall(&id, true).await.unwrap();
+    m.uninstall(&id, true, &super::langs()).await.unwrap();
     assert!(!file.exists(), "删除数据时密钥一起删除");
-    m.install(&with_secrets(""), &[]).await.unwrap();
+    m.install(&with_secrets(""), &[], super::langs())
+        .await
+        .unwrap();
     assert_ne!(env_value(&docker.env(&web), "KEY"), Some(key));
 }
 
@@ -102,7 +108,9 @@ async fn secrets_written_by_the_plugin_are_collected_and_kept_up_to_date() {
         store.secrets().load(&id).unwrap().unwrap_or_default()
     };
     // 插件还没写下文件：照常装好，之后再收。
-    m.install(&with_secrets(RECOVERY), &[]).await.unwrap();
+    m.install(&with_secrets(RECOVERY), &[], super::langs())
+        .await
+        .unwrap();
     assert!(!stored().contains_key("recovery"));
 
     let file = |text: &str| Some(FakeFile::Regular(text.as_bytes().to_vec()));
@@ -131,7 +139,7 @@ async fn a_failed_install_leaves_the_kept_secrets_as_they_were() {
     let web = container_name("app-test", "web");
     docker.set_file(&web, "/data/recovery.txt", Some(FakeFile::Directory));
     let compose = with_secrets(&format!("{RECOVERY}    token:\n      generate: {{}}\n"));
-    let err = m.install(&compose, &[]).await.unwrap_err();
+    let err = m.install(&compose, &[], super::langs()).await.unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
     assert_eq!(store.secrets().load(&id).unwrap(), Some(kept));

@@ -27,6 +27,7 @@ use crate::owner::{Owner, OwnerStore};
 use crate::plugin::egress::settings::Egress;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
+use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
@@ -291,7 +292,8 @@ impl Harness {
             .with_lan(super::lan_api_tests::lan())
             .with_egress(egress),
         );
-        let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
+        let manifest =
+            PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let gateway = Gateway::new(
             public,
@@ -496,7 +498,11 @@ async fn logged_in_requests_reach_plugin_without_gateway_cookies() {
     assert_eq!(h.hits.load(Ordering::SeqCst), 1);
 
     // 插件会话只在签发它的子域名有效。
-    let other = PluginPackage::manifest_of(&WHOAMI.replace("app.whoami", "app.other")).unwrap();
+    let other = PluginPackage::manifest_of(
+        &WHOAMI.replace("app.whoami", "app.other"),
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
     h.manager
         .register_for_test(other, PluginStatus::Running, Some("127.0.0.1:9".into()));
     let cross = h
@@ -602,7 +608,8 @@ async fn unknown_hosts_and_unready_plugins_report_the_reason() {
     let missing = h.get("app-missing.wonton.localhost", "/", &[]).await;
     assert_eq!(missing.error_kind(), Some("not_installed"));
     let app = h.app_session().await;
-    let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
+    let manifest =
+        PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
     h.manager
         .register_for_test(manifest, PluginStatus::Installing, None);
     let busy = h.get(PLUGIN, "/", &[("cookie", &app)]).await;
@@ -628,31 +635,6 @@ async fn auth_host_is_forwarded_to_the_identity_provider() {
     assert_eq!(reply.json()["path"], path);
 }
 
-/// 401 的文字按请求的 Accept-Language 写（ADR-0043）；期望值由目录格式化出来比。
-#[tokio::test]
-async fn the_denied_message_follows_the_accept_language_header() {
-    use crate::l10n::CATALOG;
-
-    let h = Harness::start(None).await;
-    let ja = h
-        .get(CORE, "/_wonton/api/plugins", &[("accept-language", "ja")])
-        .await;
-    assert_eq!(ja.status, StatusCode::UNAUTHORIZED);
-    let fr = h
-        .get(
-            CORE,
-            "/_wonton/api/plugins",
-            &[("accept-language", "fr-FR")],
-        )
-        .await;
-    assert_eq!(fr.status, StatusCode::UNAUTHORIZED);
-    // fr-FR 目录里没有，回退英文；两种头要真的给出两种话。
-    let expected = |tag: &str| CATALOG.format(CATALOG.negotiate(&[tag]), "gateway-denied", &[]);
-    assert_eq!(ja.json()["error"]["message"], expected("ja"));
-    assert_eq!(fr.json()["error"]["message"], expected("en"));
-    assert_ne!(expected("ja"), expected("en"));
-}
-
 #[tokio::test]
 async fn plugin_api_requires_owner_token() {
     let h = Harness::start(None).await;
@@ -675,7 +657,7 @@ async fn plugin_api_requires_owner_token() {
     assert_eq!(listed.json()["plugins"][0]["id"], "app.whoami");
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/examples/whoami");
-    let package = PluginPackage::load_dir(&dir).unwrap();
+    let package = PluginPackage::load_dir(&dir, &Languages::from_header(Some("zh-Hans"))).unwrap();
     let preview = h
         .send(
             Method::POST,

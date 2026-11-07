@@ -87,7 +87,10 @@ async fn exercise(
     let engine = manager.engine.clone();
     let source = compose(port);
     let granted = super::lan::granted(&source);
-    manager.install(&source, &granted).await.unwrap();
+    manager
+        .install(&source, &granted, super::langs())
+        .await
+        .unwrap();
     assert_eq!(page(manager).await, addresses[0].to_string());
     let mut before = Vec::new();
     for service in ["init", "web", "lan", "untouched"] {
@@ -158,6 +161,10 @@ async fn lan_address_change_updates_real_containers_and_config_page() {
     manager.lan = lan(addresses[0]);
     exercise(&mut manager, &names, addresses, dir.path(), port).await;
     let _ = manager
-        .uninstall(&PluginId::parse("app.test").unwrap(), false)
+        .uninstall(
+            &PluginId::parse("app.test").unwrap(),
+            false,
+            &super::langs(),
+        )
         .await;
 }

@@ -15,6 +15,7 @@ use bollard::models::Mount;
 use super::bot_services::ServiceVars;
 use super::compose::{Scalar, Service, UserSpec};
 use super::interpolate::{UsedVars, Vars};
+use super::languages::Languages;
 use super::mounts::mount_targets;
 use super::package::{PackageError, PluginPackage};
 use super::render::{InstallContext, RenderError, service_err};
@@ -53,13 +54,14 @@ pub fn resolve(
     vars: &Vars,
     mounts: &[PathBuf],
     used: &mut UsedVars,
+    langs: &Languages,
 ) -> Result<Vec<ConfigFile>, ConfigError> {
-    let placed = place(package, service, mounts).map_err(ConfigError::Rule)?;
+    let placed = place(package, service, mounts, langs).map_err(ConfigError::Rule)?;
     placed
         .into_iter()
         .map(|(source, file)| {
             Ok(ConfigFile {
-                data: package.config_data(&source, vars, used)?,
+                data: package.config_data(&source, vars, used, langs)?,
                 ..file
             })
         })
@@ -69,6 +71,7 @@ pub fn resolve(
 /// 服务的 `configs` 交付：解析内容，算好交付方式。`read_only` 的服务（归档接口写不进只读根）改为从
 /// 核心数据目录只读挂载：配置文件以只读绑定挂载加进 `mounts`，返回 store 目录
 /// （[`super::configs_store`]）；其余服务返回 `None`，创建容器后、启动前把归档写进容器根。
+#[allow(clippy::too_many_arguments)] // 交付配置要同时知道包、服务、变量和挂载去向，逐个都要。
 pub(super) fn resolve_service(
     package: &PluginPackage,
     service: &Service,
@@ -77,12 +80,14 @@ pub(super) fn resolve_service(
     vars: &ServiceVars,
     mounts: &mut Vec<Mount>,
     used: &mut UsedVars,
+    langs: &Languages,
 ) -> Result<(Vec<ConfigFile>, Option<PathBuf>), RenderError> {
     let targets = mount_targets(service, mounts);
-    let files = resolve(package, service, vars.get(name), &targets, used).map_err(|e| match e {
-        ConfigError::Package(e) => e.into(),
-        ConfigError::Rule(m) => service_err(name, m),
-    })?;
+    let files =
+        resolve(package, service, vars.get(name), &targets, used, langs).map_err(|e| match e {
+            ConfigError::Package(e) => e.into(),
+            ConfigError::Rule(m) => service_err(langs, name, m),
+        })?;
     let store_dir = (service.read_only == Some(true) && !files.is_empty()).then(|| {
         super::configs_store::service_dir(&ctx.config_store, &ctx.instance, &ctx.slug, name)
     });
@@ -97,39 +102,52 @@ fn place(
     package: &PluginPackage,
     service: &Service,
     mounts: &[PathBuf],
+    langs: &Languages,
 ) -> Result<Vec<(String, ConfigFile)>, String> {
     let (default_uid, default_gid) = default_owner(service.user.as_ref());
     let mut placed: Vec<(String, ConfigFile)> = Vec::new();
     for entry in &service.configs {
         let config = entry.long();
         if !package.has_config(&config.source) {
-            return Err(format!(
-                "配置 `{}` 没有在顶层 configs 中声明",
-                config.source
+            return Err(crate::l10n::text(
+                langs,
+                "plugin-install-cfg-undeclared",
+                &[("name", config.source.as_str().into())],
             ));
         }
         let raw = config
             .target
             .clone()
             .unwrap_or_else(|| format!("/{}", config.source));
-        let target = target_path(&raw)?;
+        let target = target_path(&raw, langs)?;
         if placed.iter().any(|(_, f)| f.target == target) {
-            return Err(format!("configs 的目标 `{raw}` 重复"));
+            return Err(crate::l10n::text(
+                langs,
+                "plugin-install-cfg-target-duplicate",
+                &[("raw", raw.as_str().into())],
+            ));
         }
         if let Some(mount) = mounts
             .iter()
             .find(|m| target.starts_with(m) || m.starts_with(&target))
         {
-            return Err(format!(
-                "configs 的目标 `{raw}` 和挂载点 `{}` 重叠：配置写在容器自己的文件系统里，不能写进挂载点",
-                mount.display()
+            return Err(crate::l10n::text(
+                langs,
+                "plugin-install-cfg-target-overlaps-mount",
+                &[
+                    ("raw", raw.as_str().into()),
+                    ("mount", mount.display().to_string().into()),
+                ],
             ));
         }
         let file = ConfigFile {
             target,
-            uid: id(config.uid.as_ref(), "uid")?.unwrap_or(default_uid),
-            gid: id(config.gid.as_ref(), "gid")?.unwrap_or(default_gid),
-            mode: config.mode.as_ref().map_or(Ok(DEFAULT_MODE), mode)?,
+            uid: id(config.uid.as_ref(), "uid", langs)?.unwrap_or(default_uid),
+            gid: id(config.gid.as_ref(), "gid", langs)?.unwrap_or(default_gid),
+            mode: config
+                .mode
+                .as_ref()
+                .map_or(Ok(DEFAULT_MODE), |m| mode(m, langs))?,
             data: Vec::new(),
         };
         placed.push((config.source, file));
@@ -138,16 +156,22 @@ fn place(
 }
 
 /// 配置的目标：容器里规范化的绝对路径，不能是 `/` 也不能含 `..`。
-fn target_path(raw: &str) -> Result<PathBuf, String> {
+fn target_path(raw: &str, langs: &Languages) -> Result<PathBuf, String> {
     let path = Path::new(raw);
     if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
-        return Err(format!(
-            "configs 的目标 `{raw}` 必须是绝对路径，且不能包含 .."
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-cfg-target-absolute",
+            &[("raw", raw.into())],
         ));
     }
     let path: PathBuf = path.components().collect();
     if path.parent().is_none() {
-        return Err("configs 的目标不能是 /".to_owned());
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-cfg-target-root",
+            &[],
+        ));
     }
     Ok(path)
 }
@@ -162,7 +186,7 @@ fn default_owner(user: Option<&Scalar>) -> (u32, u32) {
     }
 }
 
-fn id(value: Option<&Scalar>, field: &str) -> Result<Option<u32>, String> {
+fn id(value: Option<&Scalar>, field: &str, langs: &Languages) -> Result<Option<u32>, String> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -171,14 +195,18 @@ fn id(value: Option<&Scalar>, field: &str) -> Result<Option<u32>, String> {
         Scalar::Str(s) => s.parse().ok(),
         Scalar::Float(_) | Scalar::Bool(_) => None,
     };
-    parsed
-        .map(Some)
-        .ok_or_else(|| format!("configs 的 {field} `{}` 必须是非负整数", value.as_string()))
+    parsed.map(Some).ok_or_else(|| {
+        crate::l10n::text(
+            langs,
+            "plugin-install-cfg-id-invalid",
+            &[("field", field.into()), ("value", value.as_string().into())],
+        )
+    })
 }
 
 /// `mode` 按八进制理解：字符串按八进制解析；`0o440` 这样的 YAML 八进制数原样使用；`0440` 被 YAML 1.2
 /// 解析成十进制浮点数 440，按它的数字当八进制，和 docker compose 一样得到 0440。写权限位被忽略。
-fn mode(value: &Scalar) -> Result<u32, String> {
+fn mode(value: &Scalar, langs: &Languages) -> Result<u32, String> {
     let parsed = match value {
         Scalar::Int(n) => u32::try_from(*n).ok(),
         Scalar::Float(f) if f.fract() == 0.0 && *f >= 0.0 => {
@@ -189,9 +217,10 @@ fn mode(value: &Scalar) -> Result<u32, String> {
     };
     match parsed {
         Some(mode) if mode <= 0o777 => Ok(mode & !WRITE_BITS),
-        _ => Err(format!(
-            "configs 的 mode `{}` 不合法：须为 0 到 0777 的八进制权限",
-            value.as_string()
+        _ => Err(crate::l10n::text(
+            langs,
+            "plugin-install-cfg-mode-invalid",
+            &[("value", value.as_string().into())],
         )),
     }
 }
@@ -227,7 +256,11 @@ mod tests {
             (Scalar::Str("0o755".into()), 0o555),
             (float(644.0), 0o444),
         ] {
-            assert_eq!(mode(&value).unwrap(), expected, "{value:?}");
+            assert_eq!(
+                mode(&value, &Languages::default()).unwrap(),
+                expected,
+                "{value:?}"
+            );
         }
         for bad in [
             float(4.5),
@@ -236,7 +269,7 @@ mod tests {
             Scalar::Int(0o4755),
             Scalar::Bool(true),
         ] {
-            assert!(mode(&bad).is_err(), "{bad:?}");
+            assert!(mode(&bad, &Languages::default()).is_err(), "{bad:?}");
         }
     }
 
@@ -254,11 +287,15 @@ mod tests {
     #[test]
     fn targets_must_be_absolute_and_inside_the_container() {
         assert_eq!(
-            target_path("/etc//app/./x.yaml").unwrap(),
+            target_path(
+                "/etc//app/./x.yaml",
+                &Languages::from_header(Some("zh-Hans"))
+            )
+            .unwrap(),
             Path::new("/etc/app/x.yaml")
         );
         for bad in ["etc/x", "/", "/etc/../x", "./x"] {
-            assert!(target_path(bad).is_err(), "{bad}");
+            assert!(target_path(bad, &Languages::default()).is_err(), "{bad}");
         }
     }
 }

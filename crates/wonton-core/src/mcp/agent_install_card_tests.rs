@@ -10,13 +10,16 @@ use wonton_protocol::Answer;
 use super::agent_install_tests::{INSTALL, bench, plain, plain_root};
 use super::tests::{failed, text};
 use crate::plugin::PluginId;
+use crate::plugin::languages::Languages;
 
 #[tokio::test]
 async fn an_official_highest_permission_install_needs_both_cards() {
     let b = bench().await;
     // 官方索引里的最高级插件：docker.socket 权限要配上对应的挂载（ADR-0036）。
     let source = official_with_mount("app.example.root", "全能", "docker.socket");
-    let package = crate::plugin::PluginPackage::parse(&source).unwrap();
+    let package =
+        crate::plugin::PluginPackage::parse(&source, &Languages::from_header(Some("zh-Hans")))
+            .unwrap();
     let entry = crate::plugin::storefront::index::IndexEntry::of(
         &package,
         "github:example/root",

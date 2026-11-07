@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
 use super::tests::Harness;
+use crate::plugin::languages::Languages;
 use crate::plugin::models::ModelsRoute;
 use crate::plugin::{Permission, PluginPackage, PluginStatus};
 
@@ -48,7 +49,9 @@ async fn streaming_gateway(release: oneshot::Receiver<()>) -> String {
 
 async fn harness_with_gateway(upstream: String) -> Harness {
     let h = Harness::start(None).await;
-    let manifest = PluginPackage::parse(PROVIDER).unwrap().manifest;
+    let manifest = PluginPackage::parse(PROVIDER, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     let spec = manifest.provides.clone().unwrap().models.unwrap();
     let route = ModelsRoute {
         id: manifest.id.clone(),

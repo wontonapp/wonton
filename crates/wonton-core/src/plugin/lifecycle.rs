@@ -17,6 +17,7 @@ use super::gpu::GpuGrant;
 use super::health::{self, Readiness, Target};
 use super::hostdir::{self, Owner};
 use super::lan::LanGrant;
+use super::languages::Languages;
 use super::leftovers::name_taken;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
@@ -29,9 +30,12 @@ use super::store::InstalledRecord;
 use super::upstreams::{core_aliases, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
+use crate::l10n;
 use crate::matrix::ProvisionedBot;
 use crate::oidc::{ClientSpec, Hydra};
 use crate::secret::random_token;
+
+pub(super) mod rollback;
 
 /// 插件管理器需要的那部分核心配置。
 #[derive(Debug, Clone)]
@@ -93,6 +97,7 @@ pub(super) fn volume_action(
     volume: &str,
     labels: Option<&HashMap<String, String>>,
     plugin: &PluginId,
+    langs: &Languages,
 ) -> Result<VolumeAction, InstallError> {
     let Some(labels) = labels else {
         return Ok(VolumeAction::Create);
@@ -100,16 +105,23 @@ pub(super) fn volume_action(
     if labels.get(LABEL_PLUGIN).map(String::as_str) == Some(plugin.as_str()) {
         Ok(VolumeAction::Reuse)
     } else {
-        Err(name_taken("卷", volume, labels))
+        Err(name_taken(
+            &l10n::text(langs, "plugin-install-word-volume", &[]),
+            volume,
+            labels,
+            langs,
+        ))
     }
 }
 
 impl PluginManager {
-    pub(super) fn hydra(&self) -> Result<&Hydra, InstallError> {
+    pub(super) fn hydra(&self, langs: &Languages) -> Result<&Hydra, InstallError> {
         self.oidc.as_ref().ok_or_else(|| {
-            InstallError::OidcUnavailable(
-                "核心没有配置身份提供方（WONTON_OIDC_ADMIN_URL / WONTON_OIDC_PUBLIC_URL）".into(),
-            )
+            InstallError::OidcUnavailable(l10n::text(
+                langs,
+                "plugin-install-oidc-unconfigured",
+                &[],
+            ))
         })
     }
 
@@ -122,20 +134,24 @@ impl PluginManager {
         granted: &[Permission],
         gpu: Option<GpuGrant>,
         lan: Option<LanGrant>,
+        langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let mut undo = Undo::default();
         match self
-            .deploy_inner(package, granted, (gpu, lan), &mut undo)
+            .deploy_inner(package, granted, (gpu, lan), &mut undo, langs)
             .await
         {
             Ok(deployed) => Ok(deployed),
             Err(error) => {
-                let failures = self.rollback(undo).await;
+                let failures = self.rollback(undo, langs).await;
                 if failures.is_empty() {
                     Err(error)
                 } else {
-                    Err(error
-                        .with_note(&format!("回滚未完成，可能有残留：{}", failures.join("；"))))
+                    Err(error.with_note(&l10n::text(
+                        langs,
+                        "plugin-install-rollback-unfinished",
+                        &[("failures", l10n::list(langs, &failures).into())],
+                    )))
                 }
             }
         }
@@ -147,6 +163,7 @@ impl PluginManager {
         granted: &[Permission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
         undo: &mut Undo,
+        langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         self.clear_leftovers(&manifest.id).await?;
@@ -154,9 +171,10 @@ impl PluginManager {
         let mut secrets = self.prepare_secrets(manifest, undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
-        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
+        let proxy =
+            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
         let mut ctx = self
-            .install_context(manifest, secret.as_deref(), generated)
+            .install_context(manifest, secret.as_deref(), generated, langs)
             .await?;
         ctx.gpu = gpu;
         ctx.lan = lan;
@@ -169,9 +187,9 @@ impl PluginManager {
             ctx.models = Some(models);
             undo.models = Some(manifest.id.clone());
         }
-        let mut plan = render(package, &ctx)?;
+        let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan).await?;
-        self.prepare_dirs(&ctx, &plan.dirs, undo)?;
+        self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
         self.create_networks(manifest, &plan, &ctx, undo).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
@@ -184,24 +202,25 @@ impl PluginManager {
         ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
         let pulled = plan;
-        let mut plan = render(package, &ctx)?;
+        let mut plan = render(package, &ctx, langs)?;
         super::registry_mirror::use_pulled_images(&mut plan, pulled);
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;
-            if volume_action(volume, labels.as_ref(), &manifest.id)? == VolumeAction::Create {
+            if volume_action(volume, labels.as_ref(), &manifest.id, langs)? == VolumeAction::Create
+            {
                 self.engine.create_volume(volume, &plan.labels).await?;
                 undo.volumes.push(volume.clone());
             }
         }
         if let Some(secret) = &secret {
-            self.hydra()?
+            self.hydra(langs)?
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
             undo.oidc_client = Some(manifest.id.to_string());
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
-        let health = self.start_containers(&plan, undo, deadline).await?;
+        let health = self.start_containers(&plan, undo, deadline, langs).await?;
         if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
             self.store.secrets().save(&manifest.id, &secrets)?;
         }
@@ -292,6 +311,7 @@ impl PluginManager {
         manifest: &Manifest,
         secret: Option<&str>,
         generated: BTreeMap<String, String>,
+        langs: &Languages,
     ) -> Result<InstallContext, InstallError> {
         if self.cfg.profile.email().is_none() && super::manifest_oidc::needs_owner_email(manifest) {
             return Err(InstallError::OwnerProfileIncomplete);
@@ -305,7 +325,7 @@ impl PluginManager {
         let oidc = match secret {
             None => None,
             Some(secret) => {
-                let discovery = self.hydra()?.discovery().await?;
+                let discovery = self.hydra(langs)?.discovery().await?;
                 Some(OidcVars {
                     issuer: discovery.issuer,
                     client_id: manifest.id.to_string(),
@@ -328,13 +348,24 @@ impl PluginManager {
             .collect::<BTreeMap<_, _>>();
         if !shares.is_empty() {
             fs::create_dir_all(&self.cfg.shares_dir).map_err(|e| {
-                let dir = self.cfg.shares_dir.display();
-                InstallError::Storage(format!("创建共享文件夹目录 {dir} 失败：{e}"))
+                InstallError::Storage(l10n::text(
+                    langs,
+                    "plugin-install-shared-folder-mkdir-failed",
+                    &[
+                        ("dir", self.cfg.shares_dir.display().to_string().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
             })?;
         }
         for path in shares.values() {
-            hostdir::ensure_owned_dir(path, self.owner())
-                .map_err(|e| InstallError::Storage(format!("准备共享文件夹失败：{e}")))?;
+            hostdir::ensure_owned_dir(path, self.owner()).map_err(|e| {
+                InstallError::Storage(l10n::text(
+                    langs,
+                    "plugin-install-shared-folder-prepare-failed",
+                    &[("error", e.to_string().into())],
+                ))
+            })?;
         }
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
@@ -435,12 +466,18 @@ impl PluginManager {
         ctx: &InstallContext,
         dirs: &BTreeMap<PathBuf, Owner>,
         undo: &mut Undo,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         if dirs.is_empty() {
             return Ok(());
         }
-        let storage =
-            |e: &dyn std::fmt::Display| InstallError::Storage(format!("准备应用数据目录失败：{e}"));
+        let storage = |e: &dyn std::fmt::Display| {
+            InstallError::Storage(l10n::text(
+                langs,
+                "plugin-install-app-data-prepare-failed",
+                &[("error", e.to_string().into())],
+            ))
+        };
         fs::create_dir_all(&self.cfg.apps_dir).map_err(|e| storage(&e))?;
         if fs::symlink_metadata(&ctx.app_data)
             .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
@@ -455,15 +492,25 @@ impl PluginManager {
         plan: &Deployment,
         undo: &mut Undo,
         deadline: Instant,
+        langs: &Languages,
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
+            let pack_failed = |e: &dyn std::fmt::Display| {
+                InstallError::Invalid(l10n::text(
+                    langs,
+                    "plugin-install-configs-pack-failed",
+                    &[
+                        ("service", container.name.as_str().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ))
+            };
             health::wait_for_all(&self.engine, &container.depends_on, deadline).await?;
             // 只读根的服务先经一次性容器把配置文件写进核心数据目录：单文件绑定挂载的源在创建容器
             // 时就必须存在，归档接口写不进只读根（见 configs_store 的模块注释）。
             if let Some(dir) = &container.store_dir {
-                let archive = configs_store::archive(&container.files).map_err(|e| {
-                    InstallError::Invalid(format!("打包 {} 的配置文件失败：{e}", container.name))
-                })?;
+                let archive =
+                    configs_store::archive(&container.files).map_err(|e| pack_failed(&e))?;
                 configs_store::seed(
                     &self.engine,
                     &container.name,
@@ -479,9 +526,7 @@ impl PluginManager {
                 .await?;
             undo.containers.push(container.name.clone());
             if !container.files.is_empty() && container.store_dir.is_none() {
-                let archive = configs::archive(&container.files).map_err(|e| {
-                    InstallError::Invalid(format!("打包 {} 的配置文件失败：{e}", container.name))
-                })?;
+                let archive = configs::archive(&container.files).map_err(|e| pack_failed(&e))?;
                 self.engine
                     .upload_archive(&container.name, "/", archive)
                     .await?;
@@ -503,105 +548,6 @@ impl PluginManager {
         Ok(Health::of(healthy))
     }
 
-    pub(super) async fn rollback(&self, undo: Undo) -> Vec<String> {
-        let mut failures = Vec::new();
-        let mut note = |what: String, result: Result<(), String>| {
-            if let Err(e) = result {
-                tracing::error!(%what, error = %e, "回滚失败");
-                failures.push(format!("{what}：{e}"));
-            }
-        };
-        for name in undo.containers.iter().rev() {
-            note(
-                format!("容器 {name}"),
-                self.engine
-                    .remove_container(name)
-                    .await
-                    .map_err(|e| e.to_string()),
-            );
-        }
-        if let Some((id, bot)) = &undo.bot {
-            // 收回主房间要用 Bot 的令牌，所以在吊销设备之前。
-            if undo.handed_over {
-                note(
-                    format!("交给你的主房间 {}", bot.account.home_room),
-                    self.withdraw_home_room(bot).await,
-                );
-            }
-            note(
-                format!("Bot {} 的设备", bot.account.user_id),
-                self.revoke_bot_device(id, bot).await,
-            );
-        }
-        if let Some(id) = &undo.models {
-            note(
-                format!("插件 {id} 的模型网关凭据"),
-                self.revoke_models(id).await.map_err(|e| e.to_string()),
-            );
-        }
-        if let Some(id) = &undo.source {
-            self.sources.remove(id);
-        }
-        if let (Some(id), Some(hydra)) = (&undo.oidc_client, &self.oidc) {
-            note(
-                format!("OIDC 客户端 {id}"),
-                hydra.delete_client(id).await.map_err(|e| e.to_string()),
-            );
-        }
-        for volume in &undo.volumes {
-            note(
-                format!("卷 {volume}"),
-                self.engine
-                    .remove_volume(volume)
-                    .await
-                    .map_err(|e| e.to_string()),
-            );
-        }
-        if let Some(network) = &undo.lan_network {
-            let result = self.engine.remove_network(network).await;
-            note(format!("网络 {network}"), result.map_err(|e| e.to_string()));
-        }
-        if let Some(network) = &undo.network {
-            if let (true, Some(core)) = (undo.core_attached, &self.cfg.core_container) {
-                let result = self.engine.disconnect_network(network, core).await;
-                note(
-                    format!("核心退出网络 {network}"),
-                    result.map_err(|e| e.to_string()),
-                );
-            }
-            let result = self.detach_relay(network).await;
-            note(
-                format!("出口容器退出网络 {network}"),
-                result.map_err(|e| e.to_string()),
-            );
-            note(
-                format!("网络 {network}"),
-                self.engine
-                    .remove_network(network)
-                    .await
-                    .map_err(|e| e.to_string()),
-            );
-        }
-        if let Some(dir) = &undo.app_dir_created {
-            note(
-                format!("目录 {}", dir.display()),
-                fs::remove_dir_all(dir).map_err(|e| e.to_string()),
-            );
-        }
-        if let Some((id, before)) = &undo.secrets_before {
-            let store = self.store.secrets();
-            let restored = match before {
-                Some(secrets) => store.save(id, secrets),
-                None => store.remove(id),
-            };
-            note(
-                format!("插件 {id} 的密钥"),
-                restored.map_err(|e| e.to_string()),
-            );
-        }
-        failures
-    }
-
     /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
     pub(super) async fn own_resources(
         &self,
@@ -619,6 +565,7 @@ impl PluginManager {
         &self,
         id: &PluginId,
         purge: bool,
+        langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
         let found = self.own_resources(id).await?;
         for container in &found.containers {
@@ -632,7 +579,14 @@ impl PluginManager {
         let store_root = self.cfg.data_dir.join("core").join("configs");
         let store_dir = configs_store::plugin_dir(&store_root, &self.cfg.instance, &id.slug());
         configs_store::remove_tree(&store_root, &self.cfg.instance, &id.slug()).map_err(|e| {
-            InstallError::Storage(format!("删除 {} 失败：{e}", store_dir.display()))
+            InstallError::Storage(l10n::text(
+                langs,
+                "plugin-install-teardown-delete-failed",
+                &[
+                    ("dir", store_dir.display().to_string().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ))
         })?;
         self.sources.remove(id);
         let mut report = UninstallReport {
@@ -655,9 +609,13 @@ impl PluginManager {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => {
-                    return Err(InstallError::Storage(format!(
-                        "删除 {} 失败：{e}",
-                        dir.display()
+                    return Err(InstallError::Storage(l10n::text(
+                        langs,
+                        "plugin-install-teardown-delete-failed",
+                        &[
+                            ("dir", dir.display().to_string().into()),
+                            ("error", e.to_string().into()),
+                        ],
                     )));
                 }
             }
@@ -671,7 +629,11 @@ impl PluginManager {
             || !left.networks.is_empty()
             || (purge && !left.volumes.is_empty())
         {
-            return Err(InstallError::Docker(format!("卸载后仍有残留：{left:?}")));
+            return Err(InstallError::Docker(l10n::text(
+                langs,
+                "plugin-install-teardown-leftovers",
+                &[("left", format!("{left:?}").into())],
+            )));
         }
         Ok(report)
     }
@@ -732,8 +694,9 @@ mod tests {
     #[test]
     fn named_volumes_are_created_reused_or_refused_by_owner() {
         let plugin = PluginId::parse("app.foo-bar").unwrap();
+        let langs = Languages::from_header(Some("en"));
         let action = |labels: Option<HashMap<String, String>>| {
-            volume_action("wonton-app-foo-bar--data", labels.as_ref(), &plugin)
+            volume_action("wonton-app-foo-bar--data", labels.as_ref(), &plugin, &langs)
         };
         assert_eq!(action(None).unwrap(), VolumeAction::Create);
         assert_eq!(

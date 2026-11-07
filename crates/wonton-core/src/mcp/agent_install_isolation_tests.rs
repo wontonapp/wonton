@@ -181,7 +181,9 @@ async fn unchanged_or_removed_isolation_updates_quietly_but_owner_can_require_a_
         assert_eq!(app.b.s.cards.posted.lock().unwrap().len(), 1);
         let record = app.record();
         assert_eq!(record.version, version);
-        let manifest = PluginPackage::manifest_of(&record.source).unwrap();
+        let manifest =
+            PluginPackage::manifest_of(&record.source, &Languages::from_header(Some("zh-Hans")))
+                .unwrap();
         assert_eq!(manifest.webui.unwrap().cross_origin_isolated, isolation);
         assert_eq!(app.b.s.audit().last().unwrap()["decision"], "allowed");
     }

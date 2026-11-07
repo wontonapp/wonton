@@ -8,6 +8,7 @@ use hyper::StatusCode;
 use tokio::net::TcpListener;
 
 use super::tests::{CORE, Harness, PLUGIN, TOKEN, WHOAMI};
+use crate::plugin::languages::Languages;
 use crate::plugin::{PluginPackage, PluginStatus};
 
 const POLICY: &str = "document-isolation-policy";
@@ -41,7 +42,7 @@ fn register(h: &Harness, declared: Option<bool>, address: SocketAddr) {
         None => WHOAMI.to_owned(),
     };
     h.manager.register_for_test(
-        PluginPackage::manifest_of(&source).unwrap(),
+        PluginPackage::manifest_of(&source, &Languages::from_header(Some("zh-Hans"))).unwrap(),
         PluginStatus::Running,
         Some(address.to_string()),
     );

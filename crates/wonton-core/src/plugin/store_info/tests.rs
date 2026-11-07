@@ -10,12 +10,16 @@ fn without_spec(extra: &str) -> String {
     )
 }
 
+fn langs() -> crate::plugin::languages::Languages {
+    crate::plugin::languages::Languages::default()
+}
+
 fn compose(extra: &str) -> String {
     without_spec(&format!("  spec: '0.5'\n{extra}"))
 }
 
 fn parse_err(extra: &str) -> String {
-    match PluginPackage::parse(&compose(extra)) {
+    match PluginPackage::parse(&compose(extra), &langs()) {
         Ok(_) => panic!("应被拒绝：{extra}"),
         Err(e) => e.to_string(),
     }
@@ -29,30 +33,34 @@ fn store_info_parses() {
          about: {zh: 第一段, en: First}\n  release_notes: {zh: 修了问题, en: Fixes}\n  \
          screenshots: [shots/1.png, shots/2.jpg]",
     );
-    let m = PluginPackage::parse(&yaml).unwrap().manifest;
+    let m = PluginPackage::parse(&yaml, &langs()).unwrap().manifest;
     assert_eq!(m.author.unwrap().name, "Example");
     assert_eq!(m.tags["en"], ["Photos", "AI"]);
     assert_eq!(m.screenshots.unwrap().len(), 2);
     let dual = compose("  license: MIT OR Apache-2.0");
-    PluginPackage::parse(&dual).unwrap();
+    PluginPackage::parse(&dual, &langs()).unwrap();
 }
 
 /// 比核心新的清单可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
 #[test]
 fn newer_spec_is_reported_before_unknown_fields() {
     let yaml = without_spec("  spec: \"0.7\"\n  shortcuts: []");
-    let err = PluginPackage::parse(&yaml).unwrap_err();
+    let err = PluginPackage::parse(&yaml, &langs()).unwrap_err();
     assert!(err.to_string().contains("规范 0.7"), "{err}");
     assert!(err.to_string().contains("先升级核心"), "{err}");
     assert_eq!(InstallError::from(err).kind(), "unsupported");
-    let reject = |yaml: String| PluginPackage::parse(&yaml).unwrap_err().to_string();
+    let reject = |yaml: String| {
+        PluginPackage::parse(&yaml, &langs())
+            .unwrap_err()
+            .to_string()
+    };
     assert!(reject(without_spec("  spec: 0.2")).contains("加引号"));
     assert!(reject(without_spec("  spec: \"v2\"")).contains("不是规范版本"));
 }
 
 #[test]
 fn a_manifest_without_spec_is_rejected() {
-    let err = PluginPackage::parse(&without_spec("")).unwrap_err();
+    let err = PluginPackage::parse(&without_spec(""), &langs()).unwrap_err();
     assert!(err.to_string().contains("要写 spec"), "{err}");
 }
 
@@ -107,7 +115,7 @@ fn icon_must_be_a_png_or_svg_in_the_package() {
     let err = parse_err("  icon: icon.svg");
     assert!(err.contains("不存在"), "{err}");
     let files = PackageFiles::from([("icon.svg".to_owned(), b"<svg/>".to_vec())]);
-    PluginPackage::with_files(&compose("  icon: icon.svg"), files).unwrap();
+    PluginPackage::with_files(&compose("  icon: icon.svg"), files, &langs()).unwrap();
 }
 
 #[test]
@@ -119,24 +127,34 @@ fn package_size_is_limited() {
         yaml += &format!("  c{i}:\n    file: c{i}.bin\n");
         files.insert(format!("c{i}.bin"), vec![b'x'; MAX_FILE_BYTES as usize]);
     }
-    let err = PluginPackage::with_files(&yaml, files).unwrap_err();
+    let err = PluginPackage::with_files(&yaml, files, &langs()).unwrap_err();
     assert!(matches!(err, PackageError::TooBig(_)), "{err}");
 }
 
 #[test]
 fn notices_travel_with_the_package_and_stay_text() {
     let yaml = compose("  notices: [NOTICE, licenses/MIT.txt]");
-    let err = PluginPackage::with_files(&yaml, PackageFiles::new()).unwrap_err();
+    let err = PluginPackage::with_files(&yaml, PackageFiles::new(), &langs()).unwrap_err();
     assert!(err.to_string().contains("不存在"), "{err}");
 
     let mit = ("licenses/MIT.txt".to_owned(), b"MIT".to_vec());
     let files = PackageFiles::from([("NOTICE".to_owned(), b"source".to_vec()), mit.clone()]);
-    let package = PluginPackage::with_files(&yaml, files.clone()).unwrap();
+    let package = PluginPackage::with_files(&yaml, files.clone(), &langs()).unwrap();
     assert_eq!(package.files(), &files);
     let entry = IndexEntry::of(&package, "github:acme/hello", &"c".repeat(40)).unwrap();
     assert!(entry.files.contains_key("NOTICE"), "{entry:?}");
 
     let binary = PackageFiles::from([("NOTICE".to_owned(), vec![0x89, b'P', 0xff]), mit]);
-    let err = PluginPackage::with_files(&yaml, binary).unwrap_err();
-    assert!(err.to_string().contains("不是 UTF-8 文本"), "{err}");
+    let err = PluginPackage::with_files(&yaml, binary, &langs()).unwrap_err();
+    let not_utf8 = crate::plugin::package_files::FileError::NotText.to_string();
+    let expected = crate::l10n::text(
+        &langs(),
+        "plugin-install-pkg-file",
+        &[
+            ("field", "notices".into()),
+            ("path", "NOTICE".into()),
+            ("error", not_utf8.into()),
+        ],
+    );
+    assert_eq!(err.to_string(), expected, "{err}");
 }

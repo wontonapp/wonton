@@ -22,6 +22,7 @@ use wonton_core::plugin::check::{self, Report};
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::gpu::HostPaths;
 use wonton_core::plugin::image_worker::ImageWorker;
+use wonton_core::plugin::languages::Languages;
 use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::storefront::index::{Index, IndexEntry};
 use wonton_core::plugin::{host_check, host_facts};
@@ -71,7 +72,10 @@ fn slice_unit() -> ExitCode {
 }
 
 async fn host(dir: Option<&Path>) -> ExitCode {
-    let package = match dir.map(PluginPackage::load_dir).transpose() {
+    let package = match dir
+        .map(|dir| PluginPackage::load_dir(dir, &Languages::default()))
+        .transpose()
+    {
         Ok(package) => package,
         Err(e) => {
             eprintln!("不合格：{e}");
@@ -114,11 +118,12 @@ async fn host(dir: Option<&Path>) -> ExitCode {
             })
         },
     );
-    let mut facts = host_facts::read(&paths, docker_info);
+    let langs = Languages::default();
+    let mut facts = host_facts::read(&paths, docker_info, &langs);
     if let Ok(engine) = &engine {
         let core = std::env::var("WONTON_CORE_CONTAINER").ok();
         host_facts::NvidiaMemory::default()
-            .fill(&mut facts, engine, core.as_deref(), &instance)
+            .fill(&mut facts, engine, core.as_deref(), &instance, &langs)
             .await;
     }
     let mut report = serde_json::json!({ "host": facts, "limits": limits });
@@ -127,12 +132,12 @@ async fn host(dir: Option<&Path>) -> ExitCode {
         let checks = manifest
             .requirements
             .as_ref()
-            .map(|r| host_check::judge(r, &facts))
+            .map(|r| host_check::judge(r, &facts, &langs))
             .unwrap_or_default();
         let lines: Vec<_> = checks.into_iter().map(|check| check.line).collect();
         report["requirements"] = serde_json::json!(lines);
         report["blocked"] = serde_json::json!(
-            host_check::refusal(manifest, &facts).map(|refusal| refusal.to_string())
+            host_check::refusal(manifest, &facts, &langs).map(|refusal| refusal.to_string())
         );
     }
     match serde_json::to_string_pretty(&report) {
@@ -178,7 +183,7 @@ fn pack(dir: &Path) -> ExitCode {
         eprintln!("插件包是二进制的 tar：把标准输出重定向到文件或管道");
         return usage();
     }
-    let package = match PluginPackage::load_dir(dir) {
+    let package = match PluginPackage::load_dir(dir, &Languages::default()) {
         Ok(package) => package,
         Err(e) => {
             eprintln!("不合格：{e}");
@@ -229,7 +234,7 @@ fn index_entry(args: &[String]) -> ExitCode {
     if [dir, source, commit].iter().any(|a| a.starts_with('-')) {
         return usage();
     }
-    let package = match PluginPackage::load_dir(Path::new(dir)) {
+    let package = match PluginPackage::load_dir(Path::new(dir), &Languages::default()) {
         Ok(package) => package,
         Err(e) => {
             eprintln!("不合格：{e}");

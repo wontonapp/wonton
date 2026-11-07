@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus, PluginView, now_secs};
 use super::manifest::{PluginId, PluginKind};
 use super::package::PluginPackage;
@@ -91,7 +92,7 @@ pub(super) fn packages_in(dir: &Path) -> Result<Vec<PluginPackage>, InstallError
         .filter(|path| path.is_dir())
         .collect();
     dirs.sort();
-    let load = |path: &PathBuf| match PluginPackage::load_dir(path) {
+    let load = |path: &PathBuf| match PluginPackage::load_dir(path, &Languages::default()) {
         Ok(package) => Some(package),
         Err(e) => {
             tracing::error!(path = %path.display(), error = %e, "插件包无法解析，没有安装");
@@ -207,7 +208,12 @@ impl PluginManager {
         loop {
             attempts += 1;
             let e = match self
-                .install_checked(package.clone(), &manifest.permissions, false)
+                .install_checked(
+                    package.clone(),
+                    &manifest.permissions,
+                    false,
+                    &self.owner_languages(),
+                )
                 .await
             {
                 Ok(_) => {

@@ -258,8 +258,9 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, St
     if bus.plugins.is_installed(&manifest.id) {
         return Err(format!("{id} 已经装了"));
     }
+    let langs = bus.plugins.owner_languages();
     bus.plugins
-        .fits_host(manifest)
+        .fits_host(manifest, &langs)
         .await
         .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
     let package = bus
@@ -267,7 +268,7 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, St
         .official_package(listed)
         .await
         .map_err(|e| format!("取不到 {id} 的插件包（{}）：{e}", e.kind()))?;
-    dry_run(&package)
+    dry_run(&package, &langs)
         .map_err(InstallError::from)
         .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
     if bus.plugins.missing_profile(&package).is_some() {
@@ -312,7 +313,11 @@ async fn uninstall(
     let langs = bus.plugins.owner_languages();
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
     let run = move |bus: Arc<Bus>| async move {
-        match bus.plugins.uninstall_detached(id.clone(), purge).await {
+        match bus
+            .plugins
+            .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())
+            .await
+        {
             Ok(report) => {
                 let message = if report.data_removed {
                     l10n::text(

@@ -86,7 +86,10 @@ async fn oidc_logout_defaults_are_registered_on_create_and_restored_without_rein
     let client = Provider::default();
     let hydra = fake_hydra(client.clone()).await;
     let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
-    manager.install(&app(web.port(), ""), &[]).await.unwrap();
+    manager
+        .install(&app(web.port(), ""), &[], super::langs())
+        .await
+        .unwrap();
     let base = "http://app-test.wonton.localhost:8080";
     let expected = json!([
         base,
@@ -128,7 +131,10 @@ async fn oidc_logout_declared_paths_extend_defaults_without_duplicates() {
     let hydra = fake_hydra(client.clone()).await;
     let manager = manager_with_oidc(engine, &dir, hydra);
     let paths = "      post_logout_paths: [/, /auth, /auth, '/auth?logged_out=1']\n";
-    manager.install(&app(web.port(), paths), &[]).await.unwrap();
+    manager
+        .install(&app(web.port(), paths), &[], super::langs())
+        .await
+        .unwrap();
     let client = client.lock().unwrap();
     let body = client.registered.as_ref().unwrap();
     let base = "http://app-test.wonton.localhost:8080";
@@ -148,9 +154,16 @@ async fn oidc_logout_declared_paths_extend_defaults_without_duplicates() {
 fn oidc_logout_paths_require_a_leading_slash_like_login_redirects() {
     for path in ["", "auth", "https://example.com/auth"] {
         let compose = app(80, &format!("      post_logout_paths: [{path:?}]\n"));
-        assert!(PluginPackage::parse(&compose).is_err(), "{path:?}");
+        assert!(
+            PluginPackage::parse(&compose, &super::langs()).is_err(),
+            "{path:?}"
+        );
     }
     for paths in ["[]", "[/auth]", "['/auth?state=logout']"] {
-        PluginPackage::parse(&app(80, &format!("      post_logout_paths: {paths}\n"))).unwrap();
+        PluginPackage::parse(
+            &app(80, &format!("      post_logout_paths: {paths}\n")),
+            &super::langs(),
+        )
+        .unwrap();
     }
 }

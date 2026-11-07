@@ -35,18 +35,19 @@ fn write_dir(dir: &Path, compose: &str) {
 fn a_package_directory_keeps_only_the_files_it_references() {
     let tmp = tempfile::tempdir().unwrap();
     write_dir(tmp.path(), &bundle());
-    let pkg = PluginPackage::load_dir(tmp.path()).unwrap();
+    let pkg = PluginPackage::load_dir(tmp.path(), &super::langs()).unwrap();
     let paths: Vec<&str> = pkg.files().keys().map(String::as_str).collect();
     assert_eq!(paths, ["conf/app.yaml", "icon.png"]);
     // 安装记录里保存的就是这些文件，恢复时用它们重新组装插件包。
-    let again = PluginPackage::with_files(&pkg.source, pkg.files().clone()).unwrap();
+    let again =
+        PluginPackage::with_files(&pkg.source, pkg.files().clone(), &super::langs()).unwrap();
     assert_eq!(again.files(), pkg.files());
 
     // 只有 compose 文本（如经 API 上传的）时，被引用的文件不在包里。
     let only_icon: PackageFiles = [("icon.png".to_owned(), Vec::new())].into();
-    let err = PluginPackage::with_files(&bundle(), only_icon).unwrap_err();
+    let err = PluginPackage::with_files(&bundle(), only_icon, &super::langs()).unwrap_err();
     assert!(
-        matches!(&err, PackageError::File { path, source: FileError::Missing, .. } if path == "conf/app.yaml"),
+        matches!(&err, PackageError::File { path, source, .. } if path == "conf/app.yaml" && **source == FileError::Missing),
         "{err}"
     );
 }
@@ -59,14 +60,12 @@ fn referenced_files_cannot_come_through_symlinks_or_leave_the_package() {
     fs::write(tmp.path().join("host-secret"), "宿主上的文件").unwrap();
     fs::remove_file(dir.join("conf/app.yaml")).unwrap();
     symlink(tmp.path().join("host-secret"), dir.join("conf/app.yaml")).unwrap();
-    let err = PluginPackage::load_dir(&dir).unwrap_err();
+    let err = PluginPackage::load_dir(&dir, &super::langs()).unwrap_err();
     assert!(
         matches!(
             &err,
-            PackageError::File {
-                source: FileError::Symlink(_),
-                ..
-            }
+            PackageError::File { source, .. }
+                if matches!(&**source, FileError::Symlink(_))
         ),
         "{err}"
     );
@@ -75,7 +74,7 @@ fn referenced_files_cannot_come_through_symlinks_or_leave_the_package() {
         let compose = bundle().replace("./conf/app.yaml", path);
         assert!(
             matches!(
-                PluginPackage::parse(&compose),
+                PluginPackage::parse(&compose, &super::langs()),
                 Err(PackageError::Config { .. })
             ),
             "{path}"
@@ -83,7 +82,7 @@ fn referenced_files_cannot_come_through_symlinks_or_leave_the_package() {
     }
     let icon = bundle().replace("icon: icon.png", "icon: http://example.com/a.png");
     assert!(matches!(
-        PluginPackage::parse(&icon),
+        PluginPackage::parse(&icon, &super::langs()),
         Err(PackageError::Reference { .. })
     ));
     let too_big: PackageFiles = [
@@ -95,16 +94,15 @@ fn referenced_files_cannot_come_through_symlinks_or_leave_the_package() {
     ]
     .into();
     assert!(matches!(
-        PluginPackage::with_files(&bundle(), too_big),
-        Err(PackageError::File {
-            source: FileError::TooBig,
-            ..
-        })
+        PluginPackage::with_files(&bundle(), too_big, &super::langs()),
+        Err(PackageError::File { source, .. })
+            if matches!(&*source, FileError::TooBig)
     ));
 }
 
 #[test]
 fn configs_become_files_with_owner_and_mode() {
+    let langs = super::langs();
     let compose = format!(
         "configs:\n  app:\n    file: app.yaml\n  motd:\n    content: \"id=${{WONTON_APP_ID}}\\n\"\n{}",
         package(
@@ -114,7 +112,11 @@ fn configs_become_files_with_owner_and_mode() {
         )
     );
     let files: PackageFiles = [("app.yaml".to_owned(), b"level: info\n".to_vec())].into();
-    let plan = dry_run(&PluginPackage::with_files(&compose, files).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::with_files(&compose, files, &super::langs()).unwrap(),
+        &langs,
+    )
+    .unwrap();
     let file = |target: &str, uid, gid, mode, data: &[u8]| ConfigFile {
         target: PathBuf::from(target),
         uid,
@@ -159,7 +161,7 @@ fn config_definitions_outside_the_subset_are_refused() {
         );
         assert!(
             matches!(
-                PluginPackage::parse(&compose),
+                PluginPackage::parse(&compose, &super::langs()),
                 Err(PackageError::Config { .. })
             ),
             "{definition}"
@@ -169,6 +171,7 @@ fn config_definitions_outside_the_subset_are_refused() {
 
 #[test]
 fn configs_are_written_only_into_the_containers_own_filesystem() {
+    let langs = super::langs();
     let cases = [
         ("", "nope"),
         ("", "{source: app, target: etc/app}"),
@@ -187,8 +190,9 @@ fn configs_are_written_only_into_the_containers_own_filesystem() {
         ("    volumes: ['/cache']\n", "{source: app, target: /cache}"),
     ];
     for (service_extra, config_ref) in cases {
-        let pkg = PluginPackage::parse(&with_config(service_extra, config_ref)).unwrap();
-        let err = dry_run(&pkg).unwrap_err();
+        let pkg =
+            PluginPackage::parse(&with_config(service_extra, config_ref), &super::langs()).unwrap();
+        let err = dry_run(&pkg, &langs).unwrap_err();
         assert!(
             matches!(&err, RenderError::Service { service, .. } if service == "web"),
             "{service_extra}{config_ref}: {err}"
@@ -198,17 +202,26 @@ fn configs_are_written_only_into_the_containers_own_filesystem() {
         "    volumes: ['${WONTON_APP_DATA}/data:/data']\n",
         "{source: app, target: /database}",
     );
-    dry_run(&PluginPackage::parse(&fine).unwrap()).unwrap();
+    dry_run(
+        &PluginPackage::parse(&fine, &super::langs()).unwrap(),
+        &langs,
+    )
+    .unwrap();
 }
 
 /// `read_only` 的服务：配置文件改为只读单文件绑定挂载，源是核心数据目录里的 store 文件（编号）。
 #[test]
 fn read_only_services_get_configs_from_the_core_store() {
+    let langs = super::langs();
     let compose = with_config(
         "    read_only: true\n",
         "{source: app, target: /etc/app.yaml}",
     );
-    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::parse(&compose, &super::langs()).unwrap(),
+        &langs,
+    )
+    .unwrap();
     let container = &plan.containers[0];
     assert_eq!(
         container.store_dir.as_deref(),
@@ -231,8 +244,13 @@ fn read_only_services_get_configs_from_the_core_store() {
 /// 没有 `read_only` 的服务维持原来的交付：启动前把归档写进容器根，不走 store。
 #[test]
 fn writable_services_keep_the_archive_delivery() {
+    let langs = super::langs();
     let compose = with_config("", "app");
-    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::parse(&compose, &super::langs()).unwrap(),
+        &langs,
+    )
+    .unwrap();
     let container = &plan.containers[0];
     assert_eq!(container.store_dir, None);
     let host = container.body.host_config.as_ref().unwrap();
@@ -242,12 +260,17 @@ fn writable_services_keep_the_archive_delivery() {
 
 #[test]
 fn services_without_network_join_no_network() {
+    let langs = super::langs();
     let compose = package(
         "  init:\n    image: busybox\n    network_mode: none\n    restart: 'no'\n  \
          web:\n    image: nginx\n    depends_on: {init: {condition: service_completed_successfully}}",
         "  permissions: []\n  webui: {service: web, port: 80}",
     );
-    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::parse(&compose, &super::langs()).unwrap(),
+        &langs,
+    )
+    .unwrap();
     let init = &plan.containers[0];
     assert_eq!(init.service, "init");
     let host = init.body.host_config.as_ref().unwrap();
@@ -268,14 +291,18 @@ fn services_without_network_join_no_network() {
         let other = compose.replace("network_mode: none", &format!("network_mode: '{mode}'"));
         assert!(
             matches!(
-                PluginPackage::parse(&other),
+                PluginPackage::parse(&other, &super::langs()),
                 Err(PackageError::Service { .. })
             ),
             "{mode}"
         );
     }
     let isolated_webui = compose.replace("{service: web, port: 80}", "{service: init, port: 80}");
-    let err = dry_run(&PluginPackage::parse(&isolated_webui).unwrap()).unwrap_err();
+    let err = dry_run(
+        &PluginPackage::parse(&isolated_webui, &super::langs()).unwrap(),
+        &langs,
+    )
+    .unwrap_err();
     assert!(
         matches!(&err, RenderError::Service { service, .. } if service == "init"),
         "{err}"

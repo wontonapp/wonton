@@ -543,6 +543,8 @@ mod isolation_policy_tests;
 #[cfg(test)]
 mod isolation_tests;
 #[cfg(test)]
+mod l10n_tests;
+#[cfg(test)]
 mod lan_api_tests;
 #[cfg(test)]
 mod lan_tests;

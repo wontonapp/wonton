@@ -216,7 +216,11 @@ impl PluginManager {
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         record.lan_webui = enabled;
         self.store.save(&record)?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+        let mut package = PluginPackage::with_files(
+            &record.source,
+            record.files.clone(),
+            &self.owner_languages(),
+        )?;
         package.origin = record.origin.clone();
         self.rebuild_lan(&package, &record, addresses).await?;
         self.reconcile_running(&package, &record).await

@@ -32,6 +32,18 @@ fn png(width: u32, height: u32) -> Vec<u8> {
     out.into_inner()
 }
 
+/// 说话按主人语言（zh-Hans）：断言里的中文说明来自子进程和核心两边。
+fn zh_worker(timeout: Option<Duration>) -> (ImageWorker, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("langs.json"), "\"zh-Hans\"").unwrap();
+    let mut worker = ImageWorker::new(WONTON_CORE);
+    if let Some(t) = timeout {
+        worker = worker.with_timeout(t);
+    }
+    worker.set_owner_languages_path(dir.path().join("langs.json"));
+    (worker, dir)
+}
+
 fn refused<T: std::fmt::Debug>(result: Result<T, ImageError>) -> String {
     match result {
         Err(ImageError::Refused(reason)) => reason,
@@ -42,7 +54,7 @@ fn refused<T: std::fmt::Debug>(result: Result<T, ImageError>) -> String {
 #[tokio::test]
 async fn icons_and_screenshots_come_back_reencoded() {
     let _serial = SERIAL.lock().await;
-    let worker = ImageWorker::new(WONTON_CORE);
+    let (worker, _langs) = zh_worker(None);
     let icon = worker.icon(IconFormat::Svg, ICON.as_bytes()).await.unwrap();
     for (png, edge) in [(&icon.small, 192), (&icon.large, 512)] {
         let image = image::load_from_memory(png).unwrap();
@@ -58,7 +70,7 @@ async fn icons_and_screenshots_come_back_reencoded() {
 #[tokio::test]
 async fn images_that_break_the_rules_are_refused_with_the_reason() {
     let _serial = SERIAL.lock().await;
-    let worker = ImageWorker::new(WONTON_CORE);
+    let (worker, _langs) = zh_worker(None);
     let wide = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 24"/>"#;
     let reason = refused(worker.icon(IconFormat::Svg, wide.as_bytes()).await);
     assert!(reason.contains("正方形"), "{reason}");
@@ -70,7 +82,7 @@ async fn images_that_break_the_rules_are_refused_with_the_reason() {
 #[tokio::test]
 async fn slow_images_are_stopped_at_the_deadline_and_the_process_is_gone() {
     let _serial = SERIAL.lock().await;
-    let worker = ImageWorker::new(WONTON_CORE).with_timeout(Duration::from_secs(2));
+    let (worker, _langs) = zh_worker(Some(Duration::from_secs(2)));
     let started = Instant::now();
     let task = tokio::spawn(async move {
         let svg = thin_dashes();
@@ -101,7 +113,7 @@ async fn plugin_check_processes_images_in_the_same_limited_process() {
                    permissions: []\n";
     std::fs::write(dir.path().join("docker-compose.yml"), compose).unwrap();
     std::fs::write(dir.path().join("icon.svg"), thin_dashes()).unwrap();
-    let worker = ImageWorker::new(WONTON_CORE).with_timeout(Duration::from_secs(2));
+    let (worker, _langs_dir) = zh_worker(Some(Duration::from_secs(2)));
     let report = check(dir.path(), false, &worker).await.unwrap();
     let [problem] = &report.problems[..] else {
         panic!("{report:?}")

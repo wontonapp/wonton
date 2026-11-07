@@ -75,7 +75,9 @@ async fn lists_the_package_and_warns_about_what_the_store_would_flag() {
     assert_eq!(files, ["docker-compose.yml", "icon.svg"]);
     assert_eq!(
         report.digest,
-        PluginPackage::load_dir(dir.path()).unwrap().digest()
+        PluginPackage::load_dir(dir.path(), &super::langs())
+            .unwrap()
+            .digest()
     );
     assert!(report.problems.is_empty(), "{report:?}");
     let [unpinned, unhealthy] = &report.warnings[..] else {
@@ -159,12 +161,23 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
     let [icon, gif] = &report.problems[..] else {
         panic!("{report:?}")
     };
-    assert!(
-        icon.starts_with("图标 icon.svg：") && icon.contains("正方形"),
-        "{icon}"
+    // check 的外层说明仍是核心写死的中文，内层原因走目录（默认英文）。
+    let viewbox = crate::l10n::text(
+        &super::langs(),
+        "plugin-install-img-svg-viewbox",
+        &[("width", "48".into()), ("height", "24".into())],
     );
     assert!(
-        gif.starts_with("截图 shots/gif.png：") && gif.contains("PNG 或 JPEG"),
+        icon.starts_with("图标 icon.svg：") && icon.contains(&viewbox),
+        "{icon}"
+    );
+    let gif_format = crate::l10n::text(
+        &super::langs(),
+        "plugin-install-img-is-format",
+        &[("format", "Gif".into())],
+    );
+    assert!(
+        gif.starts_with("截图 shots/gif.png：") && gif.contains(&gif_format),
         "{gif}"
     );
     for expected in ["shots/tall.png 是 600×900", "横屏和竖屏"] {
@@ -193,10 +206,14 @@ async fn plugin_check_processes_tab_png_and_svg_and_rejects_opaque_png() {
 
     let report = run(dir.path(), false).await.unwrap();
     assert!(
-        report
-            .problems
-            .iter()
-            .any(|problem| problem.contains("tabs[1].icon") && problem.contains("全不透明")),
+        report.problems.iter().any(|problem| {
+            problem.contains("tabs[1].icon")
+                && problem.contains(&crate::l10n::text(
+                    &super::langs(),
+                    "plugin-install-img-tab-icon-alpha",
+                    &[],
+                ))
+        }),
         "{report:?}"
     );
     assert!(
@@ -228,7 +245,17 @@ async fn plugin_check_warns_about_long_tab_titles() {
 async fn a_package_that_does_not_parse_is_reported_like_at_install() {
     let dir = tempfile::tempdir().unwrap();
     let err = run(dir.path(), false).await.unwrap_err();
-    assert!(err.contains("docker-compose.yml：不存在"), "{err}");
+    let missing = crate::l10n::text(
+        &super::langs(),
+        "plugin-install-pkg-compose-file",
+        &[(
+            "error",
+            crate::plugin::package_files::FileError::Missing
+                .to_string()
+                .into(),
+        )],
+    );
+    assert!(err.contains(&missing), "{err}");
     write(
         dir.path(),
         "docker-compose.yml",
@@ -241,7 +268,7 @@ async fn a_package_that_does_not_parse_is_reported_like_at_install() {
 #[test]
 fn packing_keeps_only_the_package_and_installs_the_same_digest() {
     let dir = repo(&compose(UNPINNED, ""));
-    let package = PluginPackage::load_dir(dir.path()).unwrap();
+    let package = PluginPackage::load_dir(dir.path(), &super::langs()).unwrap();
     let archive = package.archive();
     let mut packed = tar::Archive::new(archive.as_slice());
     let paths: Vec<String> = packed
@@ -250,7 +277,7 @@ fn packing_keeps_only_the_package_and_installs_the_same_digest() {
         .map(|entry| entry.unwrap().path().unwrap().display().to_string())
         .collect();
     assert_eq!(paths, ["docker-compose.yml", "icon.svg"]);
-    let uploaded = PluginPackage::from_archive(&archive).unwrap();
+    let uploaded = PluginPackage::from_archive(&archive, &super::langs()).unwrap();
     assert_eq!(uploaded.digest(), package.digest());
 }
 

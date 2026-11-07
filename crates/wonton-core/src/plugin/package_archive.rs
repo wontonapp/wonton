@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
+use super::languages::Languages;
 use super::package_files::{COMPOSE_FILE, FileError, MAX_FILE_BYTES, PackageFiles, normalize};
+use crate::l10n::text;
 
 /// 压缩包最多这么大（网关的请求体上限）。
 #[allow(clippy::cast_possible_truncation)]
@@ -71,10 +73,11 @@ impl Archive {
     }
 
     /// 每一项的路径（规范化后）和种类，按压缩包里的顺序。路径不合法的（如 `../x`）不可能被引用，不列出。
-    fn entries(&self) -> Result<Vec<(String, Kind)>, String> {
+    fn entries(&self, langs: &Languages) -> Result<Vec<(String, Kind)>, String> {
         let mut entries = Vec::new();
         let mut add = |raw: String, kind: Kind| {
             if entries.len() >= MAX_ENTRIES {
+                // 目录的原文里没有对应的消息 ID，保留中文原样。
                 return Err(format!("压缩包里超过 {MAX_ENTRIES} 项"));
             }
             if let Ok(path) = normalize(&raw) {
@@ -85,36 +88,62 @@ impl Archive {
         match &self.format {
             Format::Tar(tar) => {
                 let mut archive = tar::Archive::new(tar.as_slice());
-                let read = archive
-                    .entries()
-                    .map_err(|e| format!("不是 tar 归档：{e}"))?;
+                let read = archive.entries().map_err(|e| {
+                    text(
+                        langs,
+                        "plugin-install-arch-not-tar",
+                        &[("error", e.to_string().into())],
+                    )
+                })?;
                 for entry in read {
-                    let entry = entry.map_err(|e| format!("读归档失败：{e}"))?;
+                    let entry = entry.map_err(|e| {
+                        text(
+                            langs,
+                            "plugin-install-arch-read-failed",
+                            &[("error", e.to_string().into())],
+                        )
+                    })?;
                     let raw = entry
                         .path()
-                        .map_err(|e| format!("归档里的路径不合法：{e}"))?
+                        .map_err(|e| {
+                            text(
+                                langs,
+                                "plugin-install-arch-path-invalid",
+                                &[("error", e.to_string().into())],
+                            )
+                        })?
                         .to_string_lossy()
                         .into_owned();
                     add(raw, tar_kind(entry.header().entry_type()))?;
                 }
             }
             Format::Zip(zip) => {
-                let mut archive = open_zip(zip)?;
+                let mut archive = open_zip(zip, langs)?;
                 for index in 0..archive.len() {
                     // 只看目录，不解压：没被引用的项压缩方式不支持、加了密都不要紧。
-                    let entry = archive
-                        .by_index_raw(index)
-                        .map_err(|e| format!("读 zip 失败：{e}"))?;
+                    let entry = archive.by_index_raw(index).map_err(|e| {
+                        text(
+                            langs,
+                            "plugin-install-arch-zip-read-failed",
+                            &[("error", e.to_string().into())],
+                        )
+                    })?;
                     let kind = if entry.is_dir() {
                         Kind::Dir
                     } else if entry.is_symlink() {
-                        Kind::Other("软链接".to_owned())
+                        Kind::Other(text(langs, "plugin-install-arch-symlink", &[]))
                     } else {
                         Kind::File
                     };
                     let name = entry
                         .name()
-                        .map_err(|e| format!("zip 里的路径不合法：{e}"))?
+                        .map_err(|e| {
+                            text(
+                                langs,
+                                "plugin-install-arch-zip-path-invalid",
+                                &[("error", e.to_string().into())],
+                            )
+                        })?
                         .into_owned();
                     add(name, kind)?;
                 }
@@ -125,8 +154,8 @@ impl Archive {
 
     /// compose 所在的目录：根目录，或者唯一一个一级目录（GitHub 的 “Download ZIP” 把所有文件放在 `仓库-版本/` 下）。
     /// 空字符串是根目录，否则带结尾的 `/`。
-    pub fn root(&self) -> Result<String, String> {
-        let entries = self.entries()?;
+    pub fn root(&self, langs: &Languages) -> Result<String, String> {
+        let entries = self.entries(langs)?;
         if entries.iter().any(|(path, _)| path == COMPOSE_FILE) {
             return Ok(String::new());
         }
@@ -136,32 +165,45 @@ impl Archive {
         });
         match (roots.next(), roots.next()) {
             (Some(dir), None) => Ok(format!("{dir}/")),
-            (Some(a), Some(b)) => Err(format!(
-                "{a} 和 {b} 里都有 {COMPOSE_FILE}：一个压缩包只能放一个插件"
+            (Some(a), Some(b)) => Err(text(
+                langs,
+                "plugin-install-arch-two-roots",
+                &[("a", a.into()), ("b", b.into())],
             )),
-            (None, _) => Err(format!("{COMPOSE_FILE} {}", FileError::Missing)),
+            (None, _) => Err(text(langs, "plugin-install-arch-missing-compose", &[])),
         }
     }
 
     /// 读 `root` 下的 `wanted`，路径相对 `root`。没有的文件不报错，由 [`super::package::PluginPackage`] 按引用它的字段报。
-    pub fn read(&self, root: &str, wanted: &[String]) -> Result<PackageFiles, String> {
+    pub fn read(
+        &self,
+        root: &str,
+        wanted: &[String],
+        langs: &Languages,
+    ) -> Result<PackageFiles, String> {
         let wanted: BTreeMap<String, &str> = wanted
             .iter()
             .map(|path| (format!("{root}{path}"), path.as_str()))
             .collect();
         let mut seen = BTreeSet::new();
-        for (path, kind) in self.entries()? {
+        for (path, kind) in self.entries(langs)? {
             let Some(rel) = wanted.get(&path) else {
                 continue;
             };
             if let Kind::Other(what) = &kind {
-                return Err(format!(
-                    "`{rel}` 不是普通文件（{what}）：插件包里不能有软链接、硬链接和设备"
+                return Err(text(
+                    langs,
+                    "plugin-install-arch-not-regular",
+                    &[("rel", (*rel).into()), ("what", what.into())],
                 ));
             }
             // 同名的两项，不同的工具可能解出不同的那个：拒绝，主人核对摘要才有意义。
             if kind == Kind::File && !seen.insert(path.clone()) {
-                return Err(format!("压缩包里有两个 `{rel}`"));
+                return Err(text(
+                    langs,
+                    "plugin-install-arch-duplicate-file",
+                    &[("rel", (*rel).into())],
+                ));
             }
         }
         let mut files = PackageFiles::new();
@@ -174,56 +216,116 @@ impl Archive {
             Ok(())
         };
         match &self.format {
-            Format::Tar(tar) => {
-                let mut archive = tar::Archive::new(tar.as_slice());
-                let read = archive
-                    .entries()
-                    .map_err(|e| format!("不是 tar 归档：{e}"))?;
-                for entry in read {
-                    let entry = entry.map_err(|e| format!("读归档失败：{e}"))?;
-                    let raw = entry
-                        .path()
-                        .map_err(|e| format!("归档里的路径不合法：{e}"))?
-                        .to_string_lossy()
-                        .into_owned();
-                    let Ok(path) = normalize(&raw) else { continue };
-                    if wanted.contains_key(&path)
-                        && tar_kind(entry.header().entry_type()) == Kind::File
-                    {
-                        let data = read_limited(entry, &path)?;
-                        keep(&path, data)?;
-                    }
-                }
-            }
-            Format::Zip(zip) => {
-                let mut archive = open_zip(zip)?;
-                for index in 0..archive.len() {
-                    let name = archive
-                        .by_index_raw(index)
-                        .map_err(|e| format!("读 zip 失败：{e}"))?
-                        .name()
-                        .map_err(|e| format!("zip 里的路径不合法：{e}"))?
-                        .into_owned();
-                    let Ok(path) = normalize(&name) else { continue };
-                    if !wanted.contains_key(&path) {
-                        continue;
-                    }
-                    let entry = archive
-                        .by_index(index)
-                        .map_err(|e| format!("解不开 `{path}`：{e}"))?;
-                    if entry.is_file() {
-                        let data = read_limited(entry, &path)?;
-                        keep(&path, data)?;
-                    }
-                }
-            }
+            Format::Tar(tar) => read_tar(tar, &wanted, &mut keep, langs)?,
+            Format::Zip(zip) => read_zip(zip, &wanted, &mut keep, langs)?,
         }
         Ok(files)
     }
 }
 
-fn open_zip(zip: &[u8]) -> Result<zip::ZipArchive<Cursor<&[u8]>>, String> {
-    zip::ZipArchive::new(Cursor::new(zip)).map_err(|e| format!("读 zip 失败：{e}"))
+type Keep<'a> = &'a mut dyn FnMut(&str, Vec<u8>) -> Result<(), String>;
+
+fn read_tar(
+    tar: &[u8],
+    wanted: &BTreeMap<String, &str>,
+    keep: Keep<'_>,
+    langs: &Languages,
+) -> Result<(), String> {
+    let mut archive = tar::Archive::new(tar);
+    let read = archive.entries().map_err(|e| {
+        text(
+            langs,
+            "plugin-install-arch-not-tar",
+            &[("error", e.to_string().into())],
+        )
+    })?;
+    for entry in read {
+        let entry = entry.map_err(|e| {
+            text(
+                langs,
+                "plugin-install-arch-read-failed",
+                &[("error", e.to_string().into())],
+            )
+        })?;
+        let raw = entry
+            .path()
+            .map_err(|e| {
+                text(
+                    langs,
+                    "plugin-install-arch-path-invalid",
+                    &[("error", e.to_string().into())],
+                )
+            })?
+            .to_string_lossy()
+            .into_owned();
+        let Ok(path) = normalize(&raw) else { continue };
+        if wanted.contains_key(&path) && tar_kind(entry.header().entry_type()) == Kind::File {
+            let data = read_limited(entry, &path, langs)?;
+            keep(&path, data)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_zip(
+    zip: &[u8],
+    wanted: &BTreeMap<String, &str>,
+    keep: Keep<'_>,
+    langs: &Languages,
+) -> Result<(), String> {
+    let mut archive = open_zip(zip, langs)?;
+    for index in 0..archive.len() {
+        let name = archive
+            .by_index_raw(index)
+            .map_err(|e| {
+                text(
+                    langs,
+                    "plugin-install-arch-zip-read-failed",
+                    &[("error", e.to_string().into())],
+                )
+            })?
+            .name()
+            .map_err(|e| {
+                text(
+                    langs,
+                    "plugin-install-arch-zip-path-invalid",
+                    &[("error", e.to_string().into())],
+                )
+            })?
+            .into_owned();
+        let Ok(path) = normalize(&name) else { continue };
+        if !wanted.contains_key(&path) {
+            continue;
+        }
+        let entry = archive.by_index(index).map_err(|e| {
+            text(
+                langs,
+                "plugin-install-arch-extract-failed",
+                &[
+                    ("path", path.as_str().into()),
+                    ("error", e.to_string().into()),
+                ],
+            )
+        })?;
+        if entry.is_file() {
+            let data = read_limited(entry, &path, langs)?;
+            keep(&path, data)?;
+        }
+    }
+    Ok(())
+}
+
+fn open_zip<'a>(
+    zip: &'a [u8],
+    langs: &Languages,
+) -> Result<zip::ZipArchive<Cursor<&'a [u8]>>, String> {
+    zip::ZipArchive::new(Cursor::new(zip)).map_err(|e| {
+        text(
+            langs,
+            "plugin-install-arch-zip-read-failed",
+            &[("error", e.to_string().into())],
+        )
+    })
 }
 
 fn tar_kind(kind: tar::EntryType) -> Kind {
@@ -234,12 +336,18 @@ fn tar_kind(kind: tar::EntryType) -> Kind {
     }
 }
 
-fn read_limited(entry: impl Read, path: &str) -> Result<Vec<u8>, String> {
+fn read_limited(entry: impl Read, path: &str, langs: &Languages) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
     entry
         .take(MAX_FILE_BYTES + 1)
         .read_to_end(&mut data)
-        .map_err(|e| format!("读压缩包里的 `{path}` 失败：{e}"))?;
+        .map_err(|e| {
+            text(
+                langs,
+                "plugin-install-arch-read-entry-failed",
+                &[("path", path.into()), ("error", e.to_string().into())],
+            )
+        })?;
     Ok(data)
 }
 
@@ -248,6 +356,20 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+    use crate::l10n::CATALOG;
+    use crate::plugin::languages::Languages;
+
+    fn langs() -> Languages {
+        Languages::default()
+    }
+
+    /// 测试断言用的目录消息（默认语言是英文，期望值也从目录生成）。
+    fn message(id: &str, args: &[(&str, &str)]) -> String {
+        let lang = crate::l10n::lang(&langs());
+        let args: Vec<(&str, wonton_l10n::Arg<'_>)> =
+            args.iter().map(|(k, v)| (*k, (*v).into())).collect();
+        CATALOG.format(lang, id, &args)
+    }
 
     const COMPOSE: &[u8] = b"services: {}";
 
@@ -285,10 +407,11 @@ mod tests {
     }
 
     fn read_all(body: &[u8], wanted: &[&str]) -> Result<(String, PackageFiles), String> {
+        let langs = langs();
         let archive = Archive::open(body)?;
-        let root = archive.root()?;
+        let root = archive.root(&langs)?;
         let wanted: Vec<String> = wanted.iter().map(ToString::to_string).collect();
-        let files = archive.read(&root, &wanted)?;
+        let files = archive.read(&root, &wanted, &langs)?;
         Ok((root, files))
     }
 
@@ -325,7 +448,10 @@ mod tests {
             ("a/docker-compose.yml", COMPOSE),
             ("b/docker-compose.yml", COMPOSE),
         ]);
-        assert!(read_all(&two, &[]).unwrap_err().contains("只能放一个插件"));
+        assert_eq!(
+            read_all(&two, &[]).unwrap_err(),
+            message("plugin-install-arch-two-roots", &[("a", "a"), ("b", "b")])
+        );
         assert!(read_all(&zip_of(&[("x", b"y")]), &[]).is_err());
     }
 
@@ -356,10 +482,16 @@ mod tests {
 
         let link = tar_of(&[compose, ("icon.png", tar::EntryType::Symlink, b"")]);
         let err = read_all(&link, &["icon.png"]).unwrap_err();
-        assert!(err.contains("软链接"), "{err}");
+        assert!(
+            err.contains(&message("plugin-install-arch-symlink", &[])),
+            "{err}"
+        );
 
         let twice = tar_of(&[compose, ("a", regular, b"1"), ("a", regular, b"2")]);
-        assert!(read_all(&twice, &["a"]).unwrap_err().contains("两个"));
+        assert_eq!(
+            read_all(&twice, &["a"]).unwrap_err(),
+            message("plugin-install-arch-duplicate-file", &[("rel", "a")])
+        );
 
         let escape = tar_of(&[compose, ("../a", regular, b"x")]);
         assert!(read_all(&escape, &["a"]).unwrap().1.is_empty());

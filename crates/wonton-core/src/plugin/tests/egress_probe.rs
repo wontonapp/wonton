@@ -42,7 +42,10 @@ fn closed_app() -> String {
 }
 
 fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose).unwrap().manifest.permissions
+    PluginPackage::parse(compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions
 }
 
 fn scripted(env: Option<&str>) -> (Egress, Script) {
@@ -92,14 +95,17 @@ impl Rig {
     }
 
     async fn blocked(&self, compose: &str) -> Option<String> {
-        let package = PluginPackage::parse(compose).unwrap();
+        let package = PluginPackage::parse(compose, &super::langs()).unwrap();
         let langs = Languages::default();
         let preview = self.m.preview_install(&package, &langs).await;
         preview.unwrap().blocked
     }
 
     async fn install(&self, compose: &str) -> Result<(), InstallError> {
-        self.m.install(compose, &granted(compose)).await.map(drop)
+        self.m
+            .install(compose, &granted(compose), super::langs())
+            .await
+            .map(drop)
     }
 }
 
@@ -128,7 +134,7 @@ async fn a_proxy_that_only_cannot_reach_outside_warns_and_lets_the_install_throu
     let upstream = problem(EgressFailure::UpstreamFailed, "它连不上外面");
     rig.fail_relay(upstream);
     let app = out_app();
-    let package = PluginPackage::parse(&app).unwrap();
+    let package = PluginPackage::parse(&app, &super::langs()).unwrap();
     let langs = Languages::default();
     let preview = rig.m.preview_install(&package, &langs).await.unwrap();
     assert_eq!(preview.blocked, None);

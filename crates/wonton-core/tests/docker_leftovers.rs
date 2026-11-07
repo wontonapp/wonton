@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use wonton_core::plugin::languages::Languages;
+
 // 共用的真实 Docker 测试辅助：每次运行唯一的实例名和资源回收。
 #[path = "../src/test_docker.rs"]
 mod test_docker;
@@ -153,7 +155,11 @@ impl Core {
 /// 装到容器跑起来时核心重启，返回留下的容器的 ID。
 async fn restart_midway(core: &Core) -> Result<String, String> {
     let manager = core.manager();
-    let install = tokio::spawn(async move { manager.install(PLUGIN, &[]).await });
+    let install = tokio::spawn(async move {
+        manager
+            .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+            .await
+    });
     let mut orphan = None;
     // 共用的主机很忙时，Docker 建一个容器也可能要一两分钟。
     for _ in 0..3000 {
@@ -181,7 +187,10 @@ async fn restart_midway(core: &Core) -> Result<String, String> {
 
 async fn recovers(core: &Core) -> Result<(), String> {
     let orphan = restart_midway(core).await?;
-    let view = core.manager().install(PLUGIN, &[]).await;
+    let view = core
+        .manager()
+        .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+        .await;
     let view = view.map_err(|e| format!("再装失败（{}）：{e}", e.kind()))?;
     if core.container_id().await.as_ref() == Some(&orphan) {
         return Err("容器拿的是上次的配置和令牌，应当重建".into());
@@ -208,7 +217,11 @@ async fn stays_away(core: &Core) -> Result<(), String> {
         .connect_network(&core.network(), other, Vec::new())
         .await
         .map_err(|e| e.to_string())?;
-    let Err(error) = core.manager().install(PLUGIN, &[]).await else {
+    let Err(error) = core
+        .manager()
+        .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+        .await
+    else {
         return Err("另一套核心接在网络上，不应当装上".into());
     };
     if error.kind() != "conflict" || !error.to_string().contains(other.as_str()) {
@@ -240,7 +253,11 @@ async fn refuses(core: &mut Core) -> Result<(), String> {
         .create_network(&network, &labels, NetworkReach::Egress)
         .await
         .map_err(|e| e.to_string())?;
-    let Err(error) = core.manager().install(PLUGIN, &[]).await else {
+    let Err(error) = core
+        .manager()
+        .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+        .await
+    else {
         return Err("同名网络不是本插件的，不应当装上".into());
     };
     if error.kind() != "conflict" || !error.to_string().contains(&network) {

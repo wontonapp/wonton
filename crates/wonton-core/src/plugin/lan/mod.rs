@@ -29,6 +29,7 @@ pub(in crate::plugin) use monitor::{Detected, INTERVAL};
 pub use state::Lan;
 
 use super::compose::{NetworkMode, Service};
+use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Permission};
 use super::render::{RenderError, service_err};
 
@@ -83,7 +84,7 @@ impl LanPortSpec {
 /// `lan` 和 `network.lan` 要一起出现；端口不重复，也不能是 MCP 的端口：它只经核心访问。网页的端口可以列，要不要开关见
 /// [`webui`]。
 /// 服务名是否存在由 [`super::package`] 对照 compose 检查。
-pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     let invalid = |message: String| Err(ManifestError::Invalid(message));
     let permitted = manifest.permissions.contains(&Permission::NetworkLan);
     let lan = match (&manifest.lan, permitted) {
@@ -122,7 +123,7 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
         }
     }
     if let Some(lan_client) = &lan.client {
-        client::validate(manifest, lan_client)?;
+        client::validate(manifest, lan_client, langs)?;
     }
     Ok(())
 }
@@ -185,6 +186,7 @@ pub fn publish(
     service: &Service,
     grant: &LanGrant,
     body: &mut ContainerCreateBody,
+    langs: &Languages,
 ) -> Result<(), RenderError> {
     let ports: Vec<&LanPortSpec> = grant.ports.iter().filter(|p| p.service == name).collect();
     if ports.is_empty() {
@@ -192,6 +194,7 @@ pub fn publish(
     }
     if service.network_mode == Some(NetworkMode::None) {
         return Err(service_err(
+            langs,
             name,
             "lan.ports 里的服务不能写 network_mode: none",
         ));

@@ -14,11 +14,13 @@ use serde::{Deserialize, Serialize};
 use super::compose::{NetworkMode, PullPolicy, Service};
 use super::docker::Engine;
 use super::hostdir::Owner;
+use super::languages::Languages;
 use super::manager::InstallError;
 use super::manifest::Manifest;
 use super::names::Instance;
 use super::render::{ContainerPlan, LABEL_SERVICE};
 use super::store::InstalledRecord;
+use crate::l10n;
 
 /// `alpine/socat`，ADR-0036 的验证结果用它实测过。GPL-2.0，作为独立容器运行。摘要是多架构 manifest
 /// list 的（registry API 取，`mediaType` 是 manifest list，覆盖 amd64、arm64 等），Docker 按本机架构挑。
@@ -77,17 +79,20 @@ pub fn socket_path(app_data: &Path, relay: &HostRelay) -> PathBuf {
 
 /// 核心一侧第一个放不下的套接字：超长时给人看的说明（路径、字节数、上限），
 /// 用来在装之前报明白；都放得下时为空。
-pub fn path_too_long(app_data: &Path, relays: &[HostRelay]) -> Option<String> {
+pub fn path_too_long(app_data: &Path, relays: &[HostRelay], langs: &Languages) -> Option<String> {
     relays
         .iter()
         .map(|relay| socket_path(app_data, relay))
         .find(|path| path.as_os_str().len() > MAX_SOCKET_PATH)
         .map(|path| {
-            format!(
-                "插件数据目录的路径太长，unix 套接字放不下，把核心的数据目录换到短一点的路径\
-                 （{}：{} 字节，上限 {MAX_SOCKET_PATH} 字节）",
-                path.display(),
-                path.as_os_str().len(),
+            l10n::text(
+                langs,
+                "plugin-install-relay-path-too-long",
+                &[
+                    ("path", path.display().to_string().into()),
+                    ("bytes", path.as_os_str().len().into()),
+                    ("max", MAX_SOCKET_PATH.into()),
+                ],
             )
         })
 }
@@ -191,7 +196,7 @@ impl super::manager::PluginManager {
             return false;
         };
         let name = container(&self.cfg.instance, &manifest.id.slug(), relay);
-        listens_beyond_loopback(&self.engine, &name, webui.port)
+        listens_beyond_loopback(&self.engine, &name, webui.port, &self.owner_languages())
             .await
             .unwrap_or(false)
     }
@@ -254,8 +259,14 @@ impl super::manager::PluginManager {
             .await?;
         let owner = self.owner();
         let app_data = self.cfg.apps_dir.join(manifest.id.slug());
-        super::hostdir::ensure_owned_dir(&dir(&app_data), owner)
-            .map_err(|e| InstallError::Storage(format!("准备中继目录失败：{e}")))?;
+        super::hostdir::ensure_owned_dir(&dir(&app_data), owner).map_err(|e| {
+            let langs = self.owner_languages();
+            InstallError::Storage(l10n::text(
+                &langs,
+                "plugin-install-relay-prepare-dir-failed",
+                &[("error", e.to_string().into())],
+            ))
+        })?;
         for relay in &record.relays {
             let name = container(&self.cfg.instance, &manifest.id.slug(), relay);
             let running = self
@@ -285,6 +296,7 @@ pub(super) async fn listens_beyond_loopback(
     engine: &Engine,
     container: &str,
     port: u16,
+    langs: &Languages,
 ) -> Option<bool> {
     let argv = ["cat", "/proc/net/tcp", "/proc/net/tcp6"].map(str::to_owned);
     let output = match engine
@@ -293,7 +305,12 @@ pub(super) async fn listens_beyond_loopback(
     {
         Ok(output) => output,
         Err(error) => {
-            tracing::warn!(%container, %error, "读不到监听表，不判断防火墙");
+            tracing::warn!(
+                %container,
+                %error,
+                "{}",
+                l10n::text(langs, "plugin-install-relay-listens-unknown", &[])
+            );
             return None;
         }
     };
@@ -301,7 +318,8 @@ pub(super) async fn listens_beyond_loopback(
         tracing::warn!(
             %container,
             stderr = output.stderr.trim(),
-            "读不到监听表，不判断防火墙"
+            "{}",
+            l10n::text(langs, "plugin-install-relay-listens-unknown", &[])
         );
         return None;
     }

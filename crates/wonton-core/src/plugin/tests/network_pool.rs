@@ -27,7 +27,7 @@ async fn forty_plugins_all_land_in_the_pool_disjoint_with_the_core_at_the_last_a
              version: 1.0.0\n  kind: app\n  title: {{zh: 回声{i}, en: Echo{i}}}\n  \
              description: {{zh: 测试, en: Test}}\n  permissions: []"
         );
-        m.install(&compose, &[]).await.unwrap();
+        m.install(&compose, &[], super::langs()).await.unwrap();
     }
     let pool = NetworkPool::default();
     let mut subnets = Vec::new();
@@ -78,10 +78,12 @@ async fn rebuilding_migrates_an_old_network_into_the_pool_and_keeps_data() {
         "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
              permissions: [network.lan]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let id = package.manifest.id.clone();
     let network = Instance::default().network(&id.slug());
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
 
     // 旧版核心留下的网络：Docker 从默认池分的 /16。
     docker.add_network(
@@ -134,11 +136,13 @@ async fn rebuilding_migrates_main_lan_and_egress_networks_together() {
         "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
              permissions: [network.lan, network.egress]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let id = package.manifest.id.clone();
     let network = Instance::default().network(&id.slug());
     let lan_network = Instance::default().lan_network(&id.slug());
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     // 旧版核心留下的三个网络：Docker 从默认池分的 /16。出口网络整套核心只有一个。
     let old = |subnet: &str, gateway: &str| json!({"IPAM": {"Config": [{"Subnet": subnet, "Gateway": gateway}]}});
     docker.add_network(&network, id.as_str(), old("172.18.0.0/16", "172.18.0.1"));
@@ -204,11 +208,13 @@ async fn a_failed_render_releases_the_reservation_and_keeps_the_old_setup_runnin
         "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
              permissions: [network.lan]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let id = package.manifest.id.clone();
     let network = Instance::default().network(&id.slug());
     let lan_network = Instance::default().lan_network(&id.slug());
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     docker.add_network(
         &network,
         id.as_str(),
@@ -253,7 +259,7 @@ async fn a_failed_render_releases_the_reservation_and_keeps_the_old_setup_runnin
     let next = "services:\n  web:\n    image: example/web\nx-wonton:\n  spec: '0.5'\n  \
         id: app.other\n  version: 1.0.0\n  kind: app\n  title: {zh: 另一个, en: Other}\n  \
         description: {zh: 测试, en: Test}\n  permissions: []";
-    m.install(next, &[]).await.unwrap();
+    m.install(next, &[], super::langs()).await.unwrap();
     let other = docker
         .network(&Instance::default().network("app-other"))
         .unwrap();

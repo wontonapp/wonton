@@ -19,6 +19,7 @@ async fn installed(name: Option<&str>) -> FakeDocker {
             "  permissions: []",
         ),
         &[],
+        super::langs(),
     )
     .await
     .unwrap();
@@ -65,6 +66,7 @@ async fn a_failed_lookup_is_retried_after_docker_recovers() {
             "  permissions: []",
         ),
         &[],
+        super::langs(),
     )
     .await
     .unwrap();

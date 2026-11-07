@@ -47,7 +47,9 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
     manager.cfg.install_timeout = Duration::from_secs(60);
     let m = Arc::new(manager);
-    m.install(&compose("v1\\n"), &[]).await.unwrap();
+    m.install(&compose("v1\\n"), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(m.list()[0].status, PluginStatus::Running);
 
     let web = names.container("app-test", "web");
@@ -84,7 +86,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     let id = PluginId::parse("app.test").unwrap();
     m.upgrade_upload(
         &id,
-        PluginPackage::parse(&compose("v2\\n")).unwrap(),
+        PluginPackage::parse(&compose("v2\\n"), &super::langs()).unwrap(),
         vec![],
         false,
     )
@@ -94,7 +96,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     assert_eq!(motd.stdout, "v2");
 
     // 卸载后核心写的文件没了。
-    m.uninstall(&id, false).await.unwrap();
+    m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert!(!staged.exists());
     assert!(m.list().is_empty());
 }

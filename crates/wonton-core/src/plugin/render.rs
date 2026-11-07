@@ -5,16 +5,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-use bollard::models::{
-    ContainerCreateBody, EndpointSettings, HealthConfig, HostConfig, Mount, NetworkingConfig,
-    RestartPolicy, RestartPolicyNameEnum,
-};
+use bollard::models::ContainerCreateBody;
 
 use super::bot_services::ServiceVars;
-use super::compose::{
-    DependCondition, Healthcheck, NetworkMode, PullPolicy, Service, StringOrList, parse_bytes,
-    parse_duration,
-};
+use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
 use super::configs::{self, ConfigFile};
 use super::core_address;
 use super::egress::{self, EgressVars};
@@ -23,35 +17,37 @@ use super::host_relay::HostRelay;
 use super::hostdir::Owner;
 use super::interpolate::UsedVars;
 use super::lan::{self, LanGrant};
-use super::limits;
+use super::languages::Languages;
 use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
-use super::requirements::Requirements;
 use super::vars::injected_vars;
 pub use super::vars::{MatrixVars, ModelVars, OidcVars, OwnerVars};
+use spec::{ContainerOptions, container_plan};
 
 /// 容器是插件的哪个服务。
 pub const LABEL_SERVICE: &str = "wonton.service";
+
+pub(super) mod spec;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
     #[error(transparent)]
     Package(#[from] PackageError),
-    #[error("服务 `{service}`：{message}")]
+    #[error("{message}")]
     Service { service: String, message: String },
     /// 这台主机的目录放不下插件要的资源（如中继套接字路径超长），不是插件包的问题。
     #[error("{0}")]
     HostPath(String),
-    #[error("插件没申请 owner.identity，不能引用 `{0}`：在清单的 permissions 里加上它")]
+    #[error("{0}")]
     NoOwnerIdentity(String),
     #[error("{}", crate::owner::NO_EMAIL)]
     NoOwnerEmail,
 }
 
 /// 引用了主人的身份变量却没注入时，分清是插件没申请还是主人没配（ADR-0022）。
-fn explain_owner_vars(error: RenderError, ctx: &InstallContext) -> RenderError {
+fn explain_owner_vars(error: RenderError, ctx: &InstallContext, langs: &Languages) -> RenderError {
     let variable = match &error {
         RenderError::Package(
             PackageError::Interpolate { source, .. }
@@ -62,16 +58,30 @@ fn explain_owner_vars(error: RenderError, ctx: &InstallContext) -> RenderError {
     match (variable, &ctx.owner) {
         (Some("WONTON_OWNER_EMAIL"), Some(_)) => RenderError::NoOwnerEmail,
         (Some(name @ ("WONTON_OWNER_NAME" | "WONTON_OWNER_EMAIL")), None) => {
-            RenderError::NoOwnerIdentity(name.to_owned())
+            RenderError::NoOwnerIdentity(crate::l10n::text(
+                langs,
+                "plugin-install-render-no-owner-identity",
+                &[("var", name.into())],
+            ))
         }
         _ => error,
     }
 }
 
-pub(super) fn service_err(service: &str, message: impl Into<String>) -> RenderError {
+/// `message` 已是按语言拼好的整句；这里补上「服务 {service}：」前缀（plugin-install-service-error）。
+pub(super) fn service_err(
+    langs: &Languages,
+    service: &str,
+    message: impl Into<String>,
+) -> RenderError {
+    let message: String = message.into();
     RenderError::Service {
         service: service.to_owned(),
-        message: message.into(),
+        message: crate::l10n::text(
+            langs,
+            "plugin-install-service-error",
+            &[("service", service.into()), ("error", message.into())],
+        ),
     }
 }
 
@@ -176,14 +186,6 @@ pub struct ContainerPlan {
     pub variables: UsedVars,
 }
 
-struct ContainerOptions<'a> {
-    requirements: Option<&'a Requirements>,
-    network: &'a str,
-    aliases: Vec<String>,
-    labels: &'a HashMap<String, String>,
-    gpu: Option<&'a GpuGrant>,
-}
-
 #[derive(Debug, Clone)]
 pub struct Deployment {
     pub network: String,
@@ -199,16 +201,17 @@ pub struct Deployment {
 }
 
 /// 用占位环境渲染一遍，在不接触 Docker 的情况下检查插件包能否安装。
-pub fn dry_run(package: &PluginPackage) -> Result<Deployment, RenderError> {
-    dry_run_with_email(package, Some("owner@wonton.invalid"))
+pub fn dry_run(package: &PluginPackage, langs: &Languages) -> Result<Deployment, RenderError> {
+    dry_run_with_email(package, Some("owner@wonton.invalid"), langs)
 }
 
 /// 同 [`dry_run`]，主人的邮箱用 `email`：主人没配邮箱时，看插件在这台主机上装不装得上。
 pub(super) fn dry_run_with_email(
     package: &PluginPackage,
     email: Option<&str>,
+    langs: &Languages,
 ) -> Result<Deployment, RenderError> {
-    render(package, &dry_run_context(package, email))
+    render(package, &dry_run_context(package, email), langs)
 }
 
 /// [`dry_run`] 用的占位环境。
@@ -306,31 +309,22 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
     }
 }
 
-pub fn render(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
-    render_plan(package, ctx).map_err(|e| explain_owner_vars(e, ctx))
+pub fn render(
+    package: &PluginPackage,
+    ctx: &InstallContext,
+    langs: &Languages,
+) -> Result<Deployment, RenderError> {
+    render_plan(package, ctx, langs).map_err(|e| explain_owner_vars(e, ctx, langs))
 }
 
-fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployment, RenderError> {
+fn render_plan(
+    package: &PluginPackage,
+    ctx: &InstallContext,
+    langs: &Languages,
+) -> Result<Deployment, RenderError> {
     let manifest = &package.manifest;
     let requirements = manifest.requirements.as_ref();
-    let bot_key = ctx.models.as_ref().and_then(|m| m.bot_key.clone());
-    let vars = ServiceVars::new(
-        manifest,
-        &ctx.app_data,
-        injected_vars(manifest, ctx),
-        bot_key,
-    );
-    let mut used = BTreeMap::new();
-    let services = package.services(|name| vars.get(name), &mut used)?;
-    if let Err(error) = super::privileges::validate_services(manifest, &services) {
-        return Err(service_err(&error.service, error.message));
-    }
-    if let Some((service, bot_service)) = vars.plugin_service_on_bot(&services) {
-        return Err(service_err(
-            &service,
-            format!("全插件一份的服务不能依赖 Bot 服务 `{bot_service}`：Bot 服务每个 Bot 一份"),
-        ));
-    }
+    let (services, vars, mut used) = validated_services(package, ctx, langs)?;
     let network = ctx.instance.network(&ctx.slug);
     let labels = ctx.instance.labels(&manifest.id);
     let read_only_shares = read_only_share_paths(manifest, &ctx.shares);
@@ -338,17 +332,17 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
     let gpu_services: &[String] = manifest.gpu.as_ref().map_or(&[], |g| &g.services);
     let mut binds = Vec::new();
     let mut containers = Vec::new();
-    for name in start_order(dependencies(&services))? {
+    for name in start_order(dependencies(&services), langs)? {
         let service = &services[&name];
         let mut variables = used.remove(&name).unwrap_or_default();
-        check_network_mode(manifest, &name, service)?;
+        check_network_mode(manifest, &name, service, langs)?;
         let gpu = ctx.gpu.as_ref().filter(|_| gpu_services.contains(&name));
         let one_shot = one_shot.contains(name.as_str());
         if one_shot && service.restart.as_deref() != Some("no") {
             return Err(service_err(
+                langs,
                 &name,
-                "被以 service_completed_successfully 依赖的一次性服务必须写 restart: \"no\"：\
-                 否则 Docker 会在它退出后反复重启它",
+                crate::l10n::text(langs, "plugin-install-render-one-shot-restart", &[]),
             ));
         }
         let mut mounts = Mounts {
@@ -357,6 +351,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             named: package.named_volumes(),
             service: &name,
             allow_docker_socket: manifest.permissions.contains(&Permission::DockerSocket),
+            langs,
         }
         .build(&service.volumes, &mut binds)?;
         let (files, store_dir) = configs::resolve_service(
@@ -367,6 +362,7 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             &vars,
             &mut mounts,
             &mut variables,
+            langs,
         )?;
         let options = ContainerOptions {
             requirements,
@@ -379,9 +375,9 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
             labels: &labels,
             gpu,
         };
-        let mut plan = container_plan(&name, service, mounts, ctx, options)?;
+        let mut plan = container_plan(&name, service, mounts, ctx, options, langs)?;
         if let Some(grant) = &ctx.lan {
-            lan::publish(&name, service, grant, &mut plan.body)?;
+            lan::publish(&name, service, grant, &mut plan.body, langs)?;
         }
         if let Some(vars) = ctx.egress.as_ref()
             && matches!(&service.network_mode, None | Some(NetworkMode::Service(_)))
@@ -395,9 +391,9 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
         plan.variables = variables;
         containers.push(plan);
     }
-    check_not_nested(&binds)?;
-    let mut dirs = dir_owners(&binds, &services, ctx)?;
-    let relays = prepare_relays(manifest, ctx, &services, &mut containers, &mut dirs)?;
+    check_not_nested(&binds, langs)?;
+    let mut dirs = dir_owners(&binds, &services, ctx, langs)?;
+    let relays = prepare_relays(manifest, ctx, langs, &services, &mut containers, &mut dirs)?;
     let volumes = package
         .named_volumes()
         .iter()
@@ -413,17 +409,57 @@ fn render_plan(package: &PluginPackage, ctx: &InstallContext) -> Result<Deployme
     })
 }
 
+type ServiceSet<'a> = (
+    BTreeMap<String, Service>,
+    ServiceVars<'a>,
+    BTreeMap<String, UsedVars>,
+);
+
+/// 校验服务字段和权限（含 Bot 依赖的规则），返回服务表、变量和每个服务用到的变量。
+fn validated_services<'a>(
+    package: &'a PluginPackage,
+    ctx: &InstallContext,
+    langs: &Languages,
+) -> Result<ServiceSet<'a>, RenderError> {
+    let manifest = &package.manifest;
+    let bot_key = ctx.models.as_ref().and_then(|m| m.bot_key.clone());
+    let vars = ServiceVars::new(
+        manifest,
+        &ctx.app_data,
+        injected_vars(manifest, ctx),
+        bot_key,
+    );
+    let mut used = BTreeMap::new();
+    let services = package.services(|name| vars.get(name), &mut used, langs)?;
+    if let Err(error) = super::privileges::validate_services(manifest, &services, langs) {
+        return Err(service_err(langs, &error.service, error.message));
+    }
+    if let Some((service, bot_service)) = vars.plugin_service_on_bot(&services) {
+        return Err(service_err(
+            langs,
+            &service,
+            crate::l10n::text(
+                langs,
+                "plugin-install-render-bot-dependency",
+                &[("service", bot_service.into())],
+            ),
+        ));
+    }
+    Ok((services, vars, used))
+}
+
 /// 中继容器和目录：宿主网络的服务各要一个。核心一侧的套接字路径放不下时在这报出来——
 /// 这之后才是拉镜像、起容器，装之前就失败。
 fn prepare_relays(
     manifest: &Manifest,
     ctx: &InstallContext,
+    langs: &Languages,
     services: &BTreeMap<String, Service>,
     containers: &mut Vec<ContainerPlan>,
     dirs: &mut BTreeMap<PathBuf, Owner>,
 ) -> Result<Vec<HostRelay>, RenderError> {
     let relays = super::host_relay::needed(manifest, services);
-    if let Some(problem) = super::host_relay::path_too_long(&ctx.app_data, &relays) {
+    if let Some(problem) = super::host_relay::path_too_long(&ctx.app_data, &relays, langs) {
         return Err(RenderError::HostPath(problem));
     }
     add_relays(manifest, ctx, &relays, containers, dirs);
@@ -458,6 +494,7 @@ fn check_network_mode(
     manifest: &Manifest,
     name: &str,
     service: &Service,
+    langs: &Languages,
 ) -> Result<(), RenderError> {
     if service.network_mode != Some(NetworkMode::None) {
         return Ok(());
@@ -471,8 +508,13 @@ fn check_network_mode(
         .find(|(_, service)| service.is_some_and(|s| s == name))
     {
         Some((field, _)) => Err(service_err(
+            langs,
             name,
-            format!("{field} 指向的服务不能写 network_mode: none"),
+            crate::l10n::text(
+                langs,
+                "plugin-install-render-network-mode-none",
+                &[("field", (*field).into())],
+            ),
         )),
         None => Ok(()),
     }
@@ -510,12 +552,18 @@ fn dependencies(services: &BTreeMap<String, Service>) -> BTreeMap<&str, Vec<Stri
 /// 按 `depends_on` 拓扑排序；同层按名字排序，保证结果确定。
 pub(super) fn start_order(
     mut pending: BTreeMap<&str, Vec<String>>,
+    langs: &Languages,
 ) -> Result<Vec<String>, RenderError> {
     for (name, deps) in &pending {
         if let Some(missing) = deps.iter().find(|d| !pending.contains_key(d.as_str())) {
             return Err(service_err(
+                langs,
                 name,
-                format!("depends_on 引用了不存在的服务 `{missing}`"),
+                crate::l10n::text(
+                    langs,
+                    "plugin-install-render-dependency-missing",
+                    &[("missing", missing.as_str().into())],
+                ),
             ));
         }
     }
@@ -528,7 +576,11 @@ pub(super) fn start_order(
             .collect();
         if ready.is_empty() {
             let names: Vec<&str> = pending.keys().copied().collect();
-            return Err(service_err(&names.join(", "), "depends_on 存在循环依赖"));
+            return Err(service_err(
+                langs,
+                &names.join(", "),
+                crate::l10n::text(langs, "plugin-install-render-dependency-cycle", &[]),
+            ));
         }
         for name in ready {
             pending.remove(name);
@@ -538,223 +590,9 @@ pub(super) fn start_order(
     Ok(order)
 }
 
-/// `endpoint` 是插件网络和服务在其中的别名；`gpu` 是这个服务拿到的显卡（清单的 `gpu.services` 里的服务才有）。
-fn container_plan(
-    name: &str,
-    service: &Service,
-    mounts: Vec<Mount>,
-    ctx: &InstallContext,
-    options: ContainerOptions<'_>,
-) -> Result<ContainerPlan, RenderError> {
-    let env = match &service.environment {
-        Some(kv) => kv.pairs("environment").map_err(|m| service_err(name, m))?,
-        None => Vec::new(),
-    };
-    let mut all_labels = match &service.labels {
-        Some(kv) => kv
-            .pairs("labels")
-            .map_err(|m| service_err(name, m))?
-            .into_iter()
-            .collect(),
-        None => HashMap::new(),
-    };
-    if all_labels.keys().any(|k| k.starts_with("wonton.")) {
-        return Err(service_err(name, "`wonton.` 开头的标签由核心保留"));
-    }
-    all_labels.extend(options.labels.clone());
-    all_labels.insert(LABEL_SERVICE.to_owned(), name.to_owned());
-
-    let depends_on = service
-        .dependencies()
-        .into_iter()
-        .map(|(dep, cond)| (ctx.instance.container(&ctx.slug, &dep), cond))
-        .collect();
-    let networking_config = service.network_mode.is_none().then(|| NetworkingConfig {
-        endpoints_config: Some(HashMap::from([(
-            options.network.to_owned(),
-            EndpointSettings {
-                aliases: Some(options.aliases),
-                ..Default::default()
-            },
-        )])),
-    });
-    let body = ContainerCreateBody {
-        image: Some(service.image.clone()),
-        cmd: words(name, service.command.as_ref())?,
-        entrypoint: words(name, service.entrypoint.as_ref())?,
-        env: Some(env.into_iter().map(|(k, v)| format!("{k}={v}")).collect()),
-        user: service.user.as_ref().map(|u| u.as_string()),
-        working_dir: service.working_dir.clone(),
-        hostname: service.hostname.clone(),
-        labels: Some(all_labels),
-        healthcheck: service
-            .healthcheck
-            .as_ref()
-            .map(|h| health_config(name, h))
-            .transpose()?,
-        stop_signal: service.stop_signal.clone(),
-        stop_timeout: service
-            .stop_grace_period
-            .as_deref()
-            .map(|d| parse_duration(d).map(|d| d.as_secs() as i64))
-            .transpose()
-            .map_err(|m| service_err(name, m))?,
-        host_config: Some(host_config(
-            name,
-            service,
-            mounts,
-            ctx,
-            options.requirements,
-            options.network,
-            options.gpu,
-        )?),
-        networking_config,
-        ..Default::default()
-    };
-    Ok(ContainerPlan {
-        service: name.to_owned(),
-        name: ctx.instance.container(&ctx.slug, name),
-        image: service.image.clone(),
-        pull_policy: service.pull_policy,
-        depends_on,
-        body,
-        files: Vec::new(),
-        store_dir: None,
-        one_shot: false,
-        variables: UsedVars::new(),
-    })
-}
-
-fn host_config(
-    name: &str,
-    service: &Service,
-    mounts: Vec<Mount>,
-    ctx: &InstallContext,
-    requirements: Option<&Requirements>,
-    network: &str,
-    gpu: Option<&GpuGrant>,
-) -> Result<HostConfig, RenderError> {
-    let tmpfs = service.tmpfs.as_ref().map(|spec| {
-        list(spec)
-            .into_iter()
-            .map(|entry| match entry.split_once(':') {
-                Some((path, opts)) => (path.to_owned(), opts.to_owned()),
-                None => (entry, String::new()),
-            })
-            .collect()
-    });
-    let network_mode = match &service.network_mode {
-        Some(NetworkMode::None) => "none".to_owned(),
-        Some(NetworkMode::Host) => "host".to_owned(),
-        Some(NetworkMode::Service(target)) => {
-            format!("container:{}", ctx.instance.container(&ctx.slug, target))
-        }
-        None => network.to_owned(),
-    };
-    let mut host = HostConfig {
-        network_mode: Some(network_mode),
-        mounts: Some(mounts),
-        restart_policy: Some(restart_policy(name, service.restart.as_deref())?),
-        init: service.init,
-        readonly_rootfs: service.read_only,
-        shm_size: service
-            .shm_size
-            .as_ref()
-            .map(parse_bytes)
-            .transpose()
-            .map_err(|m| service_err(name, m))?,
-        tmpfs,
-        extra_hosts: (service.network_mode.is_none() && !ctx.extra_hosts.is_empty())
-            .then(|| ctx.extra_hosts.clone()),
-        ..Default::default()
-    };
-    limits::apply(
-        &mut host,
-        service,
-        requirements,
-        ctx.memory_total,
-        ctx.cgroup_parent.as_deref(),
-        &ctx.limits,
-    )
-    .map_err(|message| service_err(name, message))?;
-    if let Some(grant) = gpu {
-        grant.apply(&mut host);
-    }
-    super::privileges::apply(service, &mut host).map_err(|message| service_err(name, message))?;
-    Ok(host)
-}
-
 pub(super) fn list(spec: &StringOrList) -> Vec<String> {
     match spec {
         StringOrList::One(s) => vec![s.clone()],
         StringOrList::Many(items) => items.clone(),
     }
-}
-
-/// `command` / `entrypoint`：字符串按 shell 规则切分（与 compose 一致），列表原样使用。
-fn words(service: &str, spec: Option<&StringOrList>) -> Result<Option<Vec<String>>, RenderError> {
-    match spec {
-        None => Ok(None),
-        Some(StringOrList::Many(items)) => Ok(Some(items.clone())),
-        Some(StringOrList::One(text)) => shlex::split(text)
-            .map(Some)
-            .ok_or_else(|| service_err(service, format!("命令 `{text}` 的引号不配对"))),
-    }
-}
-
-/// 未写 `restart` 时默认 `unless-stopped`：插件应在宿主重启后自动恢复。
-fn restart_policy(service: &str, value: Option<&str>) -> Result<RestartPolicy, RenderError> {
-    let policy = |name, retries| RestartPolicy {
-        name: Some(name),
-        maximum_retry_count: retries,
-    };
-    Ok(match value.unwrap_or("unless-stopped") {
-        "no" => policy(RestartPolicyNameEnum::NO, None),
-        "always" => policy(RestartPolicyNameEnum::ALWAYS, None),
-        "unless-stopped" => policy(RestartPolicyNameEnum::UNLESS_STOPPED, None),
-        "on-failure" => policy(RestartPolicyNameEnum::ON_FAILURE, None),
-        other => {
-            let retries = other
-                .strip_prefix("on-failure:")
-                .and_then(|n| n.parse::<i64>().ok())
-                .ok_or_else(|| service_err(service, format!("restart 取值 `{other}` 不合法")))?;
-            policy(RestartPolicyNameEnum::ON_FAILURE, Some(retries))
-        }
-    })
-}
-
-fn health_config(service: &str, check: &Healthcheck) -> Result<HealthConfig, RenderError> {
-    let nanos = |value: &Option<String>| -> Result<Option<i64>, RenderError> {
-        value
-            .as_deref()
-            .map(|d| parse_duration(d).map(|d| d.as_nanos() as i64))
-            .transpose()
-            .map_err(|m| service_err(service, m))
-    };
-    let test = if check.disable {
-        Some(vec!["NONE".to_owned()])
-    } else {
-        match &check.test {
-            None => None,
-            Some(StringOrList::One(cmd)) => Some(vec!["CMD-SHELL".to_owned(), cmd.clone()]),
-            Some(StringOrList::Many(items)) => {
-                let kind = items.first().map(String::as_str);
-                if !matches!(kind, Some("CMD" | "CMD-SHELL" | "NONE")) {
-                    return Err(service_err(
-                        service,
-                        "healthcheck.test 列表须以 CMD、CMD-SHELL 或 NONE 开头",
-                    ));
-                }
-                Some(items.clone())
-            }
-        }
-    };
-    Ok(HealthConfig {
-        test,
-        interval: nanos(&check.interval)?,
-        timeout: nanos(&check.timeout)?,
-        retries: check.retries.map(i64::from),
-        start_period: nanos(&check.start_period)?,
-        start_interval: nanos(&check.start_interval)?,
-    })
 }

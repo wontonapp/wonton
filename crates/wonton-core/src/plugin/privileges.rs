@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use bollard::models::{DeviceMapping, HostConfig};
 
 use super::compose::{NetworkMode, Service, VolumeEntry, VolumeType};
+use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Permission, PluginKind, Sso};
+use crate::l10n::text;
 
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 
@@ -82,7 +84,7 @@ impl ServiceError {
 }
 
 /// 清单级别的权限约束。
-pub fn validate_manifest(manifest: &Manifest) -> Result<(), ManifestError> {
+pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     let restricted = manifest.kind == PluginKind::Agent
         || manifest.permissions.contains(&Permission::MatrixBot)
         || manifest.bots.is_some();
@@ -94,8 +96,10 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), ManifestError> {
             )
         })
     {
-        return Err(ManifestError::Invalid(format!(
-            "Agent 或 Bot 插件不能申请很高或最高级权限 {permission}"
+        return Err(ManifestError::Invalid(text(
+            langs,
+            "plugin-install-priv-agent-high-risk",
+            &[("permission", permission.to_string().into())],
         )));
     }
     if let Some(permission) = manifest
@@ -106,8 +110,10 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), ManifestError> {
             _ => None,
         })
     {
-        return Err(ManifestError::Invalid(format!(
-            "固定设备权限只支持 /dev/net/tun 和 /dev/fuse，不能申请 {permission}"
+        return Err(ManifestError::Invalid(text(
+            langs,
+            "plugin-install-priv-fixed-device",
+            &[("permission", permission.into())],
         )));
     }
     Ok(())
@@ -129,12 +135,13 @@ struct UsedPrivileges {
 pub fn validate_services(
     manifest: &Manifest,
     services: &BTreeMap<String, Service>,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     let mut used = UsedPrivileges::default();
     for (name, service) in services {
-        validate_service(manifest, name, service, &mut used)?;
+        validate_service(manifest, name, service, &mut used, langs)?;
     }
-    validate_used_permissions(manifest, &used)
+    validate_used_permissions(manifest, &used, langs)
 }
 
 fn validate_service(
@@ -142,12 +149,13 @@ fn validate_service(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
-    validate_host_network(manifest, name, service, used)?;
-    validate_capabilities(manifest, name, service, used)?;
-    validate_devices(manifest, name, service, used)?;
-    validate_namespaces(manifest, name, service, used)?;
-    validate_socket(manifest, name, service, used)
+    validate_host_network(manifest, name, service, used, langs)?;
+    validate_capabilities(manifest, name, service, used, langs)?;
+    validate_devices(manifest, name, service, used, langs)?;
+    validate_namespaces(manifest, name, service, used, langs)?;
+    validate_socket(manifest, name, service, used, langs)
 }
 
 fn validate_host_network(
@@ -155,6 +163,7 @@ fn validate_host_network(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     if service.network_mode != Some(NetworkMode::Host) {
         return Ok(());
@@ -165,6 +174,7 @@ fn validate_host_network(
         Permission::NetworkHost,
         name,
         "network_mode: host",
+        langs,
     )?;
     if manifest
         .lan
@@ -173,7 +183,7 @@ fn validate_host_network(
     {
         return Err(ServiceError::new(
             name,
-            "宿主网络服务不能同时声明 lan.ports；端口由应用直接监听宿主网络",
+            text(langs, "plugin-install-priv-host-network-ports", &[]),
         ));
     }
     if manifest
@@ -188,7 +198,7 @@ fn validate_host_network(
         if webui.sso == Sso::Proxy {
             return Err(ServiceError::new(
                 name,
-                "宿主网络里的 webui 不能使用 sso: proxy，请改用 oidc 或 none",
+                text(langs, "plugin-install-priv-host-network-sso", &[]),
             ));
         }
         if service
@@ -198,7 +208,7 @@ fn validate_host_network(
         {
             return Err(ServiceError::new(
                 name,
-                "宿主网络里的 webui 服务必须写有效的 healthcheck",
+                text(langs, "plugin-install-priv-host-network-healthcheck", &[]),
             ));
         }
     }
@@ -210,10 +220,19 @@ fn validate_capabilities(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     for cap in &service.cap_add {
-        let capability = normalize_capability(cap)
-            .ok_or_else(|| ServiceError::new(name, format!("cap_add 里的能力 `{cap}` 不合法")))?;
+        let capability = normalize_capability(cap).ok_or_else(|| {
+            ServiceError::new(
+                name,
+                text(
+                    langs,
+                    "plugin-install-priv-cap-invalid",
+                    &[("cap", cap.into())],
+                ),
+            )
+        })?;
         require(
             manifest,
             Permission::Capability {
@@ -221,6 +240,7 @@ fn validate_capabilities(
             },
             name,
             &format!("cap_add: {cap}"),
+            langs,
         )?;
         used.caps.insert(capability);
     }
@@ -232,21 +252,30 @@ fn validate_devices(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     for device in &service.devices {
         let (source, target, permissions) = device
-            .paths()
+            .paths(langs)
             .map_err(|message| ServiceError::new(name, message))?;
         if !is_fixed_device(&source) {
             return Err(ServiceError::new(
                 name,
-                format!("设备 `{source}` 不是允许的固定设备"),
+                text(
+                    langs,
+                    "plugin-install-priv-device-not-allowed",
+                    &[("source", source.into())],
+                ),
             ));
         }
         if !target.starts_with('/') {
             return Err(ServiceError::new(
                 name,
-                format!("设备目标 `{target}` 必须是绝对路径"),
+                text(
+                    langs,
+                    "plugin-install-priv-device-absolute",
+                    &[("target", target.into())],
+                ),
             ));
         }
         if permissions.is_empty()
@@ -256,7 +285,14 @@ fn validate_devices(
         {
             return Err(ServiceError::new(
                 name,
-                format!("设备 `{source}` 的权限 `{permissions}` 不合法"),
+                text(
+                    langs,
+                    "plugin-install-priv-device-mode",
+                    &[
+                        ("source", source.into()),
+                        ("permissions", permissions.into()),
+                    ],
+                ),
             ));
         }
         require(
@@ -266,6 +302,7 @@ fn validate_devices(
             },
             name,
             &format!("devices: {source}"),
+            langs,
         )?;
         used.devices.insert(source);
     }
@@ -277,27 +314,46 @@ fn validate_namespaces(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     if let Some(pid) = &service.pid {
         if pid != "host" {
-            return Err(ServiceError::new(name, "pid 只支持 host"));
+            return Err(ServiceError::new(
+                name,
+                text(langs, "plugin-install-priv-pid-host-only", &[]),
+            ));
         }
-        require(manifest, Permission::HostPid, name, "pid: host")?;
+        require(manifest, Permission::HostPid, name, "pid: host", langs)?;
         used.pid = true;
     }
     if let Some(ipc) = &service.ipc {
         if ipc != "host" {
-            return Err(ServiceError::new(name, "ipc 只支持 host"));
+            return Err(ServiceError::new(
+                name,
+                text(langs, "plugin-install-priv-ipc-host-only", &[]),
+            ));
         }
-        require(manifest, Permission::HostIpc, name, "ipc: host")?;
+        require(manifest, Permission::HostIpc, name, "ipc: host", langs)?;
         used.ipc = true;
     }
     if !service.security_opt.is_empty() {
-        require(manifest, Permission::SecurityOpt, name, "security_opt")?;
+        require(
+            manifest,
+            Permission::SecurityOpt,
+            name,
+            "security_opt",
+            langs,
+        )?;
         used.security = true;
     }
     if service.privileged == Some(true) {
-        require(manifest, Permission::Privileged, name, "privileged: true")?;
+        require(
+            manifest,
+            Permission::Privileged,
+            name,
+            "privileged: true",
+            langs,
+        )?;
         used.privileged = true;
     }
     Ok(())
@@ -308,6 +364,7 @@ fn validate_socket(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     for entry in &service.volumes {
         let Some((source, target, read_only)) = volume_mount(entry) else {
@@ -317,10 +374,16 @@ fn validate_socket(
             if source != DOCKER_SOCKET || target != DOCKER_SOCKET || read_only {
                 return Err(ServiceError::new(
                     name,
-                    "Docker socket 只能以 /var/run/docker.sock:/var/run/docker.sock 可写挂载",
+                    text(langs, "plugin-install-priv-socket-mount", &[]),
                 ));
             }
-            require(manifest, Permission::DockerSocket, name, "docker.sock 挂载")?;
+            require(
+                manifest,
+                Permission::DockerSocket,
+                name,
+                "docker.sock 挂载",
+                langs,
+            )?;
             used.socket = true;
         }
     }
@@ -330,45 +393,58 @@ fn validate_socket(
 fn validate_used_permissions(
     manifest: &Manifest,
     used: &UsedPrivileges,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     check_declared(
         manifest,
         Permission::NetworkHost,
         used.host,
         "network_mode: host",
+        langs,
     )?;
-    check_declared(manifest, Permission::HostPid, used.pid, "pid: host")?;
-    check_declared(manifest, Permission::HostIpc, used.ipc, "ipc: host")?;
+    check_declared(manifest, Permission::HostPid, used.pid, "pid: host", langs)?;
+    check_declared(manifest, Permission::HostIpc, used.ipc, "ipc: host", langs)?;
     check_declared(
         manifest,
         Permission::SecurityOpt,
         used.security,
         "security_opt",
+        langs,
     )?;
     check_declared(
         manifest,
         Permission::Privileged,
         used.privileged,
         "privileged: true",
+        langs,
     )?;
     check_declared(
         manifest,
         Permission::DockerSocket,
         used.socket,
         "docker.sock 挂载",
+        langs,
     )?;
     for permission in &manifest.permissions {
         match permission {
             Permission::Capability { name } if !used.caps.contains(name) => {
                 return Err(ServiceError::new(
                     "*",
-                    format!("权限 {permission} 没有对应的 cap_add 字段"),
+                    text(
+                        langs,
+                        "plugin-install-priv-missing-cap-add",
+                        &[("permission", permission.to_string().into())],
+                    ),
                 ));
             }
             Permission::Device { path } if !used.devices.contains(path) => {
                 return Err(ServiceError::new(
                     "*",
-                    format!("权限 {permission} 没有对应的 devices 字段"),
+                    text(
+                        langs,
+                        "plugin-install-priv-missing-devices",
+                        &[("permission", permission.to_string().into())],
+                    ),
                 ));
             }
             _ => {}
@@ -382,13 +458,21 @@ fn require(
     permission: Permission,
     service: &str,
     field: &str,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     if manifest.permissions.contains(&permission) {
         Ok(())
     } else {
         Err(ServiceError::new(
             service,
-            format!("{field} 需要清单权限 {permission}"),
+            text(
+                langs,
+                "plugin-install-priv-field-requires",
+                &[
+                    ("field", field.into()),
+                    ("permission", permission.to_string().into()),
+                ],
+            ),
         ))
     }
 }
@@ -398,11 +482,19 @@ fn check_declared(
     permission: Permission,
     used: bool,
     field: &str,
+    langs: &Languages,
 ) -> Result<(), ServiceError> {
     if manifest.permissions.contains(&permission) && !used {
         Err(ServiceError::new(
             "*",
-            format!("清单权限 {permission} 没有对应的 {field} 字段"),
+            text(
+                langs,
+                "plugin-install-priv-missing-field",
+                &[
+                    ("permission", permission.to_string().into()),
+                    ("field", field.into()),
+                ],
+            ),
         ))
     } else {
         Ok(())
@@ -434,15 +526,20 @@ fn volume_mount(entry: &VolumeEntry) -> Option<(String, String, bool)> {
 }
 
 /// 把已校验的 Compose 高权限字段写入 Docker HostConfig。
-pub fn apply(service: &Service, host: &mut HostConfig) -> Result<(), String> {
+pub fn apply(service: &Service, host: &mut HostConfig, langs: &Languages) -> Result<(), String> {
     if !service.cap_add.is_empty() {
         host.cap_add = Some(
             service
                 .cap_add
                 .iter()
                 .map(|cap| {
-                    normalize_capability(cap)
-                        .ok_or_else(|| format!("cap_add 里的能力 `{cap}` 不合法"))
+                    normalize_capability(cap).ok_or_else(|| {
+                        text(
+                            langs,
+                            "plugin-install-priv-cap-invalid",
+                            &[("cap", cap.into())],
+                        )
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         );
@@ -468,7 +565,7 @@ pub fn apply(service: &Service, host: &mut HostConfig) -> Result<(), String> {
         host.privileged = Some(true);
     }
     for device in &service.devices {
-        let (source, target, permissions) = device.paths()?;
+        let (source, target, permissions) = device.paths(langs)?;
         host.devices
             .get_or_insert_with(Vec::new)
             .push(DeviceMapping {

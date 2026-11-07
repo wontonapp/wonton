@@ -100,7 +100,10 @@ fn samba(extra_permissions: &str) -> String {
 }
 
 pub(super) fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose).unwrap().manifest.permissions
+    PluginPackage::parse(compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions
 }
 
 pub(super) fn created(docker: &FakeDocker, service: &str) -> Value {
@@ -121,7 +124,9 @@ fn status(m: &PluginManager) -> PluginStatus {
 async fn ports_are_published_only_on_the_chosen_address() {
     let (docker, m, _, _dir) = on(office()).await;
     let compose = samba("");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
 
     let samba = created(&docker, "samba");
     let bindings = &samba["HostConfig"]["PortBindings"];
@@ -152,7 +157,7 @@ async fn ports_are_published_only_on_the_chosen_address() {
 
     // 卸载时连同局域网的网络一起删。
     let id = PluginId::parse("app.test").unwrap();
-    m.uninstall(&id, false).await.unwrap();
+    m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert_eq!(docker.networks(), ["bridge"]);
 }
 
@@ -160,7 +165,9 @@ async fn ports_are_published_only_on_the_chosen_address() {
 async fn egress_plugins_publish_on_their_own_network() {
     let (docker, m, _, _dir) = on(office()).await;
     let compose = samba(", network.egress");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     assert_eq!(docker.network("wonton-app-test--lan"), None);
     let samba = created(&docker, "samba");
     let endpoints = samba["NetworkingConfig"]["EndpointsConfig"]
@@ -178,14 +185,23 @@ async fn a_leftover_lan_network_is_replaced_but_one_the_owner_created_is_refused
     let (docker, m, _, _dir) = on(office()).await;
     docker.add_network(LAN, "app.test", json!({}));
     let compose = samba("");
-    m.install(&compose, &granted(&compose)).await.unwrap();
-    assert_eq!(docker.network(LAN).unwrap()["Name"], json!(LAN));
-
-    m.uninstall(&PluginId::parse("app.test").unwrap(), false)
+    m.install(&compose, &granted(&compose), super::langs())
         .await
         .unwrap();
+    assert_eq!(docker.network(LAN).unwrap()["Name"], json!(LAN));
+
+    m.uninstall(
+        &PluginId::parse("app.test").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     docker.add_unlabeled_network(LAN);
-    let err = m.install(&compose, &granted(&compose)).await.unwrap_err();
+    let err = m
+        .install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
     assert!(err.to_string().contains(LAN), "{err}");
     assert_eq!(docker.network(LAN), Some(json!({})));
@@ -195,7 +211,7 @@ async fn a_leftover_lan_network_is_replaced_but_one_the_owner_created_is_refused
 #[tokio::test]
 async fn previews_show_each_port_and_why_it_cannot_be_installed() {
     let (_docker, m, detected, _dir) = on(office()).await;
-    let package = PluginPackage::parse(&samba("")).unwrap();
+    let package = PluginPackage::parse(&samba(""), &super::langs()).unwrap();
     let preview = m
         .preview_install(&package, &Languages::default())
         .await
@@ -225,13 +241,19 @@ async fn previews_show_each_port_and_why_it_cannot_be_installed() {
     let blocked = preview.blocked.expect("装不上");
     assert!(blocked.contains("tailscale0"), "{blocked}");
     let compose = samba("");
-    let err = m.install(&compose, &granted(&compose)).await.unwrap_err();
+    let err = m
+        .install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "lan_unavailable", "{err}");
     assert!(m.list().is_empty());
 
     // 检测容器起不来也一样。
     *detected.lock().unwrap() = Err("没有权限".into());
-    let err = m.install(&compose, &granted(&compose)).await.unwrap_err();
+    let err = m
+        .install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "lan_unavailable", "{err}");
     assert!(err.to_string().contains("没有权限"), "{err}");
 }
@@ -240,9 +262,11 @@ async fn previews_show_each_port_and_why_it_cannot_be_installed() {
 async fn ports_taken_by_another_plugin_are_refused_before_anything_starts() {
     let (docker, m, _, _dir) = on(office()).await;
     let first = samba("");
-    m.install(&first, &granted(&first)).await.unwrap();
+    m.install(&first, &granted(&first), super::langs())
+        .await
+        .unwrap();
     let second = samba("").replace("id: app.test", "id: app.other");
-    let package = PluginPackage::parse(&second).unwrap();
+    let package = PluginPackage::parse(&second, &super::langs()).unwrap();
     let preview = m
         .preview_install(&package, &Languages::default())
         .await
@@ -253,7 +277,10 @@ async fn ports_taken_by_another_plugin_are_refused_before_anything_starts() {
         "{blocked}"
     );
     let before = docker.writes().len();
-    let err = m.install(&second, &granted(&second)).await.unwrap_err();
+    let err = m
+        .install(&second, &granted(&second), super::langs())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
     assert_eq!(docker.writes().len(), before, "冲突时什么也不建");
 }
@@ -275,7 +302,9 @@ async fn an_address_change_rebuilds_lan_containers_and_variable_consumers_only()
             ),
             "  lan: {ports: [{service: samba, port: 445}]}\n  permissions: [network.lan]",
         );
-        m.install(&compose, &granted(&compose)).await.unwrap();
+        m.install(&compose, &granted(&compose), super::langs())
+            .await
+            .unwrap();
         let before = docker.writes().len();
         m.lan_pass().await.unwrap();
         assert_eq!(docker.writes().len(), before);
@@ -346,9 +375,11 @@ async fn an_address_change_rebuilds_inline_config_consumers_but_not_literal_file
         b"${WONTON_LAN_ADDRESSES}".to_vec(),
     )]
     .into();
-    let pkg = PluginPackage::with_files(&compose, files).unwrap();
+    let pkg = PluginPackage::with_files(&compose, files, &super::langs()).unwrap();
     let permissions = pkg.manifest.permissions.clone();
-    m.install_package(pkg, &permissions).await.unwrap();
+    m.install_package(pkg, &permissions, super::langs())
+        .await
+        .unwrap();
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     m.lan_pass().await.unwrap();
@@ -389,7 +420,9 @@ async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
          \x20   depends_on: {init: {condition: service_completed_successfully}}\n  untouched:\n    image: nginx",
         "  lan: {ports: [{service: samba, port: 445}]}\n  permissions: [network.lan]",
     );
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     m.lan_pass().await.unwrap();
@@ -428,7 +461,9 @@ async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
         "  lan:\n    ports:\n      - {service: samba, port: 445}\n  \
          permissions: [network.lan, owner.identity]",
     );
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let state = dir.path().join("owner-without-profile");
     crate::owner::lock_username(&state, None).unwrap();
     Arc::get_mut(&mut m).unwrap().cfg.profile = crate::owner::OwnerStore::open(&state).unwrap();
@@ -447,7 +482,9 @@ async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
 async fn a_lost_address_degrades_the_plugin_until_it_comes_back() {
     let (docker, m, detected, _dir) = on(office()).await;
     let compose = samba("");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let mut unplugged = office();
     unplugged.routes.clear();
     *detected.lock().unwrap() = Ok(unplugged);
@@ -482,7 +519,10 @@ async fn a_core_restarted_after_a_dhcp_change_moves_the_ports() {
     let lan = || Lan::new(Detector::Fixed(detected.clone()), None);
     let first = manager_with(engine.clone(), &dir).with_lan(lan());
     let compose = samba("");
-    first.install(&compose, &granted(&compose)).await.unwrap();
+    first
+        .install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     // 宿主重启，地址变了：容器发布不到旧地址上，起不来（Docker 删不掉它们之前，这里直接让它不在）。
     engine
         .remove_container("wonton-app-test--samba")
@@ -502,7 +542,9 @@ async fn a_core_restarted_after_a_dhcp_change_moves_the_ports() {
 async fn settings_list_interfaces_and_check_new_choices() {
     let (docker, m, _, _dir) = on(office()).await;
     let compose = samba("");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let langs = Languages::default();
     let settings = m.lan_settings(&langs).await.unwrap();
     assert_eq!(settings.choice, LanChoice::Auto);
@@ -636,7 +678,8 @@ async fn the_probe_runs_unprivileged_in_the_host_network_and_is_always_removed()
 fn manifests_must_declare_ports_and_permission_together() {
     let parse = |extra: &str| {
         let compose = package("  samba:\n    image: example/samba", extra);
-        PluginPackage::parse(&compose).map(|p| dry_run(&p).map(|_| ()))
+        PluginPackage::parse(&compose, &super::langs())
+            .map(|p| dry_run(&p, &super::langs()).map(|_| ()))
     };
     let invalid = |extra: &str| match parse(extra) {
         Err(PackageError::Manifest(e)) => e.to_string(),
@@ -671,15 +714,15 @@ fn manifests_must_declare_ports_and_permission_together() {
         "  samba:\n    image: example/samba\n    network_mode: none",
         &format!("{port}  permissions: [network.lan]"),
     );
-    let pkg = PluginPackage::parse(&isolated).unwrap();
-    let err = dry_run(&pkg).unwrap_err().to_string();
+    let pkg = PluginPackage::parse(&isolated, &super::langs()).unwrap();
+    let err = dry_run(&pkg, &super::langs()).unwrap_err().to_string();
     assert!(err.contains("network_mode: none"), "{err}");
 }
 
 #[test]
 fn the_example_is_valid() {
-    let pkg = PluginPackage::parse(include_str!("examples/lan.yaml")).unwrap();
+    let pkg = PluginPackage::parse(include_str!("examples/lan.yaml"), &super::langs()).unwrap();
     let ports = &pkg.manifest.lan.as_ref().expect("有 lan").ports;
     assert_eq!(ports[0].key(), "445/tcp");
-    dry_run(&pkg).unwrap();
+    dry_run(&pkg, &super::langs()).unwrap();
 }

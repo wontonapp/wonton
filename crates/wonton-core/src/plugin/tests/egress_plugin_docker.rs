@@ -26,8 +26,11 @@ use crate::test_docker::Names;
 const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
 
 async fn install(m: &PluginManager, source: &str) {
-    let granted = PluginPackage::parse(source).unwrap().manifest.permissions;
-    m.install(source, &granted).await.unwrap();
+    let granted = PluginPackage::parse(source, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    m.install(source, &granted, super::langs()).await.unwrap();
 }
 
 async fn fetch(engine: &Engine, client: &str) -> Result<String, String> {
@@ -127,12 +130,17 @@ async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
     );
     let failed = fetch(engine, &client).await.unwrap_err();
     assert!(failed.contains("503"), "{failed}");
-    let package = PluginPackage::parse(&consumer.replace("app.out", "app.blocked")).unwrap();
+    let package =
+        PluginPackage::parse(&consumer.replace("app.out", "app.blocked"), &super::langs()).unwrap();
     assert_eq!(
-        m.install_package(package.clone(), &package.manifest.permissions)
-            .await
-            .unwrap_err()
-            .kind(),
+        m.install_package(
+            package.clone(),
+            &package.manifest.permissions,
+            super::langs()
+        )
+        .await
+        .unwrap_err()
+        .kind(),
         "egress_proxy_unavailable"
     );
     println!(

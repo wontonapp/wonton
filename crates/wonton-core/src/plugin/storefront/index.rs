@@ -12,6 +12,7 @@ use super::super::github::{GitHub, Repo, is_commit_id};
 use super::super::github_source::{Origin, SourceRef, Trust, Wanted, github_error};
 use super::super::index_location::IndexLocation;
 use super::super::install_error::InstallError;
+use super::super::languages::Languages;
 use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
 use super::super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles, sha256_hex};
@@ -256,7 +257,8 @@ fn check(entry: IndexEntry, before: &[Listed]) -> Result<Listed, String> {
             "compose 和 files 里 {COMPOSE_FILE} 的 sha256 对不上"
         ));
     }
-    let manifest = PluginPackage::manifest_of(&entry.compose).map_err(|e| e.to_string())?;
+    let manifest = PluginPackage::manifest_of(&entry.compose, &Languages::default())
+        .map_err(|e| e.to_string())?;
     if manifest.version != entry.version {
         return Err(format!(
             "version {} 和清单的版本 {} 不一致",
@@ -337,15 +339,15 @@ impl Files {
     pub async fn package(&self, listed: &Listed) -> Result<PluginPackage, InstallError> {
         let compose = &listed.entry.compose;
         let mut files = PackageFiles::new();
-        let optional = PluginPackage::optional_files(compose)?;
-        for path in PluginPackage::referenced_files(compose)? {
+        let optional = PluginPackage::optional_files(compose, &Languages::default())?;
+        for path in PluginPackage::referenced_files(compose, &Languages::default())? {
             if optional.contains(&path) && !listed.entry.files.contains_key(&path) {
                 continue;
             }
             let data = self.file(listed, &path).await?;
             files.insert(path, data);
         }
-        let mut package = PluginPackage::with_files(compose, files)?;
+        let mut package = PluginPackage::with_files(compose, files, &Languages::default())?;
         package.origin = Some(listed.origin());
         Ok(package)
     }

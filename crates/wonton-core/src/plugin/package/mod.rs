@@ -16,69 +16,28 @@ use serde::de::Error as _;
 use serde_json::{Map, Value};
 
 use super::compose::{
-    FORBIDDEN_CONFIG_KEYS, FORBIDDEN_SERVICE_KEYS, FORBIDDEN_TOP_KEYS, NetworkMode, Service,
-    strip_extensions,
+    NetworkMode, Service, forbidden_config_key_reason, forbidden_service_key_reason,
+    forbidden_top_key_reason, network_mode_refusal, strip_extensions,
 };
 use super::github_source::Origin;
 use super::images::IconFormat;
-use super::interpolate::{InterpolateError, UsedVars, Vars, interpolate, interpolate_value};
+use super::interpolate::{UsedVars, Vars, interpolate, interpolate_value};
+use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, SecretSpec};
 use super::package_archive;
 use super::package_files::{
     self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles,
 };
+use crate::l10n::text;
 
-#[derive(Debug, thiserror::Error)]
-pub enum PackageError {
-    #[error("compose 文件不是合法的 YAML：{0}")]
-    Yaml(String),
-    #[error("compose 文件顶层必须是映射")]
-    NotAMapping,
-    #[error("compose 文件缺少 `x-wonton` 扩展字段；没有清单的 compose 需要先补全权限声明")]
-    MissingManifest,
-    #[error("`x-wonton` 不合法：{0}")]
-    Manifest(#[from] ManifestError),
-    #[error("顶层字段 `{key}` 不受支持：{reason}")]
-    TopLevel { key: String, reason: String },
-    #[error("服务 `{service}`：{message}")]
-    Service { service: String, message: String },
-    #[error("服务 `{service}` 插值失败：{source}")]
-    Interpolate {
-        service: String,
-        #[source]
-        source: InterpolateError,
-    },
-    #[error("{field} 引用的服务 `{service}` 不存在")]
-    UnknownService {
-        field: &'static str,
-        service: String,
-    },
-    #[error("命名卷 `{0}` 不合法：M0 只支持不带参数的本地卷")]
-    Volume(String),
-    #[error("配置 `{name}`：{message}")]
-    Config { name: String, message: String },
-    #[error("配置 `{name}` 插值失败：{source}")]
-    ConfigInterpolate {
-        name: String,
-        #[source]
-        source: InterpolateError,
-    },
-    #[error("{field}：{message}")]
-    Reference { field: String, message: String },
-    #[error("{field} 引用的文件 `{path}`：{source}")]
-    File {
-        field: String,
-        path: String,
-        #[source]
-        source: FileError,
-    },
-    #[error("插件包的 {COMPOSE_FILE}：{0}")]
-    ComposeFile(FileError),
-    #[error("插件包归档：{0}")]
-    Archive(String),
-    #[error("插件包一共 {} KiB，超过 {} KiB", .0.div_ceil(1024), MAX_PACKAGE_BYTES >> 10)]
-    TooBig(u64),
-}
+pub(super) mod errors;
+
+pub use errors::PackageError;
+use errors::{
+    archive_error, compose_file_error, config_error, config_interpolate_error, file_error,
+    interpolate_error, reference_error, service_error, too_big_error, top_level_error,
+    unknown_service_error, yaml_error,
+};
 
 /// 顶层 `configs` 的一项。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,128 +72,139 @@ impl PluginPackage {
     }
 
     /// 只有 compose 文本的插件包：引用了包里的文件时失败。
-    pub fn parse(source: &str) -> Result<Self, PackageError> {
-        Self::with_files(source, PackageFiles::new())
+    pub fn parse(source: &str, langs: &Languages) -> Result<Self, PackageError> {
+        Self::with_files(source, PackageFiles::new(), langs)
     }
 
     /// compose 文本加上被引用的文件（如安装记录里保存的那些）。`files` 里没被引用的文件不保留。
-    pub fn with_files(source: &str, files: PackageFiles) -> Result<Self, PackageError> {
-        Self::structure(source)?.attach(files)
+    pub fn with_files(
+        source: &str,
+        files: PackageFiles,
+        langs: &Languages,
+    ) -> Result<Self, PackageError> {
+        Self::structure(source, langs)?.attach(files, langs)
     }
 
     /// 插件包打成的压缩包，规则见 [`package_archive`]：只解压 `docker-compose.yml` 和它引用的文件。
-    pub fn from_archive(body: &[u8]) -> Result<Self, PackageError> {
-        let archive = package_archive::Archive::open(body).map_err(PackageError::Archive)?;
-        let root = archive.root().map_err(PackageError::Archive)?;
+    pub fn from_archive(body: &[u8], langs: &Languages) -> Result<Self, PackageError> {
+        let archive = package_archive::Archive::open(body).map_err(|e| archive_error(langs, e))?;
+        let root = archive.root(langs).map_err(|e| archive_error(langs, e))?;
         let compose = archive
-            .read(&root, &[COMPOSE_FILE.to_owned()])
-            .map_err(PackageError::Archive)?
+            .read(&root, &[COMPOSE_FILE.to_owned()], langs)
+            .map_err(|e| archive_error(langs, e))?
             .remove(COMPOSE_FILE)
-            .ok_or(PackageError::ComposeFile(FileError::Missing))?;
+            .ok_or_else(|| compose_file_error(langs, FileError::Missing))?;
         let source = String::from_utf8(compose)
-            .map_err(|_| PackageError::Yaml("不是 UTF-8 文本".to_owned()))?;
+            .map_err(|_| yaml_error(langs, text(langs, "plugin-install-pkg-not-utf8", &[])))?;
         let files = archive
-            .read(&root, &Self::referenced_files(&source)?)
-            .map_err(PackageError::Archive)?;
-        Self::with_files(&source, files)
+            .read(&root, &Self::referenced_files(&source, langs)?, langs)
+            .map_err(|e| archive_error(langs, e))?;
+        Self::with_files(&source, files, langs)
     }
 
     /// 读插件包目录：`docker-compose.yml` 和它引用的文件，路径和软链接的规则见 [`super::package_files`]。
-    pub fn load_dir(dir: &Path) -> Result<Self, PackageError> {
-        let opened = super::package_files::open_dir(dir).map_err(PackageError::ComposeFile)?;
-        Self::load_dir_at(opened.as_fd())
+    pub fn load_dir(dir: &Path, langs: &Languages) -> Result<Self, PackageError> {
+        let opened =
+            super::package_files::open_dir(dir).map_err(|e| compose_file_error(langs, e))?;
+        Self::load_dir_at(opened.as_fd(), langs)
     }
 
     /// 同 [`Self::load_dir`]，从已打开的目录读：调用方（如 outbox 的解析）钉住目录，中途换不掉。
-    pub fn load_dir_at(dir: std::os::fd::BorrowedFd<'_>) -> Result<Self, PackageError> {
+    pub fn load_dir_at(
+        dir: std::os::fd::BorrowedFd<'_>,
+        langs: &Languages,
+    ) -> Result<Self, PackageError> {
         let source =
-            package_files::read_at(dir, COMPOSE_FILE).map_err(PackageError::ComposeFile)?;
+            package_files::read_at(dir, COMPOSE_FILE).map_err(|e| compose_file_error(langs, e))?;
         let source = String::from_utf8(source)
-            .map_err(|_| PackageError::Yaml("不是 UTF-8 文本".to_owned()))?;
-        let package = Self::structure(&source)?;
+            .map_err(|_| yaml_error(langs, text(langs, "plugin-install-pkg-not-utf8", &[])))?;
+        let package = Self::structure(&source, langs)?;
         let mut files = PackageFiles::new();
-        let optional = package.optional_references()?;
-        let required = package.references()?;
+        let optional = package.optional_references(langs)?;
+        let required = package.references(langs)?;
         for (field, path) in required.iter().chain(&optional) {
             let data = match package_files::read_at(dir, path) {
                 Ok(data) => data,
                 Err(FileError::Missing) if optional.iter().any(|(_, p)| p == path) => continue,
-                Err(source) => {
-                    return Err(PackageError::File {
-                        field: field.clone(),
-                        path: path.clone(),
-                        source,
-                    });
-                }
+                Err(source) => return Err(file_error(langs, field, path, source)),
             };
             files.insert(path.clone(), data);
         }
-        package.attach(files)
+        package.attach(files, langs)
     }
 
     /// compose 文本里的清单，不管它引用的文件：商店列表只要清单。
-    pub fn manifest_of(source: &str) -> Result<Manifest, PackageError> {
-        Ok(Self::structure(source)?.manifest)
+    pub fn manifest_of(source: &str, langs: &Languages) -> Result<Manifest, PackageError> {
+        Ok(Self::structure(source, langs)?.manifest)
     }
 
     /// 包里的引用路径，含可选的状态头像首帧；缺少首帧可以省略，其他引用都必须存在。
-    pub fn referenced_files(source: &str) -> Result<Vec<String>, PackageError> {
-        let package = Self::structure(source)?;
-        let refs = package.references()?;
+    pub fn referenced_files(source: &str, langs: &Languages) -> Result<Vec<String>, PackageError> {
+        let package = Self::structure(source, langs)?;
+        let refs = package.references(langs)?;
         Ok(refs
             .into_iter()
-            .chain(package.optional_references()?)
+            .chain(package.optional_references(langs)?)
             .map(|(_, path)| path)
             .collect())
     }
 
-    pub fn optional_files(source: &str) -> Result<Vec<String>, PackageError> {
-        Ok(Self::structure(source)?
-            .optional_references()?
+    pub fn optional_files(source: &str, langs: &Languages) -> Result<Vec<String>, PackageError> {
+        Ok(Self::structure(source, langs)?
+            .optional_references(langs)?
             .into_iter()
             .map(|(_, path)| path)
             .collect())
     }
 
-    fn structure(source: &str) -> Result<Self, PackageError> {
+    fn structure(source: &str, langs: &Languages) -> Result<Self, PackageError> {
         let document: Value =
-            serde_saphyr::from_str(source).map_err(|e| PackageError::Yaml(e.to_string()))?;
+            serde_saphyr::from_str(source).map_err(|e| yaml_error(langs, e.to_string()))?;
         let Value::Object(mut top) = document else {
-            return Err(PackageError::NotAMapping);
+            return Err(PackageError::NotAMapping(text(
+                langs,
+                "plugin-install-pkg-not-mapping",
+                &[],
+            )));
         };
-        check_top_level_keys(&top)?;
-        let manifest_value = top
-            .remove("x-wonton")
-            .ok_or(PackageError::MissingManifest)?;
+        check_top_level_keys(&top, langs)?;
+        let manifest_value = top.remove("x-wonton").ok_or_else(|| {
+            PackageError::MissingManifest(text(langs, "plugin-install-pkg-missing-manifest", &[]))
+        })?;
         super::store_info::check_spec(&manifest_value)?;
         let manifest: Manifest = match serde_json::from_value(manifest_value) {
             Ok(manifest) => manifest,
             Err(e) => {
                 // 两种解析对个别标量的松紧不同（`version: 1.0` 直接反序列化能当成字符串），成功与否仍以
                 // serde_json 的结果为准；重解析失败才借它的报错写清字段和行号。
-                return Err(manifest_from_yaml(source)
+                let inner = manifest_from_yaml(source)
                     .err()
-                    .unwrap_or_else(|| ManifestError::Invalid(e.to_string()))
-                    .into());
+                    .unwrap_or_else(|| ManifestError::Invalid(e.to_string()));
+                return Err(PackageError::Manifest(ManifestError::Invalid(text(
+                    langs,
+                    "plugin-install-pkg-manifest",
+                    &[("error", inner.to_string().into())],
+                ))));
             }
         };
-        manifest.validate()?;
+        manifest.validate(langs)?;
 
         let services = match top.remove("services") {
             Some(Value::Object(services)) if !services.is_empty() => services,
             _ => {
-                return Err(PackageError::Service {
-                    service: "*".to_owned(),
-                    message: "至少需要一个服务".to_owned(),
-                });
+                return Err(service_error(
+                    langs,
+                    "*",
+                    text(langs, "plugin-install-pkg-needs-service", &[]),
+                ));
             }
         };
         for (name, service) in &services {
-            check_service_name(name)?;
-            check_service_keys(name, service)?;
+            check_service_name(name, langs)?;
+            check_service_keys(name, service, langs)?;
         }
-        let volumes = parse_named_volumes(top.remove("volumes"))?;
-        let configs = parse_configs(top.remove("configs"))?;
+        let volumes = parse_named_volumes(top.remove("volumes"), langs)?;
+        let configs = parse_configs(top.remove("configs"), langs)?;
         let package = Self {
             manifest,
             source: source.to_owned(),
@@ -244,20 +214,17 @@ impl PluginPackage {
             files: PackageFiles::new(),
             origin: None,
         };
-        package.check_manifest_references()?;
+        package.check_manifest_references(langs)?;
         Ok(package)
     }
 
     /// 被引用的文件：（引用它的字段，规范化后的路径）。
-    fn references(&self) -> Result<Vec<(String, String)>, PackageError> {
+    fn references(&self, langs: &Languages) -> Result<Vec<(String, String)>, PackageError> {
         let manifest = &self.manifest;
         let mut refs = Vec::new();
         let mut add = |field: &str, raw: &str| {
-            let path =
-                package_files::normalize(raw).map_err(|message| PackageError::Reference {
-                    field: field.to_owned(),
-                    message,
-                })?;
+            let path = package_files::normalize(raw)
+                .map_err(|message| reference_error(langs, field, message))?;
             refs.push((field.to_owned(), path));
             Ok::<_, PackageError>(())
         };
@@ -277,10 +244,15 @@ impl PluginPackage {
         for (field, icon) in image_refs {
             // 图标随提交固定，App 也不向第三方取图（ADR-0017），所以不收网址。
             if IconFormat::from_path(icon).is_none() || icon.contains("://") {
-                return Err(PackageError::Reference {
-                    field,
-                    message: format!("`{icon}` 要是插件包里的 PNG 或 SVG 文件"),
-                });
+                return Err(reference_error(
+                    langs,
+                    &field,
+                    text(
+                        langs,
+                        "plugin-install-pkg-icon-file",
+                        &[("icon", icon.into())],
+                    ),
+                ));
             }
             add(&field, icon)?;
         }
@@ -306,9 +278,12 @@ impl PluginPackage {
         Ok(refs)
     }
 
-    fn optional_references(&self) -> Result<Vec<(String, String)>, PackageError> {
+    fn optional_references(
+        &self,
+        langs: &Languages,
+    ) -> Result<Vec<(String, String)>, PackageError> {
         let required: BTreeSet<_> = self
-            .references()?
+            .references(langs)?
             .into_iter()
             .map(|(_, path)| path)
             .collect();
@@ -320,11 +295,9 @@ impl PluginPackage {
             .and_then(|bot| bot.avatars.as_ref())
         {
             for (state, raw) in avatars {
-                let path =
-                    package_files::normalize(raw).map_err(|message| PackageError::Reference {
-                        field: format!("bot.avatars.{state}"),
-                        message,
-                    })?;
+                let path = package_files::normalize(raw).map_err(|message| {
+                    reference_error(langs, &format!("bot.avatars.{state}"), message)
+                })?;
                 let poster = super::bot_avatars::poster_path(&path);
                 if poster != path && !required.contains(&poster) {
                     optional.insert(poster, format!("bot.avatars.{state}.poster"));
@@ -338,35 +311,30 @@ impl PluginPackage {
     }
 
     /// 配上被引用的文件：每个都要有，且不超过大小上限。
-    fn attach(mut self, mut files: PackageFiles) -> Result<Self, PackageError> {
-        let optional = self.optional_references()?;
-        let required = self.references()?;
+    fn attach(mut self, mut files: PackageFiles, langs: &Languages) -> Result<Self, PackageError> {
+        let optional = self.optional_references(langs)?;
+        let required = self.references(langs)?;
         for (field, path) in required.iter().chain(&optional) {
             if self.files.contains_key(path) {
                 continue;
             }
-            let file_err = |source| PackageError::File {
-                field: field.clone(),
-                path: path.clone(),
-                source,
-            };
             let Some(data) = files.remove(path) else {
                 if optional.iter().any(|(_, p)| p == path) {
                     continue;
                 }
-                return Err(file_err(FileError::Missing));
+                return Err(file_error(langs, field, path, FileError::Missing));
             };
             if data.len() as u64 > MAX_FILE_BYTES {
-                return Err(file_err(FileError::TooBig));
+                return Err(file_error(langs, field, path, FileError::TooBig));
             }
             if field == "notices" && std::str::from_utf8(&data).is_err() {
-                return Err(file_err(FileError::NotText));
+                return Err(file_error(langs, field, path, FileError::NotText));
             }
             self.files.insert(path.clone(), data);
         }
         let total = self.source.len() + self.files.values().map(Vec::len).sum::<usize>();
         if total as u64 > MAX_PACKAGE_BYTES {
-            return Err(PackageError::TooBig(total as u64));
+            return Err(too_big_error(langs, total as u64));
         }
         Ok(self)
     }
@@ -392,7 +360,10 @@ impl PluginPackage {
     }
 
     /// 启动现存容器只需要依赖条件，不重新插值环境或改写容器配置。
-    pub(super) fn service_dependencies(&self) -> Result<ServiceDependencies<'_>, PackageError> {
+    pub(super) fn service_dependencies(
+        &self,
+        langs: &Languages,
+    ) -> Result<ServiceDependencies<'_>, PackageError> {
         self.services
             .iter()
             .map(|(name, service)| {
@@ -404,10 +375,7 @@ impl PluginPackage {
                         )
                     })
                     .transpose()
-                    .map_err(|e| PackageError::Service {
-                        service: name.clone(),
-                        message: pathed(&e),
-                    })?;
+                    .map_err(|e| service_error(langs, name, pathed(&e)))?;
                 let mut dependencies = dependencies.map(|deps| deps.entries()).unwrap_or_default();
                 if let Some(target) = service
                     .get("network_mode")
@@ -460,24 +428,28 @@ impl PluginPackage {
         name: &str,
         vars: &Vars,
         used: &mut UsedVars,
+        langs: &Languages,
     ) -> Result<Vec<u8>, PackageError> {
-        let config_err = |message: String| PackageError::Config {
-            name: name.to_owned(),
-            message,
-        };
         match self.configs.get(name) {
-            None => Err(config_err("没有在顶层 configs 中声明".to_owned())),
-            Some(ConfigSource::File(path)) => self
-                .files
-                .get(path)
-                .cloned()
-                .ok_or_else(|| config_err(format!("插件包里没有 `{path}`"))),
+            None => Err(config_error(
+                langs,
+                name,
+                text(langs, "plugin-install-pkg-config-undeclared", &[]),
+            )),
+            Some(ConfigSource::File(path)) => self.files.get(path).cloned().ok_or_else(|| {
+                config_error(
+                    langs,
+                    name,
+                    text(
+                        langs,
+                        "plugin-install-pkg-config-missing",
+                        &[("path", path.as_str().into())],
+                    ),
+                )
+            }),
             Some(ConfigSource::Content(text)) => interpolate(text, vars, used)
                 .map(String::into_bytes)
-                .map_err(|source| PackageError::ConfigInterpolate {
-                    name: name.to_owned(),
-                    source,
-                }),
+                .map_err(|source| config_interpolate_error(langs, name.to_owned(), source)),
         }
     }
 
@@ -487,6 +459,7 @@ impl PluginPackage {
         &self,
         vars: impl Fn(&str) -> &'v Vars,
         used: &mut BTreeMap<String, UsedVars>,
+        langs: &Languages,
     ) -> Result<BTreeMap<String, Service>, PackageError> {
         let services: BTreeMap<String, Service> = self
             .services
@@ -495,17 +468,10 @@ impl PluginPackage {
                 let mut value = raw.clone();
                 strip_extensions(&mut value);
                 let mut variables = UsedVars::new();
-                interpolate_value(&mut value, vars(name), &mut variables).map_err(|source| {
-                    PackageError::Interpolate {
-                        service: name.clone(),
-                        source,
-                    }
-                })?;
-                let service: Service =
-                    serde_path_to_error::deserialize(value).map_err(|e| PackageError::Service {
-                        service: name.clone(),
-                        message: pathed(&e),
-                    })?;
+                interpolate_value(&mut value, vars(name), &mut variables)
+                    .map_err(|source| interpolate_error(langs, name.clone(), source))?;
+                let service: Service = serde_path_to_error::deserialize(value)
+                    .map_err(|e| service_error(langs, name, pathed(&e)))?;
                 if !variables.is_empty() {
                     used.insert(name.clone(), variables);
                 }
@@ -516,7 +482,7 @@ impl PluginPackage {
         Ok(services)
     }
 
-    fn check_manifest_references(&self) -> Result<(), PackageError> {
+    fn check_manifest_references(&self, langs: &Languages) -> Result<(), PackageError> {
         let models = self
             .manifest
             .provides
@@ -572,10 +538,7 @@ impl PluginPackage {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {
-                return Err(PackageError::UnknownService {
-                    field,
-                    service: service.clone(),
-                });
+                return Err(unknown_service_error(langs, field, service.clone()));
             }
         }
         // 网页入口连默认 Bot；MCP 和 provides 仍是全插件一份的入口。
@@ -588,20 +551,26 @@ impl PluginPackage {
                     .map(|s| (*field, s))
             });
         if let Some((field, service)) = bot_entry {
-            return Err(PackageError::Service {
-                service: service.clone(),
-                message: format!("{field} 不能指向 Bot 服务：Bot 服务每个 Bot 一份"),
-            });
+            return Err(service_error(
+                langs,
+                service,
+                text(
+                    langs,
+                    "plugin-install-pkg-ref-bot-service",
+                    &[("field", (*field).into())],
+                ),
+            ));
         }
         if let Some(provider) = egress
             && self.services[&provider.service]
                 .as_object()
                 .is_some_and(|service| service.contains_key("network_mode"))
         {
-            return Err(PackageError::Service {
-                service: provider.service.clone(),
-                message: "provides.egress_proxy.service 不能写 network_mode".to_owned(),
-            });
+            return Err(service_error(
+                langs,
+                &provider.service,
+                text(langs, "plugin-install-pkg-egress-network-mode", &[]),
+            ));
         }
         Ok(())
     }
@@ -634,35 +603,34 @@ fn manifest_from_yaml(source: &str) -> Result<Manifest, ManifestError> {
     .map_err(|e| ManifestError::Invalid(e.to_string()))
 }
 
-fn check_top_level_keys(top: &Map<String, Value>) -> Result<(), PackageError> {
+fn check_top_level_keys(top: &Map<String, Value>, langs: &Languages) -> Result<(), PackageError> {
     for key in top.keys() {
-        if let Some((_, reason)) = FORBIDDEN_TOP_KEYS.iter().find(|(k, _)| k == key) {
-            return Err(PackageError::TopLevel {
-                key: key.clone(),
-                reason: (*reason).to_owned(),
-            });
+        if let Some(reason) = forbidden_top_key_reason(key, langs) {
+            return Err(top_level_error(langs, key, reason));
         }
         let known = matches!(
             key.as_str(),
             "name" | "version" | "services" | "volumes" | "configs"
         );
         if !known && !key.starts_with("x-") {
-            return Err(PackageError::TopLevel {
-                key: key.clone(),
-                reason: "不在核心支持的 Compose 子集里".to_owned(),
-            });
+            return Err(top_level_error(
+                langs,
+                key,
+                text(langs, "plugin-install-pkg-not-in-subset", &[]),
+            ));
         }
     }
     Ok(())
 }
 
 /// 服务名同时用作网络别名和容器名的一部分，限制为小写 DNS 安全字符。
-fn check_service_name(name: &str) -> Result<(), PackageError> {
+fn check_service_name(name: &str, langs: &Languages) -> Result<(), PackageError> {
     if matches!(name, "relay-webui" | "relay-mcp") {
-        return Err(PackageError::Service {
-            service: name.to_owned(),
-            message: "核心中继的保留服务名，插件不能使用".to_owned(),
-        });
+        return Err(service_error(
+            langs,
+            name,
+            text(langs, "plugin-install-pkg-reserved-service", &[]),
+        ));
     }
     let valid = !name.is_empty()
         && name.len() <= 63
@@ -671,54 +639,64 @@ fn check_service_name(name: &str) -> Result<(), PackageError> {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     if !valid {
-        return Err(PackageError::Service {
-            service: name.to_owned(),
-            message: "服务名必须是合法的 DNS 标签：只含小写字母、数字和 -".to_owned(),
-        });
+        return Err(service_error(
+            langs,
+            name,
+            text(langs, "plugin-install-pkg-service-name-dns", &[]),
+        ));
     }
     // 服务名会拼进网络别名 `<服务名>.<slug>.wonton.internal`（核心连上游的 Host，见 [`super::names`]），
     // 结尾不能是 `-`；Bot 服务的别名是 `<服务名>-default`。带 `--` 的裸服务名别名可以和别的插件的容器名
     // 一样，抢走发给它的请求。
     if name.ends_with('-') || name.contains("--") {
-        return Err(PackageError::Service {
-            service: name.to_owned(),
-            message: "服务名不能以 - 结尾，也不能含 --".to_owned(),
-        });
+        return Err(service_error(
+            langs,
+            name,
+            text(langs, "plugin-install-pkg-service-name-dashes", &[]),
+        ));
     }
     Ok(())
 }
 
-fn check_service_keys(name: &str, service: &Value) -> Result<(), PackageError> {
-    let service_err = |message: String| PackageError::Service {
-        service: name.to_owned(),
-        message,
-    };
+fn check_service_keys(name: &str, service: &Value, langs: &Languages) -> Result<(), PackageError> {
+    let service_err = |message: String| service_error(langs, name, message);
     let Value::Object(map) = service else {
         return Err(service_err("服务定义必须是映射".to_owned()));
     };
     super::network_mode::validate_fields(name, map)?;
     for key in map.keys() {
-        if let Some((_, reason)) = FORBIDDEN_SERVICE_KEYS.iter().find(|(k, _)| k == key) {
+        if let Some(reason) = forbidden_service_key_reason(key, langs) {
             return Err(service_err(format!("不支持 `{key}`：{reason}")));
         }
     }
     match map.get("network_mode") {
         None => Ok(()),
-        Some(Value::String(mode)) => NetworkMode::try_from(mode.clone())
-            .map(|_| ())
-            .map_err(|reason| service_err(format!("不支持 network_mode `{mode}`：{reason}"))),
+        Some(Value::String(mode)) => match NetworkMode::try_from(mode.clone()) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(service_err(format!(
+                "不支持 network_mode `{mode}`：{}",
+                network_mode_refusal(mode, langs)
+            ))),
+        },
         Some(other) => Err(service_err(format!(
             "network_mode 必须是字符串，不能写 `{other}`"
         ))),
     }
 }
 
-fn parse_named_volumes(value: Option<Value>) -> Result<BTreeSet<String>, PackageError> {
+fn parse_named_volumes(
+    value: Option<Value>,
+    langs: &Languages,
+) -> Result<BTreeSet<String>, PackageError> {
     let Some(value) = value else {
         return Ok(BTreeSet::new());
     };
     let Value::Object(map) = value else {
-        return Err(PackageError::Volume("volumes".to_owned()));
+        return Err(PackageError::Volume(text(
+            langs,
+            "plugin-install-pkg-volume",
+            &[("name", "volumes".into())],
+        )));
     };
     map.into_iter()
         .map(|(name, mut definition)| {
@@ -735,29 +713,30 @@ fn parse_named_volumes(value: Option<Value>) -> Result<BTreeSet<String>, Package
             if empty && name_ok {
                 Ok(name)
             } else {
-                Err(PackageError::Volume(name))
+                Err(PackageError::Volume(text(
+                    langs,
+                    "plugin-install-pkg-volume",
+                    &[("name", name.as_str().into())],
+                )))
             }
         })
         .collect()
 }
 
 /// 顶层 `configs`：每项恰好有 `file`（插件包里的文件）或 `content`（内联内容）之一。
-fn parse_configs(value: Option<Value>) -> Result<BTreeMap<String, ConfigSource>, PackageError> {
+fn parse_configs(
+    value: Option<Value>,
+    langs: &Languages,
+) -> Result<BTreeMap<String, ConfigSource>, PackageError> {
     let Some(value) = value else {
         return Ok(BTreeMap::new());
     };
     let Value::Object(map) = value else {
-        return Err(PackageError::TopLevel {
-            key: "configs".to_owned(),
-            reason: "必须是映射".to_owned(),
-        });
+        return Err(top_level_error(langs, "configs", "必须是映射".to_owned()));
     };
     map.into_iter()
         .map(|(name, mut definition)| {
-            let config_err = |message: String| PackageError::Config {
-                name: name.clone(),
-                message,
-            };
+            let config_err = |message: String| config_error(langs, &name, message);
             let name_ok = name.starts_with(|c: char| c.is_ascii_alphanumeric())
                 && name
                     .bytes()
@@ -770,7 +749,7 @@ fn parse_configs(value: Option<Value>) -> Result<BTreeMap<String, ConfigSource>,
                 return Err(config_err("必须是映射，写明 file 或 content".to_owned()));
             };
             for key in fields.keys() {
-                if let Some((_, reason)) = FORBIDDEN_CONFIG_KEYS.iter().find(|(k, _)| k == key) {
+                if let Some(reason) = forbidden_config_key_reason(key, langs) {
                     return Err(config_err(format!("不支持 `{key}`：{reason}")));
                 }
                 if !matches!(key.as_str(), "file" | "content") {

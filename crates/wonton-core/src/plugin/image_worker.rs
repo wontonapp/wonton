@@ -16,6 +16,7 @@ use tokio::process::Command;
 use tokio::sync::Semaphore;
 
 use super::images::{self, Icon, IconFormat, Screenshot};
+use super::languages::Languages;
 
 /// 子命令（`wonton-core image …`），核心内部用。
 pub const COMMAND: &str = "image";
@@ -43,7 +44,7 @@ pub enum ImageError {
     #[error("{0}")]
     Refused(String),
     /// 核心这边起不了或用不了处理图片的进程，和图片无关。
-    #[error("处理图片的进程不可用：{0}")]
+    #[error("{0}")]
     Unavailable(String),
 }
 
@@ -93,19 +94,19 @@ impl Job {
         .find(|job| job.arg() == arg)
     }
 
-    fn run(self, input: &[u8]) -> Result<Vec<u8>, String> {
+    fn run(self, input: &[u8], langs: &Languages) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
         match self {
-            Self::Icon(format) => put_icon(&mut out, images::icon(format, input)?),
-            Self::TabIcon(format) => put_icon(&mut out, images::tab_icon(format, input)?),
+            Self::Icon(format) => put_icon(&mut out, images::icon(format, input, langs)?),
+            Self::TabIcon(format) => put_icon(&mut out, images::tab_icon(format, input, langs)?),
             Self::Screenshot => {
-                let shot = images::screenshot(input)?;
+                let shot = images::screenshot(input, langs)?;
                 put(&mut out, &shot.jpeg);
                 put(&mut out, &shot.width.to_le_bytes());
                 put(&mut out, &shot.height.to_le_bytes());
             }
-            Self::Thumbnail => put(&mut out, &images::thumbnail(input)?),
-            Self::Preview => put(&mut out, &images::preview(input)?),
+            Self::Thumbnail => put(&mut out, &images::thumbnail(input, langs)?),
+            Self::Preview => put(&mut out, &images::preview(input, langs)?),
         }
         Ok(out)
     }
@@ -119,18 +120,32 @@ fn put_icon(out: &mut Vec<u8>, icon: Icon) {
 
 /// 子进程的入口。退出码 0：处理好了，结果在标准输出；[`REFUSED`]：图片不合规格；[`BROKEN`]：别的问题。
 pub fn child(args: &[String]) -> ExitCode {
+    // 语言来自父进程的环境变量（见 [`ImageWorker::spawn`]）。
+    let langs = Languages::from_header(std::env::var("WONTON_LANG").ok().as_deref());
     let job = match args {
         [arg] => Job::parse(arg),
         _ => None,
     };
     let Some(job) = job else {
         eprintln!(
-            "用法：wonton-core {COMMAND} <icon.png|icon.svg|tab-icon.png|tab-icon.svg|screenshot|thumbnail|preview>（核心内部用）"
+            "{}",
+            crate::l10n::text(
+                &langs,
+                "plugin-install-img-worker-usage",
+                &[("command", COMMAND.into())],
+            )
         );
         return ExitCode::from(BROKEN);
     };
     if let Err(e) = limit_resources() {
-        eprintln!("设不了资源上限：{e}");
+        eprintln!(
+            "{}",
+            crate::l10n::text(
+                &langs,
+                "plugin-install-img-worker-rlimit",
+                &[("error", e.to_string().into())],
+            )
+        );
         return ExitCode::from(BROKEN);
     }
     let mut input = Vec::new();
@@ -138,10 +153,17 @@ pub fn child(args: &[String]) -> ExitCode {
         .take(job.input_limit())
         .read_to_end(&mut input)
     {
-        eprintln!("读标准输入失败：{e}");
+        eprintln!(
+            "{}",
+            crate::l10n::text(
+                &langs,
+                "plugin-install-img-worker-stdin",
+                &[("error", e.to_string().into())],
+            )
+        );
         return ExitCode::from(BROKEN);
     }
-    let output = match job.run(&input) {
+    let output = match job.run(&input, &langs) {
         Ok(output) => output,
         Err(reason) => {
             eprintln!("{reason}");
@@ -152,7 +174,14 @@ pub fn child(args: &[String]) -> ExitCode {
     match stdout.write_all(&output).and_then(|()| stdout.flush()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("写标准输出失败：{e}");
+            eprintln!(
+                "{}",
+                crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-stdout",
+                    &[("error", e.to_string().into())],
+                )
+            );
             ExitCode::from(BROKEN)
         }
     }
@@ -188,6 +217,8 @@ pub struct ImageWorker {
     program: Program,
     timeout: Duration,
     running: Semaphore,
+    /// 主人的语言文件（见契约）：给子进程和父进程这边的消息用。
+    owner_languages_path: Option<PathBuf>,
 }
 
 enum Program {
@@ -218,7 +249,22 @@ impl ImageWorker {
             program,
             timeout: TIMEOUT,
             running: Semaphore::new(MAX_RUNNING),
+            owner_languages_path: None,
         }
+    }
+
+    /// 主人的语言文件（`Store::owner_languages`），用来给子进程和这边的消息选语言。
+    pub fn set_owner_languages_path(&mut self, path: PathBuf) {
+        self.owner_languages_path = Some(path);
+    }
+
+    pub(super) fn owner_languages(&self) -> Languages {
+        Languages::from_header(
+            self.owner_languages_path
+                .as_deref()
+                .and_then(|path| super::store::read_json::<String>(path).ok().flatten())
+                .as_deref(),
+        )
     }
 
     /// 等一个子进程最多多久（默认 10 秒）。
@@ -229,33 +275,38 @@ impl ImageWorker {
 
     pub async fn icon(&self, format: IconFormat, data: &[u8]) -> Result<Icon, ImageError> {
         let output = self.run(Job::Icon(format), data).await?;
-        parse_icon(&output)
+        let langs = self.owner_languages();
+        parse_icon(&output, &langs)
     }
 
     pub async fn tab_icon(&self, format: IconFormat, data: &[u8]) -> Result<Icon, ImageError> {
         let output = self.run(Job::TabIcon(format), data).await?;
-        parse_icon(&output)
+        let langs = self.owner_languages();
+        parse_icon(&output, &langs)
     }
 
     pub async fn screenshot(&self, data: &[u8]) -> Result<Screenshot, ImageError> {
         let output = self.run(Job::Screenshot, data).await?;
+        let langs = self.owner_languages();
         let mut fields = Fields(&output);
         let shot = Screenshot {
-            jpeg: fields.bytes()?.to_vec(),
-            width: fields.number()?,
-            height: fields.number()?,
+            jpeg: fields.bytes(&langs)?.to_vec(),
+            width: fields.number(&langs)?,
+            height: fields.number(&langs)?,
         };
         Ok(shot)
     }
 
     pub async fn thumbnail(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
         let output = self.run(Job::Thumbnail, data).await?;
-        Ok(Fields(&output).bytes()?.to_vec())
+        let langs = self.owner_languages();
+        Ok(Fields(&output).bytes(&langs)?.to_vec())
     }
 
     pub async fn preview(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
         let output = self.run(Job::Preview, data).await?;
-        Ok(Fields(&output).bytes()?.to_vec())
+        let langs = self.owner_languages();
+        Ok(Fields(&output).bytes(&langs)?.to_vec())
     }
 
     async fn run(&self, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
@@ -269,7 +320,8 @@ impl ImageWorker {
             #[cfg(test)]
             Program::InProcess => {
                 let input = input.to_vec();
-                tokio::task::spawn_blocking(move || job.run(&input))
+                let langs = self.owner_languages();
+                tokio::task::spawn_blocking(move || job.run(&input, &langs))
                     .await
                     .expect("处理图片的线程没有崩溃")
                     .map_err(ImageError::Refused)
@@ -278,16 +330,33 @@ impl ImageWorker {
     }
 
     async fn spawn(&self, program: &Path, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let langs = self.owner_languages();
         let mut child = Command::new(program)
             .args([COMMAND, job.arg()])
             .env_clear()
+            .env("WONTON_LANG", owner_language_tag(&langs))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| {
-                ImageError::Unavailable(format!("启动 {} 失败：{e}", program.display()))
+                ImageError::Unavailable(crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-unavailable",
+                    &[(
+                        "error",
+                        crate::l10n::text(
+                            &langs,
+                            "plugin-install-img-worker-spawn-failed",
+                            &[
+                                ("program", program.display().to_string().into()),
+                                ("error", e.to_string().into()),
+                            ],
+                        )
+                        .into(),
+                    )],
+                ))
             })?;
         let (Some(mut stdin), Some(stdout), Some(stderr)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
@@ -313,29 +382,42 @@ impl ImageWorker {
         let status = match finished {
             Ok(Ok(status)) => status,
             Ok(Err(e)) => {
-                return Err(ImageError::Unavailable(format!("和子进程通信失败：{e}")));
+                return Err(ImageError::Unavailable(crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-unavailable",
+                    &[(
+                        "error",
+                        crate::l10n::text(
+                            &langs,
+                            "plugin-install-img-worker-communicate",
+                            &[("error", e.to_string().into())],
+                        )
+                        .into(),
+                    )],
+                )));
             }
             Err(_) => {
                 // kill 会等进程退出并回收，返回时子进程已经不在了。
                 if let Err(e) = child.kill().await {
                     tracing::warn!("结束处理图片的子进程失败：{e}");
                 }
-                return Err(ImageError::Refused(format!(
-                    "处理超过 {} 秒，已停止",
-                    self.timeout.as_secs_f32()
+                return Err(ImageError::Refused(crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-timeout",
+                    &[("seconds", self.timeout.as_secs_f32().into())],
                 )));
             }
         };
-        outcome(status, output, &String::from_utf8_lossy(&message))
+        outcome(status, output, &String::from_utf8_lossy(&message), &langs)
     }
 }
 
-fn parse_icon(output: &[u8]) -> Result<Icon, ImageError> {
+fn parse_icon(output: &[u8], langs: &Languages) -> Result<Icon, ImageError> {
     let mut fields = Fields(output);
     Ok(Icon {
-        small: fields.bytes()?.to_vec(),
-        large: fields.bytes()?.to_vec(),
-        transparent_corner: fields.bytes()? == [1],
+        small: fields.bytes(langs)?.to_vec(),
+        large: fields.bytes(langs)?.to_vec(),
+        transparent_corner: fields.bytes(langs)? == [1],
     })
 }
 
@@ -351,33 +433,51 @@ async fn read_capped(
 }
 
 /// 子进程的退出状态对应的结果。
-fn outcome(status: ExitStatus, output: Vec<u8>, stderr: &str) -> Result<Vec<u8>, ImageError> {
+fn outcome(
+    status: ExitStatus,
+    output: Vec<u8>,
+    stderr: &str,
+    langs: &Languages,
+) -> Result<Vec<u8>, ImageError> {
     let stderr = stderr.trim();
     if let Some(signal) = status.signal() {
-        return Err(ImageError::Refused(killed_by(signal, stderr)));
+        return Err(ImageError::Refused(killed_by(signal, stderr, langs)));
     }
     match status.code() {
         Some(0) => Ok(output),
         Some(code) if code == i32::from(REFUSED) => Err(ImageError::Refused(stderr.to_owned())),
         Some(code) if code == i32::from(BROKEN) => Err(ImageError::Unavailable(stderr.to_owned())),
         // panic 的退出码是 101。
-        code => Err(ImageError::Refused(format!(
-            "处理时崩溃（退出码 {}）",
-            code.unwrap_or_default()
+        code => Err(ImageError::Refused(crate::l10n::text(
+            langs,
+            "plugin-install-img-worker-crashed",
+            &[("code", code.unwrap_or_default().into())],
         ))),
     }
 }
 
-fn killed_by(signal: i32, stderr: &str) -> String {
+fn killed_by(signal: i32, stderr: &str, langs: &Languages) -> String {
     if signal == Signal::XCPU.as_raw() {
-        format!("处理超过 {CPU_SECONDS} 秒 CPU 时间，已停止")
+        crate::l10n::text(
+            langs,
+            "plugin-install-img-worker-cpu-timeout",
+            &[("seconds", CPU_SECONDS.into())],
+        )
     } else if stderr.contains("memory allocation of") {
         // Rust 分配内存失败时先打印这句再 abort。
-        format!("处理时要的内存超过 {} MiB", MEMORY_LIMIT >> 20)
+        crate::l10n::text(
+            langs,
+            "plugin-install-img-worker-memory-limit",
+            &[("mib", (MEMORY_LIMIT >> 20).into())],
+        )
     } else if signal == Signal::KILL.as_raw() {
-        "处理图片的进程被杀掉了（SIGKILL），多半是内存不够".to_owned()
+        crate::l10n::text(langs, "plugin-install-img-worker-killed", &[])
     } else {
-        format!("处理图片的进程被信号 {signal} 结束")
+        crate::l10n::text(
+            langs,
+            "plugin-install-img-worker-signal",
+            &[("signal", signal.into())],
+        )
     }
 }
 
@@ -391,26 +491,46 @@ fn put(out: &mut Vec<u8>, field: &[u8]) {
 struct Fields<'a>(&'a [u8]);
 
 impl<'a> Fields<'a> {
-    fn bytes(&mut self) -> Result<&'a [u8], ImageError> {
-        let (len, rest) = self.0.split_first_chunk::<4>().ok_or_else(malformed)?;
+    fn bytes(&mut self, langs: &Languages) -> Result<&'a [u8], ImageError> {
+        let (len, rest) = self
+            .0
+            .split_first_chunk::<4>()
+            .ok_or_else(|| malformed(langs))?;
         let len = u32::from_le_bytes(*len) as usize;
         if rest.len() < len {
-            return Err(malformed());
+            return Err(malformed(langs));
         }
         let (field, rest) = rest.split_at(len);
         self.0 = rest;
         Ok(field)
     }
 
-    fn number(&mut self) -> Result<u32, ImageError> {
-        let bytes: [u8; 4] = self.bytes()?.try_into().map_err(|_| malformed())?;
+    fn number(&mut self, langs: &Languages) -> Result<u32, ImageError> {
+        let bytes: [u8; 4] = self
+            .bytes(langs)?
+            .try_into()
+            .map_err(|_| malformed(langs))?;
         Ok(u32::from_le_bytes(bytes))
     }
 }
 
 /// 子进程说处理好了，输出却读不懂：多半是 `wonton-core` 的版本对不上。
-fn malformed() -> ImageError {
-    ImageError::Unavailable("处理图片的进程输出的格式不对".to_owned())
+fn malformed(langs: &Languages) -> ImageError {
+    ImageError::Unavailable(crate::l10n::text(
+        langs,
+        "plugin-install-img-worker-unavailable",
+        &[(
+            "error",
+            crate::l10n::text(langs, "plugin-install-img-worker-malformed", &[]).into(),
+        )],
+    ))
+}
+
+/// 子进程和子进程里的消息用哪个语言标签：按主人的语言从目录里协商。
+fn owner_language_tag(langs: &Languages) -> String {
+    let tags: Vec<&str> = crate::l10n::RESOURCES.iter().map(|(tag, _)| *tag).collect();
+    wonton_l10n::choose_language(langs.requested(), &tags)
+        .map_or("en".to_owned(), |index| tags[index].to_owned())
 }
 
 #[cfg(test)]

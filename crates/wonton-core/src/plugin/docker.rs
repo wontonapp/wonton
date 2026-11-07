@@ -8,8 +8,7 @@ use std::time::Duration;
 use bollard::Docker;
 use bollard::errors::Error as BollardError;
 use bollard::models::{
-    ContainerCreateBody, ContainerInspectResponse, EndpointSettings, HealthConfig,
-    NetworkConnectRequest, NetworkDisconnectRequest, VolumeCreateRequest,
+    ContainerCreateBody, ContainerInspectResponse, HealthConfig, VolumeCreateRequest,
 };
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
@@ -19,10 +18,12 @@ use bollard::query_parameters::{
     UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
+use wonton_l10n::Arg;
 
 use super::lan::Detector;
+use super::languages::Languages;
 use super::network_pool::NetworkPool;
-use super::sources::Subnet;
+use crate::l10n;
 use ipnet::Ipv4Net;
 
 /// 核心要求的 Docker Engine 最低主版本：28 起局域网里的其他主机不能再经路由直接访问容器里没发布的端口
@@ -40,37 +41,59 @@ pub(super) const GATEWAY_MODES: [&str; 2] = [
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
-    #[error("无法连接 Docker：{0}")]
+    #[error("{0}")]
     Unavailable(String),
     /// 连得上，但 Docker 没按时处理完。操作可能还在 Docker 里继续，结果不确定。
-    #[error("Docker 没有按时处理完（{0}），操作可能还在继续")]
+    #[error("{0}")]
     TimedOut(String),
     #[error("{0}")]
     Unsupported(String),
-    #[error("Docker 中不存在：{0}")]
+    #[error("{0}")]
     NotFound(String),
-    #[error("Docker 拒绝了请求（{context}）：{message}")]
+    /// `context` 是出错的场合，`message` 是拼好的整句（见 `from_bollard`）。
+    #[error("{message}")]
     Rejected { context: String, message: String },
     /// 镜像仓库连不上、镜像或标签不存在、没有权限等，`message` 是 Docker 的原话。
-    #[error("拉取镜像失败（{image}）：{message}")]
+    #[error("{message}")]
     Pull { image: String, message: String },
 }
 
-impl EngineError {
-    pub(super) fn from_bollard(context: &str, error: BollardError) -> Self {
-        match error {
-            BollardError::DockerResponseServerError {
-                status_code: 404,
-                message,
-            } => Self::NotFound(format!("{context}：{message}")),
-            BollardError::DockerResponseServerError { message, .. }
-            | BollardError::DockerStreamError { error: message } => Self::Rejected {
-                context: context.to_owned(),
-                message,
-            },
-            BollardError::RequestTimeoutError => Self::TimedOut(context.to_owned()),
-            other => Self::Unavailable(format!("{context}：{other}")),
+/// 把 bollard 的错误按场合拼成给用户看的整句。
+pub(super) fn from_bollard(langs: &Languages, context: &str, error: BollardError) -> EngineError {
+    match error {
+        BollardError::DockerResponseServerError {
+            status_code: 404,
+            message,
+        } => {
+            let what = format!("{context}：{message}");
+            EngineError::NotFound(l10n::text(
+                langs,
+                "plugin-install-docker-not-found",
+                &[("what", what.into())],
+            ))
         }
+        BollardError::DockerResponseServerError { message, .. }
+        | BollardError::DockerStreamError { error: message } => {
+            let error = l10n::text(
+                langs,
+                "plugin-install-docker-rejected",
+                &[("context", context.into()), ("error", message.into())],
+            );
+            EngineError::Rejected {
+                context: context.to_owned(),
+                message: error,
+            }
+        }
+        BollardError::RequestTimeoutError => EngineError::TimedOut(l10n::text(
+            langs,
+            "plugin-install-docker-timed-out",
+            &[("context", context.into())],
+        )),
+        other => EngineError::Unavailable(l10n::text(
+            langs,
+            "plugin-install-docker-unavailable",
+            &[("error", format!("{context}：{other}").into())],
+        )),
     }
 }
 
@@ -150,15 +173,24 @@ pub struct Engine {
     pub(super) held_subnets: Arc<std::sync::Mutex<Vec<Ipv4Net>>>,
     pub(super) network_pool: NetworkPool,
     pub(super) network_detector: Detector,
+    /// 主人的语言存放在哪（[`Self::set_owner_languages_path`]）；没接上时按默认语言写。
+    owner_languages_path: Option<std::path::PathBuf>,
 }
 
 type Result<T> = std::result::Result<T, EngineError>;
 
+mod networks;
+
 impl Engine {
     /// 按 `DOCKER_HOST` 连接，未设置时使用本机 socket。
     pub fn connect() -> Result<Self> {
-        let docker =
-            Docker::connect_with_defaults().map_err(|e| EngineError::Unavailable(e.to_string()))?;
+        let docker = Docker::connect_with_defaults().map_err(|e| {
+            EngineError::Unavailable(l10n::text(
+                &Languages::default(),
+                "plugin-install-docker-unavailable",
+                &[("error", e.to_string().into())],
+            ))
+        })?;
         Ok(Self::new(docker))
     }
 
@@ -170,7 +202,54 @@ impl Engine {
             held_subnets: Arc::default(),
             network_pool: NetworkPool::default(),
             network_detector: Detector::Here,
+            owner_languages_path: None,
         }
+    }
+
+    /// 主人语言文件的路径：读不到时按默认语言写（接线由核心启动时做）。
+    pub fn set_owner_languages_path(&mut self, path: std::path::PathBuf) {
+        self.owner_languages_path = Some(path);
+    }
+
+    pub(super) fn owner_languages(&self) -> Languages {
+        let header = self
+            .owner_languages_path
+            .as_deref()
+            .and_then(|path| super::store::read_json::<String>(path).ok().flatten());
+        Languages::from_header(header.as_deref())
+    }
+
+    fn fail(&self, id: &str, args: &[(&str, Arg<'_>)], error: BollardError) -> EngineError {
+        let langs = self.owner_languages();
+        from_bollard(&langs, &l10n::text(&langs, id, args), error)
+    }
+
+    fn fail_name(&self, id: &str, name: &str, error: BollardError) -> EngineError {
+        self.fail(id, &[("name", name.into())], error)
+    }
+
+    fn fail_network(
+        &self,
+        id: &str,
+        container: &str,
+        network: &str,
+        error: BollardError,
+    ) -> EngineError {
+        self.fail(
+            id,
+            &[("container", container.into()), ("network", network.into())],
+            error,
+        )
+    }
+
+    fn net_context(&self, name: &str) -> (Languages, String) {
+        let langs = self.owner_languages();
+        let context = l10n::text(
+            &langs,
+            "plugin-install-docker-context-network",
+            &[("name", name.into())],
+        );
+        (langs, context)
     }
 
     /// Docker 可能处理很久的请求用这个客户端，见 [`SLOW_REQUEST`]。
@@ -214,7 +293,7 @@ impl Engine {
             .docker
             .version()
             .await
-            .map_err(|e| EngineError::from_bollard("查询版本", e))?;
+            .map_err(|e| self.fail("plugin-install-docker-context-version", &[], e))?;
         Ok(ServerInfo {
             version: version.version.unwrap_or_default(),
             arch: version.arch.unwrap_or_default(),
@@ -231,7 +310,7 @@ impl Engine {
             .docker
             .info()
             .await
-            .map_err(|e| EngineError::from_bollard("查询 Docker 信息", e))?;
+            .map_err(|e| self.fail("plugin-install-docker-context-host-info", &[], e))?;
         let mut runtimes: Vec<String> = info.runtimes.unwrap_or_default().into_keys().collect();
         runtimes.sort();
         Ok(HostInfo {
@@ -252,173 +331,20 @@ impl Engine {
     /// 插件网络的隔离靠的是新版的行为。
     pub async fn check_server(&self) -> Result<ServerInfo> {
         let info = self.server().await?;
-        check_engine_version(&info.version)?;
+        check_engine_version(&self.owner_languages(), &info.version)?;
         Ok(info)
     }
 
     /// 镜像自带的 `HEALTHCHECK`；没有时为空。镜像要先拉下来（[`Self::ensure_image`]）。
     pub async fn image_healthcheck(&self, image: &str) -> Result<Option<HealthConfig>> {
-        let inspect = self
-            .docker
-            .inspect_image(image)
-            .await
-            .map_err(|e| EngineError::from_bollard(&format!("检查镜像 {image}"), e))?;
+        let inspect = self.docker.inspect_image(image).await.map_err(|e| {
+            self.fail(
+                "plugin-install-docker-context-image-healthcheck",
+                &[("image", image.into())],
+                e,
+            )
+        })?;
         Ok(inspect.config.and_then(|config| config.healthcheck))
-    }
-
-    /// 查询网络的标签；网络不存在时返回 `None`。
-    pub async fn network_labels(&self, name: &str) -> Result<Option<HashMap<String, String>>> {
-        match self.docker.inspect_network(name, None).await {
-            Ok(network) => Ok(Some(network.labels.unwrap_or_default())),
-            Err(e) => match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
-                EngineError::NotFound(_) => Ok(None),
-                other => Err(other),
-            },
-        }
-    }
-
-    /// 接在网络上的容器的名字；网络不存在时为空。容器停着时不算，和 Docker 删网络时的判断一样。
-    pub async fn network_endpoints(&self, name: &str) -> Result<Vec<String>> {
-        let network = match self.docker.inspect_network(name, None).await {
-            Ok(network) => network,
-            Err(e) => {
-                return match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
-                    EngineError::NotFound(_) => Ok(Vec::new()),
-                    other => Err(other),
-                };
-            }
-        };
-        let endpoints = network.containers.unwrap_or_default().into_values();
-        Ok(endpoints.filter_map(|endpoint| endpoint.name).collect())
-    }
-
-    /// 网络能连到哪里；网络不存在时返回 `None`。
-    pub async fn network_reach(&self, name: &str) -> Result<Option<NetworkReach>> {
-        let network = match self.docker.inspect_network(name, None).await {
-            Ok(network) => network,
-            Err(e) => {
-                return match EngineError::from_bollard(&format!("查询网络 {name}"), e) {
-                    EngineError::NotFound(_) => Ok(None),
-                    other => Err(other),
-                };
-            }
-        };
-        let isolated = network
-            .options
-            .as_ref()
-            .and_then(|o| o.get(GATEWAY_MODES[0]))
-            .is_some_and(|mode| mode == "isolated");
-        Ok(Some(match (network.internal.unwrap_or(false), isolated) {
-            (false, _) => NetworkReach::Egress,
-            (true, false) => NetworkReach::Internal,
-            (true, true) => NetworkReach::Isolated,
-        }))
-    }
-
-    /// 网络在宿主上的 IPv4 网关（网桥的地址）。
-    pub async fn network_gateway(&self, name: &str) -> Result<String> {
-        let context = format!("查询网络 {name}");
-        let network = self
-            .docker
-            .inspect_network(name, None)
-            .await
-            .map_err(|e| EngineError::from_bollard(&context, e))?;
-        let configs = network
-            .ipam
-            .and_then(|ipam| ipam.config)
-            .unwrap_or_default();
-        configs
-            .into_iter()
-            .filter_map(|config| config.gateway)
-            .find(|gateway| gateway.parse::<std::net::Ipv4Addr>().is_ok())
-            .ok_or_else(|| EngineError::Rejected {
-                context,
-                message: "网络没有 IPv4 网关".to_owned(),
-            })
-    }
-
-    /// 网络的地址段（IPAM 配置里的 `Subnet`），不含网桥自己的地址（`Gateway`）。
-    pub async fn network_subnets(&self, name: &str) -> Result<Vec<Subnet>> {
-        let context = format!("查询网络 {name}");
-        let network = self
-            .docker
-            .inspect_network(name, None)
-            .await
-            .map_err(|e| EngineError::from_bollard(&context, e))?;
-        let subnets: Vec<Subnet> = network
-            .ipam
-            .and_then(|ipam| ipam.config)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|config| {
-                let gateway = config.gateway.and_then(|g| g.parse().ok());
-                Some(Subnet::parse(&config.subnet?)?.excluding(gateway))
-            })
-            .collect();
-        if subnets.is_empty() {
-            return Err(EngineError::Rejected {
-                context,
-                message: "网络没有地址段".to_owned(),
-            });
-        }
-        Ok(subnets)
-    }
-
-    /// 删除网络；不存在视为成功。
-    pub async fn remove_network(&self, name: &str) -> Result<()> {
-        ignore_missing(
-            self.patient()
-                .remove_network(name)
-                .await
-                .map_err(|e| EngineError::from_bollard(&format!("删除网络 {name}"), e)),
-        )
-    }
-
-    /// 以低于默认的网关优先级接入：容器接了几个网络时，Docker 让优先级最高的端点提供默认路由和发布的端口，
-    /// 一样高时取网络名按字典序排第一的。插件网络 `wonton-<slug>` 排在核心自己的 `wonton_core` 前面（`-` 小于 `_`），
-    /// 不压低的话，装了能出网的插件，核心的默认路由和发布端口就到了插件网络上；卸载插件、核心退出它的网络时，
-    /// 经发布端口的连接全部断开（#90）。`gw_priority` 是 Engine 28（API 1.48）加的，见 [`MIN_ENGINE_MAJOR`]。
-    pub async fn connect_network(
-        &self,
-        network: &str,
-        container: &str,
-        aliases: Vec<String>,
-    ) -> Result<()> {
-        let request = NetworkConnectRequest {
-            container: container.to_owned(),
-            endpoint_config: Some(EndpointSettings {
-                aliases: Some(aliases),
-                gw_priority: Some(-1),
-                ..Default::default()
-            }),
-        };
-        self.docker
-            .connect_network(network, request)
-            .await
-            .map_err(|e| {
-                EngineError::from_bollard(&format!("把 {container} 接入网络 {network}"), e)
-            })
-    }
-
-    /// 把容器移出网络；网络或连接不存在视为成功。
-    pub async fn disconnect_network(&self, network: &str, container: &str) -> Result<()> {
-        let request = NetworkDisconnectRequest {
-            container: container.to_owned(),
-            force: Some(true),
-        };
-        let result = self
-            .docker
-            .disconnect_network(network, request)
-            .await
-            .map_err(|e| {
-                EngineError::from_bollard(&format!("把 {container} 移出网络 {network}"), e)
-            });
-        match result {
-            Err(EngineError::Rejected { message, .. }) if message.contains("is not connected") => {
-                Ok(())
-            }
-            other => ignore_missing(other),
-        }
     }
 
     pub async fn create_volume(&self, name: &str, labels: &HashMap<String, String>) -> Result<()> {
@@ -431,14 +357,18 @@ impl Engine {
             .create_volume(request)
             .await
             .map(|_| ())
-            .map_err(|e| EngineError::from_bollard(&format!("创建卷 {name}"), e))
+            .map_err(|e| self.fail_name("plugin-install-docker-context-create-volume", name, e))
     }
 
     /// 查询卷的标签；卷不存在时返回 `None`。
     pub async fn volume_labels(&self, name: &str) -> Result<Option<HashMap<String, String>>> {
         match self.docker.inspect_volume(name).await {
             Ok(volume) => Ok(Some(volume.labels)),
-            Err(e) => match EngineError::from_bollard(&format!("查询卷 {name}"), e) {
+            Err(e) => match self.fail(
+                "plugin-install-docker-context-volume-labels",
+                &[("name", name.into())],
+                e,
+            ) {
                 EngineError::NotFound(_) => Ok(None),
                 other => Err(other),
             },
@@ -451,7 +381,9 @@ impl Engine {
             self.patient()
                 .remove_volume(name, Some(options))
                 .await
-                .map_err(|e| EngineError::from_bollard(&format!("删除卷 {name}"), e)),
+                .map_err(|e| {
+                    self.fail_name("plugin-install-docker-context-remove-volume", name, e)
+                }),
         )
     }
 
@@ -461,7 +393,9 @@ impl Engine {
             .docker
             .create_container(Some(options), body)
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("创建容器 {name}"), e))?;
+            .map_err(|e| {
+                self.fail_name("plugin-install-docker-context-create-container", name, e)
+            })?;
         for warning in response.warnings {
             tracing::warn!(container = name, warning = %warning, "Docker 创建容器时给出警告");
         }
@@ -483,7 +417,13 @@ impl Engine {
         self.docker
             .upload_to_container(container, Some(options), bollard::body_full(archive.into()))
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("往容器 {container} 写入文件"), e))
+            .map_err(|e| {
+                self.fail(
+                    "plugin-install-docker-context-upload-archive",
+                    &[("container", container.into())],
+                    e,
+                )
+            })
     }
 
     /// 经归档接口读容器里的一个普通文件，最多 `max` 字节。路径由 Docker 在容器里解析，最后一级是软链接时
@@ -494,10 +434,20 @@ impl Engine {
         path: &str,
         max: usize,
     ) -> Result<ContainerFile> {
+        let langs = self.owner_languages();
         if self.inspect_container(container).await?.is_none() {
-            return Err(EngineError::NotFound(format!("容器 {container}")));
+            let missing = l10n::text(
+                &langs,
+                "plugin-install-docker-context-container-missing",
+                &[("container", container.into())],
+            );
+            return Err(EngineError::NotFound(missing));
         }
-        let context = format!("读取容器 {container} 里的 {path}");
+        let context = l10n::text(
+            &langs,
+            "plugin-install-docker-context-read-file",
+            &[("container", container.into()), ("path", path.into())],
+        );
         let options = DownloadFromContainerOptionsBuilder::default()
             .path(path)
             .build();
@@ -506,7 +456,7 @@ impl Engine {
             .download_from_container(container, Some(options));
         let mut archive = Vec::new();
         while let Some(chunk) = stream.next().await {
-            match chunk.map_err(|e| EngineError::from_bollard(&context, e)) {
+            match chunk.map_err(|e| from_bollard(&langs, &context, e)) {
                 Ok(bytes) => archive.extend_from_slice(&bytes),
                 Err(EngineError::NotFound(_)) => return Ok(ContainerFile::Missing),
                 Err(other) => return Err(other),
@@ -517,7 +467,11 @@ impl Engine {
         }
         single_file(&archive, max).map_err(|e| EngineError::Rejected {
             context,
-            message: format!("归档无法解析：{e}"),
+            message: l10n::text(
+                &langs,
+                "plugin-install-docker-archive-unparseable",
+                &[("error", e.to_string().into())],
+            ),
         })
     }
 
@@ -525,7 +479,7 @@ impl Engine {
         self.docker
             .start_container(name, None)
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("启动容器 {name}"), e))
+            .map_err(|e| self.fail_name("plugin-install-docker-context-start-container", name, e))
     }
 
     /// 给容器发信号（如 `SIGUSR1`）；返回错误时信号可能已经发出，调用方不要盲目重试。
@@ -536,7 +490,13 @@ impl Engine {
         self.docker
             .kill_container(name, Some(options))
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("给容器 {name} 发 {signal}"), e))
+            .map_err(|e| {
+                self.fail(
+                    "plugin-install-docker-context-kill-container",
+                    &[("name", name.into()), ("signal", signal.into())],
+                    e,
+                )
+            })
     }
 
     /// 重启容器：先按 `timeout` 秒优雅停止（超时强杀），再启动。
@@ -547,17 +507,19 @@ impl Engine {
         self.patient()
             .restart_container(name, Some(options))
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("重启容器 {name}"), e))
+            .map_err(|e| self.fail_name("plugin-install-docker-context-restart-container", name, e))
     }
 
     /// 查询容器；不存在时返回 `None`。
     pub async fn inspect_container(&self, name: &str) -> Result<Option<ContainerInspectResponse>> {
         match self.docker.inspect_container(name, None).await {
             Ok(info) => Ok(Some(info)),
-            Err(e) => match EngineError::from_bollard(&format!("查询容器 {name}"), e) {
-                EngineError::NotFound(_) => Ok(None),
-                other => Err(other),
-            },
+            Err(e) => {
+                match self.fail_name("plugin-install-docker-context-inspect-container", name, e) {
+                    EngineError::NotFound(_) => Ok(None),
+                    other => Err(other),
+                }
+            }
         }
     }
 
@@ -568,7 +530,7 @@ impl Engine {
         let stopped = docker
             .stop_container(name, Some(stop))
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("停止容器 {name}"), e));
+            .map_err(|e| self.fail_name("plugin-install-docker-context-stop-container", name, e));
         match stopped {
             Ok(()) | Err(EngineError::NotFound(_)) | Err(EngineError::Rejected { .. }) => {}
             Err(other) => return Err(other),
@@ -581,7 +543,9 @@ impl Engine {
             docker
                 .remove_container(name, Some(options))
                 .await
-                .map_err(|e| EngineError::from_bollard(&format!("删除容器 {name}"), e)),
+                .map_err(|e| {
+                    self.fail_name("plugin-install-docker-context-remove-container", name, e)
+                }),
         )
     }
 
@@ -620,7 +584,7 @@ impl Engine {
                     .build(),
             ))
             .await
-            .map_err(|e| EngineError::from_bollard("列出容器", e))?
+            .map_err(|e| self.fail("plugin-install-docker-context-list-containers", &[], e))?
             .into_iter()
             .filter(|c| kept(c.labels.as_ref()))
             .filter_map(|c| {
@@ -636,7 +600,7 @@ impl Engine {
                     .build(),
             ))
             .await
-            .map_err(|e| EngineError::from_bollard("列出网络", e))?
+            .map_err(|e| self.fail("plugin-install-docker-context-list-networks", &[], e))?
             .into_iter()
             .filter(|n| kept(n.labels.as_ref()))
             .filter_map(|n| n.name)
@@ -649,7 +613,7 @@ impl Engine {
                     .build(),
             ))
             .await
-            .map_err(|e| EngineError::from_bollard("列出卷", e))?
+            .map_err(|e| self.fail("plugin-install-docker-context-list-volumes", &[], e))?
             .volumes
             .unwrap_or_default()
             .into_iter()
@@ -685,19 +649,25 @@ fn single_file(archive: &[u8], max: usize) -> std::io::Result<ContainerFile> {
     Ok(ContainerFile::Regular(data))
 }
 
-fn check_engine_version(version: &str) -> Result<()> {
+fn check_engine_version(langs: &Languages, version: &str) -> Result<()> {
     let major = version
         .split('.')
         .next()
         .and_then(|m| m.parse::<u32>().ok());
     match major {
         Some(major) if major >= MIN_ENGINE_MAJOR => Ok(()),
-        Some(_) => Err(EngineError::Unsupported(format!(
-            "Docker Engine {version} 太旧，核心要求 {MIN_ENGINE_MAJOR} 及以上：28 起局域网里的其他主机不能再直接访问\
-             容器里没发布的端口，插件网络也才能和宿主完全隔开。请升级 Docker"
+        Some(_) => Err(EngineError::Unsupported(l10n::text(
+            langs,
+            "plugin-install-docker-engine-too-old",
+            &[
+                ("version", version.into()),
+                ("min", MIN_ENGINE_MAJOR.into()),
+            ],
         ))),
-        None => Err(EngineError::Unsupported(format!(
-            "无法识别 Docker Engine 的版本 `{version}`"
+        None => Err(EngineError::Unsupported(l10n::text(
+            langs,
+            "plugin-install-docker-engine-version-unrecognized",
+            &[("version", version.into())],
         ))),
     }
 }
@@ -712,16 +682,23 @@ fn ignore_missing(result: Result<()>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{ContainerFile, EngineError, check_engine_version, single_file};
+    use crate::plugin::languages::Languages;
     use crate::plugin::registry_mirror::reference::pull_reference;
 
     #[test]
     fn engines_older_than_28_are_refused() {
         for good in ["28.0.0", "28.5.1", "29.8.2", "30.0.0-rc.1"] {
-            assert!(check_engine_version(good).is_ok(), "{good}");
+            assert!(
+                check_engine_version(&Languages::default(), good).is_ok(),
+                "{good}"
+            );
         }
         for bad in ["27.5.1", "20.10.24", "", "dev"] {
             assert!(
-                matches!(check_engine_version(bad), Err(EngineError::Unsupported(_))),
+                matches!(
+                    check_engine_version(&Languages::default(), bad),
+                    Err(EngineError::Unsupported(_))
+                ),
                 "{bad}"
             );
         }

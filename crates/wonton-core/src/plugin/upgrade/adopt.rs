@@ -39,7 +39,7 @@ impl PluginManager {
         let Some(entry) = plugins.get_mut(id) else {
             return Ok(false);
         };
-        if busy(id, &entry.status).is_some() {
+        if busy(id, &entry.status, &self.owner_languages()).is_some() {
             return Ok(false);
         }
         let Some(mut record) = self.store.load(id)? else {

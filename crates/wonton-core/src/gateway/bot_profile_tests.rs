@@ -15,6 +15,7 @@ use super::{Gateway, TunnelPeer, router};
 use crate::http::HttpClient;
 use crate::plugin::PluginId;
 use crate::plugin::bot_profile::tests::Bed;
+use crate::plugin::languages::Languages;
 use crate::tunnel::TunnelEntry;
 
 struct Home {
@@ -231,7 +232,11 @@ async fn rejected_names_media_missing_bot_and_matrix_have_distinct_errors() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"]["kind"], "not_found");
     h.bed.manager.register_for_test(
-        crate::plugin::PluginPackage::manifest_of(super::tests::WHOAMI).unwrap(),
+        crate::plugin::PluginPackage::manifest_of(
+            super::tests::WHOAMI,
+            &Languages::from_header(Some("zh-Hans")),
+        )
+        .unwrap(),
         crate::plugin::PluginStatus::Running,
         None,
     );

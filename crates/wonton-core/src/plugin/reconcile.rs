@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use super::docker::NetworkReach;
 use super::health::{self, Checked};
+use super::languages::Languages;
 use super::lifecycle::client_spec;
 use super::manager::{Deployed, Health, InstallError, PluginManager};
 use super::manifest::Manifest;
@@ -11,6 +12,7 @@ use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
+use crate::l10n;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ContainersState {
@@ -28,21 +30,26 @@ impl PluginManager {
     ) -> Result<Option<Deployed>, InstallError> {
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
+        let langs = self.owner_languages();
         let network = self.cfg.instance.network(&slug);
         let expected = self.network_reach(manifest);
         let actual = self.engine.network_reach(&network).await?;
         if actual != Some(expected) {
-            return Err(InstallError::Conflict(format!(
-                "插件网络 {network} {}，按清单和核心的运行方式应该{}：重装插件（可以不删数据）后生效",
-                describe_reach(actual),
-                describe_reach(Some(expected))
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-install-network-mismatch",
+                &[
+                    ("network", network.into()),
+                    ("actual", describe_reach(actual, &langs).into()),
+                    ("expected", describe_reach(Some(expected), &langs).into()),
+                ],
             )));
         }
         // 先接核心再看容器：靠核心的内部别名才起得来的插件，核心不接回去就一直崩，先看容器的话两边互相等。
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
-        let health = match self.check_containers(package).await? {
+        let health = match self.check_containers(package, &langs).await? {
             ContainersState::Running(health) => health,
             ContainersState::Stopped => return Ok(None),
         };
@@ -51,12 +58,13 @@ impl PluginManager {
         let secrets = self.check_secrets(manifest).await?;
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
-        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
+        let proxy =
+            ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
             let ctx = self
-                .install_context(manifest, Some(secret), generated)
+                .install_context(manifest, Some(secret), generated, &langs)
                 .await?;
-            self.hydra()?
+            self.hydra(&langs)?
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
         }
@@ -77,7 +85,11 @@ impl PluginManager {
     ) -> Result<Deployed, InstallError> {
         match self.reconcile(package, record).await? {
             Some(deployed) => Ok(deployed),
-            None => Err(InstallError::Unhealthy("插件的常驻服务已停止".to_owned())),
+            None => Err(InstallError::Unhealthy(l10n::text(
+                &self.owner_languages(),
+                "plugin-install-resident-stopped",
+                &[],
+            ))),
         }
     }
 
@@ -85,6 +97,7 @@ impl PluginManager {
     pub(super) async fn check_containers(
         &self,
         package: &PluginPackage,
+        langs: &Languages,
     ) -> Result<ContainersState, InstallError> {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
@@ -93,8 +106,14 @@ impl PluginManager {
         let mut stopped = None;
         for service in package.service_names() {
             let name = self.cfg.instance.container(&slug, service);
-            match health::check_now(&self.engine, &name, service, one_shot.contains(service))
-                .await?
+            match health::check_now(
+                &self.engine,
+                &name,
+                service,
+                one_shot.contains(service),
+                langs,
+            )
+            .await?
             {
                 Checked::Completed => {}
                 Checked::Healthy => running += 1,
@@ -110,8 +129,10 @@ impl PluginManager {
             return if running == 0 {
                 Ok(ContainersState::Stopped)
             } else {
-                Err(InstallError::Unhealthy(format!(
-                    "部分常驻服务仍在运行，容器 {container} 已停止"
+                Err(InstallError::Unhealthy(l10n::text(
+                    &self.owner_languages(),
+                    "plugin-install-resident-partial",
+                    &[("container", container.into())],
                 )))
             };
         }
@@ -138,11 +159,11 @@ impl PluginManager {
     }
 }
 
-fn describe_reach(reach: Option<NetworkReach>) -> &'static str {
+fn describe_reach(reach: Option<NetworkReach>, langs: &Languages) -> String {
     match reach {
-        None => "不存在",
-        Some(NetworkReach::Egress) => "能出网",
-        Some(NetworkReach::Internal) => "不能出网",
-        Some(NetworkReach::Isolated) => "不能出网、和宿主隔开",
+        None => l10n::text(langs, "plugin-install-reach-none", &[]),
+        Some(NetworkReach::Egress) => l10n::text(langs, "plugin-install-reach-egress", &[]),
+        Some(NetworkReach::Internal) => l10n::text(langs, "plugin-install-reach-internal", &[]),
+        Some(NetworkReach::Isolated) => l10n::text(langs, "plugin-install-reach-isolated", &[]),
     }
 }

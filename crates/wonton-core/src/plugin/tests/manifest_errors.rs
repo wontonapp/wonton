@@ -10,7 +10,7 @@ fn compose(services: &str, manifest: &str) -> String {
 }
 
 fn parse_err(manifest: &str) -> String {
-    PluginPackage::parse(&compose(WEB, manifest))
+    PluginPackage::parse(&compose(WEB, manifest), &super::langs())
         .expect_err("清单应不合法")
         .to_string()
 }

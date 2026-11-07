@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView, detached};
 use super::manifest::{Permission, PluginKind};
 use super::package::PluginPackage;
+use crate::l10n;
 
 impl PluginManager {
     /// 安装只有 compose 文本的插件包，见 [`Self::install_package`]。
@@ -12,8 +14,9 @@ impl PluginManager {
         &self,
         source: &str,
         granted: &[Permission],
+        langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_package(PluginPackage::parse(source)?, granted)
+        self.install_package(PluginPackage::parse(source, &langs)?, granted, langs)
             .await
     }
 
@@ -22,8 +25,9 @@ impl PluginManager {
         &self,
         package: PluginPackage,
         granted: &[Permission],
+        langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_user(package, granted, false).await
+        self.install_user(package, granted, false, langs).await
     }
 
     /// `lan_webui`：主人看过风险后打开了开关。系统插件只能由安装器预装（见 [`super::system`]）。
@@ -32,13 +36,17 @@ impl PluginManager {
         package: PluginPackage,
         granted: &[Permission],
         lan_webui: bool,
+        langs: Languages,
     ) -> Result<PluginView, InstallError> {
         if package.manifest.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(
-                "system 插件只能由安装器预装".to_owned(),
-            ));
+            return Err(InstallError::Unsupported(l10n::text(
+                &langs,
+                "install-system-preinstalled",
+                &[],
+            )));
         }
-        self.install_checked(package, granted, lan_webui).await
+        self.install_checked(package, granted, lan_webui, &langs)
+            .await
     }
 
     /// 同 [`Self::install_user`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里安装。
@@ -47,8 +55,9 @@ impl PluginManager {
         package: PluginPackage,
         granted: Vec<Permission>,
         lan_webui: bool,
+        langs: Languages,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
-        detached(async move { this.install_user(package, &granted, lan_webui).await }).await
+        detached(async move { this.install_user(package, &granted, lan_webui, langs).await }).await
     }
 }

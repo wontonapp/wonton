@@ -5,6 +5,7 @@ use hyper::{Method, StatusCode};
 use serde_json::json;
 
 use super::tests::{CORE, Harness};
+use crate::plugin::languages::Languages;
 use crate::plugin::models::ModelsRoute;
 use crate::plugin::names::container_name;
 use crate::plugin::storefront::StoreConfig;
@@ -26,7 +27,9 @@ fn gateway(harness: Harness) -> Harness {
     harness
         .docker
         .add_container(&container_name("system-models", "magpie"), "system.models");
-    let manifest = PluginPackage::parse(PROVIDER).unwrap().manifest;
+    let manifest = PluginPackage::parse(PROVIDER, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     let route = ModelsRoute {
         id: manifest.id.clone(),
         spec: manifest.provides.clone().unwrap().models.unwrap(),
@@ -257,7 +260,9 @@ async fn malformed_or_failed_list_does_not_expose_gateway_output() {
 #[tokio::test]
 async fn gateway_not_running_is_models_unavailable() {
     let harness = Harness::start(None).await;
-    let manifest = PluginPackage::parse(PROVIDER).unwrap().manifest;
+    let manifest = PluginPackage::parse(PROVIDER, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     harness.manager.register_for_test(
         manifest,
         PluginStatus::Degraded {
@@ -279,9 +284,12 @@ async fn gateway_not_running_is_models_unavailable() {
 #[tokio::test]
 async fn gateway_without_provider_commands_returns_web_url() {
     let harness = Harness::start(None).await;
-    let manifest = PluginPackage::parse(PROVIDER_WITHOUT_COMMANDS)
-        .unwrap()
-        .manifest;
+    let manifest = PluginPackage::parse(
+        PROVIDER_WITHOUT_COMMANDS,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap()
+    .manifest;
     let route = ModelsRoute {
         id: manifest.id.clone(),
         spec: manifest.provides.clone().unwrap().models.unwrap(),
@@ -457,7 +465,9 @@ async fn provider_writes_require_owner_and_same_origin_and_limit_body() {
 #[tokio::test]
 async fn custom_without_capability_is_unavailable_and_does_not_execute() {
     let harness = running_gateway().await;
-    let mut manifest = PluginPackage::parse(PROVIDER).unwrap().manifest;
+    let mut manifest = PluginPackage::parse(PROVIDER, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     manifest
         .provides
         .as_mut()

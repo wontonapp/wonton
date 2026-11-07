@@ -52,7 +52,8 @@ async fn online() -> Online {
 /// 官方索引只收录 `acme/hello` 在 `commit` 上的 `version` 版。
 fn publish_index(github: &FakeGitHub, version: &str, commit: &str) {
     let files = [("icon.svg".to_owned(), ICON.as_bytes().to_vec())].into();
-    let package = PluginPackage::with_files(&compose(version, "nginx"), files).unwrap();
+    let package =
+        PluginPackage::with_files(&compose(version, "nginx"), files, &super::langs()).unwrap();
     let entry = IndexEntry::of(&package, "github:acme/hello", commit).unwrap();
     let dir = tempfile::tempdir().unwrap();
     entry.write_to(dir.path(), &package).unwrap();

@@ -229,7 +229,7 @@ pub async fn preview(
                 .preview_source(&request.source, &langs)
                 .await
         }
-        None => match package(&headers, &body) {
+        None => match package(&langs, &headers, &body) {
             Ok(package) => gateway.plugins.preview_upload(package, &langs).await,
             Err(e) => return install_error(&e),
         },
@@ -259,10 +259,14 @@ pub async fn install(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
+    let langs = languages(&headers);
+    gateway
+        .plugins
+        .note_owner_languages(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()));
     let installed = match json_body::<InstallRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.install_source(&request).await,
-        None => install_upload(&gateway, &headers, &query, &body).await,
+        None => install_upload(&gateway, &langs, &headers, &query, &body).await,
     };
     let id = match installed {
         Ok(view) => view.id,
@@ -278,15 +282,16 @@ pub async fn install(
 /// 上传的插件包，`?grant=` 是主人确认的权限。
 async fn install_upload(
     gateway: &Arc<Gateway>,
+    langs: &Languages,
     headers: &HeaderMap,
     query: &InstallQuery,
     body: &[u8],
 ) -> Result<PluginView, InstallError> {
     let granted = granted(query)?;
-    let package = package(headers, body)?;
+    let package = package(langs, headers, body)?;
     gateway
         .plugins
-        .install_detached(package, granted, query.lan_webui)
+        .install_detached(package, granted, query.lan_webui, langs.clone())
         .await
 }
 
@@ -329,7 +334,7 @@ pub async fn preview_upgrade(
         })) => UpgradeTo::Source(source),
         Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
         None if body.is_empty() => UpgradeTo::Offered,
-        None => match package(&headers, &body) {
+        None => match package(&languages(&headers), &headers, &body) {
             Ok(package) => UpgradeTo::Upload(Box::new(package)),
             Err(e) => return install_error(&e),
         },
@@ -364,7 +369,9 @@ pub async fn upgrade(
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request).await,
-        None => match granted(&query).and_then(|grant| Ok((grant, package(&headers, &body)?))) {
+        None => match granted(&query)
+            .and_then(|grant| Ok((grant, package(&languages(&headers), &headers, &body)?)))
+        {
             Ok((grant, package)) => {
                 let plugins = &gateway.plugins;
                 plugins
@@ -507,7 +514,15 @@ pub async fn uninstall(
         Ok(id) => id,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
-    match gateway.plugins.uninstall_detached(id, query.purge).await {
+    let langs = languages(&headers);
+    gateway
+        .plugins
+        .note_owner_languages(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()));
+    match gateway
+        .plugins
+        .uninstall_detached(id, query.purge, langs)
+        .await
+    {
         Ok(report) => Json(report).into_response(),
         Err(e) => install_error(&e),
     }

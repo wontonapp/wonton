@@ -4,6 +4,7 @@ use bollard::models::{ContainerUpdateBody, HostConfig};
 use wonton_protocol::PluginLimits;
 
 use super::compose::{Scalar, Service, parse_bytes};
+use super::languages::Languages;
 use super::manager::InstallError;
 use super::requirements::{Requirements, parse_size};
 
@@ -26,17 +27,23 @@ fn resolve(
     requirements: Option<&Requirements>,
     memory_total: Option<u64>,
     owner: &PluginLimits,
+    langs: &Languages,
 ) -> Result<Resolved, String> {
-    let compose_memory = positive_bytes("mem_limit", service.mem_limit.as_ref())?;
-    let compose_reservation = positive_bytes("mem_reservation", service.mem_reservation.as_ref())?;
+    let compose_memory = positive_bytes(langs, "mem_limit", service.mem_limit.as_ref())?;
+    let compose_reservation =
+        positive_bytes(langs, "mem_reservation", service.mem_reservation.as_ref())?;
     if let (Some(limit), Some(reservation)) = (compose_memory, compose_reservation)
         && reservation > limit
     {
-        return Err("mem_reservation 不能大于 mem_limit".to_owned());
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-limits-mem-reservation-order",
+            &[],
+        ));
     }
     let memory = match owner.memory {
         Some(value) => Some(value),
-        None => memory_limit(compose_memory, requirements, memory_total)?,
+        None => memory_limit(compose_memory, requirements, memory_total, langs)?,
     };
     // Docker 拒绝比 `Memory` 大的 `MemoryReservation`。
     let reservation =
@@ -44,10 +51,14 @@ fn resolve(
     let nano_cpus = owner
         .cpu_percent
         .map(|percent| i64::from(percent) * NANO_CPUS_PER_PERCENT)
-        .or(service.cpus.as_ref().map(parse_cpus).transpose()?);
+        .or(service
+            .cpus
+            .as_ref()
+            .map(|value| parse_cpus(value, langs))
+            .transpose()?);
     Ok(Resolved {
-        memory: memory.map(to_i64).transpose()?,
-        memory_reservation: reservation.map(to_i64).transpose()?,
+        memory: memory.map(|value| to_i64(langs, value)).transpose()?,
+        memory_reservation: reservation.map(|value| to_i64(langs, value)).transpose()?,
         nano_cpus,
     })
 }
@@ -61,18 +72,25 @@ pub fn update_body(
     want: &HostConfig,
     current: &HostConfig,
     ncpu: i64,
+    langs: &Languages,
 ) -> Result<ContainerUpdateBody, InstallError> {
     let limited = |value: Option<i64>| value.is_some_and(|value| value > 0);
     if want.memory.is_none() && limited(current.memory) {
-        return Err(InstallError::Unsupported(
-            "读不出主机总内存，恢复默认要等重建".to_owned(),
-        ));
+        return Err(InstallError::Unsupported(crate::l10n::text(
+            langs,
+            "plugin-install-limits-host-memory-unknown",
+            &[],
+        )));
     }
     let nano_cpus = match want.nano_cpus {
         None if limited(current.nano_cpus) => {
             let all = ncpu.checked_mul(NANO_CPUS as i64);
             Some(all.ok_or_else(|| {
-                InstallError::Docker(format!("Docker 报告的 CPU 核数 {ncpu} 超出范围"))
+                InstallError::Docker(crate::l10n::text(
+                    langs,
+                    "plugin-install-limits-ncpu-bad",
+                    &[("ncpu", ncpu.into())],
+                ))
             })?)
         }
         nano_cpus => nano_cpus,
@@ -94,17 +112,20 @@ pub fn apply(
     memory_total: Option<u64>,
     cgroup_parent: Option<&str>,
     owner: &PluginLimits,
+    langs: &Languages,
 ) -> Result<(), String> {
-    let resolved = resolve(service, requirements, memory_total, owner)?;
+    let resolved = resolve(service, requirements, memory_total, owner, langs)?;
     host.cpu_shares = Some(
-        positive_integer("cpu_shares", service.cpu_shares.as_ref())?.unwrap_or(DEFAULT_CPU_SHARES),
+        positive_integer(langs, "cpu_shares", service.cpu_shares.as_ref())?
+            .unwrap_or(DEFAULT_CPU_SHARES),
     );
     host.memory = resolved.memory;
     host.memory_swap = resolved.memory;
     host.memory_reservation = resolved.memory_reservation;
     host.nano_cpus = resolved.nano_cpus;
     host.pids_limit = Some(
-        positive_integer("pids_limit", service.pids_limit.as_ref())?.unwrap_or(DEFAULT_PIDS_LIMIT),
+        positive_integer(langs, "pids_limit", service.pids_limit.as_ref())?
+            .unwrap_or(DEFAULT_PIDS_LIMIT),
     );
     host.oom_score_adj = Some(OOM_SCORE_ADJ);
     host.cgroup_parent = cgroup_parent
@@ -117,6 +138,7 @@ fn memory_limit(
     compose_memory: Option<u64>,
     requirements: Option<&Requirements>,
     memory_total: Option<u64>,
+    langs: &Languages,
 ) -> Result<Option<u64>, String> {
     if compose_memory.is_some() {
         return Ok(compose_memory);
@@ -128,53 +150,105 @@ fn memory_limit(
     let required = requirements
         .and_then(|r| r.memory.as_deref())
         .map(|value| {
-            parse_size(value).ok_or_else(|| format!("requirements.memory `{value}` 不合法"))
+            parse_size(value).ok_or_else(|| {
+                crate::l10n::text(
+                    langs,
+                    "plugin-install-limits-memory-format",
+                    &[("value", value.into())],
+                )
+            })
         })
         .transpose()?
         .unwrap_or(0);
     Ok(Some(eighty_percent.max(required).min(total)))
 }
 
-fn positive_bytes(field: &str, value: Option<&Scalar>) -> Result<Option<u64>, String> {
+fn positive_bytes(
+    langs: &Languages,
+    field: &str,
+    value: Option<&Scalar>,
+) -> Result<Option<u64>, String> {
     let Some(value) = value else {
         return Ok(None);
     };
-    let parsed = parse_bytes(value).map_err(|message| format!("{field}：{message}"))?;
+    let parsed = parse_bytes(value, langs).map_err(|message| forward(langs, field, message))?;
     if parsed <= 0 {
-        return Err(format!("{field} 必须大于 0"));
+        return Err(positive(langs, field));
     }
     Ok(Some(parsed as u64))
 }
 
-fn positive_integer(field: &str, value: Option<&Scalar>) -> Result<Option<i64>, String> {
+fn positive_integer(
+    langs: &Languages,
+    field: &str,
+    value: Option<&Scalar>,
+) -> Result<Option<i64>, String> {
     let Some(value) = value else {
         return Ok(None);
     };
     let parsed = match value {
         Scalar::Int(value) => *value,
-        _ => return Err(format!("{field} 必须是大于 0 的整数")),
+        _ => {
+            return Err(crate::l10n::text(
+                langs,
+                "plugin-install-limits-integer-positive",
+                &[("field", field.into())],
+            ));
+        }
     };
     if parsed <= 0 {
-        return Err(format!("{field} 必须大于 0"));
+        return Err(positive(langs, field));
     }
     Ok(Some(parsed))
 }
 
-fn parse_cpus(value: &Scalar) -> Result<i64, String> {
+fn parse_cpus(value: &Scalar, langs: &Languages) -> Result<i64, String> {
     let text = value.as_string();
-    let parsed: f64 = text.parse().map_err(|_| format!("cpus `{text}` 不合法"))?;
+    let parsed: f64 = text.parse().map_err(|_| {
+        crate::l10n::text(
+            langs,
+            "plugin-install-limits-cpus-format",
+            &[("text", text.as_str().into())],
+        )
+    })?;
     if !parsed.is_finite() || parsed <= 0.0 {
-        return Err("cpus 必须大于 0".to_owned());
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-limits-cpus-positive",
+            &[],
+        ));
     }
     let nanos = parsed * NANO_CPUS;
     if !nanos.is_finite() || nanos < 1.0 || nanos > i64::MAX as f64 {
-        return Err(format!("cpus `{text}` 超出范围"));
+        return Err(crate::l10n::text(
+            langs,
+            "plugin-install-limits-cpus-range",
+            &[("text", text.as_str().into())],
+        ));
     }
     Ok(nanos.round() as i64)
 }
 
-fn to_i64(value: u64) -> Result<i64, String> {
-    i64::try_from(value).map_err(|_| "内存限制超出 Docker 支持的范围".to_owned())
+fn to_i64(langs: &Languages, value: u64) -> Result<i64, String> {
+    i64::try_from(value)
+        .map_err(|_| crate::l10n::text(langs, "plugin-install-limits-memory-range", &[]))
+}
+
+/// `{ $field }：{ $error }`（plugin-install-limits-field-forward）。
+fn forward(langs: &Languages, field: &str, error: String) -> String {
+    crate::l10n::text(
+        langs,
+        "plugin-install-limits-field-forward",
+        &[("field", field.into()), ("error", error.into())],
+    )
+}
+
+fn positive(langs: &Languages, field: &str) -> String {
+    crate::l10n::text(
+        langs,
+        "plugin-install-limits-positive",
+        &[("field", field.into())],
+    )
 }
 
 /// 从 `/proc/meminfo` 读取 `MemTotal`，单位转换为字节。

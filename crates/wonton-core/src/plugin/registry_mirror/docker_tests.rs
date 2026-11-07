@@ -2,6 +2,7 @@ use wonton_protocol::RegistryMirrorUpdate;
 
 use super::docker_fixture::Fixture;
 use crate::plugin::PluginStatus;
+use crate::plugin::languages::Languages;
 
 async fn enable(fixture: &Fixture, mirror: &str) {
     fixture
@@ -29,7 +30,11 @@ async fn correct_digest(fixture: &mut Fixture) {
     enable(fixture, &fixture.mirror).await;
     let installed = fixture
         .manager
-        .install(&fixture.compose(&digest), &[])
+        .install(
+            &fixture.compose(&digest),
+            &[],
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await
         .unwrap();
     assert_eq!(installed.status, PluginStatus::Running);
@@ -84,7 +89,11 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
     enable(fixture, &fixture.mirror).await;
     let error = fixture
         .manager
-        .install(&fixture.compose(&expected), &[])
+        .install(
+            &fixture.compose(&expected),
+            &[],
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "image_pull_failed");
@@ -105,7 +114,11 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
     enable(fixture, &offline).await;
     let error = fixture
         .manager
-        .install(&fixture.compose(&expected), &[])
+        .install(
+            &fixture.compose(&expected),
+            &[],
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "image_pull_failed");

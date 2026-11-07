@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 
 use super::api::{languages, text1};
 use crate::l10n;
+use crate::plugin::languages::Languages;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::{InstallError, package_archive};
 
@@ -38,6 +39,7 @@ pub(super) fn json_body<T: DeserializeOwned>(
 
 /// 请求体里的插件包：压缩包（按内容认格式，见 [`package_archive`]），或者 compose 文本。
 pub(super) fn package(
+    langs: &Languages,
     headers: &hyper::HeaderMap,
     body: &[u8],
 ) -> Result<PluginPackage, InstallError> {
@@ -46,14 +48,9 @@ pub(super) fn package(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|t| t.starts_with("application/x-tar"));
     if tar || package_archive::is_archive(body) {
-        return Ok(PluginPackage::from_archive(body)?);
+        return Ok(PluginPackage::from_archive(body, langs)?);
     }
-    let source = std::str::from_utf8(body).map_err(|_| {
-        InstallError::Invalid(l10n::text(
-            &languages(headers),
-            "gateway-invalid-package",
-            &[],
-        ))
-    })?;
-    Ok(PluginPackage::parse(source)?)
+    let source = std::str::from_utf8(body)
+        .map_err(|_| InstallError::Invalid(l10n::text(langs, "gateway-invalid-package", &[])))?;
+    Ok(PluginPackage::parse(source, langs)?)
 }

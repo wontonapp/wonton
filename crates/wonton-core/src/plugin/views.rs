@@ -65,7 +65,8 @@ impl PluginManager {
             plugins.get(id)?.listed.clone()
         };
         if let Some(listed) = listed {
-            detail.requirements = requirement_checks(&listed.manifest, &self.host_facts().await);
+            detail.requirements =
+                requirement_checks(&listed.manifest, &self.host_facts(langs).await, langs);
         }
         Some(detail)
     }
@@ -187,14 +188,14 @@ impl PluginManager {
         blocked: Option<String>,
         written_by: Option<PluginWriter>,
     ) -> Result<InstallPreview, InstallError> {
-        let plan = dry_run(package)?;
-        let icon = self.check_icon(package).await?;
+        let plan = dry_run(package, langs)?;
+        let icon = self.check_icon(package, langs).await?;
         if let Some(icon) = &icon {
             self.gallery.remember_preview(icon);
         }
         let m = &package.manifest;
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
-        let gpu = self.gpu_preview(m).await?;
+        let gpu = self.gpu_preview(m, langs).await?;
         let lan = self.lan_preview(package).await?;
         let egress = self.egress_problem_for(m).await?;
         let egress_block = egress.as_ref().filter(|p| blocks(p));
@@ -203,7 +204,11 @@ impl PluginManager {
             .or(lan.blocked)
             .or_else(|| egress_block.map(|p| p.message.clone()))
             .or_else(|| {
-                super::host_relay::path_too_long(&self.cfg.apps_dir.join(m.id.slug()), &plan.relays)
+                super::host_relay::path_too_long(
+                    &self.cfg.apps_dir.join(m.id.slug()),
+                    &plan.relays,
+                    langs,
+                )
             });
         let mut notices = source_notices(package, &plan, langs);
         if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
@@ -215,7 +220,7 @@ impl PluginManager {
         {
             notices.push(line(permission_text(&Permission::OwnerIdentity, langs)));
         }
-        notices.extend(requirement_notices(m, &self.host_facts().await));
+        notices.extend(requirement_notices(m, &self.host_facts(langs).await, langs));
         if m.permissions.contains(&Permission::NetworkHost) {
             notices.push(line(l10n::text(langs, "install-host-network-egress", &[])));
         }
@@ -259,13 +264,14 @@ impl PluginManager {
     pub(super) async fn check_icon(
         &self,
         package: &PluginPackage,
+        langs: &Languages,
     ) -> Result<Option<IconSource>, InstallError> {
         let icon = IconSource::of(package);
         if let Some(icon) = &icon {
             self.gallery
                 .render(icon)
                 .await
-                .map_err(|e| Self::image_error(&icon.path, e))?;
+                .map_err(|e| Self::image_error(&icon.path, e, langs))?;
         }
         for (index, tab) in package
             .manifest
@@ -277,20 +283,28 @@ impl PluginManager {
         {
             for (field, raw) in tab.icon_refs(index) {
                 let source = IconSource::of_path(package, raw).ok_or_else(|| {
-                    InstallError::Invalid(format!("{field} {raw}：文件不存在或不是 PNG/SVG"))
+                    InstallError::Invalid(l10n::text(
+                        langs,
+                        "plugin-install-install-icon-file-missing",
+                        &[("field", field.as_str().into()), ("raw", raw.into())],
+                    ))
                 })?;
                 self.gallery
                     .render_tab(&source)
                     .await
-                    .map_err(|e| Self::image_error(&format!("{field} {raw}"), e))?;
+                    .map_err(|e| Self::image_error(&format!("{field} {raw}"), e, langs))?;
             }
         }
         Ok(icon)
     }
 
-    fn image_error(path: &str, error: ImageError) -> InstallError {
+    fn image_error(path: &str, error: ImageError, langs: &Languages) -> InstallError {
         match error {
-            ImageError::Refused(reason) => InstallError::Invalid(format!("图标 {path}：{reason}")),
+            ImageError::Refused(reason) => InstallError::Invalid(l10n::text(
+                langs,
+                "plugin-install-install-icon-error",
+                &[("path", path.into()), ("reason", reason.into())],
+            )),
             ImageError::Unavailable(reason) => InstallError::ImagesUnavailable(reason),
         }
     }
@@ -344,7 +358,7 @@ impl PluginManager {
     /// 主人还没填邮箱、插件又非要不可时的说明。
     pub(crate) fn missing_profile(&self, package: &PluginPackage) -> Option<String> {
         let needs_email = super::manifest_oidc::needs_owner_email(&package.manifest)
-            || dry_run_with_email(package, None).is_err();
+            || dry_run_with_email(package, None, &Languages::default()).is_err();
         (self.cfg.profile.email().is_none() && needs_email)
             .then(|| crate::owner::EMAIL_NEEDED.to_owned())
     }
@@ -376,15 +390,23 @@ impl PluginManager {
                 )));
             }
         }
-        self.fits_host(m).await
+        self.fits_host(m, langs).await
     }
 
     /// 核心支持它要的权限，这台主机放得下它。
-    pub(crate) async fn fits_host(&self, m: &Manifest) -> Result<(), InstallError> {
+    pub(crate) async fn fits_host(
+        &self,
+        m: &Manifest,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
-            return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
+            return Err(InstallError::Unsupported(l10n::text(
+                langs,
+                "plugin-install-permission-unsupported",
+                &[("permission", p.to_string().into())],
+            )));
         }
-        self.check_requirements(m).await
+        self.check_requirements(m, langs).await
     }
 
     /// 升级预览里这台主机上升不了的原因。
@@ -396,7 +418,7 @@ impl PluginManager {
         if m.kind == PluginKind::System {
             return Ok(Some(l10n::text(langs, "install-system-preinstalled", &[])));
         }
-        blocked_by(self.fits_host(m).await)
+        blocked_by(self.fits_host(m, langs).await)
     }
 
     /// 列表里的一项，还没填 Bot。
@@ -428,7 +450,7 @@ impl PluginManager {
             })
             .unwrap_or_default();
         if entry.status == PluginStatus::Running {
-            notices.extend(self.oom_notices(id));
+            notices.extend(self.oom_notices(id, langs));
         }
         InstalledPlugin {
             id: id.to_string(),
@@ -565,11 +587,15 @@ fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, Insta
 pub(crate) use super::views_permissions::permission_line;
 pub use super::views_permissions::permission_text;
 
-pub(super) fn requirement_checks(manifest: &Manifest, facts: &HostFacts) -> Vec<RequirementLine> {
+pub(super) fn requirement_checks(
+    manifest: &Manifest,
+    facts: &HostFacts,
+    langs: &Languages,
+) -> Vec<RequirementLine> {
     manifest
         .requirements
         .as_ref()
-        .map(|r| host_check::judge(r, facts))
+        .map(|r| host_check::judge(r, facts, langs))
         .unwrap_or_default()
         .into_iter()
         .map(|check| check.line)
@@ -577,11 +603,11 @@ pub(super) fn requirement_checks(manifest: &Manifest, facts: &HostFacts) -> Vec<
 }
 
 /// 安装预览里的要求。显卡不满足时不写：预览里关于显卡的那行（[`super::gpu::GpuPreview`]）已经写了为什么。
-fn requirement_notices(manifest: &Manifest, facts: &HostFacts) -> Vec<CardLine> {
+fn requirement_notices(manifest: &Manifest, facts: &HostFacts, langs: &Languages) -> Vec<CardLine> {
     let Some(requirements) = &manifest.requirements else {
         return Vec::new();
     };
-    host_check::judge(requirements, facts)
+    host_check::judge(requirements, facts, langs)
         .into_iter()
         .filter(|check| {
             let bad = matches!(

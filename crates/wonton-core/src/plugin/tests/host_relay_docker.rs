@@ -42,7 +42,13 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
     engine.start_container(&name).await.unwrap();
     let mut probed = None;
     for _ in 0..100 {
-        probed = super::super::host_relay::listens_beyond_loopback(&engine, &name, port).await;
+        probed = super::super::host_relay::listens_beyond_loopback(
+            &engine,
+            &name,
+            port,
+            &super::super::languages::Languages::default(),
+        )
+        .await;
         if probed.is_some() {
             break;
         }

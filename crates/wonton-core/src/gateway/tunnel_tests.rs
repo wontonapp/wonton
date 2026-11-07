@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use crate::plugin::languages::Languages;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
@@ -128,7 +129,8 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
+        let manifest =
+            PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let tunnel = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(

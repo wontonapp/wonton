@@ -8,7 +8,8 @@ use bollard::models::ExecConfig;
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use super::docker::{Engine, EngineError};
+use super::docker::{Engine, EngineError, from_bollard};
+use crate::l10n;
 
 /// 标准错误只留这么多，写进错误信息够用了。
 const STDERR_LIMIT: usize = 4 << 10;
@@ -55,7 +56,15 @@ impl Engine {
         timeout: Duration,
         capture_stdout: bool,
     ) -> Result<ExecOutput, EngineError> {
-        let context = format!("在容器 {container} 里执行 {}", argv.join(" "));
+        let langs = self.owner_languages();
+        let context = l10n::text(
+            &langs,
+            "plugin-install-docker-context-exec",
+            &[
+                ("container", container.into()),
+                ("argv", argv.join(" ").into()),
+            ],
+        );
         let config = ExecConfig {
             cmd: Some(argv.to_vec()),
             attach_stdin: Some(stdin.is_some()),
@@ -67,13 +76,13 @@ impl Engine {
             .docker
             .create_exec(container, config)
             .await
-            .map_err(|e| EngineError::from_bollard(&context, e))?;
+            .map_err(|e| from_bollard(&langs, &context, e))?;
         let run = async {
             let started = self
                 .docker
                 .start_exec(&created.id, None)
                 .await
-                .map_err(|e| EngineError::from_bollard(&context, e))?;
+                .map_err(|e| from_bollard(&langs, &context, e))?;
             let StartExecResults::Attached {
                 mut output,
                 mut input,
@@ -81,10 +90,24 @@ impl Engine {
             else {
                 return Err(EngineError::Rejected {
                     context: context.clone(),
-                    message: "命令没有挂上输入输出".to_owned(),
+                    message: l10n::text(&langs, "plugin-install-docker-exec-no-io", &[]),
                 });
             };
-            let io = |e: std::io::Error| EngineError::Unavailable(format!("{context}：{e}"));
+            let io = |e: std::io::Error| {
+                let joined = l10n::text(
+                    &langs,
+                    "plugin-install-docker-error-join",
+                    &[
+                        ("context", context.clone().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                );
+                EngineError::Unavailable(l10n::text(
+                    &langs,
+                    "plugin-install-docker-unavailable",
+                    &[("error", joined.into())],
+                ))
+            };
             if let Some(data) = stdin {
                 input.write_all(data).await.map_err(io)?;
             }
@@ -92,7 +115,7 @@ impl Engine {
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             while let Some(chunk) = output.next().await {
-                match chunk.map_err(|e| EngineError::from_bollard(&context, e))? {
+                match chunk.map_err(|e| from_bollard(&langs, &context, e))? {
                     LogOutput::StdOut { message } if capture_stdout => {
                         collect(&mut stdout, &message, STDOUT_LIMIT)
                     }
@@ -105,13 +128,20 @@ impl Engine {
             Ok((stdout, stderr))
         };
         let (stdout, stderr) = tokio::time::timeout(timeout, run).await.map_err(|_| {
-            EngineError::TimedOut(format!("{context}：{} 秒没有结束", timeout.as_secs()))
+            EngineError::TimedOut(l10n::text(
+                &langs,
+                "plugin-install-docker-exec-timed-out",
+                &[
+                    ("context", context.clone().into()),
+                    ("seconds", timeout.as_secs().into()),
+                ],
+            ))
         })??;
         let inspected = self
             .docker
             .inspect_exec(&created.id)
             .await
-            .map_err(|e| EngineError::from_bollard(&context, e))?;
+            .map_err(|e| from_bollard(&langs, &context, e))?;
         Ok(ExecOutput {
             exit_code: inspected.exit_code.unwrap_or(-1),
             stdout: String::from_utf8_lossy(&stdout).trim().to_owned(),

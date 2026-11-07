@@ -17,6 +17,7 @@ use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::matrix::fake::{self, Fake, User};
 use crate::plugin::docker::Engine;
+use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, PluginPackage, PluginStatus};
 
 const GET: &str = "wonton__get_profile";
@@ -51,7 +52,9 @@ impl Bed {
                 .replace("app.example.notes", id.as_str())
                 .replace("permissions: []", "permissions: [matrix.bot]");
             manager.register_for_test(
-                PluginPackage::parse(&source).unwrap().manifest,
+                PluginPackage::parse(&source, &Languages::from_header(Some("zh-Hans")))
+                    .unwrap()
+                    .manifest,
                 PluginStatus::Running,
                 None,
             );
@@ -178,7 +181,9 @@ async fn no_bot_and_uninstalled_callers_cannot_read_or_write_profiles() {
         if id.as_str().ends_with("nobot") {
             let source = NOTES.replace("app.example.notes", id.as_str());
             b.s.manager.register_for_test(
-                PluginPackage::parse(&source).unwrap().manifest,
+                PluginPackage::parse(&source, &Languages::from_header(Some("zh-Hans")))
+                    .unwrap()
+                    .manifest,
                 PluginStatus::Running,
                 None,
             );

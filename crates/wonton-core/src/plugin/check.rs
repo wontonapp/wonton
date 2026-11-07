@@ -12,6 +12,7 @@ use super::egress::hardcoded_proxy;
 use super::image_worker::ImageWorker;
 use super::images::IconFormat;
 use super::lan::webui::impersonable;
+use super::languages::Languages;
 use super::manager::supported;
 use super::manifest::{Manifest, Permission, PluginKind};
 use super::package::PluginPackage;
@@ -47,7 +48,8 @@ pub async fn check_at(
     official: bool,
     images: &ImageWorker,
 ) -> Result<Report, String> {
-    let package = PluginPackage::load_dir_at(dir).map_err(|e| e.to_string())?;
+    let package =
+        PluginPackage::load_dir_at(dir, &Languages::default()).map_err(|e| e.to_string())?;
     check_package(&package, dir, official, images).await
 }
 
@@ -84,7 +86,7 @@ pub async fn check_package(
             .problems
             .push(format!("核心还不支持权限 {permission}，装不上"));
     }
-    match dry_run(package) {
+    match dry_run(package, &Languages::default()) {
         Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }

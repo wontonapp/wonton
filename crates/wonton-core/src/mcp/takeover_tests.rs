@@ -10,6 +10,7 @@ use super::tests::{Setup, setup, text};
 use super::{Caller, PolicyChange};
 use crate::plugin::PluginId;
 use crate::plugin::fake_docker::FakeDocker;
+use crate::plugin::languages::Languages;
 
 const DELETE: &str = "app-example-notes__delete";
 const SEARCH: &str = "app-example-notes__search";
@@ -171,9 +172,12 @@ async fn a_plugin_that_stops_ends_the_takeover() {
     let call = delete(&s, "a");
     assert_still_held(&s, &call).await;
 
-    let manifest = crate::plugin::PluginPackage::parse(super::tests::NOTES)
-        .unwrap()
-        .manifest;
+    let manifest = crate::plugin::PluginPackage::parse(
+        super::tests::NOTES,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap()
+    .manifest;
     s.manager.register_for_test(
         manifest,
         crate::plugin::PluginStatus::Degraded {

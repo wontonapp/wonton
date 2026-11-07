@@ -40,7 +40,7 @@ impl PluginManager {
             self.storefront.community(&index, refresh).await;
         self.storefront.added.refresh(refresh).await;
         let added = self.storefront.added.views();
-        let facts = self.host_facts().await;
+        let facts = self.host_facts(langs).await;
         let (official, mut icons) = self.official_items(&index, &facts, langs).await;
         // 主人添加过的只在“我添加的”里列一次。
         let added_repos: Vec<&Repo> = added.iter().filter_map(|a| a.repo.as_ref()).collect();
@@ -91,7 +91,7 @@ impl PluginManager {
         source: &AddedView,
         langs: &Languages,
     ) -> AddedSource {
-        let facts = self.host_facts().await;
+        let facts = self.host_facts(langs).await;
         let plugins = source
             .plugins
             .iter()
@@ -132,7 +132,7 @@ impl PluginManager {
         Vec<StoreItem>,
     ) {
         let (index, _, problem) = self.storefront.official(false).await;
-        let facts = self.host_facts().await;
+        let facts = self.host_facts(langs).await;
         let (items, icons) = self.official_items(&index, &facts, langs).await;
         self.gallery.remember_store(icons);
         (index, problem, items)
@@ -155,7 +155,7 @@ impl PluginManager {
             };
             (package, self.storefront.stars(&wanted.repo).await)
         };
-        let icon = self.check_icon(&package).await?;
+        let icon = self.check_icon(&package, langs).await?;
         if let Some(icon) = &icon {
             self.gallery.remember_preview(icon);
         }
@@ -174,7 +174,7 @@ impl PluginManager {
     ) -> PluginDetail {
         let m = &package.manifest;
         let origin = package.origin.as_ref();
-        let facts = self.host_facts().await;
+        let facts = self.host_facts(langs).await;
         let installed = self.installed_plugin(&m.id, langs);
         PluginDetail {
             source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
@@ -204,10 +204,10 @@ impl PluginManager {
                 .iter()
                 .map(|p| permission_line(p, langs))
                 .collect(),
-            requirements: requirement_checks(m, &facts),
+            requirements: requirement_checks(m, &facts, langs),
             has_web: m.webui.is_some(),
             installed,
-            blocked: blocked(m, &facts),
+            blocked: blocked(m, &facts, langs),
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
                 .collect(),
@@ -253,7 +253,7 @@ impl PluginManager {
             stars: shown.stars,
             installed_version,
             high_permissions: m.permissions.iter().any(|p| p.is_high()),
-            blocked: blocked(m, facts),
+            blocked: blocked(m, facts, langs),
         }
     }
 
@@ -301,12 +301,12 @@ impl PluginManager {
 }
 
 /// 这台主机上装不了的原因：系统插件、核心不支持的权限、不满足的要求。查不出来的要求不拦。
-fn blocked(m: &Manifest, facts: &HostFacts) -> Option<String> {
+fn blocked(m: &Manifest, facts: &HostFacts, langs: &Languages) -> Option<String> {
     if m.kind == PluginKind::System {
         return Some("系统应用只能随核心预装".to_owned());
     }
     if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
         return Some(format!("核心还不支持权限 {p}"));
     }
-    host_check::refusal(m, facts).map(|refusal| refusal.to_string())
+    host_check::refusal(m, facts, langs).map(|refusal| refusal.to_string())
 }

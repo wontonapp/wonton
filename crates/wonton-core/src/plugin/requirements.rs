@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError};
+use crate::l10n::{list, text};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -101,7 +103,7 @@ pub fn parse_size(text: &str) -> Option<u64> {
     (bytes.is_finite() && bytes >= 1.0).then_some(bytes as u64)
 }
 
-pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     let Some(requirements) = &manifest.requirements else {
         return Ok(());
     };
@@ -117,42 +119,75 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
         if let Some(size) = size
             && parse_size(size).is_none()
         {
-            return Err(ManifestError::Invalid(format!(
-                "{field} `{size}` 要写成 512M、2G 这样的大小"
+            return Err(ManifestError::Invalid(text(
+                langs,
+                "plugin-install-req-size-format",
+                &[("field", field.into()), ("size", size.into())],
             )));
         }
     }
     Ok(())
 }
 
-pub fn arch_line(arch: &[Arch]) -> String {
-    let names: Vec<&str> = arch.iter().map(|a| a.name()).collect();
-    format!("只支持 {} 架构", names.join("、"))
+pub fn arch_line(arch: &[Arch], langs: &Languages) -> String {
+    let names: Vec<String> = arch.iter().map(|a| a.name().to_owned()).collect();
+    text(
+        langs,
+        "plugin-install-req-arch-line",
+        &[("arches", list(langs, &names).into())],
+    )
 }
 
-pub fn memory_line(memory: &str) -> String {
-    format!("需要 {memory} 内存")
+pub fn memory_line(memory: &str, langs: &Languages) -> String {
+    text(
+        langs,
+        "plugin-install-req-memory-line",
+        &[("memory", memory.into())],
+    )
 }
 
-pub fn gpu_line(gpu: &GpuRequirement) -> String {
-    let card = card_name(&gpu.vendors);
-    let memory = gpu
-        .memory
-        .as_ref()
-        .map(|memory| format!("，显存至少 {memory}"))
-        .unwrap_or_default();
+pub fn gpu_line(gpu: &GpuRequirement, langs: &Languages) -> String {
+    let card = card_name(&gpu.vendors, langs);
+    let memory = gpu.memory.as_ref().map(|memory| {
+        text(
+            langs,
+            "plugin-install-req-gpu-vram-suffix",
+            &[("memory", memory.as_str().into())],
+        )
+    });
     match gpu.need {
-        GpuNeed::Required => format!("需要{card}{memory}"),
-        GpuNeed::Optional => format!("有{card}{memory}时会用"),
+        GpuNeed::Required => text(
+            langs,
+            "plugin-install-req-gpu-required",
+            &[
+                ("card", card.as_str().into()),
+                ("memory", memory.unwrap_or_default().into()),
+            ],
+        ),
+        GpuNeed::Optional => text(
+            langs,
+            "plugin-install-req-gpu-optional",
+            &[
+                ("card", card.as_str().into()),
+                ("memory", memory.unwrap_or_default().into()),
+            ],
+        ),
     }
 }
 
 /// `显卡`，或者 ` NVIDIA 或 AMD 显卡`：直接接在中文后面，开头的英文前留空格。
-pub fn card_name(vendors: &[GpuVendor]) -> String {
-    let names: Vec<&str> = vendors.iter().map(|v| v.name()).collect();
-    match names.as_slice() {
-        [] => "显卡".to_owned(),
-        names => format!(" {} 显卡", names.join(" 或 ")),
+pub fn card_name(vendors: &[GpuVendor], langs: &Languages) -> String {
+    match vendors {
+        [] => text(langs, "plugin-install-req-card-generic", &[]),
+        vendors => {
+            let names: Vec<&str> = vendors.iter().map(|v| v.name()).collect();
+            let or = text(langs, "plugin-install-or-separator", &[]);
+            text(
+                langs,
+                "plugin-install-req-card-named",
+                &[("names", format!(" {}", names.join(&or)).into())],
+            )
+        }
     }
 }
 

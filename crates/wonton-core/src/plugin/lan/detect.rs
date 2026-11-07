@@ -144,7 +144,13 @@ impl Engine {
             Ok(Some(Ok(exit))) => exit.status_code,
             // bollard 把非 0 的退出码当成错误交回来。
             Ok(Some(Err(BollardError::DockerContainerWaitError { code, .. }))) => code,
-            Ok(Some(Err(e))) => return Err(EngineError::from_bollard("等一次性容器退出", e)),
+            Ok(Some(Err(e))) => {
+                return Err(crate::plugin::docker::from_bollard(
+                    &self.owner_languages(),
+                    "等一次性容器退出",
+                    e,
+                ));
+            }
         };
         let options = LogsOptionsBuilder::default()
             .stdout(true)
@@ -153,7 +159,13 @@ impl Engine {
         let mut logs = self.docker.logs(name, Some(options));
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         while let Some(chunk) = logs.next().await {
-            match chunk.map_err(|e| EngineError::from_bollard("读一次性容器的输出", e))? {
+            match chunk.map_err(|e| {
+                crate::plugin::docker::from_bollard(
+                    &self.owner_languages(),
+                    "读一次性容器的输出",
+                    e,
+                )
+            })? {
                 LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
                 other => stderr.extend_from_slice(other.as_ref()),
             }
@@ -167,11 +179,9 @@ impl Engine {
 
     /// Docker 的网桥：按 Docker 的网络列表认，不按网卡名字的样子猜。
     pub(in crate::plugin) async fn bridges(&self) -> Result<DockerBridges, EngineError> {
-        let networks = self
-            .docker
-            .list_networks(None)
-            .await
-            .map_err(|e| EngineError::from_bollard("列出网络", e))?;
+        let networks = self.docker.list_networks(None).await.map_err(|e| {
+            crate::plugin::docker::from_bollard(&self.owner_languages(), "列出网络", e)
+        })?;
         let mut bridges = DockerBridges::default();
         for network in networks {
             if network.driver.as_deref() != Some("bridge") {

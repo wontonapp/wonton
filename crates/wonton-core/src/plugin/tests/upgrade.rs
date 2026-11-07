@@ -38,7 +38,7 @@ fn hello(version: &str, services: &str, manifest: &str) -> String {
 }
 
 fn release(github: &FakeGitHub, compose: &str) -> String {
-    let package = PluginPackage::parse(compose).unwrap();
+    let package = PluginPackage::parse(compose, &super::langs()).unwrap();
     let tag = format!("v{}", package.manifest.version);
     github.publish(REPO, &tag, &[("docker-compose.yml", compose)])
 }
@@ -52,7 +52,10 @@ fn web() -> String {
 }
 
 fn permissions(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose).unwrap().manifest.permissions
+    PluginPackage::parse(compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions
 }
 
 async fn with_github(
@@ -374,7 +377,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
     m.check_upgrades_now().await;
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().upgrade, None);
 
-    let parse = |compose: &str| PluginPackage::parse(compose).unwrap();
+    let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
     let newer = hello("1.2.0", "", "  permissions: []\n");
     m.upgrade_upload(&id(), parse(&newer), Vec::new(), false)
         .await
@@ -423,13 +426,15 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     let id = PluginId::parse("app.echo").unwrap();
     let bot = container_name("app-echo", "bot");
     let v1 = echo("1.0.0", "");
-    m.install(&v1, &permissions(&v1)).await.unwrap();
+    m.install(&v1, &permissions(&v1), super::langs())
+        .await
+        .unwrap();
     let env = env_of_container(&docker, &bot);
     let token = env["TOKEN"].clone();
     let devices = tuwunel.state().tokens.len();
     let device = m.store.bots().load(&id).unwrap().unwrap().device_id;
 
-    let parse = |compose: &str| PluginPackage::parse(compose).unwrap();
+    let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
     let helper = container_name("app-echo", "helper");
     docker.set_state(
         &helper,
@@ -491,7 +496,8 @@ async fn a_bundled_default_plugin_is_offered_from_the_official_index() {
     m.check_upgrades_now().await;
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().upgrade, None);
 
-    let v2 = PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n")).unwrap();
+    let v2 =
+        PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
     let commit = "a".repeat(40);
     let entry = IndexEntry::of(&v2, SOURCE, &commit).unwrap();
     entry.write_to(&index, &v2).unwrap();
@@ -568,7 +574,10 @@ async fn a_system_plugin_whose_record_the_core_cannot_read_is_reinstalled_from_t
     fs::write(&kept, "主人的数据").unwrap();
 
     let old = compose.replace("  title: {zh: 你好, en: Hello}\n", "");
-    assert!(PluginPackage::parse(&old).is_err(), "旧记录这份核心读不懂");
+    assert!(
+        PluginPackage::parse(&old, &super::langs()).is_err(),
+        "旧记录这份核心读不懂"
+    );
     let mut record = m.store.load(&id()).unwrap().unwrap();
     record.source = old;
     m.store.save(&record).unwrap();
@@ -594,9 +603,10 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let (frozen, watching) = watch::channel(false);
     let m = Arc::new(manager_with(engine, &dir).with_upgrade_freeze(watching));
     let v1 = hello("1.0.0", "", "  permissions: []\n");
-    m.install(&v1, &[]).await.unwrap();
+    m.install(&v1, &[], super::langs()).await.unwrap();
     frozen.send(true).unwrap();
-    let v2 = PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n")).unwrap();
+    let v2 =
+        PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
     let err = m
         .upgrade_upload(&id(), v2, Vec::new(), false)
         .await
@@ -621,13 +631,15 @@ async fn ports_that_become_switched_close_and_the_preview_says_so() {
     let v1 = compose("1.0.0", "sso: proxy, proxy: {headers: {X-Host: 'static'}}")
         .replace("port: 1", &format!("port: {port}"));
     let granted = permissions(&v1);
-    m.install(&v1, &granted).await.unwrap();
+    m.install(&v1, &granted, super::langs()).await.unwrap();
 
     let v2 = compose("1.1.0", "sso: none").replace("port: 1", &format!("port: {port}"));
     let preview = m
         .preview_upgrade(
             &id(),
-            UpgradeTo::Upload(Box::new(PluginPackage::parse(&v2).unwrap())),
+            UpgradeTo::Upload(Box::new(
+                PluginPackage::parse(&v2, &super::langs()).unwrap(),
+            )),
             &zh(),
         )
         .await

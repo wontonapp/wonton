@@ -103,15 +103,16 @@ impl PluginManager {
         granted: &[Permission],
         lan_webui: bool,
     ) -> Result<(), InstallError> {
+        let langs = self.owner_languages();
         self.check_not_upgrading()?;
-        dry_run(&package)?;
-        self.check_icon(&package).await?;
+        dry_run(&package, &langs)?;
+        self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
-        check_permissions(manifest, granted)?;
-        self.check_requirements(manifest).await?;
+        check_permissions(manifest, granted, &langs)?;
+        self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest).await?;
-        let gpu = self.gpu_grant(manifest).await?;
+        let gpu = self.gpu_grant(manifest, &langs).await?;
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui).await?;
         let before = self.begin_upgrade(id)?;
@@ -132,11 +133,12 @@ impl PluginManager {
 
     /// 和卸载一样在插件表的锁里判断：在安装、卸载、升级或者按新地址重建的不碰。
     fn begin_upgrade(&self, id: &PluginId) -> Result<Before, InstallError> {
+        let langs = self.owner_languages();
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins
             .get_mut(id)
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        if let Some(e) = busy(id, &entry.status) {
+        if let Some(e) = busy(id, &entry.status, &langs) {
             return Err(e);
         }
         if !self.lan.begin(id) {
@@ -245,15 +247,16 @@ impl PluginManager {
 
     /// 读回旧版本的上下文和令牌：读不到就报错，容器还没动。
     async fn read_old(&self, id: &PluginId) -> Result<Old, InstallError> {
+        let langs = self.owner_languages();
         let record = self
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        let package = installed_package(&record)?;
+        let package = installed_package(&record, &langs)?;
         let lan = self.lan_grant(&package, record.lan_webui).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
         ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
-        let plan = render(&package, &ctx)?;
+        let plan = render(&package, &ctx, &langs)?;
         let mut images = HashMap::new();
         for container in &plan.containers {
             let info = self.engine.inspect_container(&container.name).await?;
@@ -279,6 +282,7 @@ impl PluginManager {
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let prepared = self.prepare_new(old, package, grants, progress).await?;
+        let langs = self.owner_languages();
         let Prepared {
             mut ctx,
             mut secrets,
@@ -290,16 +294,16 @@ impl PluginManager {
         self.swap_network(old, manifest, &network, progress).await?;
         ctx.core_address = self.core_address_var(manifest, &network).await?;
         ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
-        let mut plan = render(package, &ctx)?;
+        let mut plan = render(package, &ctx, &langs)?;
         super::super::registry_mirror::use_pulled_images(&mut plan, pulled);
         if let Some(secret) = &oidc_secret {
             let spec = client_spec(manifest, &ctx, secret);
-            self.hydra()?.upsert_client(&spec).await?;
+            self.hydra(&langs)?.upsert_client(&spec).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
         let health = self
-            .start_containers(&plan, &mut progress.undo, deadline)
+            .start_containers(&plan, &mut progress.undo, deadline, &langs)
             .await?;
         if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
             self.store.secrets().save(&manifest.id, &secrets)?;
@@ -356,12 +360,14 @@ impl PluginManager {
         let oidc_secret = uses_sso(manifest)
             .then(|| old.record.oidc_client_secret.clone())
             .map(|kept| kept.unwrap_or_else(random_token));
+        let langs = self.owner_languages();
         let secrets = self.prepare_secrets(manifest, &mut progress.undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
-        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
+        let proxy =
+            ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         let mut ctx = self
-            .install_context(manifest, oidc_secret.as_deref(), generated)
+            .install_context(manifest, oidc_secret.as_deref(), generated, &langs)
             .await?;
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
@@ -370,12 +376,13 @@ impl PluginManager {
         ctx.models = self
             .upgrade_model_vars(package, &mut progress.added_models)
             .await?;
-        let mut plan = render(package, &ctx)?;
+        let mut plan = render(package, &ctx, &langs)?;
         self.prepare_images(&mut plan).await?;
-        self.prepare_dirs(&ctx, &plan.dirs, &mut progress.undo)?;
+        self.prepare_dirs(&ctx, &plan.dirs, &mut progress.undo, &langs)?;
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;
-            if volume_action(volume, labels.as_ref(), &manifest.id)? == VolumeAction::Create {
+            if volume_action(volume, labels.as_ref(), &manifest.id, &langs)? == VolumeAction::Create
+            {
                 self.engine.create_volume(volume, &plan.labels).await?;
                 progress.undo.volumes.push(volume.clone());
             }
@@ -527,8 +534,9 @@ impl PluginManager {
         progress: Progress,
         error: InstallError,
     ) -> InstallError {
+        let langs = self.owner_languages();
         let id = &old.record.id;
-        let mut failures = self.rollback(progress.undo).await;
+        let mut failures = self.rollback(progress.undo, &langs).await;
         if let Err(e) = self.revoke_model_names(id, &progress.added_models).await {
             failures.push(format!("模型网关凭据：{e}"));
         }
@@ -546,11 +554,12 @@ impl PluginManager {
         package: &PluginPackage,
         progress: Progress,
     ) -> Result<Deployed, InstallError> {
+        let langs = self.owner_languages();
         let id = &old.record.id;
         let manifest = &old.package.manifest;
         let network = self.cfg.instance.network(&old.ctx.slug);
         self.remove_own_containers(id).await?;
-        let failures = self.rollback(progress.undo).await;
+        let failures = self.rollback(progress.undo, &langs).await;
         if !failures.is_empty() {
             tracing::error!(plugin = %id, ?failures, "收拾新版本的资源没做完");
         }
@@ -575,7 +584,7 @@ impl PluginManager {
                 None => {}
             }
         }
-        let mut plan = render(&old.package, &ctx)?;
+        let mut plan = render(&old.package, &ctx, &langs)?;
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan).await?;
         self.reconcile_running(&old.package, &old.record).await

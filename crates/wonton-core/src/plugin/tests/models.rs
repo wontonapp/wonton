@@ -59,7 +59,7 @@ fn provider(port: u16) -> PluginPackage {
          issue: [sh, /wonton/credentials.sh, issue, '{{name}}']\n        \
          revoke: [sh, /wonton/credentials.sh, revoke, '{{name}}']\n  permissions: []"
     );
-    PluginPackage::parse(&source).unwrap()
+    PluginPackage::parse(&source, &super::langs()).unwrap()
 }
 
 /// 一个使用方：唯一的服务拿到模型网关的全部变量。
@@ -137,7 +137,7 @@ impl Bed {
     async fn install_gateway(&self) {
         let port = fake_gateway(self.keys.clone()).await;
         self.manager
-            .install_checked(provider(port), &[], false)
+            .install_checked(provider(port), &[], false, &super::langs())
             .await
             .unwrap();
     }
@@ -158,7 +158,10 @@ fn web_env(bed: &Bed) -> BTreeMap<String, String> {
 #[tokio::test]
 async fn consumers_get_their_own_verified_credential_through_the_core() {
     let bed = bed().await;
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     let env = web_env(&bed);
     assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
     assert_eq!(env["ANTHROPIC"], "http://models.wonton.internal:8080");
@@ -191,7 +194,10 @@ async fn consumers_get_their_own_verified_credential_through_the_core() {
 #[tokio::test]
 async fn the_gateway_gets_lost_or_stale_credentials_back_from_the_core() {
     let bed = bed().await;
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     let key = web_env(&bed)["KEY"].clone();
     // 网关的数据丢了：对账时用同一个值重新签发，使用方不用重启。
     bed.keys.lock().unwrap().clear();
@@ -210,11 +216,20 @@ async fn the_gateway_gets_lost_or_stale_credentials_back_from_the_core() {
 async fn uninstall_revokes_the_credential() {
     let bed = bed().await;
     let id = PluginId::parse("app.test").unwrap();
-    bed.manager.install(&consumer(), &models()).await.unwrap();
-    bed.manager.uninstall(&id, false).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    bed.manager
+        .uninstall(&id, false, &super::langs())
+        .await
+        .unwrap();
     assert!(bed.keys.lock().unwrap().is_empty(), "卸载时在网关里吊销");
     // 重装是一个新值：不删数据卸载也不保留凭据。
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     assert_eq!(bed.keys.lock().unwrap().len(), 1);
 }
 
@@ -224,7 +239,9 @@ async fn installs_without_a_gateway_and_the_variables_come_up_empty() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    m.install(&consumer(), &models()).await.unwrap();
+    m.install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     let env = env_of_container(&docker, &container_name("app-test", "web"));
     for name in ["BASE", "ANTHROPIC", "KEY", "MODEL"] {
         assert_eq!(env[name], "", "{name}");
@@ -245,7 +262,10 @@ async fn installs_without_a_gateway_and_the_variables_come_up_empty() {
 #[tokio::test]
 async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
     let bed = bed_without_gateway().await;
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     assert_eq!(web_env(&bed)["BASE"], "");
 
     // 网关装上：核心给没接上的使用方签发凭据、按新变量重建容器，轻提示消失。
@@ -259,7 +279,10 @@ async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
 #[tokio::test]
 async fn the_gateway_coming_back_again_leaves_connected_consumers_alone() {
     let bed = bed().await;
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     let env = web_env(&bed);
     let web = container_name("app-test", "web");
     assert_eq!(bed.docker.creations(&web), 1);
@@ -280,7 +303,10 @@ async fn a_failed_issue_still_installs_and_the_hint_carries_the_reason() {
             _ => (0, String::new()),
         });
     // 签发失败：照样装，状态照常，变量为空。
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     assert_eq!(web_env(&bed)["KEY"], "");
     let consumer = bed
         .manager
@@ -315,12 +341,19 @@ async fn a_failed_issue_still_installs_and_the_hint_carries_the_reason() {
 #[tokio::test]
 async fn uninstalling_the_gateway_leaves_the_consumer_running_and_the_hint_returns() {
     let bed = bed().await;
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     let key = web_env(&bed)["KEY"].clone();
 
     // 网关卸掉：使用方不动，还在运行，轻提示变回“没接上”。
     bed.manager
-        .uninstall(&PluginId::parse("system.models").unwrap(), false)
+        .uninstall(
+            &PluginId::parse("system.models").unwrap(),
+            false,
+            &super::langs(),
+        )
         .await
         .unwrap();
     let consumer = bed
@@ -370,15 +403,22 @@ async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine, &dir));
     manager
-        .install_checked(provider(port), &[], false)
+        .install_checked(provider(port), &[], false, &super::langs())
         .await
         .unwrap();
-    manager.install(&consumer(), &models()).await.unwrap();
+    manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     let env = env_of_container(&docker, &container_name("app-test", "web"));
 
     // 网关不在时重建使用方（改资源上限）：注入记下的变量，不退回空值。
     manager
-        .uninstall(&PluginId::parse("system.models").unwrap(), false)
+        .uninstall(
+            &PluginId::parse("system.models").unwrap(),
+            false,
+            &super::langs(),
+        )
         .await
         .unwrap();
     let detail = manager
@@ -404,7 +444,7 @@ async fn only_one_gateway_can_be_installed() {
     let port = fake_gateway(Keys::default()).await;
     let err = bed
         .manager
-        .install_checked(provider(port), &[], false)
+        .install_checked(provider(port), &[], false, &super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
@@ -420,7 +460,10 @@ async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one(
          permissions: [matrix.bot, models]",
     );
     let granted = vec!["matrix.bot".parse().unwrap(), "models".parse().unwrap()];
-    bed.manager.install(&source, &granted).await.unwrap();
+    bed.manager
+        .install(&source, &granted, super::langs())
+        .await
+        .unwrap();
     let keys = bed.keys.lock().unwrap().clone();
     let gateway = env_of_container(&bed.docker, &container_name("app-test", "gateway"));
     assert_eq!(gateway["KEY"], keys["app.test/default"]);
@@ -431,7 +474,10 @@ async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one(
 #[tokio::test]
 async fn a_failed_reconcile_marks_the_consumer_as_degraded() {
     let bed = bed().await;
-    bed.manager.install(&consumer(), &models()).await.unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
     bed.docker.on_exec(|_, _, _| (1, "网关坏了".to_owned()));
     let failures = bed.manager.reconcile_models().await;
     assert_eq!(failures.len(), 1);
@@ -450,13 +496,13 @@ async fn a_failed_reconcile_marks_the_consumer_as_degraded() {
 #[test]
 fn the_hermes_and_magpie_drafts_render() {
     let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
-    let magpie = PluginPackage::load_dir(&plugins.join("magpie")).unwrap();
+    let magpie = PluginPackage::load_dir(&plugins.join("magpie"), &super::langs()).unwrap();
     let spec = magpie.manifest.provides.clone().unwrap().models.unwrap();
     assert_eq!(spec.credentials_service(), "magpie");
-    super::super::render::dry_run(&magpie).unwrap();
+    super::super::render::dry_run(&magpie, &super::langs()).unwrap();
     // Hermes 的 Bot 服务拿到这个 Bot 的模型凭据和 Matrix 身份。
-    let hermes = PluginPackage::load_dir(&plugins.join("hermes")).unwrap();
-    let plan = super::super::render::dry_run(&hermes).unwrap();
+    let hermes = PluginPackage::load_dir(&plugins.join("hermes"), &super::langs()).unwrap();
+    let plan = super::super::render::dry_run(&hermes, &super::langs()).unwrap();
     let gateway = plan
         .containers
         .iter()

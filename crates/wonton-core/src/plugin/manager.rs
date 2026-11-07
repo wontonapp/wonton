@@ -20,6 +20,7 @@ use super::host_facts::NvidiaMemory;
 use super::image_worker::ImageWorker;
 use super::lan::Lan;
 use super::lan::webui::switched;
+use super::languages::Languages;
 use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
 use super::manifest::{LocalizedText, Manifest, Permission, PluginId};
@@ -37,7 +38,12 @@ use super::storefront::{StoreConfig, Storefront};
 use super::upgrade::Upgrades;
 use super::upstreams::Endpoint;
 use crate::http::HttpClient;
+use crate::l10n;
 use crate::matrix::Matrix;
+
+pub(super) mod busy;
+
+pub(super) use busy::{busy, detached};
 
 pub(super) use super::entry::{Deployed, Entry};
 pub use super::entry::{Health, PluginStatus};
@@ -475,11 +481,13 @@ impl PluginManager {
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     pub async fn restore(&self) -> Result<(), InstallError> {
+        let langs = self.owner_languages();
         let files = self.store.load_all()?;
         // 先登记代理提供方：恢复其他插件时就可能需要解析它的地址。
         for file in &files {
             if let Ok(record) = &file.record
-                && let Ok(package) = PluginPackage::with_files(&record.source, record.files.clone())
+                && let Ok(package) =
+                    PluginPackage::with_files(&record.source, record.files.clone(), &langs)
                 && super::egress::provider::provides_proxy(&package.manifest)
             {
                 let listed = Listed::of_record(&package, record);
@@ -491,8 +499,8 @@ impl PluginManager {
         }
         for file in files {
             let entry = match &file.record {
-                Ok(record) => self.restore_one(record).await,
-                Err(e) => Entry::broken(&file.id, String::new(), unreadable_record(&e)),
+                Ok(record) => self.restore_one(record, &langs).await,
+                Err(e) => Entry::broken(&file.id, String::new(), unreadable_record(&e, &langs)),
             };
             match &entry.status {
                 PluginStatus::Running => tracing::info!(plugin = %file.id, "已恢复插件"),
@@ -509,8 +517,8 @@ impl PluginManager {
         Ok(())
     }
 
-    async fn restore_one(&self, record: &InstalledRecord) -> Entry {
-        match PluginPackage::with_files(&record.source, record.files.clone()) {
+    async fn restore_one(&self, record: &InstalledRecord, langs: &Languages) -> Entry {
+        match PluginPackage::with_files(&record.source, record.files.clone(), langs) {
             Ok(mut package) => {
                 package.origin = record.origin.clone();
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
@@ -532,7 +540,11 @@ impl PluginManager {
                     }
                 }
             }
-            Err(e) => Entry::broken(&record.id, record.version.clone(), unreadable_record(&e)),
+            Err(e) => Entry::broken(
+                &record.id,
+                record.version.clone(),
+                unreadable_record(&e, langs),
+            ),
         }
     }
 
@@ -542,22 +554,23 @@ impl PluginManager {
         package: PluginPackage,
         granted: &[Permission],
         lan_webui: bool,
+        langs: &Languages,
     ) -> Result<PluginView, InstallError> {
         self.check_not_upgrading()?;
-        dry_run(&package)?;
-        self.check_icon(&package).await?;
+        dry_run(&package, langs)?;
+        self.check_icon(&package, langs).await?;
         let manifest = package.manifest.clone();
-        check_permissions(&manifest, granted)?;
-        self.check_requirements(&manifest).await?;
+        check_permissions(&manifest, granted, langs)?;
+        self.check_requirements(&manifest, langs).await?;
         self.check_egress(&manifest).await?;
-        let gpu = self.gpu_grant(&manifest).await?;
+        let gpu = self.gpu_grant(&manifest, langs).await?;
         // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui).await?;
         let listed = Listed::new(&package, now_secs(), lan_webui, false, Default::default());
-        self.reserve(&listed)?;
+        self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
-        match self.deploy(&package, granted, gpu, lan).await {
+        match self.deploy(&package, granted, gpu, lan, langs).await {
             Ok(deployed) => {
                 tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
                 let listed = Listed::new(
@@ -599,20 +612,30 @@ impl PluginManager {
     }
 
     /// 占位，防止同一插件并发安装，也防止两个插件映射到同一个子域名。
-    fn reserve(&self, listed: &Arc<Listed>) -> Result<(), InstallError> {
+    fn reserve(&self, listed: &Arc<Listed>, langs: &Languages) -> Result<(), InstallError> {
         let manifest = &listed.manifest;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(existing) = plugins.get(&manifest.id) {
-            return Err(busy(&manifest.id, &existing.status).unwrap_or_else(|| {
-                InstallError::Conflict(format!("应用 {} 已经装了", manifest.id))
-            }));
+            return Err(
+                busy(&manifest.id, &existing.status, langs).unwrap_or_else(|| {
+                    InstallError::Conflict(l10n::text(
+                        langs,
+                        "plugin-install-conflict-already-installed",
+                        &[("id", manifest.id.to_string().into())],
+                    ))
+                }),
+            );
         }
         self.check_proxy_provider(manifest, &plugins)?;
         let slug = manifest.id.slug();
         if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
-            return Err(InstallError::Conflict(format!(
-                "应用 {} 与已安装的 {other} 使用同一个网页地址",
-                manifest.id
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-slug",
+                &[
+                    ("id", manifest.id.to_string().into()),
+                    ("other", other.to_string().into()),
+                ],
             )));
         }
         plugins.insert(
@@ -622,7 +645,11 @@ impl PluginManager {
         Ok(())
     }
 
-    pub(super) async fn check_requirements(&self, manifest: &Manifest) -> Result<(), InstallError> {
+    pub(super) async fn check_requirements(
+        &self,
+        manifest: &Manifest,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             self.check_proxy_provider(manifest, &plugins)?;
@@ -637,13 +664,15 @@ impl PluginManager {
             ProviderState::Ready(route) => Some(route.id),
         };
         if provides_models && let Some(id) = existing.filter(|id| *id != manifest.id) {
-            return Err(InstallError::Conflict(format!(
-                "已经装了模型网关 {id}：同一时间只能有一个"
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-models-gateway",
+                &[("id", id.to_string().into())],
             )));
         }
         let info = self.engine.host_info().await?;
-        let facts = self.facts_from(Ok(info)).await;
-        host_check::refusal(manifest, &facts).map_or(Ok(()), Err)
+        let facts = self.facts_from(Ok(info), langs).await;
+        host_check::refusal(manifest, &facts, langs).map_or(Ok(()), Err)
     }
 
     /// 同 [`Self::uninstall`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里卸载。
@@ -651,9 +680,10 @@ impl PluginManager {
         self: &Arc<Self>,
         id: PluginId,
         purge: bool,
+        langs: Languages,
     ) -> Result<UninstallReport, InstallError> {
         let this = Arc::clone(self);
-        detached(async move { this.uninstall(&id, purge).await }).await
+        detached(async move { this.uninstall(&id, purge, &langs).await }).await
     }
 
     /// 卸载插件。`purge` 时一并删除命名卷和应用数据目录。
@@ -661,34 +691,40 @@ impl PluginManager {
         &self,
         id: &PluginId,
         purge: bool,
+        langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
         self.check_not_upgrading()?;
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
             && self.egress_provider()?.id == *id
         {
-            return Err(InstallError::Conflict(
-                "正在使用这个代理插件：先在出网代理设置里换掉，再卸载".to_owned(),
-            ));
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-egress-proxy-in-use",
+                &[],
+            )));
         }
         {
             let mut plugins = self.plugins.write().expect("插件表锁中毒");
             let entry = plugins
                 .get_mut(id)
                 .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-            if let Some(e) = busy(id, &entry.status) {
+            if let Some(e) = busy(id, &entry.status, langs) {
                 return Err(e);
             }
             if self.lan.is_rebuilding(id) {
-                let reason = format!("插件 {id} 正在按新的局域网地址重建");
-                return Err(InstallError::Conflict(reason));
+                return Err(InstallError::Conflict(l10n::text(
+                    langs,
+                    "plugin-install-conflict-lan-rebuilding",
+                    &[("id", id.to_string().into())],
+                )));
             }
             entry.status = PluginStatus::Uninstalling;
             entry.checked_at = now_secs();
         }
         drop(_changing);
         tracing::info!(plugin = %id, purge, "开始卸载插件");
-        match self.teardown(id, purge).await {
+        match self.teardown(id, purge, langs).await {
             Ok(report) => {
                 self.clear_oom(id);
                 self.lan.clear_degraded(id);
@@ -699,7 +735,11 @@ impl PluginManager {
                 Ok(report)
             }
             Err(e) => {
-                let reason = format!("卸载未完成：{e}");
+                let reason = l10n::text(
+                    langs,
+                    "plugin-install-uninstall-unfinished",
+                    &[("error", e.to_string().into())],
+                );
                 self.set(id, PluginStatus::Degraded { reason }, Some(None));
                 Err(e)
             }
@@ -707,36 +747,16 @@ impl PluginManager {
     }
 }
 
-/// 插件正在安装、卸载或升级时，对它的新操作如实回答“正在进行”。
-pub(super) fn busy(id: &PluginId, status: &PluginStatus) -> Option<InstallError> {
-    let doing = match status {
-        PluginStatus::Installing => "安装",
-        PluginStatus::Uninstalling => "卸载",
-        PluginStatus::Upgrading => "升级",
-        PluginStatus::Running | PluginStatus::Stopped | PluginStatus::Degraded { .. } => {
-            return None;
-        }
-    };
-    Some(InstallError::Conflict(format!("应用 {id} 正在{doing}")))
-}
-
-/// 在独立的任务里执行，调用方只等结果：调用方被丢弃（请求断开：手机切网、隧道断开）时操作照样做完，不会停在
-/// 半路，留下一直“安装中”“卸载中”的插件和装了一半的资源。任务不会被取消（只有运行时关闭时才会，那时调用方
-/// 也已经没了），所以出错只可能是任务 panic，原样传给调用方。
-pub(super) async fn detached<T: Send + 'static>(op: impl Future<Output = T> + Send + 'static) -> T {
-    match tokio::spawn(op).await {
-        Ok(out) => out,
-        Err(e) => std::panic::resume_unwind(e.into_panic()),
-    }
-}
-
 pub(super) fn check_permissions(
     manifest: &Manifest,
     granted: &[Permission],
+    langs: &Languages,
 ) -> Result<(), InstallError> {
     if let Some(extra) = granted.iter().find(|p| !manifest.permissions.contains(p)) {
-        return Err(InstallError::Invalid(format!(
-            "授予了清单没有声明的权限 {extra}"
+        return Err(InstallError::Invalid(l10n::text(
+            langs,
+            "plugin-install-permission-not-declared",
+            &[("permission", extra.to_string().into())],
         )));
     }
     let missing: Vec<String> = manifest
@@ -749,12 +769,20 @@ pub(super) fn check_permissions(
         return Err(InstallError::PermissionNotGranted(missing));
     }
     if let Some(p) = manifest.permissions.iter().find(|p| !supported(p)) {
-        return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
+        return Err(InstallError::Unsupported(l10n::text(
+            langs,
+            "plugin-install-permission-unsupported",
+            &[("permission", p.to_string().into())],
+        )));
     }
     Ok(())
 }
 
 /// 记录读不懂时给主人看的原因：比如核心升级后不再认记录里的字段。
-fn unreadable_record(error: &dyn std::fmt::Display) -> String {
-    format!("插件记录读不懂，卸载（可以保留数据）后重新安装：{error}")
+fn unreadable_record(error: &dyn std::fmt::Display, langs: &Languages) -> String {
+    l10n::text(
+        langs,
+        "plugin-install-record-unreadable",
+        &[("error", error.to_string().into())],
+    )
 }

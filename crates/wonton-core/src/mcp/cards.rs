@@ -126,7 +126,7 @@ fn permission_lines(manifest: &Manifest, langs: &Languages) -> Vec<CardLine> {
 
 /// 服务和镜像：镜像要按摘要固定，主人在卡片上就能看到要跑的是哪些。
 fn image_lines(package: &PluginPackage, langs: &Languages) -> Vec<CardLine> {
-    match render::dry_run(package) {
+    match render::dry_run(package, langs) {
         Ok(plan) => plan
             .containers
             .iter()
@@ -172,7 +172,7 @@ pub fn added_lines(
             lines.push(emphasized(notice));
         }
     }
-    let old = PluginPackage::manifest_of(&record.source).ok();
+    let old = PluginPackage::manifest_of(&record.source, &Languages::default()).ok();
     if !old
         .as_ref()
         .and_then(|manifest| manifest.webui.as_ref())

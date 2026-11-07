@@ -21,7 +21,7 @@ fn agent_login_defaults_to_empty_and_requires_egress() {
     );
     let error = serde_json::from_str::<Manifest>(&login)
         .unwrap()
-        .validate()
+        .validate(&Languages::default())
         .unwrap_err();
     assert!(error.to_string().contains("network.egress"), "{error}");
 }
@@ -44,7 +44,7 @@ fn agent_login_ids_are_valid_and_unique() {
     ] {
         let error = serde_json::from_str::<Manifest>(&base.replace("LOGIN", login))
             .unwrap()
-            .validate()
+            .validate(&Languages::default())
             .unwrap_err();
         assert!(error.to_string().contains("agent.login"), "{error}");
     }
@@ -55,7 +55,7 @@ fn agent_login_ids_are_valid_and_unique() {
     assert!(
         serde_json::from_str::<Manifest>(&valid)
             .unwrap()
-            .validate()
+            .validate(&Languages::default())
             .is_ok()
     );
 }
@@ -72,7 +72,7 @@ fn bot_avatars_accept_exactly_the_four_activity_keys() {
             "waiting": "waiting.gif", "offline": "offline.png"}}
     });
     let manifest: Manifest = serde_json::from_value(base.clone()).unwrap();
-    manifest.validate().unwrap();
+    manifest.validate(&Languages::default()).unwrap();
     assert_eq!(manifest.bot.unwrap().avatars.unwrap().len(), 4);
     for key in ["busy", "Idle", "", "other"] {
         let mut invalid = base.clone();
@@ -80,7 +80,7 @@ fn bot_avatars_accept_exactly_the_four_activity_keys() {
         assert!(
             serde_json::from_value::<Manifest>(invalid)
                 .unwrap()
-                .validate()
+                .validate(&Languages::default())
                 .is_err()
         );
     }
@@ -97,7 +97,7 @@ fn bot_avatars_accept_exactly_the_four_activity_keys() {
     let mut empty = base;
     empty["bot"]["avatars"] = serde_json::json!({});
     let manifest: Manifest = serde_json::from_value(empty).unwrap();
-    manifest.validate().unwrap();
+    manifest.validate(&Languages::default()).unwrap();
     assert_eq!(manifest.bot.unwrap().avatars, Some(BTreeMap::new()));
 }
 

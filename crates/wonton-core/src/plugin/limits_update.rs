@@ -23,56 +23,79 @@ impl PluginManager {
     ) -> Result<PluginDetail, InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.change_limits(&id, limits).await?;
+            this.change_limits(&id, limits, &langs).await?;
             this.installed_detail(&id, &langs)
                 .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
         })
         .await
     }
 
-    async fn change_limits(&self, id: &PluginId, limits: PluginLimits) -> Result<(), InstallError> {
+    async fn change_limits(
+        &self,
+        id: &PluginId,
+        limits: PluginLimits,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         self.check_not_upgrading()?;
         if !self.is_installed(id) {
             return Err(InstallError::NotInstalled(id.to_string()));
         }
-        let ncpu = self.validate_limits(&limits).await?;
+        let ncpu = self.validate_limits(&limits, langs).await?;
         let _pass = self.lan.lock_pass().await;
         if !self.begin_rebuild(id) {
-            return Err(InstallError::Conflict(format!(
-                "插件 {id} 正在安装、卸载或重建，等那边做完"
+            return Err(InstallError::Conflict(crate::l10n::text(
+                langs,
+                "plugin-install-limits-busy",
+                &[("id", id.to_string().into())],
             )));
         }
-        let result = self.apply_limits(id, limits, ncpu).await;
+        let result = self.apply_limits(id, limits, ncpu, langs).await;
         self.lan.end(id);
         result
     }
 
-    async fn validate_limits(&self, limits: &PluginLimits) -> Result<i64, InstallError> {
+    async fn validate_limits(
+        &self,
+        limits: &PluginLimits,
+        langs: &Languages,
+    ) -> Result<i64, InstallError> {
         if limits.memory.is_some_and(|memory| memory < MIN_MEMORY) {
-            return Err(InstallError::Invalid(format!(
-                "memory 至少是 {} MiB",
-                MIN_MEMORY / (1024 * 1024)
+            return Err(InstallError::Invalid(crate::l10n::text(
+                langs,
+                "plugin-install-limits-min-memory",
+                &[("mib", (MIN_MEMORY / (1024 * 1024)).into())],
             )));
         }
-        let ncpu = self
-            .engine
-            .host_info()
-            .await?
-            .ncpu
-            .ok_or_else(|| InstallError::Docker("Docker /info 没有报告 NCPU".to_owned()))?;
+        let ncpu = self.engine.host_info().await?.ncpu.ok_or_else(|| {
+            InstallError::Docker(crate::l10n::text(
+                langs,
+                "plugin-install-limits-ncpu-missing",
+                &[],
+            ))
+        })?;
         if ncpu <= 0 {
-            return Err(InstallError::Docker(
-                "Docker /info 报告的 NCPU 不合法".to_owned(),
-            ));
+            return Err(InstallError::Docker(crate::l10n::text(
+                langs,
+                "plugin-install-limits-ncpu-invalid",
+                &[],
+            )));
         }
         if let Some(percent) = limits.cpu_percent {
             let max = u32::try_from(ncpu)
                 .ok()
                 .and_then(|cpu| cpu.checked_mul(100))
-                .ok_or_else(|| InstallError::Docker("Docker /info 的 NCPU 超出范围".to_owned()))?;
+                .ok_or_else(|| {
+                    InstallError::Docker(crate::l10n::text(
+                        langs,
+                        "plugin-install-limits-ncpu-out-of-range",
+                        &[],
+                    ))
+                })?;
             if percent == 0 || percent > max {
-                return Err(InstallError::Invalid(format!(
-                    "cpu_percent 必须在 1 到 {max} 之间"
+                return Err(InstallError::Invalid(crate::l10n::text(
+                    langs,
+                    "plugin-install-limits-cpu-percent-range",
+                    &[("max", max.into())],
                 )));
             }
         }
@@ -84,12 +107,13 @@ impl PluginManager {
         id: &PluginId,
         limits: PluginLimits,
         ncpu: i64,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let mut record = self
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         // 只要资源字段，用和安装前检查一样的占位环境：Bot 的令牌之类核心不存，真的环境凑不齐。
         let mut ctx = dry_run_context(&package, Some("owner@wonton.invalid"));
@@ -97,7 +121,7 @@ impl PluginManager {
         ctx.limits = limits;
         let slug = package.manifest.id.slug();
         let mut updates = Vec::new();
-        for plan in render(&package, &ctx)?.containers {
+        for plan in render(&package, &ctx, langs)?.containers {
             let container = self.cfg.instance.container(&slug, &plan.service);
             // 容器不在的服务下次重建时按记录来。
             let Some(current) = self.engine.inspect_container(&container).await? else {
@@ -107,6 +131,7 @@ impl PluginManager {
                 &plan.body.host_config.unwrap_or_default(),
                 &current.host_config.unwrap_or_default(),
                 ncpu,
+                langs,
             )?;
             updates.push((plan.service, container, body));
         }
@@ -119,7 +144,16 @@ impl PluginManager {
             self.engine
                 .update_container(&container, body)
                 .await
-                .map_err(|error| InstallError::Docker(format!("服务 {service}：{error}")))?;
+                .map_err(|error| {
+                    InstallError::Docker(crate::l10n::text(
+                        langs,
+                        "plugin-install-service-error",
+                        &[
+                            ("service", service.into()),
+                            ("error", error.to_string().into()),
+                        ],
+                    ))
+                })?;
         }
         self.clear_oom(id);
         self.changed();

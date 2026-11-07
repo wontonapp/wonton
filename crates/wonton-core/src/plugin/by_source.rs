@@ -148,7 +148,7 @@ impl PluginManager {
             )));
         }
         let installed = self
-            .install_detached(package, granted, request.lan_webui)
+            .install_detached(package, granted, request.lan_webui, self.owner_languages())
             .await?;
         self.staged.remove(&digest);
         Ok(installed)

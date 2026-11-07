@@ -44,7 +44,10 @@ async fn an_exited_one_shot_service_is_normal_after_install_and_restart() {
     let init = container_name("app-test", "init");
     docker.set_state(&init, exited(0));
     let m = manager_with(engine.clone(), &dir);
-    let view = m.install(&with_init(""), &[]).await.unwrap();
+    let view = m
+        .install(&with_init(""), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(
         (view.status, view.health),
         (PluginStatus::Running, Some(Health::Healthy))
@@ -77,7 +80,10 @@ async fn services_without_a_healthcheck_are_running_with_health_unknown() {
     let app = container_name("app-test", "app");
     docker.set_state(&app, json!({"Status": "running", "Running": true}));
     let m = manager_with(engine.clone(), &dir);
-    let view = m.install(&with_init(""), &[]).await.unwrap();
+    let view = m
+        .install(&with_init(""), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(
         (view.status, view.health),
         (PluginStatus::Running, Some(Health::Unknown))
@@ -110,13 +116,21 @@ async fn services_without_a_healthcheck_are_running_with_health_unknown() {
 fn one_shot_services_must_not_be_restarted() {
     for restart in ["", "    restart: always\n", "    restart: unless-stopped\n"] {
         let compose = with_init("").replace("    restart: 'no'\n", restart);
-        let err = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap_err();
+        let err = dry_run(
+            &PluginPackage::parse(&compose, &super::langs()).unwrap(),
+            &super::langs(),
+        )
+        .unwrap_err();
         assert!(
             matches!(&err, RenderError::Service { service, .. } if service == "init"),
             "{restart}: {err}"
         );
     }
-    let plan = dry_run(&PluginPackage::parse(&with_init("")).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::parse(&with_init(""), &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap();
     let one_shot: Vec<(&str, bool)> = plan
         .containers
         .iter()
@@ -132,7 +146,11 @@ async fn a_one_shot_service_nobody_depends_on_still_has_to_finish() {
          depends_on:\n      app: {condition: service_started}",
         "  permissions: []",
     );
-    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::parse(&compose, &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap();
     let one_shot: Vec<(&str, bool)> = plan
         .containers
         .iter()
@@ -146,11 +164,11 @@ async fn a_one_shot_service_nobody_depends_on_still_has_to_finish() {
     docker.set_state(&provision, exited(1));
     let m = manager_with(engine, &dir);
     assert!(
-        m.install(&compose, &[]).await.is_err(),
+        m.install(&compose, &[], super::langs()).await.is_err(),
         "收尾失败就是没装好"
     );
     docker.set_state(&provision, exited(0));
-    let view = m.install(&compose, &[]).await.unwrap();
+    let view = m.install(&compose, &[], super::langs()).await.unwrap();
     assert_eq!(view.status, PluginStatus::Running);
 }
 
@@ -177,7 +195,7 @@ async fn install_failure_names_the_failing_probes() {
     docker.set_output(&app, 0, "插件日志：数据库迁移失败", "");
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[])
+        .install(&with_init(""), &[], super::langs())
         .await
         .unwrap_err()
         .to_string();
@@ -230,7 +248,7 @@ async fn probe_output_is_trimmed_and_truncated() {
     );
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[])
+        .install(&with_init(""), &[], super::langs())
         .await
         .unwrap_err()
         .to_string();
@@ -260,7 +278,7 @@ async fn ansi_sequences_are_stripped_entirely() {
     );
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[])
+        .install(&with_init(""), &[], super::langs())
         .await
         .unwrap_err()
         .to_string();
@@ -283,7 +301,7 @@ async fn failures_without_probe_log_read_as_before() {
     docker.set_output(&app, 0, "插件日志：只写了一半", "");
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[])
+        .install(&with_init(""), &[], super::langs())
         .await
         .unwrap_err()
         .to_string();
@@ -315,7 +333,7 @@ async fn a_failed_one_shot_dependency_fails_the_install_immediately() {
         "  permissions: []",
     );
     let started = std::time::Instant::now();
-    let err = m.install(&compose, &[]).await.unwrap_err();
+    let err = m.install(&compose, &[], super::langs()).await.unwrap_err();
     assert!(
         started.elapsed() < Duration::from_secs(60),
         "一次性依赖失败要立即报错，不能等满超时：{err}"
@@ -369,7 +387,7 @@ async fn a_one_shot_service_starts_only_after_the_long_running_service_is_health
         hold.release();
         early
     });
-    let view = m.install(&compose, &[]).await.unwrap();
+    let view = m.install(&compose, &[], super::langs()).await.unwrap();
     assert_eq!(view.status, PluginStatus::Running);
     flip.await.unwrap();
     assert!(

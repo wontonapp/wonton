@@ -10,6 +10,7 @@ use wonton_protocol::{StoreFailure, StoreProblem, StoreUnreadable};
 use super::super::gallery::IconSource;
 use super::super::github::{Found, GitHub, GitHubError, Repo, Tag};
 use super::super::github_source::latest;
+use super::super::languages::Languages;
 use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
 use super::super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, normalize};
@@ -155,7 +156,7 @@ async fn read_repo(github: &GitHub, found: &Found) -> Result<RepoRead, GitHubErr
     let Ok(compose) = String::from_utf8(compose) else {
         return unreadable(format!("{COMPOSE_FILE} 不是 UTF-8 文本"));
     };
-    let manifest = match PluginPackage::manifest_of(&compose) {
+    let manifest = match PluginPackage::manifest_of(&compose, &Languages::default()) {
         Ok(manifest) => manifest,
         Err(e) => return unreadable(format!("清单读不懂：{e}")),
     };

@@ -19,7 +19,7 @@ use wonton_protocol::{InstallRequest, PluginTrust, StoreFailure};
 /// 在 `dir` 里放一份官方索引：`acme/hello` 的 1.0.0 版，文件按 sha256 放在 `blobs/` 下（同 `plugin index-entry`）。
 fn write_index(dir: &Path, compose: &str, icon: &str) {
     let files = [("icon.svg".to_owned(), icon.as_bytes().to_vec())].into();
-    let package = PluginPackage::with_files(compose, files).unwrap();
+    let package = PluginPackage::with_files(compose, files, &super::langs()).unwrap();
     let entry = IndexEntry::of(&package, "github:acme/hello", &"c".repeat(40)).unwrap();
     entry.write_to(dir, &package).unwrap();
 }

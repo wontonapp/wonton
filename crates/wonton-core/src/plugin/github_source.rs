@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::github::{GitHub, GitHubError, Repo, Tag, is_commit_id};
 use super::index_location::IndexLocation;
 use super::install_error::InstallError;
+use super::languages::Languages;
 use super::package::PluginPackage;
 use super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles};
 
@@ -215,15 +216,15 @@ pub async fn fetch(github: &GitHub, origin: &Origin) -> Result<PluginPackage, In
     let compose = String::from_utf8(compose)
         .map_err(|_| InstallError::Invalid(format!("{COMPOSE_FILE} 不是 UTF-8 文本")))?;
     let mut files = PackageFiles::new();
-    let optional = PluginPackage::optional_files(&compose)?;
-    for path in PluginPackage::referenced_files(&compose)? {
+    let optional = PluginPackage::optional_files(&compose, &Languages::default())?;
+    for path in PluginPackage::referenced_files(&compose, &Languages::default())? {
         let data = match get(path.clone()).await {
             Err(InstallError::NotFound(_)) if optional.contains(&path) => continue,
             result => result?,
         };
         files.insert(path, data);
     }
-    let mut package = PluginPackage::with_files(&compose, files)?;
+    let mut package = PluginPackage::with_files(&compose, files, &Languages::default())?;
     if let Some(tag) = &origin.tag {
         let version = &package.manifest.version;
         if tag.strip_prefix('v') != Some(version.as_str()) {

@@ -163,7 +163,11 @@ impl PluginManager {
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+        let mut package = PluginPackage::with_files(
+            &record.source,
+            record.files.clone(),
+            &self.owner_languages(),
+        )?;
         package.origin = record.origin.clone();
         let lan = self.lan_grant(&package, record.lan_webui).await?;
         // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动。
@@ -175,7 +179,7 @@ impl PluginManager {
             .rebuild_context(&package, &record, lan, pending.as_ref())
             .await?;
         ctx.matrix = self.bot_vars_read_back(&package, &ctx).await?;
-        let plan = render(&package, &ctx)?;
+        let plan = render(&package, &ctx, &self.owner_languages())?;
         if let (Some(pending), Some(reservation)) = (&pending, reservation) {
             self.apply_migration(
                 &package.manifest,
@@ -204,7 +208,7 @@ impl PluginManager {
         let mut vars = self.bot_vars(manifest)?;
         let mut probing = ctx.clone();
         probing.matrix = Some(vars.clone());
-        let plan = render(package, &probing)?;
+        let plan = render(package, &probing, &self.owner_languages())?;
         let uses = token_uses(&plan).map_err(cannot_read)?;
         vars.access_token = self.read_token(&uses).await?;
         Ok(Some(vars))

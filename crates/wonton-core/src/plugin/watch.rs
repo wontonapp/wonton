@@ -60,9 +60,16 @@ impl PluginManager {
         let Some(record) = self.store.load(id)? else {
             return Ok(());
         };
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+        let mut package = PluginPackage::with_files(
+            &record.source,
+            record.files.clone(),
+            &self.owner_languages(),
+        )?;
         package.origin = record.origin.clone();
-        match self.check_containers(&package).await {
+        match self
+            .check_containers(&package, &self.owner_languages())
+            .await
+        {
             Ok(ContainersState::Running(health))
                 if self.status_of(id) == Some(PluginStatus::Running) =>
             {

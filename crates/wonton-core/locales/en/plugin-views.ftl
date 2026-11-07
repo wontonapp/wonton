@@ -2,8 +2,9 @@
 ## data (paths, ports, device names, codes) goes in as parameters, untranslated.
 ## English is the base language, in Sentence case. Errors read like "Can't reach …".
 
-# Separator for listing data items (image repositories and the like). Quoted to keep the space.
-list-separator = ", "
+# Separator for listing data items (image repositories and the like). A string literal
+# keeps the spaces; bare quotes in a pattern would render as literal quote characters.
+list-separator = {", "}
 
 # Permissions, shown in the install confirmation, approval cards and store search results.
 permission-storage-share =

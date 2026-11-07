@@ -41,7 +41,10 @@ async fn resident_states_drive_stopped_and_degraded_without_counting_completed_i
     let app = container_name("app-test", "app");
     docker.set_state(&init, stopped("exited"));
     let manager = manager_with(engine.clone(), &dir);
-    manager.install(&compose(), &[]).await.unwrap();
+    manager
+        .install(&compose(), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(
         seen(&manager),
         (PluginStatus::Running, Some(Health::Healthy))
@@ -91,6 +94,7 @@ async fn dead_missing_unhealthy_and_oom_containers_are_not_stopped() {
         .install(
             &package("  app:\n    image: nginx\n", "  permissions: []"),
             &[],
+            super::langs(),
         )
         .await
         .unwrap();
@@ -129,6 +133,7 @@ async fn only_one_shot_services_do_not_vacuously_count_as_stopped() {
                 "  permissions: []",
             ),
             &[],
+            super::langs(),
         )
         .await
         .unwrap();
@@ -145,7 +150,10 @@ async fn starting_preserves_containers_and_skips_completed_init_in_dependency_or
     let app = container_name("app-test", "app");
     docker.set_state(&init, stopped("exited"));
     let manager = Arc::new(manager_with(engine, &dir));
-    let installed = manager.install(&compose(), &[]).await.unwrap();
+    let installed = manager
+        .install(&compose(), &[], super::langs())
+        .await
+        .unwrap();
     for (name, status) in [(&app, "exited"), (&db, "created")] {
         docker.set_state(name, stopped(status));
         docker.set_start_state(name, healthy());
@@ -174,7 +182,10 @@ async fn mixed_state_is_refused_without_starting_any_container() {
     let dir = tempfile::tempdir().unwrap();
     docker.set_state(&container_name("app-test", "init"), stopped("exited"));
     let manager = Arc::new(manager_with(engine, &dir));
-    let installed = manager.install(&compose(), &[]).await.unwrap();
+    let installed = manager
+        .install(&compose(), &[], super::langs())
+        .await
+        .unwrap();
     docker.set_state(&container_name("app-test", "app"), stopped("exited"));
     let before = docker.writes();
     let error = manager.start_detached(installed.id).await.unwrap_err();
@@ -195,7 +206,10 @@ async fn a_failed_one_shot_dependency_fails_the_start_immediately() {
     let mut m = manager_with(engine, &dir);
     m.cfg.install_timeout = Duration::from_secs(300);
     let manager = Arc::new(m);
-    let installed = manager.install(&compose(), &[]).await.unwrap();
+    let installed = manager
+        .install(&compose(), &[], super::langs())
+        .await
+        .unwrap();
     // 装好之后：一次性服务失败了，db 一直停在 starting。
     docker.set_state(
         &init,
@@ -231,6 +245,7 @@ async fn concurrent_uninstall_is_rejected_and_disconnected_start_finishes() {
         .install(
             &package("  app:\n    image: nginx\n", "  permissions: []"),
             &[],
+            super::langs(),
         )
         .await
         .unwrap();
@@ -246,7 +261,7 @@ async fn concurrent_uninstall_is_rejected_and_disconnected_start_finishes() {
     held.reached().await;
     assert_eq!(
         manager
-            .uninstall(&installed.id, false)
+            .uninstall(&installed.id, false, &super::langs())
             .await
             .unwrap_err()
             .kind(),

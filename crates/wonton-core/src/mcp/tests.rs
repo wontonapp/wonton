@@ -16,6 +16,7 @@ use super::test_support::{Notes, serve_notes};
 use super::upstream::{ReadError, Upstreams};
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
+use crate::plugin::languages::Languages;
 use crate::plugin::{McpServer, PluginId, PluginPackage, PluginStatus};
 
 pub(super) use crate::mcp::test_setup::*;
@@ -159,7 +160,9 @@ async fn stuck_plugins_do_not_hold_up_everyone_elses_tools() {
         let stuck = NOTES
             .replace("name: notes", &format!("name: {name}"))
             .replace("app.example.notes", &format!("app.example.{name}"));
-        let manifest = PluginPackage::parse(&stuck).unwrap().manifest;
+        let manifest = PluginPackage::parse(&stuck, &Languages::from_header(Some("zh-Hans")))
+            .unwrap()
+            .manifest;
         let id = manifest.id.clone();
         s.manager
             .register_for_test(manifest, PluginStatus::Running, None);
@@ -205,7 +208,9 @@ async fn a_confirmed_call_that_times_out_leaves_the_card_uncertain() {
         .replace("name: notes", "name: hanging")
         .replace("app.example.notes", "app.example.hanging")
         .replace("streamable-http}", "streamable-http, tool_idle_seconds: 1}");
-    let manifest = PluginPackage::parse(&manifest).unwrap().manifest;
+    let manifest = PluginPackage::parse(&manifest, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     let id = manifest.id.clone();
     s.manager
         .register_for_test(manifest, PluginStatus::Running, None);
@@ -274,7 +279,8 @@ async fn an_agent_cancelling_a_read_only_call_cancels_it_in_the_plugin() {
 fn a_plugin_can_declare_longer_tool_limits_within_reason() {
     let parse = |extra: &str| {
         let text = NOTES.replace("streamable-http}", &format!("streamable-http{extra}}}"));
-        PluginPackage::parse(&text).map(|package| package.manifest.mcp.unwrap())
+        PluginPackage::parse(&text, &Languages::from_header(Some("zh-Hans")))
+            .map(|package| package.manifest.mcp.unwrap())
     };
     let mcp = parse(", tool_idle_seconds: 3600, tool_total_seconds: 7200").unwrap();
     assert_eq!(mcp.tool_idle_seconds, Some(3600));
@@ -294,7 +300,8 @@ fn a_plugin_can_declare_longer_tool_limits_within_reason() {
 fn a_plugin_can_limit_its_tools_to_a_valid_allowlist() {
     let parse = |extra: &str| {
         let text = NOTES.replace("streamable-http}", &format!("streamable-http{extra}}}"));
-        PluginPackage::parse(&text).map(|package| package.manifest.mcp.unwrap())
+        PluginPackage::parse(&text, &Languages::from_header(Some("zh-Hans")))
+            .map(|package| package.manifest.mcp.unwrap())
     };
     let mcp = parse(", tools: [search, find, a.b_c-d]").unwrap();
     assert_eq!(
@@ -600,15 +607,22 @@ async fn an_unreadable_index_is_reported_not_shown_as_empty() {
 async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
     let (_docker, engine) = FakeDocker::start().await;
     let s = setup(engine, Duration::from_secs(60)).await;
-    let package = PluginPackage::parse(&official_package(
-        "app.example.journal",
-        "日记",
-        "storage.share.documents:read",
-    ))
+    let package = PluginPackage::parse(
+        &official_package(
+            "app.example.journal",
+            "日记",
+            "storage.share.documents:read",
+        ),
+        &Languages::from_header(Some("zh-Hans")),
+    )
     .unwrap();
     let permissions = package.manifest.permissions.clone();
     s.manager
-        .install_package(package, &permissions)
+        .install_package(
+            package,
+            &permissions,
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await
         .unwrap();
 
@@ -632,9 +646,12 @@ async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
             .all(|p| p.id.as_str() != "app.example.journal")
     );
 
-    let manifest = PluginPackage::parse(&NOTES.replace("app.example.notes", "com.example.agent"))
-        .unwrap()
-        .manifest;
+    let manifest = PluginPackage::parse(
+        &NOTES.replace("app.example.notes", "com.example.agent"),
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap()
+    .manifest;
     s.manager
         .register_for_test(manifest, PluginStatus::Running, None);
     let result = s

@@ -21,7 +21,10 @@ const BOTS: &str = "  bot: {display_name: {zh: 测试, en: Test}}\n  bots: {serv
     permissions: [matrix.bot]";
 
 fn plan(services: &str, manifest: &str) -> Result<Deployment, RenderError> {
-    dry_run(&PluginPackage::parse(&package(services, manifest)).unwrap())
+    dry_run(
+        &PluginPackage::parse(&package(services, manifest), &super::langs()).unwrap(),
+        &super::langs(),
+    )
 }
 
 fn container<'a>(plan: &'a Deployment, service: &str) -> &'a ContainerPlan {
@@ -97,7 +100,8 @@ fn services_get_the_service_domain() {
 
 #[test]
 fn bot_declarations_need_matrix_bot_and_real_services() {
-    let parse = |manifest: &str| PluginPackage::parse(&package(SERVICES, manifest));
+    let parse =
+        |manifest: &str| PluginPackage::parse(&package(SERVICES, manifest), &super::langs());
     for manifest in [
         BOTS.replace("[matrix.bot]", "[]"),
         "  bot: {display_name: {zh: 测试, en: Test}}\n  permissions: []".to_owned(),
@@ -112,7 +116,7 @@ fn bot_declarations_need_matrix_bot_and_real_services() {
     let agent = package(SERVICES, "  agent: {protocol: matrix}\n  permissions: []")
         .replace("kind: app", "kind: agent");
     assert!(matches!(
-        PluginPackage::parse(&agent),
+        PluginPackage::parse(&agent, &super::langs()),
         Err(PackageError::Manifest(_))
     ));
     assert!(matches!(

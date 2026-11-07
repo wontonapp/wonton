@@ -58,7 +58,7 @@ fn identity_app(mail: &str, port: u16) -> String {
 }
 
 fn parsed(compose: &str) -> PluginPackage {
-    PluginPackage::parse(compose).unwrap()
+    PluginPackage::parse(compose, &super::langs()).unwrap()
 }
 
 #[tokio::test]
@@ -89,7 +89,7 @@ async fn owner_identity_gives_an_sso_none_plugin_the_name_and_email() {
         preview.notices
     );
 
-    m.install(&compose, &[Permission::OwnerIdentity])
+    m.install(&compose, &[Permission::OwnerIdentity], super::langs())
         .await
         .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
@@ -103,9 +103,17 @@ fn a_plugin_with_neither_sso_nor_the_permission_gets_no_identity() {
         "  web:\n    image: nginx\n    environment: {ADMIN: '${WONTON_OWNER_NAME}'}",
         "  webui: {service: web, port: 80}\n  permissions: []",
     );
-    let error = dry_run(&parsed(&compose)).unwrap_err().to_string();
+    let error = dry_run(&parsed(&compose), &super::langs())
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("WONTON_OWNER_NAME"), "{error}");
-    assert!(error.contains("没申请 owner.identity"), "{error}");
+    assert!(
+        error.contains(&super::message(
+            "plugin-install-render-no-owner-identity",
+            &[("var", "WONTON_OWNER_NAME")]
+        )),
+        "{error}"
+    );
 }
 
 /// 声明了 `sso` 的插件，环境变量 `ADMIN` 引用主人的用户名。
@@ -124,8 +132,16 @@ const PROXY: &str = "  webui:\n    service: web\n    port: 80\n    sso: proxy\n 
 #[test]
 fn sso_does_not_bring_the_identity_variables() {
     for webui in [OIDC, PROXY] {
-        let error = dry_run(&parsed(&sso_app(webui))).unwrap_err().to_string();
-        assert!(error.contains("没申请 owner.identity"), "{error}");
+        let error = dry_run(&parsed(&sso_app(webui)), &super::langs())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(&super::message(
+                "plugin-install-render-no-owner-identity",
+                &[("var", "WONTON_OWNER_NAME")]
+            )),
+            "{error}"
+        );
     }
 }
 
@@ -139,7 +155,9 @@ fn proxy_sso_must_declare_a_header_or_a_cookie() {
             "  web:\n    image: nginx",
             &format!("{webui}\n  permissions: []"),
         );
-        let error = PluginPackage::parse(&compose).unwrap_err().to_string();
+        let error = PluginPackage::parse(&compose, &super::langs())
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("webui.proxy"), "{error}");
     }
 }
@@ -183,7 +201,7 @@ async fn without_an_email_a_plugin_that_requires_it_does_not_install() {
         Some(crate::owner::EMAIL_NEEDED)
     );
     let error = m
-        .install(&compose, &[Permission::OwnerIdentity])
+        .install(&compose, &[Permission::OwnerIdentity], super::langs())
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
@@ -212,7 +230,7 @@ async fn filling_in_the_email_lets_the_plugin_install_with_it() {
         .await
         .unwrap();
     assert_eq!(preview.missing_profile, None);
-    m.install(&compose, &[Permission::OwnerIdentity])
+    m.install(&compose, &[Permission::OwnerIdentity], super::langs())
         .await
         .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
@@ -231,7 +249,7 @@ async fn without_an_email_a_plugin_that_can_do_without_it_installs() {
         .await
         .unwrap();
     assert_eq!(preview.blocked, None);
-    m.install(&compose, &[Permission::OwnerIdentity])
+    m.install(&compose, &[Permission::OwnerIdentity], super::langs())
         .await
         .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
@@ -260,7 +278,7 @@ async fn without_an_email_a_proxy_template_that_uses_it_does_not_install() {
         preview.missing_profile.as_deref(),
         Some(crate::owner::EMAIL_NEEDED)
     );
-    let error = m.install(&compose, &[]).await.unwrap_err();
+    let error = m.install(&compose, &[], super::langs()).await.unwrap_err();
     assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
         error.to_string().contains(crate::owner::NO_EMAIL),
@@ -281,7 +299,7 @@ async fn a_proxy_template_stops_forwarding_when_the_email_is_removed_later() {
              headers: {{X-Mail: '{{email}}'}}\n  permissions: []"
         ),
     );
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &[], super::langs()).await.unwrap();
     let auth = m.route("app-test").unwrap().proxy.unwrap();
     let mut owner = Owner {
         username: "owner".into(),
@@ -316,7 +334,7 @@ async fn an_oidc_plugin_requiring_email_is_stopped_before_install() {
         preview.missing_profile.as_deref(),
         Some(crate::owner::EMAIL_NEEDED)
     );
-    let error = m.install(&compose, &[]).await.unwrap_err();
+    let error = m.install(&compose, &[], super::langs()).await.unwrap_err();
     assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
     assert!(
         error.to_string().contains(crate::owner::NO_EMAIL),
@@ -349,7 +367,7 @@ async fn an_oidc_plugin_requiring_email_installs_once_the_email_is_filled() {
         .await
         .unwrap();
     assert_eq!(preview.missing_profile, None);
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &[], super::langs()).await.unwrap();
 }
 
 #[tokio::test]
@@ -370,7 +388,7 @@ async fn an_oidc_plugin_without_requires_email_still_installs_without_an_email()
         .await
         .unwrap();
     assert_eq!(preview.missing_profile, None);
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &[], super::langs()).await.unwrap();
 }
 
 /// 清单校验 `oidc.owner_groups`：名字合法、不重复、最多 8 个。
@@ -400,12 +418,13 @@ fn oidc_owner_groups_are_checked_in_the_manifest() {
             "最多 8 个",
         ),
     ] {
-        let error = PluginPackage::parse(&webui(oidc)).unwrap_err();
+        let error = PluginPackage::parse(&webui(oidc), &super::langs()).unwrap_err();
         assert!(error.to_string().contains(needle), "{oidc}: {error}");
     }
-    let ok = PluginPackage::parse(&webui(
-        "{redirect_paths: [/cb], owner_groups: [admin, app.admin]}",
-    ))
+    let ok = PluginPackage::parse(
+        &webui("{redirect_paths: [/cb], owner_groups: [admin, app.admin]}"),
+        &super::langs(),
+    )
     .unwrap();
     assert_eq!(
         ok.manifest.webui.unwrap().oidc.unwrap().owner_groups,

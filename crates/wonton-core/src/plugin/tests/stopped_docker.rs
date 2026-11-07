@@ -75,7 +75,10 @@ async fn exercise(
     dir: &tempfile::TempDir,
     names: &Names,
 ) {
-    let installed = manager.install(&compose(), &[]).await.unwrap();
+    let installed = manager
+        .install(&compose(), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(installed.status, PluginStatus::Running);
     let app = names.container("app-test", "app");
     let init = names.container("app-test", "init");

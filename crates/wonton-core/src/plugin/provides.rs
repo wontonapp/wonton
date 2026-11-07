@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Permission, PluginKind};
+use crate::l10n::text;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,7 +96,7 @@ fn invalid(message: &str) -> ManifestError {
 }
 
 /// 服务名是否存在由 [`super::package`] 对照 compose 检查。
-pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     let egress = manifest
         .provides
         .as_ref()
@@ -102,39 +104,55 @@ pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let permission = manifest.permissions.contains(&Permission::EgressProxy);
     match (egress, permission) {
         (Some(_), false) => {
-            return Err(invalid("provides.egress_proxy 必须申请 egress.proxy 权限"));
+            return Err(invalid(&text(
+                langs,
+                "plugin-install-prv-egress-needs-permission",
+                &[],
+            )));
         }
-        (None, true) => return Err(invalid("egress.proxy 权限必须声明 provides.egress_proxy")),
+        (None, true) => {
+            return Err(invalid(&text(
+                langs,
+                "plugin-install-prv-permission-needs-egress",
+                &[],
+            )));
+        }
         _ => {}
     }
     if let Some(egress) = egress {
         if !manifest.permissions.contains(&Permission::NetworkEgress) {
-            return Err(invalid(
-                "provides.egress_proxy 必须申请 network.egress 权限",
-            ));
+            return Err(invalid(&text(
+                langs,
+                "plugin-install-prv-egress-needs-network",
+                &[],
+            )));
         }
         if egress.port == 0 {
-            return Err(invalid("provides.egress_proxy.port 不能为 0"));
+            return Err(invalid(&text(langs, "plugin-install-prv-egress-port", &[])));
         }
     }
     let Some(provides) = &manifest.provides else {
         return Ok(());
     };
     if provides.models.is_none() && provides.egress_proxy.is_none() {
-        return Err(invalid("provides 至少声明一项能力"));
+        return Err(invalid(&text(langs, "plugin-install-prv-empty", &[])));
     }
     let Some(models) = &provides.models else {
         return Ok(());
     };
     if manifest.kind != PluginKind::System {
-        return Err(invalid("只有 kind: system 的插件能声明 provides.models"));
+        return Err(invalid(&text(
+            langs,
+            "plugin-install-prv-models-system-only",
+            &[],
+        )));
     }
-    validate_models(models)
+    validate_models(models, langs)
 }
 
-fn validate_models(models: &ModelsProvider) -> Result<(), ManifestError> {
+fn validate_models(models: &ModelsProvider, langs: &Languages) -> Result<(), ManifestError> {
     if models.port == 0 {
-        return Err(invalid("provides.models.port 不能为 0"));
+        return Err(invalid(&text(langs, "plugin-install-prv-models-port", &[])));
     }
     let apis = [
         Some(&models.apis.openai),
@@ -146,43 +164,63 @@ fn validate_models(models: &ModelsProvider) -> Result<(), ManifestError> {
         .flatten()
         .any(|path| !path.starts_with('/'))
     {
-        return Err(invalid("provides.models.apis 的路径必须以 / 开头"));
+        return Err(invalid(&text(
+            langs,
+            "plugin-install-prv-models-apis-path",
+            &[],
+        )));
     }
     if models.default_model.trim().is_empty() {
-        return Err(invalid("provides.models.default_model 不能为空"));
+        return Err(invalid(&text(
+            langs,
+            "plugin-install-prv-models-default-model",
+            &[],
+        )));
     }
     for (field, argv) in [
         ("issue", &models.credentials.issue),
         ("revoke", &models.credentials.revoke),
     ] {
         if !argv.iter().any(|arg| arg.contains(NAME_PLACEHOLDER)) {
-            return Err(ManifestError::Invalid(format!(
-                "provides.models.credentials.{field} 是非空的 argv，并用 {NAME_PLACEHOLDER} 指明凭据名"
+            return Err(invalid(&text(
+                langs,
+                "plugin-install-prv-credentials-argv",
+                &[
+                    ("field", field.into()),
+                    ("placeholder", NAME_PLACEHOLDER.into()),
+                ],
             )));
         }
     }
     if let Some(providers) = &models.providers {
-        validate_provider_commands(providers)?;
+        validate_provider_commands(providers, langs)?;
     }
     Ok(())
 }
 
-fn validate_provider_commands(providers: &ProviderCommands) -> Result<(), ManifestError> {
+fn validate_provider_commands(
+    providers: &ProviderCommands,
+    langs: &Languages,
+) -> Result<(), ManifestError> {
     if providers.list.is_empty() {
-        return Err(invalid("provides.models.providers.list 必须是非空的 argv"));
+        return Err(invalid(&text(langs, "plugin-install-prv-list-argv", &[])));
     }
     for (field, argv) in [("save", &providers.save), ("test", &providers.test)] {
         if !argv.iter().any(|arg| arg.contains(ID_PLACEHOLDER)) {
-            return Err(invalid(&format!(
-                "provides.models.providers.{field} 是非空的 argv，并用 {{id}} 指明服务商 ID"
+            return Err(invalid(&text(
+                langs,
+                "plugin-install-prv-provider-argv",
+                &[("field", field.into())],
             )));
         }
     }
     if let Some(custom) = &providers.custom {
         for (field, argv) in [("save", &custom.save), ("test", &custom.test)] {
             if argv.is_empty() || argv.iter().any(|arg| arg.contains(['{', '}'])) {
-                return Err(invalid(&format!(
-                    "provides.models.providers.custom.{field} 必须是非空且不含占位符的 argv"
+                return Err(invalid(&text(
+                    langs,
+                    "plugin-install-prv-custom-argv",
+                    &[("field", field.into())],
                 )));
             }
         }

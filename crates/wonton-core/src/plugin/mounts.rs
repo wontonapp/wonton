@@ -8,6 +8,7 @@ use bollard::models::{Mount, MountType};
 
 use super::compose::{LongVolume, Service, UserSpec, VolumeEntry, VolumeType};
 use super::hostdir::Owner;
+use super::languages::Languages;
 use super::render::{InstallContext, RenderError, list, service_err};
 
 /// 把 compose 的 `volumes` 变成 Docker 挂载，并检查宿主路径是否在允许范围内。
@@ -17,6 +18,7 @@ pub(super) struct Mounts<'a> {
     pub named: &'a BTreeSet<String>,
     pub service: &'a str,
     pub allow_docker_socket: bool,
+    pub langs: &'a Languages,
 }
 
 impl Mounts<'_> {
@@ -44,21 +46,33 @@ impl Mounts<'_> {
             [target] => (None, *target, ""),
             [source, target] => (Some(*source), *target, ""),
             [source, target, mode] => (Some(*source), *target, *mode),
-            _ => return Err(self.err(format!("卷 `{text}` 格式不合法"))),
+            _ => {
+                return Err(self.err(crate::l10n::text(
+                    self.langs,
+                    "plugin-install-mnt-short-format",
+                    &[("text", text.into())],
+                )));
+            }
         };
         let modes: Vec<&str> = mode.split(',').filter(|m| !m.is_empty()).collect();
         if let Some(bad) = modes
             .iter()
             .find(|m| !matches!(**m, "ro" | "rw" | "z" | "Z"))
         {
-            return Err(self.err(format!("卷选项 `{bad}` 不受支持")));
+            return Err(self.err(crate::l10n::text(
+                self.langs,
+                "plugin-install-mnt-option-unsupported",
+                &[("bad", (*bad).into())],
+            )));
         }
         let kind = match source {
             None => VolumeType::Volume,
             Some(s) if s.starts_with('/') => VolumeType::Bind,
             Some(s) if s.starts_with('.') || s.starts_with('~') => {
-                return Err(self.err(format!(
-                    "不支持相对路径 `{s}`，请使用 ${{WONTON_APP_DATA}} 下的路径"
+                return Err(self.err(crate::l10n::text(
+                    self.langs,
+                    "plugin-install-mnt-relative-path",
+                    &[("path", (*s).into()), ("var", "${WONTON_APP_DATA}".into())],
                 )));
             }
             Some(_) => VolumeType::Volume,
@@ -77,18 +91,32 @@ impl Mounts<'_> {
         binds: &mut Vec<(String, PathBuf)>,
     ) -> Result<Mount, RenderError> {
         if !volume.target.starts_with('/') {
-            return Err(self.err(format!("挂载目标 `{}` 必须是绝对路径", volume.target)));
+            return Err(self.err(crate::l10n::text(
+                self.langs,
+                "plugin-install-mnt-target-absolute",
+                &[("target", volume.target.as_str().into())],
+            )));
         }
         let source = match (volume.kind, volume.source) {
             (VolumeType::Tmpfs, _) => None,
             (VolumeType::Volume, None) => None,
             (VolumeType::Volume, Some(name)) => {
                 if !self.named.contains(&name) {
-                    return Err(self.err(format!("命名卷 `{name}` 没有在顶层 volumes 中声明")));
+                    return Err(self.err(crate::l10n::text(
+                        self.langs,
+                        "plugin-install-mnt-volume-undeclared",
+                        &[("name", name.as_str().into())],
+                    )));
                 }
                 Some(self.ctx.instance.volume(&self.ctx.slug, &name))
             }
-            (VolumeType::Bind, None) => return Err(self.err("绑定挂载缺少 source")),
+            (VolumeType::Bind, None) => {
+                return Err(self.err(crate::l10n::text(
+                    self.langs,
+                    "plugin-install-mnt-bind-missing-source",
+                    &[],
+                )));
+            }
             (VolumeType::Bind, Some(path))
                 if self.allow_docker_socket
                     && path == super::privileges::DOCKER_SOCKET
@@ -121,54 +149,68 @@ impl Mounts<'_> {
     fn check_bind(&self, raw: &str, read_only: bool) -> Result<PathBuf, RenderError> {
         let raw = Path::new(raw);
         if raw.components().any(|c| matches!(c, Component::ParentDir)) {
-            return Err(self.err(format!("宿主路径 `{}` 不能包含 ..", raw.display())));
+            return Err(self.err(crate::l10n::text(
+                self.langs,
+                "plugin-install-mnt-host-path-parent",
+                &[("path", raw.display().to_string().into())],
+            )));
         }
         let path: PathBuf = raw.components().collect();
         if path.starts_with(&self.ctx.app_data) {
             return Ok(path);
         }
         let Some(root) = self.ctx.shares.values().find(|root| path.starts_with(root)) else {
-            return Err(self.err(format!(
-                "宿主路径 `{}` 不在应用数据目录或已授权的共享文件夹里",
-                path.display()
+            return Err(self.err(crate::l10n::text(
+                self.langs,
+                "plugin-install-mnt-host-path-outside",
+                &[("path", path.display().to_string().into())],
             )));
         };
         // 共享文件夹由多个插件共用，有写权限的插件能把其中的子目录换成软链接。
         if path != *root {
-            return Err(self.err(format!(
-                "共享文件夹只能整个挂载，不能只挂其中的 `{}`",
-                path.display()
+            return Err(self.err(crate::l10n::text(
+                self.langs,
+                "plugin-install-mnt-shared-folder-whole",
+                &[("path", path.display().to_string().into())],
             )));
         }
         if self.read_only_shares.contains(root) && !read_only {
-            return Err(self.err(format!(
-                "共享文件夹 `{}` 只授权了读，必须以 :ro 挂载",
-                root.display()
+            return Err(self.err(crate::l10n::text(
+                self.langs,
+                "plugin-install-mnt-shared-folder-readonly",
+                &[("path", root.display().to_string().into())],
             )));
         }
         Ok(path)
     }
 
     fn err(&self, message: impl Into<String>) -> RenderError {
-        service_err(self.service, message)
+        service_err(self.langs, self.service, message)
     }
 }
 
 /// 同一插件的绑定挂载源不能嵌套：能写外层目录的容器可以把内层的源换成软链接，Docker 下次启动容器时
 /// 跟随它，就把宿主上的任意目录挂了进来。同一个目录挂进多个服务没有问题。
-pub(super) fn check_not_nested(binds: &[(String, PathBuf)]) -> Result<(), RenderError> {
+pub(super) fn check_not_nested(
+    binds: &[(String, PathBuf)],
+    langs: &Languages,
+) -> Result<(), RenderError> {
     for (service, inner) in binds {
         let outer = binds
             .iter()
             .find(|(_, outer)| outer != inner && inner.starts_with(outer));
         if let Some((outer_service, outer)) = outer {
             return Err(service_err(
+                langs,
                 service,
-                format!(
-                    "宿主路径 `{}` 在服务 `{outer_service}` 挂载的 `{}` 里面；同一插件的绑定挂载不能嵌套\
-                     （容器能把内层目录换成软链接，逃出应用数据目录），请改用并列的子目录",
-                    inner.display(),
-                    outer.display()
+                crate::l10n::text(
+                    langs,
+                    "plugin-install-mnt-nested",
+                    &[
+                        ("path", inner.display().to_string().into()),
+                        ("outer", outer_service.as_str().into()),
+                        ("outer_path", outer.display().to_string().into()),
+                    ],
                 ),
             ));
         }
@@ -198,6 +240,7 @@ pub(super) fn dir_owners(
     binds: &[(String, PathBuf)],
     services: &BTreeMap<String, Service>,
     ctx: &InstallContext,
+    langs: &Languages,
 ) -> Result<BTreeMap<PathBuf, Owner>, RenderError> {
     let mut owners: BTreeMap<PathBuf, (Owner, &str)> = BTreeMap::new();
     for (service, path) in binds.iter().filter(|(_, p)| p.starts_with(&ctx.app_data)) {
@@ -207,16 +250,21 @@ pub(super) fn dir_owners(
                 gid: ctx.pgid,
             },
             UserSpec::Ids { uid, gid } => Owner { uid, gid },
-            UserSpec::Uid(uid) => return Err(numeric_user(service, &uid.to_string())),
-            UserSpec::Named(user) => return Err(numeric_user(service, &user)),
+            UserSpec::Uid(uid) => return Err(numeric_user(langs, service, &uid.to_string())),
+            UserSpec::Named(user) => return Err(numeric_user(langs, service, &user)),
         };
         match owners.get(path) {
             Some((other, other_service)) if *other != owner => {
                 return Err(service_err(
+                    langs,
                     service,
-                    format!(
-                        "和服务 `{other_service}` 以不同的属主挂载 `{}`，核心不知道把它交给谁",
-                        path.display()
+                    crate::l10n::text(
+                        langs,
+                        "plugin-install-mnt-owner-conflict",
+                        &[
+                            ("other", (*other_service).into()),
+                            ("path", path.display().to_string().into()),
+                        ],
                     ),
                 ));
             }
@@ -231,11 +279,14 @@ pub(super) fn dir_owners(
         .collect())
 }
 
-fn numeric_user(service: &str, user: &str) -> RenderError {
+fn numeric_user(langs: &Languages, service: &str, user: &str) -> RenderError {
     service_err(
+        langs,
         service,
-        format!(
-            "挂载了应用数据目录，user `{user}` 要写成数字形式的 uid:gid：核心据此决定目录交给谁"
+        crate::l10n::text(
+            langs,
+            "plugin-install-mnt-numeric-user",
+            &[("user", user.into())],
         ),
     )
 }

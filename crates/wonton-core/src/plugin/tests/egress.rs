@@ -41,7 +41,7 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     manager_in_container(engine, &dir)
-        .install(&app(""), &[])
+        .install(&app(""), &[], super::langs())
         .await
         .unwrap();
     assert_eq!(created(&docker), (true, json!(ISOLATED), json!(ISOLATED)));
@@ -52,7 +52,7 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     manager_with(engine, &dir)
-        .install(&app(""), &[])
+        .install(&app(""), &[], super::langs())
         .await
         .unwrap();
     assert_eq!(created(&docker), (true, Value::Null, Value::Null));
@@ -62,7 +62,7 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     let dir = tempfile::tempdir().unwrap();
     let granted = vec!["network.egress".parse().unwrap()];
     manager_in_container(engine, &dir)
-        .install(&app("network.egress"), &granted)
+        .install(&app("network.egress"), &granted, super::langs())
         .await
         .unwrap();
     assert_eq!(created(&docker), (false, Value::Null, Value::Null));
@@ -148,7 +148,7 @@ async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gatew
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with_oidc(engine, &dir, super::fake_hydra().await);
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &[], super::langs()).await.unwrap();
     // 内部网络没有默认路由，host-gateway 走不通；经插件网络的网关（宿主上网桥的地址）访问核心。
     let gateway = m.engine.network_gateway("wonton-app-test").await.unwrap();
     let created = docker.created(&container_name("app-test", "web")).unwrap();
@@ -164,7 +164,7 @@ fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
     ctx.egress = Some(EgressVars {
         auth_host: "auth.wonton.localhost".to_owned(),
     });
-    let plan = render(package, &ctx).unwrap();
+    let plan = render(package, &ctx, &super::langs()).unwrap();
     (ctx, plan)
 }
 
@@ -182,7 +182,7 @@ fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables()
          healthcheck:\n      test: wget -q http://127.0.0.1/",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let (_, plan) = with_proxy(&package);
 
     let web = super::env_of(service(&plan, "web"));
@@ -227,7 +227,7 @@ fn compose_written_no_proxy_is_merged_into_every_networked_service() {
          db:\n    image: postgres",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let (_, plan) = with_proxy(&package);
 
     // 服务名按字典序：db、hub、web；私有网段在名单末尾。
@@ -267,7 +267,7 @@ fn network_mode_shared_service_gets_the_same_egress_route_and_local_healthcheck(
          healthcheck:\n      test: wget -q http://127.0.0.1/",
         "  permissions: [network.egress]",
     );
-    let (_, plan) = with_proxy(&PluginPackage::parse(&source).unwrap());
+    let (_, plan) = with_proxy(&PluginPackage::parse(&source, &super::langs()).unwrap());
     let sidecar = service(&plan, "sidecar");
     assert!(super::env_of(sidecar).contains(&format!("HTTP_PROXY={PROXY_URL}")));
     assert!(sidecar.body.networking_config.is_none());
@@ -294,8 +294,8 @@ fn without_a_proxy_only_the_empty_url_variable_is_injected() {
          healthcheck:\n      test: wget -q http://127.0.0.1/",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
-    let plan = render(&package, &dry_run_context(&package, None)).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let plan = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap();
     let web = service(&plan, "web");
     assert_eq!(super::env_of(web), ["SEARX_PROXY="]);
     let test = web.body.healthcheck.clone().unwrap().test.unwrap();
@@ -308,8 +308,8 @@ fn a_plugin_without_egress_cannot_reference_the_proxy_url() {
         "  web:\n    image: nginx\n    environment:\n      P: ${WONTON_PROXY_URL}",
         "  permissions: []",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
-    let error = render(&package, &dry_run_context(&package, None)).unwrap_err();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let error = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap_err();
     assert!(error.to_string().contains("WONTON_PROXY_URL"), "{error}");
 }
 
@@ -319,7 +319,7 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
         "  web:\n    image: nginx\n  sealed:\n    image: nginx\n    network_mode: none",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let (docker, engine) = FakeDocker::start().await;
     docker.set_image_healthcheck(
         "nginx",
@@ -339,7 +339,7 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
     assert_eq!(service(&plan, "sealed").body.healthcheck, None);
 
     let ctx = dry_run_context(&package, None);
-    let mut plan = render(&package, &ctx).unwrap();
+    let mut plan = render(&package, &ctx, &super::langs()).unwrap();
     m.rewrite_image_healthchecks(&ctx, &mut plan).await.unwrap();
     assert_eq!(service(&plan, "web").body.healthcheck, None);
 }
@@ -359,13 +359,13 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     let dir = tempfile::tempdir().unwrap();
     // 核心直接跑在宿主上（开发时）：是网关地址。
     let m = manager_with(engine.clone(), &dir);
-    m.install(&compose, &[]).await.unwrap();
+    m.install(&compose, &[], super::langs()).await.unwrap();
     let gateway = m.engine.network_gateway("wonton-app-test").await.unwrap();
     let env = docker.env(&container_name("app-test", "web"));
     assert!(env.contains(&format!("TRUSTED={gateway}/32")), "{env:?}");
 
     // 核心在容器里：是留给它的地址。网络按新建法建好后才算得出。
-    let package = PluginPackage::parse(&compose).unwrap();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
     let m = manager_in_container(engine, &dir);
     let network = "wonton-app-test";
     let var = m
@@ -378,14 +378,14 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     );
 
     // 不是代登录的插件不注入，引用了就报错。
-    let other = PluginPackage::parse(&app("")).unwrap();
+    let other = PluginPackage::parse(&app(""), &super::langs()).unwrap();
     assert_eq!(
         m.core_address_var(&other.manifest, network).await.unwrap(),
         None
     );
     let compose = package_with_env_ref();
-    let package = PluginPackage::parse(&compose).unwrap();
-    let error = render(&package, &dry_run_context(&package, None)).unwrap_err();
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let error = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap_err();
     assert!(error.to_string().contains("WONTON_CORE_ADDRESS"), "{error}");
 }
 
@@ -401,9 +401,13 @@ async fn the_core_attaches_at_its_reserved_address_and_reconnects_when_it_is_wro
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine.clone(), &dir);
-    m.install(&app("network.egress"), &["network.egress".parse().unwrap()])
-        .await
-        .unwrap();
+    m.install(
+        &app("network.egress"),
+        &["network.egress".parse().unwrap()],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let network = "wonton-app-test";
     let endpoint = docker.endpoint(network, "wonton-core").unwrap();
     let address = m.engine.core_address(network).await.unwrap().to_string();

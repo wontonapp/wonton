@@ -35,7 +35,10 @@ fn closed_app() -> String {
 }
 
 fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose).unwrap().manifest.permissions
+    PluginPackage::parse(compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions
 }
 
 fn proxy(text: &str) -> Egress {
@@ -94,7 +97,10 @@ impl Rig {
     }
 
     async fn install(&self, compose: &str) {
-        self.m.install(compose, &granted(compose)).await.unwrap();
+        self.m
+            .install(compose, &granted(compose), super::langs())
+            .await
+            .unwrap();
     }
 }
 
@@ -236,7 +242,7 @@ async fn uninstalling_detaches_the_relay_first_and_keeps_it_for_the_others() {
     let rig = Rig::new(proxy("http://host.docker.internal:7899")).await;
     rig.install(&egress_app()).await;
     let id = PluginId::parse("app.test").unwrap();
-    rig.m.uninstall(&id, false).await.unwrap();
+    rig.m.uninstall(&id, false, &super::langs()).await.unwrap();
     let writes = rig.docker.writes();
     let position = |needle: &str| {
         writes
@@ -258,7 +264,7 @@ async fn a_failed_install_takes_the_relay_off_the_network_it_removes() {
     let compose = egress_app();
     let err = rig
         .m
-        .install(&compose, &granted(&compose))
+        .install(&compose, &granted(&compose), super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "storage", "{err}");
@@ -273,7 +279,7 @@ async fn an_image_that_cannot_be_pulled_stops_the_install_with_dockers_words() {
     let compose = egress_app();
     let err = rig
         .m
-        .install(&compose, &granted(&compose))
+        .install(&compose, &granted(&compose), super::langs())
         .await
         .unwrap_err();
     assert!(err.to_string().contains("toomanyrequests"), "{err}");
@@ -287,7 +293,7 @@ async fn a_container_or_network_that_is_not_ours_is_left_alone() {
     let compose = egress_app();
     let err = rig
         .m
-        .install(&compose, &granted(&compose))
+        .install(&compose, &granted(&compose), super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
@@ -297,7 +303,7 @@ async fn a_container_or_network_that_is_not_ours_is_left_alone() {
     rig.docker.add_unlabeled_network(RELAY);
     let err = rig
         .m
-        .install(&compose, &granted(&compose))
+        .install(&compose, &granted(&compose), super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
@@ -397,7 +403,9 @@ async fn each_core_on_a_shared_docker_has_its_own_relay() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_instance(engine, &dir, "alice2").with_egress(proxy("http://proxy:1"));
     let compose = egress_app();
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let relay = "wonton-alice2--egress";
     let created = docker.created(relay).expect("这套核心的出口容器");
     assert_eq!(created["Labels"]["wonton.instance"], "alice2");

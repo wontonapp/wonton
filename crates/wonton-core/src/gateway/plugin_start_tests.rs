@@ -13,6 +13,7 @@ use super::tunnel_tests::{Phone, loopback_tunnel};
 use super::{CORE_COOKIE, Gateway, router};
 use crate::config::PublicUrls;
 use crate::owner::OwnerStore;
+use crate::plugin::languages::Languages;
 use crate::tunnel::TunnelEntry;
 
 const ID: &str = "app.start-test";
@@ -24,7 +25,10 @@ async fn installed() -> (Harness, String) {
         .replace("app.whoami", ID)
         .replace("  icon: icon.svg\n", "")
         .replace("  webui:\n    service: web\n    port: 8000\n", "");
-    h.manager.install(&compose, &[]).await.unwrap();
+    h.manager
+        .install(&compose, &[], Languages::from_header(Some("zh-Hans")))
+        .await
+        .unwrap();
     let containers = h.docker.containers();
     assert_eq!(containers.len(), 1);
     (h, containers[0].clone())

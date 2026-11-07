@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
+use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
@@ -547,7 +548,8 @@ impl Manifest {
     }
 
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。
-    pub fn validate(&self) -> Result<(), ManifestError> {
+    /// `langs` 只用于给按语言写的校验错误选语言，文字本身在各自模块里。
+    pub fn validate(&self, langs: &Languages) -> Result<(), ManifestError> {
         if !is_semver(&self.version) {
             return Err(ManifestError::InvalidVersion(self.version.clone()));
         }
@@ -556,13 +558,13 @@ impl Manifest {
         super::store_info::validate(self)?;
         super::manifest_agent::validate(self)?;
         validate_bots(self)?;
-        super::privileges::validate_manifest(self)?;
-        super::gpu::validate(self)?;
-        super::requirements::validate(self)?;
-        super::lan::validate(self)?;
-        super::provides::validate(self)?;
-        super::proxy_auth::validate(self)?;
-        super::proxy_auth::validate_mcp_headers(self)?;
+        super::privileges::validate_manifest(self, langs)?;
+        super::gpu::validate(self, langs)?;
+        super::requirements::validate(self, langs)?;
+        super::lan::validate(self, langs)?;
+        super::provides::validate(self, langs)?;
+        super::proxy_auth::validate(self, langs)?;
+        super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {
             validate_webui(webui)?;
         }

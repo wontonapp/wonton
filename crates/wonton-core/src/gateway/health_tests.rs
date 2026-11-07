@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::tests::Harness;
+use crate::plugin::languages::Languages;
 use crate::plugin::{Permission, PluginPackage, PluginStatus};
 
 const HEALTH: &str = "health.wonton.internal";
@@ -81,7 +82,9 @@ fn register_monitor(harness: &Harness, permissions: Vec<Permission>) {
 }
 
 fn register_plugin(harness: &Harness, manifest: &str, status: PluginStatus, upstream: &str) {
-    let manifest = PluginPackage::parse(manifest).unwrap().manifest;
+    let manifest = PluginPackage::parse(manifest, &Languages::from_header(Some("zh-Hans")))
+        .unwrap()
+        .manifest;
     harness
         .manager
         .register_for_test(manifest, status, Some(upstream.to_owned()));

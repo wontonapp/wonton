@@ -44,7 +44,10 @@ async fn a_container_restarting_at_startup_recovers_when_it_becomes_healthy() {
     let dir = tempfile::tempdir().unwrap();
     let container = container_name("app-test", "app");
     let installed = manager_with(engine.clone(), &dir);
-    installed.install(&app().await, &[]).await.unwrap();
+    installed
+        .install(&app().await, &[], super::langs())
+        .await
+        .unwrap();
 
     docker.set_state(&container, restarting());
     let m = manager_with(engine, &dir);
@@ -73,6 +76,7 @@ async fn the_core_rejoins_the_network_of_a_plugin_that_crashes_without_it() {
         .install(
             &package("  app:\n    image: nginx\n", "  permissions: []"),
             &[],
+            super::langs(),
         )
         .await
         .unwrap();
@@ -97,7 +101,7 @@ async fn a_running_plugin_follows_its_container_down_and_back() {
     let dir = tempfile::tempdir().unwrap();
     let container = container_name("app-test", "app");
     let m = manager_with(engine, &dir);
-    m.install(&app().await, &[]).await.unwrap();
+    m.install(&app().await, &[], super::langs()).await.unwrap();
 
     docker.set_state(&container, with_health("unhealthy"));
     m.watch_containers().await;
@@ -127,7 +131,7 @@ async fn a_plugin_being_rebuilt_is_left_alone() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let view = m.install(&app().await, &[]).await.unwrap();
+    let view = m.install(&app().await, &[], super::langs()).await.unwrap();
     assert!(m.begin_rebuild(&view.id));
 
     let exited = json!({"Status": "exited", "Running": false, "ExitCode": 1});
@@ -141,7 +145,7 @@ async fn trouble_that_is_not_about_containers_stays_until_someone_deals_with_it(
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let view = m.install(&app().await, &[]).await.unwrap();
+    let view = m.install(&app().await, &[], super::langs()).await.unwrap();
     let status = PluginStatus::Degraded {
         reason: "卸载未完成".to_owned(),
     };

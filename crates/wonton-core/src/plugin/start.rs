@@ -6,6 +6,7 @@ use tokio::time::Instant;
 
 use super::compose::DependCondition;
 use super::health::{self, Target};
+use super::languages::Languages;
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
     now_secs,
@@ -16,6 +17,7 @@ use super::package::PluginPackage;
 use super::reconcile::ContainersState;
 use super::render::start_order;
 use super::store::InstalledRecord;
+use crate::l10n;
 
 struct Started {
     health: Health,
@@ -34,8 +36,9 @@ impl PluginManager {
 
     async fn start(&self, id: &PluginId) -> Result<PluginView, InstallError> {
         self.check_not_upgrading()?;
-        let before = self.begin_start(id)?;
-        let result = self.start_existing(id, &before).await;
+        let langs = self.owner_languages();
+        let before = self.begin_start(id, &langs)?;
+        let result = self.start_existing(id, &before, &langs).await;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins.get_mut(id).expect("启动期间其他操作不能删除插件");
         let result = match result {
@@ -52,7 +55,11 @@ impl PluginManager {
             }
             Err(error) => {
                 entry.status = PluginStatus::Degraded {
-                    reason: format!("启动失败：{error}"),
+                    reason: l10n::text(
+                        &langs,
+                        "plugin-install-start-failed",
+                        &[("error", error.to_string().into())],
+                    ),
                 };
                 entry.health = None;
                 entry.follows_containers = true;
@@ -66,17 +73,19 @@ impl PluginManager {
         result
     }
 
-    fn begin_start(&self, id: &PluginId) -> Result<PluginStatus, InstallError> {
+    fn begin_start(&self, id: &PluginId, langs: &Languages) -> Result<PluginStatus, InstallError> {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins
             .get_mut(id)
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        if let Some(error) = busy(id, &entry.status) {
+        if let Some(error) = busy(id, &entry.status, langs) {
             return Err(error);
         }
         if self.lan.is_rebuilding(id) {
-            return Err(InstallError::Conflict(format!(
-                "插件 {id} 正在重建，结束后再启动"
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-rebuilding",
+                &[("id", id.to_string().into())],
             )));
         }
         if let PluginStatus::Degraded { reason } = &entry.status
@@ -85,13 +94,17 @@ impl PluginManager {
             return Err(InstallError::Conflict(reason.clone()));
         }
         if entry.listed.is_none() {
-            return Err(InstallError::Conflict(
-                "插件记录不可用，无法启动".to_owned(),
-            ));
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-record-unusable",
+                &[],
+            )));
         }
         if !self.lan.begin(id) {
-            return Err(InstallError::Conflict(format!(
-                "插件 {id} 正在重建，结束后再启动"
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-rebuilding",
+                &[("id", id.to_string().into())],
             )));
         }
         let before = entry.status.clone();
@@ -102,14 +115,15 @@ impl PluginManager {
         &self,
         id: &PluginId,
         before: &PluginStatus,
+        langs: &Languages,
     ) -> Result<Started, InstallError> {
         let record = self
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        match self.check_containers(&package).await? {
+        match self.check_containers(&package, langs).await? {
             ContainersState::Running(health) if *before == PluginStatus::Running => {
                 return Ok(Started {
                     health,
@@ -121,7 +135,8 @@ impl PluginManager {
                 self.set(id, PluginStatus::Installing, None);
                 // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
                 self.reconcile(&package, &record).await?;
-                self.start_resident_containers(&package, &record).await?;
+                self.start_resident_containers(&package, &record, langs)
+                    .await?;
             }
         }
         let deployed = self.reconcile_running(&package, &record).await?;
@@ -144,15 +159,17 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let id = &package.manifest.id;
         let slug = id.slug();
-        let dependencies = package.service_dependencies()?;
+        let dependencies = package.service_dependencies(langs)?;
         let order = start_order(
             dependencies
                 .iter()
                 .map(|(name, deps)| (*name, deps.iter().map(|(name, _)| name.clone()).collect()))
                 .collect(),
+            langs,
         )?;
         let one_shot = package.one_shot_services();
         let names: Vec<String> = order
@@ -162,11 +179,13 @@ impl PluginManager {
             .collect();
         // 启动前逐个确认归属：同名但被别的容器占用时不碰它。
         for name in &names {
-            let info = self
-                .engine
-                .inspect_container(name)
-                .await?
-                .ok_or_else(|| InstallError::Unhealthy(format!("容器 {name} 不存在")))?;
+            let info = self.engine.inspect_container(name).await?.ok_or_else(|| {
+                InstallError::Unhealthy(l10n::text(
+                    langs,
+                    "plugin-install-container-missing",
+                    &[("name", name.as_str().into())],
+                ))
+            })?;
             let labels = info
                 .config
                 .and_then(|config| config.labels)
@@ -174,8 +193,13 @@ impl PluginManager {
             if !self.cfg.instance.owns(&labels)
                 || labels.get(LABEL_PLUGIN).map(String::as_str) != Some(id.as_str())
             {
-                return Err(InstallError::Conflict(format!(
-                    "容器 {name} 不属于插件 {id}"
+                return Err(InstallError::Conflict(l10n::text(
+                    langs,
+                    "plugin-install-container-not-owned",
+                    &[
+                        ("name", name.as_str().into()),
+                        ("id", id.to_string().into()),
+                    ],
                 )));
             }
         }

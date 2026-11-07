@@ -14,7 +14,11 @@ const SERVICES: &str =
     "  target:\n    image: nginx\n  sidecar:\n    image: busybox\n    network_mode: service:target";
 
 fn plan(extra: &str) -> Deployment {
-    dry_run(&PluginPackage::parse(&package(SERVICES, extra)).unwrap()).unwrap()
+    dry_run(
+        &PluginPackage::parse(&package(SERVICES, extra), &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -132,7 +136,7 @@ async fn network_mode_invalid_targets_and_entries_are_invalid_input() {
     ];
     for (services, manifest) in cases {
         let error = manager
-            .install(&package(&services, &manifest), &[])
+            .install(&package(&services, &manifest), &[], super::langs())
             .await
             .unwrap_err();
         assert_eq!(
@@ -174,7 +178,7 @@ async fn network_mode_shared_services_reject_ignored_network_fields_and_cross_bo
     }
     for (services, manifest) in cases {
         let error = manager
-            .install(&package(&services, &manifest), &[])
+            .install(&package(&services, &manifest), &[], super::langs())
             .await
             .unwrap_err();
         assert_eq!(
@@ -191,7 +195,14 @@ async fn network_mode_webui_uses_the_default_bot_container() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = manager_in_container(engine, &dir);
-    let package = PluginPackage::parse(&package(SERVICES, "  permissions: [matrix.bot]\n  bots: {services: [target, sidecar]}\n  webui: {service: target, port: 80}")).unwrap();
+    let package = PluginPackage::parse(
+            &package(
+                SERVICES,
+                "  permissions: [matrix.bot]\n  bots: {services: [target, sidecar]}\n  webui: {service: target, port: 80}",
+            ),
+            &super::langs(),
+        )
+        .unwrap();
     let target = container_name("app-test", "target");
     docker.add_container(&target, "app.test");
     assert_eq!(
@@ -213,7 +224,10 @@ async fn network_mode_rebuilding_a_target_replaces_its_sidecars_but_not_other_se
         &format!("{SERVICES}\n  unrelated:\n    image: nginx"),
         "  permissions: [network.lan]\n  lan: {ports: [{service: target, port: 8080}]}",
     );
-    manager.install(&source, &granted(&source)).await.unwrap();
+    manager
+        .install(&source, &granted(&source), super::langs())
+        .await
+        .unwrap();
     let before = docker.writes().len();
     let mut changed = office();
     changed
@@ -252,7 +266,11 @@ fn network_mode_preserves_explicit_health_conditions_and_rejects_dependency_cycl
         &format!("{SERVICES}\n    depends_on: {{target: {{condition: service_healthy}}}}"),
         "  permissions: []",
     );
-    let plan = dry_run(&PluginPackage::parse(&source).unwrap()).unwrap();
+    let plan = dry_run(
+        &PluginPackage::parse(&source, &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap();
     assert_eq!(
         plan.containers[1].depends_on,
         [(
@@ -265,7 +283,10 @@ fn network_mode_preserves_explicit_health_conditions_and_rejects_dependency_cycl
         "  permissions: []",
     );
     assert!(matches!(
-        dry_run(&PluginPackage::parse(&source).unwrap()),
+        dry_run(
+            &PluginPackage::parse(&source, &super::langs()).unwrap(),
+            &super::langs()
+        ),
         Err(super::super::render::RenderError::Service { .. })
     ));
 }
@@ -279,7 +300,7 @@ async fn network_mode_existing_containers_start_target_before_sidecar() {
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(super::manager::manager_with(engine, &dir));
     let installed = manager
-        .install(&package(SERVICES, "  permissions: []"), &[])
+        .install(&package(SERVICES, "  permissions: []"), &[], super::langs())
         .await
         .unwrap();
     let target = container_name("app-test", "target");
@@ -314,7 +335,7 @@ async fn network_mode_limits_update_both_containers_in_place() {
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(super::manager::manager_with(engine, &dir));
     let installed = manager
-        .install(&package(SERVICES, "  permissions: []"), &[])
+        .install(&package(SERVICES, "  permissions: []"), &[], super::langs())
         .await
         .unwrap();
     let before = docker.writes().len();
@@ -359,11 +380,12 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
     let dir = tempfile::tempdir().unwrap();
     let manager = super::manager::manager_with(engine, &dir);
     let source = package(SERVICES, "  permissions: []");
-    manager.install(&source, &[]).await.unwrap();
+    manager.install(&source, &[], super::langs()).await.unwrap();
     let next = PluginPackage::parse(
         &source
             .replace("version: 1.0.0", "version: 1.1.0")
             .replace("image: nginx", "image: nginx:next"),
+        &super::langs(),
     )
     .unwrap();
     let before = docker.writes().len();
@@ -399,13 +421,13 @@ fn network_mode_bot_webui_does_not_open_mcp_provides_or_host_network() {
         &format!("{bots}\n  mcp: {{service: target, port: 80, transport: streamable-http}}"),
     );
     assert!(matches!(
-        PluginPackage::parse(&mcp),
+        PluginPackage::parse(&mcp, &super::langs()),
         Err(PackageError::Service { .. })
     ));
     let provider = package(SERVICES, &format!("{bots}\n  provides:\n    models:\n      service: target\n      port: 80\n      apis: {{openai: /v1}}\n      default_model: test\n      credentials:\n        issue: [issue, '{{name}}']\n        revoke: [revoke, '{{name}}']"))
         .replace("kind: app", "kind: system");
     assert!(matches!(
-        PluginPackage::parse(&provider),
+        PluginPackage::parse(&provider, &super::langs()),
         Err(PackageError::Service { .. })
     ));
     let host = package(
@@ -413,7 +435,10 @@ fn network_mode_bot_webui_does_not_open_mcp_provides_or_host_network() {
         &format!("{bots}\n  webui: {{service: target, port: 80}}"),
     );
     assert!(matches!(
-        dry_run(&PluginPackage::parse(&host).unwrap()),
+        dry_run(
+            &PluginPackage::parse(&host, &super::langs()).unwrap(),
+            &super::langs()
+        ),
         Err(super::super::render::RenderError::Package(
             PackageError::Service { .. }
         ))
@@ -430,7 +455,7 @@ async fn network_mode_waits_for_the_target_to_run_before_creating_a_sidecar() {
         serde_json::json!({"Status": "exited", "Running": false, "ExitCode": 1}),
     );
     let error = manager
-        .install(&package(SERVICES, "  permissions: []"), &[])
+        .install(&package(SERVICES, "  permissions: []"), &[], super::langs())
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "unhealthy");

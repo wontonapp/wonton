@@ -8,37 +8,80 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::Value;
 
-/// 服务级别明确不支持的字段及原因。其余未知字段由 serde 的 `deny_unknown_fields` 拒绝。
-pub const FORBIDDEN_SERVICE_KEYS: &[(&str, &str)] = &[
-    ("ports", "插件不向宿主暴露端口，网页一律经核心网关访问"),
-    ("networks", "插件网络由核心创建和管理"),
-    ("container_name", "容器名由核心分配"),
-    ("build", "插件只能使用已发布的镜像，不在宿主上构建"),
+use super::languages::Languages;
+use crate::l10n::text;
+
+/// 服务级别明确不支持的字段：键和 [`plugin-install.ftl`](crate::l10n) 里的消息 ID。其余未知字段由
+/// serde 的 `deny_unknown_fields` 拒绝。
+const FORBIDDEN_SERVICE_KEYS: &[(&str, &str)] = &[
+    ("ports", "plugin-install-compose-ports-forbidden"),
+    ("networks", "plugin-install-compose-networks-forbidden"),
     (
-        "env_file",
-        "插件包只有一个 compose 文件，环境变量请写进 environment",
+        "container_name",
+        "plugin-install-compose-container-name-forbidden",
     ),
-    ("extends", "插件包只有一个 compose 文件，不支持 extends"),
-    ("links", "同一插件的服务在同一网络内，直接用服务名互访"),
-    ("external_links", "插件之间默认互不可达"),
-    ("volumes_from", "请用命名卷或应用数据目录共享数据"),
+    ("build", "plugin-install-compose-build-forbidden"),
+    ("env_file", "plugin-install-compose-env-file-forbidden"),
+    ("extends", "plugin-install-compose-extends-forbidden"),
+    ("links", "plugin-install-compose-links-forbidden"),
+    (
+        "external_links",
+        "plugin-install-compose-external-links-forbidden",
+    ),
+    (
+        "volumes_from",
+        "plugin-install-compose-volumes-from-forbidden",
+    ),
 ];
 
-/// 顶层明确不支持的字段及原因。
-pub const FORBIDDEN_TOP_KEYS: &[(&str, &str)] = &[
-    ("networks", "插件网络由核心创建和管理"),
-    ("secrets", "M0 尚不支持 secrets，密钥由核心注入"),
+/// 顶层明确不支持的字段：键和消息 ID。
+const FORBIDDEN_TOP_KEYS: &[(&str, &str)] = &[
+    ("networks", "plugin-install-compose-networks-forbidden"),
+    ("secrets", "plugin-install-compose-top-secrets-forbidden"),
 ];
 
-/// 顶层 `configs` 里明确不支持的字段及原因。
-pub const FORBIDDEN_CONFIG_KEYS: &[(&str, &str)] = &[
-    ("external", "配置只能来自插件包"),
+/// 服务级别明确不支持的字段的原因（按请求的语言）。
+pub fn forbidden_service_key_reason(key: &str, langs: &Languages) -> Option<String> {
+    forbidden_key_reason(FORBIDDEN_SERVICE_KEYS, key, langs)
+}
+
+/// 顶层明确不支持的字段的原因（按请求的语言）。
+pub fn forbidden_top_key_reason(key: &str, langs: &Languages) -> Option<String> {
+    forbidden_key_reason(FORBIDDEN_TOP_KEYS, key, langs)
+}
+
+fn forbidden_key_reason(table: &[(&str, &str)], key: &str, langs: &Languages) -> Option<String> {
+    table
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, id)| text(langs, id, &[]))
+}
+
+/// `network_mode` 接受 `none` 或声明权限后的 `host`，其余取值按原因拒绝。
+pub fn network_mode_refusal(value: &str, langs: &Languages) -> String {
+    match value {
+        "host" => text(langs, "plugin-install-compose-network-host", &[]),
+        _ => text(langs, "plugin-install-compose-network-mode", &[]),
+    }
+}
+
+/// 顶层 `configs` 里明确不支持的字段：键和消息 ID。
+const FORBIDDEN_CONFIG_KEYS: &[(&str, &str)] = &[
+    (
+        "external",
+        "plugin-install-compose-config-external-forbidden",
+    ),
     (
         "environment",
-        "核心不把自己的环境变量传给插件，需要变量时用 content 插值",
+        "plugin-install-compose-config-environment-forbidden",
     ),
-    ("name", "核心不创建 Docker 配置对象，不需要 name"),
+    ("name", "plugin-install-compose-config-name-forbidden"),
 ];
+
+/// 顶层 `configs` 里明确不支持的字段的原因（按请求的语言）。
+pub fn forbidden_config_key_reason(key: &str, langs: &Languages) -> Option<String> {
+    forbidden_key_reason(FORBIDDEN_CONFIG_KEYS, key, langs)
+}
 
 /// 字符串或数字、布尔：compose 允许在环境变量、标签等处写非字符串标量。
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -114,8 +157,14 @@ pub enum KeyValues {
 impl KeyValues {
     /// 展开成键值对。没有值的键（`KEY` 或 `KEY:`）在 compose 里表示“取宿主环境变量”，
     /// 核心不把自己的环境泄露给插件，因此报错。
-    pub fn pairs(&self, field: &str) -> Result<Vec<(String, String)>, String> {
-        let missing = |key: &str| format!("{field} 中的 `{key}` 没有值（核心不传递宿主环境变量）");
+    pub fn pairs(&self, field: &str, langs: &Languages) -> Result<Vec<(String, String)>, String> {
+        let missing = |key: &str| {
+            text(
+                langs,
+                "plugin-install-compose-pair-missing",
+                &[("field", field.into()), ("key", key.into())],
+            )
+        };
         match self {
             Self::Map(map) => map
                 .iter()
@@ -309,14 +358,14 @@ pub struct LongDevice {
 }
 
 impl DeviceEntry {
-    pub fn paths(&self) -> Result<(String, String, String), String> {
+    pub fn paths(&self, langs: &Languages) -> Result<(String, String, String), String> {
         match self {
             Self::Short(text) => {
                 let parts: Vec<&str> = text.split(':').collect();
                 let (source, target, permissions) = match parts.as_slice() {
                     [source, target] => (*source, *target, "rwm"),
                     [source, target, permissions] => (*source, *target, *permissions),
-                    _ => return Err(format!("设备映射 `{text}` 格式不合法")),
+                    _ => return Err(device_format(text, langs)),
                 };
                 Ok((source.to_owned(), target.to_owned(), permissions.to_owned()))
             }
@@ -325,12 +374,16 @@ impl DeviceEntry {
                     .source
                     .clone()
                     .or_else(|| device.path_on_host.clone())
-                    .ok_or_else(|| "设备映射缺少 source/path_on_host".to_owned())?;
+                    .ok_or_else(|| {
+                        text(langs, "plugin-install-compose-device-missing-source", &[])
+                    })?;
                 let target = device
                     .target
                     .clone()
                     .or_else(|| device.path_in_container.clone())
-                    .ok_or_else(|| "设备映射缺少 target/path_in_container".to_owned())?;
+                    .ok_or_else(|| {
+                        text(langs, "plugin-install-compose-device-missing-target", &[])
+                    })?;
                 let permissions = device
                     .permissions
                     .clone()
@@ -443,11 +496,25 @@ pub fn strip_extensions(value: &mut Value) {
     }
 }
 
+fn device_format(raw: &str, langs: &Languages) -> String {
+    text(
+        langs,
+        "plugin-install-compose-device-format",
+        &[("text", raw.into())],
+    )
+}
+
 /// 解析 compose 时长：`1h30m`、`10s`、`500ms`、`1m30.5s`。
-pub fn parse_duration(text: &str) -> Result<Duration, String> {
-    let bad = || format!("时长 `{text}` 不合法（示例：30s、1m30s、500ms）");
+pub fn parse_duration(raw: &str, langs: &Languages) -> Result<Duration, String> {
+    let bad = || {
+        text(
+            langs,
+            "plugin-install-compose-duration-invalid",
+            &[("text", raw.into())],
+        )
+    };
     let mut total = 0f64;
-    let mut rest = text.trim();
+    let mut rest = raw.trim();
     if rest.is_empty() {
         return Err(bad());
     }
@@ -476,14 +543,18 @@ pub fn parse_duration(text: &str) -> Result<Duration, String> {
 }
 
 /// 解析 compose 字节数：`64m`、`1g`、`512kb`、`1024`。
-pub fn parse_bytes(value: &Scalar) -> Result<i64, String> {
-    let text = value.as_string().to_ascii_lowercase();
-    let bad = || format!("大小 `{text}` 不合法（示例：64m、1g）");
-    let split = text
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(text.len());
-    let number: i64 = text[..split].parse().map_err(|_| bad())?;
-    let factor: i64 = match &text[split..] {
+pub fn parse_bytes(value: &Scalar, langs: &Languages) -> Result<i64, String> {
+    let raw = value.as_string().to_ascii_lowercase();
+    let bad = || {
+        text(
+            langs,
+            "plugin-install-compose-bytes-invalid",
+            &[("text", raw.clone().into())],
+        )
+    };
+    let split = raw.find(|c: char| !c.is_ascii_digit()).unwrap_or(raw.len());
+    let number: i64 = raw[..split].parse().map_err(|_| bad())?;
+    let factor: i64 = match &raw[split..] {
         "" | "b" => 1,
         "k" | "kb" => 1 << 10,
         "m" | "mb" => 1 << 20,
@@ -496,18 +567,36 @@ pub fn parse_bytes(value: &Scalar) -> Result<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::languages::Languages;
+
+    fn langs() -> Languages {
+        Languages::default()
+    }
 
     #[test]
     fn durations_and_sizes() {
-        assert_eq!(parse_duration("1m30s").unwrap(), Duration::from_secs(90));
-        assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
-        assert_eq!(parse_duration("1h").unwrap(), Duration::from_secs(3600));
+        let langs = langs();
+        assert_eq!(
+            parse_duration("1m30s", &langs).unwrap(),
+            Duration::from_secs(90)
+        );
+        assert_eq!(
+            parse_duration("500ms", &langs).unwrap(),
+            Duration::from_millis(500)
+        );
+        assert_eq!(
+            parse_duration("1h", &langs).unwrap(),
+            Duration::from_secs(3600)
+        );
         for bad in ["", "10", "5x", "s"] {
-            assert!(parse_duration(bad).is_err(), "{bad}");
+            assert!(parse_duration(bad, &langs).is_err(), "{bad}");
         }
-        assert_eq!(parse_bytes(&Scalar::Str("64m".into())).unwrap(), 64 << 20);
-        assert_eq!(parse_bytes(&Scalar::Int(1024)).unwrap(), 1024);
-        assert!(parse_bytes(&Scalar::Str("1t".into())).is_err());
+        assert_eq!(
+            parse_bytes(&Scalar::Str("64m".into()), &langs).unwrap(),
+            64 << 20
+        );
+        assert_eq!(parse_bytes(&Scalar::Int(1024), &langs).unwrap(), 1024);
+        assert!(parse_bytes(&Scalar::Str("1t".into()), &langs).is_err());
     }
 
     #[test]
@@ -538,11 +627,11 @@ mod tests {
     #[test]
     fn key_values_without_value_are_rejected() {
         let list = KeyValues::List(vec!["A=1".into(), "B".into()]);
-        assert!(list.pairs("environment").is_err());
+        assert!(list.pairs("environment", &langs()).is_err());
         let map: KeyValues =
             serde_json::from_value(serde_json::json!({"A": 1, "B": true})).unwrap();
         assert_eq!(
-            map.pairs("environment").unwrap(),
+            map.pairs("environment", &langs()).unwrap(),
             vec![("A".into(), "1".into()), ("B".into(), "true".into())]
         );
     }

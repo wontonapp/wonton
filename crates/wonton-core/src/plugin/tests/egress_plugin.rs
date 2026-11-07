@@ -29,8 +29,11 @@ fn consumer(id: &str) -> String {
 }
 
 async fn install(m: &PluginManager, compose: &str) {
-    let grants = PluginPackage::parse(compose).unwrap().manifest.permissions;
-    m.install(compose, &grants).await.unwrap();
+    let grants = PluginPackage::parse(compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    m.install(compose, &grants, super::langs()).await.unwrap();
 }
 
 fn update(url: Option<&str>, use_plugin: bool, restarts: &[&str]) -> EgressProxyUpdate {
@@ -147,7 +150,11 @@ async fn egress_plugin_selection_switches_only_relay_between_providers_and_survi
     assert_eq!(starts(&docker, proxy), 1);
     assert!(!env_of_container(&docker, out).contains_key("HTTP_PROXY"));
     restarted
-        .uninstall(&PluginId::parse("app.proxy").unwrap(), false)
+        .uninstall(
+            &PluginId::parse("app.proxy").unwrap(),
+            false,
+            &super::langs(),
+        )
         .await
         .unwrap();
 }
@@ -159,8 +166,14 @@ async fn egress_plugin_singleton_reserves_even_during_concurrent_installs() {
     let m = manager_with(engine, &dir);
     let first = proxy_app("app.first");
     let second = proxy_app("app.second");
-    let grants = PluginPackage::parse(&first).unwrap().manifest.permissions;
-    let (a, b) = tokio::join!(m.install(&first, &grants), m.install(&second, &grants));
+    let grants = PluginPackage::parse(&first, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    let (a, b) = tokio::join!(
+        m.install(&first, &grants, super::langs()),
+        m.install(&second, &grants, super::langs())
+    );
     let error = match (a, b) {
         (Ok(_), Err(e)) | (Err(e), Ok(_)) => e,
         result => panic!("只应装上一个代理插件：{result:?}"),
@@ -199,13 +212,22 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         );
         let app = consumer("app.out");
         let preview = m
-            .preview_install(&PluginPackage::parse(&app).unwrap(), &langs)
+            .preview_install(
+                &PluginPackage::parse(&app, &super::langs()).unwrap(),
+                &langs,
+            )
             .await
             .unwrap();
         assert!(preview.blocked.is_some());
-        let grants = PluginPackage::parse(&app).unwrap().manifest.permissions;
+        let grants = PluginPackage::parse(&app, &super::langs())
+            .unwrap()
+            .manifest
+            .permissions;
         assert_eq!(
-            m.install(&app, &grants).await.unwrap_err().kind(),
+            m.install(&app, &grants, super::langs())
+                .await
+                .unwrap_err()
+                .kind(),
             "egress_proxy_unavailable"
         );
     }
@@ -219,7 +241,11 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         name,
         json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
     );
-    let upgraded = PluginPackage::parse(&proxy_app("app.proxy").replace("1.0.0", "1.0.1")).unwrap();
+    let upgraded = PluginPackage::parse(
+        &proxy_app("app.proxy").replace("1.0.0", "1.0.1"),
+        &super::langs(),
+    )
+    .unwrap();
     let grants = upgraded.manifest.permissions.clone();
     m.upgrade_upload(
         &PluginId::parse("app.proxy").unwrap(),
@@ -248,9 +274,13 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
             ..Default::default()
         })
         .unwrap();
-    m.uninstall(&PluginId::parse("app.proxy").unwrap(), false)
-        .await
-        .unwrap();
+    m.uninstall(
+        &PluginId::parse("app.proxy").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     install(&m, &proxy_app("app.proxy")).await;
     assert!(!env_of_container(&docker, name).contains_key("HTTP_PROXY"));
 }
@@ -285,7 +315,7 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
     let upgraded = proxy_app("app.proxy")
         .replace("1.0.0", "1.0.1")
         .replace("port: 7890", "port: 7891");
-    let upgraded = PluginPackage::parse(&upgraded).unwrap();
+    let upgraded = PluginPackage::parse(&upgraded, &super::langs()).unwrap();
     let grants = upgraded.manifest.permissions.clone();
     m.upgrade_upload(
         &PluginId::parse("app.proxy").unwrap(),
@@ -383,8 +413,12 @@ async fn egress_plugin_being_uninstalled_cannot_be_selected_even_at_the_same_man
     let uninstall = tokio::spawn({
         let m = m.clone();
         async move {
-            m.uninstall(&PluginId::parse("app.proxy").unwrap(), false)
-                .await
+            m.uninstall(
+                &PluginId::parse("app.proxy").unwrap(),
+                false,
+                &super::langs(),
+            )
+            .await
         }
     });
     hold.reached().await;

@@ -68,7 +68,11 @@ impl Engine {
             Ok(_) => Ok(true),
             // containerd 只有别的架构变体时 Config/RootFS 为空；补拉本机变体后才能读取健康检查。
             Err(BollardError::JsonDataError { .. }) => Ok(false),
-            Err(error) => match EngineError::from_bollard("检查镜像", error) {
+            Err(error) => match crate::plugin::docker::from_bollard(
+                &self.owner_languages(),
+                "检查镜像",
+                error,
+            ) {
                 EngineError::NotFound(_) => Ok(false),
                 other => Err(other),
             },
@@ -77,11 +81,13 @@ impl Engine {
 
     async fn check_digest(&self, image: &str) -> Result<()> {
         let expected = digest(image).expect("调用方已检查摘要");
-        let inspect = self
-            .docker
-            .inspect_image(image)
-            .await
-            .map_err(|error| EngineError::from_bollard(&format!("检查镜像 {image}"), error))?;
+        let inspect = self.docker.inspect_image(image).await.map_err(|error| {
+            crate::plugin::docker::from_bollard(
+                &self.owner_languages(),
+                &format!("检查镜像 {image}"),
+                error,
+            )
+        })?;
         let found = inspect
             .repo_digests
             .unwrap_or_default()
@@ -111,20 +117,26 @@ impl Engine {
                 BollardError::DockerResponseServerError { message, .. }
                 | BollardError::DockerStreamError { error: message } => EngineError::Pull {
                     image: image.to_owned(),
-                    message,
+                    message: crate::l10n::text(
+                        &self.owner_languages(),
+                        "plugin-install-docker-pull-failed",
+                        &[("image", image.into()), ("error", message.as_str().into())],
+                    ),
                 },
-                other => EngineError::from_bollard(&format!("拉取镜像 {image}"), other),
+                other => crate::plugin::docker::from_bollard(
+                    &self.owner_languages(),
+                    &format!("拉取镜像 {image}"),
+                    other,
+                ),
             })?;
         }
         Ok(())
     }
 
     pub(crate) async fn registry_proxy_configured(&self) -> Result<bool> {
-        let info = self
-            .docker
-            .info()
-            .await
-            .map_err(|error| EngineError::from_bollard("查询 Docker 代理", error))?;
+        let info = self.docker.info().await.map_err(|error| {
+            crate::plugin::docker::from_bollard(&self.owner_languages(), "查询 Docker 代理", error)
+        })?;
         Ok(info
             .https_proxy
             .is_some_and(|proxy| !proxy.trim().is_empty()))

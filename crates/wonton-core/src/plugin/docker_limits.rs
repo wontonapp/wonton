@@ -19,7 +19,9 @@ impl Engine {
         self.docker
             .update_container(name, config)
             .await
-            .map_err(|e| EngineError::from_bollard(&format!("更新容器 {name}"), e))
+            .map_err(|e| {
+                super::docker::from_bollard(&self.owner_languages(), &format!("更新容器 {name}"), e)
+            })
     }
 
     /// 容器内存不够被杀的事件。

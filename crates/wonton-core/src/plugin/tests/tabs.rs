@@ -14,7 +14,7 @@ fn tab(extra: &str) -> String {
 }
 
 fn parse(extra: &str) -> Result<PluginPackage, PackageError> {
-    PluginPackage::parse(&package(SERVICES, &tab(extra)))
+    PluginPackage::parse(&package(SERVICES, &tab(extra)), &super::langs())
 }
 
 fn error(extra: &str) -> String {
@@ -31,7 +31,7 @@ fn valid_tabs_keep_all_declared_fields_and_defaults() {
         ("tabs/feed-fill.svg".to_owned(), b"svg".to_vec()),
     ]);
     let yaml = package(SERVICES, &source);
-    let package = PluginPackage::with_files(&yaml, files).unwrap();
+    let package = PluginPackage::with_files(&yaml, files, &super::langs()).unwrap();
     let [tab] = package.manifest.tabs.as_deref().unwrap() else {
         panic!("应有一项 tabs")
     };
@@ -73,7 +73,7 @@ fn tab_validation_reports_each_field_rule() {
     ];
     for (original, replacement, field) in cases {
         let source = tab("").replace(original, replacement);
-        let err = PluginPackage::parse(&package(SERVICES, &source))
+        let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
             .to_string();
         assert!(err.contains(field), "{field}: {err}");
@@ -81,7 +81,7 @@ fn tab_validation_reports_each_field_rule() {
 
     for (path, expected) in [("//evil.example/x", "//"), ("/\\evil.example/x", "反斜杠")] {
         let source = tab("").replace("      path: /feed", &format!("      path: '{path}'"));
-        let err = PluginPackage::parse(&package(SERVICES, &source))
+        let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
             .to_string();
         assert!(
@@ -91,7 +91,7 @@ fn tab_validation_reports_each_field_rule() {
     }
 
     let source = tab("").replace("      path: /feed", "      path: \"/feed\\u0001\"");
-    let err = PluginPackage::parse(&package(SERVICES, &source))
+    let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
         .unwrap_err()
         .to_string();
     assert!(
@@ -116,7 +116,7 @@ fn tab_validation_reports_each_field_rule() {
         "  tabs:\n    - id: feed\n      title: {zh: 动态, en: Feed}\n      icon: tabs/feed.svg\n      path: /feed\n  permissions: []",
     );
     assert!(
-        PluginPackage::parse(&no_webui)
+        PluginPackage::parse(&no_webui, &super::langs())
             .unwrap_err()
             .to_string()
             .contains("tabs 声明了但没有声明 webui")
@@ -127,7 +127,7 @@ fn tab_validation_reports_each_field_rule() {
         "  webui: {service: web, port: 8080, display: picture-in-picture}\n  permissions: []",
     );
     assert!(
-        PluginPackage::parse(&bad_display)
+        PluginPackage::parse(&bad_display, &super::langs())
             .unwrap_err()
             .to_string()
             .contains("webui.display")
@@ -144,6 +144,7 @@ fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
     let novnc_package = PluginPackage::with_files(
         &package(SERVICES, &novnc),
         PackageFiles::from([(ICON.to_owned(), b"svg".to_vec())]),
+        &super::langs(),
     )
     .unwrap();
     let [declared] = novnc_package.manifest.tabs.as_deref().unwrap() else {
@@ -158,6 +159,7 @@ fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
     let manifest = PluginPackage::with_files(
         &package(SERVICES, &with_query),
         PackageFiles::from([(ICON.to_owned(), b"svg".to_vec())]),
+        &super::langs(),
     )
     .unwrap()
     .manifest;
@@ -170,7 +172,7 @@ fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
     // 空白和不完整的 % 只断言字段名，不把文案钉进测试。
     for (bad, encoded) in [("/feed#frag", "%23"), ("/中文", "%E4%B8%AD")] {
         let source = tab("").replace("      path: /feed", &format!("      path: '{bad}'"));
-        let err = PluginPackage::parse(&package(SERVICES, &source))
+        let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
             .to_string();
         assert!(
@@ -182,14 +184,14 @@ fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
             WEBUI,
             &format!("  webui: {{service: web, port: 8080, path: '{bad}'}}"),
         );
-        let err = PluginPackage::parse(&package(SERVICES, &source))
+        let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
             .to_string();
         assert!(err.contains("webui.path") && err.contains(encoded), "{err}");
     }
     for bad in ["/fe ed", "/100%"] {
         let source = tab("").replace("      path: /feed", &format!("      path: '{bad}'"));
-        let err = PluginPackage::parse(&package(SERVICES, &source))
+        let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
             .to_string();
         assert!(err.contains("tabs[0].path"), "{err}");
@@ -198,7 +200,7 @@ fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
             WEBUI,
             &format!("  webui: {{service: web, port: 8080, path: '{bad}'}}"),
         );
-        let err = PluginPackage::parse(&package(SERVICES, &source))
+        let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
             .to_string();
         assert!(err.contains("webui.path"), "{err}");
@@ -209,7 +211,7 @@ fn entry_paths_may_carry_a_query_and_must_be_percent_encoded() {
 fn tab_icon_files_are_required_when_declared() {
     let source = tab("      icon_selected: tabs/missing.svg\n");
     let files = PackageFiles::from([(ICON.to_owned(), b"svg".to_vec())]);
-    let err = PluginPackage::with_files(&package(SERVICES, &source), files)
+    let err = PluginPackage::with_files(&package(SERVICES, &source), files, &super::langs())
         .unwrap_err()
         .to_string();
     assert!(err.contains("tabs[0].icon_selected"), "{err}");

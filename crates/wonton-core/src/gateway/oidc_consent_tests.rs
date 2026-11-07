@@ -7,6 +7,7 @@ use serde_json::json;
 
 use super::CORE_COOKIE;
 use super::tests::{CORE, Harness, TOKEN, WHOAMI, fake_hydra};
+use crate::plugin::languages::Languages;
 use crate::plugin::{PluginPackage, PluginStatus};
 
 #[tokio::test]
@@ -66,11 +67,14 @@ async fn consent_gives_owner_groups_to_the_declaring_client_only() {
     let hydra = fake_hydra(accepted.clone()).await;
     let h = Harness::start(Some(hydra)).await;
 
-    let books = PluginPackage::manifest_of(&WHOAMI.replace("app.whoami", "app.books").replace(
-        "  webui:\n    service: web\n    port: 8000",
-        "  webui:\n    service: web\n    port: 8000\n    sso: oidc\n    oidc:\n      \
+    let books = PluginPackage::manifest_of(
+        &WHOAMI.replace("app.whoami", "app.books").replace(
+            "  webui:\n    service: web\n    port: 8000",
+            "  webui:\n    service: web\n    port: 8000\n    sso: oidc\n    oidc:\n      \
                  redirect_paths: [/cb]\n      owner_groups: [admin, app.admin]",
-    ))
+        ),
+        &Languages::from_header(Some("zh-Hans")),
+    )
     .unwrap();
     assert_eq!(books.id.as_str(), "app.books");
     h.manager

@@ -40,7 +40,7 @@ async fn web_port() -> u16 {
 }
 
 fn parsed(compose: &str) -> PluginPackage {
-    PluginPackage::parse(compose).unwrap()
+    PluginPackage::parse(compose, &super::langs()).unwrap()
 }
 
 fn id() -> PluginId {
@@ -108,14 +108,14 @@ const CLIENT: &str = "{address: 'http://{host}:4533', username: '{user}', passwo
 
 #[test]
 fn the_client_address_needs_a_host_and_its_password_a_generated_secret() {
-    assert!(PluginPackage::parse(&with_client(80, CLIENT)).is_ok());
+    assert!(PluginPackage::parse(&with_client(80, CLIENT), &super::langs()).is_ok());
     for bad in [
         "{address: 'http://nas:4533', username: '{user}', password: '{secret:pw}'}",
         "{address: 'http://{host}', username: '{user}', password: '{secret:other}'}",
         "{address: 'http://{host}', username: '{what}', password: '{secret:pw}'}",
     ] {
         assert!(
-            PluginPackage::parse(&with_client(80, bad)).is_err(),
+            PluginPackage::parse(&with_client(80, bad), &super::langs()).is_err(),
             "{bad}"
         );
     }
@@ -127,7 +127,9 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
     let port = web_port().await;
     let compose = with_client(port, CLIENT);
     assert_eq!(ports_of(&parsed(&compose)), [port, 445], "全部局域网端口");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     assert_eq!(published(&docker, "smb"), Value::Null);
     let langs = Languages::default();
     let closed = m.judged_detail(&id(), &langs).await.unwrap();
@@ -160,7 +162,9 @@ async fn the_switch_answers_with_the_same_requirements_as_the_detail() {
         "  permissions:",
         "  requirements: {memory: 2G}\n  permissions:",
     );
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let langs = Languages::default();
 
     let answer = m.set_lan_webui(id(), true, langs.clone()).await.unwrap();
@@ -189,7 +193,9 @@ async fn closed_ports_are_not_published_and_need_no_address() {
     };
     assert_eq!(offer.ports, [tcp]);
 
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     assert_eq!(published(&docker, "web"), Value::Null);
     assert_eq!(docker.network("wonton-app-test--lan"), None);
     let endpoints = created(&docker, "web")["NetworkingConfig"]["EndpointsConfig"].clone();
@@ -208,7 +214,9 @@ async fn opening_at_install_publishes_the_port_and_survives_restart() {
     let compose = app(port, OWN_LOGIN, "A: b", "");
     let package = parsed(&compose);
     let granted = package.manifest.permissions.clone();
-    m.install_user(package, &granted, true).await.unwrap();
+    m.install_user(package, &granted, true, super::langs())
+        .await
+        .unwrap();
 
     let key = format!("{port}/tcp");
     assert_eq!(
@@ -232,7 +240,9 @@ async fn switching_rebuilds_the_opening_containers_only() {
     let (docker, m, _detected, _dir) = on(office()).await;
     let port = web_port().await;
     let compose = app(port, OWN_LOGIN, "A: b", ", {service: smb, port: 445}");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     assert_eq!(published(&docker, "web"), Value::Null);
     let key = format!("{port}/tcp");
 
@@ -275,7 +285,9 @@ async fn switching_updates_address_consumers_without_lan_ports() {
         "  smb:\n    image: example/samba",
         "  smb:\n    image: example/samba\n    environment: {ADDRESSES: '${WONTON_LAN_ADDRESSES}'}\n  untouched:\n    image: nginx",
     );
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     assert_eq!(
         env_of_container(&docker, "wonton-app-test--smb")["ADDRESSES"],
         ""
@@ -306,7 +318,9 @@ async fn switching_keeps_the_owners_limits() {
     let (docker, m, _detected, _dir) = on(office()).await;
     let port = web_port().await;
     let compose = app(port, OWN_LOGIN, "A: b", "");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let limits = wonton_protocol::PluginLimits {
         memory: Some(1 << 30),
         cpu_percent: Some(150),
@@ -329,7 +343,9 @@ async fn opening_reports_why_it_failed_and_keeps_the_switch_off() {
     let (docker, m, detected, _dir) = on(office()).await;
     let port = web_port().await;
     let compose = app(port, OWN_LOGIN, "A: b", "");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
 
     // 选不出地址：直接报错，容器不动。
     *detected.lock().unwrap() = Err("读不了网卡".into());
@@ -353,7 +369,9 @@ async fn opening_reports_why_it_failed_and_keeps_the_switch_off() {
         ),
     )
     .replace("app.test", "app.other");
-    m.install(&other, &granted(&other)).await.unwrap();
+    m.install(&other, &granted(&other), super::langs())
+        .await
+        .unwrap();
     let err = m
         .set_lan_webui(id(), true, Languages::default())
         .await
@@ -362,9 +380,13 @@ async fn opening_reports_why_it_failed_and_keeps_the_switch_off() {
         matches!(err, crate::plugin::InstallError::Conflict(_)),
         "{err:?}"
     );
-    m.uninstall(&PluginId::parse("app.other").unwrap(), false)
-        .await
-        .unwrap();
+    m.uninstall(
+        &PluginId::parse("app.other").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
 
     // 重建失败：报错，开关退回去；拉不到镜像时退回去也失败，插件标为异常，再试一次能恢复。
     docker.fail_pulls(Some("拉不到镜像"));
@@ -388,7 +410,9 @@ async fn closing_never_reopens_the_port_when_it_fails() {
     let (docker, m, _detected, _dir) = on(office()).await;
     let port = web_port().await;
     let compose = app(port, OWN_LOGIN, "A: b", "");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     m.set_lan_webui(id(), true, Languages::default())
         .await
         .unwrap();
@@ -440,7 +464,9 @@ async fn closed_ports_do_not_conflict_with_other_plugins() {
     let (_docker, m, _detected, _dir) = on(office()).await;
     let port = web_port().await;
     let compose = app(port, OWN_LOGIN, "A: b", "");
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let other = package(
         "  smb:\n    image: example/samba",
         &format!(
@@ -448,7 +474,9 @@ async fn closed_ports_do_not_conflict_with_other_plugins() {
         ),
     )
     .replace("app.test", "app.other");
-    m.install(&other, &granted(&other)).await.unwrap();
+    m.install(&other, &granted(&other), super::langs())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -458,7 +486,9 @@ async fn plugins_without_the_switch_refuse_it() {
         "  smb:\n    image: example/samba",
         "  lan: {ports: [{service: smb, port: 445}]}\n  permissions: [network.lan]",
     );
-    m.install(&compose, &granted(&compose)).await.unwrap();
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
     let err = m
         .set_lan_webui(id(), true, Languages::default())
         .await

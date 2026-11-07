@@ -431,7 +431,8 @@ impl PluginManager {
             // 网关升级可能改了接口路径和默认模型：对账顺手把记下的变量刷新成现在的。
             if !file.keys.is_empty()
                 && let Ok(Some(record)) = self.store.load(&id)
-                && let Ok(mut package) = PluginPackage::with_files(&record.source, record.files)
+                && let Ok(mut package) =
+                    PluginPackage::with_files(&record.source, record.files, &self.owner_languages())
             {
                 package.origin = record.origin.clone();
                 let vars = self.model_vars(&route, &package, &file.keys);
@@ -482,8 +483,11 @@ impl PluginManager {
             let Ok(Some(record)) = self.store.load(&id) else {
                 continue;
             };
-            let Ok(mut package) = PluginPackage::with_files(&record.source, record.files.clone())
-            else {
+            let Ok(mut package) = PluginPackage::with_files(
+                &record.source,
+                record.files.clone(),
+                &self.owner_languages(),
+            ) else {
                 continue;
             };
             package.origin = record.origin.clone();
@@ -522,7 +526,7 @@ impl PluginManager {
             .rebuild_context(package, record, lan, pending.as_ref())
             .await?;
         ctx.matrix = self.bot_vars_read_back(package, &ctx).await?;
-        let plan = render::render(package, &ctx)?;
+        let plan = render::render(package, &ctx, &self.owner_languages())?;
         if let (Some(pending), Some(reservation)) = (&pending, reservation) {
             self.apply_migration(
                 &package.manifest,

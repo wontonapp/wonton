@@ -61,7 +61,9 @@ async fn bed() -> Bed {
 }
 
 fn register_gateway(manager: &PluginManager) {
-    let manifest = PluginPackage::parse(PROVIDER).unwrap().manifest;
+    let manifest = PluginPackage::parse(PROVIDER, &super::langs())
+        .unwrap()
+        .manifest;
     let route = ModelsRoute {
         id: manifest.id.clone(),
         spec: manifest.provides.clone().unwrap().models.unwrap(),
@@ -141,7 +143,10 @@ fn provider_manifest_requires_commands_and_valid_placeholders() {
         ("save: [providers, custom-save]", "save: [custom, '{id}']"),
         ("test: [providers, custom-test]", "test: [custom, '{key}']"),
     ] {
-        assert!(PluginPackage::parse(&PROVIDER.replace(original, replacement)).is_err());
+        assert!(
+            PluginPackage::parse(&PROVIDER.replace(original, replacement), &super::langs())
+                .is_err()
+        );
     }
 }
 

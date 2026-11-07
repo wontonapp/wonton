@@ -17,7 +17,10 @@ use crate::matrix::Matrix;
 use crate::matrix::fake::{Fake, start};
 
 fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose).unwrap().manifest.permissions
+    PluginPackage::parse(compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions
 }
 
 fn app(id: &str, permissions: &str) -> String {
@@ -58,8 +61,12 @@ async fn turning_the_proxy_on_and_off_rebuilds_only_the_plugins_that_go_out() {
     let m = manager_with(engine, &dir);
     let out = app("app.out", "network.egress");
     let closed = app("app.closed", "");
-    m.install(&out, &granted(&out)).await.unwrap();
-    m.install(&closed, &granted(&closed)).await.unwrap();
+    m.install(&out, &granted(&out), super::langs())
+        .await
+        .unwrap();
+    m.install(&closed, &granted(&closed), super::langs())
+        .await
+        .unwrap();
     let (out_web, closed_web) = (
         container_name("app-out", "web"),
         container_name("app-closed", "web"),
@@ -111,7 +118,9 @@ async fn a_plugin_installed_with_the_proxy_on_is_not_rebuilt() {
     let m = manager_with(engine, &dir);
     set_proxy(&m, Some("http://proxy:1"));
     let out = app("app.out", "network.egress");
-    m.install(&out, &granted(&out)).await.unwrap();
+    m.install(&out, &granted(&out), super::langs())
+        .await
+        .unwrap();
     m.apply_egress().await.unwrap();
     assert_eq!(starts(&docker, &container_name("app-out", "web")), 1);
 }
@@ -122,7 +131,9 @@ async fn an_image_that_cannot_be_pulled_leaves_the_old_container_running_and_mar
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     let out = app("app.out", "network.egress");
-    m.install(&out, &granted(&out)).await.unwrap();
+    m.install(&out, &granted(&out), super::langs())
+        .await
+        .unwrap();
     let web = container_name("app-out", "web");
     set_proxy(&m, Some("http://proxy:1"));
     docker.fail_pulls_except("gost", "toomanyrequests");
@@ -148,7 +159,9 @@ async fn when_the_relay_cannot_start_no_plugin_is_touched() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     let out = app("app.out", "network.egress");
-    m.install(&out, &granted(&out)).await.unwrap();
+    m.install(&out, &granted(&out), super::langs())
+        .await
+        .unwrap();
     set_proxy(&m, Some("http://proxy:1"));
     docker.fail_pulls(Some("toomanyrequests"));
     let err = m.apply_egress().await.unwrap_err();
@@ -189,7 +202,9 @@ impl Bed {
             .unwrap();
         let m = manager_in_container(engine, &dir).with_matrix(Some(Arc::new(matrix)));
         let compose = bot(services);
-        m.install(&compose, &granted(&compose)).await.unwrap();
+        m.install(&compose, &granted(&compose), super::langs())
+            .await
+            .unwrap();
         Self {
             docker,
             tuwunel,

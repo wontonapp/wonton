@@ -40,7 +40,7 @@ fn reserved_relay_service_names_are_rejected() {
                 yaml.replace("    network_mode: host\n", "")
                     .replace("[network.host]", "[]")
             };
-            let error = PluginPackage::parse(&yaml).unwrap_err();
+            let error = PluginPackage::parse(&yaml, &super::langs()).unwrap_err();
             assert!(
                 matches!(&error, PackageError::Service { service, .. } if service == name),
                 "{name}, host={host}: {error}"
@@ -60,7 +60,11 @@ fn relay_service_name_prefixes_are_not_reserved() {
          mcp: {service: web, port: 9000, transport: streamable-http}\n  \
          permissions: [network.host]",
     );
-    let plan = super::super::render::dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
+    let plan = super::super::render::dry_run(
+        &PluginPackage::parse(&yaml, &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap();
     let names: std::collections::BTreeSet<_> = plan.containers.iter().map(|c| &c.name).collect();
     assert_eq!(names.len(), plan.containers.len());
 }
@@ -124,9 +128,13 @@ async fn a_loopback_only_host_webui_gets_no_firewall_notice() {
             String::new(),
         )
     });
-    m.install(&host_webui(port), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(port),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     assert!(detail.notices.is_empty(), "{:?}", detail.notices);
@@ -147,9 +155,13 @@ async fn a_wildcard_host_webui_still_gets_the_firewall_notice() {
             String::new(),
         )
     });
-    m.install(&host_webui(port), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(port),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     let notices: Vec<&str> = detail.notices.iter().map(|n| n.text.as_str()).collect();
@@ -165,9 +177,13 @@ async fn an_unknown_listener_does_not_claim_a_firewall() {
     let socket = dir.path().join("apps/app-test/relay/webui.sock");
     serve(&socket);
     docker.on_exec_output(move |_, _, _| (0, proc_header(), String::new()));
-    m.install(&host_webui(free_port()), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(free_port()),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     assert!(detail.notices.is_empty(), "{:?}", detail.notices);
@@ -214,7 +230,11 @@ fn host_webui_and_mcp_get_relays_on_the_host_network() {
         "  webui: {service: web, port: 8123, sso: none}\n  mcp: {service: mcp, port: 9000, transport: streamable-http}\n  \
          permissions: [network.host]",
     );
-    let plan = super::super::render::dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
+    let plan = super::super::render::dry_run(
+        &PluginPackage::parse(&yaml, &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap();
     let relays = &plan.relays;
     assert_eq!(relays.len(), 2);
     assert_eq!(relays[0].service, "web");
@@ -244,7 +264,11 @@ fn services_in_the_plugin_network_get_no_relay() {
         "  web:\n    image: nginx",
         "  webui: {service: web, port: 80, sso: none}\n  permissions: []",
     );
-    let plan = super::super::render::dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
+    let plan = super::super::render::dry_run(
+        &PluginPackage::parse(&yaml, &super::langs()).unwrap(),
+        &super::langs(),
+    )
+    .unwrap();
     assert!(plan.relays.is_empty());
 }
 
@@ -264,9 +288,13 @@ async fn installing_a_host_webui_goes_through_the_relay_and_reports_the_firewall
             String::new(),
         )
     });
-    m.install(&host_webui(port), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(port),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     let notices: Vec<&str> = detail.notices.iter().map(|n| n.text.as_str()).collect();
@@ -283,7 +311,9 @@ async fn a_host_mcp_service_is_reached_through_its_socket() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    m.install(&yaml, &[Permission::NetworkHost]).await.unwrap();
+    m.install(&yaml, &[Permission::NetworkHost], super::langs())
+        .await
+        .unwrap();
 
     let servers = m.mcp_servers();
     let [server] = &servers[..] else {
@@ -304,9 +334,13 @@ async fn the_watch_brings_a_missing_relay_back() {
     let socket = dir.path().join("apps/app-test/relay/webui.sock");
     serve(&socket);
     let port = free_port();
-    m.install(&host_webui(port), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(port),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let relay = super::super::names::container_name("app-test", "relay-webui");
     assert!(docker.containers().contains(&relay));
     m.engine.remove_container(&relay).await.unwrap();
@@ -323,14 +357,22 @@ async fn uninstalling_takes_the_relay_with_it() {
     let socket = dir.path().join("apps/app-test/relay/webui.sock");
     serve(&socket);
     let port = free_port();
-    m.install(&host_webui(port), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(port),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let relay = super::super::names::container_name("app-test", "relay-webui");
     assert!(docker.containers().contains(&relay));
-    m.uninstall(&PluginId::parse("app.test").unwrap(), false)
-        .await
-        .unwrap();
+    m.uninstall(
+        &PluginId::parse("app.test").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     assert!(!docker.containers().contains(&relay));
 }
 
@@ -354,13 +396,14 @@ fn relay_socket_paths_up_to_the_limit_fit_and_over_it_do_not() {
         socket_path(&fit, &relays[0]).as_os_str().len(),
         MAX_SOCKET_PATH
     );
-    assert_eq!(path_too_long(&fit, &relays), None);
+    let langs = Languages::from_header(Some("zh-Hans"));
+    assert_eq!(path_too_long(&fit, &relays, &langs), None);
     let over = app_data_of(MAX_SOCKET_PATH + 1);
     assert_eq!(
         socket_path(&over, &relays[0]).as_os_str().len(),
         MAX_SOCKET_PATH + 1
     );
-    let problem = path_too_long(&over, &relays).unwrap();
+    let problem = path_too_long(&over, &relays, &langs).unwrap();
     assert!(problem.contains("路径太长"), "{problem}");
     assert!(problem.contains(&over.display().to_string()), "{problem}");
     assert!(problem.contains("107"), "{problem}");
@@ -375,12 +418,27 @@ async fn an_over_long_socket_path_fails_the_install_before_any_container() {
     std::fs::create_dir_all(&apps).unwrap();
     let m = manager_with_apps_dir(engine, &dir, &apps);
     let error = m
-        .install(&host_webui(8123), &[Permission::NetworkHost])
+        .install(
+            &host_webui(8123),
+            &[Permission::NetworkHost],
+            super::langs(),
+        )
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "unsupported");
     let message = error.to_string();
-    assert!(message.contains("路径太长"), "{message}");
+    // 套接字路径随临时目录变，断言目录拼接前的句子主干和上限字节数。
+    let expected = crate::l10n::text(
+        &super::langs(),
+        "plugin-install-relay-path-too-long",
+        &[
+            ("path", "".into()),
+            ("bytes", "".into()),
+            ("max", "107".into()),
+        ],
+    );
+    let stem = expected.split('(').next().unwrap();
+    assert!(message.contains(stem), "{message}");
     assert!(message.contains("107"), "{message}");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }
@@ -400,9 +458,13 @@ async fn a_reachable_host_webui_gets_no_firewall_notice() {
             .await
             .unwrap();
     });
-    m.install(&host_webui(port), &[Permission::NetworkHost])
-        .await
-        .unwrap();
+    m.install(
+        &host_webui(port),
+        &[Permission::NetworkHost],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     assert!(detail.notices.is_empty(), "{:?}", detail.notices);
@@ -413,7 +475,7 @@ async fn an_unreadable_network_does_not_claim_a_firewall() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine, &dir);
-    let package = PluginPackage::parse(&host_webui(39871)).unwrap();
+    let package = PluginPackage::parse(&host_webui(39871), &super::langs()).unwrap();
     assert_eq!(
         m.direct_webui_probe(&package.manifest, "wonton-missing")
             .await,

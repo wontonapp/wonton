@@ -7,6 +7,7 @@ use tokio::time::{Instant, sleep};
 
 use super::compose::DependCondition;
 use super::docker::{Engine, EngineError};
+use super::languages::Languages;
 use super::oom::{OomLimit, oom_reason};
 use crate::http::HttpClient;
 
@@ -372,9 +373,14 @@ pub async fn check_now(
     container: &str,
     service: &str,
     one_shot: bool,
+    langs: &Languages,
 ) -> Result<Checked, EngineError> {
     let Some(info) = engine.inspect_container(container).await? else {
-        return Ok(Checked::Failed(format!("容器 {container} 不存在")));
+        return Ok(Checked::Failed(crate::l10n::text(
+            langs,
+            "plugin-install-container-missing",
+            &[("name", container.into())],
+        )));
     };
     let state = info.state.unwrap_or_default();
     let status = state.status.unwrap_or(ContainerStateStatusEnum::EMPTY);
@@ -384,7 +390,7 @@ pub async fn check_now(
     let limit = OomLimit::of(info.host_config.as_ref());
     // 只杀了子进程时主进程可以自己以 0 退出，`OOMKilled` 也是 true：一次性服务这样算做完了。
     if state.oom_killed == Some(true) && !running && !(one_shot && exit_code == 0) {
-        return Ok(Checked::Failed(oom_reason(service, limit)));
+        return Ok(Checked::Failed(oom_reason(service, limit, langs)));
     }
     Ok(match (one_shot, status) {
         (true, ContainerStateStatusEnum::EXITED) if exit_code == 0 => Checked::Completed,

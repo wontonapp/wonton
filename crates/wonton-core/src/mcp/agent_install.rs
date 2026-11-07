@@ -87,10 +87,15 @@ async fn official(
     }
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, &langs));
     let granted = package.manifest.permissions.clone();
+    let langs = langs.clone();
     let run = move |bus: Arc<Bus>| async move {
-        match bus.plugins.install_detached(package, granted, false).await {
+        match bus
+            .plugins
+            .install_detached(package, granted, false, langs.clone())
+            .await
+        {
             Ok(view) => installed_outcome(&view, None, &langs),
-            Err(e) => Outcome::failed(l10n::text(
+            Err(e) => Outcome::failed(crate::l10n::text(
                 &langs,
                 "chat-install-failed",
                 &[("kind", e.kind().into()), ("error", e.to_string().into())],
@@ -154,8 +159,9 @@ async fn from_dir(
         Ok((opened, _)) => opened,
         Err(failure) => return deny(failure.to_string()),
     };
+    let langs = bus.plugins.owner_languages();
     // 只读一次：对这个包做检查，装的就是校验的这一份，中间改文件换不掉。
-    let package = match PluginPackage::load_dir_at(opened.as_fd()) {
+    let package = match PluginPackage::load_dir_at(opened.as_fd(), &langs) {
         Ok(package) => package,
         Err(e) => return deny(format!("invalid_input：插件包不合法：{e}")),
     };
@@ -172,11 +178,10 @@ async fn from_dir(
         ));
     }
     // 和 id 路径一样，卡片之前就知道这台主机装不装得了。
-    if let Err(e) = bus.plugins.fits_host(&package.manifest).await {
+    if let Err(e) = bus.plugins.fits_host(&package.manifest, &langs).await {
         return deny(format!("invalid_input：{e}"));
     }
     let id = package.manifest.id.clone();
-    let langs = bus.plugins.owner_languages();
     let record = match bus.plugins.installed_record(&id) {
         Ok(record) => record,
         Err(e) => return deny(format!("internal_error：读插件记录失败：{e}")),
@@ -223,7 +228,11 @@ async fn first_install(
     let id_for_run = id.clone();
     let langs = langs.clone();
     let run = move |bus: Arc<Bus>| async move {
-        match bus.plugins.install_detached(package, granted, false).await {
+        match bus
+            .plugins
+            .install_detached(package, granted, false, langs.clone())
+            .await
+        {
             Ok(view) => {
                 // 归属没记下来时更新就装不上，如实告诉 Agent。
                 let note = match bus.plugins.set_writer(&id_for_run, Some(writer)) {

@@ -5,6 +5,7 @@ use crate::matrix::{BotAccount, Matrix};
 use crate::plugin::bots::BotRecord;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
+use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginPackage, PluginStatus};
@@ -51,7 +52,7 @@ impl Bed {
         let id = PluginId::parse("app.echo").unwrap();
         manager.register_for_test(PluginPackage::manifest_of(
             "services:\n  bot:\n    image: echo\nx-wonton:\n  spec: '0.5'\n  id: app.echo\n  version: 1.0.0\n  kind: app\n  title: {zh: 回声, en: Echo}\n  description: {zh: 回声, en: Echo}\n  bot: {}\n  permissions: [matrix.bot]\n"
-        ).unwrap(), PluginStatus::Running, None);
+        , &Languages::from_header(Some("zh-Hans"))).unwrap(), PluginStatus::Running, None);
         let login = matrix.login("echo", "Bot").await.unwrap();
         matrix
             .session(&login)
