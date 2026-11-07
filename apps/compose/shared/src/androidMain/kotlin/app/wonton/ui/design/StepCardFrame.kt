@@ -48,7 +48,7 @@ fun StepCardFrame(
 }
 @Composable
 private fun StepCardHeader(nav: StepNav, onBack: () -> Unit, onSkip: () -> Unit) {
-    val stepDescription = stringResource(R.string.design_step_progress, nav.position, nav.total)
+    val stepDescription = stringResource(R.string.design_step_progress, nav.position.toInt(), nav.total.toInt())
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
