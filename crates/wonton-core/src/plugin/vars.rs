@@ -98,6 +98,8 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     set("WONTON_APP_ID", manifest.id.to_string());
     set("WONTON_APP_DATA", ctx.app_data.display().to_string());
     set("WONTON_SERVICE_DOMAIN", names::service_domain(&ctx.slug));
+    // 取不到时是空串而不是未定义：插件写了 `${WONTON_HOST_NAME}` 也装得上，见 host_check。
+    set("WONTON_HOST_NAME", ctx.host_name.clone());
     set("TZ", ctx.tz.clone());
     set("PUID", ctx.puid.to_string());
     set("PGID", ctx.pgid.to_string());

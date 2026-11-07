@@ -303,7 +303,8 @@ async fn serve() -> anyhow::Result<()> {
         matrix.clone(),
         owner.clone(),
         upgrades.frozen(),
-    );
+    )
+    .await;
     manager.spawn_registry_mirror_probe();
     manager.restore().await.context("恢复已安装的插件")?;
     spawn_plugin_monitors(&manager);
@@ -311,10 +312,7 @@ async fn serve() -> anyhow::Result<()> {
     preinstall(&cfg, manager.clone(), upgrades.clone())?;
 
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
-    let notices = notice_room(&cfg, matrix.as_ref(), {
-        let manager = manager.clone();
-        Arc::new(move || manager.owner_languages())
-    });
+    let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // 服务器配对的同意卡片（ADR-0050）和 Bot 调用确认用同一套 Confirmations。
     let (bus, confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
@@ -512,6 +510,12 @@ fn preinstall(
     Ok(())
 }
 
+/// 主人的语言跟着管理器走：App 里改了语言，卡片和通知跟着换。
+fn owner_languages(manager: &Arc<PluginManager>) -> Arc<dyn Fn() -> Languages + Send + Sync> {
+    let manager = manager.clone();
+    Arc::new(move || manager.owner_languages())
+}
+
 /// 和主人的通知房间（ADR-0016）：插件通知、确认卡片都发进这里。没接 Matrix 时插件通知如实报不可用。
 fn notice_room(
     cfg: &Config,
@@ -531,7 +535,7 @@ fn notice_room(
 
 /// 核心的插件管理器，接上它在用的其余部件。
 #[allow(clippy::too_many_arguments)]
-fn plugin_manager(
+async fn plugin_manager(
     cfg: &Config,
     engine: Engine,
     store: Store,
@@ -542,7 +546,7 @@ fn plugin_manager(
     owner: Arc<OwnerStore>,
     upgrade_freeze: tokio::sync::watch::Receiver<bool>,
 ) -> Arc<PluginManager> {
-    Arc::new(
+    let manager = Arc::new(
         PluginManager::new(
             engine,
             store,
@@ -560,7 +564,10 @@ fn plugin_manager(
         ))
         .with_store(cfg.store.clone())
         .with_upgrade_freeze(upgrade_freeze),
-    )
+    );
+    // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
+    manager.host_name().await;
+    manager
 }
 
 /// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。

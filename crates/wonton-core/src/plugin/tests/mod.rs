@@ -27,6 +27,7 @@ mod gpu;
 mod health;
 mod host_check;
 mod host_facts;
+mod host_name;
 mod host_relay;
 mod host_relay_docker;
 mod instances;

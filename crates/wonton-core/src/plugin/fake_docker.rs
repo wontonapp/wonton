@@ -19,6 +19,7 @@ use self::events::events_response;
 use self::exec::start_exec;
 use self::networks::{endpoint_settings, networks, running};
 use self::update::update_container;
+use self::volumes::volumes;
 use super::docker::Engine;
 use super::names::LABEL_PLUGIN;
 
@@ -26,6 +27,7 @@ mod events;
 mod exec;
 mod networks;
 mod update;
+mod volumes;
 
 #[derive(Clone)]
 pub struct FakeDocker {
@@ -133,6 +135,10 @@ struct Resources {
     pull_spared: Option<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
+    /// Docker `/info` 报告的名字（宿主主机名）；没设时不报。
+    name: Option<String>,
+    /// 设了时 `GET /info` 回这个错误；`None` 恢复正常。
+    info_error: Option<String>,
     https_proxy: Option<String>,
     /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
     image_healthchecks: BTreeMap<String, Value>,
@@ -400,6 +406,16 @@ impl FakeDocker {
         self.lock().runtimes = Some(runtimes.iter().map(|r| (*r).to_owned()).collect());
     }
 
+    /// 让 `GET /info` 报告这个名字（宿主主机名）。
+    pub fn set_name(&self, name: &str) {
+        self.lock().name = Some(name.to_owned());
+    }
+
+    /// 让 `GET /info` 回 `message`，直到传入 `None`。
+    pub fn fail_info(&self, message: Option<&str>) {
+        self.lock().info_error = message.map(str::to_owned);
+    }
+
     pub fn set_https_proxy(&self, address: &str) {
         self.lock().https_proxy = Some(address.to_owned());
     }
@@ -479,7 +495,8 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
     let reply = match parts.as_slice() {
         ["containers", rest @ ..] => containers(&mut docker, method, rest, query, body),
         ["networks", rest @ ..] => networks(&mut docker, method, rest, query, body),
-        _ => others(&mut docker, method, &parts, query, body),
+        ["volumes", rest @ ..] => volumes(&mut docker, method, rest, query, body),
+        _ => others(&mut docker, method, &parts),
     };
     reply.unwrap_or_else(|| {
         json_reply(
@@ -650,15 +667,8 @@ fn list_containers(docker: &Resources, query: &str) -> Response {
     json_reply(StatusCode::OK, json!(list))
 }
 
-/// 版本、镜像、卷。
-fn others(
-    docker: &mut Resources,
-    method: &Method,
-    parts: &[&str],
-    query: &str,
-    raw: &Bytes,
-) -> Option<Response> {
-    let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+/// 版本、镜像、exec 查询。
+fn others(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Response> {
     let reply = match (method, parts) {
         (&Method::GET, ["version"]) => json_reply(
             StatusCode::OK,
@@ -673,6 +683,10 @@ fn others(
         {
             json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
         }
+        (&Method::GET, ["info"]) if docker.info_error.is_some() => json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": docker.info_error}),
+        ),
         (&Method::GET, ["info"]) => {
             let runtimes = docker
                 .runtimes
@@ -684,7 +698,7 @@ fn others(
                 .collect();
             json_reply(
                 StatusCode::OK,
-                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
+                json!({"Name": docker.name, "Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
             )
         }
         (&Method::GET, ["images", image @ .., "json"]) => {
@@ -701,23 +715,6 @@ fn others(
                 StatusCode::OK,
                 json!({"ExitCode": code, "Running": code.is_none()}),
             )
-        }
-        (&Method::POST, ["volumes", "create"]) => {
-            let name = body["Name"].as_str().unwrap_or_default().to_owned();
-            let labels = labels_of(&body);
-            let reply = volume(&name, &labels);
-            docker.volumes.insert(name, labels);
-            json_reply(StatusCode::CREATED, reply)
-        }
-        (&Method::GET, ["volumes", name]) if docker.volumes.contains_key(*name) => {
-            json_reply(StatusCode::OK, volume(name, &docker.volumes[*name]))
-        }
-        (&Method::DELETE, ["volumes", name]) => gone(docker.volumes.remove(*name).is_some()),
-        (&Method::GET, ["volumes"]) => {
-            let list: Vec<Value> = labeled(&docker.volumes, query)
-                .map(|(n, labels)| volume(n, labels))
-                .collect();
-            json_reply(StatusCode::OK, json!({"Volumes": list, "Warnings": []}))
         }
         _ => return None,
     };
@@ -773,13 +770,6 @@ fn owned_by(plugin: &str) -> Labels {
 
 fn labels_of(body: &Value) -> Labels {
     serde_json::from_value(body["Labels"].clone()).unwrap_or_default()
-}
-
-fn volume(name: &str, labels: &Labels) -> Value {
-    json!({
-        "Name": name, "Driver": "local", "Mountpoint": format!("/var/lib/docker/volumes/{name}"),
-        "Labels": labels, "Options": {}, "Scope": "local"
-    })
 }
 
 /// 按查询里的 `filters={"label":["键=值", "键"]}` 筛出资源：每一条都要满足，和 Docker 一样。

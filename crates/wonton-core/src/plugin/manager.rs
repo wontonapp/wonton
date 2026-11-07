@@ -121,6 +121,8 @@ pub struct PluginManager {
     pub(super) lan: Lan,
     /// 出网插件走哪个代理，见 [`super::egress`]。
     pub(super) egress: Egress,
+    /// 宿主主机名（`WONTON_HOST_NAME`）；只在取到时缓存，失败下次安装再取，见 [`super::host_check`]。
+    pub(super) host_name: tokio::sync::OnceCell<String>,
     pub(super) registry_mirror: super::registry_mirror::RegistryMirror,
     /// 核心升级没结束时是真，这时不动插件（ADR-0025）。
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
@@ -211,6 +213,7 @@ impl PluginManager {
             bundled: RwLock::new(BTreeSet::new()),
             lan,
             egress: Egress::default(),
+            host_name: tokio::sync::OnceCell::new(),
             registry_mirror: Default::default(),
             upgrade_frozen: None,
             oom: Default::default(),

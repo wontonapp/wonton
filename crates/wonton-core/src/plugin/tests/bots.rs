@@ -214,6 +214,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         egress: None,
         core_address: None,
         memory_total: None,
+        host_name: "server-01".into(),
         limits: Default::default(),
         cgroup_parent: None,
     };

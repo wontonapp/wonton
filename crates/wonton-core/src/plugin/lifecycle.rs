@@ -373,6 +373,7 @@ impl PluginManager {
                 .then(|| core_address::PLACEHOLDER.to_owned()),
             limits: Default::default(),
             memory_total: self.memory_total().await,
+            host_name: self.host_name().await,
             cgroup_parent: self.cfg.plugin_slice.clone(),
         })
     }

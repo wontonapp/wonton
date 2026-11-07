@@ -72,6 +72,7 @@ impl Host {
 
 fn docker(runtimes: &[&str]) -> Result<HostInfo, String> {
     Ok(HostInfo {
+        name: None,
         os_type: "linux".to_owned(),
         arch: "x86_64".to_owned(),
         runtimes: runtimes.iter().map(|&r| r.to_owned()).collect(),

@@ -118,6 +118,8 @@ pub struct InstallContext {
     pub core_address: Option<String>,
     /// 宿主总内存；未知时插件服务不设置默认内存上限。
     pub memory_total: Option<u64>,
+    /// 宿主主机名（`WONTON_HOST_NAME`）；取不到时为空。
+    pub host_name: String,
     /// 主人给插件服务设置的覆盖上限；安装和 dry run 使用默认值。
     pub limits: wonton_protocol::PluginLimits,
     /// 插件 systemd slice；没有安装 slice 时不设置父 cgroup。
@@ -149,6 +151,7 @@ impl std::fmt::Debug for InstallContext {
             .field("egress", &self.egress)
             .field("core_address", &self.core_address)
             .field("memory_total", &self.memory_total)
+            .field("host_name", &self.host_name)
             .field("limits", &self.limits)
             .field("cgroup_parent", &self.cgroup_parent)
             .finish()
@@ -297,6 +300,7 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
             .map(|_| core_address::PLACEHOLDER.to_owned()),
         limits: Default::default(),
         memory_total: None,
+        host_name: String::new(),
         cgroup_parent: None,
         slug,
     }

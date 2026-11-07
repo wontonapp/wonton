@@ -33,6 +33,32 @@ impl PluginManager {
             Known::Unknown(_) => None,
         }
     }
+
+    /// 宿主主机名（Docker `/info` 的 `Name`：daemon 跑在宿主上，安装时登记的名字就是宿主
+    /// hostname，核心自己的 hostname 不算数）。取到才缓存，之后不再查 Docker；失败打 warn、
+    /// 这次注入空串、不缓存，下次安装再取——失败即停的例外：主机名只是显示用（插件拿它填
+    /// `hostname`、信息条），注入空串是如实报告没有这个值，不是伪装成功。
+    pub async fn host_name(&self) -> String {
+        match self
+            .host_name
+            .get_or_try_init(|| async {
+                match self.engine.host_info().await {
+                    Ok(info) => Ok(info.name.unwrap_or_default()),
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "取不到宿主主机名，WONTON_HOST_NAME 注入为空；下次安装再取"
+                        );
+                        Err(error.to_string())
+                    }
+                }
+            })
+            .await
+        {
+            Ok(name) => name.clone(),
+            Err(_) => String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

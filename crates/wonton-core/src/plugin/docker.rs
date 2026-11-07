@@ -84,6 +84,8 @@ pub struct ServerInfo {
 /// Docker 报告的主机情况。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostInfo {
+    /// Docker `/info` 的 `Name`：daemon 所在主机的名字（安装时登记的就是宿主 hostname）。
+    pub name: Option<String>,
     pub os_type: String,
     pub arch: String,
     pub runtimes: Vec<String>,
@@ -233,6 +235,7 @@ impl Engine {
         let mut runtimes: Vec<String> = info.runtimes.unwrap_or_default().into_keys().collect();
         runtimes.sort();
         Ok(HostInfo {
+            name: info.name,
             os_type: info.os_type.unwrap_or_default(),
             arch: info.architecture.unwrap_or_default(),
             runtimes,
