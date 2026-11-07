@@ -293,10 +293,21 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
     assert_eq!(preview.trust, PluginTrust::Local);
     assert_eq!(preview.blocked, None);
     let notices: Vec<&str> = preview.notices.iter().map(|n| n.text.as_str()).collect();
-    assert!(
-        notices.contains(&"镜像没有按摘要固定：web（nginx:1.27）"),
-        "{notices:?}"
+    // 期望值用目录本身格式化出来（en-US 回落到 en）。
+    let unpinned = crate::l10n::text(
+        &english(),
+        "install-images-unpinned",
+        &[(
+            "images",
+            crate::l10n::text(
+                &english(),
+                "install-image",
+                &[("service", "web".into()), ("image", "nginx:1.27".into())],
+            )
+            .into(),
+        )],
     );
+    assert!(notices.contains(&unpinned.as_str()), "{notices:?}");
     assert!(notices.contains(&"需要 2G 内存"), "{notices:?}");
     // 确认页显示的图标在装之前就取得到。
     let sha = sha256_hex(ICON.as_bytes());
@@ -304,7 +315,17 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
 
     m.install_package(photos(ICON), &[]).await.unwrap();
     let again = m.preview_install(&photos(ICON), &english()).await.unwrap();
-    assert!(again.blocked.unwrap().contains("已经装了"));
+    // 期望值用目录本身格式化出来；装的就是同一种包，版本一样。
+    let installed = photos(ICON);
+    let expected = crate::l10n::text(
+        &english(),
+        "install-already-installed",
+        &[
+            ("id", installed.manifest.id.to_string().into()),
+            ("version", installed.manifest.version.as_str().into()),
+        ],
+    );
+    assert_eq!(again.blocked.unwrap(), expected);
 
     let host = package(
         "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
@@ -371,10 +392,16 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
         .iter()
         .find(|line| line.permission == "network.host")
         .and_then(|line| line.notice.as_deref());
+    // 期望值用目录本身格式化出来。
     assert_eq!(
         zh_notice,
         Some(
-            "这个插件能直接访问你家里的网络和本机所有端口，包括只给本机用的服务，也能绕过 Wonton 的登录连到部分其他插件。它开的端口会出现在本机所有网卡上，包括 Wi-Fi、Tailscale 和 IPv6 地址，本机有公网地址时互联网也能连上。本机开着防火墙时，局域网设备连不进来，要你自己放行。"
+            crate::l10n::text(
+                &Languages::from_header(Some("zh")),
+                "permission-notice-network-host",
+                &[]
+            )
+            .as_str()
         )
     );
 
@@ -390,7 +417,12 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
     assert_eq!(
         en_notice,
         Some(
-            "This plugin can directly access your home network and all ports on this machine, including services bound only to localhost, and bypass Wonton login to connect to some other plugins. Its ports will appear on all network interfaces, including Wi-Fi, Tailscale, and IPv6 addresses; if this machine has a public address, the internet can reach them too. If the machine firewall is on, LAN devices cannot connect until you allow them yourself."
+            crate::l10n::text(
+                &Languages::from_header(Some("en-US")),
+                "permission-notice-network-host",
+                &[]
+            )
+            .as_str()
         )
     );
 
@@ -411,7 +443,12 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
     assert_eq!(
         highest_notice,
         Some(
-            "This plugin can control the entire host: read and write all files and other plugins' data, change or stop Wonton itself. This is equivalent to giving it root on the host. Only install plugins you trust. After uninstalling, containers it created and things it changed will not be cleaned up."
+            crate::l10n::text(
+                &Languages::from_header(Some("en-US")),
+                "permission-notice-highest-risk",
+                &[]
+            )
+            .as_str()
         )
     );
 }

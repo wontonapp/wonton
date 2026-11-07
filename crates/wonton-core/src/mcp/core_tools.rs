@@ -197,6 +197,8 @@ async fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
         .map(str::to_lowercase)
         .collect();
     let (listed, problem) = official(bus).await?;
+    // 权限的说明按主人的语言写：这个工具是 Agent 替主人调的，请求里没有 Accept-Language。
+    let langs = bus.plugins.owner_languages();
     let found: Vec<Value> = listed
         .iter()
         .map(|l| &l.manifest)
@@ -210,7 +212,11 @@ async fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
                 "title": cards::text(&m.title),
                 "description": cards::text(&m.description),
                 "version": m.version,
-                "permissions": m.permissions.iter().map(cards::permission).collect::<Vec<_>>(),
+                "permissions": m
+                    .permissions
+                    .iter()
+                    .map(|p| cards::permission(p, &langs))
+                    .collect::<Vec<_>>(),
                 "installed": bus.plugins.is_installed(&m.id),
             })
         })

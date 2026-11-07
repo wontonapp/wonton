@@ -23,6 +23,8 @@ use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::render::{dry_run, dry_run_with_email};
+use super::views_source::source_notices;
+use crate::l10n;
 
 impl PluginManager {
     /// 已安装的插件：系统插件在前，其余按安装的先后。
@@ -119,22 +121,17 @@ impl PluginManager {
             blocked: None,
             notices: listed
                 .firewalled
-                .then(|| line("本机防火墙可能挡住了外来连接，局域网设备可能连不进来".to_owned()))
+                .then(|| line(l10n::text(langs, "plugin-firewall-notice", &[])))
                 .map(|mut notice| {
                     notice.emphasis = true;
                     notice
                 })
                 .into_iter()
                 .chain(cross_origin_isolation_notice(m, langs))
-                .chain(super::egress::provider::provides_proxy(m).then(|| {
-                    line(langs.pick_owned(&super::manifest::LocalizedText::from([
-                        ("zh".to_owned(), "在出网代理设置里选它".to_owned()),
-                        (
-                            "en".to_owned(),
-                            "Select it in egress proxy settings".to_owned(),
-                        ),
-                    ])))
-                }))
+                .chain(
+                    super::egress::provider::provides_proxy(m)
+                        .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
+                )
                 .collect(),
             hints: self.models_hint(id, m).into_iter().collect(),
             lan_webui: listed
@@ -154,9 +151,9 @@ impl PluginManager {
         package: &PluginPackage,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
-        let blocked = blocked_by(self.precheck(&package.manifest).await)?;
+        let blocked = blocked_by(self.precheck(&package.manifest, langs).await)?;
         let mut preview = self.preview_with(package, langs, blocked, None).await?;
-        if let Some(notice) = self.retained_data(&package.manifest.id).await? {
+        if let Some(notice) = self.retained_data(&package.manifest.id, langs).await? {
             let after_review_notice = usize::from(preview.trust != PluginTrust::Official);
             preview.notices.insert(after_review_notice, notice);
         }
@@ -167,13 +164,16 @@ impl PluginManager {
     pub(crate) async fn retained_data(
         &self,
         id: &PluginId,
+        langs: &Languages,
     ) -> Result<Option<CardLine>, InstallError> {
         let volumes = !self.own_resources(id).await?.volumes.is_empty();
         let secrets = self.store.secrets().load(id)?.is_some();
         let dir = self.cfg.apps_dir.join(id.slug()).exists();
         Ok((volumes || secrets || dir).then(|| CardLine {
-            text: format!(
-                "这台服务器上留着 {id} 以前的数据和密钥，这个应用装上后能读到它们；不想这样就先彻底删除"
+            text: l10n::text(
+                langs,
+                "install-retained-data",
+                &[("id", id.to_string().into())],
             ),
             emphasis: true,
         }))
@@ -205,42 +205,19 @@ impl PluginManager {
             .or_else(|| {
                 super::host_relay::path_too_long(&self.cfg.apps_dir.join(m.id.slug()), &plan.relays)
             });
-        let unpinned: Vec<String> = plan
-            .containers
-            .iter()
-            .filter(|c| !c.image.contains("@sha256:"))
-            .map(|c| format!("{}（{}）", c.service, c.image))
-            .collect();
-        let mut notices = Vec::new();
-        let reviewed = package
-            .origin
-            .as_ref()
-            .is_some_and(|o| o.trust == Trust::Official);
-        if !reviewed {
-            notices.push(CardLine {
-                text: unreviewed_notice(package),
-                emphasis: true,
-            });
-            let images = image_repositories(plan.containers.iter().map(|c| c.image.as_str()));
-            notices.push(line(format!("镜像来自 {}", images.join("、"))));
-        }
-        if !unpinned.is_empty() {
-            notices.push(line(format!("镜像没有按摘要固定：{}", unpinned.join("、"))));
-        }
+        let mut notices = source_notices(package, &plan, langs);
         if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
-            notices.push(line("在 App 里打开它的网页时自动登录".to_owned()));
+            notices.push(line(l10n::text(langs, "install-webui-sso", &[])));
         }
         // 写了权限的，已经在权限列表里了。
         if super::views_permissions::reveals_owner_identity(m)
             && !m.permissions.contains(&Permission::OwnerIdentity)
         {
-            notices.push(line(permission_text(&Permission::OwnerIdentity)));
+            notices.push(line(permission_text(&Permission::OwnerIdentity, langs)));
         }
         notices.extend(requirement_notices(m, &self.host_facts().await));
         if m.permissions.contains(&Permission::NetworkHost) {
-            notices.push(line(
-                "宿主网络里的服务出网走宿主自己的路由，不经 Wonton 的出口代理".to_owned(),
-            ));
+            notices.push(line(l10n::text(langs, "install-host-network-egress", &[])));
         }
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
@@ -372,18 +349,24 @@ impl PluginManager {
             .then(|| crate::owner::EMAIL_NEEDED.to_owned())
     }
 
-    async fn precheck(&self, m: &Manifest) -> Result<(), InstallError> {
+    async fn precheck(&self, m: &Manifest, langs: &Languages) -> Result<(), InstallError> {
         if m.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(
-                "系统应用只能随核心预装".to_owned(),
-            ));
+            return Err(InstallError::Unsupported(l10n::text(
+                langs,
+                "install-system-preinstalled",
+                &[],
+            )));
         }
         {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             if let Some(entry) = plugins.get(&m.id) {
-                return Err(InstallError::Conflict(format!(
-                    "已经装了 {}（版本 {}）",
-                    m.id, entry.version
+                return Err(InstallError::Conflict(l10n::text(
+                    langs,
+                    "install-already-installed",
+                    &[
+                        ("id", m.id.to_string().into()),
+                        ("version", entry.version.as_str().into()),
+                    ],
                 )));
             }
             let slug = m.id.slug();
@@ -405,9 +388,13 @@ impl PluginManager {
     }
 
     /// 升级预览里这台主机上升不了的原因。
-    pub(super) async fn host_block(&self, m: &Manifest) -> Result<Option<String>, InstallError> {
+    pub(super) async fn host_block(
+        &self,
+        m: &Manifest,
+        langs: &Languages,
+    ) -> Result<Option<String>, InstallError> {
         if m.kind == PluginKind::System {
-            return Ok(Some("系统插件只能随核心预装".to_owned()));
+            return Ok(Some(l10n::text(langs, "install-system-preinstalled", &[])));
         }
         blocked_by(self.fits_host(m).await)
     }
@@ -575,59 +562,6 @@ fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, Insta
     }
 }
 
-/// 未审核的插件的提示：写明谁提供。上传的插件只有清单里作者自己写的名字，核实不了。
-fn unreviewed_notice(package: &PluginPackage) -> String {
-    match &package.origin {
-        Some(origin) => {
-            let provider = origin.provider();
-            let via = origin
-                .via_index()
-                .map(|host| format!("，经 {host} 的索引"))
-                .unwrap_or_default();
-            format!("云吞没有审核过这个应用，代码和镜像由 {provider} 提供{via}")
-        }
-        None => match &package.manifest.author {
-            Some(author) => format!(
-                "云吞没有审核过这个应用，它来自你上传的文件，清单里写的作者是 {}，核实不了",
-                author.name
-            ),
-            None => "云吞没有审核过这个应用，它来自你上传的文件，清单里没写作者".to_owned(),
-        },
-    }
-}
-
-/// 镜像来自哪些仓库，去掉标签和摘要，去重，保持先后。没写主机的按 Docker 的规则算 `docker.io`。
-fn image_repositories<'a>(images: impl Iterator<Item = &'a str>) -> Vec<String> {
-    let mut repositories = Vec::new();
-    for image in images {
-        let repository = image_repository(image);
-        if !repositories.contains(&repository) {
-            repositories.push(repository);
-        }
-    }
-    repositories
-}
-
-fn image_repository(image: &str) -> String {
-    let name = image.split('@').next().unwrap_or(image);
-    // 标签的冒号在最后一个 `/` 之后；主机的端口号在它之前。
-    let last_part = name.rfind('/').map_or(0, |slash| slash + 1);
-    let name = match name[last_part..].find(':') {
-        Some(colon) => &name[..last_part + colon],
-        None => name,
-    };
-    let first = name.split('/').next().unwrap_or(name);
-    let has_host =
-        name.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost");
-    if has_host {
-        name.to_owned()
-    } else if name.contains('/') {
-        format!("docker.io/{name}")
-    } else {
-        format!("docker.io/library/{name}")
-    }
-}
-
 pub(crate) use super::views_permissions::permission_line;
 pub use super::views_permissions::permission_text;
 
@@ -689,21 +623,13 @@ pub(crate) fn cross_origin_isolation_notice(
     {
         return None;
     }
-    static TEXT: std::sync::LazyLock<super::manifest::LocalizedText> = std::sync::LazyLock::new(
-        || {
-            [
-            ("zh".to_owned(), "这个应用放宽了跨源隔离：在 Android 上，它的页面可能和别的网页共用进程。".to_owned()),
-            ("en".to_owned(), "This app relaxes cross-origin isolation: on Android, its pages may share a process with other web pages.".to_owned()),
-        ].into()
-        },
-    );
     Some(CardLine {
-        text: langs.pick_owned(&TEXT),
+        text: l10n::text(langs, "plugin-cross-origin-isolation", &[]),
         emphasis: true,
     })
 }
 
-fn line(text: String) -> CardLine {
+pub(super) fn line(text: String) -> CardLine {
     CardLine {
         text,
         emphasis: false,

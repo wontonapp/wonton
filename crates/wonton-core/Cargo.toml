@@ -40,10 +40,8 @@ ipnet = { version = "2.12.2", features = ["serde"] }
 iroh = { workspace = true, features = ["unstable-net-report"] }
 # MIT。签发 Tuwunel 登录用的 JWT（EdDSA）。
 jsonwebtoken = { workspace = true }
-# Apache-2.0 OR MIT。挑插件文字的语言（ADR-0017、ADR-0043）：协商语言，cldr 特性带 CLDR 的可能子标签（zh-TW → zh-Hant）。
-fluent-langneg = { version = "0.14.2", features = ["cldr"] }
-# Unicode-3.0。fluent-langneg 不导出补全语言标签的 LocaleExpander，请求的语言要先补全再协商。
-icu_locid_transform = "1.5"
+# Apache-2.0 OR MIT。核心给 App 的文字（ADR-0043）：Fluent 目录和语言协商。
+wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
 percent-encoding = "2.3.2"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。

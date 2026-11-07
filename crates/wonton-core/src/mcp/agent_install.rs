@@ -68,7 +68,11 @@ async fn official(
     };
     let langs = bus.plugins.owner_languages();
     let mut draft = cards::install(&caller.name, &package.manifest, &langs);
-    match bus.plugins.retained_data(&package.manifest.id).await {
+    match bus
+        .plugins
+        .retained_data(&package.manifest.id, &langs)
+        .await
+    {
         Ok(Some(notice)) => draft.lines.insert(1, notice),
         Ok(None) => {}
         Err(e) => {
@@ -176,7 +180,7 @@ async fn first_install(
     // 之前还在等的同一份提交让位：主人不会面对两张都作数的卡。
     bus.confirmations.supersede_pending(&caller.id, &id).await;
     let mut draft = cards::agent_install(&caller.name, &package, langs);
-    match bus.plugins.retained_data(&id).await {
+    match bus.plugins.retained_data(&id, langs).await {
         Ok(Some(notice)) => draft.lines.insert(1, notice),
         Ok(None) => {}
         Err(e) => {

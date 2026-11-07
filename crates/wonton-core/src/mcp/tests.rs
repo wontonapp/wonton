@@ -493,10 +493,14 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         .await;
     let found: Value = serde_json::from_str(&text(&found)).unwrap();
     assert_eq!(found["plugins"][0]["id"], "app.example.journal");
-    assert_eq!(
-        found["plugins"][0]["permissions"],
-        json!(["读共享文件夹 documents"])
+    // 主人没存过语言，回退英文；期望值用目录本身格式化出来。
+    let langs = s.bus.plugins.owner_languages();
+    let share = crate::l10n::text(
+        &langs,
+        "permission-storage-share",
+        &[("access", "read".into()), ("name", "documents".into())],
     );
+    assert_eq!(found["plugins"][0]["permissions"], json!([share]));
 
     let call = s.spawn(
         "wonton__install_plugin",
@@ -509,7 +513,7 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         card.title
     );
     let lines: Vec<&str> = card.lines.iter().map(|l| l.text.as_str()).collect();
-    assert!(lines.contains(&"· 读共享文件夹 documents"), "{lines:?}");
+    assert!(lines.contains(&format!("· {share}").as_str()), "{lines:?}");
     assert!(
         s.manager
             .list()

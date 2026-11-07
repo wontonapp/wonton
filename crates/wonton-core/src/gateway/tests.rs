@@ -666,7 +666,16 @@ async fn plugin_api_requires_owner_token() {
     assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
     let preview = preview.json();
     let blocked = preview["blocked"].as_str().unwrap();
-    assert!(blocked.starts_with("已经装了 app.whoami"), "{blocked}");
+    // 请求没带 Accept-Language，回退英文；期望值用目录本身格式化出来。
+    let expected = crate::l10n::text(
+        &crate::plugin::languages::Languages::default(),
+        "install-already-installed",
+        &[
+            ("id", "app.whoami".into()),
+            ("version", package.manifest.version.as_str().into()),
+        ],
+    );
+    assert_eq!(blocked, expected);
     assert!(preview["digest"].as_str().unwrap().starts_with("sha256:"));
     let bad = h
         .send(

@@ -20,6 +20,7 @@ pub mod gateway;
 pub mod help;
 pub mod http;
 pub mod install;
+pub(crate) mod l10n;
 pub mod matrix;
 pub mod mcp;
 pub mod oidc;

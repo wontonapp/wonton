@@ -89,6 +89,7 @@ pub(crate) mod upstreams;
 mod vars;
 pub mod views;
 mod views_permissions;
+mod views_source;
 mod watch;
 pub mod written_by;
 

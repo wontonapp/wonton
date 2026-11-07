@@ -153,10 +153,8 @@ async fn a_wildcard_host_webui_still_gets_the_firewall_notice() {
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     let notices: Vec<&str> = detail.notices.iter().map(|n| n.text.as_str()).collect();
-    assert!(
-        notices.contains(&"本机防火墙可能挡住了外来连接，局域网设备可能连不进来"),
-        "{notices:?}"
-    );
+    let expected = crate::l10n::text(&Languages::default(), "plugin-firewall-notice", &[]);
+    assert!(notices.contains(&expected.as_str()), "{notices:?}");
 }
 
 #[tokio::test]
@@ -272,10 +270,8 @@ async fn installing_a_host_webui_goes_through_the_relay_and_reports_the_firewall
     let id = PluginId::parse("app.test").unwrap();
     let detail = m.installed_detail(&id, &Languages::default()).unwrap();
     let notices: Vec<&str> = detail.notices.iter().map(|n| n.text.as_str()).collect();
-    assert!(
-        notices.contains(&"本机防火墙可能挡住了外来连接，局域网设备可能连不进来"),
-        "{notices:?}"
-    );
+    let expected = crate::l10n::text(&Languages::default(), "plugin-firewall-notice", &[]);
+    assert!(notices.contains(&expected.as_str()), "{notices:?}");
 }
 
 #[tokio::test]

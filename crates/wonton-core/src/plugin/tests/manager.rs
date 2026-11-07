@@ -478,8 +478,9 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         )
         .await
         .unwrap();
+    let expected = crate::l10n::text(&Languages::default(), "install-webui-sso", &[]);
     assert!(
-        preview.notices.iter().any(|n| n.text.contains("自动登录")),
+        preview.notices.iter().any(|n| n.text.contains(&expected)),
         "安装确认页上显示会自动登录：{:?}",
         preview.notices
     );

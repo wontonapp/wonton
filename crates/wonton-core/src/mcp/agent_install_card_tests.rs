@@ -165,10 +165,13 @@ async fn retained_data_is_called_out_on_first_install_cards() {
     fs::create_dir_all(&leftover).unwrap();
     let call = b.s.spawn(INSTALL, json!({"dir": "hello"}));
     let card = b.s.cards.wait_for(1).await;
+    let expected = crate::l10n::text(
+        &b.s.bus.plugins.owner_languages(),
+        "install-retained-data",
+        &[("id", "app.agent.hello".into())],
+    );
     assert!(
-        card.lines
-            .iter()
-            .any(|l| l.text.contains("app.agent.hello 以前的数据和密钥") && l.emphasis),
+        card.lines.iter().any(|l| l.text == expected && l.emphasis),
         "{card:?}"
     );
     b.s.answer(&card.id, Answer::Reject).unwrap();
@@ -179,10 +182,13 @@ async fn retained_data_is_called_out_on_first_install_cards() {
     fs::create_dir_all(&leftover).unwrap();
     let call = b.s.spawn(INSTALL, json!({"id": "app.example.journal"}));
     let card = b.s.cards.wait_for(2).await;
+    let expected = crate::l10n::text(
+        &b.s.bus.plugins.owner_languages(),
+        "install-retained-data",
+        &[("id", "app.example.journal".into())],
+    );
     assert!(
-        card.lines
-            .iter()
-            .any(|l| l.text.contains("app.example.journal 以前的数据和密钥") && l.emphasis),
+        card.lines.iter().any(|l| l.text == expected && l.emphasis),
         "{card:?}"
     );
     b.s.answer(&card.id, Answer::Reject).unwrap();

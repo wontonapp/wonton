@@ -53,6 +53,7 @@ mod store_refresh;
 mod tabs;
 mod upgrade;
 mod views;
+mod views_l10n;
 mod watch;
 
 fn example(name: &str) -> PluginPackage {

@@ -79,9 +79,12 @@ async fn owner_identity_gives_an_sso_none_plugin_the_name_and_email() {
         .find(|p| p.permission == "owner.identity")
         .expect("权限列在安装页上");
     assert!(line.supported && line.risk.is_none());
-    assert!(line.text.contains("username and email"), "{}", line.text);
+    // 期望值用目录本身格式化出来（主人没存语言，回退英文）。
+    let identity = crate::l10n::text(&Languages::default(), "permission-owner-identity", &[]);
+    assert_eq!(line.text, identity, "{}", line.text);
+    let sso_notice = crate::l10n::text(&Languages::default(), "install-webui-sso", &[]);
     assert!(
-        !preview.notices.iter().any(|n| n.text.contains("自动登录")),
+        !preview.notices.iter().any(|n| n.text.contains(&sso_notice)),
         "应用自带登录，不会自动登录：{:?}",
         preview.notices
     );
@@ -157,10 +160,8 @@ async fn the_preview_lists_the_identity_whenever_the_app_gets_it() {
             .preview_install(&parsed(&compose), &Languages::default())
             .await
             .unwrap();
-        let shown = preview
-            .notices
-            .iter()
-            .any(|n| n.text.contains("用户名和邮箱"));
+        let expected = crate::l10n::text(&Languages::default(), "permission-owner-identity", &[]);
+        let shown = preview.notices.iter().any(|n| n.text.contains(&expected));
         assert_eq!(shown, listed, "{webui}：{:?}", preview.notices);
     }
 }

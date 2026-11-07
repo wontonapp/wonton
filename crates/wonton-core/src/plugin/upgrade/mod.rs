@@ -263,7 +263,7 @@ impl PluginManager {
                 )));
             }
         }
-        let blocked = self.host_block(&package.manifest).await?;
+        let blocked = self.host_block(&package.manifest, langs).await?;
         let mut preview = self
             .preview_with(&package, langs, blocked, record.written_by.clone())
             .await?;
