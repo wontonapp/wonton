@@ -51,6 +51,8 @@ services:
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
       WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
       WONTON_LAN_ADDRESSES: ${WONTON_DEV_LAN_ADDRESSES:-}
+      # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。
+      WONTON_ANNOUNCE_ADDRESSES: ${WONTON_DEV_ANNOUNCE_ADDRESSES:-}
       # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
       WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；

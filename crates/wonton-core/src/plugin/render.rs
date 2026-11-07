@@ -296,6 +296,7 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
         // 192.0.2.1 是文档用的地址（RFC 5737）。
         lan: manifest.lan.as_ref().map(|lan| LanGrant {
             addresses: vec![[192, 0, 2, 1].into()],
+            announce: vec![[192, 0, 2, 1].into()],
             network: (!manifest.permissions.contains(&Permission::NetworkEgress))
                 .then(|| Instance::default().lan_network(&slug)),
             ports: lan.ports.clone(),

@@ -7,6 +7,7 @@ use std::time::Duration;
 use crate::gateway::send_limits::SendLimits;
 use crate::owner;
 use crate::plugin::egress::address::ProxyAddress;
+use crate::plugin::lan::announce::Announced;
 use crate::plugin::names::Instance;
 use crate::plugin::network_pool::{self, NetworkPool};
 use crate::plugin::storefront::StoreConfig;
@@ -78,6 +79,9 @@ pub struct Config {
     pub host_dev: Option<PathBuf>,
     /// 局域网端口只开在这些地址上，不再自动选（`WONTON_LAN_ADDRESSES`，ADR-0019）。必须都是私有地址。
     pub lan_addresses: Option<Vec<IpAddr>>,
+    /// 启动器声明的宣告地址（`WONTON_ANNOUNCE_ADDRESSES`，ADR-0019）：设了就不再自动选，端口绑通配地址、告诉手机用它。
+    /// 每项是私有地址，可以带前缀（直连网段用）。
+    pub announce_addresses: Option<Vec<Announced>>,
     /// 出网插件走的代理（`WONTON_EGRESS_PROXY`，ADR-0023）。设了就只用它，App 里不能改。
     pub egress_proxy: Option<ProxyAddress>,
     /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
@@ -142,6 +146,24 @@ fn proxy_address(
         .map_err(|e| invalid(name, &e))
 }
 
+/// 局域网地址的两个覆盖变量（ADR-0019）：`WONTON_LAN_ADDRESSES` 和 `WONTON_ANNOUNCE_ADDRESSES`。
+struct LanOverrides {
+    fixed: Option<Vec<IpAddr>>,
+    announce: Option<Vec<Announced>>,
+}
+
+fn lan_addresses(get: &impl Fn(&str) -> Option<String>) -> Result<LanOverrides, ConfigError> {
+    let fixed = get(crate::plugin::lan::ADDRESSES_VAR)
+        .map(|text| crate::plugin::lan::parse_addresses(&text))
+        .transpose()
+        .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?;
+    let announce = get(crate::plugin::lan::ANNOUNCE_VAR)
+        .map(|text| crate::plugin::lan::announce::parse(&text))
+        .transpose()
+        .map_err(|e| invalid("WONTON_ANNOUNCE_ADDRESSES", &e))?;
+    Ok(LanOverrides { fixed, announce })
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::from_lookup(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
@@ -193,6 +215,10 @@ impl Config {
             .unwrap_or_else(|| owner::DEFAULT_USERNAME.into());
         let core_container = get("WONTON_CORE_CONTAINER");
         let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
+        let LanOverrides {
+            fixed: lan_addresses,
+            announce: announce_addresses,
+        } = lan_addresses(&get)?;
         Ok(Self {
             data_dir,
             listen,
@@ -203,10 +229,8 @@ impl Config {
             },
             core_container,
             host_dev,
-            lan_addresses: get(crate::plugin::lan::ADDRESSES_VAR)
-                .map(|text| crate::plugin::lan::parse_addresses(&text))
-                .transpose()
-                .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?,
+            lan_addresses,
+            announce_addresses,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
             plugin_slice: get("WONTON_PLUGIN_SLICE").filter(|value| !value.is_empty()),

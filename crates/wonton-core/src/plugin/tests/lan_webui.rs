@@ -13,6 +13,7 @@ use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::egress::serve;
 use super::lan::{binding, created, granted, office, on};
+use super::lan_announce::on_announced;
 use super::{env_of_container, package};
 
 const IDENTITY: &str = "sso: proxy, proxy: {headers: {Remote-User: '{user}'}}";
@@ -157,6 +158,22 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
 
     let closed = m.set_lan_webui(id(), false, langs).await.unwrap();
     assert_eq!(closed.lan_webui.unwrap().client, None);
+}
+
+/// 启动器声明了宣告地址时，客户端的连接地址用宣告地址，不用容器记录里的通配地址。
+#[tokio::test]
+async fn the_client_address_uses_the_announced_address() {
+    let (_docker, m, _detected, _dir) = on_announced(office(), "192.168.0.5").await;
+    let compose = with_client(web_port().await, CLIENT);
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
+    let opened = m
+        .set_lan_webui(id(), true, Languages::default())
+        .await
+        .unwrap();
+    let client = opened.lan_webui.unwrap().client.expect("开着就有地址");
+    assert_eq!(client.addresses, ["http://192.168.0.5:4533"]);
 }
 
 #[tokio::test]

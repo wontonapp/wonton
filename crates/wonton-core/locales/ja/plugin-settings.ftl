@@ -41,6 +41,9 @@ plugin-settings-lan-client-not-published = ポートがどのローカルネッ�
 # ── ローカルネットワークの検出と選択（lan/detect.rs、select.rs、monitor.rs）────
 
 plugin-settings-lan-fixed-by-env = ローカルネットワークのアドレスは自宅サーバーのWONTON_LAN_ADDRESSESで指定されているため、設定では変更できません
+plugin-settings-lan-announce-by-env = スマートフォンが接続するアドレスは自宅サーバーのWONTON_ANNOUNCE_ADDRESSESで指定されているため、設定では変更できません
+plugin-settings-lan-desktop-vm = 自宅サーバーはコンピューター上の仮想マシンで動いているため、スマートフォンから仮想マシンのアドレスに接続できません。ランチャーがWONTON_ANNOUNCE_ADDRESSESにコンピューターのローカルネットワークのアドレスを設定する必要があります。カーネル：{ $evidence }
+plugin-settings-lan-announced = 通知先
 plugin-settings-lan-fixed-missing = WONTON_LAN_ADDRESSESの{ $ip }がホスト上にありません
 plugin-settings-lan-detect-failed = ホストのネットワークインターフェースを検出できません：{ $failure }
 plugin-settings-lan-detect-error = ホストのネットワークインターフェースの検出中にエラーが発生しました：{ $error }

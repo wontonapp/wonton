@@ -107,11 +107,27 @@ async fn the_lan_page_only_answers_ip_hosts() {
     );
 }
 
-/// 服务器上的 `wonton-core pair` 调的管理 API：码里的直连地址是宿主的局域网 IP 加隧道端口。
+/// 服务器上的 `wonton-core pair` 调的管理 API。`body` 里给直连地址；`None` 用一组固定的。
 async fn ask_for_code(
     home: &Home,
     path: &str,
     token: Option<&str>,
+) -> (StatusCode, serde_json::Value) {
+    ask_with(
+        home,
+        path,
+        token,
+        r#"{"direct_addrs": ["192.168.1.20:18482"]}"#,
+    )
+    .await
+}
+
+/// 同 [`ask_for_code`]，请求体由调用方给。
+async fn ask_with(
+    home: &Home,
+    path: &str,
+    token: Option<&str>,
+    body: &str,
 ) -> (StatusCode, serde_json::Value) {
     let mut builder = hyper::Request::builder()
         .method(Method::POST)
@@ -121,9 +137,7 @@ async fn ask_for_code(
     if let Some(token) = token {
         builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
-    let request = builder
-        .body(Body::from(r#"{"direct_addrs": ["192.168.1.20:18482"]}"#))
-        .unwrap();
+    let request = builder.body(Body::from(body.to_owned())).unwrap();
     let response = home.app.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
@@ -164,6 +178,48 @@ async fn the_install_terminal_shows_the_lan_pages_first_code_until_a_device_pair
     let (status, body) = ask_for_code(&home, first, Some(TOKEN)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"]["kind"], "paired");
+}
+
+/// 请求里没给直连地址时，码里是核心自己算的地址：启动器声明了宣告地址就是宣告地址加隧道端口。
+#[tokio::test]
+async fn codes_without_addresses_use_the_announced_address() {
+    let home = Home::start_lan(&["192.168.0.7"]).await;
+    let first = "/_wonton/api/pairing-codes/first";
+    let (status, body) = ask_with(&home, first, Some(TOKEN), "{}").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        code.direct_addrs,
+        vec![format!("192.168.0.7:{}", home.tunnel.port).parse().unwrap()]
+    );
+
+    // 配上第一台后，主人发的码同样用宣告地址。
+    let phone = loopback_endpoint(SecretKey::generate()).await;
+    assert_eq!(
+        reject_reason(pair(&phone, &reachable(code, &home), "手机").await.unwrap()),
+        None
+    );
+    let (status, body) = ask_with(&home, "/_wonton/api/pairing-codes", Some(TOKEN), "{}").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        code.direct_addrs,
+        vec![format!("192.168.0.7:{}", home.tunnel.port).parse().unwrap()]
+    );
+}
+
+/// 没设宣告地址时，没给直连地址的码里是检测到的地址。
+#[tokio::test]
+async fn codes_without_addresses_use_the_detected_address() {
+    let home = Home::start(None).await;
+    let (status, body) =
+        ask_with(&home, "/_wonton/api/pairing-codes/first", Some(TOKEN), "{}").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        code.direct_addrs,
+        vec![format!("192.168.1.2:{}", home.tunnel.port).parse().unwrap()]
+    );
 }
 
 #[tokio::test]

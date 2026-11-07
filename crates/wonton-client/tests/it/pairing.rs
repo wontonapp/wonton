@@ -331,16 +331,14 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
     )
     .unwrap();
     assert!(expires_at_ms > now_ms + 590_000, "码 10 分钟后过期");
-    // 码里写的是本设备连这台服务器用的直连地址。
+    // 直连地址由核心算，本设备不再把自己的连接信息传过去：请求体是空的。
     let request: serde_json::Value =
         serde_json::from_str(&home.codes.invites.lock().unwrap()[0]).unwrap();
-    let addrs: Vec<String> = home
-        .codes
-        .direct_addrs
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    assert_eq!(request["direct_addrs"], json!(addrs));
+    assert_eq!(request, json!({}));
+    assert!(
+        home.codes.direct_addrs[0].port() != 0,
+        "假核心的码里仍有地址"
+    );
 
     // 新设备扫这个码配上。
     let other = tempfile::tempdir().unwrap();

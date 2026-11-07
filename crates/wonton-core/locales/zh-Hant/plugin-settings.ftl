@@ -41,6 +41,9 @@ plugin-settings-lan-client-not-published = 連接埠沒有發布在任何區域�
 # ── 區域網路偵測和選擇（lan/detect.rs、lan/select.rs、lan/monitor.rs）────────
 
 plugin-settings-lan-fixed-by-env = 區域網路位址由家用伺服器的 WONTON_LAN_ADDRESSES 指定，無法在設定裡變更
+plugin-settings-lan-announce-by-env = 手機連的位址由家用伺服器的 WONTON_ANNOUNCE_ADDRESSES 指定，無法在設定裡變更
+plugin-settings-lan-desktop-vm = 伺服器跑在電腦上的虛擬機裡，手機連不到虛擬機的位址。啟動器要把 WONTON_ANNOUNCE_ADDRESSES 設為電腦的區域網路位址。核心：{ $evidence }
+plugin-settings-lan-announced = 宣告
 plugin-settings-lan-fixed-missing = WONTON_LAN_ADDRESSES 裡的 { $ip } 不在主機上
 plugin-settings-lan-detect-failed = 偵測主機的網路卡失敗：{ $failure }
 plugin-settings-lan-detect-error = 偵測主機的網路卡時出錯：{ $error }

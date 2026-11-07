@@ -34,6 +34,7 @@ mod host_relay_docker;
 mod install_l10n;
 mod instances;
 mod lan;
+mod lan_announce;
 mod lan_docker;
 mod lan_ports;
 mod lan_webui;

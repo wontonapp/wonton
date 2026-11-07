@@ -87,6 +87,21 @@ fn invalid_settings_fail_fast() {
         .lan_addresses
         .unwrap();
     assert_eq!(addresses.len(), 2);
+    // 宣告地址同样只收私有地址，前缀可以带，超长不行。
+    let announce = |value| {
+        config(&[
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_ANNOUNCE_ADDRESSES", value),
+        ])
+    };
+    assert!(announce("192.168.1.20,203.0.113.5").is_err());
+    assert!(announce("192.168.1.20/40").is_err());
+    let announced = announce("192.168.1.20/24")
+        .unwrap()
+        .announce_addresses
+        .unwrap();
+    assert_eq!(announced[0].ip.to_string(), "192.168.1.20");
+    assert_eq!(announced[0].prefix, Some(24));
     assert!(
         config(&[
             ("WONTON_DATA_DIR", "/d"),

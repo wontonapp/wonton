@@ -1,7 +1,6 @@
 //! `InviteDevice`：已配对的设备经隧道向核心要一个配对码，显示给新设备扫（ADR-0009 的“添加设备”）。请求走本地代理，
 //! 核心凭隧道身份认出这台已配对设备，不需要主人令牌。
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -62,7 +61,7 @@ impl HomeLink {
         lang: Lang,
     ) {
         let issued = match proxy {
-            Some(proxy) => issue(&ticket.core_url(), &proxy, ticket.direct_addrs(), lang).await,
+            Some(proxy) => issue(&ticket.core_url(), &proxy, lang).await,
             None => Err((
                 HomeFailure::TransportUnavailable,
                 l10n!(CATALOG, lang, "invite-not-connected"),
@@ -86,11 +85,10 @@ impl HomeLink {
     }
 }
 
-/// `POST <核心地址>/_wonton/api/pairing-codes`，码里写上本设备连这台服务器用的直连地址：新设备多半和它在同一个网络里。
+/// `POST <核心地址>/_wonton/api/pairing-codes`，直连地址由核心算（跟着宣告地址和局域网检测走），这里不猜。
 async fn issue(
     core_url: &Url,
     proxy: &ProxySettings,
-    direct_addrs: &[SocketAddr],
     lang: Lang,
 ) -> Result<Issued, (HomeFailure, String)> {
     let url = core_url
@@ -132,7 +130,7 @@ async fn issue(
             l10n!(CATALOG, lang, "invite-request-failed", reason = reason),
         )
     };
-    let body = serde_json::json!({ "direct_addrs": direct_addrs }).to_string();
+    let body = "{}";
     let response = client
         .post(url)
         .header(reqwest::header::CONTENT_TYPE, "application/json")

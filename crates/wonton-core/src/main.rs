@@ -410,20 +410,6 @@ fn open_upgrades(cfg: &Config, engine: &Engine) -> Arc<Upgrades> {
     ))
 }
 
-fn lan_state(cfg: &Config) -> Lan {
-    let detector = Lan::for_core(cfg.core_container.clone());
-    match &cfg.lan_addresses {
-        Some(addresses) => {
-            tracing::info!(
-                ?addresses,
-                "局域网端口只开在 WONTON_LAN_ADDRESSES 指定的地址上"
-            );
-            detector.with_fixed(addresses.clone())
-        }
-        None => detector,
-    }
-}
-
 async fn connect_hydra(cfg: &Config, http: &HttpClient) -> anyhow::Result<Option<(Hydra, String)>> {
     let Some(oidc) = &cfg.oidc else {
         tracing::warn!("没有配置身份提供方，声明 sso: oidc 的插件将无法安装");
@@ -541,7 +527,7 @@ fn open_plugin_manager(
     )
     .with_matrix(matrix)
     .with_host(HostPaths::new(cfg.host_dev.clone()))
-    .with_lan(lan_state(cfg))
+    .with_lan(Lan::from_config(cfg))
     .with_egress(Egress::new(
         cfg.egress_proxy.clone(),
         cfg.egress_proxy_detected.clone(),

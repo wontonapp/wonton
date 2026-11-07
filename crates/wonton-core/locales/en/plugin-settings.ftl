@@ -41,6 +41,9 @@ plugin-settings-lan-client-not-published = The port isn't published on any local
 # ── Local network detection and choice (lan/detect.rs, select.rs, monitor.rs) ──
 
 plugin-settings-lan-fixed-by-env = Local network addresses are set by the home server's WONTON_LAN_ADDRESSES and can't be changed in settings
+plugin-settings-lan-announce-by-env = The addresses phones use are set by the home server's WONTON_ANNOUNCE_ADDRESSES and can't be changed in settings
+plugin-settings-lan-desktop-vm = The home server runs in a virtual machine on a computer, so phones can't reach the virtual machine's address. The launcher has to set WONTON_ANNOUNCE_ADDRESSES to the computer's local network address. Kernel: { $evidence }
+plugin-settings-lan-announced = announced
 plugin-settings-lan-fixed-missing = { $ip } from WONTON_LAN_ADDRESSES isn't on the host computer
 plugin-settings-lan-detect-failed = Can't detect the network interfaces of the host computer: { $failure }
 plugin-settings-lan-detect-error = Error while detecting the host computer's network interfaces: { $error }

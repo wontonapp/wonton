@@ -41,6 +41,9 @@ plugin-settings-lan-client-not-published = 端口没有开在任何局域网地�
 # ── 局域网检测和选择（lan/detect.rs、lan/select.rs、lan/monitor.rs）──────────
 
 plugin-settings-lan-fixed-by-env = 局域网地址由服务器的 WONTON_LAN_ADDRESSES 指定，不能在设置里改
+plugin-settings-lan-announce-by-env = 手机连的地址由服务器的 WONTON_ANNOUNCE_ADDRESSES 指定，不能在设置里改
+plugin-settings-lan-desktop-vm = 服务器跑在电脑上的虚拟机里，手机连不到虚拟机的地址。启动器要把 WONTON_ANNOUNCE_ADDRESSES 设为电脑的局域网地址。内核：{ $evidence }
+plugin-settings-lan-announced = 宣告
 plugin-settings-lan-fixed-missing = WONTON_LAN_ADDRESSES 里的 { $ip } 不在主机上
 plugin-settings-lan-detect-failed = 检测主机的网卡失败：{ $failure }
 plugin-settings-lan-detect-error = 检测主机的网卡时出错：{ $error }

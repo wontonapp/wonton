@@ -58,6 +58,8 @@ pub(super) fn host(eno1: &[&str]) -> HostNetwork {
         ],
         interfaces: vec![nic("eno1", eno1), wifi, tailscale, docker0],
         subnets: vec![],
+        kernel: None,
+        dmi: None,
     }
 }
 

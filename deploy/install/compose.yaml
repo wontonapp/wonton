@@ -50,6 +50,8 @@ services:
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES:-}
+      # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。每项可以带前缀。
+      WONTON_ANNOUNCE_ADDRESSES: ${WONTON_ANNOUNCE_ADDRESSES:-}
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
       WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
       # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里

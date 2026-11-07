@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 use wonton_protocol::{LanChoice, LanFailure};
 
-use super::select::{self, Bound, Host, Problem};
+use super::select::{self, Bound, Host, Plan, Problem};
 use super::{LanGrant, LanSpec, published};
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -29,17 +29,22 @@ pub const INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// 一次检测的结果。
 pub struct Detected {
-    /// 检测宿主的网卡失败时的原因。用 `WONTON_LAN_ADDRESSES` 时照样用那些地址。
+    /// 检测宿主的网卡失败时的原因。用 `WONTON_LAN_ADDRESSES` 或宣告地址时照样用那些地址。
     pub failure: Option<String>,
     pub host: Host,
-    /// 端口开在哪些地址上，或者选不出的原因。
-    pub result: Result<Vec<Bound>, Problem>,
+    /// 端口开在哪、告诉手机去哪，或者选不出的原因。
+    pub result: Result<Plan, Problem>,
 }
 
 impl Detected {
     fn summary(&self, langs: &Languages) -> String {
         let result = match &self.result {
-            Ok(bound) => super::grant::describe(bound, langs),
+            Ok(plan) if plan.has_announce() => format!(
+                "{} → {}",
+                super::grant::bound_text(&plan.bind, langs),
+                super::grant::describe(plan, langs)
+            ),
+            Ok(plan) => super::grant::describe(plan, langs),
             Err(problem) => problem.message.clone(),
         };
         match &self.failure {
@@ -74,18 +79,23 @@ impl PluginManager {
             .await?;
         let choice = self.store.lan_choice()?.unwrap_or(LanChoice::Auto);
         let fixed = self.lan.fixed.as_deref();
+        let announce = self.lan.announce.as_deref();
         let network = match network {
             Ok(network) => network,
             Err(failure) => {
-                let result = match fixed {
-                    Some(fixed) => Ok(fixed
-                        .iter()
-                        .map(|&ip| Bound {
-                            ip,
-                            interface: None,
-                        })
-                        .collect()),
-                    None => Err(Problem::new(
+                let result = match (announce, fixed) {
+                    (Some(announce), _) => Ok(select::announced(announce)),
+                    (None, Some(fixed)) => Ok(Plan {
+                        bind: fixed
+                            .iter()
+                            .map(|&ip| Bound {
+                                ip,
+                                interface: None,
+                            })
+                            .collect(),
+                        announce: fixed.to_vec(),
+                    }),
+                    (None, None) => Err(Problem::new(
                         LanFailure::DetectionFailed,
                         l10n::text(
                             langs,
@@ -102,7 +112,7 @@ impl PluginManager {
             }
         };
         let host = select::classify(&network, &self.engine.bridges().await?, langs);
-        let result = select::resolve(&host, &choice, fixed, langs);
+        let result = select::resolve(&host, &choice, fixed, announce, langs);
         Ok(Detected {
             failure: None,
             host,
@@ -125,20 +135,20 @@ impl PluginManager {
         }
         self.follow_egress(&detected).await;
         self.finish_closing().await;
-        let addresses = detected
-            .result
-            .as_ref()
-            .map(|bound| bound.iter().map(|b| b.ip).collect::<BTreeSet<IpAddr>>())
-            .map_err(|p| p.message.clone());
-        if let Ok(addresses) = &addresses {
+        let plan = match &detected.result {
+            Ok(plan) => Ok(plan.clone()),
+            Err(problem) => Err(problem.message.clone()),
+        };
+        if let Ok(plan) = &plan {
+            let announce: BTreeSet<IpAddr> = plan.announce.iter().copied().collect();
             self.lan.addresses.send_if_modified(|current| {
-                let changed = current != addresses;
-                current.clone_from(addresses);
+                let changed = *current != announce;
+                current.clone_from(&announce);
                 changed
             });
         }
         for (id, spec) in self.lan_plugins() {
-            self.follow_lan(&id, &spec, &addresses, langs).await;
+            self.follow_lan(&id, &spec, &plan, langs).await;
         }
         Ok(detected)
     }
@@ -202,7 +212,7 @@ impl PluginManager {
         &self,
         id: &PluginId,
         spec: &LanSpec,
-        addresses: &Result<BTreeSet<IpAddr>, String>,
+        plan: &Result<Plan, String>,
         langs: &Languages,
     ) {
         let running = self.status_of(id) == Some(PluginStatus::Running);
@@ -210,9 +220,9 @@ impl PluginManager {
             return;
         }
         // 端口全关了（关开关失败后还异常着）：不看地址，只核对。
-        let addresses = match addresses {
+        let plan = match plan {
             _ if spec.ports.is_empty() => None,
-            Ok(addresses) => Some(addresses),
+            Ok(plan) => Some(plan),
             Err(reason) => {
                 return self.lan_failed(
                     id,
@@ -224,10 +234,13 @@ impl PluginManager {
                 );
             }
         };
-        let moved = match addresses {
+        let moved = match plan {
             None => None,
-            Some(addresses) => match self.lan_published(id, spec).await {
-                Ok(current) => (current.as_ref() != Some(addresses)).then_some(addresses),
+            Some(plan) => match self.lan_published(id, spec).await {
+                Ok(current) => {
+                    let wanted: BTreeSet<IpAddr> = plan.bind.iter().map(|bound| bound.ip).collect();
+                    (current.as_ref() != Some(&wanted)).then_some(plan)
+                }
                 Err(e) => {
                     return self.lan_failed(
                         id,
@@ -309,11 +322,11 @@ impl PluginManager {
         idle && self.lan.begin(id)
     }
 
-    /// `addresses` 为空时地址没变，只核对插件（异常的插件恢复过来）。
+    /// `plan` 为空时地址没变，只核对插件（异常的插件恢复过来）。
     async fn relocate(
         &self,
         id: &PluginId,
-        addresses: Option<&BTreeSet<IpAddr>>,
+        plan: Option<&Plan>,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let record = self
@@ -322,9 +335,8 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        if let Some(addresses) = addresses {
-            let addresses: Vec<IpAddr> = addresses.iter().copied().collect();
-            self.rebuild_lan(&package, &record, &addresses).await?;
+        if let Some(plan) = plan {
+            self.rebuild_lan(&package, &record, plan).await?;
         }
         self.reconcile_running(&package, &record).await
     }
@@ -334,19 +346,20 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-        addresses: &[IpAddr],
+        plan: &Plan,
     ) -> Result<(), InstallError> {
         // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动，插件照原样跑。
         let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
             Some((pending, reservation)) => (Some(pending), Some(reservation)),
             None => (None, None),
         };
-        let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
+        let bind: Vec<IpAddr> = plan.bind.iter().map(|bound| bound.ip).collect();
+        let grant = self.lan_grant_on(package, record.lan_webui, bind, plan.announce.clone());
         let ctx = self
             .rebuild_context(package, record, Some(grant), pending.as_ref())
             .await?;
         let langs = self.owner_languages();
-        let mut plan = render(package, &ctx, &langs)?;
+        let mut render_plan = render(package, &ctx, &langs)?;
         match (&pending, reservation) {
             (Some(pending), Some(reservation)) => {
                 self.apply_migration(
@@ -367,16 +380,17 @@ impl PluginManager {
                     .map(|port| port.service.clone())
                     .collect();
                 services.extend(
-                    plan.containers
+                    render_plan
+                        .containers
                         .iter()
                         .filter(|c| c.variables.contains(super::ADDRESSES_VAR))
                         .map(|c| c.service.clone()),
                 );
-                plan.retain_services(&services);
+                render_plan.retain_services(&services);
             }
             _ => unreachable!("迁移标记和预留成对出现"),
         }
-        self.replace_containers(&ctx, plan).await
+        self.replace_containers(&ctx, render_plan).await
     }
 
     /// 重建已装插件的容器时的上下文：和安装时一样，凭据用存下的。Bot 的 Matrix 变量另外填（见 [`crate::plugin::egress`]）。

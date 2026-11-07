@@ -667,7 +667,7 @@ impl PluginManager {
         }
         let lan_network = self.cfg.instance.lan_network(&id.slug());
         let used = self
-            .lan_grant_on(package, false, Vec::new())
+            .lan_grant_on(package, false, Vec::new(), Vec::new())
             .network
             .is_some();
         if !used

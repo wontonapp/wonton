@@ -239,12 +239,13 @@ App 扫一个一次性的配对码，成为主人的设备。线协议的类型�
 **状态页**：局域网浏览器用 IP 地址打开核心的端口（`http://<服务器 IP>:<端口>/`），看到运行状态和可用的配对码。只回应
 `Host` 是 IP 地址的请求：别的网站把自己的域名解析到局域网 IP（DNS 重绑定）后，从浏览器里读不到配对码。
 
-**主人发的码**：`POST /_wonton/api/pairing-codes`，请求体可选 `{"direct_addrs": ["IP:端口"]}`（写进码里的直连地址），回应
+**主人发的码**：`POST /_wonton/api/pairing-codes`，请求体可选 `{"direct_addrs": ["IP:端口"]}`（写进码里的直连地址；
+不给时用核心算的直连地址，跟着宣告地址和局域网检测走，ADR-0019），回应
 `{"code": "wonton://pair?…", "expires_in": 600}`，已经有设备时也能用。认两种身份：主人令牌（服务器上的命令、开发和冒烟），
 以及隧道认证过的已配对设备（App 里的“添加设备”）。
 
-**添加设备**：已配对的 App 发 `Action::InviteDevice`，客户端核心经隧道调上面的接口，请求体带上它连这台服务器用的直连
-地址（配对时存下的连接信息里的），拿到的码放进 `HomeViewModel::invite`（`Ready`，带过期时间），App 画成二维码给新设备扫，
+**添加设备**：已配对的 App 发 `Action::InviteDevice`，客户端核心经隧道调上面的接口，不带直连地址（由核心给），拿到的码
+放进 `HomeViewModel::invite`（`Ready`，带过期时间），App 画成二维码给新设备扫，
 新设备照常用 `PairHome`。还没配对时 `InviteDevice` 返回 `NotReady`；连不上、本设备被吊销、服务器出错分别是 `Failed` 里
 `HomeFailure` 的 `TransportUnavailable`、`Unauthorized`、`UpstreamUnavailable`，回应认不出是 `Protocol`。
 

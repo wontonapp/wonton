@@ -24,7 +24,7 @@ use wonton_tunnel::{
     LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
 };
 
-use super::fakes::{echo_upstream, fake_hydra, loopback_endpoint, loopback_tunnel};
+use super::fakes::{echo_upstream, fake_hydra, loopback_endpoint, loopback_tunnel_with};
 use super::isolation_tests::{OTHER, browser_cases};
 use super::proxy_sso_tests::{KEY, VAULT_HOST, leaked, received, register_vault};
 use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, owner};
@@ -63,9 +63,29 @@ impl Home {
         Self::start_with(hydra_admin, None).await
     }
 
+    /// 局域网地址是宣告地址（或检测到的地址）时的核心。
+    pub(super) async fn start_lan(addresses: &[&str]) -> Self {
+        let lan: std::collections::BTreeSet<std::net::IpAddr> =
+            addresses.iter().map(|a| a.parse().unwrap()).collect();
+        Self::start_full(None, None, lan).await
+    }
+
     pub(super) async fn start_with(
         hydra_admin: Option<SocketAddr>,
         matrix: Option<Arc<Matrix>>,
+    ) -> Self {
+        Self::start_full(
+            hydra_admin,
+            matrix,
+            std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
+        )
+        .await
+    }
+
+    async fn start_full(
+        hydra_admin: Option<SocketAddr>,
+        matrix: Option<Arc<Matrix>>,
+        lan: std::collections::BTreeSet<std::net::IpAddr>,
     ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
@@ -111,7 +131,7 @@ impl Home {
         let manifest =
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
-        let (tunnel, members) = loopback_tunnel(dir.path()).await;
+        let (tunnel, members) = loopback_tunnel_with(dir.path(), lan).await;
         let gateway = Gateway::new(
             public,
             profile,

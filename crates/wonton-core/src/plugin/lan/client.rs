@@ -126,6 +126,10 @@ impl PluginManager {
                 &[],
             ));
         }
+        // 启动器声明了宣告地址时，端口绑在通配地址上，容器记录里的地址不能给用户；连的是宣告地址。
+        if let Some(announce) = &self.lan.announce {
+            hosts = announce.iter().map(|a| a.ip.to_string()).collect();
+        }
         Ok(Some(LanClient {
             addresses: hosts
                 .iter()

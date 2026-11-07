@@ -15,6 +15,7 @@ use super::settings::EgressConfig;
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::{Endpoint, layout_of};
 use crate::plugin::lan::Detected;
+use crate::plugin::lan::announce::Announced;
 use crate::plugin::leftovers::name_taken;
 use crate::plugin::manager::{InstallError, PluginManager, PluginStatus};
 use crate::plugin::manifest::{Manifest, Permission};
@@ -316,7 +317,8 @@ impl PluginManager {
             let langs = self.owner_languages();
             let detected = self.detect_lan(&langs).await?;
             if detected.failure.is_none() {
-                self.egress.set_host_cidrs(host_cidrs(&detected));
+                self.egress
+                    .set_host_cidrs(host_cidrs(&detected, self.lan.announce.as_deref()));
             }
         }
         Ok(())
@@ -327,7 +329,10 @@ impl PluginManager {
         if detected.failure.is_some() {
             return;
         }
-        if !self.egress.set_host_cidrs(host_cidrs(detected)) {
+        if !self
+            .egress
+            .set_host_cidrs(host_cidrs(detected, self.lan.announce.as_deref()))
+        {
             return;
         }
         let _pass = self.egress.pass.lock().await;
@@ -347,11 +352,9 @@ impl PluginManager {
     }
 }
 
-/// 选出的局域网地址所在的网段（前缀来自检测容器读的 netlink）。主人覆盖或者选的地址也这样查，查不到时不放行。
-fn host_cidrs(detected: &Detected) -> Vec<IpNet> {
-    let Ok(bound) = &detected.result else {
-        return Vec::new();
-    };
+/// 选出的局域网地址所在的网段（前缀来自检测容器读的 netlink），以及启动器声明的宣告网段。主人覆盖或者选的地址也这样查，
+/// 查不到时不放行。宣告地址不在虚拟机的网卡上，用它带来的前缀（ADR-0023）。
+fn host_cidrs(detected: &Detected, announce: Option<&[Announced]>) -> Vec<IpNet> {
     let addresses = || {
         detected
             .host
@@ -359,10 +362,19 @@ fn host_cidrs(detected: &Detected) -> Vec<IpNet> {
             .iter()
             .flat_map(|candidate| &candidate.addresses)
     };
-    bound
-        .iter()
-        .filter_map(|bound| addresses().find(|address| address.ip == bound.ip))
+    let bound: Vec<&IpAddr> = detected
+        .result
+        .as_ref()
+        .map(|plan| plan.bind.iter().map(|bound| &bound.ip).collect())
+        .unwrap_or_default();
+    let mut nets: Vec<IpNet> = bound
+        .into_iter()
+        .filter_map(|ip| addresses().find(|address| address.ip == *ip))
         .filter_map(|address| IpNet::new(address.ip, address.prefix).ok())
         .map(|net| net.trunc())
-        .collect()
+        .collect();
+    nets.extend(announce.unwrap_or_default().iter().filter_map(|a| a.cidr()));
+    nets.sort();
+    nets.dedup();
+    nets
 }

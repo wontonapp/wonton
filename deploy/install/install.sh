@@ -17,6 +17,8 @@
 #   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
 #   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改；
 #                       ADR-0019）。设成空就取消
+#   WONTON_ANNOUNCE_ADDRESSES  告诉手机去连的私有地址，逗号分隔，每项可以带前缀（192.168.1.20/24）；端口改绑 0.0.0.0。
+#                       桌面虚拟机（Docker Desktop、OrbStack、WSL2、Lima）里的启动器用它。默认不设，设成空就取消
 #   WONTON_RELAYS      中继表（ADR-0048）：档位用 ; 分开、前面的档优先，同档用 , 分开；令牌写在地址的
 #                       userinfo（https://TOKEN@host），n0 代表 iroh 内置的 n0 公共中继。默认不设：用 n0。
 #                       设成空就取消，回到 n0
@@ -132,6 +134,7 @@ plugin_network_pool=${plugin_network_pool:-10.213.0.0/16}
 owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
 lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
+announce_addresses=${WONTON_ANNOUNCE_ADDRESSES-$(saved WONTON_ANNOUNCE_ADDRESSES)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置，回到 n0。
 relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
 egress_proxy=${WONTON_EGRESS_PROXY-$(saved WONTON_EGRESS_PROXY)}
@@ -424,6 +427,7 @@ WONTON_OWNER_NAME=$owner_name
 WONTON_PLUGIN_NETWORK_POOL=$plugin_network_pool
 TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
+WONTON_ANNOUNCE_ADDRESSES=$announce_addresses
 WONTON_RELAYS=$relays
 WONTON_EGRESS_PROXY=$egress_proxy
 EOF
@@ -485,15 +489,19 @@ rm -f "$up_log" "$up_rc_file"
 state_file="$data_dir/core/upgrade/state.json"
 [ ! -f "$state_file" ] || mv "$state_file" "$state_file.$(date +%Y%m%d%H%M%S)"
 
-# 浏览器和手机在局域网里用来找到这台主机的地址：默认路由出去的那张网卡。
+# 浏览器里打开哪个地址：启动器声明了宣告地址时用它里面的第一个 IPv4（虚拟机自己的网卡地址在电脑上连不到），
+# 否则用默认路由出去的那张网卡。
 lan_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)
 [ -n "$lan_ip" ] || lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+announced_ip=$(printf '%s\n' "$announce_addresses" | tr ',' '\n' \
+  | sed -n 's#^\([0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}\)\(/[0-9]*\)\?$#\1#p' | head -n 1)
+[ -n "$announced_ip" ] || announced_ip=$lan_ip
 
 mkdir -p /usr/local/bin
 ln -sf "$install_dir/wonton" /usr/local/bin/wonton
 
 echo
-info "装好了。浏览器打开 http://${lan_ip:-<这台主机的 IP>}:$port/ 看运行状态。"
+info "装好了。浏览器打开 http://${announced_ip:-<这台主机的 IP>}:$port/ 看运行状态。"
 # shellcheck disable=SC1111 # 中文的引号是要显示的文字
 cat <<EOF
 防火墙要放行 TCP $port（局域网网页）和 UDP $tunnel_port（手机连回家）。

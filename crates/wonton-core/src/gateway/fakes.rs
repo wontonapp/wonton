@@ -192,6 +192,14 @@ pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
 /// 测试用的隧道：空的设备登记表和家人记录，加一个只走回环地址的 endpoint。返回家人记录，
 /// 和隧道里的配对用的是同一份。局域网地址给一个测试值（ADR-0032 的直连地址选择）。
 pub(super) async fn loopback_tunnel(dir: &Path) -> (Tunnel, Arc<Members>) {
+    loopback_tunnel_with(dir, ["192.168.1.2".parse().unwrap()].into()).await
+}
+
+/// 同 [`loopback_tunnel`]，局域网地址由调用方给（宣告地址或检测到的地址）。
+pub(super) async fn loopback_tunnel_with(
+    dir: &Path,
+    lan: std::collections::BTreeSet<std::net::IpAddr>,
+) -> (Tunnel, Arc<Members>) {
     let members = Arc::new(Members::open(dir.join("members.json")).unwrap());
     (
         Tunnel::new(
@@ -201,10 +209,7 @@ pub(super) async fn loopback_tunnel(dir: &Path) -> (Tunnel, Arc<Members>) {
             loopback_endpoint(SecretKey::generate()).await,
             0,
             RelayTable::builtin_n0(),
-            tokio::sync::watch::channel(std::collections::BTreeSet::from(["192.168.1.2"
-                .parse()
-                .unwrap()]))
-            .1,
+            tokio::sync::watch::channel(lan).1,
         ),
         members,
     )

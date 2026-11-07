@@ -1,16 +1,20 @@
 //! 插件在局域网上提供服务（ADR-0019）：清单的 `lan.ports` 和 `network.lan` 权限。端口只发布在选出的局域网地址
-//! 上，从不发布到 `0.0.0.0` 或 `::`。
+//! 上，从不发布到 `0.0.0.0` 或 `::`；启动器声明了宣告地址时，端口在虚拟机里绑 `0.0.0.0`，告诉手机的是宣告地址。
 //!
-//! - [`probe`]：读宿主的路由和网卡，在宿主网络里的一次性容器里跑；
+//! - [`probe`]：读宿主的路由、网卡和内核，在宿主网络里的一次性容器里跑；
 //! - [`detect`]：起检测容器，列出 Docker 的网桥；
 //! - [`select`]：按检测结果和主人的选择算出地址；
+//! - [`announce`]：`WONTON_ANNOUNCE_ADDRESSES`，启动器声明的宣告地址；
+//! - [`platform`]：从内核串和 DMI 认出桌面虚拟机；
 //! - `state`：主人的选择和上次检测的结果；`grant`：安装和预览；`monitor`：定期检测、地址变了重建容器；
 //!   `settings`：管理接口；[`webui`]：网页端口的开关；[`client`]：第三方客户端的连接信息。
 
+pub mod announce;
 pub mod client;
 pub mod detect;
 mod grant;
 mod monitor;
+mod platform;
 pub(in crate::plugin) mod ports;
 pub mod probe;
 mod route_subnets;
@@ -36,8 +40,12 @@ use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Permission};
 use super::render::{RenderError, service_err};
 
-/// 注入给插件的变量：端口开在哪些地址上，逗号分隔。核心容器设了同名变量时，只用里面的地址，不再自动选。
+/// 注入给插件、也由核心容器读的变量：手机要连的地址（宣告地址），逗号分隔。核心容器设了同名变量时，只用里面的地址，
+/// 不再自动选；启动器声明了宣告地址时注入的是宣告地址。
 pub const ADDRESSES_VAR: &str = "WONTON_LAN_ADDRESSES";
+
+/// 启动器声明的宣告地址（见 [`announce`]）：告诉手机去哪连，不在虚拟机自己的网卡上。
+pub const ANNOUNCE_VAR: &str = "WONTON_ANNOUNCE_ADDRESSES";
 
 /// 清单的 `lan`：在局域网上开放的端口。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,7 +185,10 @@ pub fn parse_addresses(text: &str) -> Result<Vec<IpAddr>, String> {
 /// 插件的局域网端口开在哪里。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LanGrant {
+    /// 端口发布在哪些地址上。启动器声明了宣告地址时是通配地址。
     pub addresses: Vec<IpAddr>,
+    /// 告诉手机去哪连的地址：注入给插件的 [`ADDRESSES_VAR`] 用它。
+    pub announce: Vec<IpAddr>,
     /// 没声明 `network.egress` 的插件发布端口用的网络（`wonton-<slug>--lan`）：Docker 不在内部网络上发布端口。
     pub network: Option<String>,
     /// 要开的端口。开关关着、没有要开的时为空，地址也为空，这时不接 `network`。
@@ -187,9 +198,9 @@ pub struct LanGrant {
 }
 
 impl LanGrant {
-    /// 注入给插件的 [`ADDRESSES_VAR`]。
+    /// 注入给插件的 [`ADDRESSES_VAR`]：告诉用户怎么连的是宣告地址。
     pub fn var(&self) -> String {
-        let addresses: Vec<String> = self.addresses.iter().map(IpAddr::to_string).collect();
+        let addresses: Vec<String> = self.announce.iter().map(IpAddr::to_string).collect();
         addresses.join(",")
     }
 }
