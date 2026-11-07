@@ -492,31 +492,3 @@ async fn a_failed_reconcile_marks_the_consumer_as_degraded() {
     };
     assert!(reason.contains("网关坏了"), "{reason}");
 }
-
-#[test]
-fn the_hermes_and_magpie_drafts_render() {
-    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
-    let magpie = PluginPackage::load_dir(&plugins.join("magpie"), &super::langs()).unwrap();
-    let spec = magpie.manifest.provides.clone().unwrap().models.unwrap();
-    assert_eq!(spec.credentials_service(), "magpie");
-    super::super::render::dry_run(&magpie, &super::langs()).unwrap();
-    // Hermes 的 Bot 服务拿到这个 Bot 的模型凭据和 Matrix 身份。
-    let hermes = PluginPackage::load_dir(&plugins.join("hermes"), &super::langs()).unwrap();
-    let plan = super::super::render::dry_run(&hermes, &super::langs()).unwrap();
-    let gateway = plan
-        .containers
-        .iter()
-        .find(|c| c.service == "gateway")
-        .unwrap();
-    let env = super::env_of(gateway);
-    for expected in [
-        "WONTON_MODEL_BASE_URL=http://models.wonton.internal/v1",
-        "WONTON_MODEL_API_KEY=dry-run",
-        "MATRIX_ACCESS_TOKEN=dry-run",
-    ] {
-        assert!(
-            env.contains(&expected.to_owned()),
-            "缺少 {expected}：{env:?}"
-        );
-    }
-}

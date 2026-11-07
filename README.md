@@ -26,7 +26,7 @@ Agent 通过工具调用它们；有网页界面的插件，在 App 里像小程
 ```text
 crates/      Rust 工作区：协议类型、iroh 隧道、服务端核心、客户端厚核心
 apps/        iOS（SwiftUI）与 Compose（Android、桌面）原生壳
-plugins/     预装插件（Hermes、magpie）和示例插件；其余官方插件各在自己的仓库，见 ADR-0017
+plugins/     示例插件与预装插件锁文件 system.lock；官方插件各在自己的仓库，见 ADR-0017
 cloud/       推送中继、iroh 节点、签名静态文件的部署配置
 deploy/      一行安装脚本、compose 模板、升级器
 docs/        文档

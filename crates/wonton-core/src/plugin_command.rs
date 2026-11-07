@@ -6,6 +6,7 @@
 //! - `plugin index-entry <插件包目录> <github:owner/repo> <提交号> [--index <索引目录>]`：插件包在那个提交上的官方索引
 //!   条目（插件规范的“官方索引”）。不带 `--index` 时把条目的 JSON 写到标准输出；带了就写进那个本地的索引目录，
 //!   文件按 sha256 放进 `blobs/`，同一个来源的旧条目换掉。插件包目录要是那个提交的检出：核心不连 Git，不核对。
+//! - `plugin fetch-locked <锁文件> <目标目录>`：构建镜像时按提交取插件包，核对锁文件里的来源、提交和摘要。
 //! - `plugin host [插件包目录]`：这台主机实际有什么（内存、系统、架构、显卡），JSON 写到标准输出，读不出来的项写明原因。
 //!   和判断插件的“要求”时用的是同一份。给了插件包时还有它的要求逐条的判断和装不了的原因。
 //! - `plugin slice-unit`：根据宿主 `/proc/meminfo` 输出插件 systemd slice unit。读不到总内存时退出码 1，并把原因写到标准错误。
@@ -27,9 +28,12 @@ use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::storefront::index::{Index, IndexEntry};
 use wonton_core::plugin::{host_check, host_facts};
 
+mod locked;
+
 const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--official]\n      \
                      wonton-core plugin pack <插件包目录> > 插件包.tar\n      \
                      wonton-core plugin index-entry <插件包目录> <github:owner/repo> <提交号> [--index <索引目录>]\n      \
+                     wonton-core plugin fetch-locked <锁文件> <目标目录>\n      \
                      wonton-core plugin host [插件包目录]\n      \
                      wonton-core plugin slice-unit\n      \
                      wonton-core plugin check-index <index.json>";
@@ -39,6 +43,9 @@ pub async fn run(args: &[String]) -> ExitCode {
         [command, rest @ ..] if command == "check" => check_dir(rest).await,
         [command, dir] if command == "pack" && !dir.starts_with('-') => pack(Path::new(dir)),
         [command, rest @ ..] if command == "index-entry" => index_entry(rest),
+        [command, lock, destination] if command == "fetch-locked" => {
+            locked::run(Path::new(lock), Path::new(destination)).await
+        }
         [command] if command == "host" => host(None).await,
         [command, dir] if command == "host" && !dir.starts_with('-') => {
             host(Some(Path::new(dir))).await

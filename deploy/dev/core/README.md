@@ -8,7 +8,6 @@
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
-deploy/dev/core/dev.sh install plugins/hermes            # 插件包目录连同图标、配置打成 tar 上传
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh uninstall app.grafana --purge
@@ -96,8 +95,10 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 
 ## 模型网关和默认 Agent
 
-核心镜像里带着系统插件 magpie（`plugins/magpie`），核心启动后在后台预装它（`WONTON_SYSTEM_PLUGINS`），接着装一次
-默认 Agent Hermes（`plugins/hermes`，`WONTON_DEFAULT_PLUGINS`）；规则见插件规范的“预装插件”。不要 Hermes 时用
+核心镜像构建时按 [`plugins/system.lock`](../../../plugins/system.lock) 从独立仓库取包并核对提交和摘要；升级只改
+锁文件对应的一行，详见 [插件目录说明](../../../plugins/README.md#预装插件)。启动时从镜像内的
+`/usr/share/wonton/system-plugins` 预装 magpie（`WONTON_SYSTEM_PLUGINS`），再从
+`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。不要 Hermes 时用
 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
 核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
 已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的

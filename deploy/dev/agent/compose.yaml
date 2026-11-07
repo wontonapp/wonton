@@ -83,8 +83,8 @@ services:
         { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; }
     volumes:
       - hermes-data:/opt/data
-      - ../../../plugins/hermes/config.yaml:/seed/config.yaml:ro
-      - ../../../plugins/hermes/wonton:/seed/wonton:ro
+      - ./.secrets/packages/default-plugins/hermes/config.yaml:/seed/config.yaml:ro
+      - ./.secrets/packages/default-plugins/hermes/wonton:/seed/wonton:ro
     network_mode: none
     restart: "no"
 

@@ -28,7 +28,9 @@ RUN case "$TARGETARCH" in \
          && rm -rf /var/lib/apt/lists/* && rustup target add "$triple"; \
        fi
 WORKDIR /src
-COPY . .
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates crates
+COPY deploy/install/compose.yaml deploy/install/wonton deploy/install/
 # 构建它的提交号（dev.sh 传入），编进核心、打在启动日志里，一眼看出镜像里是哪份代码。
 ARG WONTON_BUILD_COMMIT=unknown
 # target 缓存被所有 worktree 共用，而 cargo 按修改时间判断工作区的 crate 要不要重编：这份源码比别的 worktree
@@ -38,7 +40,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
     find crates -exec touch {} + \
     && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-core \
-    && cp "target/$(cat /rust-target)/release/wonton-core" /usr/local/bin/wonton-core
+    && cp "target/$(cat /rust-target)/release/wonton-core" /usr/local/bin/wonton-core \
+    && if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
+         cp /usr/local/bin/wonton-core /usr/local/bin/wonton-core-native; \
+       else \
+         cargo build --release --locked -p wonton-core \
+         && cp target/release/wonton-core /usr/local/bin/wonton-core-native; \
+       fi
 
 # 冒烟测试用的隧道客户端（wonton-tunnel 的示例），smoke.sh 用它扮演已配对的手机。只在
 # `--target tunnel-client` 时构建，不影响核心镜像。
@@ -83,16 +91,19 @@ RUN mkdir -p /docs/user /unpacked \
     && if [ -d /unpacked/user ]; then cp -R /unpacked/user/. /docs/user/; fi \
     && printf '{"commit":"%s","updated_at_ms":%s000}\n' "$WONTON_DOCS_COMMIT" "$(stat -c %Y /unpacked/README.md)" >/docs/source.json
 
+# 取包只在构建机架构上执行；交叉编译的目标二进制不能在这里运行。
+FROM build AS system-plugins
+COPY plugins/system.lock /system.lock
+RUN /usr/local/bin/wonton-core-native plugin fetch-locked /system.lock /plugins
+
 FROM public.ecr.aws/docker/library/debian:trixie-slim AS core
 # 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。根证书从编译阶段
 # 复制过来，这一层不执行命令：交叉编译的 arm64 镜像不用模拟器也能构建。
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /usr/local/bin/wonton-core /usr/local/bin/wonton-core
 COPY --from=compose /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
-# 随核心预装的系统插件（WONTON_SYSTEM_PLUGINS）：模型网关 magpie。
-COPY plugins/magpie /usr/share/wonton/system-plugins/magpie
-# 随核心附带、只自动装一次的默认插件（WONTON_DEFAULT_PLUGINS）：默认 Agent Hermes。
-COPY plugins/hermes /usr/share/wonton/default-plugins/hermes
+COPY --from=system-plugins /plugins/system-plugins /usr/share/wonton/system-plugins
+COPY --from=system-plugins /plugins/default-plugins /usr/share/wonton/default-plugins
 COPY --from=docs /docs /usr/share/wonton/docs
 # 这个核心支持哪些核心管理的组件（ADR-0025）：切到不声明某个组件的镜像之前，升级器删掉它的容器。
 LABEL wonton.core.components="wonton-egress"

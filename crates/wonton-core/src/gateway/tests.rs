@@ -698,11 +698,11 @@ async fn plugin_api_requires_owner_token() {
         .await;
     assert_eq!(bad.error_kind(), Some("invalid_input"));
 
-    // 插件包目录的 tar 归档：compose 引用了包里的文件（Hermes 的 config.yaml）时这样传。
-    let hermes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/hermes");
-    let mut archive = tar::Builder::new(Vec::new());
-    archive.append_dir_all(".", &hermes).unwrap();
-    let archive = archive.into_inner().unwrap();
+    // 引用包内配置的上传必须带完整插件包，只有 compose 文本时应拒绝。
+    let compose = "services:\n  app:\n    image: nginx\n    configs: [settings]\nconfigs:\n  settings:\n    file: config.yaml\nx-wonton:\n  spec: '0.4'\n  id: app.config-upload\n  version: 1.0.0\n  kind: app\n  title: {zh: 配置, en: Config}\n  description: {zh: 配置上传, en: Config upload}\n  permissions: []\n";
+    let files = [("config.yaml".to_owned(), b"enabled: true\n".to_vec())].into();
+    let package = PluginPackage::with_files(compose, files, &Languages::default()).unwrap();
+    let archive = package.archive();
     let tar = [
         ("authorization", bearer.as_str()),
         ("content-type", "application/x-tar"),
@@ -717,9 +717,8 @@ async fn plugin_api_requires_owner_token() {
         )
         .await;
     assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
-    assert_eq!(preview.json()["id"], "com.nousresearch.hermes");
+    assert_eq!(preview.json()["id"], "app.config-upload");
     // 只有 compose 文本时，引用的 config.yaml 缺失。
-    let compose = std::fs::read_to_string(hermes.join("docker-compose.yml")).unwrap();
     let text = h
         .send(
             Method::POST,

@@ -230,7 +230,7 @@ apps/
   ios/               SwiftUI 壳、通知扩展
   compose/           Kotlin Multiplatform：共享 UI 模块、android、desktop（M2）
 design/              App 设计系统的输入：令牌、图标白名单和上游 SVG（ADR-0026）
-plugins/             预装插件（Hermes、magpie）和示例插件；其余官方插件各在自己的仓库（ADR-0017）
+plugins/             示例插件与预装插件锁文件 system.lock；官方插件各在自己的仓库（ADR-0017）
 cloud/               中继、发现、推送中继、目录发布的部署配置
 deploy/              一行安装脚本、compose 模板、升级器
 docs/                文档
