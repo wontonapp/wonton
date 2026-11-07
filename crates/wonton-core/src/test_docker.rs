@@ -86,6 +86,12 @@ impl Names {
         name
     }
 
+    /// 一个一次性镜像的标签 `wonton-<实例名>-<用途>`。守卫只清容器、网络和卷：镜像由测试自己删
+    /// （标签可能被移到别的镜像上，按标签强删会伤到那个镜像）。
+    pub fn oneshot_image(&mut self, what: &str) -> String {
+        self.oneshot_name(what)
+    }
+
     fn oneshot_name(&self, what: &str) -> String {
         format!("wonton-{}-{what}", self.name())
     }

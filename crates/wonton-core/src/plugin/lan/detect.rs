@@ -19,7 +19,9 @@ use ipnet::Ipv4Net;
 
 use super::probe::{self, HostNetwork};
 use super::select::DockerBridges;
+use crate::l10n;
 use crate::plugin::docker::{Engine, EngineError};
+use crate::plugin::languages::Languages;
 
 /// 一次性容器最多跑这么久：检测容器只读几个文件、发一次 netlink 请求，正常不到一秒；查代理的最多 20 秒。
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -71,12 +73,23 @@ impl Detector {
         labels: HashMap<String, String>,
     ) -> Result<Result<HostNetwork, String>, EngineError> {
         match self {
-            Self::Container { core } => Ok(engine
-                .run_probe(core, name, labels, vec![probe::COMMAND.to_owned()])
-                .await?
-                .and_then(|stdout| {
-                    serde_json::from_slice(&stdout).map_err(|e| format!("检测容器的输出不对：{e}"))
-                })),
+            Self::Container { core } => Ok(
+                match engine
+                    .run_probe(core, name, labels, vec![probe::COMMAND.to_owned()])
+                    .await?
+                {
+                    ProbeRun::Failed(reason) => Err(reason),
+                    ProbeRun::Ran { stdout, replaced } => {
+                        serde_json::from_slice(&stdout).map_err(|e| {
+                            with_replaced_note(
+                                &engine.owner_languages(),
+                                replaced,
+                                format!("检测容器的输出不对：{e}"),
+                            )
+                        })
+                    }
+                },
+            ),
             Self::Here => Ok(tokio::task::spawn_blocking(|| probe::probe(Path::new("/")))
                 .await
                 .unwrap_or_else(|e| Err(format!("检测宿主的网卡时出错：{e}")))),
@@ -109,7 +122,7 @@ impl Detector {
             .join(",");
         match self {
             Self::Container { core } => {
-                let stdout = engine
+                let run = engine
                     .run_probe(
                         core,
                         name,
@@ -117,8 +130,18 @@ impl Detector {
                         vec![probe::COMMAND.to_owned(), probe::LISTEN.to_owned(), list],
                     )
                     .await
-                    .map_err(|e| e.to_string())??;
-                serde_json::from_slice(&stdout).map_err(|e| format!("探测容器的输出不对：{e}"))
+                    .map_err(|e| e.to_string())?;
+                let stdout = match run {
+                    ProbeRun::Failed(reason) => return Err(reason),
+                    ProbeRun::Ran { stdout, replaced } => (stdout, replaced),
+                };
+                serde_json::from_slice(&stdout.0).map_err(|e| {
+                    with_replaced_note(
+                        &engine.owner_languages(),
+                        stdout.1,
+                        format!("探测容器的输出不对：{e}"),
+                    )
+                })
             }
             Self::Here => {
                 let targets = targets.to_vec();
@@ -138,6 +161,66 @@ impl Detector {
     }
 }
 
+/// 一次性容器跑成的结果：输出，和起容器用的是不是核心容器创建时的镜像引用。
+pub(in crate::plugin) struct CoreOnce {
+    pub output: OneShot,
+    /// 起容器用的不是核心正在跑的镜像 ID，而是它创建时的镜像引用：核心的镜像已被替换（#666）。
+    /// 输出读不了时上层要说明这一点。
+    pub replaced: bool,
+}
+
+/// 检测容器跑出来的东西：跑成了是原始标准输出（两种子命令各自解析），没跑成是原因。
+enum ProbeRun {
+    /// 跑成了。`replaced` 见 [`CoreOnce::replaced`]。
+    Ran { stdout: Vec<u8>, replaced: bool },
+    /// 没跑成。
+    Failed(String),
+}
+
+/// Docker 拒绝创建容器、原话里是镜像查不到时为真。镜像查不到的原话是 `No such image: …`；
+/// 网络查不到也是 404，但原话不同，不能当成镜像（见 `ports::taken`，按 Docker 的原话分类是惯例）。
+fn image_missing(rejected: &EngineError) -> bool {
+    matches!(rejected, EngineError::NotFound(message) if message.contains("No such image"))
+}
+
+/// 核心的镜像被换过时，在失败原因外面说明：镜像已被替换，重启家里的服务器就恢复（#666）。
+pub(in crate::plugin) fn with_replaced_note(
+    langs: &Languages,
+    replaced: bool,
+    reason: String,
+) -> String {
+    if replaced {
+        l10n::text(
+            langs,
+            "plugin-install-probe-image-replaced",
+            &[("reason", reason.into())],
+        )
+    } else {
+        reason
+    }
+}
+
+fn probe_body(
+    image: &str,
+    cmd: &[String],
+    labels: &HashMap<String, String>,
+) -> ContainerCreateBody {
+    ContainerCreateBody {
+        image: Some(image.to_owned()),
+        cmd: Some(cmd.to_vec()),
+        user: Some(probe::NOBODY_USER.to_owned()),
+        labels: Some(labels.clone()),
+        host_config: Some(HostConfig {
+            network_mode: Some("host".to_owned()),
+            cap_drop: Some(vec!["ALL".to_owned()]),
+            security_opt: Some(vec!["no-new-privileges".to_owned()]),
+            readonly_rootfs: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
 impl Engine {
     /// 用核心容器的镜像起检测容器，读它打印的结果（原始标准输出，两种子命令各自解析）。
     async fn run_probe(
@@ -146,58 +229,95 @@ impl Engine {
         name: &str,
         labels: HashMap<String, String>,
         cmd: Vec<String>,
-    ) -> Result<Result<Vec<u8>, String>, EngineError> {
-        let Some(image) = self.inspect_container(core).await?.and_then(|c| c.image) else {
-            return Ok(Err(format!("查不到核心容器 {core} 的镜像")));
+    ) -> Result<ProbeRun, EngineError> {
+        let Some(info) = self.inspect_container(core).await? else {
+            return Ok(ProbeRun::Failed(format!("查不到核心容器 {core} 的镜像")));
         };
-        let body = ContainerCreateBody {
-            image: Some(image),
-            cmd: Some(cmd),
-            user: Some(probe::NOBODY_USER.to_owned()),
-            labels: Some(labels),
-            host_config: Some(HostConfig {
-                network_mode: Some("host".to_owned()),
-                cap_drop: Some(vec!["ALL".to_owned()]),
-                security_opt: Some(vec!["no-new-privileges".to_owned()]),
-                readonly_rootfs: Some(true),
-                ..Default::default()
-            }),
-            ..Default::default()
+        let Some(image) = info.image else {
+            return Ok(ProbeRun::Failed(format!("查不到核心容器 {core} 的镜像")));
         };
-        let output = match self.run_once(name, body).await? {
-            Ok(output) => output,
-            Err(failure) => return Ok(Err(failure)),
+        let reference = info.config.and_then(|c| c.image);
+        let langs = self.owner_languages();
+        let once = match self
+            .run_once(name, probe_body(&image, &cmd, &labels), reference)
+            .await?
+        {
+            Ok(once) => once,
+            Err(failure) => return Ok(ProbeRun::Failed(failure)),
         };
-        if output.code != 0 {
-            let reason = String::from_utf8_lossy(&output.stderr);
-            let code = output.code;
-            return Ok(Err(format!("检测容器以 {code} 退出：{}", reason.trim())));
+        if once.output.code != 0 {
+            let reason = format!(
+                "检测容器以 {} 退出：{}",
+                once.output.code,
+                String::from_utf8_lossy(&once.output.stderr).trim()
+            );
+            return Ok(ProbeRun::Failed(with_replaced_note(
+                &langs,
+                once.replaced,
+                reason,
+            )));
         }
-        Ok(Ok(output.stdout))
+        Ok(ProbeRun::Ran {
+            stdout: once.output.stdout,
+            replaced: once.replaced,
+        })
     }
 
-    /// 起一个一次性容器，等它跑完，读它的输出。不论成败都删掉它；开始前先删掉上次核心在中途退出留下的。Docker 连不上时报错；
-    /// Docker 拒绝了（镜像没了、宿主不让用宿主网络等）时为 `Ok(Err(原因))`。
+    /// 起一个一次性容器，等它跑完，读它的输出。不论成败都删掉它；开始前先删掉上次核心在中途退出留下的。
+    /// 镜像用 `body` 里的（核心正在跑的镜像 ID）。Docker 拒绝创建、原话里是镜像查不到（containerd 镜像
+    /// 存储下核心的镜像标签被移到新镜像、旧镜像记录又被清掉后就是这样，#666）、核心容器又记得创建时的
+    /// 镜像引用时，退回按那个引用再创建一次——它通常已指向新版本的核心，输出读不了时上层如实说明。
+    /// Docker 连不上时报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）时为 `Err(原因)`，镜像被换过
+    /// 的说明已经附在原因里。
     pub(in crate::plugin) async fn run_once(
         &self,
         name: &str,
-        body: ContainerCreateBody,
-    ) -> Result<Result<OneShot, String>, EngineError> {
+        mut body: ContainerCreateBody,
+        fallback: Option<String>,
+    ) -> Result<Result<CoreOnce, String>, EngineError> {
         let _one_at_a_time = self.one_shot.lock().await;
         self.remove_container(name).await?;
-        if let Err(e) = self.create_container(name, body).await {
-            return unless_unavailable(e);
+        let mut replaced = false;
+        if let Err(e) = self.create_container(name, body.clone()).await {
+            let rejected = unless_unavailable(e)?;
+            match (&rejected, &fallback) {
+                (rejected, Some(reference)) if image_missing(rejected) => {
+                    tracing::info!(
+                        name,
+                        image = %reference,
+                        "核心的镜像 ID 起不了一次性容器，改用核心容器创建时的镜像引用"
+                    );
+                    body.image = Some(reference.clone());
+                    replaced = true;
+                    if let Err(e) = self.create_container(name, body).await {
+                        let rejected = unless_unavailable(e)?;
+                        return Ok(Err(l10n::text(
+                            &self.owner_languages(),
+                            "plugin-install-probe-image-missing",
+                            &[("error", rejected.to_string().into())],
+                        )));
+                    }
+                }
+                _ => return Ok(Err(rejected.to_string())),
+            }
         }
         let result = self.finish_once(name).await;
         let removed = self.remove_container(name).await;
         let output = result?;
         removed?;
-        Ok(output)
+        Ok(match output {
+            Ok(output) => Ok(CoreOnce { output, replaced }),
+            Err(failure) => Err(with_replaced_note(
+                &self.owner_languages(),
+                replaced,
+                failure,
+            )),
+        })
     }
 
     async fn finish_once(&self, name: &str) -> Result<Result<OneShot, String>, EngineError> {
         if let Err(e) = self.start_container(name).await {
-            return unless_unavailable(e);
+            return unless_unavailable(e).map(|rejected| Err(rejected.to_string()));
         }
         let mut wait = self.docker.wait_container(name, None);
         let code = match tokio::time::timeout(PROBE_TIMEOUT, wait.next()).await {
@@ -303,10 +423,11 @@ impl Engine {
     }
 }
 
-/// Docker 连不上或没按时处理完照常报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）算没跑成。
-fn unless_unavailable(e: EngineError) -> Result<Result<OneShot, String>, EngineError> {
+/// Docker 连不上或没按时处理完照常报错；Docker 拒绝了（镜像没了、宿主不让用宿主网络等）带原错误回来，
+/// 供调用方按原话分类。
+fn unless_unavailable(e: EngineError) -> Result<EngineError, EngineError> {
     match e {
         EngineError::Unavailable(_) | EngineError::TimedOut(_) => Err(e),
-        other => Ok(Err(other.to_string())),
+        other => Ok(other),
     }
 }

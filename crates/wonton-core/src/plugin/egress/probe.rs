@@ -14,6 +14,7 @@ use wonton_protocol::{EgressFailure, EgressProbe, EgressProblem};
 use super::address::ProxyAddress;
 use super::check::{self, TARGET, URL_VAR};
 use super::provider::provides_proxy;
+use crate::plugin::lan::detect::with_replaced_note;
 use crate::plugin::lan::probe::NOBODY_USER;
 use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::manifest::{Manifest, Permission};
@@ -185,14 +186,13 @@ impl PluginManager {
         let Some(core) = &self.cfg.core_container else {
             return Ok(self.egress.prober().direct(proxy).await);
         };
-        let Some(image) = self
-            .engine
-            .inspect_container(core)
-            .await?
-            .and_then(|c| c.image)
-        else {
+        let Some(info) = self.engine.inspect_container(core).await? else {
             return Ok(Some(relay_failed(format!("查不到核心容器 {core} 的镜像"))));
         };
+        let Some(image) = info.image else {
+            return Ok(Some(relay_failed(format!("查不到核心容器 {core} 的镜像"))));
+        };
+        let reference = info.config.and_then(|c| c.image);
         let body = ContainerCreateBody {
             image: Some(image),
             cmd: Some(vec![check::COMMAND.to_owned()]),
@@ -211,17 +211,25 @@ impl PluginManager {
         };
         let name = self.cfg.instance.egress_check();
         let _diagnosing = self.egress.diagnosing.lock().await;
-        let output = match self.engine.run_once(&name, body).await? {
-            Ok(output) => output,
+        let once = match self.engine.run_once(&name, body, reference).await? {
+            Ok(once) => once,
+            // 镜像被换过的说明已经附在原因里。
             Err(failure) => return Ok(Some(relay_failed(failure))),
         };
-        match serde_json::from_slice::<Option<EgressProblem>>(&output.stdout) {
+        match serde_json::from_slice::<Option<EgressProblem>>(&once.output.stdout) {
             Ok(found) => Ok(found),
-            Err(_) => Ok(Some(relay_failed(format!(
-                "查原因的容器以 {} 退出：{}",
-                output.code,
-                String::from_utf8_lossy(&output.stderr).trim()
-            )))),
+            Err(_) => {
+                let reason = format!(
+                    "查原因的容器以 {} 退出：{}",
+                    once.output.code,
+                    String::from_utf8_lossy(&once.output.stderr).trim()
+                );
+                Ok(Some(relay_failed(with_replaced_note(
+                    &self.owner_languages(),
+                    once.replaced,
+                    reason,
+                ))))
+            }
         }
     }
 

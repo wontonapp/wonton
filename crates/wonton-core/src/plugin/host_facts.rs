@@ -25,6 +25,7 @@ use super::languages::Languages;
 use super::names::Instance;
 use super::requirements;
 use crate::l10n::text;
+use crate::plugin::lan::detect::with_replaced_note;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -477,17 +478,25 @@ async fn run_nvidia_smi(
     labels: HashMap<String, String>,
     langs: &Languages,
 ) -> Result<Vec<(String, u64)>, String> {
-    let core_info = engine
+    let Some(info) = engine
         .inspect_container(core)
         .await
-        .map_err(|e| e.to_string())?;
-    let Some(image) = core_info.and_then(|c| c.image) else {
+        .map_err(|e| e.to_string())?
+    else {
         return Err(text(
             langs,
             "plugin-install-facts-container-image-unknown",
             &[("core", core.into())],
         ));
     };
+    let Some(image) = info.image else {
+        return Err(text(
+            langs,
+            "plugin-install-facts-container-image-unknown",
+            &[("core", core.into())],
+        ));
+    };
+    let reference = info.config.and_then(|c| c.image);
     let body = ContainerCreateBody {
         image: Some(image),
         entrypoint: Some(vec!["nvidia-smi".to_owned()]),
@@ -510,22 +519,33 @@ async fn run_nvidia_smi(
         }),
         ..Default::default()
     };
-    let output = engine
-        .run_once(name, body)
+    let once = engine
+        .run_once(name, body, reference)
         .await
-        .map_err(|e| e.to_string())??;
-    if output.code != 0 {
-        let reason = String::from_utf8_lossy(&output.stderr);
-        return Err(text(
+        .map_err(|e| e.to_string())?;
+    let once = match once {
+        Ok(once) => once,
+        // 镜像被换过的说明已经附在原因里。
+        Err(failure) => return Err(failure),
+    };
+    if once.output.code != 0 {
+        let reason = String::from_utf8_lossy(&once.output.stderr);
+        return Err(with_replaced_note(
             langs,
-            "plugin-install-facts-nvidia-smi-exit",
-            &[
-                ("code", output.code.into()),
-                ("reason", reason.trim().into()),
-            ],
+            once.replaced,
+            text(
+                langs,
+                "plugin-install-facts-nvidia-smi-exit",
+                &[
+                    ("code", once.output.code.into()),
+                    ("reason", reason.trim().into()),
+                ],
+            ),
         ));
     }
-    Ok(parse_nvidia_smi(&String::from_utf8_lossy(&output.stdout)))
+    Ok(parse_nvidia_smi(&String::from_utf8_lossy(
+        &once.output.stdout,
+    )))
 }
 
 /// `00000000:C7:00.0, 32607`：地址换成 sysfs 的写法（四位域、小写），显存是 MiB。读不懂的行不算。

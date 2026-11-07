@@ -1,14 +1,17 @@
 //! 真实 Docker：地址变化后重跑一次性服务、更新内联配置，并保留无关服务和数据。
 //! 这些测试验证行为不验证速度，期限和生产一致；共用 runner 忙时 Docker 起容器会慢。
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
+use bollard::models::{ContainerConfig, ContainerCreateBody, HostConfig, PortBinding};
+use bollard::query_parameters::{CommitContainerOptionsBuilder, RemoveImageOptionsBuilder};
 
 use super::super::compose::PullPolicy;
 use super::super::docker::Engine;
+use super::super::lan::probe::HostNetwork;
 use super::super::lan::{Detector, Lan};
 use super::super::{PluginId, PluginManager, PluginStatus};
 use super::manager::manager_in_instance;
@@ -171,6 +174,137 @@ async fn lan_address_change_updates_real_containers_and_config_page() {
             &super::langs(),
         )
         .await;
+}
+
+/// containerd 镜像存储下，核心镜像的记录被清掉（标签先被移走）后，路由探针退回按容器创建时的引用起，
+/// 检测照样能跑（#666）。经典存储下旧镜像 ID 一直可用，复现不了这个行为，CI 不跑。
+/// 前提：Docker 用 containerd 镜像存储。在 npchy 上手动跑：
+/// `~/wonton-dev/cargo-slot.sh cargo test -p wonton-core a_gone_core_image_record -- --ignored`
+#[tokio::test]
+#[ignore = "需要 Docker（containerd 镜像存储）；经典存储下旧镜像 ID 一直可用，复现不了 #666"]
+async fn a_gone_core_image_record_falls_back_to_the_creation_reference() {
+    let engine = Engine::connect().unwrap();
+    let mut names = Names::new();
+    // 前提：containerd 镜像存储。
+    let info = engine.docker.info().await.unwrap();
+    let driver = info
+        .driver_status
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(",");
+    // CI 的 Docker 作业会跑这个测试，经典存储下复现不了 #666：如实跳过，别装作跑过。
+    if !driver.contains("io.containerd.snapshotter.v1") {
+        println!("跳过：Docker 不是 containerd 镜像存储（{driver}），复现不了 #666");
+        return;
+    }
+    // 扮演核心镜像的一份私有镜像（busybox + 一个打印 HostNetwork 的假 lan-probe）：ID 独有，
+    // 它的记录可以安全地删掉，不碰别人的镜像。脚本经归档接口原样写进容器，不过 shell，引号原样保留。
+    let output = serde_json::to_string(&HostNetwork {
+        subnets: vec!["10.213.0.0/24".parse().unwrap()],
+        ..Default::default()
+    })
+    .unwrap();
+    let script = format!("#!/bin/sh\necho '{output}'\n");
+    let seed = names.oneshot_container("probe-image-seed");
+    engine
+        .create_container(
+            &seed,
+            ContainerCreateBody {
+                image: Some(IMAGE.to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let mut header = tar::Header::new_gnu();
+    header.set_size(script.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    let mut archive = Vec::new();
+    tar::Builder::new(&mut archive)
+        .append_data(&mut header, "lan-probe", script.as_bytes())
+        .unwrap();
+    engine.upload_archive(&seed, "/bin", archive).await.unwrap();
+    let repo = names.oneshot_image("probe-image");
+    let old_id = commit_image(&engine, &seed, &repo).await;
+    // 扮演核心的容器，跑在旧镜像上。
+    let core = names.oneshot_container("fake-core");
+    engine
+        .create_container(
+            &core,
+            ContainerCreateBody {
+                image: Some(format!("{repo}:v1")),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    engine.start_container(&core).await.unwrap();
+    let probe = names.oneshot_container("route-probe");
+    let first = detect_host(&engine, &core, &probe).await;
+    assert_eq!(first.subnets, ["10.213.0.0/24".parse().unwrap()]);
+    // 镜像重建、标签移到新镜像，旧镜像的记录又被清掉：核心容器还在跑，按它的镜像 ID 起不了容器。
+    let new_id = commit_image(&engine, &seed, &repo).await;
+    assert_ne!(old_id, new_id, "提交出来的两份镜像 ID 不该相同");
+    engine.remove_container(&seed).await.unwrap();
+    engine
+        .docker
+        .remove_image(
+            &old_id,
+            Some(RemoveImageOptionsBuilder::default().force(true).build()),
+            None,
+        )
+        .await
+        .unwrap();
+    // 退回按容器创建时的引用（现在是重建后的镜像）起探测容器，检测照常。
+    let second = detect_host(&engine, &core, &probe).await;
+    assert_eq!(second.subnets, ["10.213.0.0/24".parse().unwrap()]);
+    // 清理：私有镜像的标签和记录。
+    for image in [format!("{repo}:v1"), new_id, old_id] {
+        let _ = engine
+            .docker
+            .remove_image(
+                &image,
+                Some(RemoveImageOptionsBuilder::default().force(true).build()),
+                None,
+            )
+            .await;
+    }
+}
+
+/// 给测试提交一份镜像：内容随 seed 容器（busybox 加假 lan-probe），标签指向它，入口就是假 lan-probe。
+/// 同一个标签再提交一次就移到新镜像。
+async fn commit_image(engine: &Engine, seed: &str, repo: &str) -> String {
+    engine
+        .docker
+        .commit_container(
+            CommitContainerOptionsBuilder::default()
+                .container(seed)
+                .repo(repo)
+                .tag("v1")
+                .pause(false)
+                .build(),
+            ContainerConfig {
+                entrypoint: Some(vec![String::from("/bin/lan-probe")]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .id
+}
+
+/// 检测一次宿主的网卡（走 [`Detector::Container`]，即路由探针）。
+async fn detect_host(engine: &Engine, core: &str, probe: &str) -> HostNetwork {
+    Detector::Container {
+        core: core.to_owned(),
+    }
+    .detect(engine, probe, HashMap::new())
+    .await
+    .unwrap()
+    .unwrap()
 }
 
 /// 宿主上已经被别的容器发布着的端口，装的时候立刻就报、类别是端口被占，不是等超时。占着的容器是核心不认识的。

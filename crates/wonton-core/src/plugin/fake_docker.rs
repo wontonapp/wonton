@@ -2,7 +2,7 @@
 //! （连同标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
 //! 测试可以按容器名改成别的状态（已退出、没有健康检查等）。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use axum::body::Bytes;
@@ -15,14 +15,15 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, Semaphore, broadcast};
 
+use self::containers::containers;
 use self::events::events_response;
 use self::exec::start_exec;
-use self::networks::{endpoint_settings, networks, published, running, state_name};
-use self::update::update_container;
+use self::networks::networks;
 use self::volumes::volumes;
 use super::docker::Engine;
 use super::names::LABEL_PLUGIN;
 
+mod containers;
 mod events;
 mod exec;
 mod networks;
@@ -133,6 +134,8 @@ struct Resources {
     pull_error: Option<String>,
     /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
     pull_spared: Option<String>,
+    /// 查不到的镜像：查它和用它创建容器都回 404。模拟 containerd 镜像存储下镜像记录被清掉（#666）。
+    missing_images: BTreeSet<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
     /// Docker `/info` 报告的名字（宿主主机名）；没设时不报。
@@ -388,6 +391,22 @@ impl FakeDocker {
             .insert(name.to_owned(), json!({"Image": image}));
     }
 
+    /// 放进一个核心容器：跑着的镜像 ID 和创建时的镜像引用（`Config.Image`）可以不一样，
+    /// 模拟核心镜像的标签已被移走（#666）。
+    pub fn add_core_container(&self, name: &str, image_id: &str, reference: &str) {
+        let mut docker = self.lock();
+        docker.containers.insert(name.to_owned(), Labels::new());
+        docker.created.insert(
+            name.to_owned(),
+            json!({"Image": image_id, "Config": {"Image": reference}}),
+        );
+    }
+
+    /// 忘掉一个镜像：查它和用它创建容器都回 404，像 containerd 存储下镜像记录被清掉后那样（#666）。
+    pub fn forget_image(&self, image: &str) {
+        self.lock().missing_images.insert(image.to_owned());
+    }
+
     /// 这个名字的容器（之后创建的）跑完时的退出码和输出。
     pub fn set_output(&self, container: &str, code: i64, stdout: &str, stderr: &str) {
         let output = (code, stdout.to_owned(), stderr.to_owned());
@@ -504,174 +523,6 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
             json!({"message": format!("假 Docker 没有 {call}")}),
         )
     })
-}
-
-fn containers(
-    docker: &mut Resources,
-    method: &Method,
-    parts: &[&str],
-    query: &str,
-    raw: &Bytes,
-) -> Option<Response> {
-    let exists = |name: &str| docker.containers.contains_key(name);
-    let reply = match (method, parts) {
-        (&Method::POST, ["create"])
-            if query_param(query, "name").is_some_and(|name| exists(&name)) =>
-        {
-            let name = query_param(query, "name").unwrap_or_default();
-            let message = format!("Conflict. The container name \"/{name}\" is already in use");
-            json_reply(StatusCode::CONFLICT, json!({"message": message}))
-        }
-        (&Method::POST, ["create"]) => {
-            let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
-            let name = query_param(query, "name").unwrap_or_default();
-            docker.containers.insert(name.clone(), labels_of(&body));
-            let networks = body["NetworkingConfig"]["EndpointsConfig"].as_object();
-            for (network, endpoint) in networks.into_iter().flatten() {
-                docker
-                    .endpoints
-                    .entry(network.clone())
-                    .or_default()
-                    .insert(name.clone(), endpoint.clone());
-            }
-            // 和 Docker 一样：`NetworkMode` 写网络名时，容器接在这个网络上。
-            if let Some(mode) = body["HostConfig"]["NetworkMode"].as_str()
-                && docker.networks.contains_key(mode)
-                && !docker
-                    .endpoints
-                    .get(mode)
-                    .is_some_and(|e| e.contains_key(&name))
-            {
-                docker
-                    .endpoints
-                    .entry(mode.to_owned())
-                    .or_default()
-                    .insert(name.clone(), json!({}));
-            }
-            docker.created.insert(name.clone(), body);
-            *docker.creation_count.entry(name.clone()).or_default() += 1;
-            json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
-        }
-        (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
-        (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
-        (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
-        (&Method::DELETE, [name]) => {
-            for endpoints in docker.endpoints.values_mut() {
-                endpoints.remove(*name);
-            }
-            gone(docker.containers.remove(*name).is_some())
-        }
-        (&Method::GET, [name, "json"]) if exists(name) => inspect_container(docker, name),
-        (&Method::POST, [name, "wait"]) if exists(name) => {
-            let code = docker.outputs.get(*name).map_or(0, |o| o.0);
-            json_reply(StatusCode::OK, json!({"StatusCode": code}))
-        }
-        (&Method::GET, [name, "logs"]) if exists(name) => {
-            let (_, stdout, stderr) = docker.outputs.get(*name).cloned().unwrap_or_default();
-            let mut frames = Vec::new();
-            // 和 Docker 一样多路复用：1 是标准输出，2 是标准错误。
-            for (stream, text) in [(1u8, stdout), (2, stderr)] {
-                if !text.is_empty() {
-                    frames.extend_from_slice(&[stream, 0, 0, 0]);
-                    frames.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
-                    frames.extend_from_slice(text.as_bytes());
-                }
-            }
-            (StatusCode::OK, frames).into_response()
-        }
-        (&Method::POST, [name, "exec"]) if exists(name) => {
-            let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
-            let cmd = serde_json::from_value(body["Cmd"].clone()).unwrap_or_default();
-            let id = format!("exec{}", docker.execs.len() + 1);
-            let exec = FakeExec {
-                container: (*name).to_owned(),
-                cmd,
-                stdin: Vec::new(),
-                exit_code: None,
-            };
-            docker.execs.insert(id.clone(), exec);
-            json_reply(StatusCode::CREATED, json!({"Id": id}))
-        }
-        (&Method::PUT, [name, "archive"]) if exists(name) => {
-            docker.archives.insert((*name).to_owned(), raw.to_vec());
-            StatusCode::OK.into_response()
-        }
-        (&Method::GET, [name, "archive"]) if exists(name) => {
-            let path = query_param(query, "path").unwrap_or_default();
-            match docker.files.get(&((*name).to_owned(), path.clone())) {
-                Some(file) => (StatusCode::OK, archive_of(&path, file)).into_response(),
-                None => json_reply(
-                    StatusCode::NOT_FOUND,
-                    json!({"message": format!("Could not find the file {path} in container {name}")}),
-                ),
-            }
-        }
-        (&Method::GET, ["json"]) => list_containers(docker, query),
-        _ => return None,
-    };
-    Some(reply)
-}
-
-fn start_container(docker: &mut Resources, name: &str) -> Response {
-    if let Some(message) = &docker.start_error {
-        return json_reply(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            json!({"message": message}),
-        );
-    }
-    if let Some(state) = docker.start_states.get(name).cloned() {
-        docker.states.insert(name.to_owned(), state);
-    }
-    gone(true)
-}
-
-fn inspect_container(docker: &Resources, name: &str) -> Response {
-    let healthy = json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}});
-    let state = docker.states.get(name).cloned().unwrap_or(healthy);
-    let created = docker.created.get(name).cloned().unwrap_or_default();
-    let networks: serde_json::Map<String, Value> = docker
-        .endpoints
-        .iter()
-        .filter_map(|(network, endpoints)| {
-            let mut settings = endpoint_settings(endpoints.get(name)?);
-            if !running(&docker.states, name) {
-                settings["IPAddress"] = json!("");
-            }
-            Some((network.clone(), settings))
-        })
-        .collect();
-    json_reply(
-        StatusCode::OK,
-        json!({"Name": format!("/{name}"), "State": state, "Image": created["Image"],
-               "Config": {"Image": created["Image"], "Labels": created["Labels"], "Env": created["Env"]},
-               "HostConfig": created["HostConfig"],
-               "NetworkSettings": {"Networks": networks}}),
-    )
-}
-
-fn list_containers(docker: &Resources, query: &str) -> Response {
-    let network = query_param(query, "filters")
-        .and_then(|filters| serde_json::from_str::<Value>(&filters).ok())
-        .and_then(|filters| filters["network"][0].as_str().map(str::to_owned));
-    let on_network = |container: &str| match &network {
-        Some(network) => docker
-            .endpoints
-            .get(network)
-            .is_some_and(|endpoints| endpoints.contains_key(container)),
-        None => true,
-    };
-    let list: Vec<Value> = labeled(&docker.containers, query)
-        .filter(|(n, _)| on_network(n))
-        .map(|(n, labels)| {
-            json!({
-                "Names": [format!("/{n}")],
-                "Labels": labels,
-                "State": state_name(&docker.states, n),
-                "Ports": published(&docker.created, &docker.states, n),
-            })
-        })
-        .collect();
-    json_reply(StatusCode::OK, json!(list))
 }
 
 /// 版本、镜像、exec 查询。
