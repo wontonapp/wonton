@@ -204,6 +204,22 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     assert_eq!(header(&headers, "x-wonton-error"), Some("owner_only"));
 }
 
+/// 命令行带主人令牌读写主人自己的资料，`dev.sh up` 替主人填资料就这么调。
+#[tokio::test]
+async fn the_owner_token_reads_and_saves_the_owner_profile() {
+    let home = Home::start(None).await;
+    let (status, me) = owner_call(&home, Method::GET, ME, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{me}");
+    assert_eq!(me["role"], "owner");
+
+    let profile = json!({"display_name": "Owner", "email": "changed@example.com"});
+    let (status, me) = owner_call(&home, Method::PUT, ME, profile).await;
+    assert_eq!(status, StatusCode::OK, "{me}");
+    let (_, me) = owner_call(&home, Method::GET, ME, Value::Null).await;
+    assert_eq!(me["display_name"], "Owner");
+    assert_eq!(me["email"], "changed@example.com");
+}
+
 #[tokio::test]
 async fn member_pairing_codes_are_single_use_and_voidable() {
     let (home, _matrix_state) = home_with_matrix().await;

@@ -1,5 +1,6 @@
 //! 这台设备的人是谁（ADR-0045 的 `Me`）：每个人都能读自己的身份和角色，主人读写 `owner.json`，家人读写
 //! `members.json` 里自己那条。规则同 ADR-0030，检查复用 [`crate::owner`]。取代 ADR-0030 的 `owner-profile`。
+//! 认人同插件管理接口（[`requester`]）：主人令牌是主人，经隧道的已配对设备是设备记录里的人。
 
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::OwnerProfileUpdate;
 
-use super::api::{error_response, plugin_denied};
+use super::api::{error_response, plugin_denied, requester};
 use super::{Gateway, TunnelPeer};
 
 /// `GET ME_PATH`：当前人的身份和角色。
@@ -22,12 +23,9 @@ pub async fn read(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            "要经隧道的已配对设备或主人的核心会话",
-        );
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return *denied,
     };
     gateway
         .me(&person)
@@ -56,12 +54,9 @@ pub async fn save(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            "要经隧道的已配对设备或主人的核心会话",
-        );
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return *denied,
     };
     let update: OwnerProfileUpdate = match serde_json::from_slice(&body) {
         Ok(update) => update,

@@ -182,9 +182,9 @@ api() {
 fill_dev_profile() {
   [[ "${WONTON_DEV_OWNER_PROFILE:-}" != off ]] || return 0
   local current
-  current="$(api GET /_wonton/api/owner-profile)"
+  current="$(api GET /_wonton/api/me)"
   [[ "$current" == *'"email":null'* ]] || return 0
-  api PUT /_wonton/api/owner-profile -d "{\"display_name\":\"Owner\",\"email\":\"owner@$WONTON_DEV_DOMAIN\"}" >/dev/null
+  api PUT /_wonton/api/me -d "{\"display_name\":\"Owner\",\"email\":\"owner@$WONTON_DEV_DOMAIN\"}" >/dev/null
 }
 
 json_field() {
