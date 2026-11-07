@@ -81,6 +81,8 @@ pub(crate) struct HomeLink {
     core_url: std::sync::Mutex<Option<Url>>,
     /// 当前的连接。换服务器时整个替换；锁保证同一时刻只有一次建连或检查。
     link: Mutex<Option<Link>>,
+    /// 同步生命周期动作不能等异步的 link 锁；保护挂起检测布防用的当前客户端，换 Link 时整个替换。
+    lifecycle_client: std::sync::Mutex<Option<TunnelClient>>,
     tracker: std::sync::Mutex<Tracker>,
     /// 提示要重新算了。
     recount: watch::Sender<()>,
@@ -150,6 +152,7 @@ impl HomeLink {
             ticket: std::sync::Mutex::new(None),
             core_url: std::sync::Mutex::new(None),
             link: Mutex::new(None),
+            lifecycle_client: std::sync::Mutex::new(None),
             tracker: std::sync::Mutex::default(),
             recount: watch::Sender::new(()),
             stats_at: std::sync::Mutex::new(None),
@@ -293,6 +296,24 @@ impl HomeLink {
             .map(|link| (link.endpoint.clone(), link.client.clone()))
     }
 
+    /// 挂起检测的布防跟着 App 的可见性走（`AppBackgrounded`），不看合成的后台状态：保持连接（ADR-0003）靠
+    /// 前台服务减少进程被冻结的可能，但不豁免，冻结醒来也不会有 `AppForegrounded`，计时是唯一的检测手段。
+    /// 回前台先保留检测，resume 检查完成后才关，避免网页抢先开流。
+    fn arm_suspend_gate(&self) {
+        let client = self.lock_lifecycle_client();
+        if let Some(client) = client.as_ref() {
+            // dispatch 也会从原生壳的非运行时线程调用。
+            let _runtime = self.runtime.enter();
+            client.set_suspendable(true);
+        }
+    }
+
+    fn lock_lifecycle_client(&self) -> std::sync::MutexGuard<'_, Option<TunnelClient>> {
+        self.lifecycle_client
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn recount(&self) {
         self.recount.send_replace(());
     }
@@ -344,6 +365,7 @@ impl HomeLink {
     async fn establish(self: Arc<Self>, ticket: Ticket) {
         let mut current = self.link.lock().await;
         if let Some(old) = current.take() {
+            *self.lock_lifecycle_client() = None;
             old.close().await;
         }
         match self.open(&ticket).await {
@@ -390,6 +412,11 @@ impl HomeLink {
         let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
             .map_err(|e| format!("本地代理启动失败：{e}"))?;
+        {
+            let mut current = self.lock_lifecycle_client();
+            client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
+            *current = Some(client.clone());
+        }
         let settings = ProxySettings {
             host: Ipv4Addr::LOCALHOST.to_string(),
             port: proxy.local_addr().port(),
@@ -452,6 +479,13 @@ impl HomeLink {
         // 不等 30 秒的空闲超时（见 ADR-0004 的真机实测）。
         if let Err(err) = client.revalidate().await {
             tracing::info!("隧道检查失败：{err}");
+        }
+        {
+            let current = self.lock_lifecycle_client();
+            if let Some(client) = current.as_ref() {
+                // 检查期间可能再次进后台或更换 Link，不能用本次 resume 开始时的状态覆盖它。
+                client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
+            }
         }
         self.recount();
         tracing::info!(

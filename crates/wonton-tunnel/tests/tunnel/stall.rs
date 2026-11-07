@@ -24,19 +24,19 @@ const DEADLINE: Duration = Duration::from_secs(1);
 const PATIENT: Duration = Duration::from_secs(30);
 
 /// 手机和服务端之间的一段 UDP 转发，可以丢包或延迟。
-struct Flaky {
-    addr: SocketAddr,
+pub(crate) struct Flaky {
+    pub(crate) addr: SocketAddr,
     /// 大于这么多字节的包丢掉。
     limit: Arc<AtomicUsize>,
     delay_ms: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
-const PASS: usize = usize::MAX;
-const DROP_ALL: usize = 0;
+pub(crate) const PASS: usize = usize::MAX;
+pub(crate) const DROP_ALL: usize = 0;
 
 impl Flaky {
-    async fn start(target: SocketAddr) -> Self {
+    pub(crate) async fn start(target: SocketAddr) -> Self {
         let front = Arc::new(UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap());
         let back = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
         let addr = front.local_addr().unwrap();
@@ -75,7 +75,7 @@ impl Flaky {
         }
     }
 
-    fn drop_above(&self, bytes: usize) {
+    pub(crate) fn drop_above(&self, bytes: usize) {
         self.limit.store(bytes, Ordering::SeqCst);
     }
 

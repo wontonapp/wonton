@@ -32,7 +32,7 @@ mod server;
 mod wire;
 
 pub use allowlist::Allowlist;
-pub use client::{PathInfo, PathKind, TunnelClient, TunnelStats, TunnelStatus};
+pub use client::{PathInfo, PathKind, SuspendClock, TunnelClient, TunnelStats, TunnelStatus};
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;

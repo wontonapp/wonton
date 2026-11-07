@@ -3,9 +3,14 @@
 //! 同一时刻最多一次建连，失败后按 [`Pacing`] 退避，等待期间的请求共享下一次的结果（ADR-0032）。建连放在独立的
 //! 任务里：等它的请求超时走了，建连也不会被丢下重来。
 
+mod attempt;
+mod suspend;
+
+use attempt::Attempt;
+pub use suspend::SuspendClock;
+
 use std::{
     fmt,
-    future::Future,
     net::IpAddr,
     sync::{
         Arc, Mutex, MutexGuard, PoisonError, Weak,
@@ -18,7 +23,7 @@ use iroh::{
     Endpoint, EndpointAddr, EndpointId, TransportAddr,
     endpoint::{Connection, ConnectionError, RecvStream, SendStream},
 };
-use tokio::{sync::watch, task::AbortHandle};
+use tokio::sync::watch;
 use tracing::{debug, info};
 
 use crate::{
@@ -150,6 +155,8 @@ struct Inner {
     /// 服务端确认过的连接：没确认就断开的（比如被拒绝）要退避，确认过的断开了可以马上重连。
     confirmed: Mutex<Option<usize>>,
     slow_path: Mutex<Option<SlowPath>>,
+    clock: Option<Arc<dyn SuspendClock>>,
+    suspension: Mutex<suspend::Suspension>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -177,43 +184,6 @@ struct SlowPath {
     samples: u8,
 }
 
-/// 一次建连，或者回到前台时的一次确认。结果留在 watch 里，任务被取消时发送端丢弃，等的人重新取一次。
-#[derive(Debug)]
-struct Attempt {
-    result: watch::Receiver<Option<Result<Connection, TunnelError>>>,
-    task: AbortHandle,
-    /// 还在退避或握手：换网时可以直接取消。确认现有连接的那种不取消，取消了连接就没了。
-    cancellable: bool,
-}
-
-impl Attempt {
-    fn spawn(
-        cancellable: bool,
-        work: impl Future<Output = Result<Connection, TunnelError>> + Send + 'static,
-    ) -> Arc<Self> {
-        let (sender, result) = watch::channel(None);
-        let task = tokio::spawn(async move {
-            sender.send_replace(Some(work.await));
-        })
-        .abort_handle();
-        Arc::new(Self {
-            result,
-            task,
-            cancellable,
-        })
-    }
-
-    fn outcome(&self) -> Option<Result<Connection, TunnelError>> {
-        self.result.borrow().clone()
-    }
-
-    /// 等结果；被取消时返回 `None`。
-    async fn finished(&self) -> Option<Result<Connection, TunnelError>> {
-        let mut result = self.result.clone();
-        result.wait_for(Option::is_some).await.ok()?.clone()
-    }
-}
-
 /// 隧道上的一条流，已写入请求类型。
 #[derive(Debug)]
 pub(crate) struct TunnelStream {
@@ -236,11 +206,29 @@ impl TunnelClient {
     /// `server` 可以只有 endpoint ID（靠 endpoint 配置的地址发现找到服务端），也可以带上中继地址和
     /// 直连地址。
     pub fn new(endpoint: Endpoint, server: impl Into<EndpointAddr>) -> Self {
+        Self::with_clock(endpoint, server.into(), None)
+    }
+
+    /// 注入挂起检测的双时钟；不改变 QUIC 和主动检查的时限。
+    #[doc(hidden)]
+    pub fn with_suspend_clock(
+        endpoint: Endpoint,
+        server: impl Into<EndpointAddr>,
+        clock: Arc<dyn SuspendClock>,
+    ) -> Self {
+        Self::with_clock(endpoint, server.into(), Some(clock))
+    }
+
+    fn with_clock(
+        endpoint: Endpoint,
+        server: EndpointAddr,
+        clock: Option<Arc<dyn SuspendClock>>,
+    ) -> Self {
         let (status, _) = watch::channel(TunnelStatus::Idle);
         Self {
             inner: Arc::new(Inner {
                 endpoint,
-                server: Mutex::new(server.into()),
+                server: Mutex::new(server),
                 attempt: Mutex::new(None),
                 status,
                 closed: AtomicBool::new(false),
@@ -248,6 +236,8 @@ impl TunnelClient {
                 stats: Mutex::default(),
                 confirmed: Mutex::new(None),
                 slow_path: Mutex::new(None),
+                clock,
+                suspension: Mutex::default(),
             }),
         }
     }
@@ -291,19 +281,70 @@ impl TunnelClient {
     ///
     /// [`ping`]: Self::ping
     pub async fn revalidate(&self) -> Result<Duration, TunnelError> {
-        let Some(conn) = self.inner.live_connection() else {
-            return self.ping().await;
-        };
-        let started = Instant::now();
-        lock(&self.inner.pacing).reset();
-        let attempt = Attempt::spawn(false, self.clone().confirm_or_replace(conn));
-        *lock(&self.inner.attempt) = Some(attempt.clone());
-        if let Some(Err(err)) = attempt.finished().await {
-            return Err(err);
+        if self.inner.closed.load(Ordering::SeqCst) {
+            return Err(TunnelError::Closed);
         }
-        // 换了新连接时，这一次往返确认服务端仍接受本设备，并更新状态。
-        self.ping().await?;
+        let started = Instant::now();
+        let attempt = self.start_revalidation();
+        let conn = match attempt.finished().await {
+            Some(result) => result?,
+            None => return self.ping().await,
+        };
+        if let Some(reason) = conn.close_reason() {
+            return Err(from_connection_error(&reason));
+        }
+        if !attempt.revalidating {
+            self.ping_on(&conn).await?;
+        }
+        self.inner.confirm(conn.stable_id());
         Ok(started.elapsed())
+    }
+
+    fn start_revalidation(&self) -> Arc<Attempt> {
+        lock(&self.inner.pacing).reset();
+        let mut current = lock(&self.inner.attempt);
+        let mut live = None;
+        if let Some(attempt) = current.as_ref() {
+            match attempt.outcome() {
+                None => return attempt.clone(),
+                Some(Ok(conn)) if was_rejected(&conn) => return attempt.clone(),
+                Some(Err(TunnelError::Unauthorized)) => return attempt.clone(),
+                Some(result) => {
+                    let usable = match &result {
+                        Ok(conn) => conn.close_reason().is_none(),
+                        Err(_) => true,
+                    };
+                    if usable
+                        && attempt.recently_revalidated(suspend::now(self.inner.clock.as_deref()))
+                    {
+                        return attempt.clone();
+                    }
+                    live = result.ok().filter(|conn| conn.close_reason().is_none());
+                }
+            }
+        }
+        let attempt = if let Some(conn) = live {
+            Attempt::spawn(
+                false,
+                true,
+                &self.inner,
+                self.clone().confirm_or_replace(conn),
+            )
+        } else {
+            let client = self.clone();
+            Attempt::spawn(true, true, &self.inner, async move {
+                let conn = client.inner.clone().dial().await?;
+                if let Err(err) = client.ping_on(&conn).await {
+                    client
+                        .inner
+                        .set_status(TunnelStatus::Disconnected(err.clone()));
+                    return Err(err);
+                }
+                Ok(conn)
+            })
+        };
+        *current = Some(attempt.clone());
+        attempt
     }
 
     /// 限时确认隧道真的通：有连接时在它上面做一次往返，没有回应就断开它，连接状态和路径随之更新；没有连接时
@@ -378,7 +419,7 @@ impl TunnelClient {
             .is_some_and(|attempt| match attempt.outcome() {
                 None => attempt.cancellable,
                 Some(Ok(conn)) => was_rejected(&conn),
-                Some(Err(_)) => false,
+                Some(Err(err)) => err == TunnelError::Unauthorized,
             });
         if replaceable && let Some(attempt) = current.take() {
             attempt.task.abort();
@@ -418,6 +459,7 @@ impl TunnelClient {
     /// endpoint 归调用方所有，由调用方关闭。
     pub fn close(&self) {
         self.inner.closed.store(true, Ordering::SeqCst);
+        self.set_suspendable(false);
         if let Some(conn) = self.inner.live_connection() {
             conn.close(CLOSE_NORMAL, b"client closed");
         }
@@ -429,6 +471,7 @@ impl TunnelClient {
 
     /// 开一条流并写入请求类型，不等服务端回状态，调用方可以紧接着发送数据。
     pub(crate) async fn open(&self, request: Request) -> Result<TunnelStream, TunnelError> {
+        self.inner.observe_resume(false);
         let mut retried = false;
         loop {
             let conn = self.connection().await?;
@@ -473,7 +516,13 @@ impl TunnelClient {
             Err(_) => info!(?deadline, "现有连接限时内没有回应，换新连接"),
         }
         conn.close(CLOSE_NORMAL, b"no response");
-        self.inner.clone().dial().await
+        let conn = self.inner.clone().dial().await?;
+        if let Err(err) = self.ping_on(&conn).await {
+            self.inner
+                .set_status(TunnelStatus::Disconnected(err.clone()));
+            return Err(err);
+        }
+        Ok(conn)
     }
 
     /// 在指定的连接上做一次往返，不经过 [`Self::connection`]。
@@ -523,13 +572,14 @@ impl Inner {
                 None => false,
                 // 服务端不认这台设备时，重拨只会再被拒一次，状态还会在“连接中”和“要配对”之间跳。等 `retry_now`。
                 Some(Ok(conn)) => conn.close_reason().is_some() && !was_rejected(&conn),
-                Some(Err(_)) => true,
+                Some(Err(TunnelError::Unauthorized)) => false,
+                Some(Err(_)) => !attempt.recently_revalidated(suspend::now(self.clock.as_deref())),
             };
             if !stale {
                 return attempt.clone();
             }
         }
-        let attempt = Attempt::spawn(true, self.clone().dial());
+        let attempt = Attempt::spawn(true, false, self, self.clone().dial());
         *current = Some(attempt.clone());
         attempt
     }

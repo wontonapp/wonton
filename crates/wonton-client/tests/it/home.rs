@@ -313,6 +313,7 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
     let proxy = view.proxy.unwrap();
+    phone.dispatch(Action::AppBackgrounded).unwrap();
 
     // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。
     home.drop_connections_silently().await;
@@ -429,6 +430,37 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
 
     phone.dispatch(Action::AppForegrounded).unwrap();
     home.wait_for_a_connection().await;
+}
+
+#[tokio::test]
+async fn background_requests_keep_the_connection_when_backgrounded_before_connecting() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone.connect(&home);
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
+        .await;
+    let proxy = view.proxy.unwrap();
+    let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
+    let connections = opened.get();
+
+    // resume 还在执行时再次进后台，不能被旧的前台任务断流或覆盖最终后台状态。
+    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone.dispatch(Action::AppBackgrounded).unwrap();
+    // 进程没有被挂起，正常计时超过恢复阈值也不应换连接，后台请求仍可继续使用原代理。
+    for _ in 0..5 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let (status, body) = get(&proxy, WEB_URL, "/background", true).await;
+        assert_eq!((status, body.as_str()), (200, "/background"));
+    }
+    assert_eq!(opened.get(), connections, "后台正常请求不应换连接");
+
+    phone.dispatch(Action::AppForegrounded).unwrap();
+    let (status, body) = get(&proxy, WEB_URL, "/foreground", true).await;
+    assert_eq!((status, body.as_str()), (200, "/foreground"));
+    assert_eq!(opened.get(), connections, "健康连接回前台不应被替换");
 }
 
 /// 抖一下没有提示；断得久一点说“连接中”；回来了自动消失。说得久的情况在 `home::connection` 的测试里。

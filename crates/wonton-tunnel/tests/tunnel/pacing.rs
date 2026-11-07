@@ -16,14 +16,14 @@ use wonton_tunnel::{ALPN, TunnelError};
 use crate::support::{Phone, Timeouts, loopback_endpoint};
 
 /// 一个来一条连接就拒绝一条的服务端，比如正在关闭的核心。数一数手机来了多少次。
-struct Refusing {
-    addr: EndpointAddr,
+pub(crate) struct Refusing {
+    pub(crate) addr: EndpointAddr,
     dials: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
 impl Refusing {
-    async fn start() -> Self {
+    pub(crate) async fn start() -> Self {
         let endpoint = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
         endpoint.set_alpns(vec![ALPN.to_vec()]);
         let addr = endpoint.addr();
@@ -38,7 +38,7 @@ impl Refusing {
         Self { addr, dials, task }
     }
 
-    fn dials(&self) -> usize {
+    pub(crate) fn dials(&self) -> usize {
         self.dials.load(Ordering::SeqCst)
     }
 }
