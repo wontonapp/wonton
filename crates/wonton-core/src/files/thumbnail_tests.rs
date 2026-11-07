@@ -108,12 +108,17 @@ async fn a_stuck_local_read_keeps_its_slot_until_it_really_ends() {
     );
 
     drop(holding);
-    for _ in 0..500 {
-        if f.files.local_thumbnail_reads.available_permits() == super::MAX_THUMBNAIL_READS {
-            break;
+    // 期限回到生产里的长度：最后这次读验的是“名额回来以后能照常读”，和那 50 毫秒无关。
+    with_timeout(&mut f, super::THUMBNAIL_READ_TIMEOUT);
+    with_slot_wait(&mut f, super::slots::SLOT_WAIT);
+    // 读真的结束才还名额：等名额全回来为止。30 秒只是防挂死的保险（真有 bug 时别让 CI 等整作业超时），平时到不了点。
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while f.files.local_thumbnail_reads.available_permits() < super::MAX_THUMBNAIL_READS {
+            tokio::task::yield_now().await;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    })
+    .await
+    .expect("名额要在读真正结束后全还回来");
     assert_eq!(
         f.files.local_thumbnail_reads.available_permits(),
         super::MAX_THUMBNAIL_READS
