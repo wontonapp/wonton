@@ -8,7 +8,9 @@
 
 - Wonton 是独立产品，不引入端脑云（Cephalon）的任何代码、账号体系或服务。旧 Lucy 仓库只作参考，
   不整段复制代码，也不导入其 git 历史。
-- 服务端只支持“任意 Linux + Docker”，不做自有 OS 镜像、macOS 或 Windows 宿主。
+- 服务端是“任意 Linux + Docker”。Mac、Windows 上由云吞自带一台隐藏的 Linux 虚拟机来跑，核心和插件照样在 Linux + Docker 里，
+  不做原生的 macOS 或 Windows 服务端（[ADR-0062](docs/adr/0062-desktop-vm-host.md)）。
+- 不做自有 OS 镜像，只在 Mac、Windows 上带一台不可变的 Linux 虚拟机，系统盘整盘替换。
 - 核心保持薄：插件管理、网关与配对、推送代理、MCP 总线、密钥与存储授权。其余能力（包括 Agent、
   模型网关、相册）都是插件。
 - 架构遵循 ADR-0015：一个组件只做一件事，组件之间只经标准接口连接（Matrix、MCP、ACP、OIDC、Compose），
