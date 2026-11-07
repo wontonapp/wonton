@@ -56,21 +56,28 @@ pub struct FakeHost {
     pub revoked_for: Mutex<Vec<(String, String)>>,
     /// 正在做的 `resources/read`。
     pub reads_running: std::sync::atomic::AtomicUsize,
+    /// 卡住的 `resources/read` 到了卡的地方。
+    pub reads_stuck: tokio::sync::Notify,
+    /// 放行卡住的 `resources/read`。
+    pub reads_release: tokio::sync::Notify,
+    /// 读真的结束了（没有被丢掉时也一样）。每次读结束都会发，用的测试里只跑一次读。
+    pub reads_over: tokio::sync::Notify,
 }
 
-/// 读取结束或者被丢掉时减一。
-struct RunningRead<'a>(&'a std::sync::atomic::AtomicUsize);
+/// 读取结束或者被丢掉时减一，并通知等在“读真的结束”上的测试。
+struct RunningRead<'a>(&'a std::sync::atomic::AtomicUsize, &'a tokio::sync::Notify);
 
 impl<'a> RunningRead<'a> {
-    fn start(count: &'a std::sync::atomic::AtomicUsize) -> Self {
+    fn start(count: &'a std::sync::atomic::AtomicUsize, over: &'a tokio::sync::Notify) -> Self {
         count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Self(count)
+        Self(count, over)
     }
 }
 
 impl Drop for RunningRead<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        self.1.notify_one();
     }
 }
 
@@ -123,10 +130,11 @@ impl FileHost for FakeHost {
     ) -> BoxFuture<'a, Result<Vec<u8>, Failure>> {
         async move {
             self.check_mcp(plugin)?;
-            let _running = RunningRead::start(&self.reads_running);
+            let _running = RunningRead::start(&self.reads_running, &self.reads_over);
             let stuck = self.reads_hang_for.lock().unwrap().as_deref() == Some(plugin.as_str());
             if stuck || self.reads_hang.load(std::sync::atomic::Ordering::SeqCst) {
-                std::future::pending::<()>().await;
+                self.reads_stuck.notify_one();
+                self.reads_release.notified().await;
             }
             if self
                 .reads_too_large
