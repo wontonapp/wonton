@@ -10,6 +10,9 @@ mod login;
 mod matrix;
 mod permission;
 mod state;
+// ADR-0058 第 1 步：模块先入库、只随测试编译；第 2 步接线时改为普通 mod。
+#[cfg(test)]
+mod topics;
 
 use std::process::ExitCode;
 
