@@ -155,8 +155,14 @@ expect "插件容器不向宿主暴露端口" \
 expect "插件容器只在自己的网络里" \
   "$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$grafana")" "$grafana_network "
 aliases="$(docker inspect -f "{{json (index .NetworkSettings.Networks \"$grafana_network\").Aliases}}" "$core")"
-[[ "$aliases" == *"\"auth.$WONTON_DEV_DOMAIN\""* ]] || fail "核心没有以 auth.$WONTON_DEV_DOMAIN 加入插件网络：$aliases"
-ok "核心加入插件网络，别名 auth.$WONTON_DEV_DOMAIN（插件经它访问身份提供方）"
+[[ "$aliases" == *"\"auth.wonton.internal\""* ]] || fail "核心没有以 auth.wonton.internal 加入插件网络：$aliases"
+ok "核心加入插件网络，别名 auth.wonton.internal（插件经它访问身份提供方）"
+[[ "$aliases" == *"\"app-grafana.$WONTON_DEV_DOMAIN\""* ]] || fail "核心没有以插件自己的地址加入它的网络：$aliases"
+ok "核心也以插件自己的地址加入网络，插件能访问自己"
+out="$(docker exec "$grafana" wget -S -q -O /dev/null "$grafana_url/" 2>&1 || true)"
+[[ "$out" =~ HTTP/[0-9.]+[[:space:]]+[23][0-9][0-9] ]] || fail "插件经自己的地址访问自己失败：$out"
+[[ "$out" == *"/_wonton/sso"* ]] && fail "插件经自己的地址访问自己仍要会话：$out"
+ok "插件经自己的地址访问自己，不要会话（第一跳是它自己的页面，不是核心的会话交接）"
 if docker exec "$grafana" wget -q -T 3 -O /dev/null http://hydra.wonton.internal:4445/health/ready 2>/dev/null; then
   fail "插件能访问身份提供方的管理端口"
 fi
@@ -307,7 +313,8 @@ ok "手机没有拿到任何网关 Cookie"
 expect "已配对设备能调插件管理接口" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/plugins")" 200
 expect "插件网页经隧道也调不了" \
   "$(t -o /dev/null -w '%{http_code}' -H "Origin: $grafana_url" "$core_url/_wonton/api/plugins")" 403
-expect "主人专属的 devices 接口不接受隧道身份" "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/devices")" 401
+expect "devices 接口经隧道也认已配对设备（ADR-0046 起 App 要读设备列表）" \
+  "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/devices")" 200
 expect "经隧道的已配对设备能读 tunnel 接口（ADR-0032：App 连上后跟着服务器地址走）" \
   "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/tunnel")" 200
 

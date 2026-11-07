@@ -102,12 +102,17 @@ fn env_of(plan: &super::render::ContainerPlan) -> Vec<String> {
 
 /// 只回答安装时用到的端点：发现文档、登记客户端。`sso: oidc` 的插件装上时要连身份提供方。
 pub(super) async fn fake_hydra() -> crate::oidc::Hydra {
-    let endpoint = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
+    // 和 Hydra v26.2.0 实测的一样：授权、登出端点给浏览器地址，签发方和后台端点给内部地址。
+    let public = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
+    let internal = |path: &str| format!("http://auth.wonton.internal:8080{path}");
     let discovery = serde_json::json!({
-        "issuer": endpoint(""),
-        "authorization_endpoint": endpoint("/oauth2/auth"),
-        "token_endpoint": endpoint("/oauth2/token"),
-        "userinfo_endpoint": endpoint("/userinfo"),
+        "issuer": internal(""),
+        "authorization_endpoint": public("/oauth2/auth"),
+        "token_endpoint": internal("/oauth2/token"),
+        "userinfo_endpoint": internal("/userinfo"),
+        "jwks_uri": internal("/.well-known/jwks.json"),
+        "revocation_endpoint": internal("/oauth2/revoke"),
+        "end_session_endpoint": public("/oauth2/sessions/logout"),
     });
     let app = axum::Router::new()
         .route(

@@ -164,8 +164,11 @@ services:
     environment:
       <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
-      # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
-      URLS_SELF_ISSUER: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
+      # 签发方用插件网络里的内部名字（ADR-0063）：插件后端经核心的这个别名访问它，有的库把 *.localhost 直接当回环，
+      # auth.<基础域名> 的别名对它们不起作用。签发方本身浏览器不访问，只走授权和登出端点。
+      URLS_SELF_ISSUER: http://auth.wonton.internal:${WONTON_DEV_PORT:-18480}
+      # 浏览器看到的地址：登录、授权确认后 Hydra 把浏览器送回这里，浏览器只认这个地址。
+      URLS_SELF_PUBLIC: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
       # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
       URLS_LOGIN: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/login
       URLS_CONSENT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/consent

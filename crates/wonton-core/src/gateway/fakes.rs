@@ -45,12 +45,27 @@ pub(super) async fn bind() -> (TcpListener, SocketAddr) {
     (listener, addr)
 }
 
+/// 假身份提供方的发现文档：和 Hydra v26.2.0 实测的一样混着两种主机名，端口留给网关改写。
+async fn discovery() -> Json<Value> {
+    Json(json!({
+        "issuer": "http://auth.wonton.internal",
+        "authorization_endpoint": "http://auth.wonton.localhost/oauth2/auth",
+        "token_endpoint": "http://auth.wonton.localhost/oauth2/token",
+        "userinfo_endpoint": "http://auth.wonton.localhost/userinfo",
+        "jwks_uri": "http://auth.wonton.internal/.well-known/jwks.json",
+        "revocation_endpoint": "http://auth.wonton.internal/oauth2/revoke",
+        "end_session_endpoint": "http://auth.wonton.localhost/oauth2/sessions/logout",
+        "scopes_supported": ["openid"],
+    }))
+}
+
 /// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节；
 /// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回。
 pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let router = Router::new()
         .route("/ws", get(upgrade_echo))
         .route("/set-cookie", get(set_cookies))
+        .route("/.well-known/openid-configuration", get(discovery))
         .fallback(move |req: Request| {
             let hits = hits.clone();
             async move {

@@ -136,7 +136,7 @@ pub(super) async fn serve(app: Router) -> std::net::SocketAddr {
 }
 
 #[tokio::test]
-async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gateway() {
+async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_gateway() {
     // 假 Docker 把插件容器的地址报成 127.0.0.1，安装最后一步检查的网页就是这个本机服务。
     let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
     let compose = package(
@@ -156,16 +156,17 @@ async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gatew
     let created = docker.created(&container_name("app-test", "web")).unwrap();
     assert_eq!(
         created["HostConfig"]["ExtraHosts"],
-        json!([format!("auth.wonton.localhost:{gateway}")])
+        json!([
+            format!("auth.wonton.internal:{gateway}"),
+            format!("app-test.wonton.localhost:{gateway}"),
+        ])
     );
     assert_eq!(created["HostConfig"]["NetworkMode"], "wonton-app-test");
 }
 
 fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
     let mut ctx = dry_run_context(package, None);
-    ctx.egress = Some(EgressVars {
-        auth_host: "auth.wonton.localhost".to_owned(),
-    });
+    ctx.egress = Some(EgressVars);
     let plan = render(package, &ctx, &super::langs()).unwrap();
     (ctx, plan)
 }
@@ -191,10 +192,8 @@ fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables()
     assert!(web.contains(&format!("HTTP_PROXY={PROXY_URL}")), "{web:?}");
     assert!(web.contains(&format!("SEARX_PROXY={PROXY_URL}")), "{web:?}");
     let no_proxy = web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap();
-    assert!(
-        no_proxy.contains(",auth.wonton.localhost,db,sealed,web,"),
-        "{no_proxy}"
-    );
+    assert!(no_proxy.contains(",db,sealed,web,"), "{no_proxy}");
+    assert!(no_proxy.contains(",.localhost"), "{no_proxy}");
     let db = super::env_of(service(&plan, "db"));
     assert!(
         db.contains(&"HTTP_PROXY=".to_owned()),
@@ -239,16 +238,16 @@ fn compose_written_no_proxy_is_merged_into_every_networked_service() {
     assert_eq!(
         web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
         &format!(
-            "NO_PROXY=localhost,web,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,\
-             db,hub,{private}"
+            "NO_PROXY=localhost,web,.localhost,127.0.0.1,::1,.wonton.internal,db,hub,\
+             {private}"
         )
     );
     let hub = super::env_of(service(&plan, "hub"));
     assert_eq!(
         hub.iter().find(|l| l.starts_with("no_proxy=")).unwrap(),
         &format!(
-            "no_proxy=internal.example,localhost,127.0.0.1,::1,.wonton.internal,\
-             auth.wonton.localhost,db,hub,web,{private}"
+            "no_proxy=internal.example,localhost,.localhost,127.0.0.1,::1,\
+             .wonton.internal,db,hub,web,{private}"
         )
     );
     // 没写的照常拿到完整名单。
@@ -256,8 +255,8 @@ fn compose_written_no_proxy_is_merged_into_every_networked_service() {
     assert_eq!(
         db.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
         &format!(
-            "NO_PROXY=localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,\
-             db,hub,web,{private}"
+            "NO_PROXY=localhost,.localhost,127.0.0.1,::1,.wonton.internal,db,hub,web,\
+             {private}"
         )
     );
 }

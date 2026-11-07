@@ -31,6 +31,8 @@ fn hosts_are_classified_by_subdomain() {
         urls.classify("matrix.wonton.internal:8080"),
         HostKind::PluginMatrix
     );
+    // 浏览器和插件各用一个主机名，都算身份提供方。
+    assert_eq!(urls.classify("auth.wonton.internal:8080"), HostKind::Auth);
     assert_eq!(
         urls.classify("models.wonton.internal"),
         HostKind::PluginModels
@@ -56,6 +58,10 @@ fn hosts_are_classified_by_subdomain() {
     assert_eq!(
         urls.origin("auth.wonton.localhost"),
         "http://auth.wonton.localhost:8080"
+    );
+    assert_eq!(
+        urls.auth_internal_origin(),
+        "http://auth.wonton.internal:8080"
     );
 }
 

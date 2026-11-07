@@ -332,6 +332,34 @@ impl PluginManager {
         Ok(secrets)
     }
 
+    /// 注入给 SSO 插件的端点：签发方和后台端点在插件网络里，授权端点给浏览器（ADR-0063）。
+    async fn oidc_vars(
+        &self,
+        manifest: &Manifest,
+        secret: Option<&str>,
+        langs: &Languages,
+    ) -> Result<Option<OidcVars>, InstallError> {
+        let Some(secret) = secret else {
+            return Ok(None);
+        };
+        let public = &self.cfg.public;
+        let discovery = self
+            .hydra(langs)?
+            .resolved_discovery(
+                &public.origin(&public.auth_host()),
+                &public.auth_internal_origin(),
+            )
+            .await?;
+        Ok(Some(OidcVars {
+            issuer: discovery.issuer,
+            client_id: manifest.id.to_string(),
+            client_secret: secret.to_owned(),
+            auth_url: discovery.authorization_endpoint,
+            token_url: discovery.token_endpoint,
+            userinfo_url: discovery.userinfo_endpoint,
+        }))
+    }
+
     pub(super) async fn install_context(
         &self,
         manifest: &Manifest,
@@ -351,20 +379,7 @@ impl PluginManager {
             .webui
             .as_ref()
             .map(|_| public.origin(&public.plugin_host(&slug)));
-        let oidc = match secret {
-            None => None,
-            Some(secret) => {
-                let discovery = self.hydra(langs)?.discovery().await?;
-                Some(OidcVars {
-                    issuer: discovery.issuer,
-                    client_id: manifest.id.to_string(),
-                    client_secret: secret.to_owned(),
-                    auth_url: discovery.authorization_endpoint,
-                    token_url: discovery.token_endpoint,
-                    userinfo_url: discovery.userinfo_endpoint,
-                })
-            }
-        };
+        let oidc = self.oidc_vars(manifest, secret, langs).await?;
         let shares = manifest
             .permissions
             .iter()

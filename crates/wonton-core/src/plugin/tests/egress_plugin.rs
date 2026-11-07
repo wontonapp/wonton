@@ -360,12 +360,12 @@ async fn plugin_written_no_proxy_is_merged_and_networked_services_all_get_one() 
     assert_eq!(web["HTTP_PROXY"], super::super::egress::PROXY_URL);
     assert_eq!(
         web["NO_PROXY"],
-        format!("localhost,web,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,hub,{private}")
+        format!("localhost,web,.localhost,127.0.0.1,::1,.wonton.internal,hub,{private}")
     );
     let hub = env_of_container(&docker, "wonton-app-out--hub");
     assert_eq!(
         hub["NO_PROXY"],
-        format!("localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,hub,web,{private}")
+        format!("localhost,.localhost,127.0.0.1,::1,.wonton.internal,hub,web,{private}")
     );
 }
 

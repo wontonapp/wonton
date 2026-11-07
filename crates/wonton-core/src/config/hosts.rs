@@ -4,6 +4,10 @@
 /// 私有网络的顶级域名，基础域名不能落在它下面。
 pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
 
+/// 插件经核心在插件网络里的这个别名访问身份提供方（`WONTON_OIDC_ISSUER` 和后台端点，ADR-0063）。有的库把
+/// `*.localhost` 直接当回环，`auth.<base>` 的别名对它们不起作用。
+pub const PLUGIN_AUTH_HOST: &str = "auth.wonton.internal";
+
 /// 插件经核心在插件网络里的这个别名访问模型网关（`WONTON_MODEL_BASE_URL` 等）。
 pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 
@@ -27,6 +31,7 @@ pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
 pub enum HostKind {
     Core,
 
+    /// 浏览器走 `auth.<base>`、插件走 [`PLUGIN_AUTH_HOST`]：都是身份提供方的公开端点。
     Auth,
 
     Matrix,
@@ -78,6 +83,11 @@ impl PublicUrls {
         format!("auth.{}", self.base_domain)
     }
 
+    /// 插件网络里身份提供方的地址（[`PLUGIN_AUTH_HOST`]），端口同网关。
+    pub fn auth_internal_origin(&self) -> String {
+        self.origin(PLUGIN_AUTH_HOST)
+    }
+
     pub fn matrix_host(&self) -> String {
         format!("matrix.{}", self.base_domain)
     }
@@ -114,6 +124,10 @@ impl PublicUrls {
 
         if let Ok(ip) = host.trim_start_matches('[').trim_end_matches(']').parse() {
             return HostKind::Lan(ip);
+        }
+
+        if host == PLUGIN_AUTH_HOST {
+            return HostKind::Auth;
         }
 
         if host == PLUGIN_MATRIX_HOST {

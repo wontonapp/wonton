@@ -135,6 +135,11 @@ impl ProxyAuth {
         self.cookies.iter().map(|(name, _)| name.as_str())
     }
 
+    /// 代加的请求头的名字。
+    pub fn header_names(&self) -> impl Iterator<Item = &HeaderName> {
+        self.headers.iter().map(|(name, _)| name)
+    }
+
     /// 模板里用到的密钥的值：不能出现在给浏览器的响应里。
     pub fn secrets(&self) -> Vec<&str> {
         let header_parts = self.headers.iter().map(|(_, parts)| parts);

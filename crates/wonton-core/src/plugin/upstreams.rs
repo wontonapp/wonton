@@ -17,7 +17,8 @@ use super::proxy_auth::McpHeaders;
 use super::secrets::Secrets;
 use super::store::StoreError;
 use crate::config::{
-    PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PublicUrls,
+    PLUGIN_AUTH_HOST, PLUGIN_MATRIX_HOST, PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST,
+    PublicUrls,
 };
 use crate::http::HttpError;
 use crate::l10n;
@@ -140,13 +141,16 @@ pub(super) async fn probe(
     (started.elapsed(), outcome)
 }
 
-/// 核心在插件网络里的别名：插件经它们访问核心代为转发的服务。SSO 插件经 `auth.<base>` 访问身份提供方，
-/// Bot 经 `matrix.wonton.internal` 访问 Matrix 客户端接口，模型网关的使用方经 `models.wonton.internal`，
-/// Agent 经 `mcp.wonton.internal` 访问 MCP 总线。
+/// 核心在插件网络里的别名：插件经它们访问核心代为转发的服务。SSO 插件经 `auth.wonton.internal` 访问身份提供方，
+/// 有网页的插件经自己的公网地址访问自己（ADR-0063），Bot 经 `matrix.wonton.internal` 访问 Matrix 客户端接口，
+/// 模型网关的使用方经 `models.wonton.internal`，Agent 经 `mcp.wonton.internal` 访问 MCP 总线。
 pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<String> {
     let mut aliases = Vec::new();
     if uses_sso(manifest) {
-        aliases.push(public.auth_host());
+        aliases.push(PLUGIN_AUTH_HOST.to_owned());
+    }
+    if manifest.webui.is_some() {
+        aliases.push(public.plugin_host(&manifest.id.slug()));
     }
     let granted = |permission: Permission| manifest.permissions.contains(&permission);
     if granted(Permission::MatrixBot) {
@@ -445,6 +449,26 @@ x-wonton:
   permissions: [models, tools, plugins.health, matrix.bot]
 ";
 
+    const SSO_MANIFEST: &str = "name: t
+services:
+  web:
+    image: example/t
+x-wonton:
+  spec: '0.4'
+  id: app.example.t
+  version: 0.1.0
+  kind: app
+  title: {zh: 测试, en: Test}
+  description: {zh: 测试, en: Test}
+  webui:
+    service: web
+    port: 3000
+    sso: oidc
+    oidc:
+      redirect_paths: [/oidc/callback]
+  permissions: []
+";
+
     fn public() -> PublicUrls {
         PublicUrls {
             scheme: "http".into(),
@@ -469,6 +493,27 @@ x-wonton:
             .retain(|p| *p != Permission::PluginsHealth);
         assert!(!core_aliases(&public(), &without).contains(&PLUGIN_HEALTH_HOST.to_owned()));
     }
+    #[test]
+    fn sso_plugins_reach_the_provider_by_its_internal_name_and_their_own_host() {
+        let manifest = PluginPackage::parse(SSO_MANIFEST, &Languages::from_header(Some("zh-Hans")))
+            .unwrap()
+            .manifest;
+        let aliases = core_aliases(&public(), &manifest);
+        assert!(aliases.contains(&"auth.wonton.internal".to_owned()));
+        assert!(!aliases.contains(&"auth.wonton.example".to_owned()));
+        assert!(aliases.contains(&"app-example-t.wonton.example".to_owned()));
+    }
+
+    #[test]
+    fn plugins_without_a_webui_get_no_alias_to_their_own_address() {
+        let manifest = PluginPackage::parse(MANIFEST, &Languages::from_header(Some("zh-Hans")))
+            .unwrap()
+            .manifest;
+        assert!(
+            !core_aliases(&public(), &manifest)
+                .contains(&"app-example-t.wonton.example".to_owned())
+        );
+    }
 }
 
 #[cfg(test)]
@@ -489,7 +534,7 @@ mod probe_tests {
             let n = stream.read(&mut buf).await.unwrap_or(0);
             let request = String::from_utf8_lossy(&buf[..n]);
             assert!(request.starts_with("GET / HTTP/1.1"));
-            assert!(request.contains("host: app-t.wonton.example"));
+            assert!(request.contains("host: app-example-t.wonton.example"));
             let _ = stream
                 .write_all(b"HTTP/1.1 503 Service Unavailable\r\ncontent-length: 0\r\n\r\n")
                 .await;
@@ -499,7 +544,7 @@ mod probe_tests {
             &http,
             &Endpoint::unix(&path),
             "/",
-            "app-t.wonton.example",
+            "app-example-t.wonton.example",
             PROBE_TIMEOUT,
         )
         .await;

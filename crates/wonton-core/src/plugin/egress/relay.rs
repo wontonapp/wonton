@@ -55,9 +55,7 @@ impl PluginManager {
         {
             return Ok(None);
         }
-        Ok(Some(EgressVars {
-            auth_host: self.cfg.public.auth_host(),
-        }))
+        Ok(Some(EgressVars))
     }
 
     fn relay_files(&self) -> RelayFiles {

@@ -115,7 +115,8 @@ async fn with_a_proxy_an_egress_plugin_is_sent_through_the_relay() {
 
     let env = env_of_container(&rig.docker, &container_name("app-test", "web"));
     assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
-    assert!(env["NO_PROXY"].contains("auth.wonton.localhost"));
+    assert!(env["NO_PROXY"].contains(".wonton.internal"));
+    assert!(env["NO_PROXY"].contains(".localhost"));
 
     let created = rig.relay_created();
     assert_eq!(created["Image"], IMAGE);

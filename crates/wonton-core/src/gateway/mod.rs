@@ -3,11 +3,11 @@
 //! | Host | 去向 |
 //! | --- | --- |
 //! | `<base>` | 核心：登录、状态页、插件 API、OIDC 登录与授权确认端点 |
-//! | `auth.<base>` | 身份提供方（Ory Hydra）的公开端点 |
+//! | `auth.<base>`、`auth.wonton.internal` | 身份提供方（Ory Hydra）的公开端点，发现文档按谁访问改写（ADR-0063） |
 //! | `matrix.<base>` | Matrix 客户端接口，只给经隧道的已配对设备（`matrix`） |
 //! | `push.wonton.internal` | 推送代理，只给 Tuwunel（`push`） |
 //! | `notify.wonton.internal` | 插件发通知进"Wonton"私聊，只放行申请了 `notify` 的插件（`notify`） |
-//! | `<slug>.<base>` | 插件网页，需要插件会话 |
+//! | `<slug>.<base>` | 插件网页，需要插件会话；这个插件自己网络里的容器访问它时不要（ADR-0063） |
 //!
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
 //! （[`TunnelPeer`]），网关按设备登记表认出它的人（[`Person`]，ADR-0045）。局域网浏览器仍走核心会话加
@@ -23,6 +23,7 @@ mod agent_permission;
 mod api;
 mod api_body;
 mod api_switch;
+mod auth;
 mod bot_activity;
 mod bot_profile;
 mod confirmations;
@@ -45,6 +46,7 @@ mod onboarding;
 mod pages;
 mod peers;
 mod plugin_start;
+mod plugin_web;
 mod proxy;
 mod proxy_sso;
 mod push;
@@ -85,9 +87,7 @@ use crate::matrix::Matrix;
 use crate::members::Members;
 use crate::oidc::Hydra;
 use crate::owner::{Owner, OwnerStore};
-use crate::plugin::languages::Languages;
-use crate::plugin::upstreams::Endpoint;
-use crate::plugin::{PluginManager, PluginStatus};
+use crate::plugin::PluginManager;
 use crate::push::Push;
 use crate::secret::constant_time_eq;
 use crate::tunnel::Tunnel;
@@ -453,7 +453,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
             Ok(response) => response,
             Err(never) => match never {},
         },
-        HostKind::Auth => auth_request(&gateway, req).await,
+        HostKind::Auth => auth::request(&gateway, req).await,
         HostKind::Matrix => matrix::client_request(&gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
@@ -500,65 +500,6 @@ async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &
     }
 }
 
-/// `auth.<base>`：身份提供方的公开端点（授权、令牌、用户信息、JWKS、发现文档）。
-/// 这些端点本身就面向公网设计，由协议保护；真正的用户鉴权发生在核心的登录端点。
-async fn auth_request(gateway: &Gateway, req: Request) -> Response {
-    let langs = api::languages(req.headers());
-    let Some(authority) = &gateway.hydra_public else {
-        return pages::error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "oidc_unavailable",
-            &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
-            &langs,
-        );
-    };
-    let fwd = proxy::Forwarded {
-        client: client_addr(&req),
-        scheme: &gateway.public.scheme,
-    };
-    let endpoint = crate::plugin::upstreams::Endpoint::Tcp(authority.clone());
-    let name = l10n::text(&langs, "gateway-name-oidc", &[]);
-    let target = proxy::Target {
-        endpoint: &endpoint,
-        name: &name,
-    };
-    proxy::forward(&gateway.system_http, target, req, fwd, &langs).await
-}
-
-/// 插件网页的上游地址：运行中直接给；辅助容器坏了但网页还服务着也照常转发，网页里依赖坏掉的
-/// 那部分由应用自己报错。没运行时给要直接回给客户端的错误页。
-fn plugin_upstream(
-    route: &crate::plugin::manager::Route,
-    langs: &Languages,
-) -> Result<Endpoint, Box<Response>> {
-    match (&route.status, &route.upstream) {
-        (PluginStatus::Running, Some(upstream)) => Ok(upstream.clone()),
-        (PluginStatus::Running, None) => Err(Box::new(pages::error(
-            StatusCode::NOT_FOUND,
-            "no_webui",
-            &l10n::text(langs, "gateway-no-webui", &[]),
-            langs,
-        ))),
-        (PluginStatus::Degraded { .. }, Some(upstream)) if route.web_serving => {
-            Ok(upstream.clone())
-        }
-        (status, _) => {
-            let detail = pages::state_of(status, langs);
-            Err(Box::new(pages::error_with_detail(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "not_ready",
-                &l10n::text(
-                    langs,
-                    "gateway-app-not-ready",
-                    &[("id", route.id.as_str().into())],
-                ),
-                Some(&detail),
-                langs,
-            )))
-        }
-    }
-}
-
 /// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
 /// 页面发起的请求和导航。`sso: proxy` 的插件这时加上代登录凭据（`proxy_sso`）。然后转发给插件，并过滤插件
 /// 响应里的 `Set-Cookie` 和会交出凭据的头。
@@ -577,6 +518,14 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
             &langs,
         );
     };
+    // 这个插件自己网络里的容器访问它自己的网页地址：不要会话，转给它自己的上游，也不代表任何人（ADR-0063）。
+    // 认来源用网关认出调用方的同一张表（按来源地址落在哪个插件网络里）。
+    let from_itself = client_addr(&req)
+        .and_then(|addr| gateway.plugins.source(addr.ip()))
+        .is_some_and(|source| source.id == route.id);
+    if from_itself {
+        return plugin_web::self_request(gateway, &route, req).await;
+    }
     if req.uri().path() == "/_wonton/session" {
         return sso::redeem(gateway, &host, &req);
     }
@@ -603,7 +552,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
             &langs,
         );
     }
-    let upstream = match plugin_upstream(&route, &langs) {
+    let upstream = match plugin_web::upstream(&route, &langs) {
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };

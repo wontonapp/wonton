@@ -221,3 +221,23 @@ async fn only_the_owner_on_the_plugins_own_pages_gets_proxy_credentials() {
     assert!(!seen.to_string().contains(KEY), "{seen}");
     assert!(seen["headers"].get("remote-user").is_none(), "{seen}");
 }
+
+#[tokio::test]
+async fn the_plugins_own_network_reaches_it_without_a_session_or_identity() {
+    let h = Harness::start(None).await;
+    let hits = register_vault(&h.manager).await;
+    h.manager
+        .register_source_for_test("app.vault", "127.0.0.1/32", vec![]);
+    // 容器自己发来的请求带什么同名请求头和 Cookie 都剥掉：插件后端可能转发的是某个浏览器的请求，
+    // 那套值属于别人，不是网关给它的。
+    let reply = h
+        .get(
+            VAULT_HOST,
+            "/",
+            &[("remote-user", "forged"), ("cookie", "vault_web=forged")],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    assert!(!reply.text().contains("forged"), "{}", reply.text());
+}

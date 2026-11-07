@@ -55,6 +55,17 @@ pub fn attach(
     Ok(())
 }
 
+/// 转发前：去掉浏览器发来的同名请求头和 Cookie，不加值。插件自己的容器访问自己的网页地址时用（ADR-0063）。
+pub fn strip(headers: &mut HeaderMap, auth: &ProxyAuth) {
+    for name in auth.header_names() {
+        headers.remove(name);
+    }
+    strip_cookies(headers, |name| {
+        auth.cookie_names()
+            .any(|declared| declared.as_bytes().eq_ignore_ascii_case(name))
+    });
+}
+
 /// 转发后：去掉响应里会把代加的凭据交给浏览器的头。
 pub fn scrub(headers: &mut HeaderMap, auth: &ProxyAuth) {
     let secrets = auth.secrets();

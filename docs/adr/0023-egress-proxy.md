@@ -67,7 +67,7 @@
 | 变量 | 值 |
 | --- | --- |
 | `HTTP_PROXY`、`HTTPS_PROXY`、`http_proxy`、`https_proxy` | `http://egress.wonton.internal:3128` |
-| `NO_PROXY`、`no_proxy` | `localhost,127.0.0.1,::1,.wonton.internal,auth.<基础域名>,<本插件的服务名…>,.local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16` |
+| `NO_PROXY`、`no_proxy` | `localhost,.localhost,127.0.0.1,::1,.wonton.internal,<本插件的服务名…>,.local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16` |
 | `NODE_USE_ENV_PROXY` | `1` |
 
 - **大小写都写。** apt、wget 和 curl 的明文 HTTP 只认小写；只写大写，这些程序就直接连（实测）。
