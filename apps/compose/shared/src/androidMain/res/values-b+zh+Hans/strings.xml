@@ -149,6 +149,8 @@
     <string name="confirmation_card_uncertain_result">结果不确定：%1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">放行到 %1$s</string>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_addresses_stale">服务器的地址可能已经过时，会自动再取</string>
     <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
     <string name="core_upgrade_cancel_upgrade">取消升级</string>
     <!-- Stage line after the owner cancelled the update. -->

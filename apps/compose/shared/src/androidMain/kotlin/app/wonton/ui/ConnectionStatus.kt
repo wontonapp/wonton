@@ -185,6 +185,10 @@ fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             WontonGroup {
+                if (details.addressesStale) {
+                    WontonRow(stringResource(R.string.connection_addresses_stale))
+                    WontonSeparator()
+                }
                 viewModel.path?.let { path ->
                     WontonRow("路径", path.kindText)
                     WontonSeparator()

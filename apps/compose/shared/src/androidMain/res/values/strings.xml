@@ -149,6 +149,8 @@
     <string name="confirmation_card_uncertain_result">It\'s unclear whether it worked: %1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">Approved until %1$s</string>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_addresses_stale">The server\'s address may be out of date; it will be fetched again</string>
     <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
     <string name="core_upgrade_cancel_upgrade">Cancel update</string>
     <!-- Stage line after the owner cancelled the update. -->

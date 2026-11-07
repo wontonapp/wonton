@@ -2191,6 +2191,36 @@
         }
       }
     },
+    "connection.addressesStale": {
+      "comment": "Connection details row: the stored server address may be out of date; the app keeps fetching it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server's address may be out of date; it will be fetched again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器的地址可能已经过时，会自动再取"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器的位址可能已經過時，會自動再取"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーのアドレスが古い可能性があります。自動で取り直します"
+          }
+        }
+      }
+    },
     "coreUpgrade.cancelUpgrade": {
       "comment": "Danger button while the update is running and can still be cancelled: nothing was touched yet.",
       "extractionState": "manual",

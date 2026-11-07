@@ -197,6 +197,10 @@ struct ConnectionDetailsView: View {
         ScrollView {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
                 WontonGroup {
+                    if details.addressesStale {
+                        WontonRow(title: String(localized: .connectionAddressesStale))
+                        WontonSeparator()
+                    }
                     if let path = model.viewModel.path {
                         WontonRow(title: "路径", value: path.kindText)
                         WontonSeparator()

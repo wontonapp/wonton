@@ -104,6 +104,10 @@ pub(crate) struct HomeLink {
     periodic_checks: watch::Sender<bool>,
     /// 每来一次网络变化加一，合并连着来的回调。
     network_changes: AtomicU64,
+    /// 服务端现在的地址还没取到：最早一次失败起为真，取到就清掉，断开期间保持。
+    addresses_stale: AtomicBool,
+    /// 当前取地址的任务。重连时取消旧的，同一时刻只跑一个。
+    address_refresh: std::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
 /// 到一台服务器的连接：endpoint、隧道客户端和本地代理同生共死。
@@ -164,6 +168,8 @@ impl HomeLink {
             media_generation: AtomicU64::new(0),
             periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
+            addresses_stale: AtomicBool::new(false),
+            address_refresh: std::sync::Mutex::default(),
         });
         home.runtime.spawn(background::follow_keep_connection(
             Arc::downgrade(&home),
@@ -493,6 +499,10 @@ impl HomeLink {
             status = %client.status(),
             "回到前台，隧道检查完成"
         );
+        // 后台时停下过取地址：地址还是过时就接着取。
+        if self.addresses_stale.load(Ordering::Relaxed) && self.connected().await {
+            self.spawn_address_refresh();
+        }
     }
 
     /// 和服务端做一次往返（必要时重连）。状态由 `follow_connection` 跟着隧道客户端更新。
@@ -533,7 +543,7 @@ impl HomeLink {
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
-            addresses_stale: false,
+            addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
         };
         let tick = tracker.next_tick();
         drop(tracker);
@@ -614,7 +624,9 @@ async fn follow_connection(home: Weak<HomeLink>, endpoint: Endpoint, client: Tun
         let tick = link.publish(&current, &endpoint, &client);
         let connected = current == TunnelStatus::Connected;
         if connected && !was_connected {
-            link.runtime.spawn(link.clone().refresh_addresses());
+            link.spawn_address_refresh();
+        } else if !connected {
+            link.stop_address_refresh();
         }
         was_connected = connected;
         drop(link);
