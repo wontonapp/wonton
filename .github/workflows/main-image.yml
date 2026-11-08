@@ -36,3 +36,4 @@ jobs:
           file: deploy/dev/core/Dockerfile
           version: main
           extra-build-args: WONTON_BUILD_COMMIT=${{ github.sha }}
+          cache: true

@@ -19,6 +19,12 @@ inputs:
     description: 追加的 build-arg，一行一个。代理透传是固定的，不用写。
     required: false
     default: ""
+  cache:
+    description: >-
+      用常驻构建器复用构建缓存（层缓存 + cargo 的缓存挂载），只给 main-image 传 true；release 不传，照旧每次
+      新的构建器从头编，发版产物不带缓存状态。
+    required: false
+    default: "false"
   github-token:
     description: 推 ghcr.io 用的令牌。组合 action 读不到 secrets，只能从输入拿。
     required: false
@@ -46,12 +52,39 @@ runs:
         } >> "$GITHUB_OUTPUT"
     # 容器里的构建器：Docker 自带的构建器用的是 Docker 的镜像存储，本机已有 amd64 的 debian:trixie-slim 时，构建 arm64
     # 也拿它当基础镜像（Docker 29.7.2、overlayfs 存储驱动上实测，镜像里的 arm64 程序找不到动态链接器）。每次都是新的
-    # 构建器，Rust 从头编译。构建器自己的镜像 moby/buildkit 要预先放在 runner 主机上：国内的主机连不上 Docker Hub
-    # （所以基础镜像也改从 ECR Public 拉，见核心的 Dockerfile）。
+    # 构建器，层缓存和缓存挂载都从零开始，Rust 从头编译。构建器自己的镜像 moby/buildkit 要预先放在 runner 主机上：
+    # 国内的主机连不上 Docker Hub（所以基础镜像也改从 ECR Public 拉，见核心的 Dockerfile）。
     - uses: docker/setup-buildx-action@v3
+      if: inputs.cache != 'true'
       with:
         driver-opts: network=host
         buildkitd-flags: --allow-insecure-entitlement network.host
+    # 常驻构建器（main-image 传 cache=true）：留在 runner 主机上，层缓存和 RUN --mount=type=cache（cargo registry、
+    # target）都能复用，合并后只重编工作区的 crate。缓存就是构建器的状态卷 buildx_buildkit_<名>_state，buildkitd 的
+    # gc 上限 10 GiB；整个删掉：docker buildx rm <名>。多台 runner 各有各的缓存，首次构建是冷的。
+    # buildkitd 配置在 create 时写进构建器记录，改它要先在各 runner 上 docker buildx rm 旧构建器才生效。
+    - name: 常驻构建器
+      id: builder
+      if: inputs.cache == 'true'
+      shell: bash
+      env:
+        BUILDER: wonton-cache-${{ github.workflow }}
+      run: |
+        cat > "$RUNNER_TEMP/buildkitd.toml" <<'EOF'
+        [worker.oci]
+          gc = true
+          gckeepstorage = 10737418240
+
+          [[worker.oci.gcpolicy]]
+            keepBytes = 10737418240
+            all = true
+        EOF
+        docker buildx inspect "$BUILDER" >/dev/null 2>&1 || \
+          docker buildx create --name "$BUILDER" --driver docker-container \
+            --driver-opt network=host \
+            --buildkitd-flags '--allow-insecure-entitlement network.host' \
+            --buildkitd-config "$RUNNER_TEMP/buildkitd.toml"
+        echo "name=$BUILDER" >> "$GITHUB_OUTPUT"
     - uses: docker/login-action@v3
       with:
         registry: ghcr.io
@@ -60,6 +93,7 @@ runs:
     - uses: docker/build-push-action@v6
       with:
         context: .
+        builder: ${{ steps.builder.outputs.name }}
         file: ${{ inputs.file }}
         platforms: ${{ inputs.platforms }}
         network: host
