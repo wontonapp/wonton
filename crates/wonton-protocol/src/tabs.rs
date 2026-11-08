@@ -74,6 +74,11 @@ pub enum TabRef {
         /// 清单 `tabs` 里的 `id`；空的是没声明 `tabs` 的插件的网页入口（`webui`）。
         page: Option<String>,
     },
+    /// 分享页与本机插件页、其他来源的同名插件分别持有网页状态；不授予主人管理操作。
+    SharedApp {
+        owner_user_id: String,
+        plugin_id: String,
+    },
 }
 
 /// 整个底栏，以及盖在主界面上的插件页。

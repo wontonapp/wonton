@@ -1,6 +1,7 @@
 //! App 的链接（`wonton://…`）：桌面快捷方式、快捷指令和 Siri 用它打开 App 里的某一处。格式只在这里定，两端都经核心
 //! 编解码，不自己拼。
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
 use crate::TabRef;
@@ -37,6 +38,13 @@ impl AppLink {
                     plugin_id,
                     page: Some(page),
                 } => format!("tab/plugin/{plugin_id}/{page}"),
+                TabRef::SharedApp {
+                    owner_user_id,
+                    plugin_id,
+                } => format!(
+                    "tab/shared/{}/{plugin_id}",
+                    URL_SAFE_NO_PAD.encode(owner_user_id)
+                ),
             },
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
@@ -62,6 +70,21 @@ impl AppLink {
                 tab(TabRef::Plugin {
                     plugin_id: (*plugin_id).to_owned(),
                     page: Some((*page).to_owned()),
+                })
+            }
+            ["tab", "shared", owner, plugin_id] if is_id(plugin_id) => {
+                let bytes = URL_SAFE_NO_PAD.decode(owner).ok()?;
+                let owner_user_id = String::from_utf8(bytes).ok()?;
+                let (local, server) = owner_user_id.strip_prefix('@')?.split_once(':')?;
+                if local.is_empty()
+                    || server.is_empty()
+                    || owner_user_id.chars().any(char::is_control)
+                {
+                    return None;
+                }
+                tab(TabRef::SharedApp {
+                    owner_user_id,
+                    plugin_id: (*plugin_id).to_owned(),
                 })
             }
             ["new-chat"] => Some(Self::NewChat),
@@ -113,6 +136,12 @@ mod tests {
                 tab: TabRef::Plugin {
                     plugin_id: "grafana".into(),
                     page: Some("explore".into()),
+                },
+            },
+            AppLink::Tab {
+                tab: TabRef::SharedApp {
+                    owner_user_id: "@alice/smith:[2001:db8::1]:8448".into(),
+                    plugin_id: "app.snake".into(),
                 },
             },
             AppLink::NewChat,

@@ -41,7 +41,7 @@ struct TabIconView: View {
     private var builtin: WontonIcon {
         switch item.tab {
         case .chat: selected ? .chatFill : .chat
-        case .apps, .plugin: selected ? .appsFill : .apps
+        case .apps, .plugin, .sharedApp: selected ? .appsFill : .apps
         case .settings: selected ? .settingsFill : .settings
         }
     }

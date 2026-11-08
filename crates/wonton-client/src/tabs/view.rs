@@ -85,7 +85,7 @@ fn build_item(
     fixed: bool,
 ) -> TabItem {
     let page = match &stored.tab {
-        TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
+        TabRef::Chat | TabRef::Apps | TabRef::Settings | TabRef::SharedApp { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -257,6 +257,11 @@ pub(super) fn stored_item_for_tab(
             CATALOG,
             language(),
             "tabs-view-always-pinned"
+        ))),
+        TabRef::SharedApp { .. } => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-unknown-plugin"
         ))),
         TabRef::Plugin { plugin_id, page } => {
             let Some(installed) = plugins.installed.as_ref() else {

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{TabDisplay, TabState};
+use crate::{ProxySettings, TabDisplay, TabState};
 
 /// 应用页可显示的入口；未列出的入口不显示，外部 Matrix 槽位不列 Store 或 AddSource。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +76,7 @@ pub struct SharedAppsSource {
     pub owner_display_name: Option<String>,
     /// 分享人的 Matrix 服务器名，不是 endpoint ID 或自家槽位的 ID。
     pub server_name: String,
+    /// 该来源的分享连接状态；网页只用这里 Ready 携带的代理，不借自家 HomeViewModel。
     pub state: SharedAppsState,
     /// 最近一次成功返回的列表；失败时可以保留，但不能当作授权仍有效的依据。
     pub apps: Vec<SharedAppRow>,
@@ -86,7 +87,11 @@ pub struct SharedAppsSource {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum SharedAppsState {
     Loading,
-    Ready,
+    /// 已完成可信发现、OpenID 认证并取得列表；代理只路由到该来源的分享连接。
+    /// 连接结束就离开 Ready，旧列表可以保留，旧代理不可继续用于加载网页。
+    Ready {
+        proxy: ProxySettings,
+    },
     Failed {
         problem: ShareProblem,
     },
