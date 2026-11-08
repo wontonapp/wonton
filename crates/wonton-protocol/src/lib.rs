@@ -25,6 +25,7 @@ mod friends;
 mod home;
 mod lan;
 mod link;
+mod link_preview;
 mod matrix_login;
 mod onboarding;
 mod owner;
@@ -123,6 +124,9 @@ pub use lan::{
     LanProblem, LanProtocol, LanSettings,
 };
 pub use link::AppLink;
+pub use link_preview::{
+    LINK_PREVIEW_PATH, LinkPreview, LinkPreviewFailure, LinkPreviewImage, link_preview_image_path,
+};
 pub use matrix_login::{
     MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
