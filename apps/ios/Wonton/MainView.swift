@@ -44,7 +44,7 @@ struct MainView: View {
                 presentPendingSettings()
             }, content: { choice in
                 if let page = onboardingGatewayPage {
-                    TabPageView(tabs: tabs, home: home, plugins: plugins, appearance: appearance,
+                    TabPageView(tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
                                 tab: choice.tab, page: page, isOverlay: true, draft: receiveDraft, open: open,
                                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom, close: {
                         tabs.send(.closeTabOverlay)
@@ -146,7 +146,7 @@ struct MainView: View {
 
     private func pluginPage(_ tab: TabRef, page: TabPage, overlay: Bool) -> some View {
         TabPageView(
-            tabs: tabs, home: home, plugins: plugins, appearance: appearance,
+            tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
             tab: tab, page: page, isOverlay: overlay, draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom
         )

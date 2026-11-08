@@ -285,6 +285,8 @@ struct WontonPushedBar<Trailing: View>: View {
     var iconLabel = String(localized: .designBack)
     var showsStatus = false
     var showsStatusLine = false
+    /// 标题旁的头像（Bot 聊天的顶栏，ADR-0044）。
+    var avatar: AnyView?
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
@@ -296,11 +298,14 @@ struct WontonPushedBar<Trailing: View>: View {
         VStack(spacing: 0) {
             ZStack {
                 VStack(spacing: 0) {
-                    Text(title)
-                        .wontonText(WontonTheme.typography.itemTitle)
-                        .foregroundStyle(Color(colors.textPrimary))
-                        .lineLimit(1)
-                        .accessibilityAddTraits(.isHeader)
+                    HStack(spacing: WontonTheme.spacing.s8) {
+                        if let avatar { avatar }
+                        Text(title)
+                            .wontonText(WontonTheme.typography.itemTitle)
+                            .foregroundStyle(Color(colors.textPrimary))
+                            .lineLimit(1)
+                            .accessibilityAddTraits(.isHeader)
+                    }
                     if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {
                         Text(subtitle)
                             .wontonText(WontonTheme.typography.caption)
@@ -340,12 +345,14 @@ extension View {
 
     func wontonPushedScreen<Trailing: View>(
         _ title: String,
+        avatar: AnyView? = nil,
         showsStatus: Bool = false,
         showsStatusLine: Bool = false,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let bar = WontonPushedBar(
-            title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine, trailing: trailing
+            title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine,
+            avatar: avatar, trailing: trailing
         )
         return wontonTopBar { bar }
             .toolbar(.hidden, for: .navigationBar)

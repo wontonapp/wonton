@@ -24,7 +24,7 @@ struct ChatListView: View {
                             InviteRow(row: row, model: model)
                         } else {
                             NavigationLink(value: ChatRoute.room(row.roomId)) {
-                                RoomRowView(row: row, plugins: plugins)
+                                RoomRowView(row: row, model: model, plugins: plugins)
                             }
                             .buttonStyle(.plain)
                         }
@@ -44,7 +44,7 @@ struct ChatListView: View {
                 switch route {
                 case let .room(roomId):
                     // 提示条把路径直接换成另一个房间时，SwiftUI 会复用这个视图，@State 里还是旧房间的时间线。
-                    ChatRoomView(model: model, roomId: roomId, title: model.title(of: roomId))
+                    ChatRoomView(model: model, plugins: plugins, roomId: roomId, title: model.title(of: roomId))
                         .id(roomId)
                 case .chatBackup:
                     ChatBackupView(model: model)
@@ -177,6 +177,7 @@ private struct VisitedRoom: Hashable {
 /// `navigationDestination(item:)` 放在根上会先弹掉已经压进去的页面，所以走路径。
 struct VisitingRoomModifier: ViewModifier {
     let model: ChatModel
+    let plugins: PluginsModel
     let tab: AppTab
     @Binding var path: NavigationPath
     @State private var depth = 0
@@ -184,7 +185,7 @@ struct VisitingRoomModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .navigationDestination(for: VisitedRoom.self) { room in
-                ChatRoomView(model: model, roomId: room.roomId, title: model.title(of: room.roomId))
+                ChatRoomView(model: model, plugins: plugins, roomId: room.roomId, title: model.title(of: room.roomId))
                     .id(room.roomId)
             }
             .onChange(of: model.shownRoom(in: tab)) { _, roomId in
@@ -213,12 +214,13 @@ private struct NoChats: View {
 
 private struct RoomRowView: View {
     let row: RoomRow
+    let model: ChatModel
     let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            RoomAvatar(row: row, plugins: plugins)
+            RoomAvatar(row: row, model: model, plugins: plugins)
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     HStack(spacing: WontonTheme.spacing.s4) {
@@ -273,9 +275,10 @@ private struct RoomRowView: View {
     }
 }
 
-/// Bot 用它的应用的图标，其他人用名字的第一个字。
+/// Bot 的私聊行用 Bot 头像（状态头像优先，ADR-0044），其他装了应用的用应用图标，其余人用名字的第一个字。
 private struct RoomAvatar: View {
     let row: RoomRow
+    let model: ChatModel
     let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
 
@@ -286,7 +289,9 @@ private struct RoomAvatar: View {
 
     var body: some View {
         let size = WontonTheme.size.avatar
-        if let plugin {
+        if let bot = row.directUserId.flatMap({ id in model.viewModel.bots.first { $0.userId == id } }) {
+            BotAvatarView(bot: bot, pluginIcon: plugin?.icon, core: plugins.core, model: plugins, size: size)
+        } else if let plugin {
             PluginIconView(icon: plugin.icon, size: size, model: plugins)
         } else {
             Text(row.name.prefix(1).uppercased())

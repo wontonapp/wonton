@@ -43,13 +43,15 @@ struct HomeView: View {
                         }
                 }
             }
-            .modifier(VisitingRoomModifier(model: chat, tab: .apps, path: $path))
+            .modifier(VisitingRoomModifier(model: chat, plugins: plugins, tab: .apps, path: $path))
             .navigationDestination(for: AppsRoute.self) { route in
                 switch route {
                 case .store: StoreView(model: plugins, open: open)
                 }
             }
-            .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
+            .navigationDestination(for: PluginRoute.self) { route in
+                PluginDetailView(model: plugins, chat: chat, route: route, open: open)
+            }
             .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
                 guard !openedDevPage, let devWebURL,
                       let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),

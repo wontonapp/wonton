@@ -5,6 +5,7 @@ struct TabPageView: View {
     let tabs: TabsModel
     let home: HomeModel
     let plugins: PluginsModel
+    let chat: ChatModel
     let appearance: AppearanceModel
     let tab: TabRef
     let page: TabPage
@@ -31,7 +32,7 @@ struct TabPageView: View {
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
 
     init(
-        tabs: TabsModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
+        tabs: TabsModel, home: HomeModel, plugins: PluginsModel, chat: ChatModel, appearance: AppearanceModel,
         tab: TabRef, page: TabPage, isOverlay: Bool,
         draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void,
         pendingCards: [PendingConfirmation], openCardRoom: @escaping (String) -> Void,
@@ -40,6 +41,7 @@ struct TabPageView: View {
         self.tabs = tabs
         self.home = home
         self.plugins = plugins
+        self.chat = chat
         self.appearance = appearance
         self.tab = tab
         self.page = page
@@ -105,7 +107,7 @@ struct TabPageView: View {
         .sheet(isPresented: $showsDetails) {
             if let pluginId {
                 NavigationStack {
-                    PluginDetailView(model: plugins, route: .installed(id: pluginId)) { entry in
+                    PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
                         showsDetails = false
                         open(entry)
                     }

@@ -59,3 +59,26 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         TARGETED_DEVICE_FAMILY: "1"
+
+  WontonUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - WontonUITests
+    dependencies:
+      - target: Wonton
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Wonton
+
+schemes:
+  Wonton:
+    build:
+      targets:
+        Wonton: all
+        WontonUITests: [test]
+    test:
+      targets:
+        - WontonUITests

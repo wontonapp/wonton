@@ -3,6 +3,7 @@ import WontonClient
 
 struct ChatRoomView: View {
     let model: ChatModel
+    let plugins: PluginsModel
     let roomId: String
     let title: String
     @State private var timeline: TimelineModel
@@ -13,8 +14,9 @@ struct ChatRoomView: View {
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(TabsModel.self) private var tabs
 
-    init(model: ChatModel, roomId: String, title: String) {
+    init(model: ChatModel, plugins: PluginsModel, roomId: String, title: String) {
         self.model = model
+        self.plugins = plugins
         self.roomId = roomId
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId))
@@ -44,7 +46,8 @@ struct ChatRoomView: View {
         .modifier(RoomPresentations(presenter: presenter))
         .environment(model.files)
         .environment(presenter)
-        .wontonPushedScreen(title, showsStatus: true) { EmptyView() }
+        // 和 Bot 的私聊：顶栏是它的头像和 Matrix 名字，不写状态文字（ADR-0044）。
+        .wontonPushedScreen(bot?.name ?? title, avatar: barAvatar, showsStatus: true) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task(id: timeline.attempt) {
@@ -135,6 +138,22 @@ struct ChatRoomView: View {
 
     private var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false
+    }
+
+    /// 私聊对方是已装应用的 Bot 时非空。
+    private var bot: BotView? {
+        guard let directId = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId else {
+            return nil
+        }
+        return model.viewModel.bots.first { $0.userId == directId }
+    }
+
+    private var barAvatar: AnyView? {
+        guard let bot else { return nil }
+        let plugin = plugins.viewModel.installed?.plugins.first { $0.botUserId == bot.userId }
+        return AnyView(BotAvatarView(
+            bot: bot, pluginIcon: plugin?.icon, core: model.core, model: plugins, size: WontonTheme.size.avatar
+        ).accessibilityIdentifier("roomTopBarAvatar"))
     }
 
     private var isReadOnly: Bool {

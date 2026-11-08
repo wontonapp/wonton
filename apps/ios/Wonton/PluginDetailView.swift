@@ -4,6 +4,7 @@ import WontonClient
 /// 插件的详情页：商店里的看来源最新的版本，主屏上的看装着的版本。
 struct PluginDetailView: View {
     let model: PluginsModel
+    let chat: ChatModel
     let route: PluginRoute
     let open: (PluginEntry) -> Void
     @State private var loaded: Result<PluginDetail, Error>?
@@ -55,6 +56,9 @@ struct PluginDetailView: View {
         case let .success(detail):
             ScrollView {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+                    if detail.installed != nil {
+                        BotProfileSection(chat: chat, plugins: model, pluginId: detail.id)
+                    }
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let task, task.state != .succeeded || task.hasAddedToolsNews {
                         TaskRow(model: model, task: task) {
