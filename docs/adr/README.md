@@ -68,6 +68,7 @@
 | [0056](0056-internal-mailbox.md) | 每个人一个不变的内部邮箱，应用发的信转进聊天 |
 | [0057](0057-optional-permissions.md) | 可选权限：声明成默认关，主人自己打开 |
 | [0058](0058-agent-side-sessions.md) | Agent 的话题会话：都能干活，互相知道对方在做什么，改同一个文件时排队 |
+| [0059](0059-team-ops-plugins.md) | 多 Agent 团队作战：接入现成的编排器，每个做成一个插件 |
 | [0060](0060-chat-layouts.md) | 聊天页的显示方式：气泡或文档，核心合成，壳只画预设 |
 | [0061](0061-agent-runtime-and-frontends.md) | Agent 的运行时和前端分开：运行时经一道 ACP 网关提供能力，聊天、网页、看板都是前端 |
 | [0062](0062-desktop-vm-host.md) | Mac 和 Windows 当服务器：云吞自带一台隐藏的 Linux 虚拟机 |
