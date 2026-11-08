@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 
 use iroh::EndpointId;
 use wonton_client::{
-    Action, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure, HomeStatus, PushMethod,
+    Action, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure, HomeStatus, HomeViewModel,
+    PushMethod,
 };
 
 #[tokio::test]
@@ -474,7 +475,7 @@ async fn background_requests_keep_the_connection_when_backgrounded_before_connec
     assert_eq!(opened.get(), connections, "健康连接回前台不应被替换");
 }
 
-/// 抖一下没有提示；断得久一点说“连接中”；回来了自动消失。说得久的情况在 `home::connection` 的测试里。
+/// 抖一下没有提示；第一次重连失败就如实说连不上；回来了自动消失。
 #[tokio::test]
 async fn an_outage_comes_and_goes_in_plain_words() {
     let dir = tempfile::tempdir().unwrap();
@@ -487,9 +488,7 @@ async fn an_outage_comes_and_goes_in_plain_words() {
     assert_eq!(connected.notice, None);
 
     let port = home.stop().await;
-    let view = phone
-        .wait_for(|view| view.notice == Some(ConnectionNotice::Connecting))
-        .await;
+    let view = phone.wait_for(first_unreachable).await;
     assert!(view.details.disconnects >= 1, "{view:?}");
     assert!(view.details.last_connected_at_ms.is_some(), "{view:?}");
 
@@ -499,6 +498,112 @@ async fn an_outage_comes_and_goes_in_plain_words() {
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
     assert_eq!(view.notice, None);
+}
+
+/// 提示里“连不上”的那一档，配没配中继都算数。
+pub(crate) fn first_unreachable(view: &HomeViewModel) -> bool {
+    matches!(
+        view.notice,
+        Some(ConnectionNotice::Unreachable { .. } | ConnectionNotice::ServerOffline { .. })
+    )
+}
+
+/// 先失败、再连上、再断开：新一轮还没失败过时，不能把上一轮的失败带出来；“详情”里的上次失败照旧保留。
+#[tokio::test]
+async fn a_new_outage_does_not_inherit_the_previous_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+
+    // 先失败：这一轮建连失败过，马上如实说连不上。
+    let port = home.stop().await;
+    let view = phone.wait_for(first_unreachable).await;
+    assert!(view.details.last_failure.is_some(), "{view:?}");
+
+    // 再连上：旧失败原文留在详情里（排查信息不因连上丢掉），但状态不带出来。
+    home.start_again(port).await;
+    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    assert!(
+        phone.home().details.last_failure.is_some(),
+        "{:?}",
+        phone.home()
+    );
+
+    // 再断开。停掉定时检查就没有新的失败，断开的说法只能是宽限和“连接中”，不能说连不上；
+    // 详情里的上次失败是排查信息，不受状态影响。
+    phone.stop_periodic_checks();
+    home.stop().await;
+    let view = phone
+        .wait_for(|view| {
+            view.status != HomeStatus::Connected
+                && view.notice == Some(ConnectionNotice::Connecting)
+        })
+        .await;
+    assert!(view.details.last_failure.is_some(), "{view:?}");
+}
+
+/// 切到连不上的服务器：第一次建连失败就说连不上，不等 30 秒；自动重试不占着“重试”按钮。
+#[tokio::test]
+async fn switching_to_an_unreachable_server_says_so_after_the_first_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let a = Home::start(&[phone.device_id()]).await;
+    let mut b = Home::start(&[phone.device_id()]).await;
+    phone.connect(&a);
+    phone
+        .wait_for(|view| {
+            view.status == HomeStatus::Connected
+                && view.server_id.as_deref()
+                    == Some(a.server().endpoint().id().to_string().as_str())
+        })
+        .await;
+    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .wait_for(|view| view.status == HomeStatus::NotConfigured)
+        .await;
+    phone.connect(&b);
+    phone
+        .wait_for(|view| {
+            view.status == HomeStatus::Connected
+                && view.server_id.as_deref()
+                    == Some(b.server().endpoint().id().to_string().as_str())
+        })
+        .await;
+    phone
+        .dispatch(Action::SwitchServer { id: "1".into() })
+        .unwrap();
+    phone
+        .wait_for(|view| {
+            view.status == HomeStatus::Connected
+                && view.server_id.as_deref()
+                    == Some(a.server().endpoint().id().to_string().as_str())
+        })
+        .await;
+
+    b.stop().await;
+    phone
+        .dispatch(Action::SwitchServer { id: "2".into() })
+        .unwrap();
+    // 旧行为要等满 30 秒才换说法；第一次失败就试（对死端口要等到 12 秒的建连限时，上限留出余量但仍小于 30 秒）。
+    let view = tokio::time::timeout(Duration::from_secs(20), phone.wait_for(first_unreachable))
+        .await
+        .expect("第一次建连失败后就要显示连不上");
+    assert!(view.details.last_failure.is_some(), "{view:?}");
+    assert!(
+        matches!(
+            view.notice,
+            Some(ConnectionNotice::Unreachable { retrying: false })
+                | Some(ConnectionNotice::ServerOffline { retrying: false })
+        ),
+        "{view:?}"
+    );
 }
 
 #[tokio::test]

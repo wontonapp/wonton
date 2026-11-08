@@ -100,6 +100,9 @@ pub struct TunnelStats {
     pub sent_packets: u64,
     /// 当前连接判定丢失的 QUIC 包数。
     pub lost_packets: u64,
+    /// 距上次确认连上，建连已经失败的次数，连上就清零：判断“这一轮是不是已经失败过”用。给人看的
+    /// 失败原因在 [`Self::last_failure`]，那边连上之后还留着。
+    pub failed_dials: u32,
     /// 最近一次失败的原因。连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<TunnelError>,
 }
@@ -650,6 +653,9 @@ impl Inner {
     fn dial_failed(&self, err: TunnelError, server: &impl fmt::Display) -> TunnelError {
         info!(%server, "隧道建连失败：{err}");
         lock(&self.pacing).failed();
+        let mut stats = lock(&self.stats);
+        stats.failed_dials = stats.failed_dials.saturating_add(1);
+        drop(stats);
         self.set_status(TunnelStatus::Disconnected(err.clone()));
         err
     }
@@ -661,7 +667,10 @@ impl Inner {
         }
         *lock(&self.confirmed) = Some(conn_id);
         lock(&self.pacing).reset();
-        lock(&self.stats).last_confirmed = Some(SystemTime::now());
+        let mut stats = lock(&self.stats);
+        stats.last_confirmed = Some(SystemTime::now());
+        stats.failed_dials = 0;
+        drop(stats);
         self.set_status(TunnelStatus::Connected);
     }
 

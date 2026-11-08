@@ -568,7 +568,7 @@ impl HomeLink {
         let relay = relay_check(endpoint);
         let stats = client.stats();
         let mut tracker = self.lock_tracker();
-        if let Some(recovery) = tracker.observe(&status, relay, now) {
+        if let Some(recovery) = tracker.observe(&status, relay, stats.failed_dials, now) {
             let outage_ms = recovery.outage.as_millis();
             tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
         }
