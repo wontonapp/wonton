@@ -1,8 +1,10 @@
 //! 两个账号经 Simplified Sliding Sync 互发文字和图片。
 
+use std::time::Duration;
+
 use wonton_matrix::{
-    ChatRoom, Error, ImageContent, ImageUpload, MatrixSession, Membership, Message, MessageBody,
-    SendStatus, UserId,
+    ChatRoom, Error, ImageContent, ImageUpload, MISSED_GRACE, MatrixSession, Membership, Message,
+    MessageBody, SendStatus, UserId,
 };
 
 use crate::support::{TempStore, TestServer, eventually, random_bytes, unique};
@@ -172,6 +174,74 @@ async fn redacted_message_shows_as_redacted_to_both_sides() {
         })
         .await;
     }
+}
+
+/// 缓存里有、时间线里没有的事件：刚缺席的那一小会儿不算漏（事件先落进缓存，时间线经异步的订阅才拿到，中间本来
+/// 就有窗口），一直不在才当漏了，过了宽限报出来；重建以后从缓存补回。宽限内到了时间线的，过了宽限也不再报。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_missing_cached_event_is_reported_only_after_the_grace_and_then_rebuilt_back() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("Alice 建私聊");
+    eventually("Bob 收到邀请", bob.rooms().await.unwrap(), |rooms| {
+        rooms
+            .iter()
+            .find(|room| room.room_id == room_id && room.membership == Membership::Invited)
+            .map(|_| ())
+    })
+    .await;
+    bob.join_room(&room_id).await.expect("Bob 加入私聊");
+    let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
+    let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
+
+    alice_room
+        .send_text("会缺席的一条")
+        .await
+        .expect("Alice 发文字");
+    wait_for_text(&bob_room, "Bob 收到", alice.user_id(), "会缺席的一条").await;
+
+    // 时间线清空、事件缓存不动：缓存里有、时间线里没有，和活事件被 SDK 丢掉时一样。
+    bob_room.timeline().await.clear().await;
+    assert!(
+        bob_room.missed_cached_event(None).await.is_none(),
+        "刚缺席就当成漏了"
+    );
+    tokio::time::sleep(MISSED_GRACE + Duration::from_millis(500)).await;
+    let missed = bob_room
+        .missed_cached_event(None)
+        .await
+        .expect("过了宽限还是不在，该报漏了");
+    assert!(
+        missed.absent >= MISSED_GRACE,
+        "缺席时长没到宽限：{missed:?}"
+    );
+
+    // 报过的那条记下来，同一个 ID 不再重复触发。
+    assert!(
+        bob_room
+            .missed_cached_event(Some(&missed.id))
+            .await
+            .is_none()
+    );
+
+    bob_room.rebuild_timeline().await.expect("重建时间线");
+    wait_for_text(&bob_room, "重建后补回", alice.user_id(), "会缺席的一条").await;
+
+    // 宽限内就进了时间线的，过了宽限也不再报。
+    alice_room
+        .send_text("按时到的")
+        .await
+        .expect("Alice 再发一条");
+    wait_for_text(&bob_room, "Bob 收到第二条", alice.user_id(), "按时到的").await;
+    tokio::time::sleep(MISSED_GRACE + Duration::from_millis(500)).await;
+    assert!(bob_room.missed_cached_event(None).await.is_none());
 }
 
 /// 发图后，对方收到的图片带着原来的元数据，凭句柄下载到的字节与原图一致。

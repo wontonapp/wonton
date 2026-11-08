@@ -5,7 +5,9 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, mpsc, watch};
-use wonton_matrix::{BackPaginationStatus, ChatRoom, TimelineEntry, Vector, VectorDiff};
+use wonton_matrix::{
+    BackPaginationStatus, ChatRoom, MissedEvent, TimelineEntry, Vector, VectorDiff,
+};
 use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
 
 use super::confirmation::{Cards, CardsView};
@@ -102,8 +104,7 @@ async fn forward(
                     let Some(batch) = batch else { return };
                     let cleared = batch.iter().any(|diff| matches!(diff, VectorDiff::Clear));
                 if cleared {
-                    // 这一批是缓存从头重来：先告诉壳清空，剩下的增量反正换时间线后会整份重发，不再跟着发。
-                    Batch::Sent(send(sender, vec![TimelineDiff::Clear], status), true)
+                    clear_batch(room, &mut entries, batch, &shown, &mut read, sender, status)
                 } else {
                     let mut out = refresh(&entries, &mut shown, &cards, &read);
                     for diff in batch {
@@ -111,18 +112,15 @@ async fn forward(
                         diff.apply(&mut entries);
                     }
                     out.extend(move_read_mark(&entries, &shown, &mut read));
-                    // 缓存里已经有的事件没进时间线（活事件在时间线刚建好时被丢掉）：也重建一次，从缓存补回来。
-                    let missed = room.missed_cached_event(rebuilt_for.as_deref()).await;
-                    if missed.is_some() {
-                        rebuilt_for = missed.clone();
-                    }
-                    Batch::Sent(send(sender, out, status), missed.is_some())
+                    // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
+                    Batch::Sent(send(sender, out, status), false)
                 }
             }
             _ = check.tick() => {
                 match room.missed_cached_event(rebuilt_for.as_deref()).await {
                     Some(missed) => {
-                        rebuilt_for = Some(missed);
+                        log_rebuild(room, "missed-cached-event", Some(&missed));
+                        rebuilt_for = Some(missed.id);
                         Batch::Sent(Ok(()), true)
                     }
                     None => continue,
@@ -141,18 +139,16 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    let refreshed = refresh(&entries, &mut shown, &cards, &read);
-                    if refreshed.is_empty() {
+                    let Some(batch) = refreshed_batch(&entries, &mut shown, &cards, &read, sender, status) else {
                         continue;
-                    }
-                    Batch::Sent(send(sender, refreshed, status), false)
+                    };
+                    batch
                 }
                 () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
-                    let refreshed = refresh(&entries, &mut shown, &cards, &read);
-                    if refreshed.is_empty() {
+                    let Some(batch) = refreshed_batch(&entries, &mut shown, &cards, &read, sender, status) else {
                         continue;
-                    }
-                    Batch::Sent(send(sender, refreshed, status), false)
+                    };
+                    batch
                 }
             };
             match sent {
@@ -171,6 +167,106 @@ async fn forward(
                 Batch::Sent(Ok(()), false) => {}
             }
         }
+    }
+}
+
+/// 这一批里有 Clear：SDK 重置时间线时会把重读的内容跟在同一批里发过来。把重读的结果折成最小的增删交给壳，
+/// 不惊动它的清屏；开头的条目变了、或者一下子少了东西（同步从头来过）才返回 `None`，由调用方清空重建。
+fn clear_batch(
+    room: &ChatRoom,
+    entries: &mut Vector<TimelineEntry>,
+    batch: Vec<VectorDiff<TimelineEntry>>,
+    shown: &CardsView,
+    read: &mut ReadMark,
+    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    status: BackPagination,
+) -> Batch {
+    let replaced = reset_diffs(entries, &batch, shown, read);
+    tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
+    let Some(mut out) = replaced else {
+        return Batch::Sent(send(sender, vec![TimelineDiff::Clear], status), true);
+    };
+    out.extend(move_read_mark(entries, shown, read));
+    Batch::Sent(send(sender, out, status), false)
+}
+
+/// 把一次重置折成增删：返回 `Some` 时已经换上新的条目，`None` 表示这次重置动到了开头或丢了条目，要清空重建。
+/// 广播频道跟不上时重发的就是同一批事件（只多不少、开头逐条相同），这样壳不会被清屏；同步从头来过时会从最新
+/// 一段重来，开头对不上。
+fn reset_diffs(
+    entries: &mut Vector<TimelineEntry>,
+    batch: &[VectorDiff<TimelineEntry>],
+    shown: &CardsView,
+    read: &ReadMark,
+) -> Option<Vec<TimelineDiff>> {
+    let mut replacement = entries.clone();
+    for diff in batch {
+        diff.clone().apply(&mut replacement);
+    }
+    let render = |items: &Vector<TimelineEntry>| {
+        items
+            .iter()
+            .map(|entry| timeline_item(entry.clone(), shown, read))
+            .collect::<Vec<_>>()
+    };
+    let (old, new) = (render(entries), render(&replacement));
+    let mut prefix = 0;
+    while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
+        prefix += 1;
+    }
+    if prefix == 0 || new.len() < old.len() {
+        return None;
+    }
+    let mut suffix = 0;
+    while suffix < old.len() - prefix
+        && suffix < new.len() - prefix
+        && old[old.len() - 1 - suffix] == new[new.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+    let mut out = Vec::new();
+    for index in (prefix..old.len() - suffix).rev() {
+        out.push(TimelineDiff::Remove {
+            index: u32::try_from(index).unwrap_or(u32::MAX),
+        });
+    }
+    for (offset, item) in new[prefix..new.len() - suffix].iter().enumerate() {
+        out.push(TimelineDiff::Insert {
+            index: u32::try_from(prefix + offset).unwrap_or(u32::MAX),
+            item: item.clone(),
+        });
+    }
+    *entries = replacement;
+    Some(out)
+}
+
+/// 卡片显示变了时要发的 `Set`；没变时返回 `None`，这一批不发。
+fn refreshed_batch(
+    entries: &Vector<TimelineEntry>,
+    shown: &mut CardsView,
+    cards: &Cards,
+    read: &ReadMark,
+    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    status: BackPagination,
+) -> Option<Batch> {
+    let refreshed = refresh(entries, shown, cards, read);
+    if refreshed.is_empty() {
+        return None;
+    }
+    Some(Batch::Sent(send(sender, refreshed, status), false))
+}
+
+/// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。
+fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEvent>) {
+    match missed {
+        Some(missed) => tracing::info!(
+            room_id = %room.room_id(),
+            reason,
+            event_id = %missed.id,
+            absent = ?missed.absent,
+            "rebuilding the timeline"
+        ),
+        None => tracing::info!(room_id = %room.room_id(), reason, "rebuilding the timeline"),
     }
 }
 

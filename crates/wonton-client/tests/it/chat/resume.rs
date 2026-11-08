@@ -218,7 +218,8 @@ async fn edits_reactions_and_redactions_do_not_rebuild_the_timeline() {
         .await;
     assert!(
         !chat.timeline.was_cleared(),
-        "编辑、回应、撤回不该重建整条时间线"
+        "编辑、回应、撤回不该重建整条时间线；重建原因：{}",
+        chat.timeline.cleared_reasons()
     );
 }
 
@@ -282,6 +283,7 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         .await;
     assert!(
         chat.timeline.was_cleared(),
-        "同步没有从头开始，这条测试没测到"
+        "同步没有从头开始，这条测试没测到；重建原因：{}",
+        chat.timeline.cleared_reasons()
     );
 }

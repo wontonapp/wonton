@@ -1,6 +1,10 @@
 //! 一个已打开房间的时间线：收发文字和图片（发送失败的可以重发、取消）、按增量观察条目、向前翻页、发已读回执。
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use futures_util::{Stream, StreamExt, future, stream};
 use matrix_sdk::{
@@ -42,6 +46,15 @@ const UPLOAD_LIMIT_WAIT: Duration = Duration::from_secs(5);
 const FIRST_MEMBERS_RETRY: Duration = Duration::from_secs(2);
 const MAX_MEMBERS_RETRY: Duration = Duration::from_secs(30);
 
+/// 一个事件“在缓存里、时间线里没有”持续这么久才算真漏了。
+///
+/// 事件先落进事件缓存，时间线订阅是异步的（缓存更新经广播交给时间线），两处之间本来就有窗口；每秒一次的检查和
+/// 每批增量后的检查撞上这个窗口，就会把刚到的事件当成丢掉的，清屏重画整条时间线。负载高时窗口能到几百毫秒。
+/// 两秒比窗口宽一个量级；真漏了也只晚两秒补回来，比误重建（壳清屏重画）划算得多。
+///
+/// 用本机的单调时钟算，不比 `origin_server_ts`：服务器和手机的时钟可能不齐，时间戳也不代表事件到本机的时刻。
+pub const MISSED_GRACE: Duration = Duration::from_secs(2);
+
 /// 要发送的图片。
 #[derive(Clone, Debug)]
 pub struct ImageUpload {
@@ -79,11 +92,22 @@ pub enum BackPaginationStatus {
     ReachedStart,
 }
 
+/// 缓存里有、时间线里一直没有的事件。
+#[derive(Clone, Debug)]
+pub struct MissedEvent {
+    /// 事件 ID。
+    pub id: OwnedEventId,
+    /// 从第一次看到它缺席到现在过了多久（本机单调时钟）。
+    pub absent: Duration,
+}
+
 /// 一个已打开的房间。
 pub struct ChatRoom {
     room: Room,
     /// 时间线。事件缓存被清空重来时要换一条，房间对象本身不换（发消息、翻页都还走它）。
     timeline: tokio::sync::RwLock<Arc<Timeline>>,
+    /// 缓存里有、时间线里一直没有的事件第一次被看到缺席的时间。
+    missing: tokio::sync::Mutex<HashMap<OwnedEventId, Instant>>,
     names: watch::Receiver<Arc<MemberNames>>,
     /// 房间有更新时在后台刷新显示名；房间关掉时停止。
     refresh: JoinHandle<()>,
@@ -130,19 +154,22 @@ impl ChatRoom {
         Ok(Self {
             room,
             timeline: tokio::sync::RwLock::new(timeline),
+            missing: tokio::sync::Mutex::new(HashMap::new()),
             names,
             refresh,
             profiles,
         })
     }
 
-    /// 缓存里有、时间线里没有的“该自己成一项”的事件时返回它的 ID——活事件在时间线刚建好时被丢掉就是这种样子。
-    /// `seen` 是上一次已经因此重建过的 ID，同一个 ID 不再触发，免得反复重建。
+    /// 缓存里有、时间线里没有超过 [`MISSED_GRACE`] 的“该自己成一项”的事件时返回它——活事件在时间线刚建好时被丢掉
+    /// 就是这种样子。`seen` 是上一次已经因此重建过的 ID，同一个 ID 不再触发，免得反复重建。
     ///
     /// 只看最近几条（`LOOK_BACK`）：丢的那条常常不是最新一条（后面又来了一条），所以逐条问时间线有没有，缺哪条算哪条。
-    /// 编辑（`m.replace`）、表情回应（`m.annotation`）、撤回不会在时间线里单独成一项，跳过不比；解不开的加密事件也先跳
-    /// 过，解密以后缓存里换成明文再定性。thread 回复照常算一项。
-    pub async fn missed_cached_event(&self, seen: Option<&EventId>) -> Option<OwnedEventId> {
+    /// 编辑（`m.replace`）、表情回应（`m.annotation`）、撤回不会在时间线里单独成一项，跳过不比；还解不开的加密事件不知道
+    /// 会不会成项，也当候选，跟别的一样走宽限。thread 回复照常算一项。
+    ///
+    /// 缺席按本机单调时钟从第一次看到算起（[`MissedEvent::absent`]），事件回到时间线就忘掉。
+    pub async fn missed_cached_event(&self, seen: Option<&EventId>) -> Option<MissedEvent> {
         /// 往回看几条就放弃（流式回复一次能连出好几条编辑）。
         const LOOK_BACK: usize = 5;
         let Ok((cache, _handles)) = self
@@ -157,10 +184,14 @@ impl ChatRoom {
         let events = cache.events().await.ok()?;
         let rules = self.room.clone_info().room_version_rules_or_default();
         let timeline = self.timeline().await;
+        let now = Instant::now();
+        let mut missing = self.missing.lock().await;
+        let mut still_missing = HashMap::new();
+        let mut missed: Option<MissedEvent> = None;
         for event in events.iter().rev().take(LOOK_BACK) {
             let Some(id) = event.event_id() else { continue };
             if seen == Some(id) {
-                return None;
+                break;
             }
             let Ok(raw) = serde_json::from_str::<AnySyncTimelineEvent>(event.raw().json().get())
             else {
@@ -169,26 +200,36 @@ impl ChatRoom {
             if !timeline::shown(&raw, &rules) {
                 continue;
             }
-            if !own_item(&raw) {
-                // 还解不开的加密事件：刚到的先给解密留时间，超过两秒仍解不开就当“会成项”算，别让它悄悄漏掉。
-                let fresh = matches!(
-                    raw,
-                    AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomEncrypted(_))
-                ) && just_arrived(event);
-                if fresh {
-                    continue;
-                }
+            // 解不开的加密事件以后会换成明文，跟会成项的事件一样按缺席时长算。
+            let undecrypted = matches!(
+                raw,
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomEncrypted(_))
+            );
+            if !own_item(&raw) && !undecrypted {
+                continue;
             }
-            if timeline.item_by_event_id(id).await.is_none() {
-                return Some(id.to_owned());
+            if timeline.item_by_event_id(id).await.is_some() {
+                continue;
+            }
+            let absent_since = missing.get(id).copied().unwrap_or(now);
+            let absent = now - absent_since;
+            still_missing.insert(id.to_owned(), absent_since);
+            if missed.is_none() && absent >= MISSED_GRACE {
+                missed = Some(MissedEvent {
+                    id: id.to_owned(),
+                    absent,
+                });
             }
         }
-        None
+        *missing = still_missing;
+        missed
     }
 
     /// 换一条时间线：事件缓存被清空重来以后（同步从头开始、服务器丢了位置），旧时间线收不到清空期间的事件，
     /// 新的一条从缓存重新读一遍。房间对象不换，发消息和翻页都还走它。
     pub async fn rebuild_timeline(&self) -> Result<()> {
+        // 整段持写锁：换的工夫别人要时间线（翻页、比对缓存）就等新的，不拿到马上要被换掉的那一条。
+        let mut slot = self.timeline.write().await;
         let timeline = Arc::new(
             self.room
                 .timeline_builder()
@@ -201,12 +242,12 @@ impl ChatRoom {
             timeline.clone(),
             Arc::new(Notify::new()),
         ));
-        *self.timeline.write().await = timeline;
+        *slot = timeline;
         Ok(())
     }
 
     /// 现在这一条时间线。
-    async fn timeline(&self) -> Arc<Timeline> {
+    pub async fn timeline(&self) -> Arc<Timeline> {
         self.timeline.read().await.clone()
     }
 
@@ -485,8 +526,44 @@ impl ChatRoom {
     }
 
     /// 向前翻页，最多加载 `count` 条事件。返回是否已经到了房间的开头。
+    ///
+    /// 时间线自己有一份“还差多少条”的计数，它随这一条时间线走。换过时间线（[`Self::rebuild_timeline`]）以后，
+    /// 事件缓存刚从头来过，这份计数却可能认为没有要补的：这一页一个条目也不会多，壳看不到新条目就不再往下翻，
+    /// 一直卡在同一屏。所以这一页没拿到条目、或者翻的工夫时间线被换掉了，就直接问事件缓存要一页。
     pub async fn paginate_backwards(&self, count: u16) -> Result<bool> {
-        Ok(self.timeline().await.paginate_backwards(count).await?)
+        let timeline = self.timeline().await;
+        let before = timeline.subscribe().await.0.len();
+        let hit_start = timeline.paginate_backwards(count).await?;
+        let current = self.timeline().await;
+        if hit_start {
+            return Ok(true);
+        }
+        let swapped = !Arc::ptr_eq(&timeline, &current);
+        if !swapped && current.subscribe().await.0.len() != before {
+            return Ok(false);
+        }
+        let Ok((cache, _handles)) = self
+            .room
+            .client()
+            .event_cache()
+            .room(self.room.room_id())
+            .await
+        else {
+            return Ok(false);
+        };
+        // 一页 30 条会一股脑塞满时间线的更新通道（32 格），兜底这页小一点，壳还在顶上会接着翻。
+        let Ok(outcome) = cache.pagination().run_backwards_once(count.min(10)).await else {
+            return Ok(false);
+        };
+        tracing::info!(
+            room_id = %self.room.room_id(),
+            reason = "paginate-fallback",
+            swapped,
+            events = outcome.events.len(),
+            reached_start = outcome.reached_start,
+            "这一页时间线没给条目，直接问事件缓存"
+        );
+        Ok(outcome.reached_start)
     }
 
     /// 向前翻页的状态流：第一项是当前状态。
@@ -715,17 +792,4 @@ fn own_item(event: &AnySyncTimelineEvent) -> bool {
         // 状态事件不会成项，但由 `timeline::shown` 管；这里只区分消息类。
         _ => true,
     }
-}
-
-/// 事件是不是刚到的（两秒以内，按服务器时间戳）。
-fn just_arrived(event: &matrix_sdk::deserialized_responses::TimelineEvent) -> bool {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or_default();
-    let raw = event.raw();
-    serde_json::from_str::<serde_json::Value>(raw.json().get())
-        .ok()
-        .and_then(|json| json["origin_server_ts"].as_u64())
-        .is_some_and(|sent| now.saturating_sub(sent) < 2000)
 }

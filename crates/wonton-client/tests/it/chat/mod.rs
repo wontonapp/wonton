@@ -15,6 +15,7 @@ mod onboarding;
 mod pending;
 mod push;
 mod push_method;
+mod rebuild_reason;
 mod recovery;
 mod relogin;
 mod resume;

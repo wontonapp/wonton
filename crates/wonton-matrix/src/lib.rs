@@ -30,7 +30,9 @@ pub mod testkit;
 mod timeline;
 mod verification;
 
-pub use chat_room::{BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload};
+pub use chat_room::{
+    BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MissedEvent,
+};
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use matrix_sdk::ruma::{

@@ -6,7 +6,7 @@ use wonton_client::{
     Action, BackPagination, ClientCore, TimelineDiff, TimelineItem, TimelineSubscription,
 };
 
-use super::support::{Phone, WAIT};
+use super::support::{Phone, WAIT, take_rebuild_reason};
 
 /// 壳那一侧维护的时间线：按顺序应用每一批增量。同步从头开始时（服务器回 `M_UNKNOWN_POS`）SDK 只留最新的一段，
 /// 列表被清空重来；壳这时露出顶上那一行，自己往回翻，这里也一样。
@@ -16,8 +16,11 @@ pub struct Timeline {
     core: Arc<ClientCore>,
     room_id: String,
     back_pagination: BackPagination,
+    dispatched: usize,
     started: bool,
     cleared: bool,
+    /// 每次清空的原因，按发生顺序；断言失败时带进 panic 消息。
+    cleared_reasons: Vec<String>,
     paging: bool,
 }
 
@@ -33,8 +36,10 @@ impl Timeline {
             core: phone.core.clone(),
             room_id: room_id.to_owned(),
             back_pagination: BackPagination::Idle,
+            dispatched: 0,
             started: false,
             cleared: false,
+            cleared_reasons: Vec::new(),
             paging: false,
         }
     }
@@ -46,8 +51,16 @@ impl Timeline {
             self.paging = false;
         }
         for diff in diffs {
-            if self.started && matches!(diff, TimelineDiff::Clear | TimelineDiff::Reset { .. }) {
-                self.cleared = true;
+            if self.started {
+                match &diff {
+                    TimelineDiff::Clear => {
+                        self.cleared = true;
+                        let reason = take_rebuild_reason(&self.room_id);
+                        self.cleared_reasons.push(reason);
+                    }
+                    TimelineDiff::Reset { .. } => self.cleared = true,
+                    _ => {}
+                }
             }
             apply(&mut self.items, diff);
         }
@@ -71,15 +84,25 @@ impl Timeline {
                 self.apply_update(update.diffs, update.back_pagination);
             }
         };
-        tokio::time::timeout(WAIT, waiting)
-            .await
-            .expect("timeline was not rebuilt after sync restart");
+        match tokio::time::timeout(WAIT, waiting).await {
+            Ok(()) => {}
+            Err(_) => panic!(
+                "同步重启后一直没重建时间线；清空原因 {:?}",
+                self.cleared_reasons
+            ),
+        }
+    }
+
+    /// 每次清空的原因，按发生顺序；产品没打或没抓到原因时写“未记录”。
+    pub fn cleared_reasons(&self) -> String {
+        self.cleared_reasons.join("；")
     }
 
     /// 清空过、还没翻到头、没在翻：像壳一样再翻一页。
     fn page_back_if_cleared(&mut self) {
         if self.cleared && !self.paging && self.back_pagination == BackPagination::Idle {
             self.paging = true;
+            self.dispatched += 1;
             self.core
                 .dispatch(Action::PaginateBackwards {
                     room_id: self.room_id.clone(),
@@ -116,7 +139,10 @@ impl Timeline {
         };
         match tokio::time::timeout(WAIT, waiting).await {
             Ok(found) => found,
-            Err(_) => panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", self.items),
+            Err(_) => panic!(
+                "{what}：{WAIT:?} 内没有等到，翻页 {:?}、翻过 {} 次、清空原因 {:?}，当前：{:#?}",
+                self.back_pagination, self.dispatched, self.cleared_reasons, self.items
+            ),
         }
     }
 }

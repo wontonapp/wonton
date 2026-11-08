@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::stale_join::StaleJoin;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
 use serde_json::{Value, json};
@@ -16,6 +17,9 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tracing_subscriber::Layer as _;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 use wonton_client::{
     Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin, InstalledPlugins,
     Network, OnboardingViewModel, PushMethod,
@@ -26,8 +30,6 @@ use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, SECRET_LEN,
 };
 use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
-
-use super::stale_join::StaleJoin;
 
 mod fake_core;
 mod matrix;
@@ -41,14 +43,35 @@ pub const OWNER: &str = "@owner:wonton.localhost";
 
 /// `WONTON_TEST_LOG` 有值时打开核心的日志（值是过滤规则，例如 `wonton_tunnel=debug,matrix_sdk=debug`），
 /// 写到标准错误；失败的时候按时间顺序留下当时发生了什么。
+///
+/// 不论开不开日志都装一层捕获：时间线重建的原因按房间记下来（见 [`take_rebuild_reason`]），断言失败时带进
+/// panic 消息，否则只看到“被清空了”、不知道是哪条路。
 pub fn init_test_logging() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        if let Ok(filter) = std::env::var("WONTON_TEST_LOG") {
-            wonton_client::init_logging(filter, None);
-        }
+        let subscriber = tracing_subscriber::registry().with(super::rebuild_reason::Capture);
+        match std::env::var("WONTON_TEST_LOG") {
+            Ok(filter) => {
+                let filter = tracing_subscriber::EnvFilter::try_new(&filter)
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+                subscriber
+                    .with(
+                        tracing_subscriber::fmt::layer()
+                            .with_ansi(false)
+                            .with_writer(std::io::stderr)
+                            .with_filter(filter),
+                    )
+                    .try_init()
+                    .ok();
+            }
+            Err(_) => {
+                subscriber.try_init().ok();
+            }
+        };
     });
 }
+
+pub use super::rebuild_reason::take_rebuild_reason;
 
 pub struct Home {
     pub matrix: TestServer,
