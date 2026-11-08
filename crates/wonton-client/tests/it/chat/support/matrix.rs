@@ -34,13 +34,16 @@ pub(super) async fn serve_matrix(
         let mut paused = core.uploads_paused.subscribe();
         paused.wait_for(|paused| !paused).await.unwrap();
     }
-    // `chat::key_upload_order` 回归测试：挂起期间手机的 keys/upload 一接上就断开（drop 语义），
-    // 放行后才转发并计数；SDK 那头只记一条 outgoing 请求失败的日志，下一轮同步自动重试。
-    if text.starts_with("post /_matrix/client/v3/keys/upload") {
-        if core.hold_key_uploads.load(Ordering::SeqCst) {
+    if text.starts_with("post /_matrix/client/v3/keys/upload ") {
+        let mut down = core.matrix_down.subscribe();
+        if *down.borrow() {
             return;
         }
-        core.key_uploads_forwarded.send_modify(|count| *count += 1);
+        tokio::select! {
+            _ = forward_key_upload(&mut tcp, &core, &mut head, text) => {}
+            _ = down.wait_for(|down| *down) => {}
+        }
+        return;
     }
     if hold_key_request(&mut tcp, &core, text, &mut head)
         .await
@@ -247,6 +250,32 @@ async fn intercept_verification(tcp: &mut TcpStream, core: &Core, text: &str) ->
         tcp.shutdown().await.ok();
     }
     true
+}
+
+/// 通知必须晚于 Tuwunel 的成功响应：发出请求不代表密钥已经入库。
+async fn forward_key_upload(tcp: &mut TcpStream, core: &Core, head: &mut Vec<u8>, text: &str) {
+    if core.hold_key_uploads.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(body) = read_body(tcp, text).await else {
+        return;
+    };
+    head.extend_from_slice(&body);
+    let delay = *core.key_upload_delay.lock().unwrap();
+    tokio::time::sleep(delay).await;
+    let Some(mut upstream) = forward_to(core, head).await else {
+        return;
+    };
+    // 本地代理已加 Connection: close；EOF 给出这一个上传请求的完整响应。
+    let mut response = Vec::new();
+    if upstream.read_to_end(&mut response).await.is_err() {
+        return;
+    }
+    if response.starts_with(b"HTTP/1.1 200 ") {
+        core.key_uploads_completed.send_modify(|count| *count += 1);
+    }
+    tcp.write_all(&response).await.ok();
+    tcp.shutdown().await.ok();
 }
 
 /// 连上 Tuwunel 并把请求头转过去；连不上或写不进去就断开这条连接（客户端会重试）。

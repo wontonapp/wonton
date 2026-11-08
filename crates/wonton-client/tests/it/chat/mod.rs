@@ -198,39 +198,18 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
 
 /// Bot 建私聊前等主人当前设备的密钥上服务器：Bot 发消息时的收信人设备表来自它本地 crypto store，
 /// 手机的密钥还没上服务器它就查不到这台设备，首条消息的房间密钥不会发给手机，消息永远解不开。
-/// 以服务器为准（`/keys/query`），没有就等假核心放行下一次 keys/upload 再查（事件驱动，不睡固定间隔）。
+/// 以服务器为准（`/keys/query`），没有就等下一次 keys/upload 成功应答后再查。
 async fn wait_for_owner_device_keys(home: &Home, phone: &Phone, bot: &MatrixSession) {
+    // 先订阅再允许放行；查询前或查询中完成的上传也必须触发下一次查询。
+    let mut completed = home.key_uploads_completed();
     home.mark_device_keys_wait_started();
     let device_id = match &phone.chat().account {
         ChatAccount::SignedIn { device_id, .. } => device_id.clone(),
         other => panic!("等设备密钥前应已登录：{other:?}"),
     };
     let owner: OwnedUserId = OWNER.parse().unwrap();
-    let deadline = tokio::time::Instant::now() + WAIT;
-    let mut forwarded = home.key_uploads_forwarded();
-    loop {
-        if bot
-            .server_device_ids_of(&owner)
-            .await
-            .expect("查主人的设备")
-            .iter()
-            .any(|id| id.as_str() == device_id)
-        {
-            return;
-        }
-        // 等下一次 keys/upload 被放行（计数变化）。放行到 Tuwunel 入库之间有几毫秒差，放行后
-        // 短轮询 3 秒吸收这个延迟——事件仍是触发器，查不到才要求再放行一次。总时限是 WAIT。
-        if tokio::time::timeout_at(deadline, forwarded.changed())
-            .await
-            .is_err()
-        {
-            panic!(
-                "等主人的设备密钥（{device_id}）上服务器超时：手机的 keys/upload 没有被放行或放了还是查不到（放行计数 {}）",
-                *forwarded.borrow()
-            );
-        }
-        let settle = tokio::time::Instant::now() + Duration::from_secs(3);
-        while tokio::time::Instant::now() < settle {
+    let waiting = async {
+        loop {
             if bot
                 .server_device_ids_of(&owner)
                 .await
@@ -240,8 +219,14 @@ async fn wait_for_owner_device_keys(home: &Home, phone: &Phone, bot: &MatrixSess
             {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(150)).await;
+            completed.changed().await.expect("假核心的上传完成通知");
         }
+    };
+    if tokio::time::timeout(WAIT, waiting).await.is_err() {
+        panic!(
+            "等主人的设备密钥（{device_id}）上服务器超时：手机的 keys/upload 尚未成功或服务器仍查不到设备（完成计数 {}）",
+            *completed.borrow()
+        );
     }
 }
 

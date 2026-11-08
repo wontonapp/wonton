@@ -133,8 +133,9 @@ struct Core {
     uploads_paused: watch::Sender<bool>,
     /// 为真时手机的 keys/upload 一接上就断开（drop 语义），见 `chat::key_upload_order` 回归测试。
     hold_key_uploads: Arc<AtomicBool>,
-    /// 放行过的手机 keys/upload 次数；等“设备密钥上服务器”的一方靠它的事件变化再查，不睡固定间隔。
-    key_uploads_forwarded: watch::Sender<u64>,
+    key_upload_delay: Mutex<Duration>,
+    /// Tuwunel 成功应答过的手机 keys/upload 次数；收到完成事件后，设备查询才有因果上的保证。
+    key_uploads_completed: watch::Sender<u64>,
     /// 等待函数进门标记：为真表示测试开始等设备密钥上服务器（先于 Bot 发消息就该放行）。
     device_keys_wait_started: watch::Sender<bool>,
     /// 为真时 Tuwunel 像挂了一样：转发中的请求断开，新请求一接上就断开。
@@ -191,7 +192,8 @@ impl Home {
             push_registrations_seen: watch::Sender::new(0),
             uploads_paused: watch::Sender::new(false),
             hold_key_uploads: Arc::new(AtomicBool::new(false)),
-            key_uploads_forwarded: watch::Sender::new(0),
+            key_upload_delay: Mutex::new(Duration::ZERO),
+            key_uploads_completed: watch::Sender::new(0),
             device_keys_wait_started: watch::Sender::new(false),
             matrix_down: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
@@ -506,14 +508,18 @@ impl Home {
         self.core.hold_key_uploads.store(true, Ordering::SeqCst);
     }
 
+    pub fn delay_key_uploads(&self, delay: Duration) {
+        *self.core.key_upload_delay.lock().unwrap() = delay;
+    }
+
     /// 开关本体给放开挂起的任务：先到先放的逻辑里，放行的一方不持有 [`Home`]。
     pub fn key_uploads_hold(&self) -> Arc<AtomicBool> {
         self.core.hold_key_uploads.clone()
     }
 
-    /// 转发计数的接收端：`changed()` 等下一次 keys/upload 被放行。
-    pub fn key_uploads_forwarded(&self) -> watch::Receiver<u64> {
-        self.core.key_uploads_forwarded.subscribe()
+    /// 完成计数的接收端：`changed()` 等下一次 keys/upload 收到 Tuwunel 的成功响应。
+    pub fn key_uploads_completed(&self) -> watch::Receiver<u64> {
+        self.core.key_uploads_completed.subscribe()
     }
 
     /// 等待函数进门时调用：放开的任务看到它就知道测试开始等设备密钥了。
