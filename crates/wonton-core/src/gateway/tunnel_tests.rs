@@ -723,6 +723,28 @@ async fn paired_devices_get_a_login_token_and_reach_the_client_api() {
 }
 
 /// 插件网络里的容器发来的请求：网关看到的来源地址是 `from`。
+/// 和 [`from_plugin`] 一样，但不带 Authorization：matrix-sdk 恢复会话前取的 `versions` 就是这种请求。
+pub(super) async fn from_plugin_without_token(
+    home: &Home,
+    from: &str,
+    path: &str,
+) -> (StatusCode, HeaderMap, Value) {
+    let request = hyper::Request::builder()
+        .uri(path)
+        .header(header::HOST, "matrix.wonton.internal:8080")
+        .body(Body::empty())
+        .unwrap();
+    let addr: SocketAddr = from.parse().unwrap();
+    let mut request = request;
+    request.extensions_mut().insert(ConnectInfo(addr));
+    let response = home.app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, headers, body)
+}
+
 pub(super) async fn from_plugin(
     home: &Home,
     from: &str,

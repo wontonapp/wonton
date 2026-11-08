@@ -14,8 +14,8 @@ use std::sync::Arc;
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use hyper::StatusCode;
 use hyper::header::{HeaderName, HeaderValue};
+use hyper::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -126,6 +126,11 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
             );
         }
     };
+    // matrix-sdk 建客户端时先取 `/_matrix/client/versions`，那时还没有恢复会话、没有令牌；Matrix 服务器本来也
+    // 公开这个接口。其余路径都要求令牌。
+    if req.method() == Method::GET && req.uri().path() == "/_matrix/client/versions" {
+        return forward_client_api(gateway, req).await;
+    }
     // 令牌认 Bot：令牌是谁，必须且只是这个插件记录在案的 Bot。
     let token = req
         .headers()

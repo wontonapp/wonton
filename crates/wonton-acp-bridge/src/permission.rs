@@ -63,7 +63,17 @@ impl PermissionBroker {
                 [("error", error.to_string())],
             ))
         })?;
-        endpoint.set_path(AGENT_PERMISSION_PATH);
+        // 权限接口挂在同一个总线地址后面，路径里的总线令牌要带过去（`/mcp/<令牌>` → `/agent/permissions/<令牌>`，
+        // 核心靠它认出是哪个 Bot）；没有令牌的插件地址（`/mcp`）照旧不带。
+        let token = endpoint
+            .path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .filter(|segment| *segment != "mcp")
+            .map(str::to_owned);
+        endpoint.set_path(&match token {
+            Some(token) => format!("{AGENT_PERMISSION_PATH}/{token}"),
+            None => AGENT_PERMISSION_PATH.to_owned(),
+        });
         endpoint.set_query(None);
         endpoint.set_fragment(None);
         let client = reqwest::Client::builder()
@@ -348,6 +358,18 @@ mod tests {
         let broker = PermissionBroker::new(&format!("http://{address}/mcp")).unwrap();
         let result = broker.ask(pending()).await;
         (result, server.await.unwrap())
+    }
+
+    #[test]
+    fn permission_url_keeps_the_bus_token() {
+        let tokenized =
+            PermissionBroker::new("http://mcp.wonton.internal:8080/mcp/abc123").unwrap();
+        assert_eq!(
+            tokenized.endpoint.as_str(),
+            format!("http://mcp.wonton.internal:8080{AGENT_PERMISSION_PATH}/abc123")
+        );
+        let plain = PermissionBroker::new("http://mcp.wonton.internal:8080/mcp").unwrap();
+        assert_eq!(plain.endpoint.path(), AGENT_PERMISSION_PATH);
     }
 
     #[test]

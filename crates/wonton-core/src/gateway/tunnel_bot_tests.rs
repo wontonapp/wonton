@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use hyper::{Method, StatusCode};
 
-use super::tunnel_tests::{Home, from_plugin, header, lan};
+use super::tunnel_tests::{Home, from_plugin, from_plugin_without_token, header, lan};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::plugin::PluginId;
@@ -43,6 +43,17 @@ async fn bots_reach_matrix_only_from_networks_of_plugins_with_matrix_bot() {
         from_plugin(&home, "172.30.1.5:40000", "/_matrix/client/versions").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["versions"].is_array());
+    // matrix-sdk 恢复会话前取版本时还没有令牌，这里必须放行；其余客户端接口仍要令牌。
+    let (status, _, _) =
+        from_plugin_without_token(&home, "172.30.1.5:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = from_plugin_without_token(
+        &home,
+        "172.30.1.5:40000",
+        "/_matrix/client/v3/account/whoami",
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     // 规则同 matrix.<base>：只有客户端接口，写法可疑的路径先挡住。
     let admin = "/_synapse/admin/v1/register";
     let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", admin).await;
