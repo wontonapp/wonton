@@ -18,6 +18,7 @@ mod connect;
 mod contacts;
 mod display_name;
 mod follow_home;
+mod installs;
 mod login;
 mod onboarding;
 mod ops;
@@ -91,6 +92,8 @@ pub(crate) struct ChatLink {
     sent: watch::Sender<Vec<String>>,
     /// 还没登录 Matrix 时改的显示名，登录后再设。
     display_name: Mutex<Option<String>>,
+    /// 聊天列表最上面的安装占位行（ADR-0067）。
+    installs: Arc<installs::Installs>,
     bots: Arc<bots::Bots>,
     avatar_files: avatar_files::AvatarFiles,
     /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
@@ -174,6 +177,7 @@ impl ChatLink {
                 bots: Vec::new(),
             },
         );
+        let installs = installs::Installs::new(plugins.clone(), view.clone());
         let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins, view.clone());
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
@@ -190,6 +194,7 @@ impl ChatLink {
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
             display_name: Mutex::new(None),
+            installs,
             bots,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
@@ -231,6 +236,7 @@ impl ChatLink {
         if changed {
             let rows = self.room_order.display(bot.as_deref());
             self.view.send_modify(|view| view.rooms = rows);
+            self.installs.refresh();
         }
     }
 
@@ -618,6 +624,7 @@ impl ChatLink {
         let session = session.clone();
         let room_order = self.room_order.clone();
         let primary_bot = self.primary_bot.clone();
+        let chat = Arc::downgrade(self);
         self.runtime.spawn(async move {
             let rooms = match session.rooms().await {
                 Ok(rooms) => rooms,
@@ -637,6 +644,9 @@ impl ChatLink {
                 let bot = lock(&primary_bot).clone();
                 let rows = room_order.replace(rows, bot.as_deref());
                 view.send_modify(|view| view.rooms = rows);
+                if let Some(chat) = chat.upgrade() {
+                    chat.installs.refresh();
+                }
             }
         })
     }

@@ -78,6 +78,8 @@ pub(crate) struct PluginsLink {
     takeover: Mutex<takeover::Slot>,
     starts: Mutex<HashMap<String, u64>>,
     data_dir: PathBuf,
+    /// 发起安装、升级时的预览，按插件 ID 记着：失败后重试要来源，聊天列表的安装行要 `has_bot`。做完被主人清掉时删。
+    previews: Mutex<HashMap<String, InstallPreview>>,
 }
 
 impl PluginsLink {
@@ -122,6 +124,7 @@ impl PluginsLink {
             takeover: Mutex::new(takeover::Slot::default()),
             starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
+            previews: Mutex::new(HashMap::new()),
         });
         link.restore_core_upgrade();
         runtime.spawn(follow_home(Arc::downgrade(&link)));
@@ -135,6 +138,19 @@ impl PluginsLink {
     /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
     pub(crate) fn sender(&self) -> watch::Sender<PluginsViewModel> {
         self.view.clone()
+    }
+
+    /// 调用方的运行时：聊天列表的安装行跟着插件状态走，也用它起订阅。
+    pub(crate) fn runtime(&self) -> Handle {
+        self.runtime.clone()
+    }
+
+    /// 现在记着的安装预览。
+    pub(crate) fn previews(&self) -> HashMap<String, InstallPreview> {
+        self.previews
+            .lock()
+            .expect("the previews lock never panics")
+            .clone()
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<PluginsViewModel> {

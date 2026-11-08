@@ -41,6 +41,7 @@ impl PluginsLink {
         secrets: SecretValues,
     ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
+        self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         let enabled_permissions = enabled_permissions(&preview);
         let Some(source) = preview.source else {
@@ -106,6 +107,7 @@ impl PluginsLink {
         secrets: SecretValues,
     ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
+        self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         self.begin_task(
             &preview.id,
@@ -201,7 +203,21 @@ impl PluginsLink {
             view.tasks.remove(index);
             true
         });
+        if outcome.is_ok() {
+            self.previews
+                .lock()
+                .expect("the previews lock never panics")
+                .remove(id);
+        }
         outcome
+    }
+
+    /// 记下预览：失败后重试要来源，聊天列表的安装行要知道它是不是 Bot 插件。
+    fn remember_preview(&self, preview: &InstallPreview) {
+        self.previews
+            .lock()
+            .expect("the previews lock never panics")
+            .insert(preview.id.clone(), preview.clone());
     }
 
     fn begin_task(

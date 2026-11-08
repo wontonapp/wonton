@@ -2,6 +2,7 @@
 
 mod ask_every_update;
 mod bots;
+mod chat_rows;
 mod connection;
 mod core_upgrade;
 mod egress;
