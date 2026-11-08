@@ -8,7 +8,7 @@ use wonton_l10n::l10n;
 use wonton_matrix::{Error, MatrixSession};
 use wonton_protocol::{
     BackupReminder, ChatFailure, ChatProblem, CoreError, DeviceVerification, EncryptionStatus,
-    RecoveryStatus, SecretString,
+    RecoveryStatus, SecretString, VerificationCancel, VerificationStage,
 };
 
 use super::view::{failure, recovery, verification};
@@ -33,6 +33,7 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
             if !resetting {
                 encryption.recovery = recovery(state.recovery);
             }
+            settle_late_keys(encryption);
             update_reminder(encryption);
             enable = !attempted
                 && !resetting
@@ -57,6 +58,22 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
             }
             Err(error) => link.fail_recovery(before, &error),
         }
+    }
+}
+
+/// 取回密钥过了期限才到齐（旧设备重新联网后答了排着的要秘密请求）：恢复已经开启，`KeysMissing` 不再属实，
+/// 结束的流程改成完成。不改的话备份页一边说“已备份”一边说“没取全”，“重新开始”又因为本机已验证而做不了。
+fn settle_late_keys(encryption: &mut EncryptionStatus) {
+    if encryption.recovery != RecoveryStatus::Enabled {
+        return;
+    }
+    if let Some(flow) = encryption.verification_flow.as_mut()
+        && flow.stage
+            == (VerificationStage::Cancelled {
+                reason: VerificationCancel::KeysMissing,
+            })
+    {
+        flow.stage = VerificationStage::Done;
     }
 }
 

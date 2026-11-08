@@ -1335,7 +1335,7 @@
     <string name="verification_cancelled_timeout">另一部裝置太久沒有回應，確認已取消。</string>
     <string name="verification_cancelled_accepted_elsewhere">這次確認由你的另一部裝置接手了。</string>
     <string name="verification_cancelled_concurrent_request">同時收到另一個確認請求，兩個都取消了。</string>
-    <string name="verification_cancelled_keys_missing">另一部裝置手裡沒有能轉交的金鑰，以前的訊息還是解不開。</string>
+    <string name="verification_cancelled_keys_missing">沒能從另一部裝置取全金鑰，以前的訊息還是解不開。</string>
     <string name="verification_cancelled_failed">確認沒有完成，出了點問題。</string>
     <string name="verification_cancelled_other">確認沒有完成。</string>
     <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table

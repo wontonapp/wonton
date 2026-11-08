@@ -1335,7 +1335,7 @@
     <string name="verification_cancelled_timeout">もう一方のデバイスが時間内に応答しなかったため、確認を取り消しました。</string>
     <string name="verification_cancelled_accepted_elsewhere">別のデバイスがこの確認を引き継ぎました。</string>
     <string name="verification_cancelled_concurrent_request">同時に別の確認リクエストが届いたため、両方取り消しました。</string>
-    <string name="verification_cancelled_keys_missing">もう一方のデバイスに渡せる鍵がなく、以前のメッセージは開けません。</string>
+    <string name="verification_cancelled_keys_missing">もう一方のデバイスから鍵をすべて受け取れなかったため、以前のメッセージは開けません。</string>
     <string name="verification_cancelled_failed">問題が発生したため、確認が完了しませんでした。</string>
     <string name="verification_cancelled_other">確認が完了しませんでした。</string>
     <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table

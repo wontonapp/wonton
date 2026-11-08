@@ -128,6 +128,8 @@ struct Core {
     done_after_key_request: Mutex<Option<String>>,
     /// 转发过的 `m.secret.request` 次数。
     key_requests_forwarded: watch::Sender<u64>,
+    /// 为真时 `m.secret.request` 由假核心先回 200、留在手里，变回假再转发，像旧设备掉线时排着的请求。
+    hold_key_requests: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
@@ -169,6 +171,7 @@ impl Home {
             hold_backup_read: watch::Sender::new(false),
             done_after_key_request: Mutex::default(),
             key_requests_forwarded: watch::Sender::new(0),
+            hold_key_requests: watch::Sender::new(false),
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
@@ -239,6 +242,11 @@ impl Home {
     pub fn deliver_key_request_before_done(&self, device_id: &str) {
         self.core.key_requests_forwarded.send_replace(0);
         *self.core.done_after_key_request.lock().unwrap() = Some(device_id.to_owned());
+    }
+
+    /// 要秘密的请求先不送到旧设备：`false` 时把留着的按原顺序补发。
+    pub fn hold_key_requests(&self, hold: bool) {
+        self.core.hold_key_requests.send_replace(hold);
     }
 
     /// 设置假核心的引导状态；没设置时引导接口回 404。

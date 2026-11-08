@@ -203,6 +203,45 @@ async fn the_new_phone_asks_again_for_keys_the_old_phone_dropped() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn keys_that_arrive_after_the_deadline_turn_keys_missing_into_done() {
+    let devices = Devices::new(true).await;
+    devices.connect_second().await;
+    let id = compare(&devices.first, &devices.second).await;
+    // 旧手机没收到新手机要秘密的请求，像它在交出秘密前掉线。
+    devices.home.hold_key_requests(true);
+    for phone in [&devices.first, &devices.second] {
+        phone
+            .dispatch(Action::ConfirmVerification {
+                flow_id: id.clone(),
+            })
+            .unwrap();
+    }
+    flow_at(&devices.second, |stage| {
+        *stage
+            == (VerificationStage::Cancelled {
+                reason: VerificationCancel::KeysMissing,
+            })
+    })
+    .await;
+    assert_ne!(
+        devices.second.chat().encryption.recovery,
+        RecoveryStatus::Enabled
+    );
+
+    // 旧手机回来，答了排着的请求。
+    devices.home.hold_key_requests(false);
+    flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
+    devices
+        .second
+        .wait_chat("秘密到齐、恢复开启", |view| {
+            (view.encryption.recovery == RecoveryStatus::Enabled).then_some(())
+        })
+        .await;
+    assert_recovered(&devices.second);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn cancellation_and_rejection_report_who_cancelled_and_allow_a_new_request() {
     let devices = Devices::new(true).await;
     devices.connect_second().await;

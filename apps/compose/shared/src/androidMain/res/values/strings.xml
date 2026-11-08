@@ -1537,8 +1537,8 @@
     <string name="verification_cancelled_accepted_elsewhere">Another of your devices took over the verification.</string>
     <!-- Result: a second verification request arrived at the same time and both were cancelled. -->
     <string name="verification_cancelled_concurrent_request">Another verification request arrived at the same time. Both were cancelled.</string>
-    <!-- Result: the other device had no keys to hand over, so older messages stay locked. Enter the recovery key instead. -->
-    <string name="verification_cancelled_keys_missing">The other device had no keys to hand over. Older messages stay locked.</string>
+    <!-- Result: not all keys came through from the other device (it may not have them, or a request got lost), so older messages stay locked. Verify again or enter the recovery key. -->
+    <string name="verification_cancelled_keys_missing">Not all keys came through from the other device, so older messages stay locked.</string>
     <!-- Result: the verification failed for another reason; the details are in the problem dialog. -->
     <string name="verification_cancelled_failed">The verification didn\'t finish because of a problem.</string>
     <!-- Result: the verification didn't finish, for an unknown reason. -->

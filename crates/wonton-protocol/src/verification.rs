@@ -75,7 +75,8 @@ pub enum VerificationCancel {
     AcceptedElsewhere,
     /// 同一时间又来了一个确认请求。Matrix SDK 遇到这种情况会把两个都取消，防止主人确认错对象：重新发起一次。
     ConcurrentRequest,
-    /// 双方确认了，但另一台设备手里没有能转交的密钥，以前的消息还是解不开：改用恢复密钥。
+    /// 双方确认了，但没从另一台设备取全密钥（它手里没有，或者交出前掉了线），以前的消息还是解不开：再确认一次，
+    /// 或者用恢复密钥。
     KeysMissing,
     /// 传输或服务器出错，详情在 `ChatViewModel::problem`。
     Failed,

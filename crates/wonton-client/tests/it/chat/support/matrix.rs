@@ -69,6 +69,12 @@ pub(super) async fn serve_matrix(
         }
         core.key_uploads_forwarded.send_modify(|count| *count += 1);
     }
+    if hold_key_request(&mut tcp, &core, text, &mut head)
+        .await
+        .is_none()
+    {
+        return;
+    }
     if hold_done_for_key_request(&mut tcp, &core, text, &mut head)
         .await
         .is_none()
@@ -137,9 +143,7 @@ async fn hold_done_for_key_request(
     if !(text.starts_with(DONE) && to_device) {
         return Some(());
     }
-    let reply = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
-    tcp.write_all(reply.as_bytes()).await.ok();
-    tcp.shutdown().await.ok();
+    reply_ok(tcp).await;
     let (core, request) = (core.clone(), std::mem::take(head));
     tokio::spawn(async move {
         let mut forwarded = core.key_requests_forwarded.subscribe();
@@ -151,16 +155,49 @@ async fn hold_done_for_key_request(
         .await
         .ok();
         tokio::time::sleep(Duration::from_secs(3)).await;
-        let Some(mut upstream) = forward_to(&core, &request).await else {
-            return;
-        };
-        // 连接是 keep-alive，读到应答头就够了：读完前断开，Tuwunel 可能放弃处理。
-        let mut response = [0u8; 1024];
-        tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response))
-            .await
-            .ok();
+        forward_held(&core, &request).await;
     });
     None
+}
+
+/// 开了 `hold_key_requests` 时，要秘密的请求由假核心先回 200、留在手里，关掉后再补发给 Tuwunel。
+/// 回 `None` 表示这个请求已经答完（或者读不下去了）。
+async fn hold_key_request(
+    tcp: &mut TcpStream,
+    core: &Arc<Core>,
+    text: &str,
+    head: &mut Vec<u8>,
+) -> Option<()> {
+    if !text.starts_with(KEY_REQUEST) || !*core.hold_key_requests.borrow() {
+        return Some(());
+    }
+    let body = read_body(tcp, text).await?;
+    head.extend_from_slice(&body);
+    reply_ok(tcp).await;
+    let (core, request) = (core.clone(), std::mem::take(head));
+    tokio::spawn(async move {
+        let mut hold = core.hold_key_requests.subscribe();
+        hold.wait_for(|hold| !hold).await.ok();
+        forward_held(&core, &request).await;
+    });
+    None
+}
+
+async fn reply_ok(tcp: &mut TcpStream) {
+    let reply = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
+    tcp.write_all(reply.as_bytes()).await.ok();
+    tcp.shutdown().await.ok();
+}
+
+/// 补发留着的请求。连接是 keep-alive，读到应答头就够了：读完前断开，Tuwunel 可能放弃处理。
+async fn forward_held(core: &Core, request: &[u8]) {
+    let Some(mut upstream) = forward_to(core, request).await else {
+        return;
+    };
+    let mut response = [0u8; 1024];
+    tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response))
+        .await
+        .ok();
 }
 
 /// 连上 Tuwunel 并把请求头转过去；连不上或写不进去就断开这条连接（客户端会重试）。

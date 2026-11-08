@@ -1335,7 +1335,7 @@
     <string name="verification_cancelled_timeout">另一台设备太久没有回应，确认已取消。</string>
     <string name="verification_cancelled_accepted_elsewhere">这次确认由你的另一台设备接手了。</string>
     <string name="verification_cancelled_concurrent_request">同时收到了另一个确认请求，两个都取消了。</string>
-    <string name="verification_cancelled_keys_missing">另一台设备手里没有能转交的密钥，以前的消息还是解不开。</string>
+    <string name="verification_cancelled_keys_missing">没能从另一台设备取全密钥，以前的消息还是解不开。</string>
     <string name="verification_cancelled_failed">确认没有完成，出了点问题。</string>
     <string name="verification_cancelled_other">确认没有完成。</string>
     <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table

@@ -15092,31 +15092,31 @@
       }
     },
     "verification.cancelled.keysMissing": {
-      "comment": "Result: the other device had no keys to hand over, so older messages stay locked. Enter the recovery key instead.",
+      "comment": "Result: not all keys came through from the other device (it may not have them, or a request got lost), so older messages stay locked. Verify again or enter the recovery key.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The other device had no keys to hand over. Older messages stay locked."
+            "value": "Not all keys came through from the other device, so older messages stay locked."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "另一台设备手里没有能转交的密钥，以前的消息还是解不开。"
+            "value": "没能从另一台设备取全密钥，以前的消息还是解不开。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "另一部裝置手裡沒有能轉交的金鑰，以前的訊息還是解不開。"
+            "value": "沒能從另一部裝置取全金鑰，以前的訊息還是解不開。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "もう一方のデバイスに渡せる鍵がなく、以前のメッセージは開けません。"
+            "value": "もう一方のデバイスから鍵をすべて受け取れなかったため、以前のメッセージは開けません。"
           }
         }
       }
