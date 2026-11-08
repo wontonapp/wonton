@@ -16,6 +16,7 @@ mod pending;
 mod push;
 mod push_method;
 mod recovery;
+mod relogin;
 mod resume;
 mod send;
 mod server_switch;

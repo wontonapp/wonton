@@ -123,6 +123,8 @@
     <string name="chat_backup_value_incomplete">復旧キーが必要</string>
     <!-- Value on the Settings row: the status can't be determined. -->
     <string name="chat_backup_value_unknown">不明</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">再接続しています…</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">キャンセル</string>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->

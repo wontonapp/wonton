@@ -204,7 +204,11 @@ private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         ?: (sync as? ChatSync.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
             ?.let { it.reason.problem(it.message) }
             .takeIf { account is ChatAccount.SignedIn }
-    val progress = stringResource(R.string.chat_signing_in).takeIf { account == ChatAccount.SigningIn }
+    val progress = when (account) {
+        ChatAccount.SigningIn -> stringResource(R.string.chat_signing_in)
+        is ChatAccount.Reconnecting -> stringResource(R.string.chat_status_reconnecting)
+        else -> null
+    }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
     Column(
         Modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),

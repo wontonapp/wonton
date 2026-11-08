@@ -23,6 +23,9 @@ pub(super) async fn serve_matrix(
             return;
         }
     }
+    if answer_unavailable(&mut tcp, &core).await {
+        return;
+    }
     let verification_status = core.verification_failure.load(Ordering::SeqCst);
     if verification_status != 0 && text.starts_with("put /_matrix/client/v3/sendtodevice/") {
         if verification_status == 502 {
@@ -125,6 +128,21 @@ const DONE: &str = "put /_matrix/client/v3/sendtodevice/m.key.verification.done/
 /// 由假核心先回 200、留在手里：新手机的同步不会因为这个请求没回而停下，照常收到对方的完成消息、发出要钥匙的请求；
 /// 等要钥匙的请求转发出去，再过三秒让对方的同步先把它取走，才把完成消息补发给 Tuwunel。
 /// 回 `None` 表示这个请求已经答完（或者读不下去了）。
+/// Tuwunel 在重启时核心网关的应答：Matrix 的 JSON 错误 503。
+async fn answer_unavailable(tcp: &mut TcpStream, core: &Core) -> bool {
+    if !core.matrix_unavailable.load(Ordering::SeqCst) {
+        return false;
+    }
+    let body = r#"{"errcode":"M_UNKNOWN","error":"Tuwunel 暂时无法访问"}"#;
+    let response = format!(
+        "HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    tcp.write_all(response.as_bytes()).await.ok();
+    tcp.shutdown().await.ok();
+    true
+}
+
 async fn hold_done_for_key_request(
     tcp: &mut TcpStream,
     core: &Arc<Core>,

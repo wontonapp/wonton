@@ -14,6 +14,7 @@ mod bot_profile;
 mod bot_typing;
 mod bots;
 mod confirmation;
+mod connect;
 mod contacts;
 mod display_name;
 mod follow_home;
@@ -45,8 +46,8 @@ use wonton_l10n::l10n;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
-    CoreError, DeviceVerification, EncryptionStatus, ImageUpload, MediaHandle, ProxySettings,
-    PushMethod, PushStatus, RecoveryStatus,
+    CoreError, DeviceVerification, EncryptionStatus, ImageUpload, MediaHandle, PushMethod,
+    PushStatus, RecoveryStatus,
 };
 
 pub use bots::bot_current_avatar;
@@ -97,6 +98,7 @@ pub(crate) struct ChatLink {
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
+    relogin: connect::Relogin,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -192,6 +194,7 @@ impl ChatLink {
             method,
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
+            relogin: connect::Relogin::default(),
         });
         runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
@@ -230,14 +233,21 @@ impl ChatLink {
         }
     }
 
-    /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）的话重新登录；已经登录的接着用同一个会话，同步和发送队列
-    /// 马上恢复。换会话的话，打开着的房间还订阅着旧会话，再也收不到更新。
+    /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）或正在等着重连的话马上重新登录；已经登录的接着用同一个
+    /// 会话，同步和发送队列马上恢复。换会话的话，打开着的房间还订阅着旧会话，再也收不到更新。
     pub(crate) fn foregrounded(self: &Arc<Self>) {
         let view = self.view();
         // 还没连上家里、或者正在登录（家里的连接一就绪就会登录）时不插手；被吊销只能重新配对。Android 启动时
         // 也会发一次“回到前台”，正赶上第一次登录，这时再登录一遍会在同一个存储上开两个会话。
         match &view.account {
-            ChatAccount::Failed { reason, .. } if *reason != ChatFailure::Unauthorized => {
+            ChatAccount::Failed {
+                reason: ChatFailure::Unauthorized,
+                ..
+            }
+            | ChatAccount::SignedOut
+            | ChatAccount::SigningIn => {}
+            // 正在等着重连的不再等，马上登录。
+            ChatAccount::Reconnecting { .. } | ChatAccount::Failed { .. } => {
                 if let Some(proxy) = self.home.view().proxy {
                     self.runtime.spawn(self.clone().connect(proxy));
                 }
@@ -247,7 +257,6 @@ impl ChatLink {
                     session.resume();
                 }
             }
-            ChatAccount::Failed { .. } | ChatAccount::SignedOut | ChatAccount::SigningIn => {}
         }
     }
 
@@ -580,69 +589,6 @@ impl ChatLink {
 }
 
 impl ChatLink {
-    /// 用 `proxy` 登录或恢复会话，然后开始同步。
-    async fn connect(self: Arc<Self>, proxy: ProxySettings) {
-        let mut active = self.active.lock().await;
-        // 等锁时可能又换了连接：这个代理已经没了，不能凭它动下一台服务器的登录状态。
-        let home = self.home.view();
-        let Some(server_id) = home
-            .server_id
-            .filter(|_| home.proxy.as_ref() == Some(&proxy))
-        else {
-            return;
-        };
-        if let Some(old) = active.take() {
-            self.forget_current().await;
-            drop(old);
-        }
-        self.view
-            .send_modify(|view| view.account = ChatAccount::SigningIn);
-        let session = match self.sign_in(&proxy, server_id).await {
-            Ok(session) => Arc::new(session),
-            Err((reason, message)) => {
-                tracing::info!("Matrix sign-in failed: {message}");
-                self.view.send_modify(|view| {
-                    view.account = ChatAccount::Failed { reason, message };
-                    view.sync = ChatSync::Idle;
-                });
-                return;
-            }
-        };
-        *lock(&self.session) = Some(session.clone());
-        self.bots.set_session(Some(session.clone()));
-        self.apply_pending_display_name(&session);
-        self.view.send_modify(|view| {
-            view.account = ChatAccount::SignedIn {
-                user_id: session.user_id().to_string(),
-                device_id: session.device_id().to_string(),
-            };
-            view.sync = ChatSync::Starting;
-        });
-        let tasks = self.observe(&session);
-        *active = Some(Active { tasks });
-        drop(active);
-        if let Err(error) = session.start_sync().await {
-            self.view.send_modify(|view| {
-                view.sync = ChatSync::Failed {
-                    reason: failure(&error),
-                    message: error.to_string(),
-                };
-            });
-        }
-    }
-
-    /// 家里的连接没了：停掉同步，留着登录状态，下次连上时恢复。
-    async fn disconnect(&self) {
-        let mut active = self.active.lock().await;
-        if active.take().is_some() {
-            self.forget_current().await;
-        }
-        self.view.send_modify(|view| {
-            view.account = ChatAccount::SignedOut;
-            view.sync = ChatSync::Idle;
-        });
-    }
-
     async fn forget_current(&self) {
         self.bots.set_session(None);
         *lock(&self.verification) = None;

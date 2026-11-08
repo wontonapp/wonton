@@ -132,6 +132,8 @@ private enum ChatStatus {
             self = .signedOut
         case .signingIn:
             self = .progress(String(localized: .chatLoggingIn))
+        case .reconnecting:
+            self = .progress(String(localized: .chatStatusReconnecting))
         case let .failed(reason, message):
             // 连不上由标题栏说，连上后自动重来。
             if reason == .transportUnavailable { return nil }

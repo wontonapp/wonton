@@ -88,6 +88,10 @@ struct Core {
     tuwunel: String,
     issuer: Issuer,
     login_tokens: AtomicUsize,
+    /// 接下来这么多次要登录令牌的请求回 502，像本地代理那一次没连上隧道。
+    failing_login_tokens: AtomicUsize,
+    /// 核心的网关连不上 Tuwunel：Matrix 请求都回网关的 503。
+    matrix_unavailable: AtomicBool,
     /// 登记推送时回给设备的 pushkey。
     pushkey: String,
     /// 推送登记接口收到的请求：方法和请求体（`DELETE` 没有请求体，是 `Null`）。
@@ -148,6 +152,8 @@ impl Home {
             tuwunel: matrix.url.trim_start_matches("http://").to_owned(),
             issuer: matrix.issuer.clone(),
             login_tokens: AtomicUsize::new(0),
+            failing_login_tokens: AtomicUsize::new(0),
+            matrix_unavailable: AtomicBool::new(false),
             pushkey: random_hex(32),
             push_requests: Mutex::default(),
             answers: Mutex::default(),
@@ -402,6 +408,20 @@ impl Home {
         self.core.hold_answers.send_replace(hold);
     }
 
+    /// 接下来 `count` 次要登录令牌都回 502，隧道照常连着。
+    pub fn fail_login_tokens(&self, count: usize) {
+        self.core
+            .failing_login_tokens
+            .store(count, Ordering::SeqCst);
+    }
+
+    /// Tuwunel 在重启：核心的网关回 503（Matrix JSON），和 [`Self::set_matrix_down`] 的断连接不同，隧道和令牌照常。
+    pub fn set_matrix_unavailable(&self, unavailable: bool) {
+        self.core
+            .matrix_unavailable
+            .store(unavailable, Ordering::SeqCst);
+    }
+
     /// 核心签发过几次登录令牌。
     pub fn login_tokens(&self) -> usize {
         self.core.login_tokens.load(Ordering::SeqCst)
@@ -507,6 +527,13 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
         return Some((200, installed.to_string()));
     }
     let response = if head.starts_with("post /_wonton/matrix/login-token ") {
+        if core
+            .failing_login_tokens
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Some((502, String::new()));
+        }
         core.login_tokens.fetch_add(1, Ordering::SeqCst);
         json!({
             "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),

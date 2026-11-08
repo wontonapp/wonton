@@ -74,7 +74,14 @@ pub enum ChatAccount {
         /// 本设备在服务器上的设备 ID。
         device_id: String,
     },
-    /// 登录失败，或者会话已失效。`Unauthorized` 表示这台设备被吊销了，要主人重新配对。
+    /// 上一次登录因为暂时的原因没成功（连不上、Matrix 还没就绪），核心正按退避自动重试，不用用户操作。
+    /// `reason`、`message` 是上一次失败的原因。
+    Reconnecting {
+        reason: ChatFailure,
+        message: String,
+    },
+    /// 登录失败、不会自动重试（App 回到前台时再试一次），或者会话已失效。`Unauthorized` 表示这台设备被吊销了，
+    /// 要主人重新配对。
     Failed {
         reason: ChatFailure,
         message: String,

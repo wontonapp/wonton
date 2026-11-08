@@ -1531,6 +1531,36 @@
         }
       }
     },
+    "chatStatus.reconnecting": {
+      "comment": "Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重连…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重新連線…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再接続しています…"
+          }
+        }
+      }
+    },
     "common.cancel": {
       "comment": "Dialog button that closes the dialog without doing anything.",
       "extractionState": "manual",

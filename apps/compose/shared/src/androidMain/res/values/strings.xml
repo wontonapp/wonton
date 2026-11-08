@@ -137,6 +137,8 @@
     <string name="chat_backup_value_incomplete">Recovery key needed</string>
     <!-- Value on the Settings row: the status can't be determined. -->
     <string name="chat_backup_value_unknown">Unknown</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">Reconnecting…</string>
     <!-- Dialog button that closes the dialog without doing anything. -->
     <string name="common_cancel">Cancel</string>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->

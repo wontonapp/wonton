@@ -30,7 +30,7 @@ pub enum Error {
         message: String,
     },
 
-    /// 前置条件不满足：服务器缺少必需的能力，或房间还没同步到本地。
+    /// 前置条件不满足：服务器缺少必需的能力，房间还没同步到本地，或 Matrix 服务器暂时不可用（网关回 502–504）。
     #[error("Matrix 尚未就绪：{0}")]
     NotReady(String),
 
@@ -80,6 +80,9 @@ impl From<&ApiError> for Error {
                 tracing::warn!(%api, "服务器拒绝了请求");
                 Self::InvalidInput("服务器不接受这个请求，检查填的内容后再试".to_owned())
             }
+            // 核心的网关连不上 Tuwunel（重启、升级中）回 503，Tuwunel 迟迟不回回 504，都是 Matrix JSON：
+            // 会自己好，归成未就绪，登录才会退避重试，不当成要用户处理的服务器错误。
+            502..=504 => Self::NotReady(api.to_string()),
             _ => Self::Upstream(api.to_string()),
         }
     }
@@ -182,5 +185,16 @@ mod tests {
             Error::from(&response(500, r#"{"errcode":"M_UNKNOWN","error":"x"}"#)),
             Error::Upstream(_)
         ));
+    }
+
+    #[test]
+    fn a_matrix_server_that_is_temporarily_unavailable_is_not_ready() {
+        for status in [502, 503, 504] {
+            let error = Error::from(&response(
+                status,
+                r#"{"errcode":"M_UNKNOWN","error":"Tuwunel 暂时无法访问"}"#,
+            ));
+            assert!(matches!(error, Error::NotReady(_)), "{status}: {error:?}");
+        }
     }
 }

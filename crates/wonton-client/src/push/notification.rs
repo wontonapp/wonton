@@ -140,7 +140,7 @@ impl PushLink {
         ))
     }
 
-    /// 等聊天登录（或从本机恢复）好。登录失败、超时都给出原因。
+    /// 等聊天登录（或从本机恢复）好。登录失败、超时都给出原因；正在重连的等到超时。
     pub(super) async fn wait_session(&self) -> Result<Arc<MatrixSession>, (ChatFailure, String)> {
         let mut chat = self.chat.subscribe();
         let waiting = async {
@@ -161,12 +161,12 @@ impl PushLink {
         };
         match tokio::time::timeout(SESSION_WAIT, waiting).await {
             Ok(result) => result,
-            Err(_) => Err(match self.home.view().status {
-                HomeStatus::NotConfigured => (
+            Err(_) => Err(match (self.chat.view().account, self.home.view().status) {
+                (_, HomeStatus::NotConfigured) => (
                     ChatFailure::NotReady,
                     l10n!(CATALOG, language(), "push-not-paired"),
                 ),
-                HomeStatus::Disconnected { message, .. } => (
+                (_, HomeStatus::Disconnected { message, .. }) => (
                     ChatFailure::TransportUnavailable,
                     l10n!(
                         CATALOG,
@@ -175,7 +175,9 @@ impl PushLink {
                         reason = message
                     ),
                 ),
-                HomeStatus::Connecting | HomeStatus::Connected => (
+                // 正在重连的接着等，等不到就报上一次登录失败的原因。
+                (ChatAccount::Reconnecting { reason, message }, _) => (reason, message),
+                (_, HomeStatus::Connecting | HomeStatus::Connected) => (
                     ChatFailure::TransportUnavailable,
                     l10n!(
                         CATALOG,
