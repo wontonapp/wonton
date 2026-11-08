@@ -616,7 +616,7 @@ impl PluginsLink {
         let api = self.api().map_err(to_core_error)?;
         let bytes = api.image(image).await.map_err(to_core_error)?;
         if let Err(error) = save_atomically(&self.images_dir, &cached, &bytes).await {
-            tracing::warn!("插件图片写不进缓存：{error}");
+            tracing::warn!("can't write the app image to the cache: {error}");
         }
         Ok(bytes)
     }

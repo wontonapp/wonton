@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, FileCard,
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
@@ -15,6 +16,7 @@ use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
 use crate::home::Network;
+use crate::l10n::{CATALOG, language};
 use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
@@ -651,7 +653,7 @@ impl ClientCore {
             Action::AskAgent { text } => {
                 let bot = scope.onboarding.view().primary_bot_user_id.ok_or_else(|| {
                     CoreError::NotReady {
-                        reason: "还没有默认 Agent：先在设置里选一个".to_owned(),
+                        reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
                     }
                 })?;
                 scope.chat.ask(&bot, &text)
@@ -679,7 +681,7 @@ impl ClientCore {
 /// 局域网设置的接口先于实现合并（ADR-0019）：实现之前如实失败。
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
-        reason: "这个版本的客户端核心不支持局域网设置".into(),
+        reason: l10n!(CATALOG, language(), "home-lan-unsupported"),
     }
 }
 

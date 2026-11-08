@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::runtime::Handle;
 use tokio::sync::watch;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, CoreError, HomeStatus, Me, ModelProviderFailure, ModelProviderProblem, ModelProviders,
     Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingUpdate,
@@ -25,6 +26,7 @@ use wonton_protocol::{
 
 use crate::chat::ChatLink;
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 use crate::plugins::PluginsLink;
 use crate::scope::reuse;
 use draft::Draft;
@@ -162,7 +164,11 @@ impl OnboardingLink {
             Action::SetPrimaryAgent { id } => self.set_primary(&id),
             Action::DismissReplacedAgentOffer => self.dismiss_replaced(),
             Action::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
-            _ => Err(invalid("不是新用户引导操作")),
+            _ => Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-invalid-action"
+            ))),
         }
     }
 
@@ -272,17 +278,30 @@ impl OnboardingLink {
 
     fn set_primary(self: &Arc<Self>, id: &str) -> Result<(), CoreError> {
         let state = lock(&self.state);
-        let onboarding = state
-            .onboarding
-            .as_ref()
-            .ok_or_else(|| invalid("还没有取到引导状态"))?;
+        let onboarding = state.onboarding.as_ref().ok_or_else(|| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-state-missing"
+            ))
+        })?;
         let agent = onboarding
             .agents
             .iter()
             .find(|agent| agent.id == id)
-            .ok_or_else(|| invalid("这个 Agent 不在列表里"))?;
+            .ok_or_else(|| {
+                invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "onboarding-steps-agent-not-listed"
+                ))
+            })?;
         if !view::installable(agent) {
-            return Err(invalid("这个 Agent 不能安装"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-agent-not-installable"
+            )));
         }
         drop(state);
         self.spawn_update(OnboardingUpdate {
@@ -294,7 +313,11 @@ impl OnboardingLink {
 
     fn dismiss_replaced(self: &Arc<Self>) -> Result<(), CoreError> {
         if lock(&self.state).onboarding.is_none() {
-            return Err(invalid("还没有取到引导状态"));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-state-missing"
+            )));
         }
         self.spawn_update(OnboardingUpdate {
             replaced_agent_asked: Some(true),

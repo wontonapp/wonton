@@ -92,14 +92,14 @@ async fn follow_room(
     let room = match room_id.parse::<OwnedRoomId>() {
         Ok(room) => session.watch_room(&room).await,
         Err(error) => {
-            tracing::warn!(room = %room_id, "通知房间的 ID 不合法：{error}");
+            tracing::warn!(room = %room_id, "notification room ID isn't valid: {error}");
             return;
         }
     };
     let room = match room {
         Ok(room) => room,
         Err(error) => {
-            tracing::warn!(room = %room_id, "跟不了通知房间，有卡片也提示不了：{error}");
+            tracing::warn!(room = %room_id, "can't follow the notification room, so cards won't be announced: {error}");
             return;
         }
     };
@@ -117,7 +117,7 @@ async fn follow_room(
         if latest != newest {
             newest = latest;
             if let Err(error) = room.paginate_backwards(CARD_LOOKBACK).await {
-                tracing::warn!(room = %room_id, "往回翻通知房间失败，更早的卡片提示不了：{error}");
+                tracing::warn!(room = %room_id, "can't page back through the notification room, so older cards won't be announced: {error}");
             }
         }
         let shown = cards.view();

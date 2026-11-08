@@ -63,6 +63,8 @@ onboarding-steps-testing = 正在测试
 onboarding-steps-model-not-chosen = 还没有选模型
 onboarding-steps-cannot-skip = 这一步不能跳过
 onboarding-steps-cannot-go-back = 这一步不能返回
+# 壳把不认识的操作分给引导时显示。
+onboarding-invalid-action = 不是引导操作
 
 # 接模型这一步。
 onboarding-model-key-required = key 不能为空
@@ -138,8 +140,8 @@ chat-contacts-empty-username = 用户名不能为空。
 # $reason 是 Matrix ID 解析器的原始错误。
 chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }
 
-# 通过 Siri 或快捷指令发消息、内容为空时显示。
-chat-ask-empty-message = 消息不能为空。
+# 通过 Siri、快捷指令或聊天页发消息、内容为空时显示。
+chat-empty-message = 消息不能为空。
 # Siri 或快捷指令传进来的 Bot ID 解析不了时显示。
 chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
@@ -147,6 +149,42 @@ chat-ask-invalid-room-id = 私聊的房间 ID 不合法。
 
 # Matrix 吊销本设备、账号标记为失败时显示。
 chat-session-device-revoked = 这台设备在 Matrix 上已被吊销，需要主人重新配对。
+
+# 壳把不认识的操作分给聊天时显示。
+chat-invalid-action = 不是聊天操作
+# 设置聊天布局而核心还没实现时显示。
+chat-layouts-unsupported = 这个版本的客户端核心不支持聊天布局
+# 发起私聊时给的 ID 不像 @名字:服务器 时显示。
+chat-invalid-user-id = ID 的格式不对，应该像 @名字:服务器
+# $file_type 是选中文件原始的 MIME 类型。
+chat-not-image-type = 这个文件不是图片：{ $file_type }
+# 壳给了这个核心不认识的回答时显示。
+chat-unknown-answer = 这个版本的 App 不认识这个回答
+# 还没连上家里的服务器就回答或停止确认时显示。
+chat-action-not-connected = 还没连上家里的服务器
+# 还没登录 Matrix 就有聊天操作时显示。
+chat-not-signed-in = 还没有登录 Matrix
+# $error 是房间 ID 解析器的原始错误。
+chat-invalid-room-id = 房间 ID 不合法：{ $error }
+# 往只放通知的房间里发东西时显示。
+chat-read-only-room = 这个房间只放通知，不能发消息
+# $room 是原始的房间 ID。
+chat-room-not-subscribed = 要先订阅房间 { $room } 的时间线
+# 还没选默认 Agent 就问它时显示。
+chat-no-default-agent = 还没有默认 Agent：先在设置里选一个
+
+# 后台聊天操作失败的话，放进问题提示里；$error 是 Matrix SDK 或家里的服务器的原始错误。
+chat-op-ask-agent-failed = 问默认 Agent 失败：{ $error }
+chat-op-display-name-failed = 同步显示名失败：{ $error }
+chat-op-join-failed = 加入房间失败：{ $error }
+chat-op-leave-failed = 离开房间失败：{ $error }
+chat-op-resend-failed = 重发消息失败：{ $error }
+chat-op-cancel-send-failed = 取消发送失败：{ $error }
+chat-op-paginate-failed = 加载更早的消息失败：{ $error }
+chat-op-mark-read-failed = 标为已读失败：{ $error }
+chat-op-direct-chat-failed = 发起私聊失败：{ $error }
+chat-op-send-text-failed = 发送消息失败：{ $error }
+chat-op-send-image-failed = 发送图片失败：{ $error }
 ## 文件传输和播放的详情。显示在传输列表条目、文件卡片和播放失败说明上。
 
 # 传输或播放还没等开始就发现没连上时显示。
@@ -240,6 +278,13 @@ home-ticket-core-url-under-domain = 核心地址要是 { $domain } 的 http(s) �
 # 没有参数。配对页的设备名一栏被清空了。
 home-pairing-name-empty = 设备名是空的。
 home-pairing-bind-failed = 绑定网络失败：{ $error }
+# $reason 是连接信息解析器的原始错误。
+home-ticket-corrupt = 保存的连接信息已损坏：{ $reason }
+home-no-connection-info = 还没有家里服务器的连接信息
+# $error 是本地代理原始的绑定错误。
+home-proxy-start-failed = 本地代理启动失败：{ $error }
+home-tunnel-closed = 隧道客户端已关闭
+home-lan-unsupported = 这个版本的客户端核心不支持局域网设置
 # 底栏（tabs/view.rs、tabs/config.rs）和外观（appearance/mod.rs）的界面「详情」。
 
 # 底栏 ViewModel 的错误，作为 CoreError 的 reason 或底栏的问题提示显示。
@@ -369,11 +414,15 @@ servers-add-current-unpaired = 先配好这一台，再添加别的服务器
 servers-name-required = 名字不能为空
 # $path 是要读、写或删的路径，$reason 是原始的读写错误。
 servers-storage-failed = 读写不了 { $path }：{ $reason }
+# 壳把不认识的操作分给服务器列表时显示。
+servers-invalid-action = 不是服务器列表操作
 
 # 会话列表（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 会话标题不能为空
 # $id 是原样的会话编号。
 sessions-not-found = 会话不存在：{ $id }
+# 壳把不认识的操作分给会话时显示。
+sessions-invalid-action = 不是会话操作
 
 # 推送方式设置（crates/wonton-client/src/push_method.rs）。
 # $path 是设置文件的路径，$reason 是原始的读写错误。

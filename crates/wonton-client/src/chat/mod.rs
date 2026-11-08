@@ -19,6 +19,7 @@ mod display_name;
 mod follow_home;
 mod login;
 mod onboarding;
+mod ops;
 mod pending;
 mod read_mark;
 mod recovery;
@@ -30,7 +31,6 @@ mod timeline;
 mod verification;
 mod view;
 
-use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -41,11 +41,12 @@ use futures_util::future::BoxFuture;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use wonton_l10n::l10n;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
 use wonton_protocol::{
-    Action, Answer, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
-    ConfirmationAnswer, CoreError, DeviceVerification, EncryptionStatus, ImageUpload, MediaHandle,
-    ProxySettings, PushMethod, PushStatus, RecoveryStatus,
+    Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
+    CoreError, DeviceVerification, EncryptionStatus, ImageUpload, MediaHandle, ProxySettings,
+    PushMethod, PushStatus, RecoveryStatus,
 };
 
 pub use bots::bot_current_avatar;
@@ -55,6 +56,7 @@ pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
 use confirmation::{Answers, Cards};
 use storage::ChatStorage;
@@ -258,15 +260,16 @@ impl ChatLink {
             }
             Action::JoinRoom { room_id } => {
                 let (session, room_id) = self.target(&room_id)?;
-                self.spawn_op("加入房间", async move { session.join_room(&room_id).await });
+                self.spawn_op("chat-op-join-failed", async move {
+                    session.join_room(&room_id).await
+                });
                 Ok(())
             }
             Action::LeaveRoom { room_id } => {
                 let (session, room_id) = self.target(&room_id)?;
-                self.spawn_op(
-                    "离开房间",
-                    async move { session.leave_room(&room_id).await },
-                );
+                self.spawn_op("chat-op-leave-failed", async move {
+                    session.leave_room(&room_id).await
+                });
                 Ok(())
             }
             Action::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
@@ -276,7 +279,7 @@ impl ChatLink {
                 let room = self.opened(&room_id)?;
                 let sent = self.sent.clone();
                 self.spawn_op_with_success(
-                    "重发消息",
+                    "chat-op-resend-failed",
                     async move { room.retry_send(&item_id).await },
                     move || onboarding::record_sent(&sent, room_id),
                 );
@@ -284,12 +287,14 @@ impl ChatLink {
             }
             Action::CancelSend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
-                self.spawn_op("取消发送", async move { room.cancel_send(&item_id).await });
+                self.spawn_op("chat-op-cancel-send-failed", async move {
+                    room.cancel_send(&item_id).await
+                });
                 Ok(())
             }
             Action::PaginateBackwards { room_id } => {
                 let room = self.opened(&room_id)?;
-                self.spawn_op("加载更早的消息", async move {
+                self.spawn_op("chat-op-paginate-failed", async move {
                     room.paginate_backwards(PAGE).await.map(drop)
                 });
                 Ok(())
@@ -297,7 +302,7 @@ impl ChatLink {
             Action::MarkRoomRead { room_id } => {
                 let chat = self.clone();
                 let (_, room_id) = self.target(&room_id)?;
-                self.spawn_op("标为已读", async move {
+                self.spawn_op("chat-op-mark-read-failed", async move {
                     chat.room(&room_id).await?.mark_as_read().await.map(drop)
                 });
                 Ok(())
@@ -317,23 +322,23 @@ impl ChatLink {
             } => self.answer_confirmation(id, answer, choice_id),
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             Action::SetChatLayout { .. } => Err(CoreError::NotReady {
-                reason: "this client core does not implement chat layouts (ADR-0060)".to_owned(),
+                reason: l10n!(CATALOG, language(), "chat-layouts-unsupported"),
             }),
-            _ => Err(invalid("不是聊天操作")),
+            _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
         }
     }
 
     fn send_text(self: &Arc<Self>, room_id: &str, body: &str) -> Result<(), CoreError> {
         let body = body.trim().to_owned();
         if body.is_empty() {
-            return Err(invalid("消息不能为空"));
+            return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
         }
         let chat = self.clone();
         let sent = self.sent.clone();
         let (_, room_id) = self.send_target(room_id)?;
         let sent_room = room_id.to_string();
         self.spawn_op_with_success(
-            "发送消息",
+            "chat-op-send-text-failed",
             async move { chat.room(&room_id).await?.send_text(&body).await },
             move || onboarding::record_sent(&sent, sent_room),
         );
@@ -401,13 +406,13 @@ impl ChatLink {
     fn start_direct_chat(self: &Arc<Self>, user_id: &str) -> Result<(), CoreError> {
         let user: OwnedUserId = user_id
             .parse()
-            .map_err(|_| invalid("ID 的格式不对，应该像 @名字:服务器"))?;
+            .map_err(|_| invalid(&l10n!(CATALOG, language(), "chat-invalid-user-id")))?;
         let session = self.current()?;
         if session.direct_chat_with(&user).is_some() {
             return Ok(());
         }
         // 和 Bot 的主房间一样端到端加密：推送只带房间和事件 ID，正文在手机上解密（ADR-0003 的“设计：加密推送”）。
-        self.spawn_op("发起私聊", async move {
+        self.spawn_op("chat-op-direct-chat-failed", async move {
             session.create_direct_chat(&user, true).await.map(drop)
         });
         Ok(())
@@ -415,7 +420,12 @@ impl ChatLink {
 
     fn send_image(self: &Arc<Self>, room_id: &str, image: ImageUpload) -> Result<(), CoreError> {
         if !image.mime_type.starts_with("image/") {
-            return Err(invalid(&format!("不是图片类型：{}", image.mime_type)));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "chat-not-image-type",
+                file_type = image.mime_type.as_str()
+            )));
         }
         let chat = self.clone();
         let sent = self.sent.clone();
@@ -437,7 +447,7 @@ impl ChatLink {
                 }),
         };
         self.spawn_op_with_success(
-            "发送图片",
+            "chat-op-send-image-failed",
             async move { chat.room(&room_id).await?.send_image(upload).await },
             move || onboarding::record_sent(&sent, sent_room),
         );
@@ -453,10 +463,10 @@ impl ChatLink {
         choice_id: Option<String>,
     ) -> Result<(), CoreError> {
         if answer == Answer::Unknown {
-            return Err(invalid("这个 App 不认识这个回答"));
+            return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
         }
         let not_connected = || CoreError::NotReady {
-            reason: "还没连上家里的服务器".to_owned(),
+            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
         };
         let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
         let core_url = self.home.core_url().ok_or_else(not_connected)?;
@@ -482,7 +492,7 @@ impl ChatLink {
     /// 主人点了卡片上放行时段的“停止”：经隧道发给核心，进展放进 `answers`。
     fn stop_confirmation_window(&self, id: String) -> Result<(), CoreError> {
         let not_connected = || CoreError::NotReady {
-            reason: "还没连上家里的服务器".to_owned(),
+            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
         };
         let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
         let core_url = self.home.core_url().ok_or_else(not_connected)?;
@@ -500,40 +510,6 @@ impl ChatLink {
         Ok(())
     }
 
-    /// 在后台执行一个操作，成功时先回调，失败时把原因放进 `problem`。
-    fn spawn_op_with_success(
-        &self,
-        what: &'static str,
-        op: impl Future<Output = Result<(), Error>> + Send + 'static,
-        success: impl FnOnce() + Send + 'static,
-    ) {
-        let view = self.view.clone();
-        self.runtime.spawn(async move {
-            match op.await {
-                Ok(()) => success(),
-                Err(error) => {
-                    tracing::info!("{what}失败：{error}");
-                    let reason = failure(&error);
-                    let message = if reason == ChatFailure::TransportUnavailable {
-                        view::not_connected()
-                    } else {
-                        format!("{what}失败：{error}")
-                    };
-                    view.send_modify(|view| view.problem = Some(ChatProblem { reason, message }));
-                }
-            }
-        });
-    }
-
-    /// 在后台执行一个操作，失败时把原因放进 `problem`。
-    fn spawn_op(
-        &self,
-        what: &'static str,
-        op: impl Future<Output = Result<(), Error>> + Send + 'static,
-    ) {
-        self.spawn_op_with_success(what, op, || {});
-    }
-
     /// 推送的状态由 `push` 模块维护，放在聊天的 ViewModel 里。
     pub(crate) fn set_push(&self, status: PushStatus) {
         self.view.send_modify(|view| view.push = status);
@@ -543,14 +519,19 @@ impl ChatLink {
         lock(&self.session)
             .clone()
             .ok_or_else(|| CoreError::NotReady {
-                reason: "还没有登录 Matrix".to_owned(),
+                reason: l10n!(CATALOG, language(), "chat-not-signed-in"),
             })
     }
 
     fn target(&self, room_id: &str) -> Result<(Arc<MatrixSession>, OwnedRoomId), CoreError> {
-        let room_id = room_id
-            .parse()
-            .map_err(|e| invalid(&format!("房间 ID 不合法：{e}")))?;
+        let room_id = room_id.parse::<OwnedRoomId>().map_err(|e| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "chat-invalid-room-id",
+                error = e.to_string()
+            ))
+        })?;
         Ok((self.current()?, room_id))
     }
 
@@ -563,7 +544,7 @@ impl ChatLink {
             .iter()
             .any(|row| row.room_id == room_id && row.is_read_only);
         if read_only {
-            return Err(invalid("这个房间只放通知，不能发消息"));
+            return Err(invalid(&l10n!(CATALOG, language(), "chat-read-only-room")));
         }
         self.target(room_id)
     }
@@ -572,7 +553,12 @@ impl ChatLink {
         match &*lock(&self.open_room) {
             Some((id, room)) if id.as_str() == room_id => Ok(room.clone()),
             _ => Err(CoreError::NotReady {
-                reason: format!("要先订阅房间 {room_id} 的时间线"),
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "chat-room-not-subscribed",
+                    room = room_id
+                ),
             }),
         }
     }
@@ -614,7 +600,7 @@ impl ChatLink {
         let session = match self.sign_in(&proxy, server_id).await {
             Ok(session) => Arc::new(session),
             Err((reason, message)) => {
-                tracing::info!("登录 Matrix 失败：{message}");
+                tracing::info!("Matrix sign-in failed: {message}");
                 self.view.send_modify(|view| {
                     view.account = ChatAccount::Failed { reason, message };
                     view.sync = ChatSync::Idle;
@@ -687,7 +673,7 @@ impl ChatLink {
             let rooms = match session.rooms().await {
                 Ok(rooms) => rooms,
                 Err(error) => {
-                    tracing::warn!("拿不到房间列表：{error}");
+                    tracing::warn!("can't get the room list: {error}");
                     return;
                 }
             };

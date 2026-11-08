@@ -63,6 +63,8 @@ onboarding-steps-testing = テストが実行中です
 onboarding-steps-model-not-chosen = モデルがまだ選ばれていません
 onboarding-steps-cannot-skip = このステップはスキップできません
 onboarding-steps-cannot-go-back = このステップからは戻れません
+# シェルからコアの知らないセットアップ操作が渡されたときに表示します。
+onboarding-invalid-action = セットアップ操作ではありません
 
 # モデルプロバイダーの接続です。
 onboarding-model-key-required = APIキーが空です
@@ -138,8 +140,8 @@ chat-contacts-empty-username = ユーザー名を入力してください。
 # $reason はMatrix IDパーサーの元のエラーです。
 chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
 
-# Siriやショートカットでメッセージを送るとき、本文が空の場合に表示します。
-chat-ask-empty-message = メッセージを入力してください。
+# Siri、ショートカット、チャット画面でメッセージを送るとき、本文が空の場合に表示します。
+chat-empty-message = メッセージを入力してください。
 # Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
@@ -147,6 +149,42 @@ chat-ask-invalid-room-id = ダイレクトチャットのルームIDが無効で
 
 # Matrixがこのデバイスを取り消し、アカウントが失敗扱いになったときに表示します。
 chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
+
+# シェルからコアの知らないチャット操作が渡されたときに表示します。
+chat-invalid-action = チャット操作ではありません
+# チャットレイアウトの設定に未対応のとき表示します。
+chat-layouts-unsupported = このバージョンのクライアントコアはチャットレイアウトに対応していません
+# ダイレクトチャットの開始時に、@名前:サーバーの形でないIDが渡されたときに表示します。
+chat-invalid-user-id = ユーザーIDの形式が正しくありません。@名前:サーバーのように入力してください
+# $file_type は選択したファイルの元のMIMEタイプです。
+chat-not-image-type = 画像ファイルではありません：{ $file_type }
+# シェルからコアの知らない回答が渡されたときに表示します。
+chat-unknown-answer = このバージョンのWontonでは、この回答を認識できません
+# 自宅サーバーに接続する前に確認へ回答したり停止したりしたときに表示します。
+chat-action-not-connected = 自宅サーバーにまだ接続していません
+# Matrixにサインインする前にチャット操作が届いたときに表示します。
+chat-not-signed-in = Matrixにまだログインしていません
+# $error はルームID解析の元のエラーです。
+chat-invalid-room-id = ルームIDが正しくありません：{ $error }
+# 通知専用のルームに送ろうとしたときに表示します。
+chat-read-only-room = このルームは通知専用のため、メッセージを送信できません
+# $room は元のルームIDです。
+chat-room-not-subscribed = 先にルーム{ $room }のタイムラインを購読してください
+# デフォルトのエージェントを選ぶ前に問い合わせたときに表示します。
+chat-no-default-agent = デフォルトのエージェントがまだありません。設定で選んでください
+
+# バックグラウンドのチャット操作が失敗したときの問題表示です。$error はMatrix SDKまたは自宅サーバーの元のエラーです。
+chat-op-ask-agent-failed = デフォルトのエージェントに質問できませんでした：{ $error }
+chat-op-display-name-failed = 表示名を同期できませんでした：{ $error }
+chat-op-join-failed = ルームに参加できませんでした：{ $error }
+chat-op-leave-failed = ルームから退出できませんでした：{ $error }
+chat-op-resend-failed = メッセージを再送できませんでした：{ $error }
+chat-op-cancel-send-failed = 送信をキャンセルできませんでした：{ $error }
+chat-op-paginate-failed = 過去のメッセージを読み込めませんでした：{ $error }
+chat-op-mark-read-failed = ルームを既読にできませんでした：{ $error }
+chat-op-direct-chat-failed = ダイレクトチャットを開始できませんでした：{ $error }
+chat-op-send-text-failed = メッセージを送信できませんでした：{ $error }
+chat-op-send-image-failed = 画像を送信できませんでした：{ $error }
 ## ファイル転送と再生の詳細情報。転送リストの項目、ファイルカード、再生失敗の説明に表示されます。
 
 # 転送や再生を始める前に接続がないとわかったときに表示されます。
@@ -240,6 +278,13 @@ home-ticket-core-url-under-domain = 自宅サーバーのアドレスは{ $domai
 # 引数なし。ペアリング画面のデバイス名欄が空です。
 home-pairing-name-empty = デバイス名が空です
 home-pairing-bind-failed = ネットワーク接続を確立できません：{ $error }
+# $reason は接続情報の解析の元のエラーです。
+home-ticket-corrupt = 保存された接続情報が壊れています：{ $reason }
+home-no-connection-info = 自宅サーバーの接続情報がまだありません
+# $error はローカルプロキシの元のバインドエラーです。
+home-proxy-start-failed = ローカルプロキシを開始できませんでした：{ $error }
+home-tunnel-closed = トンネルクライアントが閉じられました
+home-lan-unsupported = このバージョンのクライアントコアはローカルネットワーク設定に対応していません
 # タブバー（tabs/view.rs、tabs/config.rs）と外観（appearance/mod.rs）の画面の「詳細」。
 # コアの文字は両シェルで共通のため Android の書き方に合わせ、ナビゲーションバーと書きます。プラグインはユーザーには「アプリ」です。
 
@@ -370,11 +415,15 @@ servers-add-current-unpaired = このサーバーを設定してから、別の�
 servers-name-required = 名前を入力してください
 # $path は読み書きまたは削除の対象のパス、$reason は元の入出力エラーです。
 servers-storage-failed = { $path }を読み書きできません：{ $reason }
+# シェルからコアの知らないサーバー一覧の操作が渡されたときに表示します。
+servers-invalid-action = サーバー一覧の操作ではありません
 
 # セッションリスト（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = セッションのタイトルを入力してください
 # $id はそのままのセッションIDです。
 sessions-not-found = そのセッションはありません：{ $id }
+# シェルからコアの知らないセッション操作が渡されたときに表示します。
+sessions-invalid-action = セッション操作ではありません
 
 # 通知方式の設定（crates/wonton-client/src/push_method.rs）。
 # $path は設定ファイルのパス、$reason は元の入出力エラーです。

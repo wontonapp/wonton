@@ -23,12 +23,3 @@ apps/ios/Wonton/TabTexts.swift | 待抽取（ADR-0043） | 2026-12-31
 apps/ios/Wonton/TabWebView.swift | 待抽取（ADR-0043） | 2026-12-31
 apps/ios/Wonton/TimelineRow.swift | 待抽取（ADR-0043） | 2026-12-31
 apps/ios/Wonton/WontonApp.swift | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/chat/ask.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/chat/display_name.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/chat/mod.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/chat/pending.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/client/dispatch.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/client/mod.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/home/mod.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/onboarding/mod.rs | 待抽取（ADR-0043） | 2026-12-31
-crates/wonton-client/src/plugins/mod.rs | 待抽取（ADR-0043） | 2026-12-31

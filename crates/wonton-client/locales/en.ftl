@@ -70,6 +70,8 @@ onboarding-steps-testing = A connection test is still running.
 onboarding-steps-model-not-chosen = No model is selected.
 onboarding-steps-cannot-skip = This step can't be skipped.
 onboarding-steps-cannot-go-back = You can't go back from this step.
+# Shown when the shell routes a setup action this core doesn't know.
+onboarding-invalid-action = Not a setup action.
 
 # Connecting a model provider during setup.
 onboarding-model-key-required = The API key is empty.
@@ -152,8 +154,8 @@ chat-contacts-empty-username = Enter a username.
 # $reason is the Matrix ID parser's original error.
 chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
-# Shown when sending a message through Siri or Shortcuts with empty text.
-chat-ask-empty-message = Type a message first.
+# Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
+chat-empty-message = Type a message first.
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
@@ -161,6 +163,43 @@ chat-ask-invalid-room-id = The direct chat's room ID isn't valid.
 
 # Shown when the account is marked failed because Matrix revoked this device.
 chat-session-device-revoked = This device was revoked on Matrix. Pair it with your home server again.
+
+# Shown when the shell routes a chat action this core doesn't know.
+chat-invalid-action = Not a chat action.
+# Shown when setting a chat layout this core doesn't implement (ADR-0060).
+chat-layouts-unsupported = This version of the client core doesn't support chat layouts.
+# Shown when starting a direct chat with a user ID that isn't @name:server.
+chat-invalid-user-id = That user ID isn't valid. It should look like @name:server.
+# $file_type is the picked file's unchanged MIME type.
+chat-not-image-type = That file isn't an image: { $file_type }
+# Shown when the shell sends an answer this core doesn't know.
+chat-unknown-answer = This version of Wonton doesn't know that answer.
+# Shown when answering or stopping a confirmation before the connection is up.
+chat-action-not-connected = You're not connected to your home server yet.
+# Shown when a chat action arrives before Matrix sign-in.
+chat-not-signed-in = You're not signed in to Matrix yet.
+# $error is the room ID parser's original error.
+chat-invalid-room-id = The room ID isn't valid: { $error }
+# Shown when sending into a room that only carries notifications.
+chat-read-only-room = This room only carries notifications, so you can't send messages here.
+# $room is the unchanged room ID.
+chat-room-not-subscribed = Subscribe to the room's timeline first: { $room }
+# Shown when asking the default agent before one is chosen.
+chat-no-default-agent = There's no Default Agent yet. Choose one in Settings.
+
+# Chat operations that failed in the background. Shown as the problem message;
+# $error is the Matrix SDK's or the home server's original error.
+chat-op-ask-agent-failed = Can't ask the Default Agent: { $error }
+chat-op-display-name-failed = Can't sync your display name: { $error }
+chat-op-join-failed = Can't join the room: { $error }
+chat-op-leave-failed = Can't leave the room: { $error }
+chat-op-resend-failed = Can't resend the message: { $error }
+chat-op-cancel-send-failed = Can't cancel sending: { $error }
+chat-op-paginate-failed = Can't load older messages: { $error }
+chat-op-mark-read-failed = Can't mark the room as read: { $error }
+chat-op-direct-chat-failed = Can't start the direct chat: { $error }
+chat-op-send-text-failed = Can't send the message: { $error }
+chat-op-send-image-failed = Can't send the image: { $error }
 ## File transfers and playback. Details show on transfer list entries, file cards and playback failure messages.
 
 # Shown when a transfer or playback starts before the connection is up.
@@ -252,10 +291,17 @@ home-ticket-web-url-under-domain = The address for app pages must be an http(s) 
 home-ticket-invalid-core-url = The home server address isn't valid: { $error }
 # $domain is the connection info's base domain, $url the unchanged address from the connection info.
 home-ticket-core-url-under-domain = The home server address must be an http(s) address of { $domain }: { $url }
-# $error is the network setup's original error.
+# $error is the network setup's original error, shown while pairing or while opening a connection.
 # No parameters. The device name field on the pairing screen was left empty.
 home-pairing-name-empty = The device name is empty.
 home-pairing-bind-failed = Can't set up the network connection: { $error }
+# $reason is the connection-info parser's original error.
+home-ticket-corrupt = Saved connection information is damaged: { $reason }
+home-no-connection-info = There's no connection information for your home server yet.
+# $error is the local proxy's original bind error.
+home-proxy-start-failed = Can't start the local proxy: { $error }
+home-tunnel-closed = The tunnel client has closed.
+home-lan-unsupported = This version of the client core doesn't support local network settings.
 # Tabs module (crates/wonton-client/src/tabs/view.rs, tabs/config.rs) and appearance module (appearance/mod.rs).
 # These are user-facing "details" (CoreError reasons, problem messages) shown collapsed under errors in the shells.
 # Category 2 (logs, English, not here): expect!/panic messages in the same files were reworded in English.
@@ -405,11 +451,15 @@ servers-add-current-unpaired = Set up this server before adding another one.
 servers-name-required = The name can't be empty.
 # $path is the path being read, written or deleted, $reason is the original I/O error.
 servers-storage-failed = Can't read or write { $path }: { $reason }
+# Shown when the shell routes a server list action this core doesn't know.
+servers-invalid-action = Not a server list action.
 
 # The session list (crates/wonton-client/src/session_store.rs).
 sessions-title-required = The session title can't be empty.
 # $id is the unchanged session ID.
 sessions-not-found = There's no such session: { $id }
+# Shown when the shell routes a session action this core doesn't know.
+sessions-invalid-action = Not a session action.
 
 # The push method setting (crates/wonton-client/src/push_method.rs).
 # $path is the settings file's path, $reason is the original I/O error.

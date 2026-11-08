@@ -23,6 +23,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use url::Url;
+use wonton_l10n::l10n;
 use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
@@ -33,6 +34,7 @@ use wonton_tunnel::{
     TunnelStatus,
 };
 
+use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
 use connection::Tracker;
 pub(crate) use storage::{Storage, write_private};
@@ -129,7 +131,7 @@ impl HomeLink {
         push_method: watch::Receiver<PushMethod>,
     ) -> Result<Arc<Self>, CoreError> {
         let device_key = storage.device_key()?;
-        tracing::info!(device_id = %device_key.public(), "本机设备身份");
+        tracing::info!(device_id = %device_key.public(), "device identity of this phone");
         let saved = storage.ticket()?;
         let view = reuse(
             view,
@@ -179,7 +181,7 @@ impl HomeLink {
         if let Some(text) = saved {
             // 只有校验过的连接信息才会被保存，读出来不合法说明存储坏了。
             let ticket = Ticket::parse(&text).map_err(|reason| CoreError::Storage {
-                reason: format!("保存的连接信息已损坏：{reason}"),
+                reason: l10n!(CATALOG, language(), "home-ticket-corrupt", reason = reason),
             })?;
             home.start(text, ticket);
         }
@@ -245,7 +247,7 @@ impl HomeLink {
             };
             let (checked, ()) = tokio::join!(client.probe(NETWORK_CHANGE_DEADLINE), redials);
             if let Err(err) = checked {
-                tracing::info!("网络变化后检查隧道失败：{err}");
+                tracing::info!("tunnel check after a network change failed: {err}");
                 // 探测只断开不重拨，马上换新连接，不等下一次定时检查。
                 if has_network && !*home.background.borrow() {
                     home.check(&client).await;
@@ -259,7 +261,7 @@ impl HomeLink {
     pub(crate) fn retry(self: &Arc<Self>) -> Result<(), CoreError> {
         if self.lock_ticket().is_none() {
             return Err(CoreError::NotReady {
-                reason: "还没有家里服务器的连接信息".to_owned(),
+                reason: l10n!(CATALOG, language(), "home-no-connection-info"),
             });
         }
         self.lock_tracker().retry_started(Instant::now());
@@ -270,7 +272,7 @@ impl HomeLink {
                 endpoint.network_change().await;
                 client.retry_now();
                 if let Err(err) = client.ping().await {
-                    tracing::info!("重试失败：{err}");
+                    tracing::info!("retry failed: {err}");
                 }
             }
             home.lock_tracker().retry_finished();
@@ -404,7 +406,14 @@ impl HomeLink {
             .endpoint_builder(ticket.relays(), 1)
             .bind()
             .await
-            .map_err(|e| format!("绑定网络失败：{e}"))?;
+            .map_err(|e| {
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "home-pairing-bind-failed",
+                    error = e.to_string()
+                )
+            })?;
         // 只建最优先的一档（ADR-0048）；掉档回退由这个任务盯着家中继状态做。DirectOnly 不连中继，
         // 连接信息里一个中继都没有时没有表，也不回退。
         if self.network == Network::Internet && !ticket.relays().is_empty() {
@@ -424,7 +433,14 @@ impl HomeLink {
         };
         let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
-            .map_err(|e| format!("本地代理启动失败：{e}"))?;
+            .map_err(|e| {
+                l10n!(
+                    CATALOG,
+                    language(),
+                    "home-proxy-start-failed",
+                    error = e.to_string()
+                )
+            })?;
         {
             let mut current = self.lock_lifecycle_client();
             client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
@@ -491,7 +507,7 @@ impl HomeLink {
         // 挂起久了，服务端已经放弃这条连接，手机却收不到关闭帧：限时确认，没有回应就立刻换新连接，
         // 不等 30 秒的空闲超时（见 ADR-0004 的真机实测）。
         if let Err(err) = client.revalidate().await {
-            tracing::info!("隧道检查失败：{err}");
+            tracing::info!("tunnel check failed: {err}");
         }
         {
             let current = self.lock_lifecycle_client();
@@ -504,7 +520,7 @@ impl HomeLink {
         tracing::info!(
             elapsed = ?started.elapsed(),
             status = %client.status(),
-            "回到前台，隧道检查完成"
+            "checked the tunnel after coming back to the foreground"
         );
         // 后台时停下过取地址：地址还是过时就接着取。
         if self.addresses_stale.load(Ordering::Relaxed) && self.connected().await {
@@ -515,7 +531,7 @@ impl HomeLink {
     /// 和服务端做一次往返（必要时重连）。状态由 `follow_connection` 跟着隧道客户端更新。
     async fn check(&self, client: &TunnelClient) {
         if let Err(err) = client.ping().await {
-            tracing::info!("隧道检查失败：{err}");
+            tracing::info!("tunnel check failed: {err}");
         }
         self.recount();
     }
@@ -535,7 +551,7 @@ impl HomeLink {
         let mut tracker = self.lock_tracker();
         if let Some(recovery) = tracker.observe(&status, relay, now) {
             let outage_ms = recovery.outage.as_millis();
-            tracing::info!(outage_ms, trigger = recovery.trigger, "连接恢复");
+            tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
         }
         let notice = tracker.notice(&status, now);
         let details = ConnectionDetails {
@@ -694,7 +710,7 @@ async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelC
         wait = match result {
             Ok(_) => CHECK_INTERVAL,
             Err(err) => {
-                tracing::info!("隧道检查失败：{err}");
+                tracing::info!("tunnel check failed: {err}");
                 // 可能是网络变了，让 iroh 重新检查网卡和路径。
                 endpoint.network_change().await;
                 CHECK_FLOOR
@@ -737,7 +753,7 @@ fn status_view(status: &TunnelStatus) -> HomeStatus {
         },
         TunnelStatus::Closed => HomeStatus::Disconnected {
             reason: HomeFailure::TransportUnavailable,
-            message: "隧道客户端已关闭".to_owned(),
+            message: l10n!(CATALOG, language(), "home-tunnel-closed"),
         },
     }
 }

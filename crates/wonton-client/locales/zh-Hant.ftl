@@ -63,6 +63,8 @@ onboarding-steps-testing = 正在測試
 onboarding-steps-model-not-chosen = 還沒有選模型
 onboarding-steps-cannot-skip = 這一步不能跳過
 onboarding-steps-cannot-go-back = 這一步不能返回
+# 殼把不認得的操作交給初始設定時顯示。
+onboarding-invalid-action = 不是初始設定操作
 
 # 接模型這一步。
 onboarding-model-key-required = API 金鑰不能為空
@@ -138,8 +140,8 @@ chat-contacts-empty-username = 使用者名稱不能為空。
 # $reason 是 Matrix ID 剖析器的原始錯誤。
 chat-contacts-invalid-user-id = 使用者 ID 無效：{ $reason }
 
-# 透過 Siri 或捷徑傳送訊息、內容為空時顯示。
-chat-ask-empty-message = 訊息不能為空。
+# 透過 Siri、捷徑或聊天頁傳送訊息、內容為空時顯示。
+chat-empty-message = 訊息不能為空。
 # Siri 或捷徑傳入的 Bot ID 剖析失敗時顯示。
 chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。
@@ -147,6 +149,42 @@ chat-ask-invalid-room-id = 私訊的聊天室 ID 無效。
 
 # Matrix 撤銷本裝置、帳號標記為失敗時顯示。
 chat-session-device-revoked = 這台裝置在 Matrix 上已被撤銷，需要主人重新配對。
+
+# 殼把不認得的操作交給聊天時顯示。
+chat-invalid-action = 不是聊天操作
+# 設定聊天版面配置而核心還沒實作時顯示。
+chat-layouts-unsupported = 這個版本的用戶端核心不支援聊天版面配置
+# 發起私聊時給的 ID 不像 @名稱:伺服器時顯示。
+chat-invalid-user-id = ID 格式不對，應該像 @名稱:伺服器
+# $file_type 是所選檔案原始的 MIME 類型。
+chat-not-image-type = 這個檔案不是圖片：{ $file_type }
+# 殼送出這個核心不認得的回答時顯示。
+chat-unknown-answer = 這個版本的雲吞不認得這個回答
+# 還沒連上家用伺服器就回答或停止確認時顯示。
+chat-action-not-connected = 還沒連上家用伺服器
+# 還沒登入 Matrix 就有聊天操作時顯示。
+chat-not-signed-in = 還沒登入 Matrix
+# $error 是房間 ID 剖析器的原始錯誤。
+chat-invalid-room-id = 聊天室 ID 無效：{ $error }
+# 在只放通知的房間裡送東西時顯示。
+chat-read-only-room = 這個聊天室只放通知，不能傳送訊息
+# $room 是原始的房間 ID。
+chat-room-not-subscribed = 要先訂閱聊天室 { $room } 的時間軸
+# 還沒選預設 Agent 就詢問時顯示。
+chat-no-default-agent = 還沒有預設 Agent：先在設定裡選一個
+
+# 背景聊天操作失敗的訊息，放進問題提示；$error 是 Matrix SDK 或家用伺服器的原始錯誤。
+chat-op-ask-agent-failed = 無法詢問預設 Agent：{ $error }
+chat-op-display-name-failed = 無法同步顯示名稱：{ $error }
+chat-op-join-failed = 無法加入聊天室：{ $error }
+chat-op-leave-failed = 無法離開聊天室：{ $error }
+chat-op-resend-failed = 無法重新傳送訊息：{ $error }
+chat-op-cancel-send-failed = 無法取消傳送：{ $error }
+chat-op-paginate-failed = 無法載入更早的訊息：{ $error }
+chat-op-mark-read-failed = 無法標為已讀：{ $error }
+chat-op-direct-chat-failed = 無法發起私訊：{ $error }
+chat-op-send-text-failed = 無法傳送訊息：{ $error }
+chat-op-send-image-failed = 無法傳送圖片：{ $error }
 ## 檔案傳輸與播放的詳細資訊。顯示在傳輸清單項目、檔案卡片和播放失敗說明上。
 
 # 傳輸或播放還沒開始就發現未連線時顯示。
@@ -240,6 +278,13 @@ home-ticket-core-url-under-domain = 家用伺服器位址必須是 { $domain } �
 # 沒有參數。配對頁的裝置名欄位被清空了。
 home-pairing-name-empty = 裝置名是空的。
 home-pairing-bind-failed = 無法建立網路連線：{ $error }
+# $reason 是連線資訊剖析器的原始錯誤。
+home-ticket-corrupt = 儲存的連線資訊已損毀：{ $reason }
+home-no-connection-info = 還沒有家用伺服器的連線資訊
+# $error 是本機代理原始的繫結錯誤。
+home-proxy-start-failed = 本機代理啟動失敗：{ $error }
+home-tunnel-closed = 隧道用戶端已關閉
+home-lan-unsupported = 這個版本的用戶端核心不支援區域網路設定
 # 底欄（tabs/view.rs、tabs/config.rs）和外觀（appearance/mod.rs）的介面「詳細資訊」。
 # 對使用者，插件一律叫「App」；底欄按 Android 慣例寫「底部導覽列」。
 
@@ -370,11 +415,15 @@ servers-add-current-unpaired = 先配好這一台，再新增別的伺服器
 servers-name-required = 名稱不能為空
 # $path 是要讀取、寫入或刪除的路徑，$reason 是原始的讀寫錯誤。
 servers-storage-failed = 無法讀寫 { $path }：{ $reason }
+# 殼把不認得的操作交給伺服器清單時顯示。
+servers-invalid-action = 不是伺服器清單操作
 
 # 工作階段清單（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 工作階段標題不能為空
 # $id 是原樣的工作階段編號。
 sessions-not-found = 沒有這個工作階段：{ $id }
+# 殼把不認得的操作交給工作階段時顯示。
+sessions-invalid-action = 不是工作階段操作
 
 # 推播方式設定（crates/wonton-client/src/push_method.rs）。
 # $path 是設定檔的路徑，$reason 是原始的讀寫錯誤。

@@ -1,9 +1,11 @@
 //! 用户操作分到各个作用域（ADR-0042）：这里是分派表，具体的活在各自的链路里。
 
+use wonton_l10n::l10n;
 use wonton_protocol::DeviceNetwork;
 
 use super::switch::PushInput;
 use super::*;
+use crate::l10n::{CATALOG, language};
 
 #[uniffi::export]
 impl ClientCore {
@@ -17,7 +19,7 @@ impl ClientCore {
                 self.update_sessions(|store| store.delete(&session_id))
             }
             _ => Err(CoreError::InvalidInput {
-                reason: "不是会话操作".to_owned(),
+                reason: l10n!(CATALOG, language(), "sessions-invalid-action"),
             }),
         }
     }
@@ -33,7 +35,7 @@ impl ClientCore {
             }
             Action::RemoveServer { id } => self.change_servers(|servers| servers.remove(&id)),
             _ => Err(CoreError::InvalidInput {
-                reason: "不是服务器列表操作".to_owned(),
+                reason: l10n!(CATALOG, language(), "servers-invalid-action"),
             }),
         }
     }
