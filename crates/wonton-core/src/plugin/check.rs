@@ -125,6 +125,10 @@ pub async fn check_package(
                     .as_ref()
                     .is_none_or(|t| keys(t.keys().collect())),
             ),
+            (
+                "setup",
+                m.setup.as_ref().is_none_or(|t| keys(t.keys().collect())),
+            ),
         ];
         for (field, _) in translated.iter().filter(|(_, both)| !both) {
             report.problems.push(format!(

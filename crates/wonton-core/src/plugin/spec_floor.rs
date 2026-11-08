@@ -63,6 +63,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_10, Added::Field(&["runtime"])),
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Field(&["tunnel", "ports"])),
+    (V0_11, Added::Field(&["setup"])),
     (V0_11, Added::Variable("WONTON_SMTP_HOST")),
     (V0_11, Added::Variable("WONTON_SMTP_PORT")),
     (V0_11, Added::Variable("WONTON_MAIL_FROM")),

@@ -126,14 +126,17 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             installed: Some(installed),
             blocked: None,
-            notices: listed
-                .firewalled
-                .then(|| line(l10n::text(langs, "plugin-firewall-notice", &[])))
-                .map(|mut notice| {
-                    notice.emphasis = true;
-                    notice
-                })
+            notices: setup_notice(m, langs)
                 .into_iter()
+                .chain(
+                    listed
+                        .firewalled
+                        .then(|| line(l10n::text(langs, "plugin-firewall-notice", &[])))
+                        .map(|mut notice| {
+                            notice.emphasis = true;
+                            notice
+                        }),
+                )
                 .chain(cross_origin_isolation_notice(m, langs))
                 .chain(
                     super::egress::provider::provides_proxy(m)
@@ -228,6 +231,10 @@ impl PluginManager {
                 )
             });
         let mut notices = source_notices(package, &plan, langs);
+        // 作者写的“装好后要做的一步”排在最前面、醒目显示：主人得先看到它再决定装不装。
+        if let Some(setup) = setup_notice(m, langs) {
+            notices.insert(0, setup);
+        }
         if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
             notices.push(line(l10n::text(langs, "install-webui-sso", &[])));
         }
@@ -668,6 +675,14 @@ pub(crate) fn cross_origin_isolation_notice(
     }
     Some(CardLine {
         text: l10n::text(langs, "plugin-cross-origin-isolation", &[]),
+        emphasis: true,
+    })
+}
+
+/// 清单里的 `setup`：主人装之前就得看到的一步，醒目显示。
+fn setup_notice(m: &super::manifest::Manifest, langs: &Languages) -> Option<CardLine> {
+    m.setup.as_ref().map(|setup| CardLine {
+        text: langs.pick_owned(setup),
         emphasis: true,
     })
 }

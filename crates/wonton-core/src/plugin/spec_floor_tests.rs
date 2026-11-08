@@ -31,6 +31,15 @@ fn a_newer_field_under_an_older_spec_names_the_field_and_the_version() {
 }
 
 #[test]
+fn setup_needs_spec_0_11() {
+    let manifest = json!({"setup": {"zh": "把公钥加到宿主", "en": "Add the key"}});
+    let found = problems(&document("0.10", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.setup"), "{found:?}");
+    assert!(problems(&document("0.11", manifest, plain())).is_empty());
+}
+
+#[test]
 fn compose_fields_and_permissions_count_too() {
     let manifest = json!({"permissions": ["plugins.health"]});
     let service = json!({"image": "nginx", "cap_drop": ["ALL"], "network_mode": "service:db"});

@@ -489,6 +489,9 @@ pub struct Manifest {
     pub about: Option<LocalizedText>,
     #[serde(default)]
     pub release_notes: Option<LocalizedText>,
+    /// 装好后要主人自己做的一步（如把公钥加到某台机器），安装和详情页醒目显示。
+    #[serde(default)]
+    pub setup: Option<LocalizedText>,
     #[serde(default)]
     pub webui: Option<WebUi>,
     #[serde(default)]
