@@ -516,7 +516,7 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
         ["containers", rest @ ..] => containers(&mut docker, method, rest, query, body),
         ["networks", rest @ ..] => networks(&mut docker, method, rest, query, body),
         ["volumes", rest @ ..] => volumes(&mut docker, method, rest, query, body),
-        _ => others(&mut docker, method, &parts),
+        _ => others(&mut docker, method, &parts, query),
     };
     reply.unwrap_or_else(|| {
         json_reply(
@@ -527,7 +527,12 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
 }
 
 /// 版本、镜像、exec 查询。
-fn others(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Response> {
+fn others(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+) -> Option<Response> {
     let reply = match (method, parts) {
         (&Method::GET, ["version"]) => json_reply(
             StatusCode::OK,
@@ -575,8 +580,13 @@ fn others(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Res
         ),
         // 拉成功：像 Docker 一样一行一个 JSON，带进度，最后一条表示下完。每行隔一会儿，测试才看得到中间状态。
         (&Method::POST, ["images", "create"]) => {
-            // 拉完镜像就在本地了：之后查它、用它建容器都正常。
-            docker.missing_images.clear();
+            // 拉完的这个镜像就在本地了：之后查它、用它建容器都正常；没拉的还在不在看它原来在不在。
+            // 核心拉的引用补了 `:latest`，`forget_image` 记的可能是不带标签的名字。
+            if let Some(image) = query_param(query, "fromImage") {
+                docker
+                    .missing_images
+                    .retain(|missing| *missing != image && format!("{missing}:latest") != image);
+            }
             let lines = futures_util::stream::iter([
                 "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"a\"}",
                 "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"b\"}",
