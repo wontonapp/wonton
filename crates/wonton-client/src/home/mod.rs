@@ -47,6 +47,9 @@ pub enum Network {
     Internet,
     /// 只按连接信息里的直连地址连，不连中继、不做地址发现：本机和局域网测试用。
     DirectOnly,
+    /// 只给本机行为测试：按 ticket 连自签测试中继，不做外网地址发现。
+    #[cfg(feature = "test-hooks")]
+    TestRelay,
 }
 
 /// 多久确认一次隧道真的通。iroh 每 5 秒发一次心跳，无线电反正醒着，这个检查不多耗电。
@@ -454,7 +457,7 @@ impl HomeLink {
             domain,
         };
         self.view.send_modify(|view| view.proxy = Some(settings));
-        let watcher = self.runtime.spawn(follow_connection(
+        let watcher = self.runtime.spawn(refresh::follow_connection(
             Arc::downgrade(self),
             endpoint.clone(),
             client.clone(),
@@ -486,6 +489,13 @@ impl HomeLink {
             (Network::Internet, false) => Endpoint::builder(presets::N0)
                 .relay_mode(RelayMode::Custom(relay_map(relays, tiers))),
             (Network::Internet, true) => Endpoint::builder(presets::N0),
+            #[cfg(feature = "test-hooks")]
+            (Network::TestRelay, _) => Endpoint::builder(presets::Minimal)
+                .clear_ip_transports()
+                .bind_addr((Ipv4Addr::LOCALHOST, 0))
+                .expect("fixed loopback bind is valid")
+                .relay_mode(RelayMode::Custom(relay_map(relays, tiers)))
+                .ca_tls_config(iroh::tls::CaTlsConfig::insecure_skip_verify()),
             (Network::DirectOnly, _) => Endpoint::builder(presets::Minimal),
         };
         let transport = QuicTransportConfig::builder()
@@ -628,44 +638,6 @@ impl Link {
         self.proxy.shutdown().await;
         self.client.close();
         self.endpoint.close().await;
-    }
-}
-
-/// 把隧道客户端的状态变化写进 ViewModel，断开期间定时重新算（断开的时长和中继的情况不发事件）。只持有弱引用，核心释放后
-/// 自动结束。
-async fn follow_connection(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelClient) {
-    let Some(mut recount) = home.upgrade().map(|home| home.recount.subscribe()) else {
-        return;
-    };
-    let mut status = client.watch_status();
-    let mut was_connected = false;
-    loop {
-        let current = status.borrow_and_update().clone();
-        let Some(link) = home.upgrade() else {
-            return;
-        };
-        let tick = link.publish(&current, &endpoint, &client);
-        let connected = current == TunnelStatus::Connected;
-        if connected && !was_connected {
-            link.spawn_address_refresh();
-        } else if !connected {
-            link.stop_address_refresh();
-        }
-        was_connected = connected;
-        drop(link);
-        tokio::select! {
-            changed = status.changed() => {
-                if changed.is_err() {
-                    return;
-                }
-            }
-            changed = recount.changed() => {
-                if changed.is_err() {
-                    return;
-                }
-            }
-            () = tokio::time::sleep(tick.unwrap_or_default()), if tick.is_some() => {}
-        }
     }
 }
 

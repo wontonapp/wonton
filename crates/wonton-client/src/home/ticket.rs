@@ -33,7 +33,7 @@ use wonton_tunnel::relays::Relay;
 
 use crate::l10n::{CATALOG, language};
 
-/// 连接信息里最多存这么多直连地址。服务端报的都换成新的，多了只是握手的初始包多发几份。
+/// 连接信息里最多存这么多直连地址，包含本次连接验证过的路径。
 const MAX_DIRECT_ADDRS: usize = 8;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -193,27 +193,38 @@ impl Ticket {
         &self.server.relays
     }
 
-    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧的：中继可能
-    /// 只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，跑着的 endpoint 不会跟着换
-    /// （iroh#4642），要等下一次重建 endpoint。
+    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧候选，仍把
+    /// 本次实证直连路径排第一：中继可能只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，
+    /// 跑着的 endpoint 不会跟着换（iroh#4642），要等下一次重建 endpoint。
     ///
-    /// 直连地址是替换，不和旧的合并：核心报的就是手机到得了的地址（ADR-0032），旧地址只会越积越多，
-    /// 容器网卡地址永远清不掉。
+    /// 本次真实连通的直连路径优先于核心的候选；核心不知道手机侧的地址转换。报告非空时其它旧地址不合并，
+    /// 避免失效地址积累并挤掉新候选（ADR-0032）。
     pub(crate) fn with_reported(
         &self,
         relays: Vec<Relay>,
         direct_addrs: &[SocketAddr],
+        connected: Option<SocketAddr>,
     ) -> Option<Self> {
         let mut updated = self.clone();
         if !relays.is_empty() {
             updated.server.relays = relays;
         }
-        if !direct_addrs.is_empty() {
-            updated.server.direct_addrs = direct_addrs
-                .iter()
-                .copied()
-                .take(MAX_DIRECT_ADDRS)
-                .collect();
+        if connected.is_some() || !direct_addrs.is_empty() {
+            let candidates = if direct_addrs.is_empty() {
+                self.direct_addrs()
+            } else {
+                direct_addrs
+            };
+            let mut addresses = Vec::with_capacity(MAX_DIRECT_ADDRS);
+            for addr in connected.into_iter().chain(candidates.iter().copied()) {
+                if !addresses.contains(&addr) {
+                    addresses.push(addr);
+                }
+                if addresses.len() == MAX_DIRECT_ADDRS {
+                    break;
+                }
+            }
+            updated.server.direct_addrs = addresses;
         }
         let changed = updated.server.relays != self.server.relays
             || updated.server.direct_addrs != self.server.direct_addrs;
@@ -248,36 +259,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reported_addresses_replace_the_old_ones() {
-        let id = SecretKey::generate().public();
-        let text = format!(
-            r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["192.168.1.2:18482"]}},
-                "base_domain": "wonton.localhost", "web_url": "http://wonton.localhost:1/"}}"#
-        );
-        let ticket = Ticket::parse(&text).unwrap();
-        let addr = |n: u8| SocketAddr::from(([10, 0, 0, n], 18482));
-
-        assert!(
-            ticket
-                .with_reported(Vec::new(), &ticket.server.direct_addrs)
-                .is_none()
-        );
-        // 报来的为空：留着旧的。
-        assert!(ticket.with_reported(Vec::new(), &[]).is_none());
-
-        let moved = ticket.with_reported(Vec::new(), &[addr(1)]).unwrap();
-        assert_eq!(moved.direct_addrs(), [addr(1)]);
-        let saved = serde_json::to_string(&moved).unwrap();
-        let again = Ticket::parse(&saved).unwrap();
-        assert_eq!(again.direct_addrs(), moved.direct_addrs());
-        assert_eq!(again.web_url(), moved.web_url());
-
-        let many: Vec<SocketAddr> = (1..=9).map(addr).collect();
-        let full = moved.with_reported(Vec::new(), &many).unwrap();
-        assert_eq!(full.direct_addrs(), &many[..8]);
-    }
-
-    #[test]
     fn reported_relays_replace_the_saved_table_and_an_empty_report_keeps_the_old_one() {
         let id = SecretKey::generate().public();
         let text = format!(
@@ -294,7 +275,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["https://a.example/".parse().unwrap()]
         );
-        assert!(ticket.with_reported(Vec::new(), &[]).is_none());
+        assert!(ticket.with_reported(Vec::new(), &[], None).is_none());
         let updated = ticket
             .with_reported(
                 vec![Relay {
@@ -303,6 +284,7 @@ mod tests {
                     tier: 0,
                 }],
                 &[],
+                None,
             )
             .unwrap();
         assert_eq!(updated.relays()[0].url.as_str(), "https://b.example/");

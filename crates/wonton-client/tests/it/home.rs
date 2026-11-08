@@ -1,6 +1,7 @@
 //! 和家里服务器连接的行为测试：只经由导出给原生壳的接口（`ClientCore`、`Action`、订阅）驱动。
 //! 隧道服务端、插件上游都跑在本机，只走回环地址，不依赖外网。
 
+mod migration;
 mod support;
 
 use support::{BEFORE_IDLE_TIMEOUT, WEB_URL, get, wait_until_ticket_has};
@@ -225,58 +226,7 @@ async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
         .await;
 }
 
-#[tokio::test]
-async fn reported_lan_and_public_addresses_replace_seven_old_addresses() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    let lan: SocketAddr = "192.168.1.2:18482".parse().unwrap();
-    let public: SocketAddr = "203.0.113.2:18482".parse().unwrap();
-    *home.tunnel_info.lock().unwrap() = Some(
-        serde_json::json!({
-            "endpoint_id": home.key.public(),
-            "relays": [],
-            "direct_addrs": [lan, public],
-        })
-        .to_string(),
-    );
-    let mut old = vec![home.server().endpoint().bound_sockets()[0]];
-    // 文档专用地址（RFC 5737）：开发机上不会有服务监听，和真实网段也不会撞。
-    old.extend(
-        [
-            [192, 0, 2, 11],
-            [192, 0, 2, 12],
-            [192, 0, 2, 13],
-            [198, 51, 100, 11],
-            [198, 51, 100, 12],
-            [203, 0, 113, 11],
-            [203, 0, 113, 12],
-        ]
-        .map(|ip| SocketAddr::from((ip, 18482))),
-    );
-    let mut ticket: serde_json::Value = serde_json::from_str(&home.ticket()).unwrap();
-    ticket["server"]["direct_addrs"] = serde_json::to_value(&old).unwrap();
-    phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket.to_string(),
-        })
-        .unwrap();
-
-    wait_until_ticket_has(dir.path(), public).await;
-    let text = std::fs::read(dir.path().join("servers/1/home-ticket.json")).unwrap();
-    let saved: serde_json::Value = serde_json::from_slice(&text).unwrap();
-    // 核心报来的地址是替换：旧的 7 个到不了的地址一个都不留。
-    assert_eq!(
-        saved["server"]["direct_addrs"],
-        serde_json::json!([lan, public])
-    );
-    assert_eq!(
-        saved["server"]["endpoint_id"],
-        ticket["server"]["endpoint_id"]
-    );
-}
-
-/// 取地址失败一次（换网、机器忙）：自动补取，地址照旧换掉，过时标记先真后假，连接不用重建。
+/// 取地址失败一次（换网、机器忙）：自动补取，过时标记先真后假，连接不用重建。
 #[tokio::test]
 async fn a_failed_address_refresh_is_retried_and_clears_the_stale_mark() {
     let dir = tempfile::tempdir().unwrap();
@@ -310,12 +260,6 @@ async fn a_failed_address_refresh_is_retried_and_clears_the_stale_mark() {
             .get(),
         1,
         "补取不该重新建连"
-    );
-    let text = std::fs::read(dir.path().join("servers/1/home-ticket.json")).unwrap();
-    let saved: serde_json::Value = serde_json::from_slice(&text).unwrap();
-    assert_eq!(
-        saved["server"]["direct_addrs"],
-        serde_json::json!([lan, public])
     );
 }
 

@@ -21,7 +21,7 @@ use std::{
 
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, TransportAddr,
-    endpoint::{Connection, ConnectionError, RecvStream, SendStream},
+    endpoint::{Connection, ConnectionError, PathEventStream, RecvStream, SendStream},
 };
 use tokio::sync::watch;
 use tracing::{debug, info};
@@ -463,6 +463,11 @@ impl TunnelClient {
             remote: selected.remote_addr().clone(),
             rtt: selected.rtt(),
         })
+    }
+
+    /// 当前连接的路径变化；流不持有连接，连接关闭后结束。先订阅再取路径快照，避免漏掉切换。
+    pub fn path_events(&self) -> Option<PathEventStream> {
+        self.inner.live_connection().map(|conn| conn.path_events())
     }
 
     /// 关闭客户端：断开当前连接，之后的请求都返回 [`TunnelError::Closed`]。

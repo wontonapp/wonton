@@ -38,7 +38,11 @@ impl Deref for Phone {
 
 impl Phone {
     pub(crate) fn open(dir: &std::path::Path) -> Self {
-        let core = ClientCore::with_network(dir.to_str().unwrap(), Network::DirectOnly).unwrap();
+        Self::with_network(dir, Network::DirectOnly)
+    }
+
+    pub(super) fn with_network(dir: &std::path::Path, network: Network) -> Self {
+        let core = ClientCore::with_network(dir.to_str().unwrap(), network).unwrap();
         Self { core }
     }
 
@@ -87,12 +91,16 @@ pub(crate) struct Home {
 
 impl Home {
     pub(crate) async fn start(devices: &[EndpointId]) -> Self {
+        let key = SecretKey::generate();
+        let endpoint = loopback_endpoint(key.clone(), 0).await;
+        Self::on(devices, key, endpoint).await
+    }
+
+    pub(super) async fn on(devices: &[EndpointId], key: SecretKey, endpoint: Endpoint) -> Self {
         let tunnel_info = Arc::new(Mutex::new(None));
         let fail_tunnel = Arc::new(AtomicUsize::new(0));
         let (upstream, task) = path_echo(tunnel_info.clone(), fail_tunnel.clone()).await;
-        let key = SecretKey::generate();
         let allowlist = Allowlist::new(devices.iter().copied());
-        let endpoint = loopback_endpoint(key.clone(), 0).await;
         Self {
             server: Some(TunnelServer::spawn(endpoint, allowlist.clone(), upstream)),
             key,
