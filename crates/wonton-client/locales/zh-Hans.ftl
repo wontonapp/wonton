@@ -531,3 +531,7 @@ chat-window-ended =
                *[other] 放行时段已结束，放行了 { $count } 次。
             }
     }
+
+# 配对详情。地址和中继 URL 不含配对密钥；error 保留上游原文。
+home-pairing-timeout = 配对未能在 { $seconds } 秒内完成。
+home-pairing-failed-detail = 直连地址：{ $addresses }。中继：[{ $relays }]。已用时 { $milliseconds } 毫秒，限时 { $seconds } 秒。原因：{ $error }

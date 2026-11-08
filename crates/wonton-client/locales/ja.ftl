@@ -532,3 +532,7 @@ chat-window-ended =
                *[other] 許可期間が終了しました（{ $count }回許可）。
             }
     }
+
+# ペアリングの詳細。アドレスとリレー URL にペアリングキーは含まれません。error は上流の原文です。
+home-pairing-timeout = { $seconds } 秒以内にペアリングを完了できませんでした。
+home-pairing-failed-detail = 直接接続先：{ $addresses }。リレー：[{ $relays }]。経過時間：{ $milliseconds } ミリ秒、制限時間：{ $seconds } 秒。原因：{ $error }

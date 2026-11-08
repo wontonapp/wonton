@@ -527,6 +527,8 @@
     <string name="pairing_failure_expired">ペアリングコードの有効期限が切れています</string>
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">このペアリングコードは無効化されています</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">このペアリングコードのサーバーに接続できません</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
     <string name="pairing_next_new_code">新しいコードを取得してください。ペアリング済みのデバイスで「デバイスを追加」を選ぶか、ホストでsudo wonton pairを実行します。</string>
     <string name="pairing_next_closed">このサーバーにはすでにペアリング済みのデバイスがあるため、最初のペアリングコードはもう使えません。ペアリング済みのデバイスから追加するか、ホストでsudo wonton pairを実行して新しいコードを発行してください。</string>
@@ -534,7 +536,7 @@
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">Appとサーバーのバージョンが一致していません</string>
     <!-- Next step under the transport failure. May wrap. -->
-    <string name="pairing_hint_transport">スマートフォンとサーバーが同じローカルネットワークにいるか、サーバーがインターネットに接続できるか確認して、もう一度お試しください。</string>
+    <string name="pairing_hint_transport">自宅サーバーの電源とネットワーク接続を確認して、もう一度試してください。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">Appとサーバーを最新バージョンに更新してください。</string>
     <!-- Title of the "Other servers" page and the settings row that opens it. -->

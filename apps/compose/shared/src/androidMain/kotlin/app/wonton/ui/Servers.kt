@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.PairingStatus
 import app.wonton.protocol.ServerName
 import app.wonton.protocol.ServerRow
 import app.wonton.protocol.ServersViewModel
@@ -154,15 +155,19 @@ private fun RenameServerDialog(server: ServerRow, send: (Action) -> Unit, dismis
 @Composable
 internal fun AddServerPairing(plugins: PluginsState, home: HomeViewModel) {
     val cancel = { plugins.send(Action.CancelAddServer) }
-    BackHandler(onBack = cancel)
+    val back = {
+        if (home.pairing is PairingStatus.Failed) plugins.send(Action.DismissPairingFailure)
+        cancel()
+    }
+    BackHandler(onBack = back)
     WontonScreen(bar = {
         TopAppBar(
             title = { Text(stringResource(R.string.servers_add_title), style = WontonTheme.typography.itemTitle) },
-            navigationIcon = { TextButton(onClick = cancel) { Text(stringResource(R.string.common_cancel)) } },
+            navigationIcon = { TextButton(onClick = back) { Text(stringResource(R.string.common_cancel)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
         )
     }) {
-        PairingScreen(plugins.core, home.pairing)
+        PairingScreen(plugins.core, home.pairing, onBack = cancel)
     }
 }
 

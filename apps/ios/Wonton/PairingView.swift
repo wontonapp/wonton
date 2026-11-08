@@ -7,6 +7,7 @@ import WontonClient
 /// 进展和结果都来自核心的 `HomeViewModel.pairing`；配上后调用 `onPaired`。
 struct PairingView: View {
     @Bindable var model: HomeModel
+    var onBack: (() -> Void)?
     var onPaired: () -> Void = {}
 
     @Environment(\.scenePhase) private var scenePhase
@@ -25,43 +26,14 @@ struct PairingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                    scanner
-                    Text(.pairingInstructions)
-                        .wontonText(WontonTheme.typography.supporting)
-                        .foregroundStyle(Color(colors.textSecondary))
-                }
-                VStack(spacing: WontonTheme.spacing.s8) {
-                    TextField(String(localized: .pairingPastePlaceholder), text: $pastedCode, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(pastedCode.isEmpty ? nil : .caption.monospaced())
-                        .focused($isEditingCode)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .lineLimit(1...5)
-                        .wontonField()
-                    Button {
-                        pair(pastedCode)
-                    } label: {
-                        Text(.pairingSubmit).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(WontonButtonStyle())
-                    .disabled(pastedCode.isEmpty || isPairing)
-                }
-                if let refusal {
-                    ProblemNotice(problem: refusal, icon: .error)
-                }
-                if let pairing = model.viewModel.pairing {
-                    PairingProgress(status: pairing, retry: lastCode.map { code in { pair(code) } })
-                }
-                VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                    Text(.pairingDeviceName)
-                        .wontonText(WontonTheme.typography.supporting)
-                        .foregroundStyle(Color(colors.textSecondary))
-                        .accessibilityHidden(true)
-                    TextField(String(localized: .pairingDeviceName), text: $deviceName)
-                        .textFieldStyle(.plain)
-                        .wontonField()
+                if hasFailedPairing, let pairing = model.viewModel.pairing {
+                    PairingProgress(
+                        status: pairing,
+                        retry: lastCode.map { code in { pair(code) } },
+                        back: leaveFailure
+                    )
+                } else {
+                    pairingForm
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
@@ -71,7 +43,9 @@ struct PairingView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if model.servers.adding {
                 HStack {
-                    Button(.commonCancel) { model.send(.cancelAddServer) }
+                    Button(.commonCancel) {
+                        if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
+                    }
                         .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
                     Spacer()
                     Text(.serversAddTitle)
@@ -86,12 +60,58 @@ struct PairingView: View {
             }
         }
         .task { await askForCamera() }
+        .onDisappear {
+            if hasFailedPairing { model.send(.dismissPairingFailure) }
+        }
         .onChange(of: scenePhase) { _, phase in
             // 可能刚从系统设置里改了相机权限回来。
             if phase == .active { camera = .current }
         }
         .onChange(of: model.viewModel.pairing) { old, new in
             if !model.servers.adding, old == .inProgress, new == nil { onPaired() }
+        }
+    }
+
+    private var pairingForm: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                scanner
+                Text(.pairingInstructions)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            VStack(spacing: WontonTheme.spacing.s8) {
+                TextField(String(localized: .pairingPastePlaceholder), text: $pastedCode, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(pastedCode.isEmpty ? nil : .caption.monospaced())
+                    .focused($isEditingCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .lineLimit(1...5)
+                    .wontonField()
+                Button {
+                    pair(pastedCode)
+                } label: {
+                    Text(.pairingSubmit).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle())
+                .disabled(pastedCode.isEmpty || isPairing)
+            }
+            if let refusal {
+                ProblemNotice(problem: refusal, icon: .error)
+            }
+            if let pairing = model.viewModel.pairing {
+                PairingProgress(status: pairing, retry: nil, back: leaveFailure)
+            }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.pairingDeviceName)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
+                TextField(String(localized: .pairingDeviceName), text: $deviceName)
+                    .textFieldStyle(.plain)
+                    .wontonField()
+            }
         }
     }
 
@@ -130,13 +150,30 @@ struct PairingView: View {
         model.viewModel.pairing == .inProgress
     }
 
+    private var hasFailedPairing: Bool {
+        if case .failed? = model.viewModel.pairing { return true }
+        return false
+    }
+
+    private func leaveFailure() {
+        guard hasFailedPairing else { return }
+        refusal = nil
+        model.send(.dismissPairingFailure)
+        if model.servers.adding {
+            model.send(.cancelAddServer)
+        } else {
+            onBack?()
+        }
+    }
+
     private func scanned(_ code: String) {
+        guard !hasFailedPairing else { return }
         if code != lastCode { pair(code) }
     }
 
     private func pair(_ code: String) {
         guard !isPairing else { return }
-        // 结果显示在按钮下面，键盘不收会挡住。
+        // 先收起键盘，避免挡住进展或失败后的操作。
         isEditingCode = false
         lastCode = code
         refusal = model.pair(code: code, deviceName: deviceName)
@@ -176,6 +213,7 @@ private struct PairingProgress: View {
     let status: PairingStatus
     /// 用最近一次的码再试一次；只对可能是暂时的失败显示。
     let retry: (() -> Void)?
+    let back: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -192,10 +230,18 @@ private struct PairingProgress: View {
                 title: Self.title(reason),
                 lines: Self.hint(reason).map { [$0] } ?? []
             ) {
-                if let detail = Self.detail(reason, message) { ProblemDetail(text: detail) }
                 if let retry, Self.canRetrySameCode(reason) {
-                    Button(.pairingRetrySameCode, action: retry)
-                        .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    Button(action: retry) {
+                        Text(.pairingRetrySameCode).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WontonButtonStyle())
+                }
+                Button(action: back) {
+                    Text(.pairingBack).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
+                if let detail = Self.detail(reason, message) {
+                    ProblemDetail(text: detail, minimumTargetHeight: WontonTheme.size.target)
                 }
             }
         }
@@ -212,8 +258,7 @@ private struct PairingProgress: View {
         }
     }
 
-    /// 服务器按服务器主人的语言写说明：码过期、不认识、已停用这几类说的和标题是同一件事，不再列一遍；
-    /// 本机这一侧的失败补一句下一步。
+    /// 码过期、不认识、已停用这几类不再重复服务器的说明；本机失败补一句下一步。
     private static func hint(_ reason: PairingFailure) -> String? {
         switch reason {
         case .rejected, .expired: String(localized: .pairingNextStepNewCode)
@@ -224,7 +269,7 @@ private struct PairingProgress: View {
         }
     }
 
-    /// 原始说明是服务器写的，收进详情；上面几类连下一步都说完了，不用再点开。
+    /// 核心按 App 语言写的诊断收进详情；码无效的几类已说明下一步，不再重复。
     private static func detail(_ reason: PairingFailure, _ message: String) -> String? {
         switch reason {
         case .rejected, .expired, .closed: nil

@@ -527,6 +527,8 @@
     <string name="pairing_failure_expired">配对码过期了</string>
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">这个配对码已经停用</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">连不上配对码里的服务器</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
     <string name="pairing_next_new_code">换一个新码：在已配对的设备上“添加设备”出码，或在主机上执行 sudo wonton pair。</string>
     <string name="pairing_next_closed">这台服务器已经有配对的设备，首次配对码不能再用；请在已配对的设备上添加，或在主机上执行 sudo wonton pair 另发一个码。</string>
@@ -534,7 +536,7 @@
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">App 和服务器的版本对不上</string>
     <!-- Next step under the transport failure. May wrap. -->
-    <string name="pairing_hint_transport">请确认手机和服务器在同一个局域网里，或者服务器连得上互联网，然后再试一次。</string>
+    <string name="pairing_hint_transport">确认家里的服务器已开机并联网，再试一次。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">请把 App 和服务器都更新到最新版本。</string>
     <!-- Title of the "Other servers" page and the settings row that opens it. -->

@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
+import app.wonton.protocol.Action
 import app.wonton.protocol.CoreUpgradeViewModel
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
@@ -67,15 +68,22 @@ internal fun PairingPage(
     onBack: (() -> Unit)?,
     actions: (@Composable () -> Unit)? = null,
 ) {
+    val back = onBack?.let { navigate ->
+        {
+            if (pairing is PairingStatus.Failed) core.send(Action.DismissPairingFailure)
+            navigate()
+        }
+    }
+    BackHandler(enabled = back != null) { back?.invoke() }
     WontonScreen(
         bar = {
-            if (onBack != null) WontonPushedBar(title, onBack) else WontonRootBar(
+            if (back != null) WontonPushedBar(title, back) else WontonRootBar(
                 title,
                 actions = if (actions != null) { { actions() } } else null,
             )
         },
     ) {
-        PairingScreen(core, pairing, onPaired = { onBack?.invoke() })
+        PairingScreen(core, pairing, onPaired = { onBack?.invoke() }, onBack = onBack)
     }
 }
 

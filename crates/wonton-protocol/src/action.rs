@@ -41,6 +41,8 @@ pub enum Action {
         code: SecretString,
         device_name: String,
     },
+    /// 收起本次配对失败，返回扫码或粘贴；不取消正在进行的配对、不移除已保存的服务器。
+    DismissPairingFailure,
     /// “添加设备”：经隧道向家里的服务器要一个一次性配对码，显示给新设备扫（ADR-0009 的“接口：扫码配对”）。还没配对
     /// 时返回 `NotReady`；进展和码在 [`HomeViewModel::invite`](crate::HomeViewModel::invite) 里。再发一次换一个新码，
     /// 旧码到期前仍然能用。

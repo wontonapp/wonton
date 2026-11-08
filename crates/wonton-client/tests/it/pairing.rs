@@ -236,6 +236,35 @@ impl Phone {
         }
     }
 }
+#[tokio::test]
+async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let dead = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let code = PairingCode {
+        server_id: SecretKey::generate().public(),
+        relays: Vec::new(),
+        direct_addrs: vec![dead.local_addr().unwrap()],
+        base_domain: "wonton.localhost".into(),
+        core_url: Url::parse("http://wonton.localhost:18480/").unwrap(),
+        secret: PairingSecret::from_bytes([42; SECRET_LEN]),
+    }
+    .to_uri();
+    phone.pair(&code).unwrap();
+    assert_eq!(phone.home().pairing, Some(PairingStatus::InProgress));
+    // Existing pairing deadline is 30s. Two seconds only cover scheduling; QUIC cleanup must not delay the visible result.
+    let (failure, message) = tokio::time::timeout(Duration::from_secs(32), phone.pairing_failure())
+        .await
+        .expect("pairing failure must be published before endpoint cleanup");
+    assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    assert!(phone.home().server_id.is_none());
+    phone.dispatch(Action::DismissPairingFailure).unwrap();
+    assert!(phone.home().pairing.is_none());
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    phone.pair(&code).unwrap();
+    assert_eq!(phone.home().pairing, Some(PairingStatus::InProgress));
+}
 
 #[tokio::test]
 async fn scanning_a_code_pairs_the_phone_and_it_reconnects_after_restart() {

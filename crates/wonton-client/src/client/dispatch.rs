@@ -51,6 +51,7 @@ impl ClientCore {
             | Action::DeleteSession { .. }) => self.session_action(action),
             Action::ConnectHome { ticket } => scope.home.connect(&ticket),
             Action::PairHome { code, device_name } => scope.home.pair(code.expose(), &device_name),
+            Action::DismissPairingFailure => scope.home.dismiss_pairing_failure(),
             Action::InviteDevice => scope.home.invite(),
             action @ (Action::AddServer
             | Action::CancelAddServer

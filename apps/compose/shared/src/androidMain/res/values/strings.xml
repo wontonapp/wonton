@@ -586,6 +586,8 @@
     <string name="pairing_failure_expired">The pairing code has expired</string>
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">This pairing code has been deactivated</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">Can\'t reach the server in this pairing code</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
     <!-- Next step under a rejected or expired pairing code: where a new code comes from. No arguments. -->
     <string name="pairing_next_new_code">Get a new code: on a paired device, pick Add Device; or run sudo wonton pair on the computer.</string>
@@ -595,7 +597,7 @@
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">The app and the server versions don\'t match</string>
     <!-- Next step under the transport failure. May wrap. -->
-    <string name="pairing_hint_transport">Make sure the phone and the server are on the same local network, or that the server can reach the internet, then try again.</string>
+    <string name="pairing_hint_transport">Check that your home server is on and connected to the network, then try again.</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">Update the app and the server to the latest versions.</string>
     <!-- Title of the "Other servers" page and the settings row that opens it. -->

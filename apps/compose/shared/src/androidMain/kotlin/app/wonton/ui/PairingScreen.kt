@@ -3,6 +3,7 @@ package app.wonton.ui
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,6 +59,7 @@ fun PairingScreen(
     pairing: PairingStatus?,
     modifier: Modifier = Modifier,
     onPaired: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var deviceName by rememberSaveable { mutableStateOf(defaultDeviceName(context)) }
@@ -65,7 +67,7 @@ fun PairingScreen(
     // 核心当场拒绝的原因，比如扫到的不是配对码。
     var refusal by remember { mutableStateOf<Problem?>(null) }
     // 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
-    var lastCode by remember { mutableStateOf<String?>(null) }
+    var lastCode by rememberSaveable { mutableStateOf<String?>(null) }
     var previous by remember { mutableStateOf(pairing) }
     LaunchedEffect(pairing) {
         if (previous is PairingStatus.InProgress && pairing == null) onPaired()
@@ -75,19 +77,57 @@ fun PairingScreen(
     val focus = LocalFocusManager.current
     fun pair(code: String) {
         if (inProgress) return
-        // 结果显示在按钮下面，键盘不收会挡住。
+        // 收起键盘，让配对结果和操作保持可见。
         focus.clearFocus()
         lastCode = code
         refusal = core.send(Action.PairHome(code, deviceName))
     }
+    val leaveFailure = {
+        previous = pairing
+        focus.clearFocus()
+        refusal = null
+        core.send(Action.DismissPairingFailure)
+        onBack?.invoke()
+        Unit
+    }
+    BackHandler(enabled = pairing is PairingStatus.Failed, onBack = leaveFailure)
+    if (pairing is PairingStatus.Failed) {
+        PairingFailureNotice(
+            pairing,
+            onRetry = lastCode?.let { code -> { pair(code) } },
+            onBack = leaveFailure,
+            modifier = modifier.verticalScroll(rememberScrollState())
+                .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+        )
+    } else {
+        Column(
+            modifier.verticalScroll(rememberScrollState())
+                .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
+        ) {
+            PairingForm(
+                pastedCode, { pastedCode = it }, inProgress,
+                onScan = { code -> if (code != lastCode) pair(code) }, pair = ::pair,
+            )
+            refusal?.let { ProblemNotice(it, WontonIcon.Error) }
+            if (inProgress) PairingProgress()
+            PairingDeviceName(deviceName, onDeviceName = { deviceName = it })
+        }
+    }
+}
+
+@Composable
+private fun PairingForm(
+    pastedCode: String,
+    onPastedCode: (String) -> Unit,
+    inProgress: Boolean,
+    onScan: (String) -> Unit,
+    pair: (String) -> Unit,
+) {
     val secondary = WontonTheme.colors.textSecondary.toColor()
-    Column(
-        modifier.verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
-        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            CameraArea(onCode = { code -> if (code != lastCode) pair(code) })
+            CameraArea(onCode = onScan)
             Text(
                 stringResource(R.string.pairing_instructions),
                 style = WontonTheme.typography.supporting,
@@ -97,7 +137,7 @@ fun PairingScreen(
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             WontonTextField(
                 value = pastedCode,
-                onValueChange = { pastedCode = it },
+                onValueChange = onPastedCode,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = stringResource(R.string.pairing_paste_placeholder),
                 textStyle = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
@@ -111,23 +151,26 @@ fun PairingScreen(
                 enabled = pastedCode.isNotBlank() && !inProgress,
             )
         }
-        refusal?.let { ProblemNotice(it, WontonIcon.Error) }
-        pairing?.let { status -> PairingProgress(status, onRetry = lastCode?.let { code -> { pair(code) } }) }
-        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            val deviceNameLabel = stringResource(R.string.pairing_device_name)
-            Text(
-                deviceNameLabel,
-                Modifier.semantics { hideFromAccessibility() },
-                style = WontonTheme.typography.supporting,
-                color = secondary,
-            )
-            WontonTextField(
-                value = deviceName,
-                onValueChange = { deviceName = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = deviceNameLabel,
-            )
-        }
+    }
+}
+
+@Composable
+private fun PairingDeviceName(deviceName: String, onDeviceName: (String) -> Unit) {
+    val secondary = WontonTheme.colors.textSecondary.toColor()
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        val deviceNameLabel = stringResource(R.string.pairing_device_name)
+        Text(
+            deviceNameLabel,
+            Modifier.semantics { hideFromAccessibility() },
+            style = WontonTheme.typography.supporting,
+            color = secondary,
+        )
+        WontonTextField(
+            value = deviceName,
+            onValueChange = onDeviceName,
+            modifier = Modifier.fillMaxWidth(),
+            label = deviceNameLabel,
+        )
     }
 }
 
@@ -135,29 +178,42 @@ fun PairingScreen(
 fun defaultDeviceName(context: Context): String =
     Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
 
-/** 配对的进展；失败时按原因说下一步怎么做。 */
+/** 配对的进展只反映核心状态。 */
 @Composable
-private fun PairingProgress(status: PairingStatus, onRetry: (() -> Unit)?) {
-    when (status) {
-        is PairingStatus.InProgress -> Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-        ) {
-            val color = WontonTheme.colors.textPrimary.toColor()
-            CircularProgressIndicator(Modifier.size(WontonTheme.size.iconSmall), color = color, strokeWidth = 2.dp)
-            Text(stringResource(R.string.pairing_in_progress), style = WontonTheme.typography.body, color = color)
-        }
-        is PairingStatus.Failed -> WontonNotice(
+private fun PairingProgress() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+    ) {
+        val color = WontonTheme.colors.textPrimary.toColor()
+        CircularProgressIndicator(Modifier.size(WontonTheme.size.iconSmall), color = color, strokeWidth = 2.dp)
+        Text(stringResource(R.string.pairing_in_progress), style = WontonTheme.typography.body, color = color)
+    }
+}
+
+@Composable
+private fun PairingFailureNotice(
+    status: PairingStatus.Failed,
+    onRetry: (() -> Unit)?,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        WontonNotice(
             WontonIcon.Warning,
             stringResource(failureTitle(status.reason)),
             lines = listOfNotNull(failureHint(status.reason)?.let { stringResource(it) }),
         ) {
-            if (status.reason.showsCoreMessage()) ProblemDetail(status.message)
             if (onRetry != null && status.reason.canRetrySameCode()) {
                 WontonButton(
-                    stringResource(R.string.pairing_retry_same_code), onRetry, kind = WontonButtonKind.SECONDARY,
+                    stringResource(R.string.pairing_retry_same_code), onRetry, modifier = Modifier.fillMaxWidth(),
                 )
             }
+            WontonButton(
+                stringResource(R.string.design_back), onBack,
+                modifier = Modifier.fillMaxWidth(), kind = WontonButtonKind.SECONDARY,
+            )
+            if (status.reason.showsCoreMessage()) ProblemDetail(status.message)
         }
     }
 }
@@ -166,7 +222,7 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.REJECTED -> R.string.pairing_failure_rejected
     PairingFailure.EXPIRED -> R.string.pairing_failure_expired
     PairingFailure.CLOSED -> R.string.pairing_failure_closed
-    PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.problem_transport_unavailable_title
+    PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_failure_transport
     PairingFailure.UPSTREAM -> R.string.problem_upstream_title
     PairingFailure.PROTOCOL -> R.string.pairing_failure_protocol
 }
@@ -180,7 +236,7 @@ private fun failureHint(reason: PairingFailure): Int? = when (reason) {
     PairingFailure.UPSTREAM -> null
 }
 
-/** 服务器给的原因是原始值（语言是服务器主人的），收进默认收起的详情。 */
+/** 核心按 App 语言生成的诊断信息只在默认收起的详情里显示。 */
 private fun PairingFailure.showsCoreMessage(): Boolean = when (this) {
     PairingFailure.TRANSPORT_UNAVAILABLE, PairingFailure.UPSTREAM, PairingFailure.PROTOCOL -> true
     PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.CLOSED -> false

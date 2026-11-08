@@ -39,7 +39,11 @@ struct SettingsTab: View {
         case .connectionDetails: ConnectionDetailsView(model: home)
         case .invite: InviteView(model: home, chat: chat)
         case .pairing:
-            PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
+            PairingView(
+                model: home,
+                onBack: { if !model.path.isEmpty { model.path.removeLast() } },
+                onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
+            )
                 .wontonPushedScreen(String(localized: .pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)

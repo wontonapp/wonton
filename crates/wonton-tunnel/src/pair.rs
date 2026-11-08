@@ -16,7 +16,7 @@ use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-pub use client::pair;
+pub use client::{PAIR_TIMEOUT, pair};
 pub use server::{PairHandler, PairProtocol};
 
 use crate::relays::Relay;

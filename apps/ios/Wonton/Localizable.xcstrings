@@ -20982,6 +20982,36 @@
         }
       }
     },
+    "pairing.back": {
+      "comment": "Button on the pairing failure: return to code entry or leave the pushed pairing screen without pairing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る"
+          }
+        }
+      }
+    },
     "pairing.cameraDenied": {
       "comment": "Notice when camera access was denied. Names both ways out.",
       "extractionState": "manual",
@@ -21013,31 +21043,31 @@
       }
     },
     "pairing.failure.transport": {
-      "comment": "Failure title when the home server can't be reached while pairing.",
+      "comment": "Failure title when the server identified by the pairing code can't be reached.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Can't reach your home server"
+            "value": "Can't reach the server in this pairing code"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连不上家里的服务器"
+            "value": "连不上配对码里的服务器"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "連不上家用伺服器"
+            "value": "連不上配對碼裡的伺服器"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "自宅サーバに接続できません"
+            "value": "このペアリングコードのサーバに接続できません"
           }
         }
       }
@@ -24269,25 +24299,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Make sure the phone and your home server are on the same local network, or that your home server can reach the internet, then try again."
+            "value": "Check that your home server is on and connected to the network, then try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "确认手机和家里的服务器在同一个局域网里，或者家里的服务器连得上互联网，然后再试一次。"
+            "value": "确认家里的服务器已开机并联网，再试一次。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請確認手機和家用伺服器在同一個區域網路裡，或者家用伺服器連得上網際網路，然後再試一次。"
+            "value": "確認家用伺服器已開機並連上網路，再試一次。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スマートフォンと自宅サーバが同じローカルネットワークにいるか、自宅サーバがインターネットに接続できるか確認して、もう一度お試しください。"
+            "value": "自宅サーバの電源とネットワーク接続を確認して、もう一度試してください。"
           }
         }
       }

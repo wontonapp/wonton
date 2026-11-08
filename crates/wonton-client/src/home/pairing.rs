@@ -2,9 +2,10 @@
 //! 本设备以后，把码里的服务端地址当作连接信息存下，像 `ConnectHome` 一样连上。
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::json;
-use wonton_l10n::l10n;
+use wonton_l10n::{Lang, l10n};
 use wonton_protocol::{CoreError, PairingFailure, PairingStatus};
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
@@ -34,15 +35,55 @@ impl HomeLink {
             });
         }
         self.set_pairing(Some(PairingStatus::InProgress));
-        self.runtime
-            .spawn(self.clone().pair_with(code, device_name.to_owned()));
+        self.runtime.spawn(
+            self.clone()
+                .pair_with(code, device_name.to_owned(), language()),
+        );
         Ok(())
     }
 
-    async fn pair_with(self: Arc<Self>, code: PairingCode, device_name: String) {
-        let status = match self.exchange(&code, &device_name).await {
+    async fn pair_with(self: Arc<Self>, code: PairingCode, device_name: String, lang: Lang) {
+        let started = Instant::now();
+        let mut endpoint = None;
+        let exchange = async {
+            // Pairing cannot wait for tier fallback: try every relay tier (ADR-0048).
+            endpoint = Some(
+                self.endpoint_builder(&code.relays, usize::MAX)
+                    .bind()
+                    .await
+                    .map_err(|e| TunnelError::TransportUnavailable {
+                        reason: l10n!(
+                            CATALOG,
+                            lang,
+                            "home-pairing-bind-failed",
+                            error = e.to_string()
+                        ),
+                    })?,
+            );
+            pair::pair(
+                endpoint.as_ref().expect("pairing endpoint is bound"),
+                &code,
+                &device_name,
+            )
+            .await
+        };
+        let outcome = match tokio::time::timeout(pair::PAIR_TIMEOUT, exchange).await {
+            Ok(result) => result,
+            Err(_) => Err(TunnelError::TransportUnavailable {
+                reason: l10n!(
+                    CATALOG,
+                    lang,
+                    "home-pairing-timeout",
+                    seconds = pair::PAIR_TIMEOUT.as_secs()
+                ),
+            }),
+        };
+        let status = match outcome {
             Ok(PairResponse::Paired) => {
                 tracing::info!(server = %code.server_id.fmt_short(), "paired with the home server");
+                if let Some(endpoint) = endpoint.take() {
+                    endpoint.close().await;
+                }
                 match self.connect(&ticket(&code, &device_name)) {
                     Ok(()) => None,
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
@@ -54,34 +95,41 @@ impl HomeLink {
             }
             Err(e) => {
                 tracing::info!("pairing failed: {e}");
-                Some(failed(transport(&e), e.to_string()))
+                let message = l10n!(
+                    CATALOG,
+                    lang,
+                    "home-pairing-failed-detail",
+                    addresses = format!("{:?}", code.direct_addrs),
+                    relays = code
+                        .relays
+                        .iter()
+                        .map(|relay| relay.url.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    milliseconds = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                    seconds = pair::PAIR_TIMEOUT.as_secs(),
+                    error = e.to_string()
+                );
+                Some(failed(transport(&e), message))
             }
         };
         self.set_pairing(status);
+        // QUIC draining can take seconds after the exchange deadline; it must not delay the visible result.
+        if let Some(endpoint) = endpoint {
+            endpoint.close().await;
+        }
     }
 
-    /// 用本设备的身份另开一个 endpoint 配对，配完就关：配上以后由 `connect` 按存下的连接信息建隧道。
-    async fn exchange(
-        &self,
-        code: &PairingCode,
-        device_name: &str,
-    ) -> Result<PairResponse, TunnelError> {
-        // 配对一次成，等不了分档回退：endpoint 放全部档，哪一档能连就从哪一档走（ADR-0048）。
-        let endpoint = self
-            .endpoint_builder(&code.relays, usize::MAX)
-            .bind()
-            .await
-            .map_err(|e| TunnelError::TransportUnavailable {
-                reason: l10n!(
-                    CATALOG,
-                    language(),
-                    "home-pairing-bind-failed",
-                    error = e.to_string()
-                ),
-            })?;
-        let outcome = pair::pair(&endpoint, code, device_name).await;
-        endpoint.close().await;
-        outcome
+    pub(crate) fn dismiss_pairing_failure(&self) -> Result<(), CoreError> {
+        self.view.send_if_modified(|view| {
+            if matches!(view.pairing, Some(PairingStatus::Failed { .. })) {
+                view.pairing = None;
+                true
+            } else {
+                false
+            }
+        });
+        Ok(())
     }
 
     fn set_pairing(&self, status: Option<PairingStatus>) {
