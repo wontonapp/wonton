@@ -8,8 +8,8 @@
 
 本插件使用 OpenClaw Foundation 发布的官方镜像：
 
-- `ghcr.io/openclaw/openclaw:2026.10.10`：MIT，来源 <https://github.com/openclaw/openclaw/tree/v2026.10.10>。
-- `@openclaw/matrix@2026.10.10`：MIT，来源 <https://github.com/openclaw/openclaw/tree/v2026.10.10/extensions/matrix>。
+- `ghcr.io/openclaw/openclaw:2026.11.1`：MIT，来源 <https://github.com/openclaw/openclaw/tree/v2026.11.1>。
+- `@openclaw/matrix@2026.11.1`：MIT，来源 <https://github.com/openclaw/openclaw/tree/v2026.11.1/extensions/matrix>。
 - `matrix-js-sdk@42.4.0`：Apache-2.0，来源 <https://github.com/matrix-org/matrix-js-sdk>。
 - `@matrix-org/matrix-sdk-crypto-nodejs@0.6.6`：Apache-2.0，来源 <https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs>。
 - `@matrix-org/matrix-sdk-crypto-wasm@18.9.0`：Apache-2.0，来源 <https://github.com/matrix-org/matrix-sdk-crypto-wasm>。

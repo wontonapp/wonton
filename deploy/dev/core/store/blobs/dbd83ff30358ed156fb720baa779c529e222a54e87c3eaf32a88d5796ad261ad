@@ -23,7 +23,7 @@ providers:
 
 # Matrix 的行为设置（身份和令牌由核心经环境变量注入）。只收发消息：不加处理中的表情回应、
 # 房间里不自动开线程，重启前后也不往聊天里发状态消息。
-# 注意：v0.22.5 的 Matrix 适配器没有实现 reply_to_mode，回答总是引用触发它的那条消息。
+# Matrix 的 reply_to_mode 在 v0.22.7 仍无效；适配器给回复附上触发消息的引用。
 platforms:
   matrix:
     reactions: false
