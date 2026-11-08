@@ -82,6 +82,16 @@
     <string name="chat_peer_placeholder">Username or Matrix ID</string>
     <!-- Button that starts the chat with the entered person. No arguments; short label. -->
     <string name="chat_start">Start</string>
+    <!-- Install row subtitle while images are downloaded. No arguments. -->
+    <string name="chat_install_stage_pulling_images">Pulling images</string>
+    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
+    <string name="chat_install_stage_preparing">Preparing</string>
+    <!-- Install row subtitle while containers start. No arguments. -->
+    <string name="chat_install_stage_starting">Starting</string>
+    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
+    <string name="chat_install_stage_waiting_for_bot">Waiting for the bot</string>
+    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
+    <string name="chat_install_open_page">Open app page</string>
     <string name="chat_backup_copy">Copy</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">When you switch to a new phone, enter your recovery key to see your past messages.</string>

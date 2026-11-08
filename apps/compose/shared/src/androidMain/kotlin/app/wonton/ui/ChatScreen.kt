@@ -45,8 +45,10 @@ import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.BotView
+import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
+import app.wonton.protocol.TabRef
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
@@ -76,7 +78,12 @@ import java.time.temporal.ChronoUnit
 private const val DAYS_SHOWN_AS_WEEKDAY = 7L
 
 @Composable
-fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsState) {
+fun ChatRoute(
+    core: ClientCore,
+    navigation: ChatNavigation,
+    plugins: PluginsState,
+    pluginNavigation: PluginNavigation,
+) {
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
@@ -125,14 +132,17 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
                 )
             }
         }
-        else -> ChatListScreen(
-            viewModel = viewModel,
-            plugins = plugins,
-            onAction = onAction,
-            onOpenRoom = { navigation.openRoom = it },
-            onOpenBackup = { navigation.showingBackup = true },
-            onStartChat = { navigation.startingChat = true },
-        )
+        else -> PluginPages(plugins, pluginNavigation) {
+            ChatListScreen(
+                viewModel = viewModel,
+                plugins = plugins,
+                pluginNavigation = pluginNavigation,
+                onAction = onAction,
+                onOpenRoom = { navigation.openRoom = it },
+                onOpenBackup = { navigation.showingBackup = true },
+                onStartChat = { navigation.startingChat = true },
+            )
+        }
     }
 
     viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.DismissChatProblem) } }
@@ -143,11 +153,13 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
 private fun ChatListScreen(
     viewModel: ChatViewModel,
     plugins: PluginsState,
+    pluginNavigation: PluginNavigation,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
 ) {
+    val installing = viewModel.installingBots
     WontonScreen(
         bar = { WontonRootBar(stringResource(R.string.tab_chat)) },
     ) {
@@ -159,8 +171,27 @@ private fun ChatListScreen(
                 ),
             ) {
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
-                itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
+                itemsIndexed(installing, key = { _, row -> "install:${row.pluginId}" }) { index, row ->
                     if (index > 0) {
+                        Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
+                            WontonSeparator()
+                        }
+                    }
+                    ChatInstallRow(
+                        row,
+                        plugins,
+                        onRetry = {
+                            // 重试不进核心的执行路径：重新预览，主人在确认页上再点一次（ADR-0067）。
+                            pluginNavigation.confirmation = when (row.operation) {
+                                PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(row.pluginId)
+                                else -> row.source?.let { PluginConfirmation.Install(it) }
+                            }
+                        },
+                        onOpenPage = { onAction(Action.SelectTab(TabRef.Apps)) },
+                    )
+                }
+                itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
+                    if (index > 0 || installing.isNotEmpty()) {
                         Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
                             WontonSeparator()
                         }
@@ -174,7 +205,7 @@ private fun ChatListScreen(
             }
             // 同步好之前列表是空的不代表没有聊天。
             val synced = viewModel.account is ChatAccount.SignedIn && viewModel.sync == ChatSync.Running
-            if (viewModel.rooms.isEmpty() && synced) {
+            if (viewModel.rooms.isEmpty() && installing.isEmpty() && synced) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         stringResource(R.string.chat_empty),

@@ -183,7 +183,7 @@ private fun NativeTab(
         else nav.settingsPage = nav.settingsPage.parent()
     }
     when (if (nav.settingsOverlay) TabRef.Settings else tabs.viewModel.selected) {
-        TabRef.Chat -> ChatRoute(tabs.core, nav.chat, tabs.plugins)
+        TabRef.Chat -> ChatRoute(tabs.core, nav.chat, tabs.plugins, nav.plugins)
         TabRef.Apps -> HomeRoute(
             tabs.core, home, tabs.plugins, nav.plugins, nav.appsPage, { nav.appsPage = it },
             chat.pendingConfirmations, nav::openRoom,
