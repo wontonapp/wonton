@@ -184,7 +184,7 @@ impl Home {
 /// 等旧服务端的 UDP 端口空出来。iroh 的 `Endpoint::close` 返回后，后台任务还要再过一小会儿才释放
 /// 套接字（Linux 单核上实测约 1 ms）。真实的重启是新进程，旧进程退出后端口一定已经空了；进程内模拟
 /// 重启时要等到这一点，否则会偶发 `Address already in use`。
-async fn wait_until_port_is_free(port: u16) {
+pub(crate) async fn wait_until_port_is_free(port: u16) {
     let deadline = tokio::time::Instant::now() + WAIT;
     while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
         assert!(

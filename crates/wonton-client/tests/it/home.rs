@@ -2,7 +2,7 @@
 //! 隧道服务端、插件上游都跑在本机，只走回环地址，不依赖外网。
 
 mod migration;
-mod support;
+pub(crate) mod support;
 
 use support::{BEFORE_IDLE_TIMEOUT, WEB_URL, get, wait_until_ticket_has};
 pub(crate) use support::{Home, Phone};
