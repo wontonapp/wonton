@@ -4,6 +4,7 @@ name: ios
 # target，不签名、不跑模拟器）。
 # 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改这两份列表。
+# 只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉，省模拟器构建的排队。
 on:
   pull_request:
     paths:
@@ -21,6 +22,10 @@ on:
       - "rust-toolchain.toml"
       - ".github/workflows/ios.yml"
       - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
   push:
     branches: [main]
     paths:
@@ -38,6 +43,10 @@ on:
       - "rust-toolchain.toml"
       - ".github/workflows/ios.yml"
       - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
 
 concurrency:
   group: ios-${{ github.ref }}
