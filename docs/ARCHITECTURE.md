@@ -60,6 +60,7 @@ flowchart LR
 | `wonton-egress` | 核心组件（配了代理才有） | 出口容器：把出网插件的请求转给主人的代理（ADR-0023），或者装着的代理插件（ADR-0039）。 |
 | `tuwunel` | 核心组件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
 | `hydra` | 核心组件 | OIDC 提供方，插件的单点登录（ADR-0009）。 |
+| `mailpit` | 核心组件 | 收插件应用发的信（SMTP），接入申请了 `notify` 的插件网络，只收发给家里人的内部邮箱；核心取走后转进聊天（ADR-0056）。 |
 | 第三方 App 入口 | 核心组件（主人打开才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。 |
 | `hermes` | 默认插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。核心启动后自动装一次，主人卸掉就不再装（ADR-0007）。 |
 | `magpie` | 系统插件 | 模型网关：provider 和 key 只配一次，所有插件共用。主人换不掉；我们换实现时 Agent 不用改（ADR-0008）。 |
@@ -106,7 +107,7 @@ flowchart LR
 4. 之后 App 每次启动都经隧道连回；服务器换了网络，App 通过发现服务找到它。
 5. 以后加设备，在已配对的 App 里点“添加设备”出码给新设备扫；设备都丢了，在服务器终端执行 `sudo wonton pair`。
    信任边界是服务器终端和已配对的设备，能接触局域网不算可信（理由见 ADR-0009）。
-6. 显示名和邮箱在 App 里填，存在核心里，单点登录从那里取（ADR-0030）。
+6. 显示名和邮箱在 App 里填，存在核心里，单点登录从那里取显示名（ADR-0030）；插件拿到的邮箱是每人一个、不变的内部邮箱，应用发来的信转进这个人的 Wonton 私聊（ADR-0056）。
 
 ### 新用户引导
 
@@ -258,6 +259,7 @@ scripts/             CI 与开发脚本
 | OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |
 | 可续传上传 | tus 1.0、tusd | MIT，独立容器 | 已定（ADR-0020） |
 | 出口代理 | gost | MIT，独立容器 | 已定（ADR-0023） |
+| 应用发信的收件端 | Mailpit | MIT，独立容器 | 已定（ADR-0056） |
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | Rust 本地化 | fluent-bundle、fluent-langneg（cldr）、unic-langid、fluent-syntax | Apache-2.0 / MIT | 已定 |

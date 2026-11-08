@@ -65,6 +65,7 @@
 | [0053](0053-plugin-dependencies.md) | 插件之间按能力依赖：只写直接依赖，装时一起装，卸时拦下 |
 | [0054](0054-bot-command-menu.md) | Bot 的斜杠命令菜单：房间状态事件，整表替换 |
 | [0055](0055-model-gateway-optional.md) | 模型网关可选：装 Agent 插件不再要求先有网关 |
+| [0056](0056-internal-mailbox.md) | 每个人一个不变的内部邮箱，应用发的信转进聊天 |
 | [0057](0057-optional-permissions.md) | 可选权限：声明成默认关，主人自己打开 |
 | [0058](0058-agent-side-sessions.md) | Agent 的话题会话：都能干活，互相知道对方在做什么，改同一个文件时排队 |
 | [0060](0060-chat-layouts.md) | 聊天页的显示方式：气泡或文档，核心合成，壳只画预设 |
