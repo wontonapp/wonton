@@ -503,6 +503,9 @@ pub struct PluginDetail {
     /// 开关“每次都问”：Agent 写的插件是当前值，打开后这个 Agent 每次更新都发卡片；别的插件为空。
     #[serde(default)]
     pub ask_every_update: Option<bool>,
+    /// 主人可管理的分享；没权限、没装或不支持分享接口时为空，不伪装成零人。
+    #[serde(default)]
+    pub shares: Option<crate::PluginShares>,
 }
 
 /// `PUT /_wonton/api/plugins/{id}/ask-every-update` 的请求体，响应是更新后的 [`PluginDetail`]。
@@ -697,6 +700,11 @@ pub struct PluginsViewModel {
     pub storage_problem: Option<PluginProblem>,
     /// “我来操作”；没在操作时为空。结束了但不是主人交还的，留着告诉主人，等 `EndTakeover` 或者下一次 `StartTakeover`。
     pub takeover: Option<PluginTakeover>,
+    /// 由核心给出的应用页入口；壳不按槽位种类自行判断，未知操作不显示。
+    #[serde(default)]
+    pub actions: Vec<crate::AppsAction>,
+    /// 朋友分享的应用，来源独立于自家已装插件；未取到时为空。
+    pub shared_apps: Option<crate::SharedAppsViewModel>,
 }
 
 /// 这台设备上的“我来操作”，同时只操作一个插件。

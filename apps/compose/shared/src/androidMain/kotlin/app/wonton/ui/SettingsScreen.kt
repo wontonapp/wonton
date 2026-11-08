@@ -152,6 +152,7 @@ private fun SettingsEntryRow(
         SettingsEntry.About -> WontonRow(stringResource(R.string.settings_about), version, showsForward = true) {
             onSubpage(SettingsSubpage.ABOUT)
         }
+        else -> Unit
     }
 }
 

@@ -176,12 +176,21 @@ pub struct WebUi {
     pub oidc: Option<OidcClient>,
     #[serde(default)]
     pub proxy: Option<ProxyCredentials>,
+    /// 声明插件识别好友身份的能力；省略或为 false 只是未声明，不禁止分享，也不授予访问权限。
+    #[serde(default)]
+    pub friends: bool,
     /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
     #[serde(default)]
     pub cross_origin_isolated: bool,
 }
 
 /// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。
+///
+/// 身份由网关根据当前经验证的人填入，不接受调用者提供的身份或角色：
+/// `{user}` 是固定、不复用的本机用户名；已有的 `{name}` 是此人的显示名；
+/// `{role}` 是 `owner`、`member` 或 `friend`，对应 [`wonton_protocol::Role`] 的已知值。
+/// `{email}` 和 `{secret:…}` 的约定不变。
+/// 模板变量的解析、校验和渲染由 `super::proxy_auth` 实现。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyCredentials {

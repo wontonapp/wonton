@@ -57,7 +57,7 @@ pub const FAMILY_ROOM_EVENT: &str = "app.wonton.family";
 /// 总线转给插件的 `tools/call` 在 `_meta` 里带这一项：私人 Bot 调用时是归属人的用户名，共享 Bot 不带。
 pub const TOOL_CALL_USER_META: &str = "app.wonton/user";
 
-/// 网关拒绝 Bot 的 Matrix 请求时（403 `M_FORBIDDEN`），在这个响应头里写原因。
+/// 网关拒绝请求时在此头写类别；Matrix 规则拒绝为 403，分享身份失败为 401，其他分享拒绝为 403。
 pub const GATEWAY_REFUSAL_HEADER: &str = "x-wonton-error";
 
 /// 这台设备的人在这台服务器上的身份。
@@ -85,6 +85,8 @@ pub enum Role {
     Owner,
     /// 主人邀请的人。
     Member,
+    /// 经 Matrix OpenID 认证、仅能访问逐项授权插件的好友；没有本机聊天账号或管理权限。
+    Friend,
     #[serde(other)]
     Other,
 }
@@ -244,7 +246,7 @@ pub struct FamilyAccess {
     pub enabled: bool,
 }
 
-/// 网关为什么拒绝 Bot 的请求，写在 [`GATEWAY_REFUSAL_HEADER`] 里。
+/// 网关拒绝 Matrix 或分享请求的类别，写在 [`GATEWAY_REFUSAL_HEADER`] 里。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GatewayRefusal {
@@ -254,6 +256,12 @@ pub enum GatewayRefusal {
     PublicRoom,
     /// 人上次在这个房间说话之后，Bot 连着发得太多了。
     HopLimit,
+    /// OpenID token 失效、发现失败或 userinfo 的服务器名不符（401）。
+    ShareIdentity,
+    /// 没有给这个好友开放该插件（403）。
+    ShareRequired,
+    ShareRevoked,
+    ShareExpired,
     #[serde(other)]
     Other,
 }
@@ -265,6 +273,10 @@ impl GatewayRefusal {
             Self::ContactRequired => "contact_required",
             Self::PublicRoom => "public_room",
             Self::HopLimit => "hop_limit",
+            Self::ShareIdentity => "share_identity",
+            Self::ShareRequired => "share_required",
+            Self::ShareRevoked => "share_revoked",
+            Self::ShareExpired => "share_expired",
             Self::Other => "other",
         }
     }
@@ -275,6 +287,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    #[test]
+    fn plugin_identity_roles_round_trip() {
+        for role in [Role::Owner, Role::Member, Role::Friend, Role::Other] {
+            let value = serde_json::to_value(role).unwrap();
+            assert_eq!(serde_json::from_value::<Role>(value).unwrap(), role);
+        }
+    }
 
     #[test]
     fn values_a_newer_core_adds_fall_back_to_other() {

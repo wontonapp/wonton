@@ -26,6 +26,7 @@ enum Added {
 
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
 const V0_8: SpecVersion = SpecVersion::new(0, 8);
+const V0_9: SpecVersion = SpecVersion::new(0, 9);
 
 /// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
 const TABLE: &[(SpecVersion, Added)] = &[
@@ -52,6 +53,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["optional_permissions"])),
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
+    (V0_9, Added::Field(&["webui", "friends"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。

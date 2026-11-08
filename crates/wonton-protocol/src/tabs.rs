@@ -195,6 +195,7 @@ pub enum TabState {
         status: Option<u16>,
     },
     /// 核心给的插件状态这个 App 不认识，不知道页面能不能用。
+    #[serde(other)]
     Unknown,
 }
 

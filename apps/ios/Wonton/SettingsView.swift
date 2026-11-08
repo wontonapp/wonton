@@ -128,6 +128,8 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.about) {
                 WontonRow(title: String(localized: .settingsAbout), value: AppVersion.full, showsForward: true)
             }
+        case .matrixAccount, .matrixDevices, .addWontonServer, .friends, .other:
+            EmptyView()
         }
     }
 }

@@ -44,6 +44,7 @@ fn detail(ask: bool) -> Canned {
         save_grants: Vec::new(),
         limits: None,
         ask_every_update: Some(ask),
+        shares: None,
     };
     Canned(200, serde_json::to_string(&detail).unwrap())
 }

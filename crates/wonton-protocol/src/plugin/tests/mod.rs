@@ -309,6 +309,7 @@ fn detail() -> PluginDetail {
             memory: Some(4 * 1024 * 1024 * 1024),
             cpu_percent: None,
         }),
+        shares: None,
     }
 }
 
@@ -396,6 +397,8 @@ fn interface_types_round_trip_through_json() {
                 },
             },
         }),
+        actions: Vec::new(),
+        shared_apps: None,
     };
     assert_eq!(round_trip(&view_model), view_model);
 }

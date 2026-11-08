@@ -126,7 +126,7 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
   4. 查 `shares.json`，给这条连接一个会话，只能打开分享给他的插件。会话随连接结束；token 只用来建连，不当会话存。
 - **插件怎么知道是谁**：和家人一样由网关填身份（ADR-0045 的“身份”）：
   - `sso: proxy`：`{user}` 是好友在主人这边的本机用户名，由核心按 ADR-0022 的规则生成，记在 `friends.json`，固定、不复用，不和本机账号重名。
-    新加 `{display_name}` 和 `{role}`（`owner`、`member`、`friend`）两个模板变量。
+    新加 `{role}`（`owner`、`member`、`friend`）模板变量，显示名用已有的 `{name}`。
   - `sso: oidc`：`sub`、`preferred_username` 是这个本机用户名，`groups` 是 `["friend"]`。
   - 插件自己登录（ADR-0022）：好友照样要过插件自己的登录。
   - 插件清单新加 `webui.friends: true`，声明“这个插件给好友用过、知道好友是谁”。

@@ -11,7 +11,7 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, ServerName, ServerRow, ServersViewModel};
+use wonton_protocol::{CoreError, ServerKind, ServerName, ServerRow, ServersViewModel};
 
 use crate::home::write_private;
 use crate::l10n::{CATALOG, language};
@@ -345,12 +345,14 @@ impl Saved {
                     },
                     |name| ServerName::Named { name },
                 ),
+                kind: ServerKind::Wonton,
                 current: slot.slot == self.current,
             })
             .collect();
         ServersViewModel {
             servers,
             adding: self.adding_from.is_some(),
+            matrix_login: None,
         }
     }
 }

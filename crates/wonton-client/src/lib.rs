@@ -108,6 +108,14 @@ pub use wonton_protocol::{
     VerificationFlow, VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
+    AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,
+    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState, FriendsViewModel,
+    MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, PluginShares, ServerKind,
+    ShareFailure, ShareGrant, ShareGrantUpdate, ShareIdentityFailure, ShareProblem, ShareRecipient,
+    SharedAppRow, SharedAppsSource, SharedAppsState, SharedAppsViewModel, SharedPlugin,
+};
+pub use wonton_protocol::{
     AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload, BotActivity,
     BotActivityFacts, BotActivityReport, BotNameProblem, BotProfileFailure, BotProfileProblem,
     BotView, StateAvatar,

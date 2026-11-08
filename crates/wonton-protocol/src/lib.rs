@@ -21,9 +21,11 @@ mod egress;
 mod error;
 mod family;
 mod file;
+mod friends;
 mod home;
 mod lan;
 mod link;
+mod matrix_login;
 mod onboarding;
 mod owner;
 mod peers;
@@ -36,6 +38,8 @@ mod server_version;
 mod servers;
 mod session;
 mod settings;
+mod share_transport;
+mod sharing;
 mod tabs;
 mod timeline;
 mod verification;
@@ -101,6 +105,11 @@ pub use file::{
     TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UploadSource,
     extract_file_links,
 };
+pub use friends::{
+    FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
+    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState,
+    FriendsViewModel,
+};
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, DeviceInvite, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus, ProxySettings,
@@ -110,6 +119,10 @@ pub use lan::{
     LanProblem, LanProtocol, LanSettings,
 };
 pub use link::AppLink;
+pub use matrix_login::{
+    MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
+};
 pub use onboarding::{
     AgentLogin, CUSTOM_MODEL_PROVIDER_PATH, CUSTOM_MODEL_PROVIDER_TEST_PATH,
     ConfiguredModelProvider, CustomModelProvider, MODEL_PROVIDERS_PATH, ModelProvider,
@@ -162,9 +175,18 @@ pub use registry_mirror::{
 };
 pub use secret::SecretString;
 pub use server_version::{is_older, minimum_server_version};
-pub use servers::{ServerName, ServerRow, ServersViewModel};
+pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
 pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
+pub use share_transport::{
+    MatrixOpenIdToken, SHARE_ALPN, ShareReply, ShareRequest, SharedPlugins, WONTON_WELL_KNOWN_PATH,
+    WontonDiscovery,
+};
+pub use sharing::{
+    AppsAction, PluginShares, ShareFailure, ShareGrant, ShareGrantUpdate, ShareIdentityFailure,
+    ShareProblem, ShareRecipient, SharedAppRow, SharedAppsSource, SharedAppsState,
+    SharedAppsViewModel, SharedPlugin,
+};
 pub use tabs::{
     CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
     TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,

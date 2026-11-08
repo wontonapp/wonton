@@ -232,6 +232,7 @@ impl PluginManager {
             limits: self
                 .installed_detail(&m.id, langs)
                 .and_then(|detail| detail.limits),
+            shares: None,
         }
     }
 

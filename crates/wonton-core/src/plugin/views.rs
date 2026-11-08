@@ -150,6 +150,7 @@ impl PluginManager {
             // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
             ask_every_update,
             limits: Some(listed.limits),
+            shares: None,
         })
     }
 
@@ -702,6 +703,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         save_grants: Vec::new(),
         ask_every_update: None,
         limits: None,
+        shares: None,
     }
 }
 

@@ -1,6 +1,63 @@
 use super::*;
 
 #[test]
+fn webui_friends_defaults_to_false() {
+    let webui: WebUi = serde_json::from_value(serde_json::json!({
+        "service": "web",
+        "port": 8080
+    }))
+    .unwrap();
+    assert!(!webui.friends);
+    let encoded = serde_json::to_value(&webui).unwrap();
+    assert_eq!(encoded["friends"], false);
+    assert_eq!(serde_json::from_value::<WebUi>(encoded).unwrap(), webui);
+}
+
+#[test]
+fn webui_friends_round_trips_in_manifest() {
+    for friends in [false, true] {
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "spec": "0.9",
+            "id": "com.example.web",
+            "version": "1.0.0",
+            "kind": "app",
+            "title": {"en": "Example"},
+            "description": {"en": "Example"},
+            "permissions": [],
+            "webui": {"service": "web", "port": 8080, "friends": friends}
+        }))
+        .unwrap();
+        manifest.validate(&Languages::default()).unwrap();
+        assert_eq!(manifest.webui.as_ref().unwrap().friends, friends);
+        let encoded = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(encoded["webui"]["friends"], friends);
+        let decoded: Manifest = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(decoded.webui, manifest.webui);
+        assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+    }
+}
+
+#[test]
+fn webui_friends_rejects_non_boolean_values() {
+    for invalid in [
+        serde_json::json!(null),
+        serde_json::json!("true"),
+        serde_json::json!("false"),
+        serde_json::json!(0),
+        serde_json::json!(1),
+        serde_json::json!([]),
+        serde_json::json!({}),
+    ] {
+        assert!(
+            serde_json::from_value::<WebUi>(serde_json::json!({
+                "service": "web", "port": 8080, "friends": invalid
+            }))
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn agent_login_defaults_to_empty_and_requires_egress() {
     let base = r#"{
         "spec": "0.6",
