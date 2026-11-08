@@ -10,6 +10,28 @@ use super::{OnboardingLink, invalid, lock, view};
 use crate::l10n::{CATALOG, language};
 
 impl OnboardingLink {
+    /// `step` 之后第一个还能显示的步；没有了为空。
+    fn successor(state: &super::LocalState, step: OnboardingStep) -> Option<OnboardingStep> {
+        let index = view::STEPS
+            .iter()
+            .position(|candidate| *candidate == step)?;
+        view::STEPS[index + 1..]
+            .iter()
+            .copied()
+            .find(|candidate| !state.unavailable.contains(candidate))
+    }
+
+    /// 从这个候选往前走，跳过服务器太旧显不出来的步。
+    fn advance(state: &super::LocalState, mut next: OnboardingStep) -> OnboardingStep {
+        while state.unavailable.contains(&next) {
+            match Self::successor(state, next) {
+                Some(after) => next = after,
+                None => break,
+            }
+        }
+        next
+    }
+
     /// 正在走引导的一步；走完了、还没取到状态或者已经点了完成时为错。
     fn flow_step(state: &super::LocalState) -> Result<OnboardingStep, CoreError> {
         match state.step {
@@ -209,7 +231,7 @@ impl OnboardingLink {
                 )));
             }
         };
-        state.step = Some(next);
+        state.step = Some(Self::advance(&state, next));
         drop(state);
         self.publish();
         Ok(())
@@ -251,7 +273,7 @@ impl OnboardingLink {
                 )));
             }
         };
-        state.step = Some(next);
+        state.step = Some(Self::advance(&state, next));
         drop(state);
         self.publish();
         Ok(())
@@ -260,7 +282,7 @@ impl OnboardingLink {
     pub(super) fn back_step(&self) -> Result<(), CoreError> {
         let mut state = lock(&self.state);
         let step = Self::flow_step(&state)?;
-        state.step = Some(match step {
+        let mut target = match step {
             OnboardingStep::Agent => OnboardingStep::Profile,
             OnboardingStep::Model => {
                 state.testing = false;
@@ -280,7 +302,28 @@ impl OnboardingLink {
                     "onboarding-steps-cannot-go-back"
                 )));
             }
-        });
+        };
+        if state.unavailable.contains(&target) {
+            let index = view::STEPS
+                .iter()
+                .position(|candidate| *candidate == target)
+                .unwrap_or_default();
+            match view::STEPS[..index]
+                .iter()
+                .rev()
+                .find(|candidate| !state.unavailable.contains(candidate))
+            {
+                Some(before) => target = *before,
+                None => {
+                    return Err(invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "onboarding-steps-cannot-go-back"
+                    )));
+                }
+            }
+        }
+        state.step = Some(target);
         drop(state);
         self.publish();
         Ok(())
@@ -309,7 +352,7 @@ impl OnboardingLink {
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
             state.testing = false;
-            state.step = Some(OnboardingStep::Profile);
+            state.step = view::first_visible(&state.unavailable).or(Some(OnboardingStep::Profile));
         }
         self.refresh();
         Ok(())

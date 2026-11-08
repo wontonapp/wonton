@@ -70,6 +70,8 @@ pub(crate) struct PluginsLink {
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
     egress_epoch: AtomicU64,
     upgrade: Mutex<core_upgrade::UpgradeLocal>,
+    /// 服务器报过的版本：404 分“服务器太旧”时用，取不到就不判旧。
+    server_version: api::ServerVersion,
     /// 只有测试会关：升级状态的定时轮询会让请求在测试不控制的时刻 settle，盖不住观察者要看的先后顺序。
     upgrade_polling_paused: AtomicBool,
     registry: Mutex<registry_mirror::RegistryLocal>,
@@ -114,6 +116,7 @@ impl PluginsLink {
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
+            server_version: api::ServerVersion::default(),
             upgrade_polling_paused: AtomicBool::new(false),
             registry: Mutex::new(registry_mirror::RegistryLocal::default()),
             takeover: Mutex::new(takeover::Slot::default()),
@@ -422,7 +425,10 @@ impl PluginsLink {
             .cloned()
             .collect::<Vec<_>>()
             .join(",");
+        self.server_version
+            .seed(lock(&self.upgrade).running_version());
         Ok(CoreApi {
+            version: self.server_version.clone(),
             base,
             client,
             languages,

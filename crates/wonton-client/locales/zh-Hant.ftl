@@ -7,6 +7,7 @@ core-error-not-ready = 尚未就緒：{ $reason }
 core-error-transport = 無法連上家用伺服器：{ $reason }
 core-error-unauthorized = 家用伺服器拒絕了請求：{ $reason }
 core-error-upstream = 家用伺服器發生錯誤：{ $reason }
+core-error-server-too-old = 家裡的伺服器太舊，還做不了這件事。升級伺服器後再試。
 
 # 新增裝置時，還無法取得配對碼的原因。
 invite-not-paired = 你還沒與家用伺服器配對。
@@ -333,6 +334,7 @@ plugins-api-not-image-url = 不是應用程式圖片的位址：{ $reason }
 # $status 是原始 HTTP 狀態碼。
 plugins-api-server-status = 家用伺服器傳回 HTTP { $status }
 plugins-api-not-connected = 連上家用伺服器後再試。
+plugins-api-server-too-old = 家裡的伺服器 { $version } 太舊：這個功能要 { $minimum } 起。
 
 # 安裝、更新、解除安裝任務（crates/wonton-client/src/plugins/tasks.rs）。
 plugins-tasks-uncertain = 連線中斷了，等不到家用伺服器的結果，看一下已安裝清單。

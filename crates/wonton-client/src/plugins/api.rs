@@ -1,6 +1,8 @@
 //! 核心的插件管理接口（ADR-0017 的“管理接口”）：请求走本地代理，核心凭隧道身份认出这台已配对设备。请求不带
 //! `Origin` 和 `Sec-Fetch-Site`，核心据此知道它不是网页发起的。
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::header::{ACCEPT_LANGUAGE, CONTENT_TYPE};
@@ -11,14 +13,17 @@ use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
-    PluginImage, PluginProblem, window_path,
+    PluginImage, PluginProblem, is_older, minimum_server_version, window_path,
 };
 
 use crate::chat::proxy_url;
 use crate::l10n::{CATALOG, language};
+use crate::plugins::lock;
 
 /// 列表、详情、图片：只读家里服务器上已有的东西。隧道卡住时按“连不上”失败，不一直转圈。
 pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// 问服务器版本：接口已经回过 404，等久了不如先按原来的类别报。
+const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 /// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览，以及引导要取的官方索引和图标。
 pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
@@ -57,6 +62,68 @@ pub(crate) struct CoreApi {
     pub(super) base: Url,
     pub(super) client: Client,
     pub(super) languages: String,
+    /// 这台服务器报过的版本。只有接口回 404 时才去取一次，取不到就不判旧。
+    pub(super) version: ServerVersion,
+}
+
+/// 服务器版本的一次性缓存，随作用域活着：升级状态的每次成功回应都写进来。
+#[derive(Clone, Default)]
+pub(crate) struct ServerVersion(Arc<VersionCache>);
+
+#[derive(Default)]
+struct VersionCache {
+    value: Mutex<Option<String>>,
+    /// 问过一次了：服务器不报版本时不再每次都问。
+    asked: AtomicBool,
+}
+
+impl ServerVersion {
+    /// 记下服务器自己报的版本；空的不覆盖已有的。
+    pub(super) fn seed(&self, version: Option<String>) {
+        if let Some(version) = version {
+            *lock(&self.0.value) = Some(version);
+        }
+    }
+
+    fn known(&self) -> Option<String> {
+        lock(&self.0.value).clone()
+    }
+
+    /// 还不知道时问服务器一次（核心升级状态的 `current.version`）；问不到就是不知道。
+    async fn get(&self, api: &CoreApi) -> Option<String> {
+        if let Some(version) = self.known() {
+            return Some(version);
+        }
+        if self.0.asked.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+        #[derive(Deserialize)]
+        struct Reported {
+            current: Current,
+        }
+        #[derive(Deserialize)]
+        struct Current {
+            #[serde(default)]
+            version: Option<String>,
+        }
+        let probed = match api
+            .exchange(
+                Method::GET,
+                api.url(&["core", "upgrade"], &[]),
+                None,
+                "application/json",
+                VERSION_TIMEOUT,
+            )
+            .await
+        {
+            Ok((status, bytes)) if status < 400 => serde_json::from_slice::<Reported>(&bytes)
+                .ok()
+                .and_then(|reported| reported.current.version),
+            _ => None,
+        };
+        self.seed(probed.clone());
+        probed
+    }
 }
 
 /// 建本地代理的 HTTP 客户端。
@@ -147,13 +214,26 @@ impl CoreApi {
         content_type: &str,
         timeout: Duration,
     ) -> Result<Vec<u8>, PluginProblem> {
+        let path = url.path().to_owned();
         let (status, bytes) = self
             .exchange(method, url, body, content_type, timeout)
             .await?;
         if status >= 400 {
-            return Err(core_error(status, &bytes));
+            return Err(self.problem(status, &bytes, &path).await);
         }
         Ok(bytes)
+    }
+
+    /// 失败原因：接口在表里、服务器又比要的版本旧时归“服务器太旧”，否则按原来的类别。
+    async fn problem(&self, status: u16, body: &[u8], path: &str) -> PluginProblem {
+        let minimum = (status == 404)
+            .then(|| minimum_server_version(path))
+            .flatten();
+        let version = match minimum {
+            Some(_) => self.version.get(self).await,
+            None => None,
+        };
+        core_error(status, body, minimum, version.as_deref())
     }
 
     /// 升级的接口都回 [`CoreUpgradeStatus`]；被拒绝的原因（`changed`、`busy`……）比插件的失败分类细，要原样保留。
@@ -399,7 +479,7 @@ impl CoreApi {
             .exchange(Method::DELETE, url, None, "application/json", timeout)
             .await?;
         if status >= 400 && status != 404 {
-            return Err(core_error(status, &bytes));
+            return Err(core_error(status, &bytes, None, None));
         }
         Ok(())
     }
@@ -560,7 +640,28 @@ pub(super) fn not_connected() -> PluginProblem {
 
 /// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外：本地代理连不上隧道时回 502，隧道拒绝这台设备时
 /// 回 403。这两种都是连接的事，由 `HomeViewModel` 说。
-fn core_error(status: u16, body: &[u8]) -> PluginProblem {
+fn core_error(
+    status: u16,
+    body: &[u8],
+    minimum: Option<&str>,
+    version: Option<&str>,
+) -> PluginProblem {
+    // 服务器比这个接口要的版本旧：不是对象不存在，升级服务器后可用。
+    if let (Some(minimum), Some(version)) = (minimum, version)
+        && is_older(version, minimum)
+    {
+        return PluginProblem {
+            reason: PluginFailure::ServerTooOld,
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-server-too-old",
+                version = version,
+                minimum = minimum
+            ),
+            min_version: Some(minimum.to_owned()),
+        };
+    }
     let detail = serde_json::from_slice::<ErrorBody>(body)
         .ok()
         .map(|body| body.error);
@@ -665,7 +766,7 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         }
         PluginFailure::ServerTooOld => CoreError::ServerTooOld {
             reason,
-            min_version: None,
+            min_version: problem.min_version,
         },
     }
 }

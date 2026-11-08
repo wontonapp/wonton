@@ -10,6 +10,7 @@ use super::rig::{FakeHome, Rig, core_error, item};
 
 mod commit;
 mod loading;
+mod old_server;
 mod refresh;
 
 const ONBOARDING: &str = "/_wonton/api/onboarding";

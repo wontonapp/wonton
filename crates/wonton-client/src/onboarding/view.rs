@@ -10,6 +10,20 @@ use wonton_protocol::{
 
 use super::{LocalState, review, storage};
 
+/// 引导的步骤，按走的顺序。服务器太旧显不出来的步记在 `LocalState::unavailable` 里。
+pub(super) const STEPS: [OnboardingStep; 5] = [
+    OnboardingStep::Profile,
+    OnboardingStep::Agent,
+    OnboardingStep::Model,
+    OnboardingStep::Apps,
+    OnboardingStep::Review,
+];
+
+/// 第一个还显示得出来的步；一步都不剩时为空。
+pub(super) fn first_visible(unavailable: &HashSet<OnboardingStep>) -> Option<OnboardingStep> {
+    STEPS.into_iter().find(|step| !unavailable.contains(step))
+}
+
 pub(super) fn render(
     state: &LocalState,
     records: &storage::Records,
@@ -28,26 +42,7 @@ pub(super) fn render(
         );
     };
     let selected = state.draft.agent(onboarding);
-    let agents = onboarding
-        .agents
-        .iter()
-        .map(|agent| OnboardingAgentRow {
-            id: agent.id.clone(),
-            title: agent.title.clone(),
-            logins: agent
-                .logins
-                .iter()
-                .map(|login| login.title.clone())
-                .collect(),
-            selected: selected.as_deref() == Some(agent.id.as_str()),
-            source: agent
-                .status
-                .is_none()
-                .then(|| agent.source.clone())
-                .flatten(),
-            blocked: agent.blocked.clone(),
-        })
-        .collect();
+    let agents = agent_rows(onboarding, selected.as_deref());
     let selected_agent = selected
         .as_deref()
         .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id));
@@ -77,21 +72,23 @@ pub(super) fn render(
         testing: state.testing,
         problem: state.model_problem.clone(),
     };
-    let selected_needs = state.draft.needs(onboarding);
-    let needs = onboarding
-        .needs
-        .iter()
-        .map(|need| OnboardingNeedRow {
-            id: need.id.clone(),
-            title: need.title.clone(),
-            selected: selected_needs.contains(&need.id),
-            plugins: need.plugins.clone(),
+    let needs = need_rows(state, onboarding);
+    // 服务器太旧的步跳过：正在显示的那步刚变不可用时换到下一个，一步都不剩时整段不显示。
+    // 整段都打不开（服务器比引导接口还旧）时一步都不显示，只留升级提示。
+    let step = state
+        .too_old
+        .is_none()
+        .then(|| {
+            state
+                .step
+                .filter(|step| !state.unavailable.contains(step))
+                .or_else(|| first_visible(&state.unavailable))
         })
-        .collect();
-    let step = state.step.unwrap_or(onboarding.step);
+        .flatten();
     let view = OnboardingViewModel {
-        step: Some(step),
-        nav: navigation(state, step, selected_agent),
+        step,
+        nav: step.and_then(|step| navigation(state, step, selected_agent)),
+        too_old: state.too_old.clone(),
         loading: state.loading,
         problem: state.problem.clone(),
         catalog_problem: onboarding.catalog_problem.clone(),
@@ -107,9 +104,45 @@ pub(super) fn render(
         chat_prompts,
         replaced_agent: replaced_agent(onboarding),
         tips: tips(records),
-        too_old: None,
     };
     (view, primary_bot)
+}
+
+fn agent_rows(onboarding: &Onboarding, selected: Option<&str>) -> Vec<OnboardingAgentRow> {
+    onboarding
+        .agents
+        .iter()
+        .map(|agent| OnboardingAgentRow {
+            id: agent.id.clone(),
+            title: agent.title.clone(),
+            logins: agent
+                .logins
+                .iter()
+                .map(|login| login.title.clone())
+                .collect(),
+            selected: selected == Some(agent.id.as_str()),
+            source: agent
+                .status
+                .is_none()
+                .then(|| agent.source.clone())
+                .flatten(),
+            blocked: agent.blocked.clone(),
+        })
+        .collect()
+}
+
+fn need_rows(state: &LocalState, onboarding: &Onboarding) -> Vec<OnboardingNeedRow> {
+    let selected = state.draft.needs(onboarding);
+    onboarding
+        .needs
+        .iter()
+        .map(|need| OnboardingNeedRow {
+            id: need.id.clone(),
+            title: need.title.clone(),
+            selected: selected.contains(&need.id),
+            plugins: need.plugins.clone(),
+        })
+        .collect()
 }
 
 fn navigation(
@@ -118,28 +151,29 @@ fn navigation(
     selected: Option<&OnboardingAgent>,
 ) -> Option<StepNav> {
     let not_started = state.commit == OnboardingCommit::NotStarted;
-    let (position, can_next) = match step {
-        OnboardingStep::Profile => (1, true),
-        OnboardingStep::Agent => (2, selected.is_some_and(installable)),
-        OnboardingStep::Model => (
-            3,
-            !state.testing && state.draft.model(state.providers.as_ref()).is_some(),
-        ),
-        OnboardingStep::Apps => (4, true),
-        OnboardingStep::Review => (
-            5,
-            match state.commit {
-                OnboardingCommit::NotStarted => review::can_commit(&state.review),
-                OnboardingCommit::Running => false,
-                OnboardingCommit::Done => true,
-            },
-        ),
+    // 第几步按还显示得出来的步算：踢掉的步不占号。
+    let mut visible = STEPS
+        .iter()
+        .filter(|step| !state.unavailable.contains(step));
+    let position = visible.position(|candidate| *candidate == step)? as u32 + 1;
+    let total = u32::try_from(visible.count()).unwrap_or(u32::MAX) + position;
+    let can_next = match step {
+        OnboardingStep::Profile | OnboardingStep::Apps => true,
+        OnboardingStep::Agent => selected.is_some_and(installable),
+        OnboardingStep::Model => {
+            !state.testing && state.draft.model(state.providers.as_ref()).is_some()
+        }
+        OnboardingStep::Review => match state.commit {
+            OnboardingCommit::NotStarted => review::can_commit(&state.review),
+            OnboardingCommit::Running => false,
+            OnboardingCommit::Done => true,
+        },
         OnboardingStep::Finished | OnboardingStep::Other => return None,
     };
     let ready = !state.loading;
     Some(StepNav {
         position,
-        total: 5,
+        total,
         can_back: ready && not_started && position > 1,
         can_skip: ready && not_started && step != OnboardingStep::Review,
         can_next: ready && can_next,

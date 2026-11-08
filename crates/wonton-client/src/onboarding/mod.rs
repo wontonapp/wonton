@@ -20,8 +20,8 @@ use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, CoreError, HomeStatus, Me, ModelProviderFailure, ModelProviderProblem, ModelProviders,
-    Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingUpdate,
-    OnboardingViewModel, PluginFailure, PluginProblem,
+    ONBOARDING_PATH, Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
+    OnboardingUpdate, OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
 };
 
 use crate::chat::ChatLink;
@@ -52,6 +52,10 @@ struct LocalState {
     problem: Option<PluginProblem>,
     model_problem: Option<ModelProviderProblem>,
     loading: bool,
+    /// 这一趟里因为服务器太旧整步显不出来的步骤：这些步直接跳过。
+    unavailable: HashSet<OnboardingStep>,
+    /// 服务器比引导接口还旧：整段引导都不显示，只留一条升级提示。
+    too_old: Option<OnboardingTooOld>,
 }
 
 pub(crate) struct OnboardingLink {
@@ -194,6 +198,9 @@ impl OnboardingLink {
             state.loading = true;
             state.problem = None;
             state.model_problem = None;
+            // 每次重新取都从头判：服务器升级了，踢掉的步会回来。
+            state.unavailable.clear();
+            state.too_old = None;
             self.begin_operation()
         };
         self.publish();
@@ -240,11 +247,11 @@ impl OnboardingLink {
         {
             let mut state = lock(&self.state);
             if state.step.is_none() {
-                // 中间的步骤不存在家里服务器上：没走完的从第一步开始，每一步显示现在的设置。
+                // 中间的步骤不存在家里服务器上：没走完的从第一个能显示的步开始，每一步显示现在的设置。
                 state.step = Some(match onboarding.step {
                     OnboardingStep::Finished => OnboardingStep::Finished,
                     OnboardingStep::Other => OnboardingStep::Other,
-                    _ => OnboardingStep::Profile,
+                    _ => view::first_visible(&state.unavailable).unwrap_or(OnboardingStep::Profile),
                 });
             }
             state.onboarding = Some(onboarding);
@@ -252,7 +259,14 @@ impl OnboardingLink {
             if let Some((owner, providers)) = details {
                 match owner {
                     Ok(owner) => state.owner = Some(owner),
-                    Err(problem) => state.problem = Some(problem),
+                    Err(problem) => {
+                        if problem.reason == PluginFailure::ServerTooOld {
+                            state.unavailable.insert(OnboardingStep::Profile);
+                            state.step = view::first_visible(&state.unavailable);
+                        } else {
+                            state.problem = Some(problem);
+                        }
+                    }
                 }
                 match providers {
                     Ok(providers) => state.providers = Some(providers),
@@ -271,7 +285,13 @@ impl OnboardingLink {
         }
         let mut state = lock(&self.state);
         state.loading = false;
-        state.problem = Some(problem);
+        if problem.reason == PluginFailure::ServerTooOld {
+            state.too_old = Some(too_old(&problem));
+            state.problem = None;
+            state.step = None;
+        } else {
+            state.problem = Some(problem);
+        }
         drop(state);
         self.publish();
     }
@@ -359,6 +379,10 @@ impl OnboardingLink {
                     state.onboarding = Some(onboarding);
                     state.revision += 1;
                 }
+                Err(problem) if problem.reason == PluginFailure::ServerTooOld => {
+                    state.too_old = Some(too_old(&problem));
+                    state.step = None;
+                }
                 Err(problem) => state.problem = Some(problem),
             }
             drop(state);
@@ -411,6 +435,16 @@ fn storage_problem(error: CoreError) -> PluginProblem {
         reason: PluginFailure::Upstream,
         min_version: None,
         message: error.to_string(),
+    }
+}
+
+/// 服务器比引导接口还旧：提示里带上要的版本。
+fn too_old(problem: &PluginProblem) -> OnboardingTooOld {
+    OnboardingTooOld {
+        min_version: problem
+            .min_version
+            .clone()
+            .or_else(|| minimum_server_version(ONBOARDING_PATH).map(str::to_owned)),
     }
 }
 

@@ -7,6 +7,7 @@ core-error-not-ready = まだ準備ができていません：{ $reason }
 core-error-transport = 自宅サーバーに接続できません：{ $reason }
 core-error-unauthorized = 自宅サーバーがリクエストを拒否しました：{ $reason }
 core-error-upstream = 自宅サーバーでエラーが発生しました：{ $reason }
+core-error-server-too-old = 自宅サーバーが古いため、この操作はまだできません。サーバーを更新してからもう一度お試しください。
 
 # デバイスの追加時に、ペアリングコードをまだ取得できない理由です。
 invite-not-paired = 自宅サーバーとまだペアリングしていません。
@@ -333,6 +334,7 @@ plugins-api-not-image-url = アプリ画像のアドレスではありません�
 # $status は元のHTTPステータスコードです。
 plugins-api-server-status = 自宅サーバーからHTTP { $status }が返されました
 plugins-api-not-connected = 自宅サーバーに接続してからもう一度お試しください。
+plugins-api-server-too-old = 自宅サーバー { $version } は古すぎます。この機能には { $minimum } 以降が必要です。
 
 # インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks.rs）。
 plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーでの結果は不明です。インストール済みリストを確認してください。

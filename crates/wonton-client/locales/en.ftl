@@ -7,6 +7,7 @@ core-error-not-ready = Not ready: { $reason }
 core-error-transport = Can't reach your home server: { $reason }
 core-error-unauthorized = Your home server rejected the request: { $reason }
 core-error-upstream = Something went wrong on your home server: { $reason }
+core-error-server-too-old = Your home server is too old for this. Update the server, then try again.
 
 # Add Device details, before a pairing code can be requested.
 invite-not-paired = You haven't paired with your home server yet.
@@ -359,6 +360,7 @@ plugins-api-not-image-url = Not an app image address: { $reason }
 # $status is the unchanged HTTP status code.
 plugins-api-server-status = Your home server returned HTTP { $status }
 plugins-api-not-connected = Try again once you're connected to your home server.
+plugins-api-server-too-old = Home server { $version } is too old: this needs { $minimum } or newer.
 
 # Install, upgrade and uninstall tasks (crates/wonton-client/src/plugins/tasks.rs):
 # shown under a task that ended without a known result, and in the Details of a refused task.

@@ -75,7 +75,8 @@ pub(super) fn entries(state: &LocalState) -> Vec<ReviewEntry> {
         return Vec::new();
     };
     let mut entries = Vec::new();
-    if !state.draft.profile_skipped {
+    // 服务器太旧没显示资料这一步时不列它：它存不了。
+    if !state.draft.profile_skipped && !state.unavailable.contains(&OnboardingStep::Profile) {
         let (name, email) = state.draft.profile_values(state.owner.as_ref());
         let mut entry = ReviewEntry::new(
             PROFILE,
@@ -424,6 +425,14 @@ impl OnboardingLink {
 
     async fn save_profile(&self, generation: u64) -> bool {
         if !self.pending(PROFILE) {
+            return true;
+        }
+        // 服务器太旧，资料这一步整步没显示：不存，也不让完成卡在这里。
+        if lock(&self.state)
+            .unavailable
+            .contains(&OnboardingStep::Profile)
+        {
+            self.set_entry(PROFILE, OnboardingItemState::Done);
             return true;
         }
         let update = {

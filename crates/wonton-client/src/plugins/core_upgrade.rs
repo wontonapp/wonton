@@ -63,6 +63,13 @@ pub(super) struct UpgradeLocal {
 }
 
 impl UpgradeLocal {
+    /// 服务器最近报的运行版本；没取到过时为空。
+    pub(super) fn running_version(&self) -> Option<String> {
+        self.status
+            .as_ref()
+            .and_then(|status| status.current.version.clone())
+    }
+
     fn running_run(&self) -> Option<&CoreUpgradeRun> {
         self.status
             .as_ref()
@@ -354,7 +361,13 @@ impl PluginsLink {
                 return;
             }
             match result {
-                Ok(status) => local.accept(status, now_ms()),
+                Ok(status) => {
+                    let version = status.current.version.clone();
+                    let changed = local.accept(status, now_ms());
+                    drop(local);
+                    self.server_version.seed(version);
+                    changed
+                }
                 Err(problem) => {
                     local.reject(problem);
                     false
