@@ -198,7 +198,16 @@ async fn hold_key_request(
     text: &str,
     head: &mut Vec<u8>,
 ) -> Option<()> {
-    if !text.starts_with(KEY_REQUEST) || !*core.hold_key_requests.borrow() {
+    if !text.starts_with(KEY_REQUEST) {
+        return Some(());
+    }
+    // 丢了：读完请求体照常回 200（客户端以为送到了），只是不转发。
+    if core.drop_key_requests.load(Ordering::SeqCst) {
+        read_body(tcp, text).await?;
+        reply_ok(tcp).await;
+        return None;
+    }
+    if !*core.hold_key_requests.borrow() {
         return Some(());
     }
     let body = read_body(tcp, text).await?;
@@ -225,9 +234,13 @@ async fn forward_held(core: &Core, request: &[u8]) {
         return;
     };
     let mut response = [0u8; 1024];
-    tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response))
-        .await
-        .ok();
+    match tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response)).await {
+        Ok(Ok(read)) => debug!(
+            reply = %String::from_utf8_lossy(&response[..read]).lines().next().unwrap_or(""),
+            "forwarded a held request"
+        ),
+        other => debug!(?other, "forwarding a held request failed"),
+    }
 }
 
 async fn intercept_verification(tcp: &mut TcpStream, core: &Core, text: &str) -> bool {

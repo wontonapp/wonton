@@ -20,6 +20,10 @@ const KEYS_TIMEOUT: Duration = Duration::from_secs(30);
 // 取钥匙期间再要几次缺的秘密：开始取后 1、3、7、15 秒（间隔翻倍），都在 KEYS_TIMEOUT 之内。验证完成时 SDK 要的那一次
 // 可能比对方把本机记成“已验证”早到，被对方直接丢掉（ADR-0046）；正常 0.1–0.3 秒就取齐，用不到第一次。
 const FIRST_ASK: Duration = Duration::from_secs(1);
+// 期限过了还缺秘密时，从这一档起接着再要，每要一次翻倍、封顶 `LATE_ASK_MAX`：秘密多半还等在对方那里，
+// 只是请求在对方认出本机之前被丢了。翻倍是为了别让停在“没取全”的页面一直敲服务端。
+const LATE_ASK: Duration = Duration::from_secs(5);
+const LATE_ASK_MAX: Duration = Duration::from_secs(60);
 
 type Changes = Pin<Box<dyn Stream<Item = wonton_matrix::Result<VerificationFlow>> + Send>>;
 
@@ -46,8 +50,14 @@ struct Flow {
     verification: SelfVerification,
     changes: Changes,
     keys_deadline: Option<Instant>,
-    /// 这次取钥匙已经再要过几次缺的秘密，见 [`next_ask`]。
+    /// 这次取钥匙已经再要过几次缺的秘密，见 [`ask_again`]。
     asked: u32,
+    /// 下一次再要缺的秘密的时间。
+    next_ask: Option<Instant>,
+    /// 期限到了仍缺，已经以 `KeysMissing` 结束、还在等迟到的秘密。等到就改成完成。
+    late: bool,
+    /// 期限过后又要过几次，决定下一次的间隔（见 [`LATE_ASK`]）。
+    late_asked: u32,
     finished: bool,
 }
 
@@ -178,8 +188,13 @@ async fn run(
     let mut encryption = Box::pin(session.encryption_states());
     loop {
         let deadline = flow.as_ref().and_then(|flow| flow.keys_deadline);
-        let keys_ready = deadline.is_some() && keys_ready(&session);
-        let ask = flow.as_ref().and_then(next_ask).filter(|_| !keys_ready);
+        // 期限过了还在等迟到的秘密时也算“在等”，秘密一齐就当场收尾，不用等下一次状态变化。
+        let waiting = deadline.is_some() || flow.as_ref().is_some_and(|flow| flow.late);
+        let keys_ready = waiting && keys_ready(&session);
+        let ask = flow
+            .as_ref()
+            .and_then(|flow| flow.next_ask)
+            .filter(|_| !keys_ready);
         tokio::select! {
             command = commands.recv() => {
                 let Some(command) = command else { return };
@@ -308,6 +323,8 @@ async fn apply_command(
                 if let Some(flow) = flow.as_mut() {
                     flow.finished = true;
                     flow.keys_deadline = None;
+                    flow.late = false;
+                    flow.next_ask = None;
                 }
                 if let Some(control) = control.as_mut() {
                     control.operating = false;
@@ -359,6 +376,9 @@ fn install(link: &ChatLink, flow: &mut Option<Flow>, verification: SelfVerificat
                 changes,
                 keys_deadline: None,
                 asked: 0,
+                next_ask: None,
+                late: false,
+                late_asked: 0,
                 finished: false,
             });
             update(link, flow, snapshot);
@@ -377,8 +397,12 @@ fn update(link: &ChatLink, flow: &mut Option<Flow>, snapshot: VerificationFlow) 
             return;
         }
         if *stage == VerificationStage::FetchingKeys && flow.keys_deadline.is_none() {
+            // 又进到“正在取回密钥”：新的期限从这一刻算，没过期限的再要间隔也从头来。
             flow.keys_deadline = Some(Instant::now() + KEYS_TIMEOUT);
             flow.asked = 0;
+            flow.next_ask = Some(Instant::now() + FIRST_ASK);
+            flow.late = false;
+            flow.late_asked = 0;
         }
     }
     let terminal = !active(stage);
@@ -386,14 +410,18 @@ fn update(link: &ChatLink, flow: &mut Option<Flow>, snapshot: VerificationFlow) 
     if terminal && let Some(flow) = flow.as_mut() {
         flow.finished = true;
         flow.keys_deadline = None;
+        flow.late = false;
+        flow.next_ask = None;
     }
 }
 
+/// 取钥匙的期限到了就以 `KeysMissing` 结束，之后秘密才到齐就改成完成。
+///
+/// 以 `KeysMissing` 结束后 `keys_deadline` 已经清掉，迟到的秘密靠 `late` 继续认：清掉以后的加密状态变化仍要
+/// 走到这里，不然迟到的秘密到齐了也停在“没取全”。
 fn finish_keys(link: &ChatLink, session: &MatrixSession, flow: &mut Option<Flow>, expired: bool) {
-    if !flow
-        .as_ref()
-        .is_some_and(|flow| flow.keys_deadline.is_some())
-    {
+    let Some(waiting) = flow.as_ref() else { return };
+    if waiting.keys_deadline.is_none() && !waiting.late {
         return;
     }
     let state = session.encryption_state();
@@ -422,6 +450,8 @@ fn finish_keys(link: &ChatLink, session: &MatrixSession, flow: &mut Option<Flow>
     if let Some(flow) = flow.as_mut() {
         flow.finished = true;
         flow.keys_deadline = None;
+        flow.late = !complete;
+        flow.next_ask = (!complete).then(|| Instant::now() + LATE_ASK);
     }
 }
 
@@ -442,12 +472,14 @@ async fn key_deadline(deadline: Option<Instant>, ready: bool) {
     }
 }
 
-/// 下一次再要缺的秘密的时间：开始取钥匙后 `FIRST_ASK` × (2ⁿ⁺¹ − 1)，过了取钥匙的期限就不再要。
-fn next_ask(flow: &Flow) -> Option<Instant> {
-    let deadline = flow.keys_deadline?;
+/// 排下一次再要缺的秘密的时间：期限之内按开始取钥匙后 `FIRST_ASK` × (2ⁿ⁺¹ − 1) 的间隔翻倍。
+fn schedule_ask(flow: &mut Flow) {
+    let Some(deadline) = flow.keys_deadline else {
+        return;
+    };
     let started = deadline - KEYS_TIMEOUT;
     let at = started + FIRST_ASK * ((2u32 << flow.asked.min(16)) - 1);
-    (at < deadline).then_some(at)
+    flow.next_ask = (at < deadline).then_some(at);
 }
 
 async fn sleep_until(at: Option<Instant>) {
@@ -457,16 +489,34 @@ async fn sleep_until(at: Option<Instant>) {
     }
 }
 
-/// 缺的秘密再要一次。要不成只记日志：期限到了仍缺，照常以 `KeysMissing` 结束。
+/// 缺的秘密再要一次。要不成只记日志，照常到期以 `KeysMissing` 结束。
+///
+/// 以 `KeysMissing` 结束后接着按 [`LATE_ASK`] 翻倍再要：对方在把本机记成“已验证”之前收到的请求会直接丢掉
+/// （matrix-sdk 0.19.1），丢了又没人再要，秘密就永远到不齐，页面上一直停在“没取全”。
 async fn ask_again(session: &MatrixSession, flow: &mut Option<Flow>) {
     let Some(flow) = flow.as_mut() else { return };
-    flow.asked += 1;
+    flow.next_ask = None;
+    let late = flow.late;
+    if late {
+        let wait = LATE_ASK
+            .saturating_mul(1 << flow.late_asked.min(4))
+            .min(LATE_ASK_MAX);
+        flow.late_asked += 1;
+        flow.next_ask = Some(Instant::now() + wait);
+    } else {
+        flow.asked += 1;
+        schedule_ask(flow);
+    }
+    let asked = if late { flow.late_asked } else { flow.asked };
     match session.request_missing_secrets().await {
-        Ok(requested) => tracing::info!(
-            asked = flow.asked,
-            requested,
-            "asked other devices again for missing secrets"
-        ),
+        Ok(requested) => {
+            tracing::info!(
+                asked,
+                late,
+                requested,
+                "asked other devices again for missing secrets"
+            )
+        }
         Err(error) => {
             tracing::warn!(%error, "could not ask other devices again for missing secrets")
         }
@@ -490,6 +540,8 @@ fn fail(link: &ChatLink, flow: &mut Option<Flow>, error: &Error) {
     if let Some(flow) = flow.as_mut() {
         flow.finished = true;
         flow.keys_deadline = None;
+        flow.late = false;
+        flow.next_ask = None;
     }
     report(link, error);
 }

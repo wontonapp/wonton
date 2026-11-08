@@ -166,6 +166,7 @@ struct Core {
     key_requests_forwarded: watch::Sender<u64>,
     /// 为真时 `m.secret.request` 由假核心先回 200、留在手里，变回假再转发，像旧设备掉线时排着的请求。
     hold_key_requests: watch::Sender<bool>,
+    drop_key_requests: AtomicBool,
     sync_requests: Mutex<Vec<Value>>,
     hold_sync_recording: AtomicBool,
     sync_recording_held: watch::Sender<Option<Value>>,
@@ -216,6 +217,7 @@ impl Home {
             done_after_key_request: Mutex::default(),
             key_requests_forwarded: watch::Sender::new(0),
             hold_key_requests: watch::Sender::new(false),
+            drop_key_requests: AtomicBool::new(false),
             sync_requests: Mutex::default(),
             hold_sync_recording: AtomicBool::new(false),
             sync_recording_held: watch::Sender::new(None),
@@ -297,6 +299,9 @@ impl Home {
         self.core.hold_key_requests.send_replace(hold);
     }
 
+    pub fn drop_key_requests(&self, drop: bool) {
+        self.core.drop_key_requests.store(drop, Ordering::SeqCst);
+    }
     /// 设置假核心的引导状态；没设置时引导接口回 404。
     pub fn set_onboarding(&self, onboarding: Value) {
         *self.core.onboarding.lock().unwrap() = Some(onboarding);
@@ -691,6 +696,14 @@ impl Phone {
     pub async fn wait_chat<R>(
         &self,
         what: &str,
+        check: impl FnMut(&ChatViewModel) -> Option<R>,
+    ) -> R {
+        self.wait_chat_within(what, WAIT, check).await
+    }
+    pub async fn wait_chat_within<R>(
+        &self,
+        what: &str,
+        within: Duration,
         mut check: impl FnMut(&ChatViewModel) -> Option<R>,
     ) -> R {
         let subscription = self.subscribe_chat();
@@ -705,7 +718,7 @@ impl Phone {
             }
             panic!("订阅提前结束");
         };
-        match tokio::time::timeout(WAIT, waiting).await {
+        match tokio::time::timeout(within, waiting).await {
             Ok(found) => found,
             Err(_) => {
                 let view = self.chat();
@@ -715,7 +728,7 @@ impl Phone {
                     _ => "",
                 };
                 panic!(
-                    "{what}：{WAIT:?} 内没有等到，当前：{view:#?}\n同步起步：{}\n挂着的请求：{}",
+                    "{what}：{within:?} 内没有等到，当前：{view:#?}\n同步起步：{}\n挂着的请求：{}",
                     wonton_matrix::last_sync_diagnostic(device),
                     pending_requests(since)
                 )

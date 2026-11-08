@@ -121,7 +121,10 @@ async fn sas_recovers_open_history_in_place_and_survives_restart() {
         stages.contains(&VerificationStage::FetchingKeys),
         "{stages:?}"
     );
-    assert_eq!(stages.last(), Some(&VerificationStage::Done));
+    // 期限过了才到齐的话，`confirm_and_observe` 在 `KeysMissing` 就返回了，秘密到齐后流程才改成完成。
+    if stages.last() != Some(&VerificationStage::Done) {
+        flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
+    }
     assert_recovered(&devices.second);
     assert!(matches!(
         devices.second.dispatch(Action::StartDeviceVerification),
@@ -190,13 +193,8 @@ async fn the_new_phone_asks_again_for_keys_the_old_phone_dropped() {
             flow_id: id.clone(),
         })
         .unwrap();
-    let end = flow_at(&devices.second, |stage| {
-        matches!(
-            stage,
-            VerificationStage::Done | VerificationStage::Cancelled { .. }
-        )
-    })
-    .await;
+    // 丢掉的请求要再要才补得回来，补回来前会先以 `KeysMissing` 结束，所以这里只等完成，不等取消。
+    let end = flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
     assert_eq!(end.stage, VerificationStage::Done);
     assert_recovered(&devices.second);
 }
@@ -230,6 +228,40 @@ async fn keys_that_arrive_after_the_deadline_turn_keys_missing_into_done() {
 
     // 旧手机回来，答了排着的请求。
     devices.home.hold_key_requests(false);
+    flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
+    devices
+        .second
+        .wait_chat("秘密到齐、恢复开启", |view| {
+            (view.encryption.recovery == RecoveryStatus::Enabled).then_some(())
+        })
+        .await;
+    assert_recovered(&devices.second);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn lost_key_requests_are_asked_for_again_after_the_deadline() {
+    let devices = Devices::new(true).await;
+    devices.connect_second().await;
+    let id = compare(&devices.first, &devices.second).await;
+    // 新手机要秘密的请求发出去就丢，旧手机收不到；服务端回了 200，新手机不会自己重发。
+    devices.home.drop_key_requests(true);
+    for phone in [&devices.first, &devices.second] {
+        phone
+            .dispatch(Action::ConfirmVerification {
+                flow_id: id.clone(),
+            })
+            .unwrap();
+    }
+    flow_at(&devices.second, |stage| {
+        *stage
+            == (VerificationStage::Cancelled {
+                reason: VerificationCancel::KeysMissing,
+            })
+    })
+    .await;
+    // 丢掉的请求不会自己到。以 `KeysMissing` 结束后接着再要，秘密才到得齐、流程才改成完成。
+    devices.home.drop_key_requests(false);
     flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
     devices
         .second
@@ -567,8 +599,9 @@ async fn available(phone: &Phone) {
 }
 
 async fn flow_at(phone: &Phone, check: impl Fn(&VerificationStage) -> bool) -> VerificationFlow {
+    // 30 秒期限本身就在等，晚到还要等补要，按两倍上限等，别让负载把等待挤爆。
     phone
-        .wait_chat("设备确认达到预期阶段", |view| {
+        .wait_chat_within("设备确认达到预期阶段", WAIT * 2, |view| {
             view.encryption
                 .verification_flow
                 .as_ref()

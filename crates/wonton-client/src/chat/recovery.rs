@@ -63,6 +63,9 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
 
 /// 取回密钥过了期限才到齐（旧设备重新联网后答了排着的要秘密请求）：恢复已经开启，`KeysMissing` 不再属实，
 /// 结束的流程改成完成。不改的话备份页一边说“已备份”一边说“没取全”，“重新开始”又因为本机已验证而做不了。
+///
+/// 验证任务在期限过后也认迟到的秘密（见 `verification::finish_keys`），这里补的是它管不到的时候：重连换了会话、
+/// 旧的验证任务已经退出，快照还停在 `KeysMissing`。
 fn settle_late_keys(encryption: &mut EncryptionStatus) {
     if encryption.recovery != RecoveryStatus::Enabled {
         return;
