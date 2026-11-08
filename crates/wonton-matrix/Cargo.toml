@@ -46,6 +46,8 @@ testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:test
 [dev-dependencies]
 # 集成测试用 testkit。
 wonton-matrix = { path = ".", features = ["testkit"] }
+# Apache-2.0。行为测试生成真实 Megolm 密文和迟到的房间密钥，不伪造解密结果。
+matrix-sdk-crypto = "0.19.1"
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

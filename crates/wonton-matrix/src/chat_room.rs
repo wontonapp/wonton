@@ -762,6 +762,8 @@ async fn local_member_names(room: &Room) -> MemberNames {
     )
 }
 
+#[cfg(test)]
+mod bootstrap_tests;
 mod send;
 #[cfg(test)]
 mod tests;

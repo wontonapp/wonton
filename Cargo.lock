@@ -3768,8 +3768,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e43a190b56df060b5a901d0e783e04002612981d1fef9562a44bf69330bb5257"
 dependencies = [
  "as_variant",
  "async-rx",
@@ -8237,6 +8235,7 @@ dependencies = [
  "futures-util",
  "jsonwebtoken",
  "matrix-sdk",
+ "matrix-sdk-crypto",
  "matrix-sdk-ui",
  "mime",
  "pem 3.0.6",
