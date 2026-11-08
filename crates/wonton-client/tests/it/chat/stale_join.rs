@@ -1,6 +1,8 @@
 //! 服务器发来的同步把刚加入的房间标成“受邀”：时间线里有加入事件，`required_state` 里本人却还是邀请。
-//! Tuwunel 先让新事件对同步可见、再更新房间当前状态，这中间的一次同步就是这样（CI 上实测）。模拟的核心改写
-//! 加入之后的第一个这样的同步应答，确定地造出这种情况。
+//! Tuwunel 先让新事件对同步可见、再更新房间当前状态，这中间的一次同步就是这样（CI 上实测）。模拟核心保持
+//! 这种错标，测试看到改写送达后清除，让客户端通过重新订阅拿回真实状态。
+
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8,7 +10,7 @@ use tokio::net::TcpStream;
 use wonton_client::{Action, RoomMembership};
 use wonton_matrix::OwnedUserId;
 
-use super::support::{Home, OWNER, Phone};
+use super::support::{Home, OWNER, Phone, WAIT};
 
 /// 加入后同步一直标着“受邀”时，客户端重新订阅这个房间，服务器按当前状态重发，房间变成已加入。
 #[tokio::test(flavor = "multi_thread")]
@@ -46,6 +48,17 @@ async fn a_join_the_server_reports_as_invited_still_ends_joined() {
             room_id: room_id.to_string(),
         })
         .unwrap();
+    // 改写持续到显式清除（会话里多条同步连接都会带回房间状态，只改写一次会被没改写的那条覆盖回去）。
+    // 等第一次改写发生就停：之后的应答照原样转发，客户端重新订阅、服务器按当前状态重发，房间变成已加入。
+    let deadline = Instant::now() + WAIT;
+    while !home.join_was_reported_as_invited() {
+        assert!(
+            Instant::now() < deadline,
+            "joined sync response was never rewritten"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    home.clear_join_report_as_invited();
     phone
         .wait_chat("加入后变成已加入", |view| {
             view.rooms
@@ -70,11 +83,12 @@ pub struct StaleJoin {
 }
 
 /// 只转一个请求：让 Tuwunel 回完就断开、不压缩，读完整个应答。是同步应答、里面有 `stale` 那个房间的加入事件，
-/// 就把 `required_state` 里本人的成员事件换成加入前的邀请。返回是否改写了。
+/// 就把 `required_state` 里本人的成员事件换成加入前的邀请。返回是否改写了。`body` 是代理已经读下的请求体。
 pub async fn forward_one(
     mut tcp: TcpStream,
     tuwunel: &str,
     head: &[u8],
+    body: &[u8],
     stale: &StaleJoin,
 ) -> bool {
     let head = String::from_utf8_lossy(head);
@@ -89,13 +103,14 @@ pub async fn forward_one(
         .map(|line| format!("{line}\r\n"))
         .collect();
     request.push_str("connection: close\r\n\r\n");
-    let mut body = vec![0u8; header(&head, "content-length").map_or(0, |v| v.parse().unwrap())];
-    if tcp.read_exact(&mut body).await.is_err() {
-        return false;
-    }
-    let mut upstream = TcpStream::connect(tuwunel).await.unwrap();
+    let mut upstream = TcpStream::connect(tuwunel).await.unwrap_or_else(|error| {
+        panic!(
+            "failed to connect to Tuwunel at {tuwunel} for {}: {error}",
+            head.lines().next().unwrap_or_default()
+        )
+    });
     upstream.write_all(request.as_bytes()).await.unwrap();
-    upstream.write_all(&body).await.unwrap();
+    upstream.write_all(body).await.unwrap();
     let mut response = Vec::new();
     let _ = upstream.read_to_end(&mut response).await;
     let is_sync = head
@@ -103,10 +118,15 @@ pub async fn forward_one(
         .next()
         .is_some_and(|line| line.contains("/sync"));
     let rewritten = is_sync.then(|| rewrite(&response, stale)).flatten();
+    // 改写要真的送达手机才算：同步重启的间隙里 SDK 可能已废弃这条连接（blip 后的重试、紧接着的下一次
+    // 重启），改写落上去谁也看不见；这时保持 arm，让带同一个加入事件的下一个应答再试。
     let changed = rewritten.is_some();
-    let _ = tcp.write_all(&rewritten.unwrap_or(response)).await;
+    let delivered = tcp
+        .write_all(rewritten.as_deref().unwrap_or(&response))
+        .await
+        .is_ok();
     let _ = tcp.shutdown().await;
-    changed
+    changed && delivered
 }
 
 fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {

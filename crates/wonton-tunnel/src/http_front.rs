@@ -29,6 +29,7 @@ pub(crate) async fn accept(
     tcp_write: &mut OwnedWriteHalf,
     credential: &ProxyCredential,
     domain: &str,
+    #[cfg(feature = "test-hooks")] sequence: u64,
 ) -> Option<Vec<u8>> {
     let head = match read_head(tcp_read).await {
         Ok(head) => head?,
@@ -61,6 +62,14 @@ pub(crate) async fn accept(
     }
     // 只记主机：路径和查询里可能有 OAuth 授权码等秘密。
     debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "local proxy received a request");
+    #[cfg(feature = "test-hooks")]
+    let mut head = head;
+    // 独立隧道流和服务端任务可能乱序；序号只供测试还原客户端取消旧请求之前的顺序。
+    #[cfg(feature = "test-hooks")]
+    head.headers.push((
+        "x-wonton-test-sequence".to_owned(),
+        sequence.to_string().into_bytes(),
+    ));
     Some(head.rewrite())
 }
 

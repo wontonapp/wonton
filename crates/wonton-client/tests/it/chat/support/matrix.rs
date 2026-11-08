@@ -4,6 +4,8 @@
 use std::sync::{Arc, atomic::Ordering};
 use std::time::Duration;
 
+use serde_json::Value;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::debug;
@@ -17,42 +19,10 @@ pub(super) async fn serve_matrix(
     mut head: Vec<u8>,
     text: &str,
 ) {
-    if text.starts_with("get /_matrix/client/v3/room_keys/version") {
-        let mut hold = core.hold_backup_read.subscribe();
-        if hold.wait_for(|hold| !hold).await.is_err() {
-            return;
-        }
-    }
-    if answer_unavailable(&mut tcp, &core).await {
+    if intercept_verification(&mut tcp, &core, text).await {
         return;
     }
-    let verification_status = core.verification_failure.load(Ordering::SeqCst);
-    if verification_status != 0 && text.starts_with("put /_matrix/client/v3/sendtodevice/") {
-        if verification_status == 502 {
-            // 传输故障：不回任何应答直接断开。SDK 默认对 5xx 应答会退避重试最长 15 分钟，
-            // 连接错误没有重试上限才立即失败，和隧道断开时的行为一致。
-            return;
-        }
-        let body = r#"{"errcode":"M_UNKNOWN","error":"Verification send rejected"}"#;
-        let response = format!(
-            "HTTP/1.1 {verification_status} Verification failed\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        tcp.write_all(response.as_bytes()).await.ok();
-        tcp.shutdown().await.ok();
-        return;
-    }
-    if text.starts_with("post /_matrix/client/v3/room_keys/version ")
-        && core.reject_backup_creation.load(Ordering::SeqCst)
-    {
-        let body = r#"{"errcode":"M_FORBIDDEN","error":"Backup creation rejected"}"#;
-        let response = format!(
-            "HTTP/1.1 403 Forbidden\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-                 connection: close\r\n\r\n{body}",
-            body.len()
-        );
-        tcp.write_all(response.as_bytes()).await.unwrap();
-        tcp.shutdown().await.unwrap();
+    if intercept_backup_creation(&mut tcp, &core, text).await {
         return;
     }
     if text.starts_with("post /_matrix/media/")
@@ -84,6 +54,21 @@ pub(super) async fn serve_matrix(
     {
         return;
     }
+    let is_sync = text
+        .lines()
+        .next()
+        .is_some_and(|line| line.contains("msc3575/sync"));
+    // 此处只预读同步 body；上面的设备确认钩子仅在启用时预读对应的 secret request/done。
+    // 其余请求保持流式转发，避免丢失加入请求的正文。
+    let mut body = Vec::new();
+    let mut request = None;
+    if is_sync {
+        let Some(read) = read_body(&mut tcp, text).await else {
+            return;
+        };
+        body = read;
+        request = record_sync_request(&core, text, &body).await;
+    }
     let mut down = core.matrix_down.subscribe();
     if *down.borrow() {
         return;
@@ -96,16 +81,15 @@ pub(super) async fn serve_matrix(
         core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
         return;
     }
-    let mut stale = core.stale_join.subscribe();
-    let armed = stale.borrow().clone();
-    if let Some(armed) = armed {
-        if forward_one(tcp, &core.tuwunel, &head, &armed).await {
-            core.stale_join.send_replace(None);
-            core.join_reported_as_invited.store(true, Ordering::SeqCst);
-        }
+    if expire_room_list(&mut tcp, &core, request.as_ref()).await {
         return;
     }
-    if expire_room_list(&mut tcp, &core, text, &mut head).await {
+    let mut stale = core.stale_join.subscribe();
+    let armed = stale.borrow().clone();
+    if let Some(armed) = armed.filter(|_| is_sync) {
+        if forward_one(tcp, &core.tuwunel, &head, &body, &armed).await {
+            core.join_reported_as_invited.fetch_add(1, Ordering::SeqCst);
+        }
         return;
     }
     let Some(mut upstream) = forward_to(&core, &head).await else {
@@ -114,20 +98,36 @@ pub(super) async fn serve_matrix(
     if text.starts_with(KEY_REQUEST) {
         core.key_requests_forwarded.send_modify(|count| *count += 1);
     }
+    if is_sync {
+        upstream.write_all(&body).await.unwrap();
+    }
     tokio::select! {
         _ = tokio::io::copy_bidirectional(&mut tcp, &mut upstream) => {}
         _ = down.wait_for(|down| *down) => {}
-        _ = stale.wait_for(Option::is_some) => {}
+        _ = stale.wait_for(Option::is_some), if is_sync => {}
     }
 }
 
 const KEY_REQUEST: &str = "put /_matrix/client/v3/sendtodevice/m.secret.request/";
 const DONE: &str = "put /_matrix/client/v3/sendtodevice/m.key.verification.done/";
 
-/// 开了 `done_after_key_request` 时，要钥匙的请求和确认完成消息先读完请求体、整个转发。发给指定设备的完成消息
-/// 由假核心先回 200、留在手里：新手机的同步不会因为这个请求没回而停下，照常收到对方的完成消息、发出要钥匙的请求；
-/// 等要钥匙的请求转发出去，再过三秒让对方的同步先把它取走，才把完成消息补发给 Tuwunel。
-/// 回 `None` 表示这个请求已经答完（或者读不下去了）。
+async fn intercept_backup_creation(tcp: &mut TcpStream, core: &Core, text: &str) -> bool {
+    if !text.starts_with("post /_matrix/client/v3/room_keys/version ")
+        || !core.reject_backup_creation.load(Ordering::SeqCst)
+    {
+        return false;
+    }
+    let body = r#"{"errcode":"M_FORBIDDEN","error":"Backup creation rejected"}"#;
+    let response = format!(
+        "HTTP/1.1 403 Forbidden\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+         connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    tcp.write_all(response.as_bytes()).await.unwrap();
+    tcp.shutdown().await.unwrap();
+    true
+}
+
 /// Tuwunel 在重启时核心网关的应答：Matrix 的 JSON 错误 503。
 async fn answer_unavailable(tcp: &mut TcpStream, core: &Core) -> bool {
     if !core.matrix_unavailable.load(Ordering::SeqCst) {
@@ -143,6 +143,10 @@ async fn answer_unavailable(tcp: &mut TcpStream, core: &Core) -> bool {
     true
 }
 
+/// 开了 `done_after_key_request` 时，要钥匙的请求和确认完成消息先读完请求体、整个转发。发给指定设备的完成消息
+/// 由假核心先回 200、留在手里：新手机的同步不会因为这个请求没回而停下，照常收到对方的完成消息、发出要钥匙的请求；
+/// 等要钥匙的请求转发出去，再过三秒让对方的同步先把它取走，才把完成消息补发给 Tuwunel。
+/// 回 `None` 表示这个请求已经答完（或者读不下去了）。
 async fn hold_done_for_key_request(
     tcp: &mut TcpStream,
     core: &Arc<Core>,
@@ -218,6 +222,33 @@ async fn forward_held(core: &Core, request: &[u8]) {
         .ok();
 }
 
+async fn intercept_verification(tcp: &mut TcpStream, core: &Core, text: &str) -> bool {
+    if text.starts_with("get /_matrix/client/v3/room_keys/version") {
+        let mut hold = core.hold_backup_read.subscribe();
+        if hold.wait_for(|hold| !hold).await.is_err() {
+            return true;
+        }
+    }
+    if answer_unavailable(tcp, core).await {
+        return true;
+    }
+    let status = core.verification_failure.load(Ordering::SeqCst);
+    if status == 0 || !text.starts_with("put /_matrix/client/v3/sendtodevice/") {
+        return false;
+    }
+    // SDK 对 5xx 退避重试；502 探针用直接断开连接模拟传输故障，沿用主干的失败分类。
+    if status != 502 {
+        let body = r#"{"errcode":"M_UNKNOWN","error":"Verification send rejected"}"#;
+        let response = format!(
+            "HTTP/1.1 {status} Verification failed\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        tcp.write_all(response.as_bytes()).await.ok();
+        tcp.shutdown().await.ok();
+    }
+    true
+}
+
 /// 连上 Tuwunel 并把请求头转过去；连不上或写不进去就断开这条连接（客户端会重试）。
 async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
     let mut upstream = match TcpStream::connect(core.tuwunel.as_str()).await {
@@ -236,35 +267,53 @@ async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
     }
 }
 
-/// 要求过期时，房间列表的下一个同步请求回 `M_UNKNOWN_POS`。连接号在请求体里，所以先读完请求体，别的同步请求连同
-/// 请求体照常转发。回真时这个请求已经答完（或者读不下去了）。
-async fn expire_room_list(
-    tcp: &mut TcpStream,
-    core: &Core,
-    text: &str,
-    head: &mut Vec<u8>,
-) -> bool {
-    if !text.starts_with("post /_matrix/client/unstable/org.matrix.simplified_msc3575/sync")
-        || !core.expire_room_list.load(Ordering::SeqCst)
-    {
+/// 下一条房间列表请求回 M_UNKNOWN_POS，过期注入先于房间状态改写。
+async fn expire_room_list(tcp: &mut TcpStream, core: &Core, request: Option<&Value>) -> bool {
+    let room_list = request
+        .and_then(|request| request.get("conn_id"))
+        .and_then(|conn| conn.as_str())
+        == Some("room-list");
+    if !room_list || !core.expire_room_list.swap(false, Ordering::SeqCst) {
         return false;
     }
-    let Some(body) = read_body(tcp, text).await else {
-        return true;
-    };
-    if String::from_utf8_lossy(&body).contains(r#""conn_id":"room-list""#)
-        && core.expire_room_list.swap(false, Ordering::SeqCst)
+    let body = r#"{"errcode":"M_UNKNOWN_POS","error":"Unknown position"}"#;
+    let response = format!(
+        "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+         connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    tcp.write_all(response.as_bytes()).await.ok();
+    tcp.shutdown().await.ok();
+    true
+}
+
+/// 记录请求体和查询里的 pos，区分重启的首条请求与长轮询。
+async fn record_sync_request(core: &Core, text: &str, body: &[u8]) -> Option<Value> {
+    let mut request: Value = serde_json::from_slice(body).ok()?;
+    let pos = text
+        .lines()
+        .next()
+        .and_then(|line| line.split("pos=").nth(1))
+        .map(|rest| rest.split(['&', ' ']).next().unwrap_or("").to_owned())
+        .filter(|pos| !pos.is_empty());
+    let sequence = text
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("x-wonton-test-sequence:")
+                .and_then(|value| value.trim().parse::<u64>().ok())
+        })
+        .expect("sync request must have a local proxy sequence");
+    request["test_sequence"] = sequence.into();
+    request["pos"] = pos.map(Value::String).unwrap_or(Value::Null);
+    // Joined 行可先于加入流程的临时订阅清理出现，不能把那条带订阅请求当成旧空长轮询。
+    if request["conn_id"] == "room-list"
+        && request.get("room_subscriptions").is_none()
+        && core.hold_sync_recording.swap(false, Ordering::SeqCst)
     {
-        let body = r#"{"errcode":"M_UNKNOWN_POS","error":"Unknown position"}"#;
-        let response = format!(
-            "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-             connection: close\r\n\r\n{body}",
-            body.len()
-        );
-        tcp.write_all(response.as_bytes()).await.ok();
-        tcp.shutdown().await.ok();
-        return true;
+        core.sync_recording_held.send_replace(Some(request.clone()));
+        let mut released = core.sync_recording_released.subscribe();
+        released.wait_for(|released| *released).await.ok()?;
     }
-    head.extend_from_slice(&body);
-    false
+    core.sync_requests.lock().unwrap().push(request.clone());
+    Some(request)
 }

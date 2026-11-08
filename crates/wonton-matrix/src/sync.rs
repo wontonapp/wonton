@@ -70,9 +70,17 @@ fn status_of(service: &sync_service::State, list: &room_list_service::State) -> 
 impl MatrixSession {
     /// 启动同步，等到房间列表首次同步完成才返回。
     pub async fn start_sync(&self) -> Result<()> {
-        let mut service_state = self.sync.state();
         let mut list_state = self.sync.room_list_service().state();
-        self.sync.start().await;
+        let mut service_state = self.sync.state();
+        {
+            // SyncService 的 Error 在两条同步任务及过期清理结束后才发布。观察房间列表的 Error
+            // 异步补挂会与重新启动竞跑；持订阅锁把恢复名单和启动串起来，健康服务不重发。
+            let mut subscriptions = self.subscriptions.lock().await;
+            if !matches!(service_state.get(), sync_service::State::Running) {
+                self.resubscribe(&mut subscriptions).await;
+                self.sync.start().await;
+            }
+        }
         loop {
             if let SyncStatus::Failed(error) = SyncStatus::from(&service_state.get()) {
                 return Err(error);
@@ -92,6 +100,7 @@ impl MatrixSession {
 
     /// 停止同步（App 进入后台时调用）。
     pub async fn stop_sync(&self) {
+        let _subscriptions = self.subscriptions.lock().await;
         self.sync.stop().await;
     }
 
@@ -119,7 +128,7 @@ impl MatrixSession {
             }
             delay = (delay * 2).min(MAX_RESTART);
             restarted = Instant::now();
-            // 失败时状态流里也有，下一轮处理。
+            // 失败也在状态流里，下一轮处理；start_sync 会先恢复订阅再启动。
             self.start_sync().await.ok();
         }
     }

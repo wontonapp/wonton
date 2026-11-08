@@ -233,8 +233,6 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         .until("之前的", |item| text(item, "之前的"))
         .await;
 
-    // 过期落在“同一批的”带回来之后的那次请求上；SDK 从头同步后列表清空，只剩最新的一段。
-    chat.home.expire_room_list_sync();
     chat.bot_room
         .send_text("同一批的")
         .await
@@ -242,6 +240,29 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
     chat.timeline
         .until("同一批的", |item| text(item, "同一批的"))
         .await;
+    // 订阅保留后，重启应答可能与缓存重叠而无需清空。断开期间发出超过订阅窗口的事件，
+    // 让重启应答与原缓存不重叠，确定地覆盖清空后往回翻的路径。
+    let limit = chat
+        .home
+        .sync_requests()
+        .into_iter()
+        .filter(|request| request["conn_id"] == "room-list")
+        .rev()
+        .find_map(|request| {
+            request["room_subscriptions"][chat.room_id.as_str()]["timeline_limit"].as_u64()
+        })
+        .expect("opened room subscription must specify a timeline limit");
+    chat.home.set_matrix_down(true);
+    chat.sync_failed().await;
+    for i in 0..=limit {
+        chat._bot
+            .send_text_to(&chat.room_id, &format!("gap message {i}"))
+            .await
+            .expect("Bot sends a message while the phone is disconnected");
+    }
+    chat.home.expire_room_list_sync();
+    chat.home.set_matrix_down(false);
+    chat.phone.dispatch(Action::AppForegrounded).unwrap();
     let deadline = Instant::now() + Duration::from_secs(40);
     while !chat.home.room_list_sync_expired() {
         assert!(
@@ -250,6 +271,7 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+    chat.timeline.until_cleared().await;
     chat.bot_room.send_text("之后的").await.expect("Bot 发消息");
 
     chat.timeline

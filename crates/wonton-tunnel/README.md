@@ -132,3 +132,8 @@ cargo run -p wonton-tunnel --example tunnel-client -- probe --server <服务端 
 
 行为测试在 `tests/tunnel/`（转发到 TCP 上游、交给嵌入方、App 用的本地代理各一组），只走本机回环地址，
 不依赖外网。
+
+客户端集成测试启用 `test-hooks` 时，HTTP 正向代理按接受本地连接的顺序加入
+`x-wonton-test-sequence`。独立隧道流和服务端任务可以乱序，订阅测试用它还原请求顺序，
+不把取消前已经发出的旧长轮询误判为退订。这个序号不进入 App 构建，也不适用于 CONNECT 内的加密请求。
+取消请求的乱序回归只挂住空订阅长轮询：房间行先变为已加入，不代表加入流程的临时订阅已经清理完毕。

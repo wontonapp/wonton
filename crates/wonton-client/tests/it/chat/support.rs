@@ -35,7 +35,7 @@ mod matrix;
 use fake_core::fake_core;
 
 pub const WAIT: Duration = Duration::from_secs(60);
-const BASE_DOMAIN: &str = "wonton.localhost";
+pub(super) const BASE_DOMAIN: &str = "wonton.localhost";
 /// 和 deploy/dev/matrix/tuwunel.toml 的 server_name 一致。
 pub const OWNER: &str = "@owner:wonton.localhost";
 
@@ -120,9 +120,9 @@ struct Core {
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
     reject_backup_creation: AtomicBool,
-    /// 有值时下一个带着这个房间加入事件的同步应答被改写成“受邀”，见 [`super::stale_join`]。
+    /// 同步应答保持错标直到测试显式清除，避免其他同步连接提前把状态覆盖回来。
     stale_join: watch::Sender<Option<StaleJoin>>,
-    join_reported_as_invited: AtomicBool,
+    join_reported_as_invited: AtomicUsize,
     /// 为真时房间列表的下一个同步请求回 `M_UNKNOWN_POS`，像服务器丢了这条连接的位置。
     expire_room_list: AtomicBool,
     verification_failure: AtomicUsize,
@@ -134,6 +134,10 @@ struct Core {
     key_requests_forwarded: watch::Sender<u64>,
     /// 为真时 `m.secret.request` 由假核心先回 200、留在手里，变回假再转发，像旧设备掉线时排着的请求。
     hold_key_requests: watch::Sender<bool>,
+    sync_requests: Mutex<Vec<Value>>,
+    hold_sync_recording: AtomicBool,
+    sync_recording_held: watch::Sender<Option<Value>>,
+    sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
@@ -171,13 +175,17 @@ impl Home {
             members_requests_dropped: AtomicUsize::new(0),
             reject_backup_creation: AtomicBool::new(false),
             stale_join: watch::Sender::new(None),
-            join_reported_as_invited: AtomicBool::new(false),
+            join_reported_as_invited: AtomicUsize::new(0),
             expire_room_list: AtomicBool::new(false),
             verification_failure: AtomicUsize::new(0),
             hold_backup_read: watch::Sender::new(false),
             done_after_key_request: Mutex::default(),
             key_requests_forwarded: watch::Sender::new(0),
             hold_key_requests: watch::Sender::new(false),
+            sync_requests: Mutex::default(),
+            hold_sync_recording: AtomicBool::new(false),
+            sync_recording_held: watch::Sender::new(None),
+            sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
@@ -280,14 +288,51 @@ impl Home {
         self.core.members_down.store(down, Ordering::SeqCst);
     }
 
-    /// 下一个带着 `stale` 房间加入事件的同步应答，把本人报成还是受邀。正在转发的请求断开重发，保证经过改写。
+    /// 下一个带着 `stale` 房间加入事件的同步应答起，每个这样的应答都被改写成还是受邀（同步重启后 SDK 会
+    /// 重发房间状态，会话里多条连接都会带回它），直到 [`Self::clear_join_report_as_invited`] 清除。
     pub fn report_join_as_invited(&self, stale: StaleJoin) {
         self.core.stale_join.send_replace(Some(stale));
     }
 
+    /// 停止改写：之后的同步应答照原样转发，房间回到真实状态。
+    pub fn clear_join_report_as_invited(&self) {
+        self.core.stale_join.send_replace(None);
+    }
+
     /// [`Self::report_join_as_invited`] 有没有改写到应答。
     pub fn join_was_reported_as_invited(&self) -> bool {
-        self.core.join_reported_as_invited.load(Ordering::SeqCst)
+        self.core.join_reported_as_invited.load(Ordering::SeqCst) > 0
+    }
+
+    /// 记下的同步请求体，按客户端进入本地代理的顺序；独立隧道流的到达顺序不代表发送顺序。
+    pub fn sync_requests(&self) -> Vec<Value> {
+        let mut requests = self.core.sync_requests.lock().unwrap().clone();
+        requests.sort_by_key(|request| request["test_sequence"].as_u64().unwrap());
+        requests
+    }
+
+    pub fn hold_next_unsubscribed_sync_recording(&self) {
+        self.core.sync_recording_held.send_replace(None);
+        self.core.sync_recording_released.send_replace(false);
+        self.core.hold_sync_recording.store(true, Ordering::SeqCst);
+    }
+
+    pub async fn held_sync_request(&self) -> Value {
+        let mut held = self.core.sync_recording_held.subscribe();
+        tokio::time::timeout(WAIT, held.wait_for(Option::is_some))
+            .await
+            .expect("sync request must reach recording barrier")
+            .expect("recording barrier must remain open")
+            .clone()
+            .unwrap()
+    }
+
+    pub fn release_sync_recording(&self) {
+        self.core.sync_recording_released.send_replace(true);
+    }
+
+    pub fn sync_arrivals(&self) -> Vec<Value> {
+        self.core.sync_requests.lock().unwrap().clone()
     }
 
     /// 被 [`Self::set_members_down`] 断开过多少次取房间成员的请求。

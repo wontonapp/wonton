@@ -28,7 +28,7 @@ required-features = ["bindgen"]
 bindgen = ["uniffi/cli"]
 # 只给集成测试用的时序钩子（src/test_hooks.rs），生产构建不开：App 和 uniffi 命令行不经过 dev-dependencies，
 # 编出来的就是没有钩子的核心。
-test-hooks = []
+test-hooks = ["wonton-tunnel/test-hooks"]
 
 [dependencies]
 # MIT OR Apache-2.0。校验推送订阅里 base64url 编码的公钥和认证密钥。

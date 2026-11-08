@@ -59,6 +59,23 @@ impl Timeline {
         self.cleared
     }
 
+    /// 先观察重建，不触发回翻，保证后续新消息发生在重建之后。
+    pub async fn until_cleared(&mut self) {
+        let waiting = async {
+            while !self.cleared {
+                let update = self
+                    .subscription
+                    .next()
+                    .await
+                    .expect("timeline subscription ended");
+                self.apply_update(update.diffs, update.back_pagination);
+            }
+        };
+        tokio::time::timeout(WAIT, waiting)
+            .await
+            .expect("timeline was not rebuilt after sync restart");
+    }
+
     /// 清空过、还没翻到头、没在翻：像壳一样再翻一页。
     fn page_back_if_cleared(&mut self) {
         if self.cleared && !self.paging && self.back_pagination == BackPagination::Idle {

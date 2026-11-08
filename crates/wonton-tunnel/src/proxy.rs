@@ -87,14 +87,22 @@ impl Drop for LocalProxy {
 
 async fn accept_loop(listener: TcpListener, client: TunnelClient, access: Arc<ProxyAccess>) {
     let mut connections = JoinSet::new();
+    #[cfg(feature = "test-hooks")]
+    static NEXT_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((tcp, peer)) => {
+                    #[cfg(feature = "test-hooks")]
+                    let sequence = NEXT_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     debug!(%peer, "local proxy accepted a connection");
                     // 这条连接之后的日志都带上它的本地端口，并发的连接才分得清。
                     let span = debug_span!("local connection", port = peer.port());
-                    connections.spawn(serve_local(client.clone(), tcp, access.clone()).instrument(span));
+                    connections.spawn(serve_local(
+                        client.clone(), tcp, access.clone(),
+                        #[cfg(feature = "test-hooks")]
+                        sequence,
+                    ).instrument(span));
                 }
                 Err(err) => {
                     warn!("local proxy failed to accept a connection: {err}");
@@ -122,7 +130,12 @@ enum RelayError {
     Aborted(PumpError),
 }
 
-async fn serve_local(client: TunnelClient, tcp: TcpStream, access: Arc<ProxyAccess>) {
+async fn serve_local(
+    client: TunnelClient,
+    tcp: TcpStream,
+    access: Arc<ProxyAccess>,
+    #[cfg(feature = "test-hooks")] sequence: u64,
+) {
     if let Err(err) = tcp.set_nodelay(true) {
         debug!("failed to set TCP_NODELAY on the local connection: {err}");
     }
@@ -131,7 +144,16 @@ async fn serve_local(client: TunnelClient, tcp: TcpStream, access: Arc<ProxyAcce
     let prefix = match &*access {
         ProxyAccess::Open => Vec::new(),
         ProxyAccess::Credential { credential, domain } => {
-            match http_front::accept(&mut tcp_read, &mut tcp_write, credential, domain).await {
+            match http_front::accept(
+                &mut tcp_read,
+                &mut tcp_write,
+                credential,
+                domain,
+                #[cfg(feature = "test-hooks")]
+                sequence,
+            )
+            .await
+            {
                 Some(prefix) => prefix,
                 None => return,
             }

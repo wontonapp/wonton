@@ -71,7 +71,9 @@ impl From<RoomState> for Membership {
     }
 }
 
-/// Sliding Sync 订阅完整时间线的房间。
+/// Sliding Sync 订阅完整时间线的房间。`opened`、`watched`、`joining` 是三份互不相干的需要，并集才是发给
+/// 服务器的名单：只要还有一份要这个房间，它就留在名单里——退订的一方动不到别人还需要的房间，这就是
+/// 引用计数（#370）。
 #[derive(Default)]
 pub(crate) struct RoomSubscriptions {
     /// 打开着的房间。
@@ -80,6 +82,9 @@ pub(crate) struct RoomSubscriptions {
     watched: BTreeSet<OwnedRoomId>,
     /// 加入后同步还标着“受邀”、临时订阅的房间，见 [`MatrixSession::until_joined`]。
     joining: BTreeSet<OwnedRoomId>,
+    /// 上一次发给 SDK 的并集。名单没变就不发：SDK 收到订阅变化会取消在飞的同步请求，一次名单没变的
+    /// 重发是无害的浪费，一次名单真变大的重发在 Tuwunel 上能把别的在飞请求顶成 `M_UNKNOWN_POS`（#370）。
+    applied: BTreeSet<OwnedRoomId>,
 }
 
 /// 房间列表里的一项。
@@ -146,6 +151,34 @@ impl MatrixSession {
             .map(|room| room.room_id().to_owned())
     }
 
+    /// 现在在 `m.direct` 里标给 `peer` 的全部房间，照本机存的最新一份算，不看房间现在的成员状态。
+    ///
+    /// 认私聊以这份为准，别用房间列表的行认：行的私聊字段跟着每次列表重算重取，`m.direct` 还没同步到、
+    /// 或 Tuwunel 补状态的间隙里，同一房间在相邻两次重算里一会儿算一会儿不算；`m.direct` 只在真的收到
+    /// 事件时才变（#370）。也不按成员状态过滤（[`Self::direct_chat_with`] 那样只看已加入的不行）：补状态
+    /// 的间隙里已加入的房间会被错标成受邀，按状态过滤就把这份稳定的事实也丢了；真离开的房间由“行从
+    /// 列表消失”这条出集合的依据兜住。
+    pub async fn direct_chat_rooms_with(&self, peer: &UserId) -> Result<Vec<OwnedRoomId>> {
+        let raw = self
+            .client
+            .account()
+            .account_data::<DirectEventContent>()
+            .await
+            .map_err(|error| Error::Upstream(error.to_string()))?;
+        let Some(raw) = raw else {
+            return Ok(Vec::new());
+        };
+        let event = raw
+            .deserialize()
+            .map_err(|error| Error::Upstream(error.to_string()))?;
+        Ok(event
+            .0
+            .iter()
+            .find(|(user, _)| user.as_user_id() == Some(peer))
+            .map(|(_, rooms)| rooms.clone())
+            .unwrap_or_default())
+    }
+
     /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成已加入才返回，
     /// 调用方接着就能往里发消息。
     pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {
@@ -194,12 +227,14 @@ impl MatrixSession {
         let room_id = room.room_id().to_owned();
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.joining.insert(room_id.clone());
-        self.subscribe(&subscriptions).await;
+        // 这次发送的目的就是让服务器按当前状态重发这个房间：房间多半还在名单里（跟着卡片），名单没变的
+        // 下发 SDK 只当空操作，不会取消在飞的请求，服务器也就不会重发，所以强制。
+        self.subscribe(&mut subscriptions, true).await;
         drop(subscriptions);
         let done = joined(room, RESUBSCRIBED_WAIT).await;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.joining.remove(&room_id);
-        self.subscribe(&subscriptions).await;
+        self.subscribe(&mut subscriptions, false).await;
         drop(subscriptions);
         if done {
             Ok(())
@@ -270,7 +305,7 @@ impl MatrixSession {
         let room = self.joined(room_id)?;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.opened = Some(room_id.to_owned());
-        self.subscribe(&subscriptions).await;
+        self.subscribe(&mut subscriptions, false).await;
         drop(subscriptions);
         ChatRoom::open(room).await
     }
@@ -281,7 +316,7 @@ impl MatrixSession {
         let room = self.joined(room_id)?;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.watched.insert(room_id.to_owned());
-        self.subscribe(&subscriptions).await;
+        self.subscribe(&mut subscriptions, false).await;
         drop(subscriptions);
         ChatRoom::open(room).await
     }
@@ -289,22 +324,43 @@ impl MatrixSession {
     pub async fn unwatch_room(&self, room_id: &RoomId) {
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.watched.remove(room_id);
-        self.subscribe(&subscriptions).await;
+        self.subscribe(&mut subscriptions, false).await;
     }
 
     /// 调用方拿着锁等它结束：SDK 按最后一次的名单订阅，两次调用不能交错，否则后算的名单可能先生效。
-    async fn subscribe(&self, subscriptions: &RoomSubscriptions) {
-        let rooms: Vec<&RoomId> = subscriptions
+    /// 名单没变就不发；`force_redeliver` 时即使没变也发，而且走 `reset_and_add`：SDK 会取消在飞的请求
+    /// 重新发，服务器按当前状态重发房间。发送的目的只是改名单时用差集（`false`），要服务器重发状态时
+    /// 才强制（`true`，比如 [`MatrixSession::until_joined`] 的重新订阅）。
+    async fn subscribe(&self, subscriptions: &mut RoomSubscriptions, force_redeliver: bool) {
+        let rooms: BTreeSet<OwnedRoomId> = subscriptions
             .opened
             .iter()
             .chain(&subscriptions.watched)
             .chain(&subscriptions.joining)
-            .map(|room| &**room)
+            .cloned()
             .collect();
-        self.sync
-            .room_list_service()
-            .set_room_subscriptions(&rooms)
-            .await;
+        if rooms == subscriptions.applied && !force_redeliver {
+            return;
+        }
+        let list: Vec<&RoomId> = rooms.iter().map(|room| &**room).collect();
+        if force_redeliver {
+            self.sync
+                .room_list_service()
+                .reset_and_add_room_subscriptions(&list)
+                .await;
+        } else {
+            self.sync
+                .room_list_service()
+                .set_room_subscriptions(&list)
+                .await;
+        }
+        subscriptions.applied = rooms;
+    }
+
+    /// 同步服务停止后再恢复名单；调用方持锁到重新启动，首条请求才能带上恢复后的订阅。
+    pub(crate) async fn resubscribe(&self, subscriptions: &mut RoomSubscriptions) {
+        subscriptions.applied.clear();
+        self.subscribe(subscriptions, false).await;
     }
 
     /// 往已加入的房间发一条文字，不打开它：不动 Sliding Sync 的房间订阅，正在看的房间的时间线不受影响。不经发送队列，也没有本地
