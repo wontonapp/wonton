@@ -22,6 +22,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -105,18 +106,24 @@ fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsStat
         room != null -> {
             BackHandler { navigation.closeRoom() }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
-            RoomRoute(
-                core = core,
-                roomId = room,
-                title = row?.name ?: room,
-                isDirect = row?.isDirect == true,
-                isReadOnly = row?.isReadOnly == true,
-                bot = viewModel.bots.directBot(row),
-                plugins = plugins,
-                onAction = onAction,
-                onReject = { rejection = it },
-                onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
-            )
+            val context = LocalContext.current
+            val opener = remember(core, navigation, context) {
+                AndroidLinkOpener(context, core, navigation) { rejection = it }
+            }
+            CompositionLocalProvider(LocalLinkOpener provides opener) {
+                RoomRoute(
+                    core = core,
+                    roomId = room,
+                    title = row?.name ?: room,
+                    isDirect = row?.isDirect == true,
+                    isReadOnly = row?.isReadOnly == true,
+                    bot = viewModel.bots.directBot(row),
+                    plugins = plugins,
+                    onAction = onAction,
+                    onReject = { rejection = it },
+                    onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
+                )
+            }
         }
         else -> ChatListScreen(
             viewModel = viewModel,
@@ -300,7 +307,8 @@ private fun RoomPreviewLine(row: RoomRow) {
             overflow = TextOverflow.Ellipsis,
         )
         if (row.unreadCount > 0uL) {
-            val spoken = stringResource(R.string.chat_unread_count, row.unreadCount)
+            // unreadCount 是 ULong，Android 的 %d 格式化不认，转成 Int。
+            val spoken = stringResource(R.string.chat_unread_count, row.unreadCount.toInt())
             Text(
                 row.unreadCount.toString(),
                 Modifier.semantics { contentDescription = spoken }

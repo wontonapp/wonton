@@ -404,6 +404,11 @@ impl ChatLink {
                 .map_err(|e| core_error(&e))?,
         );
         *lock(&self.open_room) = Some((room_id, room.clone()));
+        // 链接的类别要认插件页，插件列表还一次没取过时先取一次（取过或正在取就不重复，免得打乱别处的节奏）。
+        let plugins = self.plugins.view();
+        if plugins.installed.is_none() && !plugins.refreshing {
+            self.plugins.refresh_installed();
+        }
         let cards = Cards::new(session.user_id(), self.answers.subscribe());
         Ok(TimelineSubscription::start(
             &self.runtime,

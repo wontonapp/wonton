@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
@@ -84,7 +85,13 @@ private fun RichBlockView(block: RichBlock, reserve: String?) {
     }
     Box(quote.padding(start = spacing.s16 * block.depth.toInt())) {
         val reserveStyle = SpanStyle(color = Color.Transparent, fontSize = WontonTheme.typography.caption.fontSize)
-        val inline = inlineText(block.spans, ink.copy(alpha = WontonTheme.ratio.codeFill), reserve, reserveStyle)
+        val inline = inlineText(
+            block.spans,
+            ink.copy(alpha = WontonTheme.ratio.codeFill),
+            reserve,
+            reserveStyle,
+            LocalLinkOpener.current,
+        )
         when (val kind = block.kind) {
             RichBlockKind.Paragraph -> Text(inline)
             RichBlockKind.Heading -> Text(inline, style = WontonTheme.typography.itemTitle)
@@ -165,6 +172,7 @@ private fun inlineText(
     codeFill: Color,
     reserve: String?,
     reserveStyle: SpanStyle,
+    opener: LinkOpener,
 ): AnnotatedString = buildAnnotatedString {
     spans.forEach { span ->
         val style = SpanStyle(
@@ -181,7 +189,10 @@ private fun inlineText(
             withStyle(style) { append(span.text) }
         } else {
             val underline = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
-            withLink(LinkAnnotation.Url(link.url, underline)) { withStyle(style) { append(span.text) } }
+            val listener = LinkInteractionListener { opener.open(link) }
+            withLink(LinkAnnotation.Clickable(link.url, underline, listener)) {
+                withStyle(style) { append(span.text) }
+            }
         }
     }
     if (reserve != null) withStyle(reserveStyle) { append(reserve) }

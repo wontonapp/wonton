@@ -81,6 +81,7 @@ kotlin {
                 implementation(libs.androidx.appcompat)
                 // Apache-2.0。WebView 的代理设置（ProxyController），插件网页经核心的本地代理打开。
                 implementation(libs.androidx.webkit)
+                implementation(libs.androidx.browser)
                 // Apache-2.0。把网页媒体状态接到系统媒体会话和默认通知。
                 implementation(libs.androidx.media3.session)
                 // Apache-2.0。系统的照片选择器（PickVisualMedia）和返回键处理（BackHandler）。
