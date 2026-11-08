@@ -12,8 +12,14 @@ deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh open app.grafana     # 主人身份走完登录，打印网页地址和 Cookie 罐路径
 deploy/dev/core/dev.sh uninstall app.grafana --purge
-deploy/dev/core/dev.sh down                  # 停止；reset 连数据和密钥一起删除
+deploy/dev/core/dev.sh down                  # 停止，顺带删掉核心按插件起的容器和网络
+deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、插件容器、网络和卷
 ```
+
+`down` 后插件记录和卷都还在，容器没了；再 `up` 时核心只核对、不重建，插件在 `list` 里是 `degraded`。要接着用就
+重新装一次：普通插件先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`；系统插件（模型网关
+`ai.usemagpie.magpie`）接口装不了，`uninstall <ID>` 之后重启核心（再 `down` 后 `up`，或 `reset --keep-tunnel-identity`），
+核心启动时从镜像重装。
 
 浏览器打开 `http://app-grafana.wonton.localhost:18480`，用主人令牌登录一次，之后自动进入 Grafana，
 不会看到 Grafana 自己的登录页。`*.localhost` 由浏览器和 curl 自动解析到本机，不用改 hosts。命令行里
@@ -25,6 +31,8 @@ Cookie 罐路径，curl 加 `-b` 复用。
 - 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。实例名 `WONTON_DEV_INSTANCE` 默认取
   项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符，太长会撞名时自己设），插件的资源名和标签都带上它，各管各的。
   默认项目 `wonton-dev-core` 没有实例名。已有数据的环境换了实例名，插件要重装；想留着旧的资源名，把它设成空。
+  没有实例名时 `down`、`reset` 按标签分不出插件资源是这套栈的还是同一台 Docker 上正式安装的，只列出、不删，
+  并打出要手删的命令。
 - 数据目录 `WONTON_DEV_DATA`（默认本目录下的 `.data`）在核心容器内外路径相同，因为插件的绑定挂载由
   宿主上的 Docker 解析。Hydra 的系统密钥、核心签发 Matrix 登录用的 Ed25519 密钥对和 Tuwunel 的注册共享密钥
   在 `${XDG_STATE_HOME:-$HOME/.local/state}/wonton-dev/<项目名>/secrets`（`WONTON_DEV_SECRETS` 可改），按项目名放在
@@ -72,6 +80,13 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 码里的直连地址要写 App 能到达的地址：同机的 iOS 模拟器用默认的 `127.0.0.1:18482`，Android 模拟器写
 `10.0.2.2:18482`，局域网里的手机写本机的局域网 IP，并用 `WONTON_DEV_TUNNEL_BIND=0.0.0.0` 起核心。App 怎么用码见
 `apps/ios/README.md`、`apps/compose/README.md`。
+
+`DOCKER_HOST` 指向远端主机时，`127.0.0.1`、`localhost`、`::1` 是那台主机的本机地址，手机和模拟器到不了，`dev.sh pair`
+会提醒；局域网里的设备用那台主机的局域网 IP 发码，模拟器用跑着模拟器的那台机器上的栈。
+
+`reset` 删掉核心数据目录，隧道身份（endpoint ID）跟着换，已配对的 App 要重新配对（#786）；
+`reset --keep-tunnel-identity` 保留 `core/tunnel-key` 和 `core/devices.json`，endpoint ID 不变，已配对的设备不用重新配对
+（家人设备记的用户名随核心数据删了，要重新登记）。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：

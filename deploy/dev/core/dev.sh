@@ -2,8 +2,10 @@
 # 本地开发用的核心（插件管理器 + 网关）、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。
 #
 #   dev.sh up                          构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
-#   dev.sh down                        停止，保留数据
-#   dev.sh reset                       停止并删除 Hydra、Tuwunel 的数据和核心数据目录
+#   dev.sh down                        停止，删掉核心按插件起的容器和网络，保留数据和卷
+#   dev.sh reset [--keep-tunnel-identity]
+#                                      停止并删除 Hydra、Tuwunel 的数据、核心数据目录和插件卷；
+#                                      给了开关时保留隧道私钥和设备登记（endpoint ID 不变，已配对的设备不用重配）
 #   dev.sh status | logs               查看状态 / 跟随核心日志
 #   dev.sh token                       输出主人令牌
 #   dev.sh install <compose 文件或插件包目录> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
@@ -72,6 +74,11 @@ fi
 export WONTON_DEV_DATA
 core="$WONTON_DEV_PROJECT"
 base_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
+# 核心给插件容器、网络和卷打的标签（crates/wonton-core/src/plugin/names.rs）。实例标签只有设了实例名的核心才打，
+# 它只属于这套栈；插件标签是跨实例、跨安装都一样的。
+label_instance=wonton.instance
+label_plugin=wonton.plugin
+label_managed_by=wonton.managed-by
 
 die() {
   echo "$*" >&2
@@ -305,10 +312,19 @@ print(p.get("web_url") or "")' "$id" <<<"$list")" || die "插件 $id 不存在�
 }
 
 # 删除数据目录里核心和 dev.sh 创建的内容（open 的 Cookie 罐也是会话凭据）。文件可能属于 root 或插件用户，
-# 所以在容器里以 root 删除。
+# 所以在容器里以 root 删除。给了 keep_tunnel_identity 时先把隧道私钥和设备登记挪出 core/，删完放回：endpoint ID 由
+# 私钥决定（crates/wonton-core/src/tunnel.rs），设备登记是白名单（crates/wonton-core/src/device.rs），两份都留着
+# 才是原来那台服务器、原样认已配对的设备；只留私钥的话空白名单照样连不上。
 wipe_data() {
-  docker run --rm --user 0 --entrypoint rm -v "$WONTON_DEV_DATA:/wipe" "$curl_image" \
-    -rf /wipe/core /wipe/apps /wipe/shares /wipe/open
+  local before="" after=""
+  if [[ "${1:-}" == keep_tunnel_identity ]]; then
+    # $f 由容器里的 sh 展开。
+    # shellcheck disable=SC2016
+    before='for f in tunnel-key devices.json; do mv "/wipe/core/$f" "/wipe/$f.keep" 2>/dev/null || true; done; '
+    # shellcheck disable=SC2016
+    after='; for f in tunnel-key devices.json; do if [ -e "/wipe/$f.keep" ]; then mkdir -p /wipe/core && mv "/wipe/$f.keep" "/wipe/core/$f"; fi; done'
+  fi
+  docker run --rm --user 0 --entrypoint sh -v "$WONTON_DEV_DATA:/wipe" "$curl_image" -c "${before}rm -rf /wipe/core /wipe/apps /wipe/shares /wipe/open${after}"
 }
 
 # 密钥属于这个项目，reset 连它一起删。手滑把家目录、检出目录设成 WONTON_DEV_SECRETS 时拒绝删除。
@@ -318,6 +334,87 @@ reset_secrets() {
     / | "$HOME" | "$here" | "$repo") die "secrets 目录是 $dir，不敢删；用 WONTON_DEV_SECRETS 指到专门的目录" ;;
   esac
   rm -rf -- "$dir"
+}
+
+# 这套实例的插件容器、网络和卷。按核心给它们打的实例标签找：实例名只属于这套栈，名字前缀不参与判断。
+instance_containers() { docker ps -aq --filter "label=$label_instance=$WONTON_DEV_INSTANCE"; }
+instance_networks() { docker network ls -q --filter "label=$label_instance=$WONTON_DEV_INSTANCE"; }
+instance_volumes() { docker volume ls -q --filter "label=$label_instance=$WONTON_DEV_INSTANCE"; }
+
+# 停掉并删除这套实例的插件容器和网络（数据卷留着，reset 另删）。出口容器和一次性探测容器也带实例标签，一起清。
+remove_instance_resources() {
+  local id
+  local -a containers=() networks=()
+  while read -r id; do containers+=("$id"); done < <(instance_containers)
+  if [[ ${#containers[@]} -gt 0 ]]; then
+    # 先 SIGTERM 让插件自己收尾（数据库之类），停了再删；stop 超时的由 rm -f 兜住。
+    docker stop "${containers[@]}" >/dev/null 2>&1 || true
+    docker rm -f "${containers[@]}" >/dev/null
+    echo "已停掉并删除 ${#containers[@]} 个插件容器"
+  fi
+  # 容器删完网络才删得掉。
+  while read -r id; do networks+=("$id"); done < <(instance_networks)
+  if [[ ${#networks[@]} -gt 0 ]]; then
+    docker network rm "${networks[@]}" >/dev/null
+    echo "已删除 ${#networks[@]} 个插件网络"
+  fi
+}
+
+remove_instance_volumes() {
+  local id
+  local -a volumes=()
+  while read -r id; do volumes+=("$id"); done < <(instance_volumes)
+  if [[ ${#volumes[@]} -gt 0 ]]; then
+    docker volume rm "${volumes[@]}" >/dev/null
+    echo "已删除 ${#volumes[@]} 个插件卷"
+  fi
+}
+
+# 默认项目没有实例名，插件资源只带插件标签、没有实例标签。正式安装的 Wonton 也是这样（一套 dev 栈和一套正式安装放不下
+# 同名的插件），只凭标签分不出是谁的，所以不自动删：列出留下的资源，给出要手删的命令。
+# 出口容器和它的网络没有插件标签，带的是 wonton.managed-by=core，一起列。
+# 别的实例的资源带实例标签，不列：docker 的 label 过滤不能取反，逐个查标签。
+leftovers() {
+  local kind="$1" name wanted
+  shift
+  case "$kind" in
+    ps)
+      docker ps -a --filter "label=$label_plugin" --format '{{.Names}}'
+      docker ps -a --filter "label=$label_managed_by=core" --format '{{.Names}}'
+      ;;
+    network)
+      docker network ls --filter "label=$label_plugin" --format '{{.Name}}'
+      docker network ls --filter "label=$label_managed_by=core" --format '{{.Name}}'
+      ;;
+    volume) docker volume ls --filter "label=$label_plugin" --format '{{.Name}}' ;;
+  esac | sort -u | while read -r name; do
+    if [[ "$kind" == ps ]]; then
+      wanted="$(docker inspect --format "{{index .Config.Labels \"$label_instance\"}}" "$name")"
+    else
+      wanted="$(docker "$kind" inspect --format "{{index .Labels \"$label_instance\"}}" "$name")"
+    fi
+    [[ -n "$wanted" ]] || echo "$name"
+  done
+}
+
+note_plugin_leftovers() {
+  local name
+  local -a containers=() networks=() volumes=()
+  while read -r name; do containers+=("$name"); done < <(leftovers ps)
+  while read -r name; do networks+=("$name"); done < <(leftovers network)
+  if [[ "${1:-}" == purge ]]; then
+    while read -r name; do volumes+=("$name"); done < <(leftovers volume)
+  fi
+  (( ${#containers[@]} + ${#networks[@]} + ${#volumes[@]} )) || return 0
+  echo
+  echo "默认项目没有实例名，下面这些插件资源和出口容器分不出是这套栈的还是同一台 Docker 上正式安装的，没动："
+  if [[ ${#containers[@]} -gt 0 ]]; then printf '  容器 %s\n' "${containers[@]}"; fi
+  if [[ ${#networks[@]} -gt 0 ]]; then printf '  网络 %s\n' "${networks[@]}"; fi
+  if [[ ${#volumes[@]} -gt 0 ]]; then printf '  卷 %s\n' "${volumes[@]}"; fi
+  echo "要一起删就："
+  if [[ ${#containers[@]} -gt 0 ]]; then echo "  docker rm -f ${containers[*]}"; fi
+  if [[ ${#networks[@]} -gt 0 ]]; then echo "  docker network rm ${networks[*]}"; fi
+  if [[ ${#volumes[@]} -gt 0 ]]; then echo "  docker volume rm ${volumes[*]}"; fi
 }
 
 case "${1:-}" in
@@ -336,11 +433,35 @@ case "${1:-}" in
     ;;
   commit) build_commit ;;
   build) build_image "${@:2}" ;;
-  down) compose down ;;
+  down)
+    compose down
+    # 核心退出时不停插件容器，compose down 也管不到它们，这里按实例标签清；默认项目分不出来，只提示。
+    if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
+      remove_instance_resources
+    else
+      note_plugin_leftovers
+    fi
+    ;;
   reset)
     compose down --volumes
-    wipe_data
+    if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
+      remove_instance_resources
+      remove_instance_volumes
+    else
+      note_plugin_leftovers purge
+    fi
+    if [[ "${2:-}" == --keep-tunnel-identity ]]; then
+      wipe_data keep_tunnel_identity
+    else
+      wipe_data
+    fi
     reset_secrets
+    echo
+    if [[ "${2:-}" == --keep-tunnel-identity ]]; then
+      echo "隧道身份和设备登记保留（core/tunnel-key、core/devices.json）：endpoint ID 不变，已配对的设备不用重新配对（家人设备的用户名记录随核心数据删了）。"
+    else
+      echo "隧道身份已换，已配对的 App 要重新配对（Android 模拟器里可能要清 App 数据，见 #786）。"
+    fi
     ;;
   status)
     compose ps
@@ -385,7 +506,20 @@ case "${1:-}" in
     # 主人发的配对码，已经有设备时也能用。局域网状态页（http://<本机 IP>:端口/）在还没有设备时另有首次配对码。
     # 直连地址要写 App 能到达的地址：同机的 iOS 模拟器用 127.0.0.1，Android 模拟器用 10.0.2.2，局域网里的手机
     # 用本机的局域网 IP（并设 WONTON_DEV_TUNNEL_BIND=0.0.0.0）。
-    docker exec "$core" wonton-core pair "${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}"
+    addr="${2:-127.0.0.1:$WONTON_DEV_TUNNEL_PORT}"
+    host="${addr%:*}"
+    host="${host#[}"
+    host="${host%]}"
+    case "${DOCKER_HOST:-}" in
+      ssh://* | tcp://*)
+        case "$host" in
+          127.0.0.1 | localhost | ::1)
+            echo "注意：DOCKER_HOST 指向远端 Docker 主机，$host 是那台机器的本机地址，手机和模拟器到不了。局域网里的设备用那台主机的局域网 IP 发码，并把 WONTON_DEV_TUNNEL_BIND 设成 0.0.0.0；同机的模拟器用那台机器上的，不在这里。" >&2
+            ;;
+        esac
+        ;;
+    esac
+    docker exec "$core" wonton-core pair "$addr"
     ;;
-  *) die "用法：$0 up|down|reset|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
+  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
 esac
