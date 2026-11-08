@@ -11,3 +11,4 @@
 - Rust 构建缓存放在 runner 环境 `WONTON_CI_CACHE` 指的目录（没设时是 runner 工作目录下的 `_cargo-target/`），按 runner 分目录、跨次沿用。Android 作业的 `GRADLE_USER_HOME` 也在这里。CI 关掉增量编译、调试信息只留行号，缓存小一半以上。Rust 的缓存在作业开始时超过 `WONTON_CI_CACHE_MAX_GB`（runner 环境，没设是 30）就整个清掉，盘紧的机器在 runner 的 `.env` 里设小。
 - 同一台 Linux 机器可以注册多个 runner，作业并行跑。
 - PR 上按路径跳过作业，范围写在各个工作流开头的 `paths` 里（冲突标记检查没写 `paths`，不跳过）。没有分支保护，跳过的检查不挡合并。
+- 密钥扫描（secret-scan.yml）也没写 `paths`，密钥可能写在文档里。用 gitleaks 官方二进制（版本和 sha256 固定在工作流里），只扫 PR 带进来的提交（`HEAD^1..HEAD`）或 push 到 main 的这一个提交，不扫全部历史；误报白名单在 `.gitleaks.toml`，每条写明理由，真密钥不能进白名单。

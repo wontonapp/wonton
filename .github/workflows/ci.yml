@@ -27,8 +27,12 @@ jobs:
         run: bash scripts/check-file-size.sh
       - name: 界面文字检查自己的用例
         run: python3 -m unittest discover -s scripts/ui_text -t scripts
+      - name: 开发栈端口检查自己的用例
+        run: python3 -m unittest discover -s scripts/dev_ports -t scripts
       - name: 界面文字不写死，四种语言的字符串目录完整
         run: python3 scripts/check-ui-text.py
+      - name: 开发栈端口只绑 127.0.0.1
+        run: python3 scripts/check-dev-compose-ports.py
       - name: 随核心带的插件包改了文件就升版本号
         run: bash scripts/check-bundled-plugin-versions.sh HEAD^1
       - name: Docker 测试要拉的镜像都列在清单里（没有 Docker Hub 的 CI 机器按清单预先拿镜像）
