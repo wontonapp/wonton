@@ -117,8 +117,10 @@ jobs:
         run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
         env:
           WONTON_TEST_REQUIRE_CONTAINERD: "1"
-      - name: 官方索引里的清单这份核心都读得懂
+      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
         run: |
+          # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
+          # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。
           # 自建 runner 经宿主的出口代理取 raw.githubusercontent；代理偶尔卡住时 curl 默认连 300 秒才放弃（2026-11-07 194-1 上 #711 因此被取消），
           # 所以限死连接和总时长，卡住就快速重试。
           curl -fsSL --connect-timeout 20 --max-time 120 --retry 5 --retry-all-errors --retry-delay 5 \

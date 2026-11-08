@@ -66,8 +66,8 @@
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
   命令。跳过不等于通过：PR 说明里写明没跑。CI 分两个作业：“Rust”跑默认的测试，故意让 Docker 不可用，保证它们不依赖
   Docker；“Rust Docker 测试”运行这些标了 `#[ignore]` 的，Docker 不可用即失败。
-- CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂。改清单写法的 PR 要先让索引
-  换成新核心读得懂的写法，否则 CI 失败。
+- CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂、都渲染得出来（不再注入的变量当场失败）。
+  改清单写法或注入变量的 PR 要先让索引换成新核心读得懂的写法，否则 CI 失败。
 - 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；
   直接运行 `cargo test` 要自己设置，testcontainers 不读 context。
 - 依赖：只有一个 crate 用到的依赖写在该 crate 的 `Cargo.toml`；多个 crate 共用的依赖在根
