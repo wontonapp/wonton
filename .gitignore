@@ -10,6 +10,7 @@ dist/
 .env
 .env.local
 *.local.toml
+*.key
 
 # 调试产物（截图、录屏、测试结果放在仓库外）
 *.xcresult
