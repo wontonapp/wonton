@@ -286,7 +286,7 @@ home-no-connection-info = 自宅サーバーの接続情報がまだありませ
 home-proxy-start-failed = ローカルプロキシを開始できませんでした：{ $error }
 home-tunnel-closed = トンネルクライアントが閉じられました
 home-lan-unsupported = このバージョンのクライアントコアはローカルネットワーク設定に対応していません
-home-port-mapping-unsupported = このバージョンのクライアントコアはポートマッピングに対応していません
+home-port-mapping-save-failed = ポートマッピングの設定を保存できませんでした：{ $error }
 # タブバー（tabs/view.rs、tabs/config.rs）と外観（appearance/mod.rs）の画面の「詳細」。
 # コアの文字は両シェルで共通のため Android の書き方に合わせ、ナビゲーションバーと書きます。プラグインはユーザーには「アプリ」です。
 

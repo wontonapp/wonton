@@ -9,6 +9,7 @@ mod local_proxy;
 mod pacing;
 mod pairing;
 mod peer_pair;
+mod plugin_ports;
 mod relay;
 mod relay_table;
 mod reset_resume;

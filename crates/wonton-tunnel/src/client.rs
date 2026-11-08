@@ -4,6 +4,7 @@
 //! 任务里：等它的请求超时走了，建连也不会被丢下重来。
 
 mod attempt;
+mod ports;
 mod suspend;
 
 use attempt::Attempt;
@@ -157,6 +158,8 @@ struct Inner {
     slow_path: Mutex<Option<SlowPath>>,
     clock: Option<Arc<dyn SuspendClock>>,
     suspension: Mutex<suspend::Suspension>,
+    /// 当前连接的数据报分发器，第一次开 UDP 流向时建；连接换了就换。
+    datagrams: Mutex<Option<Arc<crate::udp::mux::DatagramMux>>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -238,6 +241,7 @@ impl TunnelClient {
                 slow_path: Mutex::new(None),
                 clock,
                 suspension: Mutex::default(),
+                datagrams: Mutex::default(),
             }),
         }
     }

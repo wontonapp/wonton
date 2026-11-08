@@ -12,6 +12,8 @@
 //!   [`LocalProxy`] 在回环地址上监听，把本机 HTTP 客户端的连接经隧道转发过去。App 用带会话凭据
 //!   （[`ProxyCredential`]）的 HTTP 正向代理，同机的其他 App 借用不了本设备的配对身份。
 //! - 线协议见 `wire` 模块：一条 QUIC 连接上每条双向流对应一条 TCP 连接，做法参考 dumbpipe。
+//! - 插件端口：[`TunnelClient::open_port`] 开 TCP 端口流，[`TunnelClient::open_udp`] 开 UDP 流向，载荷走
+//!   同一连接上的 QUIC 数据报（ADR-0072）。
 //! - 扫码配对：二维码里的配对码和配对的 ALPN 见 [`pair`] 模块。
 //! - 服务器配对：两台服务器的主人互相配对服务器（ADR-0050），码和 ALPN 见 [`peer_pair`] 模块。
 
@@ -30,6 +32,10 @@ mod ports;
 mod proxy;
 pub mod relays;
 mod server;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_server;
+mod udp;
 pub mod wire;
 
 pub use allowlist::Allowlist;
@@ -40,4 +46,5 @@ pub use error::TunnelError;
 pub use ports::{PortResolveError, PortResolver};
 pub use proxy::{ERROR_HEADER, LocalProxy};
 pub use server::{TunnelProtocol, TunnelServer};
+pub use udp::{PortError, PortStream, UdpFlow, UdpReceiver, UdpSender};
 pub use wire::ALPN;

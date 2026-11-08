@@ -300,6 +300,11 @@ impl HomeLink {
         }
     }
 
+    /// 当前的隧道客户端；还没有连接信息时为空。
+    pub(crate) async fn tunnel(&self) -> Option<TunnelClient> {
+        self.current_link().await.map(|(_, client)| client)
+    }
+
     async fn current_link(&self) -> Option<(Endpoint, TunnelClient)> {
         let current = self.link.lock().await;
         current
@@ -581,8 +586,8 @@ impl HomeLink {
             lost_packets: stats.lost_packets,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
             addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
-            udp_flows: Vec::new(),
-            udp_buffer_evicted_datagrams: None,
+            udp_flows: client.udp_flows(),
+            udp_buffer_evicted_datagrams: client.udp_buffer_evicted(),
         };
         let tick = tracker.next_tick();
         drop(tracker);
@@ -604,10 +609,15 @@ impl HomeLink {
             if connected && !stats_due {
                 withheld |= details.sent_packets != view.details.sent_packets
                     || details.lost_packets != view.details.lost_packets
-                    || details.last_connected_at_ms != view.details.last_connected_at_ms;
+                    || details.last_connected_at_ms != view.details.last_connected_at_ms
+                    || details.udp_flows != view.details.udp_flows
+                    || details.udp_buffer_evicted_datagrams
+                        != view.details.udp_buffer_evicted_datagrams;
                 details.sent_packets = view.details.sent_packets;
                 details.lost_packets = view.details.lost_packets;
                 details.last_connected_at_ms = view.details.last_connected_at_ms;
+                details.udp_flows = view.details.udp_flows.clone();
+                details.udp_buffer_evicted_datagrams = view.details.udp_buffer_evicted_datagrams;
                 if let (Some(new), Some(old)) = (&mut path, &view.path) {
                     withheld |= new.rtt_ms != old.rtt_ms;
                     new.rtt_ms = old.rtt_ms;

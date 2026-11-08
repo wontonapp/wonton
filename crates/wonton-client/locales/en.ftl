@@ -303,7 +303,7 @@ home-no-connection-info = There's no connection information for your home server
 home-proxy-start-failed = Can't start the local proxy: { $error }
 home-tunnel-closed = The tunnel client has closed.
 home-lan-unsupported = This version of the client core doesn't support local network settings.
-home-port-mapping-unsupported = This version of the client core doesn't support port mapping.
+home-port-mapping-save-failed = Couldn't save the port mapping switch: { $error }
 # Tabs module (crates/wonton-client/src/tabs/view.rs, tabs/config.rs) and appearance module (appearance/mod.rs).
 # These are user-facing "details" (CoreError reasons, problem messages) shown collapsed under errors in the shells.
 # Category 2 (logs, English, not here): expect!/panic messages in the same files were reworded in English.

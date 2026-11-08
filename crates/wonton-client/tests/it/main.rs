@@ -14,6 +14,7 @@ mod home;
 mod pairing;
 mod peers;
 mod plugins;
+mod port_mapping;
 mod servers;
 mod session_list;
 mod tabs;

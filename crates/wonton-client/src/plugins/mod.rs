@@ -31,6 +31,7 @@ use wonton_protocol::{
 };
 
 use crate::home::HomeLink;
+use crate::port_map::PortMapper;
 use crate::scope::reuse;
 use api::{CoreApi, INSTALL_TIMEOUT, READ_TIMEOUT, SOURCE_TIMEOUT, proxied_client, to_core_error};
 
@@ -80,6 +81,8 @@ pub(crate) struct PluginsLink {
     data_dir: PathBuf,
     /// 发起安装、升级时的预览，按插件 ID 记着：失败后重试要来源，聊天列表的安装行要 `has_bot`。做完被主人清掉时删。
     previews: Mutex<HashMap<String, InstallPreview>>,
+    /// 插件端口在本机的同号映射（ADR-0072），结果写进 `view.port_mappings`。
+    ports: Arc<PortMapper>,
 }
 
 impl PluginsLink {
@@ -94,16 +97,18 @@ impl PluginsLink {
             .view()
             .server_id
             .and_then(|server| cache::load(&installed_cache, &server));
+        let view = reuse(
+            view,
+            PluginsViewModel {
+                installed,
+                ..PluginsViewModel::default()
+            },
+        );
+        let ports = PortMapper::new(&runtime, home.clone(), data_dir, view.clone());
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
-            view: reuse(
-                view,
-                PluginsViewModel {
-                    installed,
-                    ..PluginsViewModel::default()
-                },
-            ),
+            view,
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
             images_dir: data_dir.join("plugin-images"),
@@ -125,6 +130,7 @@ impl PluginsLink {
             starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
             previews: Mutex::new(HashMap::new()),
+            ports,
         });
         link.restore_core_upgrade();
         runtime.spawn(follow_home(Arc::downgrade(&link)));
@@ -151,6 +157,15 @@ impl PluginsLink {
             .lock()
             .expect("the previews lock never panics")
             .clone()
+    }
+
+    /// `SetPortMapping`：开关先存下，绑定的结果在 `port_mappings` 里。
+    pub(crate) fn set_port_mapping(
+        &self,
+        plugin_id: String,
+        enabled: bool,
+    ) -> Result<(), CoreError> {
+        self.ports.set_enabled(plugin_id, enabled)
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<PluginsViewModel> {

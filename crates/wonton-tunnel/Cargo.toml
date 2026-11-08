@@ -12,6 +12,8 @@ publish.workspace = true
 anyhow = { workspace = true }
 # MIT OR Apache-2.0。解析本地代理收到的 Proxy-Authorization（Basic）。
 base64 = { workspace = true }
+# MIT。iroh 收发数据报用的缓冲类型（`Connection::send_datagram`）。
+bytes = "1.12.1"
 # MIT OR Apache-2.0。生成本地代理的会话凭据。
 getrandom = { workspace = true }
 # MIT OR Apache-2.0。解析本地代理和联邦出站代理收到的第一个请求头（hyper 用的同一个解析器）。
@@ -42,6 +44,11 @@ iroh-relay = "1.4.1"
 clap = { version = "4.6.7", features = ["derive"] }
 tokio = { workspace = true, features = ["signal", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# 对自己的 dev 依赖：集成测试要用 test-hooks 里的假服务端（`test_server`），App 不经 dev-dependencies。
+[dev-dependencies.wonton-tunnel]
+path = "."
+features = ["test-hooks"]
 
 [lints]
 workspace = true

@@ -36,6 +36,7 @@ mod logging;
 mod onboarding;
 mod peers;
 mod plugins;
+mod port_map;
 mod push;
 mod push_method;
 mod scope;

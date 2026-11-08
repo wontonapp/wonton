@@ -8269,6 +8269,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "bytes",
  "clap",
  "getrandom 0.4.3",
  "httparse",
@@ -8283,6 +8284,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "wonton-protocol",
+ "wonton-tunnel",
 ]
 
 [[package]]

@@ -29,9 +29,10 @@ use wonton_tunnel::{LocalProxy, ProxyAccess, ProxyCredential, TunnelClient};
 /// Wonton 隧道客户端示例。
 #[derive(Debug, Parser)]
 struct Cli {
-    /// 客户端私钥文件，不存在时自动生成；私钥决定 endpoint ID。
-    #[arg(long, global = true, default_value = "tunnel-client.key")]
-    key: PathBuf,
+    /// 客户端私钥文件，不存在时自动生成；私钥决定 endpoint ID。默认 `$XDG_STATE_HOME/wonton/tunnel-client.key`
+    /// （没设时 `~/.local/state/wonton/tunnel-client.key`），不放当前目录。
+    #[arg(long, global = true)]
+    key: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -105,7 +106,7 @@ impl ServerArgs {
 async fn main() -> Result<()> {
     common::init_tracing();
     let cli = Cli::parse();
-    let key = common::load_or_create_key(&cli.key)?;
+    let key = common::load_or_create_key(&common::key_path(cli.key.clone(), "tunnel-client.key")?)?;
     match cli.command {
         Command::Id => println!("{}", key.public()),
         Command::Pair { code, name } => {
