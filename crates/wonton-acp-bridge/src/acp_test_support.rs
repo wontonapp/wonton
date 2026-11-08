@@ -225,6 +225,41 @@ impl FakeAgent {
         .await;
     }
 
+    /// 发一条 `_wonton/task` 任务事件（编排器扩展，ADR-0059）。
+    pub(crate) async fn task(
+        &self,
+        session: &str,
+        task_id: &str,
+        title: &str,
+        state: &str,
+        task_session: &str,
+    ) {
+        let writer = self
+            .link
+            .writer
+            .lock()
+            .await
+            .clone()
+            .expect("还没有 ACP 连接");
+        send(
+            &writer,
+            json!({
+                "jsonrpc": "2.0",
+                "method": "_wonton/task",
+                "params": {
+                    "sessionId": session,
+                    "task": {
+                        "id": task_id,
+                        "title": title,
+                        "state": state,
+                        "taskSessionId": task_session
+                    }
+                }
+            }),
+        )
+        .await;
+    }
+
     /// Agent 发一次改文件的权限请求，返回请求 id。
     pub(crate) async fn ask_permission(&self, session: &str, path: &str) -> Value {
         let id = json!(self.next_request.fetch_add(1, Ordering::Relaxed));

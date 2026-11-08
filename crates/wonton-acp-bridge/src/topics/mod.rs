@@ -94,7 +94,8 @@ impl Topics {
     ) -> Result<TurnStart> {
         let now = stamp(now);
         let base = self.board.seq();
-        let admit = !key.is_topic() || limits::can_admit(&self.board);
+        let is_task = self.board.row(key).is_some_and(|row| row.is_task);
+        let admit = !key.is_topic() || is_task || limits::can_admit(&self.board);
         let started = if let Some(row) = self.board.row_mut(key) {
             row.doing = digest::clip(prompt, TEXT_MAX_CHARS);
             row.last_activity = now;
@@ -134,6 +135,7 @@ impl Topics {
                 last_seen_seq: base,
                 last_activity: now,
                 pending_prompt: (!admit).then(|| prompt.to_owned()),
+                is_task: false,
             });
             admit
         };
@@ -313,12 +315,60 @@ impl Topics {
         Ok(notice)
     }
 
+    /// 编排器发来任务事件时调：任务话题入场（第一次）并登记工作板，不受活跃话题上限管。
+    pub async fn turn_started_task(
+        &mut self,
+        key: &SessionKey,
+        title: &str,
+        now: SystemTime,
+    ) -> Result<()> {
+        if self.board.row(key).is_none() {
+            self.board.add_row(Row {
+                key: key.clone(),
+                name: digest::clip_plain(title, NAME_MAX_CHARS),
+                doing: String::new(),
+                status: Status::Working,
+                summary: Vec::new(),
+                files: Vec::new(),
+                last_seen_seq: self.board.seq(),
+                last_activity: stamp(now),
+                pending_prompt: None,
+                is_task: true,
+            });
+        }
+        self.board.persist().await
+    }
+
+    /// 任务状态换到工作板上：要人行动的标“等你确认”，完成标结束，其余进行中。
+    pub async fn task_state(
+        &mut self,
+        key: &SessionKey,
+        state: &str,
+        now: SystemTime,
+    ) -> Result<()> {
+        let Some(row) = self.board.row_mut(key) else {
+            return Ok(());
+        };
+        row.status = match state {
+            "needs_answer" | "needs_review" | "blocked" | "failed" => Status::WaitingApproval,
+            "done" => Status::Finished,
+            _ => Status::Working,
+        };
+        row.last_activity = stamp(now);
+        self.board.persist().await
+    }
+
     /// 会话在聊天里用的名字（话题名，主对话是“主对话”）；工作板上没有这个会话时为空串。
     pub fn name(&self, key: &SessionKey) -> String {
         self.board
             .row(key)
             .map(|row| row.name.clone())
             .unwrap_or_default()
+    }
+
+    /// 是编排器的任务话题。
+    pub fn is_task(&self, key: &SessionKey) -> bool {
+        self.board.row(key).is_some_and(|row| row.is_task)
     }
 
     /// 这个会话已经结束（主对话永远不结束）。

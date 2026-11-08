@@ -4,6 +4,7 @@
 mod cards;
 mod limits;
 mod restore;
+mod tasks;
 mod topics;
 
 use std::sync::Arc;

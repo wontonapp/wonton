@@ -48,7 +48,9 @@ pub(super) async fn handle_notice<R: Room>(
                 .await;
             report_conflict(context, topics, &key, &update).await;
         }
-        AgentNotice::PermissionCancelled { .. } | AgentNotice::PermissionFailed { .. } => {}
+        AgentNotice::PermissionCancelled { .. }
+        | AgentNotice::PermissionFailed { .. }
+        | AgentNotice::Task { .. } => {}
     }
     Ok(())
 }

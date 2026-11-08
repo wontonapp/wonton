@@ -238,8 +238,9 @@ async fn start_job<R: Room>(
         // 话题根不在历史里（桥重启过、或者根本就是这条消息自己开的头）：拿这句话当起点。
         session.root_text = Some(job.text.clone());
     }
-    // 只有话题第一轮带开局说明；之后每轮只带别人的动态。
-    let prefix = if first {
+    // 只有话题第一轮带开局说明；之后每轮只带别人的动态。任务话题不注入别人的动态
+    // （编排器自己分工），第一轮的开局说明照带。
+    let prefix = if first || topics.is_task(&key) {
         session
             .root_text
             .as_ref()

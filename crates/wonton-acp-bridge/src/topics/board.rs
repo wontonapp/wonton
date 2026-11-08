@@ -69,6 +69,9 @@ pub(crate) struct Row {
     pub(crate) last_activity: u64,
     /// 排队中的完整首条消息，晋升时交回调用方去发送。
     pub(crate) pending_prompt: Option<String>,
+    /// 编排器的任务话题：不受活跃话题上限管（ADR-0059）。
+    #[serde(default)]
+    pub(crate) is_task: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

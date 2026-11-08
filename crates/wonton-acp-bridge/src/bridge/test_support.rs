@@ -27,6 +27,8 @@ pub enum Effect {
     MainText(String),
     ThreadText { root: String, text: String },
     Notice(String),
+    ThreadMention { root: String, text: String },
+    ThreadNotice { root: String, text: String },
     Typing(bool),
     Redact(String),
     State(String),
@@ -35,6 +37,7 @@ pub enum Effect {
 #[derive(Default)]
 struct Recorded {
     effects: Vec<Effect>,
+    roots: u64,
     updates: Option<mpsc::UnboundedSender<Vec<Message>>>,
 }
 
@@ -50,6 +53,7 @@ impl FakeRoom {
         let (updates, receiver) = mpsc::unbounded_channel();
         let recorded = Arc::new(Mutex::new(Recorded {
             effects: Vec::new(),
+            roots: 0,
             updates: Some(updates),
         }));
         Self {
@@ -79,10 +83,29 @@ impl FakeRoom {
             .into_iter()
             .filter_map(|effect| match effect {
                 Effect::MainText(text) | Effect::Notice(text) => Some(text),
-                Effect::ThreadText { text, .. } => Some(text),
+                Effect::ThreadText { text, .. }
+                | Effect::ThreadMention { text, .. }
+                | Effect::ThreadNotice { text, .. } => Some(text),
                 Effect::Typing(_) | Effect::Redact(_) | Effect::State(_) => None,
             })
             .collect()
+    }
+
+    /// 主对话里发出的文字（不含 notice）。
+    pub fn main_texts(&self) -> Vec<String> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::MainText(text) => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 开过的话题根（按出现顺序）。
+    pub fn roots(&self) -> Vec<String> {
+        let count = self.recorded.lock().unwrap().roots;
+        (1..=count).map(|index| format!("$root{index}")).collect()
     }
 
     pub fn thread_texts(&self, root: &str) -> Vec<String> {
@@ -120,6 +143,36 @@ impl Room for FakeRoom {
     async fn send_text(&self, body: &str) -> Result<()> {
         let mut state = self.recorded.lock().unwrap();
         text(&mut state, "main", body);
+        Ok(())
+    }
+
+    async fn send_text_event(&self, body: &str) -> Result<String> {
+        let mut state = self.recorded.lock().unwrap();
+        text(&mut state, "main", body);
+        state.roots += 1;
+        Ok(format!("$root{}", state.roots))
+    }
+
+    async fn send_thread_mention(
+        &self,
+        root: &str,
+        body: &str,
+        _owner: &wonton_matrix::OwnedUserId,
+    ) -> Result<()> {
+        let mut state = self.recorded.lock().unwrap();
+        state.effects.push(Effect::ThreadMention {
+            root: root.to_owned(),
+            text: body.to_owned(),
+        });
+        Ok(())
+    }
+
+    async fn send_thread_notice(&self, root: &str, body: &str) -> Result<()> {
+        let mut state = self.recorded.lock().unwrap();
+        state.effects.push(Effect::ThreadNotice {
+            root: root.to_owned(),
+            text: body.to_owned(),
+        });
         Ok(())
     }
 

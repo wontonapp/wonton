@@ -7,6 +7,7 @@
 mod permissions;
 mod routing;
 mod sessions;
+mod tasks;
 mod turns;
 mod updates;
 
@@ -23,14 +24,16 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use tokio::sync::mpsc;
+use std::result::Result as StdResult;
+
+use tokio::sync::{broadcast, mpsc};
 use wonton_l10n::Lang;
 use wonton_matrix::{
     ChatRoom, MatrixSession, Message, OwnedUserId, SessionConfig, StoreConfig, UserId,
 };
 
 use crate::{
-    acp::{AcpClient, PermissionAsk, PromptResult},
+    acp::{AcpClient, AgentNotice, PermissionAsk, PromptResult},
     commands::{CommandSink, Commands},
     config::Config,
     error::{Detail, Error, Result as BridgeResult, format_error},
@@ -432,8 +435,7 @@ async fn run_room<R: Room>(
                 .await?;
             }
             notice = acp_notices.recv() => {
-                updates::handle_notice(&context, &mut state, &mut topics, &mut commands, notice)
-                    .await?;
+                handle_acp_notice(&context, &mut state, &mut topics, &mut commands, notice).await?;
             }
             Some(finished) = finished_rx.recv() => {
                 turns::finished(&context, &mut state, &mut topics, finished).await?;
@@ -470,6 +472,20 @@ async fn run_room<R: Room>(
                 return Err(Error::TransportUnavailable(Detail::msg("stream-closed")))
             }
         }
+    }
+}
+
+/// 一条 ACP 通知：任务事件开话题，其余交给命令菜单和改文件表。
+async fn handle_acp_notice<R: Room>(
+    context: &TurnContext<R>,
+    state: &mut RoomState,
+    topics: &mut Topics,
+    commands: &mut Commands,
+    notice: StdResult<AgentNotice, broadcast::error::RecvError>,
+) -> BridgeResult<()> {
+    match &notice {
+        Ok(AgentNotice::Task { params }) => tasks::handle(context, state, topics, params).await,
+        _ => updates::handle_notice(context, state, topics, commands, notice).await,
     }
 }
 

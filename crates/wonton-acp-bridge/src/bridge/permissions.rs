@@ -58,10 +58,25 @@ pub(super) async fn handle<R: Room>(
         spawn_direct(context, ask);
         return Ok(());
     };
+    // 任务话题的卡片标题写明是哪个任务。
+    let mut ask = ask;
+    if topics.is_task(&key) {
+        let name = topics.name(&key);
+        if !name.is_empty() {
+            ask.pending.request.title = text(
+                context.lang,
+                "task-card-title",
+                &[
+                    ("name", Arg::from(name)),
+                    ("title", Arg::from(ask.pending.request.title)),
+                ],
+            );
+        }
+    }
     let paths = edit_paths(&ask.pending);
     // 权限请求本身带了路径就先记下来：有的适配层不发带 locations 的工具调用通知。
     topics.claim(&key, &paths, super::now()).await?;
-    let conflict = if paths.is_empty() {
+    let conflict = if paths.is_empty() || topics.is_task(&key) {
         None
     } else {
         topics

@@ -54,9 +54,21 @@ pub struct Capabilities {
 
 #[derive(Clone, Debug)]
 pub enum AgentNotice {
-    PermissionCancelled { session_id: String },
-    PermissionFailed { session_id: String, detail: Detail },
-    Update { session_id: String, update: Value },
+    /// `_wonton/task`：编排器的任务事件（ADR-0059）。
+    Task {
+        params: Value,
+    },
+    PermissionCancelled {
+        session_id: String,
+    },
+    PermissionFailed {
+        session_id: String,
+        detail: Detail,
+    },
+    Update {
+        session_id: String,
+        update: Value,
+    },
 }
 
 #[derive(Debug)]
@@ -611,6 +623,12 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
     tracing::debug!(method, "收到 ACP 请求");
     if method == "session/update" {
         handle_update(inner, message).await;
+        return;
+    }
+    if method == "_wonton/task" {
+        let _ = inner.notices.send(AgentNotice::Task {
+            params: message["params"].clone(),
+        });
         return;
     }
     if method == "$/cancel_request" {
