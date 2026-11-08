@@ -54,6 +54,7 @@ impl Chat {
             .dispatch(Action::SendText {
                 room_id: self.room_id.to_string(),
                 body: "断开时主人发的".to_owned(),
+                reply_to: None,
             })
             .unwrap();
     }

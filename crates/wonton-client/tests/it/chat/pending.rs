@@ -193,6 +193,7 @@ async fn the_notice_room_is_read_only_and_other_chats_are_not() {
         phone.dispatch(Action::SendText {
             room_id: room_id.to_owned(),
             body: "你好".to_owned(),
+            reply_to: None,
         })
     };
     assert!(send(notices.as_str()).is_err());

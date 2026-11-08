@@ -486,6 +486,7 @@ mod tests {
             Action::SendImage {
                 room_id: "!a:home.example".into(),
                 image: image.clone(),
+                reply_to: None,
             },
             Action::RecoverEncryption {
                 recovery_key: SecretString::new(KEY),

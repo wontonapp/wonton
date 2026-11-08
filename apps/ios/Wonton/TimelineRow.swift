@@ -124,6 +124,9 @@ private struct MessageBubble: View {
             } label: {
                 Label { Text(.messageCopy) } icon: { WontonIcon.copy.image }
             }
+        // 核心和 App 分开升级时，不认识的菜单项不显示。
+        default:
+            EmptyView()
         }
     }
 

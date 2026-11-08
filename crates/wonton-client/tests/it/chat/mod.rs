@@ -334,6 +334,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
         .dispatch(Action::SendText {
             room_id: room_id.to_string(),
             body: "  你好，Hermes  ".to_owned(),
+            reply_to: None,
         })
         .unwrap();
     bot_receives(&bot_room, "Bot 收到主人的文字", |message| {
@@ -380,6 +381,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
                     height: 1,
                 }),
             },
+            reply_to: None,
         })
         .unwrap();
     timeline

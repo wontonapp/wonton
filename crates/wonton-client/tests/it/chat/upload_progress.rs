@@ -29,6 +29,7 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
         .dispatch(Action::SendImage {
             room_id: room.clone(),
             image: upload("big.png"),
+            reply_to: None,
         })
         .unwrap();
     let mut sending = false;
@@ -60,6 +61,7 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
         .dispatch(Action::SendImage {
             room_id: room.clone(),
             image: upload("cancelled.png"),
+            reply_to: None,
         })
         .unwrap();
     let echo = timeline

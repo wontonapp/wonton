@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConfirmationView, FileId};
+use crate::{ConfirmationView, FileId, QuotedMessage, ReplyQuote};
 
 /// 一批时间线变化，以及向前翻页的状态。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,7 +123,9 @@ pub struct TimelineMessage {
     pub edited: bool,
     /// 读过这条的其他人（显示名）。只有自己发的、别人读到的最后一条才有，壳有就显示“已读”。
     pub read_by: Vec<String>,
-    /// 长按这条消息能做的事。空的就没有菜单。
+    /// 这条回复的是哪条消息，壳画在正文上方；不是回复时为空。
+    pub reply: Option<ReplyQuote>,
+    /// 长按这条消息能做的事，按菜单顺序排好。空的就没有菜单。
     pub actions: Vec<MessageAction>,
 }
 
@@ -134,6 +136,13 @@ pub struct TimelineMessage {
 pub enum MessageAction {
     /// 把 `text` 放进剪贴板。
     Copy { text: String },
+    /// 回复这条：壳把 `message` 画在输入框上方，发送时把它的事件 ID 作为 `reply_to` 交回，并用
+    /// [`Action::SetDraft`](crate::Action::SetDraft) 记进草稿。有这一项时壳也允许右滑这条消息来回复。
+    Reply { message: QuotedMessage },
+    /// 转发到另一个房间（[`Action::ForwardMessage`](crate::Action::ForwardMessage)），壳先让主人选房间。
+    Forward,
+    /// 撤回（[`Action::RedactMessage`](crate::Action::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
+    Redact,
 }
 
 /// 发送状态。别人的消息和从服务器同步来的消息都是 [`SendState::Sent`]。
@@ -557,6 +566,7 @@ mod tests {
                 body,
                 edited: true,
                 read_by: vec!["主人".into()],
+                reply: None,
                 actions: vec![MessageAction::Copy {
                     text: "好的".into(),
                 }],

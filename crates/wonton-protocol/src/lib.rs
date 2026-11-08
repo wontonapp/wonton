@@ -35,6 +35,7 @@ mod plugin_notice;
 mod port_mapping;
 mod push;
 mod registry_mirror;
+mod reply;
 mod secret;
 mod server_version;
 mod servers;
@@ -179,6 +180,7 @@ pub use registry_mirror::{
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
     RegistryProblem,
 };
+pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
 pub use secret::SecretString;
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};

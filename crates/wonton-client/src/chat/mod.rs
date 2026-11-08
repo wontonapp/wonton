@@ -300,8 +300,16 @@ impl ChatLink {
                 Ok(())
             }
             Action::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
-            Action::SendText { room_id, body } => self.send_text(&room_id, &body),
-            Action::SendImage { room_id, image } => self.send_image(&room_id, image),
+            Action::SendText {
+                room_id,
+                body,
+                reply_to: None,
+            } => self.send_text(&room_id, &body),
+            Action::SendImage {
+                room_id,
+                image,
+                reply_to: None,
+            } => self.send_image(&room_id, image),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
                 let sent = self.sent.clone();
@@ -334,7 +342,11 @@ impl ChatLink {
                 });
                 Ok(())
             }
-            Action::SetDraft { room_id, body } => self.set_draft(&room_id, &body),
+            Action::SetDraft {
+                room_id,
+                body,
+                reply_to: None,
+            } => self.set_draft(&room_id, &body),
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),

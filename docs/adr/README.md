@@ -78,3 +78,4 @@
 | [0066](0066-plugin-forms.md) | 插件的几种形态：一条安装管线，按 Bot 生效，目录只给数据 |
 | [0067](0067-chat-installing-bot.md) | 装 Agent 插件时聊天列表有一行占位：阶段和类别由核心给，装好由私聊替换 |
 | [0072](0072-tunnel-udp.md) | 隧道传 UDP：同一条隧道连接上的 QUIC 数据报，插件声明 `tunnel.ports`，App 在本机 `127.0.0.1` 映射 |
+| [0073](0073-message-actions-and-replies.md) | 消息菜单和回复：菜单项由核心按消息给，回复、转发、撤回都用 Matrix 的标准做法 |

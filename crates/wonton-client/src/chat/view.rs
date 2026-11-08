@@ -153,6 +153,7 @@ fn timeline_message(
             },
         },
         edited,
+        reply: None,
         actions: message_actions(&body),
         body,
         read_by,

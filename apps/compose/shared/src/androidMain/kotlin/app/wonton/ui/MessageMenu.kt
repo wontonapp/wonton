@@ -159,6 +159,8 @@ private fun MenuSurface(actions: List<MessageAction>, onDismiss: () -> Unit) {
                             onDismiss()
                         },
                     )
+                    // 核心和 App 分开升级时，不认识的菜单项不显示。
+                    else -> Unit
                 }
             }
         }

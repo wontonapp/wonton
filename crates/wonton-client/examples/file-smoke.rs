@@ -292,6 +292,7 @@ impl<'a> Chat<'a> {
             .dispatch(Action::SendText {
                 room_id: self.room.clone(),
                 body: text.to_owned(),
+                reply_to: None,
             })
             .map_err(|e| format!("发不出去：{e}"))
     }

@@ -51,6 +51,7 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
         .dispatch(Action::SendText {
             room_id: room.clone(),
             body: "你好".to_owned(),
+            reply_to: None,
         })
         .unwrap();
     timeline

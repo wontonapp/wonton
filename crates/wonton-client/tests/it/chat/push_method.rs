@@ -208,6 +208,7 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
         .dispatch(Action::SendText {
             room_id: room_id.to_string(),
             body: "这是我自己说的".to_owned(),
+            reply_to: None,
         })
         .unwrap();
     bot_room.send_text("收到").await.expect("Bot 再发一条");

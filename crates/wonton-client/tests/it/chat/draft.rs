@@ -50,6 +50,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
     let set = |room: &str, body: &str| Action::SetDraft {
         room_id: room.to_owned(),
         body: body.to_owned(),
+        reply_to: None,
     };
     phone.dispatch(set(&first, "写给第一个房间")).unwrap();
     until_draft(&phone, &first, Some("写给第一个房间")).await;
@@ -82,6 +83,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
         .dispatch(Action::SendText {
             room_id: first.clone(),
             body: "第一间第 19 个字".to_owned(),
+            reply_to: None,
         })
         .unwrap();
     timeline
@@ -101,6 +103,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
         .dispatch(Action::SendText {
             room_id: first.clone(),
             body: "再发一句".to_owned(),
+            reply_to: None,
         })
         .unwrap();
     phone.dispatch(set(&first, "发送途中又打的")).unwrap();
