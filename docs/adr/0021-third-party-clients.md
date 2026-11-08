@@ -1,6 +1,6 @@
 # ADR-0021 第三方原生 App 连回家：公网子域名、公共证书和专用密码
 
-- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代
+- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代；家名同时用作 Matrix 的服务器名、中继多转联邦，见 [ADR-0051](0051-friends-and-plugin-sharing.md)
 
 ## 背景
 

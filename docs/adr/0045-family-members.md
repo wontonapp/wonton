@@ -3,7 +3,7 @@
 - 状态：已接受（2026-11-06），产品取舍由主人定（见“已定”）。修订 [ADR-0007](0007-agents-and-bots.md)（Bot 听谁的、Bot 之间的规则）、
   [ADR-0009](0009-identity-pairing-sso.md)（设备和配对码属于人）、[ADR-0010](0010-storage-and-nas.md)（私人空间）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（总线按 Bot 授权、卡片发给谁）、[ADR-0020](0020-file-service.md)（访问范围、设备上传放哪）、
-  [ADR-0024](0024-confirmation-scope.md)（谁能放宽）
+  [ADR-0024](0024-confirmation-scope.md)（谁能放宽）。好友和对整个 Matrix 开放联邦见 [ADR-0051](0051-friends-and-plugin-sharing.md)
 
 ## 背景
 
@@ -28,6 +28,7 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 - **家人**：主人邀请的人。每人有自己的 Matrix 账号 `@<用户名>:<server_name>`、自己的设备、私人空间、和核心的“Wonton”私聊，默认还有一个私人 Bot。
   用户名规则同 ADR-0022：固定、不复用，移除后也不再分配。邀请时主人填显示名，用户名默认由显示名生成（ASCII 的转成小写、
   去掉不合规则的字符；不是 ASCII 的用 `family<n>`），可以改。家人的显示名和邮箱由家人自己在 App 里填（同 ADR-0030）。
+- **好友**：不是家人的朋友，就是任何 Matrix 服务器上的人，用他自己的账号；主人能把插件分享给他（ADR-0051）。
 - **Bot 都有归属人。** 私人 Bot 归一个人，只听这个人的；共享 Bot 归全家，由主人管，听所有家人的。默认 Agent 的默认 Bot 是主人的私人 Bot。
   “听”的范围另加批准过的 Bot 联系人（见“Bot 之间互发消息”）。
 - 核心记录：主人仍在 `core/owner.json`；家人在 `core/members.json`（用户名、显示名、邮箱、状态：已邀请、已加入、已移除，移除的留着防止复用）；
@@ -137,8 +138,8 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   （`block_non_admin_invites` 是一刀切）。网关只看请求路径和请求体里的用户 ID，不看消息内容：
   - 邀请 Bot（`POST /rooms/{房间}/invite`、`createRoom` 的 `invite`）：私人 Bot 只能由归属人和它的联系人邀请，共享 Bot 由家人和联系人邀请。
   - Bot 邀请别人：只能邀请它听的人（归属人或家人）和联系人。
-  - 人邀请人不限。
-  - 不放行公开房间：`createRoom` 的 `public_chat`、`visibility: public`，把 `join_rules` 改成 `public`。联邦关着，公开房间只多一条绕过邀请的路。
+  - 人邀请人不限，只限频（ADR-0051 的“挡垃圾”）。
+  - 不放行公开房间：`createRoom` 的 `public_chat`、`visibility: public`，把 `join_rules` 改成 `public`。公开房间会被搜到、被刷，第一版不开（ADR-0051）。
   - 不合规则回 403 `M_FORBIDDEN`，`X-Wonton-Error` 是 `contact_required` 或 `public_room`。
   - 设备用的访问令牌必须是这台设备的人的（`whoami` 对得上），Bot 同理。
 
